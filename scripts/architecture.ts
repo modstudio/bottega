@@ -325,6 +325,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-render.ts', [
     '../../../shared/brand.ts',
+    './autonomy.ts',
     './workflow-cursor-format.ts',
     './workflow-floor.ts',
     './workflows.ts',
@@ -344,6 +345,7 @@ export const modules: ArchitectureModule[] = [
     './autonomy.ts',
     './session-context-cache.ts',
     './step-catalogue.ts',
+    './workflow-cursor-autonomy.ts',
   ]),
   ...workflowCommandModules,
   ...sessionContextModules,

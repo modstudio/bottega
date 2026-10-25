@@ -392,8 +392,20 @@ test('workflow import resolves hosted production from the worktree without BOTTE
 
 test('workflow tree project refusal is only required for a configured record without an owner', () => {
   const input = { command: 'hydrate' as const, root: '/fixture/unowned' }
-  expect(workflowProjectRefusal({ ...input, project: 'owned', recordConfigured: true })).toBeNull()
-  expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: false })).toBeNull()
+  expect(
+    workflowProjectRefusal({
+      ...input,
+      project: 'owned',
+      recordConfigured: true,
+    }),
+  ).toBeNull()
+  expect(
+    workflowProjectRefusal({
+      ...input,
+      project: null,
+      recordConfigured: false,
+    }),
+  ).toBeNull()
   expect(workflowProjectRefusal({ ...input, project: null, recordConfigured: true })).toBe(
     'refusing workflow hydrate in /fixture/unowned: no registered project owns this directory\n' +
       "cleared by: run from a registered project's worktree, or pass --cwd for one",
@@ -437,7 +449,14 @@ test('mode-less step command resolves autonomy from the fetched catalogue step',
       title: 'Mode-less step',
       description: 'Exercises the command without a workflow default mode.',
       arguments: [],
-      modes: [{ slug: 'only', title: 'Only', entry: 'Use the only mode?', steps: [step.slug] }],
+      modes: [
+        {
+          slug: 'only',
+          title: 'Only',
+          entry: 'Use the only mode?',
+          steps: [step.slug],
+        },
+      ],
     },
     'test mode-less step command',
     'test',
@@ -548,7 +567,10 @@ test('workflow probe and exec preserve child options after the real argv separat
           "SELECT command,cwd FROM probe WHERE kind='exec' ORDER BY created_at DESC,record_id DESC LIMIT 1",
         )
         .get()
-      expect(row).toEqual({ command: JSON.stringify(expected.command), cwd: expected.cwd })
+      expect(row).toEqual({
+        command: JSON.stringify(expected.command),
+        cwd: expected.cwd,
+      })
     }
   }
 })
@@ -574,7 +596,11 @@ test('workflow probe service returns the recorded child exit code', async () => 
     name: 'workflow-probe-status',
     path: process.cwd(),
     stack: 'bun',
-    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+    },
   })
   const result = await recordWorkflowProbe(['failing'], {
     runner: () => ({ exitCode: 9, output: '' }),
@@ -596,7 +622,11 @@ test('workflow probe prints a failed command exit and stored output tail after t
     name: 'workflow-probe-presentation-failure',
     path: process.cwd(),
     stack: 'bun',
-    settings: { gate: 'bun run check', trunk: 'main', docs: { protocol: 'orch-docs' } },
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+    },
   })
   const shown = outcomePresentation()
 
@@ -632,7 +662,10 @@ test('workflow probe failure prints the stored withheld marker instead of secret
   const shown = outcomePresentation()
 
   await workflowCommand(['workflow', 'probe', '--', 'failing'], shown.presentation, {
-    probeRunner: () => ({ exitCode: 1, output: 'token=ghp_exampletokenvalue' }),
+    probeRunner: () => ({
+      exitCode: 1,
+      output: 'token=ghp_exampletokenvalue',
+    }),
   })
 
   expect(shown.stderr).toEqual([
@@ -690,7 +723,16 @@ test('next resolves an omitted mode to the composed cursor default', async () =>
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
   ])
-  composeWorkflowWithCursor(slug, project, undefined, { key: 'DEV-937-default' }, {})
+  composeWorkflowWithCursor(
+    slug,
+    project,
+    undefined,
+    { key: 'DEV-937-default' },
+    {},
+    undefined,
+    {},
+    {},
+  )
   const lines: string[] = []
 
   await workflowCommand(
@@ -720,8 +762,18 @@ test('cursor command without a default mode names the available modes', async ()
   )!
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [
-    { slug: 'report', title: 'Report', entry: 'Prepare a report?', steps: [step.slug] },
-    { slug: 'repair', title: 'Repair', entry: 'Make a repair?', steps: [step.slug] },
+    {
+      slug: 'report',
+      title: 'Report',
+      entry: 'Prepare a report?',
+      steps: [step.slug],
+    },
+    {
+      slug: 'repair',
+      title: 'Repair',
+      entry: 'Make a repair?',
+      steps: [step.slug],
+    },
   ])
 
   expect(
@@ -745,7 +797,16 @@ test('next preserves an explicit mode', async () => {
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
     { slug: 'repair', title: 'Repair', steps: [step.slug] },
   ])
-  composeWorkflowWithCursor(slug, project, 'repair', { key: 'DEV-937-explicit' }, {})
+  composeWorkflowWithCursor(
+    slug,
+    project,
+    'repair',
+    { key: 'DEV-937-explicit' },
+    {},
+    undefined,
+    {},
+    {},
+  )
   const lines: string[] = []
 
   await workflowCommand(
@@ -783,7 +844,7 @@ test('mode-less cursor verbs keep using the cursor mode after the workflow defau
     { slug: 'report', title: 'Report', default: true, steps },
     { slug: 'repair', title: 'Repair', steps },
   ])
-  composeWorkflowWithCursor(slug, project, undefined, { key }, {})
+  composeWorkflowWithCursor(slug, project, undefined, { key }, {}, undefined, {}, {})
   const changed = setWorkflowLocal(
     slug,
     {
@@ -828,8 +889,26 @@ test('every CLI cursor verb routes by handle, including handle-only abandon', as
   ]
   registerFixtureProject(project)
   publishCursorWorkflow(slug, [{ slug: 'report', title: 'Report', default: true, steps }])
-  const first = composeWorkflowWithCursor(slug, project, 'report', { key: 'DEV-1082-A' }, {})
-  const second = composeWorkflowWithCursor(slug, project, 'report', { key: 'DEV-1082-B' }, {})
+  const first = composeWorkflowWithCursor(
+    slug,
+    project,
+    'report',
+    { key: 'DEV-1082-A' },
+    {},
+    undefined,
+    {},
+    {},
+  )
+  const second = composeWorkflowWithCursor(
+    slug,
+    project,
+    'report',
+    { key: 'DEV-1082-B' },
+    {},
+    undefined,
+    {},
+    {},
+  )
   const firstCursor = first.cursor!.id
   const secondCursor = second.cursor!.id
   db()
@@ -882,7 +961,16 @@ test('a cursor refuses a supplied workflow or project that differs from its row'
   publishCursorWorkflow(slug, [
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
   ])
-  const opened = composeWorkflowWithCursor(slug, project, 'report', { key: 'DEV-1223' }, {})
+  const opened = composeWorkflowWithCursor(
+    slug,
+    project,
+    'report',
+    { key: 'DEV-1223' },
+    {},
+    undefined,
+    {},
+    {},
+  )
   const cursor = String(opened.cursor!.id)
 
   await expect(
@@ -921,8 +1009,8 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
     { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
     { slug: 'repair', title: 'Repair', steps: [step.slug] },
   ])
-  composeWorkflowWithCursor(slug, project, 'report', { key }, {})
-  composeWorkflowWithCursor(slug, project, 'repair', { key }, {})
+  composeWorkflowWithCursor(slug, project, 'report', { key }, {}, undefined, {}, {})
+  composeWorkflowWithCursor(slug, project, 'repair', { key }, {}, undefined, {}, {})
 
   expect(
     workflowCommand(

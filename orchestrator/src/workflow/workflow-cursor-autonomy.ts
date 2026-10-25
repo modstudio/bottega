@@ -9,6 +9,7 @@ import {
   type CursorAutonomyDifference,
   type CursorAutonomyResolution,
   type LiveCursorAutonomy,
+  type RulingsResolution,
   type StoredAutonomyResolution,
 } from './autonomy.ts'
 import { shellWord } from './workflow-cursor-format.ts'
@@ -38,6 +39,13 @@ function stricterEntry<T extends ResolutionEntry>(
   if (liveRank < pinnedRank) return live
   differences.push({ subject, pinned: pinned.value, live: live.value })
   return pinned
+}
+
+export function combineCursorRulings(
+  pinned: RulingsResolution,
+  live: RulingsResolution | undefined,
+): RulingsResolution {
+  return stricterEntry('rulings', pinned, live, ['user', 'agent'], [])
 }
 
 export function combineCursorAutonomy(

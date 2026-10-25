@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { CursorAutonomyNotice } from './autonomy.ts'
 import {
   formatCursorOpened,
   formatCursorResumed,
@@ -216,11 +217,7 @@ function flowSoFar(step: WorkflowStep): string {
   return flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
 }
 
-export function cursorAutonomyLines(value: {
-  autonomyComposeCommand?: string
-  autonomyDifferences?: Array<{ subject: string; pinned: string; live: string }>
-  autonomyUnavailableReason?: string
-}): string[] {
+export function cursorAutonomyLines(value: CursorAutonomyNotice): string[] {
   const command = value.autonomyComposeCommand
   return [
     ...(value.autonomyUnavailableReason
@@ -231,7 +228,7 @@ export function cursorAutonomyLines(value: {
     ...(command
       ? (value.autonomyDifferences ?? []).map(
           ({ subject, pinned, live }) =>
-            `${subject}: pinned ${pinned}; your current setting is ${live}; recompose to adopt it: ${command}`,
+            `${subject}: pinned ${pinned}; your current setting is ${live}; it takes effect when this workflow next starts; to adopt it now: ${PLATFORM_SLUG} workflow abandon --cursor ${value.autonomyCursor} --reason "<why>"; then ${command}`,
         )
       : []),
   ]

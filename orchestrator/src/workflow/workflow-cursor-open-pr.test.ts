@@ -50,7 +50,16 @@ function database(): Database {
 
 test('open-pr does not advance from a review-lens run artifact', () => {
   const d = database()
-  const composition = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+  const composition = composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    {},
+  )
   const ordinal = composition.steps.findIndex((step) => step.slug === 'pr')
   expect(ordinal).toBeGreaterThanOrEqual(0)
   d.query("UPDATE workflow_cursor SET ordinal=?,step_slug='pr',closed=?").run(
@@ -65,7 +74,9 @@ test('open-pr does not advance from a review-lens run artifact', () => {
     ]),
   )
   const projectId = (
-    d.query("SELECT record_id FROM project WHERE name='fixture'").get() as { record_id: string }
+    d.query("SELECT record_id FROM project WHERE name='fixture'").get() as {
+      record_id: string
+    }
   ).record_id
   const run = d
     .query<{ number: number }, (string | number)[]>(

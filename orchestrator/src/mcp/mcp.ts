@@ -44,7 +44,6 @@ import {
   awaitWorkflowRuling,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
-import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorMode,
@@ -486,14 +485,6 @@ export function createDocsMcpServer(): McpServer {
         undefined,
         cursor,
       )
-      const live = await resolveCursorLiveAutonomy({
-        slug,
-        project,
-        mode: effectiveMode,
-        args: workflowArgs,
-        context,
-        cursor,
-      })
       return text(
         awaitWorkflowRuling(
           slug,
@@ -505,7 +496,6 @@ export function createDocsMcpServer(): McpServer {
           undefined,
           undefined,
           cursor,
-          live,
         ),
       )
     },

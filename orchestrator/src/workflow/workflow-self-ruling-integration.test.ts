@@ -13,11 +13,16 @@ import {
   getWorkflowStepWithCursor,
   nextWorkflowStep,
 } from './workflow-cursor.ts'
+import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
 
-const args = { key: 'DEV-1264', branch: 'DEV-1264-work', worktree: '/tmp/work' }
+const args = {
+  key: 'DEV-1264',
+  branch: 'DEV-1264-work',
+  worktree: '/tmp/work',
+}
 const context = { session: 'session-one' }
 const ports = {
   resolveCheckout: () => ({
@@ -60,7 +65,16 @@ function resolution(d: Database): AutonomyResolution {
 }
 
 function openAtRuling(d: Database): void {
-  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, resolution(d))
+  composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    { resolution: resolution(d) },
+  )
   for (const note of ['rebase', 'lens', 'score']) {
     nextWorkflowStep(
       'flow',
@@ -99,7 +113,12 @@ function selfRule(d: Database, question?: string): string {
     {},
     ports,
     undefined,
-    { ruling: 'Proceed.', basis: 'specification line 4', question, channel: 'mcp' },
+    {
+      ruling: 'Proceed.',
+      basis: 'specification line 4',
+      question,
+      channel: 'mcp',
+    },
   )
 }
 
@@ -124,7 +143,9 @@ test('self-ruling records the answered question and closes the step atomically',
       .get(),
   ).toEqual({
     workflow_cursor_record_id: (
-      d.query('SELECT record_id FROM workflow_cursor').get() as { record_id: string }
+      d.query('SELECT record_id FROM workflow_cursor').get() as {
+        record_id: string
+      }
     ).record_id,
     workflow_step_ordinal: 4,
     workflow_step_slug: 'ship-triage',
@@ -161,7 +182,9 @@ test('a close failure rolls back the self-ruling question and audit', () => {
     ordinal: 3,
     step_slug: 'ship-triage',
   })
-  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
+    count: 0,
+  })
   expect(d.query('SELECT count(*) count FROM question_mutation_audit').get()).toEqual({ count: 0 })
 })
 
@@ -170,9 +193,21 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
   const automatic = resolution(d)
   const resolved = {
     ...automatic,
-    steps: { ...automatic.steps, 'ship-triage': { value: 'ask' as const, scope: 'test' } },
+    steps: {
+      ...automatic.steps,
+      'ship-triage': { value: 'ask' as const, scope: 'test' },
+    },
   }
-  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, resolved)
+  composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    { resolution: resolved },
+  )
   for (const note of ['rebase', 'lens', 'score']) {
     nextWorkflowStep(
       'flow',
@@ -191,19 +226,33 @@ test('self-ruling refuses ask autonomy without changing the cursor or questions'
     ordinal: 3,
     step_slug: 'ship-triage',
   })
-  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
+    count: 0,
+  })
 })
 
-test('a live ask setting tightens a real cursor and refuses its self-ruling', () => {
+test('a resolved live ask setting tightens a real cursor and refuses its self-ruling', async () => {
   const d = database()
   openAtRuling(d)
-  const live = resolution(d)
-  live.steps['ship-triage'] = { value: 'ask', scope: 'hosted user' }
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      tracker: { protocol: 'hub' },
+      autonomy: { steps: { 'ship-triage': 'ask' } },
+    }),
+    'fixture',
+  )
+  const live = await resolveWorkflowLiveAutonomy(
+    { slug: 'flow', project: 'fixture', mode: 'default', args, context },
+    d,
+  )
 
   expect(
     getWorkflowStepWithCursor('flow', 'fixture', 'ship-triage', args, 'default', context, d, live)
       .resolvedAutonomy,
-  ).toEqual({ value: 'ask', scope: 'hosted user' })
+  ).toEqual({ value: 'ask', scope: 'project' })
   expect(() =>
     nextWorkflowStep(
       'flow',
@@ -218,18 +267,29 @@ test('a live ask setting tightens a real cursor and refuses its self-ruling', ()
       undefined,
       { ruling: 'Proceed.', basis: 'specification line 4', channel: 'mcp' },
       undefined,
-      { resolution: live },
+      live,
     ),
   ).toThrow(/resolved autonomy is ask.*workflow await.*workflow rule/)
 })
 
 test('self-ruling refuses a non-ruling step without changing the cursor or questions', () => {
   const d = database()
-  composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, resolution(d))
+  composeWorkflowWithCursor(
+    'flow',
+    'fixture',
+    'default',
+    args,
+    context,
+    d,
+    {},
+    { resolution: resolution(d) },
+  )
   const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
   expect(() => selfRule(d)).toThrow(/has no ruling floor.*evidence its floor names/)
   expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual(cursorBefore)
-  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
+    count: 0,
+  })
 })
 
 test('self-ruling refuses an operator-ruling floor without changing durable state', () => {
@@ -253,5 +313,7 @@ test('self-ruling refuses an operator-ruling floor without changing durable stat
     ordinal: 3,
     step_slug: 'ship-triage',
   })
-  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
+    count: 0,
+  })
 })

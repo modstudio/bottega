@@ -413,3 +413,37 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
     },
   )
 })
+
+test('answer combines a cursor rulings snapshot with a stricter current setting', async () => {
+  const d = database(JSON.stringify({ autonomy: { rulings: 'user' } }))
+  const insert = d.query(
+    `INSERT INTO workflow_cursor
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version_record_id,
+       catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
+       created_at,updated_at)
+     VALUES (?,1,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-867','current',NULL,?,?,'{}',?,0,'design','running','[]',NULL,1,'1','1')`,
+  )
+  insert.run(
+    newRecordId(),
+    workflowVersionRecordId(d),
+    catalogueVersionRecordId(d),
+    JSON.stringify({ rulings: { value: 'agent', scope: 'session' } }),
+  )
+  expect(await resolveAnswerRulings('fixture', 'DEV-867', undefined, d, missingConfig)).toEqual({
+    value: 'user',
+    scope: 'project',
+  })
+
+  d.query('UPDATE project SET settings=? WHERE name=?').run(
+    JSON.stringify({ autonomy: { rulings: 'agent' } }),
+    'fixture',
+  )
+  d.query('UPDATE workflow_cursor SET autonomy=? WHERE workflow_key=?').run(
+    JSON.stringify({ rulings: { value: 'user', scope: 'session' } }),
+    'DEV-867',
+  )
+  expect(await resolveAnswerRulings('fixture', 'DEV-867', undefined, d, missingConfig)).toEqual({
+    value: 'user',
+    scope: 'session',
+  })
+})

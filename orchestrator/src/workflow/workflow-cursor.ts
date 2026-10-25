@@ -230,9 +230,9 @@ export function composeWorkflowWithCursor(
   context: WorkflowCursorContext,
   d: Database = db(),
   selection: { version?: number; catalogueVersion?: number } = {},
-  autonomy?: AutonomyResolution,
-  live?: LiveCursorAutonomy,
+  live: LiveCursorAutonomy,
 ) {
+  const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
@@ -250,7 +250,7 @@ export function composeWorkflowWithCursor(
     if (existing && start === 'reuse') applyCursorArguments(existing, args, d)
     const row = insertCursor(composition, context, d, autonomy)
     return {
-      ...cursorComposition(row, d, live ?? { resolution: autonomy }),
+      ...cursorComposition(row, d, live),
       cursor: {
         id: row.id,
         n: row.ordinal + 1,
@@ -263,7 +263,7 @@ export function composeWorkflowWithCursor(
   }, d)
 }
 
-function cursorComposition(row: CursorRow, d: Database, live?: LiveCursorAutonomy) {
+export function cursorComposition(row: SelectableCursorRow, d: Database, live?: LiveCursorAutonomy) {
   return composeWorkflow(
     row.workflow_slug,
     row.project,
@@ -423,10 +423,10 @@ export function getWorkflowStepWithCursor(
   mode: string,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
-  autonomy?: AutonomyResolution,
+  live: LiveCursorAutonomy,
   cursor?: number,
-  live?: LiveCursorAutonomy,
 ) {
+  const autonomy = live.resolution
   return writeTransaction(
     () =>
       getWorkflowStepWithCursorImpl(
@@ -439,7 +439,7 @@ export function getWorkflowStepWithCursor(
         d,
         autonomy,
         cursor,
-        live ?? (autonomy ? { resolution: autonomy } : undefined),
+        live,
       ),
     d,
   )
@@ -975,13 +975,9 @@ export function awaitWorkflowRuling(
   d: Database = writableDb(),
   notify: typeof notifyWaitingItem = notifyWaitingItem,
   cursor?: number,
-  live?: LiveCursorAutonomy,
 ): CursorSummary & { questionId: number } {
-  const result = writeTransaction(() => {
-    const row = findCursor(project, slug, mode, args, context, d, cursor)
-    if (row) cursorAutonomy(row, live)
-    return awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor)
-  }, d)
+  const result = writeTransaction(
+    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor), d)
   notify('workflow', result.cursorId, d)
   return result.summary
 }

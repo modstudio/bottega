@@ -144,7 +144,7 @@ function closeChoice(d: Database, slug: string, outcome?: string): string {
 }
 
 function open(d: Database, slug: string): void {
-  composeWorkflowWithCursor(slug, 'fixture', 'default', args, context, d)
+  composeWorkflowWithCursor(slug, 'fixture', 'default', args, context, d, {}, {})
 }
 
 describe('conditional workflow cursor advance', () => {
@@ -178,8 +178,16 @@ describe('conditional workflow cursor advance', () => {
       }),
     ])
     expect(
-      getWorkflowStepWithCursor('conditional-skip', 'fixture', 'score', args, 'default', context, d)
-        .slug,
+      getWorkflowStepWithCursor(
+        'conditional-skip',
+        'fixture',
+        'score',
+        args,
+        'default',
+        context,
+        d,
+        {},
+      ).slug,
     ).toBe('complete')
   })
 
@@ -215,7 +223,9 @@ describe('conditional workflow cursor advance', () => {
     installConditionalFixture(d, 'conditional-end', ['score'], [])
     open(d, 'conditional-end')
     expect(closeChoice(d, 'conditional-end', 'clear')).toContain('is finished: 2 steps closed')
-    expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
+    expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({
+      state: 'done',
+    })
   })
 })
 
@@ -281,7 +291,11 @@ function closeStep(
     'selected',
     context,
     d,
-    { artifact: `probe:${probe}`, ...(ruling === undefined ? {} : { ruling }), ...extra },
+    {
+      artifact: `probe:${probe}`,
+      ...(ruling === undefined ? {} : { ruling }),
+      ...extra,
+    },
     testPorts,
     undefined,
     undefined,
@@ -291,9 +305,15 @@ function closeStep(
 
 function boundRuling(d: Database, answeredAt = new Date(Date.now() + 1000).toISOString()): number {
   const row = d
-    .query<{ record_id: string; ordinal: number; step_slug: string; workflow_key: string }, []>(
-      'SELECT record_id,ordinal,step_slug,workflow_key FROM workflow_cursor',
-    )
+    .query<
+      {
+        record_id: string
+        ordinal: number
+        step_slug: string
+        workflow_key: string
+      },
+      []
+    >('SELECT record_id,ordinal,step_slug,workflow_key FROM workflow_cursor')
     .get()!
   return d
     .query<{ number: number }, (string | number | null)[]>(
@@ -317,7 +337,10 @@ function boundRuling(d: Database, answeredAt = new Date(Date.now() + 1000).toISO
 
 function setLastReentryAt(d: Database, at: string): void {
   const row = d.query<{ closed: string }, []>('SELECT closed FROM workflow_cursor').get()!
-  const closed = JSON.parse(row.closed) as Array<{ reentered?: unknown; at: string }>
+  const closed = JSON.parse(row.closed) as Array<{
+    reentered?: unknown
+    at: string
+  }>
   const last = closed.findLast((entry) => entry.reentered)
   if (!last) throw new Error('expected a re-entry close')
   last.at = at
@@ -466,7 +489,10 @@ describe('ruling outcomes and bounded re-entry', () => {
       d,
       'ruling-outcome',
       [
-        flowStep('flow-triage', { outcomes: ['fix', 'clear'], rulingOutcomes: ['fix'] }),
+        flowStep('flow-triage', {
+          outcomes: ['fix', 'clear'],
+          rulingOutcomes: ['fix'],
+        }),
         flowStep('flow-done'),
       ],
       ['flow-triage', 'flow-done'],
@@ -482,7 +508,10 @@ describe('ruling outcomes and bounded re-entry', () => {
       d,
       'ordinary-outcome',
       [
-        flowStep('flow-triage', { outcomes: ['fix', 'clear'], rulingOutcomes: ['fix'] }),
+        flowStep('flow-triage', {
+          outcomes: ['fix', 'clear'],
+          rulingOutcomes: ['fix'],
+        }),
         flowStep('flow-done'),
       ],
       ['flow-triage', 'flow-done'],
@@ -515,7 +544,11 @@ describe('ruling outcomes and bounded re-entry', () => {
       step_slug: 'flow-start',
     })
     const closed = JSON.parse(
-      (d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }).closed,
+      (
+        d.query('SELECT closed FROM workflow_cursor').get() as {
+          closed: string
+        }
+      ).closed,
     )
     expect(closed.at(-1)).toMatchObject({
       slug: 'flow-apply',
@@ -555,7 +588,9 @@ describe('ruling outcomes and bounded re-entry', () => {
     expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/workflow await/)
     expect(() => closeStep(d, 'reentry-bound', 'changed')).toThrow(/non-re-entering outcome/)
     expect(() =>
-      closeStep(d, 'reentry-bound', 'changed', undefined, { review: insertGradedReview(d) }),
+      closeStep(d, 'reentry-bound', 'changed', undefined, {
+        review: insertGradedReview(d),
+      }),
     ).toThrow(/automatic re-entry bound is reached/)
     setLastReentryAt(d, '2026-01-01T00:00:00.000Z')
     const rulingN = boundRuling(d, '2026-01-01T00:00:01.000Z')
@@ -576,7 +611,11 @@ describe('ruling outcomes and bounded re-entry', () => {
       step_slug: 'flow-start',
     })
     const closed = JSON.parse(
-      (d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }).closed,
+      (
+        d.query('SELECT closed FROM workflow_cursor').get() as {
+          closed: string
+        }
+      ).closed,
     )
     expect(closed.filter((entry: { reentered?: unknown }) => entry.reentered)).toEqual([
       expect.objectContaining({ reentered: { to: 'flow-start', pass: 2 } }),

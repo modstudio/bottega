@@ -10,9 +10,10 @@ import {
 } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { cursorComposition } from './workflow-cursor.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { selectWorkflowCursor, type WorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { composeWorkflow } from './workflows.ts'
+import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
 type CursorLiveAutonomyInput = {
   slug: string
@@ -23,6 +24,11 @@ type CursorLiveAutonomyInput = {
   cursor?: number
   session?: AutonomySettings
   selection?: { version?: number; catalogueVersion?: number }
+}
+
+type WorkflowLiveAutonomyInput = Omit<CursorLiveAutonomyInput, 'mode'> & {
+  mode?: string
+  step?: string
 }
 
 const errorReason = (error: unknown): string =>
@@ -43,21 +49,14 @@ export async function resolveCursorLiveAutonomy(
     input.context.session,
     d,
   )
-  const storedArgs = row ? (JSON.parse(row.args) as Record<string, string>) : {}
-  const effectiveArgs = { ...storedArgs, ...input.args }
   let composition: ReturnType<typeof composeWorkflow>
   try {
-    composition = composeWorkflow(
-      row?.workflow_slug ?? input.slug,
-      row?.project ?? input.project,
-      row?.mode_slug ?? input.mode,
-      effectiveArgs,
-      d,
-      row
-        ? { version: row.workflow_version, catalogueVersion: row.catalogue_version }
-        : { ...input.selection, mode: input.mode },
-      row ? cursorAutonomy(row) : undefined,
-    )
+    composition = row
+      ? cursorComposition(row, d)
+      : composeWorkflow(input.slug, input.project, input.mode, input.args, d, {
+          ...input.selection,
+          mode: input.mode,
+        })
     const stages = row ? Object.keys(cursorAutonomy(row)?.stages ?? {}) : []
     return {
       resolution: await resolveProjectAutonomy(
@@ -76,5 +75,34 @@ export async function resolveCursorLiveAutonomy(
   } catch (error) {
     if (!row) throw error
     return { unavailableReason: errorReason(error) }
+  }
+}
+
+export async function resolveWorkflowLiveAutonomy(
+  input: WorkflowLiveAutonomyInput,
+  d: Database = db(),
+): Promise<LiveCursorAutonomy> {
+  if (input.mode) return resolveCursorLiveAutonomy({ ...input, mode: input.mode }, d)
+  const composition = composeWorkflow(
+    input.slug,
+    input.project,
+    undefined,
+    input.args,
+    d,
+    input.selection,
+  )
+  const steps = input.step
+    ? [getWorkflowStep(input.slug, input.project, input.step, input.args, d, input.selection)]
+    : composition.steps
+  return {
+    resolution: await resolveProjectAutonomy(
+      input.project,
+      composition.workflow.slug,
+      composition.workflow.defaultPreset,
+      catalogueStepsForAutonomy(steps),
+      input.session,
+      undefined,
+      d,
+    ),
   }
 }

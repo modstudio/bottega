@@ -75,6 +75,12 @@ export type LiveCursorAutonomy = {
   resolution?: AutonomyResolution
   unavailableReason?: string
 }
+export type CursorAutonomyNotice = {
+  autonomyCursor?: number
+  autonomyComposeCommand?: string
+  autonomyDifferences?: CursorAutonomyDifference[]
+  autonomyUnavailableReason?: string
+}
 export type WorkflowAutonomyResolution = AutonomyResolution | CursorAutonomyResolution
 export type RulingsResolution = {
   value: 'agent' | 'user'

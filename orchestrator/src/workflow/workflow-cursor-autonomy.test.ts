@@ -64,7 +64,11 @@ function installShipToFlow(d: Database): void {
     {
       steps: current.steps.map((step) =>
         step.slug === 'rebase'
-          ? { ...step, body: 'Ship to {{shipTo.level}}.', needs: [...step.needs, 'ship-to'] }
+          ? {
+              ...step,
+              body: 'Ship to {{shipTo.level}}.',
+              needs: [...step.needs, 'ship-to'],
+            }
           : step,
       ),
     },
@@ -79,7 +83,9 @@ function replaceCursorAutonomy(
   d: Database,
   change: (stored: Record<string, unknown>) => void,
 ): void {
-  const row = d.query('SELECT autonomy FROM workflow_cursor').get() as { autonomy: string }
+  const row = d.query('SELECT autonomy FROM workflow_cursor').get() as {
+    autonomy: string
+  }
   const stored = JSON.parse(row.autonomy) as Record<string, unknown>
   change(stored)
   d.query('UPDATE workflow_cursor SET autonomy=?').run(JSON.stringify(stored))
@@ -96,9 +102,11 @@ function composeShipToFlow(d: Database) {
     d,
     {},
     {
+      resolution: {
       steps: Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
       rulings: composed.rulings,
       shipTo: { value: 'trunk', scope: 'test' },
+    },
     },
   )
 }
@@ -107,13 +115,22 @@ describe('workflow cursor stored autonomy', () => {
   test('combines a stricter live resolution across autonomy subjects', () => {
     const combined = combineCursorAutonomy(pinnedAutonomy(), liveAutonomy())
 
-    expect(combined.resolution.steps.lens).toEqual({ value: 'ask', scope: 'live step' })
+    expect(combined.resolution.steps.lens).toEqual({
+      value: 'ask',
+      scope: 'live step',
+    })
     expect(combined.resolution.stages?.review).toEqual({
       value: 'ask',
       scope: 'live stage',
     })
-    expect(combined.resolution.rulings).toEqual({ value: 'user', scope: 'live rulings' })
-    expect(combined.resolution.shipTo).toEqual({ value: 'branch', scope: 'live ship-to' })
+    expect(combined.resolution.rulings).toEqual({
+      value: 'user',
+      scope: 'live rulings',
+    })
+    expect(combined.resolution.shipTo).toEqual({
+      value: 'branch',
+      scope: 'live ship-to',
+    })
     expect(combined.looserLiveDifferences).toEqual([])
   })
 
@@ -191,7 +208,7 @@ describe('workflow cursor stored autonomy', () => {
     })
 
     expect(() =>
-      getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d),
+      getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d, {}),
     ).toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
   })
 
@@ -204,7 +221,7 @@ describe('workflow cursor stored autonomy', () => {
     })
 
     expect(() =>
-      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d),
+      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}),
     ).toThrow(
       `workflow cursor ${opened.cursor!.id}'s stored autonomy has no ship-to level; clear it with: ${PLATFORM_SLUG} workflow abandon --cursor ${opened.cursor!.id} --reason "<why>"; then start a new run with: ${PLATFORM_SLUG} workflow compose flow --project fixture --mode default --arg key=DEV-822 --arg branch=DEV-822-work --arg worktree=/tmp/work`,
     )
@@ -212,13 +229,13 @@ describe('workflow cursor stored autonomy', () => {
 
   test('an active cursor not needing ship-to serves a snapshot with no level', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
     })
 
     expect(
-      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d).slug,
+      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {}).slug,
     ).toBe('rebase')
   })
 })
