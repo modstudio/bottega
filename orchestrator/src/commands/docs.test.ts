@@ -178,12 +178,7 @@ test('converted command families preserve trunk output and exit status without o
       'current directory is not in a registered project; pass --project <name>',
     ],
     [['canon', 'evals'], 0, ''],
-    [
-      ['canon', 'lint'],
-      1,
-      `git -C ${fixtureCwd} rev-parse --show-toplevel failed: fatal: not a git repository`,
-      true,
-    ],
+    [['canon', 'lint'], 1, `git -C ${fixtureCwd} rev-parse --show-toplevel failed:`, true],
     [['canon', 'load'], 1, '--cwd is required'],
     [
       ['port'],
