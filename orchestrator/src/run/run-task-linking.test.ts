@@ -167,6 +167,10 @@ describe('run task linking service', () => {
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('GONE-7', orphanId)
     const probeId = addRun({ agent: 'codex', job: 'review-lens' })
     db().query('UPDATE run SET launch_key=?, probe=1 WHERE record_id=?').run('DRY-2', probeId)
+    const lostProbeId = addRun({ agent: 'codex', job: 'review-lens' })
+    db()
+      .query('UPDATE run SET launch_key=?, probe=1 WHERE record_id=?')
+      .run('MISSING-3', lostProbeId)
 
     const report = await linkRunTasks(
       { dryRun: true },
@@ -177,6 +181,7 @@ describe('run task linking service', () => {
     expect(report.task_links_by_source.launch_key).toBe(1)
     expect(report.keys_without_task['GONE-7']).toBe(1)
     expect(report.keys_without_task['DRY-2']).toBeUndefined()
+    expect(report.keys_without_task['MISSING-3']).toBe(1)
     expect(db().query('SELECT task_record_id FROM run WHERE record_id=?').get(runId)).toEqual({
       task_record_id: null,
     })
