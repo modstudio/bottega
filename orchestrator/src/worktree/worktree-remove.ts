@@ -159,7 +159,10 @@ export function changesInIndex(
   // so diffing there would attribute the remote's already-landed commits to
   // this run. A merge-base at or above the recorded base is one the run's own
   // base is already an ancestor of, and is the truthful lower bound.
+  // An explicit lower bound or a since-base request keeps its own meaning.
   const mergeBaseBelowBase =
+    lowerBound === undefined &&
+    !sinceBase &&
     mergeBase !== null &&
     w.base !== '' &&
     runOk(['merge-base', '--is-ancestor', w.base, mergeBase]) === null
