@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { reviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import {
+  admissionDecision,
   createPullRequest,
   finalizeTriageIntent,
   type PullRequestChange,
@@ -129,6 +130,89 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
   })
 })
 
+test('a ceiling ruling records and admits an emptied-round architect-read posture', () => {
+  const database = db()
+  const project = database
+    .query<{ record_id: string }, []>(
+      `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'ceiling-read-fixture','/tmp/ceiling-read-fixture',NULL,0,'{"trunk":"main"}',NULL)
+       RETURNING record_id`,
+    )
+    .get()!
+  const change: PullRequestChange = {
+    project: {
+      recordId: project.record_id,
+      name: 'ceiling-read-fixture',
+      path: '/tmp/ceiling-read-fixture',
+      stack: null,
+      canon: false,
+      retiredAt: null,
+      settings: { trunk: 'main' },
+    },
+    branch: 'DEV-1641-ceiling-read',
+    tip: 'tip',
+    tree: 'tree',
+    group: {
+      project: 'ceiling-read-fixture',
+      branch: 'DEV-1641-ceiling-read',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    },
+    tier: 3,
+    applicability: { lenses: ['correctness'] },
+  }
+  const earlierReview = {
+    reviewRecordId: 'review-3',
+    reviewNumber: 3,
+    recordedAt: '2026-10-23T00:00:00Z',
+    completedAt: '2026-10-23T00:01:00Z',
+    tier: 3 as const,
+    role: 'round' as const,
+    patchId: 'earlier-patch',
+    pathSet: '["a.ts"]',
+    lensIdentities: ['correctness'],
+    lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true }],
+    findings: [],
+  }
+  const triage = decideTriage({
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    tip: 'tip',
+    tier: 3,
+    applicableReview: { lenses: ['correctness'] },
+    reviewPlan: {
+      round: { lenses: [] },
+      admissionRequired: { lenses: ['correctness'] },
+    },
+    branchOwnerSession: 'branch-owner',
+    reviews: [],
+    branchReviewGroups: [{ reviews: [earlierReview] }],
+    reads: [],
+  })
+  expect(triage).toMatchObject({
+    complete: false,
+    architectReadRequired: true,
+    missingLenses: [],
+  })
+
+  const overrideId = recordTriageOverrideForChange(
+    change,
+    {
+      ceilingRuling: 'the remaining architect read cannot reveal harm',
+      fromOperator: false,
+      reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
+      triage,
+    },
+    database,
+  )
+
+  expect(overrideId).not.toBeNull()
+  expect(admissionDecision(change, database, triage)).toMatchObject({
+    complete: true,
+    overrideId,
+  })
+})
+
 test('a ceiling ruling below the completed-round ceiling refuses in process', () => {
   expect(() =>
     recordTriageOverrideForChange(
@@ -145,7 +229,7 @@ test('a ceiling ruling below the completed-round ceiling refuses in process', ()
       },
       db(),
     ),
-  ).toThrow('before the review round ceiling is reached; rounds used 2/3')
+  ).toThrow('before the review round ceiling is reached; rounds used 2/3; cleared by:')
 })
 
 test('ceiling rulings refuse non-lens, complete, and no-missing-lenses triage', () => {
@@ -162,7 +246,7 @@ test('ceiling rulings refuse non-lens, complete, and no-missing-lenses triage', 
     },
   }
   const cases: [TriageDecision, string][] = [
-    [ceilingTriage({ noCompleteReviewRound: true }), 'triage has a non-lens admission gap'],
+    [ceilingTriage({ noCompleteReviewRound: true }), 'no complete review round'],
     [complete, 'triage is complete'],
     [ceilingTriage({ missingLenses: [] }), 'no missing lens coverage remains'],
   ]

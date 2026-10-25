@@ -63,7 +63,7 @@ export function normalizeMissingLensNames(lenses: readonly string[]): string[] {
 }
 
 /** The lens coverage still required by an incomplete triage decision. */
-export function missingLensNames(decision: TriageDecision): string[] {
+function missingLensNames(decision: TriageDecision): string[] {
   if (decision.complete) return []
   return normalizeMissingLensNames([
     ...decision.missingLenses.map(({ lens }) => lens),
@@ -76,7 +76,9 @@ export type CeilingTriageFacts = {
   unfinishedReviewNumbers: readonly number[]
   undisposedFindings: readonly { reviewNumber: number; ordinal: number }[]
   missingLenses: readonly string[]
+  architectReadRequired: boolean
   hasNonLensGap: boolean
+  nonLensGaps: readonly string[]
 }
 
 export type CeilingWaivableGaps =
@@ -99,7 +101,7 @@ export function ceilingWaivableGaps(facts: CeilingTriageFacts): CeilingWaivableG
   if (facts.undisposedFindings.length) return { waivable: false, blocker: 'undisposed-findings' }
   if (facts.hasNonLensGap) return { waivable: false, blocker: 'non-lens-gap' }
   const missingLenses = normalizeMissingLensNames(facts.missingLenses)
-  return missingLenses.length
+  return missingLenses.length || facts.architectReadRequired
     ? { waivable: true, missingLenses }
     : { waivable: false, blocker: 'no-missing-lenses' }
 }
@@ -112,18 +114,25 @@ export function ceilingTriageFacts(decision: TriageDecision): CeilingTriageFacts
         unfinishedReviewNumbers: [],
         undisposedFindings: [],
         missingLenses: [],
+        architectReadRequired: false,
         hasNonLensGap: false,
+        nonLensGaps: [],
       }
-    : {
-        complete: false,
-        unfinishedReviewNumbers: decision.unfinishedReviewNumbers,
-        undisposedFindings: decision.undisposedFindings,
-        missingLenses: missingLensNames(decision),
-        hasNonLensGap:
-          decision.architectReadRequired ||
-          decision.finalTierRaised ||
-          decision.noCompleteReviewRound,
-      }
+    : (() => {
+        const nonLensGaps = [
+          ...(decision.finalTierRaised ? ['final tier raised'] : []),
+          ...(decision.noCompleteReviewRound ? ['no complete review round'] : []),
+        ]
+        return {
+          complete: false,
+          unfinishedReviewNumbers: decision.unfinishedReviewNumbers,
+          undisposedFindings: decision.undisposedFindings,
+          missingLenses: missingLensNames(decision),
+          architectReadRequired: decision.architectReadRequired,
+          hasNonLensGap: nonLensGaps.length > 0,
+          nonLensGaps,
+        }
+      })()
 }
 
 type CompleteReviewRound = {

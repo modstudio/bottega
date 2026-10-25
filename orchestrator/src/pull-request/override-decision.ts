@@ -17,6 +17,7 @@ type TriageOverrideInput = {
   overrideReason?: string
   ceilingRuling?: string
   fromOperator: boolean
+  commandName: string
   reviewBudget?: { atCeiling: boolean; roundsUsed: number; ceiling: number }
   triage?: CeilingTriageFacts
   overrideOption?: string
@@ -26,6 +27,12 @@ function decideCeilingRuling(input: TriageOverrideInput, reason: string): Triage
   if (!reason) return { kind: 'refuse', reason: '--ceiling-ruling requires a non-empty reason' }
   if (!input.triage) {
     return { kind: 'refuse', reason: 'refusing architect ceiling ruling without triage facts' }
+  }
+  if (!input.reviewBudget) {
+    return {
+      kind: 'refuse',
+      reason: 'refusing architect ceiling ruling without review round budget facts',
+    }
   }
   const waivable = ceilingWaivableGaps(input.triage)
   if (!waivable.waivable) {
@@ -39,24 +46,29 @@ function decideCeilingRuling(input: TriageOverrideInput, reason: string): Triage
         return {
           kind: 'refuse',
           reason:
-            'refusing architect ceiling ruling while reviews are unfinished; complete reviews ' +
-            input.triage.unfinishedReviewNumbers.join(', '),
+            'refusing architect ceiling ruling while reviews are unfinished; cleared by: ' +
+            input.triage.unfinishedReviewNumbers
+              .map((number) => `${input.commandName} review complete ${number}`)
+              .join('; '),
         }
       case 'undisposed-findings':
         return {
           kind: 'refuse',
           reason:
-            'refusing architect ceiling ruling while findings are undisposed; dispose findings ' +
+            'refusing architect ceiling ruling while findings are undisposed; cleared by: ' +
             input.triage.undisposedFindings
-              .map(({ reviewNumber, ordinal }) => `${reviewNumber}/${ordinal}`)
-              .join(', '),
+              .map(
+                ({ reviewNumber, ordinal }) =>
+                  `${input.commandName} review triage ${reviewNumber} ${ordinal} <disposition>`,
+              )
+              .join('; '),
         }
       case 'non-lens-gap':
         return {
           kind: 'refuse',
           reason:
-            'refusing architect ceiling ruling because triage has a non-lens admission gap; ' +
-            'ceiling rulings waive only missing lens coverage',
+            'refusing architect ceiling ruling because triage has remaining non-lens gaps: ' +
+            input.triage.nonLensGaps.join(', '),
         }
       case 'no-missing-lenses':
         return {
@@ -65,13 +77,14 @@ function decideCeilingRuling(input: TriageOverrideInput, reason: string): Triage
         }
     }
   }
-  if (!input.reviewBudget?.atCeiling) {
-    const usage = input.reviewBudget
-      ? `; rounds used ${input.reviewBudget.roundsUsed}/${input.reviewBudget.ceiling}`
-      : ''
+  if (!input.reviewBudget.atCeiling) {
     return {
       kind: 'refuse',
-      reason: `refusing architect ceiling ruling before the review round ceiling is reached${usage}`,
+      reason:
+        'refusing architect ceiling ruling before the review round ceiling is reached; rounds used ' +
+        `${input.reviewBudget.roundsUsed}/${input.reviewBudget.ceiling}; cleared by: run the round ` +
+        `named by \`${input.commandName} review tier <branch>\`, or use \`${input.commandName} pr create ... ` +
+        '--override-triage "<reason>" --from-operator`',
     }
   }
   return {

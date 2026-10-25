@@ -18,6 +18,20 @@ export type ReviewRoundBudgetDecision = {
   wouldExceedCeiling: boolean
 }
 
+/** Build the canonical round identity for one measured branch change. */
+export function currentReviewRoundIdentity(input: {
+  branch: string
+  patchId: string
+  pathSet: string
+}): string | null {
+  return reviewRoundIdentity({
+    launch_key: null,
+    branch: input.branch,
+    patch_id: input.patchId,
+    path_set: input.pathSet,
+  }).identity
+}
+
 /** Tier n permits n review rounds. */
 export function reviewRoundBudgetDecision(input: {
   tier: ReviewTierNumber
@@ -37,7 +51,7 @@ export function reviewRoundBudgetDecision(input: {
 }
 
 export function reviewCeilingGuidance(decision: ReviewRoundBudgetDecision): string | null {
-  if (!decision.wouldExceedCeiling) return null
+  if (!decision.atCeiling) return null
   return (
     'the review round ceiling is reached; the architect rules under ' +
     '`.agents/rules/20-build-and-buy.md` “Review rounds are a funnel”. Read the fix with ' +

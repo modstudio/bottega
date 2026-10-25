@@ -72,6 +72,16 @@ describe('pull-request admission decision', () => {
     expect(
       decideAdmission({ ...change, tip: 'different-head' }, ceilingGap, [ceiling]).overrideId,
     ).toBeNull()
+    expect(
+      decideAdmission(
+        change,
+        {
+          ...ceilingGap,
+          undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
+        },
+        [ceiling],
+      ).overrideId,
+    ).toBeNull()
   })
 
   test.each([

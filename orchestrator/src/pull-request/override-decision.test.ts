@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { decideTriageOverride } from './override-decision.ts'
 
 const triage = (
@@ -8,15 +9,20 @@ const triage = (
   unfinishedReviewNumbers: [],
   undisposedFindings: [],
   missingLenses: ['safety', 'craft'],
+  architectReadRequired: false,
   hasNonLensGap: false,
+  nonLensGaps: [],
   ...values,
 })
+
+const commandName = PLATFORM_SLUG
 
 test('an architect ceiling ruling records its attribution and remaining lenses', () => {
   expect(
     decideTriageOverride({
       ceilingRuling: 'remaining findings cannot cause harm',
       fromOperator: false,
+      commandName,
       reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
       triage: triage(),
     }),
@@ -33,13 +39,16 @@ test('an architect ceiling ruling refuses below the review round ceiling', () =>
     decideTriageOverride({
       ceilingRuling: 'stop here',
       fromOperator: false,
+      commandName,
       reviewBudget: { atCeiling: false, roundsUsed: 2, ceiling: 3 },
       triage: triage({ missingLenses: ['craft'] }),
     }),
   ).toEqual({
     kind: 'refuse',
     reason:
-      'refusing architect ceiling ruling before the review round ceiling is reached; rounds used 2/3',
+      'refusing architect ceiling ruling before the review round ceiling is reached; rounds used ' +
+      `2/3; cleared by: run the round named by \`${commandName} review tier <branch>\`, or use ` +
+      `\`${commandName} pr create ... --override-triage "<reason>" --from-operator\``,
   })
 })
 
@@ -48,6 +57,7 @@ test('ordinary triage overrides keep operator attribution below the ceiling', ()
     decideTriageOverride({
       overrideReason: 'operator accepts the risk',
       fromOperator: true,
+      commandName,
       triage: triage({ missingLenses: ['craft'] }),
     }),
   ).toEqual({
@@ -62,13 +72,14 @@ test('an architect ceiling ruling refuses unfinished reviews and undisposed find
   const input = {
     ceilingRuling: 'stop here',
     fromOperator: false,
+    commandName,
     reviewBudget: { atCeiling: false, roundsUsed: 2, ceiling: 3 },
   }
   expect(
     decideTriageOverride({ ...input, triage: triage({ unfinishedReviewNumbers: [4] }) }),
   ).toEqual({
     kind: 'refuse',
-    reason: 'refusing architect ceiling ruling while reviews are unfinished; complete reviews 4',
+    reason: `refusing architect ceiling ruling while reviews are unfinished; cleared by: ${commandName} review complete 4`,
   })
   expect(
     decideTriageOverride({
@@ -77,13 +88,28 @@ test('an architect ceiling ruling refuses unfinished reviews and undisposed find
     }),
   ).toEqual({
     kind: 'refuse',
-    reason: 'refusing architect ceiling ruling while findings are undisposed; dispose findings 3/2',
+    reason: `refusing architect ceiling ruling while findings are undisposed; cleared by: ${commandName} review triage 3 2 <disposition>`,
+  })
+})
+
+test('an architect ceiling ruling requires review round budget facts', () => {
+  expect(
+    decideTriageOverride({
+      ceilingRuling: 'stop here',
+      fromOperator: false,
+      commandName,
+      triage: triage(),
+    }),
+  ).toEqual({
+    kind: 'refuse',
+    reason: 'refusing architect ceiling ruling without review round budget facts',
   })
 })
 
 test('override flag combinations are decided without process or storage', () => {
   const base = {
     fromOperator: false,
+    commandName,
     reviewBudget: { atCeiling: false, roundsUsed: 1, ceiling: 3 },
     triage: triage(),
   }

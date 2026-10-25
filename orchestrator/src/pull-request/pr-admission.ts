@@ -20,6 +20,7 @@ import {
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
 import {
+  currentReviewRoundIdentity,
   type ReviewRoundBudgetDecision,
   reviewBudgetForBranch,
   reviewRoundBudgetDecision,
@@ -349,6 +350,7 @@ export function recordTriageOverrideForChange(
 ): string | null {
   const override = decideTriageOverride({
     ...input,
+    commandName: PLATFORM_SLUG,
     triage: input.triage ? ceilingTriageFacts(input.triage) : undefined,
   })
   if (override.kind === 'refuse') throw new Error(override.reason)
@@ -538,7 +540,17 @@ export function createPullRequest(
   const database = writableDb()
   const checked = writeTransaction(() => {
     const triage = triageDecision(change, database)
-    const budget = reviewBudgetForBranch(database, change.project.name, change.branch, null)
+    const currentRoundIdentity = currentReviewRoundIdentity({
+      branch: change.branch,
+      patchId: change.group.patchId,
+      pathSet: serializePathSet(change.group.pathSet),
+    })
+    const budget = reviewBudgetForBranch(
+      database,
+      change.project.name,
+      change.branch,
+      currentRoundIdentity,
+    )
     const reviewBudget = reviewRoundBudgetDecision({
       tier: change.tier,
       roundsUsed: budget.roundsUsed,

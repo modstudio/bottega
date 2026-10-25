@@ -323,13 +323,9 @@ function printCeilingArchitectCredit(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): boolean {
-  if (
-    output.review_budget.unclassifiableReviewCount > 0 ||
-    !output.review_budget.wouldExceedCeiling
-  ) {
-    return false
-  }
-  log(reviewCeilingGuidance(output.review_budget)!)
+  const guidance = reviewCeilingGuidance(output.review_budget)
+  if (!guidance) return false
+  log(guidance)
   if (output.post_fix.kind === 're-lens') {
     log(
       `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
@@ -373,7 +369,7 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  if (!printCeilingArchitectCredit(output, log)) {
+  if (!printCeilingArchitectCredit(output, log) || output.review_budget.currentChangeCounted) {
     printReviewRoundStatus(output, log)
   }
   for (const lens of output.lens_profiles) {

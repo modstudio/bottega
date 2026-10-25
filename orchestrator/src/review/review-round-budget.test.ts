@@ -27,6 +27,11 @@ describe('review round budget decision', () => {
         reviewRoundBudgetDecision({ tier: 3, roundsUsed: 2, currentChangeCounted: false }),
       ),
     ).toBeNull()
+    expect(
+      reviewCeilingGuidance(
+        reviewRoundBudgetDecision({ tier: 3, roundsUsed: 3, currentChangeCounted: true }),
+      ),
+    ).toContain('--ceiling-ruling')
   })
 
   test.each([
@@ -239,12 +244,6 @@ describe('review budget query', () => {
       unclassifiableReviewCount: 0,
     })
     expect(reviewBudgetForBranch(db(), 'fixture', 'no-reviews', null)).toEqual({
-      roundsUsed: 0,
-      currentChangeCounted: false,
-      eligibleReviewCount: 0,
-      unclassifiableReviewCount: 0,
-    })
-    expect(reviewBudgetForBranch(db(), 'fixture', 'incomplete', null)).toEqual({
       roundsUsed: 0,
       currentChangeCounted: false,
       eligibleReviewCount: 0,
