@@ -86,6 +86,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-authority.ts',
     [
       '../../../shared/record-id.ts',
+      '../../../shared/brand.ts',
       '../caller-classification.ts',
       '../database/db.ts',
       '../issue/issue-queue.ts',

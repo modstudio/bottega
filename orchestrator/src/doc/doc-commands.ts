@@ -76,9 +76,7 @@ type DocCommandPorts = {
     cwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
-  consumeResumeHandoff?(
-    doc: Awaited<ReturnType<typeof import('./docs.ts').consumeDoc>>,
-  ): Promise<{
+  consumeResumeHandoff?(doc: Awaited<ReturnType<typeof import('./docs.ts').consumeDoc>>): Promise<{
     lines: string[]
     [key: string]: unknown
   }>

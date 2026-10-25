@@ -3,6 +3,7 @@
  * Knows root ownership, adoption, and mutation audit. Must not know routing, transports, CLI adapters, worktrees, or reviews.
  */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
@@ -101,9 +102,10 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
   } | null
   if (!row) throw new Error(`no run ${runId}`)
   const actor = sessionId()
-  const liveness = row.owner && row.owner !== actor
-    ? sessionLivenessEvidence(database, row.owner, actor)
-    : { ownerProcess: 'unknown' as const, anchor: null }
+  const liveness =
+    row.owner && row.owner !== actor
+      ? sessionLivenessEvidence(database, row.owner, actor)
+      : { ownerProcess: 'unknown' as const, anchor: null }
   return {
     runId: row.run_record_id,
     rootId: row.root_id,
@@ -141,7 +143,7 @@ function refuseRunMutation(authority: RootAuthority, action: RunMutationAction |
       `current session ${authority.actor} cannot ${action} it (owner active within the window; ` +
       `owner process ${authority.ownerProcess}, anchor ${authority.ownerAnchor ? `pid ${authority.ownerAnchor.pid} started ${authority.ownerAnchor.startTime}` : 'unknown'}, ` +
       `last_seen ${authority.ownerLastSeenAt === null ? 'unknown' : new Date(authority.ownerLastSeenAt).toISOString()}); ` +
-      `run bottega session adopt ${authority.owner} --reason "<why>"`,
+      `run ${PLATFORM_SLUG} session adopt ${authority.owner} --reason "<why>"`,
   )
 }
 

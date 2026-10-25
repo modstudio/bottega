@@ -5,6 +5,7 @@
 architect session lifecycle
 
 - [bottega session](#bottega-session)
+- [bottega session adopt](#bottega-session-adopt)
 - [bottega session close-out](#bottega-session-close-out)
 - [bottega session help](#bottega-session-help)
 
@@ -16,8 +17,24 @@ architect session lifecycle
 
 ### Related
 
+- [bottega session adopt](./session.md#bottega-session-adopt)
 - [bottega session close-out](./session.md#bottega-session-close-out)
 - [bottega session help](./session.md#bottega-session-help)
+
+## bottega session adopt
+
+**Synopsis:** `bottega session adopt <session> [--reason <text>] [--json]`
+
+take over another session's run chains
+
+### Options
+
+- `--reason <text>`: record why this session is taking ownership
+- `--json`: write the adoption report as JSON
+
+### Related
+
+- [bottega session](./session.md#bottega-session)
 
 ## bottega session close-out
 

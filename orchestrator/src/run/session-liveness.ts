@@ -6,7 +6,7 @@ import {
   parseStoredAncestorChain,
 } from '../resources/session-process-anchoring.ts'
 
-export type OwnerProcess = 'dead' | 'live' | 'unknown'
+type OwnerProcess = 'dead' | 'live' | 'unknown'
 export type ProcessProbeResult = { alive: boolean; startTime: string | null }
 
 export type SessionLivenessEvidence = {

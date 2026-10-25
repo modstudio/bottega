@@ -2,6 +2,7 @@
 /** Transfers every run chain owned by one session to an identified successor. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -20,7 +21,7 @@ import {
   sessionLivenessEvidence,
 } from '../run/session-liveness-adapter.ts'
 
-export type SessionAdoptedRun = {
+type SessionAdoptedRun = {
   number: number
   recordId: string
   job: string
@@ -62,7 +63,7 @@ function assertAdoptionConsent(
   consent: SessionAdoptionConsent,
   now: number,
 ): void {
-  const closeOut = `the owner runs bottega session close-out --session ${target}`
+  const closeOut = `the owner runs ${PLATFORM_SLUG} session close-out --session ${target}`
   if (evidence.ownerProcess === 'live')
     throw new Error(
       `session ${target} is live (${evidenceText(evidence)}); ${closeOut} before adoption`,

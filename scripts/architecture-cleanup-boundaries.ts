@@ -4,6 +4,7 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/session/session-adopt.ts',
     allowed: [
       'bun:sqlite',
+      '../../../shared/brand.ts',
       '../caller-classification.ts',
       '../database/db.ts',
       '../record/machine-identity.ts',

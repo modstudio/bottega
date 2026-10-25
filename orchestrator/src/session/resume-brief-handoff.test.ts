@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -87,7 +88,7 @@ test('a live author does not fail consume and names the explicit adopt command',
 
   expect(consumed.body).toContain('status: consumed')
   expect(handoff.status).toBe('refused')
-  expect(handoff.lines.join('\n')).toContain('bottega session adopt brief-author --reason')
+  expect(handoff.lines.join('\n')).toContain(`${PLATFORM_SLUG} session adopt brief-author --reason`)
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
     session_id: 'brief-author',
   })
