@@ -49,6 +49,21 @@ function replaceQuestionPayload(
   local.query("UPDATE outbox SET payload=? WHERE kind='question'").run(JSON.stringify(payload))
 }
 
+function hostedQuestionCursor(remote: ReturnType<typeof fakePostgres>, marker: unknown) {
+  const write = remote.statements.find((sql) =>
+    sql.toLowerCase().includes('insert into "question"'),
+  )!
+  const columns = write
+    .slice(write.indexOf('(') + 1, write.indexOf(')'))
+    .split(',')
+    .map((column) => column.replaceAll('"', '').trim())
+  const parameters = remote.parameters.find((values) => values.includes(marker))!
+  return {
+    number: parameters[columns.indexOf('workflow_cursor_id')],
+    recordId: parameters[columns.indexOf('workflow_cursor_record_id')],
+  }
+}
+
 test('a workflow question pushes the cursor UUID and leaves the hosted bigint null', async () => {
   const { cursorId, local } = workflowQuestionOutbox()
   const payload = questionPayload(local)
@@ -58,9 +73,7 @@ test('a workflow question pushes the cursor UUID and leaves the hosted bigint nu
   const remote = fakePostgres()
   const result = await syncRecord(options(local, remote))
   expect(result).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
-  const questionParameters = remote.parameters.find((parameters) => parameters.includes(cursorId))!
-  const cursorIndex = questionParameters.indexOf(cursorId)
-  expect(questionParameters[cursorIndex - 1]).toBeNull()
+  expect(hostedQuestionCursor(remote, cursorId)).toEqual({ number: null, recordId: cursorId })
   local.close()
 })
 
@@ -73,9 +86,7 @@ test('an older question payload stores a null cursor UUID', async () => {
 
   const remote = fakePostgres()
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
-  const questionParameters = remote.parameters.find((parameters) => parameters.includes(37n))!
-  const cursorIndex = questionParameters.indexOf(37n)
-  expect(questionParameters[cursorIndex + 1]).toBeNull()
+  expect(hostedQuestionCursor(remote, 37n)).toEqual({ number: 37n, recordId: null })
   local.close()
 })
 
