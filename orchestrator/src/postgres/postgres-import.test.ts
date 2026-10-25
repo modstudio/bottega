@@ -252,6 +252,7 @@ realPostgres('project import against copied live SQLite data', () => {
       testSubstance: 'test_substance',
       tracker: 'tracker',
       trunk: 'landing_branch',
+      visibility: 'visibility',
       worktree: 'worktree',
       workerMcpServers: 'worker_mcp_servers',
     }
