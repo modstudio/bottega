@@ -32,6 +32,7 @@ import {
 } from '../mcp/mcp-preflight.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
 import { reviewFindingMemoryRows } from '../review/rejected-finding-memory.ts'
+import { reviewLensSelectionReasonForDispatch } from '../review/review-lens-dispatch-reason.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { implicitReviewWarning } from '../review/review-target.ts'
 import {
@@ -477,20 +478,50 @@ function commandDetacher(presentation: Presentation) {
     waitForCapacityBeforeDetach: boolean,
     spec: DetachSpec,
   ) => {
-    const selected = await selectBeforeDetach(
+    return detachRoutedRun(
       jobName,
       text,
       spec,
-      presentation,
+      presentation.cwd(),
+      undefined,
       waitForCapacityBeforeDetach,
-    )
-    return dispatchDetached(
-      jobName,
-      text,
-      detachSpecWithRoutedSelection(spec, selected),
-      selected?.agent,
+      presentation,
     )
   }
+}
+
+export async function detachRoutedRun(
+  jobName: string,
+  text: string,
+  spec: DetachSpec,
+  cwd: string,
+  spawnCoordinator?: Parameters<typeof dispatchDetached>[4],
+  waitForCapacityBeforeDetach = false,
+  presentation: Pick<Presentation, 'cwd' | 'error'> = { cwd: () => cwd, error: () => {} },
+): Promise<string> {
+  const selected = await selectBeforeDetach(
+    jobName,
+    text,
+    spec,
+    presentation,
+    waitForCapacityBeforeDetach,
+  )
+  const selectionReason = reviewLensSelectionReasonForDispatch({
+    jobName,
+    lens: spec.lens,
+    review: spec.review,
+    cwd: spec.cwd ?? cwd,
+    repo: spec.repo,
+  })
+  return dispatchDetached(
+    jobName,
+    text,
+    detachSpecWithRoutedSelection(spec, selected),
+    selected?.agent,
+    spawnCoordinator,
+    undefined,
+    { selectionReason },
+  )
 }
 
 export async function doCommand(argv: string[], presentation: Presentation): Promise<void> {

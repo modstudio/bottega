@@ -489,6 +489,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-sync-principal.ts', ['bun', './record-sync-contract.ts']),
   module('orchestrator/src/record/outbox-dependency.ts', [
     'bun:sqlite',
+    '../run/run-status.ts',
     './record-evidence-references.ts',
     './record-sync-types.ts',
   ]),

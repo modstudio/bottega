@@ -32,14 +32,23 @@ export function grokReaderMcpServerTable(
   }
 }
 
-/** Select project server names without consulting the filesystem or process installation. */
-function projectReaderServerNames(
+/**
+ * Select project server names without consulting the filesystem or process installation.
+ *
+ * A configured primary stays even when the allow-list would disable it. An
+ * unconfigured primary is not a project server at all — bottega's own is
+ * installed by the platform — and a proxy synthesized for a name no `.mcp.json`
+ * defines exits at start, so the primary joins the selection only when the
+ * configuration names it.
+ */
+export function projectReaderServerNames(
   configuredNames: string[],
   allowed: string[] | undefined,
   primary: string,
 ): string[] {
   const disabled = new Set(disabledProjectMcpServers(configuredNames, allowed))
-  return [...new Set([...configuredNames.filter((name) => !disabled.has(name)), primary])]
+  const kept = configuredNames.filter((name) => !disabled.has(name))
+  return [...new Set(configuredNames.includes(primary) ? [...kept, primary] : kept)]
 }
 
 /** Resolve the checkout fallback used by every harness for one run. */

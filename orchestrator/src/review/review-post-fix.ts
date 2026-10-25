@@ -13,13 +13,14 @@ import { serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
 import { type ReviewRole, reviewCountsAsRound } from './review-role.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
 import { diffNumstat } from './review-tier.ts'
 import {
   type ReviewTier,
   type ReviewTierFile,
   tierThreeRiskPaths,
 } from './review-tier-classifier.ts'
-import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
+import type { ReviewRoundEvidenceRow } from './review-yield.ts'
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 

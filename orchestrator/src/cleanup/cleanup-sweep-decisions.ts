@@ -2,6 +2,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isOperatorSession } from '../../../shared/caller-classification.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 export const UNJUDGED_OWNER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
 
 export type ConversationProjectMember = {
@@ -140,7 +141,7 @@ export function isSweepCandidate(input: {
   closeOutOutcome: string | null
 }): boolean {
   return (
-    ['ok', 'failed', 'stale', 'stopped'].includes(input.status) &&
+    TERMINAL_RUN_STATUS_SET.has(input.status) &&
     (input.worktree !== null || ['held', 'failed'].includes(input.closeOutOutcome ?? ''))
   )
 }

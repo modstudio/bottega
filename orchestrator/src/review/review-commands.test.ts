@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -10,6 +10,7 @@ import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { register as registerReviewCommand } from '../commands/review.ts'
 import { db } from '../database/db.ts'
+import { detachRoutedRun } from '../dispatch/dispatch-cli-service.ts'
 import { setProfile } from '../lens/lenses.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
@@ -39,6 +40,69 @@ test('unknown review verb with options keeps the review-family refusal', async (
   await expect(runReview(['review', 'bogus', '--json'], output)).rejects.toThrow(
     `unknown: ${PLATFORM_SLUG} review bogus. Try `,
   )
+})
+
+test('review-lens dispatch stores its funnel reason and short-circuits operator orders', async () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-dispatch-reason-'))
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
+    git(repo, 'config', 'user.name', 'Fixture')
+    writeFileSync(join(repo, 'base.ts'), 'export const base = true\n')
+    git(repo, 'add', 'base.ts')
+    git(repo, 'commit', '-m', 'base')
+    const branch = `DEV-1618-${crypto.randomUUID()}`
+    git(repo, 'checkout', '-b', branch)
+    writeFileSync(join(repo, 'change.ts'), 'export const change = true\n')
+    git(repo, 'add', 'change.ts')
+    git(repo, 'commit', '-m', 'change')
+    const name = `dispatch-reason-${crypto.randomUUID()}`
+    upsertProject({
+      recordId: newRecordId(),
+      name,
+      path: repo,
+      settings: { trunk: 'main', review: { lenses: [{ lens: 'correctness' }] } },
+    })
+    const refuseSpawn = mock(() => {
+      throw new Error('fixture spawn refusal')
+    })
+
+    await expect(
+      detachRoutedRun(
+        'review-lens',
+        'dispatch initial fixture',
+        { cwd: repo, repo: name, key: 'DEV-1618', lens: 'correctness', review: branch },
+        repo,
+        refuseSpawn as never,
+      ),
+    ).rejects.toThrow('fixture spawn refusal')
+    expect(
+      db()
+        .query<{ selection_reason: string }, []>(
+          "SELECT selection_reason FROM run WHERE prompt_head='dispatch initial fixture' ORDER BY number DESC LIMIT 1",
+        )
+        .get(),
+    ).toEqual({ selection_reason: 'initial' })
+
+    await expect(
+      detachRoutedRun(
+        'summarize',
+        'dispatch operator fixture',
+        { cwd: repo, repo: name },
+        repo,
+        refuseSpawn as never,
+      ),
+    ).rejects.toThrow('fixture spawn refusal')
+    expect(
+      db()
+        .query<{ selection_reason: string }, []>(
+          "SELECT selection_reason FROM run WHERE prompt_head='dispatch operator fixture' ORDER BY number DESC LIMIT 1",
+        )
+        .get(),
+    ).toEqual({ selection_reason: 'operator-ordered' })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
 })
 
 test('review record runs through Commander and records the lens output', async () => {
@@ -695,7 +759,7 @@ test('review tier and admission agree on an owed second opinion', async () => {
   }
 })
 
-test('review tier needs no round for a never-completed lens when no scoped fix path was touched', async () => {
+test('review tier needs no round when no scoped fix path was touched', async () => {
   const { repo, branch, reviewed } = postFixFixture({ fixPath: 'src/fix.ts' })
   try {
     const output: string[] = []
@@ -739,6 +803,26 @@ test('review tier re-lenses a tier-three branch commit after a trunk merge', asy
       reviewedTip: reviewed,
       tierThreePaths: ['critical/fix.ts'],
     })
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('review tier prints architect ceiling guidance after three completed rounds', async () => {
+  const { repo, branch } = postFixFixture({
+    fixPath: 'critical/fix.ts',
+    priorRounds: 2,
+    priorRoundLens: 'correctness',
+    secondOpinion: true,
+  })
+  try {
+    const output: string[] = []
+
+    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+
+    expect(output).toContain('rounds 3/3')
+    expect(output.some((line) => line.includes('--ceiling-ruling'))).toBeTrue()
+    expect(output.some((line) => line.includes('.agents/rules/20-build-and-buy.md'))).toBeTrue()
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -833,7 +917,6 @@ test('a rebased writer run tier excludes files changed only on trunk', async () 
     expect(output).toContain('rounds 1/0')
     expect(output).toContain('current change is already a counted round; no new round consumed')
     expect(output).not.toContain('current change would start a new round')
-    expect(output).not.toContain('a new round would exceed the ceiling')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -906,8 +989,10 @@ test('review tier run target uses the landing merge-base instead of its recorded
         (line) => line.includes('risk 3:') && line.includes('basis: reviewed source evidence'),
       ),
     ).toBeTrue()
-    expect(output).toContain('lens correctness  basis: yield evidence  framework=stack')
-    expect(output).toContain('lens craft  framework=generic')
+    expect(output).toContain(
+      'lens correctness  basis: yield evidence  framework=stack  reason: initial',
+    )
+    expect(output).toContain('lens craft  framework=generic  reason: initial')
     expect(output).toContain(
       'second opinion correctness  basis: escaped defect evidence: dispatch this lens a second time on a different model with --distinct-from <the first run of correctness on this tip>',
     )

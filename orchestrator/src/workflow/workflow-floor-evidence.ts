@@ -1,5 +1,6 @@
 // concern: workflows
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
+
 import type { Database } from 'bun:sqlite'
 import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
@@ -21,6 +22,7 @@ import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-gr
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import {
   type CheckoutResolution,
@@ -167,8 +169,6 @@ export const productionFloorPorts = (): FloorEvidencePorts => ({
     return gitText(row.path, ['remote', 'get-url', 'origin'])
   },
 })
-
-const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 function runHasRecordedArtifacts(
   runId: string,
@@ -485,7 +485,7 @@ function gatherRun(
   requireRunBinding(`--run ${id}`, binding, identity, cursorId, d)
   return {
     id,
-    terminal: TERMINAL.has(row.status) && row.exit_code !== null,
+    terminal: TERMINAL_RUN_STATUS_SET.has(row.status) && row.exit_code !== null,
     exitCode: row.exit_code,
   }
 }

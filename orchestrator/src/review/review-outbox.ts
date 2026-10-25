@@ -5,7 +5,6 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export type ReviewRecordBackfillResult = {
@@ -33,7 +32,7 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
     .query<Record<string, unknown>, [string]>(
       `SELECT review.record_id,review.number,review.recorded_at,review.completed_at,review.tier,
               review.tier_risk,review.tier_size,review.tier_reasons,review.tier_reason,review.patch_id,
-              review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,review.role,
+              review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,review.role,review.round,
               project.name AS project_name, project.record_id AS project_record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     )
@@ -58,6 +57,7 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
       tierReasons: json(row.tier_reasons),
       tierReason: row.tier_reason,
       role: row.role,
+      round: row.round,
       patchId: row.patch_id,
       pathSet: json(row.path_set),
       commitMessage: row.commit_message,
@@ -92,7 +92,7 @@ export function enqueueReviewLens(
     .query<Record<string, unknown>, [string]>(
       `SELECT lens.record_id,lens.lens,lens.agent,lens.model,lens.tree_inspected,lens.reviewed_tree,
               lens.standards_read,lens.files_covered,lens.commands_run,lens.could_not_verify,
-              lens.mcp_tools,lens.docs_read,lens.substitutes,lens.reproduced,lens.coverage,lens.limits,lens.overlap,
+              lens.mcp_tools,lens.docs_read,lens.substitutes,lens.reproduced,lens.coverage,lens.limits,lens.overlap,lens.selection_reason,
               review.record_id AS review_record_id, run.record_id AS run_record_id,
               project.name AS project_name, project.record_id AS project_record_id
        FROM review_lens lens JOIN review ON review.record_id=lens.review_record_id
@@ -132,6 +132,7 @@ export function enqueueReviewLens(
       coverage: row.coverage,
       limits: row.limits,
       overlap: row.overlap,
+      selectionReason: row.selection_reason,
       createdAt: at,
       updatedAt: at,
     },

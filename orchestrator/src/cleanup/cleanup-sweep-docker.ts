@@ -30,6 +30,7 @@ import {
   teardownTerminalRunResources,
   terminalDockerRetentionReasonForRun,
 } from '../resources/resource-ownership.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideConversationProjectOwnership } from './cleanup-sweep-decisions.ts'
@@ -156,7 +157,7 @@ function terminalOwnerInScope(
   return (
     dockerOwnerCouldBeInScope(owner, owners, ownerIds, selectedProject) &&
     dockerOwnershipIssue(owner, owners, selectedProject) === null &&
-    ['ok', 'failed', 'stale', 'stopped'].includes(owner.status) &&
+    TERMINAL_RUN_STATUS_SET.has(owner.status) &&
     (!selectedProject || owner.project_record_id === selectedProject.recordId)
   )
 }

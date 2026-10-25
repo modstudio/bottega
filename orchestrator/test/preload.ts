@@ -17,6 +17,12 @@ import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.t
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
+import {
+  beginTestSetup,
+  beginTestTeardown,
+  recordTestSetup,
+  recordTestTeardown,
+} from './gate-timings-reporter.ts'
 
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
@@ -232,6 +238,7 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  const started = beginTestSetup()
   callerEnvironmentBeforeTest = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => callerEnvironmentKey(key)),
   )
@@ -267,9 +274,12 @@ beforeEach(() => {
     }
   }
   childrenBeforeTest = new Set(readdirSync(dir))
+  recordTestSetup(started)
 })
 
+let teardownStarted = 0
 afterEach(() => {
+  teardownStarted = beginTestTeardown()
   const invocation = unexpectedDockerInvocation
   unexpectedDockerInvocation = null
   if (invocation) throw new Error(`unexpected docker invocation from gate test: ${invocation}`)
@@ -289,16 +299,20 @@ afterEach(() => {
  * across the file.
  */
 afterEach(() => {
-  const residue = readdirSync(dir).filter(
-    (name) => !childrenBeforeTest.has(name) && !name.startsWith('git-template-'),
-  )
-  if (residue.length === 0) return
-  const message = residue
-    .map((name) => `test ${Bun.main} left fixture residue: ${join(dir, name)}`)
-    .join('\n')
-  for (const name of residue) rmSync(join(dir, name), { recursive: true, force: true })
-  if (process.env.CI) throw new Error(message)
-  console.warn(message)
+  try {
+    const residue = readdirSync(dir).filter(
+      (name) => !childrenBeforeTest.has(name) && !name.startsWith('git-template-'),
+    )
+    if (residue.length === 0) return
+    const message = residue
+      .map((name) => `test ${Bun.main} left fixture residue: ${join(dir, name)}`)
+      .join('\n')
+    for (const name of residue) rmSync(join(dir, name), { recursive: true, force: true })
+    if (process.env.CI) throw new Error(message)
+    console.warn(message)
+  } finally {
+    recordTestTeardown(teardownStarted)
+  }
 })
 
 function restoreEnvironment(name: string, value: string | undefined): void {

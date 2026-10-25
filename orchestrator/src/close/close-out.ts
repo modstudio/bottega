@@ -4,6 +4,7 @@
  * and reclamation. Must not know routing, contracts, transports, reviews, or
  * the CLI.
  */
+
 import { existsSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
@@ -35,6 +36,7 @@ import {
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunCloseOutLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { inspectTreeOwnership, worktreeDirty } from '../worktree/worktree-attribution.ts'
@@ -100,8 +102,6 @@ type CloseOutOptions = {
 }
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
-
-const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
 
 function conversationKeepTreeHold(rootId: string, now: string): ConversationKeepTreeHold {
   const rows = db()
@@ -301,7 +301,7 @@ export function releaseSandboxDirectoryForConversation(
     .all(rootId, rootId) as { status: string }[]
   const keepTree = conversationKeepTreeHold(rootId, nowIso())
   const decision = sandboxDirectoryRelease({
-    terminal: turns.length > 0 && turns.every((turn) => TERMINAL.has(turn.status)),
+    terminal: turns.length > 0 && turns.every((turn) => TERMINAL_RUN_STATUS_SET.has(turn.status)),
     liveTurn: aliveConversationTurns(rootId).length > 0,
     liveProcess: conversationProcessState(rootId),
     worktreeState: options.worktreeState ?? recordedWorktreeState(rootId),
@@ -393,7 +393,7 @@ function terminalHoldResult(
   status: string,
   hold: ConversationKeepTreeHold,
 ): CloseOutResult | null {
-  if (!TERMINAL.has(status))
+  if (!TERMINAL_RUN_STATUS_SET.has(status))
     return { runId, worktree: treePath, outcome: 'live', detail: `conversation is ${status}` }
   if (hold.held) return heldConversationCloseOutResult(runId, treePath, hold)
   if ('kept' in hold && hold.kept)
@@ -748,7 +748,7 @@ function attemptCloseOutRun(
             const scratch = prepareReaderScratchCloseOut({
               runId: row.root_record_id,
               job: effective.job,
-              terminal: TERMINAL.has(effective.status),
+              terminal: TERMINAL_RUN_STATUS_SET.has(effective.status),
               treeAbsent,
               treePath,
               repoRoot,
@@ -773,7 +773,7 @@ function attemptCloseOutRun(
             const archive = archiveReaderScratchForRelease({
               runId: extractionRunId(row),
               treePath,
-              terminal: TERMINAL.has(effective.status),
+              terminal: TERMINAL_RUN_STATUS_SET.has(effective.status),
               planned: scratch.archive,
             })
             if (!archive.ok)

@@ -13,6 +13,7 @@ import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import type { GateTimingSidecar, SpawnCounts, TestPhaseTiming } from './gate-phase-timing.ts'
 
 const orchRoot = join(import.meta.dir, '..')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -29,21 +30,12 @@ const junitPath = join(outDir, `${stamp}.junit.xml`)
 const files = Bun.argv.slice(2)
 const testArgs = files.length ? files : ['src']
 
-export type SpawnCounts = {
-  spawn: number
-  spawnSync: number
-  bootstraps: number
-  cli: number
-  git: number
-  other: number
-  argv0: Record<string, number>
-}
-
-export type TestRow = {
+export type TestRow = Partial<TestPhaseTiming> & {
   name: string
   file: string
   wallMs: number
   pass: boolean
+  skipped?: boolean
   failure?: string
 }
 
@@ -61,6 +53,7 @@ export type GateTimings = {
   exitCode: number
   tests: TestRow[]
   files: FileRow[]
+  phaseTimingNotices: string[]
 }
 
 function rel(path: string): string {
@@ -121,6 +114,7 @@ function parseJunit(xml: string): {
       file: testFile,
       wallMs,
       pass: !tBody.includes('<failure'),
+      skipped: tBody.includes('<skipped') || undefined,
       failure: failure ? decodeXml(failure).trim() : undefined,
     })
   }
@@ -132,11 +126,44 @@ function emptySpawn(): SpawnCounts {
 }
 
 export function mergeTimings(
-  sidecar: { elapsedMs?: number; files?: Record<string, SpawnCounts> },
+  sidecar: GateTimingSidecar,
   xml: string,
   meta: { stamp: string; command: string[]; elapsedMs: number; exitCode: number },
 ): GateTimings {
-  const { tests, fileWall, suiteTests, suiteFailures } = parseJunit(xml)
+  const { tests: junitTests, fileWall, suiteTests, suiteFailures } = parseJunit(xml)
+  const phasesByFile = new Map<string, TestPhaseTiming[]>()
+  for (const phase of sidecar.testPhases ?? []) {
+    const file = rel(phase.file)
+    const phases = phasesByFile.get(file) ?? []
+    phases.push(phase)
+    phasesByFile.set(file, phases)
+  }
+  const junitRowsByFile = new Map<string, number>()
+  for (const test of junitTests) {
+    if (test.skipped) continue
+    junitRowsByFile.set(test.file, (junitRowsByFile.get(test.file) ?? 0) + 1)
+  }
+  const phaseTimingNotices: string[] = []
+  const unattributedFiles = new Set<string>()
+  if (sidecar.testPhases) {
+    const phaseFiles = new Set([...junitRowsByFile.keys(), ...phasesByFile.keys()])
+    for (const file of [...phaseFiles].sort()) {
+      const rows = junitRowsByFile.get(file) ?? 0
+      const samples = phasesByFile.get(file)?.length ?? 0
+      if (rows === samples) continue
+      unattributedFiles.add(file)
+      phaseTimingNotices.push(
+        `phase timings not attributed for ${file}: ${rows} rows, ${samples} samples`,
+      )
+    }
+  }
+  const phaseIndexes = new Map<string, number>()
+  const tests = junitTests.map((test) => {
+    if (test.skipped || unattributedFiles.has(test.file)) return test
+    const phaseIndex = phaseIndexes.get(test.file) ?? 0
+    phaseIndexes.set(test.file, phaseIndex + 1)
+    return { ...test, ...phasesByFile.get(test.file)?.[phaseIndex] }
+  })
   const spawnFiles = sidecar.files ?? {}
   const names = new Set([
     ...Object.keys(spawnFiles),
@@ -158,7 +185,7 @@ export function mergeTimings(
         argv0: { ...spawn.argv0 },
       }
     })
-  return { ...meta, tests, files }
+  return { ...meta, tests, files, phaseTimingNotices }
 }
 
 function markdownSummary(data: GateTimings, heading: string): string {
@@ -229,7 +256,7 @@ if (recorder) {
   const exitCode = await child.exited
   const elapsedMs = Date.now() - started
   const sidecarPath = `${jsonPath}.spawn.json`
-  let sidecar: { elapsedMs?: number; files?: Record<string, SpawnCounts> } = {}
+  let sidecar: GateTimingSidecar = {}
   try {
     sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8'))
   } catch {

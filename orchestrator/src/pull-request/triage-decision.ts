@@ -57,6 +57,86 @@ export type TriageDecision =
       noCompleteReviewRound: boolean
     }
 
+/** The one normalization for missing-lens evidence stored or compared by admission. */
+export function normalizeMissingLensNames(lenses: readonly string[]): string[] {
+  return [...new Set(lenses)].sort()
+}
+
+/** The lens coverage still required by an incomplete triage decision. */
+function missingLensNames(decision: TriageDecision): string[] {
+  if (decision.complete) return []
+  return normalizeMissingLensNames([
+    ...decision.missingLenses.map(({ lens }) => lens),
+    ...(decision.missingSecondOpinion
+      ? [`second-opinion:${decision.missingSecondOpinion.lens}`]
+      : []),
+  ])
+}
+
+export type CeilingTriageFacts = {
+  complete: boolean
+  unfinishedReviewNumbers: readonly number[]
+  undisposedFindings: readonly { reviewNumber: number; ordinal: number }[]
+  missingLenses: readonly string[]
+  architectReadRequired: boolean
+  hasNonLensGap: boolean
+  nonLensGaps: readonly string[]
+}
+
+export type CeilingWaivableGaps =
+  | { waivable: true; missingLenses: string[] }
+  | {
+      waivable: false
+      blocker:
+        | 'complete'
+        | 'unfinished-reviews'
+        | 'undisposed-findings'
+        | 'non-lens-gap'
+        | 'no-missing-lenses'
+    }
+
+/** The one eligibility rule for what an architect ceiling ruling may waive. */
+export function ceilingWaivableGaps(facts: CeilingTriageFacts): CeilingWaivableGaps {
+  if (facts.complete) return { waivable: false, blocker: 'complete' }
+  if (facts.unfinishedReviewNumbers.length)
+    return { waivable: false, blocker: 'unfinished-reviews' }
+  if (facts.undisposedFindings.length) return { waivable: false, blocker: 'undisposed-findings' }
+  if (facts.hasNonLensGap) return { waivable: false, blocker: 'non-lens-gap' }
+  const missingLenses = normalizeMissingLensNames(facts.missingLenses)
+  return missingLenses.length || facts.architectReadRequired
+    ? { waivable: true, missingLenses }
+    : { waivable: false, blocker: 'no-missing-lenses' }
+}
+
+/** Map the full triage decision to the ceiling-waiver facts used by both admission edges. */
+export function ceilingTriageFacts(decision: TriageDecision): CeilingTriageFacts {
+  return decision.complete
+    ? {
+        complete: true,
+        unfinishedReviewNumbers: [],
+        undisposedFindings: [],
+        missingLenses: [],
+        architectReadRequired: false,
+        hasNonLensGap: false,
+        nonLensGaps: [],
+      }
+    : (() => {
+        const nonLensGaps = [
+          ...(decision.finalTierRaised ? ['final tier raised'] : []),
+          ...(decision.noCompleteReviewRound ? ['no complete review round'] : []),
+        ]
+        return {
+          complete: false,
+          unfinishedReviewNumbers: decision.unfinishedReviewNumbers,
+          undisposedFindings: decision.undisposedFindings,
+          missingLenses: missingLensNames(decision),
+          architectReadRequired: decision.architectReadRequired,
+          hasNonLensGap: nonLensGaps.length > 0,
+          nonLensGaps,
+        }
+      })()
+}
+
 type CompleteReviewRound = {
   reviews: readonly TriageReviewRow[]
   tier: 0 | 1 | 2 | 3

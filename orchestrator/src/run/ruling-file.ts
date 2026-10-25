@@ -183,6 +183,9 @@ function refusal(
       `Pass --from-operator to file under another scope or subject`
     )
   }
+  if (decision.code === 'owner-scope') {
+    return `the owner path files rulings only at scope project; scope ${decision.scope} is filed by the operator: pass --from-operator`
+  }
   return ownerRefusal(row, authority, decision)
 }
 

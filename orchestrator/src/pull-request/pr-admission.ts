@@ -19,6 +19,12 @@ import {
 } from '../review/review-group.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { gatherPostFixReviewFacts, postFixReviewDecision } from '../review/review-post-fix.ts'
+import {
+  currentReviewRoundIdentity,
+  type ReviewRoundBudgetDecision,
+  reviewBudgetForBranch,
+  reviewRoundBudgetDecision,
+} from '../review/review-round-budget.ts'
 import { budgetedRoundApplicabilityForChange } from '../review/review-round-lens-service.ts'
 import { reviewRemoteTrunkRefExists, reviewTrunkRef } from '../review/review-target.ts'
 import {
@@ -26,9 +32,14 @@ import {
   type AdmissionOverride,
   decideAdmission,
 } from './admission-decision.ts'
-import { validateTriageOverride } from './override-decision.ts'
+import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
-import { decideTriage, type TriageDecision, type TriageReviewGroup } from './triage-decision.ts'
+import {
+  ceilingTriageFacts,
+  decideTriage,
+  type TriageDecision,
+  type TriageReviewGroup,
+} from './triage-decision.ts'
 
 type Git = (cwd: string, args: string[]) => string
 
@@ -186,33 +197,41 @@ function overridesForChange(change: PullRequestChange, database: Database): Admi
         tree: string
         patchId: string | null
         pathSet: string | null
+        attribution: TriageOverrideAttribution
+        missingLenses: string
       },
       [string, string]
     >(
-      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet
+      `SELECT record_id AS recordId,project,branch,tip,tree,patch_id AS patchId,path_set AS pathSet,
+              attribution,missing_lenses AS missingLenses
        FROM landing_override
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
          AND branch=? ORDER BY at DESC,record_id DESC`,
     )
     .all(change.project.name, change.branch)
+    .map((row) => ({
+      ...row,
+      missingLenses: JSON.parse(row.missingLenses) as string[],
+    }))
+}
+
+function admissionChange(change: PullRequestChange) {
+  return {
+    project: change.project.name,
+    branch: change.branch,
+    tip: change.tip,
+    tree: change.tree,
+    patchId: change.group.patchId,
+    pathSet: serializePathSet(change.group.pathSet),
+  }
 }
 
 export function admissionDecision(
   change: PullRequestChange,
   database: Database,
+  triage: TriageDecision = triageDecision(change, database),
 ): AdmissionDecision {
-  return decideAdmission(
-    {
-      project: change.project.name,
-      branch: change.branch,
-      tip: change.tip,
-      tree: change.tree,
-      patchId: change.group.patchId,
-      pathSet: serializePathSet(change.group.pathSet),
-    },
-    triageDecision(change, database),
-    overridesForChange(change, database),
-  )
+  return decideAdmission(admissionChange(change), triage, overridesForChange(change, database))
 }
 
 export function triageRefusal(
@@ -267,11 +286,19 @@ export function triageRefusal(
   return lines.join('\n')
 }
 
-function insertOverride(change: PullRequestChange, reason: string, database: Database): string {
+function insertOverride(
+  change: PullRequestChange,
+  reason: string,
+  attribution: TriageOverrideAttribution,
+  missingLenses: readonly string[],
+  database: Database,
+): string {
   const row = database
     .query<
       { record_id: string },
       [
+        string,
+        string,
         string,
         string,
         string,
@@ -286,8 +313,9 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       ]
     >(
       `INSERT INTO landing_override
-         (record_id,project,project_record_id,branch,tip,tree,patch_id,path_set,reason,session_id,at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+         (record_id,project,project_record_id,branch,tip,tree,patch_id,path_set,reason,attribution,
+          missing_lenses,session_id,at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -299,6 +327,8 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
       change.group.patchId,
       serializePathSet(change.group.pathSet),
       reason,
+      attribution,
+      JSON.stringify(missingLenses),
       sessionId(),
       nowIso(),
     )!
@@ -306,20 +336,42 @@ function insertOverride(change: PullRequestChange, reason: string, database: Dat
   return row.record_id
 }
 
-function validatedOverrideReason(
-  reason: string | undefined,
-  fromOperator: boolean,
-  reasonOption = '--override-triage',
+export function recordTriageOverrideForChange(
+  change: PullRequestChange,
+  input: {
+    overrideReason?: string
+    ceilingRuling?: string
+    fromOperator: boolean
+    reviewBudget?: Pick<ReviewRoundBudgetDecision, 'atCeiling' | 'roundsUsed' | 'ceiling'>
+    triage?: TriageDecision
+    overrideOption?: string
+  },
+  database: Database,
 ): string | null {
-  const validated = validateTriageOverride(reason, fromOperator, reasonOption)
-  if (validated === null) return null
-  if (containsSecretShaped(validated)) {
+  const override = decideTriageOverride({
+    ...input,
+    commandName: PLATFORM_SLUG,
+    triage: input.triage ? ceilingTriageFacts(input.triage) : undefined,
+  })
+  if (override.kind === 'refuse') throw new Error(override.reason)
+  if (override.kind === 'none') return null
+  return insertOverride(
+    change,
+    override.reason,
+    override.attribution,
+    override.missingLenses,
+    database,
+  )
+}
+
+function guardTriageOverrideService(reasons: readonly (string | undefined)[]): void {
+  if (reasons.every((reason) => reason === undefined)) return
+  if (reasons.some((reason) => reason !== undefined && containsSecretShaped(reason))) {
     throw new Error('refusing triage override because its reason resembles a secret')
   }
   if (process.env.BOTTEGA_DEPTH !== undefined) {
     throw new Error('triage overrides are reserved for architect sessions; BOTTEGA_DEPTH is set')
   }
-  return validated
 }
 
 export function recordTriageOverride(
@@ -327,12 +379,24 @@ export function recordTriageOverride(
   fromOperator: boolean,
   cwd = process.cwd(),
 ): string {
-  const validated = validatedOverrideReason(reason, fromOperator, '--reason')
-  if (validated === null)
+  guardTriageOverrideService([reason])
+  if (reason === undefined)
     throw new Error(`${PLATFORM_SLUG} pr override requires --reason "<reason>"`)
   const change = resolvePullRequestChange(cwd)
   const database = writableDb()
-  return writeTransaction(() => insertOverride(change, validated, database), database)
+  return writeTransaction(
+    () =>
+      recordTriageOverrideForChange(
+        change,
+        {
+          overrideReason: reason,
+          fromOperator,
+          overrideOption: '--reason',
+        },
+        database,
+      )!,
+    database,
+  )
 }
 
 export function recordTriageIntent(
@@ -467,17 +531,44 @@ function pendingIntent(database: Database, project: string, branch: string): boo
 
 export function createPullRequest(
   args: string[],
-  options: { overrideReason?: string; fromOperator?: boolean },
+  options: { overrideReason?: string; ceilingRuling?: string; fromOperator?: boolean },
   cwd = process.cwd(),
 ): { output: string; overrideId: string | null } {
-  const reason = validatedOverrideReason(options.overrideReason, Boolean(options.fromOperator))
+  guardTriageOverrideService([options.overrideReason, options.ceilingRuling])
   const change = resolvePullRequestChange(cwd)
   const existing = pullRequestForBranch(cwd, change.branch)
   if (existing) finalizeTriageIntent(change.project.name, change.branch, existing.number)
   const database = writableDb()
   const checked = writeTransaction(() => {
-    if (reason !== null) insertOverride(change, reason, database)
-    const decision = admissionDecision(change, database)
+    const triage = triageDecision(change, database)
+    const currentRoundIdentity = currentReviewRoundIdentity({
+      branch: change.branch,
+      patchId: change.group.patchId,
+      pathSet: serializePathSet(change.group.pathSet),
+    })
+    const budget = reviewBudgetForBranch(
+      database,
+      change.project.name,
+      change.branch,
+      currentRoundIdentity,
+    )
+    const reviewBudget = reviewRoundBudgetDecision({
+      tier: change.tier,
+      roundsUsed: budget.roundsUsed,
+      currentChangeCounted: budget.currentChangeCounted,
+    })
+    recordTriageOverrideForChange(
+      change,
+      {
+        overrideReason: options.overrideReason,
+        ceilingRuling: options.ceilingRuling,
+        fromOperator: Boolean(options.fromOperator),
+        reviewBudget,
+        triage,
+      },
+      database,
+    )
+    const decision = admissionDecision(change, database, triage)
     if (!decision.complete && !decision.triage.complete) {
       throw new Error(triageRefusal(change, decision.triage))
     }

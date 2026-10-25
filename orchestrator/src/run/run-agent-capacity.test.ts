@@ -1,19 +1,45 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { pick } from '../route/route.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import {
+  agentCapacityWaitMaxMs,
+  capacityStartupFailure,
   decideCapacityWait,
   nextCapacityPollMs,
   waitForAgentSelection,
 } from './run-agent-capacity.ts'
+import { RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
+import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS, STALE_AFTER_MS } from './run-liveness-policy.ts'
 
-test('capacity waits unless opted out and refuses at the host wait bound', () => {
-  expect(decideCapacityWait({ noWait: false, waitedMs: 0 })).toBe('wait')
-  expect(decideCapacityWait({ noWait: true, waitedMs: 0 })).toBe('refuse')
-  expect(decideCapacityWait({ noWait: false, waitedMs: 15 * 60_000 })).toBe('refuse')
+test('capacity wait decision picks the detached or foreground bound', () => {
+  expect(agentCapacityWaitMaxMs(false)).toBe(RUN_HOST_WAIT_MAX_MS)
+  expect(agentCapacityWaitMaxMs(true)).toBe(DETACHED_AGENT_CAPACITY_WAIT_MAX_MS)
+  expect(DETACHED_AGENT_CAPACITY_WAIT_MAX_MS).toBeLessThan(STALE_AFTER_MS)
+  expect(decideCapacityWait({ noWait: false, waitedMs: 0, detached: false })).toBe('wait')
+  expect(decideCapacityWait({ noWait: true, waitedMs: 0, detached: true })).toBe('refuse')
+  expect(
+    decideCapacityWait({ noWait: false, waitedMs: RUN_HOST_WAIT_MAX_MS, detached: false }),
+  ).toBe('refuse')
+  expect(
+    decideCapacityWait({
+      noWait: false,
+      waitedMs: RUN_HOST_WAIT_MAX_MS,
+      detached: true,
+    }),
+  ).toBe('wait')
+})
+
+test('an AgentCapacityError carries capacity and a retry remedy to startup failure recording', () => {
+  const failure = capacityStartupFailure(
+    new AgentCapacityError('capacity wait bound reached', { codex: 2 }),
+    'run-id',
+  )
+  expect(failure[2]?.failureKind).toBe('capacity')
+  expect((failure[0] as Error).message).toContain('run retry run-id')
 })
 
 test('capacity poll backoff grows to its cap', () => {
@@ -71,5 +97,55 @@ test('selection names the exhausted wait bound in its refusal', async () => {
       },
       runningCounts: () => ({ codex: 2 }),
     }),
-  ).rejects.toThrow('capacity wait bound reached after')
+  ).rejects.toThrow(
+    `capacity wait bound reached after ${RUN_HOST_WAIT_MAX_MS}ms\n` +
+      `cleared by: retry this command with ${PLATFORM_SLUG} run start --detach`,
+  )
+})
+
+test('detached selection leaves the retry remedy to startup failure recording', async () => {
+  let now = 0
+  let refusal: unknown
+  try {
+    await waitForAgentSelection({
+      select: () => {
+        throw new AgentCapacityError('agent codex is at capacity', { codex: 2 })
+      },
+      detached: true,
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms
+      },
+      runningCounts: () => ({ codex: 2 }),
+    })
+  } catch (error) {
+    refusal = error
+  }
+  const [recorded] = capacityStartupFailure(refusal, 'run-id')
+  const message = (recorded as Error).message
+  expect(message).not.toContain('retry this command')
+  expect(message.match(/cleared by:/g)).toHaveLength(1)
+  expect(message).toContain(`cleared by: ${PLATFORM_SLUG} run retry run-id`)
+})
+
+test('selection refreshes the running-run snapshot at the wait bound', async () => {
+  let now = 0
+  let attempts = 0
+  await expect(
+    waitForAgentSelection({
+      select: () => {
+        attempts += 1
+        throw new AgentCapacityError(
+          `agent codex is at capacity (${attempts === 1 ? 'old-run' : 'current-run'})`,
+          { codex: 2 },
+        )
+      },
+      now: () => now,
+      sleep: async (ms) => {
+        now += ms
+      },
+      runningCounts: () => ({ codex: 2 }),
+    }),
+  ).rejects.toThrow('current-run')
+  expect(attempts).toBe(2)
 })

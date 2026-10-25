@@ -362,6 +362,7 @@ function reviewValues(row: Payload, projectId: string | null) {
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
+    round: nullableNumber(row.round),
   }
 }
 
@@ -430,6 +431,7 @@ function reviewLensValues(row: Payload) {
     coverage: nullableString(row.coverage),
     limits: nullableString(row.limits),
     overlap: nullableString(row.overlap),
+    selectionReason: nullableString(row.selectionReason),
   }
 }
 
@@ -489,6 +491,8 @@ function landingOverrideValues(row: Payload, projectId: string | null) {
     patchId: nullableString(row.patchId),
     pathSet: jsonString(row.pathSet),
     reason: String(row.reason),
+    attribution: String(row.attribution),
+    missingLenses: jsonString(row.missingLenses),
     sessionId: nullableString(row.sessionId),
     at: date(row.at),
     withheldFields: jsonString(row.withheldFields),

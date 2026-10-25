@@ -4,6 +4,7 @@ export const landingTreeModules = [
     allowed: [
       '../../../shared/brand.ts',
       '../../../shared/caller-classification.ts',
+      '../run/run-status.ts',
       '../run/synthetic-lifecycle-job.ts',
       '../worktree/worktree-template.ts',
     ],

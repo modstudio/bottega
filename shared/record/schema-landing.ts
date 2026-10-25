@@ -1,8 +1,10 @@
 // concern: postgres-schema-landing
 /** Knows the hosted landing and operational-evidence record shape. Must not know local execution or synchronization. */
+import { sql } from 'drizzle-orm'
 import {
   bigint,
   boolean,
+  check,
   integer,
   jsonb,
   pgTable,
@@ -60,13 +62,25 @@ export const landingOverride = pgTable.withRLS(
     patchId: text('patch_id'),
     pathSet: jsonb('path_set'),
     reason: text().notNull(),
+    attribution: text().notNull().default('operator'),
+    missingLenses: jsonb('missing_lenses').notNull().default([]),
     sessionId: text('session_id'),
     at: recordedAt('at'),
     withheldFields: jsonb('withheld_fields'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [...tenantPolicies('landing_override', table.spaceId)],
+  (table) => [
+    ...tenantPolicies('landing_override', table.spaceId),
+    check(
+      'landing_override_attribution_check',
+      sql`${table.attribution} IN ('operator','architect-ceiling')`,
+    ),
+    check(
+      'landing_override_missing_lenses_check',
+      sql`jsonb_typeof(${table.missingLenses}) = 'array'`,
+    ),
+  ],
 )
 
 export const landingReviewCarry = pgTable.withRLS(

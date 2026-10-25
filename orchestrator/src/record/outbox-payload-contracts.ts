@@ -64,12 +64,12 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
 })
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason withheldFields createdAt updatedAt',
-  { projectId: null, role: 'round', withheldFields: null },
+  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason round withheldFields createdAt updatedAt',
+  { projectId: null, role: 'round', round: null, withheldFields: null },
 )
 const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap withheldFields createdAt updatedAt',
-  { projectId: null, projectName: null, withheldFields: null },
+  'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap selectionReason withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, selectionReason: null, withheldFields: null },
 )
 const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt duplicateOfFindingId withheldFields createdAt updatedAt',
@@ -99,12 +99,14 @@ const LANDING_RECORD_PAYLOAD_CONTRACT = contract(LANDING_RECORD_PAYLOAD_COLUMNS,
   withheldFields: null,
 })
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId branch tip tree patchId pathSet reason sessionId at withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree patchId pathSet reason attribution missingLenses sessionId at withheldFields createdAt updatedAt',
 )
 const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = contract(LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
   patchId: null,
   pathSet: null,
+  attribution: 'operator',
+  missingLenses: [],
   withheldFields: null,
 })
 const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = columns(
