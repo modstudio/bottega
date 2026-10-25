@@ -27,8 +27,10 @@ function missingForeignKeyTargets(d: Database): string[] {
   )
 }
 
-test("a replay under Bun's connection defaults has only resolvable foreign-key targets", () => {
+test('a replay from the stale-target connection state has only resolvable foreign-key targets', () => {
   const d = new Database(':memory:')
+  // The state that leaves stale rename targets; platform defaults differ, so set it explicitly.
+  d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = ON')
   applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
   expect(missingForeignKeyTargets(d)).toEqual([])
   expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })
@@ -69,7 +71,7 @@ test('a migration that creates a dangling reference is refused and rolled back',
 
 test('migration refuses when its connection policy cannot be established', () => {
   const d = new Database(':memory:')
-  d.exec('PRAGMA foreign_keys = ON; BEGIN IMMEDIATE')
+  d.exec('PRAGMA foreign_keys = ON; PRAGMA legacy_alter_table = ON; BEGIN IMMEDIATE')
   expect(() => applyMigrations(d)).toThrow(
     `cleared by: run \`${PLATFORM_SLUG} machine migrate\`, which opens its own connection`,
   )
