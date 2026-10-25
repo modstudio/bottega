@@ -89,7 +89,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
-import { workerGitConfigEnvironment } from './run-git-guard.ts'
+import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -378,7 +378,7 @@ export async function run(opts: {
           key: opts.key ?? null,
           cwd: callerCwd,
           launchCwd: callerCwd,
-          probe: false,
+          probe: Boolean(opts.probe),
         })
         recordNeverStartedRunFailure({
           recordId: failedId,
@@ -387,6 +387,7 @@ export async function run(opts: {
           repo: runProjectName,
           projectRecordId: links.projectRecordId,
           taskRecordId: links.taskRecordId,
+          probe: Boolean(opts.probe),
           cwd: callerCwd,
           promptSha: sha(originalPrompt),
           specSha: sha(originalPrompt),
@@ -653,7 +654,7 @@ export async function run(opts: {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
     ...workerHome.codexPrivateTempEnvironment(workerHarnessName(a), repoJob, scratchDir),
   }
-  runConfinement.assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
+  assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,

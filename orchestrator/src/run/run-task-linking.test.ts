@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -132,7 +133,18 @@ describe('run link derivation', () => {
 describe('run task linking service', () => {
   test('writes derived links once and is idempotent', async () => {
     const projectId = addProject('link-write', '/work/link-write')
-    const runId = addRun({ agent: 'codex', job: 'implement' })
+    const migrationSql = readFileSync(
+      new URL('../../migrations/0164_run_task_or_project.sql', import.meta.url),
+      'utf8',
+    )
+    const insertTriggerSql = migrationSql.split('--> statement-breakpoint')[0]!
+    db().exec('DROP TRIGGER run_require_task_or_project_insert')
+    let runId: string
+    try {
+      runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: null })
+    } finally {
+      db().exec(insertTriggerSql)
+    }
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('WRITE-1', runId)
     const hubReader = async () => [
       { key: 'WRITE-1', record_id: 'write-task-id', project: 'link-write' },
@@ -140,7 +152,7 @@ describe('run task linking service', () => {
 
     const first = await linkRunTasks({ dryRun: false }, { hubReader })
     expect(first.task_links_by_source.launch_key).toBe(1)
-    expect(first.project_links_by_source['task-project']).toBe(0)
+    expect(first.project_links_by_source['task-project']).toBe(1)
     expect(
       db().query('SELECT task_record_id,project_record_id FROM run WHERE record_id=?').get(runId),
     ).toEqual({ task_record_id: 'write-task-id', project_record_id: projectId })

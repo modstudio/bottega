@@ -35,7 +35,7 @@ export function workerGitConfigEnvironment(
 }
 
 /** Refuse a worker that could replace either the published hooks or their guard executable. */
-export function assertWorkerGitGuardOutsideWritableRoots(
+function assertWorkerGitGuardOutsideWritableRoots(
   environment: NonNullable<ReturnType<typeof workerGitConfigEnvironment>>,
   writableRoots: string[],
 ): void {
@@ -44,4 +44,11 @@ export function assertWorkerGitGuardOutsideWritableRoots(
     resolveRefGuardHook(),
     writableRoots,
   )
+}
+
+export function assertConfiguredGitGuard(
+  environment: ReturnType<typeof workerGitConfigEnvironment>,
+  writableRoots: string[],
+): void {
+  if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
 }
