@@ -256,12 +256,21 @@ export function triageRefusal(
       `findings without a disposition: ${decision.undisposedFindings.map((finding) => `${finding.reviewNumber}/${finding.ordinal}`).join(', ')}; cleared by: ${decision.undisposedFindings.map((finding) => `${PLATFORM_SLUG} review triage ${finding.reviewNumber} ${finding.ordinal} <disposition>`).join('; ')}`,
     )
   }
-  for (const { lens, recordedOnBranch } of decision.missingLenses) {
+  for (const { lens, recordedOnBranch, newlyTouchedPaths } of decision.missingLenses) {
     const condition = recordedOnBranch
       ? 'has no recorded result for this change'
       : 'has no recorded result on this branch'
+    const [firstPath, ...otherPaths] = newlyTouchedPaths
+    const scope = firstPath
+      ? `, brought into scope by ${firstPath}${otherPaths.length ? ` (+${otherPaths.length} more paths)` : ''}`
+      : ''
     lines.push(
-      `applicable lens ${lens} ${condition}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+      `applicable lens ${lens} ${condition}${scope}; cleared by: ${PLATFORM_SLUG} run start review-lens --review ${change.branch} --key <task-key> --lens ${lens} "Review ${change.branch} with ${lens}."`,
+    )
+  }
+  if (decision.missingLenses.length && decision.lensesAlreadyComplete.length) {
+    lines.push(
+      `lenses that completed on an earlier change group and do not need to run again: ${decision.lensesAlreadyComplete.join(', ')}`,
     )
   }
   if (decision.missingSecondOpinion) {

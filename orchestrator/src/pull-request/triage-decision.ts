@@ -48,7 +48,17 @@ export type TriageDecision =
       missingReview: boolean
       unfinishedReviewNumbers: number[]
       undisposedFindings: { reviewNumber: number; ordinal: number }[]
-      missingLenses: { lens: string; recordedOnBranch: boolean }[]
+      missingLenses: {
+        lens: string
+        recordedOnBranch: boolean
+        /** Paths changed since the reviewed tip that select this lens and that it never reviewed. */
+        newlyTouchedPaths: string[]
+      }[]
+      /**
+       * Lenses with a completed result on the branch that this round does not ask to run again,
+       * so a refusal can say they need no second run.
+       */
+      lensesAlreadyComplete: string[]
       missingSecondOpinion: { lens: string; firstRunId: string | null } | null
       architectReadRequired: boolean
       earlierReviewNumber: number | null
@@ -221,6 +231,18 @@ export function decideSecondOpinion(
   if (!lens) return { complete: true }
   const selection = selectSecondOpinion(reviews, lens)
   return selection.complete ? { complete: true } : selection
+}
+
+/** Lenses the branch already holds a completed, tiered result for, in review order. */
+function completedBranchLenses(branchReviewGroups: readonly TriageReviewGroup[]): string[] {
+  return [
+    ...new Set(
+      branchReviewGroups
+        .flatMap(({ reviews }) => reviews)
+        .filter((review) => review.completedAt !== null && review.tier !== null)
+        .flatMap((review) => review.lensIdentities),
+    ),
+  ]
 }
 
 function undisposedReviewFindings(review: TriageReviewRow) {
@@ -407,6 +429,9 @@ function incompleteTriageDecision(input: {
   finalTierRaised: boolean
   hasCompletedBranchReview: boolean
   hasFunnelPlan: boolean
+  roundLenses: readonly string[]
+  newlyTouchedPathsByLens: Readonly<Record<string, string[]>>
+  completedBranchLenses: readonly string[]
 }): Exclude<TriageDecision, { complete: true }> {
   const { exact, composed, exactRead, finalTierRaised, hasCompletedBranchReview, hasFunnelPlan } =
     input
@@ -437,7 +462,13 @@ function incompleteTriageDecision(input: {
     missingReview,
     unfinishedReviewNumbers: exact.currentPatch.unfinishedReviewNumbers,
     undisposedFindings,
-    missingLenses: coverageGaps.missingLenses,
+    missingLenses: coverageGaps.missingLenses.map((missing) => ({
+      ...missing,
+      newlyTouchedPaths: [...(input.newlyTouchedPathsByLens[missing.lens] ?? [])].sort(),
+    })),
+    lensesAlreadyComplete: input.completedBranchLenses.filter(
+      (lens) => !input.roundLenses.includes(lens),
+    ),
     missingSecondOpinion: coverageGaps.missingSecondOpinion,
     architectReadRequired: Boolean(
       earlierRound && (!finalTierRaised || hasFunnelPlan) && !exactRead,
@@ -534,5 +565,8 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
     finalTierRaised,
     hasCompletedBranchReview,
     hasFunnelPlan: evidence.reviewPlan !== undefined,
+    roundLenses: reviewPlan.round.lenses,
+    newlyTouchedPathsByLens: reviewPlan.newlyTouchedPathsByLens ?? {},
+    completedBranchLenses: completedBranchLenses(evidence.branchReviewGroups),
   })
 }

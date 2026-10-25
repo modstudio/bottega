@@ -443,7 +443,8 @@ test('a never-reviewed branch names its missing lens without the generic no-roun
     missingReview: true,
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
-    missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    missingLenses: [{ lens: 'craft', recordedOnBranch: false, newlyTouchedPaths: [] }],
+    lensesAlreadyComplete: [],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -509,6 +510,62 @@ test('a lens recorded on the branch is refused as missing for this change, not a
   expect(message).not.toContain('applicable lens craft has no recorded result on this branch')
 })
 
+test('a lens a fix brought into scope names that path and the lenses already complete', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1469-newly-scoped-lens',
+    tip: 'tip',
+    group: { patchId: 'patch', pathSet: ['branch/tree.ts', 'src/a.ts'] },
+    tier: 3,
+  } as PullRequestChange
+  const earlier = {
+    reviewRecordId: 'review-4',
+    reviewNumber: 4,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: '2026-09-25T01:00:00Z',
+    tier: 3 as const,
+    role: 'round' as const,
+    patchId: 'patch-before-fix',
+    pathSet: '["src/a.ts"]',
+    lensIdentities: ['correctness'],
+    lenses: [{ recordId: 'lens-1', lens: 'correctness', graded: true }],
+    findings: [],
+  }
+  const decision = decideTriage({
+    patchId: 'patch',
+    pathSet: '["branch/tree.ts","src/a.ts"]',
+    tip: 'tip',
+    tier: 3,
+    applicableReview: { lenses: ['correctness', 'teardown-safety'] },
+    reviewPlan: {
+      round: { lenses: ['teardown-safety'] },
+      admissionRequired: { lenses: ['correctness', 'teardown-safety'] },
+      newlyTouchedPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
+    },
+    branchOwnerSession: 'owner-session',
+    reviews: [],
+    branchReviewGroups: [{ reviews: [earlier] }],
+    reads: [],
+  })
+  expect(decision).toMatchObject({
+    complete: false,
+    missingLenses: [
+      { lens: 'teardown-safety', recordedOnBranch: false, newlyTouchedPaths: ['branch/tree.ts'] },
+    ],
+    lensesAlreadyComplete: ['correctness'],
+  })
+  if (decision.complete) throw new Error('expected incomplete triage')
+
+  const message = triageRefusal(change, decision)
+  expect(message).toContain(
+    'applicable lens teardown-safety has no recorded result on this branch, brought into scope by branch/tree.ts',
+  )
+  expect(message).toContain(
+    'lenses that completed on an earlier change group and do not need to run again: correctness',
+  )
+  expect(message).not.toContain('applicable lens correctness')
+})
+
 test('a generic no-round refusal prints beside the unfinished-review remedy, with no lens line', () => {
   const change = {
     project: { name: 'fixture' },
@@ -556,6 +613,7 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
   const message = triageRefusal(change, decision)
   expect(message).toContain('no earlier complete review round exists on DEV-1535-no-round')
   expect(message).not.toContain('applicable lens')
+  expect(message).not.toContain('do not need to run again')
 })
 
 test('a creditable composed round refusal names only the architect read', () => {
@@ -631,6 +689,7 @@ test('a missing second opinion refusal names the lens and distinct first run', (
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
     missingLenses: [],
+    lensesAlreadyComplete: [],
     missingSecondOpinion: { lens: 'correctness', firstRunId: '47' },
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -666,6 +725,7 @@ test('unfinished-review refusals print display numbers, never review UUIDs', () 
     unfinishedReviewNumbers: [104],
     undisposedFindings: [],
     missingLenses: [],
+    lensesAlreadyComplete: [],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -720,6 +780,7 @@ test.each([
       unfinishedReviewNumbers: [],
       undisposedFindings: [],
       missingLenses: [],
+      lensesAlreadyComplete: [],
       missingSecondOpinion: null,
       architectReadRequired: state.architectReadRequired,
       earlierReviewNumber: 93,

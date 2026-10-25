@@ -201,6 +201,7 @@ describe('round lens plan', () => {
     ).toEqual({
       round: { lenses: ['safety'], lensReasons: { safety: 'newly-touched-path' } },
       admissionRequired: { lenses: ['safety'] },
+      newlyTouchedPathsByLens: { safety: ['src/new.ts'] },
     })
   })
 
