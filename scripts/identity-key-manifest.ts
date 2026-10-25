@@ -325,7 +325,7 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
     store: 'orchestrator',
     table: 'branch_landing_record',
     reason:
-      'machine-local landing evidence used only by local views in orchestrator/src/branch/branch-landing-records.ts, orchestrator/src/branch/task-key-pull-request.ts, and orchestrator/src/evidence/cycle-cost-service.ts; no outbox kind',
+      'machine-local landing evidence written by orchestrator/src/branch/branch-landing-service.ts and read by local views; no outbox kind, no synced source, and no foreign key from a synced source',
   },
   {
     store: 'orchestrator',
