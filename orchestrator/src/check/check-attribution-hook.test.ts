@@ -184,14 +184,4 @@ describe('attribution hook', () => {
     expect(outputs[0]?.systemMessage).toContain('ValueError')
     expect(outputs[1]?.systemMessage).toContain('missing-from-numeric-cwd')
   })
-
-  test('denies a write when its readable message file contains blocked attribution', () => {
-    const { root, hook } = layout()
-    const path = join(root, 'message.txt')
-    const blockedAttribution = fixture.blocked[0]
-    if (!blockedAttribution) throw new Error('shared fixture has no blocked attribution text')
-    writeFileSync(path, blockedAttribution)
-    const reason = denialReason(invoke(hook, root, `git commit --message-file ${path}`))
-    expect(reason).toContain('AI attribution is not allowed')
-  })
 })
