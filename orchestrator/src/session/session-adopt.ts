@@ -4,7 +4,14 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
-import { callerIdentity, db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import {
+  callerIdentity,
+  db,
+  SESSION_LIVE_MS,
+  sessionId,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { transferRunMutationOwnership } from '../run/run-authority.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -34,13 +41,14 @@ type PendingSessionAdoptionFailure = Omit<SessionAdoptionFailure, 'currentOwner'
 export type SessionAdoptionReport = {
   fromSession: string
   toSession: string
+  consent: SessionAdoptionConsent
   runs: SessionAdoptedRun[]
   notMoved: SessionAdoptionFailure[]
   totalRuns: number
   totalTurns: number
 }
 
-type SessionAdoptionConsent = 'standard' | 'resume-handoff'
+type SessionAdoptionConsent = 'standard' | 'resume-handoff' | 'cut-off'
 
 type Root = {
   record_id: string
@@ -92,9 +100,10 @@ function transferRoot(input: {
   target: string
   actor: string
   reason: string
+  consent: SessionAdoptionConsent
   options: AdoptionOptions
 }): { moved?: SessionAdoptedRun; failed?: PendingSessionAdoptionFailure } {
-  const { database, root, target, actor, reason, options } = input
+  const { database, root, target, actor, reason, consent, options } = input
   const run = adoptedRun(database, root, target)
   const terminal = database
     .query<{ record_id: string; finished_at: string }, [string, string]>(
@@ -108,7 +117,8 @@ function transferRoot(input: {
   const transfer = options.transfer ?? transferRunMutationOwnership
   try {
     const transferred = writeTransaction(() => {
-      if (!transfer(root.record_id, target, actor, reason, database)) return false
+      if (!transfer(root.record_id, target, actor, `consent ${consent}: ${reason}`, database))
+        return false
       for (const member of terminal)
         enqueueRunRecord(database, member.record_id, machine!, member.finished_at)
       return true
@@ -162,11 +172,18 @@ function assertAdoptionConsent(
     throw new Error(
       `session ${target} is live (${formatSessionLivenessEvidence(evidence)}); ${closeOut} before adoption`,
     )
-  if (consent === 'standard' && evidence.ownerProcess === 'unknown')
+  if (evidence.ownerProcess !== 'unknown' || consent === 'resume-handoff') return
+  if (evidence.unknownCause === 'recently-seen' && consent === 'cut-off') return
+  if (evidence.unknownCause === 'recently-seen') {
+    const opensAt = new Date(evidence.ownerLastSeenAt! + SESSION_LIVE_MS).toISOString()
     throw new Error(
       `session ${target} process is unknown (${formatSessionLivenessEvidence(evidence)}); ${closeOut}, ` +
-        `or retry the run mutation after its ownership window expires`,
+        `wait until ${opensAt}, or use --cut-off now when the session was cut off`,
     )
+  }
+  throw new Error(
+    `session ${target} liveness could not be established (${formatSessionLivenessEvidence(evidence)}); ${closeOut} before adoption`,
+  )
 }
 
 export function adoptSessionRuns(
@@ -188,11 +205,12 @@ export function adoptSessionRuns(
     now,
     probe: options.probe,
   })
-  assertAdoptionConsent(target, evidence, options.consent ?? 'standard')
+  const consent = options.consent ?? 'standard'
+  assertAdoptionConsent(target, evidence, consent)
   const moved: SessionAdoptedRun[] = []
   const notMoved: PendingSessionAdoptionFailure[] = []
   for (const root of ownedRoots(database, target)) {
-    const outcome = transferRoot({ database, root, target, actor, reason, options })
+    const outcome = transferRoot({ database, root, target, actor, reason, consent, options })
     if (outcome.moved) moved.push(outcome.moved)
     if (outcome.failed) notMoved.push(outcome.failed)
   }
@@ -200,6 +218,7 @@ export function adoptSessionRuns(
   return {
     fromSession: target,
     toSession: actor,
+    consent,
     runs: moved,
     notMoved: currentFailureOwners(database, notMoved),
     totalRuns: moved.length,
@@ -209,7 +228,7 @@ export function adoptSessionRuns(
 
 export function formatSessionAdoption(report: SessionAdoptionReport): string {
   if (!report.runs.length && !report.notMoved.length)
-    return `session ${report.fromSession} owns no runs`
+    return `session ${report.fromSession} owns no runs; consent: ${report.consent}`
   return [
     ...report.runs.map(
       (run) =>
@@ -219,6 +238,6 @@ export function formatSessionAdoption(report: SessionAdoptionReport): string {
       (run) =>
         `not moved run ${run.number} ${run.recordId} ${run.job} ${run.key ?? '-'}: ${run.turns} turn(s) (${run.reason})`,
     ),
-    `total: ${report.totalRuns} run(s), ${report.totalTurns} turn(s) moved; ${report.notMoved.length} run(s) remain`,
+    `total: ${report.totalRuns} run(s), ${report.totalTurns} turn(s) moved; ${report.notMoved.length} run(s) remain; consent: ${report.consent}`,
   ].join('\n')
 }

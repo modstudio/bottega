@@ -23,13 +23,14 @@ architect session lifecycle
 
 ## bottega session adopt
 
-**Synopsis:** `bottega session adopt <session> [--reason <text>] [--json]`
+**Synopsis:** `bottega session adopt <session> [--reason <text>] [--cut-off] [--json]`
 
 take over another session's run chains
 
 ### Options
 
 - `--reason <text>`: record why this session is taking ownership
+- `--cut-off`: adopt when every owner process is gone but last_seen is recent
 - `--json`: write the adoption report as JSON
 
 ### Related

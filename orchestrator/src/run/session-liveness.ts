@@ -15,6 +15,7 @@ export type SessionProcessEvidence = ProcessIdentity & {
 
 export type SessionLivenessEvidence = {
   ownerProcess: OwnerProcess
+  unknownCause: 'recently-seen' | 'unestablished' | null
   candidates: SessionProcessEvidence[]
   ownerLastSeenAt: number | null
 }
@@ -70,7 +71,13 @@ export function sessionLivenessDecision(input: {
   probes: SessionProcessEvidence[]
 }): SessionLivenessEvidence {
   const ownerLastSeenAt = input.ownerSeen?.lastSeenAt ?? null
-  if (!input.ownerSeen) return { ownerProcess: 'unknown', candidates: [], ownerLastSeenAt }
+  if (!input.ownerSeen)
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: 'unestablished',
+      candidates: [],
+      ownerLastSeenAt,
+    }
   const stored = storedSessionCandidates({
     ownerSessionId: input.ownerSessionId,
     ownerAncestorChain: input.ownerSeen.ancestorChain,
@@ -78,7 +85,12 @@ export function sessionLivenessDecision(input: {
     actorAncestorChain: input.actorAncestorChain,
   })
   if (stored.malformed || !stored.candidates.length)
-    return { ownerProcess: 'unknown', candidates: [], ownerLastSeenAt }
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: 'unestablished',
+      candidates: [],
+      ownerLastSeenAt,
+    }
   const candidates = stored.candidates.flatMap((identity) => {
     const probe = input.probes.find(
       ({ pid, startTime }) => pid === identity.pid && startTime === identity.startTime,
@@ -86,19 +98,30 @@ export function sessionLivenessDecision(input: {
     return probe ? [probe] : []
   })
   if (candidates.length !== stored.candidates.length)
-    return { ownerProcess: 'unknown', candidates, ownerLastSeenAt }
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: 'unestablished',
+      candidates,
+      ownerLastSeenAt,
+    }
   if (
     candidates.some(
       ({ alive, startTime, observedStartTime }) => alive && observedStartTime === startTime,
     )
   )
-    return { ownerProcess: 'live', candidates, ownerLastSeenAt }
+    return { ownerProcess: 'live', unknownCause: null, candidates, ownerLastSeenAt }
   if (candidates.some(({ alive, observedStartTime }) => alive && observedStartTime === null))
-    return { ownerProcess: 'unknown', candidates, ownerLastSeenAt }
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: 'unestablished',
+      candidates,
+      ownerLastSeenAt,
+    }
   const ownerRecentlySeen =
     ownerLastSeenAt !== null && ownerLastSeenAt >= input.now - input.liveWindowMs
   return {
     ownerProcess: ownerRecentlySeen ? 'unknown' : 'dead',
+    unknownCause: ownerRecentlySeen ? 'recently-seen' : null,
     candidates,
     ownerLastSeenAt,
   }

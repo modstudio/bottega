@@ -28,10 +28,13 @@ export function register(program: Command): void {
     .command('adopt <session>')
     .description("take over another session's run chains")
     .requiredOption('--reason <text>', 'record why this session is taking ownership')
+    .option('--cut-off', 'adopt when every owner process is gone but last_seen is recent')
     .option('--json', 'write the adoption report as JSON')
     .allowExcessArguments(false)
     .action((target, options) => {
-      const report = adoptSessionRuns(target, options.reason)
+      const report = adoptSessionRuns(target, options.reason, {
+        consent: options.cutOff ? 'cut-off' : 'standard',
+      })
       log(options.json ? JSON.stringify(report) : formatSessionAdoption(report))
     })
 }
