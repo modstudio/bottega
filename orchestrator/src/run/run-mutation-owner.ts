@@ -16,12 +16,14 @@ export type RunMutationOwnerFacts = {
   coordinatorRun: boolean
   now: number
   windowMs: number
+  ownerProcess: 'dead' | 'live' | 'unknown'
 }
 
 export function runMutationOwnerDecision(
   input: RunMutationOwnerFacts,
 ): 'owner' | 'adopt' | 'refuse' {
   if (input.owner === null || input.actor === input.owner) return 'owner'
+  if (input.actor !== null && input.ownerProcess === 'dead') return 'adopt'
   if (
     input.actor !== null &&
     ownerIsGone({

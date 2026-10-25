@@ -16,6 +16,7 @@ import {
   reauthorizeAdoptedMutation,
   runMutationOwnerDecision,
 } from './run-mutation-owner.ts'
+import { sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
 export type QuestionMutationAction = 'rule' | 'overturn' | 'file' | 'close'
 
@@ -31,20 +32,19 @@ export function authorizeWorkflowQuestionMutation(input: {
 }): string | null {
   const database = input.database ?? db()
   const readFacts = (): RunMutationOwnerFacts => {
-    const seen =
+    const liveness =
       input.owner === null
-        ? null
-        : (database
-            .query('SELECT last_seen FROM session_seen WHERE session_id=?')
-            .get(input.owner) as { last_seen: string } | null)
+        ? { ownerProcess: 'unknown' as const, ownerLastSeenAt: null }
+        : sessionLivenessEvidence(database, input.owner, input.actor, { now: input.now })
     return {
       owner: input.owner,
       actor: input.actor,
-      ownerLastSeenAt: seen ? Date.parse(seen.last_seen) : null,
+      ownerLastSeenAt: liveness.ownerLastSeenAt,
       chainLastActivityAt: input.chainLastActivityAt,
       coordinatorRun: false,
       now: input.now ?? Date.now(),
       windowMs: RUN_MUTATION_WINDOW_MS,
+      ownerProcess: liveness.ownerProcess,
     }
   }
   const initial = readFacts()

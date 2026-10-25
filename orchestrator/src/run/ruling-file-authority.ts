@@ -88,6 +88,7 @@ export function fileRulingDecision(
           coordinatorRun: input.coordinatorRun,
           now: input.now,
           windowMs: input.windowMs,
+          ownerProcess: input.ownerProcess,
         })
   if (authority.kind === 'refuse') {
     return {

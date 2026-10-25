@@ -223,13 +223,7 @@ function requireAnswerAuthority(
     sessionIdPresent: process.env.CLAUDE_CODE_SESSION_ID !== undefined,
     depthPresent: process.env.BOTTEGA_DEPTH !== undefined,
     dashboardAuthorized,
-    owner: authority.owner,
-    actor: authority.actor,
-    ownerLastSeenAt: authority.ownerLastSeenAt,
-    chainLastActivityAt: authority.chainLastActivityAt,
-    coordinatorRun: authority.coordinatorRun,
-    now: authority.now,
-    windowMs: authority.windowMs,
+    ...authority,
   })
   if (decision.kind !== 'refuse') return decision
   if (decision.code === 'operator-attribution')

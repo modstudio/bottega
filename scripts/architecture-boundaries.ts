@@ -4,6 +4,7 @@ import { canonBoundarySpecs } from './architecture-canon-boundaries.ts'
 import { cleanupBoundarySpecs } from './architecture-cleanup-boundaries.ts'
 import { contractBoundarySpecs } from './architecture-contract-boundaries.ts'
 import { databaseBoundarySpecs } from './architecture-database-boundaries.ts'
+import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
@@ -315,26 +316,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep review-lens prompt composition a pure decision over lens text and supplied prompt.',
     ['./review-memory.ts'],
   ),
-  boundary(
-    'doc-commands-boundary',
-    'orchestrator/src/doc/doc-commands.ts',
-    [
-      '../../../shared/brand.ts',
-      'node:fs',
-      '../../../shared/docs.ts',
-      '../canon/canon-files.ts',
-      '../canon/canon.ts',
-      '../database/db.ts',
-      '../record/record-session.ts',
-      '../worker-store-write.ts',
-      './doc-write-tree.ts',
-      './doc-search-service.ts',
-      './doc-revision-identifier.ts',
-      './local-doc-order.ts',
-      './docs.ts',
-    ],
-    'Keep doc commands independent of database writes beyond docs, runs, routing, transports, and the CLI.',
-  ),
+  ...docBoundarySpecs.map((spec) => boundary(spec.name, spec.file, [...spec.allowed], spec.reason)),
   boundary(
     'doc-write-identity-boundary',
     'orchestrator/src/doc/doc-write-identity.ts',

@@ -23,6 +23,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-outbox.ts',
     './question-vocabulary.ts',
     './run-mutation-owner.ts',
+    './session-liveness-adapter.ts',
   ]),
   module('orchestrator/src/run/question-ruling-remedy.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/run/run-mutation-owner.ts', ['../cleanup/cleanup-sweep-decisions.ts']),

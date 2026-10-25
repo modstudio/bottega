@@ -18,7 +18,6 @@ import { db } from '../database/db.ts'
 import { resolveDocRevisionIdentifier } from '../doc/doc-revision-identifier.ts'
 import type { SelectedDocWriteTree } from '../doc/doc-write-tree.ts'
 import {
-  consumeDoc,
   getDoc,
   getDocForAudience,
   getDocRevision,
@@ -30,6 +29,7 @@ import {
   signedInDocOwner,
   storedDocWarnings,
 } from '../doc/docs.ts'
+import { registerMcpDocConsumeTool } from './mcp-doc-consume-tool.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
 
 const text = (value: unknown) => ({
@@ -389,23 +389,7 @@ export function registerDocTools(
     },
   )
 
-  server.registerTool(
-    'consume_doc',
-    {
-      description:
-        'Mark an operator document consumed by rewriting its YAML status/stamps and updated_at.',
-      inputSchema: z.object({
-        scope: z.string(),
-        subject: z.string().nullable().optional(),
-        slug: z.string(),
-      }),
-    },
-    async ({ scope, subject, slug }) => {
-      const refusal = decideMcpDocWrite('consume_doc', scope)
-      if (refusal) throw new Error(refusal)
-      return text(await consumeDoc(scope, subject ?? null, slug, { reason: 'consumed by session' }))
-    },
-  )
+  registerMcpDocConsumeTool(server)
 
   server.registerTool(
     'list_doc_revisions',

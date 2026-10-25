@@ -14,12 +14,14 @@ import {
   writeTransaction,
 } from '../database/db.ts'
 import { filedIssueLoopRun } from '../issue/issue-queue.ts'
+import type { ProcessIdentity } from '../resources/session-process-anchoring.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
   reauthorizeAdoptedMutation,
   runMutationOwnerDecision,
 } from './run-mutation-owner.ts'
+import { sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
 const RUN_MUTATION_ACTIONS = [
   'adopt',
@@ -53,6 +55,8 @@ export type RootAuthority = {
   coordinatorRun: boolean
   now: number
   windowMs: number
+  ownerProcess: 'dead' | 'live' | 'unknown'
+  ownerAnchor: ProcessIdentity | null
 }
 
 /** Build the authority shape used only to record an ownership transfer already authorized by its caller. */
@@ -67,6 +71,8 @@ function auditOnlyRootAuthority(rootId: string, actor: string): RootAuthority {
     coordinatorRun: false,
     now: 0,
     windowMs: 0,
+    ownerProcess: 'unknown',
+    ownerAnchor: null,
   }
 }
 
@@ -94,21 +100,29 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
     chain_last_activity: string
   } | null
   if (!row) throw new Error(`no run ${runId}`)
+  const actor = sessionId()
+  const liveness = row.owner && row.owner !== actor
+    ? sessionLivenessEvidence(database, row.owner, actor)
+    : { ownerProcess: 'unknown' as const, anchor: null }
   return {
     runId: row.run_record_id,
     rootId: row.root_id,
     owner: row.owner,
-    actor: sessionId(),
+    actor,
     ownerLastSeenAt: row.last_seen === null ? null : Date.parse(row.last_seen),
     chainLastActivityAt: Date.parse(row.chain_last_activity),
     coordinatorRun: filedIssueLoopRun({ id: row.root_id, job: row.job, label: row.label }) !== null,
     now: Date.now(),
     windowMs: RUN_MUTATION_WINDOW_MS,
+    ownerProcess: liveness.ownerProcess,
+    ownerAnchor: liveness.anchor,
   }
 }
 
 function adoptedMutationReason(authority: RootAuthority): string | null {
   if (runMutationOwnerDecision(authority) !== 'adopt') return null
+  if (authority.ownerProcess === 'dead' && authority.ownerAnchor)
+    return `adopted from dead owner ${authority.owner} (anchor pid ${authority.ownerAnchor.pid} gone) by ${authority.actor}`
   return `adopted from gone owner ${authority.owner} by ${authority.actor}`
 }
 
@@ -124,7 +138,10 @@ function refuseRunMutation(authority: RootAuthority, action: RunMutationAction |
   }
   throw new Error(
     `run ${authority.runId} is owned by session ${authority.owner}; ` +
-      `current session ${authority.actor} cannot ${action} it (owner active within the window)`,
+      `current session ${authority.actor} cannot ${action} it (owner active within the window; ` +
+      `owner process ${authority.ownerProcess}, anchor ${authority.ownerAnchor ? `pid ${authority.ownerAnchor.pid} started ${authority.ownerAnchor.startTime}` : 'unknown'}, ` +
+      `last_seen ${authority.ownerLastSeenAt === null ? 'unknown' : new Date(authority.ownerLastSeenAt).toISOString()}); ` +
+      `run bottega session adopt ${authority.owner} --reason "<why>"`,
   )
 }
 

@@ -696,7 +696,8 @@ export const sessionId = (database?: Database): string | null => {
 /**
  * A session seen inside this window is known live. A session outside it is
  * UNKNOWN, not dead: this row records orchestrator activity, not the owning process.
- * Silence therefore never transfers its authority to another session.
+ * Silence therefore never transfers its authority to another session. A provably dead owner
+ * process transfers authority only after its anchor is gone and this live window has elapsed.
  */
 export const SESSION_LIVE_MS = 60 * 60 * 1000
 

@@ -90,6 +90,8 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../database/db.ts',
       '../issue/issue-queue.ts',
       './run-mutation-owner.ts',
+      './session-liveness-adapter.ts',
+      '../resources/session-process-anchoring.ts',
       'bun:sqlite',
     ],
     'Enforce the run-authority concern boundary.',

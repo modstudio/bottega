@@ -108,6 +108,13 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-compatibility.ts', []),
   module('orchestrator/src/mcp/mcp-native-attachment.ts', ['./mcp-compatibility.ts']),
   module('orchestrator/src/mcp/mcp-doc-write.ts', ['../worker-store-write.ts']),
+  module('orchestrator/src/mcp/mcp-doc-consume-tool.ts', [
+    '@modelcontextprotocol/server',
+    'zod',
+    '../doc/docs.ts',
+    '../session/resume-brief-handoff.ts',
+    './mcp-doc-write.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-doc-tools.ts', [
     '../../../shared/brand.ts',
     '@modelcontextprotocol/sdk/server/mcp.js',
@@ -121,6 +128,7 @@ export const mcpModules: McpModule[] = [
     '../doc/docs.ts',
     '../worker-store-write.ts',
     './mcp-doc-write.ts',
+    './mcp-doc-consume-tool.ts',
   ]),
   module('orchestrator/src/mcp/mcp-subject-tools.ts', [
     '@modelcontextprotocol/server',

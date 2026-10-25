@@ -1,5 +1,38 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'session-adopt-boundary',
+    file: 'orchestrator/src/session/session-adopt.ts',
+    allowed: [
+      'bun:sqlite',
+      '../caller-classification.ts',
+      '../database/db.ts',
+      '../record/machine-identity.ts',
+      '../run/run-authority.ts',
+      '../run/run-outbox.ts',
+      '../run/session-liveness-adapter.ts',
+      '../run/session-liveness.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep explicit session adoption as a service over authority, liveness, and outbox owners.',
+  },
+  {
+    name: 'resume-brief-handoff-boundary',
+    file: 'orchestrator/src/session/resume-brief-handoff.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../database/db.ts',
+      '../doc/doc-hosted-client.ts',
+      '../doc/doc-read-store.ts',
+      '../record/record-write-authority.ts',
+      '../run/session-liveness-adapter.ts',
+      './session-adopt.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep resume-to-run handoff in an adapter outside the document concern.',
+  },
+  {
     name: 'session-close-out-boundary',
     file: 'orchestrator/src/session/session-close-out.ts',
     allowed: [

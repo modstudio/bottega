@@ -11,6 +11,7 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/doc/doc-consume-command.ts', ['../../../shared/brand.ts', './docs.ts']),
   module('orchestrator/src/doc/doc-reference-read.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',

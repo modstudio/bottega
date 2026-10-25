@@ -10,6 +10,7 @@ import { portCommand } from '../porting/port-commands.ts'
 import { projectCommand } from '../project/project-commands.ts'
 import { requireRecordSpaceMembership } from '../record/record-space.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
+import { handoffConsumedResumeBrief } from '../session/resume-brief-handoff.ts'
 import { actionCommand, collect, log, optionFlags, values, write, writeStdout } from './support.ts'
 
 type Flags = { has(name: string): boolean }
@@ -144,7 +145,11 @@ async function runDoc(verb: string, args: string[], command: Command): Promise<v
         process.exitCode = code
       },
     },
-    { selectDocWriteTree, collectCanonLintInput },
+    {
+      selectDocWriteTree,
+      collectCanonLintInput,
+      consumeResumeHandoff: handoffConsumedResumeBrief,
+    },
   )
 }
 

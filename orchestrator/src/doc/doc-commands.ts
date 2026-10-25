@@ -23,11 +23,11 @@ import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
+import { handleDocConsumeCommand } from './doc-consume-command.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
-  consumeDoc,
   diffDocRevisions,
   docSubjects,
   exportDocs,
@@ -76,6 +76,12 @@ type DocCommandPorts = {
     cwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
+  consumeResumeHandoff?(
+    doc: Awaited<ReturnType<typeof import('./docs.ts').consumeDoc>>,
+  ): Promise<{
+    lines: string[]
+    [key: string]: unknown
+  }>
 }
 
 function revisionAuthorName(author: string, user: ReturnType<typeof cachedSignedInRecordUser>) {
@@ -657,10 +663,6 @@ async function handledReadOrRevisionDocCommand(
   )
 }
 
-function docConsumeUsage(): string {
-  return `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`
-}
-
 async function handledWriteDocCommand(
   sub: string,
   argv: string[],
@@ -691,25 +693,18 @@ export async function docCommand(
   if (await handledEarlyDocCommand(sub, argv, flags, presentation)) return
   if (await handledReadOrRevisionDocCommand(sub, argv, flags, presentation, address)) return
   if (await handledWriteDocCommand(sub, argv, flags, presentation, address, ports)) return
-  if (sub === 'consume') {
-    const slug = argv[2]
-    if (!slug || !scope) throw new Error(docConsumeUsage())
-    const result = await consumeDoc(scope, subject, slug, {
-      reason: flag('reason') ?? 'consumed by session',
-      author: flag('author'),
-      expectedRevision: flag('expect'),
+  if (
+    await handleDocConsumeCommand({
+      sub,
+      argv,
+      scope,
+      subject,
+      flags,
+      log: presentation.log,
+      handoff: ports.consumeResumeHandoff,
     })
-    if (has('json')) {
-      presentation.log(JSON.stringify(result))
-      return
-    }
-    presentation.log(
-      result.already_consumed
-        ? `already consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`
-        : `consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`,
-    )
+  )
     return
-  }
   if (sub === 'rm') {
     const slug = argv[2]
     const reason = flag('reason')

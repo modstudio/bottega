@@ -10,6 +10,7 @@ describe('run mutation owner decision', () => {
     coordinatorRun: false,
     now: 1_000,
     windowMs: 200,
+    ownerProcess: 'unknown' as const,
   }
 
   test('returns owner for the owning session and an unowned chain', () => {
@@ -29,7 +30,20 @@ describe('run mutation owner decision', () => {
   })
 
   test('refuses when the owner was seen within the window', () => {
+    expect(
+      runMutationOwnerDecision({ ...facts, actor: 'other-session', ownerProcess: 'live' }),
+    ).toBe('refuse')
     expect(runMutationOwnerDecision({ ...facts, actor: 'other-session' })).toBe('refuse')
+  })
+
+  test('adopts a dead owner inside the activity window', () => {
+    expect(
+      runMutationOwnerDecision({
+        ...facts,
+        actor: 'other-session',
+        ownerProcess: 'dead',
+      }),
+    ).toBe('adopt')
   })
 
   test('only an idle coordinator chain ignores recent operator activity', () => {
