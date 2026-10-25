@@ -71,22 +71,30 @@ function hookTreeHolding(): { id: string; tree: string } {
  * Answer the adapter's gh and git inspections without running either.
  *
  * stderr carries a warning on every call because a warning with a clean exit is not uncommitted
- * work: the clean-tree cases below fail if it is ever read as one.
+ * work: the clean-tree cases below fail if it is ever read as one. `statusExitCode` makes the
+ * status call fail, which leaves cleanliness unestablished rather than reading as a clean tree.
  */
-function mockGitAndGh(input: { statusOutput: string; headCommit: string }): void {
+function mockGitAndGh(input: {
+  statusOutput: string
+  headCommit: string
+  statusExitCode?: number
+}): void {
+  const statusExitCode = input.statusExitCode ?? 0
   const answer = (argv: string[]): ReturnType<typeof Bun.spawnSync> => {
     const [bin, ...args] = argv
+    const isStatus = bin !== 'gh' && args[0] === 'status'
     const stdout =
       bin === 'gh'
         ? '[{"number":88,"headRefOid":"sha-head"}]'
-        : args[0] === 'status'
+        : isStatus
           ? input.statusOutput
           : input.headCommit
+    const exitCode = isStatus ? statusExitCode : 0
     return {
-      exitCode: 0,
+      exitCode,
       stdout: Buffer.from(stdout),
       stderr: Buffer.from("git: error: couldn't create cache file (errno=Operation not permitted)"),
-      success: true,
+      success: exitCode === 0,
       exitedDueToTimeout: false,
     } as ReturnType<typeof Bun.spawnSync>
   }
@@ -263,6 +271,21 @@ describe('close-out in-flight hold annotation', () => {
       expect(annotated.detail).toBe(
         `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>; in flight (#88)`,
       )
+      expect(annotated.inFlightRef).toBe('#88')
+      expect(annotated.suppressBlock).toBe(false)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('a hook tree whose status cannot be read keeps blocking at its pull request head', () => {
+    const { id, tree } = hookTreeHolding()
+    mockGitAndGh({ statusOutput: '', headCommit: 'sha-head', statusExitCode: 128 })
+    try {
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+      )
+
       expect(annotated.inFlightRef).toBe('#88')
       expect(annotated.suppressBlock).toBe(false)
     } finally {

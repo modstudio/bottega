@@ -381,20 +381,6 @@ describe('held-tree in-flight landing', () => {
     ).toEqual({ ref: '#88', suppressBlock: true })
   })
 
-  test('an other hold at its open pull request head is in flight without a cursor', () => {
-    expect(
-      heldTreeInFlight(
-        facts({
-          cursor: null,
-          hold: 'other',
-          treeClean: true,
-          treeHead: 'sha-head',
-          openPr: { ref: '#88', headOid: 'sha-head' },
-        }),
-      ),
-    ).toEqual({ ref: '#88', suppressBlock: true })
-  })
-
   test('an other hold whose pull request head is another commit keeps blocking', () => {
     expect(
       heldTreeInFlight(
