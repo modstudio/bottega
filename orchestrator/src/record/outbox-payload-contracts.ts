@@ -50,7 +50,7 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
   // workflowCursorId is accepted and ignored because queued payloads are frozen.
-  'id spaceId runId workflowKey workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
+  'id spaceId runId workflowKey workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answeredByName answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
 )
 const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
   workflowCursorRecordId: null,
@@ -59,6 +59,8 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
   filedRecordId: null,
   filedLabel: null,
   answerBasis: null,
+  answeredByName: null,
+  overturnedByName: null,
 })
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(

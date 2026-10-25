@@ -3,7 +3,11 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
+import {
+  auditQuestionMutation,
+  authorizeWorkflowQuestionMutation,
+  rulingPersonName,
+} from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
 import { overturnRulingDecision } from './ruling-overturn-authority.ts'
@@ -20,6 +24,7 @@ type OverturnRow = {
   answered_at: string | null
   overturned_at: string | null
   overturned_by: string | null
+  overturned_by_name: string | null
   overturn_reason: string | null
   replacement: string | null
 }
@@ -35,7 +40,7 @@ function refusal(row: OverturnRow): string | null {
   }
   if (decision.code === 'already-overturned') {
     return (
-      `question ${row.number} was already overturned at ${row.overturned_at} by ${row.overturned_by}` +
+      `question ${row.number} was already overturned at ${row.overturned_at} by ${row.overturned_by_name ?? row.overturned_by}` +
       `${row.overturn_reason ? ` because ${row.overturn_reason}` : ''}; ` +
       `review the existing overturn before attempting to overturn it again`
     )
@@ -54,7 +59,7 @@ export function overturnRuling(input: {
     .query(
       `SELECT q.number,q.record_id,q.run_record_id,COALESCE(owner.parent_run_record_id,owner.record_id) root_id,
               q.workflow_cursor_record_id,c.session_id workflow_owner,c.updated_at workflow_updated_at,
-              q.answered_at,q.overturned_at,q.overturned_by,q.overturn_reason,q.replacement
+              q.answered_at,q.overturned_at,q.overturned_by,q.overturned_by_name,q.overturn_reason,q.replacement
          FROM question q LEFT JOIN run owner ON owner.record_id=q.run_record_id
          LEFT JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id WHERE q.record_id=?`,
     )
@@ -78,6 +83,7 @@ export function overturnRuling(input: {
       chainLastActivityAt: Date.parse(row.workflow_updated_at!),
     })
   const at = nowIso()
+  const personName = rulingPersonName(input.fromOperator)
   let overturnedBy = ''
   writeTransaction(() => {
     if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'overturn')
@@ -85,10 +91,10 @@ export function overturnRuling(input: {
     const changed = db()
       .query(
         `UPDATE question
-            SET overturned_at=?,overturned_by=?,overturn_reason=?,replacement=?,revision=revision+1
+            SET overturned_at=?,overturned_by=?,overturned_by_name=?,overturn_reason=?,replacement=?,revision=revision+1
           WHERE record_id=? AND answered_at IS NOT NULL AND overturned_at IS NULL`,
       )
-      .run(at, overturnedBy, input.reason, input.replacement, row.record_id)
+      .run(at, overturnedBy, personName, input.reason, input.replacement, row.record_id)
     if (changed.changes !== 1)
       throw new Error(`question ${row.number} changed before it was overturned`)
     if (row.run_record_id !== null) auditRunMutation(authority!, 'overturn', input.reason)

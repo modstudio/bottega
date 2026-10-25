@@ -99,3 +99,19 @@ test('a K7c-1 question payload syncs and its cursor number is discarded', async 
     local.close()
   }
 })
+
+test('an old-shape question payload without ruling names is accepted', async () => {
+  const { local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    delete payload.answeredByName
+    delete payload.overturnedByName
+  })
+
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+  })
+  local.close()
+})

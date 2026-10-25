@@ -39,6 +39,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../worktree/keep-tree-hold.ts',
       '../mcp/mcp-preflight.ts',
       '../outcome.ts',
+      '../record/record-session.ts',
       '../workflow/autonomy.ts',
       '../workflow/autonomy-scopes.ts',
       './checkpoint.ts',

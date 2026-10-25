@@ -7,6 +7,7 @@ import { closeQuestions } from '../run/question-close.ts'
 import {
   answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
+  rulingPersonName,
   upsertWorkflowQuestion,
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
@@ -958,6 +959,7 @@ export function ruleWorkflow(
         at,
         actor,
         fromOperator,
+        personName: rulingPersonName(fromOperator, { database: d }),
         channel,
         adoptionReason,
       },

@@ -463,7 +463,7 @@ test('multi-question answer mixes positional --q text with per-question --file',
   ).toEqual([{ answer: 'first ruling' }, { answer: 'second ruling' }])
 })
 
-test('multi-question answer attributes only the per-question operator ruling', async () => {
+test("multi-question answer attributes only the per-question person's ruling", async () => {
   const id = insert('asking')
   db()
     .query('UPDATE run SET session_id=?,vendor_session=? WHERE record_id=?')
@@ -486,7 +486,7 @@ test('multi-question answer attributes only the per-question operator ruling', a
         'Agent ruling.',
         `--from-operator-q${operator.number}`,
         `--q${operator.number}`,
-        'Operator ruling.',
+        "Person's ruling.",
       ],
       recordOnly: true,
       flags,
@@ -500,7 +500,7 @@ test('multi-question answer attributes only the per-question operator ruling', a
       .all(id),
   ).toEqual([
     { answer: 'Agent ruling.', answerer_kind: 'agent' },
-    { answer: 'Operator ruling.', answerer_kind: 'operator' },
+    { answer: "Person's ruling.", answerer_kind: 'operator' },
   ])
 })
 
@@ -749,9 +749,9 @@ test('a plain operator answers a run whose owner is gone', async () => {
   db().query(newQuestionSql()).run(id, new Date().toISOString(), 'which?')
   delete process.env.CLAUDE_CODE_SESSION_ID
 
-  await answerRun(id, { argv: ['operator ruling'], recordOnly: true, flags }, helpers)
+  await answerRun(id, { argv: ["person's ruling"], recordOnly: true, flags }, helpers)
   expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(id)).toEqual({
-    answer: 'operator ruling',
+    answer: "person's ruling",
   })
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
     session_id: 'gone-owner',

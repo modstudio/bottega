@@ -84,7 +84,7 @@ Run the local gate on the reviewed branch, push it, and open a GitHub pull reque
 
 ## End
 
-The loop ends when the board is empty or every task left is held by a named operator ruling recorded on that task, or owned by another session's announced sequence. Follow the orch-status skill `CLOSE OUT` section: discard each landed run's worktree, remove its branch, close every landed task still open, and offer a resume brief. A session with unscored runs, unclosed landed tasks, or held worktrees has paused; it has not ended. The Stop hook closes out every terminal tree owned by the session: clean trees and their provisioned resources are released while branches survive; dirty trees and explicit `--keep-tree` holds are named with their resolving command.
+The loop ends when the board is empty or every task left is held by a named person's ruling recorded on that task, or owned by another session's announced sequence. Follow the orch-status skill `CLOSE OUT` section: discard each landed run's worktree, remove its branch, close every landed task still open, and offer a resume brief. A session with unscored runs, unclosed landed tasks, or held worktrees has paused; it has not ended. The Stop hook closes out every terminal tree owned by the session: clean trees and their provisioned resources are released while branches survive; dirty trees and explicit `--keep-tree` holds are named with their resolving command.
 
 # You file it, you fix it
 

@@ -507,6 +507,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/outbox-payload-contracts.ts', ['../verdict/verdict-payload.ts']),
   module('orchestrator/src/record/record-session.ts', [
+    'node:os',
     '../../../shared/record-session.ts',
     '../../../shared/record-remedies.ts',
     '../database/db.ts',

@@ -175,12 +175,12 @@ describe('answer text sources', () => {
         'agent ruling',
         '--from-operator-q265',
         '--q265',
-        'operator ruling',
+        "person's ruling",
       ]),
     ).toEqual({
       byId: [
         { identifier: '264', text: 'agent ruling' },
-        { identifier: '265', text: 'operator ruling' },
+        { identifier: '265', text: "person's ruling" },
       ],
       fromOperatorIds: ['265'],
       commandFile: undefined,

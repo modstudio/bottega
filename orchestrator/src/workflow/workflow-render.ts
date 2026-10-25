@@ -138,7 +138,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
 
 function operatorRulingAutonomy(hasOtherFloor: boolean): string {
   return hasOtherFloor
-    ? `this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`
+    ? `this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put a ruling recorded with \`--from-operator\` with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`
     : `stop and put the ruling to the operator; record the question with \`${PLATFORM_SLUG} workflow await\`.`
 }
 

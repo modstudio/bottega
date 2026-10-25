@@ -16,6 +16,7 @@ import { callerIdentity, db, writableDb, writeTransaction } from '../database/db
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
+import { cachedRecordUserNameOrOs } from '../record/record-session.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -209,6 +210,19 @@ function answeredBy(
 ): string {
   if (operatorAuthorized && fromOperator) return 'operator via hub'
   return rulingActor(fromOperator, callerSession)
+}
+
+function answerAttribution(
+  operatorAuthorized: boolean,
+  answer: Pick<AnsweredQuestion, 'fromOperator'>,
+  callerSession: string | null,
+) {
+  const identity = answeredBy(operatorAuthorized, answer.fromOperator, callerSession)
+  return [
+    identity,
+    answer.fromOperator ? cachedRecordUserNameOrOs() : null,
+    answererKindFromAnsweredBy(identity),
+  ] as const
 }
 
 function requireAnswerAuthority(
@@ -869,7 +883,7 @@ export async function answerRun(
   const now = new Date(Date.now()).toISOString()
   const upd = db().query(
     `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?, revision=revision+1,
+      SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE record_id=?`,
   )
@@ -879,16 +893,15 @@ export async function answerRun(
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
     answers.forEach((answer) => {
-      const answeringIdentity = answeredBy(
+      const attribution = answerAttribution(
         authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
-        answer.fromOperator,
+        answer,
         callerSession,
       )
       upd.run(
         answer.answer,
         now,
-        answeringIdentity,
-        answererKindFromAnsweredBy(answeringIdentity),
+        ...attribution,
         input.channel,
         ownersLive ? null : now,
         answer.record_id,
@@ -999,7 +1012,7 @@ export async function answerRun(
         db()
           .query(
             `UPDATE question
-            SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
+            SET answer=NULL, answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
                 revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE record_id=?`,

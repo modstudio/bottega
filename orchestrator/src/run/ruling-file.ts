@@ -87,9 +87,11 @@ type QuestionRow = {
   answer_basis: string | null
   answered_at: string | null
   answered_by: string | null
+  answered_by_name: string | null
   answerer_kind: string | null
   overturned_at: string | null
   overturned_by: string | null
+  overturned_by_name: string | null
   replacement: string | null
   filed_as: string | null
   filed_ref: string | null
@@ -209,7 +211,8 @@ function loadQuestion(questionId: string): QuestionRow {
               q.workflow_cursor_record_id,c.number workflow_cursor_number,c.workflow_slug,c.mode_slug,c.session_id workflow_owner,
               c.updated_at workflow_updated_at,
               q.question, q.answer, q.answer_basis,
-              q.answered_at, q.answered_by, q.answerer_kind, q.overturned_at, q.overturned_by,
+              q.answered_at, q.answered_by, q.answered_by_name, q.answerer_kind,
+              q.overturned_at, q.overturned_by, q.overturned_by_name,
               q.replacement, q.filed_as, q.filed_ref, q.filed_record_id, q.filed_label, q.filed_at,
               COALESCE(r.repo,c.project) repo, COALESCE(r.cwd,p.path) cwd,c.args,
               COALESCE(r.launch_key,q.workflow_key) launch_key,p.path project_path
@@ -232,6 +235,16 @@ function answererKind(row: QuestionRow): string | null {
   }
   return row.answerer_kind
 }
+
+function answererDisplay(row: QuestionRow): string | null {
+  if (row.overturned_at !== null) return row.overturned_by_name ?? row.overturned_by
+  return row.answered_by_name ?? row.answered_by
+}
+
+const answererAttribution = (row: QuestionRow) => ({
+  answererKind: answererKind(row),
+  answererName: answererDisplay(row),
+})
 
 function docSubject(
   scope: FilingDocScope,
@@ -402,7 +415,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     question: row.question,
     ruling,
     basis: row.replacement === null ? row.answer_basis : null,
-    answererKind: answererKind(row),
+    ...answererAttribution(row),
     runId: row.run_record_id,
     runRecordId: row.run_record_id,
     workflow:

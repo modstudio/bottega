@@ -54,6 +54,7 @@ export function recordWorkflowSelfRuling(
       at,
       actor: sessionId(),
       fromOperator: false,
+      personName: null,
       channel: input.selfRuling.channel,
     },
     database,

@@ -18,6 +18,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     '../../../shared/record-id.ts',
     '../caller-classification.ts',
     '../database/db.ts',
+    '../record/record-session.ts',
     './question-number.ts',
     './question-open.ts',
     './question-outbox.ts',

@@ -5,6 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
+import { cachedRecordUserNameOrOs } from '../record/record-session.ts'
 import { nextQuestionNumber } from './question-number.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -21,6 +22,14 @@ import type { SessionProcessProbe } from './session-liveness-adapter.ts'
 import { sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
 export type QuestionMutationAction = 'rule' | 'overturn' | 'file' | 'close'
+
+export function rulingPersonName(
+  fromOperator: boolean,
+  input: { database?: Database; machineUsername?: () => string } = {},
+): string | null {
+  if (!fromOperator) return null
+  return cachedRecordUserNameOrOs(input.database ?? db(), input.machineUsername)
+}
 
 export function authorizeWorkflowQuestionMutation(input: {
   owner: string | null
@@ -170,6 +179,7 @@ export function answerWorkflowQuestion(
     at: string
     actor: string | null
     fromOperator: boolean
+    personName: string | null
     channel: 'cli' | 'mcp'
     adoptionReason?: string | null
   },
@@ -177,7 +187,7 @@ export function answerWorkflowQuestion(
 ): void {
   const changed = database
     .query(
-      `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
+      `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answered_by_name=?,answerer_kind=?,answer_channel=?,
         revision=revision+1
        WHERE record_id=? AND workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
@@ -186,6 +196,7 @@ export function answerWorkflowQuestion(
       input.basis ?? null,
       input.at,
       rulingActor(input.fromOperator, input.actor),
+      input.personName,
       input.fromOperator ? 'operator' : 'agent',
       input.channel,
       input.questionId,

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { userInfo } from 'node:os'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
@@ -38,10 +39,13 @@ describe('overturn ruling', () => {
 
     expect(
       db()
-        .query(`SELECT overturned_by,overturn_reason,replacement FROM question WHERE record_id=?`)
+        .query(
+          `SELECT overturned_by,overturned_by_name,overturn_reason,replacement FROM question WHERE record_id=?`,
+        )
         .get(question.record_id),
     ).toEqual({
       overturned_by: 'operator via owner-session',
+      overturned_by_name: userInfo().username,
       overturn_reason: 'New evidence contradicted it.',
       replacement: 'Use the replacement.',
     })

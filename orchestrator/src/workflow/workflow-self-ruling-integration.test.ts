@@ -292,7 +292,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
   })
 })
 
-test('self-ruling refuses an operator-ruling floor without changing durable state', () => {
+test("self-ruling refuses a person's-ruling floor without changing durable state", () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -302,13 +302,13 @@ test('self-ruling refuses an operator-ruling floor without changing durable stat
         step.slug === 'ship-triage' ? { ...step, operatorRuling: true } : step,
       ),
     },
-    'operator-ruling fixture',
+    "person's-ruling fixture",
     'test',
     d,
   )
-  promoteStepCatalogueLocal(catalogue.n, 'publish operator-ruling fixture', 'test', d)
+  promoteStepCatalogueLocal(catalogue.n, "publish person's-ruling fixture", 'test', d)
   openAtRuling(d)
-  expect(() => selfRule(d)).toThrow(/requires an operator ruling.*--from-operator/)
+  expect(() => selfRule(d)).toThrow(/requires a ruling recorded with --from-operator/)
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
     ordinal: 3,
     step_slug: 'ship-triage',
