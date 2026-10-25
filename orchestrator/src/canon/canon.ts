@@ -9,7 +9,9 @@ import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../database/db.ts'
-import { type Doc, docsForRun, docsMarkdown, listDocs } from '../doc/docs.ts'
+import { isDocInjectedForRun } from '../doc/doc-injection.ts'
+import { type Doc, docsForRun, listDocs } from '../doc/docs.ts'
+import { type GateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { DEFAULT_PACK_BYTES, job as getJob, JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
@@ -310,7 +312,7 @@ function joinPackSections(...sections: string[]): string {
   return sections.filter((section) => section.length > 0).join('\n\n')
 }
 
-function contextIndexMarkdown(rows: Doc[]): string {
+function contextIndexMarkdown(rows: Pick<Doc, 'slug' | 'body'>[]): string {
   if (!rows.length) return ''
   const lines = rows.map((row) => {
     const meta = canonFrontmatter(row.body)
@@ -322,14 +324,16 @@ function contextIndexMarkdown(rows: Doc[]): string {
 }
 
 /** Always-on bodies plus a context index; cards, references, and aliases are omitted. */
-function packedCanonMarkdown(projectName: string | null): {
+function packedCanonMarkdownFromRows(
+  projectName: string | null,
+  globalRows: Pick<Doc, 'subject' | 'slug' | 'body'>[],
+  projectRows: Pick<Doc, 'subject' | 'slug' | 'body'>[],
+): {
   markdown: string
   alwaysOnBytes: number
   contextIndexBytes: number
 } {
   if (!projectName) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
-  const globalRows = listDocs({ scope: 'canon', subject: null, status: 'current' })
-  const projectRows = listDocs({ scope: 'canon', subject: projectName, status: 'current' })
   const rows = composeCanonRows(globalRows, [], projectRows)
   if (!rows.length) return { markdown: '', alwaysOnBytes: 0, contextIndexBytes: 0 }
   const classified = rows.map((row) => ({
@@ -356,6 +360,61 @@ function packedCanonMarkdown(projectName: string | null): {
   }
 }
 
+function packedCanonMarkdown(projectName: string | null) {
+  return packedCanonMarkdownFromRows(
+    projectName,
+    listDocs({ scope: 'canon', subject: null, status: 'current' }),
+    listDocs({ scope: 'canon', subject: projectName, status: 'current' }),
+  )
+}
+
+type PackInputDoc = {
+  revisionId: string
+  scope: string
+  subject: string | null
+  slug: string
+  title: string
+  body: string
+}
+
+function assemblePack(input: {
+  job: string
+  projectName: string | null
+  selected: PackInputDoc[]
+  canon: ReturnType<typeof packedCanonMarkdownFromRows>
+  budgetBytes: number
+}): Pack {
+  const operatorMarkdown = input.selected
+    .map((doc) => `## ${doc.title}\n\n${doc.body}`)
+    .join('\n\n')
+  const docs = input.selected.map((doc) => ({
+    revisionId: doc.revisionId,
+    scope: doc.scope,
+    subject: doc.subject,
+    slug: doc.slug,
+    title: doc.title,
+    bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
+  }))
+  const markdown = joinPackSections(input.canon.markdown, operatorMarkdown)
+  const bytes = Buffer.byteLength(markdown)
+  const docBytes = Buffer.byteLength(operatorMarkdown)
+  const pack: Pack = {
+    job: input.job,
+    project: input.projectName,
+    docs,
+    markdown,
+    bytes,
+    canonBytes: bytes - docBytes,
+    docBytes,
+    budgetBytes: input.budgetBytes,
+    sha256: createHash('sha256').update(markdown).digest('hex'),
+  }
+  if (bytes > input.budgetBytes) {
+    throw new CanonBudgetError(pack, input.canon.alwaysOnBytes, input.canon.contextIndexBytes)
+  }
+  return pack
+}
+
 function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
   const project = projectAt(cwd)
   const selected = docsForRun({ job, cwd })
@@ -371,39 +430,41 @@ function buildPack(job: string, cwd: string, budgetBytes: number): Pack {
       )
     return { doc, revisionId }
   })
-  const operatorMarkdown = docsMarkdown(withRevisions.map(({ doc }) => doc))
-  const docs = withRevisions.map(({ doc, revisionId }) => ({
-    revisionId,
-    scope: doc.scope,
-    subject: doc.subject,
-    slug: doc.slug,
-    title: doc.title,
-    bytes: Buffer.byteLength(`## ${doc.title}\n\n${doc.body}`),
-  }))
   const canon = packedCanonMarkdown(project?.name ?? null)
-  const markdown = joinPackSections(canon.markdown, operatorMarkdown)
-  const bytes = Buffer.byteLength(markdown)
-  const docBytes = Buffer.byteLength(operatorMarkdown)
-  const pack: Pack = {
+  return assemblePack({
     job,
-    project: project?.name ?? null,
-    docs,
-    markdown,
-    bytes,
-    canonBytes: bytes - docBytes,
-    docBytes,
+    projectName: project?.name ?? null,
+    selected: withRevisions.map(({ doc, revisionId }) => ({ ...doc, revisionId })),
+    canon,
     budgetBytes,
-    sha256: createHash('sha256').update(markdown).digest('hex'),
-  }
-  if (bytes > budgetBytes) {
-    throw new CanonBudgetError(pack, canon.alwaysOnBytes, canon.contextIndexBytes)
-  }
-  return pack
+  })
 }
 
 export function compilePack(input: { job: string; cwd: string }): Pack {
   const selected = getJob(input.job)
   return buildPack(input.job, input.cwd, selected.packBytes ?? DEFAULT_PACK_BYTES)
+}
+
+export function compilePackFromGateFacts(
+  input: { job: string; cwd: string },
+  facts: GateFacts,
+): Pack {
+  const selectedJob = getJob(input.job)
+  const project = projectAtGateFacts(input.cwd, facts)
+  const projectName = project?.name ?? null
+  const selected = facts.docs.filter((doc) => isDocInjectedForRun(doc, input.job, projectName))
+  const canon = packedCanonMarkdownFromRows(
+    projectName,
+    facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === null),
+    facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === projectName),
+  )
+  return assemblePack({
+    job: input.job,
+    projectName,
+    selected,
+    canon,
+    budgetBytes: selectedJob.packBytes ?? DEFAULT_PACK_BYTES,
+  })
 }
 
 function tracked(root: string): Set<string> | null {

@@ -53,6 +53,12 @@ export const FROZEN_STATE_NAMES = {
   runsDirectory: 'runs',
 } as const
 
+/** Environment names are process protocol and share the brand's rename boundary. */
+export const FROZEN_ENV_NAMES = {
+  mainCheckout: 'BOTTEGA_MAIN_CHECKOUT',
+  gateFacts: 'BOTTEGA_GATE_FACTS',
+} as const
+
 /**
  * The concerns, which are the reason this is a platform rather than a tool.
  *

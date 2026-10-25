@@ -26,6 +26,7 @@ upkeep of this machine
 - [bottega machine config set](#bottega-machine-config-set)
 - [bottega machine doctor](#bottega-machine-doctor)
 - [bottega machine efficiency](#bottega-machine-efficiency)
+- [bottega machine gate-facts](#bottega-machine-gate-facts)
 - [bottega machine health](#bottega-machine-health)
 - [bottega machine legacy-calls](#bottega-machine-legacy-calls)
 - [bottega machine migrate](#bottega-machine-migrate)
@@ -81,6 +82,7 @@ upkeep of this machine
 - [bottega machine config](./machine.md#bottega-machine-config)
 - [bottega machine doctor](./machine.md#bottega-machine-doctor)
 - [bottega machine efficiency](./machine.md#bottega-machine-efficiency)
+- [bottega machine gate-facts](./machine.md#bottega-machine-gate-facts)
 - [bottega machine health](./machine.md#bottega-machine-health)
 - [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
 - [bottega machine migrate](./machine.md#bottega-machine-migrate)
@@ -376,6 +378,20 @@ report orchestration efficiency; median is nearest-rank 50th percentile
 - `--section <name>`: print one section; repeat to select more
 - `--project <name>`: limit project-keyed evidence to one project
 - `--json`: write the report as JSON
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine gate-facts
+
+**Synopsis:** `bottega machine gate-facts [--out <path>]`
+
+write branch-stable gate facts
+
+### Options
+
+- `--out <path>`: write the gate-facts JSON to this path
 
 ### Related
 

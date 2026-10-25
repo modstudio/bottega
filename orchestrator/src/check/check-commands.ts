@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
 import { flagValue } from '../cli/args.ts'
+import { GATE_FACTS_ENV, parseGateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'
 import {
   formatAttributionFinding,
@@ -26,7 +27,15 @@ type Presentation = {
 
 function selectedProject(argv: string[], cwd: string): Project {
   const name = flagValue(argv, 'project')
-  const project = name ? projectByName(name) : projectAt(cwd)
+  const snapshot = process.env[GATE_FACTS_ENV]
+  const facts = snapshot ? parseGateFacts(readFileSync(snapshot, 'utf8')) : null
+  const project = facts
+    ? name
+      ? (facts.projects.find((candidate) => candidate.name === name) ?? null)
+      : projectAtGateFacts(cwd, facts)
+    : name
+      ? projectByName(name)
+      : projectAt(cwd)
   if (!project) {
     throw new Error(
       name

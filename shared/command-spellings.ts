@@ -144,6 +144,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine config set',
   'machine doctor',
   'machine efficiency',
+  'machine gate-facts',
   'machine health',
   'machine legacy-calls',
   'machine migrate',

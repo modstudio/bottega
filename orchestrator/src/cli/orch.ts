@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { FROZEN_ENV_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
@@ -61,7 +61,10 @@ export function isHelpShapedInvocation(argv: string[]): boolean {
 }
 
 /** Informational commands that neither need nor stamp the orchestrator store. */
-export function isStoreFreeInvocation(argv: string[]): boolean {
+export function isStoreFreeInvocation(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
   return (
     isHelpShapedInvocation(argv) ||
     (argv[0] === 'record' && argv[1] === 'use') ||
@@ -73,8 +76,19 @@ export function isStoreFreeInvocation(argv: string[]): boolean {
     (argv[0] === 'setup' && argv[1] === 'facts') ||
     (argv[0] === 'test-substance' && argv[1] === 'judge') ||
     (argv[0] === 'hub-import' && argv[1] === 'judge') ||
-    (argv[0] === 'release' && argv[1] === 'check')
+    (argv[0] === 'release' && argv[1] === 'check') ||
+    (argv[0] === 'gate' &&
+      argv[1] === 'check' &&
+      argv.includes('--enabled') &&
+      Boolean(env[FROZEN_ENV_NAMES.gateFacts]))
   )
+}
+
+export function storeFreeInvocationArgv(
+  argv: string[],
+  invocation?: PublicCommandInvocation,
+): string[] {
+  return invocation ? [...invocation.publicPath, ...argv.slice(invocation.ownerPath.length)] : argv
 }
 
 async function degradedCollection(argv: string[], error: unknown): Promise<number> {
@@ -101,13 +115,21 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
 }
 
 export async function main(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
-  return cliEntry(argv, (args, storeFree) => fullCli(args, storeFree, invocation))
+  return cliEntry(argv, (args, storeFree) => fullCli(args, storeFree, invocation), invocation)
 }
 
 type FullCliEntry = (argv: string[], storeFree: boolean) => Promise<number>
 
-async function cliEntry(argv: string[], enterFullCli: FullCliEntry): Promise<number> {
-  const storeFree = isStoreFreeInvocation(argv)
+async function cliEntry(
+  argv: string[],
+  enterFullCli: FullCliEntry,
+  invocation?: PublicCommandInvocation,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<number> {
+  const storeFree =
+    isStoreFreeInvocation(argv, env) ||
+    (invocation !== undefined &&
+      isStoreFreeInvocation(storeFreeInvocationArgv(argv, invocation), env))
   if (argv.length === 1 && argv[0] === '--version') return versionCommand()
   if (argv[0] === 'init-db' && !storeFree) return initDatabaseCommand(argv)
   try {
@@ -123,8 +145,13 @@ async function cliEntry(argv: string[], enterFullCli: FullCliEntry): Promise<num
 }
 
 /** Test-only seam proving the executable entry passes store freedom into CLI loading. */
-export function runCliEntryForTest(argv: string[], enterFullCli: FullCliEntry): Promise<number> {
-  return cliEntry(argv, enterFullCli)
+export function runCliEntryForTest(
+  argv: string[],
+  enterFullCli: FullCliEntry,
+  invocation?: PublicCommandInvocation,
+  env?: NodeJS.ProcessEnv,
+): Promise<number> {
+  return cliEntry(argv, enterFullCli, invocation, env)
 }
 
 /** Structured owner output for the product front door's composite outbox listing. */

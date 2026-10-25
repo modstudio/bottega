@@ -5,12 +5,19 @@ import type { Command } from 'commander'
 import { migrateCommand, reconcileCommand } from '../database/database-commands.ts'
 import { db } from '../database/db.ts'
 import { machineUpdateCommand } from '../database/machine-update.ts'
+import { writeGateFacts } from '../gate/gate-facts.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 
 export function registerDatabaseCommands(
   program: Command,
   presentation: { log(value: string): void },
 ): void {
+  program
+    .command('gate-facts')
+    .description('write the branch-stable facts consumed by machine-dependent gate legs')
+    .requiredOption('--out <path>', 'write the gate-facts JSON to this path')
+    .allowExcessArguments(false)
+    .action((options) => writeGateFacts(options.out))
   program
     .command('update')
     .description('fetch, drain when required, and update the registered main checkout')

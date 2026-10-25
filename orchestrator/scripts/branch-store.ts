@@ -1,16 +1,36 @@
 import { Database } from 'bun:sqlite'
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES } from '../../shared/brand.ts'
+import {
+  FROZEN_ENV_NAMES,
+  FROZEN_STATE_NAMES,
+  PLATFORM_NAME,
+  PLATFORM_SLUG,
+} from '../../shared/brand.ts'
 import { DATABASE_RESOLUTION } from '../src/database/database-location.ts'
 import {
   applyMigrations,
   MIGRATIONS_FOLDER,
   storeMigrationState,
 } from '../src/database/migrations.ts'
+import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
+import { assertGateFactsFormat } from '../src/gate/gate-facts-contract.ts'
 
 export type BranchStoreKind = 'current' | 'behind' | 'ahead' | 'absent'
+
+export type GateStoreSource =
+  | { kind: 'existing'; storeKind: Exclude<BranchStoreKind, 'ahead'> }
+  | { kind: 'gate-facts' }
+  | { kind: 'refuse' }
+
+export function gateStoreSource(
+  storeKind: BranchStoreKind,
+  snapshotAvailable: boolean,
+): GateStoreSource {
+  if (storeKind !== 'ahead') return { kind: 'existing', storeKind }
+  return snapshotAvailable ? { kind: 'gate-facts' } : { kind: 'refuse' }
+}
 
 export function classifyStore(path: string | null, folder = MIGRATIONS_FOLDER): BranchStoreKind {
   if (!path || !existsSync(path)) return 'absent'
@@ -45,6 +65,65 @@ export function withBranchStoreScratch<T>(name: string, fn: (dir: string) => T):
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+}
+
+export type GateFactsSnapshot = { path: string; elapsedMs: number }
+
+function mainGateFactsSnapshot(dir: string): GateFactsSnapshot {
+  const main = process.env[FROZEN_ENV_NAMES.mainCheckout]
+  if (!main) {
+    throw new Error(
+      `${FROZEN_ENV_NAMES.mainCheckout} is unset; remedy: run the gate from a ${PLATFORM_NAME}-managed worktree carrying its main-checkout path`,
+    )
+  }
+  const path = join(dir, 'gate-facts.json')
+  const started = performance.now()
+  const env = { ...process.env }
+  delete env[GATE_FACTS_ENV]
+  const child = Bun.spawnSync(
+    [join(main, 'bin', PLATFORM_SLUG), 'machine', 'gate-facts', '--out', path],
+    {
+      env,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
+  const elapsedMs = performance.now() - started
+  if (child.exitCode !== 0) {
+    const detail = child.stderr.toString().trim() || child.stdout.toString().trim()
+    throw new Error(
+      `the main checkout could not write gate facts (exit ${child.exitCode ?? 1})${detail ? `: ${detail}` : ''}; remedy: run ${join(main, 'bin', PLATFORM_SLUG)} machine update, then retry the gate`,
+    )
+  }
+  try {
+    assertGateFactsFormat(readFileSync(path, 'utf8'))
+  } catch (cause) {
+    throw new Error(
+      `${String((cause as Error).message ?? cause)}; remedy: update this branch to a gate-facts format it understands, then retry the gate`,
+    )
+  }
+  return { path, elapsedMs }
+}
+
+export function withMainGateFactsSnapshot<T>(
+  storeKind: BranchStoreKind,
+  dir: string,
+  onUnavailable: (cause: unknown) => T,
+  run: (snapshot: GateFactsSnapshot) => T,
+): T {
+  let snapshot: GateFactsSnapshot | null = null
+  let snapshotError: unknown
+  try {
+    snapshot = mainGateFactsSnapshot(dir)
+  } catch (cause) {
+    snapshotError = cause
+  }
+  const source = gateStoreSource(storeKind, snapshot !== null)
+  if (source.kind === 'refuse') return onUnavailable(snapshotError)
+  if (source.kind !== 'gate-facts' || snapshot === null) {
+    throw new Error(`gate-facts snapshot requested for ${storeKind} store`)
+  }
+  return run(snapshot)
 }
 
 export function snapshotStore(source: string, destDir: string): string {
