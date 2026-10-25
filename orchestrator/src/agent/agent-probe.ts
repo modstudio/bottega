@@ -175,10 +175,11 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 /** Prove capabilities before routing spends a worktree discovering them. */
 export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
 
-async function withOpenRouterKeyBudget(
+async function recordBudgetProbe(
+  name: string,
   row: AgentRow,
   result: RegistrationProbeResult,
-): Promise<{ result: RegistrationProbeResult; billingHold: boolean }> {
+): Promise<RegistrationProbeResult> {
   const projection = openRouterProbeBudget(
     await checkOpenRouterKeyBudget({
       baseUrl: row.base_url,
@@ -186,24 +187,18 @@ async function withOpenRouterKeyBudget(
       billing: row.billing,
     }),
   )
-  return {
-    result: projection.budget ? { ...result, budget: projection.budget } : result,
+  const checked = {
+    ...result,
+    ...(projection.budget ? { budget: projection.budget } : {}),
     billingHold: projection.billingHold,
+    ...(projection.refusal ? { refusal: projection.refusal } : {}),
   }
-}
-
-async function recordBudgetProbe(
-  name: string,
-  row: AgentRow,
-  result: RegistrationProbeResult,
-): Promise<RegistrationProbeResult> {
-  const checked = await withOpenRouterKeyBudget(row, result)
-  recordAgentProbe(name, checked.result)
-  if (checked.billingHold && checked.result.budget?.kind === 'exhausted') {
-    const hold = billingHoldForFailure('billing', name, checked.result.budget.refusal)!
+  recordAgentProbe(name, checked)
+  if (checked.billingHold) {
+    const hold = billingHoldForFailure('billing', name, checked.refusal)!
     setAgent(name, { enabled: false, reason: hold.disabledReason })
   }
-  return checked.result
+  return checked
 }
 
 /**

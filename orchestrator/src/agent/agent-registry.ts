@@ -500,5 +500,7 @@ export type RegistrationProbeResult = {
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null
   budget?: OpenRouterRecordedBudget
+  billingHold?: boolean
+  refusal?: string
   attempts?: { harness: string; result: unknown }[]
 }

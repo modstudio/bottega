@@ -125,6 +125,7 @@ export async function checkOpenRouterKeyBudget(
 export function openRouterProbeBudget(decision: OpenRouterKeyBudgetDecision): {
   budget?: OpenRouterRecordedBudget
   billingHold: boolean
+  refusal?: string
 } {
   if (decision.kind === 'not-applicable') return { billingHold: false }
   if (decision.kind === 'unknown') {
@@ -134,25 +135,12 @@ export function openRouterProbeBudget(decision: OpenRouterKeyBudgetDecision): {
     }
   }
   if (decision.kind === 'exhausted') {
+    const refusal = openRouterKeyBudgetRefusal(decision)
     return {
-      budget: { ...decision, refusal: openRouterKeyBudgetRefusal(decision) },
+      budget: { ...decision, refusal },
       billingHold: true,
+      refusal,
     }
   }
   return { budget: decision, billingHold: false }
-}
-
-/** Replace only an auth failure proved to be an exhausted OpenRouter key. */
-export function applyOpenRouterBudgetToAuthFailure<T extends string | null>(
-  failureKind: T,
-  error: string | null,
-  decision: OpenRouterKeyBudgetDecision,
-): { failureKind: T | 'billing'; error: string | null; billingHoldDetail?: string } {
-  if (failureKind !== 'auth' || decision.kind !== 'exhausted') return { failureKind, error }
-  const refusal = openRouterKeyBudgetRefusal(decision)
-  return {
-    failureKind: 'billing',
-    error: error ? `${error}\n${refusal}` : refusal,
-    billingHoldDetail: refusal,
-  }
 }

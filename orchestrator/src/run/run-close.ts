@@ -76,6 +76,7 @@ type SuccessorOptions = {
 
 export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
+  billingHoldDetail?: string
   name: string
   opts: CloseOptions
   claim: { id: string; number: number }
@@ -211,13 +212,18 @@ async function selectFailoverSuccessor(input: {
 
 function notifyFailureRequiringHuman(input: {
   failureKind: ReturnType<typeof classify> | null
+  billingHoldDetail?: string
   name: string
   job: string
   idleUnkillable: boolean
   runId: string
 }): void {
   if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
-    const billingHold = billingHoldForFailure(input.failureKind, input.name)
+    const billingHold = billingHoldForFailure(
+      input.failureKind,
+      input.name,
+      input.billingHoldDetail,
+    )
     const routingRemedy = billingHold
       ? `Routing will avoid it: ${billingHold.disabledReason}.`
       : 'Routing will avoid it until it succeeds again.'
@@ -267,6 +273,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
   } = input
   notifyFailureRequiringHuman({
     failureKind,
+    billingHoldDetail: input.billingHoldDetail,
     name,
     job: opts.job,
     idleUnkillable,

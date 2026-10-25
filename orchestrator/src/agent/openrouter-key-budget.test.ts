@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import {
-  applyOpenRouterBudgetToAuthFailure,
   checkOpenRouterKeyBudget,
   openRouterKeyBudgetDecision,
   openRouterKeyBudgetRefusal,
@@ -9,7 +8,6 @@ import {
 
 const exactExhaustedResponse = {
   data: {
-    label: 'must-not-appear',
     limit: 250,
     limit_reset: 'weekly',
     limit_remaining: 0,
@@ -139,19 +137,15 @@ test('probe projection records each applicable verdict and holds only exhaustion
   expect(openRouterProbeBudget(exhausted)).toEqual({
     budget: { ...exhausted, refusal: openRouterKeyBudgetRefusal(exhausted) },
     billingHold: true,
+    refusal: openRouterKeyBudgetRefusal(exhausted),
   })
 })
 
-test('the exhaustion refusal names amounts and reset without response secrets', () => {
+test('the exhaustion refusal names the amounts and the reset time', () => {
   const decision = openRouterKeyBudgetDecision(exactExhaustedResponse)
   if (decision.kind !== 'exhausted') throw new Error('fixture must be exhausted')
   const refusal = openRouterKeyBudgetRefusal(decision)
   expect(refusal).toContain('weekly limit of $250')
   expect(refusal).toContain('used ($250.02)')
   expect(refusal).toContain('2026-10-26T00:00:00.000Z')
-  expect(applyOpenRouterBudgetToAuthFailure('auth', 'Authentication required', decision)).toEqual({
-    failureKind: 'billing',
-    error: `Authentication required\n${refusal}`,
-    billingHoldDetail: refusal,
-  })
 })

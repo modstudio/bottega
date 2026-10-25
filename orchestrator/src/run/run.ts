@@ -7,10 +7,7 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
-import {
-  applyOpenRouterBudgetToAuthFailure,
-  checkOpenRouterKeyBudget,
-} from '../agent/openrouter-key-budget.ts'
+import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
@@ -31,7 +28,7 @@ import {
 } from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
-import { type classify, notify } from '../failure/failure.ts'
+import { applyOpenRouterBudgetToAuthFailure, type classify, notify } from '../failure/failure.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
@@ -1101,6 +1098,7 @@ export async function run(opts: {
       }
       return await closeRun({
         failureKind,
+        billingHoldDetail,
         name,
         opts,
         claim,

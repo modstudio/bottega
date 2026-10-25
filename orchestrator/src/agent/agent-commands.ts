@@ -146,12 +146,10 @@ async function probeCommand(
     path: process.env.PATH,
     environment: process.env,
   })
-  const exhaustedBudget = result.budget?.kind === 'exhausted' ? result.budget : null
-  const billingHold = exhaustedBudget !== null
-  if (result.ok && !billingHold) recordSuccessfulRegistrationProbe(name)
+  if (result.ok && !result.billingHold) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))
-  if (exhaustedBudget) presentation.log(exhaustedBudget.refusal)
-  if (!result.ok || billingHold) presentation.setExitCode(1)
+  if (result.refusal) presentation.log(result.refusal)
+  if (!result.ok || result.billingHold) presentation.setExitCode(1)
 }
 
 function showCommand(name: string, presentation: Presentation): void {
