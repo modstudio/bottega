@@ -275,7 +275,7 @@ describe('hosted promotion title', () => {
 
   beforeEach(resetFixtureStore)
 
-  type Seen = { host: string; path: string; space: string | null; body: unknown }
+  type Seen = { path: string; body: unknown }
 
   /** A hosted hub whose promote route returns the task titled as given. */
   function hostedPromotionStub(note: { id: string; number: number; text: string }, title: string) {
@@ -309,7 +309,11 @@ describe('hosted promotion title', () => {
           { spaceId: 'space-a', slug: 'active', permission: 'write' },
           { spaceId: 'space-gamma', slug: 'declared-gamma-space', permission: 'write' },
         ],
-        capabilities: { targetSpaceNotes: true },
+        capabilities: {
+          targetSpaceNotes: true,
+          spacePush: true,
+          spacePushTables: ['hub_task'],
+        },
       })
     const promoted = () =>
       Response.json({
@@ -340,9 +344,7 @@ describe('hosted promotion title', () => {
         const url = new URL(input)
         const body = init?.body ? JSON.parse(String(init.body)) : null
         seen.push({
-          host: url.host,
           path: url.pathname,
-          space: new Headers(init?.headers).get('x-record-space'),
           body,
         })
         if (url.pathname === '/v1/tasks/identity') return identity()
