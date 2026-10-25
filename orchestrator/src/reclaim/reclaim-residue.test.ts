@@ -24,7 +24,14 @@ describe('guarded residue reclaim', () => {
 
   for (const kind of ['ref-guard', 'retained-ref'] as const) {
     test(`${kind} refuses a subject project that differs from the recorded run project`, () => {
-      const runId = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: 'alpha' })
+      const runId = addRun({
+        agent: 'codex',
+        job: 'implement',
+        status: 'ok',
+        repo: 'alpha',
+        taskRecordId: 'fixture-task',
+        projectRecordId: null,
+      })
 
       const result = reclaimResidue(kind, `beta:${runId}`, { dryRun: true })
 

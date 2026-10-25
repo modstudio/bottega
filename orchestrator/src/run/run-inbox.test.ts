@@ -362,13 +362,17 @@ test('inbox treats an empty-string exclusion as voided, matching VOIDED_SQL', as
   )
 })
 test('bare project inbox includes its questions and this session questions from other projects', async () => {
-  upsertProject({ recordId: newRecordId(), name: 'here', path: process.cwd() })
+  const hereProject = newRecordId()
+  const elsewhereProject = newRecordId()
+  upsertProject({ recordId: hereProject, name: 'here', path: process.cwd() })
+  upsertProject({ recordId: elsewhereProject, name: 'elsewhere', path: '/elsewhere' })
   const here = addRun({
     agent: 'codex',
     job: 'implement',
     status: 'asking',
     session: 'foreign',
     repo: 'here',
+    projectRecordId: hereProject,
   })
   const foreignElsewhere = addRun({
     agent: 'codex',
@@ -376,6 +380,7 @@ test('bare project inbox includes its questions and this session questions from 
     status: 'asking',
     session: 'foreign',
     repo: 'elsewhere',
+    projectRecordId: elsewhereProject,
   })
   const ownElsewhere = addRun({
     agent: 'codex',
@@ -383,6 +388,7 @@ test('bare project inbox includes its questions and this session questions from 
     status: 'asking',
     session: 'orch-test-session',
     repo: 'elsewhere',
+    projectRecordId: elsewhereProject,
   })
   question(here, 'here?')
   question(foreignElsewhere, 'foreign elsewhere?')

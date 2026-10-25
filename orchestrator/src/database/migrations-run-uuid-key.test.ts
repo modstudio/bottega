@@ -4,7 +4,10 @@ import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
-import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
+import {
+  fixtureProjectRecordId,
+  migrationBoundaryTestDatabase,
+} from './test-database.fixture.ts'
 
 migrationBoundaryTestDatabase('0124_run_uuid_key').close()
 migrationBoundaryTestDatabase('0125_question_uuid_key').close()
@@ -486,10 +489,10 @@ test('run number allocation starts after every previously issued number and neve
     const reservedId = newRecordId()
     database
       .query(
-        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (?,?, '2026-10-18','(pending)','implement','sha',1,'prompt','running')`,
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+         VALUES (?,?, '2026-10-18','(pending)','implement','sha',1,'prompt','running',?)`,
       )
-      .run(reservedId, nextRunNumber(database))
+      .run(reservedId, nextRunNumber(database), fixtureProjectRecordId(database))
     expect(database.query('SELECT number FROM run WHERE record_id=?').get(reservedId)).toEqual({
       number: 51,
     })
@@ -498,10 +501,10 @@ test('run number allocation starts after every previously issued number and neve
     const nextId = newRecordId()
     database
       .query(
-        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (?,?, '2026-10-18','codex','implement','sha',1,'prompt','running')`,
+        `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+         VALUES (?,?, '2026-10-18','codex','implement','sha',1,'prompt','running',?)`,
       )
-      .run(nextId, nextRunNumber(database))
+      .run(nextId, nextRunNumber(database), fixtureProjectRecordId(database))
     expect(database.query('SELECT number FROM run WHERE record_id=?').get(nextId)).toEqual({
       number: 52,
     })

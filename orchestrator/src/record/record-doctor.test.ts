@@ -272,9 +272,9 @@ describe('record doctor decisions', () => {
     database
       .query(
         `INSERT INTO run
-         (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+         (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,task_record_id)
          VALUES (1,'01990000-0000-7000-8000-000000000001','2026-09-25','codex','implement',
-                 'sha',3,'ask','asking')`,
+                 'sha',3,'ask','asking','fixture-task')`,
       )
       .run()
     database

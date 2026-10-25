@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, applyMigrationsBefore, migrationJournal } from './migrations.ts'
 
@@ -41,9 +42,9 @@ export function fixtureProjectRecordId(database: Database): string {
   database
     .query(
       `INSERT INTO project (record_id,name,path,canon,settings)
-       VALUES (?,'run-fixture','/tmp/run-fixture',0,'{}')`,
+       VALUES (?,'run-fixture',?,0,'{"trunk":"main"}')`,
     )
-    .run(recordId)
+    .run(recordId, resolve(import.meta.dir, '../../..'))
   return recordId
 }
 

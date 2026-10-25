@@ -2,8 +2,10 @@ import { afterEach, expect, test } from 'bun:test'
 import type { ChildProcess, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
 import { dirname } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { detach } from './run-dispatch.ts'
 
 const originalDepth = process.env.BOTTEGA_DEPTH
@@ -14,6 +16,7 @@ afterEach(() => {
 
 test('two detached runs never share prompt or coordinator files', async () => {
   process.env.BOTTEGA_DEPTH = '0'
+  upsertProject({ recordId: newRecordId(), name: 'dispatch-files', path: dir, settings: {} })
   let pid = 4_200_000
   const fakeSpawn = (() => {
     const child = new EventEmitter() as ChildProcess

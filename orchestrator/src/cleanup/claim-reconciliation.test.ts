@@ -495,9 +495,9 @@ test('an unregistered missing worktree probes a present ref in its owning reposi
   const worktree = `${repository}/.claude/worktrees/orch-${runId}`
   db()
     .query(
-      'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
+      'UPDATE run SET repo=NULL,project_record_id=NULL,task_record_id=?,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
     )
-    .run(worktree, worktree, repository, runId)
+    .run(newRecordId(), worktree, worktree, repository, runId)
   const claimRecordId = newRecordId()
   db()
     .query(
@@ -542,9 +542,9 @@ test('an unregistered claim settles absent when its owning repository root is go
   const worktree = `${repository}/.claude/worktrees/orch-${runId}`
   db()
     .query(
-      'UPDATE run SET repo=NULL,project_record_id=NULL,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
+      'UPDATE run SET repo=NULL,project_record_id=NULL,task_record_id=?,cwd=?,worktree=?,launch_cwd=? WHERE record_id=?',
     )
-    .run(worktree, worktree, repository, runId)
+    .run(newRecordId(), worktree, worktree, repository, runId)
   const claimRecordId = newRecordId()
   db()
     .query(

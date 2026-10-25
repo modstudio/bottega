@@ -7,6 +7,7 @@ import {
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -967,8 +968,8 @@ describe('record cache pull', () => {
     db()
       .query(
         `INSERT INTO run
-          (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded,project_record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         localId,
@@ -981,6 +982,7 @@ describe('record cache pull', () => {
         'ask',
         'ok',
         VOID_EXCLUSION_REASON,
+        fixtureProjectRecordId(db()),
       )
     if (scored) {
       db()
