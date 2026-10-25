@@ -4,14 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
-import {
-  callerIdentity,
-  db,
-  SESSION_LIVE_MS,
-  sessionId,
-  writableDb,
-  writeTransaction,
-} from '../database/db.ts'
+import { callerIdentity, db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { transferRunMutationOwnership } from '../run/run-authority.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -173,16 +166,20 @@ function assertAdoptionConsent(
       `session ${target} is live (${formatSessionLivenessEvidence(evidence)}); ${closeOut} before adoption`,
     )
   if (evidence.ownerProcess !== 'unknown' || consent === 'resume-handoff') return
-  if (evidence.unknownCause === 'recently-seen' && consent === 'cut-off') return
-  if (evidence.unknownCause === 'recently-seen') {
-    const opensAt = new Date(evidence.ownerLastSeenAt! + SESSION_LIVE_MS).toISOString()
+  if (evidence.unknownCause.kind === 'recently-seen' && consent === 'cut-off') return
+  if (evidence.unknownCause.kind === 'recently-seen') {
+    const opensAt = new Date(evidence.unknownCause.opensAt).toISOString()
     throw new Error(
       `session ${target} process is unknown (${formatSessionLivenessEvidence(evidence)}); ${closeOut}, ` +
         `wait until ${opensAt}, or use --cut-off now when the session was cut off`,
     )
   }
   throw new Error(
-    `session ${target} liveness could not be established (${formatSessionLivenessEvidence(evidence)}); ${closeOut} before adoption`,
+    `session ${target} owner process evidence could not be established (${formatSessionLivenessEvidence(evidence)}), ` +
+      `so neither standard nor cut-off consent can apply; the operator rules the takeover by running ` +
+      `${PLATFORM_SLUG} doc resumes and, if that session has a resume brief, ` +
+      `${PLATFORM_SLUG} doc consume <slug> --scope resume --subject <subject>; ` +
+      `otherwise this remains a refusal for the operator`,
   )
 }
 

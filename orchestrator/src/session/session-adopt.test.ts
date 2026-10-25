@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { transferRunMutationOwnership } from '../run/run-authority.ts'
@@ -88,7 +89,9 @@ test('refuses self, a live owner, and unestablished liveness', () => {
       probe: () => ({ alive: false, startTime: null }),
       machine,
     }),
-  ).toThrow('session unknown-owner liveness could not be established')
+  ).toThrow(
+    `session unknown-owner owner process evidence could not be established (process candidates unknown; last_seen unknown), so neither standard nor cut-off consent can apply; the operator rules the takeover by running ${PLATFORM_SLUG} doc resumes and, if that session has a resume brief, ${PLATFORM_SLUG} doc consume <slug> --scope resume --subject <subject>; otherwise this remains a refusal for the operator`,
+  )
 })
 
 test('cut-off adopts only when recent last_seen is the sole reason liveness is unknown', () => {
@@ -134,7 +137,7 @@ test('cut-off refuses a live owner and liveness without established process evid
       probe: () => ({ alive: false, startTime: null }),
       machine,
     }),
-  ).toThrow('session unseen-cut-off-owner liveness could not be established')
+  ).toThrow('session unseen-cut-off-owner owner process evidence could not be established')
 
   seen('malformed-cut-off-owner', '2026-10-24T01:30:00.000Z', 'not-json')
   expect(() =>
@@ -146,7 +149,7 @@ test('cut-off refuses a live owner and liveness without established process evid
       probe: () => ({ alive: false, startTime: null }),
       machine,
     }),
-  ).toThrow('session malformed-cut-off-owner liveness could not be established')
+  ).toThrow('session malformed-cut-off-owner owner process evidence could not be established')
 })
 
 test('standard consent names when recently seen adoption opens and the cut-off path', () => {
@@ -160,7 +163,7 @@ test('standard consent names when recently seen adoption opens and the cut-off p
       probe: () => ({ alive: false, startTime: null }),
       machine,
     }),
-  ).toThrow('wait until 2026-10-24T02:30:00.000Z, or use --cut-off now')
+  ).toThrow('wait until 2026-10-24T02:30:00.001Z, or use --cut-off now')
 })
 
 test('reports roots moved before a later transfer failure and roots still owned by the target', () => {

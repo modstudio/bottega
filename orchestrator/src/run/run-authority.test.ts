@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { adoptRunMutation, authorizeRunMutation } from './run-authority.ts'
@@ -54,6 +55,29 @@ describe('session identity is the primary id only', () => {
 })
 
 describe('who may judge a run', () => {
+  test('a cut-off owner refusal names the cut-off adoption consent', () => {
+    const prior = process.env.CLAUDE_CODE_SESSION_ID
+    const owner = 'cut-off-owner'
+    const gonePid = 2_147_483_647
+    const id = addRun({ agent: 'codex', job: 'implement', session: owner })
+    db()
+      .query('INSERT INTO session_seen(session_id,last_seen,ancestor_chain) VALUES (?,?,?)')
+      .run(
+        owner,
+        new Date().toISOString(),
+        JSON.stringify([{ pid: gonePid, startTime: 'gone-start' }]),
+      )
+    process.env.CLAUDE_CODE_SESSION_ID = 'successor'
+    try {
+      expect(() => authorizeRunMutation(id, 'answer')).toThrow(
+        `run ${PLATFORM_SLUG} session adopt ${owner} --reason "<why>" --cut-off`,
+      )
+    } finally {
+      if (prior === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
+      else process.env.CLAUDE_CODE_SESSION_ID = prior
+    }
+  })
+
   test('a plain operator may adopt every unowned authoritative mutation', () => {
     const id = addRun({ agent: 'codex', job: 'implement', session: null })
     const claude = process.env.CLAUDE_CODE_SESSION_ID
