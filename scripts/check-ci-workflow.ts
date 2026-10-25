@@ -83,8 +83,8 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('postgres job must install the workspace')
   if (!postgres.includes(postgresServiceContainer))
     throw new Error('postgres job must pass its service container to the real-Postgres suite')
-  if (!postgres.includes('run: bun run --cwd orchestrator test:postgres'))
-    throw new Error('postgres job must run the real-Postgres suite')
+  if (!postgres.includes('run: bun run --cwd orchestrator test:postgres --without-live-import'))
+    throw new Error('postgres job must run the real-Postgres suite without the live import proof')
 }
 
 if (import.meta.main) {

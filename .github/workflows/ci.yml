@@ -110,7 +110,7 @@ jobs:
         env:
           CI: "1"
           BOTTEGA_TEST_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
-        run: bun run --cwd orchestrator test:postgres
+        run: bun run --cwd orchestrator test:postgres --without-live-import
 
   cli:
     runs-on: ubuntu-24.04

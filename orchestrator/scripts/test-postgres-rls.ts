@@ -15,6 +15,7 @@ import {
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
 
 const falsify = process.argv.includes('--falsify')
+const withoutLiveImport = process.argv.includes('--without-live-import')
 const falsifyMode = falsify
   ? 'revoke-project-select'
   : (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY ?? '')
@@ -24,6 +25,8 @@ const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
 const LIVE_COPY_PHASE_TIMEOUT_MS = 900_000
+if (withoutLiveImport)
+  console.log('copied-live-SQLite import proof omitted: no operator store on the runner')
 class EarlyExit {
   readonly code: number
   constructor(code: number) {
@@ -130,8 +133,10 @@ process.on('SIGINT', signalHandlers.SIGINT)
 process.on('SIGTERM', signalHandlers.SIGTERM)
 
 try {
-  copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
-  copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
+  if (!withoutLiveImport) {
+    copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
+    copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
+  }
   if (!provisionedContainer) {
     launched = true
     // Synchronous so no signal handler runs between the container starting and `started` being set.
@@ -425,7 +430,7 @@ try {
             RECORD_AUTH_DATABASE_URL: authUrl,
           })
           if (evidence !== 0) process.exitCode = evidence
-          else
+          else if (!withoutLiveImport)
             process.exitCode = await run(
               [
                 'bun',

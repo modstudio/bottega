@@ -79,9 +79,12 @@ test('pins the real-Postgres leg and makes it block aggregate CI', () => {
   ).toThrow('must pass its service container')
   expect(() =>
     checkCiWorkflow(
-      workflow.replace('run: bun run --cwd orchestrator test:postgres', 'run: bun test'),
+      workflow.replace(
+        'run: bun run --cwd orchestrator test:postgres --without-live-import',
+        'run: bun run --cwd orchestrator test:postgres',
+      ),
     ),
-  ).toThrow('must run the real-Postgres suite')
+  ).toThrow('must run the real-Postgres suite without the live import proof')
 })
 
 test('requires the story job to run the hub-ui story-test script', () => {
@@ -131,7 +134,7 @@ function postgresJobFixture() {
       - run: bun install --silent
       - env:
           BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}
-        run: bun run --cwd orchestrator test:postgres`
+        run: bun run --cwd orchestrator test:postgres --without-live-import`
 }
 
 function hooksJobFixture() {
