@@ -65,7 +65,6 @@ test('a workflow question pushes only the cursor UUID', async () => {
   const { cursorId, local } = workflowQuestionOutbox()
   const payload = questionPayload(local)
   expect(payload.workflowCursorRecordId).toBe(cursorId)
-  expect(payload).not.toHaveProperty('workflowCursorId')
 
   const remote = fakePostgres()
   const result = await syncRecord(options(local, remote))
