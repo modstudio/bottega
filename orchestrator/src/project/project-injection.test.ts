@@ -973,8 +973,14 @@ describe('project settings object modes', () => {
   })
 
   test('a supplied patch is refused only for the keys this binary does not know', () => {
-    // Partial by construction: the stored row supplies the rest of the risk map.
+    // Partial by construction: the stored row supplies the rest of the risk map,
+    // and the tracker remedy below names no protocol for the same reason.
     expect(suppliedUnknownKeyProblems({ review: { risk: { unlisted: 1 } } })).toEqual([])
+    expect(
+      suppliedUnknownKeyProblems({
+        tracker: { reviewStages: { waiting: 'review', active: 'in-review' } },
+      }),
+    ).toEqual([])
     expect(suppliedUnknownKeyProblems({ review: { risk: { paths: [{ weight: 2 }] } } })).toEqual([
       expect.stringContaining(unknownKeyRefusal),
     ])
