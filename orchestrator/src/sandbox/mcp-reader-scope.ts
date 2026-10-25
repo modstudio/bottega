@@ -3,7 +3,13 @@
 
 import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
+import {
+  bottegaMcpBinary,
+  disabledProjectMcpServers,
+  type McpServerConfig,
+  readMcpConfig,
+  resolveMcpServerLaunch,
+} from '../mcp/mcp-probe.ts'
 
 export type ReaderProxyServer = {
   command: string
@@ -35,20 +41,25 @@ export function grokReaderMcpServerTable(
 /**
  * Select project server names without consulting the filesystem or process installation.
  *
- * A configured primary stays even when the allow-list would disable it. An
- * unconfigured primary is not a project server at all — bottega's own is
- * installed by the platform — and a proxy synthesized for a name no `.mcp.json`
- * defines exits at start, so the primary joins the selection only when the
+ * A configured primary stays even when the allow-list would disable it. A
+ * primary the resolution serves without a tree entry keeps its place too:
+ * bottega's own MCP server is installed by the platform, and its proxy resolves
+ * the built-in launch, so it needs no `.mcp.json` entry. Any other
+ * unconfigured primary is not a project server at all — a proxy synthesized for
+ * a name nothing starts exits at start — so it joins only when the
  * configuration names it.
  */
 export function projectReaderServerNames(
-  configuredNames: string[],
+  config: Record<string, McpServerConfig>,
   allowed: string[] | undefined,
   primary: string,
+  bottegaBinary: string,
 ): string[] {
+  const configuredNames = Object.keys(config)
   const disabled = new Set(disabledProjectMcpServers(configuredNames, allowed))
   const kept = configuredNames.filter((name) => !disabled.has(name))
-  return [...new Set(configuredNames.includes(primary) ? [...kept, primary] : kept)]
+  const primaryServed = resolveMcpServerLaunch(config, primary, bottegaBinary) !== null
+  return [...new Set(primaryServed ? [...kept, primary] : kept)]
 }
 
 /** Resolve the checkout fallback used by every harness for one run. */
@@ -70,9 +81,10 @@ export function projectReaderProxyServers(
 ): Record<string, ReaderProxyServer> {
   if (!project) return {}
   const names = projectReaderServerNames(
-    Object.keys(config),
+    config,
     project.settings.workerMcpServers,
     project.settings.mcpServer ?? project.name,
+    bottegaMcpBinary(),
   )
   const argv = bottegaEntryArgv('mcp-reader-proxy')
   const command = argv[0]!

@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { sourceBunExecutable } from '../../../shared/self-spawn.ts'
+import { bottegaEntryArgv, sourceBunExecutable } from '../../../shared/self-spawn.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -69,14 +69,16 @@ export type McpProbeResult = {
   listedTools?: string[]
 }
 
-export type McpServerConfig = {
-  name: string
+/** One server's launch as an `.mcp.json` entry holds it, before the key names it. */
+export type McpServerEntry = {
   url?: string
   command?: string
   args?: string[]
   env?: Record<string, string>
   headers?: Record<string, string>
 }
+
+export type McpServerConfig = McpServerEntry & { name: string }
 
 /** Return checkout servers withheld from this project's workers. */
 export function disabledProjectMcpServers(
@@ -182,6 +184,38 @@ export function readMcpConfigResult(cwd: string): McpConfigReadResult {
 export function readMcpConfig(cwd: string): Record<string, McpServerConfig> {
   const result = readMcpConfigResult(cwd)
   return result.ok ? result.config : {}
+}
+
+/**
+ * The launch Bottega's own MCP server is entered by, and the single place that
+ * launch is written: `bottega mcp --config` prints exactly this entry.
+ */
+export function bottegaMcpServerEntry(binary: string): McpServerEntry {
+  return { command: binary, args: ['mcp', 'serve'] }
+}
+
+/** The executable of the running installation, which serves Bottega's own MCP server. */
+export function bottegaMcpBinary(): string {
+  return bottegaEntryArgv(PLATFORM_SLUG)[0]!
+}
+
+/**
+ * Resolve one server name to the launch a run starts it with.
+ *
+ * The tree's own `.mcp.json` entry wins. Bottega's own MCP server is registered
+ * at user scope instead of in the tree, so its name resolves to the platform's
+ * built-in launch where the tree does not define it. Null means no configured
+ * launch starts the name at all.
+ */
+export function resolveMcpServerLaunch(
+  config: Record<string, McpServerConfig>,
+  serverName: string,
+  bottegaBinary: string,
+): McpServerConfig | null {
+  const configured = config[serverName]
+  if (configured) return configured
+  if (serverName !== MCP_SERVER_NAME) return null
+  return { name: serverName, ...bottegaMcpServerEntry(bottegaBinary) }
 }
 
 function mcpEndpointAllowlist(url: string | null | undefined): string[] {

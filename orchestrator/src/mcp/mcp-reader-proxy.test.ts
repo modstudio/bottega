@@ -3,6 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client, InMemoryTransport, type Tool } from '@modelcontextprotocol/client'
+import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { McpServerConfig } from './mcp-probe.ts'
 import {
   createReaderMcpProxy,
   MCP_UPSTREAM_INHERITED_ENV,
@@ -130,6 +132,53 @@ test('command sanitizes a configured credential from an upstream startup failure
     expect(errors.join('\n')).not.toContain('credential-value-123')
     expect(errors.join('\n')).not.toContain('argument-credential-456')
     expect(exitCodes).toEqual([1])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('command resolves the platform’s own server without a tree entry, and a tree entry still wins', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-platform-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  await Bun.write(join(main, '.keep'), '')
+  await Bun.write(join(tree, '.keep'), '')
+  const launches: Array<{ command?: string; args?: string[]; cwd?: string }> = []
+  const errors: string[] = []
+  const common = {
+    projectByName: () => ({ name: PLATFORM_SLUG, path: main, settings: {} }),
+    retiredProjectByName: () => null,
+    environment: {},
+    error: (line: string) => errors.push(line),
+    setExitCode: () => {},
+    connectMcpToolClient: async (launch: { command?: string; args?: string[]; cwd?: string }) => {
+      launches.push(launch)
+      throw new Error('upstream unavailable in this test')
+    },
+  }
+  try {
+    const configs: Record<string, McpServerConfig>[] = [
+      {},
+      {
+        [MCP_SERVER_NAME]: {
+          name: MCP_SERVER_NAME,
+          command: '/project/bin/own-server',
+          args: ['--own'],
+        },
+      },
+    ]
+    for (const config of configs) {
+      await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+        ...common,
+        readMcpConfigResult: () => ({ ok: true, path: join(main, '.mcp.json'), config }),
+      })
+    }
+    expect(errors.join('\n')).not.toContain('is not configured in')
+    expect(launches.map((launch) => launch.args)).toEqual([['mcp', 'serve'], ['--own']])
+    expect(launches[0]!.cwd).toBe(tree)
+    expect(launches[0]!.command?.endsWith(join('bin', PLATFORM_SLUG))).toBe(true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

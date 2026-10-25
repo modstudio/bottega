@@ -14,10 +14,12 @@ import {
   retiredProjectRefusal,
 } from '../project/projects.ts'
 import {
+  bottegaMcpBinary,
   type McpConfigReadResult,
   type McpServerConfig,
   probeSecrets,
   readMcpConfigResult,
+  resolveMcpServerLaunch,
   sanitizeProbeError,
 } from './mcp-probe.ts'
 import { type ReaderToolDecision, readerMayCallTool } from './mcp-reader-policy.ts'
@@ -167,7 +169,7 @@ function runTreePath(runTree: string, mainCheckout: string): string {
   return tree
 }
 
-function configuredUpstream(result: McpConfigReadResult, serverName: string): McpServerConfig {
+function resolvedUpstream(result: McpConfigReadResult, serverName: string): McpServerConfig {
   if (!result.ok) {
     if (result.reason === 'missing')
       throw new Error(`MCP configuration is missing at ${result.path}`)
@@ -177,7 +179,7 @@ function configuredUpstream(result: McpConfigReadResult, serverName: string): Mc
       `MCP configuration could not be read at ${result.path}${result.detail ? `: ${result.detail}` : ''}`,
     )
   }
-  const config = result.config[serverName]
+  const config = resolveMcpServerLaunch(result.config, serverName, bottegaMcpBinary())
   if (!config) {
     throw new Error(
       `server ${JSON.stringify(serverName)} is not configured in ${result.path}; add its launch definition there`,
@@ -202,7 +204,7 @@ async function serveReaderMcpProxy(
     )
   }
   const cwd = runTreePath(runTree, project.path)
-  const config = configuredUpstream(dependencies.readMcpConfigResult(project.path), serverName)
+  const config = resolvedUpstream(dependencies.readMcpConfigResult(project.path), serverName)
   const launch: McpToolListLaunch = { ...config, cwd }
   let connected: Awaited<ReturnType<typeof connectMcpToolClient>>
   try {
