@@ -78,7 +78,7 @@ import {
   type TransportName,
 } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
-import { resolveDispatchBase } from '../worktree/trunk-base-choice.ts'
+import { resolveNewTreeBase } from '../worktree/trunk-base-choice.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
@@ -299,7 +299,7 @@ export async function run(opts: {
   const readOnlyRef = opts.resume?.readOnlyBase ?? reviewTarget?.commit ?? opts.base ?? null
   const readOnlyBase =
     repoJob && !writesJob && !opts.resume?.worktree
-      ? resolveDispatchBase({
+      ? resolveNewTreeBase({
           cwd: callerCwd,
           ref: readOnlyRef,
           carry: Boolean(opts.carry),

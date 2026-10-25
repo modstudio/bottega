@@ -13,12 +13,18 @@
  *
  * Nothing here fetches. The remote-tracking ref is used exactly as it stands,
  * because a new tree must not wait on the network.
+ *
+ * The substitution belongs to a tree whose lifecycle would otherwise fall back
+ * to the caller's HEAD. A project whose recipe names the base names it there,
+ * and `writerTreeBaseRef` asks nothing further: the floor a project declared is
+ * not a stale trunk's to replace.
  */
 
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { gitOk, gitToplevel } from '../git/git-environment.ts'
-import { projectAt } from '../project/projects.ts'
-import { resolveReadOnlyBase } from './worktree-caller.ts'
+import { projectAt, type WorktreeTool } from '../project/projects.ts'
+import { loadRecipeAtBase } from '../recipe/recipe-loader.ts'
+import { landingUpstreamRef, resolveReadOnlyBase } from './worktree-caller.ts'
 
 /** Abbreviated commit length in the line naming the chosen base. */
 const SHORT_COMMIT = 8
@@ -124,9 +130,7 @@ function trunkBaseFacts(input: DispatchBaseInput): TrunkBaseFacts {
     input.cwd,
   )
   const callerBranch = gitOk(['symbolic-ref', '--short', '--quiet', 'HEAD'], input.cwd)
-  const upstreamRef = landingBranch
-    ? gitOk(['rev-parse', '--abbrev-ref', `${landingBranch}@{upstream}`], input.cwd)
-    : null
+  const upstreamRef = landingBranch ? landingUpstreamRef(input.cwd, landingBranch) : null
   const upstreamTip = upstreamRef
     ? gitOk(['rev-parse', '--verify', '--end-of-options', `${upstreamRef}^{commit}`], input.cwd)
     : null
@@ -167,13 +171,14 @@ export type DispatchBaseInput = {
 /**
  * The commit a new tree starts from.
  *
- * Both tree paths call this instead of resolving the implicit HEAD themselves,
- * so the substitution above happens once and every other case is resolved in
- * exactly the directory and from exactly the ref it was resolved in before. The
- * chosen upstream is named on stderr so a run never silently starts somewhere
- * other than the caller's checkout.
+ * The read-only path and the writer path both reach the substitution through
+ * here — the writer through `writerTreeBaseRef` — rather than resolving the
+ * implicit HEAD themselves, so it happens once and every other case is resolved
+ * in exactly the directory and from exactly the ref it was resolved in before.
+ * The chosen upstream is named on stderr so a run never silently starts
+ * somewhere other than the caller's checkout.
  */
-export function resolveDispatchBase(input: DispatchBaseInput): string {
+export function resolveNewTreeBase(input: DispatchBaseInput): string {
   const choice = chooseTrunkBase(trunkBaseFacts(input))
   if (choice.base === null)
     return resolveReadOnlyBase(
@@ -187,4 +192,55 @@ export function resolveDispatchBase(input: DispatchBaseInput): string {
       `caller trunk is ${choice.behind} behind`,
   )
   return choice.base
+}
+
+/**
+ * Whether the project's own lifecycle names the base its tree is cut from.
+ *
+ * A declared recipe carries `baseRef` so a project that branches from
+ * `origin/develop` can say so. A tracked recipe is read here at the base the
+ * lifecycle itself would read it at — the repository's HEAD — because the
+ * question is what the recipe says before any base is chosen. Either kind
+ * answers: the register's recipe and the tracked recipe are two spellings of
+ * one declaration, and a base named in one of them is the project's choice.
+ *
+ * A recipe that cannot be read here is not refused here. Creation reads the
+ * same file for real and reports its own refusal; this only asks whether a base
+ * was declared, so it falls open to the caller's own HEAD.
+ */
+function lifecycleNamesBase(tool: WorktreeTool | null, repoRoot: string): boolean {
+  if (!tool) return false
+  if (tool.recipe?.baseRef) return true
+  if (!tool.recipePath) return false
+  try {
+    return loadRecipeAtBase({ recipePath: tool.recipePath, repoRoot }).recipe.baseRef !== undefined
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The `baseRef` a fresh writer tree's creation is given; undefined when the
+ * lifecycle is to choose the base itself.
+ *
+ * The trunk substitution above is for a lifecycle that would otherwise fall
+ * back to the caller's HEAD, and both the tracked loader and the inline recipe
+ * let a supplied baseRef override the project's own `baseRef`. So passing the
+ * upstream into a project that declared its own floor would not merely add a
+ * preference — it would silently cut the tree from somewhere the project did
+ * not choose. Where a base is declared, nothing is passed and the project's
+ * lifecycle keeps its own answer.
+ *
+ * `cwd` is the caller's directory; `repoRoot` the repository whose tracked
+ * recipe is read; `tool` the lifecycle that will cut the tree, null when plain
+ * git cuts it; `carry` the dispatch's `--carry`.
+ */
+export function writerTreeBaseRef(
+  tool: WorktreeTool | null,
+  cwd: string,
+  repoRoot: string,
+  carry: boolean,
+): string | undefined {
+  if (lifecycleNamesBase(tool, repoRoot)) return undefined
+  return resolveNewTreeBase({ cwd, ref: null, carry })
 }

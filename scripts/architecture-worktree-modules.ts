@@ -45,6 +45,7 @@ export const worktreeModules: WorktreeModule[] = [
     '../project/projects.ts',
     '../git/git-environment.ts',
     '../git/checkout-identity.ts',
+    '../recipe/recipe-loader.ts',
     './worktree-caller.ts',
   ]),
   module('orchestrator/src/worktree/worktree-caller.ts', [
