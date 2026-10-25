@@ -6,7 +6,6 @@
     "board_receipt.reader_session:reference",
     "branch_landing_record:primary-key",
     "contention.resource_key:reference",
-    "doc_revision.related_subject_ids:reference",
     "hosted_board_message_tag_cache:primary-key",
     "hosted_board_receipt_cache:primary-key",
     "hosted_board_receipt_cache.reader_session:reference",
@@ -32,7 +31,6 @@
     "run.launch_key:reference",
     "schema_meta:primary-key",
     "session_seen:primary-key",
-    "worker_note_request.candidate_ids:reference",
     "workflow_cursor.instance_id:reference",
     "workflow_cursor.workflow_key:reference"
   ],
@@ -57,7 +55,6 @@
     "task_comment.task_key:reference",
     "task_document.task_key:reference",
     "task_identity_claim:primary-key",
-    "task_identity_migration_repairs.row_id:reference",
     "task_identity_migration_repairs.task_key:reference",
     "task_identity_migration_repairs:primary-key",
     "task_status_event.task_key:reference"
