@@ -18,7 +18,8 @@ const falsify = process.argv.includes('--falsify')
 const falsifyMode = falsify
   ? 'revoke-project-select'
   : (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY ?? '')
-const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
+const provisionedContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const container = provisionedContainer ?? `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
@@ -131,27 +132,29 @@ process.on('SIGTERM', signalHandlers.SIGTERM)
 try {
   copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
   copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
-  launched = true
-  // Synchronous so no signal handler runs between the container starting and `started` being set.
-  const start = Bun.spawnSync(
-    [
-      'docker',
-      'run',
-      '--rm',
-      '--name',
-      container,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-p',
-      '127.0.0.1::5432',
-      '-d',
-      'postgres:18-alpine',
-      '-c',
-      'max_connections=200',
-    ],
-    { stdout: 'inherit', stderr: 'inherit' },
-  ).exitCode
-  if (start !== 0) throw new EarlyExit(start)
+  if (!provisionedContainer) {
+    launched = true
+    // Synchronous so no signal handler runs between the container starting and `started` being set.
+    const start = Bun.spawnSync(
+      [
+        'docker',
+        'run',
+        '--rm',
+        '--name',
+        container,
+        '-e',
+        'POSTGRES_PASSWORD=postgres',
+        '-p',
+        '127.0.0.1::5432',
+        '-d',
+        'postgres:18-alpine',
+        '-c',
+        'max_connections=200',
+      ],
+      { stdout: 'inherit', stderr: 'inherit' },
+    ).exitCode
+    if (start !== 0) throw new EarlyExit(start)
+  }
   started = true
 
   let ready = false

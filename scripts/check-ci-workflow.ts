@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS, CI_ONLY_JOBS } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
 
 function workflowJobNames(source: string): string[] {
   const jobsStart = source.split('\n').indexOf('jobs:')
@@ -62,6 +63,8 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('CI aggregate job must need hub-ui-stories')
   if (!aggregateNeeds(source).includes('orchestrator-hooks'))
     throw new Error('CI aggregate job must need orchestrator-hooks')
+  if (!aggregateNeeds(source).includes('postgres'))
+    throw new Error('CI aggregate job must need postgres')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-ui story-test script')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/views storybook:test'))
@@ -71,6 +74,17 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('orchestrator-hooks job must use Python 3.12')
   if (!hooks.includes('run: $SUITE_COMMAND --only=orchestrator/hooks'))
     throw new Error('orchestrator-hooks job must run its check-plan leg')
+  const postgres = workflowJob(source, 'postgres')
+  if (!postgres.includes('image: postgres:18-alpine'))
+    throw new Error('postgres job must use Postgres 18')
+  if (!postgres.includes('uses: oven-sh/setup-bun@v2') || !postgres.includes('bun-version: 1.4.3'))
+    throw new Error('postgres job must use Bun 1.4.3')
+  if (!postgres.includes('run: bun install --silent'))
+    throw new Error('postgres job must install the workspace')
+  if (!postgres.includes(postgresServiceContainer))
+    throw new Error('postgres job must pass its service container to the real-Postgres suite')
+  if (!postgres.includes('run: bun run --cwd orchestrator test:postgres'))
+    throw new Error('postgres job must run the real-Postgres suite')
 }
 
 if (import.meta.main) {
