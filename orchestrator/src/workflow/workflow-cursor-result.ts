@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { LiveCursorAutonomy } from './autonomy.ts'
 import { workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, shellWord, workflowCursorReference } from './workflow-cursor-format.ts'
@@ -23,6 +22,8 @@ import { cursorAutonomyLines, renderWorkflowStep, withSelfRuling } from './workf
 import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
 import { withWorkflowTextFacts } from './workflow-text.ts'
 import { type composeWorkflow, getWorkflowStep } from './workflows.ts'
+
+type LiveCursorAutonomy = NonNullable<Parameters<typeof cursorAutonomy>[1]>
 
 type AdvanceRow = {
   id: number

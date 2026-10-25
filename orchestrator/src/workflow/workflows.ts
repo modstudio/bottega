@@ -23,6 +23,7 @@ import {
   sharedStepCataloguePromotionPorts,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import { cursorAutonomyOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
@@ -871,15 +872,6 @@ export function composeWorkflow(
     rulings: effectiveAutonomy.rulings,
     autonomyNote: autonomy?.note,
     ...cursorAutonomyOutput(autonomy),
-  }
-}
-
-function cursorAutonomyOutput(autonomy?: WorkflowAutonomyResolution) {
-  if (!autonomy || !('cursor' in autonomy)) return {}
-  return {
-    autonomyComposeCommand: autonomy.cursor.composeCommand,
-    autonomyDifferences: autonomy.looserLiveDifferences ?? [],
-    autonomyUnavailableReason: autonomy.liveUnavailableReason,
   }
 }
 

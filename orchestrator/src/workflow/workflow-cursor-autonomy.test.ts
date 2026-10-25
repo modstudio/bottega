@@ -26,7 +26,7 @@ const pinnedAutonomy = (): CursorAutonomyResolution => ({
   stages: { review: { value: 'auto', scope: 'pinned stage' } },
   rulings: { value: 'agent', scope: 'pinned rulings' },
   shipTo: { value: 'trunk', scope: 'pinned ship-to' },
-  cursor: { id: 7, composeCommand: 'bottega workflow compose flow' },
+  cursor: { id: 7, composeCommand: `${PLATFORM_SLUG} workflow compose flow` },
 })
 
 const liveAutonomy = (): AutonomyResolution => ({
