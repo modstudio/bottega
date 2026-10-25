@@ -16,27 +16,36 @@ import {
   hubViewsDocsModeLiteralLines,
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
-import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
-import { importSpecifiers } from './import-scanner.ts'
 import {
   architectureUndeclaredModules,
   countUndeclaredModules,
+  DECLARED_SOURCE_ROOTS,
+  isProductionSourceFile,
 } from './architecture-undeclared-modules.ts'
+import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
+import { importSpecifiers } from './import-scanner.ts'
 import { undeclaredModulesBaseline } from './quality/undeclared-modules-baseline.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const manifestFiles = new Set(modules.map(({ file }) => file))
+const manifestGlobs: string[] = modules.map(({ file }) => file)
 const violations: string[] = []
 
-function isProductionTypeScript(path: string) {
-  return !/(^|\/)tests?\//.test(path) && !/\.(?:test|spec)\.[cm]?tsx?$/.test(path)
+/** Every source file a manifest module must account for, read from the checkout. */
+function declaredSourceFiles() {
+  const files: string[] = []
+  for (const root of DECLARED_SOURCE_ROOTS) {
+    for (const relative of new Glob('**/*.{ts,tsx}').scanSync({ cwd: join(ROOT, root) })) {
+      files.push(`${root}/${relative}`)
+    }
+  }
+  return files
 }
 
 for (const relative of new Glob('**/*.{ts,tsx}').scanSync({
   cwd: join(ROOT, 'hub/views/src/docs'),
 })) {
   const file = `hub/views/src/docs/${relative}`
-  if (!isProductionTypeScript(file)) continue
+  if (!isProductionSourceFile(file)) continue
   for (const line of hubViewsDocsModeLiteralLines(readFileSync(join(ROOT, file), 'utf8'))) {
     violations.push(
       `${file}:${line} (${hubViewsDocsModeLiteralRuleName}): docs components receive mode-neutral props`,
@@ -49,7 +58,7 @@ for (const root of [...CONCERNS, 'shared']) {
   if (!existsSync(directory)) continue
   for (const relative of new Glob('**/*.{ts,tsx}').scanSync({ cwd: directory })) {
     const file = `${root}/${relative}`
-    if (!isProductionTypeScript(file)) continue
+    if (!isProductionSourceFile(file)) continue
     const imports = importSpecifiers(readFileSync(join(ROOT, file), 'utf8'))
     for (const expression of imports.unresolvedRelative) {
       violations.push(`${file}: unresolved relative import at ${expression}`)
@@ -61,14 +70,17 @@ for (const { file } of modules) {
   if (!existsSync(join(ROOT, file))) violations.push(`manifest module names missing file ${file}`)
 }
 
-// Check for undeclared modules (files in orchestrator/src and hub/src not in manifest and not baselined)
-const undeclaredViolations = architectureUndeclaredModules(manifestFiles, undeclaredModulesBaseline)
-for (const violation of undeclaredViolations) {
+// Every non-test source file under the declared roots must belong to a manifest module; the
+// frozen baseline holds the files that do not yet, and only shrinks.
+const sourceFiles = declaredSourceFiles()
+for (const violation of architectureUndeclaredModules(
+  sourceFiles,
+  manifestGlobs,
+  undeclaredModulesBaseline,
+)) {
   violations.push(violation)
 }
-
-// Report the count of undeclared files
-const undeclaredCount = countUndeclaredModules(manifestFiles, undeclaredModulesBaseline)
+const undeclaredCount = countUndeclaredModules(sourceFiles, manifestGlobs)
 
 if (violations.length) {
   for (const violation of violations) console.error(violation)

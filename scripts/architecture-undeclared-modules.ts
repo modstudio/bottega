@@ -1,55 +1,68 @@
-import { join } from 'node:path'
 import { Glob } from 'bun'
 
 /**
- * Pure function to check which files are undeclared in the manifest.
+ * The source roots whose files must belong to a manifest module. Membership is keyed on the
+ * file's location rather than on a `// concern: <slug>` header, so a file whose imports no
+ * module rule declares cannot hide behind the header's wording or its absence.
+ */
+export const DECLARED_SOURCE_ROOTS = ['orchestrator/src', 'hub/src'] as const
+
+const TEST_DIRECTORY = /(^|\/)tests?\//
+const TEST_FILE = /\.(?:test|spec)\.[cm]?tsx?$/
+const GLOB_CHARACTER = /[*?[\]{}]/
+
+/** Test files and test folders are not judged by the manifest. */
+export function isProductionSourceFile(path: string) {
+  return !TEST_DIRECTORY.test(path) && !TEST_FILE.test(path)
+}
+
+function manifestMatchers(manifestGlobs: readonly string[]) {
+  return {
+    exact: new Set(manifestGlobs.filter((glob) => !GLOB_CHARACTER.test(glob))),
+    patterns: manifestGlobs
+      .filter((glob) => GLOB_CHARACTER.test(glob))
+      .map((glob) => new Glob(glob)),
+  }
+}
+
+function isDeclared(file: string, manifest: ReturnType<typeof manifestMatchers>): boolean {
+  return manifest.exact.has(file) || manifest.patterns.some((pattern) => pattern.match(file))
+}
+
+/**
+ * Every source file that belongs to no manifest module, and every baseline entry that no
+ * longer earns its place. The decision is pure: the caller supplies the scanned file list,
+ * the manifest's declared locations and the baseline.
  *
- * @param manifestFiles - Set of files declared in the architecture manifest
- * @param baseline - Baseline of files that are currently undeclared (shrink-only)
- * @returns Array of violation messages for undeclared files
+ * The baseline only shrinks. A baselined file whose path is now declared, or whose file is
+ * gone, stays a violation until its line is removed.
  */
 export function architectureUndeclaredModules(
-  manifestFiles: ReadonlySet<string>,
+  files: readonly string[],
+  manifestGlobs: readonly string[],
   baseline: readonly string[],
 ): string[] {
+  const manifest = manifestMatchers(manifestGlobs)
+  const baselined = new Set(baseline)
   const violations: string[] = []
-  const baselineSet = new Set(baseline)
+  const judged = files.filter(isProductionSourceFile)
 
-  // Check all production TypeScript files in orchestrator/src and hub/src
-  const roots = ['orchestrator/src', 'hub/src'] as const
-
-  for (const root of roots) {
-    for (const relative of new Glob('**/*.{ts,tsx}').scanSync({
-      cwd: join(process.cwd(), root),
-    })) {
-      const file = `${root}/${relative}`
-
-      // Skip test files and fixture files
-      if (/(^|\/)tests?\//.test(file)) continue
-      if (/\.test\.(?:ts|tsx)?$/.test(file)) continue
-      if (/\.spec\.(?:ts|tsx)?$/.test(file)) continue
-      if (/\.fixture\.(?:ts|tsx)?$/.test(file)) continue
-
-      // File is declared in manifest, skip
-      if (manifestFiles.has(file)) continue
-
-      // File is in baseline, skip
-      if (baselineSet.has(file)) continue
-
-      // File is undeclared and not in baseline - this is a violation
-      violations.push(`${file}: missing manifest module (canon 10-code: A module is one concern)`)
-    }
+  for (const file of judged) {
+    if (isDeclared(file, manifest) || baselined.has(file)) continue
+    violations.push(
+      `${file}: belongs to no manifest module; declare it in scripts/architecture.ts, scripts/architecture-boundaries.ts or the matching scripts/architecture-*-modules.ts (canon 10-code: A module is one concern)`,
+    )
   }
 
-  // Check for stale baseline entries (files that are now declared)
+  const judgedFiles = new Set(judged)
   for (const file of baseline) {
-    // Skip test files and fixture files from baseline staleness check
-    if (/(^|\/)tests?\//.test(file)) continue
-    if (/\.(?:test|spec|fixture)\.[cm]?tsx?$/.test(file)) continue
-
-    if (manifestFiles.has(file)) {
+    if (isDeclared(file, manifest)) {
       violations.push(
-        `${file}: stale baseline entry - remove from baseline (canon 10-code: A module is one concern)`,
+        `${file}: baselined file is now declared; remove it from undeclaredModulesBaseline (canon 10-code: A module is one concern)`,
+      )
+    } else if (!judgedFiles.has(file)) {
+      violations.push(
+        `${file}: baselined file is gone; remove it from undeclaredModulesBaseline (canon 10-code: A module is one concern)`,
       )
     }
   }
@@ -57,11 +70,14 @@ export function architectureUndeclaredModules(
   return violations
 }
 
-/** Count undeclared files (not in manifest and not in baseline) */
+/**
+ * How many judged source files belong to no manifest module. The frozen baseline is what
+ * this counts, so the number falls as files are declared and the baseline shrinks with it.
+ */
 export function countUndeclaredModules(
-  manifestFiles: ReadonlySet<string>,
-  baseline: readonly string[],
+  files: readonly string[],
+  manifestGlobs: readonly string[],
 ): number {
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
-  return violations.filter((v) => !v.includes('stale baseline')).length
+  const manifest = manifestMatchers(manifestGlobs)
+  return files.filter(isProductionSourceFile).filter((file) => !isDeclared(file, manifest)).length
 }

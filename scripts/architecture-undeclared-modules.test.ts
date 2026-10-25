@@ -1,92 +1,61 @@
 import { expect, test } from 'bun:test'
-import { modules } from './architecture.ts'
 import {
   architectureUndeclaredModules,
   countUndeclaredModules,
 } from './architecture-undeclared-modules.ts'
-import { undeclaredModulesBaseline } from './quality/undeclared-modules-baseline.ts'
 
-test('all manifest modules are not in violations', () => {
-  const manifestFiles = new Set(modules.map(({ file }) => file))
-  const baseline = undeclaredModulesBaseline
+const undeclared = 'orchestrator/src/route/route-budget.ts'
 
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
+test('an undeclared source file fails, naming the file and the remedy', () => {
+  const violations = architectureUndeclaredModules([undeclared], [], [])
 
-  // All declared files should not appear in violations
-  for (const { file } of modules) {
-    expect(
-      violations.some((v) => v.startsWith(`${file}:`)),
-      `File ${file} should not be a violation`,
-    ).toBe(false)
-  }
+  expect(violations).toHaveLength(1)
+  expect(violations[0]).toContain(undeclared)
+  expect(violations[0]).toContain('belongs to no manifest module')
+  expect(violations[0]).toContain('scripts/architecture.ts')
 })
 
-test('baselined files are not in violations', () => {
-  const manifestFiles = new Set<string>()
-  const baseline = undeclaredModulesBaseline
-
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
-
-  // All baselined files should not appear in "missing manifest module" violations
-  for (const file of baseline) {
-    expect(violations.some((v) => v.includes(`${file}: missing manifest module`))).toBe(false)
-  }
-})
-
-test('stale baseline entries are detected', () => {
-  // If a baseline file is also in manifest, it's a stale entry
-  const manifestFiles = new Set(modules.map(({ file }) => file))
-  const baseline = [...undeclaredModulesBaseline, 'orchestrator/src/route/route-policy.ts'] // This one IS in manifest
-
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
-
-  // The stale entry should be reported
-  expect(violations).toContainEqual(
-    'orchestrator/src/route/route-policy.ts: stale baseline entry - remove from baseline (canon 10-code: A module is one concern)',
+test('a declared source file passes by exact location and by manifest glob', () => {
+  expect(architectureUndeclaredModules([undeclared], [undeclared], [])).toEqual([])
+  expect(architectureUndeclaredModules([undeclared], ['orchestrator/src/route/*.ts'], [])).toEqual(
+    [],
   )
 })
 
-test('declared file is not a violation', () => {
-  const manifestFiles = new Set<string>()
-  // Add a file that's actually in the manifest
-  const firstModule = modules[0]
-  if (firstModule) manifestFiles.add(firstModule.file)
-  const baseline: string[] = []
-
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
-
-  // The declared file should not be a violation
-  expect(violations.some((v) => v.includes(`${firstModule!.file}: missing manifest module`))).toBe(
-    false,
-  )
+test('a baselined source file passes', () => {
+  expect(architectureUndeclaredModules([undeclared], [], [undeclared])).toEqual([])
 })
 
-test('countUndeclaredModules reports zero with proper baseline', () => {
-  const manifestFiles = new Set(modules.map(({ file }) => file))
-  const baseline = undeclaredModulesBaseline
+test('a baseline entry whose file is now declared fails until removed', () => {
+  const violations = architectureUndeclaredModules([undeclared], [undeclared], [undeclared])
 
-  const count = countUndeclaredModules(manifestFiles, baseline)
-
-  expect(count).toBe(0)
+  expect(violations).toHaveLength(1)
+  expect(violations[0]).toContain(undeclared)
+  expect(violations[0]).toContain('now declared')
 })
 
-test('test files are ignored in check', () => {
-  const manifestFiles = new Set<string>()
-  const baseline: string[] = []
+test('a baseline entry whose file is gone fails until removed', () => {
+  const violations = architectureUndeclaredModules([], [], [undeclared])
 
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
-
-  // Test files should never appear in violations
-  expect(violations.some((v) => v.includes('.test.ts'))).toBe(false)
-  expect(violations.some((v) => v.includes('.spec.ts'))).toBe(false)
+  expect(violations).toHaveLength(1)
+  expect(violations[0]).toContain(undeclared)
+  expect(violations[0]).toContain('gone')
 })
 
-test('fixture files are ignored in check', () => {
-  const manifestFiles = new Set<string>()
-  const baseline: string[] = []
+test('test files and test folders are ignored', () => {
+  expect(
+    architectureUndeclaredModules(
+      [
+        'orchestrator/src/route/route-budget.test.ts',
+        'orchestrator/src/run/test/run-fixture-helper.ts',
+        'hub/src/attribute.spec.tsx',
+      ],
+      [],
+      [],
+    ),
+  ).toEqual([])
+})
 
-  const violations = architectureUndeclaredModules(manifestFiles, baseline)
-
-  // Fixture files should never appear in violations
-  expect(violations.some((v) => v.includes('.fixture.ts'))).toBe(false)
+test('the undeclared count reports files that belong to no manifest module', () => {
+  expect(countUndeclaredModules([undeclared, 'hub/src/attribute.ts'], [undeclared])).toBe(1)
 })

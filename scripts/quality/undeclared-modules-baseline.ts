@@ -1,13 +1,9 @@
 /**
- * Baseline of files that are currently not declared in the architecture manifest.
- * This list exists for the transition from concern-header-based checking to location-based checking.
- * Files not in the manifest and not in this baseline will fail the architecture check.
+ * Source files under the manifest's declared roots that belong to no manifest module yet.
  *
- * As modules are added to the manifest, remove files from this baseline.
- * A new undeclared file will fail the check until added here.
- * A stale baseline entry (file now in manifest) will fail until removed.
- *
- * This baseline only shrinks; it never grows as part of this check.
+ * Membership is keyed on a file's location, so a new source file fails the architecture check
+ * until a manifest module declares it. This list only shrinks: declaring a file here, or
+ * removing it, fails the check until its line is deleted.
  */
 
 export const undeclaredModulesBaseline: readonly string[] = [
@@ -18,6 +14,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'hub/src/doc-contract.ts',
   'hub/src/doc-search.ts',
   'hub/src/doctor.ts',
+  'hub/src/duplicate-matcher.fixture.ts',
   'hub/src/excerpt.ts',
   'hub/src/hosted-change-cache.ts',
   'hub/src/hosted-change-family.ts',
@@ -163,6 +160,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/canon/canon-lint.ts',
   'orchestrator/src/canon/canon-load-files.ts',
   'orchestrator/src/canon/canon-load.ts',
+  'orchestrator/src/canon/canon-mirror-ownership.fixture.ts',
   'orchestrator/src/canon/canon-mirror.ts',
   'orchestrator/src/canon/canon-stored-rows.ts',
   'orchestrator/src/canon/canon-write-gate.ts',
@@ -194,6 +192,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/close/close-out-adoption.ts',
   'orchestrator/src/close/close-out-command.ts',
   'orchestrator/src/close/close-out.ts',
+  'orchestrator/src/close/reader-scratch-close-out.fixture.ts',
   'orchestrator/src/close/retained-branch.ts',
   'orchestrator/src/code/code-commands.ts',
   'orchestrator/src/collect/collect.ts',
@@ -251,6 +250,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/database/migrations.ts',
   'orchestrator/src/database/monitor-release-claim-uuid-migration-preflight.ts',
   'orchestrator/src/database/store-write-lock.ts',
+  'orchestrator/src/database/test-database.fixture.ts',
   'orchestrator/src/database/write-probe.ts',
   'orchestrator/src/dispatch/dispatch-cli-service.ts',
   'orchestrator/src/dispatch/dispatch-commands.ts',
@@ -385,6 +385,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/record/record-auth-command.ts',
   'orchestrator/src/record/record-auth.ts',
   'orchestrator/src/record/record-cache-port.ts',
+  'orchestrator/src/record/record-cache-workflow.fixture.ts',
   'orchestrator/src/record/record-cache.ts',
   'orchestrator/src/record/record-canon-facts.ts',
   'orchestrator/src/record/record-canon-import.ts',
@@ -530,6 +531,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/workflow/workflow-commands.ts',
   'orchestrator/src/workflow/workflow-cursor-list.ts',
   'orchestrator/src/workflow/workflow-cursor-live-autonomy.ts',
+  'orchestrator/src/workflow/workflow-cursor-test.fixture.ts',
   'orchestrator/src/workflow/workflow-definition.ts',
   'orchestrator/src/workflow/workflow-project-facts.ts',
   'orchestrator/src/workflow/workflow-read-space.ts',
@@ -537,6 +539,7 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/workflow/workflow-render-check.ts',
   'orchestrator/src/workflow/workflow-seeds.ts',
   'orchestrator/src/workflow/workflow-step-reference.ts',
+  'orchestrator/src/workflow/workflow-store.fixture.ts',
   'orchestrator/src/workflow/workflow-template.ts',
   'orchestrator/src/workflow/workflow-version-selection.ts',
   'orchestrator/src/workflow/workflows.ts',
