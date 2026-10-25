@@ -18,6 +18,25 @@ import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-direc
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
 
+export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
+const originalPath = process.env.PATH
+// Bun resolves executables against the PATH present at its first spawn. Install
+// the suite shims before even the preload's repository discovery command.
+export const cleanDockerBin = join(dir, 'clean-docker-bin')
+mkdirSync(cleanDockerBin)
+writeFileSync(
+  join(cleanDockerBin, 'docker'),
+  "#!/bin/sh\nprintf 'unexpected docker invocation from gate test: docker' >&2\nprintf ' %s' \"$@\" >&2\nprintf '\\n' >&2\nexit 1\n",
+)
+chmodSync(join(cleanDockerBin, 'docker'), 0o755)
+process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
+const originalBunSpawnSync = Bun.spawnSync
+Bun.spawnSync = ((command: string[], options) => {
+  const resolved =
+    command[0] === 'docker' ? [join(cleanDockerBin, 'docker'), ...command.slice(1)] : command
+  return originalBunSpawnSync.call(Bun, resolved, options)
+}) as typeof Bun.spawnSync
+
 const discoveryEnv = Object.fromEntries(
   Object.entries(process.env).filter(
     ([key]) =>
@@ -52,8 +71,6 @@ export const REGISTERED_LIVE_STORE = resolve(
  * DB_PATH is read at module load, so the handle is released and the file
  * replaced from a template rather than the module graph reloaded.
  */
-export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
-const originalPath = process.env.PATH
 const originalSandbox = process.env.BOTTEGA_SANDBOX
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalHarnessEnvFile = process.env[HARNESS_ENV_FILE_ENV]
@@ -79,12 +96,6 @@ process.env.BOTTEGA_RUNS = join(dir, FROZEN_STATE_NAMES.runsDirectory)
 const testStateHome = join(dir, 'state')
 process.env[STATE_HOME_ENV] = testStateHome
 mkdirSync(testStateHome, { recursive: true })
-// Terminalisation now inventories Docker for every run. Keep the whole suite
-// hermetic, including test files that do not import the shared fixture.
-export const cleanDockerBin = join(dir, 'clean-docker-bin')
-mkdirSync(cleanDockerBin)
-writeFileSync(join(cleanDockerBin, 'docker'), '#!/bin/sh\nexit 0\n')
-chmodSync(join(cleanDockerBin, 'docker'), 0o755)
 // Routing eligibility asks which(agent.bin). The suite decides routes from the
 // registry and the evidence, never from which vendor CLIs this host has, so
 // every registered binary name resolves to a stand-in that answers a version
@@ -93,7 +104,6 @@ for (const bin of ['codex', 'codex-acp', 'grok', 'agy', 'qwen', 'goose']) {
   writeFileSync(join(cleanDockerBin, bin), '#!/bin/sh\necho "stand-in 999.0.0"\n')
   chmodSync(join(cleanDockerBin, bin), 0o755)
 }
-process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
 process.env.BOTTEGA_SANDBOX = 'host'
 export const PRELOAD_STORE = process.env.BOTTEGA_ORCHESTRATOR_DB
 export const PRELOAD_RUNS = process.env.BOTTEGA_RUNS
@@ -274,6 +284,7 @@ function restoreEnvironment(name: string, value: string | undefined): void {
 }
 
 afterAll(() => {
+  Bun.spawnSync = originalBunSpawnSync
   closeDatabaseForFixture()
   delete process.env.BOTTEGA_ORCHESTRATOR_DB
   delete process.env.BOTTEGA_HUB_DB

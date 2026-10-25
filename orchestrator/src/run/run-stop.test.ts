@@ -75,6 +75,10 @@ function lastRunPayload(id: string): Record<string, unknown> {
 
 beforeEach(() => {
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
+  spyOn(dockerResources, 'resourcesForRuns').mockReturnValue({
+    ascertainable: true,
+    resources: [],
+  })
 })
 
 afterEach(() => {
@@ -446,10 +450,6 @@ test('stop and discard agree when clone removal precedes failed close-out record
   spyOn(closeOut, 'closeOutRun').mockImplementation(() => {
     rmSync(fixture.worktree, { recursive: true, force: true })
     throw new Error('recording transaction failed')
-  })
-  spyOn(dockerResources, 'resourcesForRuns').mockReturnValue({
-    ascertainable: true,
-    resources: [],
   })
   try {
     const result = await invoke('stop', fixture.id)
