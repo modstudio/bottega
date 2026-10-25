@@ -4,7 +4,6 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId } from '../database/db.ts'
 import { answerWorkflowQuestion, upsertWorkflowQuestion } from '../run/question-mutation.ts'
-import { rulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyValue } from './autonomy.ts'
 import type { Floor } from './workflow-floor.ts'
 import { selfRulingRefusal } from './workflow-self-ruling.ts'
@@ -55,7 +54,7 @@ export function recordWorkflowSelfRuling(
       at,
       actor: sessionId(),
       fromOperator: false,
-      personName: rulingPersonName(false),
+      personName: null,
       channel: input.selfRuling.channel,
     },
     database,

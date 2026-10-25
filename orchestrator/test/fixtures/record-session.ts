@@ -14,6 +14,10 @@ export function installRecordSessionRunner(runner: SecurityRunner | null): void 
   else delete holder[RUNNER_KEY]
 }
 
+export function installRecordToken(token: string | null): void {
+  installRecordSessionRunner(token === null ? null : () => result(0, token))
+}
+
 export function memoryRecordSession(): {
   runner: SecurityRunner
   token(): string | null

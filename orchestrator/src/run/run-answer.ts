@@ -40,7 +40,7 @@ import {
   QUESTION_DELIVERY_OUTCOME_FAILED,
   rulingActor,
 } from './question-vocabulary.ts'
-import { rulingPersonName } from './ruling-attribution.ts'
+import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
@@ -234,7 +234,7 @@ function answerAttributions(
       operatorAuthorized,
       answer,
       callerSession,
-      rulingPersonName(answer.fromOperator),
+      resolvedRulingPersonName(answer.fromOperator),
     ),
   )
 }

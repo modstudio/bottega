@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
-import { userInfo } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { installRecordToken } from '../../test/fixtures/record-session.ts'
 import {
   answerRunFromArgv as answerRun,
   answerRunFlags as flags,
@@ -13,6 +13,7 @@ import {
   retryRunFromFixture as retry,
   returningQuestionSql,
 } from '../../test/fixtures/run-answer.ts'
+import { installRunAnswerEnvironment } from '../../test/fixtures/run-answer-environment.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { readMessageText } from '../cli/args.ts'
@@ -20,6 +21,7 @@ import { rulingPrompt } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
+import { rememberSignedInRecordUser } from '../record/record-session.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
@@ -27,23 +29,14 @@ import { packedResumePrompt } from './run-resume-prompt.ts'
 
 const trackResidue = trackedTestResidue()
 
-const priorEnv: Record<string, string | undefined> = {}
+let restoreEnvironment: () => void
 beforeEach(() => {
   upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
-  priorEnv.CLAUDE_CODE_SESSION_ID = process.env.CLAUDE_CODE_SESSION_ID
-  priorEnv.BOTTEGA_DEPTH = process.env.BOTTEGA_DEPTH
-  priorEnv.BOTTEGA_EXEC_PATH = process.env.BOTTEGA_EXEC_PATH
-  process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
-  delete process.env.BOTTEGA_DEPTH
-  process.env.BOTTEGA_EXEC_PATH = '/usr/bin/true'
+  restoreEnvironment = installRunAnswerEnvironment()
 })
 afterEach(() => {
-  if (priorEnv.CLAUDE_CODE_SESSION_ID === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
-  else process.env.CLAUDE_CODE_SESSION_ID = priorEnv.CLAUDE_CODE_SESSION_ID
-  if (priorEnv.BOTTEGA_DEPTH === undefined) delete process.env.BOTTEGA_DEPTH
-  else process.env.BOTTEGA_DEPTH = priorEnv.BOTTEGA_DEPTH
-  if (priorEnv.BOTTEGA_EXEC_PATH === undefined) delete process.env.BOTTEGA_EXEC_PATH
-  else process.env.BOTTEGA_EXEC_PATH = priorEnv.BOTTEGA_EXEC_PATH
+  installRecordToken(null)
+  restoreEnvironment()
 })
 
 describe('run answers', () => {
@@ -798,6 +791,8 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
     .get(id, new Date().toISOString(), 'which?') as { number: number }
   delete process.env.CLAUDE_CODE_SESSION_ID
   delete process.env.BOTTEGA_DEPTH
+  installRecordToken('fixture-token')
+  rememberSignedInRecordUser({ id: 'user-id', name: 'Ada Lovelace', email: 'ada@example.test' })
   let resumedSession: string | null | undefined
   const dispatch: typeof detach = async (_job, _prompt, spec) => {
     resumedSession = spec.resume!.sessionId
@@ -844,9 +839,10 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
       'SELECT answered_by,answered_by_name,answerer_kind,answer_channel FROM question WHERE number=?',
     )
     .get(question.number) as Record<string, unknown>
-  expect(Object.values(attribution).join('|')).toBe(
-    `operator via hub|${userInfo().username}|operator|ui`,
-  )
+  expect(attribution.answered_by).toBe('operator via hub')
+  expect(attribution.answered_by_name).toBe('Ada Lovelace')
+  expect(attribution.answerer_kind).toBe('operator')
+  expect(attribution.answer_channel).toBe('ui')
   expect(
     db()
       .query(
@@ -867,7 +863,9 @@ test('answer permits an unowned question, warns, and records the answering sessi
   const attribution = db()
     .query('SELECT answer,answered_by,answered_by_name FROM question WHERE run_record_id=?')
     .get(id) as Record<string, unknown>
-  expect(Object.values(attribution)).toEqual(['the existing shape', 'orch-test-session', null])
+  expect(attribution.answer).toBe('the existing shape')
+  expect(attribution.answered_by).toBe('orch-test-session')
+  expect(attribution.answered_by_name).toBeNull()
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
     session_id: 'orch-test-session',
   })

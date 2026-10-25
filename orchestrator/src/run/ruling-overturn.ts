@@ -6,7 +6,7 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
-import { rulingPersonName } from './ruling-attribution.ts'
+import { resolvedRulingPersonName } from './ruling-attribution.ts'
 import { overturnRulingDecision } from './ruling-overturn-authority.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-authority.ts'
 
@@ -80,7 +80,7 @@ export function overturnRuling(input: {
       chainLastActivityAt: Date.parse(row.workflow_updated_at!),
     })
   const at = nowIso()
-  const personName = rulingPersonName(input.fromOperator)
+  const personName = resolvedRulingPersonName(input.fromOperator)
   let overturnedBy = ''
   writeTransaction(() => {
     if (row.run_record_id !== null) authority = adoptRunMutation(authority!, 'overturn')

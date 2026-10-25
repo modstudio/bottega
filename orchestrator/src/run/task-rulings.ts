@@ -18,7 +18,9 @@ export type TaskRulingRow = {
   answer_basis?: string | null
   answered_at: string
   answerer_kind: AnswererKind | null
+  answered_by_name: string | null
   overturned_at: string | null
+  overturned_by_name: string | null
   replacement: string | null
   candidate_count?: number
 }
@@ -31,7 +33,7 @@ type CarriedTaskRuling = {
   question: string
   ruling: string
   basis: string | null
-  ruledBy: 'operator' | 'agent'
+  ruledBy: string
   date: string
   replacement: boolean
   questionTruncated: boolean
@@ -52,6 +54,7 @@ function truncated(value: string, maxChars: number): { value: string; truncated:
 function carriedRuling(row: TaskRulingRow): CarriedTaskRuling {
   const question = truncated(row.question, TASK_RULING_MAX_QUESTION_CHARS)
   const ruling = truncated(row.replacement ?? row.answer, TASK_RULING_MAX_RULING_CHARS)
+  const personName = row.overturned_at !== null ? row.overturned_by_name : row.answered_by_name
   return {
     questionId: row.question_id,
     questionRecordId: row.question_record_id,
@@ -60,7 +63,12 @@ function carriedRuling(row: TaskRulingRow): CarriedTaskRuling {
     question: question.value,
     ruling: ruling.value,
     basis: row.replacement === null ? (row.answer_basis ?? null) : null,
-    ruledBy: row.answerer_kind === 'operator' ? 'operator' : 'agent',
+    ruledBy:
+      row.answerer_kind === 'operator'
+        ? personName
+          ? `${personName} (operator)`
+          : 'operator'
+        : 'agent',
     date: (row.replacement !== null ? row.overturned_at : row.answered_at)!.slice(0, 10),
     replacement: row.replacement !== null,
     questionTruncated: question.truncated,
