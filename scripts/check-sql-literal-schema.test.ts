@@ -75,3 +75,14 @@ test('a global substitution resolves an identifier any file may interpolate', ()
     ),
   ).toThrow('no such column: missing')
 })
+
+test('a file that declares a global substitution identifier itself is refused', () => {
+  expect(
+    fixture(
+      [
+        "const TERMINAL_RUN_STATUS_SQL = '(SELECT missing FROM example)'",
+        'database.query(`SELECT id FROM example WHERE name IN $' + '{TERMINAL_RUN_STATUS_SQL}`)',
+      ].join('\n'),
+    ),
+  ).toThrow('import TERMINAL_RUN_STATUS_SQL from orchestrator/src/run/run-status.ts')
+})
