@@ -448,14 +448,20 @@ export const PROVIDER_UNSERVED: ReadonlySet<FailureKind> = new Set([
 ])
 
 export type BillingHold = { enabled: 0; disabledReason: string }
+export type EffectiveBillingKey = {
+  secretName: string | null
+  source: 'agent' | 'project'
+  projectName: string | null
+}
 
 /** A durable routing hold whose only release is the named operator action. */
 export function billingHoldForFailure(
   failureKind: FailureKind | null,
   agent: string,
   detail?: string,
+  keySource: 'agent' | 'project' = 'agent',
 ): BillingHold | null {
-  if (failureKind !== 'billing') return null
+  if (failureKind !== 'billing' || keySource === 'project') return null
   return {
     enabled: 0,
     disabledReason: detail

@@ -10,10 +10,47 @@ import {
   type SecretResolutionFailureClassification,
   secretResolutionFailure,
 } from '../../../shared/secret-resolution-failure.ts'
+import type { EffectiveBillingKey } from '../failure/failure.ts'
+import type { ProjectAgentKeys } from '../project/project-agent-keys.ts'
 
 type EndpointKeyRow = {
   baseUrl?: string | null
   apiKeySecret?: string | null
+}
+
+/** Pure policy: a project mapping replaces only the matching agent secret reference. */
+export function decideEffectiveEndpointApiKey(
+  agentSecretName: string | null | undefined,
+  project?: { name: string; settings: { agentKeys?: ProjectAgentKeys } } | null,
+): EffectiveBillingKey {
+  const agentSecret = agentSecretName?.trim() || null
+  if (!agentSecret) return { secretName: null, source: 'agent', projectName: null }
+  const projectSecret = project?.settings.agentKeys?.[agentSecret]
+  return projectSecret
+    ? { secretName: projectSecret, source: 'project', projectName: project.name }
+    : { secretName: agentSecret, source: 'agent', projectName: null }
+}
+
+/** Prepare one run's endpoint row and project-aware refusal context without resolving a value. */
+export function effectiveEndpointApiKeyForRun<T extends EndpointKeyRow>(
+  row: T,
+  project?: { name: string; settings: { agentKeys?: ProjectAgentKeys } } | null,
+): {
+  row: T
+  key: EffectiveBillingKey
+  resolve(): Promise<Record<string, string>>
+} {
+  const key = decideEffectiveEndpointApiKey(row.apiKeySecret, project)
+  const effectiveRow = { ...row, apiKeySecret: key.secretName }
+  const options =
+    key.source === 'project'
+      ? { projectSecret: { project: project!.name, agentSecret: row.apiKeySecret!.trim() } }
+      : {}
+  return {
+    row: effectiveRow,
+    key,
+    resolve: () => resolveEndpointApiKeyEnv(effectiveRow, undefined, options),
+  }
 }
 
 export type EndpointApiKeyDecision =
@@ -84,6 +121,20 @@ export function decideEndpointApiKey(
   }
 }
 
+/** Pure rendering policy for a declared project secret that cannot be used. */
+function projectEndpointApiKeyRefusal(input: {
+  projectName: string
+  agentSecretName: string
+  projectSecretName: string
+  cause?: string
+}): string {
+  return (
+    `project ${input.projectName} maps agent secret ${input.agentSecretName} to project secret ${input.projectSecretName}, but ${input.projectSecretName} could not be resolved` +
+    `${input.cause ? `: ${input.cause}` : ''}\n` +
+    `cleared by: ${PLATFORM_SLUG} machine config secret set ${input.projectSecretName}`
+  )
+}
+
 /** Resolve only at launch; the plaintext is returned solely for the child environment. */
 export async function resolveEndpointApiKeyEnv(
   row: EndpointKeyRow,
@@ -91,18 +142,64 @@ export async function resolveEndpointApiKeyEnv(
   options: {
     sleep?: (delayMs: number) => Promise<void>
     exhaustedRetryCommand?: string
+    projectSecret?: { project: string; agentSecret: string }
   } = {},
 ): Promise<Record<string, string>> {
   const name = row.apiKeySecret?.trim() || null
-  const resolved = name
-    ? await resolveNamedEndpointApiKey(
-        name,
-        resolver,
-        options.sleep ?? Bun.sleep,
-        options.exhaustedRetryCommand ?? RUN_RETRY_REMEDY,
-      )
-    : undefined
+  let resolved: string | undefined
+  try {
+    resolved = name
+      ? await resolveNamedEndpointApiKey(
+          name,
+          resolver,
+          options.sleep ?? Bun.sleep,
+          options.exhaustedRetryCommand ?? RUN_RETRY_REMEDY,
+        )
+      : undefined
+  } catch (error) {
+    if (!options.projectSecret) throw error
+    throw new Error(
+      projectEndpointApiKeyRefusal({
+        projectName: options.projectSecret.project,
+        agentSecretName: options.projectSecret.agentSecret,
+        projectSecretName: name!,
+        cause: String((error as Error)?.message ?? error),
+      }),
+    )
+  }
   const decision = decideEndpointApiKey(row, resolved)
-  if (!decision.ok) throw new Error(decision.refusal)
+  if (!decision.ok) {
+    if (options.projectSecret) {
+      throw new Error(
+        projectEndpointApiKeyRefusal({
+          projectName: options.projectSecret.project,
+          agentSecretName: options.projectSecret.agentSecret,
+          projectSecretName: name!,
+        }),
+      )
+    }
+    throw new Error(decision.refusal)
+  }
   return decision.env
+}
+
+export type EndpointApiKeyResolution =
+  | { status: 'resolves' }
+  | { status: 'unresolved' }
+  | { status: 'could-not-check'; reason: string }
+
+/** Check only whether a named secret resolves, without exposing its value to reporting callers. */
+export async function endpointApiKeyResolves(
+  name: string,
+  resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
+): Promise<EndpointApiKeyResolution> {
+  try {
+    return (await resolver([name]))[name] !== undefined
+      ? { status: 'resolves' }
+      : { status: 'unresolved' }
+  } catch (error) {
+    const reason = secretResolutionFailure(error, { unreachableDiagnostic: null })
+    if (!reason) throw error
+    return { status: 'could-not-check', reason }
+  }
 }

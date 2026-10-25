@@ -501,6 +501,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
       '../workflow/autonomy.ts',
       '../worktree/worktree-provision.ts',
       '../worktree/worktree-template.ts',
+      './project-agent-keys.ts',
       './project-injection.ts',
     ],
   ),

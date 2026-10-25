@@ -100,7 +100,7 @@ test('project import refuses without a signed-in user before opening its sources
 async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
-      visibility, landing_branch, production_branch, gate, gate_input, focused_tests,
+      visibility, landing_branch, production_branch, gate, gate_input, focused_tests, agent_keys,
       require_clean_main, color, color_dark, env_prefix, mcp_server, worker_mcp_servers,
       secret_paths, mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review,
       test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
@@ -233,6 +233,7 @@ realPostgres('project import against copied live SQLite data', () => {
     expect(imported).toHaveLength(sourceProjects.length)
     expectPreservedProjectIds(sourceProjects, imported)
     const columnForSetting: Record<string, string> = {
+      agentKeys: 'agent_keys',
       color: 'color',
       colorDark: 'color_dark',
       docs: 'docs',

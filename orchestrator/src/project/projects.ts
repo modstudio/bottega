@@ -57,6 +57,7 @@ import {
   placeholders,
   validateCreate,
 } from '../worktree/worktree-template.ts'
+import { projectAgentKeyProblems } from './project-agent-keys.ts'
 import { focusedTestsProblems } from './project-focused-tests.ts'
 import {
   requireHostedProjectPush,
@@ -706,6 +707,7 @@ export function validateProjectSettings(
     ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
     ...gateInputProblems(settings.gateInput),
+    ...projectAgentKeyProblems(settings.agentKeys),
   ]
 
   if (invalidOptionalStringArray(settings.secretPaths)) {

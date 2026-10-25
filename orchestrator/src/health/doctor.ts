@@ -6,6 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
+import { decideEffectiveEndpointApiKey, endpointApiKeyResolves } from '../agent/endpoint-api-key.ts'
 import {
   ensureLocalHealth,
   fileContractProbeReason,
@@ -167,6 +168,64 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
   log(await runTaskReferenceDoctorLine())
 }
 
+async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {
+  const { projects } = await import('../project/projects.ts')
+  const registered = projects()
+  const metered = Object.values(AGENTS).filter(
+    (agent) => agent.enabled !== false && agent.billing === 'metered' && agent.apiKeySecret?.trim(),
+  )
+  if (!metered.length) return
+  log('project agent keys')
+  for (const agent of metered) {
+    const agentSecret = agent.apiKeySecret!.trim()
+    log(`  ${agent.name} (${agentSecret})`)
+    for (const project of registered) {
+      const effective = decideEffectiveEndpointApiKey(agentSecret, project)
+      if (effective.source === 'agent') {
+        log(`    ${project.name}: shared ${agentSecret}`)
+        continue
+      }
+      const resolution = await endpointApiKeyResolves(effective.secretName!)
+      const status =
+        resolution.status === 'could-not-check'
+          ? `could not check: ${resolution.reason}`
+          : resolution.status === 'resolves'
+            ? 'resolves'
+            : 'UNRESOLVED'
+      log(`    ${project.name}: own ${effective.secretName} (${status})`)
+    }
+  }
+}
+
+async function reportAgents(
+  presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
+  agentStatus: typeof doctorAgentStatus,
+): Promise<void> {
+  presentation.log('agents')
+  for (const agent of Object.values(AGENTS)) {
+    const cooling = presentation
+      .candidates('summarize')
+      .find((candidate) => candidate.agent === agent.name)?.cooling
+    const why = unavailableReason(agent.name)
+    const version = why === 'not installed' ? null : cliVersion(agent.bin)
+    const old = version?.parsed && versionBelow(version.parsed, agent.minimumCliVersion)
+    const auth = agentStatus(agent.name, why, agent.bin)
+    presentation.log(
+      `  ${agent.name.padEnd(12)} ${auth.status.padEnd(7)} ${agent.billing.padEnd(13)}` +
+        (auth.detail ? `  ${auth.detail}` : '') +
+        (version ? `  version ${version.display}` : '  version unavailable') +
+        (cooling ? `  COOLING: ${cooling}` : ''),
+    )
+    if (old) {
+      presentation.log(
+        `  WARNING: ${agent.name} ${version.parsed} is below minimum ${agent.minimumCliVersion}`,
+      )
+    }
+    if (predatesFileContract(agent)) presentation.log(`  ${fileContractProbeReason(agent.name)}`)
+  }
+  await reportProjectAgentKeys(presentation.log)
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
@@ -308,26 +367,7 @@ export async function doctorCommand(
         `run ${PLATFORM_SLUG} score recalibrate --n 12`,
     )
   }
-  log('agents')
-  for (const a of Object.values(AGENTS)) {
-    const cool = candidates('summarize').find((c) => c.agent === a.name)?.cooling
-    const why = unavailableReason(a.name)
-    const version = why === 'not installed' ? null : cliVersion(a.bin)
-    const old = version?.parsed && versionBelow(version.parsed, a.minimumCliVersion)
-    const auth = agentStatus(a.name, why, a.bin)
-    log(
-      `  ${a.name.padEnd(12)} ${auth.status.padEnd(7)} ${a.billing.padEnd(13)}` +
-        (auth.detail ? `  ${auth.detail}` : '') +
-        (version ? `  version ${version.display}` : '  version unavailable') +
-        (cool ? `  COOLING: ${cool}` : ''),
-    )
-    if (old) {
-      log(`  WARNING: ${a.name} ${version.parsed} is below minimum ${a.minimumCliVersion}`)
-    }
-    if (predatesFileContract(a)) {
-      log(`  ${fileContractProbeReason(a.name)}`)
-    }
-  }
+  await reportAgents({ log, candidates }, agentStatus)
   const configuredUrl = modelHostUrl()
   for (const row of agentRows()) {
     if (row.operated_by !== 'self' || !row.enabled) continue

@@ -27,6 +27,7 @@ export const PROJECT_SETTINGS_NOT_IMPORTED = [
 ] as const
 
 export type HostedProjectColumns = {
+  agentKeys: JsonObject | null
   visibility: RepositoryVisibility | null
   keyPrefixes: string[]
   managedContext: boolean
@@ -62,6 +63,7 @@ type HostedSettingKey = Exclude<
 >
 
 export const PROJECT_SETTING_COLUMNS = {
+  agentKeys: 'agentKeys',
   visibility: 'visibility',
   color: 'color',
   colorDark: 'colorDark',
@@ -164,6 +166,7 @@ export function hostedProjectColumns(
     throw new Error(`project ${project} has unmapped settings keys: ${unknown.sort().join(', ')}`)
   }
   return {
+    [PROJECT_SETTING_COLUMNS.agentKeys]: settingDocument(settings, 'agentKeys', project),
     [PROJECT_SETTING_COLUMNS.visibility]: optionalVisibility(settings.visibility, project),
     [PROJECT_SETTING_COLUMNS.keyPrefixes]:
       optionalStringArray(settings, 'keyPrefixes', project) ?? [],

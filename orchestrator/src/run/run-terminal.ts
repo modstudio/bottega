@@ -23,7 +23,12 @@ import {
 import type { ReaderReply, ReviewReply, realQuestions, WorkerReply } from '../contract/contract.ts'
 import { db, nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { assessEvidence, recordEvidence } from '../evidence/evidence.ts'
-import { billingHoldForFailure, type classify, FAILS_OVER } from '../failure/failure.ts'
+import {
+  billingHoldForFailure,
+  type classify,
+  type EffectiveBillingKey,
+  FAILS_OVER,
+} from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
 import type { McpConnection, McpMode } from '../mcp/mcp-preflight.ts'
@@ -94,8 +99,9 @@ export function writeTerminalOperationalState(
   failureKind: ReturnType<typeof classify> | null,
   agent: string,
   billingHoldDetail?: string,
+  endpointKey: EffectiveBillingKey = { secretName: null, source: 'agent', projectName: null },
 ): void {
-  const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail)
+  const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail, endpointKey.source)
   if (hold) {
     database
       .query('UPDATE agent SET enabled=?,disabled_reason=? WHERE name=?')
@@ -118,6 +124,7 @@ function writeOperationalState(
     failureKind,
     name,
     input.billingHoldDetail,
+    input.endpointKey,
   )
 }
 
@@ -226,6 +233,7 @@ export type TerminalInput = {
   launchKey: string | null
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
+  endpointKey: EffectiveBillingKey
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
   writingAcp: boolean

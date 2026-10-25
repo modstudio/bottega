@@ -12,6 +12,7 @@ import { db, writeTransaction } from '../database/db.ts'
 import {
   billingHoldForFailure,
   type classify,
+  type EffectiveBillingKey,
   FAILOVER_REFUSAL_MARKER,
   FAILS_OVER,
   NEEDS_HUMAN,
@@ -80,6 +81,7 @@ type SuccessorOptions = {
 export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
+  endpointKey: EffectiveBillingKey
   name: string
   opts: CloseOptions
   claim: { id: string; number: number }
@@ -220,16 +222,22 @@ function notifyFailureRequiringHuman(input: {
   job: string
   idleUnkillable: boolean
   runId: string
+  endpointKey: EffectiveBillingKey
+  projectName: string | null
 }): void {
   if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
     const billingHold = billingHoldForFailure(
       input.failureKind,
       input.name,
       input.billingHoldDetail,
+      input.endpointKey.source,
     )
-    const routingRemedy = billingHold
-      ? `Routing will avoid it: ${billingHold.disabledReason}.`
-      : 'Routing will avoid it until it succeeds again.'
+    const routingRemedy =
+      input.failureKind === 'billing' && input.endpointKey.source === 'project'
+        ? `Project ${input.projectName} secret ${input.endpointKey.secretName} pays for this run; restore that key's OpenRouter balance or limit.`
+        : billingHold
+          ? `Routing will avoid it: ${billingHold.disabledReason}.`
+          : 'Routing will avoid it until it succeeds again.'
     notify(
       NEEDS_HUMAN_TITLE[input.failureKind]?.(input.name) ?? `${input.name} needs attention`,
       `${input.job} failed. ${routingRemedy}`,
@@ -281,6 +289,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     job: opts.job,
     idleUnkillable,
     runId: claim.id,
+    endpointKey: input.endpointKey,
+    projectName: input.endpointKey.projectName,
   })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.
