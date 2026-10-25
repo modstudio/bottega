@@ -690,13 +690,13 @@ export function migrateDatabase(
   }
 }
 
-/** Give machine migrate a handle while the store is intentionally mid-journal. */
 /** Migration entries refuse a worker caller: the store's schema belongs to the operator. */
 function refuseStoreMigrationFromWorkerCaller(): void {
   if (storeActorFacts.workerCaller && !linkedWorktreeMigrationAllowed(DB_PATH))
     throw new Error(workerStoreMigrationRefusal(DB_PATH))
 }
 
+/** Give machine migrate a handle while the store is intentionally mid-journal. */
 export async function withDatabaseForMigrationStep<T>(
   action: (database: Database) => Promise<T>,
 ): Promise<T> {

@@ -716,9 +716,9 @@ export function acceptPackDiff(diff: PackDiff): Pack | null {
   if (diff.stored?.sha256 === diff.current.sha256) return null
   if (storeWritesRefused()) {
     throw new Error(
-      'refusing canon acceptance: this process opens the store read-only\n' +
+      'refusing canon acceptance: this process cannot write the shared store\n' +
         'invariant: Canon is accepted by the process that may write the shared store.\n' +
-        `cleared by: run this command with the main checkout's bin/${PLATFORM_SLUG}`,
+        `cleared by: run this command as an operator from the main checkout with bin/${PLATFORM_SLUG}; a worker reports the change in its reply for the architect to accept`,
     )
   }
   recordPack(diff.current)
