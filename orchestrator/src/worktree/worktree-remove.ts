@@ -153,16 +153,12 @@ export function changesInIndex(
   if (!mergeBase && configuredTrunk) {
     throw new Error(`cannot find merge-base between the run tip and trunk ${trunk}`)
   }
-  /**
-   * Never compare below the run's recorded base.
-   *
-   * A tree cut from the landing branch's upstream while the local trunk branch
-   * still points at the caller's HEAD has a merge-base with trunk strictly
-   * below the base it was cut from, so diffing there would attribute the
-   * remote's already-landed commits to this run. A merge-base at or above the
-   * recorded base is one the run's own base is already an ancestor of, and is
-   * the truthful lower bound.
-   */
+  // Never compare below the run's recorded base. A tree cut from the landing
+  // branch's upstream while the local trunk branch still points at the caller's
+  // HEAD has a merge-base with trunk strictly below the base it was cut from,
+  // so diffing there would attribute the remote's already-landed commits to
+  // this run. A merge-base at or above the recorded base is one the run's own
+  // base is already an ancestor of, and is the truthful lower bound.
   const mergeBaseBelowBase =
     mergeBase !== null &&
     w.base !== '' &&
