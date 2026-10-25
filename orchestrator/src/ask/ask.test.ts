@@ -284,8 +284,10 @@ describe('the live ask channel always answers', () => {
       expect(runTests).toBeDefined()
       expect(runTests?.inputSchema).toMatchObject({
         type: 'object',
-        properties: { paths: { type: 'array', items: { type: 'string' } } },
-        required: ['paths'],
+        properties: {
+          paths: { type: 'array', items: { type: 'string' } },
+          affected: { type: 'boolean' },
+        },
       })
       expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()

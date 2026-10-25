@@ -4,14 +4,28 @@
 import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 export const FOCUSED_TEST_MAX_PATHS = 64
+/** What one affected-test selector may print before its selection is refused rather than held. */
+export const FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES = 1024 * 1024
 const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
 
-export type FocusedTestRunner = { command: string; args: string[] }
-export type FocusedTestRunnerValidation = {
-  runner: FocusedTestRunner | null
+/** A registered command: fixed executable and argv prefix. */
+type FocusedTestCommand = { command: string; args: string[] }
+export type FocusedTestRunner = FocusedTestCommand
+/** The command that prints this project's affected test paths for one base commit. */
+export type FocusedTestSelector = FocusedTestCommand
+/** The `focusedTests` object a project's settings declare. */
+export type FocusedTestDeclaration = FocusedTestCommand & { affected?: FocusedTestSelector }
+
+type FocusedTestCommandValidation = {
+  command: FocusedTestCommand | null
   problems: string[]
 }
-export type FocusedTestRequest = { id: string; paths: string[] }
+export type FocusedTestDeclarationValidation = {
+  runner: FocusedTestRunner | null
+  selector: FocusedTestSelector | null
+  problems: string[]
+}
+export type FocusedTestRequest = { id: string; paths: string[]; affected: boolean }
 export type FocusedTestResult = {
   exitCode: number
   timedOut: boolean
@@ -26,6 +40,8 @@ export function decideFocusedTestEligibility(input: {
   authenticated: boolean
   writer: boolean
   runner: FocusedTestRunner | null
+  selector: FocusedTestSelector | null
+  affected: boolean
 }): FocusedTestEligibility {
   if (!input.authenticated) {
     return { eligible: false, message: 'This process is not a recognized orchestrator worker.' }
@@ -39,7 +55,19 @@ export function decideFocusedTestEligibility(input: {
       message: "This run's project has no registered focused test runner, so nothing was run.",
     }
   }
+  if (input.affected && !input.selector) {
+    return { eligible: false, message: affectedSelectorRegisterMessage() }
+  }
   return { eligible: true }
+}
+
+/** The refusal a call asking for affected tests earns when its project declares no selector. */
+function affectedSelectorRegisterMessage(): string {
+  return (
+    "This run's project declares no affected-test selector, so run_tests cannot select the tests " +
+    'that import what this run changed. Declare focusedTests.affected, a command and args, in the ' +
+    "project's register settings to add one."
+  )
 }
 
 export type FocusedTestRequestDecision =
@@ -105,37 +133,106 @@ function parseStringArray(value: unknown, location: string): string[] {
   return value as string[]
 }
 
-export function validateFocusedTestRunner(value: unknown): FocusedTestRunnerValidation {
-  if (value === undefined || value === null) return { runner: null, problems: [] }
+/**
+ * The rules one registered command must satisfy, reported against the register key that holds it.
+ * A command absent or null declares nothing and is no problem; a present one must name a
+ * non-empty executable and an argv prefix of strings.
+ */
+function validateFocusedTestCommand(
+  value: unknown,
+  location: string,
+): FocusedTestCommandValidation {
+  if (value === undefined || value === null) return { command: null, problems: [] }
   if (typeof value !== 'object' || Array.isArray(value)) {
-    return { runner: null, problems: ['focusedTests must be an object'] }
+    return { command: null, problems: [`${location} must be an object`] }
   }
   const candidate = value as Record<string, unknown>
   const problems: string[] = []
   if (typeof candidate.command !== 'string' || !candidate.command.trim()) {
-    problems.push('focusedTests.command must be a non-empty string')
+    problems.push(`${location}.command must be a non-empty string`)
   }
   if (!Array.isArray(candidate.args) || candidate.args.some((item) => typeof item !== 'string')) {
-    problems.push('focusedTests.args must be an array of strings')
+    problems.push(`${location}.args must be an array of strings`)
   }
-  if (problems.length) return { runner: null, problems }
+  if (problems.length) return { command: null, problems }
   return {
-    runner: {
-      command: (candidate.command as string).trim(),
-      args: candidate.args as string[],
-    },
+    command: { command: (candidate.command as string).trim(), args: candidate.args as string[] },
     problems: [],
   }
 }
 
-export function parseFocusedTestRunner(value: unknown): FocusedTestRunner | null {
-  const validation = validateFocusedTestRunner(value)
-  if (validation.problems.length) throw new Error(validation.problems.join('; '))
-  return validation.runner
+/** The runner and selector parts of one `focusedTests` value, validated independently. */
+function focusedTestDeclarationParts(value: unknown): {
+  runner: FocusedTestCommandValidation
+  selector: FocusedTestCommandValidation
+} {
+  if (value === undefined || value === null) {
+    return {
+      runner: { command: null, problems: [] },
+      selector: { command: null, problems: [] },
+    }
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    const shape = ['focusedTests must be an object']
+    return {
+      runner: { command: null, problems: shape },
+      selector: { command: null, problems: shape },
+    }
+  }
+  const candidate = value as Record<string, unknown>
+  return {
+    runner: validateFocusedTestCommand(
+      { command: candidate.command, args: candidate.args },
+      'focusedTests',
+    ),
+    selector: validateFocusedTestCommand(candidate.affected, 'focusedTests.affected'),
+  }
+}
+
+export function validateFocusedTestDeclaration(
+  value: unknown,
+): FocusedTestDeclarationValidation {
+  const parts = focusedTestDeclarationParts(value)
+  return {
+    runner: parts.runner.command,
+    selector: parts.selector.command,
+    problems: [...new Set([...parts.runner.problems, ...parts.selector.problems])],
+  }
+}
+
+function parseFocusedTestRunner(value: unknown): FocusedTestRunner | null {
+  const parts = focusedTestDeclarationParts(value)
+  if (parts.runner.problems.length) throw new Error(parts.runner.problems.join('; '))
+  return parts.runner.command
+}
+
+function parseFocusedTestSelector(value: unknown): FocusedTestSelector | null {
+  const parts = focusedTestDeclarationParts(value)
+  if (parts.selector.problems.length) throw new Error(parts.selector.problems.join('; '))
+  return parts.selector.command
 }
 
 export function hasFocusedTestRunner(value: unknown): boolean {
-  return validateFocusedTestRunner(value).runner !== null
+  return validateFocusedTestDeclaration(value).runner !== null
+}
+
+/**
+ * The commands a project's stored settings declare. Settings that cannot be read, or that declare
+ * no command, register nothing rather than refusing here: absence is what the callers report.
+ */
+export function declaredFocusedTestCommands(settings: string | null): {
+  runner: FocusedTestRunner | null
+  selector: FocusedTestSelector | null
+} {
+  try {
+    const parsed = JSON.parse(settings ?? '{}') as { focusedTests?: unknown }
+    return {
+      runner: parseFocusedTestRunner(parsed.focusedTests),
+      selector: parseFocusedTestSelector(parsed.focusedTests),
+    }
+  } catch {
+    return { runner: null, selector: null }
+  }
 }
 
 export function parseFocusedTestRequest(value: unknown): FocusedTestRequest {
@@ -146,7 +243,14 @@ export function parseFocusedTestRequest(value: unknown): FocusedTestRequest {
   if (typeof request.id !== 'string' || !/^[A-Za-z0-9-]+$/.test(request.id)) {
     throw new Error('focused test request id is invalid')
   }
-  return { id: request.id, paths: parseStringArray(request.paths, 'paths') }
+  if (request.affected !== undefined && typeof request.affected !== 'boolean') {
+    throw new Error('focused test request affected is invalid')
+  }
+  return {
+    id: request.id,
+    paths: parseStringArray(request.paths, 'paths'),
+    affected: request.affected === true,
+  }
 }
 
 export function parseFocusedTestResult(value: unknown): FocusedTestResult {
@@ -175,24 +279,35 @@ function beneath(root: string, candidate: string): boolean {
   return offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
 }
 
+function normalizedFocusedTestPath(entry: string): string {
+  if (!entry || isAbsolute(entry)) {
+    throw new Error(`focused test path ${JSON.stringify(entry)} must be relative`)
+  }
+  if (entry.startsWith('-')) {
+    throw new Error(`focused test path ${JSON.stringify(entry)} must not start with '-'`)
+  }
+  const normalized = normalize(entry)
+  if (normalized.split(sep).includes('..')) {
+    throw new Error(`focused test path ${JSON.stringify(entry)} contains a parent segment`)
+  }
+  return normalized
+}
+
 export function normalizeFocusedTestPaths(paths: readonly string[]): string[] {
   if (!paths.length) throw new Error('paths must contain at least one project-relative path')
   if (paths.length > FOCUSED_TEST_MAX_PATHS) {
     throw new Error(`paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries`)
   }
-  return paths.map((entry) => {
-    if (!entry || isAbsolute(entry)) {
-      throw new Error(`focused test path ${JSON.stringify(entry)} must be relative`)
-    }
-    if (entry.startsWith('-')) {
-      throw new Error(`focused test path ${JSON.stringify(entry)} must not start with '-'`)
-    }
-    const normalized = normalize(entry)
-    if (normalized.split(sep).includes('..')) {
-      throw new Error(`focused test path ${JSON.stringify(entry)} contains a parent segment`)
-    }
-    return normalized
-  })
+  return paths.map(normalizedFocusedTestPath)
+}
+
+/**
+ * The shape rules for paths a registered selector chose. FOCUSED_TEST_MAX_PATHS bounds what a
+ * worker asks for in one call, not what a project's own selector found, so these paths are exempt
+ * from that count; an empty selection is meaningful and passes through.
+ */
+export function normalizeAffectedTestPaths(paths: readonly string[]): string[] {
+  return paths.map(normalizedFocusedTestPath)
 }
 
 export type FocusedTestPathFact = {
@@ -235,4 +350,159 @@ export function boundedFocusedTestOutputTail(value: string): string {
   const bytes = Buffer.from(value)
   if (bytes.byteLength <= FOCUSED_TEST_OUTPUT_TAIL_BYTES) return value
   return bytes.subarray(bytes.byteLength - FOCUSED_TEST_OUTPUT_TAIL_BYTES).toString()
+}
+
+/** What one call's paths amount to: the paths to run, or the refusal they earn. */
+export type FocusedTestPathDecision =
+  | { kind: 'paths'; paths: string[] }
+  | { kind: 'refuse'; message: string }
+
+/** What the adapter observed of the project's selector, when the call asked for affected tests. */
+export type FocusedTestSelectorOutcome =
+  | { kind: 'not-declared' }
+  | { kind: 'no-base' }
+  | {
+      kind: 'failed'
+      exitCode: number
+      timedOut: boolean
+      overflowed: boolean
+      stderrTail: string
+    }
+  | { kind: 'printed'; stdout: string }
+
+export type FocusedTestSelectionInput =
+  | { affected: false; requestedPaths: readonly string[] }
+  | {
+      affected: true
+      requestedPaths: readonly string[]
+      selector: FocusedTestSelectorOutcome
+    }
+
+/** What one run_tests call runs: the paths, nothing to run, or the refusal it earns. */
+export type FocusedTestSelection =
+  | { kind: 'run'; paths: string[]; note: string | null }
+  | { kind: 'none'; message: string }
+  | { kind: 'refuse'; message: string }
+
+const FOCUSED_TEST_NOTHING_AFFECTED =
+  'No test file in this project imports what this run changed, so nothing was affected and no focused test ran.'
+
+/**
+ * Whether one call runs the focused test runner and on which paths. The worker's own paths keep
+ * FOCUSED_TEST_MAX_PATHS and the worker's paths come first; the selector's paths are exempt from
+ * that count and are appended deduplicated. A selection of nothing at all is a completed result
+ * that says so rather than a runner invocation.
+ */
+export function decideFocusedTestSelection(
+  input: FocusedTestSelectionInput,
+): FocusedTestSelection {
+  const requested = decideRequestedTestPaths(input.affected, input.requestedPaths)
+  if (requested.kind === 'refuse') return requested
+  const selected = input.affected
+    ? decideSelectorTestPaths(input.selector)
+    : { kind: 'paths' as const, paths: [] }
+  if (selected.kind === 'refuse') return selected
+  const paths = unionFocusedTestPaths(requested.paths, selected.paths)
+  if (!paths.length) return { kind: 'none', message: FOCUSED_TEST_NOTHING_AFFECTED }
+  return {
+    kind: 'run',
+    paths,
+    note: input.affected ? affectedSelectionNote(paths.length, selected.paths.length) : null,
+  }
+}
+
+function decideRequestedTestPaths(
+  affected: boolean,
+  paths: readonly string[],
+): FocusedTestPathDecision {
+  if (!paths.length) {
+    return affected
+      ? { kind: 'paths', paths: [] }
+      : { kind: 'refuse', message: 'paths must contain at least one project-relative path' }
+  }
+  try {
+    return { kind: 'paths', paths: normalizeFocusedTestPaths(paths) }
+  } catch (error) {
+    return { kind: 'refuse', message: refusalText(error) }
+  }
+}
+
+function decideSelectorTestPaths(selector: FocusedTestSelectorOutcome): FocusedTestPathDecision {
+  if (selector.kind === 'not-declared') {
+    return { kind: 'refuse', message: affectedSelectorRegisterMessage() }
+  }
+  if (selector.kind === 'no-base') {
+    return {
+      kind: 'refuse',
+      message:
+        'This run records no base commit, so focusedTests.affected has nothing to select the ' +
+        'tests of what this run changed against.',
+    }
+  }
+  if (selector.kind === 'failed') return { kind: 'refuse', message: selectorFailureMessage(selector) }
+  return parseAffectedSelectorOutput(selector.stdout)
+}
+
+/**
+ * The paths a selector's stdout names: one project-relative test path per line, blank lines
+ * ignored. An empty selection is a valid answer; a line that is not a project-relative path is not.
+ */
+export function parseAffectedSelectorOutput(output: string): FocusedTestPathDecision {
+  const lines = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+  try {
+    return { kind: 'paths', paths: normalizeAffectedTestPaths(lines) }
+  } catch (error) {
+    return {
+      kind: 'refuse',
+      message: `the affected-test selector printed output run_tests cannot read: ${refusalText(error)}`,
+    }
+  }
+}
+
+function selectorFailureMessage(selector: {
+  exitCode: number
+  timedOut: boolean
+  overflowed: boolean
+  stderrTail: string
+}): string {
+  const tail = selector.stderrTail.trim() || '(no output)'
+  if (selector.timedOut) {
+    return `the affected-test selector timed out; its stderr tail:\n${tail}`
+  }
+  if (selector.overflowed) {
+    return (
+      `the affected-test selector printed more than ${FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES} bytes, ` +
+      `so its selection was refused; its stderr tail:\n${tail}`
+    )
+  }
+  return `the affected-test selector exited ${selector.exitCode}; its stderr tail:\n${tail}`
+}
+
+function unionFocusedTestPaths(
+  requested: readonly string[],
+  selected: readonly string[],
+): string[] {
+  const union = [...requested]
+  const seen = new Set(requested)
+  for (const path of selected) {
+    if (seen.has(path)) continue
+    seen.add(path)
+    union.push(path)
+  }
+  return union
+}
+
+function affectedSelectionNote(ran: number, selected: number): string {
+  const plural = (count: number) => (count === 1 ? 'path' : 'paths')
+  return (
+    `focusedTests.affected selected ${selected} test ${plural(selected)}; ` +
+    `running ${ran} ${plural(ran)} in total.`
+  )
+}
+
+function refusalText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

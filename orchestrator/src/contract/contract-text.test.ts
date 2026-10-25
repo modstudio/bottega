@@ -103,6 +103,9 @@ describe('job contracts are visible before submission', () => {
       'If it says focused tests are still running, call `run_tests` again',
     )
     expect(WORKER_PREAMBLE).toContain('project-relative paths')
+    expect(WORKER_PREAMBLE).toContain(
+      'call it once with `affected: true` after your own focused tests and before `run_gate`',
+    )
     expect(WORKER_PREAMBLE).toContain('tests you add or change')
     expect(WORKER_PREAMBLE).toContain('never the completion gate')
     expect(WORKER_PREAMBLE).toContain('does not replace the mandatory `run_gate` call')

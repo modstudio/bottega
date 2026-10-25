@@ -25,11 +25,16 @@ import { HOST_TOOL_NICENESS, setChildPriority } from '../run/run-child-priority.
 import { type SandboxRuntimeConfig, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import {
   boundedFocusedTestOutputTail,
+  decideFocusedTestSelection,
+  declaredFocusedTestCommands,
+  FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
   type FocusedTestRequest,
   type FocusedTestResult,
+  type FocusedTestSelection,
+  type FocusedTestSelector,
+  type FocusedTestSelectorOutcome,
   focusedTestInvocation,
   parseFocusedTestRequest,
-  parseFocusedTestRunner,
 } from './focused-test-decision.ts'
 import {
   ensureFocusedTestDirectory,
@@ -39,7 +44,7 @@ import {
   writeFocusedTestFileAtomic,
   writeFocusedTestFileExclusive,
 } from './focused-test-files.ts'
-import { validateFocusedTestPaths } from './focused-test-paths.ts'
+import { validateAffectedTestPaths } from './focused-test-paths.ts'
 import {
   FOCUSED_TEST_ACTIVE_FILE,
   FOCUSED_TEST_LOCK_FILE,
@@ -65,24 +70,26 @@ type FocusedTestProcessState = {
 function focusedTestPlan(runId: string) {
   const row = db()
     .query(
-      `SELECT r.worktree,p.record_id project_record_id,p.name project_name,p.settings
+      `SELECT r.worktree,r.base_commit,p.record_id project_record_id,p.name project_name,p.settings
        FROM run r JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as {
     worktree: string | null
+    base_commit: string | null
     project_record_id: string
     project_name: string
     settings: string | null
   } | null
   if (!row?.worktree) throw new Error(`run ${runId} has no recorded worktree`)
   const settings = JSON.parse(row.settings ?? '{}') as {
-    focusedTests?: unknown
     mainStack?: { consumers?: MainStackConsumer[]; requiredServices?: string[] }
   }
-  const runner = parseFocusedTestRunner(settings.focusedTests)
+  const { runner, selector } = declaredFocusedTestCommands(row.settings)
   if (!runner) throw new Error(`run ${runId}'s project has no registered focused test runner`)
   return {
     runner,
+    selector,
+    baseCommit: row.base_commit,
     worktree: row.worktree,
     projectId: row.project_record_id,
     projectName: row.project_name,
@@ -214,6 +221,142 @@ async function runFocusedTestProcess(input: {
   if (state.cancelled && !state.timedOut) input.record(`\n${FOCUSED_TEST_CLOSE_REASON}\n`)
 }
 
+function selectionMessage(selection: Exclude<FocusedTestSelection, { kind: 'run' }>): string {
+  return selection.kind === 'none'
+    ? selection.message
+    : `focused tests refused: ${selection.message}`
+}
+
+/**
+ * Runs one project-registered selector against the run's recorded base commit and reports what it
+ * printed, its exit, or that it never started. The selector runs in the run's worktree under the
+ * same confinement as the focused test runner, and the base commit is appended as its last argv.
+ */
+async function runFocusedTestSelector(input: {
+  selector: FocusedTestSelector
+  baseCommit: string
+  worktree: string
+  environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
+  state: FocusedTestProcessState
+  record: (chunk: Buffer | string) => void
+  stop: () => Promise<void>
+}): Promise<FocusedTestSelectorOutcome> {
+  const child = await spawnFocusedTestChild({
+    invocation: focusedTestInvocation(input.selector, [input.baseCommit], input.worktree),
+    worktree: input.worktree,
+    environment: input.environment,
+    confinement: input.confinement,
+    record: input.record,
+  })
+  input.state.child = child
+  let stdout = ''
+  let stderrTail = ''
+  let timedOut = false
+  let overflowed = false
+  child.stdout?.on('data', (chunk: Buffer) => {
+    input.record(chunk)
+    stdout += chunk.toString()
+    if (Buffer.byteLength(stdout) > FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES) {
+      overflowed = true
+      void input.stop()
+    }
+  })
+  child.stderr?.on('data', (chunk: Buffer) => {
+    input.record(chunk)
+    stderrTail = boundedFocusedTestOutputTail(`${stderrTail}${chunk.toString()}`)
+  })
+  child.once('error', (error) =>
+    input.record(`affected-test selector could not start: ${String(error)}\n`),
+  )
+  const timeout = setTimeout(() => {
+    timedOut = true
+    void input.stop()
+  }, GATE_COMMAND_TIMEOUT_MS)
+  await waitForExit(child)
+  clearTimeout(timeout)
+  input.state.child = null
+  const exitCode = child.exitCode ?? -1
+  if (!timedOut && !overflowed && exitCode === 0) return { kind: 'printed', stdout }
+  return { kind: 'failed', exitCode, timedOut, overflowed, stderrTail }
+}
+
+/** The paths one request runs: the worker's own, the selector's, or the refusal it earns. */
+async function selectFocusedTestPaths(input: {
+  plan: ReturnType<typeof focusedTestPlan>
+  request: FocusedTestRequest
+  environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
+  state: FocusedTestProcessState
+  record: (chunk: Buffer | string) => void
+  stop: () => Promise<void>
+}): Promise<FocusedTestSelection> {
+  if (!input.request.affected) {
+    return decideFocusedTestSelection({
+      affected: false,
+      requestedPaths: input.request.paths,
+    })
+  }
+  const affected = (selector: FocusedTestSelectorOutcome) =>
+    decideFocusedTestSelection({
+      affected: true,
+      requestedPaths: input.request.paths,
+      selector,
+    })
+  if (!input.plan.selector) return affected({ kind: 'not-declared' })
+  if (!input.plan.baseCommit) return affected({ kind: 'no-base' })
+  const outcome = await runFocusedTestSelector({
+    selector: input.plan.selector,
+    baseCommit: input.plan.baseCommit,
+    worktree: input.plan.worktree,
+    environment: input.environment,
+    confinement: input.confinement,
+    state: input.state,
+    record: input.record,
+    stop: input.stop,
+  })
+  if (input.state.cancelled) return { kind: 'refuse', message: FOCUSED_TEST_CLOSE_REASON }
+  return affected(outcome)
+}
+
+/**
+ * One focused test inside the host slot: select what this request runs, record a refusal or the
+ * selection note, then run the runner over the selected paths. Reports the paths the run records.
+ */
+async function runFocusedTestSelection(input: {
+  plan: ReturnType<typeof focusedTestPlan>
+  request: FocusedTestRequest
+  environment: Record<string, string>
+  confinement: BrokerConfinement<SandboxRuntimeConfig>
+  state: FocusedTestProcessState
+  record: (chunk: Buffer | string) => void
+  stop: () => Promise<void>
+  progressPath: string
+}): Promise<string[]> {
+  removeFocusedTestFile(input.progressPath)
+  const selection = await selectFocusedTestPaths(input)
+  if (selection.kind !== 'run') {
+    input.record(`\n${selectionMessage(selection)}\n`)
+    if (selection.kind === 'none') input.state.exitCode = 0
+    return input.request.paths
+  }
+  if (selection.note) input.record(`\n${selection.note}\n`)
+  await runFocusedTestProcess({
+    invocation: focusedTestInvocation(
+      input.plan.runner,
+      validateAffectedTestPaths(selection.paths, input.plan.worktree),
+      input.plan.worktree,
+    ),
+    worktree: input.plan.worktree,
+    environment: input.environment,
+    confinement: input.confinement,
+    state: input.state,
+    record: input.record,
+    stop: input.stop,
+  })
+  return selection.paths
+}
+
 function focusedTestWaitCallbacks(input: { runId: string; progressPath: string }) {
   return hostSlotWaitCallbacks({
     runId: input.runId,
@@ -284,25 +427,23 @@ function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
       writeSync(fd, bytes)
       outputTail = boundedFocusedTestOutputTail(outputTail + bytes.toString())
     }
+    let eventPaths = input.request.paths
     try {
       const plan = focusedTestPlan(input.runId)
-      const paths = validateFocusedTestPaths(input.request.paths, plan.worktree)
       ensureFocusedTestMainStack(plan, input.environment)
-      const invocation = focusedTestInvocation(plan.runner, paths, plan.worktree)
       const progressPath = join(input.scratchDir, focusedTestProgressFile(input.request.id))
-      await withGateSlot(
-        () => {
-          removeFocusedTestFile(progressPath)
-          return runFocusedTestProcess({
-            invocation,
-            worktree: plan.worktree,
+      eventPaths = await withGateSlot(
+        () =>
+          runFocusedTestSelection({
+            plan,
+            request: input.request,
             environment: input.environment,
             confinement: input.confinement,
             state,
             record,
             stop,
-          })
-        },
+            progressPath,
+          }),
         {
           signal: slotWait.signal,
           ...focusedTestWaitCallbacks({ runId: input.runId, progressPath }),
@@ -327,7 +468,7 @@ function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
     appendRunEvent(input.runId, {
       ts: nowIso(),
       type: 'focused_test',
-      paths: input.request.paths,
+      paths: eventPaths,
       started: state.started,
       exitCode: state.exitCode,
       timedOut: state.timedOut,
