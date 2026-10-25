@@ -85,24 +85,29 @@ if (import.meta.main) {
   }
 
   const kind = classifyStore(live)
-  if (gateStoreSource(kind, true).kind === 'gate-facts') {
+  if (kind === 'ahead') {
     const code = withBranchStoreScratch('pack-budget', (dir) => {
+      let snapshot: ReturnType<typeof mainGateFactsSnapshot> | null = null
+      let snapshotError: unknown
       try {
-        const snapshot = mainGateFactsSnapshot(dir)
-        console.log(
-          `canon pack budget: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
-        )
-        return runGateFacts(snapshot.path)
+        snapshot = mainGateFactsSnapshot(dir)
       } catch (cause) {
+        snapshotError = cause
+      }
+      if (gateStoreSource(kind, snapshot !== null).kind === 'refuse') {
         const database = new Database(live, { readonly: true })
         try {
           console.error(migrationRefusal(database))
-          console.error(String((cause as Error).message ?? cause))
+          console.error(String((snapshotError as Error).message ?? snapshotError))
         } finally {
           database.close()
         }
         return 1
       }
+      console.log(
+        `canon pack budget: gate-facts snapshot took ${snapshot!.elapsedMs.toFixed(1)} ms`,
+      )
+      return runGateFacts(snapshot!.path)
     })
     process.exit(code)
   }

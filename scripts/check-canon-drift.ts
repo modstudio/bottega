@@ -175,25 +175,31 @@ function checkCanonDrift(
 if (import.meta.main) {
   try {
     const live = liveStorePath()
+    const storeKind = classifyStore(live)
     const findings =
-      gateStoreSource(classifyStore(live), true).kind === 'gate-facts'
+      storeKind === 'ahead'
         ? withBranchStoreScratch('canon-drift', (dir) => {
+            let snapshot: ReturnType<typeof mainGateFactsSnapshot> | null = null
+            let snapshotError: unknown
             try {
-              const snapshot = mainGateFactsSnapshot(dir)
-              console.log(
-                `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
-              )
-              return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
+              snapshot = mainGateFactsSnapshot(dir)
             } catch (cause) {
+              snapshotError = cause
+            }
+            if (gateStoreSource(storeKind, snapshot !== null).kind === 'refuse') {
               const database = new Database(live!, { readonly: true })
               try {
                 throw new Error(
-                  `${migrationRefusal(database)}\n${String((cause as Error).message ?? cause)}`,
+                  `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
                 )
               } finally {
                 database.close()
               }
             }
+            console.log(
+              `canon drift: gate-facts snapshot took ${snapshot!.elapsedMs.toFixed(1)} ms`,
+            )
+            return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot!.path))
           })
         : checkCanonDrift(root)
     for (const finding of findings) {

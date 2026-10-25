@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { FROZEN_ENV_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
 import { installationVersionText } from '../../../shared/install-root.ts'
 import { COLLECTION_COMMANDS, collect } from '../collect/collect.ts'
@@ -77,8 +77,18 @@ export function isStoreFreeInvocation(
     (argv[0] === 'test-substance' && argv[1] === 'judge') ||
     (argv[0] === 'hub-import' && argv[1] === 'judge') ||
     (argv[0] === 'release' && argv[1] === 'check') ||
-    (argv[0] === 'check' && argv.includes('--enabled') && Boolean(env.BOTTEGA_GATE_FACTS))
+    (argv[0] === 'gate' &&
+      argv[1] === 'check' &&
+      argv.includes('--enabled') &&
+      Boolean(env[FROZEN_ENV_NAMES.gateFacts]))
   )
+}
+
+export function storeFreeInvocationArgv(
+  argv: string[],
+  invocation?: PublicCommandInvocation,
+): string[] {
+  return invocation ? [...invocation.publicPath, ...argv.slice(invocation.ownerPath.length)] : argv
 }
 
 async function degradedCollection(argv: string[], error: unknown): Promise<number> {
@@ -105,13 +115,17 @@ async function degradedCollection(argv: string[], error: unknown): Promise<numbe
 }
 
 export async function main(argv: string[], invocation?: PublicCommandInvocation): Promise<number> {
-  return cliEntry(argv, (args, storeFree) => fullCli(args, storeFree, invocation))
+  return cliEntry(argv, (args, storeFree) => fullCli(args, storeFree, invocation), invocation)
 }
 
 type FullCliEntry = (argv: string[], storeFree: boolean) => Promise<number>
 
-async function cliEntry(argv: string[], enterFullCli: FullCliEntry): Promise<number> {
-  const storeFree = isStoreFreeInvocation(argv)
+async function cliEntry(
+  argv: string[],
+  enterFullCli: FullCliEntry,
+  invocation?: PublicCommandInvocation,
+): Promise<number> {
+  const storeFree = isStoreFreeInvocation(storeFreeInvocationArgv(argv, invocation))
   if (argv.length === 1 && argv[0] === '--version') return versionCommand()
   if (argv[0] === 'init-db' && !storeFree) return initDatabaseCommand(argv)
   try {

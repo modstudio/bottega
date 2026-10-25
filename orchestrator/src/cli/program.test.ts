@@ -8,7 +8,12 @@ import {
   MigrationDrainRefusalError,
 } from '../database/database-commands.ts'
 import { CLI_COMMANDS } from './args.ts'
-import { isHelpShapedInvocation, isStoreFreeInvocation, runCliEntryForTest } from './orch.ts'
+import {
+  isHelpShapedInvocation,
+  isStoreFreeInvocation,
+  runCliEntryForTest,
+  storeFreeInvocationArgv,
+} from './orch.ts'
 import {
   exitCodeFor,
   lockedStoreMessage,
@@ -38,8 +43,19 @@ test('the outer CLI classifies every informational invocation without consulting
   expect(isStoreFreeInvocation(['setup'])).toBeTrue()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
   expect(
-    isStoreFreeInvocation(['check', '--enabled'], { BOTTEGA_GATE_FACTS: '/tmp/facts.json' }),
+    isStoreFreeInvocation(['gate', 'check', '--enabled'], {
+      BOTTEGA_GATE_FACTS: '/tmp/facts.json',
+    }),
   ).toBeTrue()
+  expect(
+    isStoreFreeInvocation(['check', '--enabled'], { BOTTEGA_GATE_FACTS: '/tmp/facts.json' }),
+  ).toBeFalse()
+  expect(
+    storeFreeInvocationArgv(['check', '--enabled'], {
+      ownerPath: ['check'],
+      publicPath: ['gate', 'check'],
+    }),
+  ).toEqual(['gate', 'check', '--enabled'])
 })
 
 test('canon command recognition is pinned to the Commander registry', () => {

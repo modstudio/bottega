@@ -38,23 +38,28 @@ if (import.meta.main) {
   const kind = classifyStore(live)
   if (kind === 'current' || kind === 'absent') process.exit(run())
 
-  if (gateStoreSource(kind, true).kind === 'gate-facts') {
+  if (kind === 'ahead') {
     const code = withBranchStoreScratch('project-checks', (dir) => {
+      let snapshot: ReturnType<typeof mainGateFactsSnapshot> | null = null
+      let snapshotError: unknown
       try {
-        const snapshot = mainGateFactsSnapshot(dir)
-        console.log(`project checks: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`)
-        return runGateFacts(snapshot.path)
+        snapshot = mainGateFactsSnapshot(dir)
       } catch (cause) {
+        snapshotError = cause
+      }
+      if (gateStoreSource(kind, snapshot !== null).kind === 'refuse') {
         const database = new Database(live!, { readonly: true })
         try {
           console.error(migrationRefusal(database))
-          console.error(String((cause as Error).message ?? cause))
+          console.error(String((snapshotError as Error).message ?? snapshotError))
           console.error('branch remedy: rebase the branch onto the landing branch')
         } finally {
           database.close()
         }
         return 1
       }
+      console.log(`project checks: gate-facts snapshot took ${snapshot!.elapsedMs.toFixed(1)} ms`)
+      return runGateFacts(snapshot!.path)
     })
     process.exit(code)
   }
