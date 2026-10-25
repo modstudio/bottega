@@ -20,7 +20,9 @@ export function decideRetryConversation(input: {
   writesRepo: boolean
   rulingsPresent: boolean
   agentChanged: boolean
+  neverStarted?: boolean
 }): RetryConversationDecision {
+  if (input.neverStarted) return { action: 'regular-retry' }
   if (!input.writesRepo) return { action: 'regular-retry' }
   if (!input.rulingsPresent && !input.agentChanged) return { action: 'continue' }
   return { action: 'needs-writing-workspace' }

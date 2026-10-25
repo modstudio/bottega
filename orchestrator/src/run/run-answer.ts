@@ -428,11 +428,13 @@ export async function retryRun(
     .all(row.root_record_id, row.root_record_id) as RecordedRuling[]
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
-  const agent = options.agent ?? row.agent
+  const neverStarted = row.agent === '(pending)'
+  const agent = options.agent ?? (neverStarted ? undefined : row.agent)
   const preliminaryPath = decideRetryConversation({
     writesRepo,
     rulingsPresent: recordedRulings.length > 0,
-    agentChanged: agent !== row.agent,
+    agentChanged: agent !== undefined && agent !== row.agent,
+    neverStarted,
   })
   if (preliminaryPath?.action === 'continue') {
     const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
@@ -474,40 +476,43 @@ export async function retryRun(
   const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
-  const workspace = writesRepo
-    ? resolveWritingRetryWorkspace({
-        id,
-        rootId: row.root_record_id,
-        job: row.job,
-        launchKey: row.launch_key,
-        repo: row.repo,
-        projectId: row.project_record_id,
-        branchKept: row.branch_kept,
-        branchKeptTip: row.branch_kept_tip,
-        strandedRecordOnly: recordedRulings.length > 0 && latestTurn.status === 'asking',
-      })
-    : null
+  const workspace =
+    writesRepo && !neverStarted
+      ? resolveWritingRetryWorkspace({
+          id,
+          rootId: row.root_record_id,
+          job: row.job,
+          launchKey: row.launch_key,
+          repo: row.repo,
+          projectId: row.project_record_id,
+          branchKept: row.branch_kept,
+          branchKeptTip: row.branch_kept_tip,
+          strandedRecordOnly: recordedRulings.length > 0 && latestTurn.status === 'asking',
+        })
+      : null
   console.error(
     `— retrying run ${id} (${row.agent}/${row.job}` +
       (row.failure_kind ? `, ${row.failure_kind}` : '') +
-      `) on ${agent}`,
+      `)${agent ? ` on ${agent}` : ' through a fresh route'}`,
   )
   retryAuthority = writeTransaction(() => {
     retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
     return adoptRunMutation(retryAuthority, 'retry')
   })
-  const retryTree = resolveRetryTree({
-    rootId: row.root_record_id,
-    projectName: row.repo,
-    projectPath: checkout.project?.path ?? null,
-    readsRepo,
-    writesRepo,
-    checkoutCwd: checkout.cwd,
-    recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
-    baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
-    agent,
-    sessionId: retryAuthority.owner,
-  })
+  const retryTree = neverStarted
+    ? { cwd: checkout.cwd, resume: undefined }
+    : resolveRetryTree({
+        rootId: row.root_record_id,
+        projectName: row.repo,
+        projectPath: checkout.project?.path ?? null,
+        readsRepo,
+        writesRepo,
+        checkoutCwd: checkout.cwd,
+        recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
+        baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
+        agent: agent!,
+        sessionId: retryAuthority.owner,
+      })
   // Detached and followed, exactly like `do`. A retry is usually started
   // BECAUSE the first attempt died; running it as a child of this process
   // would leave it dying the same way.
@@ -537,10 +542,12 @@ export async function retryRun(
       retryPrompt,
       {
         agent,
-        agentExplicit: Boolean(options.agent || row.agent_explicit),
+        agentExplicit: Boolean(options.agent || (!neverStarted && row.agent_explicit)),
         schema: row.schema_path ?? undefined,
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
-        model: retryModelForAgent(row.agent, row.model, agent, options.model),
+        model: agent
+          ? retryModelForAgent(row.agent, row.model, agent, options.model)
+          : options.model,
         ...retryReviewBindings(row),
         review: row.review_ref ?? undefined,
         probe: !!row.probe,
@@ -552,7 +559,9 @@ export async function retryRun(
         base: resumeLaunch.base,
         launchBase: row.launch_base ?? undefined,
         noFailover: !!row.no_failover,
-        transport: retryTransport(agent !== row.agent, agent, transportTurns(row.root_record_id)),
+        transport: agent
+          ? retryTransport(agent !== row.agent, agent, transportTurns(row.root_record_id))
+          : undefined,
         keepTree: row.keep_tree
           ? (() => {
               const decision = keepTreeHold({

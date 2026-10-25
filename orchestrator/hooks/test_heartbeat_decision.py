@@ -845,6 +845,11 @@ esac
             "failed", "contract", "FAILED 8/fixture codex contract 2.0s"
         )
 
+    def test_a_capacity_failure_names_its_retry(self):
+        self.assert_completion_announcement(
+            "failed", "capacity", "FAILED 8/fixture codex capacity 2.0s; retry with 'bottega run retry 8'"
+        )
+
     def assert_completion_announcement(self, status, failure_kind, expected):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)

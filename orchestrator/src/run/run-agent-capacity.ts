@@ -6,6 +6,7 @@ import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { type RunningRunCounts, runningRunCountsForAgents } from '../route/running-runs.ts'
 import {
+  DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
   RUN_HOST_WAIT_MAX_MS,
   RUN_HOST_WAIT_POLL_CAP_MS,
   RUN_HOST_WAIT_POLL_MS,
@@ -16,9 +17,14 @@ export type CapacityWaitDecision = 'wait' | 'refuse'
 export function decideCapacityWait(input: {
   noWait: boolean
   waitedMs: number
+  detached: boolean
 }): CapacityWaitDecision {
-  if (input.noWait || input.waitedMs >= RUN_HOST_WAIT_MAX_MS) return 'refuse'
+  if (input.noWait || input.waitedMs >= agentCapacityWaitMaxMs(input.detached)) return 'refuse'
   return 'wait'
+}
+
+export function agentCapacityWaitMaxMs(detached: boolean): number {
+  return detached ? DETACHED_AGENT_CAPACITY_WAIT_MAX_MS : RUN_HOST_WAIT_MAX_MS
 }
 
 export function nextCapacityPollMs(currentMs: number): number {
@@ -60,6 +66,7 @@ export async function waitForAgentSelection<T>(input: {
   sleep?: (ms: number) => Promise<void>
   runningCounts?: (agents: readonly string[]) => RunningRunCounts
   onWait?: (at: string) => void
+  detached?: boolean
 }): Promise<T> {
   const now = input.now ?? Date.now
   const sleep =
@@ -68,6 +75,8 @@ export async function waitForAgentSelection<T>(input: {
   let announced = false
   let pollMs = RUN_HOST_WAIT_POLL_MS
   let lastCapacityError: AgentCapacityError | null = null
+  const detached = Boolean(input.detached)
+  const maxWaitMs = agentCapacityWaitMaxMs(detached)
   for (;;) {
     if (!lastCapacityError) {
       try {
@@ -78,10 +87,20 @@ export async function waitForAgentSelection<T>(input: {
       }
     }
     const waitedMs = now() - started
-    const decision = decideCapacityWait({ noWait: Boolean(input.noWait), waitedMs })
-    if (decision === 'refuse') throw refusalAtWaitBound(lastCapacityError, Boolean(input.noWait))
+    const decision = decideCapacityWait({ noWait: Boolean(input.noWait), waitedMs, detached })
+    if (decision === 'refuse') {
+      if (!input.noWait) {
+        try {
+          return input.select()
+        } catch (error) {
+          if (!(error instanceof AgentCapacityError)) throw error
+          lastCapacityError = error
+        }
+      }
+      throw refusalAtWaitBound(lastCapacityError, Boolean(input.noWait), maxWaitMs)
+    }
     announced = announceCapacityWait(announced, input.onWait, now())
-    await sleep(Math.min(pollMs, RUN_HOST_WAIT_MAX_MS - waitedMs))
+    await sleep(Math.min(pollMs, maxWaitMs - waitedMs))
     const agents = Object.keys(lastCapacityError.runningCounts)
     const currentCounts = (input.runningCounts ?? runningRunCountsForAgents)(agents)
     const next = nextCapacityWaitState(pollMs, lastCapacityError.runningCounts, currentCounts)
@@ -90,11 +109,16 @@ export async function waitForAgentSelection<T>(input: {
   }
 }
 
-function refusalAtWaitBound(error: AgentCapacityError, noWait: boolean): AgentCapacityError {
+function refusalAtWaitBound(
+  error: AgentCapacityError,
+  noWait: boolean,
+  maxWaitMs: number,
+): AgentCapacityError {
   return noWait
     ? error
     : new AgentCapacityError(
-        `${error.message}; capacity wait bound reached after ${RUN_HOST_WAIT_MAX_MS}ms`,
+        `${error.message}; capacity wait bound reached after ${maxWaitMs}ms\n` +
+          'cleared by: retry this command with bottega run start --detach',
         error.runningCounts,
       )
 }
@@ -108,6 +132,7 @@ export async function selectAgentWithCapacityEvents<T>(input: {
   const selected = await waitForAgentSelection({
     select: input.select,
     noWait: input.noWait,
+    detached: Boolean(input.runId),
     onWait: (at) => {
       waiting = true
       if (input.runId) appendRunEvent(input.runId, { ts: at, type: 'capacity_wait', waiting: true })

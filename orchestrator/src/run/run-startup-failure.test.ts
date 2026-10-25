@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 
 test('a refusal after detach keeps the printed run queryable as failed', () => {
@@ -19,6 +20,17 @@ test('a refusal after detach keeps the printed run queryable as failed', () => {
   })
   expect(db().query("SELECT kind FROM outbox WHERE row_id=? AND kind='run'").get(id)).toEqual({
     kind: 'run',
+  })
+})
+
+test('an agent-capacity startup refusal records capacity and a working retry remedy', () => {
+  const id = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
+
+  recordRunStartupFailure(id, new AgentCapacityError('capacity wait bound reached', { codex: 2 }))
+
+  expect(db().query('SELECT failure_kind, error FROM run WHERE record_id=?').get(id)).toEqual({
+    failure_kind: 'capacity',
+    error: `capacity wait bound reached\ncleared by: bottega run retry ${id}`,
   })
 })
 
