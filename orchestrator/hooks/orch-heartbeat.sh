@@ -27,8 +27,9 @@
 # the poll can be frequent precisely because only transitions are expensive.
 #
 # The state key is the inbox identity set, plus sorted run ids with each run's
-# liveness class and sorted landing ids. A run changing liveness class is a
-# state change even when the ids are unchanged. Elapsed time never enters the key.
+# liveness class, sorted landing ids, and authored open-request ids. A run changing
+# liveness class is a state change even when the ids are unchanged. Elapsed time
+# never enters the key.
 #
 # CLEAR is silent so this stays cheap to run often: the answer to "should this
 # session still be waiting" is only worth a notification when it is yes, or when
