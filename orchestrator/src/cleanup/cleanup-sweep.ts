@@ -336,7 +336,7 @@ function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project |
   )
 }
 
-function printSweepKept(
+async function printSweepKept(
   released: number,
   absent: number,
   forgotten: number,
@@ -344,7 +344,7 @@ function printSweepKept(
   dry: boolean,
   force: boolean,
   presentation: CleanupPresentation,
-): void {
+): Promise<void> {
   presentation.log(
     `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}`,
   )
@@ -368,6 +368,8 @@ function printSweepKept(
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
+  const runLinks = await sweepRunTaskLinks(dry)
+  presentation[runLinks.kind](runLinks.line)
 }
 
 function reportClosedSweepRow(
@@ -1011,7 +1013,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   cleanupFailed ||= await sweepOrphanProcesses(sweepProjects, dry, options.presentation)
 
-  printSweepKept(
+  await printSweepKept(
     closedCounts.released,
     closedCounts.absent,
     closedCounts.forgotten,
@@ -1020,7 +1022,5 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  const runLinks = await sweepRunTaskLinks(dry)
-  options.presentation[runLinks.kind](runLinks.line)
   if (cleanupFailed) options.presentation.setExitCode(1)
 }

@@ -149,6 +149,22 @@ function sandboxRuntimeDoctorLine(runtime: RuntimeAvailability): string {
     : `sandbox        runtime NOT AVAILABLE at ${runtime.location}; ${runtime.remedy}`
 }
 
+async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<void> {
+  db()
+  log(`database       ${DB_PATH}`)
+  log(`open mode      ${databaseOpenMode()}`)
+  const { expectedSchemaHash, canonicalSchemaHash, schemaVersionLabel } = await import(
+    '../database/migrations.ts'
+  )
+  log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
+  log(`schema version ${schemaVersionLabel(db())}`)
+  log(`resolved by    ${DATABASE_RESOLUTION.method}`)
+  if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
+    log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
+  }
+  log(await runTaskReferenceDoctorLine())
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
@@ -227,19 +243,7 @@ export async function doctorCommand(
   if (failingEvalSlugs.length) {
     log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
   }
-  db()
-  log(`database       ${DB_PATH}`)
-  log(`open mode      ${databaseOpenMode()}`)
-  const { expectedSchemaHash, canonicalSchemaHash, schemaVersionLabel } = await import(
-    '../database/migrations.ts'
-  )
-  log(`schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`)
-  log(`schema version ${schemaVersionLabel(db())}`)
-  log(`resolved by    ${DATABASE_RESOLUTION.method}`)
-  if (DATABASE_RESOLUTION.registeredPath && DATABASE_RESOLUTION.registeredPath !== DB_PATH) {
-    log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
-  }
-  log(await runTaskReferenceDoctorLine())
+  await reportDatabaseStatus(log)
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)

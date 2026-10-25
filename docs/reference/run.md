@@ -11,6 +11,7 @@ dispatch and inspect runs
 - [bottega run diff](#bottega-run-diff)
 - [bottega run discard](#bottega-run-discard)
 - [bottega run identity-map](#bottega-run-identity-map)
+- [bottega run link-tasks](#bottega-run-link-tasks)
 - [bottega run list](#bottega-run-list)
 - [bottega run peek](#bottega-run-peek)
 - [bottega run reconcile](#bottega-run-reconcile)
@@ -41,6 +42,7 @@ dispatch and inspect runs
 - [bottega run diff](./run.md#bottega-run-diff)
 - [bottega run discard](./run.md#bottega-run-discard)
 - [bottega run identity-map](./run.md#bottega-run-identity-map)
+- [bottega run link-tasks](./run.md#bottega-run-link-tasks)
 - [bottega run list](./run.md#bottega-run-list)
 - [bottega run peek](./run.md#bottega-run-peek)
 - [bottega run reconcile](./run.md#bottega-run-reconcile)
@@ -136,6 +138,21 @@ remove a run worktree and discard its branch
 **Synopsis:** `bottega run identity-map`
 
 print numeric run identities and their durable record ids as JSON
+
+### Related
+
+- [bottega run](./run.md#bottega-run)
+
+## bottega run link-tasks
+
+**Synopsis:** `bottega run link-tasks [--dry-run] [--json]`
+
+derive missing run task and project links from recorded facts
+
+### Options
+
+- `--dry-run`: report links without writing them
+- `--json`: write the report as JSON
 
 ### Related
 

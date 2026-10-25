@@ -116,9 +116,7 @@ function deriveTaskLink(
   for (const [source, found] of sources) {
     if (found) return { task_record_id: found.record_id, task_source: source }
   }
-  const inherited = run.parent_run_record_id
-    ? resolvedTasks.get(run.parent_run_record_id)
-    : null
+  const inherited = run.parent_run_record_id ? resolvedTasks.get(run.parent_run_record_id) : null
   return inherited ? { task_record_id: inherited, task_source: 'turn' } : {}
 }
 
@@ -135,14 +133,13 @@ function deriveProjectLink(
   if (taskProject) {
     return { project_record_id: taskProject.recordId, project_source: 'task-project' }
   }
-  const direct = longestPathProject(run.cwd, registered) ?? longestPathProject(run.launch_cwd, registered)
+  const direct =
+    longestPathProject(run.cwd, registered) ?? longestPathProject(run.launch_cwd, registered)
   if (direct) return { project_record_id: direct.recordId, project_source: 'cwd' }
   const scratch =
     longestScratchpadProject(run.cwd, registered) ??
     longestScratchpadProject(run.launch_cwd, registered)
-  return scratch
-    ? { project_record_id: scratch.recordId, project_source: 'scratchpad-cwd' }
-    : {}
+  return scratch ? { project_record_id: scratch.recordId, project_source: 'scratchpad-cwd' } : {}
 }
 
 /** Roots precede turns so a turn can inherit a root link derived in this pass. */
