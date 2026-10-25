@@ -104,6 +104,25 @@ const applicationSchemaRows = (d: Database) =>
     .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
+
+function missingForeignKeyTargets(d: Database): string[] {
+  const tables = d
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all()
+  const tableNames = new Set(tables.map((row) => row.name))
+  return tables.flatMap(({ name }) =>
+    d
+      .query<{ from: string; table: string }, []>(
+        `PRAGMA foreign_key_list(${quoteIdentifier(name)})`,
+      )
+      .all()
+      .filter((foreignKey) => !tableNames.has(foreignKey.table))
+      .map((foreignKey) => `${name}.${foreignKey.from} -> ${foreignKey.table}`),
+  )
+}
+
 /** Reduce any later journal state to the baseline application-object inventory. */
 function stripPostBaselineApplicationObjects(d: Database): void {
   const foreignKeys =
@@ -160,6 +179,15 @@ function stripPostBaselineApplicationObjects(d: Database): void {
 }
 
 describe('hub migration journal', () => {
+  test("a replay under Bun's connection defaults has only resolvable foreign-key targets", () => {
+    const d = new Database(':memory:')
+    applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+    expect(missingForeignKeyTargets(d)).toEqual([])
+    expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 0 })
+    expect(d.query('PRAGMA legacy_alter_table').get()).toEqual({ legacy_alter_table: 1 })
+    d.close()
+  })
+
   test('fresh migrations equal trunk schema by structural hash', () => {
     const d = fresh()
     expect(canonicalSchemaHash(d)).toBe(expectedSchemaHash())
@@ -929,6 +957,7 @@ describe('hub migration journal', () => {
 
   test('task identity rebuild refuses and names an unresolvable child', () => {
     const d = migratedThrough(8)
+    d.exec('PRAGMA legacy_alter_table = ON')
     d.exec('PRAGMA foreign_keys = OFF')
     d.exec(`INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status) VALUES
       (1,'MISSING-42',NULL,'2026-01-01','open'),
@@ -938,6 +967,8 @@ describe('hub migration journal', () => {
       'unresolved task_status_event rows: 1:MISSING-42, 2:MISSING-43',
     )
     expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
+    expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })
+    expect(d.query('PRAGMA legacy_alter_table').get()).toEqual({ legacy_alter_table: 1 })
     d.close()
   })
 

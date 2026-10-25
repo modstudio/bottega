@@ -29,6 +29,32 @@ const baseline = `
 CREATE TABLE project (id INTEGER PRIMARY KEY, record_id TEXT);
 CREATE TABLE child (id INTEGER PRIMARY KEY, project_id INTEGER REFERENCES project(id));`
 
+const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
+
+function missingForeignKeyTargets(database: Database): string[] {
+  const tables = database
+    .query<{ name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all()
+  const tableNames = new Set(tables.map((row) => row.name))
+  return tables.flatMap(({ name }) =>
+    database
+      .query<{ from: string; table: string }, []>(
+        `PRAGMA foreign_key_list(${quoteIdentifier(name)})`,
+      )
+      .all()
+      .filter((foreignKey) => !tableNames.has(foreignKey.table))
+      .map((foreignKey) => `${name}.${foreignKey.from} -> ${foreignKey.table}`),
+  )
+}
+
+test("an orchestrator replay under Bun's connection defaults has only resolvable foreign-key targets", () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  expect(missingForeignKeyTargets(database)).toEqual([])
+})
+
 test('a parent rebuild preserves every child project_id', () => {
   const folder = mkdtempSync(join(tmpdir(), 'orch-project-rebuild-'))
   journal(folder, [
