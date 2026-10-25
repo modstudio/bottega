@@ -195,19 +195,25 @@ test('hosted author preparation resolves the latest non-consume revision author'
   ).rejects.toThrow('consume again when the hosted record is reachable')
   expect(getDoc('resume', 'handoff-project', stored.slug)?.body).toContain('status: open')
 
-  expect(
-    await resumeBriefAuthorSession(stored, db(), {
-      writeDecision: 'hosted',
-      listHostedRevisions: async () => [
-        {
-          id: localRevision,
-          op: 'create',
-          sessionId: null,
-          at: '2026-10-25T05:00:00.000Z',
-        },
-      ],
-    }),
-  ).toBe('brief-author')
+  const resolvedAuthor = await resumeBriefAuthorSession(stored, db(), {
+    writeDecision: 'hosted',
+    listHostedRevisions: async () => [
+      {
+        id: newRecordId(),
+        op: 'consume',
+        sessionId: 'brief-consumer',
+        at: '2026-10-25T06:00:00.000Z',
+      },
+      {
+        id: localRevision,
+        op: 'create',
+        sessionId: null,
+        at: '2026-10-25T05:00:00.000Z',
+      },
+    ],
+  })
+  expect(resolvedAuthor).toBe('brief-author')
+  expect(resolvedAuthor).not.toBe('brief-consumer')
 
   const unknown = await prepareResumeBriefHandoff(
     getDoc('resume', 'handoff-project', stored.slug),
@@ -261,6 +267,19 @@ test('hosted author preparation resolves the latest non-consume revision author'
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(hostedRoot)).toEqual({
     session_id: 'brief-consumer',
   })
+})
+
+test('a handoff with no local runs names this machine and the cross-machine remedy', async () => {
+  const stored = await brief()
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, { database: db(), machine })
+
+  expect(handoff).toMatchObject({ status: 'moved', authorSession: 'brief-author' })
+  expect(handoff.lines).toEqual([
+    `resume handoff: session brief-author owns no runs on machine ${machine}; runs the author left on another machine stay there; on that machine run ${PLATFORM_SLUG} session adopt brief-author --reason "resume brief handoff-project/${stored.slug} consumed by brief-consumer"`,
+  ])
 })
 
 test('handoff reports the current owner when transfer loses to a third session', async () => {
