@@ -17,7 +17,6 @@ import {
 import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { questionRulingRemedy } from './question-ruling-remedy.ts'
-import { answererKindFromAnsweredBy } from './question-vocabulary.ts'
 import {
   effectiveRuling,
   type FiledRulingKind,
@@ -229,20 +228,13 @@ function loadQuestion(questionId: string): QuestionRow {
   return row
 }
 
-function answererKind(row: QuestionRow): string | null {
-  if (row.overturned_at !== null) {
-    return answererKindFromAnsweredBy(row.overturned_by) ?? row.answerer_kind
-  }
-  return row.answerer_kind
-}
-
 function answererDisplay(row: QuestionRow): string | null {
-  if (row.overturned_at !== null) return row.overturned_by_name ?? row.overturned_by
-  return row.answered_by_name ?? row.answered_by
+  if (row.overturned_at !== null) return row.overturned_by_name
+  return row.answered_by_name
 }
 
 const answererAttribution = (row: QuestionRow) => ({
-  answererKind: answererKind(row),
+  answerer: row.overturned_at !== null ? row.overturned_by : row.answered_by,
   answererName: answererDisplay(row),
 })
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
+import { userInfo } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -139,7 +140,7 @@ describe('run answers', () => {
     expect(
       db()
         .query(
-          `SELECT answer,answered_at,answered_by,answerer_kind,answer_channel,delivery_pending_at,revision
+          `SELECT answer,answered_at,answered_by,answered_by_name,answerer_kind,answer_channel,delivery_pending_at,revision
              FROM question WHERE run_record_id=?`,
         )
         .get(id),
@@ -147,6 +148,7 @@ describe('run answers', () => {
       answer: null,
       answered_at: null,
       answered_by: null,
+      answered_by_name: null,
       answerer_kind: null,
       answer_channel: null,
       delivery_pending_at: null,
@@ -837,11 +839,14 @@ test('UI operator answers a foreign-owned chain without adopting it and resumes 
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
     session_id: 'dispatching-session',
   })
-  expect(
-    db()
-      .query('SELECT answered_by,answerer_kind,answer_channel FROM question WHERE number=?')
-      .get(question.number),
-  ).toEqual({ answered_by: 'operator via hub', answerer_kind: 'operator', answer_channel: 'ui' })
+  const attribution = db()
+    .query(
+      'SELECT answered_by,answered_by_name,answerer_kind,answer_channel FROM question WHERE number=?',
+    )
+    .get(question.number) as Record<string, unknown>
+  expect(Object.values(attribution).join('|')).toBe(
+    `operator via hub|${userInfo().username}|operator|ui`,
+  )
   expect(
     db()
       .query(
@@ -859,12 +864,10 @@ test('answer permits an unowned question, warns, and records the answering sessi
   db().query('UPDATE run SET session_id=NULL,pid=? WHERE record_id=?').run(process.pid, id)
   db().query(newQuestionSql()).run(id, new Date().toISOString(), 'which?')
   await answerRun(id, { argv: ['the existing shape'], recordOnly: false, flags }, helpers)
-  expect(
-    db().query('SELECT answer,answered_by FROM question WHERE run_record_id=?').get(id),
-  ).toEqual({
-    answer: 'the existing shape',
-    answered_by: 'orch-test-session',
-  })
+  const attribution = db()
+    .query('SELECT answer,answered_by,answered_by_name FROM question WHERE run_record_id=?')
+    .get(id) as Record<string, unknown>
+  expect(Object.values(attribution)).toEqual(['the existing shape', 'orch-test-session', null])
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(id)).toEqual({
     session_id: 'orch-test-session',
   })

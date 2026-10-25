@@ -1,7 +1,6 @@
 // concern: record-session
 /** Owns access to the locally stored record session. Must not know run phases. */
 import type { Database } from 'bun:sqlite'
-import { userInfo } from 'node:os'
 import { SQL } from 'bun'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
@@ -59,17 +58,6 @@ export function cachedSignedInRecordUser(local: Database = db()): CachedRecordUs
     return parseCachedRecordUser(JSON.parse(value))
   } catch {
     return null
-  }
-}
-
-export function cachedRecordUserNameOrOs(
-  local: Database = db(),
-  machineUsername: () => string = () => userInfo().username,
-): string {
-  try {
-    return cachedSignedInRecordUser(local)?.name ?? machineUsername()
-  } catch {
-    return machineUsername()
   }
 }
 

@@ -15,6 +15,8 @@ type QuestionRow = Record<string, unknown> & {
   project_name: string | null
   project_record_id: string | null
   workflow_cursor_record_id: string | null
+  answered_by_name: string | null
+  overturned_by_name: string | null
 }
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))

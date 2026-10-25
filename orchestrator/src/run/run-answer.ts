@@ -16,7 +16,6 @@ import { callerIdentity, db, writableDb, writeTransaction } from '../database/db
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
-import { cachedRecordUserNameOrOs } from '../record/record-session.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -41,6 +40,7 @@ import {
   QUESTION_DELIVERY_OUTCOME_FAILED,
   rulingActor,
 } from './question-vocabulary.ts'
+import { rulingPersonName } from './ruling-attribution.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
@@ -216,13 +216,10 @@ function answerAttribution(
   operatorAuthorized: boolean,
   answer: Pick<AnsweredQuestion, 'fromOperator'>,
   callerSession: string | null,
+  personName: string | null,
 ) {
   const identity = answeredBy(operatorAuthorized, answer.fromOperator, callerSession)
-  return [
-    identity,
-    answer.fromOperator ? cachedRecordUserNameOrOs() : null,
-    answererKindFromAnsweredBy(identity),
-  ] as const
+  return [identity, personName, answererKindFromAnsweredBy(identity)] as const
 }
 
 function requireAnswerAuthority(
@@ -879,8 +876,8 @@ export async function answerRun(
     rootCwd: row.cwd,
     rootRepo: row.repo,
   })
-
   const now = new Date(Date.now()).toISOString()
+  const personNames = answers.map((answer) => rulingPersonName(answer.fromOperator))
   const upd = db().query(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
@@ -892,11 +889,12 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    answers.forEach((answer) => {
+    answers.forEach((answer, index) => {
       const attribution = answerAttribution(
         authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
         answer,
         callerSession,
+        personNames[index] ?? null,
       )
       upd.run(
         answer.answer,

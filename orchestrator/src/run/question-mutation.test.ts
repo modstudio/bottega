@@ -2,7 +2,8 @@ import { expect, test } from 'bun:test'
 import { installRecordSessionRunner } from '../../test/fixtures/record-session.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { rememberSignedInRecordUser } from '../record/record-session.ts'
-import { authorizeWorkflowQuestionMutation, rulingPersonName } from './question-mutation.ts'
+import { authorizeWorkflowQuestionMutation } from './question-mutation.ts'
+import { rulingPersonName } from './ruling-attribution.ts'
 
 const now = Date.parse('2026-10-25T06:00:00.000Z')
 

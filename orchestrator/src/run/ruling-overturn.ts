@@ -3,13 +3,10 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
-import {
-  auditQuestionMutation,
-  authorizeWorkflowQuestionMutation,
-  rulingPersonName,
-} from './question-mutation.ts'
+import { auditQuestionMutation, authorizeWorkflowQuestionMutation } from './question-mutation.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
+import { rulingPersonName } from './ruling-attribution.ts'
 import { overturnRulingDecision } from './ruling-overturn-authority.ts'
 import { adoptRunMutation, auditRunMutation, runMutationActor } from './run-authority.ts'
 

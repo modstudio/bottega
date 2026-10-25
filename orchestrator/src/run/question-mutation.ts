@@ -5,7 +5,6 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, db } from '../database/db.ts'
-import { cachedRecordUserNameOrOs } from '../record/record-session.ts'
 import { nextQuestionNumber } from './question-number.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
@@ -22,14 +21,6 @@ import type { SessionProcessProbe } from './session-liveness-adapter.ts'
 import { sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
 export type QuestionMutationAction = 'rule' | 'overturn' | 'file' | 'close'
-
-export function rulingPersonName(
-  fromOperator: boolean,
-  input: { database?: Database; machineUsername?: () => string } = {},
-): string | null {
-  if (!fromOperator) return null
-  return cachedRecordUserNameOrOs(input.database ?? db(), input.machineUsername)
-}
 
 export function authorizeWorkflowQuestionMutation(input: {
   owner: string | null

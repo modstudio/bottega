@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { userInfo } from 'node:os'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   productionStepCatalogue,
@@ -566,10 +567,13 @@ describe('workflow cursor adapter', () => {
       step_slug: 'rebase',
     })
     expect(
-      d.query('SELECT question,answer,answerer_kind,answer_channel FROM question').get(),
+      d
+        .query('SELECT question,answer,answered_by_name,answerer_kind,answer_channel FROM question')
+        .get(),
     ).toEqual({
       question: 'Updated?',
       answer: 'Proceed.',
+      answered_by_name: userInfo().username,
       answerer_kind: 'operator',
       answer_channel: 'mcp',
     })

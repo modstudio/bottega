@@ -137,7 +137,7 @@ test('self-ruling records the answered question and closes the step atomically',
     d
       .query(
         `SELECT workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug,question,answer,answer_basis,
-                answerer_kind,answer_channel,answered_by
+                answerer_kind,answer_channel,answered_by,answered_by_name
            FROM question`,
       )
       .get(),
@@ -155,6 +155,7 @@ test('self-ruling records the answered question and closes the step atomically',
     answerer_kind: 'agent',
     answer_channel: 'mcp',
     answered_by: expect.stringMatching(/^operator:/),
+    answered_by_name: null,
   })
   expect(d.query('SELECT action,actor_session,reason FROM question_mutation_audit').get()).toEqual({
     action: 'rule',

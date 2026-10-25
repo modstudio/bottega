@@ -7,10 +7,10 @@ import { closeQuestions } from '../run/question-close.ts'
 import {
   answerWorkflowQuestion,
   authorizeWorkflowQuestionMutation,
-  rulingPersonName,
   upsertWorkflowQuestion,
 } from '../run/question-mutation.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { rulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
@@ -924,6 +924,7 @@ export function ruleWorkflow(
   cursor?: number,
 ): { summary: string; questionId: number } {
   if (!ruling?.trim()) throw new Error('--ruling is required')
+  const personName = rulingPersonName(fromOperator, { database: d })
   return writeTransaction(() => {
     const row = findCursor(project, slug, mode, args, context, d, cursor)
     if (!row)
@@ -959,7 +960,7 @@ export function ruleWorkflow(
         at,
         actor,
         fromOperator,
-        personName: rulingPersonName(fromOperator, { database: d }),
+        personName,
         channel,
         adoptionReason,
       },

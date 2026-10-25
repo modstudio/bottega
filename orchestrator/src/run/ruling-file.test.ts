@@ -132,6 +132,8 @@ describe('file ruling', () => {
     expect(writes[0]?.body).toContain('workflow: fixture-workflow')
     expect(writes[0]?.body).toContain('workflow_mode: default')
     expect(writes[0]?.body).toContain(`workflow_cursor: ${cursor.number}`)
+    expect(writes[0]?.body).toContain('answerer: owner-session')
+    expect(writes[0]?.body).toContain('answerer_name: unknown')
     expect(writes[0]?.body).not.toContain('\nrun:')
     expect(db().query('SELECT action FROM question_mutation_audit').get()).toEqual({
       action: 'file',
