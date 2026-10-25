@@ -161,9 +161,10 @@ function registerMachineCommands(config: Command): void {
 /** Read the piped value, refuse a blank one, and seal the rest in the requested scope. */
 async function sealPipedSecret(key: string, options: { space?: boolean }): Promise<void> {
   if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
-  const decision = sealSecretDecision(key, await Bun.stdin.text())
+  const chosen = scope(options)
+  const decision = sealSecretDecision(key, await Bun.stdin.text(), chosen)
   if (decision.kind === 'refuse') throw new Error(decision.refusal)
-  await setSecret(key, decision.value, scope(options))
+  await setSecret(key, decision.value, chosen)
 }
 
 export function register(program: Command): void {
