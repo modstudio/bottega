@@ -62,38 +62,113 @@ describe('main checkout migration refresh decision', () => {
     expect(
       decideMainCheckoutMigrationRefresh({
         currentJournals: [
-          { source: 'orchestrator journal', tags: ['0000_orch'] },
-          { source: 'hub journal', tags: ['0000_hub'] },
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'HEAD',
+            tags: ['0000_orch'],
+          },
+          { source: 'hub', path: 'hub/journal.json', revision: 'HEAD', tags: ['0000_hub'] },
         ],
         incomingJournals: [
-          { source: 'orchestrator journal', tags: ['0000_orch', '0001_orch_next'] },
-          { source: 'hub journal', tags: ['0000_hub', '0001_hub_next'] },
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'incoming',
+            tags: ['0000_orch', '0001_orch_next'],
+          },
+          {
+            source: 'hub',
+            path: 'hub/journal.json',
+            revision: 'incoming',
+            tags: ['0000_hub', '0001_hub_next'],
+          },
         ],
       }),
     ).toEqual({
       action: 'refuse',
       migrationTags: ['0001_orch_next', '0001_hub_next'],
+      journalErrors: [],
     })
   })
 
   test('refreshes when the journals are equal', () => {
     expect(
       decideMainCheckoutMigrationRefresh({
-        currentJournals: [{ source: 'orchestrator journal', tags: ['0000_orch'] }],
-        incomingJournals: [{ source: 'orchestrator journal', tags: ['0000_orch'] }],
+        currentJournals: [
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'HEAD',
+            tags: ['0000_orch'],
+          },
+        ],
+        incomingJournals: [
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'incoming',
+            tags: ['0000_orch'],
+          },
+        ],
       }),
     ).toEqual({ action: 'refresh' })
   })
 
-  test('refreshes when an incoming journal is not ahead', () => {
+  test('refuses when an incoming migration tag replaces a current tag', () => {
     expect(
       decideMainCheckoutMigrationRefresh({
         currentJournals: [
-          { source: 'orchestrator journal', tags: ['0000_orch', '0001_orch_next'] },
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'HEAD',
+            tags: ['0000_orch', '0001_old'],
+          },
         ],
-        incomingJournals: [{ source: 'orchestrator journal', tags: ['0000_orch'] }],
+        incomingJournals: [
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'incoming',
+            tags: ['0000_orch', '0001_new'],
+          },
+        ],
       }),
+    ).toEqual({ action: 'refuse', migrationTags: ['0001_new'], journalErrors: [] })
+  })
+
+  test('refreshes when no migration journal source applies to the checkout', () => {
+    expect(
+      decideMainCheckoutMigrationRefresh({ currentJournals: [], incomingJournals: [] }),
     ).toEqual({ action: 'refresh' })
+  })
+
+  test('refuses when an applicable journal is unreadable at the incoming revision', () => {
+    expect(
+      decideMainCheckoutMigrationRefresh({
+        currentJournals: [
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'HEAD',
+            tags: ['0000_orch'],
+          },
+        ],
+        incomingJournals: [
+          {
+            source: 'orchestrator',
+            path: 'orchestrator/journal.json',
+            revision: 'abc123',
+            error: 'journal is absent',
+          },
+        ],
+      }),
+    ).toEqual({
+      action: 'refuse',
+      migrationTags: [],
+      journalErrors: ['orchestrator/journal.json at abc123 could not be read: journal is absent'],
+    })
   })
 })
 
