@@ -59,16 +59,21 @@ def main() -> int:
     if markers is None:
         return 0
     text = command
-    cwd = payload.get("cwd") or os.getcwd()
+    cwd = str(payload["cwd"]) if payload.get("cwd") is not None else os.getcwd()
     unreadable_paths = []
     for match in FILE_FLAG.finditer(command):
         path = match.group(1).strip("'\"")
         try:
-            expanded_path = os.path.expandvars(os.path.expanduser(path))
+            expanded_path = os.path.expanduser(path)
             with open(os.path.join(cwd, expanded_path), encoding="utf-8", errors="replace") as fh:
                 text += "\n" + fh.read()
-        except OSError as error:
-            unreadable_paths.append(f"{path}: {error}")
+        except (OSError, ValueError) as error:
+            detail = (
+                error.strerror
+                if isinstance(error, OSError) and error.strerror
+                else type(error).__name__
+            )
+            unreadable_paths.append(f"{path}: {detail}")
     hit = markers.search(text)
     if hit:
         deny(
