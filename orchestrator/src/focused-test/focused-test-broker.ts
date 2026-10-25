@@ -16,7 +16,7 @@ import {
 import { hostSlotWaitCallbacks } from '../gate/host-slot-wait.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
-import { workerGateEnvironment } from '../issue/issue-shell.ts'
+import { RUN_PROCESS_MARKER_ENV, workerGateEnvironment } from '../issue/issue-shell.ts'
 import { createNoFollowFile } from '../no-follow-file.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
@@ -171,6 +171,7 @@ async function spawnFocusedTestChild(input: {
           process.env,
           input.environment,
         ),
+        [RUN_PROCESS_MARKER_ENV]: '1',
         [HOST_SLOT_HELD_ENV]: '1',
       },
       detached: true,

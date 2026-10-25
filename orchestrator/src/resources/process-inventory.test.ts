@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
 import { processObservationError } from '../../../shared/process-identity.ts'
-import { joinProcessCwd, parseProcessTable } from './process-inventory.ts'
+import {
+  environmentCarriesRunMarker,
+  joinProcessCwd,
+  joinRunMarker,
+  type OrphanCandidate,
+  parseProcessEnvironmentEvidence,
+  parseProcessTable,
+} from './process-inventory.ts'
 
 test('classifies process inventory subprocess failures', () => {
   expect(
@@ -75,6 +82,66 @@ test('parses faithful Linux ps etime output and ignores malformed age', () => {
       cwdVerified: false,
     },
   ])
+})
+
+test('reads a run marker from either environment shape and never from a value', () => {
+  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_DEPTH=1\0HOME=/Users/x')).toBe(true)
+  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_RUN_PROCESS=1')).toBe(true)
+  expect(environmentCarriesRunMarker('PATH=/bin HOME=/Users/x')).toBe(false)
+  // A marker name with no value, and one spelled inside another variable's value,
+  // are not ownership evidence.
+  expect(environmentCarriesRunMarker('BOTTEGA_DEPTH=')).toBe(false)
+  expect(environmentCarriesRunMarker('FOO=BOTTEGA_DEPTH=1')).toBe(false)
+  expect(environmentCarriesRunMarker('BOTTEGA_DEPTHISH=1')).toBe(false)
+})
+
+test('separates a ps environment from the command it is printed after', () => {
+  const commands = new Map([
+    [91, '/usr/bin/node vite --host'],
+    [92, '/usr/bin/node vite --host'],
+    [93, '/usr/bin/node vite --host'],
+    [95, 'BOTTEGA_DEPTH=1 node vite'],
+  ])
+  const evidence = parseProcessEnvironmentEvidence(
+    [
+      '  91 /usr/bin/node vite --host PATH=/bin BOTTEGA_DEPTH=2',
+      '  92 /usr/bin/node vite --host PATH=/bin HOME=/Users/x',
+      '  93 /usr/bin/node vite --host',
+      '  94 /usr/bin/node BOTTEGA_RUN_PROCESS=1',
+      '  95 BOTTEGA_DEPTH=1 node vite',
+      '  not a process line',
+    ].join('\n'),
+    commands,
+  )
+  expect(evidence.get(91)).toBe('present')
+  expect(evidence.get(92)).toBe('absent')
+  // ps printing no environment for a process the parser did report is absent.
+  expect(evidence.get(93)).toBe('absent')
+  // A pid whose command does not precede the text cannot be separated.
+  expect(evidence.get(94)).toBe('unknown')
+  // A marker spelled in the command line itself is not an environment read.
+  expect(evidence.get(95)).toBe('absent')
+})
+
+test('an environment that was not read stays unknown on the inventory row', () => {
+  const candidate: OrphanCandidate = {
+    pid: 42,
+    ppid: 1,
+    pgid: 42,
+    cpu: 0,
+    command: 'vite',
+    ageSeconds: 5,
+    startTime: 'birth',
+    cwd: '/trees/gone',
+    cwdVerified: true,
+    missingTree: '/trees/gone',
+    project: 'app',
+    match: 'cwd',
+  }
+  expect(joinRunMarker([candidate], new Map([[42, 'present']]))).toEqual([
+    { ...candidate, runMarker: 'present' },
+  ])
+  expect(joinRunMarker([candidate], new Map())[0]!.runMarker).toBe('unknown')
 })
 
 test('marks a cwd verified only when the process birth still matches the ps snapshot', () => {

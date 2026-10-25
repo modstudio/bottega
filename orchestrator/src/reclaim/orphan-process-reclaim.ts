@@ -78,6 +78,17 @@ export function automaticOrphanReclaimDecision(
       reclaim: false,
       reason: `younger than ${ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS}ms minimum age`,
     }
+  if (orphan.runMarker === 'absent')
+    return {
+      reclaim: false,
+      reason:
+        'process carries neither the run delegation marker nor the run-process marker; reclaim it manually if it is residue',
+    }
+  if (orphan.runMarker === 'unknown')
+    return {
+      reclaim: false,
+      reason: 'process environment could not be read to prove a run started it',
+    }
   return { reclaim: true }
 }
 

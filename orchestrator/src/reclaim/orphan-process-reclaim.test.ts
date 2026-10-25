@@ -49,6 +49,7 @@ const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   missingTree: '/trees/gone',
   project: 'app',
   match: 'cwd',
+  runMarker: 'present',
   ...overrides,
 })
 
@@ -70,6 +71,36 @@ test('automatic reclaim requires cwd evidence, age, non-platform command, and no
     reclaim: false,
     reason: 'cwd process birth could not be verified',
   })
+})
+
+test('automatic reclaim requires positive evidence that a run started the process', () => {
+  expect(automaticOrphanReclaimDecision(orphan({ runMarker: 'present' }), new Set())).toEqual({
+    reclaim: true,
+  })
+  expect(automaticOrphanReclaimDecision(orphan({ runMarker: 'absent' }), new Set())).toEqual({
+    reclaim: false,
+    reason:
+      'process carries neither the run delegation marker nor the run-process marker; reclaim it manually if it is residue',
+  })
+  expect(automaticOrphanReclaimDecision(orphan({ runMarker: 'unknown' }), new Set())).toEqual({
+    reclaim: false,
+    reason: 'process environment could not be read to prove a run started it',
+  })
+})
+
+test('an existing reason still wins over missing ownership evidence', () => {
+  expect(
+    automaticOrphanReclaimDecision(orphan({ runMarker: 'absent', ageSeconds: 1 }), new Set()),
+  ).toEqual({ reclaim: false, reason: 'younger than 60000ms minimum age' })
+  expect(
+    automaticOrphanReclaimDecision(
+      orphan({ runMarker: 'absent', command: `${PLATFORM_SLUG} recipe undo` }),
+      new Set(),
+    ),
+  ).toEqual({ reclaim: false, reason: `${PLATFORM_SLUG}/orchestrator lifecycle process` })
+  expect(
+    automaticOrphanReclaimDecision(orphan({ runMarker: 'absent' }), new Set(['/trees/gone'])),
+  ).toEqual({ reclaim: false, reason: 'tree belongs to a live run' })
 })
 
 test('a signal plan contains only the root and descendants with their births', () => {

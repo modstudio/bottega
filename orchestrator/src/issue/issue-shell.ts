@@ -16,6 +16,14 @@ import {
 
 const FILED_ISSUE_COMMAND_KILL_SIGNAL = 'SIGKILL'
 
+/**
+ * Marks a process as one the orchestrator started for a run, carrying no run
+ * identity so a gate or focused-test child still looks like an unprivileged
+ * caller. Automatic orphan reclaim reads it as ownership proof beside the
+ * delegation marker, because the gate environment scrub withholds BOTTEGA_DEPTH.
+ */
+export const RUN_PROCESS_MARKER_ENV = 'BOTTEGA_RUN_PROCESS'
+
 const WORKER_GATE_ENV_EXACT = new Set([
   'PATH',
   'USER',

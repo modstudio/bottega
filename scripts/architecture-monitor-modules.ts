@@ -21,6 +21,7 @@ export const monitorModules: MonitorModule[] = [
     'node:fs',
     'node:path',
     '../../../shared/process-identity.ts',
+    '../issue/issue-shell.ts',
   ]),
   module('orchestrator/src/resources/session-process-anchoring.ts', []),
   module('orchestrator/src/host-pressure/host-pressure-decision.ts', [
