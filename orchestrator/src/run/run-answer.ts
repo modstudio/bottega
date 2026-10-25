@@ -223,10 +223,12 @@ function answerAttribution(
 }
 
 function answerAttributions(
-  operatorAuthorized: boolean,
+  authorityDecision: ReturnType<typeof answerAuthorityDecision>,
+  channel: AnswerChannel,
   answers: readonly AnsweredQuestion[],
   callerSession: string | null,
 ) {
+  const operatorAuthorized = authorityDecision.kind === 'allow-as-operator' && channel === 'ui'
   return answers.map((answer) =>
     answerAttribution(
       operatorAuthorized,
@@ -892,11 +894,7 @@ export async function answerRun(
     rootRepo: row.repo,
   })
   const now = new Date(Date.now()).toISOString()
-  const attributions = answerAttributions(
-    authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
-    answers,
-    callerSession,
-  )
+  const attributions = answerAttributions(authorityDecision, input.channel, answers, callerSession)
   const upd = db().query(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
