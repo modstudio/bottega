@@ -98,12 +98,13 @@ program.commands
 export { AGENT_COMMAND_VERBS }
 
 /** Routed internal verbs for public `run show`, `run list`, and `run result`. */
-const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result'] as const
+const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result', 'gate-facts'] as const
 
 const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
   'mcp-reader-proxy',
   'migrate',
   'update',
+  'gate-facts',
   'ratchet',
   ...READ_ONLY_STORE_COMMANDS,
 ])
@@ -133,6 +134,7 @@ function invocationSkipsSessionStamp(argv: string[]): boolean {
 export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
   const command = argv[0] as (typeof READ_ONLY_STORE_COMMANDS)[number]
   if (!READ_ONLY_STORE_COMMANDS.includes(command)) return false
+  if (command === 'gate-facts') return true
   if (command === 'runs') return true
   // Every option these verbs take is a boolean flag, so the first non-flag token is the run id.
   const identifier = argv.slice(1).find((token) => !token.startsWith('-'))

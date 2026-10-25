@@ -4,7 +4,10 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'
 import {
   classifyStore,
+  GATE_FACTS_ENV,
+  gateStoreSource,
   liveStorePath,
+  mainGateFactsSnapshot,
   migrateStore,
   snapshotStore,
   withBranchStoreScratch,
@@ -21,20 +24,39 @@ function run(store?: string): number {
   return child.exitCode ?? 1
 }
 
+function runGateFacts(path: string): number {
+  const child = Bun.spawnSync([`${root}/bin/${PLATFORM_SLUG}`, 'gate', 'check', '--enabled'], {
+    env: { ...process.env, [GATE_FACTS_ENV]: path },
+    stdout: 'inherit',
+    stderr: 'inherit',
+  })
+  return child.exitCode ?? 1
+}
+
 if (import.meta.main) {
   const live = liveStorePath()
   const kind = classifyStore(live)
   if (kind === 'current' || kind === 'absent') process.exit(run())
 
-  if (kind === 'ahead') {
-    const database = new Database(live!, { readonly: true })
-    try {
-      console.error(migrationRefusal(database))
-      console.error('branch remedy: rebase the branch onto the landing branch')
-    } finally {
-      database.close()
-    }
-    process.exit(1)
+  if (gateStoreSource(kind, true).kind === 'gate-facts') {
+    const code = withBranchStoreScratch('project-checks', (dir) => {
+      try {
+        const snapshot = mainGateFactsSnapshot(dir)
+        console.log(`project checks: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`)
+        return runGateFacts(snapshot.path)
+      } catch (cause) {
+        const database = new Database(live!, { readonly: true })
+        try {
+          console.error(migrationRefusal(database))
+          console.error(String((cause as Error).message ?? cause))
+          console.error('branch remedy: rebase the branch onto the landing branch')
+        } finally {
+          database.close()
+        }
+        return 1
+      }
+    })
+    process.exit(code)
   }
 
   const code = withBranchStoreScratch('project-checks', (dir) => {

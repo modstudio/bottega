@@ -227,6 +227,7 @@ export const ROUTES = (
       ],
     },
     route('machine update', 'orch', 'update', 'update the main checkout after draining runs'),
+    route('machine gate-facts', 'orch', 'gate-facts', 'write branch-stable gate facts'),
     route('machine reconcile', 'hub', 'reconcile'),
     ...[
       'health',

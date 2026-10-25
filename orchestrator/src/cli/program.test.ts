@@ -37,6 +37,9 @@ test('the outer CLI classifies every informational invocation without consulting
   expect(isStoreFreeInvocation(['record', 'use', 'https://api.example.test'])).toBeTrue()
   expect(isStoreFreeInvocation(['setup'])).toBeTrue()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
+  expect(
+    isStoreFreeInvocation(['check', '--enabled'], { BOTTEGA_GATE_FACTS: '/tmp/facts.json' }),
+  ).toBeTrue()
 })
 
 test('canon command recognition is pinned to the Commander registry', () => {
@@ -65,6 +68,7 @@ test('run query verbs use the read-only store handle', () => {
   expect(usesReadOnlyStoreHandle(['result', '1'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['run', '--receipt', '42'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['result', '--quiet', '1'])).toBeTrue()
+  expect(usesReadOnlyStoreHandle(['gate-facts', '--out', '/tmp/facts.json'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['wait', '1'])).toBeFalse()
   expect(usesReadOnlyStoreHandle(['run', 'wait', '1'])).toBeFalse()
   expect(usesReadOnlyStoreHandle(['monitor'])).toBeFalse()

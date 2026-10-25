@@ -1,5 +1,12 @@
-import type { Database } from 'bun:sqlite'
+import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
+import {
+  classifyStore,
+  gateStoreSource,
+  liveStorePath,
+  mainGateFactsSnapshot,
+  withBranchStoreScratch,
+} from '../orchestrator/scripts/branch-store.ts'
 import {
   EMPTY_PROJECT_CANON_IMPORT_REMEDY,
   EMPTY_PROJECT_CANON_STORE_CONDITION,
@@ -14,6 +21,12 @@ import {
 import { storedRepositoryCanonRows } from '../orchestrator/src/canon/canon-stored-rows.ts'
 import { CODEX_PROJECT_DOC_PATH } from '../orchestrator/src/canon/codex-project-doc.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
+import { migrationRefusal } from '../orchestrator/src/database/migrations.ts'
+import {
+  type GateFacts,
+  projectAtGateFacts,
+  readGateFactsFile,
+} from '../orchestrator/src/gate/gate-facts.ts'
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
@@ -44,6 +57,23 @@ export function readCanonGateInput(
     refuse(`registered project ${project.name} has no landing branch in settings.trunk`)
   }
   return { project, rows: storedRepositoryCanonRows(project.name, database) }
+}
+
+export function readCanonGateFactsInput(
+  checkout: string,
+  facts: GateFacts,
+): { project: Project; rows: { slug: string; body: string; subject: string | null }[] } {
+  const project = projectAtGateFacts(checkout, facts)
+  if (!project) refuse(`cannot find the checkout ${checkout} in the project register`)
+  if (!project.settings.trunk?.trim()) {
+    refuse(`registered project ${project.name} has no landing branch in settings.trunk`)
+  }
+  return {
+    project,
+    rows: facts.docs.filter(
+      (doc) => doc.scope === 'canon' && (doc.subject === null || doc.subject === project.name),
+    ),
+  }
 }
 
 export function branchChangedPaths(checkout: string, base: string): string[] {
@@ -87,7 +117,41 @@ export function canonEmptyStoreDriftRefusal(input: {
   }
 }
 
-function checkCanonDrift(checkout: string, databasePath = DB_PATH): HydrationDrift[] {
+function canonDriftFromInput(
+  checkout: string,
+  input: ReturnType<typeof readCanonGateInput> | ReturnType<typeof readCanonGateFactsInput>,
+): HydrationDrift[] {
+  const { project, rows } = input
+  let base: string
+  try {
+    base = resolveRegisteredLandingBase(
+      checkout,
+      'canon drift check',
+      project.settings.trunk!.trim(),
+    ).commit
+  } catch (cause) {
+    refuse(String((cause as Error).message ?? cause))
+  }
+  const findings = canonBranchFindings({ checkout, base, rows })
+  if (findings.length === 0) return findings
+  const plan = planHydration({
+    rows,
+    tree: collectCanonTreeAtRef(checkout, 'HEAD').tree,
+  })
+  const emptyStore = canonEmptyStoreDriftRefusal({
+    projectRowCount: rows.filter((row) => row.subject === project.name).length,
+    deleteCount: plan.deletes.length,
+  })
+  if (emptyStore) refuse(emptyStore.condition, emptyStore.remedy)
+  return findings
+}
+
+function checkCanonDrift(
+  checkout: string,
+  databasePath = DB_PATH,
+  facts?: GateFacts,
+): HydrationDrift[] {
+  if (facts) return canonDriftFromInput(checkout, readCanonGateFactsInput(checkout, facts))
   let database: Database
   try {
     database = openReadOnlyDatabase(databasePath)
@@ -97,29 +161,7 @@ function checkCanonDrift(checkout: string, databasePath = DB_PATH): HydrationDri
     )
   }
   try {
-    const { project, rows } = readCanonGateInput(checkout, database)
-    let base: string
-    try {
-      base = resolveRegisteredLandingBase(
-        checkout,
-        'canon drift check',
-        project.settings.trunk!.trim(),
-      ).commit
-    } catch (cause) {
-      refuse(String((cause as Error).message ?? cause))
-    }
-    const findings = canonBranchFindings({ checkout, base, rows })
-    if (findings.length === 0) return findings
-    const plan = planHydration({
-      rows,
-      tree: collectCanonTreeAtRef(checkout, 'HEAD').tree,
-    })
-    const emptyStore = canonEmptyStoreDriftRefusal({
-      projectRowCount: rows.filter((row) => row.subject === project.name).length,
-      deleteCount: plan.deletes.length,
-    })
-    if (emptyStore) refuse(emptyStore.condition, emptyStore.remedy)
-    return findings
+    return canonDriftFromInput(checkout, readCanonGateInput(checkout, database))
   } catch (cause) {
     if (String((cause as Error).message ?? cause).includes('\nremedy: ')) throw cause
     refuse(
@@ -132,7 +174,28 @@ function checkCanonDrift(checkout: string, databasePath = DB_PATH): HydrationDri
 
 if (import.meta.main) {
   try {
-    const findings = checkCanonDrift(root)
+    const live = liveStorePath()
+    const findings =
+      gateStoreSource(classifyStore(live), true).kind === 'gate-facts'
+        ? withBranchStoreScratch('canon-drift', (dir) => {
+            try {
+              const snapshot = mainGateFactsSnapshot(dir)
+              console.log(
+                `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
+              )
+              return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
+            } catch (cause) {
+              const database = new Database(live!, { readonly: true })
+              try {
+                throw new Error(
+                  `${migrationRefusal(database)}\n${String((cause as Error).message ?? cause)}`,
+                )
+              } finally {
+                database.close()
+              }
+            }
+          })
+        : checkCanonDrift(root)
     for (const finding of findings) {
       console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)
     }

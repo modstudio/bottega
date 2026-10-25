@@ -61,7 +61,10 @@ export function isHelpShapedInvocation(argv: string[]): boolean {
 }
 
 /** Informational commands that neither need nor stamp the orchestrator store. */
-export function isStoreFreeInvocation(argv: string[]): boolean {
+export function isStoreFreeInvocation(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
   return (
     isHelpShapedInvocation(argv) ||
     (argv[0] === 'record' && argv[1] === 'use') ||
@@ -73,7 +76,8 @@ export function isStoreFreeInvocation(argv: string[]): boolean {
     (argv[0] === 'setup' && argv[1] === 'facts') ||
     (argv[0] === 'test-substance' && argv[1] === 'judge') ||
     (argv[0] === 'hub-import' && argv[1] === 'judge') ||
-    (argv[0] === 'release' && argv[1] === 'check')
+    (argv[0] === 'release' && argv[1] === 'check') ||
+    (argv[0] === 'check' && argv.includes('--enabled') && Boolean(env.BOTTEGA_GATE_FACTS))
   )
 }
 
