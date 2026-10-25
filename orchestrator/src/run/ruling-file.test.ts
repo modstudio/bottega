@@ -254,6 +254,11 @@ describe('file ruling', () => {
       answer: 'Old',
       overturned: { reason: 'New evidence', replacement: 'Use the replacement.' },
     })
+    db()
+      .query(
+        "UPDATE question SET answered_by_name='Ada Lovelace', overturned_by_name='Grace Hopper' WHERE record_id=?",
+      )
+      .run(questionId)
     const writes: string[] = []
     await file(
       { questionId, as: 'doc' },
@@ -265,6 +270,7 @@ describe('file ruling', () => {
       }),
     )
     expect(writes[0]).toContain('  Use the replacement.')
+    expect(writes[0]).toContain('answerer_name: Grace Hopper')
   })
 
   test('files a canon proposal note with the prefix and records its id', async () => {
