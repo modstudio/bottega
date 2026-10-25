@@ -101,6 +101,8 @@ Retrieval-shaped jobs (`file-question`, `canon-lookup`, `summarize`) prefer the 
 
 **Asking is faithful and costs nothing.** That has to hold in the arithmetic or asking stops.
 
+Refusal: proof `full right [faithful]`; should have asked `full mixed [faithful]`; false `full wrong`; else `none`.
+
 **The value of an escalation is the interruption, not the correctness of the question.** Never mark an escalation down for being wrong, on fidelity or on quality. An architect who overrules one should say what made the concern reasonable.
 
 **Required on a writing job that delivered something.** `delivery: none` takes no fidelity. Files changed, tests claimed, deviations and questions are recorded automatically beside the verdict, because the signal is where they disagree.

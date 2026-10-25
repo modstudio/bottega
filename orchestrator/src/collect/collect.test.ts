@@ -18,16 +18,22 @@ import {
   thinOutputWarning,
 } from './collect.ts'
 
-const recordedResult = (recordId: string) => {
+const recordedResult = (recordId: string, writingJob: () => boolean = () => false) => {
   const logs: string[] = []
   const errors: string[] = []
-  collectResult(db(), ['result', recordId], () => '', {
-    log: (...values) => logs.push(values.join(' ')),
-    error: (...values) => errors.push(values.join(' ')),
-    exit: (code): never => {
-      throw new Error(`EXIT:${code}`)
+  collectResult(
+    db(),
+    ['result', recordId],
+    () => '',
+    {
+      log: (...values) => logs.push(values.join(' ')),
+      error: (...values) => errors.push(values.join(' ')),
+      exit: (code): never => {
+        throw new Error(`EXIT:${code}`)
+      },
     },
-  })
+    writingJob,
+  )
   return { logs, errors }
 }
 
@@ -327,6 +333,32 @@ describe('collection records', () => {
     expect(recordedResult(id).errors).toEqual([
       `\n— run ${number} · codex · 1.0s · vendor tokens not reported\n  score it:  ${PLATFORM_SLUG} score ${id} <none|partial|full> [wrong|mixed|right] --note "..."\n  record_id: ${recordId}`,
     ])
+  })
+
+  test('a refusal hint quotes its first summary line and includes writing fidelity', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const output = join(dir, `refused-${id}.txt`)
+    writeFileSync(
+      output,
+      JSON.stringify({
+        status: 'refused',
+        summary: 'evidence at outcome.ts:4\nsecond line',
+        files_changed: null,
+        change_guide: null,
+        questions: null,
+        deviations: null,
+        blockers: null,
+        tests: null,
+      }),
+    )
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
+    try {
+      const hint = recordedResult(id, () => true).errors.join('\n')
+      expect(hint).toContain('refused: "evidence at outcome.ts:4"')
+      expect(hint).toContain('correct with evidence: full right faithful')
+    } finally {
+      rmSync(output, { force: true })
+    }
   })
 
   test.each([

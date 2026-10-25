@@ -27,6 +27,7 @@ import {
   treeRemoveCommand,
 } from '../hook-tree/tree-commands.ts'
 import { jobsCommand } from '../jobs/job-commands.ts'
+import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { tellCommand } from '../mailbox/mailbox-commands.ts'
 import { mcpCommand } from '../mcp/mcp-commands.ts'
@@ -77,7 +78,7 @@ const presentation = {
   printRunId: (id: string) => write(`${displayRunNumber(id)}\n`),
 }
 const scoreSuffix = (jobName: string) =>
-  (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') +
+  (jobTakesFidelity(jobName) ? ' [drifted|partial|faithful]' : '') +
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')

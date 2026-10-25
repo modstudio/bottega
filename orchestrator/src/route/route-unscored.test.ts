@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
+  newestTurnOutputPathSql,
   pendingForSession,
   UNSCORED_WHERE,
   unscoredCount,
@@ -164,10 +165,20 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
   const hookOwedWhere = (source: string) => {
     const start = source.indexOf('SELECT r.record_id, r.agent, r.job')
     if (start < 0) throw new Error('hook owed-run query not found')
+    const from = source.indexOf('FROM run r LEFT JOIN', start)
+    if (from < 0) throw new Error('hook owed-run outer FROM not found')
     const order = source.indexOf('ORDER BY r.number', start)
-    const sql = source.slice(start, order)
+    const sql = source.slice(from, order)
     const whereAt = sql.search(/\bWHERE\b/)
     return sql.slice(whereAt + 'WHERE'.length)
+  }
+
+  const hookNewestTurnOutputPathSql = (source: string) => {
+    const match = source.match(
+      /CASE WHEN EXISTS \(SELECT 1 FROM run child[\s\S]*?ELSE r\.output_path END/,
+    )
+    if (!match) throw new Error('hook newest-turn output-path CASE not found')
+    return match[0]
   }
 
   const liveHookWhere = () =>
@@ -187,6 +198,16 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
     expect(hook).toContain(`${PLATFORM_SLUG} note keep {note_label}`)
     expect(hook).toContain(`${PLATFORM_SLUG} note drop {note_label}`)
     expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label} --title "<the point>"`)
+  })
+
+  test("the hook's newest-turn output-path rule matches the canonical SQL", () => {
+    const hook = readFileSync(
+      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
+      'utf8',
+    )
+    expect(normalizeSql(hookNewestTurnOutputPathSql(hook))).toBe(
+      normalizeSql(newestTurnOutputPathSql('r')),
+    )
   })
 
   const predicateDrift = (tsWhere: string, hookWhere: string) => {

@@ -11,7 +11,7 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
-from score_reminder_decision import decide_held_tree
+from score_reminder_decision import WRITING_JOBS, decide_held_tree, refusal_score_guidance
 
 GLOBAL_BUDGET_SECONDS = 20
 
@@ -86,7 +86,12 @@ def main() -> int:
         rows = con.execute(
             """SELECT r.record_id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60),
                       s.delivery, s.quality, s.fidelity, review.record_id,
-                      rl.reproduced, rl.coverage, rl.limits, rl.overlap
+                      rl.reproduced, rl.coverage, rl.limits, rl.overlap,
+                      CASE WHEN EXISTS (SELECT 1 FROM run child WHERE child.parent_run_record_id=r.record_id)
+                        THEN (SELECT child.output_path FROM run child
+                                WHERE child.parent_run_record_id=r.record_id
+                               ORDER BY child.turn DESC, child.number DESC LIMIT 1)
+                        ELSE r.output_path END
                  FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
                  LEFT JOIN review_lens rl ON rl.run_record_id = r.record_id
                  LEFT JOIN review ON review.record_id = rl.review_record_id
@@ -257,9 +262,8 @@ def main() -> int:
     # A writing job takes a THIRD axis, and printing the two-axis form for one
     # is how a session came to run a command bottega then rejected. The hook cannot
     # import the job table (it is TypeScript), so the jobs that write are named
-    # here — and the reminder is generated from the same list rather than a
-    # fixed string, so adding one means adding it here too.
-    WRITING_JOBS = {"implement", "fix"}
+    # in score_reminder_decision — and both reminders use that list rather than
+    # a fixed string, so adding one means adding it there too.
     lines = []
     pairs_by_run = {}
     for current, partner, agent, reason, pair_job, pair_delivery, pair_quality, pair_fidelity in pairs:
@@ -268,7 +272,7 @@ def main() -> int:
             "fidelity": pair_fidelity, "partners": [],
         })
         entry["partners"].append((partner, agent, reason))
-    for i, a, j, p, delivery, quality, fidelity, review_id, reproduced, coverage, limits, overlap in rows:
+    for i, a, j, p, delivery, quality, fidelity, review_id, reproduced, coverage, limits, overlap, output_path in rows:
         axes = delivery or "<none|partial|full>"
         if delivery is None or delivery != "none":
             axes += " " + (quality or "<wrong|mixed|right>")
@@ -304,6 +308,9 @@ def main() -> int:
             f'  bottega score {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
             .replace("  --note", " --note")
         )
+        refusal = refusal_score_guidance(output_path, j)
+        if refusal:
+            lines.append(f"    {refusal}")
         for partner, agent, reason in run_pairs:
             lines.append(f"    comparable to run {partner} ({agent}): {reason}")
     for current, pair_entry in pairs_by_run.items():
@@ -338,7 +345,7 @@ def main() -> int:
             lines.append("")
         lines.extend(in_flight_lines)
     if rows:
-        needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _ in rows)
+        needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _, _ in rows)
         intro = (
             f"{len(rows)} delegated run{'s' if len(rows) > 1 else ''} from this session "
             f"{'have' if len(rows) > 1 else 'has'} not been scored"

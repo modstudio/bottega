@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { sessionId } from '../database/db.ts'
 import { unrecordedPairsForSession } from '../score/duel.ts'
+import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { pendingForSession } from './evidence-query.ts'
 export function pendingCommand(
   pairHint: (partner: { id: string; agent: string; reason?: string }) => string,
@@ -28,10 +29,13 @@ function renderRows(
 ): void {
   if (!rows.length) return
   presentation.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
-  for (const row of rows)
+  for (const row of rows) {
+    const refusal = refusalScoreGuidanceFromPath(row.output_path, row.job)
     presentation.log(
       `  ${PLATFORM_SLUG} score ${row.record_id} <none|partial|full> [wrong|mixed|right]   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}${row.rescore ? '  rescore' : ''}`,
     )
+    if (refusal) presentation.log(`    ${refusal}`)
+  }
 }
 
 function renderPairs(

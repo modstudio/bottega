@@ -16,6 +16,8 @@ import {
   readWorkerFile,
 } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
+import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
   REVIEW_COVERAGE,
@@ -23,6 +25,7 @@ import {
   REVIEW_OVERLAP,
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
+import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { parseQuestionIdentifier, resolveQuestionIdentifier } from './question-identifier.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingAttributionDecision } from './question-vocabulary.ts'
@@ -48,12 +51,18 @@ const duration = (ms: number | null | undefined): string => {
   return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`
 }
 const scoreSuffix = (jobName: string) =>
-  (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') +
+  (jobTakesFidelity(jobName) ? ' [drifted|partial|faithful]' : '') +
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
-const scoreHint = (id: string, jobName: string, parent: string | null) =>
-  `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."${parent ? `   # the whole conversation, not turn ${id}` : ''}`
+const scoreHint = (id: string, jobName: string, parent: string | null) => {
+  const refusal = refusalScoreGuidanceFromPath(newestTurnOutputPath(db(), parent ?? id), jobName)
+  return (
+    `${PLATFORM_SLUG} score ${parent ?? id} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."` +
+    (parent ? `   # the whole conversation, not turn ${id}` : '') +
+    (refusal ? `\n  ${refusal}` : '')
+  )
+}
 const argvResumeLimit = (agentName: string) =>
   AGENTS[agentName]?.resumeArgv ? resumePromptByteLimit(AGENTS[agentName]!) : undefined
 const controlPresentation = (presentation: Presentation): RunControlPresentation => ({

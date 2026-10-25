@@ -16,6 +16,7 @@ import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
+import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
@@ -300,13 +301,29 @@ function scoreHint(
   jobName: string,
   parent: string | null,
   scoreSuffix: (job: string) => string,
+  refusalGuidance: string | null,
 ): string {
   const target = parent ?? recordId
   return (
     `${PLATFORM_SLUG} score ${target} <none|partial|full> [wrong|mixed|right]` +
     scoreSuffix(jobName) +
     ' --note "..."' +
-    (parent ? `   # the whole conversation, not turn ${recordId}` : '')
+    (parent ? `   # the whole conversation, not turn ${recordId}` : '') +
+    (refusalGuidance ? `\n  ${refusalGuidance}` : '')
+  )
+}
+
+function collectedScoreHint(
+  row: Pick<CollectedRunRow, 'record_id' | 'job' | 'parent_run_record_id'>,
+  output: string | null,
+  scoreSuffix: (job: string) => string,
+): string {
+  return scoreHint(
+    row.record_id,
+    row.job,
+    row.parent_run_record_id,
+    scoreSuffix,
+    refusalScoreGuidance(output, row.job),
   )
 }
 
@@ -698,7 +715,7 @@ export function collectResult(
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
         okOutcomeNote(row) +
-        `\n  score it:  ${scoreHint(row.record_id, row.job, row.parent_run_record_id, scoreSuffix)}` +
+        `\n  score it:  ${collectedScoreHint(row, output, scoreSuffix)}` +
         branchNote(database, row.record_id) +
         releasedWritingTreeNote(
           {

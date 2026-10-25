@@ -8,6 +8,7 @@ import { callerIdentityRefusal } from './caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
 import { isNotEvidenceFailure } from './failure/failure.ts'
+import { jobTakesFidelity } from './jobs/job-fidelity.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { findingsCloseOutRefusal } from './judgment-closeout-refusal.ts'
 import { machineId } from './record/machine-identity.ts'
@@ -208,7 +209,7 @@ function scoredVoidFidelity(
   if (delivery !== 'none' && (!quality || !QUALITY.includes(quality))) {
     throw new Error(`delivery '${delivery}' needs a quality: ${QUALITY.join(' | ')}`)
   }
-  const needsFidelity = Boolean(JOBS[jobName]?.needs.writesRepo) && delivery !== 'none'
+  const needsFidelity = jobTakesFidelity(jobName) && delivery !== 'none'
   if (needsFidelity && (!fidelity || !FIDELITY.includes(fidelity))) {
     throw new Error(`${jobName} writes code, so verdicts require a fidelity axis`)
   }
@@ -527,7 +528,7 @@ export async function judgeRun(
   if (quality && !QUALITY.includes(quality)) {
     throw new Error(`quality must be: ${QUALITY.join(' | ')}`)
   }
-  const writes = Boolean(JOBS[row.job]?.needs.writesRepo)
+  const writes = jobTakesFidelity(row.job)
   if (fidelity && !FIDELITY.includes(fidelity)) {
     throw new Error(`fidelity must be: ${FIDELITY.join(' | ')}`)
   }
@@ -974,7 +975,7 @@ export async function scoreRun(
    * drift. Demanding the word forces the question to be asked, and the
    * question is the whole point of the axis.
    */
-  const writesRepo = Boolean(JOBS[row.job]?.needs.writesRepo)
+  const writesRepo = jobTakesFidelity(row.job)
   const findingsJob = Boolean(job(row.job).findings)
   assertRunReviewFindingIntegrity(id)
   const needsFidelity = writesRepo && delivery !== 'none'

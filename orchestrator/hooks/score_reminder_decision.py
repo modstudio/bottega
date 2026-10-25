@@ -6,7 +6,18 @@ reads those fields and does not re-derive them or parse the human report.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import NamedTuple
+
+
+REFUSAL_QUOTE_CHARS = 200
+WRITING_JOBS = {"fix", "implement", "issue-worker"}
+REQUIRED_REPLY_KEYS = {
+    "status", "summary", "files_changed", "change_guide", "questions",
+    "deviations", "blockers", "tests",
+}
+REPLY_STATUSES = {"done", "asking", "refused"}
 
 
 class HeldTreeDecision(NamedTuple):
@@ -22,3 +33,53 @@ def decide_held_tree(tree: dict) -> HeldTreeDecision:
             in_flight_line=f"in flight: {tree['worktree']} ({ref})",
         )
     return HeldTreeDecision(block=True, in_flight_line=None)
+
+
+def _worker_replies(text: str):
+    decoder = json.JSONDecoder()
+    for offset, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            value, _ = decoder.raw_decode(text, offset)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(value, dict)
+            and REQUIRED_REPLY_KEYS.issubset(value)
+            and value.get("status") in REPLY_STATUSES
+            and isinstance(value.get("summary"), str)
+        ):
+            yield value
+
+
+def refusal_score_guidance(output_path: str | None, job_name: str) -> str | None:
+    if not output_path:
+        return None
+    try:
+        text = Path(output_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    if "\ufffd" in text:
+        return None
+    replies = list(_worker_replies(text))
+    if not replies or replies[-1].get("status") != "refused":
+        return None
+    summary = replies[-1]["summary"].splitlines()[0] if replies[-1]["summary"] else ""
+    if len(summary) > REFUSAL_QUOTE_CHARS:
+        cut = next(
+            (
+                index
+                for index in range(REFUSAL_QUOTE_CHARS, -1, -1)
+                if summary[index].isspace()
+            ),
+            REFUSAL_QUOTE_CHARS,
+        )
+        summary = summary[:cut] + "…"
+    faithful = " faithful" if job_name in WRITING_JOBS else ""
+    return (
+        f"refused: {json.dumps(summary, ensure_ascii=False)}; judge the refusal on its merits "
+        f"(correct with evidence: full right{faithful}; should have asked: full mixed{faithful}; "
+        "false evidence: full wrong; no evidence: none), or rule and continue the chain and "
+        "score it after."
+    )
