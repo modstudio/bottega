@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   secrets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
         run: docker run --rm -v "$GITHUB_WORKSPACE:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 git /repo --config /repo/.gitleaks.toml --redact --exit-code 1 --verbose
 
   static:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
 
   orchestrator:
     name: orchestrator (${{ matrix.shard }}/${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -67,7 +67,7 @@ jobs:
         run: $SUITE_COMMAND --only=orchestrator --shard=${{ matrix.shard }}/${ORCHESTRATOR_SHARD_COUNT}
 
   orchestrator-hooks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -85,7 +85,7 @@ jobs:
         run: $SUITE_COMMAND --only=orchestrator/hooks
 
   cli:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +100,7 @@ jobs:
         run: $SUITE_COMMAND --only=cli
 
   hub:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -115,7 +115,7 @@ jobs:
         run: $SUITE_COMMAND --only=hub
 
   hub-data:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -130,7 +130,7 @@ jobs:
         run: $SUITE_COMMAND --only=hub/data
 
   hub-web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -145,7 +145,7 @@ jobs:
         run: $SUITE_COMMAND --only=hub/web
 
   hub-web-smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -162,7 +162,7 @@ jobs:
         run: bun run --cwd hub/web smoke
 
   hub-ui-stories:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -183,7 +183,7 @@ jobs:
         run: bun run --cwd hub/views storybook:test
 
   hub-deploy-site:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -198,7 +198,7 @@ jobs:
         run: $SUITE_COMMAND --only=hub/deploy/site
 
   retrieval:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -213,7 +213,7 @@ jobs:
         run: $SUITE_COMMAND --only=retrieval
 
   shared:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -228,7 +228,7 @@ jobs:
         run: $SUITE_COMMAND --only=shared
 
   root:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -247,7 +247,7 @@ jobs:
   ci:
     if: always()
     needs: [secrets, static, cli, orchestrator, orchestrator-hooks, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every CI job
