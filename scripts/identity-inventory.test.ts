@@ -19,6 +19,7 @@ import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 
 const EMPTY: KeyManifests = {
   values: [],
+  displayLabels: [],
   references: [],
   externalIdentifiers: [],
   uuids: [],
@@ -31,7 +32,16 @@ const column = (
   type: string,
   primaryKey = false,
   foreignKey = false,
-) => ({ table, name, type, required: true, primaryKey, foreignKey, foreignTable: null })
+) => ({
+  table,
+  name,
+  type,
+  required: true,
+  primaryKey,
+  foreignKey,
+  foreignTable: null,
+  foreignColumn: null,
+})
 
 const write = (sources: readonly string[]) => ({
   store: 'hub' as const,
@@ -269,6 +279,203 @@ test('an unclassified reference-shaped column is refused', () => {
   }
   expect(() => classifyKeyInventory('hosted', [table], EMPTY)).toThrow(
     'reference-shaped column child.run_ref is not classified',
+  )
+})
+
+test('a display label beside a UUID sibling produces no reference finding', () => {
+  const table = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [
+      column('task', 'id', 'uuid', true),
+      column('task', 'task_key', 'text'),
+      column('task', 'task_record_id', 'text'),
+    ],
+  }
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'task.task_key',
+        sibling: 'task.task_record_id',
+        reason: 'displayed task key',
+      },
+    ],
+    uuids: [{ store: 'hosted' as const, column: 'task.task_record_id', reason: 'task UUID' }],
+  }
+  expect(classifyKeyInventory('hosted', [table], manifests).findings).not.toContain(
+    'task.task_key:reference',
+  )
+})
+
+test('a display label may name a foreign key to a UUID primary key as its sibling', () => {
+  const parent = {
+    name: 'project',
+    primaryKey: ['id'],
+    columns: [column('project', 'id', 'uuid', true)],
+  }
+  const sibling = {
+    ...column('task', 'project_record_id', 'uuid', false, true),
+    foreignTable: 'project',
+    foreignColumn: 'id',
+  }
+  const task = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [column('task', 'id', 'uuid', true), column('task', 'task_key', 'text'), sibling],
+  }
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'task.task_key',
+        sibling: 'task.project_record_id',
+        reason: 'displayed task key',
+      },
+    ],
+  }
+  expect(classifyKeyInventory('hosted', [parent, task], manifests).findings).not.toContain(
+    'task.task_key:reference',
+  )
+})
+
+test('a display-label sibling must be on the same table', () => {
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'task.task_key',
+        sibling: 'other.record_id',
+        reason: 'displayed task key',
+      },
+    ],
+  }
+  const table = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [column('task', 'id', 'uuid', true), column('task', 'task_key', 'text')],
+  }
+  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+    'display label task.task_key sibling other.record_id is on another table; remedy: name a sibling on task',
+  )
+})
+
+test('a display-label sibling must exist', () => {
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'task.task_key',
+        sibling: 'task.record_id',
+        reason: 'displayed task key',
+      },
+    ],
+  }
+  const table = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [column('task', 'id', 'uuid', true), column('task', 'task_key', 'text')],
+  }
+  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+    'display label task.task_key sibling task.record_id does not exist; remedy: name an existing sibling column',
+  )
+})
+
+test('a display-label sibling must be a UUID reference', () => {
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'task.task_key',
+        sibling: 'task.task_record_id',
+        reason: 'displayed task key',
+      },
+    ],
+  }
+  const table = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [
+      column('task', 'id', 'uuid', true),
+      column('task', 'task_key', 'text'),
+      column('task', 'task_record_id', 'text'),
+    ],
+  }
+  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+    'display label task.task_key sibling task.task_record_id is not a UUID reference; remedy: name a UUID column or a foreign key to a UUID primary key',
+  )
+})
+
+test('a display label may not overlap another identity manifest', () => {
+  const table = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [
+      column('task', 'id', 'uuid', true),
+      column('task', 'task_key', 'text'),
+      column('task', 'task_record_id', 'text'),
+    ],
+  }
+  const displayLabels = [
+    {
+      store: 'hosted' as const,
+      column: 'task.task_key',
+      sibling: 'task.task_record_id',
+      reason: 'displayed task key',
+    },
+  ]
+  const taskRecordUuid = {
+    store: 'hosted' as const,
+    column: 'task.task_record_id',
+    reason: 'task UUID',
+  }
+  for (const [manifest, kind] of [
+    ['references', 'undeclared reference'],
+    ['externalIdentifiers', 'external identifier'],
+    ['uuids', 'UUID column'],
+  ] as const) {
+    const overlap = { store: 'hosted' as const, column: 'task.task_key', reason: 'overlap' }
+    const manifests = {
+      ...EMPTY,
+      displayLabels,
+      uuids: manifest === 'uuids' ? [taskRecordUuid, overlap] : [taskRecordUuid],
+      [manifest]: manifest === 'uuids' ? [taskRecordUuid, overlap] : [overlap],
+    }
+    expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+      `display label task.task_key also appears as ${kind}; remedy: remove it from one manifest`,
+    )
+  }
+})
+
+test('a display label needs a reason', () => {
+  const table = {
+    name: 'task',
+    primaryKey: ['id'],
+    columns: [
+      column('task', 'id', 'uuid', true),
+      column('task', 'task_key', 'text'),
+      column('task', 'task_record_id', 'text'),
+    ],
+  }
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'task.task_key',
+        sibling: 'task.task_record_id',
+        reason: ' ',
+      },
+    ],
+    uuids: [{ store: 'hosted' as const, column: 'task.task_record_id', reason: 'task UUID' }],
+  }
+  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+    'display label task.task_key needs a reason; remedy: provide a non-empty reason',
   )
 })
 

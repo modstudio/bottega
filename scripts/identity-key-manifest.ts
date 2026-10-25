@@ -1,4 +1,5 @@
 import type {
+  DisplayLabel,
   InfrastructureIdentity,
   KeyManifests,
   KeyStore,
@@ -319,6 +320,8 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'port_ref.version',
   ]),
 ]
+
+const DISPLAY_LABELS: readonly DisplayLabel[] = []
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
@@ -865,6 +868,7 @@ const SYNCED_SOURCES = SYNCED_SOURCE_DECLARATIONS
 
 export const KEY_MANIFESTS: KeyManifests = {
   values: INTEGER_VALUES,
+  displayLabels: DISPLAY_LABELS,
   references: UNDECLARED_REFERENCES,
   externalIdentifiers: EXTERNAL_IDENTIFIERS,
   uuids: UUID_COLUMNS,
