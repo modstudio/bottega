@@ -10,7 +10,6 @@ import {
   integer,
   pgPolicy,
   pgTable,
-  primaryKey,
   text,
   timestamp,
   unique,
@@ -142,6 +141,7 @@ export const configSecret = pgTable.withRLS(
 export const secretDekWrap = pgTable.withRLS(
   'secret_dek_wrap',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     spaceId: spaceIdentity(),
     dekId: uuid('dek_id').notNull(),
     recipientKeyId: text('recipient_key_id').notNull(),
@@ -151,9 +151,12 @@ export const secretDekWrap = pgTable.withRLS(
     createdAt: createdAt(),
   },
   (table) => [
-    primaryKey({
-      columns: [table.spaceId, table.dekId, table.recipientKeyId, table.senderKeyId],
-    }),
+    unique('secret_dek_wrap_space_dek_recipient_sender_unique').on(
+      table.spaceId,
+      table.dekId,
+      table.recipientKeyId,
+      table.senderKeyId,
+    ),
     foreignKey({
       columns: [table.spaceId, table.dekId],
       foreignColumns: [secretDek.spaceId, secretDek.id],
@@ -168,6 +171,7 @@ export const secretDekWrap = pgTable.withRLS(
 export const machinePublicKey = pgTable.withRLS(
   'machine_public_key',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     spaceId: spaceIdentity(),
     keyId: text('key_id').notNull(),
     publicKey: bytea('public_key').notNull(),

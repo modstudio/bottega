@@ -63,13 +63,9 @@
     "task_status_event.task_key:reference"
   ],
   "hosted": [
-    "board_message_tag:primary-key",
-    "board_receipt:primary-key",
     "board_receipt.reader_session:reference",
     "contention.resource_key:reference",
     "doc_revision.related_subject_ids:reference",
-    "hub_change:primary-key",
-    "hub_change_head:primary-key",
     "hub_interval.task_key:reference",
     "hub_task.parent_key:reference",
     "hub_task_comment.task_key:reference",
@@ -77,17 +73,12 @@
     "hub_task_status_event.task_key:reference",
     "landing_triage_snapshot.review_ids:reference",
     "machine_public_key.key_id:reference",
-    "machine_public_key:primary-key",
     "operator_waiting_email.item_id:reference",
     "operator_waiting_email.task_key:reference",
-    "public_doc_space:primary-key",
     "question.filed_ref:reference",
     "question.workflow_key:reference",
-    "question_mutation_audit:primary-key",
     "secret_dek_wrap.recipient_key_id:reference",
     "secret_dek_wrap.sender_key_id:reference",
-    "secret_dek_wrap:primary-key",
-    "run.task_key:reference",
-    "seq:primary-key"
+    "run.task_key:reference"
   ]
 }

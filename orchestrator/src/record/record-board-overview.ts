@@ -93,7 +93,9 @@ async function relatedRows(tx: SQL, ids: string[]) {
     GROUP BY thread_root_id
   `
   const receiptRows = await tx`
-    SELECT * FROM board_receipt
+    SELECT message_id, reader_user_id, reader_session, audience_at_posting,
+      delivered_at, acknowledged_at
+    FROM board_receipt
     WHERE message_id = ANY(COALESCE(${boardUuidArray(tx, ids)}, ARRAY[]::uuid[]))
     ORDER BY reader_user_id, reader_session
   `
