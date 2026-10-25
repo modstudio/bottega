@@ -13,6 +13,11 @@ from typing import NamedTuple
 
 REFUSAL_QUOTE_CHARS = 200
 WRITING_JOBS = {"fix", "implement", "issue-worker"}
+REQUIRED_REPLY_KEYS = {
+    "status", "summary", "files_changed", "change_guide", "questions",
+    "deviations", "blockers", "tests",
+}
+REPLY_STATUSES = {"done", "asking", "refused"}
 
 
 class HeldTreeDecision(NamedTuple):
@@ -32,10 +37,6 @@ def decide_held_tree(tree: dict) -> HeldTreeDecision:
 
 def _worker_replies(text: str):
     decoder = json.JSONDecoder()
-    required = {
-        "status", "summary", "files_changed", "change_guide", "questions",
-        "deviations", "blockers", "tests",
-    }
     for offset, character in enumerate(text):
         if character != "{":
             continue
@@ -45,8 +46,8 @@ def _worker_replies(text: str):
             continue
         if (
             isinstance(value, dict)
-            and required.issubset(value)
-            and value.get("status") in {"done", "asking", "refused"}
+            and REQUIRED_REPLY_KEYS.issubset(value)
+            and value.get("status") in REPLY_STATUSES
             and isinstance(value.get("summary"), str)
         ):
             yield value

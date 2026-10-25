@@ -213,7 +213,7 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
 }
 
 /** The output owned by the newest turn of a root conversation. */
-function newestTurnOutputPathSql(runAlias: string): string {
+export function newestTurnOutputPathSql(runAlias: string): string {
   const run = sqlAlias(runAlias)
   return `CASE WHEN EXISTS (SELECT 1 FROM run child WHERE child.parent_run_record_id=${run}.record_id)
               THEN (SELECT child.output_path FROM run child

@@ -13,6 +13,8 @@ SPEC.loader.exec_module(score_reminder_decision)
 decide_held_tree = score_reminder_decision.decide_held_tree
 refusal_score_guidance = score_reminder_decision.refusal_score_guidance
 WRITING_JOBS = score_reminder_decision.WRITING_JOBS
+REQUIRED_REPLY_KEYS = score_reminder_decision.REQUIRED_REPLY_KEYS
+REPLY_STATUSES = score_reminder_decision.REPLY_STATUSES
 FIXTURE = PATH.parents[1] / "src" / "close" / "held-tree-json.fixture.json"
 REFUSAL_FIXTURE = PATH.parents[1] / "src" / "score" / "refusal-guidance.fixture.json"
 
@@ -40,6 +42,10 @@ class RefusalScoreGuidanceTest(unittest.TestCase):
             path = Path(directory) / "reply.txt"
             path.write_text(json.dumps(reply))
             return refusal_score_guidance(str(path), job_name)
+
+    def test_shared_fixture_pins_worker_reply_vocabulary(self):
+        self.assertEqual(REQUIRED_REPLY_KEYS, set(self.fixture["workerReplyRequired"]))
+        self.assertEqual(REPLY_STATUSES, set(self.fixture["workerReplyStatuses"]))
 
     def test_shared_fixture_pins_guidance_and_writing_jobs(self):
         self.assertEqual(WRITING_JOBS, set(self.fixture["writingJobs"]))

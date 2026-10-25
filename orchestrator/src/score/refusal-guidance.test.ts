@@ -3,14 +3,17 @@ import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { addRun, dir } from '../../test/fixtures/store.ts'
+import { WORKER_SCHEMA } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
-import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
+import { jobTakesFidelity, WRITING_JOB_NAMES } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { refusalScoreGuidance, refusalScoreGuidanceFromPath } from './refusal-guidance.ts'
 
 type Fixture = {
   writingJobs: string[]
+  workerReplyRequired: string[]
+  workerReplyStatuses: string[]
   replies: {
     shortRefused: Record<string, unknown>
     longRefused: Record<string, unknown>
@@ -34,7 +37,9 @@ describe('refusal score guidance', () => {
     const declared = Object.keys(JOBS)
       .filter((name) => JOBS[name]?.needs.writesRepo)
       .sort()
+    const scorerWritingJobs: string[] = [...WRITING_JOB_NAMES].sort()
     expect(declared).toEqual([...fixture.writingJobs].sort())
+    expect(scorerWritingJobs).toEqual(declared)
     expect(Object.keys(JOBS).filter(jobTakesFidelity).sort()).toEqual(declared)
     expect(refusalScoreGuidance(JSON.stringify(fixture.replies.shortRefused), 'implement')).toBe(
       fixture.expected.writing,
@@ -45,6 +50,11 @@ describe('refusal score guidance', () => {
     expect(refusalScoreGuidance(JSON.stringify(fixture.replies.longRefused), 'craft')).toBe(
       fixture.expected.longNonWriting,
     )
+  })
+
+  test('the shared fixture pins the worker reply vocabulary', () => {
+    expect(fixture.workerReplyRequired).toEqual([...WORKER_SCHEMA.required])
+    expect(fixture.workerReplyStatuses).toEqual([...WORKER_SCHEMA.properties.status.enum])
   })
 
   test('a root whose newest turn refused yields the mark', () => {

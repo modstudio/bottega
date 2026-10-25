@@ -1,5 +1,16 @@
 {
   "writingJobs": ["fix", "implement", "issue-worker"],
+  "workerReplyRequired": [
+    "status",
+    "summary",
+    "files_changed",
+    "change_guide",
+    "questions",
+    "deviations",
+    "tests",
+    "blockers"
+  ],
+  "workerReplyStatuses": ["done", "asking", "refused"],
   "replies": {
     "shortRefused": {
       "status": "refused",

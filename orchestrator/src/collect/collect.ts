@@ -314,10 +314,7 @@ function scoreHint(
 }
 
 function collectedScoreHint(
-  row: Pick<
-    CollectedRunRow,
-    'record_id' | 'job' | 'parent_run_record_id' | 'output_path' | 'branch' | 'minted_branch'
-  >,
+  row: Pick<CollectedRunRow, 'record_id' | 'job' | 'parent_run_record_id'>,
   output: string | null,
   scoreSuffix: (job: string) => string,
 ): string {
