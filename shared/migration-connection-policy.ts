@@ -1,8 +1,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from './brand.ts'
 
-type MigrationConnectionSettings = {
-  foreignKeys: number
+export type MigrationConnectionSettings = {
   legacyAlterTable: number
 }
 
@@ -26,7 +25,6 @@ function restoreLegacyAlterTable(d: Database, value: number): void {
 /** Establish the connection settings under which every SQLite migration journal runs. */
 export function enterMigrationConnectionPolicy(d: Database): MigrationConnectionSettings {
   const settings = {
-    foreignKeys: pragmaValue(d, 'foreign_keys'),
     legacyAlterTable: pragmaValue(d, 'legacy_alter_table'),
   }
   d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = OFF')
@@ -66,7 +64,7 @@ export function assertMigrationForeignKeyIntegrity(d: Database): void {
   )
 }
 
-/** Leave every migration connection enforcing foreign keys and restore its legacy rename mode. */
+/** Leave foreign keys ON and restore the connection's prior legacy rename mode. */
 export function leaveMigrationConnectionPolicy(
   d: Database,
   settings: MigrationConnectionSettings,

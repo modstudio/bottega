@@ -7,7 +7,7 @@ import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import { PROJECT_REFERENCES } from '../orchestrator/src/project/project-reference-counts.ts'
 
-type ConcernName = 'orchestrator' | 'hub'
+type ConcernName = 'orchestrator' | 'hub' | 'shared'
 type Concern = { name: ConcernName; root: string; migrate(database: Database): unknown }
 type SqlSite = { file: string; line: number; sql: string; interpolated: boolean }
 type UnresolvedSite = { file: string; line: number; expression: string }
@@ -30,6 +30,16 @@ const exempt = (file: string, fingerprints: string[], reason: string): SqlExempt
   fingerprints.map((fingerprint) => ({ file, fingerprint, reason }))
 
 const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
+  ...exempt(
+    'shared/migration-connection-policy.ts',
+    ['c38d7bd094749ac7'],
+    'migration policy reads one of its two controlled connection pragma names',
+  ),
+  ...exempt(
+    'shared/migration-connection-policy.ts',
+    ['fca48103a85254d5', 'e58d10635c8a5c98'],
+    'migration policy restores the captured boolean legacy_alter_table setting',
+  ),
   ...exempt(
     'orchestrator/src/database/db.ts',
     ['a6421c4bc26604dc'],
@@ -541,8 +551,8 @@ export function checkSqlLiteralSchemaWith(input: SqlCheckInput): {
   skipped: Record<ConcernName, number>
   exemptions: SqlExemption[]
 } {
-  const prepared = { orchestrator: 0, hub: 0 }
-  const skipped = { orchestrator: 0, hub: 0 }
+  const prepared = { orchestrator: 0, hub: 0, shared: 0 }
+  const skipped = { orchestrator: 0, hub: 0, shared: 0 }
   const failures: string[] = []
   const exemptions = input.exemptions ?? []
   const unused = new Set(exemptions.map(({ file, fingerprint }) => `${file}#${fingerprint}`))
@@ -575,6 +585,11 @@ function checkSqlLiteralSchema() {
   return checkSqlLiteralSchemaWith({
     concerns: [
       {
+        name: 'shared',
+        root: resolve(root, 'shared'),
+        migrate: () => {},
+      },
+      {
         name: 'orchestrator',
         root: resolve(root, 'orchestrator/src'),
         migrate: applyOrchestratorMigrations,
@@ -600,7 +615,7 @@ function checkSqlLiteralSchema() {
 if (import.meta.main) {
   const result = checkSqlLiteralSchema()
   console.log(
-    `SQL literal schema: prepared ${result.prepared.orchestrator} orchestrator and ${result.prepared.hub} hub statements; skipped ${result.skipped.orchestrator} orchestrator and ${result.skipped.hub} hub sites`,
+    `SQL literal schema: prepared ${result.prepared.orchestrator} orchestrator, ${result.prepared.hub} hub, and ${result.prepared.shared} shared statements; skipped ${result.skipped.orchestrator} orchestrator, ${result.skipped.hub} hub, and ${result.skipped.shared} shared sites`,
   )
   for (const exemption of result.exemptions)
     console.log(`  exempt ${exemption.file}#${exemption.fingerprint}: ${exemption.reason}`)

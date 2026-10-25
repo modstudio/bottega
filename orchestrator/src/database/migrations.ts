@@ -798,7 +798,6 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   if (cached) return cached
   const d = new Database(':memory:')
   try {
-    d.exec('PRAGMA foreign_keys = ON')
     applyMigrations(d, folder)
     const hash = canonicalSchemaHash(d)
     expectedSchemaHashes.set(folder, hash)
@@ -858,10 +857,12 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
 function baselineInventory(folder = MIGRATIONS_FOLDER): SchemaInventory {
   const baseline = migrationJournal(folder)[0]!
   const d = new Database(':memory:')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
     executeMigrationSource(d, migrationSource(baseline, folder))
     return schemaInventory(d)
   } finally {
+    leaveMigrationConnectionPolicy(d, connectionSettings)
     d.close()
   }
 }
