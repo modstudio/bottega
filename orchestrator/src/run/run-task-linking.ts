@@ -259,7 +259,9 @@ export async function linkRunTasks(
     const taskId = link.task_record_id ?? run.task_record_id
     const projectId = link.project_record_id ?? run.project_record_id
     if (taskId === null) increment(report.without_task_by_job, run.job)
-    if (taskId === null && run.launch_key) increment(report.keys_without_task, run.launch_key)
+    if (taskId === null && run.launch_key && !tasks.has(run.launch_key)) {
+      increment(report.keys_without_task, run.launch_key)
+    }
     if (run.probe !== 1 && taskId === null && projectId === null) {
       increment(report.without_task_or_project_by_job, run.job)
     }
