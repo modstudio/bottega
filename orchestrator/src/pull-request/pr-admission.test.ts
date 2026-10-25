@@ -544,11 +544,11 @@ test('a lens a fix brought into scope names that path and the lenses already com
       kind: 're-lens',
       reviewNumber: 4,
       reviewedTip: 'reviewed-tip',
-      fixPaths: ['branch/tree.ts'],
-      tierThreePaths: ['branch/tree.ts'],
+      fixPaths: ['branch/tree.ts', 'src/b.ts'],
+      tierThreePaths: ['branch/tree.ts', 'src/b.ts'],
       applicability: { lenses: ['teardown-safety'] },
     },
-    fixPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
+    fixPathsByLens: { 'teardown-safety': ['branch/tree.ts', 'src/b.ts'] },
   })
   expect(reviewPlan.round).toEqual({
     lenses: ['teardown-safety'],
@@ -569,7 +569,11 @@ test('a lens a fix brought into scope names that path and the lenses already com
   expect(decision).toMatchObject({
     complete: false,
     missingLenses: [
-      { lens: 'teardown-safety', recordedOnBranch: false, newlyTouchedPaths: ['branch/tree.ts'] },
+      {
+        lens: 'teardown-safety',
+        recordedOnBranch: false,
+        newlyTouchedPaths: ['branch/tree.ts', 'src/b.ts'],
+      },
     ],
     lensesAlreadyComplete: ['correctness'],
   })
@@ -579,6 +583,7 @@ test('a lens a fix brought into scope names that path and the lenses already com
   expect(message).toContain(
     'applicable lens teardown-safety has no recorded result on this branch, brought into scope by branch/tree.ts',
   )
+  expect(message).toContain(', brought into scope by branch/tree.ts (+1 more paths)')
   expect(message).toContain(
     'lenses that completed on an earlier change group and do not need to run again: correctness',
   )
@@ -665,6 +670,88 @@ test('a lens the round asks to run again is not also reported as already complet
   expect(message).toContain(
     'lenses that completed on an earlier change group and do not need to run again: craft',
   )
+})
+
+test('a lens owed as a second opinion is not also reported as already complete', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1469-second-opinion-owed',
+    tip: 'tip',
+    group: { patchId: 'patch', pathSet: ['src/a.ts'] },
+    tier: 3,
+  } as PullRequestChange
+  // The branch completed correctness and safety earlier, safety with a single graded model run.
+  // The fix resolved a correctness finding, so the round asks for correctness again, and the
+  // second opinion on safety is still owed: safety must not also read as needing no second run.
+  const earlier = {
+    reviewRecordId: 'review-4',
+    reviewNumber: 4,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: '2026-09-25T01:00:00Z',
+    tier: 3 as const,
+    role: 'round' as const,
+    patchId: 'patch-before-fix',
+    pathSet: '["src/a.ts"]',
+    lensIdentities: ['correctness', 'safety'],
+    lenses: [
+      { recordId: 'lens-1', lens: 'correctness', runId: 'run-1', model: 'model-a', graded: true },
+      { recordId: 'lens-2', lens: 'safety', runId: 'run-2', model: 'model-a', graded: true },
+    ],
+    findings: [{ recordId: 'finding-1', ordinal: 1, lens: 'correctness', disposition: 'accepted' }],
+  }
+  const reviewPlan = applicableRoundLensPlan({
+    relevant: {
+      lenses: ['correctness', 'safety'],
+      secondOpinion: 'safety',
+      secondOpinionBasis: 'fixture',
+    },
+    facts: {
+      reviewedPathsByLens: { correctness: ['src/a.ts'], safety: ['src/a.ts'] },
+      completedLenses: ['correctness', 'safety'],
+      satisfiedSecondOpinionLenses: [],
+      latestAcceptedOrModifiedLenses: ['correctness'],
+    },
+    postFix: {
+      kind: 're-lens',
+      reviewNumber: 4,
+      reviewedTip: 'reviewed-tip',
+      fixPaths: ['branch/tree.ts'],
+      tierThreePaths: ['branch/tree.ts'],
+      applicability: { lenses: [] },
+    },
+    fixPathsByLens: {},
+  })
+  expect(reviewPlan.round).toEqual({
+    lenses: ['correctness'],
+    lensReasons: { correctness: 'accepted-finding' },
+    secondOpinion: 'safety',
+    secondOpinionBasis: 'fixture',
+  })
+  expect(reviewPlan.completedLensesOnBranch).toEqual(['correctness', 'safety'])
+  const decision = decideTriage({
+    patchId: 'patch',
+    pathSet: '["src/a.ts"]',
+    tip: 'tip',
+    tier: 3,
+    applicableReview: { lenses: ['correctness', 'safety'] },
+    reviewPlan,
+    branchOwnerSession: 'owner-session',
+    reviews: [],
+    branchReviewGroups: [{ reviews: [earlier] }],
+    reads: [],
+  })
+  expect(decision).toMatchObject({
+    complete: false,
+    missingLenses: [{ lens: 'correctness', recordedOnBranch: true, newlyTouchedPaths: [] }],
+    missingSecondOpinion: { lens: 'safety', firstRunId: 'run-2' },
+  })
+  if (decision.complete) throw new Error('expected incomplete triage')
+  expect(decision.lensesAlreadyComplete).not.toContain('safety')
+  expect(decision.lensesAlreadyComplete).toEqual([])
+
+  const message = triageRefusal(change, decision)
+  expect(message).toContain('missing second opinion for safety on a different model')
+  expect(message).not.toContain('do not need to run again')
 })
 
 test('a generic no-round refusal prints beside the unfinished-review remedy, with no lens line', () => {

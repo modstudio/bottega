@@ -458,7 +458,8 @@ function incompleteTriageDecision(input: {
       newlyTouchedPaths: [...(input.newlyTouchedPathsByLens[missing.lens] ?? [])].sort(),
     })),
     lensesAlreadyComplete: input.completedLensesOnBranch.filter(
-      (lens) => !input.roundLenses.includes(lens),
+      (lens) =>
+        !input.roundLenses.includes(lens) && lens !== coverageGaps.missingSecondOpinion?.lens,
     ),
     missingSecondOpinion: coverageGaps.missingSecondOpinion,
     architectReadRequired: Boolean(
