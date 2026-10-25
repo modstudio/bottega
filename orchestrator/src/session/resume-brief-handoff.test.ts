@@ -159,8 +159,9 @@ test('a live author does not fail consume and names the explicit adopt command',
   })
 })
 
-test('hosted author preparation wins over local history and a failed read leaves consume retryable', async () => {
+test('hosted author preparation resolves the latest non-consume revision author', async () => {
   const stored = await brief()
+  const localRevision = listDocRevisions('resume', 'handoff-project', stored.slug)[0]!.record_id
   const hostedRoot = addRun({
     agent: 'codex',
     job: 'implement',
@@ -194,6 +195,50 @@ test('hosted author preparation wins over local history and a failed read leaves
   ).rejects.toThrow('consume again when the hosted record is reachable')
   expect(getDoc('resume', 'handoff-project', stored.slug)?.body).toContain('status: open')
 
+  expect(
+    await resumeBriefAuthorSession(stored, db(), {
+      writeDecision: 'hosted',
+      listHostedRevisions: async () => [
+        {
+          id: localRevision,
+          op: 'create',
+          sessionId: null,
+          at: '2026-10-25T05:00:00.000Z',
+        },
+      ],
+    }),
+  ).toBe('brief-author')
+
+  const unknown = await prepareResumeBriefHandoff(
+    getDoc('resume', 'handoff-project', stored.slug),
+    {
+      database: db(),
+      machine,
+      author: {
+        writeDecision: 'hosted',
+        listHostedRevisions: async () => [
+          {
+            id: newRecordId(),
+            op: 'set',
+            sessionId: null,
+            at: '2026-10-25T06:00:00.000Z',
+          },
+          {
+            id: newRecordId(),
+            op: 'create',
+            sessionId: 'older-hosted-author',
+            at: '2026-10-25T04:00:00.000Z',
+          },
+        ],
+      },
+    },
+  )
+  const unknownHandoff = await unknown({ ...stored, already_consumed: false })
+  expect(unknownHandoff).toMatchObject({ status: 'skipped', authorSession: null })
+  expect(unknownHandoff.lines.join('\n')).toContain(
+    `${PLATFORM_SLUG} session adopt <session> --reason <why>`,
+  )
+
   const finish = await prepareResumeBriefHandoff(getDoc('resume', 'handoff-project', stored.slug), {
     database: db(),
     machine,
@@ -201,6 +246,7 @@ test('hosted author preparation wins over local history and a failed read leaves
       writeDecision: 'hosted',
       listHostedRevisions: async () => [
         {
+          id: newRecordId(),
           op: 'set',
           sessionId: 'hosted-brief-author',
           at: '2026-10-25T05:00:00.000Z',

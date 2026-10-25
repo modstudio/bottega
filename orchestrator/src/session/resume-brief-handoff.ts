@@ -102,7 +102,9 @@ async function handoffFromAuthor(
       authorSession: null,
       status: 'skipped',
       report: null,
-      lines: ['resume handoff skipped: brief author session is unknown'],
+      lines: [
+        `resume handoff skipped: latest non-consume hosted revision has no author session; when the author session is known, run ${PLATFORM_SLUG} session adopt <session> --reason <why>`,
+      ],
     }
   const actor = sessionId(database)
   if (author === actor)
