@@ -825,6 +825,13 @@ export function validateStoredProjectSettings(
   )
 }
 
+/**
+ * The keys a register write must refuse out of what it supplied, beside the
+ * validators the update commands already call. Exported from here because those
+ * commands may not reach the injection grammar directly.
+ */
+export { suppliedUnknownKeyProblems } from './project-injection.ts'
+
 export type RegisterBranchCheck = {
   head: string | null
   landing: string | null

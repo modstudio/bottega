@@ -17,7 +17,6 @@ import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
-import { suppliedUnknownKeyProblems } from './project-injection.ts'
 import { fillProjectRecordIds } from './project-record-identity.ts'
 import { persistLocalProjectSet } from './project-rename.ts'
 import {
@@ -42,6 +41,7 @@ import {
   retiredProjectByName,
   retireWrittenProject,
   sniffStack,
+  suppliedUnknownKeyProblems,
   unretireWrittenProject,
   upsertProject,
   validateProjectSettings,
