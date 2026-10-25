@@ -3,38 +3,32 @@
 
 import { realpathSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
-import {
-  decideFocusedTestPathFacts,
-  type FocusedTestPathFact,
-  normalizeAffectedTestPaths,
-} from './focused-test-decision.ts'
+import { decideFocusedTestPathFacts, type FocusedTestPathFact } from './focused-test-decision.ts'
 
-function focusedTestPathFacts(
-  entries: readonly string[],
-  normalizedPaths: readonly string[],
-  worktree: string,
-): FocusedTestPathFact[] {
+function focusedTestPathFacts(entries: readonly string[], worktree: string): FocusedTestPathFact[] {
   const resolvedRoot = realpathSync(worktree)
-  return normalizedPaths.map((normalized, index): FocusedTestPathFact => {
+  return entries.map((path): FocusedTestPathFact => {
     let resolvedCandidate: string | null = null
     let exists = false
     try {
-      resolvedCandidate = realpathSync(resolve(resolvedRoot, normalized))
+      resolvedCandidate = realpathSync(resolve(resolvedRoot, path))
       statSync(resolvedCandidate)
       exists = true
     } catch {
       // The pure decision turns the missing filesystem fact into the public refusal.
     }
-    return { entry: entries[index]!, normalized, resolvedRoot, resolvedCandidate, exists }
+    return { path, resolvedRoot, resolvedCandidate, exists }
   })
 }
 
 /**
- * The paths one call will run, which may include a selector's selection. The count bound is decided
- * with the selection itself, so every path here is checked for existence and confinement only.
+ * Refuses a focused test run whose paths do not exist or resolve outside the run worktree, throwing
+ * the decision's message. Paths arrive normalized — a worker's at its call edge, a selector's where
+ * its output was parsed — so this checks existence and canonical confinement only. The count bound
+ * on what one worker call may ask for is decided with the selection itself
+ * (`decideFocusedTestSelection`), never here, because a project's selector may legitimately find
+ * more paths than a worker may name in one call.
  */
-export function validateAffectedTestPaths(paths: readonly string[], worktree: string): string[] {
-  return decideFocusedTestPathFacts(
-    focusedTestPathFacts(paths, normalizeAffectedTestPaths(paths), worktree),
-  )
+export function validateFocusedTestRunPaths(paths: readonly string[], worktree: string): void {
+  decideFocusedTestPathFacts(focusedTestPathFacts(paths, worktree))
 }

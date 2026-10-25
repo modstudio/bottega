@@ -36,11 +36,17 @@ export type FocusedTestResult = {
 
 export type FocusedTestEligibility = { eligible: true } | { eligible: false; message: string }
 
+/** Why a focused test execution stopped without a result of its own. */
+export const FOCUSED_TEST_CLOSE_REASON =
+  'Focused test run cancelled because the supervising run closed.'
+
 export function decideFocusedTestEligibility(input: {
   authenticated: boolean
   writer: boolean
   runner: FocusedTestRunner | null
   selector: FocusedTestSelector | null
+  /** The problems a declared `focusedTests.affected` block carries, if it declares any. */
+  selectorProblem: string | null
   affected: boolean
 }): FocusedTestEligibility {
   if (!input.authenticated) {
@@ -55,10 +61,27 @@ export function decideFocusedTestEligibility(input: {
       message: "This run's project has no registered focused test runner, so nothing was run.",
     }
   }
-  if (input.affected && !input.selector) {
-    return { eligible: false, message: affectedSelectorRegisterMessage() }
+  if (input.affected) {
+    if (input.selectorProblem) {
+      return { eligible: false, message: affectedSelectorProblemMessage(input.selectorProblem) }
+    }
+    if (!input.selector) {
+      return { eligible: false, message: affectedSelectorRegisterMessage() }
+    }
   }
   return { eligible: true }
+}
+
+/**
+ * The refusal a call asking for affected tests earns when its project declares a
+ * `focusedTests.affected` block that cannot be read. The problem names the register key.
+ */
+function affectedSelectorProblemMessage(problem: string): string {
+  return (
+    `This run's project declares focusedTests.affected, but run_tests cannot read it: ${problem}. ` +
+    'Fix it in the project register settings, or call run_tests without affected to run the ' +
+    'registered runner.'
+  )
 }
 
 /** The refusal a call asking for affected tests earns when its project declares no selector. */
@@ -198,38 +221,33 @@ export function validateFocusedTestDeclaration(value: unknown): FocusedTestDecla
   }
 }
 
-function parseFocusedTestRunner(value: unknown): FocusedTestRunner | null {
-  const parts = focusedTestDeclarationParts(value)
-  if (parts.runner.problems.length) throw new Error(parts.runner.problems.join('; '))
-  return parts.runner.command
-}
-
-function parseFocusedTestSelector(value: unknown): FocusedTestSelector | null {
-  const parts = focusedTestDeclarationParts(value)
-  if (parts.selector.problems.length) throw new Error(parts.selector.problems.join('; '))
-  return parts.selector.command
-}
-
 export function hasFocusedTestRunner(value: unknown): boolean {
   return validateFocusedTestDeclaration(value).runner !== null
 }
 
 /**
- * The commands a project's stored settings declare. Settings that cannot be read, or that declare
- * no command, register nothing rather than refusing here: absence is what the callers report.
+ * The commands a project's stored settings declare, read independently: the runner and the optional
+ * selector are separate declarations, so a malformed `focusedTests.affected` never costs the runner
+ * its registration — it leaves `selector` null and reports why in `selectorProblem`. Settings that
+ * cannot be parsed at all register nothing rather than refusing here: absence is what the callers
+ * report.
  */
 export function declaredFocusedTestCommands(settings: string | null): {
   runner: FocusedTestRunner | null
   selector: FocusedTestSelector | null
+  selectorProblem: string | null
 } {
+  let parsed: { focusedTests?: unknown } | null
   try {
-    const parsed = JSON.parse(settings ?? '{}') as { focusedTests?: unknown }
-    return {
-      runner: parseFocusedTestRunner(parsed.focusedTests),
-      selector: parseFocusedTestSelector(parsed.focusedTests),
-    }
+    parsed = JSON.parse(settings ?? '{}') as { focusedTests?: unknown } | null
   } catch {
-    return { runner: null, selector: null }
+    return { runner: null, selector: null, selectorProblem: null }
+  }
+  const parts = focusedTestDeclarationParts(parsed?.focusedTests)
+  return {
+    runner: parts.runner.problems.length ? null : parts.runner.command,
+    selector: parts.selector.problems.length ? null : parts.selector.command,
+    selectorProblem: parts.selector.problems.join('; ') || null,
   }
 }
 
@@ -308,25 +326,26 @@ export function normalizeAffectedTestPaths(paths: readonly string[]): string[] {
   return paths.map(normalizedFocusedTestPath)
 }
 
+/**
+ * One path's filesystem facts. Paths reach this decision already normalized — a worker's at its
+ * call edge, a selector's where its output was parsed — so a fact carries the path itself.
+ */
 export type FocusedTestPathFact = {
-  entry: string
-  normalized: string
+  path: string
   resolvedRoot: string
   resolvedCandidate: string | null
   exists: boolean
 }
 
 export function decideFocusedTestPathFacts(facts: readonly FocusedTestPathFact[]): string[] {
-  return facts.map(({ entry, normalized, resolvedRoot, resolvedCandidate, exists }) => {
+  return facts.map(({ path, resolvedRoot, resolvedCandidate, exists }) => {
     if (!exists || !resolvedCandidate) {
-      throw new Error(`focused test path ${JSON.stringify(entry)} does not exist`)
+      throw new Error(`focused test path ${JSON.stringify(path)} does not exist`)
     }
     if (!beneath(resolvedRoot, resolvedCandidate)) {
-      throw new Error(
-        `focused test path ${JSON.stringify(entry)} resolves outside the run worktree`,
-      )
+      throw new Error(`focused test path ${JSON.stringify(path)} resolves outside the run worktree`)
     }
-    return normalized
+    return path
   })
 }
 
@@ -357,7 +376,9 @@ export type FocusedTestPathDecision =
 
 /** What the adapter observed of the project's selector, when the call asked for affected tests. */
 export type FocusedTestSelectorOutcome =
+  | { kind: 'closed' }
   | { kind: 'not-declared' }
+  | { kind: 'ill-declared'; problem: string }
   | { kind: 'no-base' }
   | {
       kind: 'failed'
@@ -376,9 +397,13 @@ export type FocusedTestSelectionInput =
       selector: FocusedTestSelectorOutcome
     }
 
-/** What one run_tests call runs: the paths, nothing to run, or the refusal it earns. */
+/**
+ * What one run_tests call runs: the paths, nothing to run, or the refusal it earns. `paths` is the
+ * union of what the call asked for and what the selector chose; `selectorPaths` names the selector's
+ * own part of it, so a path that cannot run is refused against the side that named it.
+ */
 export type FocusedTestSelection =
-  | { kind: 'run'; paths: string[]; note: string | null }
+  | { kind: 'run'; paths: string[]; selectorPaths: string[]; note: string | null }
   | { kind: 'none'; message: string }
   | { kind: 'refuse'; message: string }
 
@@ -398,13 +423,46 @@ export function decideFocusedTestSelection(input: FocusedTestSelectionInput): Fo
     ? decideSelectorTestPaths(input.selector)
     : { kind: 'paths' as const, paths: [] }
   if (selected.kind === 'refuse') return selected
-  const paths = unionFocusedTestPaths(requested.paths, selected.paths)
-  if (!paths.length) return { kind: 'none', message: FOCUSED_TEST_NOTHING_AFFECTED }
+  const union = unionFocusedTestPaths(requested.paths, selected.paths)
+  if (!union.paths.length) return { kind: 'none', message: FOCUSED_TEST_NOTHING_AFFECTED }
   return {
     kind: 'run',
-    paths,
-    note: input.affected ? affectedSelectionNote(paths.length, selected.paths.length) : null,
+    paths: union.paths,
+    selectorPaths: union.added,
+    note: input.affected ? affectedSelectionNote(union.paths.length, selected.paths.length) : null,
   }
+}
+
+/**
+ * What a selector's own run amounts to. A selector the broker stopped for its own timeout or
+ * overflow reports that cause even though stopping it looked like a cancellation; only a selector
+ * that did not fail while its supervising run closed reports the close. Stopping a selector for its
+ * own reason never becomes the close's message.
+ */
+export function decideFocusedTestSelectorOutcome(input: {
+  cancelled: boolean
+  outcome: FocusedTestSelectorOutcome
+}): FocusedTestSelectorOutcome {
+  if (input.outcome.kind === 'failed' && (input.outcome.timedOut || input.outcome.overflowed)) {
+    return input.outcome
+  }
+  return input.cancelled ? { kind: 'closed' } : input.outcome
+}
+
+/** Which of a call's paths named a path that cannot run. */
+export type FocusedTestPathSource = 'worker' | 'selector'
+
+/**
+ * The refusal a selected path that cannot run earns. A path the project's own selector printed
+ * names the register key that produced it; a path this call named keeps the path's own message.
+ */
+export function focusedTestRunPathRefusal(input: {
+  source: FocusedTestPathSource
+  message: string
+}): string {
+  return input.source === 'selector'
+    ? `the affected-test selector (focusedTests.affected) printed a path run_tests cannot run: ${input.message}`
+    : input.message
 }
 
 function decideRequestedTestPaths(
@@ -424,8 +482,14 @@ function decideRequestedTestPaths(
 }
 
 function decideSelectorTestPaths(selector: FocusedTestSelectorOutcome): FocusedTestPathDecision {
+  if (selector.kind === 'closed') {
+    return { kind: 'refuse', message: FOCUSED_TEST_CLOSE_REASON }
+  }
   if (selector.kind === 'not-declared') {
     return { kind: 'refuse', message: affectedSelectorRegisterMessage() }
+  }
+  if (selector.kind === 'ill-declared') {
+    return { kind: 'refuse', message: affectedSelectorProblemMessage(selector.problem) }
   }
   if (selector.kind === 'no-base') {
     return {
@@ -481,15 +545,17 @@ function selectorFailureMessage(selector: {
 function unionFocusedTestPaths(
   requested: readonly string[],
   selected: readonly string[],
-): string[] {
-  const union = [...requested]
+): { paths: string[]; added: string[] } {
+  const paths = [...requested]
   const seen = new Set(requested)
+  const added: string[] = []
   for (const path of selected) {
     if (seen.has(path)) continue
     seen.add(path)
-    union.push(path)
+    added.push(path)
+    paths.push(path)
   }
-  return union
+  return { paths, added }
 }
 
 function affectedSelectionNote(ran: number, selected: number): string {

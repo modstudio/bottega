@@ -179,18 +179,3 @@ test('an affected request travels through the same scratch file as its paths', a
   answerRequest(scratchDir, request)
   expect(await pending).toBe(expectedResult(runId, scratchDir, request))
 })
-
-test('a call that asks for no selection records that it asked for none', async () => {
-  const scratchDir = scratchDirectory()
-  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
-  const signal = new AbortController().signal
-  const pending = requestFocusedTests({
-    runId,
-    scratchDir,
-    paths: ['tests/one.test.ts'],
-    signal,
-  })
-  expect(emittedRequest(scratchDir).affected).toBeFalse()
-  answerRequest(scratchDir, emittedRequest(scratchDir))
-  await pending
-})

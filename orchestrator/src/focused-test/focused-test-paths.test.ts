@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FOCUSED_TEST_MAX_PATHS } from './focused-test-decision.ts'
-import { validateAffectedTestPaths } from './focused-test-paths.ts'
+import { validateFocusedTestRunPaths } from './focused-test-paths.ts'
 
 const roots: string[] = []
 const directory = (name: string) => {
@@ -21,7 +21,7 @@ test('filesystem facts expose a symlink escape to the pure confinement decision'
   const outside = directory('focused-outside-')
   writeFileSync(join(outside, 'escape.test.ts'), '')
   symlinkSync(join(outside, 'escape.test.ts'), join(tree, 'escape.test.ts'))
-  expect(() => validateAffectedTestPaths(['escape.test.ts'], tree)).toThrow(
+  expect(() => validateFocusedTestRunPaths(['escape.test.ts'], tree)).toThrow(
     'focused test path "escape.test.ts" resolves outside the run worktree',
   )
 })
@@ -33,8 +33,8 @@ test('a selection past the worker bound is validated without the count', () => {
     writeFileSync(join(tree, name), '')
     return name
   })
-  expect(validateAffectedTestPaths(selected, tree)).toHaveLength(selected.length)
-  expect(() => validateAffectedTestPaths([...selected, 'missing.test.ts'], tree)).toThrow(
+  expect(() => validateFocusedTestRunPaths(selected, tree)).not.toThrow()
+  expect(() => validateFocusedTestRunPaths([...selected, 'missing.test.ts'], tree)).toThrow(
     'focused test path "missing.test.ts" does not exist',
   )
 })

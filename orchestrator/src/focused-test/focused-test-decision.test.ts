@@ -4,9 +4,13 @@ import {
   decideFocusedTestPathFacts,
   decideFocusedTestRequest,
   decideFocusedTestSelection,
+  decideFocusedTestSelectorOutcome,
   decideFocusedTestWait,
+  declaredFocusedTestCommands,
   FOCUSED_TEST_MAX_PATHS,
+  FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
   focusedTestInvocation,
+  focusedTestRunPathRefusal,
   hasFocusedTestRunner,
   normalizeAffectedTestPaths,
   normalizeFocusedTestPaths,
@@ -78,8 +82,7 @@ describe('focused test decisions', () => {
     expect(
       decideFocusedTestPathFacts([
         {
-          entry: 'tests/one.test.ts',
-          normalized: 'tests/one.test.ts',
+          path: 'tests/one.test.ts',
           resolvedRoot: '/tree',
           resolvedCandidate: '/tree/tests/one.test.ts',
           exists: true,
@@ -89,8 +92,7 @@ describe('focused test decisions', () => {
     expect(() =>
       decideFocusedTestPathFacts([
         {
-          entry: 'missing.test.ts',
-          normalized: 'missing.test.ts',
+          path: 'missing.test.ts',
           resolvedRoot: '/tree',
           resolvedCandidate: null,
           exists: false,
@@ -100,8 +102,7 @@ describe('focused test decisions', () => {
     expect(() =>
       decideFocusedTestPathFacts([
         {
-          entry: 'escape.test.ts',
-          normalized: 'escape.test.ts',
+          path: 'escape.test.ts',
           resolvedRoot: '/tree',
           resolvedCandidate: '/outside/escape.test.ts',
           exists: true,
@@ -216,6 +217,7 @@ describe('affected focused test selections', () => {
         writer: true,
         runner: { command: 'runner', args: [] },
         selector: selector ? { command: 'selector', args: [] } : null,
+        selectorProblem: null,
         affected,
       })
     expect(eligibility(false, false)).toEqual({ eligible: true })
@@ -224,6 +226,55 @@ describe('affected focused test selections', () => {
       eligible: false,
       message: expect.stringContaining('focusedTests.affected'),
     })
+  })
+
+  test('a malformed selector leaves the runner registered and names the selector key', () => {
+    const settings = JSON.stringify({
+      focusedTests: {
+        command: 'scripts/test-focused.ts',
+        args: [],
+        affected: { command: '', args: [] },
+      },
+    })
+    expect(declaredFocusedTestCommands(settings)).toEqual({
+      runner: { command: 'scripts/test-focused.ts', args: [] },
+      selector: null,
+      selectorProblem: 'focusedTests.affected.command must be a non-empty string',
+    })
+    const commands = declaredFocusedTestCommands(settings)
+    expect(
+      decideFocusedTestEligibility({
+        authenticated: true,
+        writer: true,
+        ...commands,
+        affected: true,
+      }),
+    ).toEqual({
+      eligible: false,
+      message: expect.stringContaining('focusedTests.affected.command'),
+    })
+    expect(
+      decideFocusedTestEligibility({
+        authenticated: true,
+        writer: true,
+        ...commands,
+        affected: false,
+      }),
+    ).toEqual({ eligible: true })
+    expect(
+      decideFocusedTestSelection({
+        affected: true,
+        requestedPaths: [],
+        selector: {
+          kind: 'ill-declared',
+          problem: 'focusedTests.affected.command must be a non-empty string',
+        },
+      }),
+    ).toEqual({ kind: 'refuse', message: expect.stringContaining('focusedTests.affected.command') })
+    expect(declaredFocusedTestCommands('not json').runner).toBeNull()
+    expect(
+      declaredFocusedTestCommands(JSON.stringify({ focusedTests: { command: 'r', args: [] } })),
+    ).toEqual({ runner: { command: 'r', args: [] }, selector: null, selectorProblem: null })
   })
 
   test('a selector selection larger than the worker bound still runs', () => {
@@ -270,8 +321,89 @@ describe('affected focused test selections', () => {
         'orchestrator/src/two.test.ts',
         'orchestrator/src/three.test.ts',
       ],
+      selectorPaths: ['orchestrator/src/three.test.ts'],
       note: 'focusedTests.affected selected 2 test paths; running 3 paths in total.',
     })
+  })
+
+  test('a selector stopped for its own timeout or overflow is never reported as a closed run', () => {
+    const stopped = (stopped: { timedOut: boolean; overflowed: boolean }) =>
+      decideFocusedTestSelectorOutcome({
+        cancelled: true,
+        outcome: {
+          kind: 'failed',
+          exitCode: -1,
+          timedOut: stopped.timedOut,
+          overflowed: stopped.overflowed,
+          stderrTail: 'selector noise\n',
+        },
+      })
+    const timedOut = stopped({ timedOut: true, overflowed: false })
+    expect(timedOut).toEqual({
+      kind: 'failed',
+      exitCode: -1,
+      timedOut: true,
+      overflowed: false,
+      stderrTail: 'selector noise\n',
+    })
+    expect(
+      decideFocusedTestSelection({ affected: true, requestedPaths: [], selector: timedOut }),
+    ).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining(
+        'the affected-test selector timed out; its stderr tail:\nselector noise',
+      ),
+    })
+    const overflowed = stopped({ timedOut: false, overflowed: true })
+    expect(
+      decideFocusedTestSelection({ affected: true, requestedPaths: [], selector: overflowed }),
+    ).toEqual({
+      kind: 'refuse',
+      message: expect.stringContaining(
+        `printed more than ${FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES} bytes`,
+      ),
+    })
+    // Only a selector that did not fail of its own accord reports the run's close, so no failure
+    // message is ever replaced by the close reason.
+    expect(
+      decideFocusedTestSelectorOutcome({
+        cancelled: true,
+        outcome: { kind: 'printed', stdout: 'orchestrator/src/one.test.ts\n' },
+      }),
+    ).toEqual({ kind: 'closed' })
+    expect(
+      decideFocusedTestSelection({
+        affected: true,
+        requestedPaths: [],
+        selector: { kind: 'closed' },
+      }),
+    ).toEqual({ kind: 'refuse', message: expect.stringContaining('supervising run closed') })
+  })
+
+  test('a path that cannot run is refused against the side that named it', () => {
+    expect(
+      focusedTestRunPathRefusal({
+        source: 'selector',
+        message: 'focused test path "gone.test.ts" does not exist',
+      }),
+    ).toBe(
+      'the affected-test selector (focusedTests.affected) printed a path run_tests cannot run: ' +
+        'focused test path "gone.test.ts" does not exist',
+    )
+    expect(
+      focusedTestRunPathRefusal({
+        source: 'worker',
+        message: 'focused test path "gone.test.ts" does not exist',
+      }),
+    ).toBe('focused test path "gone.test.ts" does not exist')
+  })
+
+  test('the union names the selector part of it and nothing the worker asked for', () => {
+    const selection = decideFocusedTestSelection({
+      affected: false,
+      requestedPaths: ['orchestrator/src/one.test.ts'],
+    })
+    expect(selection.kind === 'run' ? selection.selectorPaths : ['unexpected']).toEqual([])
   })
 
   test('an empty selection is a completed result, and a broken selector is not', () => {
