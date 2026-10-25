@@ -365,6 +365,7 @@ export function recordTriageOverrideForChange(
 }
 
 function guardTriageOverrideService(reasons: readonly (string | undefined)[]): void {
+  if (reasons.every((reason) => reason === undefined)) return
   if (reasons.some((reason) => reason !== undefined && containsSecretShaped(reason))) {
     throw new Error('refusing triage override because its reason resembles a secret')
   }
