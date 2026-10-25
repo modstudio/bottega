@@ -413,15 +413,12 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'board_hosted_adoption_receipt.reader_session',
     'board_receipt.reader_session',
     'contention.resource_key',
-    'doc_revision.related_subject_ids',
     'hosted_board_receipt_cache.reader_session',
-    'operator_notification.item_id',
     'port_ref.task_key',
     'presence.current_task_key',
     'question.workflow_key',
     'question.filed_ref',
     'run.launch_key',
-    'worker_note_request.candidate_ids',
     'workflow_cursor.workflow_key',
     'workflow_cursor.instance_id',
   ]),
@@ -434,11 +431,7 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'question.task_key',
     'question_delivery.run_ref',
     'task.parent_key',
-    'task_comment.task_key',
-    'task_document.task_key',
-    'task_identity_migration_repairs.row_id',
     'task_identity_migration_repairs.task_key',
-    'task_status_event.task_key',
   ]),
   ...manifest('hosted', 'natural or encoded reference to an application row', [
     'board_receipt.reader_session',
@@ -446,8 +439,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'doc_revision.related_subject_ids',
     'hub_interval.task_key',
     'hub_task.parent_key',
-    'hub_task_comment.task_key',
-    'hub_task_document.task_key',
     'hub_task_status_event.task_key',
     'landing_triage_snapshot.review_ids',
     'machine_public_key.key_id',
@@ -462,6 +453,9 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
 ]
 
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
+  ...manifest('orchestrator', 'display label beside a UUID identity', [
+    'operator_notification.item_id',
+  ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
     'board_claim.holder_session',
     'board_message.author_session',
@@ -536,6 +530,11 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'task_identity_migration_repairs.old_external_id',
     'task_identity_migration_repairs.new_external_id',
   ]),
+  ...manifest('hub', 'display label beside a UUID identity', [
+    'task_comment.task_key',
+    'task_document.task_key',
+    'task_status_event.task_key',
+  ]),
   ...manifest('hosted', 'identifier issued by the harness session system', [
     'board_claim.holder_session',
     'board_message.author_session',
@@ -561,6 +560,10 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
   ...manifest('hosted', 'identifier issued by the orchestrator run system', [
     'hub_task_comment.run_id',
     'hub_task_status_event.run_id',
+  ]),
+  ...manifest('hosted', 'display label beside a UUID identity', [
+    'hub_task_comment.task_key',
+    'hub_task_document.task_key',
   ]),
   ...manifest('hosted', 'identifier issued by GitHub Actions', ['pull_request_ci.workflow_run_id']),
   ...manifest('hosted', "identifier issued by Git's patch-id system", [
@@ -643,6 +646,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'doc_revision.parent_record_id',
     'doc_revision.project_record_id',
     'doc_revision.article_subject_id',
+    'doc_revision.related_subject_ids',
     'duel.record_id',
     'duel.loser_run_record_id',
     'duel.winner_run_record_id',
@@ -784,6 +788,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'subject.parent_id',
     'test_flake.record_id',
     'worker_note_request.note_record_id',
+    'worker_note_request.candidate_ids',
     'worker_note_request.project_record_id',
     'worker_note_request.record_id',
     'worker_note_request.run_record_id',
@@ -842,6 +847,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'task_identity_claim.project_record_id',
     'task_identity_migration_repairs.old_record_id',
     'task_identity_migration_repairs.new_record_id',
+    'task_identity_migration_repairs.row_id',
     'task_status_event.record_id',
     'task_status_event.task_record_id',
   ]),
