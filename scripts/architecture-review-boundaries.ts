@@ -50,6 +50,7 @@ export const reviewModuleSpecs = [
     file: 'orchestrator/src/review/review-lens-dispatch-reason.ts',
     allowed: [
       '../database/db.ts',
+      '../project/projects.ts',
       './review-applicability.ts',
       './review-pins.ts',
       './review-post-fix.ts',
@@ -377,7 +378,6 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-round-lens-service-boundary',
     file: 'orchestrator/src/review/review-round-lens-service.ts',
     allowed: [
-      '../project/projects.ts',
       './review-applicability.ts',
       './review-group.ts',
       './review-pins.ts',

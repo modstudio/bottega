@@ -225,9 +225,7 @@ export function applicableRoundLensPlan(input: {
         lenses
           .map((lens) => [
             lens,
-            unidentified
-              ? 'unidentified-tip-funnel'
-              : laterRoundReason(lens, findings, touched),
+            unidentified ? 'unidentified-tip-funnel' : laterRoundReason(lens, findings, touched),
           ])
           .filter((entry): entry is [string, ReviewLensSelectionReason] => entry[1] !== null),
       ),

@@ -19,7 +19,6 @@ import {
   triageRefusal,
 } from '../pull-request/pr-admission.ts'
 import { serializePathSet } from './review-group.ts'
-import { reviewLensSelectionReasonForDispatch } from './review-lens-dispatch-reason.ts'
 import { pinRef } from './review-pins.ts'
 import { completeReview, recordReview, triageFinding } from './review-triage.ts'
 
@@ -101,7 +100,6 @@ test('review-lens dispatch stores its funnel reason and short-circuits operator 
         )
         .get(),
     ).toEqual({ selection_reason: 'operator-ordered' })
-
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }

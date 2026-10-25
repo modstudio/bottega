@@ -7,8 +7,8 @@ import type { Project } from '../project/projects.ts'
 import {
   type ApplicableReview,
   lensesSelectingPaths,
-  selectReviewApplicability,
   type ReviewFunnelPlan,
+  selectReviewApplicability,
 } from './review-applicability.ts'
 import { type ChangeGroup, reviewsForTriage, serializePathSet } from './review-group.ts'
 import { measureChangeIdentity } from './review-pins.ts'
@@ -148,10 +148,7 @@ export function budgetedReviewPlanForResolvedChange(input: {
       database: input.database,
       repo: input.cwd,
       to: input.commit,
-      trunkRef: reviewTrunkRef(
-        reviewRemoteTrunkRefExists(trunk, spawnGitProbe(input.cwd)),
-        trunk,
-      ),
+      trunkRef: reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(input.cwd)), trunk),
       project: input.project.name,
       branch: input.branch,
     }),
