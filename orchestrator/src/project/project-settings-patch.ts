@@ -1,8 +1,26 @@
 // concern: project-settings-patch
-/** Owns pure JSON Merge Patch application and effect reporting. */
+/**
+ * Owns project-settings patch parsing, RFC 7386 merge application, and the
+ * structural diff of two settings objects. The command owns report wording.
+ * Project settings must remain an object, so top-level non-object patches are
+ * refused rather than applying RFC 7386's whole-document replacement rule.
+ */
 
 function mergeableObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+const SETTINGS_PATCH_OBJECT_ERROR = '--settings must be a JSON object, for example {"trunk":"main"}'
+
+export function parseSettingsPatch(json: string): Record<string, unknown> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(json)
+  } catch (error) {
+    throw new Error(`${SETTINGS_PATCH_OBJECT_ERROR}: ${error}`)
+  }
+  if (!mergeableObject(parsed)) throw new Error(SETTINGS_PATCH_OBJECT_ERROR)
+  return parsed
 }
 
 /**
@@ -20,10 +38,9 @@ export function mergeProjectSettings(
       continue
     }
     const previous = out[key]
-    out[key] =
-      mergeableObject(value) && mergeableObject(previous)
-        ? mergeProjectSettings(previous, value)
-        : value
+    out[key] = mergeableObject(value)
+      ? mergeProjectSettings(mergeableObject(previous) ? previous : {}, value)
+      : value
   }
   return out
 }

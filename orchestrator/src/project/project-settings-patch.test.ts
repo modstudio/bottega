@@ -1,5 +1,27 @@
 import { describe, expect, test } from 'bun:test'
-import { mergeProjectSettings, settingsPatchEffect } from './project-settings-patch.ts'
+import {
+  mergeProjectSettings,
+  parseSettingsPatch,
+  settingsPatchEffect,
+} from './project-settings-patch.ts'
+
+describe('parseSettingsPatch', () => {
+  test('accepts a JSON object', () => {
+    expect(parseSettingsPatch('{"trunk":"main"}')).toEqual({ trunk: 'main' })
+  })
+
+  test.each(['"hi"', '[7,8]', 'null'])('refuses a non-object top-level patch: %s', (json) => {
+    expect(() => parseSettingsPatch(json)).toThrow(
+      '--settings must be a JSON object, for example {"trunk":"main"}',
+    )
+  })
+
+  test('refuses invalid JSON and preserves the parse error detail', () => {
+    expect(() => parseSettingsPatch('{')).toThrow(
+      /--settings must be a JSON object, for example \{"trunk":"main"\}: SyntaxError:/,
+    )
+  })
+})
 
 describe('mergeProjectSettings', () => {
   test('a nested null removes only that key while an omitted sibling remains', () => {
@@ -17,8 +39,17 @@ describe('mergeProjectSettings', () => {
     )
   })
 
-  test('null for an absent key is a no-op', () => {
-    expect(mergeProjectSettings({ trunk: 'main' }, { color: null })).toEqual({ trunk: 'main' })
+  test('a nested null under an absent parent removes the nested key', () => {
+    expect(mergeProjectSettings({ trunk: 'main' }, { review: { lenses: null } })).toEqual({
+      trunk: 'main',
+      review: {},
+    })
+  })
+
+  test('a nested null under a scalar parent removes the nested key', () => {
+    expect(mergeProjectSettings({ color: 'blue' }, { color: { shade: null } })).toEqual({
+      color: {},
+    })
   })
 
   test('an object replaces a scalar', () => {

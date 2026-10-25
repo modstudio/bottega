@@ -444,6 +444,40 @@ test('project set reports setting effects without values and reports a no-op', a
   ).toBe('updated settings-effect\n               settings unchanged')
 })
 
+test('project set refuses non-object settings without changing stored settings', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-object',
+    path: '/w/settings-object',
+    settings: { color: 'blue' },
+  })
+
+  await expect(
+    runProject(['project', 'set', 'settings-object'], { settings: '[7,8]' }),
+  ).rejects.toThrow('--settings must be a JSON object, for example {"trunk":"main"}')
+  expect(projectByName('settings-object')?.settings).toEqual({ color: 'blue' })
+})
+
+test('project set reports the stored autonomy ship-to key', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-autonomy',
+    path: '/w/settings-autonomy',
+    settings: { autonomy: { preset: 'manual' } },
+  })
+
+  expect(
+    await runProject(['project', 'set', 'settings-autonomy'], {
+      settings: JSON.stringify({ autonomy: { shipTo: 'trunk' } }),
+    }),
+  ).toBe('updated settings-autonomy\n               added autonomy.ship-to')
+  expect(projectByName('settings-autonomy')?.settings).toEqual({
+    autonomy: { preset: 'manual', 'ship-to': 'trunk' },
+  })
+})
+
 test('project set with --json emits only the existing project JSON', async () => {
   installRecordApiClient(createMemoryRecordApiClient())
   upsertProject({
