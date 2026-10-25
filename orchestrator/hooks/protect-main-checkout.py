@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
-"""Refuse edits and commits in a registered main checkout.
+"""Refuse edits and mutating Git commands in a registered main checkout.
 
-The default PreToolUse mode watches tracked-file edits. The --pre-commit mode
-watches commits from the checkout itself. A project opts out with
-{"requireCleanMain": false} in its register settings.
+The default PreToolUse mode watches tracked-file edits and recognized mutating
+Git subcommands from Bash. The --pre-commit mode watches commits from the
+checkout itself. A project opts out with {"requireCleanMain": false} in its
+register settings. Commands the Bash adapter cannot parse fail open.
 """
 import json
 import os
+import re
+import shlex
 import sqlite3
 import subprocess
 import sys
 
-from protect_main_checkout import candidate_git_mutations, decision_for_command
+from protect_main_checkout import MUTATING_GIT_SUBCOMMANDS, decision_for_mutations, real
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 EDITOR_TOOLS = {"Write", "Edit", "NotebookEdit"}
 INVARIANT = "A registered main checkout stays clean; work happens in a worktree"
+GIT_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])git(?![A-Za-z0-9_-])")
+ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
 def fail_open(message=None) -> int:
@@ -76,11 +81,150 @@ def git(args, cwd):
         return None
 
 
-def real(path):
+def without_assignments(tokens):
+    index = 0
+    while index < len(tokens) and ASSIGNMENT.match(tokens[index]):
+        index += 1
+    return tokens[index:]
+
+
+def simple_commands(command, cwd):
+    """Adapt shell text into command words and normalized effective cwd."""
+    if not isinstance(command, str) or not isinstance(cwd, str):
+        return None
+    if "$(" in command or "`" in command or "\n" in command:
+        return None
     try:
-        return os.path.realpath(path)
-    except OSError:
-        return path
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        words = list(lexer)
+    except (ValueError, TypeError):
+        return None
+    if any(word in {"(", ")"} for word in words):
+        return None
+
+    commands = []
+    words_for_command = []
+    effective_cwd = real(cwd)
+    index = 0
+    while index <= len(words):
+        word = words[index] if index < len(words) else None
+        if word and (">" in word or "<" in word):
+            if words_for_command and words_for_command[-1].isdigit():
+                words_for_command.pop()
+            index += 2
+            continue
+        if word is not None and word not in {"&&", "||", ";", "|", "&"}:
+            words_for_command.append(word)
+            index += 1
+            continue
+        if words_for_command:
+            executable = without_assignments(words_for_command)
+            if not executable:
+                return None
+            if executable[0] == "eval" or (
+                os.path.basename(executable[0]) == "bash" and "-c" in executable[1:]
+            ):
+                return None
+            if executable[0] == "cd":
+                if word != "&&" or len(executable) != 2:
+                    return None
+                destination = os.path.expanduser(executable[1])
+                effective_cwd = real(
+                    destination if os.path.isabs(destination)
+                    else os.path.join(effective_cwd, destination)
+                )
+            else:
+                commands.append((executable, effective_cwd))
+        words_for_command = []
+        index += 1
+    return commands
+
+
+def resolve_git_path(path, cwd):
+    expanded = os.path.expanduser(path)
+    return real(expanded if os.path.isabs(expanded) else os.path.join(cwd, expanded))
+
+
+def git_invocation(tokens, cwd):
+    if not tokens or os.path.basename(tokens[0]) != "git":
+        return None
+    target = cwd
+    git_dir = None
+    work_tree = None
+    index = 1
+    options_with_values = {"-c", "--config-env", "--exec-path", "--namespace"}
+    while index < len(tokens):
+        word = tokens[index]
+        if word == "-C":
+            if index + 1 >= len(tokens):
+                return None
+            target = resolve_git_path(tokens[index + 1], target)
+            index += 2
+            continue
+        if word.startswith("-C") and word != "-C":
+            target = resolve_git_path(word[2:], target)
+            index += 1
+            continue
+        if word in {"--git-dir", "--work-tree"}:
+            if index + 1 >= len(tokens):
+                return None
+            resolved = resolve_git_path(tokens[index + 1], target)
+            if word == "--git-dir":
+                git_dir = resolved
+            else:
+                work_tree = resolved
+            index += 2
+            continue
+        if word.startswith("--git-dir="):
+            git_dir = resolve_git_path(word.split("=", 1)[1], target)
+            index += 1
+            continue
+        if word.startswith("--work-tree="):
+            work_tree = resolve_git_path(word.split("=", 1)[1], target)
+            index += 1
+            continue
+        if word in options_with_values:
+            if index + 1 >= len(tokens):
+                return None
+            index += 2
+            continue
+        if any(word.startswith(option + "=") for option in options_with_values if option.startswith("--")):
+            index += 1
+            continue
+        if word == "--":
+            index += 1
+            break
+        if word.startswith("-"):
+            index += 1
+            continue
+        break
+    if index >= len(tokens):
+        return None
+    if work_tree is not None:
+        target = work_tree
+    elif git_dir is not None:
+        target = real(os.path.dirname(git_dir))
+    return {"subcommand": tokens[index], "target": real(target)}
+
+
+def candidate_git_mutations(command, cwd):
+    if not isinstance(command, str) or not GIT_TOKEN.search(command):
+        return []
+    commands = simple_commands(command, cwd)
+    if commands is None:
+        return None
+    mutations = []
+    for tokens, command_cwd in commands:
+        invocation = git_invocation(tokens, command_cwd)
+        if invocation and invocation["subcommand"] in MUTATING_GIT_SUBCOMMANDS:
+            mutations.append(invocation)
+    return mutations
+
+
+def normalized_projects(projects):
+    return [{**project, "path": real(project.get("path") or "")} for project in projects]
 
 
 def load_projects_result(db_path):
@@ -242,8 +386,8 @@ def main() -> int:
         mutations = candidate_git_mutations(command, cwd)
         if not mutations:
             return fail_open()
-        projects = load_projects(database_path())
-        decision = decision_for_command(command, cwd, projects)
+        projects = normalized_projects(load_projects(database_path()))
+        decision = decision_for_mutations(mutations, projects)
         return deny_git_mutation(decision) if decision else fail_open()
     if tool_name not in EDITOR_TOOLS:
         return fail_open()

@@ -186,10 +186,11 @@ describe('attribution hook', () => {
   })
 })
 
-test('main-checkout hook decides Bash git mutations from parsed commands', () => {
-  const policy = resolve(import.meta.dir, '../../hooks/protect_main_checkout.py')
+test('main-checkout hook handles Bash git mutations end to end', () => {
+  const hook = resolve(import.meta.dir, '../../hooks/protect-main-checkout.py')
   const runner = `
-import importlib.util, json, sys
+import importlib.util, io, json, os, sys
+sys.path.insert(0, os.path.dirname(sys.argv[1]))
 spec = importlib.util.spec_from_file_location("protect_main_checkout", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -207,14 +208,37 @@ cases = [
     ("git checkout $(branch-name)", main, protected),
     ("git checkout x", main, exempt),
     ("A=1 git status || git restore file | git log; git clean -n", main, protected),
+    ("git -C /registered/main commit -m x 2>&1", "/elsewhere", protected),
+    ("git reset --hard", main + "/.claude/worktrees", protected),
+    ("git --work-tree=/registered/main reset --hard", "/elsewhere", protected),
+    ("git --git-dir=/registered/main/.git reset --hard", "/elsewhere", protected),
+    ("ls", main, protected),
 ]
 results = []
+database_calls = 0
+def database_path():
+    global database_calls
+    database_calls += 1
+    return "/unused"
+module.database_path = database_path
+stdout = sys.stdout
 for command, cwd, projects in cases:
-    decision = module.decision_for_command(command, cwd, projects)
-    results.append(None if decision is None else {"subcommand": decision["subcommand"]})
-json.dump(results, sys.stdout)
+    module.load_projects = lambda _path, fixture=projects: fixture
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd}
+    sys.stdin = io.StringIO(json.dumps(payload))
+    sys.stdout = io.StringIO()
+    before = database_calls
+    exit_code = module.main()
+    output = sys.stdout.getvalue()
+    results.append({
+        "exitCode": exit_code,
+        "output": json.loads(output) if output else None,
+        "databaseCalls": database_calls - before,
+    })
+sys.stdout = stdout
+json.dump(results, stdout)
 `
-  const result = Bun.spawnSync(['python3', '-c', runner, policy], {
+  const result = Bun.spawnSync(['python3', '-c', runner, hook], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -222,15 +246,36 @@ json.dump(results, sys.stdout)
     exitCode: 0,
     stderr: '',
   })
-  expect(JSON.parse(result.stdout.toString()) as Array<{ subcommand: string } | null>).toEqual([
-    { subcommand: 'checkout' },
-    { subcommand: 'switch' },
+  const outputs = JSON.parse(result.stdout.toString()) as Array<{
+    exitCode: number
+    output: HookOutput | null
+    databaseCalls: number
+  }>
+  expect(outputs.map(({ exitCode }) => exitCode)).toEqual(Array(14).fill(0))
+  expect(
+    outputs.map(({ output }) => output?.hookSpecificOutput?.permissionDecision ?? null),
+  ).toEqual([
+    'deny',
+    'deny',
     null,
     null,
-    { subcommand: 'reset' },
+    'deny',
     null,
     null,
     null,
-    { subcommand: 'restore' },
+    'deny',
+    'deny',
+    'deny',
+    'deny',
+    'deny',
+    null,
   ])
+  expect(outputs[0]?.output?.hookSpecificOutput?.permissionDecisionReason).toContain(
+    'refusing git checkout in registered main checkout /registered/main',
+  )
+  expect(outputs[0]?.output?.hookSpecificOutput?.permissionDecisionReason).toContain(
+    'worktree under /registered/main/.claude/worktrees',
+  )
+  expect(outputs[0]?.output?.hookSpecificOutput?.permissionDecisionReason).toContain('invariant:')
+  expect(outputs[13]?.databaseCalls).toBe(0)
 })
