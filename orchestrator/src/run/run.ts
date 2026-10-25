@@ -296,12 +296,11 @@ export async function run(opts: {
       throw new Error('--base is only valid for the implement and fix jobs')
     }
   }
-  const readOnlyRef = opts.resume?.readOnlyBase ?? reviewTarget?.commit ?? opts.base ?? null
   const readOnlyBase =
     repoJob && !writesJob && !opts.resume?.worktree
       ? resolveNewTreeBase({
           cwd: callerCwd,
-          ref: readOnlyRef,
+          ref: opts.resume?.readOnlyBase ?? reviewTarget?.commit ?? opts.base ?? null,
           carry: Boolean(opts.carry),
           automaticFailover: opts.automaticFailover,
           registeredProjectPath: readOnlyBaseProjectPath(runProjectName ?? undefined, callerCwd),
