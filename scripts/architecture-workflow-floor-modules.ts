@@ -69,6 +69,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-evidence-replay.ts', [
     '../branch/pull-request-view.ts',
     './workflow-checkout-refusal.ts',
+    './workflow-floor-task-read.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-task-read.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/trackers.ts',
   ]),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', []),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
@@ -114,6 +119,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-checkout.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',
   ]),

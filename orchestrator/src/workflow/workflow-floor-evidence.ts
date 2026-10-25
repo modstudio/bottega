@@ -48,6 +48,7 @@ import {
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
+import { type HubTaskRead, hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -89,14 +90,6 @@ export function openWorkflowObligations(cursorId: string, d: Database): OpenObli
     .all(cursorId)
 }
 
-type HubTaskRead = {
-  key: string
-  status: string | null
-  statusCategory: string | null
-  commentIds: Array<string | number>
-  commentsVerifiable?: boolean
-}
-
 function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
   const [hub, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
   const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json', '--fresh'], {
@@ -107,29 +100,7 @@ function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
   if (result.status !== 0) {
     throw new Error(hubTaskReadRefusal(key, result.status, result.stderr, result.stdout))
   }
-  const parsed = JSON.parse(result.stdout) as {
-    task?: {
-      key?: string
-      status?: string | null
-      status_category?: string | null
-    }
-    comments?: Array<{ id?: number | string }>
-    tracker_comments_verifiable?: boolean
-  }
-  if (!parsed.task?.key)
-    throw new Error(`--task ${key} was not a ${PLATFORM_SLUG} task show record`)
-  return {
-    key: parsed.task.key,
-    status: parsed.task.status ?? null,
-    statusCategory: parsed.task.status_category ?? null,
-    commentIds: (parsed.comments ?? [])
-      .map((comment) => comment.id)
-      .filter((id): id is number | string =>
-        typeof id === 'string' ? id.length > 0 : Number.isInteger(id),
-      )
-      .map(String),
-    commentsVerifiable: parsed.tracker_comments_verifiable !== false,
-  }
+  return hubTaskReadFromJson(key, JSON.parse(result.stdout))
 }
 
 export function hubTaskReadRefusal(

@@ -33,7 +33,22 @@ type FreshTaskDependencies = {
 export type FreshTaskResult = {
   trackerRead: boolean
   commentsVerifiable: boolean
+  /** The tracker read's own comment ids; empty when it reports none. */
+  commentIds: string[]
   shown?: ReturnType<typeof showTask>
+}
+
+/**
+ * One task's comment ids as the tracker reports them, or null when this
+ * tracker's read carries no comments at all. A read that cannot report ids
+ * stays unverifiable rather than answering "no comments".
+ */
+function reportedCommentIds(
+  source: TrackerSource,
+  client: TrackerConnection,
+  key: string,
+): Promise<string[] | null> {
+  return source.readCommentIds ? source.readCommentIds(client, key) : Promise.resolve(null)
 }
 
 function projectForTask(
@@ -67,7 +82,7 @@ export async function refreshTrackerTask(
 ): Promise<FreshTaskResult> {
   const project = projectForTask(key, projectName, (dependencies.registeredProjects ?? projects)())
   const source = (dependencies.sourceFor ?? trackerSourceFor)(project)
-  if (!source) return { trackerRead: false, commentsVerifiable: true }
+  if (!source) return { trackerRead: false, commentsVerifiable: true, commentIds: [] }
   if (!source.lookup)
     throw new Error(`project ${project.name} tracker has no single-task lookup for ${key}`)
 
@@ -84,9 +99,14 @@ export async function refreshTrackerTask(
               `task ${key.toUpperCase()} was not found in project ${project.name}'s tracker by its single-task lookup`,
             )
           guard.assertHeld()
+          const commentIds = await reportedCommentIds(source, client, task.key)
+          guard.assertHeld()
           ;(dependencies.observe ?? observeTrackerTask)(task)
           guard.assertHeld()
-          return (dependencies.readBack ?? showTask)(task.key, { project: task.project })
+          return {
+            commentIds,
+            shown: (dependencies.readBack ?? showTask)(task.key, { project: task.project }),
+          }
         },
         dependencies.leaseWaitMs,
       )
@@ -94,7 +114,13 @@ export async function refreshTrackerTask(
         throw new Error(
           `${leased.heldBy ?? 'another process'} holds the collect lease; fresh task read was not performed`,
         )
-      return { trackerRead: true, commentsVerifiable: false, shown: leased.value }
+      const { commentIds, shown } = leased.value
+      return {
+        trackerRead: true,
+        commentsVerifiable: commentIds !== null,
+        commentIds: commentIds ?? [],
+        shown,
+      }
     },
     dependencies,
   )

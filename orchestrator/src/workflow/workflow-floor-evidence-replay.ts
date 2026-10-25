@@ -3,14 +3,7 @@
 
 import type { PullRequestView } from '../branch/pull-request-view.ts'
 import type { CheckoutResolution } from './workflow-checkout-refusal.ts'
-
-type HubTaskRead = {
-  key: string
-  status: string | null
-  statusCategory: string | null
-  commentIds: Array<string | number>
-  commentsVerifiable?: boolean
-}
+import type { HubTaskRead } from './workflow-floor-task-read.ts'
 
 export type FloorEvidencePorts = {
   readTask?: (key: string, options: { fresh: true }) => HubTaskRead

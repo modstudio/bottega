@@ -154,6 +154,7 @@ async function showTaskCommand(key: string, options: TaskOptions): Promise<void>
           ? {
               ...shown,
               tracker_comments_verifiable: freshness.commentsVerifiable,
+              tracker_comment_ids: freshness.commentIds,
             }
           : shown,
       ),
