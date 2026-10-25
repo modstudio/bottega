@@ -302,6 +302,7 @@ export async function run(opts: {
       ? resolveDispatchBase({
           cwd: callerCwd,
           ref: readOnlyRef,
+          carry: Boolean(opts.carry),
           automaticFailover: opts.automaticFailover,
           registeredProjectPath: readOnlyBaseProjectPath(runProjectName ?? undefined, callerCwd),
         })
