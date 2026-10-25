@@ -1,8 +1,10 @@
-import { expect, test } from 'bun:test'
+import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
+
+afterEach(() => mock.restore())
 
 test('repository workers receive test caps while inline workers do not', () => {
   const defaults = childEnv(AGENTS.codex!, undefined, undefined, {}, true)
@@ -241,6 +243,33 @@ test('filed-defect terminate leaves the row unreaped when the vendor stays alive
     confirmMs: 5,
     selfPgid: () => 1,
   })
+  expect(result).toEqual({
+    outcome: 'still-alive',
+    pid: vendor,
+    reason: 'process did not exit after SIGKILL',
+  })
+})
+
+test('a denied vendor signal reports the process still alive', () => {
+  const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const coordinator = 42402
+  const vendor = 42922
+  db()
+    .query('UPDATE run SET pid=?, agent_pid=?, agent_pgid=?, agent_start_time=? WHERE record_id=?')
+    .run(coordinator, vendor, vendor, FILED_DEFECT_BIRTH, id)
+  spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+  })
+
+  const result = terminateRunProcesses(id, [coordinator], {
+    inventory: () => filedDefectInventory(coordinator, vendor),
+    identity: () => 'live',
+    alive: () => true,
+    wait: () => {},
+    confirmMs: 5,
+    selfPgid: () => 1,
+  })
+
   expect(result).toEqual({
     outcome: 'still-alive',
     pid: vendor,

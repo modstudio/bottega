@@ -14,6 +14,7 @@ import {
 } from 'node:fs'
 import { cpus, freemem, loadavg } from 'node:os'
 import { join } from 'node:path'
+import { pidAlive } from '../../shared/process-identity.ts'
 import { resolveStatePaths } from '../../shared/state-directory.ts'
 
 export type HostLoad = {
@@ -51,15 +52,6 @@ const GATE_HOLD_CONDITION_ORDER: HostHoldCondition[] = ['gates', 'load', 'memory
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(resolveStatePaths(env).orchestratorDirectory, 'host-slots')
-}
-
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0)
-    return true
-  } catch {
-    return false
-  }
 }
 
 type Lease = { pid: number; admittedAt: number }
@@ -149,7 +141,7 @@ function liveLeases(dir: string, selfPid: number): Lease[] {
       removeRegularFile(path)
       continue
     }
-    if (lease.pid === selfPid || processAlive(lease.pid)) leases.push(lease)
+    if (lease.pid === selfPid || pidAlive(lease.pid)) leases.push(lease)
     else removeRegularFile(path)
   }
   return leases
@@ -171,7 +163,7 @@ export function measureHostWaiters(
       continue
     }
     const lease = readLease(path)
-    if (!lease || (lease.pid !== selfPid && !processAlive(lease.pid))) {
+    if (!lease || (lease.pid !== selfPid && !pidAlive(lease.pid))) {
       removeRegularFile(path)
       continue
     }
@@ -392,7 +384,7 @@ function tryAcquireLock(dir: string): (() => void) | null {
       const contents = readRegularFile(path)
       if (contents === null) return null
       const pid = Number(contents)
-      if (!Number.isInteger(pid) || pid <= 0 || !processAlive(pid)) {
+      if (!Number.isInteger(pid) || pid <= 0 || !pidAlive(pid)) {
         removeRegularFile(path)
         console.error(`reclaimed stale host capacity acquisition lock (pid=${pid || 'invalid'})`)
       }

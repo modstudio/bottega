@@ -2,7 +2,12 @@
 
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { pidAlive, pidRecordIdentity, processStartTime } from '../../../shared/process-identity.ts'
+import {
+  pidAlive,
+  pidRecordIdentity,
+  processSignalOutcome,
+  processStartTime,
+} from '../../../shared/process-identity.ts'
 import { liveRuns } from '../database/db.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
 import {
@@ -126,7 +131,14 @@ export function signalFreshOrphanPlan(
     try {
       adapters.kill(target.pid, value)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+      const outcome = processSignalOutcome(error)
+      if (outcome === 'denied') {
+        return {
+          ok: false,
+          reason: `pid ${target.pid} exists but this user may not signal it; rerun as the owning user`,
+        }
+      }
+      if (outcome === 'unknown') throw error
     }
   }
   return { ok: true }

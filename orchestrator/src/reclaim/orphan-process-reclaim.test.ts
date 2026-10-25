@@ -114,3 +114,21 @@ test('a signal pass uses a fresh plan and skips a descendant whose birth changed
   ).toEqual({ ok: true })
   expect(signaled).toEqual([42])
 })
+
+test('a denied orphan signal is a refusal with the owning-user remedy', () => {
+  expect(
+    signalFreshOrphanPlan(orphan(), 'SIGTERM', {
+      freshPlan: () => ({
+        ok: true,
+        plan: { targets: [{ pid: 42, startTime: 'root-birth' }] },
+      }),
+      identity: () => 'live',
+      kill: (() => {
+        throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+      }) as typeof process.kill,
+    }),
+  ).toEqual({
+    ok: false,
+    reason: 'pid 42 exists but this user may not signal it; rerun as the owning user',
+  })
+})

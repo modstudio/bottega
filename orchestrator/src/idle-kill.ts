@@ -7,7 +7,11 @@
  * test (silence AND no CPU) and a failure kind that is not routing evidence.
  */
 
-import { pidAlive } from '../../shared/process-identity.ts'
+import {
+  type ProcessSignalOutcome,
+  pidAlive,
+  processSignalOutcome,
+} from '../../shared/process-identity.ts'
 import { idleMsSince } from './events.ts'
 import {
   liveProcessTreePids,
@@ -112,7 +116,7 @@ export function isGroupKillablePgid(
 }
 
 export type TerminateDeps = {
-  kill: (pid: number, signal: NodeJS.Signals | number) => void
+  kill: (pid: number, signal: NodeJS.Signals | number) => ProcessSignalOutcome
   alive: (pid: number) => boolean
   sample: () => ProcessSample[]
   selfPgid: () => number | null
@@ -129,8 +133,11 @@ const defaultDeps: TerminateDeps = {
   kill(pid, signal) {
     try {
       process.kill(pid, signal)
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e
+      return processSignalOutcome()
+    } catch (error) {
+      const outcome = processSignalOutcome(error)
+      if (outcome === 'unknown') throw error
+      return outcome
     }
   },
   alive: pidAlive,
@@ -172,13 +179,7 @@ function signalTree(
  * unavailable and the walk over sampled descendants is the delivery path.
  */
 function signalGroup(pgid: number, signal: NodeJS.Signals | number, deps: TerminateDeps): boolean {
-  try {
-    deps.kill(-pgid, signal)
-    return true
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EPERM') return false
-    throw e
-  }
+  return deps.kill(-pgid, signal) !== 'denied'
 }
 
 function pidsSharingPgid(pgid: number | null | undefined, samples: ProcessSample[]): number[] {

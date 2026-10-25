@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import { resolveRunsDirectory } from '../../../shared/state-directory.ts'
 import {
   persistedRunArtifactPath,
@@ -263,15 +264,7 @@ export function resolveFailover(
     pid: number | null
     no_failover: number
   }
-  let workerAlive = false
-  if (pending.pid) {
-    try {
-      process.kill(pending.pid, 0)
-      workerAlive = true
-    } catch {
-      /* terminal worker */
-    }
-  }
+  const workerAlive = pidAlive(pending.pid)
   const settling = mayStillFailOver(last) && !pending.no_failover && workerAlive
   return { requestedId, attempts, finalId: last.record_id, settling }
 }
