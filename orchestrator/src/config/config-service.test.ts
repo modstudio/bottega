@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
@@ -13,6 +14,7 @@ import {
   migrateLegacyEnvironmentSecrets,
   planRotation,
   restoreLegacyEnvironmentSecrets,
+  sealSecretDecision,
   secretEnvironmentDecision,
   setEntry,
 } from './config-service.ts'
@@ -20,6 +22,34 @@ import {
 const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+test('secret set refuses an empty piped value and names the key and both remedies', () => {
+  const decision = sealSecretDecision('EMPTY_KEY', '')
+  expect(decision.kind).toBe('refuse')
+  const refusal = decision.kind === 'refuse' ? decision.refusal : ''
+  expect(refusal).toContain('EMPTY_KEY')
+  expect(refusal).toContain('no value was sealed')
+  expect(refusal).toContain('stdin')
+  expect(refusal).toContain(`${PLATFORM_SLUG} machine config secret set EMPTY_KEY`)
+  expect(refusal).toContain(`${PLATFORM_SLUG} machine config secret delete EMPTY_KEY`)
+})
+
+test('secret set refuses a value that is blank after its trailing newline', () => {
+  for (const piped of ['\n', '\r\n', '   \n', '\t', '   ']) {
+    expect(sealSecretDecision('EMPTY_KEY', piped).kind).toBe('refuse')
+  }
+})
+
+test('secret set seals the value without one trailing newline and keeps its other characters', () => {
+  expect(sealSecretDecision('TOKEN', 'fixture-token\n')).toEqual({
+    kind: 'seal',
+    value: 'fixture-token',
+  })
+  expect(sealSecretDecision('TOKEN', ' fixture-token ')).toEqual({
+    kind: 'seal',
+    value: ' fixture-token ',
+  })
 })
 
 test('rotation plan re-seals only rows on older DEKs and retires each old DEK once', () => {

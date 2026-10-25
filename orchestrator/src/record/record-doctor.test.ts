@@ -299,18 +299,25 @@ describe('record doctor decisions', () => {
 })
 
 describe('record doctor agent secrets', () => {
-  test('distinguishes a missing secret from a set-but-empty secret', async () => {
+  test('distinguishes a missing secret, a sealed-empty secret, and a set-but-empty secret', async () => {
     const missing = await agentSecretChecks(
       [{ enabled: true, apiKeySecret: 'MISSING_KEY' }],
-      async () => ({ MISSING_KEY: undefined }),
+      async () => ({ values: { MISSING_KEY: undefined }, sealedEmpty: [] }),
+    )
+    const sealedEmpty = await agentSecretChecks(
+      [{ enabled: true, apiKeySecret: 'SEALED_EMPTY_KEY' }],
+      async () => ({ values: { SEALED_EMPTY_KEY: undefined }, sealedEmpty: ['SEALED_EMPTY_KEY'] }),
     )
     const empty = await agentSecretChecks(
       [{ enabled: true, apiKeySecret: 'EMPTY_KEY' }],
-      async () => ({ EMPTY_KEY: '' }),
+      async () => ({ values: { EMPTY_KEY: '' }, sealedEmpty: [] }),
     )
 
     expect(missing[0]?.detail).toBe(
       `permanent: secret is not set\ncleared by: ${PLATFORM_SLUG} machine config secret set MISSING_KEY`,
+    )
+    expect(sealedEmpty[0]?.detail).toBe(
+      `permanent: secret is sealed empty\ncleared by: ${PLATFORM_SLUG} machine config secret set SEALED_EMPTY_KEY`,
     )
     expect(empty[0]?.detail).toBe(
       `permanent: secret is set but empty\ncleared by: ${PLATFORM_SLUG} machine config secret set EMPTY_KEY`,
@@ -327,7 +334,7 @@ describe('record doctor agent secrets', () => {
       ],
       async (names) => {
         calls.push([...names])
-        return { SHARED_KEY: 'SECRET_VALUE_MARKER' }
+        return { values: { SHARED_KEY: 'SECRET_VALUE_MARKER' }, sealedEmpty: [] }
       },
     )
 

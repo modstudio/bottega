@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   childEnvironmentForNamedSecrets,
+  namedSecretUnresolvedRefusal,
   parseSecretRunArgs,
   SECRET_RUN_WORKING_FORM,
 } from './secret-run.ts'
@@ -66,4 +68,26 @@ test('names and argv are taken from --name flags and the literal --', () => {
     names: ['TOKEN', 'OTHER'],
     argv: ['echo', '--help'],
   })
+})
+
+test('a name that is sealed empty is refused as sealed empty', () => {
+  expect(namedSecretUnresolvedRefusal(['TOKEN'], ['TOKEN'])).toBe(
+    `named secret TOKEN is sealed empty\ncleared by: ${PLATFORM_SLUG} machine config secret set TOKEN, or add it to an env file the resolver reads`,
+  )
+})
+
+test('names that are simply not set keep the not-set refusal', () => {
+  expect(namedSecretUnresolvedRefusal(['TOKEN'], [])).toBe(
+    `named secret TOKEN not set\ncleared by: ${PLATFORM_SLUG} machine config secret set TOKEN, or add it to an env file the resolver reads`,
+  )
+  expect(namedSecretUnresolvedRefusal(['TOKEN', 'OTHER'], [])).toContain(
+    'named secrets TOKEN, OTHER not set',
+  )
+})
+
+test('a mixed refusal names each group its own state', () => {
+  const refusal = namedSecretUnresolvedRefusal(['EMPTY_KEY', 'MISSING_KEY'], ['EMPTY_KEY'])
+  expect(refusal).toContain('named secrets EMPTY_KEY is sealed empty, MISSING_KEY not set')
+  expect(refusal).toContain(`${PLATFORM_SLUG} machine config secret set EMPTY_KEY`)
+  expect(refusal).toContain(`${PLATFORM_SLUG} machine config secret set MISSING_KEY`)
 })

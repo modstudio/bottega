@@ -36,6 +36,7 @@ import {
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
+import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -360,6 +361,26 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
     throw new Error(
       `rotation stopped after re-sealing rows [${completed.join(', ')}]: ${error instanceof Error ? error.message : String(error)}`,
     )
+  }
+}
+
+export type SealedSecretSetDecision =
+  | { kind: 'seal'; value: string }
+  | { kind: 'refuse'; refusal: string }
+
+/**
+ * Decide `machine config secret set` from the text piped on stdin, before anything is written.
+ *
+ * A blank value is the mistake `secret set` used to seal: `echo | ... secret set KEY` stored an
+ * empty copy that later resolved as a present secret.
+ */
+export function sealSecretDecision(key: string, piped: string): SealedSecretSetDecision {
+  if (!sealedValueIsEmpty(piped)) return { kind: 'seal', value: stripTrailingNewline(piped) }
+  return {
+    kind: 'refuse',
+    refusal:
+      `refusing to seal ${key}: the value piped on stdin is empty, so no value was sealed\n` +
+      `cleared by: pipe the value on stdin (\`printf %s "$VALUE" | ${PLATFORM_SLUG} machine config secret set ${key}\`), or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete ${key}\``,
   }
 }
 

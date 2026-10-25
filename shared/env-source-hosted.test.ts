@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import { ConfigClientError } from './config-client.ts'
-import { readEnvValuesWithHosted } from './env-source.ts'
+import { readEnvValuesWithHosted, resolveEnvValuesWithHosted } from './env-source.ts'
 
 test('local precedence wins and hosted receives only unresolved names', async () => {
   const root = mkdtempSync(join(tmpdir(), 'env-hosted-'))
@@ -18,7 +18,7 @@ test('local precedence wins and hosted receives only unresolved names', async ()
     { PROCESS: 'from-process', BOTTEGA_CONFIG_HOME: root, BOTTEGA_HARNESS_ENV_FILE: harness },
     async (names) => {
       requested = names
-      return { HOSTED: 'from-hosted' }
+      return { values: { HOSTED: 'from-hosted' }, sealedEmpty: [] }
     },
   )
   expect(requested).toEqual(['HOSTED'])
@@ -28,6 +28,23 @@ test('local precedence wins and hosted receives only unresolved names', async ()
     HARNESS: 'from-harness',
     HOSTED: 'from-hosted',
   })
+})
+
+test('a name an env file answers never reaches the sealed store, so nothing is reported sealed empty', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'env-hosted-blank-'))
+  const harness = join(root, 'harness.env')
+  writeFileSync(harness, 'TOKEN=from-env-file\n')
+  let requested: readonly string[] = []
+  const resolution = await resolveEnvValuesWithHosted(
+    ['TOKEN'],
+    { BOTTEGA_CONFIG_HOME: join(root, 'missing-config'), BOTTEGA_HARNESS_ENV_FILE: harness },
+    async (names) => {
+      requested = names
+      return { values: { TOKEN: undefined }, sealedEmpty: ['TOKEN'] }
+    },
+  )
+  expect(requested).toEqual([])
+  expect(resolution).toEqual({ values: { TOKEN: 'from-env-file' }, sealedEmpty: [] })
 })
 
 test('not configured is absent while a configured failure refuses', async () => {

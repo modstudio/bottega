@@ -22,6 +22,7 @@ import {
   machineRevoke,
   machineShow,
   machineTrust,
+  sealSecretDecision,
   setEntry,
   setMachineEntry,
   setSecret,
@@ -224,8 +225,9 @@ export function register(program: Command): void {
     .option('--space', 'write the value in the active space scope')
     .action(async (key, options) => {
       if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
-      const value = await Bun.stdin.text()
-      await setSecret(key, value.replace(/\r?\n$/, ''), scope(options))
+      const decision = sealSecretDecision(key, await Bun.stdin.text())
+      if (decision.kind === 'refuse') throw new Error(decision.refusal)
+      await setSecret(key, decision.value, scope(options))
     })
   secret
     .command('list')

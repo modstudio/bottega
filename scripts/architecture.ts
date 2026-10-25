@@ -486,8 +486,10 @@ export const modules: ArchitectureModule[] = [
     './hosted-config-space.ts',
     './hosted-secret-opening.ts',
     './machine-key-store.ts',
+    './sealed-value.ts',
     './trust-list.ts',
   ]),
+  module('shared/sealed-value.ts', []),
   module('shared/secret-envelope.ts', [
     '@hpke/chacha20poly1305',
     '@hpke/core',
