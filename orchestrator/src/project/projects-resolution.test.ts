@@ -50,6 +50,29 @@ afterEach(() => {
 })
 
 describe('projects are data, not code', () => {
+  test('project agent key mappings contain only trimmed non-empty secret names', () => {
+    expect(
+      validateProjectSettings({
+        agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+      }),
+    ).toEqual([])
+    for (const agentKeys of [
+      null,
+      [],
+      { '': 'PROJECT_KEY' },
+      { AGENT_KEY: ' ' },
+      { ' AGENT': 'KEY' },
+    ]) {
+      expect(
+        validateProjectSettings({ agentKeys } as unknown as Parameters<
+          typeof validateProjectSettings
+        >[0]),
+      ).toContain(
+        'agentKeys must be an object mapping non-empty trimmed agent secret names to non-empty trimmed project secret names',
+      )
+    }
+  })
+
   test('focused test runners have a fixed executable and argv prefix', () => {
     expect(
       validateProjectSettings({

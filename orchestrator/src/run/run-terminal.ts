@@ -9,6 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
+import type { EffectiveEndpointApiKey } from '../agent/endpoint-api-key.ts'
 import { type AskLoopback, recordReplyQuestions } from '../ask/ask.ts'
 import {
   type CheckoutRemovalAttribution,
@@ -94,8 +95,9 @@ export function writeTerminalOperationalState(
   failureKind: ReturnType<typeof classify> | null,
   agent: string,
   billingHoldDetail?: string,
+  endpointKey: EffectiveEndpointApiKey = { secretName: null, source: 'agent' },
 ): void {
-  const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail)
+  const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail, endpointKey.source)
   if (hold) {
     database
       .query('UPDATE agent SET enabled=?,disabled_reason=? WHERE name=?')
@@ -118,6 +120,7 @@ function writeOperationalState(
     failureKind,
     name,
     input.billingHoldDetail,
+    input.endpointKey,
   )
 }
 
@@ -226,6 +229,7 @@ export type TerminalInput = {
   launchKey: string | null
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
+  endpointKey: EffectiveEndpointApiKey
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
   writingAcp: boolean

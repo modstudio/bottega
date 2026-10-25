@@ -4,7 +4,10 @@ import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
-import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
+import {
+  decideEffectiveEndpointApiKey,
+  resolveEndpointApiKeyEnv,
+} from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
 import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
@@ -647,6 +650,8 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   const runProject = projectAt(callerCwd)
+  const endpointKey = decideEffectiveEndpointApiKey(a.apiKeySecret, runProject?.settings)
+  const endpointAgent = { ...a, apiKeySecret: endpointKey.secretName }
   const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)
   const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))
@@ -702,7 +707,16 @@ export async function run(opts: {
         runToken,
         environment: {
           ...(gitConfigEnvironment ?? {}),
-          ...(await resolveEndpointApiKeyEnv(a)),
+          ...(await resolveEndpointApiKeyEnv(endpointAgent, undefined, {
+            ...(endpointKey.source === 'project'
+              ? {
+                  projectSecret: {
+                    project: runProject!.name,
+                    agentSecret: a.apiKeySecret!.trim(),
+                  },
+                }
+              : {}),
+          })),
         },
         grokEnvironment: grokMcpEnvironment,
         includeStore: repoJob,
@@ -1020,7 +1034,7 @@ export async function run(opts: {
           ;({ failureKind, error, billingHoldDetail } = applyOpenRouterBudgetToAuthFailure(
             failureKind,
             error,
-            await checkOpenRouterKeyBudget(a),
+            await checkOpenRouterKeyBudget(endpointAgent),
           ))
         }
       } finally {
@@ -1048,6 +1062,7 @@ export async function run(opts: {
             launchKey,
             failureKind,
             billingHoldDetail,
+            endpointKey,
             scratchDir,
             gitConfigEnvironment,
             ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
@@ -1099,6 +1114,8 @@ export async function run(opts: {
       return await closeRun({
         failureKind,
         billingHoldDetail,
+        endpointKey,
+        projectName: runProject?.name ?? null,
         name,
         opts,
         claim,

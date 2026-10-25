@@ -3,11 +3,28 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { HostedSecretError } from '../../../shared/hosted-secrets.ts'
 import {
+  decideEffectiveEndpointApiKey,
   decideEndpointApiKey,
   decideEndpointApiKeyRetry,
   ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS,
   resolveEndpointApiKeyEnv,
 } from './endpoint-api-key.ts'
+
+test('a project substitutes only a matching named agent secret', () => {
+  expect(
+    decideEffectiveEndpointApiKey('BOTTEGA_OPENROUTER', {
+      agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+    }),
+  ).toEqual({ secretName: 'OPENROUTER_STARSHIP', source: 'project' })
+  expect(decideEffectiveEndpointApiKey('BOTTEGA_OPENROUTER', { agentKeys: {} })).toEqual({
+    secretName: 'BOTTEGA_OPENROUTER',
+    source: 'agent',
+  })
+  expect(decideEffectiveEndpointApiKey(null, { agentKeys: { UNUSED: 'PROJECT_KEY' } })).toEqual({
+    secretName: null,
+    source: 'agent',
+  })
+})
 
 test('an endpoint without a secret reference keeps local authentication', () => {
   expect(decideEndpointApiKey({ baseUrl: 'http://127.0.0.1:8000/v1' }, undefined)).toEqual({
@@ -34,6 +51,20 @@ test('an unresolved named key refuses with the setting command', async () => {
     ),
   ).rejects.toThrow(
     `agent endpoint API key MISSING_KEY could not be resolved\ncleared by: ${PLATFORM_SLUG} machine config secret set MISSING_KEY`,
+  )
+})
+
+test('an unresolved project key refusal names the project and both secret names', async () => {
+  await expect(
+    resolveEndpointApiKeyEnv(
+      { apiKeySecret: 'OPENROUTER_STARSHIP' },
+      async () => ({ OPENROUTER_STARSHIP: undefined }),
+      {
+        projectSecret: { project: 'starship', agentSecret: 'BOTTEGA_OPENROUTER' },
+      },
+    ),
+  ).rejects.toThrow(
+    `project starship maps agent secret BOTTEGA_OPENROUTER to project secret OPENROUTER_STARSHIP, but OPENROUTER_STARSHIP could not be resolved\ncleared by: ${PLATFORM_SLUG} machine config secret set OPENROUTER_STARSHIP`,
   )
 })
 

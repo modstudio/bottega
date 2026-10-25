@@ -717,6 +717,24 @@ export function validateProjectSettings(
     problems.push('requireCleanMain must be a boolean')
   }
   if (
+    settings.agentKeys !== undefined &&
+    (settings.agentKeys === null ||
+      typeof settings.agentKeys !== 'object' ||
+      Array.isArray(settings.agentKeys) ||
+      Object.entries(settings.agentKeys).some(
+        ([agentSecret, projectSecret]) =>
+          !agentSecret.trim() ||
+          typeof projectSecret !== 'string' ||
+          !projectSecret.trim() ||
+          projectSecret !== projectSecret.trim(),
+      ) ||
+      Object.keys(settings.agentKeys).some((agentSecret) => agentSecret !== agentSecret.trim()))
+  ) {
+    problems.push(
+      'agentKeys must be an object mapping non-empty trimmed agent secret names to non-empty trimmed project secret names',
+    )
+  }
+  if (
     settings.mcpServer !== undefined &&
     (typeof settings.mcpServer !== 'string' || !settings.mcpServer.trim())
   ) {

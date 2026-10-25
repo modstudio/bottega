@@ -108,6 +108,8 @@ export type WorktreeTool = {
 }
 
 export type ProjectSettings = {
+  /** Project-owned sealed secrets that replace matching metered agent secrets for this project's runs. */
+  agentKeys?: Record<string, string>
   /** Repository visibility established against the forge when declared. */
   visibility?: RepositoryVisibility
   /** Canonical owner/name whose visibility was verified at declaration time. */

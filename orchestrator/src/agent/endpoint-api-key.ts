@@ -16,6 +16,25 @@ type EndpointKeyRow = {
   apiKeySecret?: string | null
 }
 
+export type EndpointApiKeySource = 'agent' | 'project'
+export type EffectiveEndpointApiKey = {
+  secretName: string | null
+  source: EndpointApiKeySource
+}
+
+/** Pure policy: a project mapping replaces only the matching agent secret reference. */
+export function decideEffectiveEndpointApiKey(
+  agentSecretName: string | null | undefined,
+  projectSettings?: { agentKeys?: Record<string, string> } | null,
+): EffectiveEndpointApiKey {
+  const agentSecret = agentSecretName?.trim() || null
+  if (!agentSecret) return { secretName: null, source: 'agent' }
+  const projectSecret = projectSettings?.agentKeys?.[agentSecret]
+  return projectSecret
+    ? { secretName: projectSecret, source: 'project' }
+    : { secretName: agentSecret, source: 'agent' }
+}
+
 export type EndpointApiKeyDecision =
   | { ok: true; env: Record<string, string> }
   | { ok: false; refusal: string }
@@ -91,18 +110,36 @@ export async function resolveEndpointApiKeyEnv(
   options: {
     sleep?: (delayMs: number) => Promise<void>
     exhaustedRetryCommand?: string
+    projectSecret?: { project: string; agentSecret: string }
   } = {},
 ): Promise<Record<string, string>> {
   const name = row.apiKeySecret?.trim() || null
-  const resolved = name
-    ? await resolveNamedEndpointApiKey(
-        name,
-        resolver,
-        options.sleep ?? Bun.sleep,
-        options.exhaustedRetryCommand ?? RUN_RETRY_REMEDY,
-      )
-    : undefined
+  let resolved: string | undefined
+  try {
+    resolved = name
+      ? await resolveNamedEndpointApiKey(
+          name,
+          resolver,
+          options.sleep ?? Bun.sleep,
+          options.exhaustedRetryCommand ?? RUN_RETRY_REMEDY,
+        )
+      : undefined
+  } catch (error) {
+    if (!options.projectSecret) throw error
+    throw new Error(
+      `project ${options.projectSecret.project} maps agent secret ${options.projectSecret.agentSecret} to project secret ${name}, but ${name} could not be resolved: ${String((error as Error)?.message ?? error)}\n` +
+        `cleared by: ${PLATFORM_SLUG} machine config secret set ${name}`,
+    )
+  }
   const decision = decideEndpointApiKey(row, resolved)
-  if (!decision.ok) throw new Error(decision.refusal)
+  if (!decision.ok) {
+    if (options.projectSecret) {
+      throw new Error(
+        `project ${options.projectSecret.project} maps agent secret ${options.projectSecret.agentSecret} to project secret ${name}, but ${name} could not be resolved\n` +
+          `cleared by: ${PLATFORM_SLUG} machine config secret set ${name}`,
+      )
+    }
+    throw new Error(decision.refusal)
+  }
   return decision.env
 }

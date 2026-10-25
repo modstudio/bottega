@@ -3,9 +3,11 @@
 
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
+import { decideEffectiveEndpointApiKey } from '../agent/endpoint-api-key.ts'
 import {
   ensureLocalHealth,
   fileContractProbeReason,
@@ -165,6 +167,38 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
     log(`registered     ${DATABASE_RESOLUTION.registeredPath}  (resolved path won)`)
   }
   log(await runTaskReferenceDoctorLine())
+}
+
+async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {
+  const { projects } = await import('../project/projects.ts')
+  const registered = projects()
+  const metered = Object.values(AGENTS).filter(
+    (agent) => agent.enabled !== false && agent.billing === 'metered' && agent.apiKeySecret?.trim(),
+  )
+  if (!metered.length) return
+  log('project agent keys')
+  for (const agent of metered) {
+    const agentSecret = agent.apiKeySecret!.trim()
+    log(`  ${agent.name} (${agentSecret})`)
+    for (const project of registered) {
+      const effective = decideEffectiveEndpointApiKey(agentSecret, project.settings)
+      if (effective.source === 'agent') {
+        log(`    ${project.name}: shared ${agentSecret}`)
+        continue
+      }
+      let resolves = false
+      try {
+        resolves =
+          (await readEnvValuesWithHosted([effective.secretName!]))[effective.secretName!] !==
+          undefined
+      } catch {
+        resolves = false
+      }
+      log(
+        `    ${project.name}: own ${effective.secretName} (${resolves ? 'resolves' : 'UNRESOLVED'})`,
+      )
+    }
+  }
 }
 
 export async function doctorCommand(
@@ -328,6 +362,7 @@ export async function doctorCommand(
       log(`  ${fileContractProbeReason(a.name)}`)
     }
   }
+  await reportProjectAgentKeys(log)
   const configuredUrl = modelHostUrl()
   for (const row of agentRows()) {
     if (row.operated_by !== 'self' || !row.enabled) continue

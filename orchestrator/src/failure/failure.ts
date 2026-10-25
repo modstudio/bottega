@@ -454,8 +454,9 @@ export function billingHoldForFailure(
   failureKind: FailureKind | null,
   agent: string,
   detail?: string,
+  keySource: 'agent' | 'project' = 'agent',
 ): BillingHold | null {
-  if (failureKind !== 'billing') return null
+  if (failureKind !== 'billing' || keySource === 'project') return null
   return {
     enabled: 0,
     disabledReason: detail

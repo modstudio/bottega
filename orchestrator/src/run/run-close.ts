@@ -6,6 +6,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { EffectiveEndpointApiKey } from '../agent/endpoint-api-key.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -80,6 +81,8 @@ type SuccessorOptions = {
 export type CloseInput = {
   failureKind: ReturnType<typeof classify> | null
   billingHoldDetail?: string
+  endpointKey: EffectiveEndpointApiKey
+  projectName: string | null
   name: string
   opts: CloseOptions
   claim: { id: string; number: number }
@@ -220,16 +223,22 @@ function notifyFailureRequiringHuman(input: {
   job: string
   idleUnkillable: boolean
   runId: string
+  endpointKey: EffectiveEndpointApiKey
+  projectName: string | null
 }): void {
   if (input.failureKind && NEEDS_HUMAN.includes(input.failureKind)) {
     const billingHold = billingHoldForFailure(
       input.failureKind,
       input.name,
       input.billingHoldDetail,
+      input.endpointKey.source,
     )
-    const routingRemedy = billingHold
-      ? `Routing will avoid it: ${billingHold.disabledReason}.`
-      : 'Routing will avoid it until it succeeds again.'
+    const routingRemedy =
+      input.failureKind === 'billing' && input.endpointKey.source === 'project'
+        ? `Project ${input.projectName} secret ${input.endpointKey.secretName} pays for this run; restore that key's OpenRouter balance or limit.`
+        : billingHold
+          ? `Routing will avoid it: ${billingHold.disabledReason}.`
+          : 'Routing will avoid it until it succeeds again.'
     notify(
       NEEDS_HUMAN_TITLE[input.failureKind]?.(input.name) ?? `${input.name} needs attention`,
       `${input.job} failed. ${routingRemedy}`,
@@ -281,6 +290,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     job: opts.job,
     idleUnkillable,
     runId: claim.id,
+    endpointKey: input.endpointKey,
+    projectName: input.projectName,
   })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.
