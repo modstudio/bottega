@@ -97,12 +97,14 @@ const LANDING_RECORD_PAYLOAD_CONTRACT = contract(LANDING_RECORD_PAYLOAD_COLUMNS,
   withheldFields: null,
 })
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId branch tip tree patchId pathSet reason sessionId at withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId branch tip tree patchId pathSet reason attribution missingLenses sessionId at withheldFields createdAt updatedAt',
 )
 const LANDING_OVERRIDE_RECORD_PAYLOAD_CONTRACT = contract(LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
   patchId: null,
   pathSet: null,
+  attribution: 'operator',
+  missingLenses: [],
   withheldFields: null,
 })
 const LANDING_REVIEW_CARRY_RECORD_PAYLOAD_COLUMNS = columns(

@@ -1,13 +1,7 @@
 // concern: codex-mcp-preflight
 /** Runs the Codex-only catalogue preflight over already-granted MCP servers. */
-import { listMcpToolPages } from '../mcp/mcp-tool-list.ts'
+import { launchFailureReason, listMcpToolPages } from '../mcp/mcp-tool-list.ts'
 import type { CodexMcpCatalogue, CodexMcpScope } from './codex-mcp-scope.ts'
-
-function failureReason(error: unknown): string {
-  return String((error as Error)?.message ?? error)
-    .replaceAll(/\s+/g, ' ')
-    .trim()
-}
 
 export async function preflightCodexMcpCatalogues(
   scope: CodexMcpScope | null,
@@ -19,7 +13,7 @@ export async function preflightCodexMcpCatalogues(
       try {
         return { server, pages: await listMcpToolPages(launch, env) }
       } catch (error) {
-        return { server, error: failureReason(error) }
+        return { server, error: launchFailureReason(error) }
       }
     }),
   )

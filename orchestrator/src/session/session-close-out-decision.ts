@@ -2,8 +2,7 @@
 /** Pure ownership, release classification, and final verdict for one architect session. */
 
 import type { BranchLanding } from '../branch/branch-state.ts'
-
-const TERMINAL_RUN_STATUSES = ['ok', 'failed', 'stale', 'stopped'] as const
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export type SessionOwnedRun = {
   recordId: string
@@ -139,8 +138,7 @@ function classifyRuns(
       })
       continue
     }
-    if (!TERMINAL_RUN_STATUSES.includes(run.status as (typeof TERMINAL_RUN_STATUSES)[number]))
-      continue
+    if (!TERMINAL_RUN_STATUS_SET.has(run.status)) continue
     if (actedRoots.has(run.rootRecordId)) continue
     actedRoots.add(run.rootRecordId)
     const held = heldRunResources.find((candidate) => candidate.rootRecordId === run.rootRecordId)

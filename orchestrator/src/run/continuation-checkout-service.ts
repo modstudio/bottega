@@ -50,3 +50,11 @@ export function continuationCheckoutForAnswer(input: {
     rootRepo: input.rootRepo,
   })
 }
+
+export function continuationCheckoutForRetry(
+  neverStarted: boolean,
+  input: Omit<Parameters<typeof requireContinuationCheckout>[0], 'operation'>,
+): ReturnType<typeof requireContinuationCheckout> | null {
+  if (neverStarted) return null
+  return requireContinuationCheckout({ ...input, operation: 'retried' })
+}

@@ -184,7 +184,7 @@ export const ROOT_TEST_FILES = [
 ] as const
 
 /** CI-only process checks that are intentionally outside the in-process local gate. */
-export const CI_ONLY_JOBS = ['hub-ui-stories', 'hub-web-smoke'] as const
+export const CI_ONLY_JOBS = ['postgres', 'hub-ui-stories', 'hub-web-smoke'] as const
 
 export const STATIC_OMIT_GROUPS = {
   'machine-only': {

@@ -18,12 +18,12 @@ import {
   postFixReviewDecision,
 } from './review-post-fix.ts'
 import {
+  currentReviewRoundIdentity,
   type ReviewRoundBudgetDecision,
   type ReviewTierNumber,
   reviewBudgetForBranch,
   reviewRoundBudgetDecision,
 } from './review-round-budget.ts'
-import { reviewRoundIdentity } from './review-round-identity.ts'
 import {
   applicableRoundLensPlan,
   reviewPlanForBudget,
@@ -100,12 +100,11 @@ export function budgetedRoundApplicabilityForChange(
   const project = knownIdentity ? input.group.project : input.project
   const branch = knownIdentity ? input.group.branch : input.branch
   const currentRoundIdentity = knownIdentity
-    ? reviewRoundIdentity({
-        launch_key: null,
+    ? currentReviewRoundIdentity({
         branch,
-        patch_id: input.group.patchId,
-        path_set: serializePathSet(input.group.pathSet),
-      }).identity
+        patchId: input.group.patchId,
+        pathSet: serializePathSet(input.group.pathSet),
+      })
     : null
   const branchBudget = reviewBudgetForBranch(input.database, project, branch, currentRoundIdentity)
   const reviewBudget = reviewRoundBudgetDecision({

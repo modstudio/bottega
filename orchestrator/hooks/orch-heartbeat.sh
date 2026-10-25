@@ -389,6 +389,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
       echo "HARNESS-REFUSED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     elif [ "$failover_note" != "-" ]; then
       echo "FAILED $id/$job $agent $failure_kind $latency$failover_note"
+    elif [ "$failure_kind" = "capacity" ]; then
+      echo "FAILED $id/$job $agent $failure_kind $latency; retry with 'bottega run retry $id'"
     else
       echo "FAILED $id/$job $agent $failure_kind $latency; inspect with 'bottega run show $id'"
     fi

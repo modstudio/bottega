@@ -188,6 +188,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/close/close-out-questions.ts', [
     '../database/db.ts',
     '../run/question-close.ts',
+    '../run/run-status.ts',
   ]),
   module('orchestrator/src/close/close-out-lease.ts', ['../database/db.ts', '../run/run-lease.ts']),
   module('orchestrator/src/close/absent-close-out-residue.ts', [
@@ -226,6 +227,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/close/close-out-in-flight.ts', [
     'node:fs',
     '../database/db.ts',
+    '../git/git-environment.ts',
     '../landing-tree/landing-tree.ts',
     './close-out-report.ts',
   ]),
@@ -271,6 +273,7 @@ export const modules: ArchitectureModule[] = [
     '../project/project-lock.ts',
     '../resources/resource-claims.ts',
     '../run/run-lease.ts',
+    '../run/run-status.ts',
     '../sandbox/grok-trust.ts',
     './cleanup.ts',
     './cleanup-sweep-decisions.ts',
@@ -358,6 +361,7 @@ export const modules: ArchitectureModule[] = [
     '../resources/resource-claims.ts',
     '../resources/resource-inventory.ts',
     '../run/run-alive.ts',
+    '../run/run-status.ts',
     '../run/run-bootstrap.ts',
     '../run/run-host-capacity.ts',
     '../run/live-run-member.ts',
@@ -517,6 +521,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../worktree/worktree-attribution.ts',
     '../git/git-environment.ts',
+    '../run/run-status.ts',
     './ref-guard-runtime.ts',
     './worker-hooks.ts',
   ]),
@@ -604,15 +609,6 @@ export const modules: ArchitectureModule[] = [
     './standard-calibration.ts',
     './store-hooks.ts',
     './standard-transports.ts',
-  ]),
-  module('orchestrator/src/runtime/store-hooks.ts', [
-    '../database/db.ts',
-    '../evidence/evidence-query.ts',
-    '../lens/lens-seeds.ts',
-    '../review/review-round-backfill.ts',
-    '../run/run-liveness.ts',
-    '../run/shared-git-config-run.ts',
-    '../workflow/workflow-seeds.ts',
   ]),
   module('orchestrator/src/transport/ajv-validator.ts', []),
   module('orchestrator/src/transport/acp-trace.ts', [

@@ -16,10 +16,57 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import type { GateTimingSidecar, TestPhaseTiming } from './gate-phase-timing.ts'
 
 const enabled = process.env.BOTTEGA_GATE_TIMINGS
+const testPhases: TestPhaseTiming[] = []
+let activeTestPhase: TestPhaseTiming | undefined
+const orchRoot = join(import.meta.dir, '..')
+
+function rel(path: string): string {
+  const raw = path.startsWith('file://') ? fileURLToPath(path) : path
+  const fromRoot = relative(orchRoot, raw)
+  if (fromRoot && !fromRoot.startsWith('..') && fromRoot !== raw) return fromRoot
+  if (raw.startsWith('src/')) return raw
+  const idx = raw.lastIndexOf('/src/')
+  if (idx !== -1) return raw.slice(idx + 1)
+  return raw
+}
+
+function callerFile(): string {
+  const stack = new Error().stack ?? ''
+  let found = rel(Bun.main)
+  for (const match of stack.matchAll(/(?:file:\/\/)?(\/[^:)\s]+\.test\.ts)/g)) {
+    const path = match[1]!
+    if (path.includes('gate-timings')) continue
+    found = rel(path)
+  }
+  return found
+}
+
+export function beginTestSetup(): number {
+  if (!enabled) return 0
+  activeTestPhase = { file: callerFile() }
+  testPhases.push(activeTestPhase)
+  return performance.now()
+}
+
+export function recordTestSetup(started: number): void {
+  if (!enabled || !activeTestPhase) return
+  activeTestPhase.setupMs = performance.now() - started
+}
+
+export function beginTestTeardown(): number {
+  return enabled ? performance.now() : 0
+}
+
+export function recordTestTeardown(started: number): void {
+  if (!enabled || !activeTestPhase) return
+  activeTestPhase.teardownMs = performance.now() - started
+  activeTestPhase = undefined
+}
+
 if (enabled) {
-  const orchRoot = join(import.meta.dir, '..')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
   const outPath =
     enabled.includes('/') || enabled.endsWith('.json')
@@ -54,27 +101,6 @@ if (enabled) {
 
   function empty(): FileCounts {
     return { spawn: 0, spawnSync: 0, bootstraps: 0, cli: 0, git: 0, other: 0, argv0: {} }
-  }
-
-  function rel(path: string): string {
-    const raw = path.startsWith('file://') ? fileURLToPath(path) : path
-    const fromRoot = relative(orchRoot, raw)
-    if (fromRoot && !fromRoot.startsWith('..') && fromRoot !== raw) return fromRoot
-    if (raw.startsWith('src/')) return raw
-    const idx = raw.lastIndexOf('/src/')
-    if (idx !== -1) return raw.slice(idx + 1)
-    return raw
-  }
-
-  function callerFile(): string {
-    const stack = new Error().stack ?? ''
-    let found = '(process)'
-    for (const match of stack.matchAll(/(?:file:\/\/)?(\/[^:)\s]+\.test\.ts)/g)) {
-      const path = match[1]!
-      if (path.includes('gate-timings')) continue
-      found = rel(path)
-    }
-    return found
   }
 
   function counts(file = callerFile()): FileCounts {
@@ -137,10 +163,11 @@ if (enabled) {
 
   function writeSidecar() {
     mkdirSync(dirname(sidecarPath), { recursive: true })
-    const payload = {
+    const payload: GateTimingSidecar & { outPath: string } = {
       outPath,
       elapsedMs: Date.now() - started,
       files: Object.fromEntries(files),
+      testPhases,
     }
     writeFileSync(sidecarPath, JSON.stringify(payload, null, 2))
     process.env.BOTTEGA_GATE_TIMINGS_SIDECAR = sidecarPath

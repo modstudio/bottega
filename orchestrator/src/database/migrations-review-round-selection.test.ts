@@ -5,7 +5,7 @@ import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
 
 test('review round migration adds columns without independently classifying historical rows', () => {
   const database = new Database(':memory:')
-  applyMigrationsBefore(database, '0164_review_round_selection_reason')
+  applyMigrationsBefore(database, '0165_review_round_selection_reason')
   const project = newRecordId()
   database
     .query(

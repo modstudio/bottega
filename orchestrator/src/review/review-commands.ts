@@ -18,6 +18,7 @@ import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { reviewPins } from './review-pins.ts'
+import { reviewCeilingGuidance } from './review-round-budget.ts'
 import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
@@ -196,8 +197,6 @@ function resolveTierTarget(
 
 function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
-  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-  if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
   const { output, postFix, reviewPlan, reviewBudget, creditedByArchitectRead } =
     budgetedReviewPlanForResolvedChange({
       database: db(),
@@ -266,15 +265,9 @@ function printCeilingArchitectCredit(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): boolean {
-  if (
-    output.review_budget.unclassifiableReviewCount > 0 ||
-    !output.review_budget.wouldExceedCeiling
-  ) {
-    return false
-  }
-  log(
-    `a new round would exceed the ceiling: the architect rules. Read the fix (${PLATFORM_SLUG} review read), land with test-only fixes, and file the rest`,
-  )
+  const guidance = reviewCeilingGuidance(output.review_budget)
+  if (!guidance) return false
+  log(guidance)
   if (output.post_fix.kind === 're-lens') {
     log(
       `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
@@ -318,7 +311,7 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  if (!printCeilingArchitectCredit(output, log)) {
+  if (!printCeilingArchitectCredit(output, log) || output.review_budget.currentChangeCounted) {
     printReviewRoundStatus(output, log)
   }
   for (const lens of output.lens_profiles) {

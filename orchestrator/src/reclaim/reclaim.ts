@@ -24,6 +24,7 @@ import { settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
 import {
@@ -158,7 +159,7 @@ function proveRunOwners(
       const live = liveOwner(row)
       if (live) return refuse(live)
     }
-    if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+    if (!TERMINAL_RUN_STATUS_SET.has(row.status)) {
       return refuse(`run ${row.record_id} status ${row.status} is not terminal`)
     }
   }

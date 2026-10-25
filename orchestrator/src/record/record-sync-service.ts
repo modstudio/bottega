@@ -489,6 +489,8 @@ function landingOverrideValues(row: Payload, projectId: string | null) {
     patchId: nullableString(row.patchId),
     pathSet: jsonString(row.pathSet),
     reason: String(row.reason),
+    attribution: String(row.attribution),
+    missingLenses: jsonString(row.missingLenses),
     sessionId: nullableString(row.sessionId),
     at: date(row.at),
     withheldFields: jsonString(row.withheldFields),

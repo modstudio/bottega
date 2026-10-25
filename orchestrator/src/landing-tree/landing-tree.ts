@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isOperatorSession } from '../../../shared/caller-classification.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
@@ -115,7 +116,7 @@ export function landingTreeReleaseDecision(
   if (row.job !== LANDING_TREE_JOB) return { action: 'release' }
   const owner = row.sessionId ? `session ${row.sessionId}` : 'its invoking session'
   if (!row.treeExists) {
-    if (!['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+    if (!TERMINAL_RUN_STATUS_SET.has(row.status)) {
       return keep(`landing tree held by ${owner}: conversation is ${row.status}`, 'other')
     }
     if (row.landingInFlight) {
@@ -181,13 +182,38 @@ type HeldTreeCursorFacts = {
   worktree: string | null
 }
 
+export type HeldTreeOpenPr = { ref: string; headOid: string | null }
+
 export type HeldTreeInFlightFacts = {
   treePath: string
   project: string | null
   branch: string | null
   cursor: HeldTreeCursorFacts | null
-  openPr: string | null
-  uniqueWork: boolean
+  openPr: HeldTreeOpenPr | null
+  hold: LandingTreeHoldKind
+  treeClean: boolean
+  treeHead: string | null
+}
+
+/** The facts that decide whether a held tree still holds work nothing else has. */
+export type HeldTreeWorkFacts = {
+  hold: LandingTreeHoldKind
+  treeClean: boolean
+  openPrHead: string | null
+  treeHead: string | null
+}
+
+/**
+ * Whether the held tree is the only copy of its work.
+ *
+ * A clean tree whose HEAD is the head of its own open pull request has its commits on origin, so
+ * the hold preserves nothing and the tree is in flight. Uncommitted work, a pull request for a
+ * different commit, no open pull request at all, or an unreadable HEAD leave the work unique. A
+ * landing-progress hold is in flight already.
+ */
+export function heldTreeWorkIsUnique(facts: HeldTreeWorkFacts): boolean {
+  if (facts.hold === 'landing-progress') return false
+  return !(facts.treeClean && facts.treeHead !== null && facts.treeHead === facts.openPrHead)
 }
 
 type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
@@ -223,12 +249,18 @@ function inFlightRef(facts: HeldTreeInFlightFacts): string | null {
   if (cursorMatchesThisTree(facts, cursor)) {
     return cursor.step ? `cursor ${cursor.id} ${cursor.step}` : `cursor ${cursor.id}`
   }
-  return facts.openPr
+  return facts.openPr?.ref ?? null
 }
 
-/** Cursor or open PR for this exact tree; unique-work holds still carry the fact without suppressing. */
+/** Cursor or open PR for this exact tree; a hold whose work is unique carries the fact too. */
 export function heldTreeInFlight(facts: HeldTreeInFlightFacts): HeldTreeInFlight | null {
   const ref = inFlightRef(facts)
   if (!ref) return null
-  return { ref, suppressBlock: !facts.uniqueWork }
+  const unique = heldTreeWorkIsUnique({
+    hold: facts.hold,
+    treeClean: facts.treeClean,
+    openPrHead: facts.openPr?.headOid ?? null,
+    treeHead: facts.treeHead,
+  })
+  return { ref, suppressBlock: !unique }
 }

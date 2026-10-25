@@ -7,9 +7,9 @@ import {
   providerDidNotServeRun,
   type UnjudgedRunRemedy,
 } from '../cleanup/unjudged-run-remedy.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
-const SHIP_CLEANUP_TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 // Architect-owned trees, from `tree open` and `tree create`, are released by tree removal, never close-out.
 const ARCHITECT_TREE_JOBS: ReadonlySet<string> = new Set([LANDING_TREE_JOB, HOOK_TREE_JOB])
 export const SHIP_CLEANUP_RESIDUE_EXIT_CODE = 20
@@ -184,7 +184,7 @@ function decideScopedRun(
       reason: `run ${liveChainRun.number} is live (${liveChainRun.status})`,
     }
   }
-  if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status)) {
+  if (!TERMINAL_RUN_STATUS_SET.has(run.status)) {
     return {
       ...run,
       scope,
@@ -245,7 +245,7 @@ export function decideShipCleanup(
   )
   const liveChainRuns = new Map<string, ShipCleanupRunFact>()
   for (const run of runs) {
-    if (!SHIP_CLEANUP_TERMINAL_STATUSES.has(run.status) && !liveChainRuns.has(run.root_record_id)) {
+    if (!TERMINAL_RUN_STATUS_SET.has(run.status) && !liveChainRuns.has(run.root_record_id)) {
       liveChainRuns.set(run.root_record_id, run)
     }
   }

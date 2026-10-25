@@ -26,6 +26,7 @@ import {
   retainedRefInventory,
   worktreeDatabaseInventory,
 } from '../resources/resource-inventory.ts'
+import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 
 export { sandboxDirectoryInventory } from '../resources/resource-inventory.ts'
 
@@ -109,7 +110,7 @@ export function terminalCloseOutRuns(database = db()): TerminalCloseOutRun[] {
     .query(
       `SELECT record_id, started_at, close_out_outcome, close_out_detail, close_out_attempted_at, session_id
        FROM run
-      WHERE status IN ('ok','failed','stale','stopped')
+      WHERE status IN ${TERMINAL_RUN_STATUS_SQL}
         AND job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
         AND close_out_outcome IN ('held','failed')`,
     )
@@ -327,8 +328,6 @@ export function stalledRunConditions(
   })
 }
 
-const TERMINAL_RUN_STATUSES = "('ok','failed','stale','stopped')"
-const TERMINAL_RUN_STATUS_SET = new Set(['ok', 'failed', 'stale', 'stopped'])
 const PID_BIRTH_TOLERANCE_MS = 2_000
 
 /** A pid born well after terminal completion belongs to a later process incarnation. */
@@ -427,7 +426,7 @@ export function terminalProcessResidueObservations(
   const terminal = db()
     .query(
       `SELECT record_id, started_at, latency_ms, pid, agent_pid, agent_pgid, agent_start_time FROM run
-      WHERE status IN ${TERMINAL_RUN_STATUSES}
+      WHERE status IN ${TERMINAL_RUN_STATUS_SQL}
         AND (pid IS NOT NULL OR agent_pid IS NOT NULL OR agent_pgid IS NOT NULL)`,
     )
     .all() as TerminalProcessRun[]

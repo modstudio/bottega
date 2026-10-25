@@ -3,8 +3,10 @@
  * Knows durable resource claims and their lifecycle states.
  * Must not know resource creation, Git operations, close-out policy, or the CLI.
  */
+
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 
 export const RESOURCE_CLAIM_MIGRATION = '0020_resource_claim'
@@ -690,7 +692,7 @@ function claimedClaimsOnTerminalConversations(
     .query(
       `SELECT resource_claim.kind, COUNT(*) count
        FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
-       WHERE resource_claim.state='claimed' AND run.status IN ('ok','failed','stale','stopped')
+       WHERE resource_claim.state='claimed' AND run.status IN ${TERMINAL_RUN_STATUS_SQL}
          AND run.job NOT IN (${SYNTHETIC_LIFECYCLE_JOBS.map(() => '?').join(',')})
        GROUP BY resource_claim.kind ORDER BY resource_claim.kind`,
     )

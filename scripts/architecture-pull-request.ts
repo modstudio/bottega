@@ -10,10 +10,13 @@ export const pullRequestModuleSpecs = [
     typeOnlyAllowed: ['../review/review-group.ts'],
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
-  { file: 'orchestrator/src/pull-request/override-decision.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/pull-request/override-decision.ts',
+    allowed: ['./triage-decision.ts'],
+  },
   {
     file: 'orchestrator/src/pull-request/admission-decision.ts',
-    allowed: ['./triage-decision.ts'],
+    allowed: ['./override-decision.ts', './triage-decision.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/pr-admission.ts',
@@ -30,6 +33,7 @@ export const pullRequestModuleSpecs = [
       '../review/review-applicability.ts',
       '../review/review-lineage-store.ts',
       '../review/review-post-fix.ts',
+      '../review/review-round-budget.ts',
       '../review/review-round-lens-service.ts',
       '../review/review-target.ts',
       './admission-decision.ts',

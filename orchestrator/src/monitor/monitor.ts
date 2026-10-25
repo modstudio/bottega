@@ -35,6 +35,7 @@ import { gitLocks, shellQuote, worktreeIndexLockForPath } from '../resources/git
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { terminalDockerRetentionReasonForRun } from '../resources/resource-ownership.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
+import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { grokTrustHeadings, grokTrustPathFromHeading } from '../sandbox/grok-trust.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
@@ -97,7 +98,6 @@ import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
 
-const TERMINAL_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
   failed: 'terminal-close-out-failed',
@@ -294,7 +294,7 @@ function retainedDockerResourceAction(
     resource_teardown: 'pending' | 'done' | null
   } | null,
 ): string {
-  const terminal = owner && TERMINAL_STATUSES.has(owner.status)
+  const terminal = owner && TERMINAL_RUN_STATUS_SET.has(owner.status)
   const project = owner?.repo ? projectByName(owner.repo) : null
   const teardownPlan = owner
     ? absentTreeTeardownPlan({
@@ -462,7 +462,7 @@ function observedDockerNetworkInventory(database: ReturnType<typeof db>) {
       rootId,
       terminal:
         owner.statuses.length > 0 &&
-        owner.statuses.every((status) => TERMINAL_STATUSES.has(status)),
+        owner.statuses.every((status) => TERMINAL_RUN_STATUS_SET.has(status)),
       hasWorktree: owner.worktrees.some((worktree) => existsSync(worktree)),
     })),
   }
@@ -810,7 +810,7 @@ export async function monitor(
                 MAX(keep_tree_until) keep_tree_until, MAX(keep_tree_reason) keep_tree_reason,
                 MIN(started_at) started_at
          FROM run WHERE project_record_id=? AND worktree IS NOT NULL
-          AND status IN ('ok','failed','stale','stopped')
+          AND status IN ${TERMINAL_RUN_STATUS_SQL}
         GROUP BY worktree`,
       )
       .all(project.recordId) as {

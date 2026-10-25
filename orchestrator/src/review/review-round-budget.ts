@@ -14,8 +14,23 @@ export type ReviewRoundBudgetDecision = {
   roundsUsed: number
   ceiling: number
   currentChangeCounted: boolean
+  atCeiling: boolean
   startsNewRound: boolean
   wouldExceedCeiling: boolean
+}
+
+/** Build the canonical round identity for one measured branch change. */
+export function currentReviewRoundIdentity(input: {
+  branch: string
+  patchId: string
+  pathSet: string
+}): string | null {
+  return reviewRoundIdentity({
+    launch_key: null,
+    branch: input.branch,
+    patch_id: input.patchId,
+    path_set: input.pathSet,
+  }).identity
 }
 
 /** Tier n permits n review rounds. */
@@ -30,9 +45,20 @@ export function reviewRoundBudgetDecision(input: {
     roundsUsed: input.roundsUsed,
     ceiling: input.tier,
     currentChangeCounted: input.currentChangeCounted,
+    atCeiling: input.roundsUsed >= input.tier,
     startsNewRound,
     wouldExceedCeiling: startsNewRound && input.roundsUsed + 1 > input.tier,
   }
+}
+
+export function reviewCeilingGuidance(decision: ReviewRoundBudgetDecision): string | null {
+  if (!decision.atCeiling) return null
+  return (
+    'the review round ceiling is reached; the architect rules under ' +
+    '`.agents/rules/20-build-and-buy.md` “Review rounds are a funnel”. Read the fix with ' +
+    `\`${PLATFORM_SLUG} review read\` and, when no remaining finding can cause harm, record ` +
+    `the ruling with \`${PLATFORM_SLUG} pr create ... --ceiling-ruling "<reason>"\``
+  )
 }
 
 type ReviewBudgetBranch = {

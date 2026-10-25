@@ -67,3 +67,22 @@ test('every controlled catalogue statement is prepared', () => {
     }),
   ).toThrow('no such column: missing')
 })
+
+test('a global substitution resolves an identifier any file may interpolate', () => {
+  expect(
+    fixture(
+      'database.query(`SELECT missing FROM example WHERE name IN $' + '{TERMINAL_RUN_STATUS_SQL}`)',
+    ),
+  ).toThrow('no such column: missing')
+})
+
+test('a file that declares a global substitution identifier itself is refused', () => {
+  expect(
+    fixture(
+      [
+        "const TERMINAL_RUN_STATUS_SQL = '(SELECT missing FROM example)'",
+        'database.query(`SELECT id FROM example WHERE name IN $' + '{TERMINAL_RUN_STATUS_SQL}`)',
+      ].join('\n'),
+    ),
+  ).toThrow('import TERMINAL_RUN_STATUS_SQL from orchestrator/src/run/run-status.ts')
+})
