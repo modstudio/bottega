@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  fixtureProjectRecordId,
+  migratedTestDatabase,
+} from '../database/test-database.fixture.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
@@ -163,11 +166,13 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
 
 test('backfill leaves hook-tree rows local', () => {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree')`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-16T00:00:00.000Z','(hook)',?,'sha',4,'tree','ok','hook tree',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(HOOK_TREE_JOB)
 
@@ -187,12 +192,14 @@ test('backfill leaves hook-tree rows local', () => {
 
 test('backfill refreshes only roots whose latest run payload disagrees', () => {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   const insert = database.query(
     `INSERT INTO run
        (record_id,number,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
-        status,failure_kind,parent_run_record_id,turn)
+        status,failure_kind,parent_run_record_id,turn,project_record_id)
      VALUES (?,?,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',
-             'codex','implement','sha',4,'head',?,?,NULL,1)`,
+             'codex','implement','sha',4,'head',?,?,NULL,1,
+             (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
   )
   const firstRecordId = newRecordId()
   const secondRecordId = newRecordId()
@@ -230,23 +237,26 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
 
 test('backfill timestamps a refreshed root from its outcome-producing turn', () => {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   const rootRecordId = newRecordId()
   database
     .query(
       `INSERT INTO run
        (record_id,number,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
-        prompt_head,status,failure_kind,parent_run_record_id,turn)
+        prompt_head,status,failure_kind,parent_run_record_id,turn,project_record_id)
        VALUES (?,1,'2026-10-16T12:00:00.000Z','2026-10-16T12:01:00.000Z',60000,
-               'codex','implement','sha',4,'root','ok',NULL,NULL,1)`,
+               'codex','implement','sha',4,'root','ok',NULL,NULL,1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(rootRecordId)
   database
     .query(
       `INSERT INTO run
        (record_id,number,started_at,last_event_at,latency_ms,agent,job,prompt_sha,prompt_bytes,
-        prompt_head,status,failure_kind,parent_run_record_id,turn)
+        prompt_head,status,failure_kind,parent_run_record_id,turn,project_record_id)
        VALUES (?,2,'2026-10-16T12:10:00.000Z','2026-10-16T12:15:00.000Z',300000,
-               'codex','implement','sha',4,'turn','ok',NULL,?,2)`,
+               'codex','implement','sha',4,'turn','ok',NULL,?,2,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(newRecordId(), rootRecordId)
   const machine = '01990000-0000-7000-8000-000000000099'

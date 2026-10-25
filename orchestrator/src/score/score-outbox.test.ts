@@ -1,7 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  fixtureProjectRecordId,
+  migratedTestDatabase,
+} from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
 import {
@@ -19,11 +22,13 @@ const STAMP = '2026-09-16T01:00:00.000Z'
 
 function scoredRun(recordId: string | null = RECORD_ID): Database {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','implement','sha',3,'ask','ok')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','implement','sha',3,'ask','ok',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(recordId)
   database

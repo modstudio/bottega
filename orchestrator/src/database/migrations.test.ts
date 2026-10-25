@@ -28,6 +28,8 @@ function additiveStatementRefusal(statement: string): string | null {
   if (!normalized) return null
   if (/^CREATE\s+TABLE\b/i.test(normalized)) return null
   if (/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(normalized)) return null
+  if (/^CREATE\s+TRIGGER\b/i.test(normalized)) return null
+  if (/^END$/i.test(normalized)) return null
   if (/^ALTER\s+TABLE\b[\s\S]*\bADD(?:\s+COLUMN)?\b/i.test(normalized)) {
     if (!/\bNOT\s+NULL\b/i.test(normalized) || /\bDEFAULT\b/i.test(normalized)) return null
   }

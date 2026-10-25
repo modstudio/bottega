@@ -1,24 +1,10 @@
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { AGENTS } from '../../src/agent/agent-registry.ts'
 import { db } from '../../src/database/db.ts'
+import { fixtureProjectRecordId } from '../../src/database/test-database.fixture.ts'
 import { dir as preloadDir } from '../preload.ts'
 
 export const dir = preloadDir
-
-function fixtureProjectRecordId(): string {
-  const existing = db().query('SELECT record_id FROM project ORDER BY name LIMIT 1').get() as {
-    record_id: string
-  } | null
-  if (existing) return existing.record_id
-  const recordId = newRecordId()
-  db()
-    .query(
-      `INSERT INTO project (record_id,name,path,canon,settings)
-       VALUES (?,'run-fixture',?,0,'{}')`,
-    )
-    .run(recordId, preloadDir)
-  return recordId
-}
 
 export function addRun(o: {
   agent: string
@@ -76,7 +62,7 @@ export function addRun(o: {
       o.headCommit ?? null,
       o.transport ?? AGENTS[o.agent]?.defaultTransport ?? 'cli',
       o.taskRecordId ?? null,
-      o.projectRecordId === undefined ? fixtureProjectRecordId() : o.projectRecordId,
+      o.projectRecordId === undefined ? fixtureProjectRecordId(db()) : o.projectRecordId,
     )
   return recordId
 }

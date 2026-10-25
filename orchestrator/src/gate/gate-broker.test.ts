@@ -14,6 +14,7 @@ import { CHECK_EXECUTION_FILE_ENV } from '../../../shared/check-execution.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { createCheckpointSchedule } from '../run/checkpoint-schedule.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import {
@@ -26,12 +27,14 @@ import {
 import { cancelPendingGateExecution, requestGateExecution } from './gate-run.ts'
 
 test('gate request cancellation changes only an unfinished execution', () => {
+  fixtureProjectRecordId(db())
   const runId = (
     db()
       .query(
         `INSERT INTO run
-         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'fixture','running')
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'fixture','running',
+                 (SELECT record_id FROM project ORDER BY name LIMIT 1))
          RETURNING record_id AS id`,
       )
       .get(newRecordId(), new Date().toISOString()) as { id: string }

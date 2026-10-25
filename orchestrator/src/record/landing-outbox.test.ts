@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 
@@ -14,11 +15,13 @@ const TEST_FLAKE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.test_flake.co
 test('landing evidence backfill enqueues references in order, maps every column, and is idempotent', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(`INSERT INTO run
-      (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-      VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','test','sha',1,'head','ok')`)
+      (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+      VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','test','sha',1,'head','ok',
+              (SELECT record_id FROM project ORDER BY name LIMIT 1))`)
     .run()
   database
     .query(

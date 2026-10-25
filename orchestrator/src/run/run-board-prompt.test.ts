@@ -16,6 +16,7 @@ import {
   postNotice,
 } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
   appendInitialRunBoardPrompt,
@@ -34,8 +35,9 @@ test('persisting a board-bound prompt leaves the original prompt unchanged', () 
   writeFileSync(promptPath, 'original')
   const run = db()
     .query<{ id: string }, []>(`INSERT INTO run
-    (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,turn)
-    VALUES (lower(hex(randomblob(4))) || '-0000-7000-8000-' || lower(hex(randomblob(6))),(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','implement','sha','spec',8,'head','running',1)
+    (record_id,number,started_at,agent,job,prompt_sha,spec_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+    VALUES (lower(hex(randomblob(4))) || '-0000-7000-8000-' || lower(hex(randomblob(6))),(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','implement','sha','spec',8,'head','running',1,
+            (SELECT record_id FROM project ORDER BY name LIMIT 1))
     RETURNING record_id AS id`)
     .get()!
   persistBoundPrompt(promptPath, 'original\n\nnotice', run.id)
@@ -54,6 +56,7 @@ test('later-run prompt labels mailbox messages by their display number', async (
 })
 
 beforeEach(() => {
+  fixtureProjectRecordId(db())
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
 afterEach(() => {
@@ -74,8 +77,9 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH')
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','dispatch-board-project','sha',1,'prompt','running','DEV-DISPATCH',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))
        RETURNING record_id AS id`,
     )
     .get(new Date(clock).toISOString()) as { id: string }
@@ -93,8 +97,9 @@ test('a dispatch-delivered notice is not returned by the worker pull path', asyn
 test('dispatch and later-turn injection each combine hosted and local once with a refresh warning', async () => {
   const root = db()
     .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1) RETURNING record_id AS id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,turn,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','prompt-project','sha',1,'prompt','running','DEV-968',1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1)) RETURNING record_id AS id`,
     )
     .get('2026-10-05T11:00:00.000Z') as { id: string }
   const hosted = (id = newRecordId()): HostedBoardMessage => ({

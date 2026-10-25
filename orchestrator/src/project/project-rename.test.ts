@@ -49,9 +49,9 @@ function seedNameMirrors(projectId: string, otherId: string): void {
      VALUES (?,2,?,?,?,?,?,?,?,?,?)`,
   ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OTHER, otherId)
   d.query(
-    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo)
-     VALUES (?,3,?,?,?,?,?,?,?,?)`,
-  ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OLD)
+    `INSERT INTO run (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,task_record_id)
+     VALUES (?,3,?,?,?,?,?,?,?,?,?)`,
+  ).run(id(), 't', 'codex', 'implement', 'sha', 1, 'p', 'ok', OLD, id())
   d.query(
     `INSERT INTO canon_pack (record_id,job,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project,project_record_id)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,

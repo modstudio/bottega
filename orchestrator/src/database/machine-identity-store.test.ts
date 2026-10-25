@@ -12,6 +12,7 @@ import { enqueueReview } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { carryMachineIdentity, machineIdStored } from './machine-identity-store.ts'
 import { applyMigrations } from './migrations.ts'
+import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 test('an orchestrator identity is carried to shared configuration once', () => {
   const root = mkdtempSync(join(tmpdir(), 'machine-carry-'))
@@ -64,6 +65,7 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
   process.env[CONFIG_HOME_ENV] = join(root, 'config')
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   try {
     const shared = '01990000-0000-7000-8000-000000001240'
     database.query("INSERT INTO schema_meta(key,value) VALUES ('machine_id',?)").run(shared)
@@ -72,10 +74,11 @@ test('all evidence enqueue paths use the shared id and preserve its legacy key',
     )
     database.exec(`
       INSERT INTO run
-        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
+        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
       VALUES
         (1,'01990000-0000-7000-8000-000000001251','2026-10-12T10:00:00Z',
-         'codex','implementation','sha',1,'prompt','asking');
+         'codex','implementation','sha',1,'prompt','asking',
+         (SELECT record_id FROM project ORDER BY name LIMIT 1));
       INSERT INTO question (number,record_id,run_record_id,asked_at,question)
       VALUES (1,'${newRecordId()}','01990000-0000-7000-8000-000000001251','2026-10-12T10:01:00Z','Which?');
       INSERT INTO review (number,record_id,recorded_at)

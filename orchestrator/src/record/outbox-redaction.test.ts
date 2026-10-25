@@ -1,7 +1,10 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  fixtureProjectRecordId,
+  migratedTestDatabase,
+} from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import {
   redactSyncedOutbox,
@@ -36,12 +39,14 @@ function runPayload(error: string, label: string): string {
 
 function seeded(): { database: Database; urlUserinfo: string; base64: string } {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   const planted = plantedValues()
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label)
-       VALUES (42,'record-42',?,'codex','implement','sha',4,'ordinary prompt','ok',?,?)`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,label,project_record_id)
+       VALUES (42,'record-42',?,'codex','implement','sha',4,'ordinary prompt','ok',?,?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(STAMP, planted.urlUserinfo, planted.base64)
   database

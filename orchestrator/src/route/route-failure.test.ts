@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import {
   billingHoldForFailure,
   COOLS_DOWN,
@@ -409,12 +410,13 @@ describe('routing counts failures as evidence', () => {
     // The bug this pins: wake succeeds, the box is serving five minutes later,
     // and routing still refuses it for the remaining fifty-five because the
     // last run had failed `unreachable`.
+    fixtureProjectRecordId(db())
     db()
       .query(
         `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
-                        status, failure_kind)
+                        status, failure_kind, project_record_id)
        VALUES ('${newRecordId()}',1,datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
-               'failed','unreachable')`,
+               'failed','unreachable',(SELECT record_id FROM project ORDER BY name LIMIT 1))`,
       )
       .run()
     const c = candidates('file-question').find((x) => x.agent === 'qwen-local')!

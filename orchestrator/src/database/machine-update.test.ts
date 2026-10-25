@@ -7,6 +7,7 @@ import { db } from './db.ts'
 import { machineUpdateCommand } from './machine-update.ts'
 import { migrationDrain, setMigrationDrain } from './migration-drain.ts'
 import { migrationJournal } from './migrations.ts'
+import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
@@ -65,6 +66,7 @@ test("machine update clears a dead holder's marker before deciding", async () =>
 
 test('a non-additive update waits for an admitted resume, then migrates behind the fence', async () => {
   const database = db()
+  fixtureProjectRecordId(database)
   const held = holdBackLastNonAdditiveMigration(database)
   const pending = held.pending
   const events: string[] = []
@@ -74,8 +76,9 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fixture','sha',0,'','ok')`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fixture','sha',0,'','ok',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId)
   const lease = acquireRunLease(runId)
@@ -116,8 +119,9 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
           database
             .query(
               `INSERT INTO run
-               (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-               VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-resume','sha',0,'','running')`,
+               (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+               VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-resume','sha',0,'','running',
+                       (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
             )
             .run(resumeId)
           events.push('resume-admitted')
@@ -144,13 +148,15 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
 
 test('machine update clears the drain marker when the bounded wait expires', async () => {
   const database = db()
+  fixtureProjectRecordId(database)
   const held = holdBackLastNonAdditiveMigration(database)
   const runId = randomUUID()
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-bound','sha',0,'','ok',?)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-bound','sha',0,'','ok',?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId, process.pid)
   const lease = acquireRunLease(runId)

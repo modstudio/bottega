@@ -489,8 +489,12 @@ describe('lens catalogue', () => {
     const renamedRunId = addRun({ agent: 'codex', job: 'review-lens', repo: 'devbox' })
     const live = db()
     live.exec('PRAGMA foreign_keys=ON')
-    live.query('UPDATE run SET project_record_id=NULL WHERE record_id=?').run(runId)
-    live.query('UPDATE run SET project_record_id=NULL WHERE record_id=?').run(renamedRunId)
+    live
+      .query('UPDATE run SET project_record_id=NULL,task_record_id=? WHERE record_id=?')
+      .run(newRecordId(), runId)
+    live
+      .query('UPDATE run SET project_record_id=NULL,task_record_id=? WHERE record_id=?')
+      .run(newRecordId(), renamedRunId)
     live
       .query(`INSERT INTO canon_pack (record_id,job,project,sha256,bytes,doc_count,doc_revisions,compiled_at,findings,project_record_id)
       VALUES (?,'review-lens','one','sha',1,1,'[]','now',0,NULL)`)

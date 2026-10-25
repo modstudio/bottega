@@ -4,6 +4,7 @@ import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { fakePostgres } from '../../test/fixtures/record-sync-postgres.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { enqueueScoreRecord } from '../score/score-outbox.ts'
 import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
@@ -16,11 +17,13 @@ const STAMP = '2026-09-15T01:01:00.000Z'
 function localScoreOutbox(): Database {
   const local = new Database(':memory:')
   applyMigrations(local)
+  fixtureProjectRecordId(local)
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(RECORD_ID)
   local

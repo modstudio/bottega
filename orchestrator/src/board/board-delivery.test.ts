@@ -5,6 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import {
   claimBoardNotices,
@@ -77,6 +78,7 @@ function installFailedRefreshWithCached(message: HostedBoardMessage): void {
 }
 
 beforeEach(() => {
+  fixtureProjectRecordId(db())
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.test'
 })
 afterEach(() => {
@@ -139,14 +141,16 @@ test('a second chain turn claims and marks hosted and local notices through its 
   const recordId = newRecordId()
   const root = db()
     .query(
-      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn)
-       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,1) RETURNING record_id AS id`,
+      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,record_id,turn,project_record_id)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1)) RETURNING record_id AS id`,
     )
     .get('2026-10-05T11:00:00.000Z', recordId) as { id: string }
   const turn = db()
     .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_record_id,turn)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2) RETURNING record_id AS id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,parent_run_record_id,turn,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','delivery-project','sha',1,'prompt','running','DEV-968',?,2,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1)) RETURNING record_id AS id`,
     )
     .get('2026-10-05T11:30:00.000Z', root.id) as { id: string }
   const local = postNotice(

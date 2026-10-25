@@ -153,8 +153,9 @@ test('a tied claim follows the chain latest turn and renewal restarts its lease'
   db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId, new Date(clock).toISOString())
   const claim = takeClaim({ subject: 'task:DEV-1', runId }, env('holder'), clock, cwd)
@@ -236,8 +237,9 @@ test('task audience reaches its claim holder, current architect, and live launch
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9')
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,repo,launch_key,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','owner',1,'claims','DEV-9',
+               (SELECT record_id FROM project WHERE name='claims'))
        RETURNING record_id`,
     )
     .get(new Date(clock).toISOString()) as { record_id: string }
@@ -290,8 +292,9 @@ test('a task claim tied to an ended chain does not put its holder in the task au
   db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,turn,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running','holder',1,
+               (SELECT record_id FROM project WHERE name='claims'))`,
     )
     .run(runId, new Date(clock).toISOString())
   takeClaim({ subject: 'task:DEV-9', runId }, env('holder'), clock, cwd)

@@ -1,16 +1,21 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  fixtureProjectRecordId,
+  migratedTestDatabase,
+} from '../database/test-database.fixture.ts'
 import { writeTerminalRunResourceUsage } from './run-terminal.ts'
 
 test('terminal persistence rounds resource measurements to whole units', () => {
   using database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   const runId = newRecordId()
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (1,?,'2026-10-24T00:00:00.000Z','codex','write','sha',4,'work','running')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1,?,'2026-10-24T00:00:00.000Z','codex','write','sha',4,'work','running',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId)
 

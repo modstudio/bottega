@@ -3,7 +3,10 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import {
+  fixtureProjectRecordId,
+  migratedTestDatabase,
+} from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
@@ -14,11 +17,13 @@ const RUN_RECORD_ID = '01990000-0000-7000-8000-000000000042'
 
 function fixture(): Database {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-25T10:00:00.000Z','codex','implement','sha',3,'ask','asking')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-25T10:00:00.000Z','codex','implement','sha',3,'ask','asking',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(RUN_RECORD_ID)
   return database
@@ -144,11 +149,13 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
 
 test('a question has an identity before its first enqueue', () => {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,'${RUN_RECORD_ID}','2026-09-25T10:00:00.000Z','codex','implement','sha',3,'ask','asking')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,'${RUN_RECORD_ID}','2026-09-25T10:00:00.000Z','codex','implement','sha',3,'ask','asking',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run()
   const question = database

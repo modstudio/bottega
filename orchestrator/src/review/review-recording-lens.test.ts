@@ -1,6 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -213,6 +214,8 @@ describe('review discipline', () => {
       lens: 'unregistered-pin',
       repo: 'not-registered',
       headCommit: 'a'.repeat(40),
+      taskRecordId: newRecordId(),
+      projectRecordId: null,
     })
     const stderr = spyOn(console, 'error').mockImplementation(() => {})
     try {

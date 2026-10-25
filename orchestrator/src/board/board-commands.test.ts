@@ -89,8 +89,9 @@ test('suggestion post CLI collects path overrides and preserves omitted suggesti
     .run(cwd)
   const createRun = db().query(
     `INSERT INTO run
-     (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id)
-     VALUES (?,?,'2026-10-05','codex','implement','board-cli-project','sha',1,'prompt','running','cli-owner')
+     (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,project_record_id)
+     VALUES (?,?,'2026-10-05','codex','implement','board-cli-project','sha',1,'prompt','running','cli-owner',
+             (SELECT record_id FROM project WHERE name='board-cli-project'))
      RETURNING record_id AS id`,
   )
   const envBefore = process.env.CLAUDE_CODE_SESSION_ID
