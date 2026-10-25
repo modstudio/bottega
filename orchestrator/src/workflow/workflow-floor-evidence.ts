@@ -617,8 +617,8 @@ function resolveArtifact(
   if (ref.kind === 'run') {
     const recordId = resolveRunIdentifier(d, ref.id)
     const run = loadRunBinding(recordId, d)
-    if (!run) throw new Error(`--artifact run:${ref.id} does not exist`)
-    requireRunBinding(`--artifact run:${ref.id}`, run, identity, binding.cursorId, d)
+    if (!run) throw new Error(`--artifact ${raw} does not exist`)
+    requireRunBinding(`--artifact ${raw}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
       exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),

@@ -491,7 +491,7 @@ test('a foreign run is refused and a matching run is allowed', () => {
   })
 })
 
-test('a bare run number artifact resolves through the run record', () => {
+test('a bare run number or run UUID artifact resolves through the run record', () => {
   const d = database()
   const matching = insertRun(d, {
     project: 'fixture',
@@ -505,6 +505,8 @@ test('a bare run number artifact resolves through the run record', () => {
     ref: String(number),
     exists: true,
   })
+  expect(gather(d, { artifact: matching }).artifact).toEqual({ ref: matching, exists: true })
+  expect(() => gather(d, { artifact: newRecordId() })).toThrow('run number or a full run UUID')
 })
 
 test('a foreign probe is refused and a matching probe is allowed', () => {
