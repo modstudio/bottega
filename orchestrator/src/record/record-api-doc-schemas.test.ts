@@ -1,5 +1,9 @@
 import { expect, test } from 'bun:test'
-import { recordDocImportSchema, recordDocUpsertSchema } from './record-api-doc-schemas.ts'
+import {
+  docWriteContextSchema,
+  recordDocImportSchema,
+  recordDocUpsertSchema,
+} from './record-api-doc-schemas.ts'
 import { normalizeRecordDocImport } from './record-doc-mapping.ts'
 
 test('doc imports require audience sets and allow the service to mint the id', () => {
@@ -85,6 +89,26 @@ test('hosted updates may omit delivery so the write service can preserve it', ()
   })
   expect(parsed.success).toBe(true)
   if (parsed.success) expect('delivery' in parsed.data).toBe(false)
+})
+
+test('hosted document write schemas preserve the writing session', () => {
+  const sessionId = 'session-that-authored-the-revision'
+  expect(
+    recordDocUpsertSchema.parse({
+      scope: 'global',
+      subject: null,
+      slug: 'session-attribution',
+      title: 'Session attribution',
+      body: 'Body.',
+      reason: 'attribute the write',
+      author: 'test',
+      sessionId,
+    }).sessionId,
+  ).toBe(sessionId)
+  expect(
+    docWriteContextSchema.parse({ reason: 'attribute the write', author: 'test', sessionId })
+      .sessionId,
+  ).toBe(sessionId)
 })
 
 test('hosted writes refuse malformed checked-against commits with the remedy', () => {

@@ -20,6 +20,7 @@ const docGeneratorSchema = z.literal(REFERENCE_GENERATOR).optional()
 export const docWriteContextSchema = z.object({
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
+  sessionId: z.string().nullable().optional(),
   expectedRevision: z.string().uuid().optional(),
   generator: docGeneratorSchema,
 })
@@ -76,6 +77,7 @@ export const recordDocUpsertSchema = z.object({
   projectId: z.string().uuid().nullable().optional(),
   reason: z.string().trim().min(1),
   author: z.string().trim().min(1),
+  sessionId: z.string().nullable().optional(),
   forceInject: z.string().min(1).optional(),
   op: revisionOpSchema.optional(),
   at: isoSchema.optional(),

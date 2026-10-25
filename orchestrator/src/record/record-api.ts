@@ -143,6 +143,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       projectName?: string | null
       reason: string
       author: string
+      sessionId?: string | null
       forceInject?: string
       op?: RecordDocRevision['op']
       at?: string
@@ -167,6 +168,7 @@ type RecordApiDeps = RecordInvitationRouteDeps & {
       revisionId: string
       reason: string
       author: string
+      sessionId?: string | null
       expectedRevision?: string
     },
   ): Promise<{ id: string; revisionId: string }>

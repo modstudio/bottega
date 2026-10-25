@@ -46,6 +46,7 @@ function adoptionHandoff(
   author: string,
   report: SessionAdoptionReport,
   command: string,
+  machine: string,
 ): ResumeBriefHandoff {
   const remainingWithAuthor = report.notMoved.filter(({ currentOwner }) => currentOwner === author)
   const ownedElsewhere = report.notMoved.filter(({ currentOwner }) => currentOwner !== author)
@@ -79,7 +80,9 @@ function adoptionHandoff(
     authorSession: author,
     status: 'moved',
     report,
-    lines: [`resume handoff: session ${author} owns no runs`],
+    lines: [
+      `resume handoff: session ${author} owns no runs on machine ${machine}; runs the author left on another machine stay there; on that machine run ${command}`,
+    ],
   }
 }
 
@@ -102,7 +105,9 @@ async function handoffFromAuthor(
       authorSession: null,
       status: 'skipped',
       report: null,
-      lines: ['resume handoff skipped: brief author session is unknown'],
+      lines: [
+        `resume handoff skipped: latest non-consume hosted revision has no author session; when the author session is known, run ${PLATFORM_SLUG} session adopt <session> --reason <why>`,
+      ],
     }
   const actor = sessionId(database)
   if (author === actor)
@@ -125,7 +130,7 @@ async function handoffFromAuthor(
         transfer: options.transfer,
       },
     )
-    return adoptionHandoff(author, report, command)
+    return adoptionHandoff(author, report, command, options.machine ?? 'unknown')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return {

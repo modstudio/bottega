@@ -100,6 +100,7 @@ export type RecordDocUpsertInput = {
   projectId?: string | null
   reason: string
   author: string
+  sessionId?: string | null
   forceInject?: string
   op?: DocRevisionOp
   at?: string
@@ -109,6 +110,10 @@ export type RecordDocUpsertInput = {
   generator?: DocGenerator
 }
 type RecordDocImportResult = RecordDocWriteResponse<{ id: string; revisionIds: string[] }>
+type RecordDocWriteContext = Pick<
+  RecordDocUpsertInput,
+  'reason' | 'author' | 'sessionId' | 'expectedRevision'
+>
 
 export type RecordDocImportInput = {
   expectedRevision?: string
@@ -275,22 +280,17 @@ export type RecordApiClient = ProjectIdentityClient &
     ): Promise<RecordCanonImportResult>
     deleteDoc(
       id: string,
-      input: {
-        reason: string
-        author: string
-        expectedRevision?: string
-        generator?: DocGenerator
-      },
+      input: RecordDocWriteContext & { generator?: DocGenerator },
       destination?: RecordRequestDestination,
     ): Promise<{ id: string; revisionId: string }>
     consumeDoc(
       id: string,
-      input: { reason: string; author: string; expectedRevision?: string },
+      input: RecordDocWriteContext,
       destination?: RecordRequestDestination,
     ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
     restoreDoc(
       id: string,
-      input: { revisionId: string; reason: string; author: string; expectedRevision?: string },
+      input: RecordDocWriteContext & { revisionId: string },
       destination?: RecordRequestDestination,
     ): Promise<{ id: string; revisionId: string }>
     renameSubject(

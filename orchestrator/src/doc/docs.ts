@@ -122,6 +122,12 @@ import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type { DocWriteContext } from './doc-article-fields.ts'
 
+const hostedDocWriteIdentity = (identity: ReturnType<typeof resolvedDocWriteIdentity>) => ({
+  author: identity.author,
+  reason: identity.reason,
+  sessionId: identity.session,
+})
+
 function assertSetDocAllowed(input: DocWriteInput): void {
   assertWorkerDocStoreWriteAllowed('setDoc')
   if (input.scope !== 'resume') return
@@ -442,8 +448,7 @@ async function setDocWithOp(
         status: lifecycle.status,
         replacementSlug: lifecycle.replacementSlug,
         projectName,
-        reason: identity.reason,
-        author: identity.author,
+        ...hostedDocWriteIdentity(identity),
         forceInject: input.forceInject,
         op: requestedOp ?? (prior ? 'set' : 'create'),
         id: prior?.record_id ?? undefined,
@@ -626,8 +631,7 @@ export async function removeDoc(
           position: doc.position,
           featured: doc.featured,
           projectName: docWriteProjectName(doc.scope, doc.subject),
-          reason: identity.reason,
-          author: identity.author,
+          ...hostedDocWriteIdentity(identity),
           id: undefined,
           expectedRevision: context.expectedRevision,
           generator: context.generator,
@@ -636,8 +640,7 @@ export async function removeDoc(
         hostedExpected = created.revisionId
       }
       const hosted = await client.deleteDoc(recordId, {
-        reason: identity.reason,
-        author: identity.author,
+        ...hostedDocWriteIdentity(identity),
         expectedRevision: hostedExpected,
         generator: context.generator,
       })
@@ -717,16 +720,14 @@ export async function consumeDoc(
           position: doc.position,
           featured: doc.featured,
           projectName: docWriteProjectName(doc.scope, doc.subject),
-          reason: identity.reason,
-          author: identity.author,
+          ...hostedDocWriteIdentity(identity),
           expectedRevision: context.expectedRevision,
         })
         recordId = created.id
         hostedExpected = created.revisionId
       }
       const hosted = await client.consumeDoc(recordId, {
-        reason: identity.reason,
-        author: identity.author,
+        ...hostedDocWriteIdentity(identity),
         expectedRevision: hostedExpected,
       })
       if (hosted.alreadyConsumed) return { ...doc, already_consumed: true }
@@ -1019,8 +1020,7 @@ export async function restoreDoc(
           }),
           replacementSlug: revision.replacement_slug,
           projectName,
-          reason: identity.reason,
-          author: identity.author,
+          ...hostedDocWriteIdentity(identity),
           op: 'restore',
         })
         recordId = created.id
@@ -1028,8 +1028,7 @@ export async function restoreDoc(
       }
       const hosted = await client.restoreDoc(recordId, {
         revisionId: revision.record_id ?? recordId,
-        reason: identity.reason,
-        author: identity.author,
+        ...hostedDocWriteIdentity(identity),
         expectedRevision: hostedExpected,
       })
       return commitDocRestore({

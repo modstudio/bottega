@@ -6,13 +6,21 @@ import { db } from '../database/db.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import type { RecordWriteDecision } from '../record/record-write-decision.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
-import { latestStoredDocAuthorSession } from './doc-revision-store.ts'
+import {
+  latestStoredDocAuthorSession,
+  storedDocRevisionAuthorSession,
+} from './doc-revision-store.ts'
 import type { ConsumedDoc, Doc } from './docs.ts'
 
-type HostedRevision = Record<string, unknown>
+type ResumeBriefHostedRevision = {
+  id: string
+  op: string
+  sessionId: string | null
+  at: string
+}
 export type ResumeBriefAuthorOptions = {
   writeDecision?: RecordWriteDecision
-  listHostedRevisions?: (doc: Doc) => Promise<HostedRevision[]>
+  listHostedRevisions?: (doc: Doc) => Promise<ResumeBriefHostedRevision[]>
 }
 
 export async function resumeBriefAuthorSession(
@@ -22,25 +30,23 @@ export async function resumeBriefAuthorSession(
 ): Promise<string | null> {
   const writeDecision = options.writeDecision ?? currentRecordWriteDecision(database)
   if (writeDecision !== 'hosted') return latestStoredDocAuthorSession(doc.record_id, database)
-  let revisions: HostedRevision[]
+  let revisions: ResumeBriefHostedRevision[]
   try {
     revisions = options.listHostedRevisions
       ? await options.listHostedRevisions(doc)
-      : await (await hostedDocClient(doc.scope, doc.subject)).listRevisions(doc.record_id)
+      : ((await (
+          await hostedDocClient(doc.scope, doc.subject)
+        ).listRevisions(doc.record_id)) as ResumeBriefHostedRevision[])
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(
       `could not read hosted revisions for resume brief ${doc.subject}/${doc.slug}: ${message}; consume again when the hosted record is reachable`,
     )
   }
-  return (
-    (revisions
-      .filter(
-        (revision) =>
-          revision.op !== 'consume' && typeof revision.sessionId === 'string' && revision.sessionId,
-      )
-      .sort((left, right) => String(right.at).localeCompare(String(left.at)))[0]?.sessionId as
-      | string
-      | undefined) ?? null
-  )
+  const latest = revisions
+    .filter((revision) => revision.op !== 'consume')
+    .sort((left, right) => right.at.localeCompare(left.at))[0]
+  if (!latest) return null
+  if (latest.sessionId) return latest.sessionId
+  return storedDocRevisionAuthorSession(latest.id, database)
 }

@@ -112,6 +112,18 @@ export function latestStoredDocAuthorSession(
   return row?.session_id ?? null
 }
 
+export function storedDocRevisionAuthorSession(
+  recordId: string,
+  database: Database = db(),
+): string | null {
+  const row = database
+    .query<{ session_id: string | null }, [string]>(
+      'SELECT session_id FROM doc_revision WHERE record_id=?',
+    )
+    .get(recordId)
+  return row?.session_id ?? null
+}
+
 export function insertLocalRevision(
   doc: RevisionDoc,
   op: DocRevisionOp,
