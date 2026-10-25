@@ -94,7 +94,7 @@ export function cloneProvisionRecorder(runId: string) {
   return (measurement: CloneProvisionMeasurement): void =>
     appendProvisioningPhases(runId, [
       {
-        phase: 'dependency',
+        phase: 'clone',
         name: `${measurement.path} (${measurement.mechanism})`,
         durationMs: measurement.durationMs,
       },
@@ -107,14 +107,12 @@ export function measureProvisioningPhase<T>(
   phase: string,
   name: string,
   operation: () => T,
-  record: (runId: string, phases: readonly ProvisioningPhase[]) => void = appendProvisioningPhases,
-  now: () => number = performance.now.bind(performance),
 ): T {
-  const started = now()
+  const started = performance.now()
   try {
     return operation()
   } finally {
-    record(runId, [{ phase, name, durationMs: now() - started }])
+    appendProvisioningPhases(runId, [{ phase, name, durationMs: performance.now() - started }])
   }
 }
 

@@ -22,6 +22,7 @@ import {
 } from '../resources/resource-claims.ts'
 import {
   appendProvisioningPhases,
+  cloneProvisionRecorder,
   measureProvisioningPhase,
 } from '../worktree/provisioning-measurement.ts'
 import { type ProvisionSkip, provisionWorktree } from '../worktree/worktree-provision.ts'
@@ -93,6 +94,8 @@ function provisionTrackedDependencies(
       path,
       snapshot.recipe.provision ?? [],
       `tracked recipe "${snapshot.source.path}"`,
+      undefined,
+      cloneProvisionRecorder(input.runId),
     ),
   )
 }
