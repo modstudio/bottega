@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, nowIso } from '../database/db.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { createTrackedRecipe } from './tracked-recipe.ts'
 
@@ -36,19 +37,12 @@ test('records declared dependencies once and clone mechanisms separately', () =>
     writeFileSync(join(repoRoot, 'vendor', 'dependency'), 'ready')
 
     const database = db()
-    const projectId = database
-      .query<{ record_id: string }, [string]>(
-        "INSERT INTO project(record_id,name,path,canon) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'provisioning-phases',?,1) RETURNING record_id",
-      )
-      .get(repoRoot)!.record_id
-    const runId = database
-      .query<{ id: string }, [string, string, string]>(
-        `INSERT INTO run
-           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id,turn)
-           VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'provisioning phases','running',?,1)
-           RETURNING record_id AS id`,
-      )
-      .get(newRecordId(), nowIso(), projectId)!.id
+    const projectId = newRecordId()
+    database
+      .query("INSERT INTO project(record_id,name,path,canon) VALUES (?,'provisioning-phases',?,1)")
+      .run(projectId, repoRoot)
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    database.query('UPDATE run SET project_record_id=? WHERE record_id=?').run(projectId, runId)
     const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
 
     createTrackedRecipe({
