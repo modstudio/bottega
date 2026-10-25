@@ -15,6 +15,7 @@ import {
   promoteStepCatalogueLocal,
   showStepCatalogue,
 } from './step-catalogue.ts'
+import { decideCloseFloors } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
@@ -336,6 +337,38 @@ describe('importWorkflowTree', () => {
       floor: ['tracker-transition'],
       expectedStatus: 'checking',
     })
+  })
+
+  test('the ship flow closes a task only after its pull request merges', async () => {
+    const d = database()
+    await importAndPromoteCurrentTree(d)
+    d.query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    ).run(
+      'fixture',
+      '/fixture',
+      'bun',
+      JSON.stringify({
+        tracker: { protocol: 'hub' },
+        docs: { protocol: 'orch-docs' },
+        gate: 'bun run check',
+        trunk: 'main',
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+      }),
+    )
+    const composed = composeWorkflow(
+      'ship-task',
+      'fixture',
+      'full',
+      { key: 'DEV-1732', branch: 'DEV-1732-fix', worktree: '/fixture' },
+      d,
+    )
+    const closeTask = composed.steps.find(({ slug }) => slug === 'close-task')!
+    const floors = decideCloseFloors(closeTask, undefined)
+
+    expect(floors).toMatchObject([
+      { kind: 'tracker-transition', expectedStatus: 'done', requirePullRequest: true },
+    ])
   })
 
   test(`array-mcp ship steps render ${PLATFORM_SLUG} status and workflow evidence verbs`, async () => {
