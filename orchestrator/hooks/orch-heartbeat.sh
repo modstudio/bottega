@@ -10,8 +10,8 @@
 #
 #   BLOCKED  question_is_answerable_now accepts a question; the session must act
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs or landings still going, or a workflow ruling was parked here
-#   CLEAR    no runs, no landings, nothing asked, and nothing stalled -> exits SILENTLY
+#   WAITING  runs, landings, or authored requests still live, or a workflow ruling was parked here
+#   CLEAR    no runs, landings, open requests, questions, or stalls -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
 # hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
@@ -341,15 +341,81 @@ for landing_id, branch, status, started_at, finished_at in rows:
 print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
 ' 2>/dev/null); landings_parse_rc=$?
 
+  if [ ! -e "$DB_PATH" ]; then
+    requests_observed=$'STATE\t0\t\t'
+    requests_rc=0
+    requests_parse_rc=0
+  else
+    request_rows=$(SID="$SID" BOTTEGA_ORCHESTRATOR_DB_PATH="$DB_PATH" python3 -c '
+import json, os, sqlite3
+path = os.environ["BOTTEGA_ORCHESTRATOR_DB_PATH"]
+if not os.path.exists(path):
+    print(json.dumps({"roots": [], "replies": []}))
+    raise SystemExit(0)
+connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
+try:
+    local_receipts = {
+        row[0]: row[1]
+        for row in connection.execute(
+            "SELECT message_record_id,delivered_at FROM board_receipt WHERE reader_session=?",
+            (os.environ["SID"],),
+        )
+    }
+    roots, replies = [], []
+    for row in connection.execute(
+        "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,thread_root_record_id "
+        "FROM board_message"
+    ):
+        record_id, number, kind, purpose, author, title, expires, withdrawn, root_id = row
+        if root_id is None:
+            title = str(title).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+            roots.append({"id": record_id, "label": "board:%s %s" % (number, title), "kind": kind,
+                          "purpose": purpose, "author_session": author, "expires_at": expires,
+                          "withdrawn_at": withdrawn})
+        else:
+            replies.append({"root_id": root_id, "author_session": author,
+                            "delivered_at": local_receipts.get(record_id)})
+    hosted_receipts = {
+        row[0]: row[1]
+        for row in connection.execute(
+            "SELECT message_id,delivered_at FROM hosted_board_receipt_cache WHERE reader_session=?",
+            (os.environ["SID"],),
+        )
+    }
+    for message_id, kind, root_id, payload in connection.execute(
+        "SELECT id,kind,thread_root_id,payload FROM hosted_board_message_cache"
+    ):
+        message = json.loads(payload)
+        author = message.get("authorSession")
+        if author is None and isinstance(message.get("origin"), dict):
+            author = message["origin"].get("session")
+        if root_id is None:
+            title = str(message.get("title")).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+            roots.append({"id": message_id, "label": "board:%s %s" % (message_id, title),
+                          "kind": kind, "purpose": message.get("purpose"),
+                          "author_session": author, "expires_at": message.get("expiresAt"),
+                          "withdrawn_at": message.get("withdrawnAt")})
+        else:
+            replies.append({"root_id": root_id, "author_session": author,
+                            "delivered_at": hosted_receipts.get(message_id)})
+    print(json.dumps({"roots": roots, "replies": replies}))
+finally:
+    connection.close()
+' 2>/dev/null); requests_rc=$?
+    requests_observed=$(printf '%s' "$request_rows" | \
+      python3 "$ROOT/hooks/heartbeat-decision.py" requests "$SID" 2>/dev/null); requests_parse_rc=$?
+  fi
+
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
      [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
      [ "$completion_rc" -ne 0 ] || [ "$completion_parse_rc" -ne 0 ] || \
-     [ "$landings_parse_rc" -ne 0 ]; then
+     [ "$landings_parse_rc" -ne 0 ] || [ "$requests_rc" -ne 0 ] || \
+     [ "$requests_parse_rc" -ne 0 ]; then
     key="degraded"
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
@@ -372,6 +438,11 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   landing_n=${landing_state%%$'\t'*}; landing_rest=${landing_state#*$'\t'}
   landing_detail=${landing_rest%%$'\t'*}; landing_ids=${landing_rest#*$'\t'}
   landing_n=${landing_n:-0}
+  request_state=${requests_observed%%$'\n'*}
+  request_state=${request_state#*$'\t'}
+  request_n=${request_state%%$'\t'*}; request_rest=${request_state#*$'\t'}
+  request_detail=${request_rest%%$'\t'*}; request_ids=${request_rest#*$'\t'}
+  request_n=${request_n:-0}
 
   while IFS=$'\t' read -r record record_id terminal_id id outcome job agent failure_kind latency failover_note; do
     [ "$record" = "EVENT" ] || continue
@@ -405,7 +476,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   fi
   previous_live_roots="$live_roots"
 
-  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids"
+  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids|$request_n|$request_ids"
   since_emit=$((since_emit + 1))
   direct_stalled_subjects=""
   combined_detail="$detail"
@@ -418,6 +489,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     HEARTBEAT_RUNS="$n" HEARTBEAT_LANDINGS="$landing_n" \
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
+    HEARTBEAT_OPEN_REQUESTS="$request_n" HEARTBEAT_OPEN_REQUEST_DETAIL="$request_detail" \
       python3 "$ROOT/hooks/heartbeat-decision.py" tick 2>"$decision_err")
   decision_rc=$?
   if [ "$decision_rc" -eq "$HEARTBEAT_CLEAR_EXIT_STATUS" ]; then

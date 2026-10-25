@@ -1,3 +1,4 @@
+import { resolve } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
@@ -14,7 +15,11 @@ import {
   boardThread,
   boardWithdraw,
 } from '../board/board-operations.ts'
-import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
+import {
+  architectIdentity,
+  BOARD_BODY_MAX_CHARS,
+  BOARD_TITLE_MAX_CHARS,
+} from '../board/board-policy.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
 import { db } from '../database/db.ts'
 import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
@@ -27,6 +32,20 @@ const result = (value: unknown) => ({
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
+
+function boardHeartbeatGuidance(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const session = architectIdentity(env)?.session
+  if (!session) return null
+  return `Arm under Monitor from the main checkout: ${resolve(import.meta.dir, '../../hooks/orch-heartbeat.sh')} ${session}`
+}
+
+function withHeartbeatGuidance<T>(value: T, required: boolean): T | (T & { heartbeat: string }) {
+  if (!required) return value
+  const heartbeat = boardHeartbeatGuidance()
+  return heartbeat && typeof value === 'object' && value !== null ? { ...value, heartbeat } : value
+}
 
 function registerBoardPostTool(server: McpServer): void {
   server.registerTool(
@@ -46,27 +65,30 @@ function registerBoardPostTool(server: McpServer): void {
         expires_ms: z.number().int().positive().optional(),
       }),
     },
-    async (input) =>
-      result(
-        await boardPost({
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          purpose: defaultBoardPurpose(input.purpose, Boolean(input.ack_required)),
-          task: input.task,
-          paths: input.path,
-          topics: input.topic,
-          ackRequired: input.ack_required,
-          deadlineMs: input.deadline_ms,
-          expiresMs: input.expires_ms,
-        }),
-      ),
+    async (input) => {
+      const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ack_required))
+      return result(
+        withHeartbeatGuidance(
+          await boardPost({
+            audience: input.audience,
+            title: input.title,
+            body: input.body,
+            purpose,
+            task: input.task,
+            paths: input.path,
+            topics: input.topic,
+            ackRequired: input.ack_required,
+            deadlineMs: input.deadline_ms,
+            expiresMs: input.expires_ms,
+          }),
+          purpose === 'request',
+        ),
+      )
+    },
   )
 }
 
-export function registerBoardTools(server: McpServer): void {
-  registerBoardClaimTools(server)
-  registerBoardPostTool(server)
+function registerBoardAskTool(server: McpServer): void {
   server.registerTool(
     'board_ask',
     {
@@ -83,17 +105,23 @@ export function registerBoardTools(server: McpServer): void {
     },
     async (input) =>
       result(
-        await boardAsk({
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          task: input.task,
-          paths: input.path,
-          topics: input.topic,
-          expiresMs: input.expires_ms,
-        }),
+        withHeartbeatGuidance(
+          await boardAsk({
+            audience: input.audience,
+            title: input.title,
+            body: input.body,
+            task: input.task,
+            paths: input.path,
+            topics: input.topic,
+            expiresMs: input.expires_ms,
+          }),
+          true,
+        ),
       ),
   )
+}
+
+function registerBoardReplyTool(server: McpServer): void {
   server.registerTool(
     'board_reply',
     {
@@ -105,6 +133,9 @@ export function registerBoardTools(server: McpServer): void {
     },
     async ({ root_id, body }) => result(await boardReply(root_id, body)),
   )
+}
+
+function registerBoardThreadTool(server: McpServer): void {
   server.registerTool(
     'board_thread',
     {
@@ -114,6 +145,9 @@ export function registerBoardTools(server: McpServer): void {
     },
     async ({ id }) => result(await boardThread(id)),
   )
+}
+
+function registerBoardAcceptTool(server: McpServer): void {
   server.registerTool(
     'board_accept',
     {
@@ -125,6 +159,15 @@ export function registerBoardTools(server: McpServer): void {
     },
     async ({ question_id, reply_id }) => result(await boardAccept(question_id, reply_id)),
   )
+}
+
+export function registerBoardTools(server: McpServer): void {
+  registerBoardClaimTools(server)
+  registerBoardPostTool(server)
+  registerBoardAskTool(server)
+  registerBoardReplyTool(server)
+  registerBoardThreadTool(server)
+  registerBoardAcceptTool(server)
   server.registerTool(
     'board_file_note',
     {

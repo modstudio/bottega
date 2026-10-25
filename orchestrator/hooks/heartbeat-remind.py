@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """PostToolUse hook: detached work without a watcher disappears from view.
 
-`bottega run start` returns before its worker does. Unless the session arms the heartbeat
-under Monitor, waiting work and a worker asking for a ruling look exactly like
-an abandoned session to the operator. Dispatch creates that obligation, so this
-hook puts the runnable command back in the model's context at that moment.
+Detached runs and board requests need a watcher. Unless the session arms the heartbeat
+under Monitor, waiting work and replies look exactly like an abandoned session to the
+operator. The command creating that obligation puts the runnable command back in the
+model's context through this hook.
 """
 from __future__ import annotations  # bool | None must parse on macOS system python 3.9
 
@@ -18,6 +18,7 @@ PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 
 DETACHED_DISPATCHES = {
     ("bottega", "run", "start"): ("run start", 3),
+    ("bottega", "board", "ask"): ("board ask", 3),
 }
 
 
@@ -80,7 +81,25 @@ def detached_dispatch(command: object):
             if arg in (";", "&", "|", "&&", "||"):
                 break
             args.append(arg)
-        return kind if "--follow" not in args else None
+        if kind == "run start":
+            return kind if "--follow" not in args else None
+        return kind
+    for index, word in enumerate(words):
+        if (
+            os.path.basename(word) == "bottega"
+            and tuple(words[index + 1 : index + 3]) == ("board", "post")
+        ):
+            args = []
+            for arg in words[index + 3 :]:
+                if arg in (";", "&", "|", "&&", "||"):
+                    break
+                args.append(arg)
+            if "--purpose=request" in args:
+                return "board post request"
+            for arg_index, arg in enumerate(args[:-1]):
+                if arg == "--purpose" and args[arg_index + 1] == "request":
+                    return "board post request"
+            return None
     return None
 
 

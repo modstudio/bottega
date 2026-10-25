@@ -1,8 +1,11 @@
 import importlib.util
+import io
 import json
 import os
+import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
@@ -44,6 +47,27 @@ class HeartbeatGuardRunIdentityTest(unittest.TestCase):
             return_value=Result({"id": 42, "session_id": "session", "status": "running"}),
         ):
             self.assertIsNone(heartbeat_guard.live_run_ids("session"))
+
+    def test_open_request_blocks_once_and_names_the_thread(self):
+        output = io.StringIO()
+        with (
+            patch.object(heartbeat_guard, "live_run_ids", return_value=[]),
+            patch.object(heartbeat_guard, "live_landing_ids", return_value=[]),
+            patch.object(
+                heartbeat_guard,
+                "open_request_threads",
+                return_value=[{"id": "request-1", "label": "board:12 Need a ruling"}],
+            ),
+            patch.object(heartbeat_guard, "heartbeat_armed", return_value=False),
+            patch.object(heartbeat_guard, "first_observation", return_value=True),
+            patch.object(sys, "stdin", io.StringIO('{"session_id":"session"}')),
+            redirect_stdout(output),
+        ):
+            self.assertEqual(heartbeat_guard.main(), 0)
+        message = json.loads(output.getvalue())
+        self.assertEqual(message["decision"], "block")
+        self.assertIn("1 open request: board:12 Need a ruling", message["reason"])
+        self.assertIn("orch-heartbeat.sh session", message["reason"])
 
 
 if __name__ == "__main__":

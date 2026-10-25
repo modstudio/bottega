@@ -20,6 +20,31 @@ class DetachedDispatchTest(unittest.TestCase):
             heartbeat_remind.detached_dispatch("bottega run start implement task --follow")
         )
 
+    def test_board_question_needs_a_heartbeat(self):
+        self.assertEqual(
+            heartbeat_remind.detached_dispatch("bottega board ask --audience architects"),
+            "board ask",
+        )
+
+    def test_only_request_posts_need_a_heartbeat(self):
+        self.assertEqual(
+            heartbeat_remind.detached_dispatch(
+                "bottega board post --purpose request --audience architects"
+            ),
+            "board post request",
+        )
+        self.assertEqual(
+            heartbeat_remind.detached_dispatch(
+                "bin/bottega board post --purpose=request --audience architects"
+            ),
+            "board post request",
+        )
+        self.assertIsNone(
+            heartbeat_remind.detached_dispatch(
+                "bottega board post --purpose information --audience architects"
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

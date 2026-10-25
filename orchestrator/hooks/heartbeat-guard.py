@@ -10,6 +10,7 @@ session on every later stop.
 from __future__ import annotations  # bool | None must parse on macOS system python 3.9
 
 import hashlib
+import importlib.util
 import json
 import os
 import shlex
@@ -26,6 +27,11 @@ DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
+DECISION_SPEC = importlib.util.spec_from_file_location(
+    "heartbeat_decision", os.path.join(os.path.dirname(__file__), "heartbeat-decision.py")
+)
+heartbeat_decision = importlib.util.module_from_spec(DECISION_SPEC)
+DECISION_SPEC.loader.exec_module(heartbeat_decision)
 
 
 def heartbeat_path() -> str:
@@ -139,6 +145,98 @@ def live_run_ids(session_id: str):
         return None
 
 
+def open_request_threads(session_id: str):
+    """Open requests authored here, [] if none, None if the store cannot answer."""
+    if not os.path.exists(DB):
+        return []
+    try:
+        connection = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
+        try:
+            receipts = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    "SELECT message_record_id,delivered_at FROM board_receipt WHERE reader_session=?",
+                    (session_id,),
+                )
+            }
+            roots, replies = [], []
+            for row in connection.execute(
+                "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,thread_root_record_id "
+                "FROM board_message"
+            ):
+                record_id, number, kind, purpose, author, title, expires, withdrawn, root_id = row
+                if root_id is None:
+                    if author == session_id:
+                        title = (
+                            str(title).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+                        )
+                        roots.append(
+                            {
+                                "id": record_id,
+                                "label": f"board:{number} {title}",
+                                "kind": kind,
+                                "purpose": purpose,
+                                "expires_at": expires,
+                                "withdrawn_at": withdrawn,
+                            }
+                        )
+                else:
+                    replies.append(
+                        {
+                            "root_id": root_id,
+                            "author_session": author,
+                            "delivered_at": receipts.get(record_id),
+                        }
+                    )
+            hosted_receipts = {
+                row[0]: row[1]
+                for row in connection.execute(
+                    "SELECT message_id,delivered_at FROM hosted_board_receipt_cache WHERE reader_session=?",
+                    (session_id,),
+                )
+            }
+            for message_id, kind, root_id, payload in connection.execute(
+                "SELECT id,kind,thread_root_id,payload FROM hosted_board_message_cache"
+            ):
+                message = json.loads(payload)
+                author = message.get("authorSession")
+                if author is None and isinstance(message.get("origin"), dict):
+                    author = message["origin"].get("session")
+                if root_id is None:
+                    if author == session_id:
+                        title = (
+                            str(message.get("title"))
+                            .replace("\t", " ")
+                            .replace("\r", " ")
+                            .replace("\n", " ")
+                        )
+                        roots.append(
+                            {
+                                "id": message_id,
+                                "label": f"board:{message_id} {title}",
+                                "kind": kind,
+                                "purpose": message.get("purpose"),
+                                "expires_at": message.get("expiresAt"),
+                                "withdrawn_at": message.get("withdrawnAt"),
+                            }
+                        )
+                else:
+                    replies.append(
+                        {
+                            "root_id": root_id,
+                            "author_session": author,
+                            "delivered_at": hosted_receipts.get(message_id),
+                        }
+                    )
+        finally:
+            connection.close()
+        return heartbeat_decision.open_board_requests(
+            roots, replies, session_id, __import__("time").time()
+        )
+    except Exception:
+        return None
+
+
 def first_observation(session_id: str, run_ids) -> bool:
     key = json.dumps([session_id, run_ids], separators=(",", ":"))
     name = hashlib.sha256(key.encode()).hexdigest()
@@ -166,10 +264,16 @@ def main() -> int:
             return 0
         run_ids = live_run_ids(sid) or []
         landing_ids = live_landing_ids(sid)
+        request_rows = open_request_threads(sid)
         # None from the landing query is uncertainty, not absence: count it as
         # live so an unreadable store cannot be reported as quiescence.
         landings = ["unknown"] if landing_ids is None else [str(i) for i in landing_ids]
-        if not run_ids and not landings:
+        requests = (
+            [{"id": "unknown", "label": "unknown (board store unreadable)"}]
+            if request_rows is None
+            else request_rows
+        )
+        if not run_ids and not landings and not requests:
             return 0
 
         arm = f"{heartbeat_path()} {sid}"
@@ -179,13 +283,24 @@ def main() -> int:
             return 0
         count = len(run_ids)
         landing_count = len(landings)
+        request_count = len(requests)
         work = (
             f"{count} live bottega run{'s' if count != 1 else ''}"
             f" and {landing_count} landing{'s' if landing_count != 1 else ''}"
+            f" and {request_count} open request{'s' if request_count != 1 else ''}"
         )
         if landing_ids is None:
             work += " (landing store unreadable; assuming live)"
-        if first_observation(sid, [*run_ids, *[f"landing:{item}" for item in landings]]):
+        if request_rows is None:
+            work += " (board store unreadable; assuming an open request)"
+        elif requests:
+            work += ": " + " | ".join(str(row["label"]) for row in requests)
+        observed = [
+            *run_ids,
+            *[f"landing:{item}" for item in landings],
+            *[f"request:{row['id']}" for row in requests],
+        ]
+        if first_observation(sid, observed):
             reason = (
                 f"{work} for this session have no heartbeat. "
                 f"Arm under Monitor from the main checkout: {arm}"
