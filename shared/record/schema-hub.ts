@@ -13,7 +13,6 @@ import {
   jsonb,
   pgPolicy,
   pgTable,
-  primaryKey,
   text,
   timestamp,
   unique,
@@ -62,13 +61,15 @@ export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
 export const hubChangeHead = pgTable.withRLS(
   'hub_change_head',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     spaceId: uuid('space_id')
-      .primaryKey()
+      .notNull()
       .references(() => space.id),
     sequence: bigint({ mode: 'bigint' }).notNull(),
   },
   // Triggers write change-log heads inside a statement whose row policy already judged the caller.
   (table) => [
+    unique('hub_change_head_space_unique').on(table.spaceId),
     pgPolicy('hub_change_head_space_select', {
       for: 'select',
       using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
@@ -94,6 +95,7 @@ export const hubChangeHead = pgTable.withRLS(
 export const hubChange = pgTable.withRLS(
   'hub_change',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     spaceId: uuid('space_id')
       .notNull()
       .references(() => space.id),
@@ -105,7 +107,7 @@ export const hubChange = pgTable.withRLS(
   },
   // Triggers write change rows inside a statement whose row policy already judged the caller.
   (table) => [
-    primaryKey({ columns: [table.spaceId, table.sequence] }),
+    unique('hub_change_space_sequence_unique').on(table.spaceId, table.sequence),
     check('hub_change_op_check', sql`${table.op} IN ('upsert','delete')`),
     pgPolicy('hub_change_space_select', {
       for: 'select',

@@ -11,9 +11,9 @@ import {
   pgPolicy,
   pgSequence,
   pgTable,
-  primaryKey,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
@@ -266,6 +266,7 @@ export const boardMessage = pgTable.withRLS(
 export const boardMessageTag = pgTable.withRLS(
   'board_message_tag',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     messageId: uuid('message_id')
       .notNull()
       .references(() => boardMessage.id, { onDelete: 'cascade' }),
@@ -283,7 +284,12 @@ export const boardMessageTag = pgTable.withRLS(
     )`
     // Board policies already distinguish write membership from read membership.
     return [
-      primaryKey({ columns: [table.messageId, table.kind, table.value, table.origin] }),
+      unique('board_message_tag_message_kind_value_origin_unique').on(
+        table.messageId,
+        table.kind,
+        table.value,
+        table.origin,
+      ),
       index('board_message_tag_message_idx').on(table.messageId),
       check('board_message_tag_kind_check', sql`${table.kind} IN ('task','path','topic')`),
       check('board_message_tag_origin_check', sql`${table.origin} IN ('sender','inferred')`),
@@ -315,6 +321,7 @@ export const boardMessageTag = pgTable.withRLS(
 export const boardReceipt = pgTable.withRLS(
   'board_receipt',
   {
+    id: uuid('id').primaryKey().defaultRandom(),
     messageId: uuid('message_id')
       .notNull()
       .references(() => boardMessage.id, { onDelete: 'cascade' }),
@@ -338,7 +345,11 @@ export const boardReceipt = pgTable.withRLS(
     const writesReceipt = sql`${ownReceipt} AND ${visibleMessage}`
     // Board policies already distinguish write membership from read membership.
     return [
-      primaryKey({ columns: [table.messageId, table.readerUserId, table.readerSession] }),
+      unique('board_receipt_message_reader_session_unique').on(
+        table.messageId,
+        table.readerUserId,
+        table.readerSession,
+      ),
       pgPolicy('board_receipt_actor_select', {
         for: 'select',
         to: RECORD_ACTOR_ROLE,

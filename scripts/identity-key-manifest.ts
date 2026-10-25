@@ -234,6 +234,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'count, ordinal, version, handle, or measurement', [
     'doc.position',
     'doc_revision.position',
+    'hub_change.sequence',
     'seq.next',
     'config_entry.row_version',
     'secret_dek.version',
