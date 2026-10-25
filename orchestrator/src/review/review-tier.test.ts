@@ -308,8 +308,9 @@ describe('review tier classification', () => {
       ],
       risk,
     })
-    expect(actual).toMatchObject({ risk: 3, size: 0, tier: 3 })
+    expect(actual).toMatchObject({ risk: 3, size: 0, tier: 2 })
     expect(actual.reasons[0]).toBe('risk 3: orchestrator/hooks/x.py (repository hooks)')
+    expect(actual.reasons.join('\n')).toContain('size 0 lowered risk 3 by one')
   })
 
   test('tests and fixtures under declared source paths carry no risk', () => {
@@ -335,8 +336,9 @@ describe('review tier classification', () => {
         unlisted: 2,
       },
     })
-    expect(actual).toMatchObject({ risk: 1, tier: 1 })
+    expect(actual).toMatchObject({ risk: 1, size: 0, tier: 0 })
     expect(actual.reasons[0]).toBe('risk 1: .agents/skills/test_x.py (agent skill)')
+    expect(actual.reasons.join('\n')).toContain('size 0 lowered risk 1 by one')
   })
 
   test('documentation under a declared risk path keeps that risk', () => {
@@ -347,8 +349,9 @@ describe('review tier classification', () => {
         unlisted: 2,
       },
     })
-    expect(actual).toMatchObject({ risk: 2, size: 0, tier: 2 })
+    expect(actual).toMatchObject({ risk: 2, size: 0, tier: 1 })
     expect(actual.reasons[0]).toBe('risk 2: orchestrator/src/README.md (orchestrator source)')
+    expect(actual.reasons.join('\n')).toContain('size 0 lowered risk 2 by one')
   })
 
   test('names only paths whose surface risk is tier three', () => {

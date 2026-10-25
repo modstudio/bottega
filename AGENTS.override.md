@@ -248,7 +248,7 @@ always: true
 
 **Lens** — one narrow, named review viewpoint with a stable identity, one question, and explicit exclusions.
 
-**Review tier** — the review breadth and round budget selected from the higher of change risk and cognitive size.
+**Review tier** — breadth and round budget from path risk and size, one lower at size `0` except `firm`.
 
 **Fidelity** — the writing-job judgment of whether the delivered change built what the specification asked for.
 
