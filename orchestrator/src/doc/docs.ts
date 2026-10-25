@@ -41,6 +41,7 @@ import {
 import { assertDocBodyCommands } from './doc-command-check.ts'
 import { exportDocFiles, importDocFiles } from './doc-files.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
+import { isDocInjectedForRun } from './doc-injection.ts'
 import { storedDocLintRefusal } from './doc-lint-adapter.ts'
 import { listDocMetadata, listDocs } from './doc-list.ts'
 import { type DocOrderInput, docOrderRefusal, type LocalDocOrderRow } from './doc-order.ts'
@@ -755,7 +756,7 @@ export function docsForRun(input: { job: string; cwd: string }): InjectedDoc[] {
     ...listDocs({ scope: 'global', subject: null, status: 'current' }),
     ...listDocs({ scope: 'job', subject: input.job, status: 'current' }),
     ...(project ? listDocs({ scope: 'project', subject: project.name, status: 'current' }) : []),
-  ].filter((doc) => doc.delivery === 'inject')
+  ].filter((doc) => isDocInjectedForRun(doc, input.job, project?.name ?? null))
   const latest = db().query(
     'SELECT record_id FROM doc_revision WHERE doc_record_id=? ORDER BY number DESC LIMIT 1',
   )

@@ -9,6 +9,7 @@ import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../database/db.ts'
+import { isDocInjectedForRun } from '../doc/doc-injection.ts'
 import { type Doc, docsForRun, listDocs } from '../doc/docs.ts'
 import { type GateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
@@ -451,12 +452,7 @@ export function compilePackFromGateFacts(
   const selectedJob = getJob(input.job)
   const project = projectAtGateFacts(input.cwd, facts)
   const projectName = project?.name ?? null
-  const selected = facts.docs.filter(
-    (doc) =>
-      (doc.scope === 'global' && doc.subject === null) ||
-      (doc.scope === 'job' && doc.subject === input.job) ||
-      (doc.scope === 'project' && doc.subject === projectName),
-  )
+  const selected = facts.docs.filter((doc) => isDocInjectedForRun(doc, input.job, projectName))
   const canon = packedCanonMarkdownFromRows(
     projectName,
     facts.docs.filter((doc) => doc.scope === 'canon' && doc.subject === null),

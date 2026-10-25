@@ -8,15 +8,14 @@ import {
   PLATFORM_NAME,
   PLATFORM_SLUG,
 } from '../../shared/brand.ts'
-import { assertGateFactsFormat } from '../../shared/gate-facts-contract.ts'
 import { DATABASE_RESOLUTION } from '../src/database/database-location.ts'
 import {
   applyMigrations,
   MIGRATIONS_FOLDER,
   storeMigrationState,
 } from '../src/database/migrations.ts'
-
-export const GATE_FACTS_ENV = FROZEN_ENV_NAMES.gateFacts
+import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
+import { assertGateFactsFormat } from '../src/gate/gate-facts-contract.ts'
 
 export type BranchStoreKind = 'current' | 'behind' | 'ahead' | 'absent'
 
@@ -70,7 +69,7 @@ export function withBranchStoreScratch<T>(name: string, fn: (dir: string) => T):
 
 export type GateFactsSnapshot = { path: string; elapsedMs: number }
 
-export function mainGateFactsSnapshot(dir: string): GateFactsSnapshot {
+function mainGateFactsSnapshot(dir: string): GateFactsSnapshot {
   const main = process.env[FROZEN_ENV_NAMES.mainCheckout]
   if (!main) {
     throw new Error(
@@ -104,6 +103,27 @@ export function mainGateFactsSnapshot(dir: string): GateFactsSnapshot {
     )
   }
   return { path, elapsedMs }
+}
+
+export function withMainGateFactsSnapshot<T>(
+  storeKind: BranchStoreKind,
+  dir: string,
+  onUnavailable: (cause: unknown) => T,
+  run: (snapshot: GateFactsSnapshot) => T,
+): T {
+  let snapshot: GateFactsSnapshot | null = null
+  let snapshotError: unknown
+  try {
+    snapshot = mainGateFactsSnapshot(dir)
+  } catch (cause) {
+    snapshotError = cause
+  }
+  const source = gateStoreSource(storeKind, snapshot !== null)
+  if (source.kind === 'refuse') return onUnavailable(snapshotError)
+  if (source.kind !== 'gate-facts' || snapshot === null) {
+    throw new Error(`gate-facts snapshot requested for ${storeKind} store`)
+  }
+  return run(snapshot)
 }
 
 export function snapshotStore(source: string, destDir: string): string {

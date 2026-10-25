@@ -2,15 +2,14 @@ import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { migrationRefusal } from '../src/database/migrations.ts'
+import { GATE_FACTS_ENV } from '../src/gate/gate-facts.ts'
 import {
   classifyStore,
-  GATE_FACTS_ENV,
-  gateStoreSource,
   liveStorePath,
-  mainGateFactsSnapshot,
   migrateStore,
   snapshotStore,
   withBranchStoreScratch,
+  withMainGateFactsSnapshot,
 } from './branch-store.ts'
 
 const root = fileURLToPath(new URL('../..', import.meta.url)).replace(/\/$/, '')
@@ -39,28 +38,29 @@ if (import.meta.main) {
   if (kind === 'current' || kind === 'absent') process.exit(run())
 
   if (kind === 'ahead') {
-    const code = withBranchStoreScratch('project-checks', (dir) => {
-      let snapshot: ReturnType<typeof mainGateFactsSnapshot> | null = null
-      let snapshotError: unknown
-      try {
-        snapshot = mainGateFactsSnapshot(dir)
-      } catch (cause) {
-        snapshotError = cause
-      }
-      if (gateStoreSource(kind, snapshot !== null).kind === 'refuse') {
-        const database = new Database(live!, { readonly: true })
-        try {
-          console.error(migrationRefusal(database))
-          console.error(String((snapshotError as Error).message ?? snapshotError))
-          console.error('branch remedy: rebase the branch onto the landing branch')
-        } finally {
-          database.close()
-        }
-        return 1
-      }
-      console.log(`project checks: gate-facts snapshot took ${snapshot!.elapsedMs.toFixed(1)} ms`)
-      return runGateFacts(snapshot!.path)
-    })
+    const code = withBranchStoreScratch('project-checks', (dir) =>
+      withMainGateFactsSnapshot(
+        kind,
+        dir,
+        (snapshotError) => {
+          const database = new Database(live!, { readonly: true })
+          try {
+            console.error(migrationRefusal(database))
+            console.error(String((snapshotError as Error).message ?? snapshotError))
+            console.error('branch remedy: rebase the branch onto the landing branch')
+          } finally {
+            database.close()
+          }
+          return 1
+        },
+        (snapshot) => {
+          console.log(
+            `project checks: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
+          )
+          return runGateFacts(snapshot.path)
+        },
+      ),
+    )
     process.exit(code)
   }
 

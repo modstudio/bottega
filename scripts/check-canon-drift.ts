@@ -2,10 +2,9 @@ import { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import {
   classifyStore,
-  gateStoreSource,
   liveStorePath,
-  mainGateFactsSnapshot,
   withBranchStoreScratch,
+  withMainGateFactsSnapshot,
 } from '../orchestrator/scripts/branch-store.ts'
 import {
   EMPTY_PROJECT_CANON_IMPORT_REMEDY,
@@ -178,29 +177,28 @@ if (import.meta.main) {
     const storeKind = classifyStore(live)
     const findings =
       storeKind === 'ahead'
-        ? withBranchStoreScratch('canon-drift', (dir) => {
-            let snapshot: ReturnType<typeof mainGateFactsSnapshot> | null = null
-            let snapshotError: unknown
-            try {
-              snapshot = mainGateFactsSnapshot(dir)
-            } catch (cause) {
-              snapshotError = cause
-            }
-            if (gateStoreSource(storeKind, snapshot !== null).kind === 'refuse') {
-              const database = new Database(live!, { readonly: true })
-              try {
-                throw new Error(
-                  `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
+        ? withBranchStoreScratch('canon-drift', (dir) =>
+            withMainGateFactsSnapshot(
+              storeKind,
+              dir,
+              (snapshotError) => {
+                const database = new Database(live!, { readonly: true })
+                try {
+                  throw new Error(
+                    `${migrationRefusal(database)}\n${String((snapshotError as Error).message ?? snapshotError)}`,
+                  )
+                } finally {
+                  database.close()
+                }
+              },
+              (snapshot) => {
+                console.log(
+                  `canon drift: gate-facts snapshot took ${snapshot.elapsedMs.toFixed(1)} ms`,
                 )
-              } finally {
-                database.close()
-              }
-            }
-            console.log(
-              `canon drift: gate-facts snapshot took ${snapshot!.elapsedMs.toFixed(1)} ms`,
-            )
-            return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot!.path))
-          })
+                return checkCanonDrift(root, DB_PATH, readGateFactsFile(snapshot.path))
+              },
+            ),
+          )
         : checkCanonDrift(root)
     for (const finding of findings) {
       console.error(`${finding.path}: branch canon differs from stored canon; remedy: ${remedy}`)

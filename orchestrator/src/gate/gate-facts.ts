@@ -5,13 +5,11 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import { DOC_SCOPES, type DocScope } from '../../../shared/docs.ts'
-import {
-  assertGateFactsFormat,
-  GATE_FACTS_FORMAT_VERSION,
-} from '../../../shared/gate-facts-contract.ts'
 import { db } from '../database/db.ts'
+import { isDocInjectedForRun } from '../doc/doc-injection.ts'
 import { listDocsStore } from '../doc/doc-read-store.ts'
-import { isProjectRepository, type Project, projects } from '../project/projects.ts'
+import { type Project, projectAmong, projects } from '../project/projects.ts'
+import { assertGateFactsFormat, GATE_FACTS_FORMAT_VERSION } from './gate-facts-contract.ts'
 
 export const GATE_FACTS_ENV = FROZEN_ENV_NAMES.gateFacts
 
@@ -23,6 +21,7 @@ type GateFactDoc = {
   slug: string
   title: string
   body: string
+  delivery: 'inject' | 'demand'
 }
 
 export type GateFacts = {
@@ -43,10 +42,8 @@ export function collectGateFacts(database: Database = db()): GateFacts {
     .filter(
       (doc) =>
         (doc.scope === 'canon' && (doc.subject === null || projectNames.has(doc.subject))) ||
-        (doc.delivery === 'inject' &&
-          (doc.scope === 'global' ||
-            doc.scope === 'job' ||
-            (doc.scope === 'project' && doc.subject !== null && projectNames.has(doc.subject)))),
+        isDocInjectedForRun(doc, doc.scope === 'job' ? (doc.subject ?? '') : '', null) ||
+        [...projectNames].some((projectName) => isDocInjectedForRun(doc, '', projectName)),
     )
     .map((doc) => {
       if (!doc.revision) {
@@ -62,6 +59,7 @@ export function collectGateFacts(database: Database = db()): GateFacts {
         slug: doc.slug,
         title: doc.title,
         body: doc.body,
+        delivery: doc.delivery,
       }
     })
   return {
@@ -105,7 +103,8 @@ function isGateFactDoc(value: unknown): value is GateFactDoc {
     (typeof row.subject === 'string' || row.subject === null) &&
     typeof row.slug === 'string' &&
     typeof row.title === 'string' &&
-    typeof row.body === 'string'
+    typeof row.body === 'string' &&
+    (row.delivery === 'inject' || row.delivery === 'demand')
   )
 }
 
@@ -136,12 +135,5 @@ export function readGateFactsFile(path: string): GateFacts {
 }
 
 export function projectAtGateFacts(cwd: string, facts: GateFacts): Project | null {
-  let best: Project | null = null
-  for (const project of facts.projects) {
-    if (!isProjectRepository(project)) continue
-    if (cwd === project.path || cwd.startsWith(`${project.path}/`)) {
-      if (!best || project.path.length > best.path.length) best = project
-    }
-  }
-  return best
+  return projectAmong(cwd, facts.projects)
 }

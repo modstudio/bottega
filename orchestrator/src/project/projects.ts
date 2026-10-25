@@ -245,15 +245,19 @@ export function retiredProjectAt(cwd: string): Project | null {
  * read as "no project" rather than as "this tool has never been told about your
  * machine".
  */
-export function projectAt(cwd: string, database: Database = db()): Project | null {
+export function projectAmong(cwd: string, candidates: Iterable<Project>): Project | null {
   let best: Project | null = null
-  for (const p of projects(undefined, database)) {
+  for (const p of candidates) {
     if (!isProjectRepository(p)) continue
     if (cwd === p.path || cwd.startsWith(`${p.path}/`)) {
       if (!best || p.path.length > best.path.length) best = p
     }
   }
   return best
+}
+
+export function projectAt(cwd: string, database: Database = db()): Project | null {
+  return projectAmong(cwd, projects(undefined, database))
 }
 
 /** Whether a registered project path is a repository that repository consumers may enter. */
