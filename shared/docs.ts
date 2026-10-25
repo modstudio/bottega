@@ -177,22 +177,6 @@ export function docScopeIsProjectless(scope: string): boolean {
   return DOC_SCOPE_SUBJECT_KIND[scope as DocScope] === null
 }
 
-/**
- * Whether a document address belongs to the given project. A document in a
- * project-less scope belongs to every project; a document scoped to another
- * project does not.
- */
-export function docAddressBelongsToProject(
-  address: { scope: string; subject: string | null; projectName: string | null },
-  project: string,
-): boolean {
-  return (
-    docScopeIsProjectless(address.scope) ||
-    address.projectName === project ||
-    (docScopeHasProjectSubject(address.scope) && address.subject === project)
-  )
-}
-
 export function resolveDocSubject(
   scope: DocScope,
   explicit: string | undefined,
