@@ -160,7 +160,10 @@ export function classifyReviewTier(input: {
   return { tier: combined.tier, risk, size, reasons, riskBasis }
 }
 
-/** Paths whose declared surface risk independently requires tier-three review. */
+/**
+ * Paths whose declared surface risk is tier three; the firm flag holds one at combined tier three
+ * for a size-0 change, while a non-firm size-0 change lowers it by one.
+ */
 export function tierThreeRiskPaths(
   files: readonly ReviewTierFile[],
   riskMap: ReviewRiskMap | undefined,

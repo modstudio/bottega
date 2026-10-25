@@ -4,22 +4,26 @@ const tiers = [
   [
     'Risk',
     'Where the change landed',
-    'Paths carry a risk level. Schema and migrations, landing safety, worktree lifecycle, run execution, repository hooks and cross-concern shared code sit at the top. Backend source is lower. A web surface or a skill lower still. Documentation, tests, fixtures and ordinary configuration are zero.',
+    'Paths carry a risk level. Schema and migrations, landing safety, worktree lifecycle, run execution, repository hooks and cross-concern shared code sit at the top. Backend source is lower. A web surface or a skill lower still. Documentation, tests, fixtures and ordinary configuration are zero. A path marked firm keeps its declared risk even on a size-0 change.',
   ],
   [
     'Size',
     'How much of it there is',
-    'Product lines changed, with a bump when the change is spread across many product files — breadth is its own kind of risk. Tests and docs do not inflate it.',
+    'Product lines changed, with a bump when the change is spread across many product files — breadth is its own kind of risk. Tests and docs do not inflate it. A size-0 change lowers the risk of the path it touches by one tier.',
   ],
 ].map(([eyebrow, title, text]) => ({ eyebrow, title, text }))
 const tierLevels = [
   [
     'Tier 0',
     'No lenses',
-    'Docs, tests and config only. Review would find nothing and cost a round.',
+    'Docs, tests and config only, or a size-0 change on a risk-1 path. Review would find nothing and cost a round.',
   ],
   ['Tier 1', 'One lens, one round', 'A surface change with little blast radius.'],
-  ['Tier 2', 'Two rounds', 'Ordinary product source.'],
+  [
+    'Tier 2',
+    'Two rounds',
+    'Ordinary product source, or a size-0 change on a risk-3 path that is not firm.',
+  ],
   ['Tier 3', 'Three rounds', 'The paths where a mistake is expensive and quiet.'],
 ].map(([eyebrow, title, text]) => ({ eyebrow, title, text }))
 const multi = [
@@ -223,7 +227,8 @@ function ReviewShot() {
       <div className="shot-head">
         <h4>Tier 2</h4>
         <span>
-          risk 2: unlisted product path · size 1: 143 product lines — the higher of the two wins
+          risk 3: orchestrator/src/run/run.ts (run execution) · size 0: 2 product lines · tier 2:
+          size 0 lowered risk 3 by one
         </span>
       </div>
       <div className="shot-scroll">

@@ -48,7 +48,7 @@ Precision measures false positives among findings raised. It says nothing about 
 
 `bottega run start` detaches so concurrent review can run.
 
-Review breadth follows a tier from `review-tier-classifier.ts:classifyReviewTier`. Path risk comes from the surface touched. A size-`0` change lowers that risk by one, except on a risk-map path marked `firm`. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Bottega's mapping from change shape and tier to lenses is its `review` register setting, read with `bottega review tier`.
+Review breadth follows a tier from `review-tier-classifier.ts:classifyReviewTier`. Path risk comes from the surface touched. A size-`0` change lowers that risk by one, except on a risk-map path marked `firm`. A `firm` path (`project-injection.ts:reviewRiskSchema`) keeps its declared risk for a size-`0` change, so a firm risk-`3` path stays at combined tier `3`. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Bottega's mapping from change shape and tier to lenses is its `review` register setting, read with `bottega review tier`.
 
 When a project's review declaration requests a second opinion at the applicable tier, run that lens again after its first result on the same tip with `--distinct-from` naming the first run so a different model produces the second result, and count both results toward the review.
 
