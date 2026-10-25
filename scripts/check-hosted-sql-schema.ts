@@ -56,7 +56,7 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
   },
   {
     file: 'orchestrator/src/postgres/postgres-migrate-rls.test.ts',
-    fingerprint: '4a018147fe1ed109',
+    fingerprint: '0a70fb7bc3dbf904',
     reason: 'RLS seed composes the reviewed Better Auth invitation fixture statements',
   },
   {
@@ -107,7 +107,7 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
     fingerprint,
     reason: 'JSONB proof interpolates UUID values from the revisions created earlier in the test',
   })),
-  ...['f3a43598cf6214e1', '699e03b5f4b6d87f', '33db9bcc8aa8f7c7'].map((fingerprint) => ({
+  ...['1cb20671c474a7d6', '699e03b5f4b6d87f', '33db9bcc8aa8f7c7'].map((fingerprint) => ({
     file: 'orchestrator/test/postgres-board-proof.ts',
     fingerprint,
     reason: 'board proof inserts rows composed by the closed messageValues fixture helper',

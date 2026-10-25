@@ -1,9 +1,5 @@
 import { beforeAll, expect, test } from 'bun:test'
-import {
-  newRecordId,
-  RECORD_ACTOR_ROLE,
-  RECORD_PUBLIC_ROLE,
-} from '../../shared/record/schema.ts'
+import { newRecordId, RECORD_ACTOR_ROLE, RECORD_PUBLIC_ROLE } from '../../shared/record/schema.ts'
 import { getRecordDoc, upsertRecordDoc } from '../src/record/record-docs.ts'
 import {
   clearPublicDocProject,
