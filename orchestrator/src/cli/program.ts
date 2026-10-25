@@ -33,6 +33,7 @@ import { register as registerReview } from '../commands/review.ts'
 import { register as registerRouting } from '../commands/routing.ts'
 import { register as registerRulings } from '../commands/rulings.ts'
 import { register as registerRunListing } from '../commands/run-listing.ts'
+import { register as registerRunTaskLinking } from '../commands/run-task-linking.ts'
 import { register as registerSession } from '../commands/session.ts'
 import { register as registerSettings } from '../commands/settings.ts'
 import { register as registerSetup } from '../commands/setup.ts'
@@ -74,6 +75,7 @@ registerReference(program)
 registerDocs(program)
 registerSubjects(program)
 registerRunListing(program)
+registerRunTaskLinking(program)
 registerHealth(program)
 registerHubImport(program)
 registerInbox(program)
