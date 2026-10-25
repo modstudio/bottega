@@ -19,7 +19,7 @@ import {
 import {
   probeProjectMcpLaunches,
   projectMcpProbeLaunches,
-  requiredMcpProbeRefusal,
+  requiredMcpProbeRefusalError,
 } from '../sandbox/project-mcp-preflight.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import {
@@ -94,7 +94,8 @@ export type WorkerMcpLaunch = {
 
 /**
  * Probe each launch the run will actually get and refuse an affirmatively
- * failed one, which is the only outcome `--mcp require` refuses.
+ * failed one, which is the only outcome `--mcp require` refuses. The refusal
+ * carries the kind a run that never started must be recorded with.
  */
 async function refuseRequiredProjectMcpLaunch(input: {
   mcpMode: McpMode | null
@@ -107,12 +108,12 @@ async function refuseRequiredProjectMcpLaunch(input: {
     projectMcpProbeLaunches(input.projectSelection),
     input.environment,
   )
-  const refusal = requiredMcpProbeRefusal({
+  const refusal = requiredMcpProbeRefusalError({
     mode: input.mcpMode,
     project: input.project,
     failures,
   })
-  if (refusal) throw new Error(refusal)
+  if (refusal) throw refusal
 }
 
 /** Give cwd-discovered project MCP configuration only to a repository writer. */

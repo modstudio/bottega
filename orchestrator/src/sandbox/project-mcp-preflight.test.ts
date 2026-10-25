@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { requiredMcpProbeRefusal } from './project-mcp-preflight.ts'
+import { requiredMcpProbeRefusal, requiredMcpProbeRefusalError } from './project-mcp-preflight.ts'
 
 const project = { name: 'starship', path: '/opt/starship' }
 const failure = { server: 'starship', error: 'Connection closed\nstderr: not configured' }
@@ -20,4 +20,16 @@ test('the refusal names the server, its error and the edit that clears it', () =
   expect(refusal).toContain('/opt/starship/.mcp.json')
   expect(refusal).toContain('project set starship --settings')
   expect(refusal).toContain('mcpServer')
+})
+
+test('a refused probe carries the mcp_unverified kind its record needs', () => {
+  const refusal = requiredMcpProbeRefusalError({ mode: 'require', project, failures: [failure] })
+
+  // The kind is what routing and failover must see: the agent never ran, so a
+  // before-launch refusal can never be recorded as 'harness'.
+  expect(refusal?.failureKind).toBe('mcp_unverified')
+  expect(refusal?.mcpError).toBe(refusal?.message)
+  expect(refusal?.mcpError).toContain('starship: Connection closed')
+  expect(requiredMcpProbeRefusalError({ mode: 'require', project, failures: [] })).toBeNull()
+  expect(requiredMcpProbeRefusalError({ mode: 'prefer', project, failures: [failure] })).toBeNull()
 })

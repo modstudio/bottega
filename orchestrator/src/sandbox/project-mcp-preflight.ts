@@ -70,3 +70,29 @@ export function requiredMcpProbeRefusal(facts: RequiredMcpProbeFacts): string | 
     ` provides with ${PLATFORM_SLUG} project set ${projectName} --settings '{"mcpServer":"<server>"}'`
   )
 }
+
+/**
+ * A required project launch that affirmatively failed before the run started.
+ *
+ * The kind travels on the error so the run's own catch records mcp_unverified:
+ * the agent never ran, and recording 'harness' here would read to routing and
+ * failover as the agent failing.
+ */
+export class RequiredMcpProbeRefusalError extends Error {
+  readonly failureKind = 'mcp_unverified'
+  readonly mcpError: string
+
+  constructor(refusal: string) {
+    super(refusal)
+    this.name = 'RequiredMcpProbeRefusalError'
+    this.mcpError = refusal
+  }
+}
+
+/** The refusal a strict run raises, or null when the outcome does not refuse one. */
+export function requiredMcpProbeRefusalError(
+  facts: RequiredMcpProbeFacts,
+): RequiredMcpProbeRefusalError | null {
+  const refusal = requiredMcpProbeRefusal(facts)
+  return refusal === null ? null : new RequiredMcpProbeRefusalError(refusal)
+}
