@@ -57,7 +57,7 @@ export const question = pgTable.withRLS(
 export const questionMutationAudit = pgTable.withRLS(
   'question_mutation_audit',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     questionId: uuid('question_id')
       .notNull()
       .references(() => question.id),

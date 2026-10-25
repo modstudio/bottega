@@ -266,7 +266,7 @@ export const boardMessage = pgTable.withRLS(
 export const boardMessageTag = pgTable.withRLS(
   'board_message_tag',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     messageId: uuid('message_id')
       .notNull()
       .references(() => boardMessage.id, { onDelete: 'cascade' }),
@@ -321,7 +321,7 @@ export const boardMessageTag = pgTable.withRLS(
 export const boardReceipt = pgTable.withRLS(
   'board_receipt',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     messageId: uuid('message_id')
       .notNull()
       .references(() => boardMessage.id, { onDelete: 'cascade' }),

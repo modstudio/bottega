@@ -61,7 +61,7 @@ export const HUB_CHANGE_SOURCE_EXCLUSIONS = {
 export const hubChangeHead = pgTable.withRLS(
   'hub_change_head',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     spaceId: uuid('space_id')
       .notNull()
       .references(() => space.id),
@@ -95,7 +95,7 @@ export const hubChangeHead = pgTable.withRLS(
 export const hubChange = pgTable.withRLS(
   'hub_change',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     spaceId: uuid('space_id')
       .notNull()
       .references(() => space.id),

@@ -179,7 +179,7 @@ export const doc = pgTable.withRLS(
 export const publicDocSpace = pgTable(
   'public_doc_space',
   {
-    id: uuid('id').primaryKey().defaultRandom(),
+    id: uuid('id').primaryKey(),
     spaceId: uuid('space_id').notNull(),
     projectId: uuid('project_id').notNull(),
   },

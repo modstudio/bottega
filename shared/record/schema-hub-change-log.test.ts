@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
-import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
+import { newRecordId, RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
 import { HUB_CHANGE_SOURCE_EXCLUSIONS, HUB_CHANGE_SOURCES } from './schema-hub.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
@@ -98,6 +98,16 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (database) await database.close()
+})
+
+test('hosted id columns declare no default', async () => {
+  const defaults = await database.query<{ table_name: string }>(`
+    SELECT table_name
+    FROM information_schema.columns
+    WHERE table_schema='public' AND column_name='id' AND column_default IS NOT NULL
+    ORDER BY table_name
+  `)
+  expect(defaults.rows).toEqual([])
 })
 
 test('change-log triggers cover every synced table and recipient changes map to sends', async () => {
@@ -368,7 +378,7 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
   ).toEqual([])
   await expect(
     database.query(
-      `INSERT INTO hub_change_head(space_id,sequence) VALUES ($1,1)
+      `INSERT INTO hub_change_head(id,space_id,sequence) VALUES ('${newRecordId()}',$1,1)
        ON CONFLICT(space_id) DO UPDATE SET sequence=hub_change_head.sequence+1`,
       [spaceB],
     ),

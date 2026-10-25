@@ -231,8 +231,8 @@ async function proveDocumentStatus(
     `
       INSERT INTO project (id,space_id,name,key_prefixes,created_at)
       VALUES ('${projectId}','${spaceId}','${projectName}',ARRAY['STATUS'],now());
-      INSERT INTO public_doc_space (space_id,project_id)
-      VALUES ('${spaceId}','${projectId}');
+      INSERT INTO public_doc_space (id,space_id,project_id)
+      VALUES ('${newRecordId()}','${spaceId}','${projectId}');
     `,
   )
 

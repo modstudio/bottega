@@ -1,6 +1,7 @@
 import { beforeAll, expect, test } from 'bun:test'
 import { machineKeyId } from '../../shared/machine-key-id.ts'
 import {
+  newRecordId,
   RECORD_ACTOR_ROLE,
   RECORD_OWNER_ROLE,
   RECORD_READER_ROLE,
@@ -59,15 +60,15 @@ export function registerHostedConfigProofs(
          ('01990000-0000-7000-8000-000000000213', '${spaceA}', '${USER_B}', 'user-y', 'default', '${DEK_A}', 1, decode('03', 'hex'), now()),
          ('01990000-0000-7000-8000-000000000214', '${spaceB}', NULL, 'wide', 'default', '${DEK_B}', 1, decode('04', 'hex'), now());
        INSERT INTO secret_dek_wrap
-         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
        VALUES
-         ('${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'CCCCCCCCCCCCCCCCCCCCCC', decode('01', 'hex'), decode('02', 'hex'), now()),
-         ('${spaceB}', '${DEK_B}', 'BBBBBBBBBBBBBBBBBBBBBB', 'DDDDDDDDDDDDDDDDDDDDDD', decode('03', 'hex'), decode('04', 'hex'), now());
+         ('${newRecordId()}', '${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'CCCCCCCCCCCCCCCCCCCCCC', decode('01', 'hex'), decode('02', 'hex'), now()),
+         ('${newRecordId()}', '${spaceB}', '${DEK_B}', 'BBBBBBBBBBBBBBBBBBBBBB', 'DDDDDDDDDDDDDDDDDDDDDD', decode('03', 'hex'), decode('04', 'hex'), now());
        INSERT INTO machine_public_key
-         (space_id, key_id, public_key, label, created_at)
+         (id, space_id, key_id, public_key, label, created_at)
        VALUES
-         ('${spaceA}', 'AAAAAAAAAAAAAAAAAAAAAA', decode(repeat('00', 32), 'hex'), 'machine-a', now()),
-         ('${spaceB}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now());`,
+         ('${newRecordId()}', '${spaceA}', 'AAAAAAAAAAAAAAAAAAAAAA', decode(repeat('00', 32), 'hex'), 'machine-a', now()),
+         ('${newRecordId()}', '${spaceB}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now());`,
     )
     if (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select') {
       succeeds('postgres', 'postgres', `GRANT SELECT ON config_secret TO ${RECORD_READER_ROLE};`)
@@ -215,9 +216,9 @@ export function registerHostedConfigProofs(
          ('01990000-0000-7000-8000-000000000221', '${spaceA}', NULL, 'cross-space',
           'default', '${DEK_B}', 1, decode('05', 'hex'), now());`,
       `INSERT INTO secret_dek_wrap
-         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
        VALUES
-         ('${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'FFFFFFFFFFFFFFFFFFFFFF',
+         ('${newRecordId()}', '${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'FFFFFFFFFFFFFFFFFFFFFF',
           decode('05', 'hex'), decode('06', 'hex'), now());`,
     ]
     for (const statement of statements) {
@@ -240,9 +241,9 @@ export function registerHostedConfigProofs(
       'actor-password',
       spaceA,
       `INSERT INTO secret_dek_wrap
-         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
        VALUES
-         ('${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'EEEEEEEEEEEEEEEEEEEEEE',
+         ('${newRecordId()}', '${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'EEEEEEEEEEEEEEEEEEEEEE',
           decode('05', 'hex'), decode('06', 'hex'), now());
        SELECT count(*) FROM secret_dek_wrap
        WHERE dek_id = '${DEK_A}' AND recipient_key_id = 'AAAAAAAAAAAAAAAAAAAAAA';`,
@@ -256,9 +257,9 @@ export function registerHostedConfigProofs(
       spaceA,
       `\\set VERBOSITY verbose
        INSERT INTO secret_dek_wrap
-         (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
        VALUES
-         ('${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'EEEEEEEEEEEEEEEEEEEEEE',
+         ('${newRecordId()}', '${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'EEEEEEEEEEEEEEEEEEEEEE',
           decode('07', 'hex'), decode('08', 'hex'), now());`,
     )
     expect(duplicate.code).not.toBe(0)
@@ -507,8 +508,8 @@ export function registerHostedConfigProofs(
       'postgres',
       'postgres',
       `INSERT INTO secret_dek_wrap
-        (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
-       VALUES ('${spaceA}', '${DEK_A}', '${keyId}', 'CCCCCCCCCCCCCCCCCCCCCC',
+        (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+       VALUES ('${newRecordId()}', '${spaceA}', '${DEK_A}', '${keyId}', 'CCCCCCCCCCCCCCCCCCCCCC',
          decode('10', 'hex'), decode('11', 'hex'), now());`,
     )
     await revokeMachineKey({ ...serviceTenant, keyId })
