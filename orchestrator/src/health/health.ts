@@ -6,6 +6,7 @@ import {
   HarnessHealthSchema,
   HostLoadSchema,
 } from '../../../shared/orch-contract.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { attributionCounts, parseConfinement } from '../confinement/confinement.ts'
 import { summarizeContention } from '../database/contention.ts'
 import { db } from '../database/db.ts'
@@ -25,17 +26,19 @@ type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
 export function throttleBuckets(input: { database: Database; from: string }): ThrottleBucket[] {
   const runs = input.database
     .query(
-      `SELECT r.record_id FROM run r LEFT JOIN agent a ON a.name=r.agent
-        WHERE COALESCE(a.harness,r.agent)='codex'`,
+      `SELECT r.record_id, r.agent name, a.harness FROM run r LEFT JOIN agent a ON a.name=r.agent
+        WHERE r.started_at>=?`,
     )
-    .all() as { record_id: string }[]
-  const events = runs.flatMap((run) =>
-    readEventLog(runEventsPath(run.record_id)).flatMap((event) =>
-      event.type === 'throttled' && event.ts >= input.from
-        ? [{ concurrency: event.concurrency }]
-        : [],
-    ),
-  )
+    .all(input.from) as { record_id: string; name: string; harness: string | null }[]
+  const events = runs
+    .filter((run) => workerHarnessName({ ...run, harness: run.harness ?? undefined }) === 'codex')
+    .flatMap((run) =>
+      readEventLog(runEventsPath(run.record_id)).flatMap((event) =>
+        event.type === 'throttled' && event.ts >= input.from
+          ? [{ concurrency: event.concurrency }]
+          : [],
+      ),
+    )
   return bucketThrottles(events)
 }
 

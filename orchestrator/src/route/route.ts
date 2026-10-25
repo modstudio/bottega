@@ -32,8 +32,6 @@ import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
-export { AgentCapacityError } from './routing-refusal.ts'
-
 export type Candidate = {
   agent: string
   runs: number

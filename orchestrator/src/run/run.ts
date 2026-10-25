@@ -59,7 +59,7 @@ import {
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
-import { runningRunCountForAgent } from '../route/running-runs.ts'
+import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
 import { mergeMcpSetupHeader } from '../sandbox/project-mcp-scope.ts'
@@ -1015,7 +1015,7 @@ export async function run(opts: {
           resolvedDialect,
           mcpSetupHeader,
           initialBoardNoticeIds: initialBoard.noticeIds,
-          throttleConcurrency: () => runningRunCountForAgent('codex'),
+          throttleConcurrency: () => runningRunCountForHarness('codex'),
           askLoopback,
           ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         }))

@@ -30,7 +30,8 @@ import {
   failoverRefusalReason,
   failoverSuccessorAgent,
 } from '../route/failover.ts'
-import { AgentCapacityError, agentsIneligibleForTransport, pick } from '../route/route.ts'
+import { agentsIneligibleForTransport, pick } from '../route/route.ts'
+import { AgentCapacityError } from '../route/routing-refusal.ts'
 import type { TransportName } from '../transport/transport.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import type { Changes } from '../worktree/worktree-remove.ts'
