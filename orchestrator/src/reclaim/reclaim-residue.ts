@@ -1,5 +1,6 @@
 // concern: reclaim-residue
 /** Observes and releases one explicitly named piece of monitor residue. */
+
 import { existsSync, lstatSync, mkdirSync, realpathSync, renameSync, rmSync } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -17,6 +18,7 @@ import { runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { processTable } from '../run/run-process.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import {
   grokTrustHeadings,
   grokTrustPathFromHeading,
@@ -44,7 +46,7 @@ export type ResidueKind =
   | 'stale-run'
 
 type Options = { dryRun?: boolean; allowSignal?: boolean; absentSatisfies?: boolean }
-const terminal = (status: string) => ['ok', 'failed', 'stale', 'stopped'].includes(status)
+const terminal = (status: string) => TERMINAL_RUN_STATUS_SET.has(status)
 const denied = (decision: Extract<ReleaseDecision, { allowed: false }>) => ({
   ok: false,
   action: decision.refusal,

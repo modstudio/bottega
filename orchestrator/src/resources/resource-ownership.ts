@@ -2,6 +2,7 @@
 /**
  * Knows worktree claims, live sharing, and terminal resource teardown. Must not know routing, transports, reviews, contracts, or CLI adapters.
  */
+
 import type { Database } from 'bun:sqlite'
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -14,6 +15,7 @@ import { repoRootOf } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import {
   type DockerInventory,
   type DockerResource,
@@ -209,7 +211,7 @@ export function terminalDockerRetentionReasonForRun(
       `SELECT worktree,repo,project_record_id,cwd FROM run
       WHERE COALESCE(parent_run_record_id,record_id) =
         (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
-        AND status IN ('ok','failed','stale','stopped')
+        AND status IN ${TERMINAL_RUN_STATUS_SQL}
       ORDER BY number DESC`,
     )
     .all(runId) as {
@@ -439,7 +441,7 @@ function terminalTeardownTarget(
   const row = database
     .query('SELECT status,worktree,repo,project_record_id,cwd FROM run WHERE record_id=?')
     .get(runId) as TerminalRunRow | null
-  if (!row || !['ok', 'failed', 'stale', 'stopped'].includes(row.status)) return null
+  if (!row || !TERMINAL_RUN_STATUS_SET.has(row.status)) return null
   const ids = database
     .query(
       `SELECT record_id,worktree FROM run WHERE COALESCE(parent_run_record_id,record_id) =

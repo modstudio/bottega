@@ -1,6 +1,8 @@
 // concern: outbox-dependency
 /** Resolves local outbox parent state without knowing how hosted rows are sent. */
+
 import type { Database } from 'bun:sqlite'
+import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { evidenceReferences } from './record-evidence-references.ts'
 import type {
   BlockedOutboxRow,
@@ -38,7 +40,7 @@ function localRunIsLive(database: Database, recordId: string): boolean {
     database
       .query<{ found: number }, [string]>(
         `SELECT 1 AS found FROM run WHERE record_id=?
-         AND status NOT IN ('ok','failed','stale','stopped')`,
+         AND status NOT IN ${TERMINAL_RUN_STATUS_SQL}`,
       )
       .get(recordId),
   )

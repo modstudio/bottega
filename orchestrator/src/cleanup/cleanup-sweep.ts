@@ -1,4 +1,5 @@
 /** Cleanup sweep knows worktree ownership, leases and the cleanup lock, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
+
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -38,6 +39,7 @@ import {
   runLeaseIds,
   runLeaseState,
 } from '../run/run-lease.ts'
+import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { type HubTaskReader, sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
@@ -452,7 +454,7 @@ function sweepTerminalRunLeases(dry: boolean): void {
       record_id: string
       status: string
     } | null
-    if (row && ['ok', 'failed', 'stale', 'stopped'].includes(row.status)) {
+    if (row && TERMINAL_RUN_STATUS_SET.has(row.status)) {
       ;(closeOut ? removeFreeRunCloseOutLease : removeFreeRunLease)(row.record_id)
     }
   }
@@ -727,7 +729,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
               r.launch_key, r.close_out_outcome
          FROM run r
          LEFT JOIN session_seen seen ON seen.session_id=r.session_id
-        WHERE r.status IN ('ok','failed','stale','stopped')
+        WHERE r.status IN ${TERMINAL_RUN_STATUS_SQL}
         ORDER BY r.number`,
       )
       .all() as Array<SweepCandidate & { close_out_outcome: string | null }>

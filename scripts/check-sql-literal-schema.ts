@@ -6,6 +6,7 @@ import ts from 'typescript'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import { PROJECT_REFERENCES } from '../orchestrator/src/project/project-reference-counts.ts'
+import { TERMINAL_RUN_STATUS_SQL } from '../orchestrator/src/run/run-status.ts'
 
 type ConcernName = 'orchestrator' | 'hub' | 'shared'
 type Concern = { name: ConcernName; root: string; migrate(database: Database): unknown }
@@ -28,6 +29,27 @@ export function sqlFingerprint(sql: string): string {
 /** Content-addressed exceptions: moving a site is harmless; changing its SQL makes this stale. */
 const exempt = (file: string, fingerprints: string[], reason: string): SqlExemption[] =>
   fingerprints.map((fingerprint) => ({ file, fingerprint, reason }))
+
+type GlobalSubstitution = {
+  /** The fragment itself, so a query that composes it is prepared like any other literal. */
+  values: readonly string[]
+  /** The module that owns the fragment: the one file allowed to declare that identifier. */
+  declaredIn: string
+}
+
+/**
+ * Substitutions every file gets, keyed by the identifier a shared SQL fragment is imported under.
+ * The value is the fragment itself, so a query that composes it is prepared like any other and the
+ * check never restates the list. A per-file catalogue entry of the same name overrides it. A file
+ * other than the declaring module that declares the identifier itself is refused, because the
+ * substitution would otherwise prepare SQL that file never writes.
+ */
+const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
+  TERMINAL_RUN_STATUS_SQL: {
+    values: [TERMINAL_RUN_STATUS_SQL],
+    declaredIn: 'orchestrator/src/run/run-status.ts',
+  },
+}
 
 const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ...exempt(
@@ -361,6 +383,33 @@ function combinations(parts: string[][]): string[] {
 
 type ResolvedStrings = { values: string[]; interpolated: boolean }
 
+/** A file that declares the identifier of a shared substitution instead of importing it. */
+type SubstitutionRedefinition = { file: string; name: string; declaredIn: string }
+
+const globalSubstitutionValues: Readonly<Record<string, readonly string[]>> = Object.fromEntries(
+  Object.entries(GLOBAL_SUBSTITUTIONS).map(([name, entry]) => [name, entry.values]),
+)
+
+/**
+ * The names a file may not declare itself: every global substitution the file does not own and its
+ * own catalogue does not supply, since the substitution would otherwise prepare SQL that file never
+ * writes.
+ */
+function substitutionRedefinitions(input: {
+  fileName: string
+  constants: Map<string, ts.Expression>
+  catalogue: Readonly<Record<string, readonly string[]>>
+}): SubstitutionRedefinition[] {
+  const redefinitions: SubstitutionRedefinition[] = []
+  for (const name of input.constants.keys()) {
+    const substitution = GLOBAL_SUBSTITUTIONS[name]
+    if (!substitution || substitution.declaredIn === input.fileName) continue
+    if (name in input.catalogue) continue
+    redefinitions.push({ file: input.fileName, name, declaredIn: substitution.declaredIn })
+  }
+  return redefinitions
+}
+
 function mergeExpressions(
   expressions: ts.Expression[],
   constants: Map<string, ts.Expression>,
@@ -458,9 +507,10 @@ function addSqlArgument(input: {
 function extractSqlSites(
   concern: Concern,
   catalogues: SqlCheckInput['catalogues'] = {},
-): { sites: SqlSite[]; unresolved: UnresolvedSite[] } {
+): { sites: SqlSite[]; unresolved: UnresolvedSite[]; redefinitions: SubstitutionRedefinition[] } {
   const sites: SqlSite[] = []
   const unresolved: UnresolvedSite[] = []
+  const redefinitions: SubstitutionRedefinition[] = []
   for (const file of productionTypeScriptFiles(concern.root)) {
     const fileName = relative(root, file)
     const source = ts.createSourceFile(
@@ -479,6 +529,9 @@ function extractSqlSites(
       ts.forEachChild(node, collect)
     }
     collect(source)
+    const catalogue = catalogues[fileName] ?? {}
+    const substitutions = { ...globalSubstitutionValues, ...catalogue }
+    redefinitions.push(...substitutionRedefinitions({ fileName, constants, catalogue }))
     const visit = (node: ts.Node): void => {
       const argument = sqlCallArgument(node)
       if (argument)
@@ -487,7 +540,7 @@ function extractSqlSites(
           source,
           fileName,
           constants,
-          substitutions: catalogues[fileName] ?? {},
+          substitutions,
           sites,
           unresolved,
         })
@@ -495,7 +548,7 @@ function extractSqlSites(
     }
     visit(source)
   }
-  return { sites, unresolved }
+  return { sites, unresolved, redefinitions }
 }
 
 function checkConcern(input: {
@@ -512,6 +565,10 @@ function checkConcern(input: {
   try {
     concern.migrate(database)
     const extracted = extractSqlSites(concern, catalogues)
+    for (const redefinition of extracted.redefinitions)
+      failures.push(
+        `${redefinition.file} declares ${redefinition.name}, which the check substitutes from ${redefinition.declaredIn}: import ${redefinition.name} from ${redefinition.declaredIn} instead of redefining it`,
+      )
     const candidates = [
       ...extracted.sites.map((site) => ({ ...site, fingerprint: sqlFingerprint(site.sql) })),
       ...extracted.unresolved.map((site) => ({

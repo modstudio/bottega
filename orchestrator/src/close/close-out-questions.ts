@@ -3,8 +3,7 @@
 
 import { db, writeTransaction } from '../database/db.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_CHAIN_TERMINAL } from '../run/question-close.ts'
-
-const TERMINAL = new Set(['ok', 'failed', 'stale', 'stopped'])
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 
 export function closeTerminalChainQuestions(rootId: string, dryRun: boolean): void {
   if (dryRun) return
@@ -13,7 +12,7 @@ export function closeTerminalChainQuestions(rootId: string, dryRun: boolean): vo
       'SELECT status FROM run WHERE record_id=? OR parent_run_record_id=?',
     )
     .all(rootId, rootId)
-  if (turns.length === 0 || turns.some((turn) => !TERMINAL.has(turn.status))) return
+  if (turns.length === 0 || turns.some((turn) => !TERMINAL_RUN_STATUS_SET.has(turn.status))) return
   writeTransaction(() => {
     closeRunChainQuestions(db(), rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
   })

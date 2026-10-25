@@ -1,9 +1,9 @@
 // concern: scheduled run-store leftover cleanup policy
 
 import { RUN_LEFTOVER_MAX_AGE_DAYS } from '../run/run-artifact-limits.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from './unjudged-run-remedy.ts'
 
-const TERMINAL_RUN_STATUSES = new Set(['ok', 'failed', 'stale', 'stopped'])
 const RUN_LEFTOVER_MAX_AGE_MS = RUN_LEFTOVER_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
 
 export type RunLeftoverKind = 'scratch' | 'sandbox' | 'isolate' | 'artifacts' | 'orphan'
@@ -46,7 +46,7 @@ export function decideRunLeftover(facts: RunLeftoverFacts): RunLeftoverDecision 
       ? { action: 'remove', reason: 'orphan is older than the run leftover age cap' }
       : { action: 'keep', reason: 'young orphan' }
   }
-  if (facts.runStatus === null || !TERMINAL_RUN_STATUSES.has(facts.runStatus))
+  if (facts.runStatus === null || !TERMINAL_RUN_STATUS_SET.has(facts.runStatus))
     return { action: 'keep', reason: 'live', status: facts.runStatus ?? 'unknown' }
   if (facts.finishedAt === null) return { action: 'keep', reason: 'finish time unknown' }
   if (facts.finishedAt >= cutoff) return { action: 'keep', reason: 'recently finished' }
