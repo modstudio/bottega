@@ -7,22 +7,67 @@ import {
   decideEndpointApiKey,
   decideEndpointApiKeyRetry,
   ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS,
+  effectiveEndpointApiKeyForRun,
+  endpointApiKeyResolves,
   resolveEndpointApiKeyEnv,
 } from './endpoint-api-key.ts'
 
 test('a project substitutes only a matching named agent secret', () => {
   expect(
     decideEffectiveEndpointApiKey('BOTTEGA_OPENROUTER', {
-      agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+      name: 'starship',
+      settings: { agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' } },
     }),
-  ).toEqual({ secretName: 'OPENROUTER_STARSHIP', source: 'project' })
-  expect(decideEffectiveEndpointApiKey('BOTTEGA_OPENROUTER', { agentKeys: {} })).toEqual({
-    secretName: 'BOTTEGA_OPENROUTER',
-    source: 'agent',
+  ).toEqual({ secretName: 'OPENROUTER_STARSHIP', source: 'project', projectName: 'starship' })
+  expect(
+    decideEffectiveEndpointApiKey('BOTTEGA_OPENROUTER', {
+      name: 'starship',
+      settings: { agentKeys: {} },
+    }),
+  ).toEqual({ secretName: 'BOTTEGA_OPENROUTER', source: 'agent', projectName: null })
+  expect(
+    decideEffectiveEndpointApiKey(null, {
+      name: 'starship',
+      settings: { agentKeys: { UNUSED: 'PROJECT_KEY' } },
+    }),
+  ).toEqual({ secretName: null, source: 'agent', projectName: null })
+})
+
+test('run endpoint selection returns the effective row and its owning source', () => {
+  const agent = { baseUrl: 'https://openrouter.ai/api/v1', apiKeySecret: 'BOTTEGA_OPENROUTER' }
+  expect(
+    effectiveEndpointApiKeyForRun(agent, {
+      name: 'starship',
+      settings: { agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' } },
+    }),
+  ).toMatchObject({
+    row: { apiKeySecret: 'OPENROUTER_STARSHIP' },
+    key: { secretName: 'OPENROUTER_STARSHIP', source: 'project', projectName: 'starship' },
   })
-  expect(decideEffectiveEndpointApiKey(null, { agentKeys: { UNUSED: 'PROJECT_KEY' } })).toEqual({
-    secretName: null,
-    source: 'agent',
+  expect(effectiveEndpointApiKeyForRun(agent, { name: 'starship', settings: {} })).toMatchObject({
+    row: { apiKeySecret: 'BOTTEGA_OPENROUTER' },
+    key: { secretName: 'BOTTEGA_OPENROUTER', source: 'agent', projectName: null },
+  })
+  expect(effectiveEndpointApiKeyForRun(agent)).toMatchObject({
+    row: { apiKeySecret: 'BOTTEGA_OPENROUTER' },
+    key: { secretName: 'BOTTEGA_OPENROUTER', source: 'agent', projectName: null },
+  })
+})
+
+test('endpoint key reporting distinguishes an absent secret from a store it could not check', async () => {
+  expect(
+    await endpointApiKeyResolves('PROJECT_KEY', async () => ({ PROJECT_KEY: 'value' })),
+  ).toEqual({ status: 'resolves' })
+  expect(
+    await endpointApiKeyResolves('PROJECT_KEY', async () => ({ PROJECT_KEY: undefined })),
+  ).toEqual({ status: 'unresolved' })
+  expect(
+    await endpointApiKeyResolves('PROJECT_KEY', async () => {
+      throw new HostedSecretError('PROJECT_KEY', 'machine-key-missing')
+    }),
+  ).toEqual({
+    status: 'could-not-check',
+    reason: `hosted secret PROJECT_KEY could not be opened: machine-key-missing\ncleared by: ${PLATFORM_SLUG} machine config machine init`,
   })
 })
 

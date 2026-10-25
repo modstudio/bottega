@@ -451,6 +451,7 @@ export type BillingHold = { enabled: 0; disabledReason: string }
 export type EffectiveBillingKey = {
   secretName: string | null
   source: 'agent' | 'project'
+  projectName: string | null
 }
 
 /** A durable routing hold whose only release is the named operator action. */

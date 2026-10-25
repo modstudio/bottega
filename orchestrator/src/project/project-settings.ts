@@ -10,6 +10,7 @@ import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
 import type { ReadonlyProvision } from '../worktree/worktree-provision.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
+import type { ProjectAgentKeys } from './project-agent-keys.ts'
 import type {
   DocsSettings,
   ReferenceSettings,
@@ -109,7 +110,7 @@ export type WorktreeTool = {
 
 export type ProjectSettings = {
   /** Project-owned sealed secrets that replace matching metered agent secrets for this project's runs. */
-  agentKeys?: Record<string, string>
+  agentKeys?: ProjectAgentKeys
   /** Repository visibility established against the forge when declared. */
   visibility?: RepositoryVisibility
   /** Canonical owner/name whose visibility was verified at declaration time. */

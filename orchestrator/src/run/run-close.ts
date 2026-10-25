@@ -21,7 +21,7 @@ import {
 } from '../failure/failure.ts'
 import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
-import { projectAt, resolveBranchRef, stackAt } from '../project/projects.ts'
+import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import {
@@ -290,7 +290,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     idleUnkillable,
     runId: claim.id,
     endpointKey: input.endpointKey,
-    projectName: projectAt(callerCwd)?.name ?? null,
+    projectName: input.endpointKey.projectName,
   })
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.

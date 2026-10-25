@@ -180,15 +180,19 @@ async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<v
     const agentSecret = agent.apiKeySecret!.trim()
     log(`  ${agent.name} (${agentSecret})`)
     for (const project of registered) {
-      const effective = decideEffectiveEndpointApiKey(agentSecret, project.settings)
+      const effective = decideEffectiveEndpointApiKey(agentSecret, project)
       if (effective.source === 'agent') {
         log(`    ${project.name}: shared ${agentSecret}`)
         continue
       }
-      const resolves = await endpointApiKeyResolves(effective.secretName!)
-      log(
-        `    ${project.name}: own ${effective.secretName} (${resolves ? 'resolves' : 'UNRESOLVED'})`,
-      )
+      const resolution = await endpointApiKeyResolves(effective.secretName!)
+      const status =
+        resolution.status === 'could-not-check'
+          ? `could not check: ${resolution.reason}`
+          : resolution.status === 'resolves'
+            ? 'resolves'
+            : 'UNRESOLVED'
+      log(`    ${project.name}: own ${effective.secretName} (${status})`)
     }
   }
 }

@@ -1,6 +1,8 @@
 // concern: project-agent-keys
 /** Validates project-owned agent secret mappings without knowing register storage. */
 
+export type ProjectAgentKeys = Record<string, string>
+
 export function projectAgentKeyProblems(value: unknown): string[] {
   if (value === undefined) return []
   if (

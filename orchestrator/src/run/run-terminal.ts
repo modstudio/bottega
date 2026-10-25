@@ -99,7 +99,7 @@ export function writeTerminalOperationalState(
   failureKind: ReturnType<typeof classify> | null,
   agent: string,
   billingHoldDetail?: string,
-  endpointKey: EffectiveBillingKey = { secretName: null, source: 'agent' },
+  endpointKey: EffectiveBillingKey = { secretName: null, source: 'agent', projectName: null },
 ): void {
   const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail, endpointKey.source)
   if (hold) {
