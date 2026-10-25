@@ -58,7 +58,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/running-runs.ts',
-    allowed: ['bun:sqlite', '../database/db.ts'],
+    allowed: ['bun:sqlite', '../agent/worker-launch-env.ts', '../database/db.ts'],
   },
   {
     file: 'orchestrator/src/run/run-bootstrap.ts',

@@ -1,6 +1,7 @@
 // concern: route
-/** Reads the live, non-probe runs used by routing capacity admission. */
+/** Reads the live, non-probe runs behind routing capacity admission and the run-throttle concurrency fact. */
 import type { Database } from 'bun:sqlite'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { db } from '../database/db.ts'
 
 export type RunningRunsByAgent = Map<string, string[]>
@@ -46,6 +47,15 @@ export function runningRunCountsForAgents(
   return counts
 }
 
-export function runningRunCountForAgent(agent: string): number {
-  return runningRunCountsForAgents([agent])[agent] ?? 0
+/** All live runs sharing one worker harness, including separately named agent rows. */
+export function runningRunCountForHarness(harness: string, database: Database = db()): number {
+  const rows = database
+    .query(
+      `SELECT r.agent name, a.harness FROM run r LEFT JOIN agent a ON a.name=r.agent
+        WHERE ${LIVE_RUN}`,
+    )
+    .all() as { name: string; harness: string | null }[]
+  return rows.filter(
+    (row) => workerHarnessName({ ...row, harness: row.harness ?? undefined }) === harness,
+  ).length
 }

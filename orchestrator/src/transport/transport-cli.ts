@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { constants as osConstants } from 'node:os'
 import { execa } from 'execa'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
@@ -182,7 +183,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const { stdoutTask, stderrTask } = startCliStreamReaders({
     stdout: p.stdout!,
     stderr: p.stderr!,
-    codex: (opts.agent.harness ?? opts.agent.name) === 'codex',
+    codex: workerHarnessName(opts.agent) === 'codex',
     push: (event) => pushEvent(eventForBilling(opts.agent.billing, event)),
   })
 

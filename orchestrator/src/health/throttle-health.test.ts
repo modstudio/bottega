@@ -12,11 +12,11 @@ test('throttles are bucketed by live codex concurrency', () => {
   ])
 })
 
-test('the report windows throttle events rather than run start times', () => {
+test('the report reads only codex runs started inside its window', () => {
   const runId = addRun({
     agent: 'codex',
     job: 'craft',
-    startedAt: '2026-10-01T00:00:00.000Z',
+    startedAt: '2026-10-21T00:00:00.000Z',
   })
   const path = runEventsPath(runId)
   appendRunEvent(
@@ -46,6 +46,26 @@ test('the report windows throttle events rather than run start times', () => {
       concurrency: 8,
     },
     path,
+  )
+
+  const oldRunId = addRun({
+    agent: 'codex',
+    job: 'craft',
+    startedAt: '2026-10-01T00:00:00.000Z',
+  })
+  appendRunEvent(
+    oldRunId,
+    {
+      ts: '2026-10-22T00:00:00.000Z',
+      type: 'throttled',
+      attempt: 1,
+      max: 5,
+      retryDelayMs: 225_000,
+      retryAt: '2026-10-22T00:03:45.000Z',
+      status: 429,
+      concurrency: 10,
+    },
+    runEventsPath(oldRunId),
   )
 
   expect(throttleBuckets({ database: db(), from: '2026-10-21T00:00:00.000Z' })).toEqual([
