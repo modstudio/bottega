@@ -13,6 +13,7 @@ import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import type { TestPhaseTiming } from './gate-phase-timing.ts'
 
 const orchRoot = join(import.meta.dir, '..')
 const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -39,11 +40,12 @@ export type SpawnCounts = {
   argv0: Record<string, number>
 }
 
-export type TestRow = {
+export type TestRow = Partial<TestPhaseTiming> & {
   name: string
   file: string
   wallMs: number
   pass: boolean
+  skipped?: boolean
   failure?: string
 }
 
@@ -121,6 +123,7 @@ function parseJunit(xml: string): {
       file: testFile,
       wallMs,
       pass: !tBody.includes('<failure'),
+      skipped: tBody.includes('<skipped') || undefined,
       failure: failure ? decodeXml(failure).trim() : undefined,
     })
   }
@@ -132,11 +135,19 @@ function emptySpawn(): SpawnCounts {
 }
 
 export function mergeTimings(
-  sidecar: { elapsedMs?: number; files?: Record<string, SpawnCounts> },
+  sidecar: {
+    elapsedMs?: number
+    files?: Record<string, SpawnCounts>
+    testPhases?: TestPhaseTiming[]
+  },
   xml: string,
   meta: { stamp: string; command: string[]; elapsedMs: number; exitCode: number },
 ): GateTimings {
-  const { tests, fileWall, suiteTests, suiteFailures } = parseJunit(xml)
+  const { tests: junitTests, fileWall, suiteTests, suiteFailures } = parseJunit(xml)
+  let phaseIndex = 0
+  const tests = junitTests.map((test) =>
+    test.skipped ? test : { ...test, ...sidecar.testPhases?.[phaseIndex++] },
+  )
   const spawnFiles = sidecar.files ?? {}
   const names = new Set([
     ...Object.keys(spawnFiles),
@@ -229,7 +240,11 @@ if (recorder) {
   const exitCode = await child.exited
   const elapsedMs = Date.now() - started
   const sidecarPath = `${jsonPath}.spawn.json`
-  let sidecar: { elapsedMs?: number; files?: Record<string, SpawnCounts> } = {}
+  let sidecar: {
+    elapsedMs?: number
+    files?: Record<string, SpawnCounts>
+    testPhases?: TestPhaseTiming[]
+  } = {}
   try {
     sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8'))
   } catch {

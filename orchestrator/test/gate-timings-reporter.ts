@@ -16,8 +16,32 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { resolveGateTimingDirectory } from '../../shared/gate-timing-directory.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
+import type { TestPhaseTiming } from './gate-phase-timing.ts'
 
 const enabled = process.env.BOTTEGA_GATE_TIMINGS
+const testPhases: TestPhaseTiming[] = []
+let activeTestPhase: Partial<TestPhaseTiming> | undefined
+
+export function beginTestSetup(): number {
+  return enabled ? performance.now() : 0
+}
+
+export function recordTestSetup(started: number): void {
+  if (!enabled) return
+  activeTestPhase = { setupMs: performance.now() - started }
+}
+
+export function beginTestTeardown(): number {
+  return enabled ? performance.now() : 0
+}
+
+export function recordTestTeardown(started: number): void {
+  if (!enabled || activeTestPhase?.setupMs === undefined) return
+  activeTestPhase.teardownMs = performance.now() - started
+  testPhases.push(activeTestPhase as TestPhaseTiming)
+  activeTestPhase = undefined
+}
+
 if (enabled) {
   const orchRoot = join(import.meta.dir, '..')
   const stamp = new Date().toISOString().replace(/[:.]/g, '-')
@@ -141,6 +165,7 @@ if (enabled) {
       outPath,
       elapsedMs: Date.now() - started,
       files: Object.fromEntries(files),
+      testPhases,
     }
     writeFileSync(sidecarPath, JSON.stringify(payload, null, 2))
     process.env.BOTTEGA_GATE_TIMINGS_SIDECAR = sidecarPath
