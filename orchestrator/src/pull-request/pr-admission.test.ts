@@ -258,7 +258,7 @@ test('a lens recorded on the branch is refused as missing for this change, not a
   expect(message).not.toContain('applicable lens craft has no recorded result on this branch')
 })
 
-test('a generic no-round refusal prints no lens line when nothing else is missing', () => {
+test('a generic no-round refusal prints beside the unfinished-review remedy, with no lens line', () => {
   const change = {
     project: { name: 'fixture' },
     branch: 'DEV-1535-no-round',
@@ -266,8 +266,8 @@ test('a generic no-round refusal prints no lens line when nothing else is missin
     group: { patchId: 'patch' },
     tier: 0,
   } as PullRequestChange
-  // No applicable lens and an unfinished exact review: the only thing left to report is
-  // that no earlier complete review round exists on the branch.
+  // No applicable lens and an unfinished exact review: the refusal names that review's remedy
+  // and the generic remedy that no earlier complete review round exists on the branch.
   const unfinished: TriageEvidence['reviews'][number] = {
     reviewRecordId: 'review-2',
     reviewNumber: 2,
