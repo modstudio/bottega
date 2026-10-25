@@ -417,6 +417,7 @@ export const modules: ArchitectureModule[] = [
     './hosted-tenant.ts',
   ]),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
+  module('shared/run-process-marker.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/command-spellings.ts', []),
   module('shared/config-directory.ts', ['node:path', './brand.ts']),

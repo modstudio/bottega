@@ -5,6 +5,7 @@ import { spawn } from 'node:child_process'
 import { closeSync, writeSync } from 'node:fs'
 import { join } from 'node:path'
 import { projectCodeGitEnv } from '../../../shared/git.ts'
+import { RUN_PROCESS_MARKER_ENV } from '../../../shared/run-process-marker.ts'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import {
@@ -171,6 +172,7 @@ async function spawnFocusedTestChild(input: {
           process.env,
           input.environment,
         ),
+        [RUN_PROCESS_MARKER_ENV]: '1',
         [HOST_SLOT_HELD_ENV]: '1',
       },
       detached: true,

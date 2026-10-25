@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
 import { processObservationError } from '../../../shared/process-identity.ts'
-import { joinProcessCwd, parseProcessTable } from './process-inventory.ts'
+import {
+  environmentCarriesRunMarker,
+  joinProcessCwd,
+  joinRunMarker,
+  type OrphanCandidate,
+  parseProcessEnvironmentEvidence,
+  parseProcessTable,
+} from './process-inventory.ts'
 
 test('classifies process inventory subprocess failures', () => {
   expect(
@@ -74,6 +81,149 @@ test('parses faithful Linux ps etime output and ignores malformed age', () => {
       cwd: null,
       cwdVerified: false,
     },
+  ])
+})
+
+test('reads a run marker from the environment shape the platform offers', () => {
+  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_DEPTH=1\0HOME=/Users/x', '\0')).toBe(true)
+  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_RUN_PROCESS=1', '\0')).toBe(true)
+  expect(environmentCarriesRunMarker('PATH=/bin HOME=/Users/x', /\s+/)).toBe(false)
+  // A marker name with no value, and one spelled inside another variable's
+  // value, are not ownership evidence.
+  expect(environmentCarriesRunMarker('BOTTEGA_DEPTH=', '\0')).toBe(false)
+  expect(environmentCarriesRunMarker('FOO=BOTTEGA_DEPTH=1', '\0')).toBe(false)
+  expect(environmentCarriesRunMarker('BOTTEGA_DEPTHISH=1', '\0')).toBe(false)
+  // A procfs entry is one NUL-separated string, so a space inside a value never
+  // starts an entry that reads as a marker.
+  expect(environmentCarriesRunMarker('PATH=/bin\0FOO=x BOTTEGA_DEPTH=1\0HOME=/x', '\0')).toBe(false)
+  // `ps -E` joins entries with whitespace and destroys that boundary, so the
+  // same text is the known ambiguity of that shape rather than a second proof.
+  expect(environmentCarriesRunMarker('PATH=/bin FOO=x BOTTEGA_DEPTH=1', /\s+/)).toBe(true)
+})
+
+test('separates a ps environment from the command it is printed after', () => {
+  const commands = new Map([
+    [91, '/usr/bin/node vite --host'],
+    [92, '/usr/bin/node vite --host'],
+    [93, '/usr/bin/node vite --host'],
+    [95, 'BOTTEGA_DEPTH=1 node vite'],
+  ])
+  const evidence = parseProcessEnvironmentEvidence(
+    [
+      '  91 /usr/bin/node vite --host PATH=/bin BOTTEGA_DEPTH=2',
+      '  92 /usr/bin/node vite --host PATH=/bin HOME=/Users/x',
+      '  93 /usr/bin/node vite --host',
+      '  94 /usr/bin/node BOTTEGA_RUN_PROCESS=1',
+      '  95 BOTTEGA_DEPTH=1 node vite',
+      '  not a process line',
+    ].join('\n'),
+    commands,
+    92,
+  )
+  expect(evidence.get(91)).toBe('present')
+  expect(evidence.get(92)).toBe('absent')
+  // ps printing no environment for a process the parser did report is absent.
+  expect(evidence.get(93)).toBe('absent')
+  // A pid whose command does not precede the text cannot be separated, and a
+  // probe that cannot be separated proves nothing about the platform.
+  const unseparated = parseProcessEnvironmentEvidence(
+    ['  94 /usr/bin/node BOTTEGA_RUN_PROCESS=1', '  92 /usr/bin/node vite --host PATH=/bin'].join(
+      '\n',
+    ),
+    commands,
+    94,
+  )
+  expect(unseparated.get(94)).toBe('unknown')
+  expect(unseparated.get(92)).toBe('unknown')
+  // A marker spelled in the command line itself is not an environment read.
+  expect(evidence.get(95)).toBe('absent')
+})
+
+test('a ps that prints no environment at all makes every candidate unknown', () => {
+  const probePid = 4242
+  const commands = new Map([
+    [91, '/usr/bin/node vite --host'],
+    [probePid, 'bun check'],
+  ])
+  // The probe process always carries PATH, so a line with no entry after its
+  // command means this ps cannot read environments: nothing proves absence.
+  const unreadable = parseProcessEnvironmentEvidence(
+    ['  91 /usr/bin/node vite --host BOTTEGA_DEPTH=1', `  ${probePid} bun check`].join('\n'),
+    commands,
+    probePid,
+  )
+  expect(unreadable.get(91)).toBe('unknown')
+  expect(unreadable.get(probePid)).toBe('unknown')
+  // A probe line that does print an environment leaves the candidates as read.
+  const readable = parseProcessEnvironmentEvidence(
+    [
+      '  91 /usr/bin/node vite --host PATH=/bin BOTTEGA_DEPTH=1',
+      `  ${probePid} bun check PATH=/usr/bin:/bin HOME=/Users/operator`,
+    ].join('\n'),
+    commands,
+    probePid,
+  )
+  expect(readable.get(91)).toBe('present')
+  expect(readable.get(probePid)).toBe('absent')
+  // A probe line ps did not print at all cannot be trusted either.
+  expect(
+    parseProcessEnvironmentEvidence(
+      '  91 /usr/bin/node vite --host PATH=/bin',
+      commands,
+      probePid,
+    ).get(91),
+  ).toBe('unknown')
+})
+
+test('an environment that was not read stays unknown on the inventory row', () => {
+  const candidate: OrphanCandidate = {
+    pid: 42,
+    ppid: 1,
+    pgid: 42,
+    cpu: 0,
+    command: 'vite',
+    ageSeconds: 5,
+    startTime: 'birth',
+    cwd: '/trees/gone',
+    cwdVerified: true,
+    missingTree: '/trees/gone',
+    project: 'app',
+    match: 'cwd',
+  }
+  expect(joinRunMarker([candidate], new Map())[0]!.runMarker).toBe('unknown')
+})
+
+test('each inventory row carries the marker read for its own pid', () => {
+  const row: OrphanCandidate = {
+    pid: 42,
+    ppid: 1,
+    pgid: 42,
+    cpu: 0,
+    command: 'vite',
+    ageSeconds: 5,
+    startTime: 'birth',
+    cwd: '/trees/gone',
+    cwdVerified: true,
+    missingTree: '/trees/gone',
+    project: 'app',
+    match: 'cwd',
+  }
+  const parent = { ...row, pid: 42, ppid: 1 }
+  const child = { ...row, pid: 43, ppid: 42 }
+  // The evidence map is keyed by each candidate's own pid: keying the join on
+  // the parent's pid would hand a run's proof to a process that never carried
+  // it, and one marker for every row would read as proof for all of them.
+  expect(
+    joinRunMarker(
+      [parent, child],
+      new Map([
+        [42, 'present'],
+        [43, 'absent'],
+      ]),
+    ),
+  ).toEqual([
+    { ...parent, runMarker: 'present' },
+    { ...child, runMarker: 'absent' },
   ])
 })
 

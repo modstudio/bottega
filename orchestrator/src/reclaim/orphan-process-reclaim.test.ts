@@ -2,7 +2,9 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { OrphanProcess, ProcessFact } from '../resources/process-inventory.ts'
 import {
+  applyRunProcessGroupEvidence,
   automaticOrphanReclaimDecision,
+  type OwnedOrphanProcess,
   orphanProcessReverification,
   orphanSignalPlan,
   signalFreshOrphanPlan,
@@ -36,7 +38,7 @@ test('orphan process reclamation requires unchanged birth, command, and missing 
   })
 })
 
-const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
+const orphanRow = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   pid: 42,
   ppid: 1,
   pgid: 42,
@@ -49,8 +51,17 @@ const orphan = (overrides: Partial<OrphanProcess> = {}): OrphanProcess => ({
   missingTree: '/trees/gone',
   project: 'app',
   match: 'cwd',
+  runMarker: 'present',
   ...overrides,
 })
+
+/**
+ * A decision input, i.e. a row the ownership fold has branded. Production folds
+ * the recorded run process groups in through `orphansWithOwnershipEvidence`;
+ * here the fold adds none, so the row carries only what the test set.
+ */
+const orphan = (overrides: Partial<OrphanProcess> = {}): OwnedOrphanProcess =>
+  applyRunProcessGroupEvidence([orphanRow(overrides)], [])[0]!
 
 test('automatic reclaim requires cwd evidence, age, non-platform command, and no live run', () => {
   expect(automaticOrphanReclaimDecision(orphan(), new Set())).toEqual({ reclaim: true })
@@ -70,6 +81,66 @@ test('automatic reclaim requires cwd evidence, age, non-platform command, and no
     reclaim: false,
     reason: 'cwd process birth could not be verified',
   })
+})
+
+test('automatic reclaim requires positive evidence that a run started the process', () => {
+  expect(automaticOrphanReclaimDecision(orphan({ runMarker: 'present' }), new Set())).toEqual({
+    reclaim: true,
+  })
+  expect(automaticOrphanReclaimDecision(orphan({ runMarker: 'absent' }), new Set())).toEqual({
+    reclaim: false,
+    reason:
+      'process carries neither the run delegation marker nor the run-process marker; reclaim it manually if it is residue',
+  })
+  expect(automaticOrphanReclaimDecision(orphan({ runMarker: 'unknown' }), new Set())).toEqual({
+    reclaim: false,
+    reason: 'process environment could not be read to prove a run started it',
+  })
+})
+
+test('a candidate in a recorded run process group is run residue whatever its environment says', () => {
+  const runs = [{ worktree: '/trees/gone', agentPgid: 42 }]
+  expect(applyRunProcessGroupEvidence([orphan({ runMarker: 'absent' })], runs)).toEqual([
+    { ...orphan(), runMarker: 'present' },
+  ])
+  expect(applyRunProcessGroupEvidence([orphan({ runMarker: 'unknown' })], runs)[0]!.runMarker).toBe(
+    'present',
+  )
+  // A recorded group belongs to one tree: the same group elsewhere proves nothing.
+  expect(
+    applyRunProcessGroupEvidence(
+      [orphan({ runMarker: 'absent' })],
+      [{ worktree: '/trees/other', agentPgid: 42 }],
+    )[0]!.runMarker,
+  ).toBe('absent')
+  // Neither does the tree alone, or a candidate leading its own group.
+  expect(
+    applyRunProcessGroupEvidence([orphan({ runMarker: 'absent', pgid: 7 })], runs)[0]!.runMarker,
+  ).toBe('absent')
+  expect(
+    applyRunProcessGroupEvidence(
+      [orphan({ runMarker: 'absent' })],
+      [
+        { worktree: null, agentPgid: 42 },
+        { worktree: '/trees/gone', agentPgid: null },
+      ],
+    )[0]!.runMarker,
+  ).toBe('absent')
+})
+
+test('an existing reason still wins over missing ownership evidence', () => {
+  expect(
+    automaticOrphanReclaimDecision(orphan({ runMarker: 'absent', ageSeconds: 1 }), new Set()),
+  ).toEqual({ reclaim: false, reason: 'younger than 60000ms minimum age' })
+  expect(
+    automaticOrphanReclaimDecision(
+      orphan({ runMarker: 'absent', command: `${PLATFORM_SLUG} recipe undo` }),
+      new Set(),
+    ),
+  ).toEqual({ reclaim: false, reason: `${PLATFORM_SLUG}/orchestrator lifecycle process` })
+  expect(
+    automaticOrphanReclaimDecision(orphan({ runMarker: 'absent' }), new Set(['/trees/gone'])),
+  ).toEqual({ reclaim: false, reason: 'tree belongs to a live run' })
 })
 
 test('a signal plan contains only the root and descendants with their births', () => {
