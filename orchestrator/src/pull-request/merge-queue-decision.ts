@@ -7,6 +7,7 @@ export type MergeQueueObservation = {
   pullRequestState: string
   mergeCommit: string | null
   entryState: string | null
+  enqueuedAt: string | null
 }
 
 export type MergeQueueState =

@@ -22,10 +22,16 @@ describe('merge-queue state', () => {
         pullRequestState: 'MERGED',
         mergeCommit: 'merge-oid',
         entryState: null,
+        enqueuedAt: null,
       }),
     ).toEqual({ state: 'merged', mergeCommit: 'merge-oid' })
     expect(
-      interpretMergeQueue({ pullRequestState: 'MERGED', mergeCommit: null, entryState: null }),
+      interpretMergeQueue({
+        pullRequestState: 'MERGED',
+        mergeCommit: null,
+        entryState: null,
+        enqueuedAt: null,
+      }),
     ).toEqual({
       state: 'unknown',
       detail: 'pull request state MERGED, queue entry none, merge commit none',
@@ -36,7 +42,12 @@ describe('merge-queue state', () => {
     'entry state %s remains queued',
     (entryState) => {
       expect(
-        interpretMergeQueue({ pullRequestState: 'OPEN', mergeCommit: null, entryState }),
+        interpretMergeQueue({
+          pullRequestState: 'OPEN',
+          mergeCommit: null,
+          entryState,
+          enqueuedAt: '2026-10-24T10:00:00Z',
+        }),
       ).toEqual({ state: 'queued' })
     },
   )
@@ -47,16 +58,27 @@ describe('merge-queue state', () => {
         pullRequestState: 'OPEN',
         mergeCommit: null,
         entryState: 'UNMERGEABLE',
+        enqueuedAt: '2026-10-24T10:00:00Z',
       }),
     ).toEqual({ state: 'failed' })
     expect(
-      interpretMergeQueue({ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }),
+      interpretMergeQueue({
+        pullRequestState: 'OPEN',
+        mergeCommit: null,
+        entryState: null,
+        enqueuedAt: null,
+      }),
     ).toEqual({ state: 'dequeued' })
   })
 
   test('a closed pull request is distinct from an open pull request with no queue entry', () => {
     expect(
-      interpretMergeQueue({ pullRequestState: 'CLOSED', mergeCommit: null, entryState: null }),
+      interpretMergeQueue({
+        pullRequestState: 'CLOSED',
+        mergeCommit: null,
+        entryState: null,
+        enqueuedAt: null,
+      }),
     ).toEqual({ state: 'closed' })
   })
 })

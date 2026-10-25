@@ -10,7 +10,7 @@ import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import { currentProjectRepository, projectAt } from '../project/projects.ts'
+import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
 import {
   formatShipCleanup,
   type ShipCleanupReport,
@@ -65,6 +65,7 @@ export type PullRequestMergeFacts = {
 }
 
 export type PullRequestMergeAdapter = {
+  repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
   checks(cwd: string, number: number): PullRequestCheck[]
   landingState(
@@ -110,6 +111,7 @@ export type PullRequestMergeAdapter = {
     repository: string,
     baseBranch: string,
     pullRequestNumber: number,
+    enqueuedAt: string,
   ): FailedMergeGroupRun | null
   now(): number
   wait(milliseconds: number): void
@@ -162,6 +164,9 @@ function parsed<T>(value: string, label: string): T {
 }
 
 const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
+  repository(project) {
+    return currentProjectRepository(project)
+  },
   view(cwd, target) {
     const value = parsed<{
       id?: unknown
@@ -320,8 +325,8 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   requeue(cwd, nodeId, headCommit) {
     requeuePullRequest(cwd, nodeId, headCommit)
   },
-  failedMergeGroupRun(cwd, repository, baseBranch, pullRequestNumber) {
-    return githubFailedMergeGroupRun(cwd, repository, baseBranch, pullRequestNumber)
+  failedMergeGroupRun(cwd, repository, baseBranch, pullRequestNumber, enqueuedAt) {
+    return githubFailedMergeGroupRun(cwd, repository, baseBranch, pullRequestNumber, enqueuedAt)
   },
   now: Date.now,
   wait(milliseconds) {
@@ -399,7 +404,8 @@ function waitForQueuedMerge(
   }
   let requeueOutput: string | undefined
   while (true) {
-    const state = interpretMergeQueue(adapter.queueState(cwd, pullRequest.nodeId))
+    const observation = adapter.queueState(cwd, pullRequest.nodeId)
+    const state = interpretMergeQueue(observation)
     const now = adapter.now()
     const step = stepMergeQueueWait(pullRequest.number, waitState, state, now, deadline)
     waitState = step.state
@@ -413,7 +419,7 @@ function waitForQueuedMerge(
     if (action.action === 'refuse') {
       const evidence =
         state.state === 'failed'
-          ? `; ${failedMergeGroupRunEvidence(pullRequest, cwd, repository, adapter)}`
+          ? `; ${failedMergeGroupRunEvidence(pullRequest, cwd, repository, observation.enqueuedAt, adapter)}`
           : ''
       throw new Error(`refusing merge: ${action.refusal}${evidence}; cleared by: ${action.remedy}`)
     }
@@ -422,7 +428,13 @@ function waitForQueuedMerge(
       continue
     }
     if (action.action === 'requeue') {
-      const evidence = failedMergeGroupRunEvidence(pullRequest, cwd, repository, adapter)
+      const evidence = failedMergeGroupRunEvidence(
+        pullRequest,
+        cwd,
+        repository,
+        observation.enqueuedAt,
+        adapter,
+      )
       requeueForMergeQueue(pullRequest, cwd, adapter, evidence)
       requeueOutput = `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
       continue
@@ -435,19 +447,24 @@ function failedMergeGroupRunEvidence(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   repository: string | null,
+  enqueuedAt: string | null,
   adapter: PullRequestMergeAdapter,
 ): string {
   if (!repository) return 'failed merge-group run could not be read: repository identity is absent'
+  if (!enqueuedAt) {
+    return 'failed merge-group run could not be read: the queue entry has no enqueue time'
+  }
   try {
     const run = adapter.failedMergeGroupRun(
       cwd,
       repository,
       pullRequest.baseBranch,
       pullRequest.number,
+      enqueuedAt,
     )
     return run
-      ? `failed merge-group run ${run.id} (${run.url})`
-      : 'no failed merge-group run was found'
+      ? `${run.conclusion} merge-group run ${run.id} (${run.url})`
+      : `no merge-group run that failed since ${enqueuedAt} was found`
   } catch (cause) {
     return `failed merge-group run could not be read: ${cause instanceof Error ? cause.message : String(cause)}`
   }
@@ -667,7 +684,7 @@ export function mergePullRequest(
       database,
     )
     if (release.mergeQueue) {
-      const repository = currentProjectRepository(project)
+      const repository = adapter.repository(project)
       const queued = waitForQueuedMerge(pullRequest, cwd, repository, adapter)
       mergeCommit = queued.mergeCommit
       requeueOutput = queued.requeueOutput

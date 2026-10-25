@@ -2,12 +2,14 @@
 /** Reads and mutates GitHub's merge queue without owning merge policy. */
 
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { githubWorkflowRuns } from './github-actions.ts'
 import { isPullRequestMergeGroupRun } from './merge-group-run.ts'
 import type { MergeQueueObservation } from './merge-queue-decision.ts'
 
 export type FailedMergeGroupRun = {
   id: number
   url: string
+  conclusion: string
 }
 
 function successful(cwd: string, argv: string[], label: string): string {
@@ -33,7 +35,7 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
       'api',
       'graphql',
       '-f',
-      'query=query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state}}}}',
+      'query=query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state enqueuedAt}}}}',
       '-f',
       `id=${nodeId}`,
     ],
@@ -44,7 +46,7 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
       node?: {
         state?: unknown
         mergeCommit?: { oid?: unknown } | null
-        mergeQueueEntry?: { state?: unknown } | null
+        mergeQueueEntry?: { state?: unknown; enqueuedAt?: unknown } | null
       } | null
     }
   }
@@ -58,13 +60,17 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
   const node = value.data?.node
   const mergeCommit = node?.mergeCommit?.oid
   const entryState = node?.mergeQueueEntry?.state
+  const enqueuedAt = node?.mergeQueueEntry?.enqueuedAt
   if (
     !node ||
     typeof node.state !== 'string' ||
     node.mergeCommit === undefined ||
     (node.mergeCommit !== null && typeof mergeCommit !== 'string') ||
     node.mergeQueueEntry === undefined ||
-    (node.mergeQueueEntry !== null && typeof entryState !== 'string')
+    (node.mergeQueueEntry !== null &&
+      (typeof entryState !== 'string' ||
+        enqueuedAt === undefined ||
+        (enqueuedAt !== null && typeof enqueuedAt !== 'string')))
   ) {
     throw new Error('merge-queue lookup returned an unexpected JSON shape')
   }
@@ -72,6 +78,7 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
     pullRequestState: node.state,
     mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
     entryState: typeof entryState === 'string' ? entryState : null,
+    enqueuedAt: typeof enqueuedAt === 'string' ? enqueuedAt : null,
   }
 }
 
@@ -114,47 +121,42 @@ export function requeuePullRequest(cwd: string, nodeId: string, headCommit: stri
   )
 }
 
-function workflowRunPage(output: string): unknown[] {
-  let value: { workflow_runs?: unknown }
-  try {
-    value = JSON.parse(output) as typeof value
-  } catch (cause) {
-    throw new Error(
-      `failed merge-group run lookup returned invalid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
-  }
-  if (!Array.isArray(value.workflow_runs)) {
-    throw new Error('failed merge-group run lookup returned an unexpected JSON shape')
-  }
-  return value.workflow_runs
-}
-
 function failedMergeGroupRunFrom(
   raw: unknown,
   baseBranch: string,
   pullRequestNumber: number,
-): FailedMergeGroupRun | null {
+): (FailedMergeGroupRun & { createdAt: string }) | null {
   if (!isPullRequestMergeGroupRun(raw, baseBranch, pullRequestNumber)) return null
-  if (raw.conclusion !== 'failure') return null
-  if (!Number.isSafeInteger(raw.id) || typeof raw.html_url !== 'string') {
+  if (raw.status !== 'completed') return null
+  if (['success', 'skipped', 'neutral'].includes(String(raw.conclusion))) return null
+  if (
+    typeof raw.conclusion !== 'string' ||
+    !Number.isSafeInteger(raw.id) ||
+    typeof raw.html_url !== 'string' ||
+    typeof raw.created_at !== 'string'
+  ) {
     throw new Error('failed merge-group run lookup returned an unexpected run shape')
   }
-  return { id: Number(raw.id), url: raw.html_url }
+  return {
+    id: Number(raw.id),
+    url: raw.html_url,
+    conclusion: raw.conclusion,
+    createdAt: raw.created_at,
+  }
 }
 
-export function failedMergeGroupRunFromPages(
-  fetchPage: (page: number) => unknown[],
+export function failedMergeGroupRunFromRuns(
+  runs: readonly unknown[],
   baseBranch: string,
   pullRequestNumber: number,
 ): FailedMergeGroupRun | null {
-  for (let page = 1; ; page += 1) {
-    const batch = fetchPage(page)
-    for (const raw of batch) {
-      const match = failedMergeGroupRunFrom(raw, baseBranch, pullRequestNumber)
-      if (match) return match
-    }
-    if (batch.length < 100) return null
-  }
+  const matches = runs.flatMap((raw) => {
+    const match = failedMergeGroupRunFrom(raw, baseBranch, pullRequestNumber)
+    return match ? [match] : []
+  })
+  matches.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+  const match = matches[0]
+  return match ? { id: match.id, url: match.url, conclusion: match.conclusion } : null
 }
 
 export function githubFailedMergeGroupRun(
@@ -162,28 +164,13 @@ export function githubFailedMergeGroupRun(
   repository: string,
   baseBranch: string,
   pullRequestNumber: number,
+  enqueuedAt: string,
 ): FailedMergeGroupRun | null {
-  return failedMergeGroupRunFromPages(
-    (page) =>
-      workflowRunPage(
-        successful(
-          cwd,
-          [
-            'gh',
-            'api',
-            '--method',
-            'GET',
-            `repos/${repository}/actions/runs`,
-            '-f',
-            'event=merge_group',
-            '-f',
-            'per_page=100',
-            '-f',
-            `page=${page}`,
-          ],
-          'failed merge-group run lookup',
-        ),
-      ),
+  return failedMergeGroupRunFromRuns(
+    githubWorkflowRuns(cwd, repository, {
+      event: 'merge_group',
+      created: `>=${enqueuedAt}`,
+    }),
     baseBranch,
     pullRequestNumber,
   )
