@@ -88,13 +88,11 @@ export function roundLensPlan(input: {
 
 function laterRoundReason(
   lens: string,
-  completed: ReadonlySet<string>,
   findings: ReadonlySet<string>,
   newlyTouched: ReadonlySet<string>,
 ): ReviewLensSelectionReason | null {
   if (findings.has(lens)) return 'accepted-finding'
   if (newlyTouched.has(lens)) return 'newly-touched-path'
-  if (!completed.has(lens)) return 'never-completed'
   return null
 }
 
@@ -218,19 +216,20 @@ export function applicableRoundLensPlan(input: {
       latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
       newlyTouchedLenses: newlyTouched,
     })
-    const completed = new Set(input.facts.completedLenses)
     const findings = new Set(input.facts.latestAcceptedOrModifiedLenses)
     const touched = new Set(newlyTouched)
     const unidentified = input.postFix.kind === 'reviewed-tip-unidentified'
     return withLensReasons(
       selectReviewApplicability(input.relevant, lenses),
       Object.fromEntries(
-        lenses.map((lens) => [
-          lens,
-          unidentified
-            ? 'unidentified-tip-funnel'
-            : (laterRoundReason(lens, completed, findings, touched) ?? 'never-completed'),
-        ]),
+        lenses
+          .map((lens) => [
+            lens,
+            unidentified
+              ? 'unidentified-tip-funnel'
+              : laterRoundReason(lens, findings, touched),
+          ])
+          .filter((entry): entry is [string, ReviewLensSelectionReason] => entry[1] !== null),
       ),
     )
   })()

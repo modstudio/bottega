@@ -38,10 +38,18 @@ export const reviewModuleSpecs = [
     typeOnlyAllowed: ['./review-role.ts'],
   },
   {
+    file: 'orchestrator/src/review/review-round-backfill.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      './review-outbox.ts',
+      './review-round-identity.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/review/review-lens-dispatch-reason.ts',
     allowed: [
       '../database/db.ts',
-      '../project/projects.ts',
       './review-applicability.ts',
       './review-pins.ts',
       './review-post-fix.ts',
@@ -66,11 +74,15 @@ export const reviewModuleSpecs = [
     allowed: [
       './review-applicability.ts',
       './review-group.ts',
+      './review-pins.ts',
+      './review-post-fix.ts',
       './review-round-budget.ts',
       './review-round-lens-plan.ts',
       './review-round-identity.ts',
+      './review-target.ts',
+      './review-tier-service.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', './review-post-fix.ts'],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', '../project/projects.ts'],
   },
   {
     file: 'orchestrator/src/review/review-yield.ts',
@@ -339,6 +351,17 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       'Keep post-fix re-lens selection within completed review pins and declared review policy.',
   },
   {
+    name: 'review-round-backfill-boundary',
+    file: 'orchestrator/src/review/review-round-backfill.ts',
+    allowed: [
+      'bun:sqlite',
+      '../database/db.ts',
+      './review-outbox.ts',
+      './review-round-identity.ts',
+    ],
+    reason: 'Keep historical review-round writes beside the identity rule they apply.',
+  },
+  {
     name: 'review-round-lens-plan-boundary',
     file: 'orchestrator/src/review/review-round-lens-plan.ts',
     allowed: ['./review-applicability.ts', './review-role.ts', './review-second-opinion.ts'],
@@ -354,13 +377,18 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-round-lens-service-boundary',
     file: 'orchestrator/src/review/review-round-lens-service.ts',
     allowed: [
+      '../project/projects.ts',
       './review-applicability.ts',
       './review-group.ts',
+      './review-pins.ts',
+      './review-post-fix.ts',
       './review-round-budget.ts',
       './review-round-lens-plan.ts',
       './review-round-identity.ts',
+      './review-target.ts',
+      './review-tier-service.ts',
     ],
-    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', './review-post-fix.ts'],
+    typeOnlyAllowed: ['bun:sqlite', '../project/project-injection.ts', '../project/projects.ts'],
     reason: 'Keep round lens fact gathering in one review service around the pure plan.',
   },
   {
@@ -428,8 +456,6 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       '../record/machine-identity.ts',
       '../record/outbox-sanitize.ts',
-      './review-evidence-sql.ts',
-      './review-round-identity.ts',
       'bun:sqlite',
     ],
     reason: 'Enforce the review-outbox concern boundary.',

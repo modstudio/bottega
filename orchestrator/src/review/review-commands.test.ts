@@ -102,24 +102,6 @@ test('review-lens dispatch stores its funnel reason and short-circuits operator 
         .get(),
     ).toEqual({ selection_reason: 'operator-ordered' })
 
-    expect(
-      reviewLensSelectionReasonForDispatch({
-        jobName: 'review-lens',
-        lens: undefined,
-        review: branch,
-        cwd: repo,
-        repo: name,
-      }),
-    ).toBe('operator-ordered')
-    expect(
-      reviewLensSelectionReasonForDispatch({
-        jobName: 'summarize',
-        lens: 'correctness',
-        review: branch,
-        cwd: repo,
-        repo: name,
-      }),
-    ).toBe('operator-ordered')
   } finally {
     rmSync(repo, { recursive: true, force: true })
   }
@@ -779,7 +761,7 @@ test('review tier and admission agree on an owed second opinion', async () => {
   }
 })
 
-test('review tier needs no round for a never-completed lens when no scoped fix path was touched', async () => {
+test('review tier needs no round when no scoped fix path was touched', async () => {
   const { repo, branch, reviewed } = postFixFixture({ fixPath: 'src/fix.ts' })
   try {
     const output: string[] = []

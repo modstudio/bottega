@@ -3,17 +3,8 @@
 
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
-import { selectReviewApplicability } from './review-applicability.ts'
-import { measureChangeIdentity } from './review-pins.ts'
-import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
-import { budgetedRoundApplicabilityForChange } from './review-round-lens-service.ts'
-import {
-  resolveReviewTarget,
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-  spawnGitProbe,
-} from './review-target.ts'
-import { reviewTierForRange } from './review-tier-service.ts'
+import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
+import { resolveReviewTarget } from './review-target.ts'
 import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 const OPERATOR_ORDERED: ReviewLensSelectionReason = 'operator-ordered'
@@ -41,35 +32,16 @@ function funnelReasonForLens(input: {
   const checkout = input.repo ? project.path : input.cwd
   const target = resolveReviewTarget('review-lens', checkout, input.review)
   if (!target) return OPERATOR_ORDERED
-  const identity = measureChangeIdentity(checkout, target.base, target.commit)
-  if (!identity) return OPERATOR_ORDERED
-  const output = reviewTierForRange(checkout, target.base, target.commit, project.settings.review)
   const trunk = project.settings.trunk?.trim()
   if (!trunk) return OPERATOR_ORDERED
-  const postFix = postFixReviewDecision({
-    facts: gatherPostFixReviewFacts({
-      database: db(),
-      repo: checkout,
-      to: target.commit,
-      trunkRef: reviewTrunkRef(reviewRemoteTrunkRefExists(trunk, spawnGitProbe(checkout)), trunk),
-      project: project.name,
-      branch: target.branch,
-    }),
-    tier: output.tier,
-    review: project.settings.review,
-  })
-  const plan = budgetedRoundApplicabilityForChange({
+  const plan = budgetedReviewPlanForResolvedChange({
     database: db(),
-    group: {
-      project: project.name,
-      branch: target.branch,
-      patchId: identity.patchId,
-      pathSet: identity.paths,
-    },
-    relevant: selectReviewApplicability(output, output.lenses),
-    postFix,
-    review: project.settings.review,
-    tier: output.tier,
+    cwd: checkout,
+    base: target.base,
+    commit: target.commit,
+    branch: target.branch,
+    project,
   })
+  if (!plan.identity) return OPERATOR_ORDERED
   return plan.reviewPlan.round.lensReasons?.[input.lens] ?? OPERATOR_ORDERED
 }

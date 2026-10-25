@@ -609,7 +609,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../evidence/evidence-query.ts',
     '../lens/lens-seeds.ts',
-    '../review/review-outbox.ts',
+    '../review/review-round-backfill.ts',
     '../run/run-liveness.ts',
     '../run/shared-git-config-run.ts',
     '../workflow/workflow-seeds.ts',

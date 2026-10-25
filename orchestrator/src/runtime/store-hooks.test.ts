@@ -13,6 +13,7 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
     number: number,
     patch: string | null,
     role: 'round' | 'supplementary' = 'round',
+    evidenceExcluded = false,
   ) => {
     const review = newRecordId()
     const run = addRun({
@@ -23,8 +24,13 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
       repo: 'adanim',
     })
     db()
-      .query('UPDATE run SET branch=?,project_record_id=? WHERE record_id=?')
-      .run('worktree-ADN-1004-worktree-teardown', project, run)
+      .query('UPDATE run SET branch=?,project_record_id=?,evidence_excluded=? WHERE record_id=?')
+      .run(
+        'worktree-ADN-1004-worktree-teardown',
+        project,
+        evidenceExcluded ? 'historical exclusion' : null,
+        run,
+      )
     db()
       .query(
         `INSERT INTO review (record_id,number,recorded_at,patch_id,path_set,role)
@@ -46,13 +52,14 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
   const repeated = addReview(3, 'one')
   const supplementary = addReview(4, 'three', 'supplementary')
   const unclassifiable = addReview(5, null)
+  const excluded = addReview(6, 'four', 'round', true)
 
   closeDatabaseForFixture()
   migrateDatabase()
 
   expect(
     db()
-      .query('SELECT number,round FROM review WHERE number BETWEEN 1 AND 5 ORDER BY number')
+      .query('SELECT number,round FROM review WHERE number BETWEEN 1 AND 6 ORDER BY number')
       .all(),
   ).toEqual([
     { number: 1, round: 1 },
@@ -60,6 +67,7 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
     { number: 3, round: 1 },
     { number: 4, round: null },
     { number: 5, round: null },
+    { number: 6, round: 3 },
   ])
   expect(
     db()
@@ -85,6 +93,9 @@ test('standard after-initialize hooks backfill classifiable rounds and re-enqueu
   ).toEqual({ count: 1 })
   expect(db().query('SELECT round FROM review WHERE record_id=?').get(unclassifiable)).toEqual({
     round: null,
+  })
+  expect(db().query('SELECT round FROM review WHERE record_id=?').get(excluded)).toEqual({
+    round: 3,
   })
 
   closeDatabaseForFixture()

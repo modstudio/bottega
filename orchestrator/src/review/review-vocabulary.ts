@@ -16,7 +16,6 @@ const REVIEW_LENS_SELECTION_REASON = [
   'initial',
   'accepted-finding',
   'newly-touched-path',
-  'never-completed',
   'unidentified-tip-funnel',
   'operator-ordered',
 ] as const

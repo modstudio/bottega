@@ -3,11 +3,9 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { nowIso, writeTransaction } from '../database/db.ts'
+import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
-import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
-import { reviewRoundForRecording, reviewRoundIdentity } from './review-round-identity.ts'
 
 export type ReviewRecordBackfillResult = {
   enqueuedReviews: number
@@ -286,51 +284,4 @@ export function enqueueChangedReviewRounds(database: Database): number {
     .all()
   for (const row of reviews) enqueueReview(database, row.record_id)
   return reviews.length
-}
-
-type PendingReviewRound = {
-  record_id: string
-  project: string
-  role: 'round'
-  patch_id: string | null
-  path_set: string | null
-  launch_key: string | null
-  branch: string
-}
-
-/** Fill historical ordinals through the same classification and lineage rule used at write time. */
-export function backfillReviewRounds(database: Database): number {
-  const pending = database
-    .query<PendingReviewRound, []>(
-      `SELECT r.record_id,p.name AS project,r.role,r.patch_id,r.path_set,run.launch_key,run.branch
-         FROM review r
-         JOIN review_lens rl ON rl.review_record_id=r.record_id
-         JOIN run ON run.record_id=rl.run_record_id
-         JOIN project p ON p.record_id=run.project_record_id
-        WHERE r.role='round' AND r.round IS NULL AND run.branch IS NOT NULL
-          AND ${reviewRunEvidenceSql('run', 'rl')}
-        ORDER BY r.recorded_at,r.number,run.number,rl.record_id`,
-    )
-    .all()
-  const seen = new Set<string>()
-  const classifiable = pending.filter((row) => {
-    if (seen.has(row.record_id)) return false
-    seen.add(row.record_id)
-    return reviewRoundIdentity(row).identity !== null
-  })
-  if (!classifiable.length) return 0
-
-  return writeTransaction(() => {
-    let changed = 0
-    for (const row of classifiable) {
-      const round = reviewRoundForRecording(database, row)
-      if (round === null) continue
-      const result = database
-        .query('UPDATE review SET round=? WHERE record_id=? AND round IS NULL')
-        .run(round, row.record_id)
-      changed += result.changes
-    }
-    enqueueChangedReviewRounds(database)
-    return changed
-  }, database)
 }

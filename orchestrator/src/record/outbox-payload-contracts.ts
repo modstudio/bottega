@@ -66,8 +66,8 @@ const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
   { projectId: null, role: 'round', round: null, withheldFields: null },
 )
 const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap withheldFields createdAt updatedAt',
-  { projectId: null, projectName: null, withheldFields: null },
+  'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap selectionReason withheldFields createdAt updatedAt',
+  { projectId: null, projectName: null, selectionReason: null, withheldFields: null },
 )
 const REVIEW_FINDING_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName reviewId reviewLensId machineId localId ordinal severity location evidence proposedCorrection disposition rejectionCategory triagedSeverity triagedAt duplicateOfFindingId withheldFields createdAt updatedAt',

@@ -12,24 +12,14 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
-import { measureChangeIdentity, reviewPins } from './review-pins.ts'
-import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
-import {
-  type BudgetedReviewPlan,
-  budgetedRoundApplicabilityForChange,
-} from './review-round-lens-service.ts'
-import {
-  resolveReviewBase,
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-  spawnGitProbe,
-} from './review-target.ts'
+import { reviewPins } from './review-pins.ts'
+import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
+import { resolveReviewBase } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
 import { reviewTierForRange } from './review-tier-service.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
@@ -40,39 +30,6 @@ type ReviewFlags = { has(name: string): boolean; flag(name: string): string | un
 type ReviewPresentation = { log(...values: unknown[]): void }
 const TIER_RUN_SQL =
   'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
-
-function roundApplicabilityForTierOutput(input: {
-  output: ReturnType<typeof reviewTierForRange>
-  identity: ReturnType<typeof measureChangeIdentity>
-  project: string
-  branch: string
-  postFix: ReturnType<typeof postFixReviewDecision>
-  review: Parameters<typeof reviewTierForRange>[3]
-}): BudgetedReviewPlan {
-  const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) {
-    return budgetedRoundApplicabilityForChange({
-      database: db(),
-      project: input.project,
-      branch: input.branch,
-      relevant,
-      tier: input.output.tier,
-    })
-  }
-  return budgetedRoundApplicabilityForChange({
-    database: db(),
-    group: {
-      project: input.project,
-      branch: input.branch,
-      patchId: input.identity.patchId,
-      pathSet: input.identity.paths,
-    },
-    relevant,
-    postFix: input.postFix,
-    review: input.review,
-    tier: input.output.tier,
-  })
-}
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -242,29 +199,15 @@ function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
   const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
   if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
-  const output = reviewTierForRange(repo, from, to, project.settings.review)
-  const identity = measureChangeIdentity(repo, from, to)
-  const postFix = postFixReviewDecision({
-    facts: gatherPostFixReviewFacts({
+  const { output, postFix, reviewPlan, reviewBudget, creditedByArchitectRead } =
+    budgetedReviewPlanForResolvedChange({
       database: db(),
-      repo,
-      to,
-      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
-      project: project.name,
+      cwd: repo,
+      base: from,
+      commit: to,
+      project,
       branch,
-    }),
-    tier: output.tier,
-    review: project.settings.review,
-  })
-  const { reviewPlan, reviewBudget, creditedByArchitectRead } = roundApplicabilityForTierOutput({
-    output,
-    identity,
-    project: project.name,
-    branch,
-    postFix,
-    review: project.settings.review,
-  })
+    })
   const round = reviewPlan.round
   return {
     ...output,
