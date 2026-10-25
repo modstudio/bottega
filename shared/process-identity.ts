@@ -57,14 +57,14 @@ export function observeBoundedSubprocess(
   }
 }
 
-/** Test whether a recorded process still exists without signaling it. */
-export function pidAlive(pid: number | null): boolean {
+/** Test whether a recorded process exists; EPERM means it cannot be signaled but is alive. */
+export function pidAlive(pid: number | null, kill: typeof process.kill = process.kill): boolean {
   if (!pid) return false
   try {
-    process.kill(pid, 0)
+    kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    return typeof error === 'object' && error !== null && 'code' in error && error.code === 'EPERM'
   }
 }
 
