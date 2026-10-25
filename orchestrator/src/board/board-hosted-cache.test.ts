@@ -324,6 +324,20 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
   expect(
     cachedMessageAddressed({ message: reply, tags: [] }, 'not-a-participant', clock, database),
   ).toBe(false)
+  const addressedReply = message({
+    kind: 'reply',
+    threadRootId: threadRoot.id,
+    audience: 'session:not-a-participant',
+    createdAt: '2026-10-05T12:00:02.000Z',
+  })
+  expect(
+    cachedMessageAddressed(
+      { message: addressedReply, tags: [] },
+      'not-a-participant',
+      clock,
+      database,
+    ),
+  ).toBe(true)
 })
 
 test('cache refresh distinguishes legacy architects rows from a hidden stored project', async () => {

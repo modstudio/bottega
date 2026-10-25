@@ -9,9 +9,52 @@ import {
   boardReachConcern,
   boardReachReport,
   countBoardReach,
+  countBoardReplyReach,
   reapBoardReach,
   renderBoardReach,
 } from './board-reach.ts'
+
+test('counts replies delivered to the asker, a successor instead, and nobody', () => {
+  const result = countBoardReplyReach([
+    {
+      messageSource: 'local',
+      replyId: 'delivered',
+      title: 'Delivered',
+      createdAt: '2026-10-13T12:00:00.000Z',
+      rootAuthorDeliveredAt: '2026-10-13T12:00:01.000Z',
+      successorDeliveredAt: null,
+      firstDeliveredAt: '2026-10-13T12:00:01.000Z',
+    },
+    {
+      messageSource: 'local',
+      replyId: 'successor',
+      title: 'Successor',
+      createdAt: '2026-10-13T12:00:00.000Z',
+      rootAuthorDeliveredAt: null,
+      successorDeliveredAt: '2026-10-13T12:00:03.000Z',
+      firstDeliveredAt: '2026-10-13T12:00:03.000Z',
+    },
+    {
+      messageSource: 'hosted',
+      replyId: 'never',
+      title: 'Never delivered',
+      createdAt: '2026-10-13T12:00:00.000Z',
+      rootAuthorDeliveredAt: null,
+      successorDeliveredAt: null,
+      firstDeliveredAt: null,
+    },
+  ])
+
+  expect(result).toEqual({
+    replies: 3,
+    deliveredToRootAuthor: 1,
+    deliveredToSuccessorInstead: 1,
+    medianFirstDeliveryLatencyMs: 2_000,
+    worstFirstDeliveryLatencyMs: 3_000,
+    deliveredToNobody: [{ messageSource: 'hosted', replyId: 'never', title: 'Never delivered' }],
+  })
+})
+
 import { postNotice } from './board-service.ts'
 
 const row = ({
@@ -182,10 +225,19 @@ test('an empty reach window has no pushes or worst messages', () => {
           title: null,
         })),
       },
+      replies: {
+        replies: 0,
+        deliveredToRootAuthor: 0,
+        deliveredToSuccessorInstead: 0,
+        medianFirstDeliveryLatencyMs: null,
+        worstFirstDeliveryLatencyMs: null,
+        deliveredToNobody: [],
+        rows: [],
+      },
       rows: [],
     }),
   ).toBe(
-    'Covered 2026-10-13T12:00:00.000Z to 2026-10-13T13:00:00.000Z (partial window). Recording failures: 2.\nNo board pushes recorded in this window. Recording has existed since 2026-10-13T12:00:00.000Z.',
+    'Covered 2026-10-13T12:00:00.000Z to 2026-10-13T13:00:00.000Z (partial window). Recording failures: 2.\nNo board pushes recorded in this window. Recording has existed since 2026-10-13T12:00:00.000Z.\nReply delivery:\nReplies with a session-authored root: 0\nDelivered to the root author: 0\nDelivered to a successor instead: 0\nFirst-delivery latency: median none, worst none\nReplies delivered to nobody: 0',
   )
 })
 

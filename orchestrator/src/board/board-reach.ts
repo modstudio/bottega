@@ -7,6 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { cachedHostedBoardMessages } from './board-hosted-cache.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 
@@ -49,6 +50,43 @@ export type BoardReachRecordingInput = {
   deliveryPoint: BoardDeliveryPoint
   blockedStop: boolean
   recordedAt: string
+}
+
+export type BoardReplyReachRow = {
+  messageSource: 'local' | 'hosted'
+  replyId: string
+  title: string | null
+  createdAt: string
+  rootAuthorDeliveredAt: string | null
+  successorDeliveredAt: string | null
+  firstDeliveredAt: string | null
+}
+
+export function countBoardReplyReach(rows: BoardReplyReachRow[]) {
+  const deliveredLatencies = rows.flatMap((row) =>
+    row.firstDeliveredAt === null
+      ? []
+      : [Math.max(0, Date.parse(row.firstDeliveredAt) - Date.parse(row.createdAt))],
+  )
+  deliveredLatencies.sort((left, right) => left - right)
+  const middle = Math.floor(deliveredLatencies.length / 2)
+  const medianFirstDeliveryLatencyMs = deliveredLatencies.length
+    ? deliveredLatencies.length % 2
+      ? deliveredLatencies[middle]!
+      : (deliveredLatencies[middle - 1]! + deliveredLatencies[middle]!) / 2
+    : null
+  return {
+    replies: rows.length,
+    deliveredToRootAuthor: rows.filter((row) => row.rootAuthorDeliveredAt !== null).length,
+    deliveredToSuccessorInstead: rows.filter(
+      (row) => row.rootAuthorDeliveredAt === null && row.successorDeliveredAt !== null,
+    ).length,
+    medianFirstDeliveryLatencyMs,
+    worstFirstDeliveryLatencyMs: deliveredLatencies.at(-1) ?? null,
+    deliveredToNobody: rows
+      .filter((row) => row.firstDeliveredAt === null)
+      .map(({ messageSource, replyId, title }) => ({ messageSource, replyId, title })),
+  }
 }
 
 type MessageFacts = {
@@ -368,6 +406,81 @@ const reachRow = (row: Record<string, unknown>): BoardReachRow => ({
   successor: row.successor === 1,
 })
 
+function localReplyReachRows(windowStart: string, database: Database): BoardReplyReachRow[] {
+  return (
+    database
+      .query(
+        `SELECT reply.record_id AS reply_id,root.title,reply.created_at,
+                MIN(CASE WHEN receipt.reader_session=root.author_session THEN receipt.delivered_at END) AS root_author_delivered_at,
+                MIN(CASE WHEN receipt.successor=1 THEN receipt.delivered_at END) AS successor_delivered_at,
+                MIN(receipt.delivered_at) AS first_delivered_at
+         FROM board_message reply
+         JOIN board_message root ON root.record_id=reply.thread_root_record_id
+         LEFT JOIN board_receipt receipt ON receipt.message_record_id=reply.record_id
+         WHERE reply.kind='reply' AND reply.created_at>=? AND root.author_session IS NOT NULL
+         GROUP BY reply.record_id,root.title,reply.created_at
+         ORDER BY reply.created_at,reply.record_id`,
+      )
+      .all(windowStart) as Array<{
+      reply_id: string
+      title: string | null
+      created_at: string
+      root_author_delivered_at: string | null
+      successor_delivered_at: string | null
+      first_delivered_at: string | null
+    }>
+  ).map((row) => ({
+    messageSource: 'local',
+    replyId: row.reply_id,
+    title: row.title,
+    createdAt: row.created_at,
+    rootAuthorDeliveredAt: row.root_author_delivered_at,
+    successorDeliveredAt: row.successor_delivered_at,
+    firstDeliveredAt: row.first_delivered_at,
+  }))
+}
+
+function hostedReplyReachRows(windowStart: string, database: Database): BoardReplyReachRow[] {
+  const messages = cachedHostedBoardMessages(database)
+  const roots = new Map(messages.map((message) => [message.id, message]))
+  return messages
+    .filter((message) => {
+      if (
+        message.kind !== 'reply' ||
+        message.threadRootId === null ||
+        message.createdAt < windowStart
+      )
+        return false
+      const root = roots.get(message.threadRootId)
+      return Boolean(root && root.authorSession !== null)
+    })
+    .map((message) => {
+      const root = roots.get(message.threadRootId!)!
+      const receipts = database
+        .query(
+          `SELECT reader_session,successor,delivered_at FROM hosted_board_receipt_cache
+           WHERE message_id=? AND delivered_at IS NOT NULL ORDER BY delivered_at`,
+        )
+        .all(message.id) as Array<{
+        reader_session: string
+        successor: number
+        delivered_at: string
+      }>
+      return {
+        messageSource: 'hosted' as const,
+        replyId: message.id,
+        title: root.title,
+        createdAt: message.createdAt,
+        rootAuthorDeliveredAt:
+          receipts.find((receipt) => receipt.reader_session === root.authorSession)?.delivered_at ??
+          null,
+        successorDeliveredAt:
+          receipts.find((receipt) => receipt.successor === 1)?.delivered_at ?? null,
+        firstDeliveredAt: receipts[0]?.delivered_at ?? null,
+      }
+    })
+}
+
 export function boardReachReport(
   hours = BOARD_REACH_DEFAULT_HOURS,
   clock = Date.now(),
@@ -413,6 +526,10 @@ export function boardReachReport(
       .all(windowStart) as Record<string, unknown>[]
   ).map(reachRow)
   const totals = countBoardReach(rows)
+  const replyRows = [
+    ...localReplyReachRows(windowStart, database),
+    ...hostedReplyReachRows(windowStart, database),
+  ]
   return {
     windowHours: hours,
     windowStart,
@@ -428,28 +545,35 @@ export function boardReachReport(
         title: boardMessageTitle(message.messageSource, message.messageId, database),
       })),
     },
+    replies: {
+      ...countBoardReplyReach(replyRows),
+      rows: replyRows,
+    },
     rows,
   }
 }
 
 export function renderBoardReach(report: ReturnType<typeof boardReachReport>): string {
   const coverage = `Covered ${report.coveredFrom} to ${report.coveredTo}${report.partial ? ' (partial window)' : ''}. Recording failures: ${report.recordingFailures}.`
-  if (!report.rows.length)
-    return `${coverage}\nNo board pushes recorded in this window. Recording has existed since ${report.recordingStartedAt}.`
   const totals = report.totals
-  const lines = [
-    coverage,
-    `Messages pushed: ${totals.messagesPushed}`,
-    `Pushes: ${totals.pushes}`,
-    `Pushes by purpose: information ${totals.pushesByPurpose.information}, request ${totals.pushesByPurpose.request}, standing ${totals.pushesByPurpose.standing}`,
-    `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
-    `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
-    `Pushes older than the session: ${totals.pushesOlderThanSession}`,
-    `Pushes with audience_at_posting 0: ${totals.audienceAtPostingZero}`,
-    `Pushes with audience_at_posting unset: ${totals.audienceAtPostingNull}`,
-    `Successor deliveries: ${totals.successorDeliveries}`,
-    `Stops blocked without acknowledgement required: ${totals.stopsBlockedWithoutAcknowledgement}`,
-  ]
+  const lines = [coverage]
+  if (!report.rows.length)
+    lines.push(
+      `No board pushes recorded in this window. Recording has existed since ${report.recordingStartedAt}.`,
+    )
+  else
+    lines.push(
+      `Messages pushed: ${totals.messagesPushed}`,
+      `Pushes: ${totals.pushes}`,
+      `Pushes by purpose: information ${totals.pushesByPurpose.information}, request ${totals.pushesByPurpose.request}, standing ${totals.pushesByPurpose.standing}`,
+      `Pushes not concerning the reader's project: ${totals.pushesNotConcerned}`,
+      `Pushes of unqualified messages: ${totals.pushesUnqualified}`,
+      `Pushes older than the session: ${totals.pushesOlderThanSession}`,
+      `Pushes with audience_at_posting 0: ${totals.audienceAtPostingZero}`,
+      `Pushes with audience_at_posting unset: ${totals.audienceAtPostingNull}`,
+      `Successor deliveries: ${totals.successorDeliveries}`,
+      `Stops blocked without acknowledgement required: ${totals.stopsBlockedWithoutAcknowledgement}`,
+    )
   if (totals.worstMessages.length) {
     lines.push('Worst messages by pushes not shown to concern the reader:')
     for (const message of totals.worstMessages)
@@ -457,5 +581,16 @@ export function renderBoardReach(report: ReturnType<typeof boardReachReport>): s
         `${message.messageId}${message.title ? ` — ${message.title}` : ''} [${message.audience}]: ${message.pushesNotShownToConcernReader} not shown to concern (${message.pushesNotConcerned} not concerning, ${message.pushesUnqualified} unqualified); ${message.pushesOlderThanSession} older than the session; ${message.stopsBlocked} blocked stops; projects: ${message.readerProjects.join(', ')}`,
       )
   }
+  const reply = report.replies
+  lines.push(
+    'Reply delivery:',
+    `Replies with a session-authored root: ${reply.replies}`,
+    `Delivered to the root author: ${reply.deliveredToRootAuthor}`,
+    `Delivered to a successor instead: ${reply.deliveredToSuccessorInstead}`,
+    `First-delivery latency: median ${reply.medianFirstDeliveryLatencyMs === null ? 'none' : `${reply.medianFirstDeliveryLatencyMs} ms`}, worst ${reply.worstFirstDeliveryLatencyMs === null ? 'none' : `${reply.worstFirstDeliveryLatencyMs} ms`}`,
+    `Replies delivered to nobody: ${reply.deliveredToNobody.length}`,
+  )
+  for (const message of reply.deliveredToNobody)
+    lines.push(`${message.replyId}${message.title ? ` — ${message.title}` : ''}`)
   return lines.join('\n')
 }

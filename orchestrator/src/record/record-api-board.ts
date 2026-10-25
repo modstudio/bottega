@@ -70,6 +70,7 @@ const replySchema = z
   .object({
     id: idSchema,
     body: z.string(),
+    audience: z.string().min(1).optional(),
     authorSession: sessionSchema,
     authorHarness: z.string().min(1).nullable().optional(),
     authorMachineId: idSchema.nullable().optional(),

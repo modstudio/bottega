@@ -80,6 +80,36 @@ test('board_post MCP schema mirrors the title size ceiling before service storag
   ).toBe(0)
 })
 
+test('board_reply MCP stores and applies its audience option through the shared service', async () => {
+  const root = postNotice(
+    { audience: 'operator', title: 'MCP reply audience', body: 'Address the chosen reader.' },
+    {},
+  )
+  const result = await withBoardClient((client) =>
+    client.callTool({
+      name: 'board_reply',
+      arguments: {
+        root_id: String(root.recordId),
+        body: 'Directed reply',
+        audience: 'session:chosen-reader',
+      },
+    }),
+  )
+  expect(result.isError).not.toBe(true)
+  const reply = db()
+    .query(
+      `SELECT record_id,audience FROM board_message
+       WHERE thread_root_record_id=? AND kind='reply'`,
+    )
+    .get(root.recordId) as { record_id: string; audience: string }
+  expect(reply.audience).toBe('session:chosen-reader')
+  expect(
+    db()
+      .query('SELECT reader_session FROM board_receipt WHERE message_record_id=?')
+      .all(reply.record_id),
+  ).toEqual([{ reader_session: 'chosen-reader' }])
+})
+
 test('board_read MCP result is the delivery envelope with one normalized notice shape', async () => {
   const posted = postNotice(
     { audience: 'operator', title: 'MCP read shape', body: 'Read through the envelope.' },

@@ -66,6 +66,11 @@ export function hostedBoardStoreRefusal(error: unknown): RecordBoardError | null
   if (state === '42501' && message.includes('row-level security')) {
     return new RecordBoardError(message, 400)
   }
+  if (state === '23514' && postgresConstraint(error) === 'board_message_reply_shape_check')
+    return new RecordBoardError(
+      'the hosted record does not support reply audiences; deploy the current record migration, then retry',
+      409,
+    )
   return null
 }
 

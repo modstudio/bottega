@@ -33,6 +33,21 @@ test('a missing grant is not treated as a board refusal', () => {
   expect(hostedBoardStoreRefusal(error)).toBeNull()
 })
 
+test('an old hosted reply constraint names the migration needed for reply audiences', () => {
+  const error = new SQL.PostgresError(
+    'new row for relation "board_message" violates check constraint "board_message_reply_shape_check"',
+    {
+      code: 'ERR_POSTGRES_SERVER_ERROR',
+      errno: '23514',
+      constraint: 'board_message_reply_shape_check',
+    },
+  )
+  const refusal = hostedBoardStoreRefusal(error)
+  expect(refusal).toBeInstanceOf(RecordBoardError)
+  expect(refusal?.status).toBe(409)
+  expect(refusal?.message).toContain('deploy the current record migration')
+})
+
 test('the live-subject unique violation is identified through the Postgres error chain', () => {
   const error = new SQL.PostgresError(
     'duplicate key value violates unique constraint "board_claim_live_subject_unique"',

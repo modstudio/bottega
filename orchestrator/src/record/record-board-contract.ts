@@ -212,6 +212,7 @@ export type HostedBoardPostInput = {
 export type HostedBoardReplyInput = {
   id: string
   body: string
+  audience?: string
   authorSession?: string | null
   authorHarness?: string | null
   authorMachineId?: string | null

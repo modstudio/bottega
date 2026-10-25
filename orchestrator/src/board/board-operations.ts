@@ -69,7 +69,7 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
-import { boardThreadState } from './board-thread-policy.ts'
+import { boardThreadState, parseReplyAudienceOption } from './board-thread-policy.ts'
 import {
   acceptAnswer,
   askQuestion,
@@ -491,12 +491,18 @@ export async function boardAsk(
   } satisfies BoardPostResult
 }
 
-export async function boardReply(id: string, body: string, inputContext?: Context) {
+export async function boardReply(
+  id: string,
+  body: string,
+  inputContext?: Context,
+  audienceValue?: string,
+) {
   const c = context(inputContext)
+  const audience = audienceValue === undefined ? undefined : parseReplyAudienceOption(audienceValue)
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') {
     const parsed = resolved.recordId
-    const result = replyToThread(parsed, body, c.env, c.clock, c.cwd)
+    const result = replyToThread(parsed, body, c.env, c.clock, c.cwd, audience)
     return {
       recordId: result.recordId,
       number: result.number,
@@ -510,6 +516,7 @@ export async function boardReply(id: string, body: string, inputContext?: Contex
   const row = await hostedClient(c).replyBoardMessage(resolved.recordId, {
     id: newRecordId(),
     body,
+    ...(audience === undefined ? {} : { audience }),
     authorSession: actor.session,
     authorHarness: actor.harness,
     authorMachineId: actor.machine,

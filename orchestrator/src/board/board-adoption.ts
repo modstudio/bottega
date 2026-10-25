@@ -281,6 +281,7 @@ async function uploadMessage(
     const uploaded = await client.replyBoardMessage(hostedRoot, {
       id: hostedId,
       body: row.body,
+      ...(row.audience === null ? {} : { audience: row.audience }),
       authorSession: row.author_session,
       authorHarness: row.author_harness,
       authorMachineId: machineId(),

@@ -101,9 +101,11 @@ export function registerBoardTools(server: McpServer): void {
       inputSchema: z.object({
         root_id: z.string().min(1),
         body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        audience: z.string().min(1).optional(),
       }),
     },
-    async ({ root_id, body }) => result(await boardReply(root_id, body)),
+    async ({ root_id, body, audience }) =>
+      result(await boardReply(root_id, body, undefined, audience)),
   )
   server.registerTool(
     'board_thread',

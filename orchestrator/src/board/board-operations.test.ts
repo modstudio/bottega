@@ -122,10 +122,14 @@ test('hosted post and reply expose unavailable posting counts as null', async ()
   db().query('INSERT INTO schema_meta(key,value) VALUES (?,?)').run(BOARD_HOSTED_ADOPTED_KEY, '1')
   const root = hostedMessage()
   const reply = hostedMessage()
+  let replyAudience: string | undefined
   const client = {
     ...createMemoryRecordApiClient(),
     postBoardMessage: async () => root,
-    replyBoardMessage: async () => reply,
+    replyBoardMessage: async (_rootId: string, input: { audience?: string }) => {
+      replyAudience = input.audience
+      return reply
+    },
   }
   await expect(
     boardPost({ audience: 'operator', title: 'Hosted', body: 'body' }, { env, client }),
@@ -136,7 +140,7 @@ test('hosted post and reply expose unavailable posting counts as null', async ()
     reached: null,
     warning: null,
   })
-  await expect(boardReply(root.id, 'reply', { env, client })).resolves.toEqual({
+  await expect(boardReply(root.id, 'reply', { env, client }, 'acknowledged')).resolves.toEqual({
     recordId: reply.id,
     number: null,
     rootId: root.id,
@@ -144,6 +148,7 @@ test('hosted post and reply expose unavailable posting counts as null', async ()
     reached: null,
     warning: null,
   })
+  expect(replyAudience).toBe('acknowledged')
 })
 
 test('uploaded message and claim UUIDs route to hosted rows instead of retired local shadows', async () => {

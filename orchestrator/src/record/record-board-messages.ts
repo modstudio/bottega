@@ -34,6 +34,7 @@ import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,
   noteFilingLeaseDecision,
+  parseReplyAudienceOption,
   replyRefusal,
 } from '../board/board-thread-policy.ts'
 import {
@@ -695,7 +696,7 @@ async function insertReplyCopyingRoot(
       ${input.id}::uuid, ${input.userId}::uuid, ${session}, ${input.authorHarness ?? null},
       ${input.authorMachineId ?? null}::uuid, ${input.authorRunId ?? null}::uuid,
       ${authorProjectId}::uuid,
-      'reply', NULL, root.id, NULL, NULL, ${input.body}, false, NULL, NULL,
+      'reply', NULL, root.id, ${input.audience ?? null}, NULL, ${input.body}, false, NULL, NULL,
       ${createdAt}::timestamptz, NULL, root.scope_project_ids, root.recipient_user_ids,
       root.shared_space_reach
     FROM board_message AS root
@@ -711,13 +712,16 @@ export async function replyHostedBoardMessage(
 ): Promise<HostedBoardMessage> {
   const bodyRefusal = replyBodyRefusal(input.body)
   if (bodyRefusal) throw new RecordBoardError(bodyRefusal, 400)
+  const audience = input.audience
+    ? asBoardError(() => parseReplyAudienceOption(input.audience!))
+    : null
   const session = sessionOrNull(input.authorSession)
   const actor = hostedBoardActor(session)
   const clock = Date.now()
   const requested: HostedBoardCreateContent = {
     kind: 'reply',
     purpose: null,
-    audience: null,
+    audience,
     title: null,
     body: input.body,
     ackRequired: false,
@@ -767,6 +771,7 @@ export async function replyHostedBoardMessage(
       WHERE kind='reply' AND author_user_id=${input.userId}::uuid
         AND author_session IS NOT DISTINCT FROM ${session}
         AND thread_root_id=${String(rootRow.row.id)}::uuid AND body=${input.body}
+        AND audience IS NOT DISTINCT FROM ${audience}
         AND created_at>=${duplicateSince}::timestamptz
       ORDER BY created_at DESC LIMIT 1
     `) as { id: string }[]

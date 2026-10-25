@@ -212,7 +212,9 @@ export const boardMessage = pgTable.withRLS(
       check(
         'board_message_reply_shape_check',
         sql`(${table.kind} = 'reply' AND ${table.threadRootId} IS NOT NULL
-          AND ${table.audience} IS NULL AND ${table.title} IS NULL
+          AND (${table.audience} IS NULL OR ${table.audience} IN ('participants','acknowledged','audience','operator')
+            OR ${table.audience} LIKE 'session:%' OR ${table.audience} LIKE 'run:%')
+          AND ${table.title} IS NULL
           AND ${table.ackRequired} = false AND ${table.ackDeadline} IS NULL
           AND ${table.expiresAt} IS NULL) OR
           (${table.kind} <> 'reply' AND ${table.threadRootId} IS NULL

@@ -36,8 +36,10 @@ import {
   BOARD_NOTE_FILING_LEASE_MS,
   boardThreadState,
   noteFilingLeaseDecision,
+  parseReplyAudienceOption,
+  type ReplyAudienceOption,
   replyRefusal,
-  threadParticipants,
+  resolveReplyReaders,
 } from './board-thread-policy.ts'
 
 type Environment = Record<string, string | undefined>
@@ -89,6 +91,7 @@ function addReplyReceipts(
   root: MessageRow,
   replyRecordId: string,
   reader: string,
+  audience: ReplyAudienceOption | null,
   database: ReturnType<typeof writableDb>,
 ): number {
   const earlierAuthors = database
@@ -100,18 +103,34 @@ function addReplyReceipts(
     author_session: string | null
     author_kind: string
   }[]
-  const participants = threadParticipants(
-    authorReader(root),
-    earlierAuthors.map((row) => row.author_session ?? OPERATOR_READER),
-    reader,
-  )
+  const rootReceipts = database
+    .query(
+      `SELECT reader_session,audience_at_posting,acknowledged_at FROM board_receipt
+       WHERE message_record_id=? ORDER BY rowid`,
+    )
+    .all(root.record_id) as Array<{
+    reader_session: string
+    audience_at_posting: number
+    acknowledged_at: string | null
+  }>
+  const recipients = resolveReplyReaders({
+    rootAuthor: authorReader(root),
+    threadAuthors: earlierAuthors.map((row) => row.author_session ?? OPERATOR_READER),
+    rootReceipts: rootReceipts.map((receipt) => ({
+      reader: receipt.reader_session,
+      audienceAtPosting: receipt.audience_at_posting === 1,
+      acknowledged: receipt.acknowledged_at !== null,
+    })),
+    audience,
+    replier: reader,
+  })
   const addReceipt = database.query(
     `INSERT INTO board_receipt
      (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
      VALUES (?,?,1,NULL,NULL,?)`,
   )
-  for (const participant of participants) addReceipt.run(replyRecordId, participant, newRecordId())
-  return participants.length
+  for (const recipient of recipients) addReceipt.run(replyRecordId, recipient, newRecordId())
+  return recipients.length
 }
 
 export function replyToThread(
@@ -120,12 +139,14 @@ export function replyToThread(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  audienceValue?: string,
 ): ReplyResult {
   if (!body.trim()) throw new Error('board reply body is required; provide --body')
   if (body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
   if (containsSecretShaped(body))
     throw new Error('board reply contains secret-shaped text; remove the credential and retry')
+  const audience = audienceValue === undefined ? null : parseReplyAudienceOption(audienceValue)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
@@ -149,7 +170,7 @@ export function replyToThread(
       .query(
         `SELECT record_id,number FROM board_message
          WHERE kind='reply' AND author_kind=? AND author_session IS ?
-           AND thread_root_record_id=? AND body=? AND created_at>=?
+           AND thread_root_record_id=? AND body=? AND audience IS ? AND created_at>=?
          ORDER BY created_at DESC,number DESC LIMIT 1`,
       )
       .get(
@@ -157,6 +178,7 @@ export function replyToThread(
         actor.session,
         root.record_id,
         body,
+        audience,
         new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString(),
       ) as { record_id: string; number: number } | null
     const decision = authorWindowDecision(actor, clock, Boolean(duplicate), database)
@@ -187,7 +209,7 @@ export function replyToThread(
          (record_id,number,kind,author_kind,author_session,author_run_record_id,author_harness,author_project,author_project_record_id,
           audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,
           thread_root_record_id)
-         VALUES (?,?,'reply',?,?,NULL,?,?,?,NULL,NULL,?,0,NULL,NULL,?,NULL,?)`,
+         VALUES (?,?,'reply',?,?,NULL,?,?,?,?,NULL,?,0,NULL,NULL,?,NULL,?)`,
       )
       .run(
         replyRecordId,
@@ -197,11 +219,12 @@ export function replyToThread(
         identity?.harness ?? null,
         project?.name ?? null,
         project?.recordId ?? null,
+        audience,
         body,
         createdAt,
         root.record_id,
       )
-    const reached = addReplyReceipts(root, replyRecordId, reader, database)
+    const reached = addReplyReceipts(root, replyRecordId, reader, audience, database)
     return {
       recordId: replyRecordId,
       number: replyNumber,

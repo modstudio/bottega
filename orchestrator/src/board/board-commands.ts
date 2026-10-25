@@ -318,8 +318,14 @@ export function registerBoardCommands(program: Command): void {
     .command('reply <root-id>')
     .description(BOARD_DESCRIPTIONS.reply)
     .requiredOption('--body <text>', 'set the reply body')
+    .option(
+      '--audience <choice>',
+      'participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+    )
     .action(async (id, options) =>
-      console.log(JSON.stringify(await boardReply(String(id), options.body))),
+      console.log(
+        JSON.stringify(await boardReply(String(id), options.body, undefined, options.audience)),
+      ),
     )
   board
     .command('thread <id>')
