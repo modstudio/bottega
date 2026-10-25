@@ -37,6 +37,6 @@ export function assertAgentPortBaselineIdentities(database: Database): void {
   if (!conflicts.length) return
   throw new Error(
     `refusing agent/port baseline UUID-key migration: rows have invalid identities (${conflicts.join(', ')})\n` +
-      `cleared by: repair the named identities, then run \`${PLATFORM_SLUG} database migrate\``,
+      `cleared by: repair the named identities, then run \`${PLATFORM_SLUG} machine migrate\``,
   )
 }

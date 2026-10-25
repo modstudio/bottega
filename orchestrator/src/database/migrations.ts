@@ -965,7 +965,7 @@ function prepareMigrationEntry(
     if (conflicts.length) {
       throw new Error(
         `refusing lens/port UUID-key migration: bound store has NULL-space port rows without equivalent hosted twins (${conflicts.join(', ')})\n` +
-          `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} database migrate\``,
+          `cleared by: reconcile the named rows with the hosted record, then run \`${PLATFORM_SLUG} machine migrate\``,
       )
     }
   }
