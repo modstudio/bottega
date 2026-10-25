@@ -1,8 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { mechanicalCheckEntryIssues } from './mechanical-check-declaration.ts'
 
-const messages = (identifier: string, entry: unknown) =>
-  mechanicalCheckEntryIssues(identifier, entry).map(({ path, message }) => ({ path, message }))
+const messages = (identifier: string, entry: unknown, mode: 'strict' | 'strip' = 'strict') =>
+  mechanicalCheckEntryIssues(identifier, entry, mode).map(({ path, message }) => ({
+    path,
+    message,
+  }))
+
+/** A declaration a newer binary wrote: a category and a field this one has not heard of. */
+const unknownCategory = ['mystery', { tool: 'probe' }] as const
+const unknownField = ['spelling', { tool: 'typos', newField: 1 }] as const
 
 describe('mechanicalCheckEntryIssues', () => {
   test('refuses malformed declarations with their field paths and messages', () => {
@@ -52,6 +59,73 @@ describe('mechanicalCheckEntryIssues', () => {
       {
         path: ['secrets', 'points'],
         message: 'points must not contain duplicates',
+      },
+    ])
+  })
+
+  test('a register read drops a category or a field this binary does not know', () => {
+    expect(messages(...unknownCategory, 'strip')).toEqual([])
+    expect(messages(...unknownField, 'strip')).toEqual([])
+    // The write keeps the refusal it always made, so a typo in a declaration
+    // is still caught at the register edge.
+    expect(messages(...unknownCategory)).toEqual([
+      {
+        path: ['mystery'],
+        message: expect.stringContaining('unknown category'),
+      },
+    ])
+    expect(messages(...unknownField)).toEqual([
+      {
+        path: ['spelling'],
+        message: expect.stringContaining('entry has unknown fields: newField'),
+      },
+    ])
+  })
+
+  test('an opt-out entry honors the mode for the keys beside it and inside it', () => {
+    const optOut = { optOut: { reason: 'not used' } }
+    // A key this binary does not know, beside or inside the opt-out, is
+    // dropped on a read and refused on a write.
+    expect(messages('spelling', { ...optOut, newField: 1 }, 'strip')).toEqual([])
+    expect(messages('spelling', optOut, 'strip')).toEqual([])
+    expect(
+      messages('spelling', { optOut: { reason: 'not used', until: '2026-01-01' } }, 'strip'),
+    ).toEqual([])
+    expect(messages('spelling', { ...optOut, newField: 1 })).toEqual([
+      {
+        path: ['spelling'],
+        message: 'optOut cannot be mixed with override fields: newField',
+      },
+    ])
+    expect(messages('spelling', { optOut: { reason: 'not used', until: '2026-01-01' } })).toEqual([
+      {
+        path: ['spelling', 'optOut'],
+        message: 'optOut must contain only a non-empty reason',
+      },
+    ])
+    // A known override field beside the opt-out is refused in both modes, and
+    // an opt-out with no reason is still judged by value in both.
+    for (const mode of ['strict', 'strip'] as const) {
+      expect(messages('spelling', { ...optOut, tool: 'probe' }, mode)).toEqual([
+        {
+          path: ['spelling'],
+          message: 'optOut cannot be mixed with override fields: tool',
+        },
+      ])
+      expect(messages('spelling', { optOut: { newField: 1 } }, mode)).toEqual([
+        {
+          path: ['spelling', 'optOut'],
+          message: 'optOut must contain only a non-empty reason',
+        },
+      ])
+    }
+  })
+
+  test('a check on a category or a field this binary knows is the same in either mode', () => {
+    expect(messages('file-placement', { limit: 10 }, 'strip')).toEqual([
+      {
+        path: ['file-placement', 'limit'],
+        message: 'file-placement has no limit; remove the limit field',
       },
     ])
   })

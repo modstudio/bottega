@@ -20,6 +20,7 @@ import {
   retiredProjectRefusal,
   retireProject,
   stackAt,
+  suppliedUnknownKeyProblems,
   unretireProject,
   upsertProject,
   validateProjectSettings,
@@ -52,9 +53,12 @@ afterEach(() => {
 describe('projects are data, not code', () => {
   test('project agent key mappings contain only trimmed non-empty secret names', () => {
     expect(
-      validateProjectSettings({
-        agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
-      }),
+      validateProjectSettings(
+        {
+          agentKeys: { BOTTEGA_OPENROUTER: 'OPENROUTER_STARSHIP' },
+        },
+        'strict',
+      ),
     ).toEqual([])
     for (const agentKeys of [
       null,
@@ -64,9 +68,10 @@ describe('projects are data, not code', () => {
       { ' AGENT': 'KEY' },
     ]) {
       expect(
-        validateProjectSettings({ agentKeys } as unknown as Parameters<
-          typeof validateProjectSettings
-        >[0]),
+        validateProjectSettings(
+          { agentKeys } as unknown as Parameters<typeof validateProjectSettings>[0],
+          'strict',
+        ),
       ).toContain(
         'agentKeys must be an object mapping non-empty trimmed agent secret names to non-empty trimmed project secret names',
       )
@@ -75,14 +80,20 @@ describe('projects are data, not code', () => {
 
   test('focused test runners have a fixed executable and argv prefix', () => {
     expect(
-      validateProjectSettings({
-        focusedTests: { command: 'scripts/test-focused', args: ['--ci'] },
-      }),
+      validateProjectSettings(
+        {
+          focusedTests: { command: 'scripts/test-focused', args: ['--ci'] },
+        },
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({
-        focusedTests: { command: '', args: ['ok', 1] },
-      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          focusedTests: { command: '', args: ['ok', 1] },
+        } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([
       'focusedTests.command must be a non-empty string',
       'focusedTests.args must be an array of strings',
@@ -91,89 +102,122 @@ describe('projects are data, not code', () => {
 
   test('reader MCP tool maps are strict, named, and duplicate-free', () => {
     expect(
-      validateProjectSettings({
-        mcp: { reader_tools: { starship: ['get-task', 'search_tasks'], absent: [] } },
-      }),
+      validateProjectSettings(
+        {
+          mcp: { reader_tools: { starship: ['get-task', 'search_tasks'], absent: [] } },
+        },
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({ mcp: { reader_tools: [] } } as unknown as Parameters<
-        typeof validateProjectSettings
-      >[0]),
+      validateProjectSettings(
+        { mcp: { reader_tools: [] } } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toContain('mcp.reader_tools must be a map from server names to tool-name lists')
     expect(
-      validateProjectSettings({ mcp: { reader_tools: { server: [''] } } }).join('\n'),
+      validateProjectSettings({ mcp: { reader_tools: { server: [''] } } }, 'strict').join('\n'),
     ).toContain('plain non-empty tool names')
     expect(
-      validateProjectSettings({ mcp: { reader_tools: { server: ['same', 'same'] } } }).join('\n'),
+      validateProjectSettings(
+        { mcp: { reader_tools: { server: ['same', 'same'] } } },
+        'strict',
+      ).join('\n'),
     ).toContain('duplicate tool name "same"')
   })
 
   test('code search opt-in is a boolean-only project setting', () => {
-    expect(validateProjectSettings({ search: { code: true } })).toEqual([])
+    expect(validateProjectSettings({ search: { code: true } }, 'strict')).toEqual([])
     expect(
-      validateProjectSettings({ search: { code: 'yes' } } as unknown as Parameters<
-        typeof validateProjectSettings
-      >[0]),
+      validateProjectSettings(
+        { search: { code: 'yes' } } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toContain('search.code must be a boolean')
   })
 
   test('main stack consumers are explicit and validated', () => {
     expect(
-      validateProjectSettings({ mainStack: { consumers: ['gate', 'worktree-create'] } }),
+      validateProjectSettings({ mainStack: { consumers: ['gate', 'worktree-create'] } }, 'strict'),
     ).toEqual([])
     expect(
-      validateProjectSettings({
-        mainStack: { consumers: ['mcp'], requiredServices: ['db', 'cache'] },
-      }),
+      validateProjectSettings(
+        {
+          mainStack: { consumers: ['mcp'], requiredServices: ['db', 'cache'] },
+        },
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({ mainStack: { consumers: ['unknown'] } } as unknown as Parameters<
-        typeof validateProjectSettings
-      >[0]),
+      validateProjectSettings(
+        { mainStack: { consumers: ['unknown'] } } as unknown as Parameters<
+          typeof validateProjectSettings
+        >[0],
+        'strict',
+      ),
     ).toEqual(['mainStack.consumers entries must be gate, mcp, or worktree-create'])
   })
 
   test('checks accept the optional policy shapes', () => {
     expect(
-      validateProjectSettings({
-        checks: {
-          spelling: true,
-          attribution: false,
-          commentTaskKeys: true,
-          commentHistory: { phrases: ['used to'] },
+      validateProjectSettings(
+        {
+          checks: {
+            spelling: true,
+            attribution: false,
+            commentTaskKeys: true,
+            commentHistory: { phrases: ['used to'] },
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({ checks: { spelling: 'yes' } as unknown as { spelling: boolean } }),
+      validateProjectSettings(
+        { checks: { spelling: 'yes' } as unknown as { spelling: boolean } },
+        'strict',
+      ),
     ).toContain('checks.spelling must be a boolean')
     expect(
-      validateProjectSettings({ checks: { unknown: true } as unknown as { spelling: boolean } }),
+      validateProjectSettings(
+        { checks: { unknown: true } as unknown as { spelling: boolean } },
+        'strict',
+      ),
     ).toContain('checks.unknown is not a recognized check')
     expect(
-      validateProjectSettings({
-        checks: { commentTaskKeys: 'yes' },
-      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          checks: { commentTaskKeys: 'yes' },
+        } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toContain('checks.commentTaskKeys must be a boolean')
     expect(
-      validateProjectSettings({
-        checks: { commentHistory: { phrases: [''] } },
-      }),
+      validateProjectSettings(
+        {
+          checks: { commentHistory: { phrases: [''] } },
+        },
+        'strict',
+      ),
     ).toContain('checks.commentHistory.phrases must be an array of non-empty strings')
     expect(
-      validateProjectSettings({ checks: null } as unknown as Parameters<
-        typeof validateProjectSettings
-      >[0]),
+      validateProjectSettings(
+        { checks: null } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toContain('checks must be an object')
   })
 
   test('readonly_docker is refused with its brokered replacement', () => {
     expect(
-      validateProjectSettings({
-        worktree: { readonly_docker: true } as unknown as Parameters<
-          typeof validateProjectSettings
-        >[0]['worktree'],
-      }),
+      validateProjectSettings(
+        {
+          worktree: { readonly_docker: true } as unknown as Parameters<
+            typeof validateProjectSettings
+          >[0]['worktree'],
+        },
+        'strict',
+      ),
     ).toContain(
       'worktree.readonly_docker is retired; remove it and read the recorded gate through gate_result',
     )
@@ -181,36 +225,39 @@ describe('projects are data, not code', () => {
 
   test('managedContext must be boolean when present', () => {
     expect(
-      validateProjectSettings({
-        managedContext: 'yes',
-      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          managedContext: 'yes',
+        } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toContain('managedContext must be a boolean')
   })
 
   test('validates only key prefixes being written against register rows', () => {
     const register = [{ name: 'existing', settings: { keyPrefixes: ['DEV'] } }]
     expect(
-      validateProjectSettings({ keyPrefixes: ['TASK'] }, undefined, {
+      validateProjectSettings({ keyPrefixes: ['TASK'] }, 'strict', undefined, {
         validateKeyPrefixes: true,
         currentProjectName: 'new',
         register,
       }),
     ).toContain('key prefix TASK is reserved')
     expect(
-      validateProjectSettings({ keyPrefixes: ['TASK'] }, undefined, {
+      validateProjectSettings({ keyPrefixes: ['TASK'] }, 'strict', undefined, {
         validateKeyPrefixes: true,
         currentProjectName: 'tasks',
         register,
       }),
     ).toEqual([])
     expect(
-      validateProjectSettings({ keyPrefixes: ['DEV'] }, undefined, {
+      validateProjectSettings({ keyPrefixes: ['DEV'] }, 'strict', undefined, {
         validateKeyPrefixes: true,
         currentProjectName: 'new',
         register,
       }),
     ).toContain('key prefix DEV is already used by another project')
-    expect(validateProjectSettings({ keyPrefixes: ['legacy-invalid'] })).toEqual([])
+    expect(validateProjectSettings({ keyPrefixes: ['legacy-invalid'] }, 'strict')).toEqual([])
   })
 
   test('a directory belongs to the project that contains it', () => {
@@ -287,7 +334,11 @@ describe('projects are data, not code', () => {
     projectDirectory = mkdtempSync(join(tmpdir(), 'orch-project-recipe-'))
     writeFileSync(join(projectDirectory, 'worktree.jsonc'), '{"worktree":{"create":[]}}')
     expect(
-      validateProjectSettings({ worktree: { recipePath: 'worktree.jsonc' } }, projectDirectory),
+      validateProjectSettings(
+        { worktree: { recipePath: 'worktree.jsonc' } },
+        'strict',
+        projectDirectory,
+      ),
     ).toEqual([])
     writeFileSync(
       join(projectDirectory, 'worktree.jsonc'),
@@ -296,6 +347,7 @@ describe('projects are data, not code', () => {
     expect(
       validateProjectSettings(
         { worktree: { recipePath: 'worktree.jsonc' } },
+        'strict',
         projectDirectory,
       ).join('\n'),
     ).toContain('unknown-key rule')
@@ -303,9 +355,12 @@ describe('projects are data, not code', () => {
 
   test('registration accepts a shadowed tracked recipe beside an inline recipe', () => {
     expect(
-      validateProjectSettings({
-        worktree: { recipe: {}, recipePath: '.orch/worktree.jsonc' },
-      }),
+      validateProjectSettings(
+        {
+          worktree: { recipe: {}, recipePath: '.orch/worktree.jsonc' },
+        },
+        'strict',
+      ),
     ).toEqual([])
   })
 })
@@ -477,5 +532,78 @@ describe('DEV-587 referenced projects are retired, not unstitched', () => {
     expect(live?.path).toBe('/w/restored-next')
     expect(live?.stack).toBe('node')
     expect(live?.retiredAt).toBeNull()
+  })
+})
+
+/**
+ * The register is written by one binary and read by another, so a settings name
+ * this binary does not know is a read's ordinary case and a write's typo.
+ */
+describe('an unknown settings name is judged by which side is reading', () => {
+  const asSettings = (settings: Record<string, unknown>) =>
+    settings as unknown as Parameters<typeof validateProjectSettings>[0]
+  const unknownCheck = asSettings({ checks: { spelling: true, brandNewCheck: true } })
+  const unknownHistoryField = asSettings({
+    checks: { commentHistory: { phrases: ['used to'], tone: 'warm' } },
+  })
+  const unknownSearchField = asSettings({ search: { code: true, docs: true } })
+  const unknownMainStackKey = asSettings({ mainStack: { consumers: ['gate'], health: 'http' } })
+
+  test('a read drops a name this binary does not know', () => {
+    expect(validateProjectSettings(unknownCheck, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownHistoryField, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownSearchField, 'strip')).toEqual([])
+    expect(validateProjectSettings(unknownMainStackKey, 'strip')).toEqual([])
+  })
+
+  test('a write refuses the same name with the text it always printed', () => {
+    expect(validateProjectSettings(unknownCheck, 'strict')).toEqual([
+      'checks.brandNewCheck is not a recognized check',
+    ])
+    expect(validateProjectSettings(unknownHistoryField, 'strict')).toEqual([
+      'checks.commentHistory.tone is not recognized',
+    ])
+    expect(validateProjectSettings(unknownSearchField, 'strict')).toEqual([
+      'search.docs is not recognized',
+    ])
+    expect(validateProjectSettings(unknownMainStackKey, 'strict')).toEqual([
+      'mainStack contains unknown settings',
+    ])
+  })
+
+  test('a check on a name or a value this binary knows is the same in either mode', () => {
+    expect(validateProjectSettings(asSettings({ checks: { spelling: 'yes' } }), 'strip')).toEqual([
+      'checks.spelling must be a boolean',
+    ])
+    expect(validateProjectSettings(asSettings({ search: { code: 'yes' } }), 'strip')).toEqual([
+      'search.code must be a boolean',
+    ])
+    expect(
+      validateProjectSettings(asSettings({ mainStack: { consumers: ['unknown'] } }), 'strip'),
+    ).toEqual(['mainStack.consumers entries must be gate, mcp, or worktree-create'])
+  })
+
+  test('a supplied patch is refused only for the names this binary does not know', () => {
+    expect(suppliedUnknownKeyProblems({ checks: { brandNewCheck: true } })).toEqual([
+      'checks.brandNewCheck is not a recognized check',
+    ])
+    expect(suppliedUnknownKeyProblems({ search: { docs: true } })).toEqual([
+      'search.docs is not recognized',
+    ])
+    expect(suppliedUnknownKeyProblems({ mainStack: { health: 'http' } })).toEqual([
+      'mainStack contains unknown settings',
+    ])
+    expect(
+      suppliedUnknownKeyProblems({ mechanicalChecks: { brandNewCheck: { tool: 'probe' } } }),
+    ).toEqual([expect.stringContaining('unknown category')])
+    expect(
+      suppliedUnknownKeyProblems({
+        mechanicalChecks: { spelling: { tool: 'typos', newField: 1 } },
+      }),
+    ).toEqual([expect.stringContaining('entry has unknown fields: newField')])
+    // A partial patch is judged on the keys it names, never on the ones it left
+    // out for the stored row to complete.
+    expect(suppliedUnknownKeyProblems({ checks: { spelling: true } })).toEqual([])
+    expect(suppliedUnknownKeyProblems({ mainStack: { consumers: ['mcp'] } })).toEqual([])
   })
 })

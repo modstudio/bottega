@@ -12,6 +12,8 @@ import {
 import {
   refuseHubActionOverrides,
   refuseNonCursorProjectId,
+  trackerActionsShape,
+  trackerReviewStagesShape,
   trackerSettingsShape,
 } from './trackers.ts'
 
@@ -209,8 +211,16 @@ export type AnswerWaitingResult = z.infer<typeof AnswerWaitingResultSchema>
 export type ListOpenQuestionsResult = z.infer<typeof ListOpenQuestionsResultSchema>
 export type FileRulingResult = z.infer<typeof FileRulingResultSchema>
 
+// The published register is a read, so the tracker's two inner objects are
+// loose here as well: a stage or an action a newer binary added must not take
+// the whole register away from hub and retrieval. The shared shape keeps them
+// strict for the register's writer.
 const OrchTrackerSettingsSchema = z
-  .looseObject(trackerSettingsShape)
+  .looseObject({
+    ...trackerSettingsShape,
+    reviewStages: z.looseObject(trackerReviewStagesShape).optional(),
+    actions: z.looseObject(trackerActionsShape).optional(),
+  })
   .superRefine((tracker, context) => {
     refuseHubActionOverrides(tracker, context)
     refuseNonCursorProjectId(tracker, context)

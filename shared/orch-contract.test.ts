@@ -3,6 +3,7 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from './brand.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
+  OrchProjectSchema,
   OrchRunDetailSchema,
   OrchStateSchema,
 } from './orch-contract.ts'
@@ -153,4 +154,52 @@ test('run detail accepts a child-turn request with both run UUIDs', () => {
     root_id: 10,
     root_record_id: payload.root_record_id,
   })
+})
+
+/** The `project list --json` row shape, with a tracker a newer binary extended. */
+const listedProjectRow = {
+  name: PLATFORM_NAME,
+  path: '/w/probe',
+  stack: null,
+  canon: true,
+  settings: {
+    tracker: {
+      protocol: 'cursor-mcp',
+      actions: { search: 'task_list', newVerb: 'tool' },
+      reviewStages: { waiting: 'waiting-review', active: 'in-review', brandNew: 'x' },
+    },
+  },
+  visibility: null,
+  record_id: '01990000-0000-7000-8000-000000000021',
+  repository: true,
+  lifecycle_form: 'managed',
+  problems: [],
+  commit_hooks_skipped: true,
+  gate: null,
+}
+
+test('the published register accepts a tracker action and stage this binary does not know', () => {
+  const parsed = OrchProjectSchema.parse(listedProjectRow)
+  expect(parsed.settings.tracker).toMatchObject({
+    protocol: 'cursor-mcp',
+    actions: { search: 'task_list' },
+    reviewStages: { waiting: 'waiting-review', active: 'in-review' },
+  })
+})
+
+test('the published register still judges the tracker keys it knows', () => {
+  expect(() =>
+    OrchProjectSchema.parse({
+      ...listedProjectRow,
+      settings: { tracker: { protocol: 'hub', actions: { search: 'task_list' } } },
+    }),
+  ).toThrow('the built-in tracker accepts no action overrides; remove tracker.actions')
+  expect(() =>
+    OrchProjectSchema.parse({
+      ...listedProjectRow,
+      settings: {
+        tracker: { protocol: 'hub', projectId: '01990000-0000-7000-8000-000000000022' },
+      },
+    }),
+  ).toThrow('projectId is accepted only by the cursor-mcp protocol')
 })

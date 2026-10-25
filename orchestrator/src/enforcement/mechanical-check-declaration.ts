@@ -41,9 +41,16 @@ const mechanicalCheckIssue = (
 function optOutIssues(
   identifier: string,
   entry: Record<string, unknown>,
+  mode: 'strict' | 'strip',
 ): MechanicalCheckValidationIssue[] {
   const issues: MechanicalCheckValidationIssue[] = []
-  const mixed = Object.keys(entry).filter((key) => key !== 'optOut')
+  // A known override field beside optOut is always a mistake; a key this
+  // binary does not know is a mistake only where a write is being judged.
+  const mixed = Object.keys(entry).filter(
+    (key) =>
+      key !== 'optOut' &&
+      (mode === 'strict' || MECHANICAL_CHECK_OVERRIDE_FIELDS.includes(key as never)),
+  )
   if (mixed.length) {
     issues.push(
       mechanicalCheckIssue(
@@ -53,11 +60,13 @@ function optOutIssues(
     )
   }
   const optOut = entry.optOut
+  const optOutObject = Boolean(optOut) && typeof optOut === 'object' && !Array.isArray(optOut)
   const valid =
-    optOut &&
-    typeof optOut === 'object' &&
-    !Array.isArray(optOut) &&
-    Object.keys(optOut).every((key) => key === 'reason') &&
+    optOutObject &&
+    // Strip mode judges only the known opt-out shape; a key a newer binary
+    // added beside `reason` is dropped like any other unknown key.
+    (mode === 'strip' ||
+      Object.keys(optOut as Record<string, unknown>).every((key) => key === 'reason')) &&
     typeof (optOut as Record<string, unknown>).reason === 'string' &&
     Boolean((optOut as { reason: string }).reason.trim())
   if (!valid) {
@@ -146,25 +155,38 @@ function pointIssues(
   return issues
 }
 
+/**
+ * The refusal about a category or an entry field this binary does not know
+ * depends on WHO is reading: a register write refuses one, because that is how
+ * a typo in a declaration is caught, and a register read drops it, because a
+ * newer binary may have written a category this one has never heard of and
+ * refusing there takes the whole project out of the register. The mode is
+ * spelled out here rather than shared with the register's own settings mode,
+ * which imports this grammar and so cannot be imported back without a cycle.
+ * Checks on a category and a field this binary knows are the same in both.
+ */
 export function mechanicalCheckEntryIssues(
   identifier: string,
   raw: unknown,
+  mode: 'strict' | 'strip',
 ): MechanicalCheckValidationIssue[] {
   const category = MECHANICAL_CHECK_CATEGORIES.get(identifier)
   if (!category) {
-    return [
-      mechanicalCheckIssue(
-        identifier,
-        `unknown category; choose one of: ${MECHANICAL_CHECK_CATALOGUE.map(({ id }) => id).join(', ')}`,
-      ),
-    ]
+    return mode === 'strict'
+      ? [
+          mechanicalCheckIssue(
+            identifier,
+            `unknown category; choose one of: ${MECHANICAL_CHECK_CATALOGUE.map(({ id }) => id).join(', ')}`,
+          ),
+        ]
+      : []
   }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return [mechanicalCheckIssue(identifier, 'entry must be an override or an opt-out object')]
   }
   const entry = raw as Record<string, unknown>
   const keys = Object.keys(entry)
-  if (Object.hasOwn(entry, 'optOut')) return optOutIssues(identifier, entry)
+  if (Object.hasOwn(entry, 'optOut')) return optOutIssues(identifier, entry, mode)
   if (keys.length === 0) {
     return [
       mechanicalCheckIssue(
@@ -173,7 +195,10 @@ export function mechanicalCheckEntryIssues(
       ),
     ]
   }
-  const unknown = keys.filter((key) => !MECHANICAL_CHECK_OVERRIDE_FIELDS.includes(key as never))
+  const unknown =
+    mode === 'strict'
+      ? keys.filter((key) => !MECHANICAL_CHECK_OVERRIDE_FIELDS.includes(key as never))
+      : []
   return [
     ...(unknown.length
       ? [mechanicalCheckIssue(identifier, `entry has unknown fields: ${unknown.sort().join(', ')}`)]

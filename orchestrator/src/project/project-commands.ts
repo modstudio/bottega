@@ -44,6 +44,7 @@ import {
   unretireWrittenProject,
   upsertProject,
   validateProjectSettings,
+  validateRegisterWrite,
   worktreeWarnings,
   writeHostedProject,
 } from './projects.ts'
@@ -68,7 +69,7 @@ function listedProjectJson(project: Project) {
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
     lifecycle_form: lifecycleForm(project.settings.worktree),
-    problems: validateProjectSettings(project.settings, project.path),
+    problems: validateProjectSettings(project.settings, 'strip', project.path),
     commit_hooks_skipped: true,
     gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,
   }
@@ -94,7 +95,7 @@ function printProjectRows(all: Project[], presentation: ProjectPresentation): vo
     )
     const keys = Object.keys(p.settings)
     if (keys.length) presentation.log(`${' '.repeat(14)} settings: ${keys.join(', ')}`)
-    for (const problem of validateProjectSettings(p.settings, p.path)) {
+    for (const problem of validateProjectSettings(p.settings, 'strip', p.path)) {
       presentation.log(`${p.name}: ${problem}`)
     }
     // Reported, not enforced: a half-configured project should say so and
@@ -174,7 +175,7 @@ export async function addProject(
   requireMembership: (space: string) => Promise<unknown>,
 ): Promise<{ project: Project; wasRetired: boolean; adoptedSpace?: string }> {
   if (!existsSync(input.path)) throw new Error(`no such directory: ${input.path}`)
-  const malformed = validateProjectSettings(input.settings, input.path, {
+  const malformed = validateProjectSettings(input.settings, 'strict', input.path, {
     validateKeyPrefixes: Object.hasOwn(input.settings, 'keyPrefixes'),
     currentProjectName: input.name,
     register: projects(),
@@ -200,7 +201,10 @@ export async function addProject(
     retiredAt: null,
     settings: decision.settings,
   }
-  const adoptedMalformed = validateProjectSettings(candidate.settings, input.path, {
+  // Adopting merges the hosted row's settings with the requested ones, so the
+  // merged row is read in strip mode; the requested settings were refused
+  // strictly above.
+  const adoptedMalformed = validateProjectSettings(candidate.settings, 'strip', input.path, {
     validateKeyPrefixes: Object.hasOwn(candidate.settings, 'keyPrefixes'),
     currentProjectName: input.name,
     register: projects(),
@@ -382,12 +386,17 @@ function validatedFillCandidate(current: Project, input: FillAbsentProjectInput)
   }
   const settings = fillAbsentSettings(current, input)
   const lensSpaceId = effectiveProjectSpace(db(), current.name)
-  const malformed = validateProjectSettings(settings, current.path, {
-    validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
-    currentProjectName: current.name,
-    register: projects(),
-    enabledLensIds: enabledLensIds(lensSpaceId),
-    enabledLensSpaceId: lensSpaceId,
+  const malformed = validateRegisterWrite({
+    merged: settings,
+    supplied: input.fill.settings,
+    projectPath: current.path,
+    context: {
+      validateKeyPrefixes: Object.hasOwn(input.fill.settings, 'keyPrefixes'),
+      currentProjectName: current.name,
+      register: projects(),
+      enabledLensIds: enabledLensIds(lensSpaceId),
+      enabledLensSpaceId: lensSpaceId,
+    },
   })
   if (malformed.length) throw new Error(malformed.join('\n'))
   const candidate = {
@@ -608,15 +617,22 @@ async function setProjectCommand(
     settings,
   }
   const lensSpaceId = effectiveProjectSpace(db(), name)
-  const malformed = validateProjectSettings(candidate.settings, candidate.path, {
-    validateKeyPrefixes:
-      writesKeyPrefixes(settingsPatch) ||
-      (nextName !== name && candidate.settings.keyPrefixes !== undefined),
-    currentProjectName: name,
-    projectNameAfterWrite: nextName,
-    register: projects(),
-    enabledLensIds: enabledLensIds(lensSpaceId),
-    enabledLensSpaceId: lensSpaceId,
+  // The patch's own keys are refused strictly; the row it merges into is read
+  // in strip mode, so a key a newer binary wrote survives the update.
+  const malformed = validateRegisterWrite({
+    merged: candidate.settings,
+    supplied: settingsPatch,
+    projectPath: candidate.path,
+    context: {
+      validateKeyPrefixes:
+        writesKeyPrefixes(settingsPatch) ||
+        (nextName !== name && candidate.settings.keyPrefixes !== undefined),
+      currentProjectName: name,
+      projectNameAfterWrite: nextName,
+      register: projects(),
+      enabledLensIds: enabledLensIds(lensSpaceId),
+      enabledLensSpaceId: lensSpaceId,
+    },
   }).filter((problem) => !skipLegacyCreateMigration(project, candidate, problem))
   if (malformed.length) throw new Error(malformed.join('\n'))
   const incomplete = incompleteWorktreeProblems(candidate)

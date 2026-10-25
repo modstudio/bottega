@@ -5,7 +5,22 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { fillAbsentProjectSettings } from './project-commands.ts'
+import type { ProjectSettings } from './project-settings.ts'
 import { projectByName, upsertProject } from './projects.ts'
+
+/** A risk path a newer binary wrote: `weight` is a key this one has never heard of. */
+const weightedRiskPath = {
+  pattern: '^hub/web/',
+  tier: 3,
+  reason: 'dashboard',
+  firm: true,
+  weight: 2,
+}
+
+const settingsCarrying = (path: unknown) =>
+  ({
+    review: { lenses: [], risk: { paths: [path], unlisted: 0 } },
+  }) as unknown as ProjectSettings
 
 afterEach(() => mock.restore())
 
@@ -42,6 +57,38 @@ test('fills recipePath while preserving existing worktree settings', async () =>
     readonly_provision: readonlyProvision,
     recipePath,
   })
+})
+
+test('fill-absent judges a supplied key strictly and a stored one leniently', async () => {
+  const path = mkdtempSync(join(tmpdir(), 'orch-fill-stored-unknown-'))
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'setup-fill-stored-unknown',
+    path,
+    settings: settingsCarrying(weightedRiskPath),
+  })
+  await fillAbsentProjectSettings({
+    name: 'setup-fill-stored-unknown',
+    fill: { settings: { search: { code: true } } },
+  })
+  expect(projectByName('setup-fill-stored-unknown')?.settings).toMatchObject({
+    search: { code: true },
+    review: { risk: { paths: [weightedRiskPath] } },
+  })
+
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'setup-fill-supplied-unknown',
+    path: '/projects/setup-fill-supplied-unknown',
+    settings: {},
+  })
+  await expect(
+    fillAbsentProjectSettings({
+      name: 'setup-fill-supplied-unknown',
+      fill: { settings: settingsCarrying(weightedRiskPath) },
+    }),
+  ).rejects.toThrow('review.risk.paths.0: Unrecognized key: "weight"')
+  expect(projectByName('setup-fill-supplied-unknown')?.settings).toEqual({})
 })
 
 test('recomputes the branch check when the candidate changes before the write', async () => {

@@ -20,6 +20,14 @@ export const settingsModules: SettingsModule[] = [
     '../enforcement/mechanical-check-declaration.ts',
     './review-record-template.ts',
   ]),
+  module('orchestrator/src/project/project-settings-refusals.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/repository-visibility.ts',
+    '../gate/gate-decision.ts',
+    '../workflow/autonomy.ts',
+    './project-injection.ts',
+    './project-settings.ts',
+  ]),
   module('orchestrator/src/project/review-record-template.ts', []),
   module('orchestrator/src/config/secret-run.ts', [
     '../../../shared/brand.ts',

@@ -17,7 +17,7 @@ import {
 import { readRecordInstallBinding } from '../record/install-binding.ts'
 import { applyLensCatalogueRow } from '../record/record-cache-lens.ts'
 import { fillAbsentProjectSettings, projectCommand } from './project-commands.ts'
-import { projectByName, projects, retireProject, upsertProject } from './projects.ts'
+import { type Project, projectByName, projects, retireProject, upsertProject } from './projects.ts'
 
 async function runProject(
   args: string[],
@@ -442,6 +442,93 @@ test('project set reports setting effects without values and reports a no-op', a
       settings: JSON.stringify({ checks: { spelling: false } }),
     }),
   ).toBe('updated settings-effect\n               settings unchanged')
+})
+
+test('project set keeps a stored key this binary does not know', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  const newerRiskPath = {
+    pattern: '^hub/web/',
+    tier: 3,
+    reason: 'dashboard',
+    firm: true,
+    weight: 2,
+  }
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-newer-binary',
+    path: '/w/settings-newer-binary',
+    settings: {
+      review: { lenses: [], risk: { paths: [newerRiskPath], unlisted: 0 } },
+    } as unknown as Project['settings'],
+  })
+
+  const listed = JSON.parse(await runProject(['project', 'list'], { json: true })) as {
+    name: string
+    problems: string[]
+  }[]
+  expect(listed.find((row) => row.name === 'settings-newer-binary')?.problems).toEqual([])
+
+  await runProject(['project', 'set', 'settings-newer-binary'], {
+    settings: JSON.stringify({ checks: { spelling: true } }),
+  })
+  expect(projectByName('settings-newer-binary')?.settings).toMatchObject({
+    checks: { spelling: true },
+    review: { risk: { paths: [newerRiskPath] } },
+  })
+
+  await expect(
+    runProject(['project', 'set', 'settings-newer-binary'], {
+      settings: JSON.stringify({ review: { risk: { paths: [newerRiskPath] } } }),
+    }),
+  ).rejects.toThrow('review.risk.paths.0: Unrecognized key: "weight"')
+  expect(projectByName('settings-newer-binary')?.settings).toMatchObject({
+    review: { risk: { paths: [newerRiskPath] } },
+  })
+})
+
+test('project set keeps a check name and a tracker verb this binary does not know', async () => {
+  installRecordApiClient(createMemoryRecordApiClient())
+  const storedSettings = {
+    checks: { spelling: true, brandNewCheck: true },
+    tracker: { protocol: 'cursor-mcp', actions: { search: 'task_list', newVerb: 'tool' } },
+  } as unknown as Project['settings']
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'settings-newer-names',
+    path: '/w/settings-newer-names',
+    settings: storedSettings,
+  })
+
+  const listed = JSON.parse(await runProject(['project', 'list'], { json: true })) as {
+    name: string
+    problems: string[]
+  }[]
+  expect(listed.find((row) => row.name === 'settings-newer-names')?.problems).toEqual([])
+
+  await runProject(['project', 'set', 'settings-newer-names'], {
+    settings: JSON.stringify({ gate: 'bun run check' }),
+  })
+  expect(projectByName('settings-newer-names')?.settings).toMatchObject({
+    gate: 'bun run check',
+    checks: { spelling: true, brandNewCheck: true },
+    tracker: { actions: { search: 'task_list', newVerb: 'tool' } },
+  })
+
+  await expect(
+    runProject(['project', 'set', 'settings-newer-names'], {
+      settings: JSON.stringify({ checks: { brandNewCheck: true } }),
+    }),
+  ).rejects.toThrow('checks.brandNewCheck is not a recognized check')
+  await expect(
+    runProject(['project', 'set', 'settings-newer-names'], {
+      settings: JSON.stringify({ tracker: { actions: { newVerb: 'tool' } } }),
+    }),
+  ).rejects.toThrow('tracker.actions: Unrecognized key: "newVerb"')
+  expect(projectByName('settings-newer-names')?.settings).toMatchObject({
+    gate: 'bun run check',
+    checks: { spelling: true, brandNewCheck: true },
+    tracker: { actions: { search: 'task_list', newVerb: 'tool' } },
+  })
 })
 
 test('project set refuses non-object settings without changing stored settings', async () => {
