@@ -4,7 +4,7 @@ import { pgTable, text, uuid } from 'drizzle-orm/pg-core'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import * as taskClient from '../hub/src/task-client.ts'
 import { applyMigrations } from '../orchestrator/src/database/migrations.ts'
-import { enumerateClientMethods } from './check-identity-inventory.ts'
+import { enumerateClientMethods } from './identity-client-enumeration.ts'
 import {
   assertShrinkingKeyBaseline,
   classifyKeyInventory,
