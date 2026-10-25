@@ -51,6 +51,14 @@ class RefusalScoreGuidanceTest(unittest.TestCase):
         self.assertIn('refused: "evidence at a.ts:2"', guidance)
         self.assertIn("correct with evidence: full right faithful", guidance)
 
+    def test_refusal_caps_a_long_one_line_summary_at_its_last_word_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reply.txt"
+            path.write_text(json.dumps(self.reply("refused", "word " * 40 + "tail")))
+            guidance = refusal_score_guidance(str(path), False)
+        self.assertIn(f'refused: "{"word " * 39}word…"', guidance)
+        self.assertNotIn("tail", guidance)
+
     def test_done_and_absent_replies_have_no_mark(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "reply.txt"

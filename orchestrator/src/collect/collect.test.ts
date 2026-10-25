@@ -361,6 +361,32 @@ describe('collection records', () => {
     }
   })
 
+  test('a refusal hint caps a long one-line summary at its last word boundary', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const output = join(dir, `long-refusal-${id}.txt`)
+    writeFileSync(
+      output,
+      JSON.stringify({
+        status: 'refused',
+        summary: `${'word '.repeat(40)}tail`,
+        files_changed: null,
+        change_guide: null,
+        questions: null,
+        deviations: null,
+        blockers: null,
+        tests: null,
+      }),
+    )
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, id)
+    try {
+      const hint = recordedResult(id).errors.join('\n')
+      expect(hint).toContain(`refused: "${'word '.repeat(39)}word…"`)
+      expect(hint).not.toContain('tail')
+    } finally {
+      rmSync(output, { force: true })
+    }
+  })
+
   test('a done or absent reply adds no refusal mark and does not throw', () => {
     const done = addRun({ agent: 'codex', job: 'implement' })
     const absent = addRun({ agent: 'codex', job: 'implement' })

@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 
+REFUSAL_QUOTE_CHARS = 200
+
+
 class HeldTreeDecision(NamedTuple):
     block: bool
     in_flight_line: str | None
@@ -58,6 +61,16 @@ def refusal_score_guidance(output_path: str | None, writing_job: bool) -> str | 
     if not replies or replies[-1].get("status") != "refused":
         return None
     summary = replies[-1]["summary"].splitlines()[0] if replies[-1]["summary"] else ""
+    if len(summary) > REFUSAL_QUOTE_CHARS:
+        cut = next(
+            (
+                index
+                for index in range(REFUSAL_QUOTE_CHARS, -1, -1)
+                if summary[index].isspace()
+            ),
+            REFUSAL_QUOTE_CHARS,
+        )
+        summary = summary[:cut] + "…"
     faithful = " faithful" if writing_job else ""
     return (
         f"refused: {json.dumps(summary, ensure_ascii=False)}; judge the refusal on its merits "

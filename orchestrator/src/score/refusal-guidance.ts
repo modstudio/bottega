@@ -5,6 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { readFileSync } from 'node:fs'
 import { parseWorkerReplyWithCount } from '../contract/contract-reply.ts'
 
+const REFUSAL_QUOTE_CHARS = 200
+
 const STATUS_SUMMARY_SCHEMA = {
   type: 'object',
   required: ['status', 'summary'],
@@ -23,7 +25,18 @@ function refusalScoreGuidance(text: string, writingJob: boolean): string | null 
     STATUS_SUMMARY_SCHEMA,
   ).reply
   if (reply?.status !== 'refused') return null
-  const summary = reply.summary.split(/\r?\n/, 1)[0] ?? ''
+  const firstLine = reply.summary.split(/\r?\n/, 1)[0] ?? ''
+  let summary = firstLine
+  if (firstLine.length > REFUSAL_QUOTE_CHARS) {
+    let cut = REFUSAL_QUOTE_CHARS
+    for (let index = REFUSAL_QUOTE_CHARS; index >= 0; index -= 1) {
+      if (/\s/.test(firstLine[index] ?? '')) {
+        cut = index
+        break
+      }
+    }
+    summary = `${firstLine.slice(0, cut)}…`
+  }
   return (
     `refused: ${JSON.stringify(summary)}; judge the refusal on its merits ` +
     `(correct with evidence: full right${writingJob ? ' faithful' : ''}; should have asked: ` +
