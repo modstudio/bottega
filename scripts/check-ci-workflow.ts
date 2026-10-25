@@ -59,12 +59,15 @@ export function checkCiWorkflow(source: string): void {
       `CI jobs do not match check plan: expected ${expected.join(', ')}; got ${actual.join(', ')}`,
     )
   }
-  if (!aggregateNeeds(source).includes('hub-ui-stories'))
-    throw new Error('CI aggregate job must need hub-ui-stories')
-  if (!aggregateNeeds(source).includes('orchestrator-hooks'))
-    throw new Error('CI aggregate job must need orchestrator-hooks')
-  if (!aggregateNeeds(source).includes('postgres'))
-    throw new Error('CI aggregate job must need postgres')
+  const actualNeeds = aggregateNeeds(source).sort()
+  const expectedNeeds = expectedWorkflowJobNames().filter((name) => name !== 'ci')
+  if (JSON.stringify(actualNeeds) !== JSON.stringify(expectedNeeds)) {
+    const missing = expectedNeeds.filter((name) => !actualNeeds.includes(name))
+    const unknown = actualNeeds.filter((name) => !expectedNeeds.includes(name))
+    throw new Error(
+      `CI aggregate needs do not match check plan: missing ${missing.join(', ') || 'none'}; unknown ${unknown.join(', ') || 'none'}`,
+    )
+  }
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/ui storybook:test'))
     throw new Error('hub-ui-stories job must run the hub-ui story-test script')
   if (!workflowJob(source, 'hub-ui-stories').includes('bun run --cwd hub/views storybook:test'))

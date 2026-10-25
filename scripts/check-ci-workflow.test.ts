@@ -11,7 +11,9 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'ci')
-        return `  ${job}:\n    needs: [hub-ui-stories, orchestrator-hooks, postgres]`
+        return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
+          .filter((name) => name !== 'ci')
+          .join(', ')}]`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
@@ -21,28 +23,23 @@ test('refuses a workflow with a missing or extra job', () => {
   )
 })
 
-test('requires the story job to block the aggregate ci job', () => {
+test('requires every planned job to block the aggregate ci job', () => {
   const workflow = readWorkflowFixture()
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace(
-        '    needs: [hub-ui-stories, orchestrator-hooks, postgres]',
-        '    needs: [orchestrator-hooks, postgres]',
+  const plannedJobs = expectedWorkflowJobNames().filter((name) => name !== 'ci')
+  for (const job of plannedJobs) {
+    expect(() =>
+      checkCiWorkflow(
+        workflow.replace(
+          `    needs: [${plannedJobs.join(', ')}]`,
+          `    needs: [${plannedJobs.filter((name) => name !== job).join(', ')}]`,
+        ),
       ),
-    ),
-  ).toThrow('must need hub-ui-stories')
+    ).toThrow(job)
+  }
 })
 
-test('pins the Python hook leg and makes it block aggregate CI', () => {
+test('pins the Python hook leg', () => {
   const workflow = readWorkflowFixture()
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace(
-        '    needs: [hub-ui-stories, orchestrator-hooks, postgres]',
-        '    needs: [hub-ui-stories, postgres]',
-      ),
-    ),
-  ).toThrow('must need orchestrator-hooks')
   expect(() =>
     checkCiWorkflow(workflow.replace("python-version: '3.12'", "python-version: '3.11'")),
   ).toThrow('must use Python 3.12')
@@ -53,16 +50,8 @@ test('pins the Python hook leg and makes it block aggregate CI', () => {
   ).toThrow('must run its check-plan leg')
 })
 
-test('pins the real-Postgres leg and makes it block aggregate CI', () => {
+test('pins the real-Postgres leg', () => {
   const workflow = readWorkflowFixture()
-  expect(() =>
-    checkCiWorkflow(
-      workflow.replace(
-        '    needs: [hub-ui-stories, orchestrator-hooks, postgres]',
-        '    needs: [hub-ui-stories, orchestrator-hooks]',
-      ),
-    ),
-  ).toThrow('must need postgres')
   expect(() =>
     checkCiWorkflow(workflow.replace('image: postgres:18-alpine', 'image: postgres:17-alpine')),
   ).toThrow('must use Postgres 18')
@@ -116,7 +105,9 @@ function readWorkflowFixture() {
       if (job === 'orchestrator-hooks') return hooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'ci')
-        return `  ${job}:\n    needs: [hub-ui-stories, orchestrator-hooks, postgres]`
+        return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
+          .filter((name) => name !== 'ci')
+          .join(', ')}]`
       return `  ${job}:\n    runs-on: ubuntu-latest`
     })
     .join('\n')}\n`
