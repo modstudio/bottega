@@ -19,3 +19,4 @@ An auto-incrementing integer may stand beside the key as a label a person reads,
 A readable natural key may stand beside a UUID reference as a display label when `scripts/identity-key-manifest.ts` declares it with its sibling; nothing may resolve the row through the label.
 
 A table whose rows never leave the machine, and that no synced row references, may keep another key only when `scripts/identity-key-manifest.ts` declares it with that reason. A declared table that starts syncing loses the exemption. `scripts/check-identity-inventory.ts` refuses any key that `scripts/identity-key-baseline.json` does not already hold, and that baseline only shrinks.
+
