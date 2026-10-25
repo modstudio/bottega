@@ -113,7 +113,7 @@ import {
   initialDispatchPrompt,
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
-import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
+import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -712,8 +712,9 @@ export async function run(opts: {
         },
         grokEnvironment: grokMcpEnvironment,
         includeStore: repoJob,
-        codexMcpScope: mcpLaunch.codex,
-        grokReaderServers: mcpLaunch.grok,
+        mcpLaunch,
+        mcpMode,
+        project: runProject,
       })
       ;({
         codexMcpCatalogues,
@@ -725,7 +726,9 @@ export async function run(opts: {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
       try {
-        recordRunStartupFailure(claim.id, e, started)
+        // A pre-launch refusal carries its own failure kind: the agent never
+        // ran, so routing and failover must not read this as 'harness'.
+        recordRunStartupFailure(claim.id, e, started, carriedRefusalFailure(e))
       } finally {
         teardownTerminalRunResources(db(), claim.id)
       }
