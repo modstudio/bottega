@@ -206,11 +206,12 @@ export async function proveScoreRecordSync(input: {
   await unvoidRecordRun({ ...tenant, id: unscoredId, note: 'mistaken unscored void' })
   const cache = new Database(':memory:')
   applyMigrations(cache)
+  const cacheTaskRecordId = newRecordId()
   cache
     .query(
       `INSERT INTO run
-        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-       VALUES (991,?,?,?,?,?,?,?,?,?), (992,?,?,?,?,?,?,?,?,?)`,
+        (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded,task_record_id)
+       VALUES (991,?,?,?,?,?,?,?,?,?,?), (992,?,?,?,?,?,?,?,?,?,?)`,
     )
     .run(
       recordId,
@@ -222,6 +223,7 @@ export async function proveScoreRecordSync(input: {
       'prompt',
       'ok',
       VOID_EXCLUSION_REASON,
+      cacheTaskRecordId,
       unscoredId,
       String(run.startedAt),
       'codex',
@@ -231,6 +233,7 @@ export async function proveScoreRecordSync(input: {
       'prompt',
       'ok',
       VOID_EXCLUSION_REASON,
+      cacheTaskRecordId,
     )
   cache
     .query(
