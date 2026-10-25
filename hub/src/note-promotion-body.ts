@@ -6,6 +6,8 @@ export type NotePromotionAnchor = {
   session_id: string | null
 }
 
+export const PROMOTED_TASK_TITLE_REFUSAL = 'a promoted task needs a title stating its point'
+
 export function notePromotionBody(
   text: string,
   sightings: number,

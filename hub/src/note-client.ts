@@ -1,7 +1,7 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
-import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
@@ -79,11 +79,7 @@ export const hostedCreateNote = async (body: unknown, options?: Options) => {
   await assertNoteCapabilities(options)
   return request<HostedNote>('/v1/notes', 'POST', body, options)
 }
-export const hostedPromoteNote = (
-  recordId: string,
-  input: { task?: string; title?: string },
-  options?: Options,
-) =>
+export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, options?: Options) =>
   request<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
     `/v1/notes/${recordId}/promote`,
     'POST',

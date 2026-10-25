@@ -34,7 +34,7 @@ import {
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { setPromotedTaskTitle } from './note-promoted-title.ts'
-import { notePromotionBody } from './note-promotion-body.ts'
+import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -53,16 +53,11 @@ import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
-export type NoteAnchor = {
+export type NoteAnchor = NotePromotionAnchor & {
   id?: string
-  cwd: string
   project: string
   files: { path: string; line: number; content: string }[]
-  run_id: number | null
   run_record_id?: string | null
-  branch: string | null
-  commit: string | null
-  session_id: string | null
 }
 
 export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
@@ -707,7 +702,7 @@ export async function promoteNote(
           conn,
           options.existingTaskKey!,
           row.project,
-          promotionBody(row),
+          notePromotionBody(row.text, row.sightings, row.anchors),
           at,
         )
         conn
@@ -727,7 +722,7 @@ export async function promoteNote(
         {
           project: row.project,
           title,
-          body: promotionBody(row),
+          body: notePromotionBody(row.text, row.sightings, row.anchors),
         },
         { skipDuplicateCheck: true },
       )
@@ -757,10 +752,6 @@ export async function promoteNote(
 
 export function promotionTaskInput(note: NoteRow, title: string) {
   return { title, body: notePromotionBody(note.text, note.sightings, note.anchors) }
-}
-
-function promotionBody(note: NoteRow): string {
-  return notePromotionBody(note.text, note.sightings, note.anchors)
 }
 
 export async function dropNote(

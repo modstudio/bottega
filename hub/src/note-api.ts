@@ -14,6 +14,7 @@ import {
   getHostedNote,
   hostedNoteCounts,
   mirrorHostedNotes,
+  type PromoteNoteInput,
   promoteHostedNote,
   reapHostedNotes,
 } from './hosted-notes.ts'
@@ -108,14 +109,15 @@ async function noteActionRoute(context: RouteContext): Promise<Response | null> 
   if (request.method !== 'POST') return null
   const promote = /^\/v1\/notes\/([0-9a-f-]{36})\/promote$/i.exec(url.pathname)
   if (promote) {
+    const input: PromoteNoteInput = {
+      task: typeof body?.task === 'string' ? body.task : undefined,
+      title: typeof body?.title === 'string' ? body.title : undefined,
+    }
     const value = await call(dependencies.promote, promoteHostedNote)(
       config.recordDatabaseUrl,
       who,
       promote[1]!,
-      {
-        task: typeof body?.task === 'string' ? body.task : undefined,
-        title: typeof body?.title === 'string' ? body.title : undefined,
-      },
+      input,
     )
     return value ? json(value) : json({ error: 'note not found' }, 404)
   }
