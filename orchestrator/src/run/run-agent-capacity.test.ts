@@ -6,15 +6,18 @@ import { pick } from '../route/route.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import {
   agentCapacityWaitMaxMs,
+  capacityStartupFailure,
   decideCapacityWait,
   nextCapacityPollMs,
   waitForAgentSelection,
 } from './run-agent-capacity.ts'
 import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
+import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 
 test('capacity wait decision picks the detached or foreground bound', () => {
   expect(agentCapacityWaitMaxMs(false)).toBe(RUN_HOST_WAIT_MAX_MS)
   expect(agentCapacityWaitMaxMs(true)).toBe(DETACHED_AGENT_CAPACITY_WAIT_MAX_MS)
+  expect(DETACHED_AGENT_CAPACITY_WAIT_MAX_MS).toBeLessThan(STALE_AFTER_MS)
   expect(decideCapacityWait({ noWait: false, waitedMs: 0, detached: false })).toBe('wait')
   expect(decideCapacityWait({ noWait: true, waitedMs: 0, detached: true })).toBe('refuse')
   expect(
@@ -27,6 +30,15 @@ test('capacity wait decision picks the detached or foreground bound', () => {
       detached: true,
     }),
   ).toBe('wait')
+})
+
+test('an AgentCapacityError carries capacity and a retry remedy to startup failure recording', () => {
+  const failure = capacityStartupFailure(
+    new AgentCapacityError('capacity wait bound reached', { codex: 2 }),
+    'run-id',
+  )
+  expect(failure[2]?.failureKind).toBe('capacity')
+  expect((failure[0] as Error).message).toContain('run retry run-id')
 })
 
 test('capacity poll backoff grows to its cap', () => {

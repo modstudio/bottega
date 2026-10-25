@@ -60,6 +60,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-artifact-limits.ts',
   ]),
   module('orchestrator/src/run/run-chain.ts', ['bun:sqlite', './run-status.ts']),
+  module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
@@ -264,6 +265,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../database/migration-drain.ts',
     '../gate-load.ts',
+    './run-liveness-policy.ts',
   ]),
   module('orchestrator/src/run/run-reply-source.ts', [
     '../contract/contract.ts',

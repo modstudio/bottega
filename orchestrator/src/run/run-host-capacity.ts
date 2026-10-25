@@ -10,13 +10,10 @@ import {
   type HostHoldCondition,
   measureHostLoad,
 } from '../gate-load.ts'
-import { STALE_AFTER_MS } from './run-liveness.ts'
+import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS as POLICY_DETACHED_AGENT_CAPACITY_WAIT_MAX_MS } from './run-liveness-policy.ts'
 
 export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
-export const DETACHED_AGENT_CAPACITY_STALE_MARGIN_MS = 5 * 60_000
-// Agent selection must finish before liveness can classify its reserved run as stale.
-export const DETACHED_AGENT_CAPACITY_WAIT_MAX_MS =
-  STALE_AFTER_MS - DETACHED_AGENT_CAPACITY_STALE_MARGIN_MS
+export const DETACHED_AGENT_CAPACITY_WAIT_MAX_MS = POLICY_DETACHED_AGENT_CAPACITY_WAIT_MAX_MS
 export const RUN_HOST_WAIT_POLL_MS = 1_000
 export const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
 

@@ -82,7 +82,7 @@ import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
-import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
+import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
 import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
@@ -493,7 +493,8 @@ export async function run(opts: {
       job: opts.job,
       projectName: runProjectName ?? undefined,
       preflightedAgent: opts.dispatchMcpPreflightedAgent,
-      onFailure: (cause) => recordRunStartupFailure(opts.reserveId, cause),
+      onFailure: (cause) =>
+        recordRunStartupFailure(opts.reserveId, ...capacityStartupFailure(cause, opts.reserveId)),
     })
   const source = resume.isFirstTurn
     ? {

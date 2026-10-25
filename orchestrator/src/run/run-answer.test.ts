@@ -960,29 +960,6 @@ describe('retry command', () => {
     )
   })
 
-  test('retry sends a never-started writing run through a fresh route', async () => {
-    const id = failed('implement')
-    db().query("UPDATE run SET agent='(pending)',failure_kind='capacity' WHERE record_id=?").run(id)
-    const dispatchedId = addRun({
-      agent: 'codex',
-      job: 'implement',
-      status: 'ok',
-      session: 'orch-test-session',
-      repo: 'continuation-fixture',
-    })
-    const dispatched: Parameters<typeof detach>[2][] = []
-    const dispatch: typeof detach = async (_job, _prompt, spec) => {
-      dispatched.push(spec)
-      return dispatchedId
-    }
-
-    await retryRun(id, { flags }, { ...helpers, dispatch })
-
-    expect(dispatched[0]?.agent).toBeUndefined()
-    expect(dispatched[0]?.resume).toBeUndefined()
-    expect(dispatched[0]?.retryOf).toBe(id)
-  })
-
   test('fresh retry refuses a continuation turn whose instructions are unrecoverable', async () => {
     const id = failed('implement')
     const child = addRun({

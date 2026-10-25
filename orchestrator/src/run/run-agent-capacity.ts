@@ -1,6 +1,7 @@
 // concern: agent capacity admission
 /** Pure wait-or-refuse decision plus the bounded polling adapter. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
@@ -13,6 +14,18 @@ import {
 } from './run-host-capacity.ts'
 
 export type CapacityWaitDecision = 'wait' | 'refuse'
+
+export function capacityStartupFailure(
+  error: unknown,
+  runId: string | undefined,
+): [error: unknown, started?: number, options?: { failureKind: 'capacity' }] {
+  if (!(error instanceof AgentCapacityError) || !runId) return [error]
+  return [
+    new Error(`${error.message}\ncleared by: ${PLATFORM_SLUG} run retry ${runId}`),
+    undefined,
+    { failureKind: 'capacity' },
+  ]
+}
 
 export function decideCapacityWait(input: {
   noWait: boolean
@@ -59,6 +72,21 @@ function announceCapacityWait(
   return true
 }
 
+function selectAtCapacityBound<T>(
+  select: () => T,
+  lastError: AgentCapacityError,
+  noWait: boolean,
+  maxWaitMs: number,
+): T {
+  if (noWait) throw refusalAtWaitBound(lastError, true, maxWaitMs)
+  try {
+    return select()
+  } catch (error) {
+    if (!(error instanceof AgentCapacityError)) throw error
+    throw refusalAtWaitBound(error, false, maxWaitMs)
+  }
+}
+
 export async function waitForAgentSelection<T>(input: {
   select: () => T
   noWait?: boolean
@@ -88,17 +116,13 @@ export async function waitForAgentSelection<T>(input: {
     }
     const waitedMs = now() - started
     const decision = decideCapacityWait({ noWait: Boolean(input.noWait), waitedMs, detached })
-    if (decision === 'refuse') {
-      if (!input.noWait) {
-        try {
-          return input.select()
-        } catch (error) {
-          if (!(error instanceof AgentCapacityError)) throw error
-          lastCapacityError = error
-        }
-      }
-      throw refusalAtWaitBound(lastCapacityError, Boolean(input.noWait), maxWaitMs)
-    }
+    if (decision === 'refuse')
+      return selectAtCapacityBound(
+        input.select,
+        lastCapacityError,
+        Boolean(input.noWait),
+        maxWaitMs,
+      )
     announced = announceCapacityWait(announced, input.onWait, now())
     await sleep(Math.min(pollMs, maxWaitMs - waitedMs))
     const agents = Object.keys(lastCapacityError.runningCounts)
@@ -118,7 +142,7 @@ function refusalAtWaitBound(
     ? error
     : new AgentCapacityError(
         `${error.message}; capacity wait bound reached after ${maxWaitMs}ms\n` +
-          'cleared by: retry this command with bottega run start --detach',
+          `cleared by: retry this command with ${PLATFORM_SLUG} run start --detach`,
         error.runningCounts,
       )
 }

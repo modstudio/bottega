@@ -1,10 +1,8 @@
 // concern: run-startup-failure
 /** Records and publishes startup failures before or after a run is claimed. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
@@ -42,7 +40,7 @@ export function recordRunStartupFailure(
   options?: { failureKind?: string; mcpError?: string },
 ): void {
   if (!reserveId) return
-  const failure = startupFailureRecord(reserveId, error, options?.failureKind)
+  const message = error instanceof Error ? error.message : String(error)
   const finishedAt = nowIso()
   const localMachineId = machineId()
   writeTransaction(() => {
@@ -55,8 +53,8 @@ export function recordRunStartupFailure(
       )
       // Keep this status predicate paired with exec.ts's self-contained fallback.
       .run(
-        failure.failureKind,
-        failure.error,
+        options?.failureKind ?? 'harness',
+        message,
         options?.mcpError ?? null,
         started === undefined ? 0 : Date.now() - started,
         reserveId,
@@ -64,21 +62,6 @@ export function recordRunStartupFailure(
     if (changed !== 1) return
     enqueueFailedReservedRun(reserveId, database, localMachineId, finishedAt)
   })
-}
-
-export function startupFailureRecord(
-  reserveId: string,
-  error: unknown,
-  explicitFailureKind?: string,
-): { failureKind: string; error: string } {
-  const message = error instanceof Error ? error.message : String(error)
-  if (!(error instanceof AgentCapacityError)) {
-    return { failureKind: explicitFailureKind ?? 'harness', error: message }
-  }
-  return {
-    failureKind: explicitFailureKind ?? 'capacity',
-    error: `${message}\ncleared by: ${PLATFORM_SLUG} run retry ${reserveId}`,
-  }
 }
 
 export function enforceRunStartupRefusal(
