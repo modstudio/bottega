@@ -34,7 +34,9 @@ const isOrdinaryConfig = (path: string) => {
 }
 
 const isTestOrFixture = (path: string) =>
-  categorizeFile(path) === 'test' || /(^|\/)fixtures?\//i.test(path)
+  categorizeFile(path) === 'test' ||
+  /(^|\/)fixtures?\//i.test(path) ||
+  /\.fixtures?\.[^/]+$/i.test(path)
 
 const isReviewExcluded = (path: string) => {
   if (

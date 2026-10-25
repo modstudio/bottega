@@ -305,6 +305,7 @@ describe('review tier classification', () => {
     const actual = classifyReviewTier({
       files: [
         { path: 'orchestrator/src/a/a.test.ts', insertions: 500, deletions: 0 },
+        { path: 'orchestrator/src/a/a.fixture.ts', insertions: 500, deletions: 0 },
         { path: 'orchestrator/src/a/fixtures/f.json', insertions: 500, deletions: 0 },
       ],
       risk: {
