@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { pgTable, text, uuid } from 'drizzle-orm/pg-core'
+import { foreignKey, pgTable, text, uuid } from 'drizzle-orm/pg-core'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import * as taskClient from '../hub/src/task-client.ts'
 import { applyMigrations } from '../orchestrator/src/database/migrations.ts'
@@ -39,8 +39,7 @@ const column = (
   required: true,
   primaryKey,
   foreignKey,
-  foreignTable: null,
-  foreignColumn: null,
+  foreignTargets: [],
 })
 
 const write = (sources: readonly string[]) => ({
@@ -125,6 +124,11 @@ test('a synced source may not reference machine-local infrastructure', () => {
       binding_id INTEGER NOT NULL REFERENCES install_binding(id)
     )`)
     const facts = sqliteSyncedSchemaFacts('hub', readSqliteKeyTables(database))
+    expect(
+      readSqliteKeyTables(database)
+        .find((table) => table.name === 'child')
+        ?.columns.find((entry) => entry.name === 'binding_id')?.foreignTargets,
+    ).toEqual([{ table: 'install_binding', column: 'id' }])
     expect(facts.find((fact) => fact.table === 'child')?.foreignTables).toEqual(['install_binding'])
     expect(
       syncedSourceRefusals(
@@ -289,7 +293,7 @@ test('a display label beside a UUID sibling produces no reference finding', () =
     columns: [
       column('task', 'id', 'uuid', true),
       column('task', 'task_key', 'text'),
-      column('task', 'task_record_id', 'text'),
+      column('task', 'task_record_id', 'uuid'),
     ],
   }
   const manifests = {
@@ -302,7 +306,6 @@ test('a display label beside a UUID sibling produces no reference finding', () =
         reason: 'displayed task key',
       },
     ],
-    uuids: [{ store: 'hosted' as const, column: 'task.task_record_id', reason: 'task UUID' }],
   }
   expect(classifyKeyInventory('hosted', [table], manifests).findings).not.toContain(
     'task.task_key:reference',
@@ -316,9 +319,8 @@ test('a display label may name a foreign key to a UUID primary key as its siblin
     columns: [column('project', 'id', 'uuid', true)],
   }
   const sibling = {
-    ...column('task', 'project_record_id', 'uuid', false, true),
-    foreignTable: 'project',
-    foreignColumn: 'id',
+    ...column('task', 'project_record_id', 'text', false, true),
+    foreignTargets: [{ table: 'project', column: 'id' }],
   }
   const task = {
     name: 'task',
@@ -358,7 +360,12 @@ test('a display-label sibling must be on the same table', () => {
     primaryKey: ['id'],
     columns: [column('task', 'id', 'uuid', true), column('task', 'task_key', 'text')],
   }
-  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+  const other = {
+    name: 'other',
+    primaryKey: ['record_id'],
+    columns: [column('other', 'record_id', 'uuid', true)],
+  }
+  expect(() => classifyKeyInventory('hosted', [table, other], manifests)).toThrow(
     'display label task.task_key sibling other.record_id is on another table; remedy: name a sibling on task',
   )
 })
@@ -434,10 +441,11 @@ test('a display label may not overlap another identity manifest', () => {
     column: 'task.task_record_id',
     reason: 'task UUID',
   }
-  for (const [manifest, kind] of [
-    ['references', 'undeclared reference'],
-    ['externalIdentifiers', 'external identifier'],
-    ['uuids', 'UUID column'],
+  for (const [manifest, overlapKind] of [
+    ['values', 'value/display label'],
+    ['references', 'display label/reference'],
+    ['externalIdentifiers', 'display label/external identifier'],
+    ['uuids', 'display label/UUID'],
   ] as const) {
     const overlap = { store: 'hosted' as const, column: 'task.task_key', reason: 'overlap' }
     const manifests = {
@@ -447,7 +455,7 @@ test('a display label may not overlap another identity manifest', () => {
       [manifest]: manifest === 'uuids' ? [taskRecordUuid, overlap] : [overlap],
     }
     expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
-      `display label task.task_key also appears as ${kind}; remedy: remove it from one manifest`,
+      `${overlapKind} manifests overlap: task.task_key`,
     )
   }
 })
@@ -532,5 +540,37 @@ test('hosted discovery inventories every pgTable export without naming it', () =
   const otherwiseUnnamed = pgTable('otherwise_unnamed', { id: uuid().primaryKey(), label: text() })
   expect(hostedKeyTablesFromModules([{ otherwiseUnnamed }]).map((table) => table.name)).toEqual([
     'otherwise_unnamed',
+  ])
+})
+
+test('hosted discovery keeps every foreign-key target for a column', () => {
+  const project = pgTable('project', {
+    id: uuid().primaryKey(),
+    spaceId: uuid('space_id').notNull(),
+  })
+  const task = pgTable(
+    'task',
+    {
+      id: uuid().primaryKey(),
+      projectId: uuid('project_id')
+        .notNull()
+        .references(() => project.id),
+      spaceId: uuid('space_id').notNull(),
+    },
+    (table) => [
+      foreignKey({
+        columns: [table.projectId, table.spaceId],
+        foreignColumns: [project.spaceId, project.id],
+      }),
+    ],
+  )
+  const tables = hostedKeyTablesFromModules([{ project, task }])
+  expect(
+    tables
+      .find((table) => table.name === 'task')
+      ?.columns.find((entry) => entry.name === 'project_id')?.foreignTargets,
+  ).toEqual([
+    { table: 'project', column: 'id' },
+    { table: 'project', column: 'space_id' },
   ])
 })

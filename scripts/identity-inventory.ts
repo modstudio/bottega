@@ -13,8 +13,7 @@ type KeyColumn = {
   required: boolean
   primaryKey: boolean
   foreignKey: boolean
-  foreignTable: string | null
-  foreignColumn: string | null
+  foreignTargets: { table: string; column: string }[]
 }
 export type KeyTable = { name: string; columns: KeyColumn[]; primaryKey: string[] }
 export type ManifestColumn = { store: KeyStore; column: string; reason: string }
@@ -220,6 +219,7 @@ function validateKeyManifests(
   )
   const kinds = [
     ['value', manifests.values],
+    ['display label', manifests.displayLabels],
     ['reference', manifests.references],
     ['external identifier', manifests.externalIdentifiers],
     ['UUID', manifests.uuids],
@@ -290,9 +290,6 @@ function validateDisplayLabel(
     throw new Error(
       `${name} sibling ${entry.sibling} is not a UUID reference; remedy: name a UUID column or a foreign key to a UUID primary key`,
     )
-  const overlap = displayLabelOverlap(entry.column, manifests)
-  if (overlap)
-    throw new Error(`${name} also appears as ${overlap}; remedy: remove it from one manifest`)
 }
 
 function isUuidReference(
@@ -302,23 +299,18 @@ function isUuidReference(
   columns: ReadonlyMap<string, KeyColumn>,
   uuids: ReadonlyMap<string, string>,
 ): boolean {
+  if (column.type === 'uuid') return true
   if (uuids.has(address)) return true
-  const foreignTable =
-    column.foreignTable && tables.find(({ name }) => name === column.foreignTable)
-  if (foreignTable?.primaryKey.length !== 1 || foreignTable.primaryKey[0] !== column.foreignColumn)
-    return false
-  const primaryKey = columns.get(`${foreignTable.name}.${foreignTable.primaryKey[0]}`)
-  return Boolean(
-    primaryKey &&
-      (primaryKey.type === 'uuid' || uuids.has(`${primaryKey.table}.${primaryKey.name}`)),
-  )
-}
-
-function displayLabelOverlap(column: string, manifests: StoreManifests): string | null {
-  if (manifests.references.has(column)) return 'undeclared reference'
-  if (manifests.externalIdentifiers.has(column)) return 'external identifier'
-  if (manifests.uuids.has(column)) return 'UUID column'
-  return null
+  return column.foreignTargets.some((target) => {
+    const foreignTable = tables.find(({ name }) => name === target.table)
+    if (foreignTable?.primaryKey.length !== 1 || foreignTable.primaryKey[0] !== target.column)
+      return false
+    const primaryKey = columns.get(`${foreignTable.name}.${foreignTable.primaryKey[0]}`)
+    return Boolean(
+      primaryKey &&
+        (primaryKey.type === 'uuid' || uuids.has(`${primaryKey.table}.${primaryKey.name}`)),
+    )
+  })
 }
 
 function validateManifestEntries(
@@ -474,7 +466,7 @@ export function sqliteSyncedSchemaFacts(
     table: table.name,
     foreignTables: [
       ...new Set(
-        table.columns.flatMap((column) => (column.foreignTable ? [column.foreignTable] : [])),
+        table.columns.flatMap((column) => column.foreignTargets.map((target) => target.table)),
       ),
     ].sort(),
   }))
@@ -492,14 +484,9 @@ export function readSqliteKeyTables(database: Database): KeyTable[] {
         `PRAGMA table_info('${name}')`,
       )
       .all()
-    const foreignKeys = new Map(
-      database
-        .query<{ from: string; table: string; to: string }, []>(
-          `PRAGMA foreign_key_list('${name}')`,
-        )
-        .all()
-        .map((foreignKey) => [foreignKey.from, foreignKey]),
-    )
+    const foreignKeys = database
+      .query<{ from: string; table: string; to: string }, []>(`PRAGMA foreign_key_list('${name}')`)
+      .all()
     return {
       name,
       primaryKey: columns
@@ -512,9 +499,10 @@ export function readSqliteKeyTables(database: Database): KeyTable[] {
         type: /INT/i.test(column.type) ? 'integer' : column.type.toLowerCase(),
         required: column.notnull === 1 || column.pk > 0,
         primaryKey: column.pk > 0,
-        foreignKey: foreignKeys.has(column.name),
-        foreignTable: foreignKeys.get(column.name)?.table ?? null,
-        foreignColumn: foreignKeys.get(column.name)?.to ?? null,
+        foreignKey: foreignKeys.some((foreignKey) => foreignKey.from === column.name),
+        foreignTargets: foreignKeys
+          .filter((foreignKey) => foreignKey.from === column.name)
+          .map((foreignKey) => ({ table: foreignKey.table, column: foreignKey.to })),
       })),
     }
   })
@@ -534,18 +522,23 @@ export function hostedKeyTablesFromModules(modules: readonly SchemaModule[]): Ke
         ...config.primaryKeys.flatMap((primaryKey) => primaryKey.columns),
       ]
       const primaryNames = new Set(primaryColumns.map((column) => column.name))
-      const foreignColumns = new Map(
-        config.foreignKeys.flatMap((foreignKey) => {
-          const reference = foreignKey.reference()
-          return reference.columns.map((column, index) => [
-            column.name,
-            {
-              table: getTableConfig(reference.foreignTable).name,
-              column: reference.foreignColumns[index].name,
-            },
-          ])
-        }),
-      )
+      const foreignColumns = config.foreignKeys.flatMap((foreignKey) => {
+        const reference = foreignKey.reference()
+        return reference.columns.flatMap((column, index) => {
+          const foreignColumn = reference.foreignColumns[index]
+          return foreignColumn
+            ? [
+                {
+                  name: column.name,
+                  target: {
+                    table: getTableConfig(reference.foreignTable).name,
+                    column: foreignColumn.name,
+                  },
+                },
+              ]
+            : []
+        })
+      })
       return {
         name: config.name,
         primaryKey: [...primaryNames],
@@ -560,9 +553,10 @@ export function hostedKeyTablesFromModules(modules: readonly SchemaModule[]): Ke
                 : column.getSQLType(),
           required: column.notNull,
           primaryKey: primaryNames.has(column.name),
-          foreignKey: foreignColumns.has(column.name),
-          foreignTable: foreignColumns.get(column.name)?.table ?? null,
-          foreignColumn: foreignColumns.get(column.name)?.column ?? null,
+          foreignKey: foreignColumns.some((foreignColumn) => foreignColumn.name === column.name),
+          foreignTargets: foreignColumns
+            .filter((foreignColumn) => foreignColumn.name === column.name)
+            .map((foreignColumn) => foreignColumn.target),
         })),
       }
     })
