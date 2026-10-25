@@ -23,6 +23,7 @@ import {
   storedChangePathSet,
 } from './review-pins.ts'
 import { type ReviewRole, reviewRoleForBatch } from './review-role.ts'
+import { reviewRoundForRecording } from './review-round-identity.ts'
 import type {
   CoverageGitResult,
   ReviewListFilter,
@@ -505,16 +506,12 @@ function recordedReviewNumber(database: Database, runRecordId: string): number |
   return row?.number ?? null
 }
 
-export function recordReviews(
-  entries: { runId: string; output: ReviewReply }[],
-  database: Database = writableDb(),
-): string {
-  if (!entries.length) throw new Error('a review requires at least one lens run')
-  const runs = entries.map(({ runId }) => {
+function loadFindingsRuns(entries: { runId: string }[], database: Database): RunRow[] {
+  return entries.map(({ runId }) => {
     const run = database
       .query(
         `SELECT record_id, agent, model, lens, review_role, job, status, output_path, input_tree, head_commit, repo, project_record_id,
-              base_commit, review_ref, changed_paths, branch
+              base_commit, review_ref, changed_paths, branch, launch_key, selection_reason
          FROM run WHERE record_id=?`,
       )
       .get(runId) as RunRow | null
@@ -529,6 +526,23 @@ export function recordReviews(
     if (existing) throw new Error(`run ${runId} is already recorded in review ${existing}`)
     return run
   })
+}
+
+function reviewProjectName(database: Database, projectRecordId: string | null): string | null {
+  if (!projectRecordId) return null
+  return (
+    database
+      .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+      .get(projectRecordId)?.name ?? null
+  )
+}
+
+export function recordReviews(
+  entries: { runId: string; output: ReviewReply }[],
+  database: Database = writableDb(),
+): string {
+  if (!entries.length) throw new Error('a review requires at least one lens run')
+  const runs = loadFindingsRuns(entries, database)
   const projects = [...new Set(runs.map((run) => run.project_record_id))]
   if (projects.length > 1) {
     throw new Error(
@@ -559,13 +573,25 @@ export function recordReviews(
       run.head_commit,
     )
   })()
+  const [projectRecordId, role] = reviewProjectAndRole(runs)
+  const projectName = reviewProjectName(database, projectRecordId)
+  const pathSet = measured ? serializePathSet(measured.pathSet) : null
   const reviewRecordId = writeTransaction(() => {
     const tier = measured?.tier ?? null
+    const first = runs[0]!
+    const round = reviewRoundForRecording(database, {
+      project: projectName,
+      branch: first.branch,
+      launch_key: first.launch_key,
+      patch_id: measured?.patchId ?? null,
+      path_set: pathSet,
+      role,
+    })
     const review = database
       .query(
         `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id, role,
-                           patch_id, path_set, commit_message)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+                           patch_id, path_set, commit_message, round)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -576,16 +602,18 @@ export function recordReviews(
         tier?.size ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
-        ...reviewProjectAndRole(runs),
+        projectRecordId,
+        role,
         measured?.patchId ?? null,
-        measured ? serializePathSet(measured.pathSet) : null,
+        pathSet,
         measured?.message ?? null,
+        round,
       ) as { record_id: string }
     const insertLens = database.query(
       `INSERT INTO review_lens
          (record_id, review_record_id, run_record_id, lens, agent, model, tree_inspected, reviewed_tree, standards_read,
-          files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+          files_covered, commands_run, could_not_verify, mcp_tools, docs_read, substitutes, selection_reason)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     const insert = database.query(
       `INSERT INTO review_finding
@@ -612,6 +640,7 @@ export function recordReviews(
         JSON.stringify(output.provenance.mcp_tools),
         JSON.stringify(output.provenance.docs_read),
         JSON.stringify(output.provenance.substitutes),
+        run.selection_reason ?? 'operator-ordered',
       ) as { record_id: string }
       output.findings.forEach((finding) => {
         insert.run(

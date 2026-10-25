@@ -3,6 +3,7 @@
 import { ensureMachineIdentity, registerOpenHooks } from '../database/db.ts'
 import { excludeSharedOutputRuns } from '../evidence/evidence-query.ts'
 import { seedLenses } from '../lens/lens-seeds.ts'
+import { enqueueChangedReviewRounds } from '../review/review-outbox.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { seedWorkflows } from '../workflow/workflow-seeds.ts'
@@ -16,7 +17,13 @@ export function registerStandardHooks(): void {
   if (registered) return
   registerOpenHooks({
     afterWritableOpen: [ensureMachineIdentity, excludeSharedOutputRuns, reapStaleRuns],
-    afterInitialize: [ensureMachineIdentity, excludeSharedOutputRuns, seedLenses, seedWorkflows],
+    afterInitialize: [
+      ensureMachineIdentity,
+      excludeSharedOutputRuns,
+      enqueueChangedReviewRounds,
+      seedLenses,
+      seedWorkflows,
+    ],
   })
   registered = true
 }

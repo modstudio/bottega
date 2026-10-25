@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
-import { backfillReviewRecords } from './review-outbox.ts'
+import { backfillReviewRecords, enqueueChangedReviewRounds } from './review-outbox.ts'
 
 test('review backfill enqueues the graph once and is idempotent', () => {
   const database = new Database(':memory:')
@@ -66,5 +66,15 @@ test('review backfill enqueues the graph once and is idempotent', () => {
     enqueuedReviews: 0,
     enqueuedReads: 0,
   })
+  database.query('UPDATE review SET round=2').run()
+  expect(enqueueChangedReviewRounds(database)).toBe(1)
+  expect(
+    database
+      .query<{ round: number }, []>(
+        "SELECT json_extract(payload,'$.round') AS round FROM outbox WHERE kind='review' ORDER BY id DESC LIMIT 1",
+      )
+      .get(),
+  ).toEqual({ round: 2 })
+  expect(enqueueChangedReviewRounds(database)).toBe(0)
   database.close()
 })

@@ -113,7 +113,14 @@ describe('round lens plan', () => {
         fixPathsByLens: {},
       }),
     ).toEqual({
-      round: { lenses: ['correctness', 'craft', 'architecture'] },
+      round: {
+        lenses: ['correctness', 'craft', 'architecture'],
+        lensReasons: {
+          correctness: 'initial',
+          craft: 'initial',
+          architecture: 'initial',
+        },
+      },
       admissionRequired: { lenses: ['correctness', 'craft', 'architecture'] },
     })
   })
@@ -189,7 +196,7 @@ describe('round lens plan', () => {
         fixPathsByLens: { safety: ['src/new.ts'] },
       }),
     ).toEqual({
-      round: { lenses: ['safety'] },
+      round: { lenses: ['safety'], lensReasons: { safety: 'newly-touched-path' } },
       admissionRequired: { lenses: ['safety'] },
     })
   })
@@ -235,7 +242,13 @@ describe('round lens plan', () => {
         fixPathsByLens: {},
       }),
     ).toEqual({
-      round: { lenses: ['correctness', 'craft'] },
+      round: {
+        lenses: ['correctness', 'craft'],
+        lensReasons: {
+          correctness: 'unidentified-tip-funnel',
+          craft: 'unidentified-tip-funnel',
+        },
+      },
       admissionRequired: { lenses: [...sixLenses] },
     })
   })
@@ -348,7 +361,10 @@ describe('round lens plan', () => {
         fixPathsByLens: {},
       }),
     ).toEqual({
-      round: { lenses: ['correctness', 'craft'] },
+      round: {
+        lenses: ['correctness', 'craft'],
+        lensReasons: { correctness: 'initial', craft: 'initial' },
+      },
       admissionRequired: { lenses: ['correctness', 'craft', 'issue-blast-radius'] },
     })
   })

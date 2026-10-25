@@ -16,12 +16,12 @@ import {
   reviewBudgetForBranch,
   reviewRoundBudgetDecision,
 } from './review-round-budget.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
 import {
   applicableRoundLensPlan,
   reviewPlanForBudget,
   roundLensFacts,
 } from './review-round-lens-plan.ts'
-import { reviewRoundIdentity } from './review-yield.ts'
 
 /** Assemble the round plan from the current change, branch review history, and project declaration. */
 export function roundApplicabilityForChange(input: {

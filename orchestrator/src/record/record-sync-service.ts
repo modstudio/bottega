@@ -362,6 +362,7 @@ function reviewValues(row: Payload, projectId: string | null) {
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
+    round: nullableNumber(row.round),
   }
 }
 
@@ -428,6 +429,7 @@ function reviewLensValues(row: Payload) {
     coverage: nullableString(row.coverage),
     limits: nullableString(row.limits),
     overlap: nullableString(row.overlap),
+    selectionReason: nullableString(row.selectionReason),
   }
 }
 

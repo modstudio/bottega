@@ -56,6 +56,9 @@ function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string):
   return promptPath
 }
 
+export type RunDispatchMetadata = { selectionReason?: string }
+type ResolvedDetachSpec = DetachSpec & RunDispatchMetadata
+
 function refuseLiveRetryOwner(spec: DetachSpec): void {
   if (spec.resume?.kind !== 'retry-root') return
   const branch = spec.resume.worktree?.branch ?? spec.resume.treePlan?.branch ?? null
@@ -154,8 +157,12 @@ function resolvedDetachSpec(spec: DetachSpec, jobName: string): DetachSpec {
   return { ...spec, reviewRole: 'round' }
 }
 
-function detachedReviewBindings(spec: DetachSpec) {
-  return [spec.resume?.continuationMessage?.sha256 ?? null, spec.reviewRole ?? null] as const
+function detachedReviewBindings(spec: ResolvedDetachSpec) {
+  return [
+    spec.resume?.continuationMessage?.sha256 ?? null,
+    spec.reviewRole ?? null,
+    spec.selectionReason ?? null,
+  ] as const
 }
 
 export async function detach(
@@ -165,40 +172,40 @@ export async function detach(
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
   beforeClaim: () => void = () => {},
+  dispatch: RunDispatchMetadata = {},
 ): Promise<string> {
   assertDispatchDatabase(spec.resume !== undefined)
   return detachResolved(
     jobName,
     prompt,
-    resolvedDetachSpec(spec, jobName),
+    { ...resolvedDetachSpec(spec, jobName), ...dispatch },
     selectedAgent,
     spawnCoordinator,
     beforeClaim,
   )
 }
 
+/**
+ * The depth check happens HERE TOO, before a row exists.
+ *
+ * run() already refuses to delegate from inside a delegated agent, but by
+ * then this function has inserted a placeholder row — so a worker that tries
+ * to hire someone leaves a `(pending)` row behind that nobody ever fills in
+ * and the stale sweep later marks `interrupted`. Two observed attempts left abandoned rows.
+ *
+ * They cost routing nothing, because `(pending)` is not an agent any query
+ * groups by — but they are litter in the one table that is supposed to be
+ * evidence, and "a run that should not exist should not leave a row behind"
+ * is already the rule three lines into run().
+ */
 async function detachResolved(
   jobName: string,
   prompt: string,
-  spec: DetachSpec,
+  spec: ResolvedDetachSpec,
   selectedAgent?: string,
   spawnCoordinator: typeof spawn = spawn,
   beforeClaim: () => void = () => {},
 ): Promise<string> {
-  /**
-   * The depth check happens HERE TOO, before a row exists.
-   *
-   * run() already refuses to delegate from inside a delegated agent, but by
-   * then this function has inserted a placeholder row — so a worker that tries
-   * to hire someone leaves a `(pending)` row behind that nobody ever fills in
-   * and the stale sweep later marks `interrupted`. Two observed attempts left abandoned rows.
-   *
-   * They cost routing nothing, because `(pending)` is not an agent any query
-   * groups by — but they are litter in the one table that is supposed to be
-   * evidence, and "a run that should not exist should not leave a row behind"
-   * is already the rule three lines into run().
-   */
-  // A retry names the directory the original ran in; everything else is here.
   const cwd = spec.cwd ?? process.cwd()
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
   const firstTurn = resumeFacts(
@@ -236,8 +243,7 @@ async function detachResolved(
   // every detached run showed a blank project in "running now" until its child
   // got far enough to fill the row in. There is no reason to make the page wait
   // for a fact this function already has.
-  // A resume is claimed as a chain member in this same INSERT. One SQLite
-  // statement is the claim boundary: readers see either no new turn or a
+  // A resume is claimed in this INSERT. One SQLite statement is the claim boundary: readers see either no new turn or a
   // running turn already linked to its chain.
   const claimed = claimDetachedRun(beforeClaim, spec.resume !== undefined, () => {
     const identity = claimIdentity(spec.resume)
@@ -246,8 +252,8 @@ async function detachResolved(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha, review_role)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (

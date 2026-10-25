@@ -11,6 +11,7 @@ import type { PostFixReviewDecision } from './review-post-fix.ts'
 import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
+import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 export type RoundLensFacts = {
   reviewedPathsByLens: Readonly<Record<string, readonly string[]>>
@@ -83,6 +84,25 @@ export function roundLensPlan(input: {
   const findings = new Set(input.latestAcceptedOrModifiedLenses)
   const newlyTouched = new Set(input.newlyTouchedLenses)
   return input.relevantLenses.filter((lens) => findings.has(lens) || newlyTouched.has(lens))
+}
+
+function laterRoundReason(
+  lens: string,
+  completed: ReadonlySet<string>,
+  findings: ReadonlySet<string>,
+  newlyTouched: ReadonlySet<string>,
+): ReviewLensSelectionReason | null {
+  if (findings.has(lens)) return 'accepted-finding'
+  if (newlyTouched.has(lens)) return 'newly-touched-path'
+  if (!completed.has(lens)) return 'never-completed'
+  return null
+}
+
+function withLensReasons(
+  applicable: ApplicableReview,
+  reasons: Record<string, ReviewLensSelectionReason>,
+): ApplicableReview {
+  return Object.keys(reasons).length ? { ...applicable, lensReasons: reasons } : applicable
 }
 
 /** Gather branch-history facts without deciding which lenses the round needs. */
@@ -178,7 +198,11 @@ export function applicableRoundLensPlan(input: {
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
 }): ReviewFunnelPlan {
   const round = (() => {
-    if (input.postFix.kind === 'no-completed-round') return input.relevant
+    if (input.postFix.kind === 'no-completed-round')
+      return withLensReasons(
+        input.relevant,
+        Object.fromEntries(input.relevant.lenses.map((lens) => [lens, 'initial'])),
+      )
     if (input.postFix.kind === 'no-round-needed')
       return selectReviewApplicability(input.relevant, [])
     const newlyTouched =
@@ -189,13 +213,25 @@ export function applicableRoundLensPlan(input: {
             fixPathsByLens: input.fixPathsByLens,
           })
         : []
-    return selectReviewApplicability(
-      input.relevant,
-      roundLensPlan({
-        relevantLenses: input.relevant.lenses,
-        latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
-        newlyTouchedLenses: newlyTouched,
-      }),
+    const lenses = roundLensPlan({
+      relevantLenses: input.relevant.lenses,
+      latestAcceptedOrModifiedLenses: input.facts.latestAcceptedOrModifiedLenses,
+      newlyTouchedLenses: newlyTouched,
+    })
+    const completed = new Set(input.facts.completedLenses)
+    const findings = new Set(input.facts.latestAcceptedOrModifiedLenses)
+    const touched = new Set(newlyTouched)
+    const unidentified = input.postFix.kind === 'reviewed-tip-unidentified'
+    return withLensReasons(
+      selectReviewApplicability(input.relevant, lenses),
+      Object.fromEntries(
+        lenses.map((lens) => [
+          lens,
+          unidentified
+            ? 'unidentified-tip-funnel'
+            : (laterRoundReason(lens, completed, findings, touched) ?? 'never-completed'),
+        ]),
+      ),
     )
   })()
   const required = new Set([...input.facts.completedLenses, ...round.lenses])

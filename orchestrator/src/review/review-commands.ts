@@ -283,8 +283,10 @@ function reviewTierOutput(value: string, cwd: string) {
     lens_profiles: round.lenses.map((id) => ({
       id,
       basis: round.lensBases?.[id] ?? null,
+      reason: round.lensReasons?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
+    lensReasons: round.lensReasons,
   }
 }
 
@@ -381,7 +383,9 @@ function printReviewTier(
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    log(`lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}`)
+    log(
+      `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`,
+    )
   }
   if (output.secondOpinion) {
     log(
@@ -395,6 +399,8 @@ function printReviewTier(
 }
 
 const basisLabel = (basis: string | null | undefined): string => (basis ? `  basis: ${basis}` : '')
+const reasonLabel = (reason: string | null | undefined): string =>
+  reason ? `  reason: ${reason}` : ''
 
 export function listReviewCommand(flags: ReviewFlags, presentation: ReviewPresentation): void {
   const { has, flag } = flags
