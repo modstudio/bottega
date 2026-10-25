@@ -1,0 +1,41 @@
+{
+  "status": "done",
+  "summary": "Implemented location-based manifest membership check in check-architecture.ts. Created a pure function architectureUndeclaredModules() that checks every source file under orchestrator/src and hub/src against the manifest, using a shrink-only baseline for currently undeclared files. The check reports the count of undeclared files and passes with the current baseline of 538 files.",
+  "files_changed": [
+    "scripts/check-architecture.ts",
+    "scripts/architecture-undeclared-modules.ts",
+    "scripts/architecture-undeclared-modules.test.ts",
+    "scripts/quality/undeclared-modules-baseline.ts"
+  ],
+  "change_guide": [
+    {
+      "files": ["scripts/quality/undeclared-modules-baseline.ts"],
+      "explanation": "New baseline file containing 538 files currently not in the architecture manifest. This list only shrinks as modules are added.",
+      "verify": "Check that the baseline contains all currently undeclared files under orchestrator/src and hub/src"
+    },
+    {
+      "files": ["scripts/architecture-undeclared-modules.ts"],
+      "explanation": "Pure function architectureUndeclaredModules() that checks manifest membership by file location. Takes manifest file set and baseline, returns violations. Exports countUndeclaredModules() helper.",
+      "verify": "Run bun test scripts/architecture-undeclared-modules.test.ts - all 7 tests should pass"
+    },
+    {
+      "files": ["scripts/architecture-undeclared-modules.test.ts"],
+      "explanation": "Test file with beside-tests covering: undeclared new file fails, baselined file passes, stale baseline entry fails, test files ignored, fixture files ignored, manifest modules not in violations, countUndeclaredModules reports zero.",
+      "verify": "bun test scripts/architecture-undeclared-modules.test.ts"
+    },
+    {
+      "files": ["scripts/check-architecture.ts"],
+      "explanation": "Modified to import and call architectureUndeclaredModules() and countUndeclaredModules(). Removed unused imports (architectureRules). Added undeclared count to output message. The comment header check is no longer used for manifest membership.",
+      "verify": "run bun run scripts/check-architecture.ts - should output 'check-architecture: ok (736 manifest modules, 3463 cruised modules, 0 undeclared, depcruise ...s)'"
+    }
+  ],
+  "questions": null,
+  "deviations": null,
+  "blockers": null,
+  "tests": {
+    "command": "bun test scripts/architecture-undeclared-modules.test.ts && bun run scripts/check-architecture.ts",
+    "ran": true,
+    "passed": true,
+    "detail": "All 7 tests pass. check-architecture.ts runs successfully with 0 undeclared files."
+  }
+}

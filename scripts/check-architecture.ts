@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 import type { ICruiseResult } from 'dependency-cruiser'
 import { CONCERNS } from '../shared/brand.ts'
-import { architectureRules, modules } from './architecture.ts'
+import { modules } from './architecture.ts'
 import {
   ARCHITECTURE_CRUISE_ENTRIES,
   ARCHITECTURE_CRUISE_ROOTS,
@@ -17,14 +17,15 @@ import {
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
-import { architectureUndeclaredModules, countUndeclaredModules } from './architecture-undeclared-modules.ts'
-import { undeclaredModulesBaseline } from './quality/undeclared-modules-baseline.ts'
 import { importSpecifiers } from './import-scanner.ts'
+import {
+  architectureUndeclaredModules,
+  countUndeclaredModules,
+} from './architecture-undeclared-modules.ts'
+import { undeclaredModulesBaseline } from './quality/undeclared-modules-baseline.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const CONCERN = /^\/\/ concern: ([a-z0-9-]+)$/
 const manifestFiles = new Set(modules.map(({ file }) => file))
-const manifestRules = new Set(architectureRules().forbidden.map(({ name }) => name))
 const violations: string[] = []
 
 function isProductionTypeScript(path: string) {
