@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
@@ -17,6 +17,8 @@ import {
   hubViewsDocsModeLiteralRuleName,
 } from './architecture-hub-data.ts'
 import { architectureViolationRatchet } from './architecture-violation-baseline.ts'
+import { architectureUndeclaredModules, countUndeclaredModules } from './architecture-undeclared-modules.ts'
+import { undeclaredModulesBaseline } from './quality/undeclared-modules-baseline.ts'
 import { importSpecifiers } from './import-scanner.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -58,23 +60,14 @@ for (const { file } of modules) {
   if (!existsSync(join(ROOT, file))) violations.push(`manifest module names missing file ${file}`)
 }
 
-for (const root of ['orchestrator/src', 'hub/src']) {
-  for (const relative of new Glob('**/*.{ts,tsx}').scanSync({ cwd: join(ROOT, root) })) {
-    const file = `${root}/${relative}`
-    const firstLine = readFileSync(join(ROOT, file), 'utf8').split('\n', 1)[0]!
-    const concern = firstLine.match(CONCERN)?.[1]
-    if (!concern || manifestFiles.has(file)) continue
-    const customBoundary = `scripts/check-${concern}-boundary.ts`
-    if (
-      !existsSync(join(ROOT, customBoundary)) &&
-      !manifestRules.has(`import-${concern}-boundary`)
-    ) {
-      violations.push(
-        `${file}: missing manifest module or ${customBoundary} (canon 10-code: A module is one concern)`,
-      )
-    }
-  }
+// Check for undeclared modules (files in orchestrator/src and hub/src not in manifest and not baselined)
+const undeclaredViolations = architectureUndeclaredModules(manifestFiles, undeclaredModulesBaseline)
+for (const violation of undeclaredViolations) {
+  violations.push(violation)
 }
+
+// Report the count of undeclared files
+const undeclaredCount = countUndeclaredModules(manifestFiles, undeclaredModulesBaseline)
 
 if (violations.length) {
   for (const violation of violations) console.error(violation)
@@ -136,5 +129,5 @@ if (ratchet.newViolations.length || ratchet.fixedBaseline.length) {
 }
 
 console.log(
-  `check-architecture: ok (${modules.length} manifest modules, ${result.modules.length} cruised modules, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,
+  `check-architecture: ok (${modules.length} manifest modules, ${result.modules.length} cruised modules, ${undeclaredCount} undeclared, depcruise ${((performance.now() - startedAt) / 1000).toFixed(2)}s)`,
 )
