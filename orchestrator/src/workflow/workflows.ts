@@ -37,6 +37,12 @@ import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
+  selectCatalogueVersion,
+  selectWorkflowVersion,
+  type WorkflowNeeds,
+  type WorkflowSelection,
+} from './workflow-version-selection.ts'
+import {
   expandWorkflowModeSteps,
   expandWorkflowSteps,
   inspectWorkflowSteps,
@@ -329,7 +335,7 @@ function versionRow(
       : `AND v.n=?`
   const row = d
     .query(
-      `SELECT v.*, w.slug FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id IS ? ${where}`,
+      `SELECT v.*, w.slug FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id IS ? AND v.superseded_at IS NULL ${where}`,
     )
     .get(...(n === undefined ? [slug, spaceId] : [slug, spaceId, n])) as VersionRow | null
   if (!row)
@@ -347,7 +353,7 @@ function productionVersionRow(slug: string, d: Database, spaceId: string | null)
   const row = d
     .query(`SELECT v.*, w.slug FROM workflow_version v
     JOIN workflow w ON w.record_id=v.workflow_record_id
-    WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`)
+    WHERE w.slug=? AND w.space_id IS ? AND v.status='production' AND v.superseded_at IS NULL`)
     .get(slug, spaceId) as VersionRow | null
   if (!row)
     throw new Error(
@@ -368,8 +374,8 @@ export function listResolvedWorkflows(spaceId: string | null, d: Database = db()
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
       .query(`SELECT w.record_id,w.slug,
-    (SELECT n FROM workflow_version WHERE workflow_record_id=w.record_id AND status='production') production_n,
-    (SELECT MAX(n) FROM workflow_version WHERE workflow_record_id=w.record_id AND status='draft') draft_n
+    (SELECT n FROM workflow_version WHERE workflow_record_id=w.record_id AND status='production' AND superseded_at IS NULL) production_n,
+    (SELECT MAX(n) FROM workflow_version WHERE workflow_record_id=w.record_id AND status='draft' AND superseded_at IS NULL) draft_n
     FROM workflow w WHERE w.slug=? AND w.space_id IS ?`)
       .get(slug, spaceId) as {
       record_id: string
@@ -395,7 +401,7 @@ export function productionWorkflows(d: Database, spaceId: string | null) {
     d
       .query(
         `SELECT w.slug,v.definition FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
-         WHERE v.status='production' AND w.space_id IS ? ORDER BY w.slug`,
+         WHERE v.status='production' AND v.superseded_at IS NULL AND w.space_id IS ? ORDER BY w.slug`,
       )
       .all(spaceId) as { slug: string; definition: string }[]
   ).map((row) => ({ slug: row.slug, definition: JSON.parse(row.definition) as WorkflowDefinition }))
@@ -624,7 +630,7 @@ export function retireWorkflow(
       hostedProductionCatalogue(d, spaceId)
       const current = d
         .query<{ n: number }, [string, string]>(
-          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id=? AND v.status='production'`,
+          `SELECT v.n FROM workflow_version v JOIN workflow w ON w.record_id=v.workflow_record_id WHERE w.slug=? AND w.space_id=? AND v.status='production' AND v.superseded_at IS NULL`,
         )
         .get(slug, spaceId)
       const result = await recordApiClient().retireWorkflow!(
@@ -708,7 +714,7 @@ export function resolvedProductionWorkflows(project: string, d: Database = db())
     const exists = d
       .query(
         `SELECT 1 FROM workflow w JOIN workflow_version v ON v.workflow_record_id=w.record_id
-         WHERE w.slug=? AND w.space_id IS ? AND v.status='production'`,
+         WHERE w.slug=? AND w.space_id IS ? AND v.status='production' AND v.superseded_at IS NULL`,
       )
       .get(slug, spaceId)
     if (!exists) return []
@@ -716,12 +722,6 @@ export function resolvedProductionWorkflows(project: string, d: Database = db())
     return [{ slug, definition: row.definition, spaceId }]
   })
 }
-
-type WorkflowNeeds = {
-  mode?: { slug: string; title: string; entry: string }[]
-  arguments?: { name: string; description: string }[]
-}
-type WorkflowSelection = { version?: number; catalogueVersion?: number; mode?: string }
 
 const selectedWorkflow = (
   slug: string,
@@ -734,9 +734,6 @@ const selectedWorkflow = (
       ? productionVersionRow(slug, d, spaceId)
       : versionRow(slug, version, d, spaceId),
   )
-const selectedCatalogue = (version: number | undefined, d: Database, spaceId: string | null) =>
-  selectedStepCatalogue(version, d, spaceId)
-
 export function resolveWorkflowMode(
   definition: WorkflowDefinition,
   modeSlug?: string,
@@ -753,8 +750,10 @@ export function workflowModeStepLists(
   selection: WorkflowSelection = {},
 ): WorkflowModeStepList[] {
   const spaceId = workflowReadSpaceFor(d, project)
-  const workflow = selectedWorkflow(slug, selection.version, d, spaceId)
-  const catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
+  const workflow = selectWorkflowVersion(selection, d, () =>
+    selectedWorkflow(slug, selection.version, d, spaceId),
+  )
+  const catalogue = selectCatalogueVersion(selection, d, spaceId)
   return workflow.definition.modes.map((mode) => ({
     mode: mode.slug,
     steps: expandWorkflowSteps(mode.steps, catalogue.definition.sequences ?? []),
@@ -795,9 +794,11 @@ export function composeWorkflow(
   autonomy?: WorkflowAutonomyResolution,
 ) {
   const spaceId = workflowReadSpaceFor(d, projectName)
-  const row = selectedWorkflow(slug, selection.version, d, spaceId),
+  const row = selectWorkflowVersion(selection, d, () =>
+      selectedWorkflow(slug, selection.version, d, spaceId),
+    ),
     definition = row.definition,
-    catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId)
+    catalogue = selectCatalogueVersion(selection, d, spaceId)
   const mode = resolveWorkflowMode(definition, modeSlug)
   const needs: WorkflowNeeds = {}
   if (modeSlug && !mode) throw new Error(`workflow "${slug}" has no mode "${modeSlug}"`)
@@ -910,9 +911,11 @@ export function getWorkflowStep(
   autonomy?: WorkflowAutonomyResolution,
 ) {
   const spaceId = workflowReadSpaceFor(d, projectName)
-  const row = selectedWorkflow(slug, selection.version, d, spaceId),
+  const row = selectWorkflowVersion(selection, d, () =>
+      selectedWorkflow(slug, selection.version, d, spaceId),
+    ),
     definition = row.definition,
-    catalogue = selectedCatalogue(selection.catalogueVersion, d, spaceId),
+    catalogue = selectCatalogueVersion(selection, d, spaceId),
     { selectedMode, containingModes, referenced } = workflowModesForStep(
       definition,
       catalogue.definition.sequences,

@@ -268,7 +268,7 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
     const versions = (
       local
         .query(
-          `SELECT v.*,i.record_id owner_record_id FROM ${name}_version v JOIN ${name} i ON i.record_id=v.${foreign} WHERE v.space_id IS NULL`,
+          `SELECT v.*,i.record_id owner_record_id FROM ${name}_version v JOIN ${name} i ON i.record_id=v.${foreign} WHERE v.space_id IS NULL AND v.superseded_at IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).map((r) => ({
@@ -288,7 +288,7 @@ function workflowSpacePlan(local: Database, spaceId: string): RecordWorkflowImpo
     const events = (
       local
         .query(
-          `SELECT e.*,v.record_id version_record_id FROM ${name}_event e JOIN ${name}_version v ON v.record_id=e.${eventForeign} WHERE e.space_id IS NULL`,
+          `SELECT e.*,v.record_id version_record_id FROM ${name}_event e JOIN ${name}_version v ON v.record_id=e.${eventForeign} WHERE e.space_id IS NULL AND v.superseded_at IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).map((r) => ({

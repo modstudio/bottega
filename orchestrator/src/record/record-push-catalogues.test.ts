@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
+import { newRecordId, replicatedRecordId } from '../../../shared/record-id.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
@@ -267,6 +267,16 @@ test('pushes complete workflow history to every registered project space and lis
   rememberActiveRecordSpace(local, spaceId)
   rememberProjectSpace(local, activeProject, spaceId)
   rememberProjectSpace(local, remoteProject, remoteSpace)
+  const superseded = local
+    .query<{ event_id: string; version_id: string }, []>(
+      `SELECT e.record_id event_id,v.record_id version_id
+       FROM workflow_version v JOIN workflow_event e ON e.workflow_version_record_id=v.record_id
+       WHERE v.space_id IS NULL LIMIT 1`,
+    )
+    .get()!
+  local
+    .query('UPDATE workflow_version SET superseded_at=? WHERE record_id=?')
+    .run('2026-10-25T00:00:00.000Z', superseded.version_id)
   const imports = new Map<string, RecordWorkflowImportInput>()
   const logs: string[] = []
   const client = fakeCatalogueClient(
@@ -317,6 +327,12 @@ test('pushes complete workflow history to every registered project space and lis
       expect(input[`${kind}_version`].every((row) => identityIds.has(row.ownerId))).toBeTrue()
       expect(input[`${kind}_event`].every((row) => versionIds.has(row.ownerVersionId))).toBeTrue()
     }
+    expect(input.workflow_version.map((row) => row.id)).not.toContain(
+      replicatedRecordId(destination, 'workflow_version', superseded.version_id),
+    )
+    expect(input.workflow_event.map((row) => row.id)).not.toContain(
+      replicatedRecordId(destination, 'workflow_event', superseded.event_id),
+    )
   }
   const remoteInput = imports.get(remoteSpace)!
   for (const table of [

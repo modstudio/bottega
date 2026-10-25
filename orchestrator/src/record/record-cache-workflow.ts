@@ -1,7 +1,7 @@
 // concern: record-cache-workflow
 /** Pulls and reconciles the six hosted workflow catalogue streams. */
 import type { Database } from 'bun:sqlite'
-import { writeTransaction } from '../database/db.ts'
+import { nowIso, writeTransaction } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
 import {
   decodeRecordCursor,
@@ -74,6 +74,7 @@ async function pullTable(
         applyWorkflowCatalogueRow(local, table, item)
         count++
       }
+      releaseSupersededVersions(local)
       const last = page.items.at(-1)!
       current = page.endCursor
         ? decodeRecordCursor(page.endCursor)
@@ -190,24 +191,52 @@ function resetIdentityHistoryCursors(local: Database, n: Names, spaceId: string)
 }
 
 function deleteIdentityHistory(local: Database, n: Names, spaceId: string, parentId: string): void {
-  if (n.event === 'workflow_event') {
+  const versions = local
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT record_id FROM ${n.version} WHERE space_id=? AND ${n.foreign}=? AND superseded_at IS NULL`,
+    )
+    .all(spaceId, parentId)
+  for (const version of versions) setAsideOrDeleteVersion(local, n, spaceId, version.record_id)
+}
+
+function setAsideOrDeleteVersion(
+  local: Database,
+  n: Names,
+  spaceId: string,
+  recordId: string,
+): void {
+  const cursorForeign =
+    n.version === 'workflow_version' ? 'workflow_version_record_id' : 'catalogue_version_record_id'
+  const pinned = local
+    .query(`SELECT 1 FROM workflow_cursor WHERE ${cursorForeign}=? LIMIT 1`)
+    .get(recordId)
+  if (pinned) {
+    // Residue is bounded by versions a cursor pinned when a replace-seed set them aside.
     local
-      .query(
-        'DELETE FROM workflow_event WHERE space_id=? AND workflow_version_record_id IN (SELECT record_id FROM workflow_version WHERE workflow_record_id=?)',
+      .query(`UPDATE ${n.version} SET superseded_at=? WHERE record_id=? AND space_id=?`)
+      .run(nowIso(), recordId, spaceId)
+    return
+  }
+  local
+    .query(`DELETE FROM ${n.event} WHERE ${n.eventForeign}=? AND space_id=?`)
+    .run(recordId, spaceId)
+  local.query(`DELETE FROM ${n.version} WHERE record_id=? AND space_id=?`).run(recordId, spaceId)
+}
+
+function releaseSupersededVersions(local: Database): void {
+  for (const table of ['workflow', 'step_catalogue'] as const) {
+    const n = names(table)
+    const cursorForeign =
+      table === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'
+    const versions = local
+      .query<{ record_id: string; space_id: string }, []>(
+        `SELECT record_id,space_id FROM ${n.version} v
+         WHERE superseded_at IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM workflow_cursor c WHERE c.${cursorForeign}=v.record_id)`,
       )
-      .run(spaceId, parentId)
-    local
-      .query('DELETE FROM workflow_version WHERE space_id=? AND workflow_record_id=?')
-      .run(spaceId, parentId)
-  } else {
-    local
-      .query(
-        'DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=?)',
-      )
-      .run(spaceId, parentId)
-    local
-      .query('DELETE FROM step_catalogue_version WHERE space_id=? AND catalogue_record_id=?')
-      .run(spaceId, parentId)
+      .all()
+    for (const version of versions)
+      setAsideOrDeleteVersion(local, n, version.space_id, version.record_id)
   }
 }
 
@@ -232,7 +261,7 @@ function applyVersion(
     byRecordId ??
     local
       .query<{ record_id: string }, [string, number]>(
-        `SELECT record_id FROM ${n.version} WHERE ${n.foreign}=? AND n=?`,
+        `SELECT record_id FROM ${n.version} WHERE ${n.foreign}=? AND n=? AND superseded_at IS NULL`,
       )
       .get(parent.record_id, Number(item.n))
   const values = [
@@ -249,40 +278,25 @@ function applyVersion(
     item.retiredAt == null ? null : String(item.retiredAt),
   ]
   if (found) {
-    if (!byRecordId)
-      deleteReplacedVersionEvents(local, n, spaceId, parent.record_id, Number(item.n))
-    local
-      .query(
-        `UPDATE ${n.version} SET record_id=?,space_id=?,${n.foreign}=?,n=?,status=?,definition=?,author=?,reason=?,created_at=?,promoted_at=?,retired_at=? WHERE record_id=?`,
-      )
-      .run(...values, found.record_id)
+    if (!byRecordId) {
+      setAsideOrDeleteVersion(local, n, spaceId, found.record_id)
+      local
+        .query(
+          `INSERT INTO ${n.version} (record_id,space_id,${n.foreign},n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(...values)
+    } else
+      local
+        .query(
+          `UPDATE ${n.version} SET record_id=?,space_id=?,${n.foreign}=?,n=?,status=?,definition=?,author=?,reason=?,created_at=?,promoted_at=?,retired_at=?,superseded_at=NULL WHERE record_id=?`,
+        )
+        .run(...values, found.record_id)
   } else
     local
       .query(
         `INSERT INTO ${n.version} (record_id,space_id,${n.foreign},n,status,definition,author,reason,created_at,promoted_at,retired_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(...values)
-}
-
-function deleteReplacedVersionEvents(
-  local: Database,
-  n: Names,
-  spaceId: string,
-  parentId: string,
-  version: number,
-): void {
-  if (n.event === 'workflow_event')
-    local
-      .query(
-        'DELETE FROM workflow_event WHERE space_id=? AND workflow_version_record_id IN (SELECT record_id FROM workflow_version WHERE workflow_record_id=? AND n=?)',
-      )
-      .run(spaceId, parentId, version)
-  else
-    local
-      .query(
-        'DELETE FROM step_catalogue_event WHERE space_id=? AND catalogue_version_record_id IN (SELECT record_id FROM step_catalogue_version WHERE catalogue_record_id=? AND n=?)',
-      )
-      .run(spaceId, parentId, version)
 }
 
 function applyEvent(
@@ -339,6 +353,7 @@ export async function applyWorkflowWriteResponse(
     for (const version of response.versions)
       applyWorkflowCatalogueRow(local, `${prefix}_version`, version)
     for (const event of response.events) applyWorkflowCatalogueRow(local, `${prefix}_event`, event)
+    releaseSupersededVersions(local)
   }, local)
   if (reconciled) await pullWorkflowCatalogue(local, [String(response.identity.spaceId)])
 }

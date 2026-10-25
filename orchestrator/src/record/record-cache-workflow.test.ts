@@ -10,7 +10,9 @@ import { applyMigrations, applyMigrationsBefore } from '../database/migrations.t
 import { upsertProject } from '../project/projects.ts'
 import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
+import { selectWorkflowCursor } from '../workflow/workflow-cursor-selection.ts'
 import { productionWorkflowTree } from '../workflow/workflow-tree-store.ts'
+import { showPinnedWorkflow } from '../workflow/workflow-version-selection.ts'
 import { productionWorkflows } from '../workflow/workflows.ts'
 import { pullRecordCache } from './record-cache.ts'
 import {
@@ -55,6 +57,28 @@ const event = (spaceId: string, ownerVersionId: string, id = newRecordId()) => (
   at,
   updatedAt: at,
 })
+
+function pinCursor(
+  local: Database,
+  workflowVersionId: string,
+  catalogueVersionId: string,
+  project = 'fixture',
+): { number: number; recordId: string } {
+  const cursorId = newRecordId()
+  local
+    .query(
+      `INSERT INTO workflow_cursor
+       (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+        workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+        question,total_steps,created_at,updated_at,enforcement)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,'fix-defect','default','DEV-1728',?,NULL,?,?,'{}',0,'design','running','[]',NULL,1,?,?,'note-only')`,
+    )
+    .run(cursorId, project, newRecordId(), workflowVersionId, catalogueVersionId, at, at)
+  const row = local
+    .query<{ number: number }, [string]>('SELECT number FROM workflow_cursor WHERE record_id=?')
+    .get(cursorId)!
+  return { number: row.number, recordId: cursorId }
+}
 
 test('workflow pull orders six durable streams, resumes pages, and holds an unresolved child', async () => {
   const local = db(),
@@ -209,6 +233,156 @@ const catalogueKinds = [
   ['workflow', 'workflow', 'workflow_version', 'workflow_event', 'fix-defect'],
   ['step catalogue', 'step_catalogue', 'step_catalogue_version', 'step_catalogue_event', 'shared'],
 ] as const
+
+test('replace-seed preserves a pinned workflow version and composes the new generation', async () => {
+  const local = db(),
+    space = newRecordId(),
+    project = `replace-seed-${space}`,
+    catalogue = identity(space, 'shared'),
+    catalogueVersion = version(space, catalogue.id, productionStepCatalogue(local).definition),
+    workflow = identity(space, 'fix-defect'),
+    baseDefinition = productionWorkflows(local, null).find(
+      (row) => row.slug === 'fix-defect',
+    )!.definition,
+    pinned = {
+      ...version(space, workflow.id, { ...baseDefinition, title: 'Pinned generation one' }),
+      status: 'retired' as const,
+      promotedAt: null,
+      retiredAt: at,
+    },
+    unpinned = {
+      ...version(space, workflow.id, { ...baseDefinition, title: 'Old production' }),
+      id: newRecordId(),
+      n: 2,
+    },
+    pinnedEvent = event(space, pinned.id),
+    unpinnedEvent = event(space, unpinned.id),
+    replacementIdentity = { ...workflow, generation: 2, updatedAt: '2026-10-25T01:00:00.000Z' },
+    replacements = [
+      {
+        ...version(space, workflow.id, { ...baseDefinition, title: 'New retired' }),
+        id: newRecordId(),
+        status: 'retired' as const,
+        promotedAt: null,
+        retiredAt: at,
+      },
+      {
+        ...version(space, workflow.id, { ...baseDefinition, title: 'New production' }),
+        id: newRecordId(),
+        n: 2,
+      },
+    ]
+  applyWorkflowCatalogueRow(local, 'step_catalogue', catalogue)
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', catalogueVersion)
+  applyWorkflowCatalogueRow(local, 'workflow', workflow)
+  applyWorkflowCatalogueRow(local, 'workflow_version', pinned)
+  applyWorkflowCatalogueRow(local, 'workflow_version', unpinned)
+  applyWorkflowCatalogueRow(local, 'workflow_event', pinnedEvent)
+  applyWorkflowCatalogueRow(local, 'workflow_event', unpinnedEvent)
+  const cursor = pinCursor(local, pinned.id, catalogueVersion.id, project)
+  upsertProject({ recordId: newRecordId(), name: project, path: `/tmp/${project}` })
+  rememberProjectSpace(local, project, space)
+
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    async listWorkflowCatalogue(table) {
+      if (table === 'workflow') return { items: [replacementIdentity], nextCursor: null }
+      if (table === 'workflow_version') return { items: replacements, nextCursor: null }
+      if (table === 'workflow_event')
+        return { items: replacements.map((row) => event(space, row.id)), nextCursor: null }
+      return { items: [], nextCursor: null }
+    },
+  })
+
+  expect(await pullWorkflowCatalogue(local, [space])).toEqual({
+    count: 5,
+    completedSpaces: new Set([space]),
+  })
+  expect(
+    local
+      .query(
+        `SELECT v.record_id,v.definition,v.superseded_at
+         FROM workflow_cursor c JOIN workflow_version v ON v.record_id=c.workflow_version_record_id
+         WHERE c.record_id=?`,
+      )
+      .get(cursor.recordId),
+  ).toEqual({
+    record_id: pinned.id,
+    definition: pinned.definition,
+    superseded_at: expect.any(String),
+  })
+  const selectedCursor = selectWorkflowCursor({}, cursor.number, null, local)!
+  expect(
+    showPinnedWorkflow(selectedCursor.workflow_version_record_id, local).definition.title,
+  ).toBe('Pinned generation one')
+  expect(
+    local.query('SELECT record_id FROM workflow_version WHERE record_id=?').get(unpinned.id),
+  ).toBeNull()
+  expect(
+    local.query('SELECT record_id FROM workflow_event WHERE record_id=?').get(unpinnedEvent.id),
+  ).toBeNull()
+  expect(
+    local
+      .query(
+        'SELECT record_id,n FROM workflow_version WHERE workflow_record_id=? AND superseded_at IS NULL ORDER BY n',
+      )
+      .all(workflow.id),
+  ).toEqual(replacements.map((row) => ({ record_id: row.id, n: row.n })))
+  expect(
+    productionWorkflowTree({ database: local, project }).workflows.find(
+      (row) => row.slug === 'fix-defect',
+    )?.definition.title,
+  ).toBe('New production')
+})
+
+test.each(catalogueKinds)(
+  'a pinned %s version is set aside when the same number arrives under another id',
+  (_label, identityTable, versionTable, _eventTable, slug) => {
+    const local = db(),
+      space = newRecordId(),
+      owner = identity(space, slug),
+      oldVersion = version(space, owner.id, { title: 'Pinned old' }),
+      replacement = { ...version(space, owner.id, { title: 'Current new' }), id: newRecordId() }
+    applyWorkflowCatalogueRow(local, identityTable, owner)
+    applyWorkflowCatalogueRow(local, versionTable, oldVersion)
+    let workflowVersionId = oldVersion.id,
+      catalogueVersionId = oldVersion.id
+    if (identityTable === 'workflow') {
+      const support = identity(space, 'shared')
+      const supportVersion = version(space, support.id, { steps: [] })
+      applyWorkflowCatalogueRow(local, 'step_catalogue', support)
+      applyWorkflowCatalogueRow(local, 'step_catalogue_version', supportVersion)
+      catalogueVersionId = supportVersion.id
+    } else {
+      const support = identity(space, 'fix-defect')
+      const supportVersion = version(space, support.id, { title: 'Support' })
+      applyWorkflowCatalogueRow(local, 'workflow', support)
+      applyWorkflowCatalogueRow(local, 'workflow_version', supportVersion)
+      workflowVersionId = supportVersion.id
+    }
+    const cursor = pinCursor(local, workflowVersionId, catalogueVersionId)
+
+    applyWorkflowCatalogueRow(local, versionTable, replacement)
+
+    expect(
+      local
+        .query(`SELECT record_id,superseded_at FROM ${versionTable} WHERE record_id=?`)
+        .get(oldVersion.id),
+    ).toEqual({ record_id: oldVersion.id, superseded_at: expect.any(String) })
+    expect(
+      local
+        .query(`SELECT record_id,superseded_at FROM ${versionTable} WHERE record_id=?`)
+        .get(replacement.id),
+    ).toEqual({ record_id: replacement.id, superseded_at: null })
+    expect(
+      local
+        .query(
+          `SELECT ${identityTable === 'workflow' ? 'workflow_version_record_id' : 'catalogue_version_record_id'} pinned FROM workflow_cursor WHERE record_id=?`,
+        )
+        .get(cursor.recordId),
+    ).toEqual({ pinned: oldVersion.id })
+  },
+)
 
 const identityDisagreements = catalogueKinds.flatMap(
   ([kind, identityTable, versionTable, eventTable, slug]) => [

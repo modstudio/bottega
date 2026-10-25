@@ -97,6 +97,7 @@ function newestDefinitions(
       `SELECT v.definition,v.status FROM step_catalogue_version v
        JOIN step_catalogue c ON c.record_id=v.catalogue_record_id
        WHERE c.slug='shared' AND c.space_id IS ? AND v.status IN ('production','draft')
+         AND v.superseded_at IS NULL
        ORDER BY v.status='draft' DESC,v.n DESC`,
     )
     .all(spaceId)
@@ -105,6 +106,7 @@ function newestDefinitions(
       `SELECT w.slug,v.definition,v.status,v.n FROM workflow_version v
        JOIN workflow w ON w.record_id=v.workflow_record_id
        WHERE w.space_id IS ? AND v.status IN ('production','draft')
+         AND v.superseded_at IS NULL
        ORDER BY w.slug,v.status='draft' DESC,v.n DESC`,
     )
     .all(spaceId)
