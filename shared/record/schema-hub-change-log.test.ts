@@ -176,8 +176,12 @@ test('portable record UUID function orders version-7 UUIDs from distinct timesta
     await database.query('SELECT pg_sleep(0.0001)')
   }
 
-  for (const id of ids)
+  for (const id of ids) {
     expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    // The leading 48 bits are Unix-epoch milliseconds, not a time of day.
+    const encodedMs = Number.parseInt(id.replaceAll('-', '').slice(0, 12), 16)
+    expect(Math.abs(Date.now() - encodedMs)).toBeLessThan(60_000)
+  }
   expect(ids).toEqual([...ids].sort())
 })
 

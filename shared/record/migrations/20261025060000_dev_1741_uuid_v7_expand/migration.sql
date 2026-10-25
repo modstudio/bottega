@@ -6,10 +6,10 @@ SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $$
 DECLARE
-  current_time timestamptz := clock_timestamp();
-  unix_milliseconds bigint := floor(extract(epoch FROM current_time) * 1000)::bigint;
+  minted_at timestamptz := clock_timestamp();
+  unix_milliseconds bigint := floor(extract(epoch FROM minted_at) * 1000)::bigint;
   submillisecond_bits bigint := floor(
-    (extract(microseconds FROM current_time)::bigint % 1000) * 4096 / 1000
+    (extract(microseconds FROM minted_at)::bigint % 1000) * 4096 / 1000
   )::bigint;
   uuid_bytes bytea := uuid_send(gen_random_uuid());
 BEGIN
