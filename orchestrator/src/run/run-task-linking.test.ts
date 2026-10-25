@@ -140,7 +140,7 @@ describe('run task linking service', () => {
 
     const first = await linkRunTasks({ dryRun: false }, { hubReader })
     expect(first.task_links_by_source.launch_key).toBe(1)
-    expect(first.project_links_by_source['task-project']).toBe(1)
+    expect(first.project_links_by_source['task-project']).toBe(0)
     expect(
       db().query('SELECT task_record_id,project_record_id FROM run WHERE record_id=?').get(runId),
     ).toEqual({ task_record_id: 'write-task-id', project_record_id: projectId })
@@ -165,11 +165,16 @@ describe('run task linking service', () => {
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DRY-2', runId)
     const orphanId = addRun({ agent: 'codex', job: 'review-lens' })
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('GONE-7', orphanId)
-    const probeId = addRun({ agent: 'codex', job: 'review-lens' })
-    db().query('UPDATE run SET launch_key=?, probe=1 WHERE record_id=?').run('DRY-2', probeId)
-    const lostProbeId = addRun({ agent: 'codex', job: 'review-lens' })
+    const probeId = addRun({ agent: 'codex', job: 'review-lens', projectRecordId: null, probe: 1 })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DRY-2', probeId)
+    const lostProbeId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      projectRecordId: null,
+      probe: 1,
+    })
     db()
-      .query('UPDATE run SET launch_key=?, probe=1 WHERE record_id=?')
+      .query('UPDATE run SET launch_key=? WHERE record_id=?')
       .run('MISSING-3', lostProbeId)
 
     const report = await linkRunTasks(

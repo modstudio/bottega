@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
-import { newRecordId } from '../../../shared/record-id.ts'
-import { resolveNewRunLinks } from './run-task-reference.ts'
+import { admitNewRunReference, RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 afterEach(() => {
   spyOn(Bun, 'spawn').mockRestore()
@@ -21,9 +20,7 @@ describe('run task reference', () => {
     })) as unknown as typeof Bun.spawn)
 
     expect(
-      await resolveNewRunLinks({
-        recordId: newRecordId(),
-        job: 'understand',
+      await admitNewRunReference({
         projectName: 'beta',
         projectRecordId: null,
         key: 'SHARED-42',
@@ -37,14 +34,12 @@ describe('run task reference', () => {
     )
   })
 
-  test('leaves the reference null when hub is unavailable', async () => {
+  test('refuses with the remedy when hub is unavailable and no project can be derived', async () => {
     spyOn(Bun, 'spawn').mockImplementation((() => {
       throw new Error('hub unavailable')
     }) as unknown as typeof Bun.spawn)
     expect(
-      await resolveNewRunLinks({
-        recordId: newRecordId(),
-        job: 'understand',
+      admitNewRunReference({
         projectName: 'beta',
         projectRecordId: null,
         key: 'SHARED-42',
@@ -52,6 +47,23 @@ describe('run task reference', () => {
         launchCwd: null,
         probe: false,
       }),
-    ).toEqual({ taskRecordId: null, projectRecordId: null })
+    ).rejects.toThrow(RUN_REFERENCE_REFUSAL)
+  })
+
+  test('admits a turn with the links already read from its parent', async () => {
+    const spawn = spyOn(Bun, 'spawn')
+    expect(
+      await admitNewRunReference({
+        inheritedTaskRecordId: 'parent-task',
+        inheritedProjectRecordId: 'parent-project',
+        projectName: null,
+        projectRecordId: null,
+        key: null,
+        cwd: null,
+        launchCwd: null,
+        probe: false,
+      }),
+    ).toEqual({ taskRecordId: 'parent-task', projectRecordId: 'parent-project' })
+    expect(spawn).not.toHaveBeenCalled()
   })
 })

@@ -33,6 +33,16 @@ export type DerivedRunLinks = {
   project_source?: ProjectLinkSource
 }
 
+export type NewRunLinkFacts = {
+  key: string | null
+  cwd: string | null
+  launchCwd: string | null
+  probe: boolean
+  inheritedTaskRecordId?: string | null
+  inheritedProjectRecordId?: string | null
+  projectRecordId: string | null
+}
+
 export type RunTaskLinkReport = {
   dry_run: boolean
   task_links_by_source: Record<TaskLinkSource, number>
@@ -164,6 +174,33 @@ export function deriveRunLinks(
       ...deriveProjectLink(run, taskLink.task_record_id, tasksById, registered, registeredByName),
     }
   })
+}
+
+/** Applies the recorded-row policy to the facts known before a new run is inserted. */
+export function deriveNewRunLinks(
+  input: NewRunLinkFacts,
+  tasks: ReadonlyMap<string, HubTaskReference>,
+  registered: readonly Project[],
+): { taskRecordId: string | null; projectRecordId: string | null } {
+  const inheritedProjectRecordId = input.inheritedProjectRecordId ?? null
+  const facts: RunLinkFacts = {
+    record_id: 'new-run',
+    job: 'new-run',
+    launch_key: input.key,
+    review_ref: null,
+    branch: null,
+    cwd: input.cwd,
+    launch_cwd: input.launchCwd,
+    probe: input.probe ? 1 : 0,
+    parent_run_record_id: null,
+    task_record_id: input.inheritedTaskRecordId ?? null,
+    project_record_id: inheritedProjectRecordId ?? input.projectRecordId,
+  }
+  const derived = deriveRunLinks([facts], tasks, registered)[0]!
+  return {
+    taskRecordId: derived.task_record_id ?? facts.task_record_id,
+    projectRecordId: derived.project_record_id ?? facts.project_record_id,
+  }
 }
 
 function taskReadRefusal(project: string, detail: string): Error {

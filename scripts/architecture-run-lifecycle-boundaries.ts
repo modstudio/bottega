@@ -158,6 +158,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-alive.ts',
       './run-artifacts.ts',
       './run-claim-transaction.ts',
+      './run-claim-inheritance.ts',
       './run-coordinator-log.ts',
       './run-lease.ts',
       './run-mcp-main-stack.ts',

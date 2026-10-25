@@ -86,7 +86,7 @@ import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
-import { assertRunHasTaskOrProject, resolveNewRunLinks } from './run-task-reference.ts'
+import { admitNewRunReference } from './run-task-reference.ts'
 
 type ClaimOptions = {
   reserveId?: string
@@ -195,29 +195,20 @@ function claimableRow<T>(
 
 async function claimLinks(
   input: ClaimInput,
-  recordId: string,
   launchKey: string | null,
   launchCwd: string,
-  inherited: { task_record_id: string | null } | null,
+  inherited: { task_record_id: string | null; project_record_id: string | null } | null,
 ) {
-  const links = await resolveNewRunLinks({
-    recordId,
-    job: input.opts.job,
+  return admitNewRunReference({
     inheritedTaskRecordId: inherited?.task_record_id,
+    inheritedProjectRecordId: inherited?.project_record_id,
     projectName: input.runProjectName,
     projectRecordId: input.runProjectId,
     key: launchKey,
     cwd: input.repoJob ? null : input.callerCwd,
     launchCwd,
     probe: Boolean(input.opts.probe),
-    parentRunRecordId: input.opts.resume?.parent ?? null,
   })
-  assertRunHasTaskOrProject({
-    probe: Boolean(input.opts.probe),
-    taskRecordId: links.taskRecordId,
-    projectRecordId: links.projectRecordId,
-  })
-  return links
 }
 
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
@@ -307,7 +298,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
-  const links = await claimLinks(input, recordId, launchKey, launchCwd, inheritedLaunch)
+  const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
   const taskRecordId = links.taskRecordId
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null

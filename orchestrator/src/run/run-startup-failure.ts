@@ -5,7 +5,6 @@ import { machineId } from '../record/machine-identity.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
-import { assertRunHasTaskOrProject, resolveNewRunLinks } from './run-task-reference.ts'
 
 function enqueueFailedReservedRun(
   reserveId: string,
@@ -73,13 +72,13 @@ export function enforceRunStartupRefusal(
   throw new Error(refusalReason)
 }
 
-export async function recordNeverStartedRunFailure(input: {
+export function recordNeverStartedRunFailure(input: {
   recordId: string
   error: unknown
   job: string
   repo: string | null
   projectRecordId: string | null
-  key: string | null
+  taskRecordId: string | null
   cwd: string
   promptSha: string
   specSha: string
@@ -89,22 +88,7 @@ export async function recordNeverStartedRunFailure(input: {
   mcp: number
   startedByUserId: string | null
   agentExplicit: number
-}): Promise<string> {
-  const links = await resolveNewRunLinks({
-    recordId: input.recordId,
-    job: input.job,
-    projectName: input.repo,
-    projectRecordId: input.projectRecordId,
-    key: input.key,
-    cwd: input.cwd,
-    launchCwd: input.cwd,
-    probe: false,
-  })
-  assertRunHasTaskOrProject({
-    probe: false,
-    taskRecordId: links.taskRecordId,
-    projectRecordId: links.projectRecordId,
-  })
+}): string {
   const message = input.error instanceof Error ? input.error.message : String(input.error)
   const finishedAt = nowIso()
   const localMachineId = machineId()
@@ -124,8 +108,8 @@ export async function recordNeverStartedRunFailure(input: {
         finishedAt,
         input.job,
         input.repo,
-        links.projectRecordId,
-        links.taskRecordId,
+        input.projectRecordId,
+        input.taskRecordId,
         input.cwd,
         input.promptSha,
         input.specSha,

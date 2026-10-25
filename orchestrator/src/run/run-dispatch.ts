@@ -40,6 +40,7 @@ import type { DetachSpec } from '../route/failover.ts'
 import { runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
+import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
@@ -47,7 +48,7 @@ import { nextRunNumber } from './run-number.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
-import { assertRunHasTaskOrProject, resolveNewRunLinks } from './run-task-reference.ts'
+import { admitNewRunReference } from './run-task-reference.ts'
 
 function writeDetachedPrompt(runsDir: string, recordId: string, prompt: string): string {
   const runDirectory = join(runsDir, recordId)
@@ -159,33 +160,22 @@ function detachedReviewBindings(spec: DetachSpec) {
   return [spec.resume?.continuationMessage?.sha256 ?? null, spec.reviewRole ?? null] as const
 }
 
-async function detachedRunLinks(jobName: string, cwd: string, spec: DetachSpec) {
+async function detachedRunLinks(cwd: string, spec: DetachSpec) {
   const identity = claimIdentity(spec.resume)
   const pendingRecordId = newRecordId()
-  const inheritedTaskRecordId = identity.parent_run_record_id
-    ? (db()
-        .query<{ task_record_id: string | null }, [string]>(
-          'SELECT task_record_id FROM run WHERE record_id=?',
-        )
-        .get(identity.parent_run_record_id)?.task_record_id ?? null)
+  const inherited = identity.parent_run_record_id
+    ? inheritedRunLinks(identity.parent_run_record_id)
     : null
   const detached = detachedProject(cwd, spec)
-  const links = await resolveNewRunLinks({
-    recordId: pendingRecordId,
-    job: jobName,
-    inheritedTaskRecordId,
+  const links = await admitNewRunReference({
+    inheritedTaskRecordId: inherited?.taskRecordId,
+    inheritedProjectRecordId: inherited?.projectRecordId,
     projectName: detached.projectName,
     projectRecordId: detached.projectId,
     key: spec.key ?? null,
     cwd,
     launchCwd: cwd,
     probe: Boolean(spec.probe),
-    parentRunRecordId: identity.parent_run_record_id,
-  })
-  assertRunHasTaskOrProject({
-    probe: Boolean(spec.probe),
-    taskRecordId: links.taskRecordId,
-    projectRecordId: links.projectRecordId,
   })
   return { identity, pendingRecordId, detached, links }
 }
@@ -232,7 +222,7 @@ async function detachResolved(
    */
   // A retry names the directory the original ran in; everything else is here.
   const cwd = spec.cwd ?? process.cwd()
-  const detachedLinks = await detachedRunLinks(jobName, cwd, spec)
+  const detachedLinks = await detachedRunLinks(cwd, spec)
   const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName)),
     firstTurn = resumeFacts(spec.resume?.kind ?? null, '', spec.resume?.parent ?? null).isFirstTurn
   const seed = !firstTurn

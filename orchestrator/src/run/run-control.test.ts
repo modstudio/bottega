@@ -30,8 +30,10 @@ function insert(status: string, job = 'file-question'): string {
     db()
       .query(
         `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status,
-                         repo, cwd, worktree)
-     VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING record_id AS id`,
+                         repo, project_record_id, cwd, worktree)
+     VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?, 'codex', ?, 'x', 1, 'x', ?,
+             'continuation-fixture',(SELECT record_id FROM project WHERE name='continuation-fixture'),?,?)
+     RETURNING record_id AS id`,
       )
       .get(new Date().toISOString(), job, status, dir, dir) as { id: string }
   ).id

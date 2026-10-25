@@ -128,6 +128,7 @@ import {
   recordNeverStartedRunFailure,
   recordRunStartupFailure,
 } from './run-startup-failure.ts'
+import { admitNewRunReference } from './run-task-reference.ts'
 import { finishRun, type TerminalInput } from './run-terminal.ts'
 import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
@@ -389,13 +390,22 @@ export async function run(opts: {
       let failedId = opts.reserveId
       if (failedId) recordRunStartupFailure(failedId, cause)
       else {
-        failedId = await recordNeverStartedRunFailure({
-          recordId: newRecordId(),
+        failedId = newRecordId()
+        const links = await admitNewRunReference({
+          projectName: runProjectName,
+          projectRecordId: runProjectId,
+          key: opts.key ?? null,
+          cwd: callerCwd,
+          launchCwd: callerCwd,
+          probe: false,
+        })
+        recordNeverStartedRunFailure({
+          recordId: failedId,
           error: cause,
           job: opts.job,
           repo: runProjectName,
-          projectRecordId: runProjectId,
-          key: opts.key ?? null,
+          projectRecordId: links.projectRecordId,
+          taskRecordId: links.taskRecordId,
           cwd: callerCwd,
           promptSha: sha(originalPrompt),
           specSha: sha(originalPrompt),
