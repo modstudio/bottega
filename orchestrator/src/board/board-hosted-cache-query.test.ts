@@ -63,15 +63,21 @@ test('hosted claims batch tag and reader receipt reads independent of cache size
   )
   const putReceipt = database.query(
     `INSERT INTO hosted_board_receipt_cache
-     (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-     VALUES (?,?,1,?,NULL,0)`,
+     (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+     VALUES (?,?,?,1,?,NULL,0)`,
   )
   const insert = (count: number) => {
     for (let index = 0; index < count; index++) {
       const cached = message(index)
       putMessage.run(cached.id, cached.kind, null, cached.revision, JSON.stringify(cached))
       putTag.run(cached.id, 'task', `DEV-${index}`, 'sender')
-      if (index > 0) putReceipt.run(cached.id, 'cache-reader', createdAt)
+      if (index > 0)
+        putReceipt.run(
+          `01990000-0000-7000-8000-${String(index).padStart(12, '0')}`,
+          cached.id,
+          'cache-reader',
+          createdAt,
+        )
     }
   }
   const queryCount = () => {

@@ -177,7 +177,12 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     ['board_claim'],
     ['releaseBoardClaim', 'releaseBoardTaskClaims', 'renewBoardClaim', 'takeBoardClaim'],
   ),
-  ...writeEntries('orchestrator', 'recordApiClient', ['board_receipt'], ['putBoardReceipt']),
+  ...writeEntries(
+    'orchestrator',
+    'recordApiClient',
+    ['board_receipt', 'hosted_board_receipt_cache'],
+    ['putBoardReceipt'],
+  ),
   ...writeEntries(
     'orchestrator',
     'recordApiClient',
