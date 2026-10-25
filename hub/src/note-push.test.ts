@@ -30,9 +30,9 @@ test('note push sends each space only that space projects notes', async () => {
       at,
     )
     conn
-      .query(`INSERT INTO note_counter(project,project_record_id,next) VALUES
-        ('workshop','01990000-0000-7000-8000-000000000075',2),
-        ('gamma','01990000-0000-7000-8000-000000001103',2)`)
+      .query(`INSERT INTO note_counter(record_id,project,project_record_id,next) VALUES
+        ('01990000-0000-7000-8000-000000001104','workshop','01990000-0000-7000-8000-000000000075',2),
+        ('01990000-0000-7000-8000-000000001105','gamma','01990000-0000-7000-8000-000000001103',2)`)
       .run()
   })
   const mirrors: Array<{ space: string | null; projects: string[] }> = []
@@ -69,8 +69,8 @@ test('note push sends each space only that space projects notes', async () => {
 test('note push sends a project counter when the project has no notes', async () => {
   writeTransaction((conn) => {
     conn
-      .query(`INSERT INTO note_counter(project,project_record_id,next)
-        VALUES ('gamma','01990000-0000-7000-8000-000000001103',7)`)
+      .query(`INSERT INTO note_counter(record_id,project,project_record_id,next)
+        VALUES ('01990000-0000-7000-8000-000000001106','gamma','01990000-0000-7000-8000-000000001103',7)`)
       .run()
   })
   const raises: Array<{ space: string | null; counters: unknown[] }> = []

@@ -321,12 +321,12 @@ export async function markBoardDeliveryDelivered(input: {
       localStamp.run(row.record_id, input.session, deliveredAt, newRecordId())
     const hostedStamp = database.query(
       `INSERT INTO hosted_board_receipt_cache
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       VALUES (?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
     )
     for (const row of hosted)
-      hostedStamp.run(row.id, input.session, row.posting ? 1 : 0, deliveredAt)
+      hostedStamp.run(newRecordId(), row.id, input.session, row.posting ? 1 : 0, deliveredAt)
     for (const row of prepared) {
       try {
         recordBoardReach(row, database)

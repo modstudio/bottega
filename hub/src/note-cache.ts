@@ -1,4 +1,5 @@
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
@@ -55,10 +56,15 @@ export function applyHostedNote(conn: Database, row: HostedNote) {
       promotedTaskRecordId,
     )
   conn
-    .query(`INSERT INTO note_counter(project,project_record_id,next) VALUES (?,?,?)
+    .query(`INSERT INTO note_counter(record_id,project,project_record_id,next) VALUES (?,?,?,?)
       ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next),
       project_record_id=COALESCE(excluded.project_record_id,note_counter.project_record_id)`)
-    .run(row.project, row.projectId ?? projectRecordIdFor(row.project), row.number + 1)
+    .run(
+      newRecordId(),
+      row.project,
+      row.projectId ?? projectRecordIdFor(row.project),
+      row.number + 1,
+    )
 }
 export function applyHostedAcknowledgement(conn: Database, row: HostedAcknowledgement) {
   if (row.deleted_at) {
@@ -112,10 +118,10 @@ export function applyHostedNoteRows(
   })
   changes.projectCounters.forEach((counter) => {
     conn
-      .query(`INSERT INTO note_counter(project,project_record_id,next) VALUES (?,?,?)
+      .query(`INSERT INTO note_counter(record_id,project,project_record_id,next) VALUES (?,?,?,?)
         ON CONFLICT(project) DO UPDATE SET next=MAX(note_counter.next,excluded.next),
         project_record_id=COALESCE(excluded.project_record_id,note_counter.project_record_id)`)
-      .run(counter.project, projectRecordIdFor(counter.project), counter.next)
+      .run(newRecordId(), counter.project, projectRecordIdFor(counter.project), counter.next)
   })
 }
 

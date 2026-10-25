@@ -204,11 +204,11 @@ function mintLocalNoteNumber(conn: Database, project: string): number {
       .get(project)?.next ?? 1
   conn
     .query(
-      `INSERT INTO note_counter (project, project_record_id, next) VALUES (?, ?, ?)
+      `INSERT INTO note_counter (record_id, project, project_record_id, next) VALUES (?, ?, ?, ?)
        ON CONFLICT(project) DO UPDATE SET next = MAX(note_counter.next, excluded.next),
        project_record_id=COALESCE(excluded.project_record_id,note_counter.project_record_id)`,
     )
-    .run(project, projectRecordIdFor(project), number + 1)
+    .run(newRecordId(), project, projectRecordIdFor(project), number + 1)
   return number
 }
 
