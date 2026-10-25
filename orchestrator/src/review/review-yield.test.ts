@@ -14,13 +14,14 @@ function addReview(
   patchId: string | null,
   completed = true,
   pathSet: string | null = null,
+  role: 'round' | 'supplementary' = 'round',
 ): string {
   const recordId = newRecordId()
   db()
     .query(
-      'INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set) VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?)',
+      'INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,path_set,role) VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?,?)',
     )
-    .run(recordId, recordedAt, completed ? recordedAt : null, patchId, pathSet)
+    .run(recordId, recordedAt, completed ? recordedAt : null, patchId, pathSet, role)
   return recordId
 }
 
@@ -146,6 +147,25 @@ function fixture() {
 }
 
 describe('review yield', () => {
+  test('a supplementary review has lens yield but no round number', () => {
+    const review = addReview(
+      '2026-09-08T09:00:00Z',
+      'supplementary-patch',
+      true,
+      '["a.ts"]',
+      'supplementary',
+    )
+    addLens(review, {
+      lens: 'issue-blast-radius',
+      agent: 'codex',
+      model: 'gpt-a',
+      minutes: 5,
+    })
+    const report = reviewYield({ task: 'DEV-YIELD' }, db(), NO_SUBSCRIPTION_COST)
+    expect(report.lenses).toHaveLength(1)
+    expect(report.rounds).toEqual([])
+  })
+
   test('one computed object supplies lens, round, agent and model yield', () => {
     fixture()
     const report = reviewYield({ task: 'DEV-YIELD' }, db(), NO_SUBSCRIPTION_COST)

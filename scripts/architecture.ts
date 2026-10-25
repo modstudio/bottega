@@ -591,6 +591,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/review/review-types.ts', [
     './review-vocabulary.ts',
     './change-identity.ts',
+    './review-role.ts',
   ]),
   module('orchestrator/src/runtime/runtime-registration.ts', [
     './standard-calibration.ts',

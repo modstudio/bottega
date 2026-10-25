@@ -106,6 +106,7 @@ export const ORCH_DO_OPTIONS = [
   { flags: '--carry', description: 'include visible uncommitted checkout changes' },
   { flags: '--quiet', description: 'suppress collection guidance and followed output' },
   { flags: '--probe', description: 'exclude the run from routing evidence' },
+  { flags: '--supplementary', description: 'record findings as supplementary review evidence' },
   { flags: '--follow', description: 'wait for the detached run and print its result' },
   { flags: '--detach', description: 'return after starting the run' },
   { flags: '--porcelain', description: 'print only the run identifier' },

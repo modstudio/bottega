@@ -48,5 +48,23 @@ test('review backfill enqueues the graph once and is idempotent', () => {
   expect(
     database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,
   ).toBe(3)
+
+  database
+    .query("UPDATE review SET role='supplementary' WHERE record_id=?")
+    .run('01990000-0000-7000-8000-000000000011')
+  expect(backfillReviewRecords(database)).toEqual({
+    enqueuedReviews: 1,
+    enqueuedReads: 0,
+  })
+  const latest = database
+    .query<{ payload: string }, []>(
+      "SELECT payload FROM outbox WHERE kind='review' ORDER BY id DESC LIMIT 1",
+    )
+    .get()
+  expect(JSON.parse(latest!.payload).role).toBe('supplementary')
+  expect(backfillReviewRecords(database)).toEqual({
+    enqueuedReviews: 0,
+    enqueuedReads: 0,
+  })
   database.close()
 })

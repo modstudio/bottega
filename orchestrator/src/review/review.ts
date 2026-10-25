@@ -1,5 +1,6 @@
 // concern: review
 import type { Database, SQLQueryBindings } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { ReviewReply } from '../contract/contract.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
@@ -21,6 +22,7 @@ import {
   reviewChangeRange,
   storedChangePathSet,
 } from './review-pins.ts'
+import { type ReviewRole, reviewRoleForBatch } from './review-role.ts'
 import type {
   CoverageGitResult,
   ReviewListFilter,
@@ -484,6 +486,16 @@ function sharedProjectRecordId(runs: readonly RunRow[]): string | null {
     : null
 }
 
+function reviewProjectAndRole(runs: readonly RunRow[]): [string | null, ReviewRole] {
+  const role = reviewRoleForBatch(runs.map((run) => run.review_role))
+  if (!role) {
+    throw new Error(
+      `review lens runs have different round roles; record the round and supplementary runs separately with one ${PLATFORM_SLUG} review record command each`,
+    )
+  }
+  return [sharedProjectRecordId(runs), role]
+}
+
 function recordedReviewNumber(database: Database, runRecordId: string): number | null {
   const row = database
     .query(
@@ -501,7 +513,7 @@ export function recordReviews(
   const runs = entries.map(({ runId }) => {
     const run = database
       .query(
-        `SELECT record_id, agent, model, lens, job, status, output_path, input_tree, head_commit, repo, project_record_id,
+        `SELECT record_id, agent, model, lens, review_role, job, status, output_path, input_tree, head_commit, repo, project_record_id,
               base_commit, review_ref, changed_paths, branch
          FROM run WHERE record_id=?`,
       )
@@ -551,9 +563,9 @@ export function recordReviews(
     const tier = measured?.tier ?? null
     const review = database
       .query(
-        `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id,
+        `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id, role,
                            patch_id, path_set, commit_message)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -564,7 +576,7 @@ export function recordReviews(
         tier?.size ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
-        sharedProjectRecordId(runs),
+        ...reviewProjectAndRole(runs),
         measured?.patchId ?? null,
         measured ? serializePathSet(measured.pathSet) : null,
         measured?.message ?? null,

@@ -16,6 +16,7 @@ import { callerIdentity, db, writableDb, writeTransaction } from '../database/db
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { failureReason } from '../outcome.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
@@ -370,6 +371,7 @@ type RetryRunRow = {
   schema_path: string | null
   model: string | null
   lens: string | null
+  review_role: ReviewRole | null
   review_ref: string | null
   launch_cwd: string | null
   launch_seed: string | null
@@ -387,6 +389,10 @@ type RetryRunRow = {
   branch_kept_tip: string | null
 }
 
+function retryReviewBindings(row: Pick<RetryRunRow, 'lens' | 'review_role'>) {
+  return { lens: row.lens ?? undefined, reviewRole: row.review_role ?? undefined }
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -398,7 +404,7 @@ export async function retryRun(
       `SELECT requested.record_id, COALESCE(requested.parent_run_record_id,requested.record_id) root_record_id,
           requested.agent, requested.job, requested.cwd, requested.prompt_path,
           requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
-          requested.schema_path, requested.model, requested.lens, COALESCE(requested.review_ref, root.review_ref) review_ref, requested.launch_cwd,
+          requested.schema_path, requested.model, requested.lens, requested.review_role, COALESCE(requested.review_ref, root.review_ref) review_ref, requested.launch_cwd,
           requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover, requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
           requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
           root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip, root.agent_explicit
@@ -535,7 +541,7 @@ export async function retryRun(
         schema: row.schema_path ?? undefined,
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
         model: retryModelForAgent(row.agent, row.model, agent, options.model),
-        lens: row.lens ?? undefined,
+        ...retryReviewBindings(row),
         review: row.review_ref ?? undefined,
         probe: !!row.probe,
         retryOf: id,

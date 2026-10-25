@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
-import { reviewsForTriage } from './review-group.ts'
+import { reviewsForTriage, type TriageReviewRow } from './review-group.ts'
 import {
   applicableRoundLensPlan,
   reviewPlanForBudget,
@@ -17,6 +17,29 @@ const facts = (
   completedLenses: [],
   satisfiedSecondOpinionLenses: [],
   latestAcceptedOrModifiedLenses: [],
+  ...overrides,
+})
+
+const finding = (lens: string, disposition: string): TriageReviewRow['findings'][number] => ({
+  recordId: `finding-${lens}`,
+  ordinal: 1,
+  disposition,
+  lens,
+})
+
+const reviewRow = (
+  overrides: Partial<TriageReviewRow> & Pick<TriageReviewRow, 'reviewNumber'>,
+): TriageReviewRow => ({
+  reviewRecordId: `review-${overrides.reviewNumber}`,
+  recordedAt: '2026-10-20T00:00:00Z',
+  completedAt: '2026-10-20T01:00:00Z',
+  tier: 2,
+  role: 'round',
+  patchId: 'patch',
+  pathSet: '["a.ts"]',
+  lensIdentities: ['correctness'],
+  lenses: [],
+  findings: [],
   ...overrides,
 })
 
@@ -296,5 +319,37 @@ describe('round lens plan', () => {
       latestAcceptedOrModifiedLenses: ['correctness', 'craft'],
     })
     database.close()
+  })
+
+  test('a supplementary result is credited without establishing prior-round facts', () => {
+    const supplementary = reviewRow({
+      reviewNumber: 1,
+      patchId: 'prior',
+      pathSet: '["a.ts"]',
+      lensIdentities: ['issue-blast-radius'],
+      findings: [finding('issue-blast-radius', 'accepted')],
+      role: 'supplementary',
+    })
+    const result = roundLensFacts([supplementary], {
+      patchId: 'current',
+      pathSet: '["a.ts"]',
+    })
+    expect(result).toEqual({
+      reviewedPathsByLens: {},
+      completedLenses: ['issue-blast-radius'],
+      satisfiedSecondOpinionLenses: [],
+      latestAcceptedOrModifiedLenses: [],
+    })
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness', 'craft'] },
+        facts: result,
+        postFix: { kind: 'no-completed-round' },
+        fixPathsByLens: {},
+      }),
+    ).toEqual({
+      round: { lenses: ['correctness', 'craft'] },
+      admissionRequired: { lenses: ['correctness', 'craft', 'issue-blast-radius'] },
+    })
   })
 })

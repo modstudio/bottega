@@ -54,7 +54,7 @@ export const workflowSeeds = [
           job: 'review-lens',
           autonomy: 'auto',
           gate: null,
-          body: `Use \`/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG}\` from the main checkout, never a worktree's ./bin/${PLATFORM_SLUG}, whose access to the shared per-user store is read-only. Run \`/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG} run start review-lens --review <fix-branch> --key {{key}} --lens issue-blast-radius "Review the fix for {{key}} for its blast radius."\`, where \`<fix-branch>\` is the branch \`${PLATFORM_SLUG} run result\` prints for the issue-worker run.`,
+          body: `Use \`/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG}\` from the main checkout, never a worktree's ./bin/${PLATFORM_SLUG}, whose access to the shared per-user store is read-only. Run \`/absolute/path/to/main-checkout/bin/${PLATFORM_SLUG} run start review-lens --supplementary --review <fix-branch> --key {{key}} --lens issue-blast-radius "Review the fix for {{key}} for its blast radius."\`, where \`<fix-branch>\` is the branch \`${PLATFORM_SLUG} run result\` prints for the issue-worker run.`,
         },
         {
           slug: 'triage',

@@ -17,6 +17,7 @@ import { claimRun } from './run-claim.ts'
 test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
   const root = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
   const reserved = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })
+  db().query("UPDATE run SET review_role='round' WHERE record_id=?").run(reserved)
   const reservedRecordId = db()
     .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
     .get(reserved)!.record_id
@@ -36,6 +37,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       opts: {
         job: 'review-lens',
         reserveId: reserved,
+        reviewRole: 'round',
         transport: 'cli',
         resume: {
           kind: 'continue',
@@ -87,6 +89,11 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(claimed.claim.id),
     ).toEqual({ transport_explicit: 1 })
+    expect(
+      db().query('SELECT review_role FROM run WHERE record_id=?').get(claimed.claim.id),
+    ).toEqual({
+      review_role: 'round',
+    })
     expect(db().query('SELECT record_id FROM run WHERE record_id=?').get(claimed.claim.id)).toEqual(
       {
         record_id: reservedRecordId,

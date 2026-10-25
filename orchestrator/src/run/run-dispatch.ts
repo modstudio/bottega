@@ -149,6 +149,15 @@ function claimDetachedRun<T>(beforeClaim: () => void, existingChain: boolean, cl
   )
 }
 
+function resolvedDetachSpec(spec: DetachSpec, jobName: string): DetachSpec {
+  if (spec.reviewRole !== undefined || !job(jobName).findings) return spec
+  return { ...spec, reviewRole: 'round' }
+}
+
+function detachedReviewBindings(spec: DetachSpec) {
+  return [spec.resume?.continuationMessage?.sha256 ?? null, spec.reviewRole ?? null] as const
+}
+
 export async function detach(
   jobName: string,
   prompt: string,
@@ -158,6 +167,24 @@ export async function detach(
   beforeClaim: () => void = () => {},
 ): Promise<string> {
   assertDispatchDatabase(spec.resume !== undefined)
+  return detachResolved(
+    jobName,
+    prompt,
+    resolvedDetachSpec(spec, jobName),
+    selectedAgent,
+    spawnCoordinator,
+    beforeClaim,
+  )
+}
+
+async function detachResolved(
+  jobName: string,
+  prompt: string,
+  spec: DetachSpec,
+  selectedAgent?: string,
+  spawnCoordinator: typeof spawn = spawn,
+  beforeClaim: () => void = () => {},
+): Promise<string> {
   /**
    * The depth check happens HERE TOO, before a row exists.
    *
@@ -219,8 +246,8 @@ export async function detach(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -251,7 +278,7 @@ export async function detach(
         storedMcpRequest(mcpRequest),
         spec.resume?.session ?? null,
         startedByUserId,
-        spec.resume?.continuationMessage?.sha256 ?? null,
+        ...detachedReviewBindings(spec),
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,

@@ -51,6 +51,7 @@ import {
   calibrationLine,
   reviewCalibration,
 } from '../review/review-calibration.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import {
   attributedLaunchKey,
   implicitReviewClaim,
@@ -176,6 +177,7 @@ export async function run(opts: {
   label?: string
   /** Stable identity used to calibrate findings-producing review jobs. */
   lens?: string
+  reviewRole?: ReviewRole
   model?: string
   /** Pilot opt-in. Default `cli`. */
   transport?: TransportName

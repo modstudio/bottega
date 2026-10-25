@@ -11,6 +11,7 @@ const review = (
     recordedAt: '2026-09-25T00:00:00Z',
     completedAt: '2026-09-25T01:00:00Z',
     tier: 1 as const,
+    role: 'round' as const,
     patchId: 'patch-old',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness'],

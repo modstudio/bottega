@@ -7,7 +7,11 @@ import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { serializePathSet } from './review-group.ts'
 import { measureChangeIdentity, pinRef } from './review-pins.ts'
-import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
+import {
+  gatherPostFixReviewFacts,
+  latestCompletedReview,
+  postFixReviewDecision,
+} from './review-post-fix.ts'
 
 const unidentifiedTipFacts = {
   completed: { number: 7, identity: null, launchKey: null, runIds: [] },
@@ -33,6 +37,78 @@ test('a completed tier-three round applies the fallback when its reviewed tip is
     kind: 'reviewed-tip-unidentified',
     reviewNumber: 7,
   })
+})
+
+test('only a completed review recorded with the round role establishes a completed round', () => {
+  const database = migratedTestDatabase()
+  const projectRecordId = newRecordId()
+  const runId = newRecordId()
+  const reviewRecordId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(projectRecordId)
+  database
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+          repo,project_record_id,branch,launch_key)
+       VALUES (?,1,'2026-10-22','codex','review-lens','sha',1,'head','ok',
+          'fixture',?,'DEV-1723','DEV-1723')`,
+    )
+    .run(runId, projectRecordId)
+  database
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,role,patch_id,path_set)
+       VALUES (?,2,'2026-10-22T00:00:00Z','2026-10-22T01:00:00Z',2,'supplementary','patch','["a.ts"]')`,
+    )
+    .run(reviewRecordId)
+  database
+    .query(
+      `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+          commands_run,could_not_verify)
+       VALUES (?,?,?,'issue-blast-radius','codex','[]','["a.ts"]','[]','[]')`,
+    )
+    .run(newRecordId(), reviewRecordId, runId)
+  const supplementary = latestCompletedReview(database, 'fixture', 'DEV-1723')
+  expect(supplementary).toBeNull()
+  expect(
+    postFixReviewDecision({
+      facts: { completed: null },
+      tier: 2,
+      review: { lenses: [{ lens: 'correctness' }, { lens: 'craft' }] },
+    }),
+  ).toEqual({ kind: 'no-completed-round' })
+
+  const roundRunId = newRecordId()
+  const roundReviewId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+          repo,project_record_id,branch,launch_key)
+       VALUES (?,2,'2026-10-21','codex','review-lens','sha',1,'head','ok',
+          'fixture',?,'DEV-1723','DEV-1723')`,
+    )
+    .run(roundRunId, projectRecordId)
+  database
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,role,patch_id,path_set)
+       VALUES (?,1,'2026-10-21T00:00:00Z','2026-10-21T01:00:00Z',2,'round','patch','["a.ts"]')`,
+    )
+    .run(roundReviewId)
+  database
+    .query(
+      `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+          commands_run,could_not_verify)
+       VALUES (?,?,?,'correctness-reviewer','codex','[]','["a.ts"]','[]','[]')`,
+    )
+    .run(newRecordId(), roundReviewId, roundRunId)
+  expect(latestCompletedReview(database, 'fixture', 'DEV-1723')).toMatchObject({ number: 1 })
+  database.close()
 })
 
 function git(repo: string, ...args: string[]): string {

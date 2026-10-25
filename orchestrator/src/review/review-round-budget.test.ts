@@ -54,20 +54,26 @@ function addEvidence(input: {
   probe?: boolean
   excluded?: boolean
   deliveryNone?: boolean
+  lens?: string
+  role?: 'round' | 'supplementary'
 }): void {
   const project = input.project ?? 'fixture'
   db()
     .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
     .run(newRecordId(), project, `/fixture/${project}`)
   const review = db()
-    .query<{ record_id: string }, [string, string, number | null, string | null, string]>(
-      `INSERT INTO review (record_id,number,recorded_at,tier,patch_id,path_set)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?) RETURNING record_id`,
+    .query<
+      { record_id: string },
+      [string, string, number | null, 'round' | 'supplementary', string | null, string]
+    >(
+      `INSERT INTO review (record_id,number,recorded_at,tier,role,patch_id,path_set)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
       input.at,
       input.tier,
+      input.role ?? 'round',
       input.patch,
       JSON.stringify([input.path ?? 'change.ts']),
     )!
@@ -91,9 +97,9 @@ function addEvidence(input: {
     .query(
       `INSERT INTO review_lens
        (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
-       VALUES (?,?,?,'correctness','codex','[]','[]','[]','[]')`,
+       VALUES (?,?,?,?,'codex','[]','[]','[]','[]')`,
     )
-    .run(newRecordId(), review.record_id, run)
+    .run(newRecordId(), review.record_id, run, input.lens ?? 'correctness')
 }
 
 function addMintFact(input: {
@@ -115,6 +121,39 @@ function addMintFact(input: {
 }
 
 describe('review budget query', () => {
+  test('a supplementary result does not consume a review round', () => {
+    addEvidence({
+      branch: 'DEV-1723',
+      at: '2026-10-01T00:00:00Z',
+      patch: 'supplementary',
+      tier: 2,
+      lens: 'issue-blast-radius',
+      role: 'supplementary',
+    })
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-1723', null).roundsUsed).toBe(0)
+
+    addEvidence({
+      branch: 'DEV-1723',
+      at: '2026-10-02T00:00:00Z',
+      patch: 'declared',
+      tier: 2,
+      lens: 'correctness',
+    })
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-1723', null).roundsUsed).toBe(1)
+  })
+
+  test('a blast-radius lens on a round-role review consumes a round', () => {
+    addEvidence({
+      branch: 'DEV-1723-legacy',
+      at: '2026-10-01T00:00:00Z',
+      patch: 'legacy',
+      tier: 1,
+      lens: 'issue-blast-radius',
+      role: 'round',
+    })
+    expect(reviewBudgetForBranch(db(), 'fixture', 'DEV-1723-legacy', null).roundsUsed).toBe(1)
+  })
+
   test('uses yield identity and evidence eligibility without classifying absent history as zero', () => {
     addEvidence({ branch: 'over', at: '2026-10-01T00:00:00Z', patch: 'one', tier: 1 })
     addEvidence({ branch: 'over', at: '2026-10-02T00:00:00Z', patch: 'one', tier: 1 })

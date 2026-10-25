@@ -61,6 +61,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       '../git/git-environment.ts',
     ],
     'Keep run-answer independent of transports, worktrees, routing, reviews, and the CLI.',
+    ['../review/review-role.ts'],
   ),
   boundary(
     'run-artifacts-boundary',
@@ -132,6 +133,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './question-open.ts',
     ],
     'Keep run-control independent of transports, worktrees, routing, reviews, and the CLI.',
+    ['../review/review-role.ts'],
   ),
   boundary(
     'run-dispatch-boundary',

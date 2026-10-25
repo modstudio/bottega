@@ -22,6 +22,7 @@ import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import {
   decideFailover,
   failoverAttemptLimit,
@@ -56,6 +57,7 @@ type SuccessorOptions = {
   probe: boolean
   label: string | undefined
   lens: string | undefined
+  reviewRole: ReviewRole | undefined
   cwd: string
   repo: string | undefined
   retryOf: string
@@ -287,7 +289,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     const first = db()
       .query(
         `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
-              no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, repo,
+              no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, review_role, repo,
               base_commit, head_commit, review_ref, transport, transport_explicit
          FROM run WHERE record_id=?`,
       )
@@ -305,6 +307,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       probe: number
       label: string | null
       lens: string | null
+      review_role: ReviewRole | null
       repo: string | null
       base_commit: string | null
       head_commit: string | null
@@ -368,6 +371,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           probe: !!first.probe,
           label: first.label ?? undefined,
           lens: first.lens ?? undefined,
+          reviewRole: first.review_role ?? undefined,
           cwd: first.launch_cwd ?? callerCwd,
           repo: first.repo ?? undefined,
           retryOf: claim.id,

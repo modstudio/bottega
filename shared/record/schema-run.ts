@@ -73,6 +73,7 @@ export const run = pgTable.withRLS(
     inputTree: text('input_tree'),
     headCommit: text('head_commit'),
     reviewRef: text('review_ref'),
+    reviewRole: text('review_role'),
     branch: text(),
     baseCommit: text('base_commit'),
     mintedBranch: text('minted_branch'),
@@ -104,6 +105,10 @@ export const run = pgTable.withRLS(
   },
   (table) => [
     index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
+    check(
+      'run_review_role_check',
+      sql`${table.reviewRole} IS NULL OR ${table.reviewRole} IN ('round', 'supplementary')`,
+    ),
     ...tenantPolicies('run', table.spaceId),
   ],
 )

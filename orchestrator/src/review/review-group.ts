@@ -9,6 +9,7 @@ import {
 } from './review-applicability.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { measureChangeIdentity } from './review-pins.ts'
+import type { ReviewRole } from './review-role.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { diffNumstat } from './review-tier.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
@@ -26,6 +27,7 @@ export type TriageReviewRow = {
   recordedAt: string
   completedAt: string | null
   tier: 0 | 1 | 2 | 3 | null
+  role: ReviewRole
   patchId: string | null
   pathSet: string | null
   lensIdentities: readonly string[]
@@ -213,6 +215,7 @@ function reviewsForBranch(
         recorded_at: string
         completed_at: string | null
         tier: 0 | 1 | 2 | 3 | null
+        role: ReviewRole
         patch_id: string | null
         path_set: string | null
         lens_id: string
@@ -229,7 +232,7 @@ function reviewsForBranch(
       },
       [string, ...string[], string | null]
     >(
-      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.patch_id,r.path_set,
+      `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
@@ -248,6 +251,7 @@ function reviewsForBranch(
       recordedAt: row.recorded_at,
       completedAt: row.completed_at,
       tier: row.tier,
+      role: row.role,
       patchId: row.patch_id,
       pathSet: row.path_set,
       lensIdentities: [],

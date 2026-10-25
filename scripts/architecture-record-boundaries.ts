@@ -555,7 +555,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-review-boundary',
     'shared/record/schema-review.ts',
-    ['drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
     'Enforce the hosted review schema concern boundary.',
   ),
   boundary(

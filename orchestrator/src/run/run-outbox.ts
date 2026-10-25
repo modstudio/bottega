@@ -48,6 +48,10 @@ function resourceValues(row: LocalRun) {
   }
 }
 
+function reviewValues(row: LocalRun) {
+  return { reviewRef: row.review_ref, reviewRole: row.review_role }
+}
+
 const nullableBoolean = (value: unknown): boolean | null => (value == null ? null : Boolean(value))
 
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
@@ -108,7 +112,7 @@ export function buildRunRecordPayload(
     evidenceUnvoid,
     inputTree: row.input_tree,
     headCommit: row.head_commit,
-    reviewRef: row.review_ref,
+    ...reviewValues(row),
     branch: row.branch,
     baseCommit: row.base_commit,
     mintedBranch: row.minted_branch,

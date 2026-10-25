@@ -261,7 +261,7 @@ export const importBoundaries: ImportBoundary[] = [
       './task-key-admission.ts',
     ],
     'Keep dispatch command adapters independent of transports, routing, worktrees, the CLI, and reviews.',
-    ['./review-memory.ts'],
+    ['./review-memory.ts', '../review/review-role.ts'],
   ),
 
   boundary(
@@ -445,7 +445,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/question-open.ts',
     ],
     'Keep failover independent of execution transports, contracts, and worktrees.',
-    ['../run/continuation-message.ts', '../run/run-types.ts'],
+    ['../run/continuation-message.ts', '../run/run-types.ts', '../review/review-role.ts'],
   ),
   boundary(
     'failure-commands-boundary',

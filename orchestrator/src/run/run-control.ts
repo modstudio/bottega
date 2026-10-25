@@ -16,6 +16,7 @@ import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
 import { outcomeOf } from '../outcome.ts'
 import { type Project, resolvedWorktreeTool } from '../project/projects.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport } from '../route/failover.ts'
 import { requireContinuationCheckout } from './continuation-checkout-service.ts'
 import {
@@ -332,6 +333,7 @@ type StoredResumeLaunch = {
   mcp: number | null
   mcp_error: string | null
   lens: string | null
+  review_role: ReviewRole | null
 }
 
 type ResumeLaunchOptions = {
@@ -341,6 +343,7 @@ type ResumeLaunchOptions = {
   noFailover: boolean
   mcp: ReturnType<typeof mcpRequestFromStored>
   lens: string | undefined
+  reviewRole: ReviewRole | undefined
 }
 
 /** Map a stored launch row to the detach options a resumed turn inherits. */
@@ -352,6 +355,7 @@ export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOpt
     noFailover: !!row.no_failover,
     mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
     lens: row.lens ?? undefined,
+    reviewRole: row.review_role ?? undefined,
   }
 }
 
@@ -359,7 +363,7 @@ export function resumeLaunchFromStored(row: StoredResumeLaunch): ResumeLaunchOpt
 export function resumeLaunchForRoot(rootId: string): ResumeLaunchOptions {
   const row = db()
     .query(
-      `SELECT launch_seed, launch_key, launch_base, base_commit, no_failover, mcp, mcp_error, lens
+      `SELECT launch_seed, launch_key, launch_base, base_commit, no_failover, mcp, mcp_error, lens, review_role
        FROM run WHERE record_id=?`,
     )
     .get(rootId) as StoredResumeLaunch | null

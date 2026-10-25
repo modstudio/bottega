@@ -12,6 +12,7 @@ import { completedReviewEvidenceSql } from './review-evidence-sql.ts'
 import { serializePathSet } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { git, measureChangeIdentity, pinRef } from './review-pins.ts'
+import { type ReviewRole, reviewCountsAsRound } from './review-role.ts'
 import { diffNumstat } from './review-tier.ts'
 import {
   type ReviewTier,
@@ -22,7 +23,7 @@ import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield
 
 const POST_FIX_RELENS_TIER: ReviewTier['tier'] = 3
 
-type CompletedReview = {
+export type CompletedReview = {
   number: number
   identity: string | null
   launchKey: string | null
@@ -59,9 +60,9 @@ export type PostFixReviewDecision =
 type CompletedReviewEvidenceRow = Pick<
   ReviewRoundEvidenceRow,
   'review_record_id' | 'run_id' | 'launch_key' | 'branch' | 'patch_id' | 'path_set'
-> & { review_number: number }
+> & { review_number: number; role: ReviewRole }
 
-function latestCompletedReview(
+export function latestCompletedReview(
   database: Database,
   project: string,
   branch: string,
@@ -69,7 +70,7 @@ function latestCompletedReview(
   const lineage = reviewLineage(database, project, branch)
   const rows = database
     .query<CompletedReviewEvidenceRow, [string, ...string[]]>(
-      `SELECT r.record_id AS review_record_id,r.number AS review_number,
+      `SELECT r.record_id AS review_record_id,r.number AS review_number,r.role,
               run.record_id AS run_id,run.launch_key,run.branch,r.patch_id,r.path_set
          FROM review r
          JOIN review_lens rl ON rl.review_record_id=r.record_id
@@ -80,11 +81,15 @@ function latestCompletedReview(
         ORDER BY r.number DESC,rl.record_id`,
     )
     .all(project, ...lineage)
-  const first = rows[0]
+  const roundRows = rows.reduce<CompletedReviewEvidenceRow[]>((selected, row) => {
+    if (selected.length > 0) return selected
+    const candidate = rows.filter(
+      ({ review_record_id }) => review_record_id === row.review_record_id,
+    )
+    return reviewCountsAsRound(row.role) ? candidate : selected
+  }, [])
+  const first = roundRows[0]
   if (!first) return null
-  const roundRows = rows.filter(
-    ({ review_record_id }) => review_record_id === first.review_record_id,
-  )
   return {
     number: first.review_number,
     identity: reviewRoundIdentity(first).identity,
