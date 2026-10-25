@@ -309,6 +309,13 @@ export const modules: ArchitectureModule[] = [
     '../mcp/mcp-tool-list.ts',
     './codex-mcp-scope.ts',
   ]),
+  module('orchestrator/src/sandbox/project-mcp-preflight.ts', [
+    '../../../shared/brand.ts',
+    'node:path',
+    '../mcp/mcp-preflight.ts',
+    '../mcp/mcp-tool-list.ts',
+    './project-mcp-scope.ts',
+  ]),
   module('orchestrator/src/sandbox/codex-mcp-scope.ts', [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',

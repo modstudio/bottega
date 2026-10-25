@@ -94,8 +94,9 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
     environment: {},
     grokEnvironment: {},
     includeStore: true,
-    codexMcpScope: null,
-    grokReaderServers: proxies,
+    mcpLaunch: { codex: null, grok: proxies, projectSelection: null },
+    mcpMode: null,
+    project: null,
   })
   const readerHome = readFileSync(join(readerRun, 'config.toml'), 'utf8')
   expect(readerHome).toContain('mcp-reader-proxy')
@@ -128,8 +129,9 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
     environment: {},
     grokEnvironment: {},
     includeStore: false,
-    codexMcpScope: null,
-    grokReaderServers: null,
+    mcpLaunch: { codex: null, grok: null, projectSelection: null },
+    mcpMode: null,
+    project: null,
   })
   expect(readFileSync(join(writerRun, 'config.toml'), 'utf8')).toContain('writer-direct')
   expect(readFileSync(join(writer, '.mcp.json'), 'utf8')).toContain('writer-tree')

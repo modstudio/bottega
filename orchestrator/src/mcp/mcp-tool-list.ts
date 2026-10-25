@@ -4,10 +4,38 @@
  * owns scope policy and interpretation of the returned pages.
  */
 
+import type { Stream } from 'node:stream'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 
 const MCP_TOOL_LIST_TIMEOUT_MS = 8_000
+
+/** How much of a failed launch's stderr is shown to a probing caller. */
+const MCP_STDIO_STDERR_TAIL_BYTES = 4_096
+
+/**
+ * Keep the last bytes a child writes to stderr while draining the pipe, so an
+ * unread stream can never fill and the caller still learns why a launch failed.
+ */
+function stdioStderrTail(stream: Stream | null | undefined): () => string {
+  if (!stream) return () => ''
+  let tail = ''
+  stream.on('data', (chunk: Buffer | string) => {
+    const text = typeof chunk === 'string' ? chunk : chunk.toString('utf8')
+    tail = `${tail}${text}`.slice(-MCP_STDIO_STDERR_TAIL_BYTES)
+  })
+  stream.on('error', () => undefined)
+  return () => tail.trim()
+}
+
+/** The launch failure a caller sees, with the child's own diagnostics appended. */
+function launchFailure(error: unknown, tail: string): Error {
+  const message = String((error as Error)?.message ?? error)
+  const failure = new Error(tail ? `${message}\nstderr: ${tail}` : message)
+  failure.name = (error as Error)?.name ?? failure.name
+  failure.cause = error
+  return failure
+}
 
 export type McpToolPage = { tools: { name: string }[] }
 
@@ -68,25 +96,35 @@ export type ConnectedMcpToolClient = {
   close(): Promise<void>
 }
 
-/** Connect once so a caller can proxy a complete upstream MCP session. */
+/**
+ * Connect once so a caller can proxy a complete upstream MCP session.
+ *
+ * A caller that only probes asks for the stderr tail, because a launch that
+ * exits before initialization otherwise reports nothing but a closed
+ * connection. Every other caller keeps stderr ignored, so upstream diagnostics
+ * never reach an agent and an unread pipe never fills.
+ */
 export async function connectMcpToolClient(
   launch: McpToolListLaunch,
   env: Record<string, string>,
+  options: { stderrTail?: boolean } = {},
 ): Promise<ConnectedMcpToolClient> {
-  const transport = launch.url
-    ? new StreamableHTTPClientTransport(new URL(launch.url), {
-        requestInit: { headers: launch.headers },
-      })
-    : launch.command
+  const stdio =
+    !launch.url && launch.command
       ? new StdioClientTransport({
           command: launch.command,
           args: launch.args ?? [],
           cwd: launch.cwd,
           env: { ...env, ...launch.env },
-          // Upstream diagnostics must neither reach the agent nor fill an unread pipe.
-          stderr: 'ignore',
+          stderr: options.stderrTail ? 'pipe' : 'ignore',
         })
       : null
+  const readStderrTail = options.stderrTail ? stdioStderrTail(stdio?.stderr) : () => ''
+  const transport = launch.url
+    ? new StreamableHTTPClientTransport(new URL(launch.url), {
+        requestInit: { headers: launch.headers },
+      })
+    : stdio
   if (!transport) throw new Error('MCP server has no stored launch definition')
 
   const client = new Client({ name: 'orch-mcp-preflight', version: '0.1.0' })
@@ -99,7 +137,7 @@ export async function connectMcpToolClient(
     return { client, close: () => client.close() }
   } catch (error) {
     await client.close().catch(() => undefined)
-    throw error
+    throw launchFailure(error, readStderrTail())
   }
 }
 
@@ -107,8 +145,9 @@ async function withMcpClient<T>(
   launch: McpToolListLaunch,
   env: Record<string, string>,
   use: (client: Client, request: { signal: AbortSignal; timeout: number }) => Promise<T>,
+  options: { stderrTail?: boolean } = {},
 ): Promise<T> {
-  const connected = await connectMcpToolClient(launch, env)
+  const connected = await connectMcpToolClient(launch, env, options)
   const request = {
     signal: AbortSignal.timeout(MCP_TOOL_LIST_TIMEOUT_MS),
     timeout: MCP_TOOL_LIST_TIMEOUT_MS,
@@ -125,16 +164,22 @@ export async function listMcpToolPages(
   launch: McpToolListLaunch,
   env: Record<string, string>,
 ): Promise<McpToolPage[]> {
-  return withMcpClient(launch, env, async (client, request) => {
-    const pages: McpToolPage[] = []
-    let cursor: string | undefined
-    do {
-      const page = await client.listTools(cursor ? { cursor } : undefined, request)
-      pages.push({ tools: page.tools.map(({ name }) => ({ name })) })
-      cursor = page.nextCursor
-    } while (cursor)
-    return pages
-  })
+  return withMcpClient(
+    launch,
+    env,
+    async (client, request) => {
+      const pages: McpToolPage[] = []
+      let cursor: string | undefined
+      do {
+        const page = await client.listTools(cursor ? { cursor } : undefined, request)
+        pages.push({ tools: page.tools.map(({ name }) => ({ name })) })
+        cursor = page.nextCursor
+      } while (cursor)
+      return pages
+    },
+    // A probe reports why a launch failed, so it keeps the child's own words.
+    { stderrTail: true },
+  )
 }
 
 /** Call one advertised tool through the same standard MCP transports used by preflight. */

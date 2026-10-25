@@ -712,8 +712,9 @@ export async function run(opts: {
         },
         grokEnvironment: grokMcpEnvironment,
         includeStore: repoJob,
-        codexMcpScope: mcpLaunch.codex,
-        grokReaderServers: mcpLaunch.grok,
+        mcpLaunch,
+        mcpMode,
+        project: runProject,
       })
       ;({
         codexMcpCatalogues,
