@@ -120,60 +120,29 @@ test('K8b-6 keys agents and port baselines by UUID without losing their values',
   }
 })
 
-const invalidCases = [
-  { table: 'agent', kind: 'NULL', values: "('one','id-one'),('two',NULL)" },
-  { table: 'agent', kind: 'duplicate', values: "('one','same-id'),('two','same-id')" },
-  {
-    table: 'port_baseline',
-    kind: 'NULL',
-    values:
-      "('01990000-0000-7000-8000-000000001722','id-one'),('01990000-0000-7000-8000-000000001723',NULL)",
-  },
-  {
-    table: 'port_baseline',
-    kind: 'duplicate',
-    values:
-      "('01990000-0000-7000-8000-000000001722','same-id'),('01990000-0000-7000-8000-000000001723','same-id')",
-  },
-] as const
-
-test.each(invalidCases)(
-  'K8b-6 refuses $kind $table record ids atomically and leaves the natural primary key',
-  ({ table, kind, values }) => {
-    const database = migrationBoundaryTestDatabase(MIGRATION)
-    try {
-      database.exec('PRAGMA foreign_keys=OFF')
-      if (table === 'agent') {
-        database.exec(`
-          DROP TABLE agent;
-          CREATE TABLE agent(name TEXT PRIMARY KEY, record_id TEXT);
-          INSERT INTO agent(name,record_id) VALUES ${values};
-        `)
-      } else {
-        database.exec(`
-          INSERT INTO port_pair(record_id,source_project_record_id,target_project_record_id,created_at)
-          VALUES
-            ('01990000-0000-7000-8000-000000001722','source-a','target-a','at'),
-            ('01990000-0000-7000-8000-000000001723','source-b','target-b','at');
-          DROP TABLE port_baseline;
-          CREATE TABLE port_baseline(
-            pair_record_id TEXT PRIMARY KEY REFERENCES port_pair(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
-            record_id TEXT
-          );
-          INSERT INTO port_baseline(pair_record_id,record_id) VALUES ${values};
-        `)
-      }
-
-      expect(() => applyMigrations(database)).toThrow(
-        `refusing agent/port baseline UUID-key migration: rows have invalid record ids (${table}.record_id ${kind}=1)`,
+test('K8b-6 refuses a NULL agent name by record id and leaves the old schema intact', () => {
+  const database = migrationBoundaryTestDatabase(MIGRATION)
+  const nullNameRecordId = '01990000-0000-7000-8000-000000001722'
+  try {
+    database
+      .query(
+        `INSERT INTO agent(
+           record_id,name,harness,model,transport,caps,billing,operated_by,enabled
+         ) VALUES (?,NULL,'claude','kept-model','cli','{}','subscription','vendor',1)`,
       )
-      expect(database.query(`SELECT COUNT(*) count FROM ${table}`).get()).toEqual({ count: 2 })
-      expect(column(database, table, table === 'agent' ? 'name' : 'pair_record_id')?.pk).toBe(1)
-      expect(
-        database.query('SELECT COUNT(*) count FROM orch_migrations WHERE version=?').get(MIGRATION),
-      ).toEqual({ count: 0 })
-    } finally {
-      database.close()
-    }
-  },
-)
+      .run(nullNameRecordId)
+
+    expect(() => applyMigrations(database)).toThrow(
+      `refusing agent/port baseline UUID-key migration: rows have invalid identities (agent.name NULL=1 record_ids=${nullNameRecordId})`,
+    )
+    expect(
+      database.query('SELECT record_id,name FROM agent WHERE record_id=?').get(nullNameRecordId),
+    ).toEqual({ record_id: nullNameRecordId, name: null })
+    expect(column(database, 'agent', 'name')).toEqual({ name: 'name', notnull: 0, pk: 1 })
+    expect(
+      database.query('SELECT COUNT(*) count FROM orch_migrations WHERE version=?').get(MIGRATION),
+    ).toEqual({ count: 0 })
+  } finally {
+    database.close()
+  }
+})
