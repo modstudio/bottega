@@ -38,8 +38,12 @@ export function quarantinedParentHeldLines(
 ): string[] {
   return rows.map(
     (row) =>
-      `held: orch:${row.id} ${row.kind} is quarantined; ${row.rows} rows wait on it; retry or retire it with ${PLATFORM_SLUG} record outbox retry|retire orch:${row.id}`,
+      `held: orch:${row.id} ${row.kind} is quarantined at ${row.quarantinedAt}; ${row.rows} rows wait on it; ${quarantinedParentRemedy(row.id)}`,
   )
+}
+
+function quarantinedParentRemedy(id: number): string {
+  return `retry it with ${PLATFORM_SLUG} record outbox retry orch:${id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${id} --reason <text>`
 }
 
 export async function syncCommand(

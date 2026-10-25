@@ -23,8 +23,12 @@ test('sync presentation names each quarantined row with its kind and error', () 
 })
 
 test('sync presentation names a quarantined parent and its waiting rows', () => {
-  expect(quarantinedParentHeldLines([{ id: 48, kind: 'run', rows: 3 }])).toEqual([
-    `held: orch:48 run is quarantined; 3 rows wait on it; retry or retire it with ${PLATFORM_SLUG} record outbox retry|retire orch:48`,
+  expect(
+    quarantinedParentHeldLines([
+      { id: 48, kind: 'run', quarantinedAt: '2026-10-24T12:00:00.000Z', rows: 3 },
+    ]),
+  ).toEqual([
+    `held: orch:48 run is quarantined at 2026-10-24T12:00:00.000Z; 3 rows wait on it; retry it with ${PLATFORM_SLUG} record outbox retry orch:48, or retire it with ${PLATFORM_SLUG} record outbox retire orch:48 --reason <text>`,
   ])
 })
 

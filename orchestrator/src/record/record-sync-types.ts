@@ -17,7 +17,12 @@ export type BlockedOutboxRow = {
   reason?: string
 }
 export type HeldRecordSyncRows = { kind: string; rows: number; reason: string }
-export type QuarantinedParentHold = { id: number; kind: string; rows: number }
+export type QuarantinedParentHold = {
+  id: number
+  kind: string
+  quarantinedAt: string
+  rows: number
+}
 
 export type RecordSyncResult = {
   pushed: number

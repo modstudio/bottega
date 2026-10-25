@@ -236,7 +236,9 @@ test('pending children report the quarantined parent holding them', async () => 
     client: dependencyClient(batches, () => ({ status: 'synced' })),
   })
 
-  expect(result.quarantinedParentHolds).toEqual([{ id: 1, kind: 'run', rows: 2 }])
+  expect(result.quarantinedParentHolds).toEqual([
+    { id: 1, kind: 'run', quarantinedAt: STAMP, rows: 2 },
+  ])
   expect(batches).toEqual([[]])
 })
 

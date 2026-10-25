@@ -37,6 +37,7 @@ export const MONITOR_NOTICE_DELIVERY_POLICY = {
   'observation-error': 'append-only',
   'outbox-quarantined': 'revalidated',
   'outbox-held-for-upgrade': 'revalidated',
+  'outbox-quarantined-parent': 'revalidated',
   'outbox-retired-parent': 'revalidated',
   'stale-run': 'append-only',
   'stalled-run': 'revalidated',

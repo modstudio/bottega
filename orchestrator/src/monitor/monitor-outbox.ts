@@ -2,7 +2,7 @@
 /** Reports recoverable hosted-record outbox quarantine state. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { blockedByRetiredParentRows } from '../record/outbox-dependency.ts'
+import { blockedByRetiredParentRows, quarantinedParentHolds } from '../record/outbox-dependency.ts'
 import { heldOutboxKinds } from '../record/outbox-held.ts'
 import {
   HOSTED_API_RELEASE_COMMAND,
@@ -10,6 +10,11 @@ import {
 } from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
 import type { AddressedMonitorCondition } from './monitor-types.ts'
+
+function quarantinedParentRemedy(id: number): string {
+  return `retry it with ${PLATFORM_SLUG} record outbox retry orch:${id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${id} --reason <text>`
+}
+
 export function outboxQuarantineConditions(database: Database): AddressedMonitorCondition[] {
   return quarantinedOutboxRows(database).map((row) => ({
     kind: 'outbox-quarantined',
@@ -30,6 +35,18 @@ export function outboxRetiredParentConditions(database: Database): AddressedMoni
     ageMs: null,
     detail: `${row.kind} outbox row ${row.id} is blocked by ${row.reason ?? `retired parent ${row.parentRecordId}`}`,
     action: `inspect the parent retirement, then run ${PLATFORM_SLUG} record outbox retire orch:${row.id} --reason <text> or replace the dependent row`,
+    ownerSession: null,
+  }))
+}
+
+export function outboxQuarantinedParentConditions(database: Database): AddressedMonitorCondition[] {
+  return quarantinedParentHolds(database).map((row) => ({
+    kind: 'outbox-quarantined-parent',
+    subject: `outbox:${row.id}`,
+    since: row.quarantinedAt,
+    ageMs: null,
+    detail: `${row.kind} outbox row ${row.id} was quarantined at ${row.quarantinedAt}; ${row.rows} pending rows wait on it`,
+    action: quarantinedParentRemedy(row.id),
     ownerSession: null,
   }))
 }
@@ -56,6 +73,7 @@ export function outboxConditions(database: Database, clock: number): AddressedMo
   return [
     ...outboxQuarantineConditions(database),
     ...outboxHeldForUpgradeConditions(database, clock),
+    ...outboxQuarantinedParentConditions(database),
     ...outboxRetiredParentConditions(database),
   ]
 }

@@ -21,9 +21,10 @@ import {
   outboxParentIdentityKey,
   outboxRowIsEligible,
   outboxRowPlannedParentKeys,
+  outboxRowWaitsForParent,
   type QuarantinedParentHoldAccumulator,
   quarantinedParentHoldResult,
-  rowWaitsForQuarantinedParent,
+  recordQuarantinedParentsHoldingRow,
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
@@ -188,16 +189,16 @@ function planBatchRow(
   },
 ): PlannedBatchRow {
   const { row, parsed } = candidate
-  if (
-    parsed &&
-    rowWaitsForQuarantinedParent(
+  if (parsed) {
+    recordQuarantinedParentsHoldingRow(
       input.local,
       row,
       parsed,
-      input.plannedParents,
       input.quarantinedParentHolds,
+      input.plannedParents,
     )
-  ) {
+  }
+  if (parsed && outboxRowWaitsForParent(input.local, row, parsed, input.plannedParents)) {
     return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
   }
   if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked, input.plannedParents))

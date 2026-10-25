@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { HostedApiUpgradeRequiredError } from '../record/outbox-held-contract.ts'
@@ -6,6 +7,7 @@ import { quarantineOutboxRow } from '../record/outbox-quarantine.ts'
 import {
   outboxConditions,
   outboxQuarantineConditions,
+  outboxQuarantinedParentConditions,
   outboxRetiredParentConditions,
 } from './monitor-outbox.ts'
 
@@ -72,6 +74,30 @@ test('an active outbox row blocked by a retired parent is a clearing monitor con
       subject: 'outbox:9',
       detail: expect.stringContaining('retired parent parent'),
     }),
+  ])
+  database.close()
+})
+
+test('a quarantined parent holding pending rows is a clearing monitor condition', () => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,quarantined_at) VALUES (?,8,'run','parent','{}','2026-09-28','2026-09-28T01:02:03.000Z'),
+              ('01990000-0000-7000-8000-000000000009',9,'score','score-1','{"id":"parent"}','2026-09-28',NULL),
+              ('01990000-0000-7000-8000-000000000010',10,'score','score-2','{"id":"parent"}','2026-09-28',NULL)`,
+    )
+    .run(newRecordId())
+  expect(outboxQuarantinedParentConditions(database)).toEqual([
+    {
+      kind: 'outbox-quarantined-parent',
+      subject: 'outbox:8',
+      since: '2026-09-28T01:02:03.000Z',
+      ageMs: null,
+      detail:
+        'run outbox row 8 was quarantined at 2026-09-28T01:02:03.000Z; 2 pending rows wait on it',
+      action: `retry it with ${PLATFORM_SLUG} record outbox retry orch:8, or retire it with ${PLATFORM_SLUG} record outbox retire orch:8 --reason <text>`,
+      ownerSession: null,
+    },
   ])
   database.close()
 })
