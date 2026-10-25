@@ -9,7 +9,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL
-const remainingUuidKeysMigrationUrl = process.env.BOTTEGA_TEST_REMAINING_UUID_KEYS_MIGRATION_URL
+const remainingUuidKeysMigrationUrl = process.env.TEST_REMAINING_UUID_KEYS_MIGRATION_URL
 const realPostgres = migrationUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
 const taskIdBackfill = '20260924190350_dev_895_hosted_task_ids_backfill'
@@ -21,8 +21,8 @@ const COMMENT_ID = '01990000-0000-7000-8000-000000008952'
 const DOCUMENT_ID = '01990000-0000-7000-8000-000000008953'
 const STATUS_EVENT_ID = '01990000-0000-7000-8000-000000008954'
 const NOTE_ID = '01990000-0000-7000-8000-000000008955'
-const HUB_CHANGE_ROW_COUNT = 526_940
-const HUB_CHANGE_MIGRATION_LIMIT_MS = 15_000
+const CHANGE_ROW_COUNT = 526_940
+const CHANGE_MIGRATION_LIMIT_MS = 15_000
 
 const remainingUuidMigration = readFileSync(
   new URL(
@@ -194,9 +194,9 @@ remainingUuidPostgres('remaining hosted UUID keys preserve every populated row',
       CREATE TABLE question_mutation_audit(
         question_id uuid NOT NULL, action text NOT NULL, at timestamptz NOT NULL,
         CONSTRAINT question_mutation_audit_identity UNIQUE(question_id,action,at));
-      INSERT INTO board_message_tag VALUES
+      INSERT INTO board_message_tag(message_id, kind, value, origin) VALUES
         ('01990000-0000-7000-8000-000000001001','task','DEV-1726','sender');
-      INSERT INTO board_receipt VALUES
+      INSERT INTO board_receipt(message_id, reader_user_id, reader_session) VALUES
         ('01990000-0000-7000-8000-000000001001','01990000-0000-7000-8000-000000001002','session');
       INSERT INTO hub_change(space_id, sequence, table_name, row_id, op, at)
       SELECT
@@ -211,16 +211,16 @@ remainingUuidPostgres('remaining hosted UUID keys preserve every populated row',
         CASE sequence % 5 WHEN 0 THEN 'delete' ELSE 'upsert' END,
         '2026-10-25T00:00:00Z'::timestamptz - sequence * interval '1 millisecond'
       FROM generate_series(1, 526940) AS sequence;
-      INSERT INTO hub_change_head VALUES ('01990000-0000-7000-8000-000000001003');
-      INSERT INTO public_doc_space VALUES
+      INSERT INTO hub_change_head(space_id) VALUES ('01990000-0000-7000-8000-000000001003');
+      INSERT INTO public_doc_space(space_id, project_id) VALUES
         ('01990000-0000-7000-8000-000000001003','01990000-0000-7000-8000-000000001004');
-      INSERT INTO secret_dek_wrap VALUES
+      INSERT INTO secret_dek_wrap(space_id, dek_id, recipient_key_id, sender_key_id) VALUES
         ('01990000-0000-7000-8000-000000001003','01990000-0000-7000-8000-000000001005','recipient','sender');
-      INSERT INTO seq VALUES
+      INSERT INTO seq(space_id, project_id, name) VALUES
         ('01990000-0000-7000-8000-000000001003','01990000-0000-7000-8000-000000001004','task:DEV');
-      INSERT INTO machine_public_key VALUES
+      INSERT INTO machine_public_key(space_id, key_id) VALUES
         ('01990000-0000-7000-8000-000000001003','machine-key');
-      INSERT INTO question_mutation_audit VALUES
+      INSERT INTO question_mutation_audit(question_id, action, at) VALUES
         ('01990000-0000-7000-8000-000000001006','answer','2026-10-25T00:00:00Z');
     `)
     const [{ bytes: hubChangeBytes }] = await sql.unsafe(
@@ -242,9 +242,7 @@ remainingUuidPostgres('remaining hosted UUID keys preserve every populated row',
           (SELECT count(*) FROM machine_public_key) AS machine_public_key,
           (SELECT count(*) FROM question_mutation_audit) AS question_mutation_audit
       `)
-      return Object.fromEntries(
-        remainingUuidTables.map((table) => [table, Number(row![table])]),
-      )
+      return Object.fromEntries(remainingUuidTables.map((table) => [table, Number(row![table])]))
     }
     const before = await counts()
     let hubChangeMigrationMilliseconds = 0
@@ -273,17 +271,17 @@ remainingUuidPostgres('remaining hosted UUID keys preserve every populated row',
     })
     const migrationMilliseconds = performance.now() - migrationStartedAt
     console.log(
-      `DEV-1726 populated migration: ${HUB_CHANGE_ROW_COUNT} hub_change rows, ` +
+      `DEV-1726 populated migration: ${CHANGE_ROW_COUNT} hub_change rows, ` +
         `${hubChangeMebibytes.toFixed(1)} MiB; hub_change statements ` +
         `${hubChangeMigrationMilliseconds.toFixed(0)} ms; transaction ` +
         `${migrationMilliseconds.toFixed(0)} ms; locks ${hubChangeLocks.join(', ')}`,
     )
-    expect(hubChangeMigrationMilliseconds).toBeLessThanOrEqual(HUB_CHANGE_MIGRATION_LIMIT_MS)
+    expect(hubChangeMigrationMilliseconds).toBeLessThanOrEqual(CHANGE_MIGRATION_LIMIT_MS)
     expect(hubChangeLocks).toContain('AccessExclusiveLock')
     expect(before).toEqual({
       board_message_tag: 1,
       board_receipt: 1,
-      hub_change: HUB_CHANGE_ROW_COUNT,
+      hub_change: CHANGE_ROW_COUNT,
       hub_change_head: 1,
       public_doc_space: 1,
       secret_dek_wrap: 1,

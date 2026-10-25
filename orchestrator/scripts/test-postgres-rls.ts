@@ -293,7 +293,7 @@ try {
     ['bun', 'test', '--timeout', '120000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
     {
       BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl,
-      BOTTEGA_TEST_REMAINING_UUID_KEYS_MIGRATION_URL: remainingUuidKeysMigrationUrl,
+      TEST_REMAINING_UUID_KEYS_MIGRATION_URL: remainingUuidKeysMigrationUrl,
     },
   )
   if (hostedTaskIdMigration !== 0) throw new EarlyExit(hostedTaskIdMigration)
