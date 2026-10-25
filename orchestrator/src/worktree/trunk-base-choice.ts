@@ -23,7 +23,7 @@ import { resolveReadOnlyBase } from './worktree-caller.ts'
 /** Abbreviated commit length in the line naming the chosen base. */
 const SHORT_COMMIT = 8
 
-export type TrunkBaseReason =
+type TrunkBaseReason =
   /** A base was named explicitly and stands. */
   | 'explicit-base'
   /** `--carry` sends the caller checkout's own state into the tree. */
