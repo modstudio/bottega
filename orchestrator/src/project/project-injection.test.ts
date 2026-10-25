@@ -6,6 +6,7 @@ import {
   resolveDeclaredFacts,
   resolveInjection,
   type SignalsSettings,
+  suppliedUnknownKeyProblems,
 } from './project-injection.ts'
 import { type Project, validateProjectSettings } from './projects.ts'
 
@@ -61,27 +62,39 @@ describe('project workflow injection', () => {
 
   test('validates generated-reference settings at the register edge', () => {
     expect(
-      validateProjectSettings({
-        reference: {
-          directory: 'docs/reference',
-          publish: `${PLATFORM_SLUG} doc reference publish`,
+      validateProjectSettings(
+        {
+          reference: {
+            directory: 'docs/reference',
+            publish: `${PLATFORM_SLUG} doc reference publish`,
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({
-        reference: { directory: '/docs/reference', publish: 'publish-reference' },
-      }),
+      validateProjectSettings(
+        {
+          reference: { directory: '/docs/reference', publish: 'publish-reference' },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('reference.directory: must be a repository-relative path')])
     expect(
-      validateProjectSettings({
-        reference: { directory: 'docs/../../outside', publish: 'publish-reference' },
-      }),
+      validateProjectSettings(
+        {
+          reference: { directory: 'docs/../../outside', publish: 'publish-reference' },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('reference.directory: must not escape the repository')])
     expect(
-      validateProjectSettings({
-        reference: { directory: 'docs/reference', publish: '   ' },
-      }),
+      validateProjectSettings(
+        {
+          reference: { directory: 'docs/reference', publish: '   ' },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('reference.publish: Too small')])
   })
 
@@ -95,39 +108,52 @@ describe('project workflow injection', () => {
     ['.', 'must name a directory inside the repository'],
   ])('reference directory %s is refused because %s', (directory, message) => {
     expect(
-      validateProjectSettings({ reference: { directory, publish: 'publish-reference' } }),
+      validateProjectSettings({ reference: { directory, publish: 'publish-reference' } }, 'strict'),
     ).toEqual([expect.stringContaining(`reference.directory: ${message}`)])
   })
 
   test('valid release and docs settings pass while unknown keys are refused', () => {
     expect(
-      validateProjectSettings({ release, docs, gate: 'bun run check', gateInput: 'worktree' }),
+      validateProjectSettings(
+        { release, docs, gate: 'bun run check', gateInput: 'worktree' },
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({ gateInput: 'unknown' } as unknown as Parameters<
-        typeof validateProjectSettings
-      >[0]),
+      validateProjectSettings(
+        { gateInput: 'unknown' } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toContain('gateInput must be staged, worktree, or committed')
 
     expect(
-      validateProjectSettings({
-        release: { ...release, unexpected: true },
-      } as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          release: { ...release, unexpected: true },
+        } as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('release: Unrecognized key')])
   })
 
   test('validates signal source names and list actions while accepting an empty declaration', () => {
-    expect(validateProjectSettings({ signals })).toEqual([])
-    expect(validateProjectSettings({ signals: { sources: [] } })).toEqual([])
+    expect(validateProjectSettings({ signals }, 'strict')).toEqual([])
+    expect(validateProjectSettings({ signals: { sources: [] } }, 'strict')).toEqual([])
     expect(
-      validateProjectSettings({
-        signals: { sources: [{ list: 'error_list' }] },
-      } as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          signals: { sources: [{ list: 'error_list' }] },
+        } as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('signals.sources.0.name')])
     expect(
-      validateProjectSettings({
-        signals: { sources: [{ name: 'errors' }] },
-      } as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          signals: { sources: [{ name: 'errors' }] },
+        } as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('signals.sources.0.list')])
   })
 
@@ -157,35 +183,48 @@ describe('project workflow injection', () => {
             },
           },
         },
+        'strict',
         undefined,
         { enabledLensIds: ['correctness', 'migration-safety', 'craft'] },
       ),
     ).toEqual([])
     expect(
-      validateProjectSettings({
-        review: { lenses: [], unscopedLenses: 'sometimes' },
-      } as unknown as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          review: { lenses: [], unscopedLenses: 'sometimes' },
+        } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('review.unscopedLenses')])
     expect(
-      validateProjectSettings({
-        review: {
-          lenses: [],
-          secondOpinion: { lens: 'correctness', unexpected: true },
-        },
-      } as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          review: {
+            lenses: [],
+            secondOpinion: { lens: 'correctness', unexpected: true },
+          },
+        } as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('review.secondOpinion: Unrecognized key')])
     expect(
-      validateProjectSettings({
-        review: {
-          lenses: [],
-          record:
-            'project-review record --tier {tier} --reason "{reason}" --agents {agents} --findings {findings} --branch {branch}',
+      validateProjectSettings(
+        {
+          review: {
+            lenses: [],
+            record:
+              'project-review record --tier {tier} --reason "{reason}" --agents {agents} --findings {findings} --branch {branch}',
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([])
-    const unknownPlaceholder = validateProjectSettings({
-      review: { lenses: [], record: 'project-review record --findings {findings} --tree {tree}' },
-    }).join('\n')
+    const unknownPlaceholder = validateProjectSettings(
+      {
+        review: { lenses: [], record: 'project-review record --findings {findings} --tree {tree}' },
+      },
+      'strict',
+    ).join('\n')
     expect(unknownPlaceholder).toContain('unknown placeholder {tree}')
     expect(unknownPlaceholder).toContain(
       'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
@@ -193,16 +232,22 @@ describe('project workflow injection', () => {
     expect(unknownPlaceholder).toContain(
       `set with: ${PLATFORM_SLUG} project set <project> --settings`,
     )
-    const missingFindings = validateProjectSettings({
-      review: { lenses: [], record: 'project-review record --tier {tier}' },
-    }).join('\n')
+    const missingFindings = validateProjectSettings(
+      {
+        review: { lenses: [], record: 'project-review record --tier {tier}' },
+      },
+      'strict',
+    ).join('\n')
     expect(missingFindings).toContain('template must contain {findings}')
     expect(missingFindings).toContain(
       'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
     )
-    const shellCommand = validateProjectSettings({
-      review: { lenses: [], record: '/bin/bash -c "record {findings}"' },
-    }).join('\n')
+    const shellCommand = validateProjectSettings(
+      {
+        review: { lenses: [], record: '/bin/bash -c "record {findings}"' },
+      },
+      'strict',
+    ).join('\n')
     expect(shellCommand).toContain(
       'a review record command is run directly with its arguments; a shell interpreter is not allowed',
     )
@@ -210,67 +255,82 @@ describe('project workflow injection', () => {
       'valid placeholders: {tier}, {reason}, {agents}, {findings}, {branch}',
     )
     expect(
-      validateProjectSettings({ review: { lenses: [{ lens: 'nope' }] } }, undefined, {
+      validateProjectSettings({ review: { lenses: [{ lens: 'nope' }] } }, 'strict', undefined, {
         enabledLensIds: ['correctness'],
       }),
     ).toEqual([
       `review.lenses.0.lens: unknown or disabled lens "nope"; choose an enabled lens from ${PLATFORM_SLUG} review lens list`,
     ])
 
-    const invalidRiskPattern = validateProjectSettings({
-      review: {
-        lenses: [],
-        risk: {
-          paths: [{ pattern: '[', tier: 2, reason: 'product source' }],
-          unlisted: 1,
+    const invalidRiskPattern = validateProjectSettings(
+      {
+        review: {
+          lenses: [],
+          risk: {
+            paths: [{ pattern: '[', tier: 2, reason: 'product source' }],
+            unlisted: 1,
+          },
         },
       },
-    }).join('\n')
+      'strict',
+    ).join('\n')
     expect(invalidRiskPattern).toContain('review.risk.paths.0.pattern')
     expect(invalidRiskPattern).toContain('does not compile')
     expect(invalidRiskPattern).toContain('replace it with a valid regular expression')
 
-    const refusedFirm = validateProjectSettings({
-      review: {
-        lenses: [],
-        risk: {
-          paths: [
-            {
-              pattern: '^orchestrator/src/run/run\\.ts$',
-              tier: 3,
-              reason: 'run execution',
-              firm: false,
-            },
-          ],
-          unlisted: 1,
+    const refusedFirm = validateProjectSettings(
+      {
+        review: {
+          lenses: [],
+          risk: {
+            paths: [
+              {
+                pattern: '^orchestrator/src/run/run\\.ts$',
+                tier: 3,
+                reason: 'run execution',
+                firm: false,
+              },
+            ],
+            unlisted: 1,
+          },
         },
-      },
-    } as unknown as Parameters<typeof validateProjectSettings>[0]).join('\n')
+      } as unknown as Parameters<typeof validateProjectSettings>[0],
+      'strict',
+    ).join('\n')
     expect(refusedFirm).toContain('review.risk.paths.0.firm')
     expect(refusedFirm).toContain('omit firm for a path whose risk may lower with size')
   })
 
   test('refuses unknown and repeated PHP policy rules with the register remedy', () => {
-    const unknownRuleErrors = validateProjectSettings({
-      testSubstance: { phpPolicyRules: ['unknown-rule'] },
-    } as unknown as Project['settings']).join('\n')
+    const unknownRuleErrors = validateProjectSettings(
+      {
+        testSubstance: { phpPolicyRules: ['unknown-rule'] },
+      } as unknown as Project['settings'],
+      'strict',
+    ).join('\n')
     expect(unknownRuleErrors).toContain('unknown PHP policy rule')
     expect(unknownRuleErrors).toContain('valid rules:')
     expect(unknownRuleErrors).toContain(`${PLATFORM_SLUG} project set <project> --settings`)
     expect(
-      validateProjectSettings({
-        testSubstance: { phpPolicyRules: ['createMock', 'createMock'] },
-      }),
+      validateProjectSettings(
+        {
+          testSubstance: { phpPolicyRules: ['createMock', 'createMock'] },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('PHP policy rule "createMock" is repeated')])
-    expect(validateProjectSettings({ testSubstance: { phpPolicyRules: [] } })).toEqual([])
+    expect(validateProjectSettings({ testSubstance: { phpPolicyRules: [] } }, 'strict')).toEqual([])
   })
 
   test('applies mechanical-check declaration refusals with the register remedy', () => {
-    const problems = validateProjectSettings({
-      mechanicalChecks: {
-        mystery: { tool: 'probe' },
-      },
-    } as unknown as Project['settings'])
+    const problems = validateProjectSettings(
+      {
+        mechanicalChecks: {
+          mystery: { tool: 'probe' },
+        },
+      } as unknown as Project['settings'],
+      'strict',
+    )
 
     expect(problems).toEqual([
       expect.stringContaining('mechanicalChecks.mystery: unknown category'),
@@ -282,38 +342,50 @@ describe('project workflow injection', () => {
 
   test('validates a rung live command as a non-empty string', () => {
     expect(
-      validateProjectSettings({
-        release: { ...release, rungs: [{ ...release.rungs[0]!, live: ' ' }] },
-      }),
+      validateProjectSettings(
+        {
+          release: { ...release, rungs: [{ ...release.rungs[0]!, live: ' ' }] },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('release.rungs.0.live: Too small')])
   })
 
   test('refuses repeated rung names and a non-boolean on-demand marker', () => {
     expect(
-      validateProjectSettings({
-        release: {
-          ...release,
-          rungs: [release.rungs[0]!, { ...release.rungs[0]!, branch: 'preview' }],
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            rungs: [release.rungs[0]!, { ...release.rungs[0]!, branch: 'preview' }],
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([
       expect.stringContaining('release.rungs.1.name: release rung name "production" is repeated'),
     ])
     expect(
-      validateProjectSettings({
-        release: {
-          ...release,
-          rungs: [{ ...release.rungs[0]!, onDemand: 'yes' }],
-        },
-      } as unknown as Project['settings']),
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            rungs: [{ ...release.rungs[0]!, onDemand: 'yes' }],
+          },
+        } as unknown as Project['settings'],
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('release.rungs.0.onDemand: Invalid input')])
   })
 
   test('refuses the retired release.deployCommand instead of silently accepting it', () => {
     expect(
-      validateProjectSettings({
-        release: { ...release, deployCommand: 'bun run deploy' },
-      } as Parameters<typeof validateProjectSettings>[0]),
+      validateProjectSettings(
+        {
+          release: { ...release, deployCommand: 'bun run deploy' },
+        } as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
     ).toEqual([
       'release.deployCommand: retired; move the command onto a rung: release.rungs[].deploy',
     ])
@@ -321,82 +393,109 @@ describe('project workflow injection', () => {
 
   test('accepts a sole landing-branch rung carrying deploy (mutation: remove rungs[].deploy)', () => {
     expect(
-      validateProjectSettings({
-        trunk: 'main',
-        release: {
-          rungs: [{ name: 'production', branch: 'main', deploy: 'bun run deploy' }],
-          mergeMethod: 'squash',
-          requiredChecks: ['gate'],
+      validateProjectSettings(
+        {
+          trunk: 'main',
+          release: {
+            rungs: [{ name: 'production', branch: 'main', deploy: 'bun run deploy' }],
+            mergeMethod: 'squash',
+            requiredChecks: ['gate'],
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([])
   })
 
   test('refuses an unknown tracker action override at the register edge', () => {
     expect(
-      validateProjectSettings({
-        tracker: {
-          kind: 'fixture',
-          protocol: 'workspace-mcp',
-          actions: { archive: 'archive-task-tool' },
-        } as Project['settings']['tracker'],
-      }),
+      validateProjectSettings(
+        {
+          tracker: {
+            kind: 'fixture',
+            protocol: 'workspace-mcp',
+            actions: { archive: 'archive-task-tool' },
+          } as Project['settings']['tracker'],
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('tracker.actions: Unrecognized key')])
   })
 
   test('validates tracker team as a non-empty register string', () => {
     expect(
-      validateProjectSettings({
-        tracker: { protocol: 'workspace-mcp', team: 'Platform' },
-      }),
+      validateProjectSettings(
+        {
+          tracker: { protocol: 'workspace-mcp', team: 'Platform' },
+        },
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({
-        tracker: { protocol: 'workspace-mcp', team: ' ' },
-      }),
+      validateProjectSettings(
+        {
+          tracker: { protocol: 'workspace-mcp', team: ' ' },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('tracker.team: Too small')])
   })
 
   test('accepts a cursor-mcp project UUID and refuses invalid or cross-protocol values', () => {
     expect(
-      validateProjectSettings({
-        tracker: {
-          protocol: 'cursor-mcp',
-          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'cursor-mcp',
+            projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([])
     expect(
-      validateProjectSettings({
-        tracker: { protocol: 'cursor-mcp', projectId: 'not-a-uuid' },
-      }),
+      validateProjectSettings(
+        {
+          tracker: { protocol: 'cursor-mcp', projectId: 'not-a-uuid' },
+        },
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('tracker.projectId: Invalid UUID')])
     expect(
-      validateProjectSettings({
-        tracker: {
-          protocol: 'workspace-mcp',
-          projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'workspace-mcp',
+            projectId: '019d9699-a223-729f-a032-50de9fdf4303',
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('tracker.projectId: projectId is accepted only by')])
   })
 
   test('accepts only MCP tool names and refuses every hub action override with a remedy', () => {
     expect(
-      validateProjectSettings({
-        tracker: {
-          protocol: 'workspace-mcp',
-          actions: { get: 'task_get; rm -rf checkout' },
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'workspace-mcp',
+            actions: { get: 'task_get; rm -rf checkout' },
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([expect.stringContaining('must be a plain MCP tool name')])
     expect(
-      validateProjectSettings({
-        tracker: {
-          protocol: 'hub',
-          actions: { get: `${PLATFORM_SLUG} task show {key}; rm -rf checkout` },
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'hub',
+            actions: { get: `${PLATFORM_SLUG} task show {key}; rm -rf checkout` },
+          },
         },
-      }).join('\n'),
+        'strict',
+      ).join('\n'),
     ).toContain(
       'tracker.actions: the built-in tracker accepts no action overrides; remove tracker.actions',
     )
@@ -531,7 +630,7 @@ describe('project workflow injection', () => {
       protocol: 'workspace-mcp' as const,
       actions: { document: 'custom_document' },
     }
-    expect(validateProjectSettings({ tracker })).toEqual([])
+    expect(validateProjectSettings({ tracker }, 'strict')).toEqual([])
 
     const { facts } = resolveDeclaredFacts(
       {
@@ -546,7 +645,9 @@ describe('project workflow injection', () => {
   })
 
   test('derives only declared remote states and gives hub vocabulary defaults', () => {
-    expect(validateProjectSettings({ tracker: { kind: 'hub', protocol: 'hub' } })).toEqual([])
+    expect(
+      validateProjectSettings({ tracker: { kind: 'hub', protocol: 'hub' } }, 'strict'),
+    ).toEqual([])
     const mapped = resolveInjection(
       {
         name: 'fixture',
@@ -627,13 +728,16 @@ describe('project workflow injection', () => {
 
   test('validates each review stage selection at the register edge', () => {
     const problems = (reviewStages: { waiting: string; active: string }) =>
-      validateProjectSettings({
-        tracker: {
-          protocol: 'workspace-mcp',
-          states: { queued: 'open', waiting: 'review', reviewing: 'review' },
-          reviewStages,
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'workspace-mcp',
+            states: { queued: 'open', waiting: 'review', reviewing: 'review' },
+            reviewStages,
+          },
         },
-      }).join('\n')
+        'strict',
+      ).join('\n')
 
     expect(problems({ waiting: 'missing', active: 'reviewing' })).toContain(
       'tracker.reviewStages.waiting: value "missing" is not a key of tracker.states',
@@ -727,42 +831,54 @@ describe('project workflow injection', () => {
   test('the register edge refuses a blank or non-string trunk', () => {
     for (const trunk of ['', '   ', 42]) {
       expect(
-        validateProjectSettings({ trunk } as Parameters<typeof validateProjectSettings>[0]).join(
-          '\n',
-        ),
+        validateProjectSettings(
+          { trunk } as Parameters<typeof validateProjectSettings>[0],
+          'strict',
+        ).join('\n'),
       ).toContain('trunk')
     }
   })
 
   test('the register edge refuses a missing or unsupported tracker protocol', () => {
-    expect(validateProjectSettings({ tracker: {} }).join('\n')).toContain('tracker.protocol')
-    expect(validateProjectSettings({ tracker: { protocol: 'made-up' } }).join('\n')).toContain(
+    expect(validateProjectSettings({ tracker: {} }, 'strict').join('\n')).toContain(
       'tracker.protocol',
     )
+    expect(
+      validateProjectSettings({ tracker: { protocol: 'made-up' } }, 'strict').join('\n'),
+    ).toContain('tracker.protocol')
   })
 
   test('the register edge refuses shell syntax in a tracker kind or state name', () => {
     expect(
-      validateProjectSettings({
-        tracker: { protocol: 'hub', kind: 'hub; cat secrets' },
-      }).join('\n'),
+      validateProjectSettings(
+        {
+          tracker: { protocol: 'hub', kind: 'hub; cat secrets' },
+        },
+        'strict',
+      ).join('\n'),
     ).toContain('must be a plain name')
     expect(
-      validateProjectSettings({
-        tracker: {
-          protocol: 'workspace-mcp',
-          states: { 'active; cat secrets': 'active' },
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'workspace-mcp',
+            states: { 'active; cat secrets': 'active' },
+          },
         },
-      }).join('\n'),
+        'strict',
+      ).join('\n'),
     ).toContain('Invalid key in record')
     expect(
-      validateProjectSettings({
-        tracker: {
-          protocol: 'cursor-mcp',
-          kind: 'stopal',
-          states: { 'In Progress': 'active' },
+      validateProjectSettings(
+        {
+          tracker: {
+            protocol: 'cursor-mcp',
+            kind: 'stopal',
+            states: { 'In Progress': 'active' },
+          },
         },
-      }),
+        'strict',
+      ),
     ).toEqual([])
   })
 
@@ -817,5 +933,50 @@ describe('project workflow injection', () => {
         `- signals; set with: ${PLATFORM_SLUG} project set fixture --settings '{"signals":{"sources":[{"name":"<label>","list":"<command-or-tool>"}]}}'\n` +
         `- stack; set with: ${PLATFORM_SLUG} project set fixture --stack <stack>`,
     )
+  })
+})
+
+/** A row a newer binary wrote: `weight` is a key this one has never heard of. */
+const writtenByNewerBinary = {
+  review: {
+    lenses: [],
+    risk: {
+      paths: [{ pattern: '^hub/web/', tier: 3, reason: 'dashboard', firm: true, weight: 2 }],
+      unlisted: 0,
+    },
+  },
+} as unknown as Project['settings']
+
+const unknownKeyRefusal = 'review.risk.paths.0: Unrecognized key: "weight"'
+
+describe('project settings object modes', () => {
+  test('a register read drops a key this binary does not know', () => {
+    expect(validateProjectSettings(writtenByNewerBinary, 'strip')).toEqual([])
+  })
+
+  test('a register write refuses the same key', () => {
+    expect(validateProjectSettings(writtenByNewerBinary, 'strict')).toEqual([
+      expect.stringContaining(unknownKeyRefusal),
+    ])
+  })
+
+  test('checks on known keys are the same in either mode', () => {
+    const uncompilablePattern = {
+      review: {
+        lenses: [],
+        risk: { paths: [{ pattern: '(', tier: 1, reason: 'uncompilable' }], unlisted: 0 },
+      },
+    } as unknown as Project['settings']
+    const refusal = [expect.stringContaining('review.risk.paths.0.pattern: does not compile')]
+    expect(validateProjectSettings(uncompilablePattern, 'strip')).toEqual(refusal)
+    expect(validateProjectSettings(uncompilablePattern, 'strict')).toEqual(refusal)
+  })
+
+  test('a supplied patch is refused only for the keys this binary does not know', () => {
+    // Partial by construction: the stored row supplies the rest of the risk map.
+    expect(suppliedUnknownKeyProblems({ review: { risk: { unlisted: 1 } } })).toEqual([])
+    expect(suppliedUnknownKeyProblems({ review: { risk: { paths: [{ weight: 2 }] } } })).toEqual([
+      expect.stringContaining(unknownKeyRefusal),
+    ])
   })
 })

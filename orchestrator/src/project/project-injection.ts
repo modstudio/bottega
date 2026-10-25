@@ -24,186 +24,218 @@ import {
   reviewRecordTemplateProblem,
 } from './review-record-template.ts'
 
+/**
+ * One settings grammar, two object modes, because the register is written by
+ * one binary and read by another.
+ *
+ * A write refuses a key this binary does not know, which is how a typo in
+ * `--settings` is caught. A read drops one, because a newer binary may have
+ * written a key this one has never heard of and reading the register in an
+ * older tree is ordinary: refusing there takes the whole project, and every
+ * workflow that needs it, out of the register at once.
+ */
+export type SettingsObjectMode = 'strict' | 'strip'
+
 const strictObject = <Shape extends z.core.$ZodLooseShape>(shape: Shape) => z.strictObject(shape)
 
-const releaseSchema = strictObject({
-  rungs: z
-    .array(
-      strictObject({
-        name: z.string(),
-        branch: z.string(),
-        deploy: z.string().optional(),
-        live: z.string().trim().min(1).optional(),
-        onDemand: z.boolean().optional(),
-      }),
-    )
-    .superRefine((rungs, context) => {
-      const seen = new Set<string>()
-      for (const [index, rung] of rungs.entries()) {
-        if (seen.has(rung.name)) {
-          context.addIssue({
-            code: 'custom',
-            path: [index, 'name'],
-            message: `release rung name "${rung.name}" is repeated; use each name at most once`,
-          })
-        }
-        seen.add(rung.name)
-      }
-    }),
-  mergeMethod: z.enum(['squash', 'merge', 'rebase']),
-  requiredChecks: z.array(z.string()),
-  mergeQueue: z.boolean().optional(),
-  observationWindowHours: z.number().int().positive().optional(),
-})
+/** The same grammar in the mode its reader declares, and one type for both. */
+const objectIn = (mode: SettingsObjectMode) =>
+  mode === 'strict'
+    ? strictObject
+    : <Shape extends z.core.$ZodLooseShape>(shape: Shape) =>
+        // Both modes accept the same known keys and produce the same value, so
+        // the strip schema carries the strict one's type; only its verdict on a
+        // key this binary does not know differs.
+        z.object(shape) as unknown as ReturnType<typeof strictObject<Shape>>
 
-const docsSchema = z.discriminatedUnion('protocol', [
-  strictObject({ protocol: z.literal('orch-docs') }),
-  strictObject({ protocol: z.literal('workspace-mcp') }),
-  strictObject({ protocol: z.literal('cursor-mcp') }),
-  strictObject({ protocol: z.literal('array-mcp') }),
-])
-
-const referenceSchema = strictObject({
-  directory: z
-    .string()
-    .min(1)
-    .superRefine((directory, context) => {
-      if (directory !== directory.trim()) {
-        context.addIssue({ code: 'custom', message: `must be written as ${directory.trim()}` })
-        return
-      }
-      if (isAbsolute(directory) || win32.isAbsolute(directory)) {
-        context.addIssue({ code: 'custom', message: 'must be a repository-relative path' })
-        return
-      }
-      const normalized = normalize(directory)
-      const normalizedWindows = win32.normalize(directory)
-      if (
-        normalized === '..' ||
-        normalized.startsWith('../') ||
-        normalized.startsWith('..\\') ||
-        normalizedWindows === '..' ||
-        normalizedWindows.startsWith('..\\')
-      ) {
-        context.addIssue({
-          code: 'custom',
-          message: 'must not escape the repository',
-        })
-        return
-      }
-      // The merge step compares changed paths with this spelling, so only the canonical one is stored.
-      const canonical = posix.normalize(directory.replaceAll('\\', '/')).replace(/\/+$/, '')
-      if (canonical === '.')
-        context.addIssue({ code: 'custom', message: 'must name a directory inside the repository' })
-      else if (canonical !== directory)
-        context.addIssue({ code: 'custom', message: `must be written as ${canonical}` })
-    }),
-  publish: z.string().trim().min(1),
-})
-
-const signalsSchema = strictObject({
-  sources: z.array(
-    strictObject({
-      name: z.string().trim().min(1),
-      list: z.string().trim().min(1),
-      get: z.string().trim().min(1).optional(),
-    }),
-  ),
-})
-
-const reviewRiskSchema = strictObject({
-  paths: z.array(
-    strictObject({
-      pattern: z
-        .custom<string>(
-          (pattern) => typeof pattern === 'string',
-          'must be a regular-expression string; replace it with a valid regular expression over repository-relative paths',
-        )
-        .superRefine((pattern, context) => {
-          try {
-            new RegExp(pattern)
-          } catch (cause) {
+const releaseSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    rungs: z
+      .array(
+        objectIn(mode)({
+          name: z.string(),
+          branch: z.string(),
+          deploy: z.string().optional(),
+          live: z.string().trim().min(1).optional(),
+          onDemand: z.boolean().optional(),
+        }),
+      )
+      .superRefine((rungs, context) => {
+        const seen = new Set<string>()
+        for (const [index, rung] of rungs.entries()) {
+          if (seen.has(rung.name)) {
             context.addIssue({
               code: 'custom',
-              message: `does not compile (${cause instanceof Error ? cause.message : String(cause)}); replace it with a valid regular expression over repository-relative paths`,
+              path: [index, 'name'],
+              message: `release rung name "${rung.name}" is repeated; use each name at most once`,
             })
           }
-        }),
-      tier: z.custom<1 | 2 | 3>(
-        (tier) => tier === 1 || tier === 2 || tier === 3,
-        'must be 1, 2, or 3; replace it with a supported risk tier',
-      ),
-      reason: z.custom<string>(
-        (reason) => typeof reason === 'string' && reason.trim().length > 0,
-        'must be a non-empty short phrase; replace it with the reason for this path risk',
-      ),
-      basis: z.string().trim().min(1).optional(),
-      firm: z
-        .literal(
-          true,
-          'must be true or omitted; omit firm for a path whose risk may lower with size',
-        )
-        .optional(),
-    }),
-  ),
-  unlisted: z.custom<0 | 1 | 2>(
-    (tier) => tier === 0 || tier === 1 || tier === 2,
-    'must be 0, 1, or 2; replace it with the risk tier for an unlisted product path',
-  ),
-})
-
-const reviewSchema = strictObject({
-  lenses: z.array(
-    strictObject({
-      lens: z.string().trim().min(1),
-      paths: z.array(z.string().trim().min(1)).optional(),
-      minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-      basis: z.string().trim().min(1).optional(),
-    }),
-  ),
-  secondOpinion: strictObject({
-    lens: z.string().trim().min(1),
-    minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
-    basis: z.string().trim().min(1).optional(),
-  }).optional(),
-  unscopedLenses: z.enum(['all', 'skip']).optional(),
-  risk: reviewRiskSchema.optional(),
-  record: z.string().trim().min(1).optional(),
-}).superRefine((review, context) => {
-  if (!review.record) return
-  const problem = reviewRecordTemplateProblem(review.record)
-  if (!problem) return
-  context.addIssue({
-    code: 'custom',
-    path: ['record'],
-    message:
-      `${problem}; valid placeholders: ${REVIEW_RECORD_PLACEHOLDERS.map((name) => `{${name}}`).join(', ')}; ` +
-      `set with: ${PLATFORM_SLUG} project set <project> --settings '{"review":{"lenses":[],"record":"<command> {findings}"}}'`,
+          seen.add(rung.name)
+        }
+      }),
+    mergeMethod: z.enum(['squash', 'merge', 'rebase']),
+    requiredChecks: z.array(z.string()),
+    mergeQueue: z.boolean().optional(),
+    observationWindowHours: z.number().int().positive().optional(),
   })
-})
 
-const testSubstanceSchema = strictObject({
-  phpPolicyRules: z
-    .array(
-      z.custom<PhpPolicyRule>(
-        (rule) => typeof rule === 'string' && PHP_POLICY_RULES.includes(rule as PhpPolicyRule),
-        `unknown PHP policy rule; valid rules: ${PHP_POLICY_RULES.join(', ')}; set with: ${PLATFORM_SLUG} project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
-      ),
-    )
-    .superRefine((rules, context) => {
-      const seen = new Set<string>()
-      for (const [index, rule] of rules.entries()) {
-        if (seen.has(rule)) {
+const docsSchema = (mode: SettingsObjectMode) =>
+  z.discriminatedUnion('protocol', [
+    objectIn(mode)({ protocol: z.literal('orch-docs') }),
+    objectIn(mode)({ protocol: z.literal('workspace-mcp') }),
+    objectIn(mode)({ protocol: z.literal('cursor-mcp') }),
+    objectIn(mode)({ protocol: z.literal('array-mcp') }),
+  ])
+
+const referenceSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    directory: z
+      .string()
+      .min(1)
+      .superRefine((directory, context) => {
+        if (directory !== directory.trim()) {
+          context.addIssue({ code: 'custom', message: `must be written as ${directory.trim()}` })
+          return
+        }
+        if (isAbsolute(directory) || win32.isAbsolute(directory)) {
+          context.addIssue({ code: 'custom', message: 'must be a repository-relative path' })
+          return
+        }
+        const normalized = normalize(directory)
+        const normalizedWindows = win32.normalize(directory)
+        if (
+          normalized === '..' ||
+          normalized.startsWith('../') ||
+          normalized.startsWith('..\\') ||
+          normalizedWindows === '..' ||
+          normalizedWindows.startsWith('..\\')
+        ) {
           context.addIssue({
             code: 'custom',
-            path: [index],
-            message: `PHP policy rule "${rule}" is repeated; use each valid rule at most once; set with: ${PLATFORM_SLUG} project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+            message: 'must not escape the repository',
           })
+          return
         }
-        seen.add(rule)
-      }
-    }),
-})
+        // The merge step compares changed paths with this spelling, so only the canonical one is stored.
+        const canonical = posix.normalize(directory.replaceAll('\\', '/')).replace(/\/+$/, '')
+        if (canonical === '.')
+          context.addIssue({
+            code: 'custom',
+            message: 'must name a directory inside the repository',
+          })
+        else if (canonical !== directory)
+          context.addIssue({ code: 'custom', message: `must be written as ${canonical}` })
+      }),
+    publish: z.string().trim().min(1),
+  })
+
+const signalsSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    sources: z.array(
+      objectIn(mode)({
+        name: z.string().trim().min(1),
+        list: z.string().trim().min(1),
+        get: z.string().trim().min(1).optional(),
+      }),
+    ),
+  })
+
+const reviewRiskSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    paths: z.array(
+      objectIn(mode)({
+        pattern: z
+          .custom<string>(
+            (pattern) => typeof pattern === 'string',
+            'must be a regular-expression string; replace it with a valid regular expression over repository-relative paths',
+          )
+          .superRefine((pattern, context) => {
+            try {
+              new RegExp(pattern)
+            } catch (cause) {
+              context.addIssue({
+                code: 'custom',
+                message: `does not compile (${cause instanceof Error ? cause.message : String(cause)}); replace it with a valid regular expression over repository-relative paths`,
+              })
+            }
+          }),
+        tier: z.custom<1 | 2 | 3>(
+          (tier) => tier === 1 || tier === 2 || tier === 3,
+          'must be 1, 2, or 3; replace it with a supported risk tier',
+        ),
+        reason: z.custom<string>(
+          (reason) => typeof reason === 'string' && reason.trim().length > 0,
+          'must be a non-empty short phrase; replace it with the reason for this path risk',
+        ),
+        basis: z.string().trim().min(1).optional(),
+        firm: z
+          .literal(
+            true,
+            'must be true or omitted; omit firm for a path whose risk may lower with size',
+          )
+          .optional(),
+      }),
+    ),
+    unlisted: z.custom<0 | 1 | 2>(
+      (tier) => tier === 0 || tier === 1 || tier === 2,
+      'must be 0, 1, or 2; replace it with the risk tier for an unlisted product path',
+    ),
+  })
+
+const reviewSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    lenses: z.array(
+      objectIn(mode)({
+        lens: z.string().trim().min(1),
+        paths: z.array(z.string().trim().min(1)).optional(),
+        minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+        basis: z.string().trim().min(1).optional(),
+      }),
+    ),
+    secondOpinion: objectIn(mode)({
+      lens: z.string().trim().min(1),
+      minTier: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      basis: z.string().trim().min(1).optional(),
+    }).optional(),
+    unscopedLenses: z.enum(['all', 'skip']).optional(),
+    risk: reviewRiskSchema(mode).optional(),
+    record: z.string().trim().min(1).optional(),
+  }).superRefine((review, context) => {
+    if (!review.record) return
+    const problem = reviewRecordTemplateProblem(review.record)
+    if (!problem) return
+    context.addIssue({
+      code: 'custom',
+      path: ['record'],
+      message:
+        `${problem}; valid placeholders: ${REVIEW_RECORD_PLACEHOLDERS.map((name) => `{${name}}`).join(', ')}; ` +
+        `set with: ${PLATFORM_SLUG} project set <project> --settings '{"review":{"lenses":[],"record":"<command> {findings}"}}'`,
+    })
+  })
+
+const testSubstanceSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    phpPolicyRules: z
+      .array(
+        z.custom<PhpPolicyRule>(
+          (rule) => typeof rule === 'string' && PHP_POLICY_RULES.includes(rule as PhpPolicyRule),
+          `unknown PHP policy rule; valid rules: ${PHP_POLICY_RULES.join(', ')}; set with: ${PLATFORM_SLUG} project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+        ),
+      )
+      .superRefine((rules, context) => {
+        const seen = new Set<string>()
+        for (const [index, rule] of rules.entries()) {
+          if (seen.has(rule)) {
+            context.addIssue({
+              code: 'custom',
+              path: [index],
+              message: `PHP policy rule "${rule}" is repeated; use each valid rule at most once; set with: ${PLATFORM_SLUG} project set <project> --settings '{"testSubstance":{"phpPolicyRules":["<rule>"]}}'`,
+            })
+          }
+          seen.add(rule)
+        }
+      }),
+  })
 
 const mechanicalChecksRemedy = `set with: ${PLATFORM_SLUG} project set <project> --settings '{"mechanicalChecks":{"<category>":{"tool":"<command>"}}}'`
 
@@ -223,22 +255,23 @@ const gateSchema = z.string().trim().min(1)
 const trunkSchema = z.string().trim().min(1)
 // The shared shape keeps protocol open so hub can read any stored row; the
 // register edge accepts only protocols a workflow can act on.
-const trackerSchema = strictObject({
-  ...trackerSettingsShape,
-  protocol: z.enum(TRACKER_PROTOCOLS),
-}).superRefine((tracker, context) => {
-  refuseHubActionOverrides(tracker, context)
-  refuseNonCursorProjectId(tracker, context)
-  refuseInvalidReviewStages(tracker, context)
-})
+const trackerSchema = (mode: SettingsObjectMode) =>
+  objectIn(mode)({
+    ...trackerSettingsShape,
+    protocol: z.enum(TRACKER_PROTOCOLS),
+  }).superRefine((tracker, context) => {
+    refuseHubActionOverrides(tracker, context)
+    refuseNonCursorProjectId(tracker, context)
+    refuseInvalidReviewStages(tracker, context)
+  })
 
-export type ReleaseSettings = z.infer<typeof releaseSchema>
-export type DocsSettings = z.infer<typeof docsSchema>
-export type ReferenceSettings = z.infer<typeof referenceSchema>
-export type SignalsSettings = z.infer<typeof signalsSchema>
-export type ReviewRiskMap = z.infer<typeof reviewRiskSchema>
-export type ReviewSettings = z.infer<typeof reviewSchema>
-export type TestSubstanceSettings = z.infer<typeof testSubstanceSchema>
+export type ReleaseSettings = z.infer<ReturnType<typeof releaseSchema>>
+export type DocsSettings = z.infer<ReturnType<typeof docsSchema>>
+export type ReferenceSettings = z.infer<ReturnType<typeof referenceSchema>>
+export type SignalsSettings = z.infer<ReturnType<typeof signalsSchema>>
+export type ReviewRiskMap = z.infer<ReturnType<typeof reviewRiskSchema>>
+export type ReviewSettings = z.infer<ReturnType<typeof reviewSchema>>
+export type TestSubstanceSettings = z.infer<ReturnType<typeof testSubstanceSchema>>
 type ResolvedDocs = DocsSettings & {
   server?: string
   read: string[]
@@ -538,7 +571,7 @@ export function resolveDeclaredFacts<Project extends InjectableProject>(
   return { resolved, facts }
 }
 
-type ValidatedInjectionSettings = Pick<
+export type ValidatedInjectionSettings = Pick<
   InjectionSettings,
   | 'tracker'
   | 'trunk'
@@ -552,17 +585,23 @@ type ValidatedInjectionSettings = Pick<
   | 'mechanicalChecks'
 >
 
-/** Validate the workflow-specific portion of a project settings blob at the register edge. */
-export function validateProjectInjectionSettings(settings: ValidatedInjectionSettings): string[] {
+/**
+ * Validate the workflow-specific portion of a project settings blob at the
+ * register edge, in the mode its reader or writer declares.
+ */
+export function validateProjectInjectionSettings(
+  settings: ValidatedInjectionSettings,
+  mode: SettingsObjectMode,
+): string[] {
   const problems: string[] = []
   for (const [name, schema] of [
-    ['tracker', trackerSchema],
-    ['release', releaseSchema],
-    ['docs', docsSchema],
-    ['reference', referenceSchema],
-    ['signals', signalsSchema],
-    ['review', reviewSchema],
-    ['testSubstance', testSubstanceSchema],
+    ['tracker', trackerSchema(mode)],
+    ['release', releaseSchema(mode)],
+    ['docs', docsSchema(mode)],
+    ['reference', referenceSchema(mode)],
+    ['signals', signalsSchema(mode)],
+    ['review', reviewSchema(mode)],
+    ['testSubstance', testSubstanceSchema(mode)],
     ['mechanicalChecks', mechanicalChecksSchema],
     ['gate', gateSchema],
     ['trunk', trunkSchema],
@@ -593,4 +632,23 @@ export function validateProjectInjectionSettings(settings: ValidatedInjectionSet
     }
   }
   return problems
+}
+
+/**
+ * The keys a register write must still refuse out of what its caller supplied.
+ *
+ * Every other issue is judged on the row the write produces, because a patch is
+ * partial and the stored row completes it: `--settings '{"tracker":{"reviewStages":…}}'`
+ * is a complete tracker once merged, and refusing it for the keys it did not
+ * mention would refuse the remedy every refusal message prints. Only a key this
+ * binary does not know is settled by the supplied object alone, and strip mode
+ * reports everything strict mode reports except those, so the difference between
+ * the two modes over the same supplied object is exactly them.
+ */
+export function suppliedUnknownKeyProblems(supplied: Record<string, unknown>): string[] {
+  const settings = supplied as ValidatedInjectionSettings
+  const dropped = new Set(validateProjectInjectionSettings(settings, 'strip'))
+  return validateProjectInjectionSettings(settings, 'strict').filter(
+    (problem) => !dropped.has(problem),
+  )
 }

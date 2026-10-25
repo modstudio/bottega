@@ -64,7 +64,7 @@ import {
   retireProjectInHostedRecord,
   writeProjectToHostedRecord,
 } from './project-hosted-write.ts'
-import { validateProjectInjectionSettings } from './project-injection.ts'
+import { type SettingsObjectMode, validateProjectInjectionSettings } from './project-injection.ts'
 import {
   PROJECT_REFERENCES,
   type ProjectReferenceCounts,
@@ -371,7 +371,8 @@ export function setProjectRecordSpace(name: string, space: string): void {
   const project = projectByName(name)
   if (!project) throw new Error(`no project "${name}"`)
   const settings = { ...project.settings, space }
-  const malformed = validateStoredProjectSettings(settings, project.path)
+  // The row keeps every key it already held; the write only judges the space it was given.
+  const malformed = validateStoredProjectSettings(settings, 'strip', project.path)
   if (malformed.length) throw new Error(malformed.join('\n'))
   writableDb()
   db()
@@ -680,11 +681,12 @@ function gateInputProblems(gateInput: ProjectSettings['gateInput']): string[] {
 
 export function validateProjectSettings(
   settings: ProjectSettings,
+  mode: SettingsObjectMode,
   projectPath?: string,
   context: ProjectSettingsValidationContext = {},
 ): string[] {
   const problems = [
-    ...validateProjectInjectionSettings(settings),
+    ...validateProjectInjectionSettings(settings, mode),
     ...validateCreate(settings.worktree?.create as unknown, 'worktree.create', CREATE_VARS),
     ...validateCreate(
       settings.worktree?.readonly_create as unknown,
@@ -814,14 +816,12 @@ function invalidOptionalStringArray(value: unknown): boolean {
 /** Validate a stored row without re-refusing its unchanged legacy create string. */
 export function validateStoredProjectSettings(
   settings: ProjectSettings,
+  mode: SettingsObjectMode,
   projectPath?: string,
 ): string[] {
-  return validateProjectSettings(settings, projectPath).filter(
-    (problem) =>
-      !(
-        typeof settings.worktree?.create === 'string' &&
-        problem === 'worktree.create is a shell string; migrate it (DEV-308)'
-      ),
+  const legacy = 'worktree.create is a shell string; migrate it (DEV-308)'
+  return validateProjectSettings(settings, mode, projectPath).filter(
+    (problem) => !(typeof settings.worktree?.create === 'string' && problem === legacy),
   )
 }
 
