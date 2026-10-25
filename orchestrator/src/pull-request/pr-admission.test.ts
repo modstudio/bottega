@@ -1,15 +1,51 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
+import { reviewRoundBudgetDecision } from '../review/review-round-budget.ts'
 import {
   createPullRequest,
   finalizeTriageIntent,
   type PullRequestChange,
   recordMergeAdmission,
   recordTriageIntent,
+  recordTriageOverrideForChange,
   triageRefusal,
 } from './pr-admission.ts'
-import { decideTriage, type TriageEvidence } from './triage-decision.ts'
+import { decideTriage, type TriageDecision, type TriageEvidence } from './triage-decision.ts'
+
+const ceilingChange = {
+  project: { name: 'ceiling-fixture' },
+  branch: 'DEV-1641-ceiling',
+  tip: 'tip',
+  tree: 'tree',
+  group: { patchId: 'patch', pathSet: ['a.ts'] },
+  tier: 3,
+} as PullRequestChange
+
+const ceilingTriage = (values: Partial<Extract<TriageDecision, { complete: false }>> = {}) =>
+  ({
+    complete: false,
+    snapshot: {
+      reviewRecordIds: ['review-3'],
+      patchId: 'patch',
+      tier: 3,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'exact_review',
+      readRecordId: null,
+    },
+    missingReview: false,
+    unfinishedReviewNumbers: [],
+    undisposedFindings: [],
+    missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    missingSecondOpinion: null,
+    architectReadRequired: false,
+    earlierReviewNumber: null,
+    earlierReviewTier: null,
+    finalTierRaised: false,
+    noCompleteReviewRound: false,
+    ...values,
+  }) as TriageDecision
 
 test('refuses a secret-shaped override reason before resolving the checkout', () => {
   expect(() =>
@@ -18,6 +54,136 @@ test('refuses a secret-shaped override reason before resolving the checkout', ()
       fromOperator: true,
     }),
   ).toThrow('reason resembles a secret')
+})
+
+test('an undisposed finding at the ceiling refuses without recording a ruling', () => {
+  const database = db()
+  const project = database
+    .query<{ record_id: string }, []>(
+      `INSERT INTO project (record_id,name,path,stack,canon,settings,retired_at)
+       VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),'ceiling-fixture','/tmp/ceiling-fixture',NULL,0,'{"trunk":"main"}',NULL)
+       RETURNING record_id`,
+    )
+    .get()!
+  const change: PullRequestChange = {
+    project: {
+      recordId: project.record_id,
+      name: 'ceiling-fixture',
+      path: '/tmp/ceiling-fixture',
+      stack: null,
+      canon: false,
+      retiredAt: null,
+      settings: { trunk: 'main' },
+    },
+    branch: 'DEV-1641-ceiling',
+    tip: 'tip',
+    tree: 'tree',
+    group: {
+      project: 'ceiling-fixture',
+      branch: 'DEV-1641-ceiling',
+      patchId: 'patch',
+      pathSet: ['a.ts'],
+    },
+    tier: 3,
+    applicability: { lenses: ['correctness', 'craft'] },
+  }
+  const triage = decideTriage({
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    tip: 'tip',
+    tier: 3,
+    applicableReview: { lenses: ['correctness', 'craft'] },
+    branchOwnerSession: null,
+    reviews: [
+      {
+        reviewRecordId: 'review-3',
+        reviewNumber: 3,
+        recordedAt: '2026-10-23T00:00:00Z',
+        completedAt: '2026-10-23T00:01:00Z',
+        tier: 3,
+        patchId: 'patch',
+        pathSet: '["a.ts"]',
+        lensIdentities: ['correctness'],
+        lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true }],
+        findings: [{ recordId: 'finding-3', ordinal: 1, disposition: null }],
+      },
+    ],
+    branchReviewGroups: [],
+    reads: [],
+  })
+  expect(() =>
+    recordTriageOverrideForChange(
+      change,
+      {
+        ceilingRuling: 'no remaining harm',
+        fromOperator: false,
+        reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
+        triage,
+      },
+      database,
+    ),
+  ).toThrow('findings are undisposed')
+  expect(database.query('SELECT count(*) AS count FROM landing_override').get()).toEqual({
+    count: 0,
+  })
+})
+
+test('a ceiling ruling below the completed-round ceiling refuses in process', () => {
+  expect(() =>
+    recordTriageOverrideForChange(
+      ceilingChange,
+      {
+        ceilingRuling: 'no remaining harm',
+        fromOperator: false,
+        reviewBudget: reviewRoundBudgetDecision({
+          tier: 3,
+          roundsUsed: 2,
+          currentChangeCounted: false,
+        }),
+        triage: ceilingTriage(),
+      },
+      db(),
+    ),
+  ).toThrow('before the review round ceiling is reached; rounds used 2/3')
+})
+
+test('ceiling rulings refuse non-lens, complete, and no-missing-lenses triage', () => {
+  const complete: TriageDecision = {
+    complete: true,
+    snapshot: {
+      reviewRecordIds: ['review-3'],
+      patchId: 'patch',
+      tier: 3,
+      lensRounds: 1,
+      findingCount: 0,
+      admissionPath: 'exact_review',
+      readRecordId: null,
+    },
+  }
+  const cases: [TriageDecision, string][] = [
+    [ceilingTriage({ noCompleteReviewRound: true }), 'triage has a non-lens admission gap'],
+    [complete, 'triage is complete'],
+    [ceilingTriage({ missingLenses: [] }), 'no missing lens coverage remains'],
+  ]
+
+  for (const [triage, message] of cases) {
+    expect(() =>
+      recordTriageOverrideForChange(
+        ceilingChange,
+        {
+          ceilingRuling: 'no remaining harm',
+          fromOperator: false,
+          reviewBudget: reviewRoundBudgetDecision({
+            tier: 3,
+            roundsUsed: 3,
+            currentChangeCounted: true,
+          }),
+          triage,
+        },
+        db(),
+      ),
+    ).toThrow(message)
+  }
 })
 
 test('records the exact triage snapshot and outboxes it', () => {

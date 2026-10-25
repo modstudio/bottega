@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { decideSecondOpinion, decideTriage, type TriageEvidence } from './triage-decision.ts'
+import {
+  decideSecondOpinion,
+  decideTriage,
+  missingLensNames,
+  type TriageEvidence,
+} from './triage-decision.ts'
 
 const review = (
   overrides: Partial<TriageEvidence['reviews'][number]> & { reviewId?: number } = {},
@@ -34,6 +39,17 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
   branchReviewGroups: [],
   reads: [],
   ...overrides,
+})
+
+test('missing lens names normalize coverage and second-opinion gaps', () => {
+  const decision = decideTriage(
+    evidence({
+      applicableReview: { lenses: ['safety', 'correctness'], secondOpinion: 'correctness' },
+      reviews: [],
+      branchReviewGroups: [],
+    }),
+  )
+  expect(missingLensNames(decision)).toEqual(['correctness', 'safety'])
 })
 
 describe('pull-request triage decision', () => {

@@ -744,6 +744,26 @@ test('review tier re-lenses a tier-three branch commit after a trunk merge', asy
   }
 })
 
+test('review tier prints architect ceiling guidance after three completed rounds', async () => {
+  const { repo, branch } = postFixFixture({
+    fixPath: 'critical/fix.ts',
+    priorRounds: 2,
+    priorRoundLens: 'correctness',
+    secondOpinion: true,
+  })
+  try {
+    const output: string[] = []
+
+    await runReview(['review', 'tier', branch, '--cwd', repo], output)
+
+    expect(output).toContain('rounds 3/3')
+    expect(output.some((line) => line.includes('--ceiling-ruling'))).toBeTrue()
+    expect(output.some((line) => line.includes('.agents/rules/20-build-and-buy.md'))).toBeTrue()
+  } finally {
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
 test('review tier re-lenses a conflict resolution in a trunk merge', async () => {
   const { repo, branch, reviewed } = postFixFixture({ resolveConflict: true })
   try {
