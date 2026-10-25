@@ -1,7 +1,7 @@
 // concern: postgres-schema-question
 /** Knows the hosted question evidence shape. Must not know local execution or synchronization. */
 import { type SQLWrapper, sql } from 'drizzle-orm'
-import { bigint, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 import { run } from './schema-run.ts'
 
@@ -16,7 +16,6 @@ export const question = pgTable.withRLS(
     spaceId: spaceIdentity(),
     runId: uuid('run_id').references(() => run.id),
     workflowKey: text('workflow_key'),
-    workflowCursorId: bigint('workflow_cursor_id', { mode: 'bigint' }),
     workflowCursorRecordId: uuid('workflow_cursor_record_id'),
     projectId: uuid('project_id').references(() => project.id),
     machineId: uuid('machine_id')

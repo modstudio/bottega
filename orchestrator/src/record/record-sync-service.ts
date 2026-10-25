@@ -368,7 +368,6 @@ const questionValues = (row: Payload, projectId: string | null) => ({
   spaceId: String(row.spaceId),
   runId: nullableString(row.runId),
   workflowKey: nullableString(row.workflowKey),
-  workflowCursorId: nullableBigint(row.workflowCursorId),
   workflowCursorRecordId: nullableUuid(
     row.workflowCursorRecordId,
     'question.workflowCursorRecordId',

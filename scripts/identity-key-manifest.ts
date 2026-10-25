@@ -399,7 +399,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'operator_waiting_email.item_id',
     'operator_waiting_email.task_key',
     'question.workflow_key',
-    'question.workflow_cursor_id',
     'question.filed_ref',
     'run.task_key',
     'secret_dek_wrap.recipient_key_id',

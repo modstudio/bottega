@@ -79,7 +79,6 @@
     "spaceId",
     "runId",
     "workflowKey",
-    "workflowCursorId",
     "projectName",
     "machineId",
     "localId",

@@ -58,7 +58,6 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     spaceId: PLATFORM_SPACE_ID,
     runId: row.run_record_id,
     workflowKey: row.workflow_key,
-    workflowCursorId: null,
     workflowCursorRecordId: row.workflow_cursor_record_id,
     projectId: row.project_record_id,
     projectName: row.project_name,
