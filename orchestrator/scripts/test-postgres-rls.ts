@@ -78,7 +78,6 @@ function release(): void {
       postgres(`
         DROP DATABASE IF EXISTS recipient_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_task_id_migration WITH (FORCE);
-        DROP DATABASE IF EXISTS remaining_uuid_keys_migration WITH (FORCE);
         DROP DATABASE IF EXISTS doc_revision_migration WITH (FORCE);
         DROP DATABASE IF EXISTS doc_author_migration WITH (FORCE);
         DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
@@ -189,7 +188,6 @@ try {
     ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};
     CREATE DATABASE recipient_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_task_id_migration OWNER ${RECORD_OWNER_ROLE};
-    CREATE DATABASE remaining_uuid_keys_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hub_project_identity_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_revision_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE doc_author_migration OWNER ${RECORD_OWNER_ROLE};
@@ -205,7 +203,6 @@ try {
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
-  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'remaining_uuid_keys_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hub_project_identity_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_revision_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'doc_author_migration')
@@ -227,7 +224,6 @@ try {
   const authUrl = `postgres://${RECORD_AUTH_ROLE}:auth-password@127.0.0.1:${port}/postgres`
   const recipientMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/recipient_migration`
   const hostedTaskIdMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_task_id_migration`
-  const remainingUuidKeysMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/remaining_uuid_keys_migration`
   const hubProjectIdentityMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hub_project_identity_migration`
   const docRevisionMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/doc_revision_migration`
   const docRevisionMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/doc_revision_migration`
@@ -290,11 +286,8 @@ try {
   if (recipientMigration !== 0) throw new EarlyExit(recipientMigration)
 
   const hostedTaskIdMigration = await run(
-    ['bun', 'test', '--timeout', '120000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
-    {
-      BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl,
-      TEST_REMAINING_UUID_KEYS_MIGRATION_URL: remainingUuidKeysMigrationUrl,
-    },
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-hosted-task-ids.test.ts'],
+    { BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL: hostedTaskIdMigrationUrl },
   )
   if (hostedTaskIdMigration !== 0) throw new EarlyExit(hostedTaskIdMigration)
 
