@@ -32,6 +32,8 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
   const actualSpawnSync = Bun.spawnSync.bind(Bun)
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[], options) => {
     const command = args.join(' ')
+    if (command === 'docker ps --format {{.Label "com.docker.compose.project.working_dir"}}')
+      return result('')
     if (command.startsWith('docker ps -a --format')) return result('')
     if (command.startsWith('docker volume ls --format')) return result('')
     if (command === 'docker network ls --format {{.Name}}') return result('')
