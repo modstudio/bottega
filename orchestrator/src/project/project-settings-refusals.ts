@@ -64,7 +64,7 @@ const PROJECT_CHECK_NAMES = new Set([
   'commentHistory',
 ])
 
-export function commentHistoryProblems(value: unknown, mode: SettingsObjectMode): string[] {
+function commentHistoryProblems(value: unknown, mode: SettingsObjectMode): string[] {
   if (value === undefined || typeof value === 'boolean') return []
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return ['checks.commentHistory must be a boolean or an object with phrases']
