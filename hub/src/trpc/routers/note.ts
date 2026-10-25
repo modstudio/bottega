@@ -2,12 +2,11 @@ import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { listNotes, promoteNote } from '../../note.ts'
 import { PROMOTED_TASK_TITLE_REFUSAL } from '../../note-promotion-body.ts'
-import { machineAttribution } from '../../task-machine-attribution.ts'
 import type { Context } from '../context.ts'
 
 const t = initTRPC.context<Context>().create()
 
-export function createNoteRouter(deps = { listNotes, promoteNote, machineAttribution }) {
+export function createNoteRouter(deps = { listNotes, promoteNote }) {
   return t.router({
     list: t.procedure
       .input(
@@ -28,7 +27,6 @@ export function createNoteRouter(deps = { listNotes, promoteNote, machineAttribu
         try {
           return await deps.promoteNote(input.id, {
             title: input.title,
-            attribution: await deps.machineAttribution(),
           })
         } catch (cause) {
           throw new TRPCError({

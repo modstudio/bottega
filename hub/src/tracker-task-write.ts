@@ -7,7 +7,6 @@ import {
   updateArrayMcpTaskStatus,
 } from '../../shared/trackers.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
-import type { HostedEditDelivery } from './offline-task-edits.ts'
 import { classifyTaskBranches } from './orch.ts'
 import { projects, type RegisteredProject } from './projects.ts'
 import {
@@ -39,8 +38,6 @@ type TrackerWriteOptions = {
   confirm: string
   /** The destination the write belongs to, so a hosted local row lands where its caller read it. */
   hosted?: HostedTaskWriteOptions
-  /** Receives the hosted drain result; a throw here propagates to the caller. */
-  onHostedDelivery?: (delivery: HostedEditDelivery) => void
 }
 
 function registeredProjectFor(
