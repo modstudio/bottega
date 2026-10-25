@@ -46,7 +46,7 @@ describe('session liveness decision', () => {
     expect(evidence.ownerProcess).toBe('live')
   })
 
-  test('all unshared processes gone is dead only after the live window', () => {
+  test('all unshared processes gone names the recently-seen window and dies at its opening instant', () => {
     const first = { pid: 42, startTime: 'first-start' }
     const second = { pid: 43, startTime: 'second-start' }
     const probes = [
@@ -55,7 +55,27 @@ describe('session liveness decision', () => {
     ]
 
     expect(decide([first, second, actorEntry], probes).ownerProcess).toBe('dead')
-    expect(decide([first, second, actorEntry], probes, 900).ownerProcess).toBe('unknown')
+    const recent = decide([first, second, actorEntry], probes, 900)
+    expect(recent).toMatchObject({
+      ownerProcess: 'unknown',
+      unknownCause: { kind: 'recently-seen', opensAt: 1_101 },
+    })
+    expect(
+      sessionLivenessDecision({
+        ...facts,
+        now: 1_100,
+        ownerSeen: { ancestorChain: JSON.stringify([first, second, actorEntry]), lastSeenAt: 900 },
+        probes,
+      }).ownerProcess,
+    ).toBe('unknown')
+    expect(
+      sessionLivenessDecision({
+        ...facts,
+        now: 1_101,
+        ownerSeen: { ancestorChain: JSON.stringify([first, second, actorEntry]), lastSeenAt: 900 },
+        probes,
+      }).ownerProcess,
+    ).toBe('dead')
   })
 
   test('pid reuse on every unshared process is dead after the live window', () => {

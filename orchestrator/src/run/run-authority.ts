@@ -151,11 +151,18 @@ function refuseRunMutation(authority: RootAuthority, action: RunMutationAction |
       `run ${authority.runId} is owned by session ${authority.owner}; ${callerIdentityRefusal(callerIdentity(), action)}`,
     )
   }
+  const cutOff =
+    authority.ownerProcess === 'unknown' &&
+    authority.ownerProcesses.length > 0 &&
+    authority.ownerProcesses.every(
+      ({ alive, startTime, observedStartTime }) =>
+        !alive || (observedStartTime !== null && observedStartTime !== startTime),
+    )
   throw new Error(
     `run ${authority.runId} is owned by session ${authority.owner}; ` +
       `current session ${authority.actor} cannot ${action} it (owner active within the window; ` +
       `owner process ${authority.ownerProcess}, ${formatSessionLivenessEvidence({ candidates: authority.ownerProcesses, ownerLastSeenAt: authority.ownerLastSeenAt })}); ` +
-      `run ${PLATFORM_SLUG} session adopt ${authority.owner} --reason "<why>"`,
+      `run ${PLATFORM_SLUG} session adopt ${authority.owner} --reason "<why>"${cutOff ? ' --cut-off' : ''}`,
   )
 }
 

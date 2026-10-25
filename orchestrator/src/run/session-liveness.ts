@@ -13,11 +13,19 @@ export type SessionProcessEvidence = ProcessIdentity & {
   observedStartTime: string | null
 }
 
-export type SessionLivenessEvidence = {
-  ownerProcess: OwnerProcess
+type SessionLivenessFacts = {
   candidates: SessionProcessEvidence[]
   ownerLastSeenAt: number | null
 }
+
+export type SessionLivenessEvidence = SessionLivenessFacts &
+  (
+    | {
+        ownerProcess: 'unknown'
+        unknownCause: { kind: 'recently-seen'; opensAt: number } | { kind: 'unestablished' }
+      }
+    | { ownerProcess: Exclude<OwnerProcess, 'unknown'>; unknownCause: null }
+  )
 
 export function formatSessionLivenessEvidence(
   evidence: Pick<SessionLivenessEvidence, 'candidates' | 'ownerLastSeenAt'>,
@@ -70,7 +78,13 @@ export function sessionLivenessDecision(input: {
   probes: SessionProcessEvidence[]
 }): SessionLivenessEvidence {
   const ownerLastSeenAt = input.ownerSeen?.lastSeenAt ?? null
-  if (!input.ownerSeen) return { ownerProcess: 'unknown', candidates: [], ownerLastSeenAt }
+  if (!input.ownerSeen)
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: { kind: 'unestablished' },
+      candidates: [],
+      ownerLastSeenAt,
+    }
   const stored = storedSessionCandidates({
     ownerSessionId: input.ownerSessionId,
     ownerAncestorChain: input.ownerSeen.ancestorChain,
@@ -78,7 +92,12 @@ export function sessionLivenessDecision(input: {
     actorAncestorChain: input.actorAncestorChain,
   })
   if (stored.malformed || !stored.candidates.length)
-    return { ownerProcess: 'unknown', candidates: [], ownerLastSeenAt }
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: { kind: 'unestablished' },
+      candidates: [],
+      ownerLastSeenAt,
+    }
   const candidates = stored.candidates.flatMap((identity) => {
     const probe = input.probes.find(
       ({ pid, startTime }) => pid === identity.pid && startTime === identity.startTime,
@@ -86,20 +105,34 @@ export function sessionLivenessDecision(input: {
     return probe ? [probe] : []
   })
   if (candidates.length !== stored.candidates.length)
-    return { ownerProcess: 'unknown', candidates, ownerLastSeenAt }
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: { kind: 'unestablished' },
+      candidates,
+      ownerLastSeenAt,
+    }
   if (
     candidates.some(
       ({ alive, startTime, observedStartTime }) => alive && observedStartTime === startTime,
     )
   )
-    return { ownerProcess: 'live', candidates, ownerLastSeenAt }
+    return { ownerProcess: 'live', unknownCause: null, candidates, ownerLastSeenAt }
   if (candidates.some(({ alive, observedStartTime }) => alive && observedStartTime === null))
-    return { ownerProcess: 'unknown', candidates, ownerLastSeenAt }
-  const ownerRecentlySeen =
-    ownerLastSeenAt !== null && ownerLastSeenAt >= input.now - input.liveWindowMs
-  return {
-    ownerProcess: ownerRecentlySeen ? 'unknown' : 'dead',
-    candidates,
-    ownerLastSeenAt,
-  }
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: { kind: 'unestablished' },
+      candidates,
+      ownerLastSeenAt,
+    }
+  if (ownerLastSeenAt !== null && ownerLastSeenAt >= input.now - input.liveWindowMs)
+    return {
+      ownerProcess: 'unknown',
+      unknownCause: {
+        kind: 'recently-seen',
+        opensAt: ownerLastSeenAt + input.liveWindowMs + 1,
+      },
+      candidates,
+      ownerLastSeenAt,
+    }
+  return { ownerProcess: 'dead', unknownCause: null, candidates, ownerLastSeenAt }
 }
