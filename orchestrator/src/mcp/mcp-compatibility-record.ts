@@ -5,7 +5,12 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import { decideMcpCompatibility, type McpCompatibilityVerdict } from './mcp-compatibility.ts'
-import { bottegaMcpBinary, parseMcpProbe, readMcpConfig, resolveMcpServerLaunch } from './mcp-probe.ts'
+import {
+  bottegaMcpBinary,
+  parseMcpProbe,
+  readMcpConfig,
+  resolveMcpServerLaunch,
+} from './mcp-probe.ts'
 
 export type McpListingObservation = {
   runId: string
