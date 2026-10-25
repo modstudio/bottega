@@ -9,6 +9,7 @@ import { sweepRuns } from '../cleanup/cleanup-sweep.ts'
 import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { confirmRunProcessTermination, planRecordedRunTermination } from '../run/run-process.ts'
+import { readHubTasks } from '../run/run-task-linking.ts'
 import { abandonRun, stopRun } from '../run/run-stop.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
@@ -74,7 +75,7 @@ export function register(program: Command): void {
           force: flags.has('force'),
           presentation,
         },
-        { observeGrokTrustHeadings, grokTrustPathFromHeading },
+        { observeGrokTrustHeadings, grokTrustPathFromHeading, hubTaskReader: readHubTasks },
       )
     })
 

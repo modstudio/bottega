@@ -94,6 +94,11 @@ describe('run link derivation', () => {
         project('component', '/work/alpha/component'),
       ])[0],
     ).toMatchObject({ project_record_id: 'component-id', project_source: 'cwd' })
+    expect(
+      deriveRunLinks([facts({ cwd: '/work/alphax' })], new Map(), [
+        project('alpha', '/work/alpha'),
+      ])[0],
+    ).toEqual({ record_id: 'run-1' })
   })
 
   test('matches an encoded scratchpad project only on a dash boundary', () => {
@@ -103,6 +108,11 @@ describe('run link derivation', () => {
         project('alpha', '/Users/sam/Projects/alpha'),
       ])[0],
     ).toMatchObject({ project_record_id: 'alpha-id', project_source: 'scratchpad-cwd' })
+    expect(
+      deriveRunLinks([facts({ cwd: '/tmp/session/-Users-sam-Projects-alx/work' })], new Map(), [
+        project('prefix', '/Users/sam/Projects/al'),
+      ])[0],
+    ).toEqual({ record_id: 'run-1' })
   })
 
   test('never overwrites links and never assigns a project to a probe', () => {

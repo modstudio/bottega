@@ -165,7 +165,13 @@ export function deriveRunLinks(
   })
 }
 
-async function readHubTasks(project: string): Promise<HubTaskReference[]> {
+function taskReadRefusal(project: string, detail: string): Error {
+  return new Error(
+    `could not read task data for project ${project}: ${detail}; retry: ${PLATFORM_SLUG} task list --project ${project} --json`,
+  )
+}
+
+export async function readHubTasks(project: string): Promise<HubTaskReference[]> {
   const child = Bun.spawn(
     [...bottegaEntryArgv(PLATFORM_SLUG), 'task', 'list', '--project', project, '--json'],
     { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
@@ -175,32 +181,21 @@ async function readHubTasks(project: string): Promise<HubTaskReference[]> {
     new Response(child.stderr).text(),
     child.exited,
   ])
-  const remedy = `${PLATFORM_SLUG} task list --project ${project} --json`
-  if (code !== 0) {
-    throw new Error(
-      `could not read task data for project ${project}: ${stderr.trim() || `exit status ${code}`}; retry: ${remedy}`,
-    )
-  }
-  try {
-    const rows: unknown = JSON.parse(stdout)
-    if (!Array.isArray(rows)) throw new Error('response was not an array')
-    return rows.map((row) => {
-      if (
-        !row ||
-        typeof row !== 'object' ||
-        typeof (row as HubTaskReference).key !== 'string' ||
-        typeof (row as HubTaskReference).record_id !== 'string' ||
-        typeof (row as HubTaskReference).project !== 'string'
-      ) {
-        throw new Error('response contained an invalid task row')
-      }
-      return row as HubTaskReference
-    })
-  } catch (error) {
-    throw new Error(
-      `could not read task data for project ${project}: ${error instanceof Error ? error.message : String(error)}; retry: ${remedy}`,
-    )
-  }
+  if (code !== 0) throw new Error(stderr.trim() || `exit status ${code}`)
+  const rows: unknown = JSON.parse(stdout)
+  if (!Array.isArray(rows)) throw new Error('response was not an array')
+  return rows.map((row) => {
+    if (
+      !row ||
+      typeof row !== 'object' ||
+      typeof (row as HubTaskReference).key !== 'string' ||
+      typeof (row as HubTaskReference).record_id !== 'string' ||
+      typeof (row as HubTaskReference).project !== 'string'
+    ) {
+      throw new Error('response contained an invalid task row')
+    }
+    return row as HubTaskReference
+  })
 }
 
 async function hubTaskMap(
@@ -213,10 +208,7 @@ async function hubTaskMap(
     try {
       rows = await reader(project.name)
     } catch (error) {
-      if (error instanceof Error && error.message.includes(`project ${project.name}`)) throw error
-      throw new Error(
-        `could not read task data for project ${project.name}: ${error instanceof Error ? error.message : String(error)}; retry: ${PLATFORM_SLUG} task list --project ${project.name} --json`,
-      )
+      throw taskReadRefusal(project.name, error instanceof Error ? error.message : String(error))
     }
     for (const task of rows) taskMap.set(task.key, task)
   }
@@ -314,9 +306,10 @@ export function formatRunTaskLinkReport(report: RunTaskLinkReport): string[] {
 
 export async function sweepRunTaskLinks(
   dryRun: boolean,
+  hubReader: HubTaskReader,
 ): Promise<{ kind: 'log' | 'error'; line: string }> {
   try {
-    const linked = await linkRunTasks({ dryRun })
+    const linked = await linkRunTasks({ dryRun }, { hubReader })
     const taskLinks = Object.values(linked.task_links_by_source).reduce(
       (sum, count) => sum + count,
       0,

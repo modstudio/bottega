@@ -51,6 +51,7 @@ test('an owned terminal sweep candidate reaches close-out by UUID', async () => 
       {
         observeGrokTrustHeadings: () => ({ succeeded: true, headings: [] }),
         grokTrustPathFromHeading: () => null,
+        hubTaskReader: async () => [],
       },
     )
     expect(db().query('SELECT close_out_outcome FROM run WHERE record_id=?').get(run)).toEqual({

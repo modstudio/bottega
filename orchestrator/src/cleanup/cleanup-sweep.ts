@@ -38,7 +38,7 @@ import {
   runLeaseIds,
   runLeaseState,
 } from '../run/run-lease.ts'
-import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
+import { type HubTaskReader, sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import {
@@ -122,6 +122,7 @@ export type SweepOptions = {
 export type SweepHelpers = {
   observeGrokTrustHeadings: () => GrokTrustObservation
   grokTrustPathFromHeading: (heading: string) => string | null
+  hubTaskReader: HubTaskReader
 }
 
 const KEPT_ROW_LIMIT = 10
@@ -336,7 +337,7 @@ function sweepCandidateInProject(row: SweepCandidate, selectedProject: Project |
   )
 }
 
-async function printSweepKept(
+function printSweepKept(
   released: number,
   absent: number,
   forgotten: number,
@@ -344,7 +345,7 @@ async function printSweepKept(
   dry: boolean,
   force: boolean,
   presentation: CleanupPresentation,
-): Promise<void> {
+): void {
   presentation.log(
     `\n${dry ? 'would reclaim' : 'reclaimed'} ${released}, already absent ${absent}, forgotten ${forgotten}, kept ${kept.length}`,
   )
@@ -368,8 +369,6 @@ async function printSweepKept(
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
-  const runLinks = await sweepRunTaskLinks(dry)
-  presentation[runLinks.kind](runLinks.line)
 }
 
 function reportClosedSweepRow(
@@ -1013,7 +1012,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
   cleanupFailed ||= await sweepOrphanProcesses(sweepProjects, dry, options.presentation)
 
-  await printSweepKept(
+  printSweepKept(
     closedCounts.released,
     closedCounts.absent,
     closedCounts.forgotten,
@@ -1022,5 +1021,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  if (cleanupFailed) options.presentation.setExitCode(1)
+  const runLinks = await sweepRunTaskLinks(dry, helpers.hubTaskReader)
+  options.presentation[runLinks.kind](runLinks.line)
+  if (cleanupFailed || runLinks.kind === 'error') options.presentation.setExitCode(1)
 }
