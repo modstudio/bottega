@@ -65,7 +65,10 @@ describe('pull-request admission decision', () => {
         change,
         {
           ...ceilingGap,
-          missingLenses: [...incomplete.missingLenses, { lens: 'craft', recordedOnBranch: false, newlyTouchedPaths: [] }],
+          missingLenses: [
+            ...incomplete.missingLenses,
+            { lens: 'craft', recordedOnBranch: false, newlyTouchedPaths: [] },
+          ],
         },
         [ceiling],
       ).overrideId,
