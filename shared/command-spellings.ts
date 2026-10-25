@@ -314,6 +314,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'run diff',
   'run discard',
   'run identity-map',
+  'run link-tasks',
   'run list',
   'run peek',
   'run reconcile',

@@ -1,64 +1,39 @@
 // concern: GitHub merge-queue adapter
 /** Reads and mutates GitHub's merge queue without owning merge policy. */
 
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { githubCommand, githubGraphql, githubWorkflowRuns } from './github-actions.ts'
+import { type FailedMergeGroupRun, failedMergeGroupRunFromRuns } from './merge-group-run.ts'
 import type { MergeQueueObservation } from './merge-queue-decision.ts'
 
-function successful(cwd: string, argv: string[], label: string): string {
-  const result = Bun.spawnSync(argv, {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `${label} failed: ${result.stderr.toString().trim() || `exit ${result.exitCode}`}`,
-    )
-  }
-  return result.stdout.toString().trim()
-}
-
 export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueObservation {
-  const output = successful(
+  const value = githubGraphql(
     cwd,
-    [
-      'gh',
-      'api',
-      'graphql',
-      '-f',
-      'query=query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state}}}}',
-      '-f',
-      `id=${nodeId}`,
-    ],
+    'query($id:ID!){node(id:$id){... on PullRequest{state mergeCommit{oid} mergeQueueEntry{state enqueuedAt}}}}',
+    [`id=${nodeId}`],
     'merge-queue lookup',
-  )
-  let value: {
+  ) as {
     data?: {
       node?: {
         state?: unknown
         mergeCommit?: { oid?: unknown } | null
-        mergeQueueEntry?: { state?: unknown } | null
+        mergeQueueEntry?: { state?: unknown; enqueuedAt?: unknown } | null
       } | null
     }
-  }
-  try {
-    value = JSON.parse(output) as typeof value
-  } catch (cause) {
-    throw new Error(
-      `merge-queue lookup returned invalid JSON: ${cause instanceof Error ? cause.message : String(cause)}`,
-    )
   }
   const node = value.data?.node
   const mergeCommit = node?.mergeCommit?.oid
   const entryState = node?.mergeQueueEntry?.state
+  const enqueuedAt = node?.mergeQueueEntry?.enqueuedAt
   if (
     !node ||
     typeof node.state !== 'string' ||
     node.mergeCommit === undefined ||
     (node.mergeCommit !== null && typeof mergeCommit !== 'string') ||
     node.mergeQueueEntry === undefined ||
-    (node.mergeQueueEntry !== null && typeof entryState !== 'string')
+    (node.mergeQueueEntry !== null &&
+      (typeof entryState !== 'string' ||
+        enqueuedAt === undefined ||
+        (enqueuedAt !== null && typeof enqueuedAt !== 'string')))
   ) {
     throw new Error('merge-queue lookup returned an unexpected JSON shape')
   }
@@ -66,13 +41,46 @@ export function githubMergeQueueState(cwd: string, nodeId: string): MergeQueueOb
     pullRequestState: node.state,
     mergeCommit: typeof mergeCommit === 'string' ? mergeCommit : null,
     entryState: typeof entryState === 'string' ? entryState : null,
+    enqueuedAt: typeof enqueuedAt === 'string' ? enqueuedAt : null,
   }
 }
 
 export function enqueuePullRequest(cwd: string, number: number, headCommit: string): void {
-  successful(
+  githubCommand(
     cwd,
-    ['gh', 'pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit],
+    ['pr', 'merge', String(number), '--auto', '--match-head-commit', headCommit],
     'merge-queue enqueue',
+  )
+}
+
+export function requeuePullRequest(cwd: string, nodeId: string, headCommit: string): void {
+  githubGraphql(
+    cwd,
+    'mutation($id:ID!){dequeuePullRequest(input:{id:$id}){clientMutationId}}',
+    [`id=${nodeId}`],
+    'merge-queue dequeue',
+  )
+  githubGraphql(
+    cwd,
+    'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!){enqueuePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid}){clientMutationId}}',
+    [`pullRequestId=${nodeId}`, `expectedHeadOid=${headCommit}`],
+    'merge-queue re-enqueue',
+  )
+}
+
+export function githubFailedMergeGroupRun(
+  cwd: string,
+  repository: string,
+  baseBranch: string,
+  pullRequestNumber: number,
+  enqueuedAt: string,
+): FailedMergeGroupRun | null {
+  return failedMergeGroupRunFromRuns(
+    githubWorkflowRuns(cwd, repository, {
+      event: 'merge_group',
+      created: `>=${enqueuedAt}`,
+    }),
+    baseBranch,
+    pullRequestNumber,
   )
 }

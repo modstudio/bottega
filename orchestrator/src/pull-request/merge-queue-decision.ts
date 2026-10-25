@@ -7,6 +7,7 @@ export type MergeQueueObservation = {
   pullRequestState: string
   mergeCommit: string | null
   entryState: string | null
+  enqueuedAt: string | null
 }
 
 export type MergeQueueState =
@@ -20,6 +21,7 @@ export type MergeQueueState =
 type MergeQueueAction =
   | { action: 'complete'; mergeCommit: string }
   | { action: 'enqueue' }
+  | { action: 'requeue' }
   | { action: 'wait'; delay: number }
   | { action: 'refuse'; refusal: string; remedy: string }
 
@@ -27,6 +29,7 @@ export type MergeQueueWaitState = {
   enqueueSubmitted: boolean
   activeEntryObserved: boolean
   dequeueObservedAt: number | null
+  requeuePendingSince: number | null
 }
 
 export type MergeQueueStep = {
@@ -37,7 +40,72 @@ export type MergeQueueStep = {
 const ACTIVE_ENTRY_STATES = new Set(['AWAITING_CHECKS', 'LOCKED', 'MERGEABLE', 'QUEUED'])
 export const MERGE_QUEUE_WAIT_MS = 30 * 60 * 1000
 export const MERGE_QUEUE_DEQUEUE_CONFIRM_MS = 60 * 1000
+export const MERGE_QUEUE_REQUEUE_CONFIRM_MS = 60 * 1000
 const MERGE_QUEUE_POLL_MS = 10 * 1000
+
+function failedMergeQueueStep(
+  number: number,
+  state: MergeQueueWaitState,
+  now: number,
+  deadline: number,
+): MergeQueueStep {
+  if (!state.enqueueSubmitted && !state.activeEntryObserved) {
+    const requeued = { ...state, enqueueSubmitted: true, requeuePendingSince: now }
+    return { state: requeued, action: { action: 'requeue' } }
+  }
+  if (
+    state.requeuePendingSince !== null &&
+    now < deadline &&
+    now - state.requeuePendingSince < MERGE_QUEUE_REQUEUE_CONFIRM_MS
+  ) {
+    return {
+      state,
+      action: {
+        action: 'wait',
+        delay: Math.min(
+          MERGE_QUEUE_POLL_MS,
+          deadline - now,
+          MERGE_QUEUE_REQUEUE_CONFIRM_MS - (now - state.requeuePendingSince),
+        ),
+      },
+    }
+  }
+  const retry = `${PLATFORM_SLUG} pr merge ${number}`
+  return {
+    state,
+    action: {
+      action: 'refuse',
+      refusal: `pull request #${number} failed in the merge queue`,
+      remedy: `push a fix if the check failure is real, or re-run ${retry} to requeue the unchanged head if it flaked`,
+    },
+  }
+}
+
+function observedMergeQueueState(
+  previous: MergeQueueWaitState,
+  queue: MergeQueueState,
+  now: number,
+): MergeQueueWaitState {
+  if (queue.state === 'queued') {
+    return {
+      ...previous,
+      activeEntryObserved: true,
+      dequeueObservedAt: null,
+      requeuePendingSince: null,
+    }
+  }
+  if (queue.state === 'dequeued' && previous.requeuePendingSince !== null) {
+    return { ...previous, requeuePendingSince: null }
+  }
+  if (
+    queue.state === 'dequeued' &&
+    previous.activeEntryObserved &&
+    previous.dequeueObservedAt === null
+  ) {
+    return { ...previous, dequeueObservedAt: now }
+  }
+  return previous
+}
 
 export function interpretMergeQueue(observation: MergeQueueObservation): MergeQueueState {
   const pullRequestState = observation.pullRequestState.toUpperCase()
@@ -64,16 +132,7 @@ export function stepMergeQueueWait(
   now: number,
   deadline: number,
 ): MergeQueueStep {
-  let state = previous
-  if (queue.state === 'queued') {
-    state = { ...state, activeEntryObserved: true, dequeueObservedAt: null }
-  } else if (
-    queue.state === 'dequeued' &&
-    state.activeEntryObserved &&
-    state.dequeueObservedAt === null
-  ) {
-    state = { ...state, dequeueObservedAt: now }
-  }
+  let state = observedMergeQueueState(previous, queue, now)
 
   const retry = `${PLATFORM_SLUG} pr merge ${number}`
   if (queue.state === 'merged') {
@@ -90,14 +149,7 @@ export function stepMergeQueueWait(
     }
   }
   if (queue.state === 'failed') {
-    return {
-      state,
-      action: {
-        action: 'refuse',
-        refusal: `pull request #${number} failed in the merge queue`,
-        remedy: `fix the merge-group check or conflict, then ${retry}`,
-      },
-    }
+    return failedMergeQueueStep(number, state, now, deadline)
   }
   if (queue.state === 'unknown') {
     return {

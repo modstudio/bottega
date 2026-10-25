@@ -394,6 +394,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/migrations.ts',
       './health.ts',
       '../project/projects.ts',
+      '../run/run-task-linking.ts',
     ],
     'Keep doctor independent of transports, routing, run control, the CLI, and reviews by value.',
   ),

@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
+  MERGE_QUEUE_REQUEUE_CONFIRM_MS,
   type MergeQueueWaitState,
   mergeQueueEnqueueFailureRemedy,
   stepMergeQueueWait,
@@ -12,6 +13,7 @@ const initialWaitState: MergeQueueWaitState = {
   enqueueSubmitted: false,
   activeEntryObserved: false,
   dequeueObservedAt: null,
+  requeuePendingSince: null,
 }
 
 describe('merge-queue state', () => {
@@ -21,10 +23,16 @@ describe('merge-queue state', () => {
         pullRequestState: 'MERGED',
         mergeCommit: 'merge-oid',
         entryState: null,
+        enqueuedAt: null,
       }),
     ).toEqual({ state: 'merged', mergeCommit: 'merge-oid' })
     expect(
-      interpretMergeQueue({ pullRequestState: 'MERGED', mergeCommit: null, entryState: null }),
+      interpretMergeQueue({
+        pullRequestState: 'MERGED',
+        mergeCommit: null,
+        entryState: null,
+        enqueuedAt: null,
+      }),
     ).toEqual({
       state: 'unknown',
       detail: 'pull request state MERGED, queue entry none, merge commit none',
@@ -35,7 +43,12 @@ describe('merge-queue state', () => {
     'entry state %s remains queued',
     (entryState) => {
       expect(
-        interpretMergeQueue({ pullRequestState: 'OPEN', mergeCommit: null, entryState }),
+        interpretMergeQueue({
+          pullRequestState: 'OPEN',
+          mergeCommit: null,
+          entryState,
+          enqueuedAt: '2026-10-24T10:00:00Z',
+        }),
       ).toEqual({ state: 'queued' })
     },
   )
@@ -46,16 +59,27 @@ describe('merge-queue state', () => {
         pullRequestState: 'OPEN',
         mergeCommit: null,
         entryState: 'UNMERGEABLE',
+        enqueuedAt: '2026-10-24T10:00:00Z',
       }),
     ).toEqual({ state: 'failed' })
     expect(
-      interpretMergeQueue({ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }),
+      interpretMergeQueue({
+        pullRequestState: 'OPEN',
+        mergeCommit: null,
+        entryState: null,
+        enqueuedAt: null,
+      }),
     ).toEqual({ state: 'dequeued' })
   })
 
   test('a closed pull request is distinct from an open pull request with no queue entry', () => {
     expect(
-      interpretMergeQueue({ pullRequestState: 'CLOSED', mergeCommit: null, entryState: null }),
+      interpretMergeQueue({
+        pullRequestState: 'CLOSED',
+        mergeCommit: null,
+        entryState: null,
+        enqueuedAt: null,
+      }),
     ).toEqual({ state: 'closed' })
   })
 })
@@ -137,6 +161,7 @@ describe('merge-queue action', () => {
 
   test('a renewed active entry clears dequeue confirmation', () => {
     const gapState = {
+      ...initialWaitState,
       enqueueSubmitted: true,
       activeEntryObserved: true,
       dequeueObservedAt: 1,
@@ -147,15 +172,53 @@ describe('merge-queue action', () => {
     })
   })
 
-  test('failed and unknown states never complete', () => {
+  test('a failed first observation requeues once', () => {
     expect(stepMergeQueueWait(42, initialWaitState, { state: 'failed' }, 0, 20_000)).toEqual({
-      state: initialWaitState,
+      state: { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 0 },
+      action: { action: 'requeue' },
+    })
+  })
+
+  test('a failed entry after a requeue refuses with both remedies', () => {
+    const state = { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 0 }
+    expect(
+      stepMergeQueueWait(
+        42,
+        state,
+        { state: 'failed' },
+        MERGE_QUEUE_REQUEUE_CONFIRM_MS,
+        MERGE_QUEUE_REQUEUE_CONFIRM_MS * 2,
+      ),
+    ).toEqual({
+      state,
       action: {
         action: 'refuse',
         refusal: expect.stringContaining('failed in the merge queue'),
-        remedy: expect.any(String),
+        remedy: expect.stringMatching(/push a fix.*re-run .* pr merge 42.*flaked/),
       },
     })
+  })
+
+  test('a stale failed reading after requeue waits inside the confirmation window', () => {
+    const state = { ...initialWaitState, enqueueSubmitted: true, requeuePendingSince: 1 }
+    expect(
+      stepMergeQueueWait(42, state, { state: 'failed' }, 2, MERGE_QUEUE_REQUEUE_CONFIRM_MS * 2),
+    ).toEqual({ state, action: { action: 'wait', delay: 10_000 } })
+  })
+
+  test('a failed entry after an observed active entry refuses without requeuing', () => {
+    const state = { ...initialWaitState, activeEntryObserved: true }
+    expect(stepMergeQueueWait(42, state, { state: 'failed' }, 0, 20_000)).toEqual({
+      state,
+      action: {
+        action: 'refuse',
+        refusal: expect.stringContaining('failed in the merge queue'),
+        remedy: expect.stringContaining(`re-run ${PLATFORM_SLUG} pr merge 42`),
+      },
+    })
+  })
+
+  test('unknown states never complete', () => {
     expect(
       stepMergeQueueWait(
         42,

@@ -431,6 +431,7 @@ export const CLI_COMMANDS = new Set([
   'gate',
   'jobs',
   'lens',
+  'link-tasks',
   'mcp',
   'metric',
   'migrate',

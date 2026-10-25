@@ -38,6 +38,7 @@ import {
   runLeaseIds,
   runLeaseState,
 } from '../run/run-lease.ts'
+import { type HubTaskReader, sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import {
@@ -121,6 +122,7 @@ export type SweepOptions = {
 export type SweepHelpers = {
   observeGrokTrustHeadings: () => GrokTrustObservation
   grokTrustPathFromHeading: (heading: string) => string | null
+  hubTaskReader: HubTaskReader
 }
 
 const KEPT_ROW_LIMIT = 10
@@ -367,6 +369,18 @@ function printSweepKept(
     if (force) parts.push('--force')
     presentation.log(`  ${parts.join(' ')} lists every kept row`)
   }
+}
+
+/** Links run tasks after the sweep's own steps, and fails the sweep when either part failed. */
+async function finishSweep(
+  dry: boolean,
+  cleanupFailed: boolean,
+  hubTaskReader: HubTaskReader,
+  presentation: CleanupPresentation,
+): Promise<void> {
+  const runLinks = await sweepRunTaskLinks(dry, hubTaskReader)
+  presentation[runLinks.kind](runLinks.line)
+  if (cleanupFailed || runLinks.kind === 'error') presentation.setExitCode(1)
 }
 
 function reportClosedSweepRow(
@@ -1019,5 +1033,5 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  if (cleanupFailed) options.presentation.setExitCode(1)
+  await finishSweep(dry, cleanupFailed, helpers.hubTaskReader, options.presentation)
 }
