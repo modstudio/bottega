@@ -64,7 +64,7 @@ describe('review round identity', () => {
 })
 
 describe('review round ordinals', () => {
-  test('assigns first-seen ordinals and keeps the same identity on one round', () => {
+  test('assigns lineage-wide first-seen ordinals and keeps the same identity on one round', () => {
     expect(
       reviewRoundOrdinals([
         { task: 'DEV-1', identity: 'a' },
@@ -74,7 +74,7 @@ describe('review round ordinals', () => {
         { task: 'DEV-1', identity: 'b' },
         { task: 'DEV-2', identity: 'y' },
       ]),
-    ).toEqual([1, 1, 1, null, 2, 2])
+    ).toEqual([1, 1, 2, null, 3, 4])
   })
 })
 

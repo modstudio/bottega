@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
 
-test('review round backfill numbers one task across branch names', () => {
+test('review round migration adds columns without independently classifying historical rows', () => {
   const database = new Database(':memory:')
   applyMigrationsBefore(database, '0164_review_round_selection_reason')
   const project = newRecordId()
@@ -64,14 +64,9 @@ test('review round backfill numbers one task across branch names', () => {
 
   applyMigrations(database)
 
-  expect(database.query('SELECT number,round FROM review ORDER BY number').all()).toEqual([
-    { number: 1, round: 1 },
-    { number: 2, round: 2 },
-    { number: 3, round: 1 },
-    { number: 4, round: 1 },
-    { number: 5, round: null },
-    { number: 6, round: null },
-  ])
+  expect(database.query('SELECT number,round FROM review ORDER BY number').all()).toEqual(
+    Array.from({ length: 6 }, (_, index) => ({ number: index + 1, round: null })),
+  )
 
   database.query('UPDATE review SET round=42 WHERE number=2').run()
   applyMigrations(database)

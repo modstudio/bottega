@@ -34,19 +34,18 @@ export function reviewRoundIdentity(row: ReviewRoundIdentityInput): {
   }
 }
 
-/** Assign first-seen ordinals per task; unclassifiable rows stay null. */
+/** Assign first-seen ordinals across the eligible lineage; unclassifiable rows stay null. */
 export function reviewRoundOrdinals(
   rows: readonly { task: string | null; identity: string | null }[],
 ): (number | null)[] {
   const ordinals = new Map<string, number>()
-  const counts = new Map<string, number>()
+  let count = 0
   return rows.map(({ task, identity }) => {
     const normalizedTask = normalized(task)
     if (!normalizedTask || !identity) return null
     const existing = ordinals.get(identity)
     if (existing !== undefined) return existing
-    const round = (counts.get(normalizedTask) ?? 0) + 1
-    counts.set(normalizedTask, round)
+    const round = ++count
     ordinals.set(identity, round)
     return round
   })
