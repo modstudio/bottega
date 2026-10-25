@@ -34,6 +34,7 @@ import {
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { setPromotedTaskTitle } from './note-promoted-title.ts'
+import { notePromotionBody } from './note-promotion-body.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -739,13 +740,14 @@ export async function promoteNote(
     return getNote(note.record_id)
   }
   const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
-  const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, hostedOptions)
+  const promoteInput = { task: options.existingTaskKey, title: creating ? title : undefined }
+  const hosted = await hostedPromoteNote(note.record_id, promoteInput, hostedOptions)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
     if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
-  if (creating && hosted.task)
+  if (creating && hosted.task && hosted.task.title !== title)
     await setPromotedTaskTitle(hosted.task, title, {
       hosted: hostedOptions,
       attribution: options.attribution ?? UNATTRIBUTED,
@@ -754,17 +756,11 @@ export async function promoteNote(
 }
 
 export function promotionTaskInput(note: NoteRow, title: string) {
-  return { title, body: promotionBody(note) }
+  return { title, body: notePromotionBody(note.text, note.sightings, note.anchors) }
 }
 
 function promotionBody(note: NoteRow): string {
-  const evidence = note.anchors
-    .map(
-      (anchor, index) =>
-        `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
-    )
-    .join('\n')
-  return `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
+  return notePromotionBody(note.text, note.sightings, note.anchors)
 }
 
 export async function dropNote(

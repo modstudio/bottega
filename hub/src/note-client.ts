@@ -79,11 +79,15 @@ export const hostedCreateNote = async (body: unknown, options?: Options) => {
   await assertNoteCapabilities(options)
   return request<HostedNote>('/v1/notes', 'POST', body, options)
 }
-export const hostedPromoteNote = (recordId: string, task: string | undefined, options?: Options) =>
+export const hostedPromoteNote = (
+  recordId: string,
+  input: { task?: string; title?: string },
+  options?: Options,
+) =>
   request<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
     `/v1/notes/${recordId}/promote`,
     'POST',
-    task ? { task } : {},
+    input,
     options,
   )
 export const hostedReapNotes = (body: unknown, options?: Options) =>

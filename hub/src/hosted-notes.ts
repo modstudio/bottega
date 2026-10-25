@@ -14,6 +14,7 @@ import {
 import { type TaskIdentity, withHostedTenant } from './hosted-tenant.ts'
 import { projectHasRemoteTracker } from './hosted-write-mode.ts'
 import { nextNoteNumber } from './note-number.ts'
+import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
 
 export type HostedNote = {
   id: string
@@ -173,7 +174,7 @@ export async function promoteHostedNote(
   url: SQL,
   identity: TaskIdentity,
   recordId: string,
-  input: { task?: string } = {},
+  input: { task?: string; title?: string } = {},
   createTask = createHostedTaskInTransaction,
 ): Promise<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null } | null> {
   return withHostedTenant(url, identity, async (tx) => {
@@ -201,13 +202,8 @@ export async function promoteHostedNote(
       )[0]
       validateHostedPromotionTaskKey(input.task, note.project, promotionProject)
     }
-    const anchors = JSON.parse(note.anchors) as Array<Record<string, unknown>>
-    const evidence = anchors
-      .map(
-        (a, i) =>
-          `Sighting ${i + 1}: cwd=${a.cwd}; branch=${a.branch ?? '-'}; commit=${a.commit ?? '-'}; run=${a.run_id ?? '-'}; session=${a.session_id ?? '-'}`,
-      )
-      .join('\n')
+    const anchors = JSON.parse(note.anchors) as NotePromotionAnchor[]
+    const body = notePromotionBody(note.text, note.sightings, anchors)
     const selected = await selectPromotionTask(
       input.task,
       async (key) =>
@@ -215,20 +211,23 @@ export async function promoteHostedNote(
           await tx`SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid AND project_id=${noteProjectId}::uuid
           AND key=${key} AND source='local' AND deleted_at IS NULL`,
         )[0] ?? null,
-      () =>
-        createTask(tx, identity, {
+      () => {
+        const title = input.title?.trim()
+        if (input.title !== undefined && !title)
+          throw new Error('a promoted task needs a title stating its point')
+        return createTask(tx, identity, {
           project: note.project,
           projectId: noteProjectId,
-          title: note.text,
-          body: `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`,
-        }),
+          title: title ?? note.text,
+          body,
+        })
+      },
       input.task !== undefined && !projectHasRemoteTracker(promotionProject?.tracker),
       note.project,
     )
     const { task } = selected
     let comment: HostedComment | null = null
     if (input.task !== undefined && task && !projectHasRemoteTracker(promotionProject?.tracker)) {
-      const body = `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
       comment = rows<HostedComment>(
         await tx`INSERT INTO hub_task_comment
           (id,space_id,project_name,project_id,task_key,task_id,body,actor_user_id,created_at,updated_at)
