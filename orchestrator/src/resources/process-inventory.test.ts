@@ -112,15 +112,61 @@ test('separates a ps environment from the command it is printed after', () => {
       '  not a process line',
     ].join('\n'),
     commands,
+    92,
   )
   expect(evidence.get(91)).toBe('present')
   expect(evidence.get(92)).toBe('absent')
   // ps printing no environment for a process the parser did report is absent.
   expect(evidence.get(93)).toBe('absent')
-  // A pid whose command does not precede the text cannot be separated.
-  expect(evidence.get(94)).toBe('unknown')
+  // A pid whose command does not precede the text cannot be separated, and a
+  // probe that cannot be separated proves nothing about the platform.
+  const unseparated = parseProcessEnvironmentEvidence(
+    ['  94 /usr/bin/node BOTTEGA_RUN_PROCESS=1', '  92 /usr/bin/node vite --host PATH=/bin'].join(
+      '\n',
+    ),
+    commands,
+    94,
+  )
+  expect(unseparated.get(94)).toBe('unknown')
+  expect(unseparated.get(92)).toBe('unknown')
   // A marker spelled in the command line itself is not an environment read.
   expect(evidence.get(95)).toBe('absent')
+})
+
+test('a ps that prints no environment at all makes every candidate unknown', () => {
+  const probePid = 4242
+  const commands = new Map([
+    [91, '/usr/bin/node vite --host'],
+    [probePid, 'bun check'],
+  ])
+  // The probe process always carries PATH, so a line with no entry after its
+  // command means this ps cannot read environments: nothing proves absence.
+  const unreadable = parseProcessEnvironmentEvidence(
+    ['  91 /usr/bin/node vite --host BOTTEGA_DEPTH=1', `  ${probePid} bun check`].join('\n'),
+    commands,
+    probePid,
+  )
+  expect(unreadable.get(91)).toBe('unknown')
+  expect(unreadable.get(probePid)).toBe('unknown')
+  // A probe line that does print an environment leaves the candidates as read.
+  const readable = parseProcessEnvironmentEvidence(
+    [
+      '  91 /usr/bin/node vite --host PATH=/bin BOTTEGA_DEPTH=1',
+      `  ${probePid} bun check PATH=/usr/bin:/bin HOME=/Users/operator`,
+    ].join('\n'),
+    commands,
+    probePid,
+  )
+  expect(readable.get(91)).toBe('present')
+  expect(readable.get(probePid)).toBe('absent')
+  // A probe line ps did not print at all cannot be trusted either.
+  expect(
+    parseProcessEnvironmentEvidence(
+      '  91 /usr/bin/node vite --host PATH=/bin',
+      commands,
+      probePid,
+    ).get(91),
+  ).toBe('unknown')
 })
 
 test('an environment that was not read stays unknown on the inventory row', () => {

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { OrphanProcess, ProcessFact } from '../resources/process-inventory.ts'
 import {
+  applyRunProcessGroupEvidence,
   automaticOrphanReclaimDecision,
   orphanProcessReverification,
   orphanSignalPlan,
@@ -86,6 +87,40 @@ test('automatic reclaim requires positive evidence that a run started the proces
     reclaim: false,
     reason: 'process environment could not be read to prove a run started it',
   })
+})
+
+test('a candidate in a recorded run process group is run residue whatever its environment says', () => {
+  const runs = [{ worktree: '/trees/gone', agentPgid: 42 }]
+  expect(applyRunProcessGroupEvidence([orphan({ runMarker: 'absent' })], runs)).toEqual([
+    { ...orphan(), runMarker: 'present' },
+  ])
+  expect(applyRunProcessGroupEvidence([orphan({ runMarker: 'unknown' })], runs)[0]!.runMarker).toBe(
+    'present',
+  )
+  // A recorded group belongs to one tree: the same group elsewhere proves nothing.
+  expect(
+    applyRunProcessGroupEvidence(
+      [orphan({ runMarker: 'absent' })],
+      [{ worktree: '/trees/other', agentPgid: 42 }],
+    )[0]!.runMarker,
+  ).toBe('absent')
+  // Neither does the tree alone, or a candidate leading its own group.
+  expect(
+    applyRunProcessGroupEvidence([orphan({ runMarker: 'absent', pgid: 7 })], runs)[0]!.runMarker,
+  ).toBe('absent')
+  expect(
+    applyRunProcessGroupEvidence(
+      [orphan({ runMarker: 'absent' })],
+      [
+        { worktree: null, agentPgid: 42 },
+        { worktree: '/trees/gone', agentPgid: null },
+      ],
+    )[0]!.runMarker,
+  ).toBe('absent')
+  // Evidence already read is left exactly as read.
+  expect(applyRunProcessGroupEvidence([orphan({ runMarker: 'present' })], runs)).toEqual([
+    orphan({ runMarker: 'present' }),
+  ])
 })
 
 test('an existing reason still wins over missing ownership evidence', () => {

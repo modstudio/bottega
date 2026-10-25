@@ -8,7 +8,7 @@ import {
   processSignalOutcome,
   processStartTime,
 } from '../../../shared/process-identity.ts'
-import { liveRuns } from '../database/db.ts'
+import { db, liveRuns } from '../database/db.ts'
 import { isProjectRepository, projects } from '../project/projects.ts'
 import {
   currentOrphanProcesses,
@@ -90,6 +90,44 @@ export function automaticOrphanReclaimDecision(
       reason: 'process environment could not be read to prove a run started it',
     }
   return { reclaim: true }
+}
+
+/** A run's recorded process group, paired with the tree that run used. */
+export type RecordedRunProcessGroup = { worktree: string | null; agentPgid: number | null }
+
+/**
+ * Process-group evidence: a run records the group of the agent it launched, so
+ * a candidate sharing that group *and* that tree is what the run left behind,
+ * whatever its environment proves — which is how residue is still reclaimed on
+ * a platform whose ps prints no environment at all. A gate or focused-test
+ * child leads its own group, so the run-process marker the broker stamps on it
+ * is what covers that one instead.
+ */
+export function applyRunProcessGroupEvidence(
+  orphans: readonly OrphanProcess[],
+  runs: readonly RecordedRunProcessGroup[],
+): OrphanProcess[] {
+  const groups = new Map<string, Set<number>>()
+  for (const run of runs) {
+    if (run.worktree === null || run.agentPgid === null) continue
+    const tree = resolve(run.worktree)
+    const pgids = groups.get(tree) ?? new Set<number>()
+    pgids.add(run.agentPgid)
+    groups.set(tree, pgids)
+  }
+  return orphans.map((orphan) =>
+    orphan.runMarker !== 'present' && groups.get(resolve(orphan.missingTree))?.has(orphan.pgid)
+      ? { ...orphan, runMarker: 'present' }
+      : orphan,
+  )
+}
+
+/** The process groups runs recorded, read in one query for the whole inventory. */
+function recordedRunProcessGroups(): RecordedRunProcessGroup[] {
+  const rows = db()
+    .query('SELECT worktree, agent_pgid FROM run WHERE agent_pgid IS NOT NULL')
+    .all() as { worktree: string | null; agent_pgid: number | null }[]
+  return rows.map(({ worktree, agent_pgid }) => ({ worktree, agentPgid: agent_pgid }))
 }
 
 function descendants(root: number, facts: readonly ProcessFact[]): Set<number> {
@@ -240,7 +278,8 @@ export function reclaimRemovedTreeProcesses(
   const result: RemovedTreeProcessCleanup = { reclaimed: [], kept: [], errors: [] }
   if (inventory.error) result.errors.push(`process inventory unavailable: ${inventory.error}`)
   const liveWorktrees = liveRunWorktrees()
-  const candidates = inventory.orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
+  const orphans = applyRunProcessGroupEvidence(inventory.orphans, recordedRunProcessGroups())
+  const candidates = orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
   const candidatePids = new Set(candidates.map(({ pid }) => pid))
   for (const orphan of candidates) {
     if (candidatePids.has(orphan.ppid)) continue

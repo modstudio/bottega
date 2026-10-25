@@ -34,6 +34,8 @@ export type OrphanProcess = OrphanCandidate & { runMarker: RunMarkerEvidence }
  */
 const RUN_MARKER_ENV_NAMES = ['BOTTEGA_DEPTH', RUN_PROCESS_MARKER_ENV]
 const RUN_MARKER_ENTRY = new RegExp(`^(?:${RUN_MARKER_ENV_NAMES.join('|')})=.`)
+/** Any environment entry, which is the only proof an environment was printed at all. */
+const ENVIRONMENT_ENTRY = /(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=\S/
 
 const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
 const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
@@ -219,12 +221,20 @@ export function environmentCarriesRunMarker(environment: string): boolean {
  * subtracted first: an argument that merely spells a marker name must not read
  * as ownership. A line whose command cannot be separated is unknown, because
  * nothing was read to prove a run started the process.
+ *
+ * Some platforms print no environment at all, which would otherwise read as
+ * every candidate lacking the marker. `probePid` names a process whose
+ * environment is known to be non-empty — this process, which always carries
+ * PATH — so a probe line with no NAME=value entry after its command means the
+ * platform cannot read environments: every candidate is unknown, not absent.
  */
 export function parseProcessEnvironmentEvidence(
   output: string,
   commands: ReadonlyMap<number, string>,
+  probePid: number,
 ): Map<number, RunMarkerEvidence> {
   const evidence = new Map<number, RunMarkerEvidence>()
+  const environments = new Map<number, string>()
   for (const line of output.split('\n')) {
     const match = /^\s*(\d+)\s+(.*)$/.exec(line)
     if (!match) continue
@@ -235,24 +245,37 @@ export function parseProcessEnvironmentEvidence(
       evidence.set(pid, 'unknown')
       continue
     }
-    evidence.set(
-      pid,
-      environmentCarriesRunMarker(observed.slice(command.length)) ? 'present' : 'absent',
-    )
+    const environment = observed.slice(command.length)
+    environments.set(pid, environment)
+    evidence.set(pid, environmentCarriesRunMarker(environment) ? 'present' : 'absent')
   }
+  const probe = environments.get(probePid)
+  if (probe === undefined || !ENVIRONMENT_ENTRY.test(probe))
+    return new Map<number, RunMarkerEvidence>(
+      [...new Set([...commands.keys(), probePid])].map((pid): [number, RunMarkerEvidence] => [
+        pid,
+        'unknown',
+      ]),
+    )
   return evidence
 }
 
 /** macOS prints the environment of this user's processes after their command. */
 function psRunMarkerEvidence(
-  pids: readonly number[],
+  candidates: readonly OrphanCandidate[],
   commands: ReadonlyMap<number, string>,
 ): Map<number, RunMarkerEvidence> {
+  const probeCommand = commands.get(process.pid)
+  if (!probeCommand) return new Map()
+  const queried = new Map<number, string>(
+    candidates.map(({ pid, command }) => [pid, command] as const),
+  )
+  queried.set(process.pid, probeCommand)
   for (const flag of ['-Eww', 'eww']) {
     try {
       const { process: found, error } = observeBoundedSubprocess(
         'ps',
-        ['ps', flag, '-o', 'pid=,command=', '-p', pids.join(',')],
+        ['ps', flag, '-o', 'pid=,command=', '-p', [...queried.keys()].join(',')],
         {
           env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
           stdout: 'pipe',
@@ -260,7 +283,8 @@ function psRunMarkerEvidence(
         },
         PROCESS_ENVIRONMENT_PS_TIMEOUT_MS,
       )
-      if (!error) return parseProcessEnvironmentEvidence(found.stdout?.toString() ?? '', commands)
+      if (!error)
+        return parseProcessEnvironmentEvidence(found.stdout?.toString() ?? '', queried, process.pid)
     } catch {
       // A platform without this ps form leaves every candidate unknown.
     }
@@ -289,12 +313,11 @@ function procRunMarkerEvidence(pids: readonly number[]): Map<number, RunMarkerEv
 /** Read only the candidate orphans' environments, in one read per inventory. */
 function processRunMarkerEvidence(
   candidates: readonly OrphanCandidate[],
+  commands: ReadonlyMap<number, string>,
 ): Map<number, RunMarkerEvidence> {
   if (!candidates.length) return new Map()
-  const pids = candidates.map(({ pid }) => pid)
-  if (process.platform === 'darwin')
-    return psRunMarkerEvidence(pids, new Map(candidates.map(({ pid, command }) => [pid, command])))
-  if (process.platform === 'linux') return procRunMarkerEvidence(pids)
+  if (process.platform === 'darwin') return psRunMarkerEvidence(candidates, commands)
+  if (process.platform === 'linux') return procRunMarkerEvidence(candidates.map(({ pid }) => pid))
   return new Map()
 }
 
@@ -312,5 +335,9 @@ export function joinRunMarker(
 export function currentOrphanProcesses(projects: readonly { name: string; path: string }[]) {
   const observed = observeProcesses()
   const candidates = orphanProcesses(observed.facts, projects, existsSync)
-  return { ...observed, orphans: joinRunMarker(candidates, processRunMarkerEvidence(candidates)) }
+  const commands = new Map(observed.facts.map(({ pid, command }) => [pid, command] as const))
+  return {
+    ...observed,
+    orphans: joinRunMarker(candidates, processRunMarkerEvidence(candidates, commands)),
+  }
 }
