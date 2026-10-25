@@ -212,17 +212,30 @@ export function chainScoreJoin(runAlias: string, scoreAlias: string): string {
   )
 }
 
+/** The output owned by the newest turn of a root conversation. */
+function newestTurnOutputPathSql(runAlias: string): string {
+  const run = sqlAlias(runAlias)
+  return `CASE WHEN EXISTS (SELECT 1 FROM run child WHERE child.parent_run_record_id=${run}.record_id)
+              THEN (SELECT child.output_path FROM run child
+                     WHERE child.parent_run_record_id=${run}.record_id
+                     ORDER BY child.turn DESC, child.number DESC LIMIT 1)
+              ELSE ${run}.output_path END`
+}
+
+export function newestTurnOutputPath(database: Database, rootId: string): string | null {
+  const row = database
+    .query(`SELECT ${newestTurnOutputPathSql('r')} AS output_path FROM run r WHERE r.record_id=?`)
+    .get(rootId) as { output_path: string | null } | null
+  return row?.output_path ?? null
+}
+
 export function pendingForSession(sid: string | null) {
   if (!sid) return []
   return db()
     .query(
       `SELECT r.record_id, r.agent, r.job, r.repo, r.branch, r.minted_branch,
             COALESCE(r.label, r.prompt_head) AS prompt_head,
-            CASE WHEN EXISTS (SELECT 1 FROM run child WHERE child.parent_run_record_id=r.record_id)
-              THEN (SELECT child.output_path FROM run child
-                     WHERE child.parent_run_record_id=r.record_id
-                     ORDER BY child.turn DESC, child.number DESC LIMIT 1)
-              ELSE r.output_path END AS output_path,
+            ${newestTurnOutputPathSql('r')} AS output_path,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
        FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
       WHERE r.session_id = ? AND ${UNSCORED_WHERE}

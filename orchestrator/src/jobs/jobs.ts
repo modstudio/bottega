@@ -1,6 +1,9 @@
 import { type Caps, MIGRATED_AGENT_NAMES } from '../agent/capabilities.ts'
 import { DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS, idleKillMs } from '../idle-kill.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
+import { writingJobNeeds } from './job-fidelity.ts'
+
+export { jobTakesFidelity } from './job-fidelity.ts'
 
 export type Job = {
   name: string
@@ -256,7 +259,7 @@ export const JOBS: Record<string, Job> = {
   'issue-worker': {
     name: 'issue-worker',
     what: 'Fix one independently diagnosed filed issue and return measured, structured evidence.',
-    needs: { readsRepo: true, writesRepo: true, resumable: true },
+    needs: writingJobNeeds('issue-worker'),
     prefer: ['codex'],
     contextTokens: DEEP,
   },
@@ -357,7 +360,7 @@ export const JOBS: Record<string, Job> = {
   implement: {
     name: 'implement',
     what: 'Implement a bounded spec in a throwaway worktree. Escalate every design decision; never guess.',
-    needs: { readsRepo: true, writesRepo: true, resumable: true },
+    needs: writingJobNeeds('implement'),
     prefer: ['codex'],
     contextTokens: DEEP,
     // Measured against a real one: fifteen files, then PHPStan and PHPUnit in
@@ -373,7 +376,7 @@ export const JOBS: Record<string, Job> = {
   fix: {
     name: 'fix',
     what: 'Apply one specific, already-diagnosed change. No design latitude.',
-    needs: { readsRepo: true, writesRepo: true, resumable: true },
+    needs: writingJobNeeds('fix'),
     prefer: ['codex'],
     contextTokens: ERRAND,
     // Narrower than `implement` by design, but still a build-and-verify cycle.

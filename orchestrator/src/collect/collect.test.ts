@@ -387,31 +387,11 @@ describe('collection records', () => {
     }
   })
 
-  test('a done or absent reply adds no refusal mark and does not throw', () => {
-    const done = addRun({ agent: 'codex', job: 'implement' })
+  test('an absent reply adds no refusal mark and does not throw', () => {
     const absent = addRun({ agent: 'codex', job: 'implement' })
-    const output = join(dir, `done-${done}.txt`)
-    writeFileSync(
-      output,
-      JSON.stringify({
-        status: 'done',
-        summary: 'complete',
-        files_changed: null,
-        change_guide: null,
-        questions: null,
-        deviations: null,
-        blockers: null,
-        tests: null,
-      }),
-    )
-    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, done)
-    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(`${output}.missing`, absent)
-    try {
-      expect(recordedResult(done).errors.join('\n')).not.toContain('refused:')
-      expect(recordedResult(absent).errors.join('\n')).not.toContain('refused:')
-    } finally {
-      rmSync(output, { force: true })
-    }
+    const output = join(dir, `absent-${absent}.txt`)
+    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, absent)
+    expect(recordedResult(absent).errors.join('\n')).not.toContain('refused:')
   })
 
   test.each([

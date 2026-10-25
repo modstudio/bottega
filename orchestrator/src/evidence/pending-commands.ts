@@ -3,7 +3,6 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { sessionId } from '../database/db.ts'
-import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { unrecordedPairsForSession } from '../score/duel.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { pendingForSession } from './evidence-query.ts'
@@ -31,10 +30,7 @@ function renderRows(
   if (!rows.length) return
   presentation.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
   for (const row of rows) {
-    const refusal = refusalScoreGuidanceFromPath(
-      row.output_path,
-      resolveRecordedRunJob(row).writesRepo,
-    )
+    const refusal = refusalScoreGuidanceFromPath(row.output_path, row.job)
     presentation.log(
       `  ${PLATFORM_SLUG} score ${row.record_id} <none|partial|full> [wrong|mixed|right]   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}${row.rescore ? '  rescore' : ''}`,
     )

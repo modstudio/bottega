@@ -16,7 +16,7 @@ import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
-import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
+import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
@@ -318,18 +318,15 @@ function collectedScoreHint(
     CollectedRunRow,
     'record_id' | 'job' | 'parent_run_record_id' | 'output_path' | 'branch' | 'minted_branch'
   >,
+  output: string | null,
   scoreSuffix: (job: string) => string,
-  writingJob: (job: string, branch: string | null, mintedBranch: string | null) => boolean,
 ): string {
   return scoreHint(
     row.record_id,
     row.job,
     row.parent_run_record_id,
     scoreSuffix,
-    refusalScoreGuidanceFromPath(
-      row.output_path,
-      writingJob(row.job, row.branch, row.minted_branch),
-    ),
+    refusalScoreGuidance(output, row.job),
   )
 }
 
@@ -721,7 +718,7 @@ export function collectResult(
           ? ` · ${row.vendor_tokens.toLocaleString()} vendor tokens`
           : ' · vendor tokens not reported') +
         okOutcomeNote(row) +
-        `\n  score it:  ${collectedScoreHint(row, scoreSuffix, writingJob)}` +
+        `\n  score it:  ${collectedScoreHint(row, output, scoreSuffix)}` +
         branchNote(database, row.record_id) +
         releasedWritingTreeNote(
           {

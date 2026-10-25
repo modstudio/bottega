@@ -99,11 +99,11 @@ Retrieval-shaped jobs (`file-question`, `canon-lookup`, `summarize`) prefer the 
 
 **FIDELITY:** `drifted` | `partial` | `faithful`, judged on writing jobs only. Delivery and quality cannot see a complete, correct change that solves a **different problem**. Fidelity is a penalty (`FIDELITY_PENALTY` in `score.ts`), not a third matrix dimension.
 
-**Asking is faithful and costs nothing.**
+**Asking is faithful and costs nothing.** That has to hold in the arithmetic or asking stops.
 
-Judge refusal on its merits: correct with evidence is `full right` and, for writing, `faithful`; should have asked is `full mixed` and, for writing, `faithful`; false evidence is `full wrong`; no file:line, command or measured output is `none`.
+Refusal: correct+proof `full right [faithful]`; ask `full mixed [faithful]`; false `full wrong`; no proof `none`.
 
-**An escalation's value is the interruption, not correctness.** Never lower its fidelity or quality; an overruling architect names what made it reasonable.
+**The value of an escalation is the interruption, not the correctness of the question.** Never mark an escalation down for being wrong, on fidelity or on quality. An architect who overrules one should say what made the concern reasonable.
 
 **Required on a writing job that delivered something.** `delivery: none` takes no fidelity. Files changed, tests claimed, deviations and questions are recorded automatically beside the verdict, because the signal is where they disagree.
 

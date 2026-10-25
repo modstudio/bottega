@@ -11,7 +11,7 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
-from score_reminder_decision import decide_held_tree, refusal_score_guidance
+from score_reminder_decision import WRITING_JOBS, decide_held_tree, refusal_score_guidance
 
 GLOBAL_BUDGET_SECONDS = 20
 
@@ -262,10 +262,8 @@ def main() -> int:
     # A writing job takes a THIRD axis, and printing the two-axis form for one
     # is how a session came to run a command bottega then rejected. The hook cannot
     # import the job table (it is TypeScript), so the jobs that write are named
-    # here — and the reminder is generated from the same list rather than a
-    # fixed string, so adding one means adding it here too.
-    WRITING_JOBS = {"implement", "fix"}
-    REFUSAL_WRITING_JOBS = WRITING_JOBS | {"issue-worker"}
+    # in score_reminder_decision — and both reminders use that list rather than
+    # a fixed string, so adding one means adding it there too.
     lines = []
     pairs_by_run = {}
     for current, partner, agent, reason, pair_job, pair_delivery, pair_quality, pair_fidelity in pairs:
@@ -310,7 +308,7 @@ def main() -> int:
             f'  bottega score {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
             .replace("  --note", " --note")
         )
-        refusal = refusal_score_guidance(output_path, j in REFUSAL_WRITING_JOBS)
+        refusal = refusal_score_guidance(output_path, j)
         if refusal:
             lines.append(f"    {refusal}")
         for partner, agent, reason in run_pairs:

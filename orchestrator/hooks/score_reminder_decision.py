@@ -12,6 +12,7 @@ from typing import NamedTuple
 
 
 REFUSAL_QUOTE_CHARS = 200
+WRITING_JOBS = {"fix", "implement", "issue-worker"}
 
 
 class HeldTreeDecision(NamedTuple):
@@ -51,13 +52,16 @@ def _worker_replies(text: str):
             yield value
 
 
-def refusal_score_guidance(output_path: str | None, writing_job: bool) -> str | None:
+def refusal_score_guidance(output_path: str | None, job_name: str) -> str | None:
     if not output_path:
         return None
     try:
-        replies = list(_worker_replies(Path(output_path).read_text()))
-    except FileNotFoundError:
+        text = Path(output_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
         return None
+    if "\ufffd" in text:
+        return None
+    replies = list(_worker_replies(text))
     if not replies or replies[-1].get("status") != "refused":
         return None
     summary = replies[-1]["summary"].splitlines()[0] if replies[-1]["summary"] else ""
@@ -71,7 +75,7 @@ def refusal_score_guidance(output_path: str | None, writing_job: bool) -> str | 
             REFUSAL_QUOTE_CHARS,
         )
         summary = summary[:cut] + "…"
-    faithful = " faithful" if writing_job else ""
+    faithful = " faithful" if job_name in WRITING_JOBS else ""
     return (
         f"refused: {json.dumps(summary, ensure_ascii=False)}; judge the refusal on its merits "
         f"(correct with evidence: full right{faithful}; should have asked: full mixed{faithful}; "

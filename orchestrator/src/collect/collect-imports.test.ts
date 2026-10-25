@@ -17,6 +17,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../collect/collect.ts',
   '../contract/contract-reply.ts',
   '../failure/failure.ts',
+  '../jobs/job-fidelity.ts',
   '../mcp/mcp-probe.ts',
   'orch.ts',
   '../outcome.ts',

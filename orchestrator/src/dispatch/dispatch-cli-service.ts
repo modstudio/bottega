@@ -20,7 +20,9 @@ import { readStrictCodexSchema } from '../contract/codex-schema.ts'
 import { contractConflicts, resolveReplyDialect } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
+import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { branchOf } from '../git/git-environment.ts'
+import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import {
   effectiveMcpRequest,
@@ -50,7 +52,7 @@ import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { routedPromptBytes } from '../run/run-routing-input.ts'
-import { refusalScoreGuidanceForRun } from '../score/refusal-guidance.ts'
+import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import {
   assertAcpReady,
   classifyTransportPin,
@@ -338,7 +340,7 @@ function resolveTaskBranchForDispatch(
 }
 
 const scoreSuffix = (jobName: string) =>
-  (JOBS[jobName]?.needs.writesRepo ? ' [drifted|partial|faithful]' : '') +
+  (jobTakesFidelity(jobName) ? ' [drifted|partial|faithful]' : '') +
   (JOBS[jobName]?.findings
     ? ` [--reproduced ${REVIEW_REPRODUCED.join('|')}] [--coverage ${REVIEW_COVERAGE.join('|')}] [--limits ${REVIEW_LIMITS.join('|')}] [--overlap ${REVIEW_OVERLAP.join('|')}]`
     : '')
@@ -350,11 +352,7 @@ const runNumber = (id: string) =>
   ).number
 const scoreHint = (id: string, jobName: string, parent: string | null) => {
   const number = runNumber(parent ?? id)
-  const refusal = refusalScoreGuidanceForRun(
-    db(),
-    parent ?? id,
-    Boolean(JOBS[jobName]?.needs.writesRepo),
-  )
+  const refusal = refusalScoreGuidanceFromPath(newestTurnOutputPath(db(), parent ?? id), jobName)
   return (
     `${PLATFORM_SLUG} score ${number} <none|partial|full> [wrong|mixed|right]${scoreSuffix(jobName)} --note "..."` +
     (refusal ? `\n  ${refusal}` : '')
