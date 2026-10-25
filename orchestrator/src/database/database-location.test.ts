@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
 import {
   decideOrchestratorDatabasePath,
@@ -14,6 +14,7 @@ import {
   missingDatabaseMessage,
   missingWorkingDirectoryFallback,
   unauthorizedDatabaseInitializationMessage,
+  workerStoreMigrationRefusal,
 } from './database-location.ts'
 
 test('default open refuses legacy-only state and accepts the current filename', () => {
@@ -247,6 +248,49 @@ test('migrating an existing store retains the linked-worktree refusal', () => {
     linkedWorktreeDatabaseInitializationMessage(),
   )
   expect(existingDatabaseMigrationRefusal({ ...existing, linkedWorktreeBinary: false })).toBeNull()
+})
+
+test('a worker caller may not migrate the shared store, the ask server included', () => {
+  const shared = {
+    path: '/state/orchestrator.db',
+    method: 'state-root' as const,
+    tried: ['/state/orchestrator.db'],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: '/state/orchestrator.db',
+  }
+
+  // The migration decision takes no broker-channel fact, so the ask server's worker environment is refused here too.
+  expect(existingDatabaseMigrationRefusal(shared, true)).toBe(
+    workerStoreMigrationRefusal(shared.path),
+  )
+  expect(implicitDatabaseCreationRefusal(shared, shared.path, true)).toBe(
+    workerStoreMigrationRefusal(shared.path),
+  )
+  expect(workerStoreMigrationRefusal(shared.path)).toBe(
+    `refusing to migrate the orchestrator store from a worker: ${shared.path}\n` +
+      'invariant: A worker never changes the store it reads, because a schema change under a live process breaks every run in flight.\n' +
+      `cleared by: the operator runs ${PLATFORM_SLUG} machine update from the main checkout`,
+  )
+})
+
+test('a worker caller may still create and migrate the isolated store its test leg mints under temporary state', () => {
+  const path = join(tmpdir(), `orch-worker-scratch-${randomUUID()}`, 'orchestrator.db')
+  const scratch = {
+    path,
+    method: 'state-root' as const,
+    tried: [path],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: path,
+  }
+
+  expect(existingDatabaseMigrationRefusal(scratch, true)).toBeNull()
+  expect(implicitDatabaseCreationRefusal(scratch, path, true)).toBeNull()
 })
 
 test('a linked-worktree binary may create and migrate a temporary store', () => {

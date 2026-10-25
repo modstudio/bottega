@@ -176,7 +176,10 @@ export function storeWriteRefusal(workerCaller: boolean): string {
 
 function orchestratorStoreAccess(walOrShmSidecarPresent: boolean) {
   return decideStoreAccess({
-    restrictedActor: restrictedStoreActor({ ...storeActorFacts, brokerChannel: storeBrokerChannel }),
+    restrictedActor: restrictedStoreActor({
+      ...storeActorFacts,
+      brokerChannel: storeBrokerChannel,
+    }),
     storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
     walOrShmSidecarPresent,
   })
