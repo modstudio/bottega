@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Finding } from '../../../shared/ratchet.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
-import { workerLaunchEnv } from '../agent/worker-launch-env.ts'
+import { workerHarnessName, workerLaunchEnv } from '../agent/worker-launch-env.ts'
 import { hasCanonImportHistory, importCanon } from '../doc/canon-import.ts'
 import { nonCurrentCanonCollisionRefusal } from '../doc/canon-import-collision.ts'
 import { canonFindingsRefusal } from '../doc/doc-write-allowed.ts'
@@ -537,7 +537,7 @@ function canonLoadCommand(flags: CanonFlags, presentation: CanonPresentation): v
   }
   const agent = flags.flag('agent')
   if (role === 'worker' && !agent) throw new Error('--agent is required with --role worker')
-  const harnessName = agent ? (requireAgent(agent).harness ?? agent) : null
+  const harnessName = agent ? workerHarnessName(requireAgent(agent)) : null
   const loadFacts =
     role === 'worker'
       ? gatherWorkerHarnessLoadFacts(cwd, harnessName!, {

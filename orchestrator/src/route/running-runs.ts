@@ -1,5 +1,5 @@
 // concern: route
-/** Reads the live, non-probe runs used by routing capacity admission. */
+/** Reads the live, non-probe runs behind routing capacity admission and the run-throttle concurrency fact. */
 import type { Database } from 'bun:sqlite'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { db } from '../database/db.ts'
