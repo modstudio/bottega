@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
-import { RUN_PROCESS_MARKER_ENV } from '../issue/issue-shell.ts'
+import { RUN_PROCESS_ENV_NAMES } from '../../../shared/run-process-marker.ts'
 
 export type ProcessFact = {
   pid: number
@@ -28,12 +28,12 @@ export type RunMarkerEvidence = 'present' | 'absent' | 'unknown'
 export type OrphanProcess = OrphanCandidate & { runMarker: RunMarkerEvidence }
 
 /**
- * The delegation marker every run child inherits, and the marker a host broker
- * stamps on the children it starts for a run. Either proves a run started the
- * process; neither is present in an operator's own shell.
+ * The environment names that prove a run started a process: the delegation
+ * marker every run child inherits, and the marker a host broker stamps on the
+ * children it starts for a run once the gate environment scrub has withheld the
+ * delegation marker. Neither is present in an operator's own shell.
  */
-const RUN_MARKER_ENV_NAMES = ['BOTTEGA_DEPTH', RUN_PROCESS_MARKER_ENV]
-const RUN_MARKER_ENTRY = new RegExp(`^(?:${RUN_MARKER_ENV_NAMES.join('|')})=.`)
+const RUN_MARKER_ENTRY = new RegExp(`^(?:${RUN_PROCESS_ENV_NAMES.join('|')})=.`)
 /** Any environment entry, which is the only proof an environment was printed at all. */
 const ENVIRONMENT_ENTRY = /(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=\S/
 
