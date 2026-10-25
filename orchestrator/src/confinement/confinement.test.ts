@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import {
-  fixtureProjectRecordId,
-  migratedTestDatabase,
-} from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { checkoutPathsOverlap, checkoutWatchSet } from '../git/checkout-identity.ts'
 import { checkoutRemovalAttribution } from '../resources/resource-claims.ts'
 import { callerWatch } from '../run/run-caller-watch.ts'

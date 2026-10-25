@@ -1,12 +1,36 @@
 // concern: run confinement adapter
 /** Gathers launch facts for the pure checkout classifier and removal attribution. */
 import type { Database } from 'bun:sqlite'
-import { callerCheckoutWatch, freezeCheckouts } from '../confinement/confinement.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  callerCheckoutWatch,
+  type FreezeFailure,
+  freezeCheckouts,
+} from '../confinement/confinement.ts'
 import { checkoutWatchSet } from '../git/checkout-identity.ts'
 import { gitContext } from '../git/git-environment.ts'
 import { checkoutRemovalAttribution } from '../resources/resource-claims.ts'
 import { confinementRoots } from './run-acp-writer.ts'
 import { callerWatch } from './run-caller-watch.ts'
+import {
+  assertWorkerGitGuardOutsideWritableRoots,
+  type workerGitConfigEnvironment,
+} from './run-git-guard.ts'
+
+export function confinementSkipLines(failures: FreezeFailure[]): string[] {
+  return failures.map(
+    (failure) =>
+      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
+      `fix the register with ${PLATFORM_SLUG} project set`,
+  )
+}
+
+export function assertConfiguredGitGuard(
+  environment: ReturnType<typeof workerGitConfigEnvironment>,
+  writableRoots: string[],
+): void {
+  if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
+}
 
 export function freezeBeforeRunCheckouts(input: {
   srtProfile: { filesystem: { allowWrite: string[] } } | null

@@ -3,10 +3,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
-import {
-  fixtureProjectRecordId,
-  migratedTestDatabase,
-} from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'

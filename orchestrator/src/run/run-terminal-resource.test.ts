@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  fixtureProjectRecordId,
-  migratedTestDatabase,
-} from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { writeTerminalRunResourceUsage } from './run-terminal.ts'
 
 test('terminal persistence rounds resource measurements to whole units', () => {

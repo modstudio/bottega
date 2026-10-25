@@ -3,10 +3,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  fixtureProjectRecordId,
-  migratedTestDatabase,
-} from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE, type RecordSyncRowResult } from './record-sync-contract.ts'

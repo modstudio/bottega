@@ -173,9 +173,7 @@ describe('run task linking service', () => {
       projectRecordId: null,
       probe: 1,
     })
-    db()
-      .query('UPDATE run SET launch_key=? WHERE record_id=?')
-      .run('MISSING-3', lostProbeId)
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('MISSING-3', lostProbeId)
 
     const report = await linkRunTasks(
       { dryRun: true },

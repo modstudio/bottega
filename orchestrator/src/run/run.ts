@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -90,10 +89,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
-import {
-  assertWorkerGitGuardOutsideWritableRoots,
-  workerGitConfigEnvironment,
-} from './run-git-guard.ts'
+import { workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -139,21 +135,6 @@ import {
 } from './shared-git-config.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
-
-function confinementSkipLines(failures: FreezeFailure[]): string[] {
-  return failures.map(
-    (failure) =>
-      `confinement watch skipped ${failure.project} at ${failure.path}: ${failure.error}; ` +
-      `fix the register with ${PLATFORM_SLUG} project set`,
-  )
-}
-
-function assertConfiguredGitGuard(
-  environment: ReturnType<typeof workerGitConfigEnvironment>,
-  writableRoots: string[],
-): void {
-  if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
-}
 
 function completeStartup(): true {
   bindSignals()
@@ -672,7 +653,7 @@ export async function run(opts: {
     ...workerHome.trackedWorkerEnvironment(repoJob, writesJob, worktree, claim.id),
     ...workerHome.codexPrivateTempEnvironment(workerHarnessName(a), repoJob, scratchDir),
   }
-  assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
+  runConfinement.assertConfiguredGitGuard(gitConfigEnvironment, writableRoots)
   let askLoopback: AskLoopback | null = null
   const mcpLaunch = workerMcpLaunchScope({
     agent: a,
@@ -935,7 +916,7 @@ export async function run(opts: {
     runProjectName,
   })
   const skipped = [...candidates.failures, ...beforeFreeze.failures]
-  const skipLines = confinementSkipLines(skipped)
+  const skipLines = runConfinement.confinementSkipLines(skipped)
   for (const line of skipLines) console.error(line)
   if (skipLines.length) {
     mcpSetupHeader = mcpSetupHeader

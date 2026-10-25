@@ -13,10 +13,7 @@ import {
   STAMP,
 } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
-import {
-  fixtureProjectRecordId,
-  migratedTestDatabase,
-} from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'

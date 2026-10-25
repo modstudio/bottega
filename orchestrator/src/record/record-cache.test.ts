@@ -964,7 +964,6 @@ describe('record cache pull', () => {
     const recordId = newRecordId()
     const scoreAt = '2026-09-24T12:00:00.000Z'
     const voidAt = '2026-09-24T12:01:00.000Z'
-    const unvoidAt = '2026-09-24T12:02:00.000Z'
     db()
       .query(
         `INSERT INTO run
@@ -1014,7 +1013,7 @@ describe('record cache pull', () => {
                 scoredAt: scored ? scoreAt : null,
                 scoredBy: scored ? 'architect' : null,
                 evidenceExcluded: null,
-                updatedAt: unvoidAt,
+                updatedAt: '2026-09-24T12:02:00.000Z',
               },
             ],
             nextCursor: null,

@@ -4,10 +4,7 @@ import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
-import {
-  fixtureProjectRecordId,
-  migrationBoundaryTestDatabase,
-} from './test-database.fixture.ts'
+import { fixtureProjectRecordId, migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
 migrationBoundaryTestDatabase('0124_run_uuid_key').close()
 migrationBoundaryTestDatabase('0125_question_uuid_key').close()
