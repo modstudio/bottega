@@ -427,6 +427,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-tunnel-error.ts', []),
   module('orchestrator/src/record/record-public-doc-designation.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     'bun',
     '../../../shared/record-remedies.ts',
     './record-session.ts',
@@ -594,6 +595,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-board-messages.ts', [
     'bun',
     '../../../shared/board-purpose.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/record-project-identity.ts',
     '../../../shared/secret-shaped.ts',
     '../board/board-policy.ts',
@@ -605,6 +607,7 @@ export const recordModules: RecordModule[] = [
     './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/record-board-receipts.ts', [
+    '../../../shared/record-id.ts',
     './record-board-contract.ts',
     './record-board-messages.ts',
     './record-board-tx.ts',

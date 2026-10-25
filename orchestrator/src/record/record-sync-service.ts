@@ -24,7 +24,7 @@ import {
   review as reviewRecord,
 } from '../../../shared/record/schema-review.ts'
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
-import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
@@ -628,6 +628,7 @@ const recordKinds = {
           await drizzle({ client: tx })
             .insert(questionMutationAuditRecord)
             .values({
+              id: newRecordId(),
               questionId: values.id,
               spaceId: values.spaceId,
               action: String(audit.action),

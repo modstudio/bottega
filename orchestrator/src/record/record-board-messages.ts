@@ -7,6 +7,7 @@ import {
   defaultBoardPurpose,
   parseBoardPurpose,
 } from '../../../shared/board-purpose.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
@@ -347,8 +348,8 @@ async function duplicateRootId(
 async function insertTags(tx: SQL, messageId: string, tags: BoardTag[]): Promise<void> {
   for (const tag of tags) {
     await tx`
-      INSERT INTO board_message_tag (message_id, kind, value, origin)
-      VALUES (${messageId}::uuid, ${tag.kind}, ${tag.value}, ${tag.origin})
+      INSERT INTO board_message_tag (id, message_id, kind, value, origin)
+      VALUES (${newRecordId()}::uuid, ${messageId}::uuid, ${tag.kind}, ${tag.value}, ${tag.origin})
       ON CONFLICT DO NOTHING
     `
   }

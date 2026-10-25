@@ -373,6 +373,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     [
       'bun',
       '../../../shared/board-purpose.ts',
+      '../../../shared/record-id.ts',
       '../../../shared/record-project-identity.ts',
       '../../../shared/secret-shaped.ts',
       '../board/board-policy.ts',
@@ -388,7 +389,12 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-board-receipts-boundary',
     'orchestrator/src/record/record-board-receipts.ts',
-    ['./record-board-contract.ts', './record-board-messages.ts', './record-board-tx.ts'],
+    [
+      '../../../shared/record-id.ts',
+      './record-board-contract.ts',
+      './record-board-messages.ts',
+      './record-board-tx.ts',
+    ],
     'Keep hosted board receipts independent of HTTP and local stores.',
   ),
   boundary(

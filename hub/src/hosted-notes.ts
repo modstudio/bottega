@@ -157,8 +157,8 @@ export async function createHostedNote(
         AND project_id=${project.id}::uuid AND name='note'),1)::text next`,
     )[0]!
     const number = nextNoteNumber(BigInt(maxima.highest), BigInt(maxima.next))
-    await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
-      (${identity.spaceId}::uuid,${project.id}::uuid,'note',${number + 1n})
+    await tx`INSERT INTO seq(id,space_id,project_id,name,next) VALUES
+      (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.id}::uuid,'note',${number + 1n})
       ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
     return rows<HostedNote>(
       await tx`INSERT INTO hub_note
@@ -387,8 +387,8 @@ async function mirrorOneHostedNote(tx: SQL, identity: TaskIdentity, row: HostedN
     await tx`SELECT id FROM project WHERE space_id=${identity.spaceId}::uuid AND id=${projectId}::uuid`,
   )[0]
   if (project)
-    await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
-      (${identity.spaceId}::uuid,${project.id}::uuid,'note',${row.number + 1})
+    await tx`INSERT INTO seq(id,space_id,project_id,name,next) VALUES
+      (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.id}::uuid,'note',${row.number + 1})
       ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
   return written
 }
@@ -438,8 +438,8 @@ export async function mirrorHostedNotes(
           await tx`SELECT (COALESCE(max(number),0)+1)::text next FROM hub_note
             WHERE space_id=${identity.spaceId}::uuid AND project_id=${item.projectId}::uuid`,
         )[0]!.next
-        await tx`INSERT INTO seq(space_id,project_id,name,next) VALUES
-        (${identity.spaceId}::uuid,${project.id}::uuid,'note',${BigInt(highest) > BigInt(item.next) ? BigInt(highest) : BigInt(item.next)})
+        await tx`INSERT INTO seq(id,space_id,project_id,name,next) VALUES
+        (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.id}::uuid,'note',${BigInt(highest) > BigInt(item.next) ? BigInt(highest) : BigInt(item.next)})
         ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
       }
     }
