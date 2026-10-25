@@ -371,6 +371,18 @@ function printSweepKept(
   }
 }
 
+/** Links run tasks after the sweep's own steps, and fails the sweep when either part failed. */
+async function finishSweep(
+  dry: boolean,
+  cleanupFailed: boolean,
+  hubTaskReader: HubTaskReader,
+  presentation: CleanupPresentation,
+): Promise<void> {
+  const runLinks = await sweepRunTaskLinks(dry, hubTaskReader)
+  presentation[runLinks.kind](runLinks.line)
+  if (cleanupFailed || runLinks.kind === 'error') presentation.setExitCode(1)
+}
+
 function reportClosedSweepRow(
   outcome: ClosedSweepOutcome,
   row: { record_id: string; root_record_id: string; worktree: string | null },
@@ -1021,7 +1033,5 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     options.force,
     options.presentation,
   )
-  const runLinks = await sweepRunTaskLinks(dry, helpers.hubTaskReader)
-  options.presentation[runLinks.kind](runLinks.line)
-  if (cleanupFailed || runLinks.kind === 'error') options.presentation.setExitCode(1)
+  await finishSweep(dry, cleanupFailed, helpers.hubTaskReader, options.presentation)
 }
