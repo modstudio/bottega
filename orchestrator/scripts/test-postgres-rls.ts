@@ -25,6 +25,8 @@ const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
 const LIVE_COPY_PHASE_TIMEOUT_MS = 900_000
+// Migrate never calls the API; this placeholder only declares a hosted-record install.
+const RECORD_API_URL = 'http://127.0.0.1:9'
 if (withoutLiveImport)
   console.log('copied-live-SQLite import proof omitted: no operator store on the runner')
 class EarlyExit {
@@ -41,9 +43,12 @@ function copyDatabase(source: string, target: string): void {
 }
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('BOTTEGA_RECORD_')),
+  )
   const child = Bun.spawn(argv, {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
-    env: { ...process.env, ...env },
+    env: { ...inheritedEnv, ...env },
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -391,6 +396,7 @@ try {
     if (readOnlyMembership !== 0) process.exitCode = readOnlyMembership
     else {
       const remigrate = await run(['bun', 'src/cli/orch.ts', 'record', 'migrate'], {
+        BOTTEGA_RECORD_API_URL: RECORD_API_URL,
         BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
       })
       if (remigrate !== 0) process.exitCode = remigrate
