@@ -124,12 +124,25 @@ describe('file ruling decision', () => {
     })
   })
 
-  test('refuses a scope or subject that names another project on the owner path', () => {
+  test('refuses an owner filing at a scope other than project on its own project', () => {
+    expect(decide({ scope: 'resume' })).toEqual({
+      kind: 'refuse',
+      code: 'owner-scope',
+      scope: 'resume',
+    })
+    expect(decide({ scope: 'machine' })).toEqual({
+      kind: 'refuse',
+      code: 'owner-scope',
+      scope: 'machine',
+    })
+  })
+
+  test('refuses a subject that names another project on the owner path', () => {
     expect(decide({ subject: 'other-project' })).toEqual({
       kind: 'refuse',
       code: 'foreign-project',
+      scope: 'project',
     })
-    expect(decide({ scope: 'machine' })).toEqual({ kind: 'refuse', code: 'foreign-project' })
   })
 
   test('allows another project address on the operator path', () => {
