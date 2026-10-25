@@ -36,6 +36,16 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
       unavailableReason: 'disabled — retired after replacement',
     },
     {
+      name: 'unchecked',
+      enabled: true,
+      disabledReason: null,
+      executableFound: true,
+      probedAt: '2026-10-05T00:00:00.000Z',
+      available: true,
+      unavailableReason: null,
+      probeBudgetKind: 'unknown' as const,
+    },
+    {
       name: 'usable',
       enabled: true,
       disabledReason: null,
@@ -50,6 +60,7 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
     'not installed',
     `installed but not probed — ${PLATFORM_SLUG} agent probe newcomer`,
     'disabled — retired after replacement',
+    'OpenRouter key budget not verified',
     'ready',
   ])
 })
@@ -160,6 +171,8 @@ test('an exhausted OpenRouter probe does not record cooldown-clearing success', 
         'https://openrouter.ai/api/v1',
         '--api-key-secret',
         'OPENROUTER_FIXTURE_KEY',
+        '--billing',
+        'metered',
       ],
       { log: () => {}, setExitCode: () => {} },
     )
@@ -177,7 +190,7 @@ test('an exhausted OpenRouter probe does not record cooldown-clearing success', 
       {
         probeAgent: async () => ({
           ...JSON.parse(prior.probe_result),
-          ok: false,
+          ok: true,
           budget: {
             kind: 'exhausted',
             limitUsd: 250,
@@ -193,13 +206,16 @@ test('an exhausted OpenRouter probe does not record cooldown-clearing success', 
 
     expect(exitCode).toBe(1)
     expect(JSON.parse(output[0]!)).toMatchObject({
-      ok: false,
+      ok: true,
       budget: {
         kind: 'exhausted',
         refusal:
           "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
       },
     })
+    expect(output[1]).toBe(
+      "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
+    )
     expect(
       db().query("SELECT COUNT(*) count FROM run WHERE agent=? AND job='agent-probe'").get(name),
     ).toEqual({ count: 0 })

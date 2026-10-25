@@ -7,6 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
+import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
 
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
 const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
@@ -498,16 +499,6 @@ export type RegistrationProbeResult = {
   >
   contextTokens: number | null
   contextSource: 'harness' | 'declared' | null
-  budget?:
-    | { kind: 'spendable' }
-    | { kind: 'unknown'; detail: string }
-    | {
-        kind: 'exhausted'
-        limitUsd: number
-        usedUsd: number
-        resetInterval: string
-        resetsAt: string | null
-        refusal: string
-      }
+  budget?: OpenRouterRecordedBudget
   attempts?: { harness: string; result: unknown }[]
 }

@@ -6,6 +6,7 @@ import { resolveEndpointApiKeyEnv } from './endpoint-api-key.ts'
 type OpenRouterKeyRow = {
   baseUrl?: string | null
   apiKeySecret?: string | null
+  billing?: string | null
 }
 
 export type OpenRouterKeyBudgetDecision =
@@ -18,6 +19,19 @@ export type OpenRouterKeyBudgetDecision =
       resetsAt: string | null
     }
   | { kind: 'unknown' }
+  | { kind: 'not-applicable' }
+
+export type OpenRouterRecordedBudget =
+  | { kind: 'spendable' }
+  | { kind: 'unknown'; detail: string }
+  | {
+      kind: 'exhausted'
+      limitUsd: number
+      usedUsd: number
+      resetInterval: string
+      resetsAt: string | null
+      refusal: string
+    }
 
 const OPENROUTER_KEY_CHECK_TIMEOUT_MS = 4_000
 
@@ -67,9 +81,9 @@ export function openRouterKeyBudgetRefusal(
   )
 }
 
-/** Only an explicitly keyed OpenRouter endpoint is eligible for a budget request. */
-export function isOpenRouterKeyBudgetAgent(row: OpenRouterKeyRow): boolean {
-  if (!row.apiKeySecret?.trim() || !row.baseUrl) return false
+/** Only a metered, explicitly keyed OpenRouter endpoint spends through this budget. */
+function isOpenRouterKeyBudgetAgent(row: OpenRouterKeyRow): boolean {
+  if (row.billing !== 'metered' || !row.apiKeySecret?.trim() || !row.baseUrl) return false
   try {
     return new URL(row.baseUrl).hostname === 'openrouter.ai'
   } catch {
@@ -92,7 +106,7 @@ export async function checkOpenRouterKeyBudget(
   row: OpenRouterKeyRow,
   dependencies: BudgetDependencies = budgetDependencies,
 ): Promise<OpenRouterKeyBudgetDecision> {
-  if (!isOpenRouterKeyBudgetAgent(row)) return { kind: 'unknown' }
+  if (!isOpenRouterKeyBudgetAgent(row)) return { kind: 'not-applicable' }
   try {
     const key = (await dependencies.resolve(row)).OPENAI_API_KEY
     if (!key) return { kind: 'unknown' }
@@ -107,12 +121,38 @@ export async function checkOpenRouterKeyBudget(
   }
 }
 
+/** Project an account decision into the probe record and durable routing policy. */
+export function openRouterProbeBudget(decision: OpenRouterKeyBudgetDecision): {
+  budget?: OpenRouterRecordedBudget
+  billingHold: boolean
+} {
+  if (decision.kind === 'not-applicable') return { billingHold: false }
+  if (decision.kind === 'unknown') {
+    return {
+      budget: { kind: 'unknown', detail: 'OpenRouter key budget not verified' },
+      billingHold: false,
+    }
+  }
+  if (decision.kind === 'exhausted') {
+    return {
+      budget: { ...decision, refusal: openRouterKeyBudgetRefusal(decision) },
+      billingHold: true,
+    }
+  }
+  return { budget: decision, billingHold: false }
+}
+
 /** Replace only an auth failure proved to be an exhausted OpenRouter key. */
 export function applyOpenRouterBudgetToAuthFailure<T extends string | null>(
   failureKind: T,
   error: string | null,
   decision: OpenRouterKeyBudgetDecision,
-): { failureKind: T | 'billing'; error: string | null } {
+): { failureKind: T | 'billing'; error: string | null; billingHoldDetail?: string } {
   if (failureKind !== 'auth' || decision.kind !== 'exhausted') return { failureKind, error }
-  return { failureKind: 'billing', error: openRouterKeyBudgetRefusal(decision) }
+  const refusal = openRouterKeyBudgetRefusal(decision)
+  return {
+    failureKind: 'billing',
+    error: error ? `${error}\n${refusal}` : refusal,
+    billingHoldDetail: refusal,
+  }
 }

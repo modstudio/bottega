@@ -901,6 +901,7 @@ export async function run(opts: {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
+  let billingHoldDetail: string | undefined
   let artifactsPersisted = true,
     workerEvents: StreamEvent[] = []
   let preConfinement: string | null = null
@@ -1019,7 +1020,7 @@ export async function run(opts: {
           ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         }))
         if (failureKind === 'auth') {
-          ;({ failureKind, error } = applyOpenRouterBudgetToAuthFailure(
+          ;({ failureKind, error, billingHoldDetail } = applyOpenRouterBudgetToAuthFailure(
             failureKind,
             error,
             await checkOpenRouterKeyBudget(a),
@@ -1049,6 +1050,7 @@ export async function run(opts: {
             worktree,
             launchKey,
             failureKind,
+            billingHoldDetail,
             scratchDir,
             gitConfigEnvironment,
             ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),

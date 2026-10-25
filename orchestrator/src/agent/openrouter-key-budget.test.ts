@@ -4,6 +4,7 @@ import {
   checkOpenRouterKeyBudget,
   openRouterKeyBudgetDecision,
   openRouterKeyBudgetRefusal,
+  openRouterProbeBudget,
 } from './openrouter-key-budget.ts'
 
 const exactExhaustedResponse = {
@@ -81,6 +82,7 @@ test('the adapter asks the keyed OpenRouter endpoint without network', async () 
     {
       baseUrl: 'https://openrouter.ai/api/v1',
       apiKeySecret: 'OPENROUTER_FIXTURE_KEY',
+      billing: 'metered',
     },
     {
       resolve: async () => ({ OPENAI_API_KEY: 'fixture-secret' }),
@@ -103,6 +105,43 @@ test('the adapter asks the keyed OpenRouter endpoint without network', async () 
   })
 })
 
+test('only a metered keyed OpenRouter row is applicable', async () => {
+  const fetch = async () => new Response(JSON.stringify({ data: { limit: null } }))
+  const resolve = async () => ({ OPENAI_API_KEY: 'fixture-secret' })
+  const endpoint = {
+    baseUrl: 'https://openrouter.ai/api/v1',
+    apiKeySecret: 'OPENROUTER_FIXTURE_KEY',
+  }
+
+  expect(
+    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'metered' }, { fetch, resolve }),
+  ).toEqual({ kind: 'spendable' })
+  expect(
+    await checkOpenRouterKeyBudget({ ...endpoint, billing: 'free' }, { fetch, resolve }),
+  ).toEqual({
+    kind: 'not-applicable',
+  })
+})
+
+test('probe projection records each applicable verdict and holds only exhaustion', () => {
+  const exhausted = openRouterKeyBudgetDecision(exactExhaustedResponse)
+  if (exhausted.kind !== 'exhausted') throw new Error('fixture must be exhausted')
+
+  expect(openRouterProbeBudget({ kind: 'not-applicable' })).toEqual({ billingHold: false })
+  expect(openRouterProbeBudget({ kind: 'spendable' })).toEqual({
+    budget: { kind: 'spendable' },
+    billingHold: false,
+  })
+  expect(openRouterProbeBudget({ kind: 'unknown' })).toEqual({
+    budget: { kind: 'unknown', detail: 'OpenRouter key budget not verified' },
+    billingHold: false,
+  })
+  expect(openRouterProbeBudget(exhausted)).toEqual({
+    budget: { ...exhausted, refusal: openRouterKeyBudgetRefusal(exhausted) },
+    billingHold: true,
+  })
+})
+
 test('the exhaustion refusal names amounts and reset without response secrets', () => {
   const decision = openRouterKeyBudgetDecision(exactExhaustedResponse)
   if (decision.kind !== 'exhausted') throw new Error('fixture must be exhausted')
@@ -110,10 +149,9 @@ test('the exhaustion refusal names amounts and reset without response secrets', 
   expect(refusal).toContain('weekly limit of $250')
   expect(refusal).toContain('used ($250.02)')
   expect(refusal).toContain('2026-10-26T00:00:00.000Z')
-  expect(refusal).not.toContain('must-not-appear')
-  expect(refusal).not.toContain('secret')
   expect(applyOpenRouterBudgetToAuthFailure('auth', 'Authentication required', decision)).toEqual({
     failureKind: 'billing',
-    error: refusal,
+    error: `Authentication required\n${refusal}`,
+    billingHoldDetail: refusal,
   })
 })

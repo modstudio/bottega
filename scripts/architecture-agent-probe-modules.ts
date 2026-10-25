@@ -23,6 +23,7 @@ export const agentProbeModules = [
     './agents.ts',
     './capabilities.ts',
     '../database/db.ts',
+    '../failure/failure.ts',
     '../jobs/jobs.ts',
     './model-host.ts',
     '../mcp/mcp-native-attachment.ts',

@@ -7,6 +7,7 @@ import { which } from 'bun'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
+import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
 import { nextRunNumber } from '../run/run-number.ts'
@@ -19,6 +20,7 @@ import {
   type RegistrationProbeResult,
   refreshAgents,
   rowAgent,
+  setAgent,
 } from './agent-registry.ts'
 import { probeAgentResumesInSandbox, resumeCapabilityPolicy } from './agent-resume-probe.ts'
 import {
@@ -31,11 +33,7 @@ import {
 } from './agent-writing-probe.ts'
 import type { Caps } from './capabilities.ts'
 import { localReachable } from './model-host.ts'
-import {
-  checkOpenRouterKeyBudget,
-  isOpenRouterKeyBudgetAgent,
-  openRouterKeyBudgetRefusal,
-} from './openrouter-key-budget.ts'
+import { checkOpenRouterKeyBudget, openRouterProbeBudget } from './openrouter-key-budget.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
@@ -180,24 +178,18 @@ export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
 async function withOpenRouterKeyBudget(
   row: AgentRow,
   result: RegistrationProbeResult,
-): Promise<RegistrationProbeResult> {
-  const endpoint = { baseUrl: row.base_url, apiKeySecret: row.api_key_secret }
-  if (!isOpenRouterKeyBudgetAgent(endpoint)) return result
-  const budget = await checkOpenRouterKeyBudget(endpoint)
-  if (budget.kind === 'exhausted') {
-    return {
-      ...result,
-      ok: false,
-      budget: { ...budget, refusal: openRouterKeyBudgetRefusal(budget) },
-    }
+): Promise<{ result: RegistrationProbeResult; billingHold: boolean }> {
+  const projection = openRouterProbeBudget(
+    await checkOpenRouterKeyBudget({
+      baseUrl: row.base_url,
+      apiKeySecret: row.api_key_secret,
+      billing: row.billing,
+    }),
+  )
+  return {
+    result: projection.budget ? { ...result, budget: projection.budget } : result,
+    billingHold: projection.billingHold,
   }
-  if (budget.kind === 'unknown') {
-    return {
-      ...result,
-      budget: { ...budget, detail: 'OpenRouter key budget could not be checked' },
-    }
-  }
-  return { ...result, budget }
 }
 
 async function recordBudgetProbe(
@@ -206,8 +198,12 @@ async function recordBudgetProbe(
   result: RegistrationProbeResult,
 ): Promise<RegistrationProbeResult> {
   const checked = await withOpenRouterKeyBudget(row, result)
-  recordAgentProbe(name, checked)
-  return checked
+  recordAgentProbe(name, checked.result)
+  if (checked.billingHold && checked.result.budget?.kind === 'exhausted') {
+    const hold = billingHoldForFailure('billing', name, checked.result.budget.refusal)!
+    setAgent(name, { enabled: false, reason: hold.disabledReason })
+  }
+  return checked.result
 }
 
 /**

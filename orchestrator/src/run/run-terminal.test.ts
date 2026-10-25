@@ -27,6 +27,17 @@ test('a billing terminal outcome durably disables the agent with its operator re
   })
 })
 
+test('a billing terminal outcome includes the verified refusal in its hold', () => {
+  const runId = addRun({ agent: 'grok', job: 'implement' })
+
+  writeTerminalOperationalState(db(), runId, null, 'billing', 'grok', 'the paid key limit is used')
+
+  expect(db().query("SELECT enabled,disabled_reason FROM agent WHERE name='grok'").get()).toEqual({
+    enabled: 0,
+    disabled_reason: `billing hold — the paid key limit is used; then run '${PLATFORM_SLUG} agent set grok --enabled true'`,
+  })
+})
+
 test('a non-billing terminal outcome leaves agent enablement unchanged', () => {
   const runId = addRun({ agent: 'grok', job: 'implement' })
   db()

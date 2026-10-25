@@ -135,6 +135,10 @@ describe('failure classification', () => {
       enabled: 0,
       disabledReason: `billing hold — restore the vendor balance or billing limit, then run '${PLATFORM_SLUG} agent set grok --enabled true'`,
     })
+    expect(billingHoldForFailure('billing', 'grok', 'the paid key limit is used')).toEqual({
+      enabled: 0,
+      disabledReason: `billing hold — the paid key limit is used; then run '${PLATFORM_SLUG} agent set grok --enabled true'`,
+    })
   })
 
   test('a missing product entitlement fails over, cools down and is not agent evidence', () => {
