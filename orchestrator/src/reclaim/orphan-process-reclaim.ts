@@ -60,6 +60,16 @@ const platformProcess = (command: string) => {
   return words.includes(PLATFORM_SLUG) || /orchestrator\/src\//.test(command)
 }
 
+/**
+ * Whether to reclaim an orphan process without being asked, from its own row.
+ *
+ * Ownership proof — positive evidence that a run started the process — has two
+ * routes: the environment names in `shared/run-process-marker.ts`, which the
+ * inventory reads into `orphan.runMarker`, and the run's own recorded process
+ * group, its `agent_pgid` with the worktree it used, which
+ * `orphansWithOwnershipEvidence` folds into that same field before any caller
+ * decides. A process with neither proof is left alone.
+ */
 export function automaticOrphanReclaimDecision(
   orphan: OrphanProcess,
   liveWorktrees: ReadonlySet<string>,
@@ -115,11 +125,25 @@ export function applyRunProcessGroupEvidence(
     pgids.add(run.agentPgid)
     groups.set(tree, pgids)
   }
+  // A group that covers this orphan's tree upgrades it to the same 'present'
+  // the environment route writes, so both proofs share one field and one meaning.
   return orphans.map((orphan) =>
-    orphan.runMarker !== 'present' && groups.get(resolve(orphan.missingTree))?.has(orphan.pgid)
+    groups.get(resolve(orphan.missingTree))?.has(orphan.pgid)
       ? { ...orphan, runMarker: 'present' }
       : orphan,
   )
+}
+
+/**
+ * Attach the ownership proof the inventory does not itself carry.
+ *
+ * The inventory reads the environment route; this adds the run's recorded
+ * process group. It is the one entry point for that proof, and every caller of
+ * automaticOrphanReclaimDecision goes through it, so no decision is made on
+ * orphans that carry only the environment reading.
+ */
+export function orphansWithOwnershipEvidence(orphans: readonly OrphanProcess[]): OrphanProcess[] {
+  return applyRunProcessGroupEvidence(orphans, recordedRunProcessGroups())
 }
 
 /** The process groups runs recorded, read in one query for the whole inventory. */
@@ -278,7 +302,7 @@ export function reclaimRemovedTreeProcesses(
   const result: RemovedTreeProcessCleanup = { reclaimed: [], kept: [], errors: [] }
   if (inventory.error) result.errors.push(`process inventory unavailable: ${inventory.error}`)
   const liveWorktrees = liveRunWorktrees()
-  const orphans = applyRunProcessGroupEvidence(inventory.orphans, recordedRunProcessGroups())
+  const orphans = orphansWithOwnershipEvidence(inventory.orphans)
   const candidates = orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
   const candidatePids = new Set(candidates.map(({ pid }) => pid))
   for (const orphan of candidates) {

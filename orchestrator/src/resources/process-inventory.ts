@@ -23,17 +23,29 @@ export type OrphanCandidate = ProcessFact & {
   match: 'cwd' | 'argument'
 }
 
-/** Whether a process environment proves a run started the process. */
+/**
+ * Whether ownership evidence proves a run started the process.
+ *
+ * The inventory itself reads the environment names only. Reclaim also counts
+ * the run's recorded process group — its `agent_pgid` paired with the worktree
+ * it used — which `orphansWithOwnershipEvidence` folds into this field before
+ * any decision, so a consumer downstream of that entry point reads 'present'
+ * for either proof.
+ */
 export type RunMarkerEvidence = 'present' | 'absent' | 'unknown'
 export type OrphanProcess = OrphanCandidate & { runMarker: RunMarkerEvidence }
 
 /**
  * The environment names that prove a run started a process: the delegation
- * marker every run child inherits, and the marker a host broker stamps on the
+ * marker, and the marker a host broker stamps on the gate and focused-test
  * children it starts for a run once the gate environment scrub has withheld the
  * delegation marker. Neither is present in an operator's own shell.
  */
 const RUN_MARKER_ENTRY = new RegExp(`^(?:${RUN_PROCESS_ENV_NAMES.join('|')})=.`)
+/** `ps -E` joins the environment entries it prints with whitespace. */
+const PS_ENVIRONMENT_SEPARATOR = /\s+/
+/** `/proc/<pid>/environ` separates entries with NUL bytes. */
+const PROCFS_ENVIRONMENT_SEPARATOR = '\0'
 /** Any environment entry, which is the only proof an environment was printed at all. */
 const ENVIRONMENT_ENTRY = /(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=\S/
 
@@ -205,12 +217,19 @@ export function orphanProcesses(
 /**
  * Whether an environment text carries a run marker.
  *
- * Takes either shape the platform offers: the NUL-separated environ bytes of
- * `/proc/<pid>/environ`, or the whitespace-joined environment `ps -E` prints
- * after a process's command. A name with an empty value is not a marker.
+ * The separator belongs to the platform's format, so the caller supplies it:
+ * `/proc/<pid>/environ` is NUL-separated, where a value containing a space — a
+ * copied environment string stored in another variable, say — never starts an
+ * entry that reads as a marker. `ps -E` joins its entries with whitespace, a
+ * boundary it has already destroyed, so a marker name cut out of a value may
+ * read as ownership evidence there. A name with an empty value is not a marker
+ * in either shape.
  */
-export function environmentCarriesRunMarker(environment: string): boolean {
-  return environment.split(/[\s\0]+/).some((entry) => RUN_MARKER_ENTRY.test(entry))
+export function environmentCarriesRunMarker(
+  environment: string,
+  separator: string | RegExp,
+): boolean {
+  return environment.split(separator).some((entry) => RUN_MARKER_ENTRY.test(entry))
 }
 
 /**
@@ -247,7 +266,10 @@ export function parseProcessEnvironmentEvidence(
     }
     const environment = observed.slice(command.length)
     environments.set(pid, environment)
-    evidence.set(pid, environmentCarriesRunMarker(environment) ? 'present' : 'absent')
+    evidence.set(
+      pid,
+      environmentCarriesRunMarker(environment, PS_ENVIRONMENT_SEPARATOR) ? 'present' : 'absent',
+    )
   }
   const probe = environments.get(probePid)
   if (probe === undefined || !ENVIRONMENT_ENTRY.test(probe))
@@ -299,7 +321,10 @@ function procRunMarkerEvidence(pids: readonly number[]): Map<number, RunMarkerEv
     try {
       evidence.set(
         pid,
-        environmentCarriesRunMarker(readFileSync(`/proc/${pid}/environ`, 'utf8'))
+        environmentCarriesRunMarker(
+          readFileSync(`/proc/${pid}/environ`, 'utf8'),
+          PROCFS_ENVIRONMENT_SEPARATOR,
+        )
           ? 'present'
           : 'absent',
       )

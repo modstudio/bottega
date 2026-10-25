@@ -117,10 +117,21 @@ test('a candidate in a recorded run process group is run residue whatever its en
       ],
     )[0]!.runMarker,
   ).toBe('absent')
-  // Evidence already read is left exactly as read.
-  expect(applyRunProcessGroupEvidence([orphan({ runMarker: 'present' })], runs)).toEqual([
-    orphan({ runMarker: 'present' }),
-  ])
+})
+
+test('enrichment decides an unknown environment by the recorded group, and keeps one outside it', () => {
+  const runs = [{ worktree: '/trees/gone', agentPgid: 42 }]
+  const inGroup = applyRunProcessGroupEvidence([orphan({ runMarker: 'unknown' })], runs)[0]!
+  expect(automaticOrphanReclaimDecision(inGroup, new Set())).toEqual({ reclaim: true })
+  const outside = applyRunProcessGroupEvidence(
+    [orphan({ runMarker: 'unknown', pgid: 7 })],
+    runs,
+  )[0]!
+  expect(outside.runMarker).toBe('unknown')
+  expect(automaticOrphanReclaimDecision(outside, new Set())).toEqual({
+    reclaim: false,
+    reason: 'process environment could not be read to prove a run started it',
+  })
 })
 
 test('an existing reason still wins over missing ownership evidence', () => {

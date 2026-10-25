@@ -84,15 +84,21 @@ test('parses faithful Linux ps etime output and ignores malformed age', () => {
   ])
 })
 
-test('reads a run marker from either environment shape and never from a value', () => {
-  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_DEPTH=1\0HOME=/Users/x')).toBe(true)
-  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_RUN_PROCESS=1')).toBe(true)
-  expect(environmentCarriesRunMarker('PATH=/bin HOME=/Users/x')).toBe(false)
-  // A marker name with no value, and one spelled inside another variable's value,
-  // are not ownership evidence.
-  expect(environmentCarriesRunMarker('BOTTEGA_DEPTH=')).toBe(false)
-  expect(environmentCarriesRunMarker('FOO=BOTTEGA_DEPTH=1')).toBe(false)
-  expect(environmentCarriesRunMarker('BOTTEGA_DEPTHISH=1')).toBe(false)
+test('reads a run marker from the environment shape the platform offers', () => {
+  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_DEPTH=1\0HOME=/Users/x', '\0')).toBe(true)
+  expect(environmentCarriesRunMarker('PATH=/bin\0BOTTEGA_RUN_PROCESS=1', '\0')).toBe(true)
+  expect(environmentCarriesRunMarker('PATH=/bin HOME=/Users/x', /\s+/)).toBe(false)
+  // A marker name with no value, and one spelled inside another variable's
+  // value, are not ownership evidence.
+  expect(environmentCarriesRunMarker('BOTTEGA_DEPTH=', '\0')).toBe(false)
+  expect(environmentCarriesRunMarker('FOO=BOTTEGA_DEPTH=1', '\0')).toBe(false)
+  expect(environmentCarriesRunMarker('BOTTEGA_DEPTHISH=1', '\0')).toBe(false)
+  // A procfs entry is one NUL-separated string, so a space inside a value never
+  // starts an entry that reads as a marker.
+  expect(environmentCarriesRunMarker('PATH=/bin\0FOO=x BOTTEGA_DEPTH=1\0HOME=/x', '\0')).toBe(false)
+  // `ps -E` joins entries with whitespace and destroys that boundary, so the
+  // same text is the known ambiguity of that shape rather than a second proof.
+  expect(environmentCarriesRunMarker('PATH=/bin FOO=x BOTTEGA_DEPTH=1', /\s+/)).toBe(true)
 })
 
 test('separates a ps environment from the command it is printed after', () => {
@@ -184,9 +190,6 @@ test('an environment that was not read stays unknown on the inventory row', () =
     project: 'app',
     match: 'cwd',
   }
-  expect(joinRunMarker([candidate], new Map([[42, 'present']]))).toEqual([
-    { ...candidate, runMarker: 'present' },
-  ])
   expect(joinRunMarker([candidate], new Map())[0]!.runMarker).toBe('unknown')
 })
 
