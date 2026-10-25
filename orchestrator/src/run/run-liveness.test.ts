@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db, nowIso } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
+import * as resourceOwnership from '../resources/resource-ownership.ts'
 import { candidates } from '../route/route.ts'
 import { PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { recordCoordinatorCause, runCoordinatorLogPath } from './run-coordinator-log.ts'
@@ -14,6 +15,21 @@ import { reapStale, STALE_AFTER_MS } from './run-liveness.ts'
 import { sharedGitConfigCheckSkipReason } from './shared-git-config-check.ts'
 
 const noSharedGitConfigCheck = () => null
+
+beforeEach(() => {
+  spyOn(resourceOwnership, 'teardownTerminalRunResources').mockReturnValue({
+    complete: true,
+    errors: [],
+    removed: 0,
+    skipped: false,
+    outcome: 'nothing',
+    reason: null,
+  })
+})
+
+afterEach(() => {
+  mock.restore()
+})
 
 test('shared git config skip reasons prioritize a live vendor over worktree sharers', () => {
   expect(

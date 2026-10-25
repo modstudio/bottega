@@ -31,9 +31,11 @@ writeFileSync(
 chmodSync(join(cleanDockerBin, 'docker'), 0o755)
 process.env.PATH = `${cleanDockerBin}:${originalPath ?? ''}`
 const originalBunSpawnSync = Bun.spawnSync
+let unexpectedDockerInvocation: string | null = null
 Bun.spawnSync = ((command: string[], options) => {
-  const resolved =
-    command[0] === 'docker' ? [join(cleanDockerBin, 'docker'), ...command.slice(1)] : command
+  const docker = command[0] === 'docker'
+  if (docker) unexpectedDockerInvocation = command.join(' ')
+  const resolved = docker ? [join(cleanDockerBin, 'docker'), ...command.slice(1)] : command
   return originalBunSpawnSync.call(Bun, resolved, options)
 }) as typeof Bun.spawnSync
 
@@ -250,6 +252,12 @@ beforeEach(() => {
     }
   }
   childrenBeforeTest = new Set(readdirSync(dir))
+})
+
+afterEach(() => {
+  const invocation = unexpectedDockerInvocation
+  unexpectedDockerInvocation = null
+  if (invocation) throw new Error(`unexpected docker invocation from gate test: ${invocation}`)
 })
 
 afterEach(() => {
