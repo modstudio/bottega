@@ -78,7 +78,7 @@ async function command(args: string[], stdin = '') {
       {
         selectDocWriteTree,
         collectCanonLintInput,
-        consumeResumeHandoff: async () => ({ lines: [] }),
+        consumeResumeHandoff: { prepare: async () => async () => ({ lines: [] }) },
       },
     )
   } catch (error) {

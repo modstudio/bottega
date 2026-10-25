@@ -23,6 +23,7 @@ import {
 } from './run-mutation-owner.ts'
 import {
   formatSessionLivenessEvidence,
+  type SessionLivenessEvidence,
   type SessionProcessEvidence,
   sessionLivenessEvidence,
 } from './session-liveness-adapter.ts'
@@ -122,11 +123,22 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
   }
 }
 
-function adoptedMutationReason(authority: RootAuthority): string | null {
+export function adoptedMutationReason(
+  owner: string | null,
+  actor: string | null,
+  liveness: Pick<SessionLivenessEvidence, 'ownerProcess' | 'candidates'>,
+): string {
+  if (liveness.ownerProcess === 'dead' && liveness.candidates.length)
+    return `adopted from dead owner ${owner} (pids ${liveness.candidates.map(({ pid }) => pid).join(', ')} gone or reused) by ${actor}`
+  return `adopted from gone owner ${owner} by ${actor}`
+}
+
+function authorityAdoptionReason(authority: RootAuthority): string | null {
   if (runMutationOwnerDecision(authority) !== 'adopt') return null
-  if (authority.ownerProcess === 'dead' && authority.ownerProcesses.length)
-    return `adopted from dead owner ${authority.owner} (pids ${authority.ownerProcesses.map(({ pid }) => pid).join(', ')} gone or reused) by ${authority.actor}`
-  return `adopted from gone owner ${authority.owner} by ${authority.actor}`
+  return adoptedMutationReason(authority.owner, authority.actor, {
+    ownerProcess: authority.ownerProcess,
+    candidates: authority.ownerProcesses,
+  })
 }
 
 export function runMutationActor(runId: string): RootAuthority {
@@ -193,7 +205,7 @@ export function auditRunMutation(
       action,
       authority.actor,
       nowIso(),
-      joinMutationReason(reason, adoptedMutationReason(mutationAuthority)),
+      joinMutationReason(reason, authorityAdoptionReason(mutationAuthority)),
       turnId,
     )
 }

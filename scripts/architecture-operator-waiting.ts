@@ -22,6 +22,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './question-open.ts',
     './question-outbox.ts',
     './question-vocabulary.ts',
+    './run-authority.ts',
     './run-mutation-owner.ts',
     './session-liveness-adapter.ts',
   ]),

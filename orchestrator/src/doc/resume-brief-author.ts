@@ -4,21 +4,35 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import type { RecordWriteDecision } from '../record/record-write-decision.ts'
 import { hostedDocClient } from './doc-hosted-client.ts'
-import type { Doc } from './doc-read-store.ts'
 import { latestStoredDocAuthorSession } from './doc-revision-store.ts'
+import type { ConsumedDoc, Doc } from './docs.ts'
 
-export type ConsumedDoc = Doc & { already_consumed: boolean }
+type HostedRevision = Record<string, unknown>
+export type ResumeBriefAuthorOptions = {
+  writeDecision?: RecordWriteDecision
+  listHostedRevisions?: (doc: Doc) => Promise<HostedRevision[]>
+}
 
 export async function resumeBriefAuthorSession(
-  doc: Doc,
+  doc: Doc | ConsumedDoc,
   database: Database = db(),
+  options: ResumeBriefAuthorOptions = {},
 ): Promise<string | null> {
-  const local = latestStoredDocAuthorSession(doc.record_id, database)
-  if (local || currentRecordWriteDecision(database) !== 'hosted') return local
-  const revisions = await (await hostedDocClient(doc.scope, doc.subject)).listRevisions(
-    doc.record_id,
-  )
+  const writeDecision = options.writeDecision ?? currentRecordWriteDecision(database)
+  if (writeDecision !== 'hosted') return latestStoredDocAuthorSession(doc.record_id, database)
+  let revisions: HostedRevision[]
+  try {
+    revisions = options.listHostedRevisions
+      ? await options.listHostedRevisions(doc)
+      : await (await hostedDocClient(doc.scope, doc.subject)).listRevisions(doc.record_id)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `could not read hosted revisions for resume brief ${doc.subject}/${doc.slug}: ${message}; consume again when the hosted record is reachable`,
+    )
+  }
   return (
     (revisions
       .filter(

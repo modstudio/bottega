@@ -2,10 +2,12 @@
 /** Applies and presents one document consume, delegating resume handoff through a port. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { consumeDoc } from './docs.ts'
-import type { ConsumedDoc } from './resume-brief-author.ts'
+import { type ConsumedDoc, consumeDoc, type Doc, getDoc } from './docs.ts'
 
-export type ConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
+type PreparedConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
+export type ConsumeDocHandoff = {
+  prepare(doc: Doc | null): Promise<PreparedConsumeDocHandoff>
+}
 
 type ConsumeFlags = {
   has(name: string): boolean
@@ -27,12 +29,13 @@ export async function handleDocConsumeCommand(input: {
     throw new Error(
       `${PLATFORM_SLUG} doc consume <slug> --scope S [--subject X] [--expect REVISION]`,
     )
+  const finishHandoff = await input.handoff.prepare(getDoc(input.scope, input.subject, slug))
   const result = await consumeDoc(input.scope, input.subject, slug, {
     reason: input.flags.flag('reason') ?? 'consumed by session',
     author: input.flags.flag('author'),
     expectedRevision: input.flags.flag('expect'),
   })
-  const handoff = await input.handoff(result)
+  const handoff = await finishHandoff(result)
   if (input.flags.has('json')) input.log(JSON.stringify({ ...result, handoff }))
   else {
     input.log(

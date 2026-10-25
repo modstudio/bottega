@@ -93,6 +93,7 @@ function assertLocalRestoreCommands(revision: DocRevision, audiences: DocAudienc
 }
 
 export type { Doc, DocRevision, DocRevisionMetadata }
+export type ConsumedDoc = Doc & { already_consumed: boolean }
 
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import {
@@ -660,7 +661,7 @@ export async function consumeDoc(
   subject: string | null,
   slug: string,
   context: DocWriteContext,
-): Promise<Doc & { already_consumed: boolean }> {
+): Promise<ConsumedDoc> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)

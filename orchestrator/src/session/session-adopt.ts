@@ -25,7 +25,11 @@ type SessionAdoptedRun = {
   turns: number
 }
 
-type SessionAdoptionFailure = SessionAdoptedRun & { reason: string }
+type SessionAdoptionFailure = SessionAdoptedRun & {
+  reason: string
+  currentOwner: string | null
+}
+type PendingSessionAdoptionFailure = Omit<SessionAdoptionFailure, 'currentOwner'>
 
 export type SessionAdoptionReport = {
   fromSession: string
@@ -45,7 +49,7 @@ type Root = {
   launch_key: string | null
 }
 
-type AdoptionOptions = {
+export type AdoptionOptions = {
   consent?: SessionAdoptionConsent
   database?: Database
   now?: number
@@ -89,7 +93,7 @@ function transferRoot(input: {
   actor: string
   reason: string
   options: AdoptionOptions
-}): { moved?: SessionAdoptedRun; failed?: SessionAdoptionFailure } {
+}): { moved?: SessionAdoptedRun; failed?: PendingSessionAdoptionFailure } {
   const { database, root, target, actor, reason, options } = input
   const run = adoptedRun(database, root, target)
   const terminal = database
@@ -122,8 +126,8 @@ function transferRoot(input: {
 function remainingFailures(
   database: Database,
   target: string,
-  failures: SessionAdoptionFailure[],
-): SessionAdoptionFailure[] {
+  failures: PendingSessionAdoptionFailure[],
+): PendingSessionAdoptionFailure[] {
   const known = new Set(failures.map(({ recordId }) => recordId))
   return ownedRoots(database, target)
     .filter(({ record_id }) => !known.has(record_id))
@@ -131,6 +135,21 @@ function remainingFailures(
       ...adoptedRun(database, root, target),
       reason: 'still owned by target after adoption',
     }))
+}
+
+function currentFailureOwners(
+  database: Database,
+  failures: PendingSessionAdoptionFailure[],
+): SessionAdoptionFailure[] {
+  return failures.map((failure) => ({
+    ...failure,
+    currentOwner:
+      database
+        .query<{ session_id: string | null }, [string]>(
+          'SELECT session_id FROM run WHERE record_id=?',
+        )
+        .get(failure.recordId)?.session_id ?? null,
+  }))
 }
 
 function assertAdoptionConsent(
@@ -171,7 +190,7 @@ export function adoptSessionRuns(
   })
   assertAdoptionConsent(target, evidence, options.consent ?? 'standard')
   const moved: SessionAdoptedRun[] = []
-  const notMoved: SessionAdoptionFailure[] = []
+  const notMoved: PendingSessionAdoptionFailure[] = []
   for (const root of ownedRoots(database, target)) {
     const outcome = transferRoot({ database, root, target, actor, reason, options })
     if (outcome.moved) moved.push(outcome.moved)
@@ -182,7 +201,7 @@ export function adoptSessionRuns(
     fromSession: target,
     toSession: actor,
     runs: moved,
-    notMoved,
+    notMoved: currentFailureOwners(database, notMoved),
     totalRuns: moved.length,
     totalTurns: moved.reduce((sum, run) => sum + run.turns, 0),
   }

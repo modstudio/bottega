@@ -9,6 +9,7 @@ import { nextQuestionNumber } from './question-number.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import { rulingActor } from './question-vocabulary.ts'
+import { adoptedMutationReason } from './run-authority.ts'
 import {
   joinMutationReason,
   RUN_MUTATION_WINDOW_MS,
@@ -16,6 +17,7 @@ import {
   reauthorizeAdoptedMutation,
   runMutationOwnerDecision,
 } from './run-mutation-owner.ts'
+import type { SessionProcessProbe } from './session-liveness-adapter.ts'
 import { sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
 export type QuestionMutationAction = 'rule' | 'overturn' | 'file' | 'close'
@@ -29,13 +31,19 @@ export function authorizeWorkflowQuestionMutation(input: {
   chainLastActivityAt: number
   now?: number
   database?: Database
+  probe?: SessionProcessProbe
 }): string | null {
   const database = input.database ?? db()
-  const readFacts = (): RunMutationOwnerFacts => {
+  const readFacts = (): RunMutationOwnerFacts & {
+    ownerProcesses: ReturnType<typeof sessionLivenessEvidence>['candidates']
+  } => {
     const liveness =
       input.owner === null
         ? { ownerProcess: 'unknown' as const, ownerLastSeenAt: null }
-        : sessionLivenessEvidence(database, input.owner, input.actor, { now: input.now })
+        : sessionLivenessEvidence(database, input.owner, input.actor, {
+            now: input.now,
+            probe: input.probe,
+          })
     return {
       owner: input.owner,
       actor: input.actor,
@@ -45,6 +53,7 @@ export function authorizeWorkflowQuestionMutation(input: {
       now: input.now ?? Date.now(),
       windowMs: RUN_MUTATION_WINDOW_MS,
       ownerProcess: liveness.ownerProcess,
+      ownerProcesses: 'candidates' in liveness ? liveness.candidates : [],
     }
   }
   const initial = readFacts()
@@ -61,7 +70,11 @@ export function authorizeWorkflowQuestionMutation(input: {
   const current = reauthorizeAdoptedMutation(initial, readFacts, refusal)
   const decision = runMutationOwnerDecision(current)
   if (input.fromOperator || decision === 'owner') return null
-  if (decision === 'adopt') return `adopted from gone owner ${input.owner} by ${input.actor}`
+  if (decision === 'adopt')
+    return adoptedMutationReason(input.owner, input.actor, {
+      ownerProcess: current.ownerProcess,
+      candidates: current.ownerProcesses,
+    })
   return refusal()
 }
 

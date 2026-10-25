@@ -13,7 +13,7 @@ import {
   storedSessionCandidates,
 } from './session-liveness.ts'
 
-export { formatSessionLivenessEvidence, type SessionProcessEvidence }
+export { formatSessionLivenessEvidence, type SessionLivenessEvidence, type SessionProcessEvidence }
 
 export type SessionProcessProbe = (pid: number) => ProcessProbeResult
 

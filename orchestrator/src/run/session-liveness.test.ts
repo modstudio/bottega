@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { sessionLivenessDecision } from './session-liveness.ts'
+import { sessionLivenessDecision, storedSessionCandidates } from './session-liveness.ts'
 
 describe('session liveness decision', () => {
   const old = 700
@@ -103,19 +103,19 @@ describe('session liveness decision', () => {
         }).ownerProcess,
       ).toBe('unknown')
     expect(
-      sessionLivenessDecision({
-        ...facts,
-        ownerSeen: { ancestorChain: 'not-json', lastSeenAt: old },
-        probes: [
-          {
-            pid: 42,
-            startTime: 'owner-start',
-            alive: false,
-            observedStartTime: null,
-          },
-        ],
-      }).ownerProcess,
-    ).toBe('unknown')
+      storedSessionCandidates({
+        ownerSessionId: 'owner',
+        ownerAncestorChain: 'not-json',
+        actorSessionId: 'actor',
+        actorAncestorChain: facts.actorAncestorChain,
+      }),
+    ).toEqual({ candidates: [], malformed: true })
+    expect(
+      decide(
+        [{ pid: 42, startTime: 'owner-start' }],
+        [{ pid: 42, startTime: 'owner-start', alive: false, observedStartTime: null }],
+      ).ownerProcess,
+    ).toBe('dead')
     expect(
       sessionLivenessDecision({
         ...facts,

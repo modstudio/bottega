@@ -21,7 +21,7 @@ import {
   type PortPair,
 } from '../porting/porting.ts'
 import { upsertProject } from '../project/projects.ts'
-import { handoffConsumedResumeBrief } from '../session/resume-brief-handoff.ts'
+import { resumeBriefHandoff } from '../session/resume-brief-handoff.ts'
 import {
   docCommand,
   formatDocSearchRefresh,
@@ -108,7 +108,7 @@ async function command(args: string[], stdin = '') {
       await docCommand(args[1] ?? 'list', args, flags, presentation, {
         selectDocWriteTree,
         collectCanonLintInput,
-        consumeResumeHandoff: handoffConsumedResumeBrief,
+        consumeResumeHandoff: resumeBriefHandoff,
       })
     else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
     else if (args[0] === 'review') {

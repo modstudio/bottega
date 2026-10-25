@@ -111,7 +111,11 @@ test('reports roots moved before a later transfer failure and roots still owned 
 
   expect(report.runs.map(({ recordId }) => recordId)).toEqual([first])
   expect(report.notMoved).toEqual([
-    expect.objectContaining({ recordId: second, reason: 'injected transfer failure' }),
+    expect.objectContaining({
+      recordId: second,
+      reason: 'injected transfer failure',
+      currentOwner: 'former',
+    }),
   ])
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(first)).toEqual({
     session_id: 'successor',

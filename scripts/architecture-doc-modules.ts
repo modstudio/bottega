@@ -15,15 +15,12 @@ export const docModules: DocModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     '../record/record-write-authority.ts',
+    '../record/record-write-decision.ts',
     './doc-hosted-client.ts',
-    './doc-read-store.ts',
+    './docs.ts',
     './doc-revision-store.ts',
   ]),
-  module('orchestrator/src/doc/doc-consume-command.ts', [
-    '../../../shared/brand.ts',
-    './docs.ts',
-    './resume-brief-author.ts',
-  ]),
+  module('orchestrator/src/doc/doc-consume-command.ts', ['../../../shared/brand.ts', './docs.ts']),
   module('orchestrator/src/doc/doc-reference-read.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
