@@ -20,7 +20,10 @@ import {
   recordAuth,
   setActiveRecordSpaceForSession,
 } from '../record/record-auth.ts'
-import { PROJECT_SETTINGS_NOT_IMPORTED } from '../record/record-project-columns.ts'
+import {
+  PROJECT_SETTING_COLUMNS,
+  PROJECT_SETTINGS_NOT_IMPORTED,
+} from '../record/record-project-columns.ts'
 import { syncRecord } from '../record/record-sync.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { backfillRunRecords } from '../run/run-outbox.ts'
@@ -97,9 +100,10 @@ test('project import refuses without a signed-in user before opening its sources
 async function targetState(sql: SQL): Promise<unknown> {
   const projects = await sql`
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
-      landing_branch, production_branch, gate, require_clean_main, color,
-      color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, mcp_reader_tools, docs, signals, review, release, states, tracker, worktree, retired_at, created_at
+      visibility, landing_branch, production_branch, gate, gate_input, focused_tests,
+      require_clean_main, color, color_dark, env_prefix, mcp_server, worker_mcp_servers,
+      secret_paths, mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review,
+      test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     FROM project ORDER BY name
   `
   const sequences = await sql`
@@ -234,6 +238,7 @@ realPostgres('project import against copied live SQLite data', () => {
       docs: 'docs',
       envPrefix: 'env_prefix',
       gate: 'gate',
+      gateInput: 'gate_input',
       focusedTests: 'focused_tests',
       keyPrefixes: 'key_prefixes',
       managedContext: 'managed_context',
@@ -252,9 +257,15 @@ realPostgres('project import against copied live SQLite data', () => {
       testSubstance: 'test_substance',
       tracker: 'tracker',
       trunk: 'landing_branch',
+      visibility: 'visibility',
       worktree: 'worktree',
       workerMcpServers: 'worker_mcp_servers',
     }
+    expect(
+      Object.keys(columnForSetting)
+        .filter((key) => key !== 'mcp.reader_tools')
+        .sort(),
+    ).toEqual(Object.keys(PROJECT_SETTING_COLUMNS).sort())
     const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
     expect(
       [...sourceKeySet].filter((key) => !(key in columnForSetting) && !notImported.has(key)),

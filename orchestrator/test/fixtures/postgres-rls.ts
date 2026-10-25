@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { provisionedPostgres } from '../preload.ts'
 
-const container = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
 const recordFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record')
 const migrationsFolder = join(recordFolder, 'migrations')
 
@@ -37,10 +37,10 @@ export const migration = readdirSync(migrationsFolder, { withFileTypes: true })
 export type PsqlResult = { code: number; stdout: string; stderr: string }
 
 export function psql(user: string, password: string, source: string): PsqlResult {
-  if (!container) throw new Error('BOTTEGA_TEST_POSTGRES_CONTAINER is required')
+  const { docker, container } = provisionedPostgres()
   const result = Bun.spawnSync(
     [
-      'docker',
+      docker,
       'exec',
       '-i',
       '-e',

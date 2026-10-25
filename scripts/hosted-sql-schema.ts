@@ -87,6 +87,7 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   'orchestrator/test/fixtures/doc-import.ts',
   'orchestrator/test/fixtures/record-api.ts',
   'orchestrator/test/fixtures/record-session.ts',
+  'orchestrator/test/preload.ts',
   // Registers hosted canon HTTP assertions and intentionally owns no SQL.
   'orchestrator/test/canon-import-proof.ts',
   'orchestrator/test/postgres-board-api-values.ts',
