@@ -1,5 +1,7 @@
 // concern: record-sync-command
 /** Owns sync command presentation. Must not know record schema or run execution. */
+
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { syncRecord } from './record-sync.ts'
 import { recordTunnelFailure } from './record-tunnel-error.ts'
@@ -29,6 +31,15 @@ function heldOutboxLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['held']>,
 ): string[] {
   return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)
+}
+
+export function quarantinedParentHeldLines(
+  rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
+): string[] {
+  return rows.map(
+    (row) =>
+      `held: orch:${row.id} ${row.kind} is quarantined; ${row.rows} rows wait on it; retry or retire it with ${PLATFORM_SLUG} record outbox retry|retire orch:${row.id}`,
+  )
 }
 
 export async function syncCommand(
@@ -67,4 +78,6 @@ export async function syncCommand(
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
   for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)
   for (const line of heldOutboxLines(result.held ?? [])) presentation.log(line)
+  for (const line of quarantinedParentHeldLines(result.quarantinedParentHolds ?? []))
+    presentation.log(line)
 }

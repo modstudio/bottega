@@ -21,7 +21,9 @@ import {
   outboxParentIdentityKey,
   outboxRowIsEligible,
   outboxRowPlannedParentKeys,
-  outboxRowWaitsForParent,
+  type QuarantinedParentHoldAccumulator,
+  quarantinedParentHoldResult,
+  rowWaitsForQuarantinedParent,
 } from './outbox-dependency.ts'
 import { quarantinedOutboxRows, quarantineOutboxRow } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
@@ -181,11 +183,21 @@ function planBatchRow(
     memberships: ReturnType<typeof parseRecordSpaceMemberships>
     blocked: BlockedOutboxRow[]
     plannedParents: ReadonlyMap<string, readonly number[]>
+    quarantinedParentHolds: QuarantinedParentHoldAccumulator
     projectSpaces?: Record<string, string>
   },
 ): PlannedBatchRow {
   const { row, parsed } = candidate
-  if (parsed && outboxRowWaitsForParent(input.local, row, parsed, input.plannedParents)) {
+  if (
+    parsed &&
+    rowWaitsForQuarantinedParent(
+      input.local,
+      row,
+      parsed,
+      input.plannedParents,
+      input.quarantinedParentHolds,
+    )
+  ) {
     return { disposition: input.hasBatchRows ? 'stop' : 'skip' }
   }
   if (parsed && deferOutboxRow(input.local, row, parsed, input.blocked, input.plannedParents))
@@ -412,6 +424,7 @@ function nextBatch(input: {
   now: () => string
   memberships: ReturnType<typeof parseRecordSpaceMemberships>
   blocked: BlockedOutboxRow[]
+  quarantinedParentHolds: QuarantinedParentHoldAccumulator
   projectSpaces?: Record<string, string>
 }): {
   request: RecordSyncRequest
@@ -452,6 +465,7 @@ function nextBatch(input: {
       memberships: input.memberships,
       blocked: input.blocked,
       plannedParents,
+      quarantinedParentHolds: input.quarantinedParentHolds,
       projectSpaces: input.projectSpaces,
     })
     if (planned.disposition === 'stop') break
@@ -518,6 +532,37 @@ async function ensureActiveSpaceBuiltIns(
   return session
 }
 
+function completedSyncResult(input: {
+  pushed: number
+  failed: number
+  local: Database
+  blocked: BlockedOutboxRow[]
+  held: Map<string, HeldRecordSyncRows>
+  quarantinedParentHolds: QuarantinedParentHoldAccumulator
+  readOnlyDeferred: Map<string, number>
+  backfill: RecordSyncResult['backfill']
+}): RecordSyncResult {
+  return {
+    pushed: input.pushed,
+    failed: input.failed,
+    pending: pendingCount(input.local),
+    configured: true,
+    quarantined: quarantinedOutboxRows(input.local),
+    blocked: input.blocked,
+    ...(input.held.size ? { held: [...input.held.values()] } : {}),
+    ...quarantinedParentHoldResult(input.quarantinedParentHolds),
+    ...(input.readOnlyDeferred.size
+      ? {
+          readOnlyDeferred: [...input.readOnlyDeferred].map(([spaceId, rows]) => ({
+            spaceId,
+            rows,
+          })),
+        }
+      : {}),
+    ...(input.backfill ? { backfill: input.backfill } : {}),
+  }
+}
+
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
   const identity = options.identity ?? { id: machineId(), name: machineName() }
@@ -553,6 +598,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   let failed = 0
   const readOnlyDeferred = new Map<string, number>()
   const held = new Map<string, HeldRecordSyncRows>()
+  const quarantinedParentHolds: QuarantinedParentHoldAccumulator = new Map()
   const attempted = new Set<number>()
   const candidates = preparePendingRows(writableLocal)
   let sentBatch = false
@@ -565,6 +611,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
       now: options.now ?? nowIso,
       memberships,
       blocked,
+      quarantinedParentHolds,
       projectSpaces: options.projectSpaces,
     })
     failed += batch.quarantined
@@ -585,22 +632,14 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   }
   if (!options.client) await pullRecordCache(writableLocal)
   rememberHostedRecord(writableLocal)
-  return {
+  return completedSyncResult({
     pushed,
     failed,
-    pending: pendingCount(writableLocal),
-    configured: true,
-    quarantined: quarantinedOutboxRows(writableLocal),
+    local: writableLocal,
     blocked,
-    ...(held.size ? { held: [...held.values()] } : {}),
-    ...(readOnlyDeferred.size
-      ? {
-          readOnlyDeferred: [...readOnlyDeferred].map(([spaceId, count]) => ({
-            spaceId,
-            rows: count,
-          })),
-        }
-      : {}),
-    ...(backfill ? { backfill } : {}),
-  }
+    held,
+    quarantinedParentHolds,
+    readOnlyDeferred,
+    backfill,
+  })
 }

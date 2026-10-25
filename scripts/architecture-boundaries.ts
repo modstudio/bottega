@@ -12,6 +12,7 @@ import {
   recordReadBoundariesAfterPublish,
   recordReadBoundariesBeforePublish,
   recordSchemaBoundaries,
+  recordSyncCommandBoundaries,
 } from './architecture-record-boundaries.ts'
 import { recordSettingsBoundarySpecs } from './architecture-record-settings-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
@@ -831,6 +832,7 @@ export const importBoundaries: ImportBoundary[] = [
     'Enforce the record-push-docs concern boundary.',
   ),
   ...recordReadBoundariesAfterPublish,
+  ...recordSyncCommandBoundaries,
   boundary(
     'record-sync-boundary',
     'orchestrator/src/record/record-sync.ts',
@@ -872,12 +874,6 @@ export const importBoundaries: ImportBoundary[] = [
       './record-verdicts.ts',
     ],
     'Keep hosted score validation and upsert together.',
-  ),
-  boundary(
-    'record-sync-command-boundary',
-    'orchestrator/src/record/record-sync-command.ts',
-    ['../../../shared/machine-config.ts', './record-sync.ts', './record-tunnel-error.ts'],
-    'Enforce the record-sync-command concern boundary.',
   ),
   boundary(
     'record-review-read-boundary',

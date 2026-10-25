@@ -476,8 +476,8 @@ function recordTerminalMcpEvidence(
 
 function runResourceColumnValues(usage: RunResourceUsage | null) {
   return [
-    usage?.cpuMs ?? null,
-    usage?.peakRssBytes ?? null,
+    usage?.cpuMs == null ? null : Math.round(usage.cpuMs),
+    usage?.peakRssBytes == null ? null : Math.round(usage.peakRssBytes),
     usage?.samples ?? null,
     usage?.source ?? null,
   ]

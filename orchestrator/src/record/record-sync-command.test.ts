@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   blockedOutboxLines,
   quarantinedOutboxLines,
+  quarantinedParentHeldLines,
   readOnlyDeferredLines,
 } from './record-sync-command.ts'
 
@@ -18,6 +20,12 @@ test('sync presentation names each quarantined row with its kind and error', () 
       },
     ]),
   ).toEqual(["quarantined 28138\tscore\tfailure kind 'context' is not evidence"])
+})
+
+test('sync presentation names a quarantined parent and its waiting rows', () => {
+  expect(quarantinedParentHeldLines([{ id: 48, kind: 'run', rows: 3 }])).toEqual([
+    `held: orch:48 run is quarantined; 3 rows wait on it; retry or retire it with ${PLATFORM_SLUG} record outbox retry|retire orch:48`,
+  ])
 })
 
 test('sync presentation names a row blocked by its retired parent', () => {
