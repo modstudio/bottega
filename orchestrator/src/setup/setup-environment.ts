@@ -21,6 +21,14 @@ import {
   legacyEnvironmentNameMatches,
   replacementEnvironmentName,
 } from './environment-name-migration.ts'
+import {
+  decideStateFileMove,
+  defaultStateFilePair,
+  renameStateFiles,
+  type StateFileHolderObservation,
+  type StateFileMoveDecision,
+  type StateFileNamePair,
+} from './setup-state-file.ts'
 
 const ENVIRONMENT_FILES = [
   '.zshenv',
@@ -51,6 +59,7 @@ export type EnvironmentMigrationReport = {
   backupDirectory: string | null
   restoreCommand: string | null
   notes: string[]
+  stateFile: StateFileNamePair | null
 }
 
 export type EnvironmentSettingsDecision = {
@@ -304,6 +313,12 @@ type EnvironmentBackupManifest = {
   register: unknown[]
   secrets: SecretEnvironmentMigration[]
   settings: Array<{ oldName: string; newName: string }>
+  stateFile?: StateFileNamePair
+}
+
+export type PreparedStateFileMigration = {
+  directory: string
+  manifest: EnvironmentBackupManifest
 }
 
 async function createModeRestrictedCopy(
@@ -353,28 +368,105 @@ async function createMigrationBackup(
     `${new Date().toISOString().replaceAll(':', '-')}-${crypto.randomUUID()}`,
   )
   await mkdir(directory, { mode: 0o700 })
-  const files: EnvironmentBackupManifest['files'] = []
-  for (const [index, path] of [...new Set(paths)].entries()) {
-    if (!(await existing(path))) {
-      files.push({ path, existed: false })
-      continue
-    }
-    const backup = `${index}.file`
-    const mode = (await stat(path)).mode & 0o7777
-    await createModeRestrictedCopy(path, join(directory, backup), mode)
-    files.push({ path, existed: true, backup, mode })
-  }
   const manifest: EnvironmentBackupManifest = {
     version: 1,
-    files,
+    files: [],
     register,
     secrets: [],
     settings: [],
   }
+  await appendBackupFiles(directory, manifest, paths)
   await writeFile(join(directory, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, {
     mode: 0o600,
   })
   return { directory, manifest }
+}
+
+async function appendBackupFiles(
+  directory: string,
+  manifest: EnvironmentBackupManifest,
+  paths: readonly string[],
+): Promise<void> {
+  const known = new Set(manifest.files.map(({ path }) => path))
+  for (const path of [...new Set(paths)]) {
+    if (known.has(path)) continue
+    if (!(await existing(path))) {
+      manifest.files.push({ path, existed: false })
+      continue
+    }
+    const backup = `${manifest.files.length}.file`
+    const mode = (await stat(path)).mode & 0o7777
+    await createModeRestrictedCopy(path, join(directory, backup), mode)
+    manifest.files.push({ path, existed: true, backup, mode })
+  }
+}
+
+/** Move the default store before setup planning can open it, retaining a restore manifest. */
+export async function prepareStateFileMigration(
+  env: NodeJS.ProcessEnv,
+  holders?: (paths: string[]) => StateFileHolderObservation,
+  authorizeRename?: () => void,
+): Promise<PreparedStateFileMigration | null> {
+  const pair = defaultStateFilePair(env)
+  if (!pair) return null
+  const decision = await decideStateFileMove(pair, holders)
+  if (decision.kind === 'refuse') throw new Error(decision.reason)
+  if (decision.kind !== 'move') return null
+  authorizeRename?.()
+  const backup = await createMigrationBackup(dirname(pair.newPath), [], [])
+  backup.manifest.stateFile = pair
+  await writeFile(
+    join(backup.directory, 'manifest.json'),
+    `${JSON.stringify(backup.manifest, null, 2)}\n`,
+    { mode: 0o600 },
+  )
+  await renameStateFiles(pair, decision.suffixes)
+  return backup
+}
+
+/** Reverse a prepared move when setup stops before any planned action begins. */
+export async function reversePreparedStateFileMigration(
+  prepared: PreparedStateFileMigration,
+  adapters: {
+    authorizeStateFileRename?: () => void
+    checkpointAndCloseStore?: () => Promise<void> | void
+    stateFileHolders?: (paths: string[]) => StateFileHolderObservation
+  } = {},
+): Promise<string> {
+  const pair = prepared.manifest.stateFile
+  if (!pair)
+    throw new Error(`prepared state-file backup has no recorded move: ${prepared.directory}`)
+  const restoreCommand = `${PLATFORM_SLUG} machine setup restore ${JSON.stringify(prepared.directory)}`
+  try {
+    adapters.authorizeStateFileRename?.()
+    await restoreStateFileMigrationDecision(pair, adapters.stateFileHolders)
+    await adapters.checkpointAndCloseStore?.()
+    const decision = await restoreStateFileMigrationDecision(pair, adapters.stateFileHolders)
+    await renameStateFiles({ oldPath: pair.newPath, newPath: pair.oldPath }, decision.suffixes)
+    await rm(prepared.directory, { recursive: true })
+    return `reversed state-file move ${pair.newPath} -> ${pair.oldPath}`
+  } catch (error) {
+    throw new Error(
+      `could not reverse state-file move: ${error instanceof Error ? error.message : String(error)}; backup retained at ${prepared.directory}; recover with ${restoreCommand}`,
+    )
+  }
+}
+
+async function restoreStateFileMigrationDecision(
+  pair: StateFileNamePair,
+  holders?: (paths: string[]) => StateFileHolderObservation,
+): Promise<Extract<StateFileMoveDecision, { kind: 'move' }>> {
+  const reversed = { oldPath: pair.newPath, newPath: pair.oldPath }
+  const decision = await decideStateFileMove(reversed, holders)
+  if (decision.kind === 'refuse') {
+    throw new Error(`${decision.reason}; then re-run ${PLATFORM_SLUG} machine setup restore`)
+  }
+  if (decision.kind !== 'move') {
+    throw new Error(
+      `refusing setup restore: recorded state file is absent: ${pair.newPath}; recover the recorded database at that path, then re-run ${PLATFORM_SLUG} machine setup restore`,
+    )
+  }
+  return decision
 }
 
 export async function restoreOperatorEnvironmentBackup(
@@ -383,6 +475,9 @@ export async function restoreOperatorEnvironmentBackup(
     restoreRegister: (rows: unknown[]) => Promise<void>
     restoreSecrets: (migrations: SecretEnvironmentMigration[]) => Promise<void>
     restoreSettings: (migrations: Array<{ oldName: string; newName: string }>) => Promise<void>
+    checkpointAndCloseStore?: () => Promise<void> | void
+    authorizeStateFileRename?: () => void
+    stateFileHolders?: (paths: string[]) => StateFileHolderObservation
   },
 ): Promise<void> {
   const manifest = JSON.parse(
@@ -393,9 +488,16 @@ export async function restoreOperatorEnvironmentBackup(
     !Array.isArray(manifest.files) ||
     !Array.isArray(manifest.register) ||
     !Array.isArray(manifest.secrets) ||
-    !Array.isArray(manifest.settings)
+    !Array.isArray(manifest.settings) ||
+    (manifest.stateFile !== undefined &&
+      (typeof manifest.stateFile?.oldPath !== 'string' ||
+        typeof manifest.stateFile?.newPath !== 'string'))
   ) {
     throw new Error(`refusing setup restore: malformed manifest in ${directory}`)
+  }
+  if (manifest.stateFile) {
+    adapters.authorizeStateFileRename?.()
+    await restoreStateFileMigrationDecision(manifest.stateFile, adapters.stateFileHolders)
   }
   for (const file of manifest.files) {
     if (!file.existed) {
@@ -407,6 +509,17 @@ export async function restoreOperatorEnvironmentBackup(
   await adapters.restoreSecrets(manifest.secrets)
   await adapters.restoreSettings(manifest.settings)
   await adapters.restoreRegister(manifest.register)
+  if (manifest.stateFile) {
+    await adapters.checkpointAndCloseStore?.()
+    const stateFileDecision = await restoreStateFileMigrationDecision(
+      manifest.stateFile,
+      adapters.stateFileHolders,
+    )
+    await renameStateFiles(
+      { oldPath: manifest.stateFile.newPath, newPath: manifest.stateFile.oldPath },
+      stateFileDecision.suffixes,
+    )
+  }
   await rm(directory, { recursive: true })
 }
 
@@ -494,6 +607,7 @@ export async function migrateOperatorEnvironment(
     registerBackup?: () => Promise<unknown[]>
     notes?: () => string[]
     processNamesRenamed?: number
+    preparedStateFileMigration?: PreparedStateFileMigration | null
   },
 ): Promise<EnvironmentMigrationReport> {
   const sources = await environmentSources(home)
@@ -502,28 +616,35 @@ export async function migrateOperatorEnvironment(
   const followUps = await staleInstalledPlists(home)
   const registerBackup = await (adapters.registerBackup?.() ?? Promise.resolve([]))
   const settingsJson = join(home, '.claude', 'settings.json')
-  const backup = await createMigrationBackup(
-    adapters.backupRoot ?? join(home, '.local', 'state', PLATFORM_SLUG, 'orchestrator'),
-    [
-      ...sources
-        .filter((source) =>
-          filePlan.files.some(
-            (planned) => planned.path === source.path && planned.decision.kind === 'replace',
-          ),
-        )
-        .map(({ path }) => path),
-      ...sources
-        .filter((source) =>
-          filePlan.files.some(
-            (planned) => planned.path === source.path && planned.decision.kind === 'replace',
-          ),
-        )
-        .map(({ path }) => `${path}.${PLATFORM_SLUG}-env-backup`),
-      settingsJson,
-      ...followUps.map(({ path }) => path),
-    ],
-    registerBackup,
-  )
+  const backupPaths = [
+    ...sources
+      .filter((source) =>
+        filePlan.files.some(
+          (planned) => planned.path === source.path && planned.decision.kind === 'replace',
+        ),
+      )
+      .map(({ path }) => path),
+    ...sources
+      .filter((source) =>
+        filePlan.files.some(
+          (planned) => planned.path === source.path && planned.decision.kind === 'replace',
+        ),
+      )
+      .map(({ path }) => `${path}.${PLATFORM_SLUG}-env-backup`),
+    settingsJson,
+    ...followUps.map(({ path }) => path),
+  ]
+  const backup =
+    adapters.preparedStateFileMigration ??
+    (await createMigrationBackup(
+      adapters.backupRoot ?? join(home, '.local', 'state', PLATFORM_SLUG, 'orchestrator'),
+      backupPaths,
+      registerBackup,
+    ))
+  if (adapters.preparedStateFileMigration) {
+    await appendBackupFiles(backup.directory, backup.manifest, backupPaths)
+  }
+  backup.manifest.register = registerBackup
   const writeManifest = async () => {
     await writeFile(
       join(backup.directory, 'manifest.json'),
@@ -550,7 +671,8 @@ export async function migrateOperatorEnvironment(
     secrets.length > 0 ||
     register.length > 0 ||
     settings.length > 0 ||
-    settingsRendered
+    settingsRendered ||
+    backup.manifest.stateFile !== undefined
   if (reversibleChange) {
     await writeManifest()
   } else await rm(backup.directory, { recursive: true })
@@ -566,6 +688,7 @@ export async function migrateOperatorEnvironment(
       ? `${PLATFORM_SLUG} machine setup restore ${JSON.stringify(backup.directory)}`
       : null,
     notes: adapters.notes?.() ?? [],
+    stateFile: backup.manifest.stateFile ?? null,
   }
 }
 
@@ -580,6 +703,9 @@ export function environmentMigrationMessage(report: EnvironmentMigrationReport):
       ({ path, names, backup }) => `${path}: ${names.join(', ')} (backup: ${backup})`,
     ),
   )
+  if (report.stateFile) {
+    changes.push(`orchestrator state: ${report.stateFile.oldPath} -> ${report.stateFile.newPath}`)
+  }
   changes.push(
     ...report.secrets.map(
       ({ oldName, newName, scope }) => `${scope} secret: ${oldName} -> ${newName}`,

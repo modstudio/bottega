@@ -66,7 +66,7 @@ poll, start a background process, or leave a process behind.
    registered projects, rely on the project-qualified paths and findings that
    the orchestrator publishes; do not discover repositories by scanning the filesystem.
 
-Do not open `orch.db` or `hub.db`, import orchestrator query code, inspect the
+Do not open `orchestrator.db` or `hub.db`, import orchestrator query code, inspect the
 Docker socket, or reconstruct a missing fact from a directory name. Correlate
 resources by exact canonical path, exact run ID, exact branch, or exact Docker
 resource name. Keep conflicting evidence visible rather than choosing the

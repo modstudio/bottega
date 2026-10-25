@@ -104,6 +104,7 @@ function legacyDatabaseRefusal(): string | null {
       store: existsSync(legacyPath),
       wal: existsSync(`${legacyPath}-wal`),
       shm: existsSync(`${legacyPath}-shm`),
+      journal: existsSync(`${legacyPath}-journal`),
       destinationStore: existsSync(DB_PATH),
     },
     {

@@ -65,6 +65,11 @@ export function isStoreFreeInvocation(argv: string[]): boolean {
   return (
     isHelpShapedInvocation(argv) ||
     (argv[0] === 'record' && argv[1] === 'use') ||
+    (argv[0] === 'setup' &&
+      (argv[1] === undefined ||
+        argv[1] === 'apply' ||
+        argv[1] === 'plan' ||
+        argv[1] === 'restore')) ||
     (argv[0] === 'setup' && argv[1] === 'facts') ||
     (argv[0] === 'test-substance' && argv[1] === 'judge') ||
     (argv[0] === 'hub-import' && argv[1] === 'judge') ||

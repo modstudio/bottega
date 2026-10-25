@@ -87,7 +87,7 @@ export function blockersCommand(flags: CommandFlags, presentation: CommandPresen
   const payload = blockersPayload(days)
 
   /**
-   * PUBLISHED, because hub cannot import this concern or open orch.db.
+   * PUBLISHED, because hub cannot import this concern or open orchestrator.db.
    *
    * The same contract `bottega run state` and `bottega project list --json` already
    * serve: what another concern needs is emitted here rather than reached

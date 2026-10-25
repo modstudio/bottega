@@ -52,8 +52,12 @@ function resultLine(result: SetupActionResult): string {
   return `${result.status}: ${action}${detail}`
 }
 
-function cancelled(prompter: SetupPrompter): InteractiveSetupOutcome {
-  prompter.line('Setup cancelled; nothing was changed.')
+function cancelled(prompter: SetupPrompter, changesAlreadyMade: boolean): InteractiveSetupOutcome {
+  prompter.line(
+    changesAlreadyMade
+      ? 'Setup cancelled; reversing the state-file move.'
+      : 'Setup cancelled; nothing was changed.',
+  )
   return { kind: 'cancelled' }
 }
 
@@ -61,6 +65,7 @@ export async function runInteractiveSetup(
   plan: SetupPlan,
   prompter: SetupPrompter,
   apply: SetupApply,
+  changesAlreadyMade = false,
 ): Promise<InteractiveSetupOutcome> {
   for (const notice of plan.notices) {
     prompter.note(notice.fix ? `${notice.message}\nFix: ${notice.fix}` : notice.message, 'Notice')
@@ -79,7 +84,7 @@ export async function runInteractiveSetup(
       options: questionOptions(question),
       initialValue: question.recommendation,
     })
-    if (answer === SETUP_CANCEL) return cancelled(prompter)
+    if (answer === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
     answers[question.id] = answer
   }
 
@@ -93,9 +98,13 @@ export async function runInteractiveSetup(
 
   prompter.note(summary.join('\n'), 'Changes')
   const confirmed = await prompter.confirm({ message: 'Apply these changes?', initialValue: true })
-  if (confirmed === SETUP_CANCEL) return cancelled(prompter)
+  if (confirmed === SETUP_CANCEL) return cancelled(prompter, changesAlreadyMade)
   if (!confirmed) {
-    prompter.line('Setup declined; nothing was changed.')
+    prompter.line(
+      changesAlreadyMade
+        ? 'Setup declined; reversing the state-file move.'
+        : 'Setup declined; nothing was changed.',
+    )
     return { kind: 'declined' }
   }
 

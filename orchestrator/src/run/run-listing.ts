@@ -666,7 +666,7 @@ export async function runListingCommand(
 
   // JSON Lines, so a consumer can stream it and a truncated read loses only
   // the last record. This is a published interface: `hub` reads it rather
-  // than opening orch.db, because a database shared between two concerns is
+  // than opening orchestrator.db, because a database shared between two concerns is
   // how two concerns quietly become one.
   if (json) {
     const publish = (data: unknown) =>

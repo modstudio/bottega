@@ -983,7 +983,7 @@ type MainCheckoutInspection = {
  * - an in-progress sequence blocks (merge / cherry-pick / rebase / revert /
  *   am / bisect); residue of a pseudo-ref over a clean tree does not —
  *   refusing residue would incorrectly block an otherwise clean tree
- * - untracked files warn and do not block (orch.db and build output live there)
+ * - untracked files warn and do not block (orchestrator.db and build output live there)
  * - ignored files are silent
  * - submodules: `--ignore-submodules=untracked`, so a dirty gitlink or tracked
  *   change inside a submodule still blocks, and untracked files inside a

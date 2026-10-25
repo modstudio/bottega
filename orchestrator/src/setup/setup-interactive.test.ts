@@ -179,6 +179,19 @@ test('cancelling a question never applies', async () => {
   expect(prompts.lines.at(-1)).toContain('nothing was changed')
 })
 
+test('cancelling after a state-file move never claims that nothing changed', async () => {
+  const prompts = new ScriptedPrompter([SETUP_CANCEL])
+  const outcome = await runInteractiveSetup(
+    plan([question('pick', 'yes', [{ id: 'yes' }, { id: 'no' }])]),
+    prompts,
+    async () => [],
+    true,
+  )
+
+  expect(outcome).toEqual({ kind: 'cancelled' })
+  expect(prompts.lines.at(-1)).toBe('Setup cancelled; reversing the state-file move.')
+})
+
 test('cancelling or declining confirmation never applies', async () => {
   for (const answer of [SETUP_CANCEL, false] as const) {
     const prompts = new ScriptedPrompter([], [answer])

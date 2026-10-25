@@ -17,6 +17,7 @@ import {
   resolveCallerIdentity,
 } from '../caller-classification.ts'
 import { contentionTableExists, insertContention } from './contention.ts'
+import { DATABASE_SIDECAR_SUFFIXES } from './database-file-family.ts'
 import {
   DATABASE_RESOLUTION,
   DB_PATH,
@@ -144,6 +145,10 @@ export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
  * Without WAL sidecars it opens immutable, so it reads the store as of the open and never sees a later writer; a short-lived check tolerates that and a long-lived reader must not use it.
  */
 export function openReadOnlyDatabase(path = DB_PATH): Database {
+  if (path === DB_PATH) {
+    const refusal = legacyDatabaseRefusal()
+    if (refusal) throw new Error(refusal)
+  }
   const sidecarsExist = existsSync(`${path}-wal`) || existsSync(`${path}-shm`)
   const access = decideStoreAccess({
     restrictedActor: true,
@@ -280,6 +285,12 @@ export function closeDatabaseForFixture(): void {
   openedUserVersion = null
   schemaReload = null
   schemaReloadRefusal = null
+}
+
+/** Flush and release the process-owned store handle before a setup state-file rename. */
+export function checkpointAndCloseDatabase(): void {
+  if (handle) handle.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  closeDatabaseForFixture()
 }
 
 /** Long-lived processes (bottega mcp serve) reload instead of refusing a write after a migrate. */
@@ -483,6 +494,8 @@ export function tryWriteContention(
 
 /** Ensure an ordinary store-needing command has a current, authorized store. */
 export function ensureDatabase(): string {
+  const legacyRefusal = legacyDatabaseRefusal()
+  if (legacyRefusal) throw new Error(legacyRefusal)
   if (existsSync(DB_PATH)) return DB_PATH
   migrateDatabase()
   return DB_PATH
@@ -492,8 +505,6 @@ export function ensureDatabase(): string {
 export function initializeDatabase(): string {
   return ensureDatabase()
 }
-
-const DATABASE_SIDECAR_SUFFIXES = ['', '-wal', '-shm', '-journal'] as const
 
 function removeDatabaseFiles(path: string): void {
   for (const suffix of DATABASE_SIDECAR_SUFFIXES) rmSync(`${path}${suffix}`, { force: true })

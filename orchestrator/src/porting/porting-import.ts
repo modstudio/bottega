@@ -1026,7 +1026,7 @@ export async function applyImport(
       const issue: ImportRefusal = {
         kind: 'refusal',
         what: 'existing port data',
-        where: 'orch.db port_* tables or importer-owned docs',
+        where: 'orchestrator.db port_* tables or importer-owned docs',
         why: 'the importer requires an empty destination; pass --replace to replace port data and docs',
       }
       plan.refusals.push(issue)

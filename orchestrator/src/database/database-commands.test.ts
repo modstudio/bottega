@@ -300,7 +300,7 @@ test('the cutover write lock refuses a concurrent run insert before recording th
 test('a populated pre-0117 store reaches the fence before filesystem discovery', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-pre-0117-cutover-'))
   fixturePaths.push(root)
-  const legacy = new Database(join(root, 'orch.db'), { create: true })
+  const legacy = new Database(join(root, 'orchestrator.db'), { create: true })
   try {
     applyMigrationsBefore(legacy, '0117_project_uuid_key')
     const recordId = randomUUID()

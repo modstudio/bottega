@@ -59,7 +59,7 @@ flowchart LR
     O["<b>orch</b><br/>dispatch · contracts · rulings<br/>worktrees · review · score · route"]:::c
     U["<b>hub</b><br/>tasks · intervals · cost · reports"]:::c
     W["vendor agents and local models"]:::e
-    OD[("orch.db<br/>runs · artifacts")]:::s
+    OD[("orchestrator.db<br/>runs · artifacts")]:::s
     HD[("hub.db<br/>local tasks · hosted task cache")]:::s
     RC[("<b>record</b><br/>Postgres + RLS · spaces")]:::r
 
@@ -68,7 +68,7 @@ flowchart LR
     W -- "asks, mid-task" --> O
     O --> OD
     U --> HD
-    U -- "shells the binary,<br/>never opens orch.db" --> O
+    U -- "shells the binary,<br/>never opens orchestrator.db" --> O
     OD -- "outbox sync" --> RC
     U -- "hosted API" --> RC
 

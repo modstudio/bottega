@@ -1,3 +1,4 @@
+import { Database } from 'bun:sqlite'
 import { afterEach, expect, test } from 'bun:test'
 import {
   chmodSync,
@@ -14,7 +15,8 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
 import {
   environmentFileDecision,
   environmentFilesDecision,
@@ -22,7 +24,9 @@ import {
   environmentSettingsDecision,
   installedPlistOwners,
   migrateOperatorEnvironment,
+  prepareStateFileMigration,
   restoreOperatorEnvironmentBackup,
+  reversePreparedStateFileMigration,
   staleInstalledPlistEnvironmentNames,
 } from './setup-environment.ts'
 
@@ -36,6 +40,120 @@ const adapters = () => ({
 })
 afterEach(() => {
   for (const path of temporary.splice(0)) rmSync(path, { recursive: true, force: true })
+})
+
+const knownNoHolders = { kind: 'known' as const, holders: [] }
+
+test('cancelling after preparation reverses the state-file move and removes its backup', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'setup-state-cancel-'))
+  temporary.push(root)
+  const directory = join(root, 'orchestrator')
+  mkdirSync(directory, { recursive: true })
+  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+  writeFileSync(legacy, 'store')
+  const prepared = await prepareStateFileMigration(
+    { BOTTEGA_STATE_HOME: root },
+    () => knownNoHolders,
+  )
+
+  await expect(
+    reversePreparedStateFileMigration(prepared!, { stateFileHolders: () => knownNoHolders }),
+  ).resolves.toContain('reversed state-file move')
+  expect(readFileSync(legacy, 'utf8')).toBe('store')
+  expect(() => statSync(current)).toThrow()
+  expect(() => statSync(prepared!.directory)).toThrow()
+})
+
+test('setup restore reverses a recorded state-file move', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'setup-state-file-'))
+  temporary.push(root)
+  const directory = join(root, 'orchestrator')
+  mkdirSync(directory, { recursive: true })
+  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+  const environment = join(root, '.zshenv')
+  const originalEnvironment = 'export ORCH_RECORD_URL=before\n'
+  writeFileSync(environment, originalEnvironment)
+  const initial = new Database(legacy, { create: true })
+  initial.exec(
+    "PRAGMA journal_mode = WAL; CREATE TABLE entries(value TEXT); INSERT INTO entries VALUES ('before')",
+  )
+  initial.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+  initial.close()
+  const prepared = await prepareStateFileMigration(
+    { BOTTEGA_STATE_HOME: root },
+    () => knownNoHolders,
+  )
+  expect(statSync(current).isFile()).toBeTrue()
+
+  const report = await migrateOperatorEnvironment(root, {
+    ...adapters(),
+    preparedStateFileMigration: prepared,
+  })
+  expect(readFileSync(environment, 'utf8')).toBe('export BOTTEGA_RECORD_URL=before\n')
+  let restoreWriter: Database | null = null
+  await restoreOperatorEnvironmentBackup(report.backupDirectory!, {
+    restoreRegister: async () => {
+      restoreWriter = new Database(current, { readwrite: true })
+      restoreWriter.exec("INSERT INTO entries VALUES ('during restore')")
+    },
+    restoreSecrets: async () => {},
+    restoreSettings: async () => {},
+    checkpointAndCloseStore: () => {
+      restoreWriter?.exec('PRAGMA wal_checkpoint(TRUNCATE)')
+      restoreWriter?.close()
+      restoreWriter = null
+    },
+    stateFileHolders: () => knownNoHolders,
+  })
+  expect(readFileSync(environment, 'utf8')).toBe(originalEnvironment)
+  const restored = new Database(legacy, { readonly: true })
+  expect(restored.query('SELECT value FROM entries ORDER BY rowid').all()).toEqual([
+    { value: 'before' },
+    { value: 'during restore' },
+  ])
+  restored.close()
+  expect(() => statSync(current)).toThrow()
+})
+
+test('setup restore reports collision and holder refusals instead of calling the store absent', async () => {
+  for (const refusal of ['collision', 'holder'] as const) {
+    const root = mkdtempSync(join(tmpdir(), `setup-state-refusal-${refusal}-`))
+    temporary.push(root)
+    const directory = join(root, 'orchestrator')
+    mkdirSync(directory, { recursive: true })
+    const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+    const environment = join(root, '.zshenv')
+    writeFileSync(environment, 'export ORCH_RECORD_URL=before\n')
+    writeFileSync(legacy, 'store')
+    const prepared = await prepareStateFileMigration(
+      { BOTTEGA_STATE_HOME: root },
+      () => knownNoHolders,
+    )
+    const report = await migrateOperatorEnvironment(root, {
+      ...adapters(),
+      preparedStateFileMigration: prepared,
+    })
+    expect(readFileSync(environment, 'utf8')).toBe('export BOTTEGA_RECORD_URL=before\n')
+    if (refusal === 'collision') writeFileSync(legacy, 'collision')
+    let registerRestores = 0
+    await expect(
+      restoreOperatorEnvironmentBackup(report.backupDirectory!, {
+        restoreRegister: async () => {
+          registerRestores += 1
+        },
+        restoreSecrets: async () => {},
+        restoreSettings: async () => {},
+        stateFileHolders: () =>
+          refusal === 'holder'
+            ? { kind: 'known', holders: [{ pid: 42, command: 'mcp serve' }] }
+            : knownNoHolders,
+      }),
+    ).rejects.toThrow(refusal === 'collision' ? 'both names exist' : 'pid 42 (mcp serve)')
+    expect(readFileSync(environment, 'utf8')).toBe('export BOTTEGA_RECORD_URL=before\n')
+    expect(registerRestores).toBe(0)
+  }
 })
 
 test('renames an old assignment while preserving its value byte for byte', () => {

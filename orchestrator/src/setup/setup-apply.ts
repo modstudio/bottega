@@ -5,6 +5,7 @@ import { lstat, mkdir, open, readFile, realpath, rm, writeFile } from 'node:fs/p
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { PreparedStateFileMigration } from './setup-environment.ts'
 import { removableLegacyPathTarget } from './setup-legacy-path.ts'
 import {
   commandFailureReason,
@@ -55,7 +56,7 @@ export type SetupProjectService = {
 }
 
 export type SetupEnvironmentService = {
-  migrateEnvironment(): Promise<{
+  migrateEnvironment(prepared?: PreparedStateFileMigration | null): Promise<{
     status: SetupAppliedActionStatus
     message: string | null
   }>
@@ -227,6 +228,7 @@ export async function applySetupActions(
   service: SetupProjectService,
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner = runSetupCommand,
+  preparedStateFileMigration?: PreparedStateFileMigration | null,
 ): Promise<SetupActionResult[]> {
   const results: SetupActionResult[] = []
   let refused = false
@@ -236,7 +238,13 @@ export async function applySetupActions(
       continue
     }
     try {
-      const applied = await applySetupAction(action, service, environment, runner)
+      const applied = await applySetupAction(
+        action,
+        service,
+        environment,
+        runner,
+        preparedStateFileMigration,
+      )
       results.push({ ...action, ...applied })
     } catch (error) {
       refused = true
@@ -255,12 +263,13 @@ async function applySetupAction(
   service: SetupProjectService,
   environment: SetupEnvironmentService,
   runner: SetupCommandRunner,
+  preparedStateFileMigration?: PreparedStateFileMigration | null,
 ): Promise<{
   status: SetupAppliedActionStatus
   message: string | null
 }> {
   if (action.kind === 'migrate-environment') {
-    return environment.migrateEnvironment()
+    return environment.migrateEnvironment(preparedStateFileMigration)
   }
   if (
     action.kind === 'unchanged' ||

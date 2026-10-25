@@ -1,21 +1,154 @@
 import { describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
+import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
 import {
   decideOrchestratorDatabasePath,
   existingDatabaseMigrationRefusal,
   implicitDatabaseCreationRefusal,
+  legacyDatabaseRefusal,
   linkedWorktreeDatabaseInitializationMessage,
   missingDatabaseMessage,
   missingWorkingDirectoryFallback,
   unauthorizedDatabaseInitializationMessage,
 } from './database-location.ts'
 
-const livePath = '/nonexistent-live-orchestrator-store/orch.db'
-const tempPath = '/nonexistent-temp-orchestrator-store/orch.db'
+test('default open refuses legacy-only state and accepts the current filename', () => {
+  const root = join(tmpdir(), `legacy-store-refusal-${randomUUID()}`)
+  const directory = join(root, 'orchestrator')
+  mkdirSync(directory, { recursive: true })
+  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+  const resolution = {
+    path: current,
+    method: 'state-root' as const,
+    tried: [current],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: current,
+  }
+  try {
+    writeFileSync(legacy, 'legacy')
+    expect(legacyDatabaseRefusal(resolution, { BOTTEGA_STATE_HOME: root })).toContain(
+      'machine setup apply',
+    )
+    rmSync(legacy)
+    writeFileSync(current, 'current')
+    expect(legacyDatabaseRefusal(resolution, { BOTTEGA_STATE_HOME: root })).toBeNull()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('default open refuses a lone legacy rollback journal', () => {
+  const root = join(tmpdir(), `legacy-journal-refusal-${randomUUID()}`)
+  const directory = join(root, 'orchestrator')
+  mkdirSync(directory, { recursive: true })
+  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+  const resolution = {
+    path: current,
+    method: 'state-root' as const,
+    tried: [current],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: current,
+  }
+  try {
+    writeFileSync(`${legacy}-journal`, 'journal')
+    expect(legacyDatabaseRefusal(resolution, { BOTTEGA_STATE_HOME: root })).toContain(
+      `${legacy}-journal`,
+    )
+    const { BOTTEGA_ORCHESTRATOR_DB: _ignored, ...env } = process.env
+    const result = Bun.spawnSync(
+      [
+        process.execPath,
+        '--no-env-file',
+        '-e',
+        `import { ensureDatabase } from ${JSON.stringify(join(import.meta.dir, 'db.ts'))}; try { ensureDatabase(); process.exit(2) } catch (error) { console.error(error instanceof Error ? error.message : String(error)) }`,
+      ],
+      {
+        env: { ...env, BOTTEGA_STATE_HOME: root, NODE_ENV: 'production' },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+    )
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr.toString()).toContain(`${legacy}-journal`)
+    expect(existsSync(current)).toBeFalse()
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('default open directs an interrupted move back to setup apply', () => {
+  const root = join(tmpdir(), `interrupted-store-refusal-${randomUUID()}`)
+  const directory = join(root, 'orchestrator')
+  mkdirSync(directory, { recursive: true })
+  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+  const resolution = {
+    path: current,
+    method: 'state-root' as const,
+    tried: [current],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: current,
+  }
+  try {
+    writeFileSync(current, 'store')
+    writeFileSync(`${legacy}-wal`, 'wal')
+    const refusal = legacyDatabaseRefusal(resolution, { BOTTEGA_STATE_HOME: root })
+    expect(refusal).toContain('machine setup apply completes the interrupted move')
+    expect(refusal).not.toContain('remove the other')
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('database entry points refuse legacy-only state before opening the destination', () => {
+  const root = join(tmpdir(), `legacy-store-entry-${randomUUID()}`)
+  const directory = join(root, 'orchestrator')
+  mkdirSync(directory, { recursive: true })
+  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+  writeFileSync(legacy, 'legacy')
+  const { BOTTEGA_ORCHESTRATOR_DB: _ignored, ...env } = process.env
+  try {
+    for (const subject of ['ensureDatabase', 'openReadOnlyDatabase']) {
+      const result = Bun.spawnSync(
+        [
+          process.execPath,
+          '--no-env-file',
+          '-e',
+          `import { ${subject} } from ${JSON.stringify(join(import.meta.dir, 'db.ts'))}; try { ${subject}(); process.exit(2) } catch (error) { console.error(error instanceof Error ? error.message : String(error)) }`,
+        ],
+        {
+          env: { ...env, BOTTEGA_STATE_HOME: root, NODE_ENV: 'production' },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      )
+      expect(result.exitCode).toBe(0)
+      expect(result.stderr.toString()).toContain('machine setup apply')
+      expect(existsSync(current)).toBeFalse()
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+const livePath = '/nonexistent-live-orchestrator-store/orchestrator.db'
+const tempPath = '/nonexistent-temp-orchestrator-store/orchestrator.db'
 
 describe('missing working directory fallback', () => {
   const facts = {
@@ -57,8 +190,8 @@ describe('orchestrator database path decision', () => {
 })
 
 test('the unauthorized default-store refusal names the condition and remedy', () => {
-  expect(unauthorizedDatabaseInitializationMessage('/state/orch.db')).toBe(
-    `refusing to initialize the default store: cannot establish an authorized ${PLATFORM_NAME} installation: /state/orch.db\n` +
+  expect(unauthorizedDatabaseInitializationMessage('/state/orchestrator.db')).toBe(
+    `refusing to initialize the default store: cannot establish an authorized ${PLATFORM_NAME} installation: /state/orchestrator.db\n` +
       'invariant: A default store is initialized only by a checkout or an installed distribution.\n' +
       `cleared by: run the command from the main checkout or reinstall ${PLATFORM_NAME}`,
   )
@@ -74,40 +207,40 @@ test('the absent explicit-store refusal names the condition and explicit remedy'
 
 test('implicit creation uses the existing installation authority decision', () => {
   const authorized = {
-    path: '/state/orch.db',
+    path: '/state/orchestrator.db',
     method: 'state-root' as const,
-    tried: ['/state/orch.db'],
+    tried: ['/state/orchestrator.db'],
     registeredPath: null,
     repositoryRoot: '/checkout',
     initializable: true,
     linkedWorktreeBinary: false,
-    mainStorePath: '/state/orch.db',
+    mainStorePath: '/state/orchestrator.db',
   }
   expect(implicitDatabaseCreationRefusal(authorized)).toBeNull()
   expect(
     implicitDatabaseCreationRefusal(
       { ...authorized, linkedWorktreeBinary: true },
-      '/installation/state/orch.db',
+      '/installation/state/orchestrator.db',
     ),
   ).toBe(linkedWorktreeDatabaseInitializationMessage())
   expect(implicitDatabaseCreationRefusal({ ...authorized, initializable: false })).toBe(
-    unauthorizedDatabaseInitializationMessage('/state/orch.db'),
+    unauthorizedDatabaseInitializationMessage('/state/orchestrator.db'),
   )
   expect(
     implicitDatabaseCreationRefusal({ ...authorized, method: 'BOTTEGA_ORCHESTRATOR_DB' }),
-  ).toBe(missingDatabaseMessage('/state/orch.db'))
+  ).toBe(missingDatabaseMessage('/state/orchestrator.db'))
 })
 
 test('migrating an existing store retains the linked-worktree refusal', () => {
   const existing = {
-    path: '/state/orch.db',
+    path: '/state/orchestrator.db',
     method: 'state-root' as const,
-    tried: ['/state/orch.db'],
+    tried: ['/state/orchestrator.db'],
     registeredPath: null,
     repositoryRoot: '/checkout',
     initializable: true,
     linkedWorktreeBinary: true,
-    mainStorePath: '/state/orch.db',
+    mainStorePath: '/state/orchestrator.db',
   }
 
   expect(existingDatabaseMigrationRefusal(existing)).toBe(
@@ -117,7 +250,7 @@ test('migrating an existing store retains the linked-worktree refusal', () => {
 })
 
 test('a linked-worktree binary may create and migrate a temporary store', () => {
-  const path = join(tmpdir(), `orch-linked-scratch-${randomUUID()}`, 'orch.db')
+  const path = join(tmpdir(), `orch-linked-scratch-${randomUUID()}`, 'orchestrator.db')
   const scratch = {
     path,
     method: 'state-root' as const,
@@ -135,7 +268,7 @@ test('a linked-worktree binary may create and migrate a temporary store', () => 
 
 test('the migrate and init-db creation decision refuses an absent BOTTEGA_ORCHESTRATOR_DB before touching its parent', () => {
   const parent = join(tmpdir(), `orch-explicit-${randomUUID()}`)
-  const path = join(parent, 'orch.db')
+  const path = join(parent, 'orchestrator.db')
   const explicit = {
     path,
     method: 'BOTTEGA_ORCHESTRATOR_DB' as const,

@@ -148,7 +148,7 @@ project because it is the blind spot in every task denominator.
 # Orchestrator boundary and schema
 
 Hub reads orchestrator data through the `bottega run list` CLI interface and never opens
-`orch.db`. Concerns do not share a local store.
+`orchestrator.db`. Concerns do not share a local store.
 
 Opening `hub.db` never changes its schema. `bottega machine migrate` is the only schema writer and
 applies the ordered, checksummed journal in `hub/migrations`. Ordinary opens refuse stores

@@ -31,8 +31,11 @@ test('the outer CLI classifies every informational invocation without consulting
   }
   expect(isHelpShapedInvocation(['jobs'])).toBeFalse()
   expect(isStoreFreeInvocation(['setup', 'facts', '--json'])).toBeTrue()
+  expect(isStoreFreeInvocation(['setup', 'apply', '--yes'])).toBeTrue()
+  expect(isStoreFreeInvocation(['setup', 'plan', '--json'])).toBeTrue()
+  expect(isStoreFreeInvocation(['setup', 'restore', '/backup'])).toBeTrue()
   expect(isStoreFreeInvocation(['record', 'use', 'https://api.example.test'])).toBeTrue()
-  expect(isStoreFreeInvocation(['setup'])).toBeFalse()
+  expect(isStoreFreeInvocation(['setup'])).toBeTrue()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
 })
 
@@ -78,7 +81,7 @@ test('a failed holder inspection cannot hide the original database lock refusal'
   expect(message).toContain('then retry the command')
 })
 
-test('setup facts reaches the executable entry without creating or mutating a store', async () => {
+test('store-free setup invocations reach the executable entry without creating or mutating a store', async () => {
   const absent = join(dir, 'setup-facts-absent.db')
   const existing = join(dir, 'setup-facts-existing.db')
   writeFileSync(existing, 'unchanged fixture')
@@ -91,7 +94,13 @@ test('setup facts reaches the executable entry without creating or mutating a st
   }
 
   try {
-    expect(await runCliEntryForTest(['setup', 'facts', '--json'], enter)).toBe(0)
+    for (const argv of [
+      ['setup', 'facts', '--json'],
+      ['setup', 'plan', '--json'],
+      ['setup', 'apply', '--yes'],
+    ]) {
+      expect(await runCliEntryForTest(argv, enter)).toBe(0)
+    }
     expect(existsSync(absent)).toBe(false)
     expect(readFileSync(existing, 'utf8')).toBe('unchanged fixture')
   } finally {

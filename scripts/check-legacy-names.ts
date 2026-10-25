@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
-// hub.db is already named for its concern and is the target state-file name, so only orch.db is legacy.
+// State databases are named for their concerns; the former orchestrator filename is legacy.
 // Environment names are blocking at zero; prefix-sharing TypeScript constants are named exemptions.
 import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_COMMAND_WORDS } from '../shared/command-spellings.ts'
+import { LEGACY_ORCHESTRATOR_DATABASE } from '../shared/state-directory.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const BASELINE = 'scripts/quality/legacy-names.json'
@@ -45,7 +46,10 @@ const LEGACY_NAME_REGISTRY = {
     blocking: true,
     detectors: [/\b(?:ORCH|HUB)_[A-Z][A-Z0-9_]*\b/g, /['"`](?:ORCH|HUB)_['"`]/g],
   },
-  'state-file': { blocking: true, detectors: [/\borch\.db\b/g] },
+  'state-file': {
+    blocking: true,
+    detectors: [new RegExp(`\\b${escapeRegExp(LEGACY_ORCHESTRATOR_DATABASE)}\\b`, 'g')],
+  },
 } as const satisfies Record<string, { blocking: boolean; detectors: readonly RegExp[] }>
 
 export type LegacyNameClass = keyof typeof LEGACY_NAME_REGISTRY

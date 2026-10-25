@@ -93,7 +93,7 @@ function writeCurrentSettings() {
             autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
           },
           assetPath(),
-          join(root, 'state', 'orchestrator', 'orch.db'),
+          join(root, 'state', 'orchestrator', 'orchestrator.db'),
         ).settings,
         env: {},
       },

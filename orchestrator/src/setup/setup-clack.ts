@@ -40,6 +40,7 @@ export function introduceSetup(folders: string[]): void {
 export async function gatherSetupPlan<T>(
   gather: () => Promise<T>,
   onCancel: () => void,
+  changesAlreadyMade = false,
 ): Promise<T | typeof SETUP_CANCEL> {
   let gathering = true
   let cancelGather!: () => void
@@ -54,7 +55,9 @@ export async function gatherSetupPlan<T>(
   }
   process.on('exit', exitedWhileGathering)
   const progress = spinner({
-    cancelMessage: 'Setup cancelled; nothing was changed.',
+    cancelMessage: changesAlreadyMade
+      ? 'Setup cancelled; reversing the state-file move.'
+      : 'Setup cancelled; nothing was changed.',
     onCancel: cancelGather,
   })
   progress.start('Gathering setup plan')

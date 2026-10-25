@@ -1,7 +1,7 @@
 /**
  * The orchestrator, read through its CLI.
  *
- * Never by opening `orch.db`: a database shared between two concerns is how two
+ * Never by opening `orchestrator.db`: a database shared between two concerns is how two
  * concerns quietly become one, which is the root canon's line and the reason
  * `orch` grew `--json` flags rather than hub growing a second connection.
  */

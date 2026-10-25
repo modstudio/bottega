@@ -8,6 +8,8 @@ import {
   migrateLegacyEnvironmentSecrets,
   restoreLegacyEnvironmentSecrets,
 } from '../config/config-service.ts'
+import { linkedWorktreeDatabaseInitializationMessage } from '../database/database-location.ts'
+import { checkpointAndCloseDatabase, DATABASE_RESOLUTION } from '../database/db.ts'
 import {
   assertProjectSettingsMigrationWritable,
   migrateProjectSettingsText,
@@ -15,6 +17,7 @@ import {
 } from '../project/project-commands.ts'
 import { projects } from '../project/projects.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   assertStoredSettingsEnvironmentMigration,
   migrateStoredSettingsEnvironmentNames,
@@ -30,8 +33,29 @@ import {
   environmentMigrationMessage,
   environmentSettingsDecision,
   migrateOperatorEnvironment,
+  type PreparedStateFileMigration,
+  prepareStateFileMigration,
   restoreOperatorEnvironmentBackup,
+  reversePreparedStateFileMigration,
 } from './setup-environment.ts'
+
+function assertStateFileRenameAllowed(action: 'migration' | 'restore'): void {
+  if (DATABASE_RESOLUTION.linkedWorktreeBinary) {
+    throw new Error(linkedWorktreeDatabaseInitializationMessage())
+  }
+  if (isOrchWorkerProcess(process.env, process.pid)) {
+    throw new Error(
+      `refusing setup ${action} from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine setup ${action === 'migration' ? 'apply' : 'restore'}`,
+    )
+  }
+}
+
+/** Run before setup planning so no connection can open the destination first. */
+export async function prepareSetupStateFileMigration(): Promise<PreparedStateFileMigration | null> {
+  return prepareStateFileMigration(process.env, undefined, () =>
+    assertStateFileRenameAllowed('migration'),
+  )
+}
 
 export async function restoreSetupEnvironment(directory: string): Promise<void> {
   await restoreOperatorEnvironmentBackup(directory, {
@@ -39,6 +63,17 @@ export async function restoreSetupEnvironment(directory: string): Promise<void> 
       migrations.length ? restoreLegacyEnvironmentSecrets(migrations) : Promise.resolve(),
     restoreSettings: (migrations) => restoreStoredSettingsEnvironmentNames(migrations),
     restoreRegister: restoreMigratedProjectRows,
+    checkpointAndCloseStore: checkpointAndCloseDatabase,
+    authorizeStateFileRename: () => assertStateFileRenameAllowed('restore'),
+  })
+}
+
+export async function reverseSetupStateFileMigration(
+  prepared: PreparedStateFileMigration,
+): Promise<string> {
+  return reversePreparedStateFileMigration(prepared, {
+    authorizeStateFileRename: () => assertStateFileRenameAllowed('restore'),
+    checkpointAndCloseStore: checkpointAndCloseDatabase,
   })
 }
 
@@ -86,7 +121,7 @@ export async function withMigratedProcessEnvironment<T>(
 }
 
 export const setupEnvironmentService: SetupEnvironmentService = {
-  migrateEnvironment: async () =>
+  migrateEnvironment: async (preparedStateFileMigration) =>
     withMigratedProcessEnvironment(process.env, async (processNamesRenamed) => {
       const notes: string[] = []
       const home = homedir()
@@ -123,6 +158,7 @@ export const setupEnvironmentService: SetupEnvironmentService = {
             .map((project) => project),
         notes: () => notes,
         processNamesRenamed,
+        preparedStateFileMigration,
       })
       const message = environmentMigrationMessage(report)
       const changed =
