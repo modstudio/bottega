@@ -221,24 +221,45 @@ test('a quarantined same-batch parent leaves its refused child pending', async (
   ])
 })
 
+test('pending children report the quarantined parent holding them', async () => {
+  using local = migratedTestDatabase()
+  insertOutboxRow(local, 1, 'run', 'run-1', { id: 'run-1' })
+  insertOutboxRow(local, 2, 'score', 'run-1', { id: 'run-1' })
+  insertOutboxRow(local, 3, 'score', 'run-1', { id: 'run-1' })
+  local.query('UPDATE outbox SET quarantined_at=?,last_error=? WHERE id=1').run(STAMP, 'refused')
+  const batches: number[][] = []
+
+  const result = await syncRecord({
+    local,
+    now: () => STAMP,
+    identity: { id: machineId(), name: 'test-machine' },
+    client: dependencyClient(batches, () => ({ status: 'synced' })),
+  })
+
+  expect(result.quarantinedParentHolds).toEqual([
+    { id: 1, kind: 'run', quarantinedAt: STAMP, rows: 2 },
+  ])
+  expect(batches).toEqual([[]])
+})
+
 test('a deferred same-batch parent leaves its child pending', async () => {
   using local = migratedTestDatabase()
   insertOutboxRow(local, 1, 'run', 'run-1', { id: 'run-1' })
   insertOutboxRow(local, 2, 'score', 'run-1', { id: 'run-1' })
   const batches: number[][] = []
 
-  expect(
-    await syncRecord({
-      local,
-      now: () => STAMP,
-      identity: { id: machineId(), name: 'test-machine' },
-      client: dependencyClient(batches, () => ({
-        status: 'deferred',
-        reason: 'read-only',
-        spaceId: SPACE_ID,
-      })),
-    }),
-  ).toMatchObject({ pushed: 0, failed: 0, pending: 2 })
+  const result = await syncRecord({
+    local,
+    now: () => STAMP,
+    identity: { id: machineId(), name: 'test-machine' },
+    client: dependencyClient(batches, () => ({
+      status: 'deferred',
+      reason: 'read-only',
+      spaceId: SPACE_ID,
+    })),
+  })
+  expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 2 })
+  expect(result.quarantinedParentHolds).toBeUndefined()
   expect(batches).toEqual([[1, 2]])
   expect(local.query('SELECT attempts FROM outbox ORDER BY id').all()).toEqual([
     { attempts: 1 },

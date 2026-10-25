@@ -192,8 +192,8 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     vendorOutputTokens: 103,
     vendorEstimatedCostUsd: 1.5,
     vendorCostSource: 'billed',
-    resourceCpuMs: 201,
-    resourcePeakRssBytes: 202,
+    resourceCpuMs: 201.49,
+    resourcePeakRssBytes: 202.51,
     resourceSamples: 203,
     resourceSource: 'sampled',
   })
@@ -238,7 +238,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     vendorEstimatedCostUsd: 1.5,
     vendorCostSource: 'billed',
     resourceCpuMs: 201n,
-    resourcePeakRssBytes: 202n,
+    resourcePeakRssBytes: 203n,
     resourceSamples: 203,
     resourceSource: 'sampled',
   })

@@ -45,6 +45,17 @@ function nullableInteger(value: unknown): number | null {
   return integer
 }
 
+function nullableRoundedBigint(value: unknown): bigint | null {
+  if (value == null) return null
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new OutboxRowError(
+      'run resource measurement must be a finite number or null',
+      'row-validation',
+    )
+  }
+  return BigInt(Math.round(value))
+}
+
 export function runUsageRecordValues(row: Record<string, unknown>) {
   return {
     vendorTokens: nullableBigint(row.vendorTokens),
@@ -53,8 +64,8 @@ export function runUsageRecordValues(row: Record<string, unknown>) {
     vendorOutputTokens: nullableBigint(row.vendorOutputTokens),
     vendorEstimatedCostUsd: nullableNumber(row.vendorEstimatedCostUsd),
     vendorCostSource: nullableVendorCostSource(row.vendorCostSource),
-    resourceCpuMs: nullableBigint(row.resourceCpuMs),
-    resourcePeakRssBytes: nullableBigint(row.resourcePeakRssBytes),
+    resourceCpuMs: nullableRoundedBigint(row.resourceCpuMs),
+    resourcePeakRssBytes: nullableRoundedBigint(row.resourcePeakRssBytes),
     resourceSamples: nullableInteger(row.resourceSamples),
     resourceSource: nullableRunResourceSource(row.resourceSource),
   }

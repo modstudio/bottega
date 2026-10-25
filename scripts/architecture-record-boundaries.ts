@@ -458,6 +458,20 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   ),
 ]
 
+export const recordSyncCommandBoundaries: ImportBoundary[] = [
+  boundary(
+    'record-sync-command-boundary',
+    'orchestrator/src/record/record-sync-command.ts',
+    [
+      '../../../shared/brand.ts',
+      '../../../shared/machine-config.ts',
+      './record-sync.ts',
+      './record-tunnel-error.ts',
+    ],
+    'Enforce the record-sync-command concern boundary.',
+  ),
+]
+
 export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'record-project-columns-boundary',

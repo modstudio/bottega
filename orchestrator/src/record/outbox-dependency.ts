@@ -2,14 +2,35 @@
 /** Resolves local outbox parent state without knowing how hosted rows are sent. */
 import type { Database } from 'bun:sqlite'
 import { evidenceReferences } from './record-evidence-references.ts'
-import type { BlockedOutboxRow, OutboxRow, Payload } from './record-sync-types.ts'
+import type {
+  BlockedOutboxRow,
+  OutboxRow,
+  Payload,
+  QuarantinedParentHold,
+} from './record-sync-types.ts'
 
 type ParentRef = { kind: string; recordId: string; blockedReason?: string }
 
 type ParentState = {
+  id: number
   synced_at: string | null
   quarantined_at: string | null
   retired_at: string | null
+}
+
+export type QuarantinedParentHoldAccumulator = Map<
+  number,
+  QuarantinedParentHold & { rowIds: Set<number> }
+>
+
+function parentRowDisposition(
+  rows: ParentState[],
+): 'missing' | 'ready' | 'pending' | 'quarantined' | 'blocked' {
+  const latest = rows[0]
+  if (!latest) return 'missing'
+  if (rows.some((row) => row.synced_at !== null)) return 'ready'
+  if (latest.retired_at !== null) return 'blocked'
+  return latest.quarantined_at === null ? 'pending' : 'quarantined'
 }
 
 function localRunIsLive(database: Database, recordId: string): boolean {
@@ -21,6 +42,35 @@ function localRunIsLive(database: Database, recordId: string): boolean {
       )
       .get(recordId),
   )
+}
+
+function localParentDependency(database: Database, parent: ParentRef) {
+  const rows = database
+    .query<ParentState, [string, string]>(
+      `SELECT id,synced_at,quarantined_at,retired_at FROM outbox
+       WHERE kind=? AND row_id=? ORDER BY id DESC`,
+    )
+    .all(parent.kind, parent.recordId)
+  const disposition = parentRowDisposition(rows)
+  if (disposition === 'missing') {
+    return parent.kind === 'run' && localRunIsLive(database, parent.recordId)
+      ? { disposition: 'deferred' as const }
+      : { disposition: 'ready' as const }
+  }
+  if (disposition === 'ready') return { disposition }
+  if (disposition === 'blocked') return { disposition, parentRecordId: parent.recordId }
+  return {
+    disposition: 'deferred' as const,
+    ...(disposition === 'quarantined'
+      ? {
+          quarantinedParent: {
+            id: rows[0]!.id,
+            kind: parent.kind,
+            quarantinedAt: rows[0]!.quarantined_at!,
+          },
+        }
+      : {}),
+  }
 }
 
 export const outboxParentIdentityKey = (kind: string, recordId: string): string =>
@@ -135,32 +185,31 @@ function outboxDependencyState(
   database: Database,
   parents: readonly ParentRef[],
   plannedParents?: ReadonlyMap<string, readonly number[]>,
-): { disposition: 'ready' | 'deferred' | 'blocked'; parentRecordId?: string; reason?: string } {
+): {
+  disposition: 'ready' | 'deferred' | 'blocked'
+  parentRecordId?: string
+  reason?: string
+  quarantinedParents?: { id: number; kind: string; quarantinedAt: string }[]
+} {
   const unique = new Map(
     parents.map((parent) => [outboxParentIdentityKey(parent.kind, parent.recordId), parent]),
   )
   let deferred = false
-  for (const { kind, recordId: parentRecordId, blockedReason } of unique.values()) {
-    if (plannedParents?.has(outboxParentIdentityKey(kind, parentRecordId))) continue
-    const rows = database
-      .query<ParentState, [string, string]>(
-        `SELECT synced_at,quarantined_at,retired_at FROM outbox
-         WHERE kind=? AND row_id=? ORDER BY id DESC`,
-      )
-      .all(kind, parentRecordId)
-    const latest = rows[0]
-    if (!latest) {
-      if (kind === 'run' && localRunIsLive(database, parentRecordId)) deferred = true
-      continue
+  const quarantinedParents: { id: number; kind: string; quarantinedAt: string }[] = []
+  for (const parent of unique.values()) {
+    if (plannedParents?.has(outboxParentIdentityKey(parent.kind, parent.recordId))) continue
+    const dependency = localParentDependency(database, parent)
+    if (dependency.disposition === 'ready') continue
+    if (dependency.disposition === 'blocked') {
+      return { ...dependency, reason: parent.blockedReason }
     }
-    if (rows.some((row) => row.synced_at !== null)) continue
-    if (latest.retired_at === null) {
-      deferred = true
-      continue
-    }
-    return { disposition: 'blocked', parentRecordId, reason: blockedReason }
+    deferred = true
+    if (dependency.quarantinedParent) quarantinedParents.push(dependency.quarantinedParent)
   }
-  return { disposition: deferred ? 'deferred' : 'ready' }
+  return {
+    disposition: deferred ? 'deferred' : 'ready',
+    ...(quarantinedParents.length ? { quarantinedParents } : {}),
+  }
 }
 
 function outboxDependency(
@@ -239,6 +288,52 @@ export function outboxRowWaitsForParent(
   plannedParents?: ReadonlyMap<string, readonly number[]>,
 ): boolean {
   return outboxDependency(row, payload, database, plannedParents).disposition === 'deferred'
+}
+
+export function recordQuarantinedParentsHoldingRow(
+  database: Database,
+  row: OutboxRow,
+  payload: Payload,
+  holds: QuarantinedParentHoldAccumulator,
+  plannedParents?: ReadonlyMap<string, readonly number[]>,
+): void {
+  const dependency = outboxDependency(row, payload, database, plannedParents)
+  for (const parent of dependency.quarantinedParents ?? []) {
+    const hold = holds.get(parent.id) ?? { ...parent, rows: 0, rowIds: new Set<number>() }
+    hold.rowIds.add(row.id)
+    hold.rows = hold.rowIds.size
+    holds.set(parent.id, hold)
+  }
+}
+
+export function quarantinedParentHoldResult(holds: QuarantinedParentHoldAccumulator): {
+  quarantinedParentHolds?: QuarantinedParentHold[]
+} {
+  if (!holds.size) return {}
+  return {
+    quarantinedParentHolds: [...holds.values()].map(({ rowIds: _, ...hold }) => hold),
+  }
+}
+
+export function quarantinedParentHolds(database: Database): QuarantinedParentHold[] {
+  const rows = database
+    .query<OutboxRow, []>(
+      `SELECT id,kind,row_id,payload FROM outbox
+       WHERE synced_at IS NULL AND quarantined_at IS NULL AND retired_at IS NULL ORDER BY id`,
+    )
+    .all()
+  const holds: QuarantinedParentHoldAccumulator = new Map()
+  for (const row of rows) {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(row.payload)
+    } catch {
+      continue
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) continue
+    recordQuarantinedParentsHoldingRow(database, row, parsed as Payload, holds)
+  }
+  return quarantinedParentHoldResult(holds).quarantinedParentHolds ?? []
 }
 
 export function outboxRowPlannedParentKeys(
