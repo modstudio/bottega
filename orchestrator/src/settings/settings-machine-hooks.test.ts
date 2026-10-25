@@ -69,9 +69,10 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(17)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(19)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
+  expect(commands.match(/protect-main-checkout\.py/g)).toHaveLength(2)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(3)
   expect(commands).toContain(`Bash(${PLATFORM_SLUG} run start:*)`)
   expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} run start:*)`)
@@ -102,6 +103,22 @@ test('git guard covers every Bash command and has no condition', () => {
     .find((item) => String(item.command).endsWith('/git-guard.py'))
   expect(preToolUse.find((group) => group.hooks.includes(guard!))?.matcher).toBe('Bash')
   expect(guard).not.toHaveProperty('if')
+})
+
+test('main checkout protection covers Bash and every judged editor tool', () => {
+  const hooks = render({}).settings.hooks as Record<
+    string,
+    Array<{ matcher?: string; hooks: Array<{ command: string }> }>
+  >
+  const groups = (hooks.PreToolUse ?? []).filter((group) =>
+    group.hooks.some((hook) => hook.command.endsWith('/protect-main-checkout.py')),
+  )
+  expect(groups.map((group) => group.matcher)).toEqual(['Bash', 'Write|Edit|NotebookEdit'])
+  expect(
+    groups.flatMap((group) =>
+      group.hooks.filter((hook) => hook.command.endsWith('/protect-main-checkout.py')),
+    ),
+  ).toHaveLength(2)
 })
 
 test('test substance guard covers every editor tool from the rendered install', () => {

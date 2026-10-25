@@ -4,7 +4,8 @@
 The default PreToolUse mode watches tracked-file edits and recognized mutating
 Git subcommands from Bash. The --pre-commit mode watches commits from the
 checkout itself. A project opts out with {"requireCleanMain": false} in its
-register settings. Commands the Bash adapter cannot parse fail open.
+register settings. Commands the Bash adapter cannot parse fail open, including
+shell interpreter (`sh`/`bash`/`zsh -c`), `xargs`, and `eval` invocations.
 """
 import json
 import os
@@ -14,7 +15,7 @@ import sqlite3
 import subprocess
 import sys
 
-from protect_main_checkout import MUTATING_GIT_SUBCOMMANDS, decision_for_mutations, real
+from protect_main_checkout import MUTATING_GIT_SUBCOMMANDS, decision_for_mutations
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -22,6 +23,13 @@ EDITOR_TOOLS = {"Write", "Edit", "NotebookEdit"}
 INVARIANT = "A registered main checkout stays clean; work happens in a worktree"
 GIT_TOKEN = re.compile(r"(?<![A-Za-z0-9_-])git(?![A-Za-z0-9_-])")
 ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def real(path):
+    try:
+        return os.path.realpath(path)
+    except OSError:
+        return path
 
 
 def fail_open(message=None) -> int:
@@ -81,11 +89,53 @@ def git(args, cwd):
         return None
 
 
-def without_assignments(tokens):
+def split_assignments(tokens):
     index = 0
     while index < len(tokens) and ASSIGNMENT.match(tokens[index]):
         index += 1
-    return tokens[index:]
+    assignments = {}
+    for word in tokens[:index]:
+        name, value = word.split("=", 1)
+        assignments[name] = value
+    return assignments, tokens[index:]
+
+
+def unwrap_command(tokens):
+    """Strip transparent command wrappers, retaining leading assignments."""
+    assignments = {}
+    remaining = tokens
+    while remaining:
+        leading, remaining = split_assignments(remaining)
+        assignments.update(leading)
+        if not remaining:
+            return None
+        command = os.path.basename(remaining[0])
+        if command in {"eval", "xargs"}:
+            return None
+        if command in {"sh", "bash", "zsh"} and "-c" in remaining[1:]:
+            return None
+        if command == "env":
+            remaining = remaining[1:]
+            while remaining and remaining[0].startswith("-"):
+                remaining = remaining[1:]
+            continue
+        if command == "command":
+            remaining = remaining[1:]
+            continue
+        if command == "nice":
+            remaining = remaining[1:]
+            if remaining[:1] == ["-n"]:
+                if len(remaining) < 2:
+                    return None
+                remaining = remaining[2:]
+            continue
+        if command == "timeout":
+            if len(remaining) < 3:
+                return None
+            remaining = remaining[2:]
+            continue
+        return assignments, remaining
+    return None
 
 
 def simple_commands(command, cwd):
@@ -120,13 +170,10 @@ def simple_commands(command, cwd):
             index += 1
             continue
         if words_for_command:
-            executable = without_assignments(words_for_command)
-            if not executable:
+            unwrapped = unwrap_command(words_for_command)
+            if unwrapped is None:
                 return None
-            if executable[0] == "eval" or (
-                os.path.basename(executable[0]) == "bash" and "-c" in executable[1:]
-            ):
-                return None
+            assignments, executable = unwrapped
             if executable[0] == "cd":
                 if word != "&&" or len(executable) != 2:
                     return None
@@ -136,7 +183,7 @@ def simple_commands(command, cwd):
                     else os.path.join(effective_cwd, destination)
                 )
             else:
-                commands.append((executable, effective_cwd))
+                commands.append((executable, effective_cwd, assignments))
         words_for_command = []
         index += 1
     return commands
@@ -147,12 +194,11 @@ def resolve_git_path(path, cwd):
     return real(expanded if os.path.isabs(expanded) else os.path.join(cwd, expanded))
 
 
-def git_invocation(tokens, cwd):
+def git_invocation(tokens, cwd, assignments):
     if not tokens or os.path.basename(tokens[0]) != "git":
         return None
-    target = cwd
-    git_dir = None
-    work_tree = None
+    target = real(cwd)
+    targets = [target]
     index = 1
     options_with_values = {"-c", "--config-env", "--exec-path", "--namespace"}
     while index < len(tokens):
@@ -161,10 +207,12 @@ def git_invocation(tokens, cwd):
             if index + 1 >= len(tokens):
                 return None
             target = resolve_git_path(tokens[index + 1], target)
+            targets.append(target)
             index += 2
             continue
         if word.startswith("-C") and word != "-C":
             target = resolve_git_path(word[2:], target)
+            targets.append(target)
             index += 1
             continue
         if word in {"--git-dir", "--work-tree"}:
@@ -172,17 +220,18 @@ def git_invocation(tokens, cwd):
                 return None
             resolved = resolve_git_path(tokens[index + 1], target)
             if word == "--git-dir":
-                git_dir = resolved
+                targets.append(real(os.path.dirname(resolved)))
             else:
-                work_tree = resolved
+                targets.append(resolved)
             index += 2
             continue
         if word.startswith("--git-dir="):
-            git_dir = resolve_git_path(word.split("=", 1)[1], target)
+            resolved = resolve_git_path(word.split("=", 1)[1], target)
+            targets.append(real(os.path.dirname(resolved)))
             index += 1
             continue
         if word.startswith("--work-tree="):
-            work_tree = resolve_git_path(word.split("=", 1)[1], target)
+            targets.append(resolve_git_path(word.split("=", 1)[1], target))
             index += 1
             continue
         if word in options_with_values:
@@ -202,11 +251,12 @@ def git_invocation(tokens, cwd):
         break
     if index >= len(tokens):
         return None
-    if work_tree is not None:
-        target = work_tree
-    elif git_dir is not None:
-        target = real(os.path.dirname(git_dir))
-    return {"subcommand": tokens[index], "target": real(target)}
+    if assignments.get("GIT_DIR"):
+        git_dir = resolve_git_path(assignments["GIT_DIR"], target)
+        targets.append(real(os.path.dirname(git_dir)))
+    if assignments.get("GIT_WORK_TREE"):
+        targets.append(resolve_git_path(assignments["GIT_WORK_TREE"], target))
+    return {"subcommand": tokens[index], "targets": list(dict.fromkeys(targets))}
 
 
 def candidate_git_mutations(command, cwd):
@@ -216,10 +266,13 @@ def candidate_git_mutations(command, cwd):
     if commands is None:
         return None
     mutations = []
-    for tokens, command_cwd in commands:
-        invocation = git_invocation(tokens, command_cwd)
+    for tokens, command_cwd, assignments in commands:
+        invocation = git_invocation(tokens, command_cwd, assignments)
         if invocation and invocation["subcommand"] in MUTATING_GIT_SUBCOMMANDS:
-            mutations.append(invocation)
+            mutations.extend(
+                {"subcommand": invocation["subcommand"], "target": target}
+                for target in invocation["targets"]
+            )
     return mutations
 
 
@@ -386,7 +439,10 @@ def main() -> int:
         mutations = candidate_git_mutations(command, cwd)
         if not mutations:
             return fail_open()
-        projects = normalized_projects(load_projects(database_path()))
+        projects, error = load_projects_result(database_path())
+        if error:
+            return fail_open(error)
+        projects = normalized_projects(projects)
         decision = decision_for_mutations(mutations, projects)
         return deny_git_mutation(decision) if decision else fail_open()
     if tool_name not in EDITOR_TOOLS:

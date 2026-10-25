@@ -8,13 +8,6 @@ MUTATING_GIT_SUBCOMMANDS = {
 }
 
 
-def real(path):
-    try:
-        return os.path.realpath(path)
-    except OSError:
-        return path
-
-
 def decision_for_mutations(mutations, projects):
     """Decide whether normalized mutations target a protected registered main."""
     for mutation in mutations:
