@@ -119,6 +119,18 @@ test('only a metered keyed OpenRouter row is applicable', async () => {
   ).toEqual({
     kind: 'not-applicable',
   })
+  expect(
+    await checkOpenRouterKeyBudget(
+      { ...endpoint, billing: 'metered', baseUrl: 'https://api.example.test/v1' },
+      { fetch, resolve },
+    ),
+  ).toEqual({ kind: 'not-applicable' })
+  expect(
+    await checkOpenRouterKeyBudget(
+      { ...endpoint, billing: 'metered', apiKeySecret: '  ' },
+      { fetch, resolve },
+    ),
+  ).toEqual({ kind: 'not-applicable' })
 })
 
 test('probe projection records each applicable verdict and holds only exhaustion', () => {

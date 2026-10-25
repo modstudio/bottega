@@ -71,6 +71,8 @@ test('agent presentation reports an unverified stored OpenRouter budget', async 
     .get() as { probed_at: string | null; probe_result: string | null }
   const probeResult = original.probe_result ? JSON.parse(original.probe_result) : {}
   const output: string[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response('', { status: 503 })) as unknown as typeof fetch
   try {
     db()
       .query("UPDATE agent SET probed_at=?,probe_result=? WHERE name='codex'")
@@ -89,6 +91,7 @@ test('agent presentation reports an unverified stored OpenRouter budget', async 
       'OpenRouter key budget not verified',
     )
   } finally {
+    globalThis.fetch = realFetch
     db()
       .query("UPDATE agent SET probed_at=?,probe_result=? WHERE name='codex'")
       .run(original.probed_at, original.probe_result)
