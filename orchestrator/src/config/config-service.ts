@@ -380,7 +380,7 @@ export function sealSecretDecision(key: string, piped: string): SealedSecretSetD
     kind: 'refuse',
     refusal:
       `refusing to seal ${key}: the value piped on stdin is empty, so no value was sealed\n` +
-      `cleared by: pipe the value on stdin (\`printf %s "$VALUE" | ${PLATFORM_SLUG} machine config secret set ${key}\`), or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete ${key}\``,
+      `cleared by: pipe the value on stdin to \`${PLATFORM_SLUG} machine config secret set ${key}\`, or remove the sealed value with \`${PLATFORM_SLUG} machine config secret delete ${key}\``,
   }
 }
 
