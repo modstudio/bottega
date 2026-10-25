@@ -83,7 +83,6 @@
     "operator_waiting_email.item_id:reference",
     "operator_waiting_email.task_key:reference",
     "public_doc_space:primary-key",
-    "question.workflow_cursor_id:reference",
     "question.filed_ref:reference",
     "question.workflow_key:reference",
     "question_mutation_audit:primary-key",
