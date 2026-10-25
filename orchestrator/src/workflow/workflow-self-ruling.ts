@@ -10,9 +10,9 @@ const remedy = `use \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} w
 function operatorRulingRefusal(floors: Pick<Floor, 'kind' | 'operatorRuling'>[]): string {
   const alternatives = floors.filter((floor) => floor.kind !== 'ruling')
   if (alternatives.length === 0)
-    return `self-ruling is refused because this step's floor requires an operator ruling; ${remedy}`
+    return `self-ruling is refused because this step's floor requires a ruling recorded with --from-operator; ${remedy}`
   const named = alternatives.map((floor) => flagForFloor(floor.kind)).join('; ')
-  return `self-ruling is refused because this step's ruling floor requires an operator ruling; close with no ruling using ${named}; an operator ruling is needed only when that other evidence does not close the step — ${remedy}`
+  return `self-ruling is refused because this step's ruling floor requires a ruling recorded with --from-operator; close with no ruling using ${named}; a person's ruling is needed only when that other evidence does not close the step — ${remedy}`
 }
 
 export function selfRulingRefusal(
@@ -36,6 +36,6 @@ export function selfRulingRefusal(
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))
     return operatorRulingRefusal(floors)
   if (!basis.trim())
-    return `self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded operator ruling it rests on, or put the question to the operator with \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule --from-operator\``
+    return `self-ruling is refused because it names no basis; pass --basis naming the canon rule, specification line or recorded person's ruling it rests on, or put the question to the operator with \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule --from-operator\``
   return null
 }

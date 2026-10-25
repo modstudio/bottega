@@ -21,8 +21,10 @@ function workflowQuestionOutbox() {
   const question = local
     .query<{ record_id: string }, [string, string]>(
       `INSERT INTO question
-       (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via)
-       VALUES (1,'${newRecordId()}',?,?,'Which?','workflow') RETURNING record_id`,
+       (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,
+        answered_by_name,overturned_by_name)
+       VALUES (1,'${newRecordId()}',?,?,'Which?','workflow','Ada Lovelace','Grace Hopper')
+       RETURNING record_id`,
     )
     .get(cursor.record_id, STAMP)!
   local
@@ -61,6 +63,7 @@ function hostedQuestionCursor(remote: ReturnType<typeof fakePostgres>, marker: u
   return {
     columns,
     recordId: parameters[columns.indexOf('workflow_cursor_record_id')],
+    valueFor: (column: string) => parameters[columns.indexOf(column)],
   }
 }
 
@@ -98,4 +101,34 @@ test('a K7c-1 question payload syncs and its cursor number is discarded', async 
     })
     local.close()
   }
+})
+
+test('an old-shape question payload without ruling names is accepted', async () => {
+  const { local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    delete payload.answeredByName
+    delete payload.overturnedByName
+  })
+
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+  })
+  local.close()
+})
+
+test('question ruling names reach the hosted record', async () => {
+  const { cursorId, local } = workflowQuestionOutbox()
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({
+    pushed: 1,
+    failed: 0,
+    pending: 0,
+  })
+  const hosted = hostedQuestionCursor(remote, cursorId)
+  expect(hosted.valueFor('answered_by_name')).toBe('Ada Lovelace')
+  expect(hosted.valueFor('overturned_by_name')).toBe('Grace Hopper')
+  local.close()
 })

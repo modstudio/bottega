@@ -31,15 +31,14 @@ import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
-  answererKindFromAnsweredBy,
   QUESTION_DELIVERY_MODE_LIVE,
   QUESTION_DELIVERY_MODE_RECORD_ONLY,
   QUESTION_DELIVERY_MODE_RESUME,
   QUESTION_DELIVERY_MODE_RETRY,
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
   QUESTION_DELIVERY_OUTCOME_FAILED,
-  rulingActor,
 } from './question-vocabulary.ts'
+import { answerAttributions } from './ruling-attribution.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
@@ -201,15 +200,6 @@ function answerRoot(requestedId: string): AnswerRootRow | null {
     WHERE requested.record_id = ?`,
     )
     .get(requestedId) as AnswerRootRow | null
-}
-
-function answeredBy(
-  operatorAuthorized: boolean,
-  fromOperator: boolean,
-  callerSession: string | null,
-): string {
-  if (operatorAuthorized && fromOperator) return 'operator via hub'
-  return rulingActor(fromOperator, callerSession)
 }
 
 function requireAnswerAuthority(
@@ -911,11 +901,16 @@ export async function answerRun(
     rootCwd: row.cwd,
     rootRepo: row.repo,
   })
-
   const now = new Date(Date.now()).toISOString()
+  const attributions = answerAttributions(
+    authorityDecision.kind,
+    input.channel,
+    answers,
+    callerSession,
+  )
   const upd = db().query(
     `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?, revision=revision+1,
+      SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE record_id=?`,
   )
@@ -924,17 +919,11 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    answers.forEach((answer) => {
-      const answeringIdentity = answeredBy(
-        authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
-        answer.fromOperator,
-        callerSession,
-      )
+    answers.forEach((answer, index) => {
       upd.run(
         answer.answer,
         now,
-        answeringIdentity,
-        answererKindFromAnsweredBy(answeringIdentity),
+        ...attributions[index]!,
         input.channel,
         ownersLive ? null : now,
         answer.record_id,
@@ -1045,7 +1034,7 @@ export async function answerRun(
         db()
           .query(
             `UPDATE question
-            SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
+            SET answer=NULL, answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
                 revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE record_id=?`,

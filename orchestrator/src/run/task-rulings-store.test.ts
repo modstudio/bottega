@@ -103,4 +103,51 @@ describe('task ruling candidate query', () => {
     expect(selected.rulings.map((ruling) => ruling.question)).not.toContain('wrong project')
     expect(selected.omitted).toBe(5)
   })
+
+  test('carries the operator name, preferring the overturner of a replaced ruling', () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: `/fixture/${PLATFORM_SLUG}`,
+    })
+    const run = root(PLATFORM_SLUG, 'DEV-960')
+    db()
+      .query(
+        `INSERT INTO question
+           (number,record_id,run_record_id,asked_at,question,answer,answered_at,answerer_kind,answered_by_name,
+            overturned_at,overturned_by_name,replacement)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,'2026-09-01',?,'answer',?,'operator','Ada Lovelace',?,?,?)`,
+      )
+      .run(newRecordId(), run, 'answered', '2026-09-02T12:00:00.000Z', null, null, null)
+    db()
+      .query(
+        `INSERT INTO question
+           (number,record_id,run_record_id,asked_at,question,answer,answered_at,answerer_kind,answered_by_name,
+            overturned_at,overturned_by_name,replacement)
+         VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,'2026-09-01',?,'answer',?,'operator','Ada Lovelace',?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        run,
+        'replaced',
+        '2026-09-01T12:00:00.000Z',
+        '2026-09-03T12:00:00.000Z',
+        'Grace Hopper',
+        'new answer',
+      )
+
+    const selected = taskRulingsForDispatch({
+      resume: false,
+      project: PLATFORM_SLUG,
+      launchKey: 'DEV-960',
+    })
+
+    const ruledBy = Object.fromEntries(
+      selected.rulings.map((ruling) => [ruling.question, ruling.ruledBy]),
+    )
+    expect(ruledBy).toEqual({
+      answered: 'Ada Lovelace (operator)',
+      replaced: 'Grace Hopper (operator)',
+    })
+  })
 })

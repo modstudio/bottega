@@ -170,6 +170,7 @@ export function answerWorkflowQuestion(
     at: string
     actor: string | null
     fromOperator: boolean
+    personName: string | null
     channel: 'cli' | 'mcp'
     adoptionReason?: string | null
   },
@@ -177,7 +178,7 @@ export function answerWorkflowQuestion(
 ): void {
   const changed = database
     .query(
-      `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answerer_kind=?,answer_channel=?,
+      `UPDATE question SET answer=?,answer_basis=?,answered_at=?,answered_by=?,answered_by_name=?,answerer_kind=?,answer_channel=?,
         revision=revision+1
        WHERE record_id=? AND workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
@@ -186,6 +187,7 @@ export function answerWorkflowQuestion(
       input.basis ?? null,
       input.at,
       rulingActor(input.fromOperator, input.actor),
+      input.personName,
       input.fromOperator ? 'operator' : 'agent',
       input.channel,
       input.questionId,

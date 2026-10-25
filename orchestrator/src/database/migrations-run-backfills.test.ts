@@ -54,7 +54,7 @@ test('task rulings migration applies cleanly and preserves mutation audit rows',
       database
         .query(`SELECT name FROM pragma_table_info('question') WHERE name LIKE 'overturn%'`)
         .all(),
-    ).toHaveLength(3)
+    ).toHaveLength(4)
     expect(
       database
         .query(`SELECT name FROM pragma_table_info('question') WHERE name LIKE 'filed_%'`)

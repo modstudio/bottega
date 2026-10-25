@@ -215,7 +215,7 @@ describe('operator MCP tools', () => {
           run_record_id: runId,
           rulings: [
             { question_id: agent, ruling: 'Agent ruling.' },
-            { question_id: operator, ruling: 'Operator ruling.', from_operator: true },
+            { question_id: operator, ruling: "Person's ruling.", from_operator: true },
           ],
         },
       }),
@@ -247,7 +247,7 @@ describe('operator MCP tools', () => {
           rulings: [
             {
               question_id: questionId,
-              ruling: 'Operator ruling.',
+              ruling: "Person's ruling.",
               from_operator: true,
             },
           ],

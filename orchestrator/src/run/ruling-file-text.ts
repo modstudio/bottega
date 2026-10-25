@@ -14,7 +14,8 @@ export function renderRulingFileText(input: {
   question: string
   ruling: string
   basis?: string | null
-  answererKind: string | null
+  answerer: string | null
+  answererName: string | null
   runId: string | null
   runRecordId: string | null
   workflow?: { slug: string; mode: string; cursorId: number } | null
@@ -36,7 +37,8 @@ export function renderRulingFileText(input: {
       : [`run: ${input.runRecordId}`, `run_number: ${input.runId}`]),
     `task: ${input.taskKey ?? 'none'}`,
     `date: ${input.date}`,
-    `answerer: ${input.answererKind ?? 'unknown'}`,
+    `answerer: ${input.answerer ?? 'unknown'}`,
+    `answerer_name: ${input.answererName ?? 'unknown'}`,
     `question: ${yamlLiteral(input.question)}`,
     `ruling: ${yamlLiteral(input.ruling)}`,
     ...(input.basis ? [`basis: ${yamlLiteral(input.basis)}`] : []),

@@ -58,6 +58,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './question-open.ts',
       './question-outbox.ts',
       './question-vocabulary.ts',
+      './ruling-attribution.ts',
       '../git/git-environment.ts',
     ],
     'Keep run-answer independent of transports, worktrees, routing, reviews, and the CLI.',

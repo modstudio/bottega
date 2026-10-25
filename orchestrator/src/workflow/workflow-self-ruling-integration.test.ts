@@ -137,7 +137,7 @@ test('self-ruling records the answered question and closes the step atomically',
     d
       .query(
         `SELECT workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug,question,answer,answer_basis,
-                answerer_kind,answer_channel,answered_by
+                answerer_kind,answer_channel,answered_by,answered_by_name
            FROM question`,
       )
       .get(),
@@ -155,6 +155,7 @@ test('self-ruling records the answered question and closes the step atomically',
     answerer_kind: 'agent',
     answer_channel: 'mcp',
     answered_by: expect.stringMatching(/^operator:/),
+    answered_by_name: null,
   })
   expect(d.query('SELECT action,actor_session,reason FROM question_mutation_audit').get()).toEqual({
     action: 'rule',
@@ -292,7 +293,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
   })
 })
 
-test('self-ruling refuses an operator-ruling floor without changing durable state', () => {
+test("self-ruling refuses a person's-ruling floor without changing durable state", () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -302,13 +303,13 @@ test('self-ruling refuses an operator-ruling floor without changing durable stat
         step.slug === 'ship-triage' ? { ...step, operatorRuling: true } : step,
       ),
     },
-    'operator-ruling fixture',
+    "person's-ruling fixture",
     'test',
     d,
   )
-  promoteStepCatalogueLocal(catalogue.n, 'publish operator-ruling fixture', 'test', d)
+  promoteStepCatalogueLocal(catalogue.n, "publish person's-ruling fixture", 'test', d)
   openAtRuling(d)
-  expect(() => selfRule(d)).toThrow(/requires an operator ruling.*--from-operator/)
+  expect(() => selfRule(d)).toThrow(/requires a ruling recorded with --from-operator/)
   expect(d.query('SELECT ordinal,step_slug FROM workflow_cursor').get()).toEqual({
     ordinal: 3,
     step_slug: 'ship-triage',

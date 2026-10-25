@@ -15,7 +15,9 @@ const row = (overrides: Partial<TaskRulingRow> = {}): TaskRulingRow => ({
   answer: 'Use the settled way.',
   answered_at: '2026-09-20T12:00:00.000Z',
   answerer_kind: 'agent',
+  answered_by_name: null,
   overturned_at: null,
+  overturned_by_name: null,
   replacement: null,
   ...overrides,
 })
@@ -43,6 +45,13 @@ describe('task ruling carry', () => {
       'Ruling (replaces an overturned ruling):\n> Use the replacement.',
     )
     expect(renderTaskRulings(selected)).toContain('Ruled by: operator')
+  })
+
+  test("shows the person's name for a carried ruling", () => {
+    const selected = selectTaskRulings([
+      row({ answerer_kind: 'operator', answered_by_name: 'Ada Lovelace' }),
+    ])
+    expect(renderTaskRulings(selected)).toContain('Ruled by: Ada Lovelace (operator)')
   })
 
   test('shows a self-ruling basis beside its ruling but not beside a replacement', () => {
