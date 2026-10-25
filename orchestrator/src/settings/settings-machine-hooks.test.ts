@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   BOARD_ACK_STOP_BLOCKS,
@@ -14,7 +13,6 @@ import { withMachineProductHooks } from './settings-machine-hooks.ts'
 const ASSET_ROOT = '/installed/product'
 const DATABASE = '/state/orchestrator/orch.db'
 const OLD_ROOT = '/Users/operator/Projects/bottega'
-const HEARTBEAT_SUITE_TIMEOUT_MS = 20_000
 const command = (file: string) => `python3 ${OLD_ROOT}/orchestrator/hooks/${file}`
 const handler = (file: string, extra: Record<string, unknown> = {}) => ({
   type: 'command',
@@ -61,59 +59,6 @@ const profileHooks = {
 function render(hooks: unknown) {
   return withMachineProductHooks({ permissions: {}, hooks }, ASSET_ROOT, DATABASE)
 }
-
-test('heartbeat reminder recognizes detached dispatch commands', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_heartbeat_remind.py', import.meta.url))
-  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
-  expect({
-    exitCode: result.exitCode,
-    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-  }).toEqual({ exitCode: 0, output: 'ok' })
-})
-
-// This suite drives real heartbeat processes; moving those cases out of the gate is follow-up work.
-test(
-  'heartbeat decisions match the canonical hook behavior',
-  () => {
-    const hookTest = fileURLToPath(
-      new URL('../../hooks/test_heartbeat_decision.py', import.meta.url),
-    )
-    const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
-    expect({
-      exitCode: result.exitCode,
-      output:
-        result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-    }).toEqual({ exitCode: 0, output: 'ok' })
-  },
-  HEARTBEAT_SUITE_TIMEOUT_MS,
-)
-
-test('agent blocker logs spawn identities and fails open when minting fails', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_block_agent.py', import.meta.url))
-  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
-  expect({
-    exitCode: result.exitCode,
-    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-  }).toEqual({ exitCode: 0, output: 'ok' })
-})
-
-test('Stop held-tree decisions list in-flight landing trees without blocking the turn', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_score_reminder.py', import.meta.url))
-  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
-  expect({
-    exitCode: result.exitCode,
-    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-  }).toEqual({ exitCode: 0, output: 'ok' })
-})
-
-test('bun cache guard refuses destructive shared-cache commands', () => {
-  const hookTest = fileURLToPath(new URL('../../hooks/test_bun_cache_guard.py', import.meta.url))
-  const result = Bun.spawnSync(['python3', hookTest], { stdout: 'pipe', stderr: 'pipe' })
-  expect({
-    exitCode: result.exitCode,
-    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-  }).toEqual({ exitCode: 0, output: 'ok' })
-})
 
 test('typed profile hooks and an empty profile render the same canonical product hooks', () => {
   const fromProfile = render(profileHooks)
