@@ -4,10 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
-import {
-  type ConsumedDoc,
-  resumeBriefAuthorSession,
-} from '../doc/resume-brief-author.ts'
+import { type ConsumedDoc, resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
 import type { SessionProcessProbe } from '../run/session-liveness-adapter.ts'
 import { adoptSessionRuns, type SessionAdoptionReport } from './session-adopt.ts'
 
