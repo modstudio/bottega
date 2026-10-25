@@ -1,8 +1,4 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import {
-  type OpenRouterKeyBudgetDecision,
-  openRouterKeyBudgetRefusal,
-} from '../agent/openrouter-key-budget.ts'
 import { isCodexThrottleNotice } from '../transport/codex-throttle.ts'
 
 /**
@@ -452,25 +448,6 @@ export const PROVIDER_UNSERVED: ReadonlySet<FailureKind> = new Set([
 ])
 
 export type BillingHold = { enabled: 0; disabledReason: string }
-
-/** Replace only an auth failure proved to be an exhausted OpenRouter key. */
-export function applyOpenRouterBudgetToAuthFailure(
-  failureKind: FailureKind | null,
-  error: string | null,
-  decision: OpenRouterKeyBudgetDecision,
-): {
-  failureKind: FailureKind | null
-  error: string | null
-  billingHoldDetail?: string
-} {
-  if (failureKind !== 'auth' || decision.kind !== 'exhausted') return { failureKind, error }
-  const refusal = openRouterKeyBudgetRefusal(decision)
-  return {
-    failureKind: 'billing',
-    error: error ? `${error}\n${refusal}` : refusal,
-    billingHoldDetail: refusal,
-  }
-}
 
 /** A durable routing hold whose only release is the named operator action. */
 export function billingHoldForFailure(

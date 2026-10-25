@@ -16,6 +16,10 @@ export const agentProbeModules = [
     '../../../shared/secret-resolution-failure.ts',
   ]),
   module('orchestrator/src/agent/openrouter-key-budget.ts', ['./endpoint-api-key.ts']),
+  module('orchestrator/src/agent/openrouter-auth-failure.ts', [
+    '../failure/failure.ts',
+    './openrouter-key-budget.ts',
+  ]),
   module('orchestrator/src/agent/agent-probe.ts', [
     '../../../shared/config-directory.ts',
     '../../../shared/record-id.ts',

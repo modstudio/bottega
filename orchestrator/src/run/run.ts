@@ -7,6 +7,7 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
+import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
 import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
@@ -28,7 +29,7 @@ import {
 } from '../database/migration-drain.ts'
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
-import { applyOpenRouterBudgetToAuthFailure, type classify, notify } from '../failure/failure.ts'
+import { type classify, notify } from '../failure/failure.ts'
 import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
