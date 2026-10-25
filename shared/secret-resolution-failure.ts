@@ -5,9 +5,15 @@ import { RECORD_SIGN_IN_REMEDY } from './record-remedies.ts'
 
 type SecretResolutionFailureOptions = {
   exhaustedRetryCommand?: string
-  /** The caller is the record doctor, so its remedy must not send the operator back to it. */
-  omitDoctorDiagnostic?: boolean
+  /**
+   * The `checked by:` line that names where an unreachable service is confirmed, or `null` to omit
+   * the line. Omitting the option names the record doctor, which is the surface that reports it;
+   * the doctor itself passes `null` because its own remedy must not send the operator back to it.
+   */
+  unreachableDiagnostic?: string | null
 }
+
+const DEFAULT_UNREACHABLE_DIAGNOSTIC = `checked by: ${PLATFORM_SLUG} record doctor`
 
 type HostedFailureCause = {
   constructorName: string
@@ -95,11 +101,9 @@ function configClientRemedy(
   options: SecretResolutionFailureOptions,
 ) {
   if (options.exhaustedRetryCommand) {
-    const diagnostic =
-      classification.reason === 'unreachable' && !options.omitDoctorDiagnostic
-        ? `\nchecked by: ${PLATFORM_SLUG} record doctor`
-        : ''
-    return `${diagnostic}\ncleared by: ${options.exhaustedRetryCommand}`
+    const { unreachableDiagnostic = DEFAULT_UNREACHABLE_DIAGNOSTIC } = options
+    const diagnostic = classification.reason === 'unreachable' ? unreachableDiagnostic : null
+    return `${diagnostic ? `\n${diagnostic}` : ''}\ncleared by: ${options.exhaustedRetryCommand}`
   }
   if (classification.reason === 'unreachable') return `\ncleared by: ${PLATFORM_SLUG} record doctor`
   if (classification.reason === 'not-configured') return `\ncleared by: ${RECORD_SIGN_IN_REMEDY}`

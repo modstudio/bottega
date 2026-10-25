@@ -233,7 +233,7 @@ export function decideRecordDoctorChecks(facts: RecordDoctorFacts): RecordDoctor
 /** A transient doctor failure clears by waiting; the doctor never names itself as the diagnostic. */
 const DOCTOR_TRANSIENT_REMEDY = {
   exhaustedRetryCommand: `wait for the hosted record to recover, then re-run ${PLATFORM_SLUG} record doctor`,
-  omitDoctorDiagnostic: true,
+  unreachableDiagnostic: null,
 }
 
 /** Resolve each distinct enabled-agent secret once without exposing its value. */

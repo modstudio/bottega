@@ -138,6 +138,12 @@ const reviewRiskSchema = strictObject({
         'must be a non-empty short phrase; replace it with the reason for this path risk',
       ),
       basis: z.string().trim().min(1).optional(),
+      firm: z
+        .literal(
+          true,
+          'must be true or omitted; omit firm for a path whose risk may lower with size',
+        )
+        .optional(),
     }),
   ),
   unlisted: z.custom<0 | 1 | 2>(
