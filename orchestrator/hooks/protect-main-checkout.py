@@ -11,13 +11,10 @@ import sqlite3
 import subprocess
 import sys
 
+from protect_main_checkout import candidate_git_mutations, decision_for_command
+
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
-DB_PATH = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
-    ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
-    text=True,
-).strip()
-
 EDITOR_TOOLS = {"Write", "Edit", "NotebookEdit"}
 INVARIANT = "A registered main checkout stays clean; work happens in a worktree"
 
@@ -26,6 +23,23 @@ def fail_open(message=None) -> int:
     if message:
         print(f"protect-main-checkout: allowing commit: {message}", file=sys.stderr)
     return 0
+
+
+def database_path():
+    configured = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
+    if configured:
+        return configured
+    try:
+        return subprocess.check_output(
+            [
+                "bun", "--no-env-file",
+                os.path.join(ROOT, "shared", "state-directory.ts"),
+                "orchestrator", "database",
+            ],
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def git(args, cwd):
@@ -164,6 +178,26 @@ def deny(project, path):
     return 0
 
 
+def deny_git_mutation(decision):
+    project = decision["project"]
+    root = decision["root"]
+    subcommand = decision["subcommand"]
+    hint = os.path.join(project["path"], ".claude", "worktrees")
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": (
+                f"{project['name']}: refusing git {subcommand} in registered main checkout {root}\n"
+                f"run it from a worktree under {hint} instead\n"
+                f"invariant: {INVARIANT}\n"
+                f"cleared by: bottega run start --cwd {shell_quote(hint + '/<tree>')}"
+            ),
+        }
+    }))
+    return 0
+
+
 def deny_commit(project):
     hint = os.path.join(project["path"], ".claude", "worktrees")
     print(
@@ -177,7 +211,7 @@ def deny_commit(project):
 
 def pre_commit() -> int:
     cwd = os.getcwd()
-    projects, error = load_projects_result(DB_PATH)
+    projects, error = load_projects_result(database_path())
     if error:
         return fail_open(error)
     top = toplevel(cwd)
@@ -200,13 +234,24 @@ def main() -> int:
         payload = json.load(sys.stdin)
     except Exception:
         return fail_open()
-    if payload.get("tool_name") not in EDITOR_TOOLS:
+    tool_name = payload.get("tool_name")
+    if tool_name == "Bash":
+        inp = payload.get("tool_input") or {}
+        command = inp.get("command")
+        cwd = payload.get("cwd")
+        mutations = candidate_git_mutations(command, cwd)
+        if not mutations:
+            return fail_open()
+        projects = load_projects(database_path())
+        decision = decision_for_command(command, cwd, projects)
+        return deny_git_mutation(decision) if decision else fail_open()
+    if tool_name not in EDITOR_TOOLS:
         return fail_open()
     path = target_path(payload)
     if not path:
         return fail_open()
     path = real(path)
-    projects = load_projects(DB_PATH)
+    projects = load_projects(database_path())
     project, root = project_for(path, projects)
     if project is None or root is None:
         return fail_open()

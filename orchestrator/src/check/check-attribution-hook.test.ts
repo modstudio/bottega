@@ -185,3 +185,52 @@ describe('attribution hook', () => {
     expect(outputs[1]?.systemMessage).toContain('missing-from-numeric-cwd')
   })
 })
+
+test('main-checkout hook decides Bash git mutations from parsed commands', () => {
+  const policy = resolve(import.meta.dir, '../../hooks/protect_main_checkout.py')
+  const runner = `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("protect_main_checkout", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+main = "/registered/main"
+worktree = main + "/.claude/worktrees/DEV-1578"
+protected = [{"name": "protected", "path": main, "settings": {}}]
+exempt = [{"name": "exempt", "path": main, "settings": {"requireCleanMain": False}}]
+cases = [
+    ("git checkout x", main, protected),
+    ("git -C /registered/main switch x", "/elsewhere", protected),
+    ("git status", main, protected),
+    ("git pull --ff-only", main, protected),
+    ("cd /registered/main && git reset --hard", "/elsewhere", protected),
+    ("git checkout x", worktree, protected),
+    ("git checkout $(branch-name)", main, protected),
+    ("git checkout x", main, exempt),
+    ("A=1 git status || git restore file | git log; git clean -n", main, protected),
+]
+results = []
+for command, cwd, projects in cases:
+    decision = module.decision_for_command(command, cwd, projects)
+    results.append(None if decision is None else {"subcommand": decision["subcommand"]})
+json.dump(results, sys.stdout)
+`
+  const result = Bun.spawnSync(['python3', '-c', runner, policy], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  expect({ exitCode: result.exitCode, stderr: result.stderr.toString() }).toEqual({
+    exitCode: 0,
+    stderr: '',
+  })
+  expect(JSON.parse(result.stdout.toString()) as Array<{ subcommand: string } | null>).toEqual([
+    { subcommand: 'checkout' },
+    { subcommand: 'switch' },
+    null,
+    null,
+    { subcommand: 'reset' },
+    null,
+    null,
+    null,
+    { subcommand: 'restore' },
+  ])
+})
