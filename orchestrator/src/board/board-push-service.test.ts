@@ -34,7 +34,6 @@ import { renderBoardReplyDelivery } from './board-thread-render.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
 const interruptHook = resolve(import.meta.dir, '../../hooks/board-interrupt.py')
-const interruptHookTest = resolve(import.meta.dir, '../../hooks/test_board_interrupt.py')
 const guardHook = resolve(import.meta.dir, '../../hooks/board-ack-guard.py')
 const postingCwd = resolve(import.meta.dir, '../../..')
 
@@ -541,14 +540,6 @@ test('recently-injected ids do not suppress messages never delivered to the sess
   })
 
   expect(result.delivery.map((notice) => notice.id)).toEqual([String(unread.number)])
-})
-
-test('board interrupt presence helpers match the canonical hook behavior', () => {
-  const result = Bun.spawnSync(['python3', interruptHookTest], { stdout: 'pipe', stderr: 'pipe' })
-  expect({
-    exitCode: result.exitCode,
-    output: result.exitCode === 0 ? 'ok' : `${result.stdout.toString()}${result.stderr.toString()}`,
-  }).toEqual({ exitCode: 0, output: 'ok' })
 })
 
 test('PostToolUse does not repair presence without a session start', () => {
