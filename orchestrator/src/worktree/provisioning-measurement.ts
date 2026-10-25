@@ -107,12 +107,14 @@ export function measureProvisioningPhase<T>(
   phase: string,
   name: string,
   operation: () => T,
+  record: (runId: string, phases: readonly ProvisioningPhase[]) => void = appendProvisioningPhases,
+  now: () => number = performance.now.bind(performance),
 ): T {
-  const started = performance.now()
+  const started = now()
   try {
     return operation()
   } finally {
-    appendProvisioningPhases(runId, [{ phase, name, durationMs: performance.now() - started }])
+    record(runId, [{ phase, name, durationMs: now() - started }])
   }
 }
 
