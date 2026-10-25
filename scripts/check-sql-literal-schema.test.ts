@@ -67,3 +67,11 @@ test('every controlled catalogue statement is prepared', () => {
     }),
   ).toThrow('no such column: missing')
 })
+
+test('a global substitution resolves an identifier any file may interpolate', () => {
+  expect(
+    fixture(
+      'database.query(`SELECT missing FROM example WHERE name IN $' + '{TERMINAL_RUN_STATUS_SQL}`)',
+    ),
+  ).toThrow('no such column: missing')
+})
