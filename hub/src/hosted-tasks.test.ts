@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
-import { getHostedTask } from './hosted-tasks.ts'
+import { createHostedTaskInTransaction, getHostedTask } from './hosted-tasks.ts'
 
 const spaceId = '01990000-0000-7000-8000-000000001430'
 const otherSpaceId = '01990000-0000-7000-8000-000000001431'
@@ -9,6 +9,7 @@ const userId = '01990000-0000-7000-8000-000000001432'
 const liveTaskId = '01990000-0000-7000-8000-000000001433'
 const deletedTaskId = '01990000-0000-7000-8000-000000001434'
 const otherSpaceTaskId = '01990000-0000-7000-8000-000000001435'
+const projectId = '01990000-0000-7000-8000-000000001436'
 const at = '2026-10-20T12:00:00.000Z'
 let database: PGlite
 
@@ -18,6 +19,8 @@ beforeAll(async () => {
     RESET ROLE;
     INSERT INTO space (id,name,slug,created_at)
     VALUES ('${otherSpaceId}','Other space','other-space','${at}');
+    INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+    VALUES ('${projectId}','${spaceId}','one',ARRAY['DEV'],now());
     INSERT INTO hub_task
       (id,space_id,project_name,key,project,title,source,first_seen,last_seen,created_at,updated_at,deleted_at)
     VALUES
@@ -50,4 +53,24 @@ test('getHostedTask does not return a deleted task', async () => {
 
 test('getHostedTask does not return a task in another space', async () => {
   expect(await getHostedTask(pgliteSql(database), { userId, spaceId }, otherSpaceTaskId)).toBeNull()
+})
+
+test('createHostedTaskInTransaction mints a version-7 seq id', async () => {
+  const client = pgliteSql(database)
+  const identity = { userId, spaceId }
+
+  await client.begin((tx) =>
+    createHostedTaskInTransaction(tx, identity, {
+      project: 'one',
+      projectId,
+      title: 'Mint seq id',
+    }),
+  )
+
+  const rows = await client<{ id: string }[]>`
+    SELECT id::text AS id FROM seq
+    WHERE space_id=${spaceId}::uuid AND project_id=${projectId}::uuid AND name='task:DEV'`
+  expect(rows[0]!.id).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  )
 })

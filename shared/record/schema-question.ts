@@ -2,7 +2,7 @@
 /** Knows the hosted question evidence shape. Must not know local execution or synchronization. */
 import { type SQLWrapper, sql } from 'drizzle-orm'
 import { integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
-import { machine, newRecordId, project, spaceIdentity, tenantPolicies } from './schema.ts'
+import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 import { run } from './schema-run.ts'
 
 export function hostedQuestionWins(incoming: SQLWrapper, hosted: SQLWrapper) {
@@ -57,7 +57,7 @@ export const question = pgTable.withRLS(
 export const questionMutationAudit = pgTable.withRLS(
   'question_mutation_audit',
   {
-    id: uuid('id').primaryKey().defaultRandom().$defaultFn(newRecordId),
+    id: uuid('id').primaryKey().defaultRandom(),
     questionId: uuid('question_id')
       .notNull()
       .references(() => question.id),

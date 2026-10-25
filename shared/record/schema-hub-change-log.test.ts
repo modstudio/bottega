@@ -167,15 +167,18 @@ test('change-log triggers cover every synced table and recipient changes map to 
   }
 })
 
-test('portable record UUID function returns ordered version-7 UUIDs', async () => {
-  const first = (await database.query<{ id: string }>('SELECT record_uuid_v7()::text AS id'))
-    .rows[0]!.id
-  const second = (await database.query<{ id: string }>('SELECT record_uuid_v7()::text AS id'))
-    .rows[0]!.id
+test('portable record UUID function orders version-7 UUIDs from distinct timestamps', async () => {
+  const ids: string[] = []
+  for (let index = 0; index < 10; index++) {
+    ids.push(
+      (await database.query<{ id: string }>('SELECT record_uuid_v7()::text AS id')).rows[0]!.id,
+    )
+    await database.query('SELECT pg_sleep(0.0001)')
+  }
 
-  expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
-  expect(second).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
-  expect(first < second).toBe(true)
+  for (const id of ids)
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  expect(ids).toEqual([...ids].sort())
 })
 
 test('tenant and owner writes append gapless, space-scoped change entries', async () => {
