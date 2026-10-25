@@ -258,38 +258,53 @@ test('a lens recorded on the branch is refused as missing for this change, not a
   expect(message).not.toContain('applicable lens craft has no recorded result on this branch')
 })
 
-test('a no-round refusal prints the generic remedy only from its decision field', () => {
+test('a generic no-round refusal prints beside the unfinished-review remedy, with no lens line', () => {
   const change = {
     project: { name: 'fixture' },
     branch: 'DEV-1535-no-round',
     tip: 'tip',
     group: { patchId: 'patch' },
-    tier: 2,
+    tier: 0,
   } as PullRequestChange
-  const message = triageRefusal(change, {
+  // No applicable lens and an unfinished exact review: the refusal names that review's remedy
+  // and the generic remedy that no earlier complete review round exists on the branch.
+  const unfinished: TriageEvidence['reviews'][number] = {
+    reviewRecordId: 'review-2',
+    reviewNumber: 2,
+    recordedAt: '2026-09-25T00:00:00Z',
+    completedAt: null,
+    tier: null,
+    role: 'round',
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    lensIdentities: ['correctness'],
+    lenses: [{ recordId: 'lens-2', lens: 'correctness', graded: false }],
+    findings: [],
+  }
+  const decision = decideTriage({
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    tip: 'tip',
+    tier: 0,
+    applicableReview: { lenses: [] },
+    branchOwnerSession: 'owner-session',
+    reviews: [unfinished],
+    branchReviewGroups: [{ reviews: [unfinished] }],
+    reads: [],
+  })
+  expect(decision).toMatchObject({
     complete: false,
-    snapshot: {
-      reviewRecordIds: [],
-      patchId: 'patch',
-      tier: 2,
-      lensRounds: 0,
-      findingCount: 0,
-      admissionPath: 'exact_review',
-      readRecordId: null,
-    },
     missingReview: false,
-    unfinishedReviewNumbers: [],
-    undisposedFindings: [],
     missingLenses: [],
-    missingSecondOpinion: null,
-    architectReadRequired: false,
+    undisposedFindings: [],
     earlierReviewNumber: null,
-    earlierReviewTier: null,
-    finalTierRaised: false,
     noCompleteReviewRound: true,
   })
+  if (decision.complete) throw new Error('expected incomplete triage')
 
+  const message = triageRefusal(change, decision)
   expect(message).toContain('no earlier complete review round exists on DEV-1535-no-round')
+  expect(message).not.toContain('applicable lens')
 })
 
 test('a creditable composed round refusal names only the architect read', () => {

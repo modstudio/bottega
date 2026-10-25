@@ -69,10 +69,10 @@ type ReviewGaps = {
   missingSecondOpinion: { lens: string; firstRunId: string | null } | null
 }
 
-type ComposedReviewEvidence = {
-  coverageGaps: ReviewGaps
-  round: CompleteReviewRound | null
-}
+/** Composed branch evidence: the gaps, and the one round those reviews compose when complete. */
+type ComposedReviewEvidence =
+  | { complete: false; coverageGaps: ReviewGaps; round: null }
+  | { complete: true; coverageGaps: ReviewGaps; round: CompleteReviewRound }
 
 function recordedLensRounds(reviews: readonly TriageReviewRow[]): number {
   return reviews.reduce((count, review) => count + review.lenses.length, 0)
@@ -237,20 +237,21 @@ function composedReviewEvidence(
     missingLenses.length === 0 &&
     sortedUndisposed.length === 0 &&
     missingSecondOpinion === null
+  const coverageGaps: ReviewGaps = {
+    missingLenses,
+    undisposedFindings: sortedUndisposed,
+    missingSecondOpinion,
+  }
+  if (!complete) return { complete: false, coverageGaps, round: null }
   return {
-    round: complete
-      ? {
-          reviews,
-          tier: Math.max(...reviews.map((review) => review.tier!)) as 0 | 1 | 2 | 3,
-          completedAt: reviews
-            .map((review) => review.completedAt!)
-            .sort((left, right) => right.localeCompare(left))[0]!,
-        }
-      : null,
-    coverageGaps: {
-      missingLenses,
-      undisposedFindings: sortedUndisposed,
-      missingSecondOpinion,
+    complete: true,
+    coverageGaps,
+    round: {
+      reviews,
+      tier: Math.max(...reviews.map((review) => review.tier!)) as 0 | 1 | 2 | 3,
+      completedAt: reviews
+        .map((review) => review.completedAt!)
+        .sort((left, right) => right.localeCompare(left))[0]!,
     },
   }
 }
@@ -322,21 +323,14 @@ function exactReviewEvidence(evidence: TriageEvidence) {
 function incompleteTriageDecision(input: {
   exact: ReturnType<typeof exactReviewEvidence>
   composed: ComposedReviewEvidence
-  earlierRound: CompleteReviewRound | null
   exactRead: TriageEvidence['reads'][number] | undefined
   finalTierRaised: boolean
   hasCompletedBranchReview: boolean
   hasFunnelPlan: boolean
 }): Exclude<TriageDecision, { complete: true }> {
-  const {
-    exact,
-    composed,
-    earlierRound,
-    exactRead,
-    finalTierRaised,
-    hasCompletedBranchReview,
-    hasFunnelPlan,
-  } = input
+  const { exact, composed, exactRead, finalTierRaised, hasCompletedBranchReview, hasFunnelPlan } =
+    input
+  const earlierRound = composed.round
   const emptyGaps: ReviewGaps = {
     missingLenses: [],
     undisposedFindings: [],
@@ -372,7 +366,7 @@ function incompleteTriageDecision(input: {
     earlierReviewTier: earlierRound?.tier ?? null,
     finalTierRaised,
     noCompleteReviewRound:
-      !earlierRound &&
+      !composed.complete &&
       !missingReview &&
       coverageGaps.missingLenses.length === 0 &&
       undisposedFindings.length === 0 &&
@@ -423,45 +417,39 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   if (
     evidence.reviewPlan !== undefined &&
     (reviewPlan.round.lenses.length > 0 || reviewPlan.round.secondOpinion !== undefined) &&
-    earlierRound &&
-    !composed.coverageGaps.missingLenses.length &&
-    !composed.coverageGaps.undisposedFindings.length &&
-    composed.coverageGaps.missingSecondOpinion === null &&
+    composed.complete &&
     !exact.currentPatch.unfinishedReviewNumbers.length &&
     !exact.currentPatch.undisposedFindings.length
   ) {
+    const { round } = composed
     return {
       complete: true,
       snapshot: {
-        reviewRecordIds: earlierRound.reviews.map((review) => review.reviewRecordId).sort(),
+        reviewRecordIds: round.reviews.map((review) => review.reviewRecordId).sort(),
         patchId: evidence.patchId,
         tier: evidence.tier,
-        lensRounds: recordedLensRounds(earlierRound.reviews),
-        findingCount: earlierRound.reviews.flatMap((review) => review.findings).length,
+        lensRounds: recordedLensRounds(round.reviews),
+        findingCount: round.reviews.flatMap((review) => review.findings).length,
         admissionPath: 'exact_review',
         readRecordId: null,
       },
     }
   }
   if (
-    earlierRound &&
+    composed.complete &&
     (!finalTierRaised || evidence.reviewPlan !== undefined) &&
     exactRead &&
-    !composed.coverageGaps.missingLenses.length &&
-    !composed.coverageGaps.undisposedFindings.length &&
-    composed.coverageGaps.missingSecondOpinion === null &&
     !exact.currentPatch.unfinishedReviewNumbers.length &&
     !exact.currentPatch.undisposedFindings.length
   ) {
     return {
       complete: true,
-      snapshot: architectReadSnapshot(evidence, earlierRound, exactRead.recordId),
+      snapshot: architectReadSnapshot(evidence, composed.round, exactRead.recordId),
     }
   }
   return incompleteTriageDecision({
     exact,
     composed,
-    earlierRound,
     exactRead,
     finalTierRaised,
     hasCompletedBranchReview,
