@@ -13,7 +13,7 @@ export type SourceRootAllowance = { path: string; line: number; reason: string }
 export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   {
     path: 'orchestrator/src/canon/canon.ts',
-    line: 20,
+    line: 21,
     reason: 'repository citation validation runs only against canon maintained in a checkout',
   },
   {
