@@ -5,8 +5,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 function invalidMetricIdentityDays(database: Database): string[] {
   return database
     .query<{ day: string }, []>(
-      `SELECT day FROM metric
-       WHERE record_id IS NULL OR trim(record_id)=''
+      `SELECT CASE WHEN day IS NULL THEN '<NULL>' WHEN trim(day)='' THEN '<empty>' ELSE day END day
+       FROM metric
+       WHERE day IS NULL OR trim(day)=''
+          OR record_id IS NULL OR trim(record_id)=''
           OR record_id IN (
             SELECT record_id FROM metric
             WHERE record_id IS NOT NULL AND trim(record_id)<>''
@@ -23,7 +25,7 @@ export function assertMetricIdentities(database: Database): void {
   const days = invalidMetricIdentityDays(database)
   if (!days.length) return
   throw new Error(
-    `refusing metric/receipt cache UUID-key migration: metric.record_id is NULL, empty, or duplicate for days [${days.join(',')}]\n` +
+    `refusing metric/receipt cache UUID-key migration: metric.day is NULL or empty, or metric.record_id is NULL, empty, or duplicate for days [${days.join(',')}]\n` +
       `cleared by: repair the named metric identities, then run \`${PLATFORM_SLUG} machine migrate\``,
   )
 }

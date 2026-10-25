@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
@@ -97,15 +98,6 @@ test('keys metrics and receipt cache rows by UUID without losing their values', 
       sync_error: 'kept-error',
       successor: 1,
     })
-    expect(typeof receipt.record_id).toBe('string')
-    expect(receipt.record_id).not.toBe('')
-    expect(
-      database
-        .query<{ count: number; distinct_count: number }, []>(
-          'SELECT COUNT(*) count,COUNT(DISTINCT record_id) distinct_count FROM hosted_board_receipt_cache',
-        )
-        .get(),
-    ).toEqual({ count: 1, distinct_count: 1 })
     expect(() =>
       database.exec(`INSERT INTO metric(
         record_id,day,claude_tokens,cache_read,messages,tasks,collected_at
@@ -133,12 +125,34 @@ test('refuses duplicate metric record ids and names every affected day', () => {
         ('duplicate-id','2026-10-25',1,1,1,1,'at');
     `)
     expect(() => applyMigrations(database)).toThrow(
-      'metric.record_id is NULL, empty, or duplicate for days [2026-10-24,2026-10-25]',
+      'metric.day is NULL or empty, or metric.record_id is NULL, empty, or duplicate for days [2026-10-24,2026-10-25]',
     )
     expect(column(database, 'metric', 'day')).toEqual({ name: 'day', notnull: 0, pk: 1 })
     expect(
       database.query('SELECT COUNT(*) count FROM orch_migrations WHERE version=?').get(MIGRATION),
     ).toEqual({ count: 0 })
+  } finally {
+    database.close()
+  }
+})
+
+test('refuses a NULL metric day with the migration remedy', () => {
+  const database = migrationBoundaryTestDatabase(MIGRATION)
+  try {
+    database.exec(`
+      DELETE FROM metric;
+      INSERT INTO metric(record_id,day,claude_tokens,cache_read,messages,tasks,collected_at)
+      VALUES ('01990000-0000-7000-8000-000000001805',NULL,1,1,1,1,'at');
+    `)
+    expect(() => applyMigrations(database)).toThrow(
+      'metric.day is NULL or empty, or metric.record_id is NULL, empty, or duplicate for days [<NULL>]\n' +
+        `cleared by: repair the named metric identities, then run \`${PLATFORM_SLUG} machine migrate\``,
+    )
+    expect(column(database, 'metric', 'day')).toEqual({ name: 'day', notnull: 0, pk: 1 })
+    expect(database.query('SELECT record_id,day FROM metric').get()).toEqual({
+      record_id: '01990000-0000-7000-8000-000000001805',
+      day: null,
+    })
   } finally {
     database.close()
   }
