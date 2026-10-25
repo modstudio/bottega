@@ -164,8 +164,8 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
         }
         const projectId = projectIds.get(decision.owner)!
         await tx`
-          INSERT INTO seq (space_id, project_id, name, next)
-          VALUES (${options.spaceId}::uuid, ${projectId}::uuid, ${sequence.name}, ${sequence.next})
+          INSERT INTO seq (id, space_id, project_id, name, next)
+          VALUES (${newRecordId()}::uuid, ${options.spaceId}::uuid, ${projectId}::uuid, ${sequence.name}, ${sequence.next})
           ON CONFLICT (space_id, project_id, name) DO UPDATE SET next = EXCLUDED.next
         `
         importedSequences++

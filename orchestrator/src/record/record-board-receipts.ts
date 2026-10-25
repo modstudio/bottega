@@ -1,6 +1,7 @@
 // concern: record-board-receipts
 /** Owns hosted board receipt writes. Must not know HTTP or local stores. */
 
+import { newRecordId } from '../../../shared/record-id.ts'
 import {
   type HostedBoardReceipt,
   type HostedBoardReceiptInput,
@@ -60,9 +61,9 @@ export async function putHostedBoardReceipt(
     const acknowledgedAt = input.acknowledged ? clock : null
     const rows = await tx`
       INSERT INTO board_receipt (
-        message_id, reader_user_id, reader_session, audience_at_posting, delivered_at, acknowledged_at
+        id, message_id, reader_user_id, reader_session, audience_at_posting, delivered_at, acknowledged_at
       ) VALUES (
-        ${input.messageId}::uuid, ${input.userId}::uuid, ${input.readerSession},
+        ${newRecordId()}::uuid, ${input.messageId}::uuid, ${input.userId}::uuid, ${input.readerSession},
         ${input.audienceAtPosting}, ${deliveredAt}::timestamptz, ${acknowledgedAt}::timestamptz
       )
       ON CONFLICT (message_id, reader_user_id, reader_session) DO UPDATE SET

@@ -3,6 +3,7 @@
 
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
@@ -135,8 +136,8 @@ export async function designatePublicDocProject(
       return { changed: false, spaceId: target.spaceId!, projectId: target.projectId! }
     }
     const inserted = await tx`
-      INSERT INTO public_doc_space (space_id, project_id)
-      VALUES (${target.spaceId!}::uuid, ${target.projectId!}::uuid)
+      INSERT INTO public_doc_space (id, space_id, project_id)
+      VALUES (${newRecordId()}::uuid, ${target.spaceId!}::uuid, ${target.projectId!}::uuid)
       ON CONFLICT DO NOTHING RETURNING space_id
     `
     refuse(publicDocDesignationRefusal({ ...facts, affectedRows: inserted.length }))

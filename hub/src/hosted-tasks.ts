@@ -101,8 +101,8 @@ export async function createHostedTaskInTransaction(
       SELECT MAX(((regexp_match(key, ${pattern}, 'i'))[1])::bigint)::text highest
       FROM hub_task WHERE space_id=${identity.spaceId}::uuid`,
   )[0]?.highest
-  await tx`INSERT INTO seq(space_id,project_id,name,next)
-      VALUES (${identity.spaceId}::uuid,${project.id}::uuid,${`task:${prefix}`},${BigInt(highest ?? 0) + 1n})
+  await tx`INSERT INTO seq(id,space_id,project_id,name,next)
+      VALUES (${newRecordId()}::uuid,${identity.spaceId}::uuid,${project.id}::uuid,${`task:${prefix}`},${BigInt(highest ?? 0) + 1n})
       ON CONFLICT(space_id,project_id,name) DO UPDATE SET next=GREATEST(seq.next,excluded.next)`
   const sequence = rows<{ next: string }>(
     await tx`

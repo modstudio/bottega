@@ -236,6 +236,7 @@ export const recordModules: RecordModule[] = [
     './outbox-held-contract.ts',
     './outbox-payload-contracts.ts',
     './record-payload-columns.ts',
+    './record-question-audit.ts',
     './record-auth.ts',
     './record-evidence-references.ts',
     './record-release-sync.ts',
@@ -251,6 +252,14 @@ export const recordModules: RecordModule[] = [
     './record-run-usage.ts',
     './record-value-conversions.ts',
     './score-sync.ts',
+  ]),
+  module('orchestrator/src/record/record-question-audit.ts', [
+    'bun',
+    'drizzle-orm/bun-sql',
+    '../../../shared/record/schema-question.ts',
+    '../../../shared/record-id.ts',
+    './outbox-failure.ts',
+    './record-sync-contract.ts',
   ]),
   module('orchestrator/src/record/record-sync-pull-request-ci.ts', [
     'bun',
@@ -427,6 +436,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-tunnel-error.ts', []),
   module('orchestrator/src/record/record-public-doc-designation.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
     'bun',
     '../../../shared/record-remedies.ts',
     './record-session.ts',
@@ -594,6 +604,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-board-messages.ts', [
     'bun',
     '../../../shared/board-purpose.ts',
+    '../../../shared/record-id.ts',
     '../../../shared/record-project-identity.ts',
     '../../../shared/secret-shaped.ts',
     '../board/board-policy.ts',
@@ -605,6 +616,7 @@ export const recordModules: RecordModule[] = [
     './record-board-tx.ts',
   ]),
   module('orchestrator/src/record/record-board-receipts.ts', [
+    '../../../shared/record-id.ts',
     './record-board-contract.ts',
     './record-board-messages.ts',
     './record-board-tx.ts',

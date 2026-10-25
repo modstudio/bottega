@@ -6,11 +6,11 @@ import { migration, postgresSchema } from '../../test/fixtures/postgres-rls.ts'
 const OPERATOR_USER_ID = '01990000-0000-7000-8000-000000000002'
 
 describe('Postgres substrate shape', () => {
-  test('uses application-minted UUIDv7 ids and declares no id default', () => {
+  test('uses application-minted UUIDv7 ids and limits expand defaults to slice-five tables', () => {
     const generated = newRecordId()
     expect(generated[14]).toBe('7')
     expect(['8', '9', 'a', 'b']).toContain(generated[19]!.toLowerCase())
-    expect(migration).not.toMatch(/"id" uuid DEFAULT/i)
+    expect(migration.match(/ADD COLUMN "id" uuid DEFAULT gen_random_uuid\(\)/g)).toHaveLength(9)
   })
 
   test('seeds the fixed platform space and stand-in operator', () => {

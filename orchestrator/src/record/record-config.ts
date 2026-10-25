@@ -549,9 +549,9 @@ async function insertWraps(
   for (const wrap of input.wraps) {
     await tx`
       INSERT INTO secret_dek_wrap
-        (space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+        (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
       VALUES
-        (${input.spaceId}::uuid, ${input.dekId}::uuid, ${wrap.recipientKeyId},
+        (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.dekId}::uuid, ${wrap.recipientKeyId},
          ${wrap.senderKeyId}, ${wrap.enc}, ${wrap.ciphertext}, now())
     `
   }
@@ -689,8 +689,8 @@ export async function registerMachineKey(
   }
   return tenant(input, async (tx) => {
     const rows = await tx`
-      INSERT INTO machine_public_key (space_id, key_id, public_key, label, created_at)
-      VALUES (${input.spaceId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.label}, now())
+      INSERT INTO machine_public_key (id, space_id, key_id, public_key, label, created_at)
+      VALUES (${newRecordId()}::uuid, ${input.spaceId}::uuid, ${input.keyId}, ${input.publicKey}, ${input.label}, now())
       ON CONFLICT (space_id, key_id) DO NOTHING
       RETURNING key_id, public_key, label, created_at, revoked_at
     `

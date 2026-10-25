@@ -495,6 +495,14 @@ export function registerHostedConfigProofs(
       publicKey,
       label: 'service machine',
     })
+    const mintedId = succeeds(
+      'postgres',
+      'postgres',
+      `SELECT id::text FROM machine_public_key
+       WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
+    )
+    expect(mintedId[14]).toBe('7')
+    expect(['8', '9', 'a', 'b']).toContain(mintedId[19]!.toLowerCase())
     succeeds(
       'postgres',
       'postgres',

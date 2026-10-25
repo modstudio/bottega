@@ -167,6 +167,24 @@ test('change-log triggers cover every synced table and recipient changes map to 
   }
 })
 
+test('portable record UUID function orders version-7 UUIDs from distinct timestamps', async () => {
+  const ids: string[] = []
+  for (let index = 0; index < 10; index++) {
+    ids.push(
+      (await database.query<{ id: string }>('SELECT record_uuid_v7()::text AS id')).rows[0]!.id,
+    )
+    await database.query('SELECT pg_sleep(0.0001)')
+  }
+
+  for (const id of ids) {
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    // The leading 48 bits are Unix-epoch milliseconds, not a time of day.
+    const encodedMs = Number.parseInt(id.replaceAll('-', '').slice(0, 12), 16)
+    expect(Math.abs(Date.now() - encodedMs)).toBeLessThan(60_000)
+  }
+  expect(ids).toEqual([...ids].sort())
+})
+
 test('tenant and owner writes append gapless, space-scoped change entries', async () => {
   await bindActor(database, spaceA)
   await database.exec(`
@@ -192,6 +210,21 @@ test('tenant and owner writes append gapless, space-scoped change entries', asyn
     { sequence: 2, op: 'upsert' },
     { sequence: 3, op: 'upsert' },
   ])
+  const changeIds = (
+    await database.query<{ id: string }>(
+      `SELECT id::text FROM hub_change WHERE space_id=$1 ORDER BY sequence`,
+      [spaceA],
+    )
+  ).rows.map(({ id }) => id)
+  const headId = (
+    await database.query<{ id: string }>(`SELECT id::text FROM hub_change_head WHERE space_id=$1`, [
+      spaceA,
+    ])
+  ).rows[0]!.id
+  for (const id of [headId, ...changeIds]) {
+    expect(id[14]).toBe('7')
+    expect(['8', '9', 'a', 'b']).toContain(id[19]!.toLowerCase())
+  }
 
   await database.exec(`
     BEGIN;
