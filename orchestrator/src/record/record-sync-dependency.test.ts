@@ -3,7 +3,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE, type RecordSyncRowResult } from './record-sync-contract.ts'
@@ -289,10 +289,10 @@ test('contention waits for its local run to enqueue a record row', async () => {
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running',?)`,
     )
-    .run(runId)
+    .run(runId, fixtureProjectRecordId(local))
   insertOutboxRow(local, 1, 'contention', contentionId, {
     id: contentionId,
     runId,
@@ -356,10 +356,10 @@ test('contention stops waiting when its local run becomes terminal without an ou
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1,?,'2026-10-13T03:00:00.000Z','codex','write','sha',4,'work','running',?)`,
     )
-    .run(runId)
+    .run(runId, fixtureProjectRecordId(local))
   insertOutboxRow(local, 1, 'contention', contentionId, {
     id: contentionId,
     runId,

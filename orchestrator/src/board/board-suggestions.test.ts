@@ -3,6 +3,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { claimNotices } from './board-service.ts'
 import {
   declineBoardSuggestion,
@@ -21,11 +22,13 @@ function projectFixture() {
 }
 
 function runFixture(session: string | null, status = 'running') {
+  fixtureProjectRecordId(db())
   return db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968')
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-04','codex','implement','suggestion-project','sha',1,'prompt',?,?, 'DEV-968',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))
        RETURNING record_id AS id`,
     )
     .get(status, session) as { id: string }

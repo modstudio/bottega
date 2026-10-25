@@ -7,6 +7,7 @@ import {
   unusedIdentityAndSpaceClientMethods,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { retireProject, upsertProject } from '../project/projects.ts'
 import { subjectClient } from '../subject/subject-client.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -963,12 +964,11 @@ describe('record cache pull', () => {
     const recordId = newRecordId()
     const scoreAt = '2026-09-24T12:00:00.000Z'
     const voidAt = '2026-09-24T12:01:00.000Z'
-    const unvoidAt = '2026-09-24T12:02:00.000Z'
     db()
       .query(
         `INSERT INTO run
-          (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+          (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,evidence_excluded,project_record_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         localId,
@@ -981,6 +981,7 @@ describe('record cache pull', () => {
         'ask',
         'ok',
         VOID_EXCLUSION_REASON,
+        fixtureProjectRecordId(db()),
       )
     if (scored) {
       db()
@@ -1012,7 +1013,7 @@ describe('record cache pull', () => {
                 scoredAt: scored ? scoreAt : null,
                 scoredBy: scored ? 'architect' : null,
                 evidenceExcluded: null,
-                updatedAt: unvoidAt,
+                updatedAt: '2026-09-24T12:02:00.000Z',
               },
             ],
             nextCursor: null,

@@ -78,6 +78,8 @@ export function recordNeverStartedRunFailure(input: {
   job: string
   repo: string | null
   projectRecordId: string | null
+  taskRecordId: string | null
+  probe: boolean
   cwd: string
   promptSha: string
   specSha: string
@@ -96,10 +98,10 @@ export function recordNeverStartedRunFailure(input: {
     database
       .query(
         `INSERT INTO run
-         (record_id,number,started_at,agent,job,repo,project_record_id,cwd,prompt_sha,spec_sha,
+         (record_id,number,started_at,agent,job,repo,project_record_id,task_record_id,probe,cwd,prompt_sha,spec_sha,
           prompt_bytes,prompt_head,status,failure_kind,error,latency_ms,session_id,docs_injected,mcp,
           started_by_user_id,agent_explicit)
-         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?)`,
+         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?)`,
       )
       .run(
         input.recordId,
@@ -108,6 +110,8 @@ export function recordNeverStartedRunFailure(input: {
         input.job,
         input.repo,
         input.projectRecordId,
+        input.taskRecordId,
+        input.probe ? 1 : 0,
         input.cwd,
         input.promptSha,
         input.specSha,

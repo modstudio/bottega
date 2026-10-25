@@ -6,6 +6,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { type RecordApiClient, RecordApiRequestError } from '../record/record-api-client.ts'
 import { CLAIM_CONFLICT } from '../record/record-board-claims.ts'
 import type { HostedBoardMessage, HostedBoardReceipt } from '../record/record-board-contract.ts'
@@ -751,13 +752,16 @@ test('a receipt network failure stops adoption with its mark unset', async () =>
 
 test('the plan and upload include only receipts for readers that are still around', async () => {
   presence('live-reader')
+  const projectRecordId = newRecordId()
+  upsertProject({ recordId: projectRecordId, name: 'board-adoption-run', path: '/tmp/board-run' })
   const finishedRun = db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','ok',1) RETURNING record_id AS id`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','ok',1,?)
+       RETURNING record_id AS id`,
     )
-    .get(new Date(NOW - 1_000).toISOString()) as { id: string }
+    .get(new Date(NOW - 1_000).toISOString(), projectRecordId) as { id: string }
   const notice = postNotice(
     { audience: 'session:live-reader', title: 'reader liveness', body: 'receipt' },
     {},

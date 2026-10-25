@@ -105,7 +105,14 @@ test('an unreadable project reports an error and conservatively plans its root',
   const project = `missing-session-close-out-${newRecordId()}`
   const repo = join(dir, project)
   const projectId = registerProject(project, repo)
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner' })
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'owner',
+    taskRecordId: 'fixture-task',
+    projectRecordId: null,
+  })
   attachRunToProject(root, projectId, project)
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     if (command[0] === 'ps' || command[0] === 'lsof') return spawnResult()
@@ -153,7 +160,14 @@ test('an absent tree that owes recorded teardown makes its terminal root planned
 })
 
 test('a terminal root without a project is planned because its held state is unknown', () => {
-  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'owner' })
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'owner',
+    taskRecordId: 'fixture-task',
+    projectRecordId: null,
+  })
 
   const report = closeOutSession({ session: 'owner', dryRun: true })
 

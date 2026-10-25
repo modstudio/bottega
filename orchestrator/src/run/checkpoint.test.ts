@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { git } from '../git/git-environment.ts'
 import { checkpointRun, latestCheckpoint } from './checkpoint.ts'
 
@@ -40,11 +41,13 @@ function fixture(name: string): { database: Database; repository: string; runId:
   )
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   const runId = newRecordId()
   database
     .query(
-      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (835,?,'2026-10-15','codex','implement','sha',1,'checkpoint','running')`,
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (835,?,'2026-10-15','codex','implement','sha',1,'checkpoint','running',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId)
   return { database, repository, runId }

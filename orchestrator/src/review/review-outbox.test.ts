@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { backfillReviewRecords, enqueueReview, enqueueReviewLens } from './review-outbox.ts'
 
@@ -51,11 +52,13 @@ test('review payload keys conform to the hosted review-family contracts', () => 
 test('review backfill enqueues the graph once and is idempotent', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   database
     .query(`INSERT INTO run
-    (number, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status)
+    (number, record_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, project_record_id)
     VALUES (1, '01990000-0000-7000-8000-000000000010', '2026-09-15T00:00:00Z',
-      'codex', 'review-lens', 'sha', 1, 'head', 'ok')`)
+      'codex', 'review-lens', 'sha', 1, 'head', 'ok',
+      (SELECT record_id FROM project ORDER BY name LIMIT 1))`)
     .run()
   database
     .query(

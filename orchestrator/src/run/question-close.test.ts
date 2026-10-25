@@ -2,7 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import {
   closeQuestionByOperator,
   closeQuestions,
@@ -24,11 +24,13 @@ afterEach(() => {
 
 function fixture(status = 'ok'): { database: Database; questionId: string } {
   const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,'01990000-0000-7000-8000-000000000042','2026-09-29','codex','implement','sha',3,'ask',?)`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,'01990000-0000-7000-8000-000000000042','2026-09-29','codex','implement','sha',3,'ask',?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(status)
   const question = database

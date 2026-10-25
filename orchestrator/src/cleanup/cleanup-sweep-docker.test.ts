@@ -155,8 +155,8 @@ test('a fully NULL chain is reported instead of disappearing from project-scoped
   const name = `docker-null-chain-${root}`
   upsertProject({ recordId: newRecordId(), name, path: join(dir, name), settings: {} })
   db()
-    .query('UPDATE run SET repo=?,project_record_id=NULL WHERE record_id IN (?,?)')
-    .run(name, root, child)
+    .query('UPDATE run SET repo=?,project_record_id=NULL,task_record_id=? WHERE record_id IN (?,?)')
+    .run(name, newRecordId(), root, child)
   const commands: string[] = []
   mockDockerForRun(root, commands)
   const lines: string[] = []

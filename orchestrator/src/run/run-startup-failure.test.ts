@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { upsertProject } from '../project/projects.ts'
 import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
 
 test('a refusal after detach keeps the printed run queryable as failed', () => {
@@ -63,13 +64,17 @@ test('a post-claim startup failure records elapsed latency', () => {
 
 test('a never-started failure is inserted and published atomically', () => {
   const id = newRecordId()
+  const projectId = newRecordId()
+  upsertProject({ recordId: projectId, name: 'never-started', path: '/tmp/caller' })
 
   recordNeverStartedRunFailure({
     recordId: id,
     error: new Error('canon pack exceeded its budget'),
     job: 'understand',
     repo: null,
-    projectRecordId: null,
+    projectRecordId: projectId,
+    taskRecordId: null,
+    probe: false,
     cwd: '/tmp/caller',
     promptSha: 'prompt-sha',
     specSha: 'spec-sha',
@@ -95,6 +100,8 @@ test('a never-started failure is inserted and published atomically', () => {
 
 test('a never-started failure insert rolls back when publication fails', () => {
   const id = newRecordId()
+  const projectId = newRecordId()
+  upsertProject({ recordId: projectId, name: 'never-started-rollback', path: '/tmp/caller' })
   db().exec(
     `CREATE TEMP TRIGGER refuse_run_outbox BEFORE INSERT ON outbox
      WHEN NEW.row_id = '${id}' BEGIN SELECT RAISE(ABORT, 'publication refused'); END`,
@@ -106,7 +113,9 @@ test('a never-started failure insert rolls back when publication fails', () => {
       error: 'canon pack could not compile',
       job: 'understand',
       repo: null,
-      projectRecordId: null,
+      projectRecordId: projectId,
+      taskRecordId: null,
+      probe: false,
       cwd: '/tmp/caller',
       promptSha: 'prompt-sha',
       specSha: 'spec-sha',
@@ -119,4 +128,29 @@ test('a never-started failure insert rolls back when publication fails', () => {
     }),
   ).toThrow('publication refused')
   expect(db().query('SELECT 1 FROM run WHERE record_id=?').get(id)).toBeNull()
+})
+
+test('a never-started probe without a task or project keeps its probe flag', () => {
+  const id = newRecordId()
+
+  recordNeverStartedRunFailure({
+    recordId: id,
+    error: new Error('probe canon pack could not compile'),
+    job: 'understand',
+    repo: null,
+    projectRecordId: null,
+    taskRecordId: null,
+    probe: true,
+    cwd: '/tmp/probe-caller',
+    promptSha: 'prompt-sha',
+    specSha: 'spec-sha',
+    promptBytes: 12,
+    promptHead: 'inspect this',
+    sessionId: null,
+    mcp: 0,
+    startedByUserId: null,
+    agentExplicit: 0,
+  })
+
+  expect(db().query('SELECT probe FROM run WHERE record_id=?').get(id)).toEqual({ probe: 1 })
 })

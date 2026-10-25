@@ -4,6 +4,7 @@ import { notificationCommand } from '../../../shared/operator-notification.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import {
   claimOperatorNotifications,
   initialQuestionWaitingAt,
@@ -24,11 +25,13 @@ afterEach(() => {
 })
 
 function run(status = 'asking') {
+  fixtureProjectRecordId(db())
   return db()
     .query(
       `INSERT INTO run
-        (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','implement','fixture','x',1,'x',?,'operator-waiting-test','DEV-943')
+        (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-25','codex','implement','fixture','x',1,'x',?,'operator-waiting-test','DEV-943',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))
        RETURNING record_id AS id, number`,
     )
     .get(status) as { id: string; number: number }

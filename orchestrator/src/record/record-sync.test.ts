@@ -13,7 +13,7 @@ import {
   STAMP,
 } from '../../test/fixtures/record-sync.ts'
 import { fakePostgres, serverError } from '../../test/fixtures/record-sync-postgres.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { backfillReviewRecords } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -167,10 +167,10 @@ function localScoreOutbox(): Database {
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','ok',?)`,
     )
-    .run(RECORD_ID)
+    .run(RECORD_ID, fixtureProjectRecordId(local))
   enqueueRunRecord(local, RECORD_ID, MACHINE_ID, STAMP)
   local.query("UPDATE outbox SET synced_at=? WHERE kind='run'").run(STAMP)
   local
@@ -327,10 +327,10 @@ test('ordinary sync pushes an asking run before its live question', async () => 
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking',?)`,
     )
-    .run(RECORD_ID)
+    .run(RECORD_ID, fixtureProjectRecordId(local))
   local
     .query(
       `INSERT INTO question (number,record_id,run_record_id,asked_at,question,asked_via)
@@ -742,10 +742,10 @@ test('a quarantined parent defers its graph until retry delivers the parent', as
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking',?)`,
     )
-    .run(RECORD_ID)
+    .run(RECORD_ID, fixtureProjectRecordId(local))
   local
     .query(
       `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,
@@ -892,10 +892,10 @@ test('a dependent reports a retired parent without attempting delivery', async (
   local
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking')`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (42,?,'2026-09-16T00:00:00.000Z','codex','file-question','sha',3,'ask','asking',?)`,
     )
-    .run(RECORD_ID)
+    .run(RECORD_ID, fixtureProjectRecordId(local))
   local
     .query(
       `INSERT INTO question (number,record_id,run_record_id,asked_at,question) VALUES (1,'${newRecordId()}',?,?,'Which?')`,

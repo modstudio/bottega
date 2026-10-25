@@ -1,5 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, applyMigrationsBefore, migrationJournal } from './migrations.ts'
 
 let migratedTemplate: Uint8Array | undefined
@@ -28,6 +30,22 @@ export function prepareMigrationTestDatabases(): void {
 export function migratedTestDatabase(): Database {
   ensureMigrationTemplates()
   return cloneDatabase(migratedTemplate!)
+}
+
+/** Gives a run fixture a real project parent without inventing a task reference. */
+export function fixtureProjectRecordId(database: Database): string {
+  const existing = database.query('SELECT record_id FROM project ORDER BY name LIMIT 1').get() as {
+    record_id: string
+  } | null
+  if (existing) return existing.record_id
+  const recordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,canon,settings)
+       VALUES (?,'run-fixture',?,0,'{"trunk":"main"}')`,
+    )
+    .run(recordId, resolve(import.meta.dir, '../../..'))
+  return recordId
 }
 
 /** Writes an isolated file-backed clone for code that opens the store by path. */

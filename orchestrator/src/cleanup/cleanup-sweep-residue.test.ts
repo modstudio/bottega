@@ -37,6 +37,8 @@ describe('unattended residue sweep adapter', () => {
       job: 'implement',
       status: 'ok',
       repo: 'project',
+      taskRecordId: 'fixture-task',
+      projectRecordId: null,
     })
     db().query('UPDATE run SET pid=? WHERE record_id=?').run(2_147_483_647, runId)
 
@@ -49,6 +51,8 @@ describe('unattended residue sweep adapter', () => {
       job: 'implement',
       status: 'ok',
       repo: 'project',
+      taskRecordId: 'fixture-task',
+      projectRecordId: null,
     })
     db()
       .query('UPDATE run SET agent_pid=?,agent_start_time=NULL WHERE record_id=?')

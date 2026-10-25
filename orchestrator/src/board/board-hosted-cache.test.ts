@@ -4,6 +4,7 @@ import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../../shared/config-di
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { RecordApiRequestError } from '../record/record-api-client.ts'
 import type { HostedBoardChange, HostedBoardMessage } from '../record/record-board-contract.ts'
 import { hostedBoardMessageView } from '../record/record-board-messages.ts'
@@ -239,6 +240,7 @@ test('routing narrows own-user audiences and withholds questions from worker cha
 
 test('reader routing covers local audiences, context, hosted run ids, nobody here, and reply participants', async () => {
   const database = db()
+  const projectRecordId = fixtureProjectRecordId(database)
   database
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_HOSTED_ADOPTED_KEY, '1')
@@ -249,26 +251,20 @@ test('reader routing covers local audiences, context, hosted run ids, nobody her
     .query('INSERT INTO schema_meta(key,value) VALUES (?,?)')
     .run(BOARD_CACHE_OWNER_KEY, userId)
   insertArchitect('cache-reader', '2026-10-05T11:00:00.000Z', '2026-10-05T12:01:00.000Z', 'DEV-968')
+  const changedPaths = JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts'])
   database
     .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?)`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,session_id,launch_key,changed_paths,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','ok','cache-reader','DEV-968',?,?)`,
     )
-    .run(
-      '2026-10-05T11:30:00.000Z',
-      JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']),
-    )
+    .run('2026-10-05T11:30:00.000Z', changedPaths, projectRecordId)
   const recordId = newRecordId()
   const root = database
     .query(
-      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn)
-       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1) RETURNING record_id AS id`,
+      `INSERT INTO run(number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,launch_key,changed_paths,record_id,turn,project_record_id)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','cache-project','sha',1,'prompt','running','DEV-968',?,?,1,?) RETURNING record_id AS id`,
     )
-    .get(
-      '2026-10-05T11:30:00.000Z',
-      JSON.stringify(['orchestrator/src/board/board-hosted-cache.ts']),
-      recordId,
-    ) as { id: string }
+    .get('2026-10-05T11:30:00.000Z', changedPaths, recordId, projectRecordId) as { id: string }
   const clock = Date.parse('2026-10-05T12:02:00.000Z')
   const addressed = (audience: string, reader: string, tags: HostedBoardChange['tags'] = []) =>
     cachedMessageAddressed({ message: message({ audience }), tags }, reader, clock, database)
@@ -919,20 +915,21 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
 
 test('audienceAtPosting uses session first_seen and chain-root start time in both directions', () => {
   const database = db()
+  const projectRecordId = fixtureProjectRecordId(database)
   insertArchitect('early-session', '2026-10-05T11:00:00.000Z', createdAt)
   insertArchitect('late-session', '2026-10-05T13:00:00.000Z')
   const earlyRun = database
     .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1) RETURNING record_id AS id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1,?) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T11:00:00.000Z') as { id: string }
+    .get('2026-10-05T11:00:00.000Z', projectRecordId) as { id: string }
   const lateRun = database
     .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1) RETURNING record_id AS id`,
+      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1,?) RETURNING record_id AS id`,
     )
-    .get('2026-10-05T13:00:00.000Z') as { id: string }
+    .get('2026-10-05T13:00:00.000Z', projectRecordId) as { id: string }
   const cached = message()
   database
     .query(

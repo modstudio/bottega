@@ -972,9 +972,9 @@ test('review tier run target uses the landing merge-base instead of its recorded
       .query<{ id: string }, [string, string, string]>(
         `INSERT INTO run
            (record_id,number,started_at,agent,job,repo,base_commit,input_tree,head_commit,
-            prompt_sha,prompt_bytes,prompt_head,status)
+            prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
          VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-27','codex','review-lens','tier-profile-fixture',?,?,?,
-                 'sha',1,'head','ok')
+                 'sha',1,'head','ok',(SELECT record_id FROM project WHERE name='tier-profile-fixture'))
          RETURNING record_id AS id`,
       )
       .get(FIXTURE_BASE, FIXTURE_WRITER_HEAD, FIXTURE_WRITER_HEAD)!

@@ -86,7 +86,7 @@ import type { RunResumeOptions } from './run-resume-options.ts'
 import { assertRetryRootWorkspace } from './run-retry-claim.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
 import { taskBranchResolution } from './run-task-branch-resolution.ts'
-import { resolveRunTaskRecordId } from './run-task-reference.ts'
+import { admitNewRunReference } from './run-task-reference.ts'
 
 type ClaimOptions = {
   reserveId?: string
@@ -193,6 +193,24 @@ function claimableRow<T>(
   return row
 }
 
+async function claimLinks(
+  input: ClaimInput,
+  launchKey: string | null,
+  launchCwd: string,
+  inherited: { task_record_id: string | null; project_record_id: string | null } | null,
+) {
+  return admitNewRunReference({
+    inheritedTaskRecordId: inherited?.task_record_id,
+    inheritedProjectRecordId: inherited?.project_record_id,
+    projectName: input.runProjectName,
+    projectRecordId: input.runProjectId,
+    key: launchKey,
+    cwd: input.repoJob ? null : input.callerCwd,
+    launchCwd,
+    probe: Boolean(input.opts.probe),
+  })
+}
+
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -278,16 +296,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     )
   const launchCwd = inheritedLaunch?.launch_cwd ?? opts.launchCwd ?? callerCwd
   const launchSeed = inheritedLaunch?.launch_seed ?? seed ?? null
-  // A read-only run's key is an address on its record, not an input to the
-  // worktree lifecycle. Writing runs retain the explicit-key-only behavior
-  // enforced by preflight and consumed below by createWithTool.
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
-  const taskRecordId = await resolveRunTaskRecordId({
-    inherited: inheritedLaunch?.task_record_id,
-    project: runProjectName,
-    key: launchKey,
-  })
+  const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
+  const taskRecordId = links.taskRecordId
+  runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
   const worktreeTool = repoJob ? toolFor(callerCwd) : null
@@ -329,13 +342,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     conversationRootId: resumePlan?.rootId ?? null,
     projectId: runProjectId,
   })
-  // A repository row has no artifact address until creation returns one.
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
   const identity = claimIdentity(opts.resume)
-  // A reserved row is FILLED IN, not inserted: the id is already in the
-  // caller's hands and printed, so allocating a second one here would hand back
-  // an id that never finishes.
   const updateReservedRun = () =>
     db()
       .query(

@@ -18,6 +18,7 @@ import {
   migrationApplied,
   migrationJournal,
 } from './migrations.ts'
+import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
 function actions(fill: () => Promise<unknown>, contracted = false) {
   const calls: string[] = []
@@ -145,6 +146,7 @@ test('the in-flight override requires operator attribution and is unavailable to
 })
 
 test('default migrate fences before sampling a held run lease', async () => {
+  fixtureProjectRecordId(db())
   const database = db()
   const journal = migrationJournal()
   const pendingIndex = journal.findLastIndex((entry) => entry.compatibility !== 'additive')
@@ -164,8 +166,9 @@ test('default migrate fences before sampling a held run lease', async () => {
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fence','sha',0,'','ok',?)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fence','sha',0,'','ok',?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId, process.pid)
   const lease = acquireRunLease(runId)
@@ -222,6 +225,7 @@ const fenceApplied = (): boolean => inspectStore((database) => migrationApplied(
 
 function pendingFenceFixture(status: 'ok' | 'asking', numericFolder: boolean, deleteFence = true) {
   const database = db()
+  fixtureProjectRecordId(database)
   const fence = migrationJournal().find((entry) => entry.tag === FENCE)!
   if (deleteFence) database.query('DELETE FROM orch_migrations WHERE created_at=?').run(fence.when)
   database.run(
@@ -231,8 +235,9 @@ function pendingFenceFixture(status: 'ok' | 'asking', numericFolder: boolean, de
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fixture','sha',0,'',?)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','migration-fixture','sha',0,'',?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(recordId, status)
   const id = database

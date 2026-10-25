@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
@@ -132,7 +133,18 @@ describe('run link derivation', () => {
 describe('run task linking service', () => {
   test('writes derived links once and is idempotent', async () => {
     const projectId = addProject('link-write', '/work/link-write')
-    const runId = addRun({ agent: 'codex', job: 'implement' })
+    const migrationSql = readFileSync(
+      new URL('../../migrations/0167_run_task_or_project.sql', import.meta.url),
+      'utf8',
+    )
+    const insertTriggerSql = migrationSql.split('--> statement-breakpoint')[0]!
+    db().exec('DROP TRIGGER run_require_task_or_project_insert')
+    let runId: string
+    try {
+      runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: null })
+    } finally {
+      db().exec(insertTriggerSql)
+    }
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('WRITE-1', runId)
     const hubReader = async () => [
       { key: 'WRITE-1', record_id: 'write-task-id', project: 'link-write' },
@@ -165,12 +177,15 @@ describe('run task linking service', () => {
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DRY-2', runId)
     const orphanId = addRun({ agent: 'codex', job: 'review-lens' })
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('GONE-7', orphanId)
-    const probeId = addRun({ agent: 'codex', job: 'review-lens' })
-    db().query('UPDATE run SET launch_key=?, probe=1 WHERE record_id=?').run('DRY-2', probeId)
-    const lostProbeId = addRun({ agent: 'codex', job: 'review-lens' })
-    db()
-      .query('UPDATE run SET launch_key=?, probe=1 WHERE record_id=?')
-      .run('MISSING-3', lostProbeId)
+    const probeId = addRun({ agent: 'codex', job: 'review-lens', projectRecordId: null, probe: 1 })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DRY-2', probeId)
+    const lostProbeId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      projectRecordId: null,
+      probe: 1,
+    })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('MISSING-3', lostProbeId)
 
     const report = await linkRunTasks(
       { dryRun: true },

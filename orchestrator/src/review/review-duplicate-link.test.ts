@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -66,8 +67,22 @@ describe('duplicate finding links', () => {
 
   test('scoring stores a same-tip link and enqueues it with the finding verdict', async () => {
     const session = process.env.CLAUDE_CODE_SESSION_ID ?? null
-    const other = addRun({ agent: 'codex', job: 'review-lens', status: 'ok', session })
-    const current = addRun({ agent: 'codex', job: 'review-lens', status: 'ok', session })
+    const other = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      session,
+      taskRecordId: newRecordId(),
+      projectRecordId: null,
+    })
+    const current = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      session,
+      taskRecordId: newRecordId(),
+      projectRecordId: null,
+    })
     for (const [run, model] of [
       [other, 'model-a'],
       [current, 'model-b'],
@@ -119,8 +134,22 @@ describe('duplicate finding links', () => {
 
   test('resolves review ordinals only when they belong to their named runs', async () => {
     const session = process.env.CLAUDE_CODE_SESSION_ID ?? null
-    const other = addRun({ agent: 'codex', job: 'review-lens', status: 'ok', session })
-    const current = addRun({ agent: 'codex', job: 'review-lens', status: 'ok', session })
+    const other = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      session,
+      taskRecordId: newRecordId(),
+      projectRecordId: null,
+    })
+    const current = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'ok',
+      session,
+      taskRecordId: newRecordId(),
+      projectRecordId: null,
+    })
     db().query("UPDATE run SET lens='correctness',model='model-a' WHERE record_id=?").run(other)
     db().query("UPDATE run SET lens='craft',model='model-b' WHERE record_id=?").run(current)
     recordReviews(

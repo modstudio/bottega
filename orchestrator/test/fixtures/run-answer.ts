@@ -2,6 +2,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { ARGV_PROMPT_BYTES } from '../../src/agent/agents.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from '../../src/cli/args.ts'
 import { db } from '../../src/database/db.ts'
+import { fixtureProjectRecordId } from '../../src/database/test-database.fixture.ts'
 import { answerRun as answerRunService, retryRun } from '../../src/run/run-answer.ts'
 import { answerInputFromArgv } from '../../src/run/run-message-commands.ts'
 import { dir } from './store.ts'
@@ -48,10 +49,12 @@ export function insertRun(status: string, job = 'file-question', recordId = newR
   return (
     db()
       .query(
-        `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?) RETURNING record_id AS id`,
+        `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head, status, repo, cwd, project_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?, 'codex', ?, 'x', 1, 'x', ?, 'continuation-fixture', ?, ?) RETURNING record_id AS id`,
       )
-      .get(recordId, new Date().toISOString(), job, status, dir) as { id: string }
+      .get(recordId, new Date().toISOString(), job, status, dir, fixtureProjectRecordId(db())) as {
+      id: string
+    }
   ).id
 }
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { migratedTestDatabase } from '../database/test-database.fixture.ts'
+import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { checkoutPathsOverlap, checkoutWatchSet } from '../git/checkout-identity.ts'
 import { checkoutRemovalAttribution } from '../resources/resource-claims.ts'
 import { callerWatch } from '../run/run-caller-watch.ts'
@@ -181,10 +181,10 @@ test('a harmless removed caller records the owner tree-removal attribution', () 
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id)
-       VALUES ('tree-run',1,'2026-10-22T00:00:00.000Z','codex','implement','fixture',7,'fixture','ok','owner-session')`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,session_id,project_record_id)
+       VALUES ('tree-run',1,'2026-10-22T00:00:00.000Z','codex','implement','fixture',7,'fixture','ok','owner-session',?)`,
     )
-    .run()
+    .run(fixtureProjectRecordId(database))
   database
     .query(
       `INSERT INTO resource_claim

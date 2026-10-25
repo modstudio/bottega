@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { SequenceKind, SequenceState } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import { git, gitOk } from '../git/git-environment.ts'
 import { checkpointRun } from './checkpoint.ts'
@@ -86,11 +87,13 @@ test('a real stopped rebase is left in the tree, not committed, and recorded', (
   const repository = stoppedRebaseRepository('stopped-rebase')
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   const runId = newRecordId()
   database
     .query(
-      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (1691,?,'2026-10-24','codex','implement','sha',1,'checkpoint','running')`,
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1691,?,'2026-10-24','codex','implement','sha',1,'checkpoint','running',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId)
   const head = git(['rev-parse', 'HEAD'], repository)

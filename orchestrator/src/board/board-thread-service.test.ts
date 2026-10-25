@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { projectAt } from '../project/projects.ts'
 import { claimNotices, claimRunNotices, reapBoardMessages } from './board-service.ts'
 import { BOARD_NOTE_FILING_LEASE_MS } from './board-thread-policy.ts'
@@ -79,12 +80,14 @@ test('question replies reach the prior participants but never the replier', () =
 
 test('questions are withheld from run readers and architect broadcasts reject non-author replies', () => {
   ensurePostingProject()
+  fixtureProjectRecordId(db())
   const clock = Date.now() + 200_000
   const run = db()
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','thread-workers','sha',1,'prompt','running',1) RETURNING record_id AS id`,
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','thread-workers','sha',1,'prompt','running',1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1)) RETURNING record_id AS id`,
     )
     .get(new Date(clock).toISOString()) as { id: string }
   const workerQuestion = askQuestion(

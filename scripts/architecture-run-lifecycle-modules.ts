@@ -143,6 +143,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-task-reference.ts', [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
+    '../project/projects.ts',
+    './run-task-linking.ts',
   ]),
   module('orchestrator/src/run/run-task-branch-resolution.ts', [
     '../branch/task-branch.ts',

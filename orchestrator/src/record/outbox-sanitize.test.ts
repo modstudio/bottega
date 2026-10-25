@@ -2,6 +2,7 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { enqueueReview, enqueueReviewFinding, enqueueReviewRead } from '../review/review-outbox.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
@@ -171,11 +172,13 @@ test('question withholds options as a unit and audit reasons as audit_reason', (
 test('a sanitized run row stays eligible for the send-time payload re-check', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   database
     .query(
       `INSERT INTO run
-       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error)
-       VALUES (42,'run-record-42','2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?)`,
+       (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,error,project_record_id)
+       VALUES (42,'run-record-42','2026-09-15T01:00:00.000Z','codex','implement','sha',4,'head','ok',?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(SECRET)
   enqueueRunRecord(
@@ -216,6 +219,7 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
 test('enqueue withholds a planted leaf for score, question, review, override, and contention', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   database
     .query(
       "INSERT INTO schema_meta (key,value) VALUES ('machine_id','01990000-0000-7000-8000-000000000099')",
@@ -223,8 +227,9 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
     .run()
   database
     .query(
-      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (1,'01990000-0000-7000-8000-000000000010','2026-09-15T00:00:00Z','codex','implement','sha',1,'head','ok')`,
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1,'01990000-0000-7000-8000-000000000010','2026-09-15T00:00:00Z','codex','implement','sha',1,'head','ok',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run()
   database
@@ -284,11 +289,13 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
 test('review finding and read enqueue withhold planted leaves', () => {
   const database = new Database(':memory:')
   applyMigrations(database)
+  fixtureProjectRecordId(database)
   database.query("INSERT INTO schema_meta (key,value) VALUES ('machine_id','machine-record')").run()
   database
     .query(
-      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status)
-       VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','review-lens','sha',1,'head','ok')`,
+      `INSERT INTO run (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+       VALUES (1,'run-record','2026-09-15T00:00:00Z','codex','review-lens','sha',1,'head','ok',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run()
   database

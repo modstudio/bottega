@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { PRELOAD_RUNS } from '../../test/preload.ts'
 import { db } from '../database/db.ts'
 import { applyMigrationsBefore } from '../database/migrations.ts'
+import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
 import { tryKernelLease } from '../project/project-lock.ts'
 import {
   formatMigrationInFlightRun,
@@ -64,12 +65,14 @@ test('lease reports shim a store from before run host waits', () => {
 
 test('a terminal run remains in flight while its coordinator is closing', async () => {
   const database = db()
+  fixtureProjectRecordId(database)
   const runId = randomUUID()
   database
     .query(
       `INSERT INTO run
-       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','closing-fixture','sha',0,'','ok',?)`,
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,pid,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),datetime('now'),'codex','closing-fixture','sha',0,'','ok',?,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
     )
     .run(runId, process.pid)
   try {
