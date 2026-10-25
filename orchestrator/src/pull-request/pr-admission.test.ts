@@ -39,7 +39,7 @@ const ceilingTriage = (values: Partial<Extract<TriageDecision, { complete: false
     missingReview: false,
     unfinishedReviewNumbers: [],
     undisposedFindings: [],
-    missingLenses: [{ lens: 'craft', recordedOnBranch: false }],
+    missingLenses: [{ lens: 'craft', recordedOnBranch: false, newlyTouchedPaths: [] }],
     missingSecondOpinion: null,
     architectReadRequired: false,
     earlierReviewNumber: null,
@@ -550,7 +550,10 @@ test('a lens a fix brought into scope names that path and the lenses already com
     },
     fixPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
   })
-  expect(reviewPlan.round).toEqual({ lenses: ['teardown-safety'] })
+  expect(reviewPlan.round).toEqual({
+    lenses: ['teardown-safety'],
+    lensReasons: { 'teardown-safety': 'newly-touched-path' },
+  })
   const decision = decideTriage({
     patchId: 'patch',
     pathSet: '["branch/tree.ts","src/a.ts"]',
@@ -627,7 +630,10 @@ test('a lens the round asks to run again is not also reported as already complet
     },
     fixPathsByLens: { 'teardown-safety': ['branch/tree.ts'] },
   })
-  expect(reviewPlan.round).toEqual({ lenses: ['correctness', 'teardown-safety'] })
+  expect(reviewPlan.round).toEqual({
+    lenses: ['correctness', 'teardown-safety'],
+    lensReasons: { correctness: 'accepted-finding', 'teardown-safety': 'newly-touched-path' },
+  })
   expect(reviewPlan.completedLensesOnBranch).toEqual(['correctness', 'craft'])
   const decision = decideTriage({
     patchId: 'patch',
