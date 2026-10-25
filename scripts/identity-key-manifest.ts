@@ -324,6 +324,12 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
   {
     store: 'orchestrator',
+    table: 'hosted_board_message_tag_cache',
+    reason:
+      'machine-local pull-only mirror of hosted board_message_tag written by orchestrator/src/board/board-hosted-cache.ts; no synced source and no foreign key from a synced source',
+  },
+  {
+    store: 'orchestrator',
     table: 'branch_landing_record',
     reason:
       'machine-local landing evidence written by orchestrator/src/branch/branch-landing-service.ts and read by local views; no outbox kind, no synced source, and no foreign key from a synced source',
@@ -365,6 +371,12 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'presence', reason: 'replaceable session presence cache' },
   { store: 'orchestrator', table: 'main_stack_activity', reason: 'replaceable activity cache' },
   { store: 'hub', table: 'hub_migrations', reason: 'migration journal bookkeeping' },
+  {
+    store: 'hub',
+    table: 'question_delivery',
+    reason:
+      'machine-local ingest copy rebuilt per run by hub/src/ingest/runs.ts; no synced source and no foreign key from a synced source',
+  },
   {
     store: 'hub',
     table: 'operator_waiting_email',

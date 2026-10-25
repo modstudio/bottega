@@ -10,13 +10,13 @@ import {
   lensPortReferenceOrphanCounts,
   portStaleCopyConflicts,
 } from './lens-port-migration-preflight.ts'
+import { assertMetricIdentities } from './metric-receipt-cache-uuid-migration-preflight.ts'
 import {
   CONNECTION_SCHEMA_INVARIANT,
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 import { monitorReleaseClaimOrphanCounts } from './monitor-release-claim-uuid-migration-preflight.ts'
-import { assertMetricIdentities } from './metric-receipt-cache-uuid-migration-preflight.ts'
 import {
   prepareWorkflowUuidMigration,
   workflowUuidReferenceOrphanCounts,

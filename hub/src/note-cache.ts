@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
-import { newRecordId } from '../../shared/record/schema.ts'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { newRecordId } from '../../shared/record/schema.ts'
 import { db } from './db.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
 import { persistInstallBinding } from './install-binding.ts'
