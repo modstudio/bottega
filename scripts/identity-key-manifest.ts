@@ -323,6 +323,24 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
   {
     store: 'orchestrator',
+    table: 'branch_landing_record',
+    reason:
+      'machine-local landing evidence used only by local views in orchestrator/src/branch/branch-landing-records.ts, orchestrator/src/branch/task-key-pull-request.ts, and orchestrator/src/evidence/cycle-cost-service.ts; no outbox kind',
+  },
+  {
+    store: 'orchestrator',
+    table: 'question_delivery',
+    reason:
+      'machine-local delivery ledger; orchestrator/src/run/question-outbox.ts carries question_mutation_audit rather than deliveries, and the integer id is only an output label',
+  },
+  {
+    store: 'orchestrator',
+    table: 'board_hosted_adoption_receipt',
+    reason:
+      'machine-local hosted-adoption ledger read only in orchestrator/src/board/board-adoption.ts; never pushed',
+  },
+  {
+    store: 'orchestrator',
     table: 'outbox',
     reason:
       'machine-local sync delivery queue (DEV-1214 out of scope: the outbox builds on the record); hosted identity is the payload UUID, and the integer is a per-machine insertion sequence and transport correlation',
@@ -346,6 +364,41 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'presence', reason: 'replaceable session presence cache' },
   { store: 'orchestrator', table: 'main_stack_activity', reason: 'replaceable activity cache' },
   { store: 'hub', table: 'hub_migrations', reason: 'migration journal bookkeeping' },
+  {
+    store: 'hub',
+    table: 'operator_waiting_email',
+    reason:
+      'machine-local dedupe ledger for episodes already pushed by hub/src/operator-waiting-email.ts; the hosted row is minted separately',
+  },
+  {
+    store: 'hub',
+    table: 'seq',
+    reason:
+      'machine-local task numbering in hub/src/task.ts; hosted seq is recomputed from hosted hub_task by hub/src/hosted-tasks.ts',
+  },
+  {
+    store: 'hub',
+    table: 'setting',
+    reason:
+      'machine-local key/value state including hosted-cache cursors in hub/src/hosted-change-cache.ts and task-adoption counters in hub/src/task-adoption.ts',
+  },
+  {
+    store: 'hub',
+    table: 'commit_key',
+    reason:
+      'machine-local Git ingestion in hub/src/ingest/git.ts and hub/src/task-import.ts, keyed by content-addressed commit sha',
+  },
+  {
+    store: 'hub',
+    table: 'task_identity_claim',
+    reason: 'machine-local task identity cache read in hub/src/task-identity.ts',
+  },
+  {
+    store: 'hub',
+    table: 'task_identity_migration_repairs',
+    reason:
+      'machine-local task identity repair audit written by hub/migrations/0009_task_record_identity.sql and hub/src/ingest/trackers.ts',
+  },
   { store: 'hub', table: 'hub_schema_lock', reason: 'schema migration lock' },
   { store: 'hub', table: 'install_binding', reason: 'singleton install binding' },
 ]
