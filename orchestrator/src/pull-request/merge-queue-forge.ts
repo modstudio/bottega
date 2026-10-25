@@ -133,17 +133,28 @@ function failedMergeGroupRunFrom(
   raw: unknown,
   baseBranch: string,
   pullRequestNumber: number,
-): (FailedMergeGroupRun & { createdAt: string }) | null {
+): FailedMergeGroupRun | null {
   if (!isPullRequestMergeGroupRun(raw, baseBranch, pullRequestNumber)) return null
   if (raw.conclusion !== 'failure') return null
-  if (
-    !Number.isSafeInteger(raw.id) ||
-    typeof raw.html_url !== 'string' ||
-    typeof raw.created_at !== 'string'
-  ) {
+  if (!Number.isSafeInteger(raw.id) || typeof raw.html_url !== 'string') {
     throw new Error('failed merge-group run lookup returned an unexpected run shape')
   }
-  return { id: Number(raw.id), url: raw.html_url, createdAt: raw.created_at }
+  return { id: Number(raw.id), url: raw.html_url }
+}
+
+export function failedMergeGroupRunFromPages(
+  fetchPage: (page: number) => unknown[],
+  baseBranch: string,
+  pullRequestNumber: number,
+): FailedMergeGroupRun | null {
+  for (let page = 1; ; page += 1) {
+    const batch = fetchPage(page)
+    for (const raw of batch) {
+      const match = failedMergeGroupRunFrom(raw, baseBranch, pullRequestNumber)
+      if (match) return match
+    }
+    if (batch.length < 100) return null
+  }
 }
 
 export function githubFailedMergeGroupRun(
@@ -152,34 +163,28 @@ export function githubFailedMergeGroupRun(
   baseBranch: string,
   pullRequestNumber: number,
 ): FailedMergeGroupRun | null {
-  const matches: Array<FailedMergeGroupRun & { createdAt: string }> = []
-  for (let page = 1; ; page += 1) {
-    const output = successful(
-      cwd,
-      [
-        'gh',
-        'api',
-        '--method',
-        'GET',
-        `repos/${repository}/actions/runs`,
-        '-f',
-        'event=merge_group',
-        '-f',
-        'per_page=100',
-        '-f',
-        `page=${page}`,
-      ],
-      'failed merge-group run lookup',
-    )
-    const batch = workflowRunPage(output)
-    matches.push(
-      ...batch.flatMap((raw) => {
-        const match = failedMergeGroupRunFrom(raw, baseBranch, pullRequestNumber)
-        return match ? [match] : []
-      }),
-    )
-    if (batch.length < 100) break
-  }
-  const latest = matches.sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]
-  return latest ? { id: latest.id, url: latest.url } : null
+  return failedMergeGroupRunFromPages(
+    (page) =>
+      workflowRunPage(
+        successful(
+          cwd,
+          [
+            'gh',
+            'api',
+            '--method',
+            'GET',
+            `repos/${repository}/actions/runs`,
+            '-f',
+            'event=merge_group',
+            '-f',
+            'per_page=100',
+            '-f',
+            `page=${page}`,
+          ],
+          'failed merge-group run lookup',
+        ),
+      ),
+    baseBranch,
+    pullRequestNumber,
+  )
 }
