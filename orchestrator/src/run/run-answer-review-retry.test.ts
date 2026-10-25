@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
 import {
   answerRunFlags as flags,
   answerRunHelpers as helpers,
@@ -11,6 +12,7 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { recordReview } from '../review/review-triage.ts'
 import { retryRun } from './run-answer.ts'
 import type { detach } from './run-dispatch.ts'
 
@@ -67,4 +69,28 @@ test('retrying a failed continuation dispatches with the root review target', as
   db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, root)
 
   expect(await dispatchedReview(failed(root))).toBe(reviewRef)
+})
+
+test('retrying a supplementary review run preserves the role on its recorded review', async () => {
+  const root = failed()
+  db()
+    .query(
+      "UPDATE run SET lens='issue-blast-radius', review_role='supplementary' WHERE record_id=?",
+    )
+    .run(root)
+  let successor: string | null = null
+  const dispatch: typeof detach = async (_job, _prompt, spec) => {
+    successor = insert('ok', 'review-lens')
+    db()
+      .query('UPDATE run SET model=?,lens=?,review_role=? WHERE record_id=?')
+      .run('m', spec.lens ?? null, spec.reviewRole ?? null, successor)
+    return successor
+  }
+
+  await retryRun(root, { flags }, { ...helpers, dispatch })
+  if (!successor) throw new Error('retry did not dispatch a successor')
+  const review = recordReview(successor, reviewReply(0), db())
+  expect(db().query('SELECT role FROM review WHERE record_id=?').get(review)).toEqual({
+    role: 'supplementary',
+  })
 })

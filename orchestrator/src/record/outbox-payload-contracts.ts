@@ -9,12 +9,13 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey label lens latencyMs exitCode outputBytes vendorTokens vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
   startedByUserId: null,
   taskKey: null,
+  reviewRole: null,
   evidenceUnvoid: null,
   vendorInputTokens: null,
   vendorOutputTokens: null,
@@ -61,8 +62,8 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
 })
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason patchId pathSet commitMessage outdatedAt outdatedReason withheldFields createdAt updatedAt',
-  { projectId: null, withheldFields: null },
+  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason withheldFields createdAt updatedAt',
+  { projectId: null, role: 'round', withheldFields: null },
 )
 const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap withheldFields createdAt updatedAt',

@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import type { ContinuationMessageBinding } from '../run/continuation-message.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
@@ -50,6 +51,7 @@ export type DetachSpec = {
   transportPinSource?: 'explicit' | 'environment'
   label?: string
   lens?: string
+  reviewRole?: ReviewRole
   seed?: string
   key?: string
   repo?: string
@@ -130,6 +132,7 @@ export function transportTurns(rootId: string): Array<{
 const detachRouting = (spec: DetachSpec) => ({
   agentExplicit: spec.agentExplicit,
   routedAgent: spec.routedAgent,
+  reviewRole: spec.reviewRole,
 })
 
 export function detachedRunOptions(

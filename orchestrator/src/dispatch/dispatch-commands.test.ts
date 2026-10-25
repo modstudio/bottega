@@ -5,7 +5,17 @@ import {
   genericLensProfileNotices,
   lensDispatchNotices,
   reviewMemoryBranch,
+  reviewRoleForDispatch,
 } from './dispatch-commands.ts'
+
+test('findings dispatch leaves the default role to run dispatch unless explicitly supplementary', () => {
+  expect(reviewRoleForDispatch(true, false)).toBeUndefined()
+  expect(reviewRoleForDispatch(true, true)).toBe('supplementary')
+  expect(reviewRoleForDispatch(false, false)).toBeUndefined()
+  expect(() => reviewRoleForDispatch(false, true)).toThrow(
+    '--supplementary is only valid for findings-producing jobs',
+  )
+})
 
 test('generic lens resolution names the stack-profile write command', () => {
   const notices = genericLensProfileNotices(resolveLens('correctness', null), 'node')

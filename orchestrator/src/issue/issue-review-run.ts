@@ -5,6 +5,7 @@ import { type CollectedWaitRun, collectWaitForRuns } from '../collect/collect.ts
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { parseReviewOutput } from '../review/review.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import { resolveReviewBase } from '../review/review-target.ts'
 import { reviewTierForRange } from '../review/review-tier-service.ts'
 import { detach } from '../run/run-dispatch.ts'
@@ -19,6 +20,10 @@ import {
 } from './issue-review.ts'
 
 const POLL_MS = 100
+
+export function issueReviewRole(lens: string): ReviewRole | undefined {
+  return lens === ISSUE_BLAST_RADIUS_LENS ? 'supplementary' : undefined
+}
 
 type ReviewLaunch = { runId: string | null; failedToRun: string | null }
 type DispatchResult<T> = { claim: T; dispatchNext: boolean }
@@ -124,6 +129,7 @@ export async function runIssueFixReviews(input: {
         runId = await detach('review-lens', reviewPrompt(issue, lens, tier.tier), {
           cwd: worktree.path,
           lens,
+          reviewRole: issueReviewRole(lens),
           key: branchKey,
           carry: true,
           review: worktree.branch,

@@ -1,6 +1,7 @@
 // concern: review-types
 
 import type { ChangeIdentityGitResult, ChangeIdentityGitRunner } from './change-identity.ts'
+import type { ReviewRole } from './review-role.ts'
 import type {
   ReviewCoverage,
   ReviewLimits,
@@ -96,6 +97,7 @@ export type RunRow = {
   agent: string
   model: string | null
   lens: string | null
+  review_role: ReviewRole | null
   job: string
   status: string
   output_path: string | null

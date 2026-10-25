@@ -4,8 +4,10 @@ export const pullRequestModuleSpecs = [
     allowed: [
       '../review/review-applicability.ts',
       '../review/review-group.ts',
+      '../review/review-role.ts',
       '../review/review-second-opinion.ts',
     ],
+    typeOnlyAllowed: ['../review/review-group.ts'],
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   { file: 'orchestrator/src/pull-request/override-decision.ts', allowed: [] },
@@ -44,9 +46,11 @@ export const pullRequestModuleSpecs = [
       './review-applicability.ts',
       './review-lineage-store.ts',
       './review-pins.ts',
+      './review-role.ts',
       './review-target.ts',
       './review-tier-classifier.ts',
       './review-tier.ts',
     ],
+    typeOnlyAllowed: ['./review-role.ts'],
   },
 ] as const

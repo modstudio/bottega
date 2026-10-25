@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { dispatchThenGatherIssueReviews, runIssueFixReviews } from './issue-review-run.ts'
+import {
+  dispatchThenGatherIssueReviews,
+  issueReviewRole,
+  runIssueFixReviews,
+} from './issue-review-run.ts'
 
 const gathered = (lens: string, runId: string | null) => ({
   lens,
@@ -11,6 +15,11 @@ const gathered = (lens: string, runId: string | null) => ({
 })
 
 describe('filed issue review adapter', () => {
+  test('marks only the blast-radius lens as supplementary', () => {
+    expect(issueReviewRole('issue-blast-radius')).toBe('supplementary')
+    expect(issueReviewRole('correctness')).toBeUndefined()
+  })
+
   test('waits for each lens claim before dispatching the next and gathers in lens order', async () => {
     let firstClaimed = false
     const dispatched: string[] = []

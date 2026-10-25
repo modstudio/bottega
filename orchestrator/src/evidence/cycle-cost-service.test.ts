@@ -50,6 +50,22 @@ test('loads branch attribution, ambiguity, retired projects, and incomplete CI',
     'DEV-2-conflict',
     'DEV-2-conflict',
   )
+  database
+    .query("UPDATE run SET lens='issue-blast-radius' WHERE record_id=?")
+    .run('01990000-0000-7000-8000-000000000201')
+  const supplementaryReviewId = '01990000-0000-7000-8000-000000000211'
+  database
+    .query(
+      `INSERT INTO review(record_id,number,recorded_at,completed_at,tier,role,patch_id,path_set,project_record_id)
+       VALUES (?,1,'2026-10-09T00:00:00Z','2026-10-09T01:00:00Z',1,'supplementary','patch','[]',?)`,
+    )
+    .run(supplementaryReviewId, activeId)
+  database
+    .query(
+      `INSERT INTO review_lens(record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES ('01990000-0000-7000-8000-000000000212',?,?,'issue-blast-radius','codex','[]','[]','[]','[]')`,
+    )
+    .run(supplementaryReviewId, '01990000-0000-7000-8000-000000000201')
 
   const insertLanding = database.query(
     `INSERT INTO branch_landing_record
@@ -135,6 +151,7 @@ test('loads branch attribution, ambiguity, retired projects, and incomplete CI',
   ])
   expect(report.current.tasks[0]?.dispatchToMergeHours).toBe(24)
   expect(report.current.tasks[0]?.ciRuns).toBeNull()
+  expect(report.current.tasks[0]?.reviewRounds).toBe(0)
   expect(report.current.aggregates.unknownCiTasks).toBe(2)
   expect(report.current.unattributedLandings).toEqual([
     {

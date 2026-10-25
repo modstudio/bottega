@@ -3,6 +3,7 @@
 
 import type { ApplicableReview, ReviewFunnelPlan } from '../review/review-applicability.ts'
 import type { TriageReviewRow } from '../review/review-group.ts'
+import { reviewCountsAsRound } from '../review/review-role.ts'
 import { identifySecondOpinionRun } from '../review/review-second-opinion.ts'
 
 export type TriageReviewGroup = {
@@ -406,7 +407,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   )
   const earlierRound = composed.round
   const hasCompletedBranchReview = evidence.branchReviewGroups.some(({ reviews }) =>
-    reviews.some(({ completedAt }) => completedAt !== null),
+    reviews.some((review) => review.completedAt !== null && reviewCountsAsRound(review.role)),
   )
   const exactRead = earlierRound
     ? evidence.reads.find(

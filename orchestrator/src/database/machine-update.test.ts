@@ -8,6 +8,33 @@ import { machineUpdateCommand } from './machine-update.ts'
 import { migrationDrain, setMigrationDrain } from './migration-drain.ts'
 import { migrationJournal } from './migrations.ts'
 
+function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
+  const journal = migrationJournal()
+  const pendingIndex = journal.findLastIndex((entry) => entry.compatibility !== 'additive')
+  const pending = journal[pendingIndex]!
+  const held = journal.slice(pendingIndex).map((entry) => ({
+    entry,
+    applied: database
+      .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+        'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+      )
+      .get(entry.when)!,
+  }))
+  for (const { entry } of held) {
+    database.query('DELETE FROM orch_migrations WHERE created_at=?').run(entry.when)
+  }
+  return {
+    pending,
+    restore() {
+      for (const { applied } of held) {
+        database
+          .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+          .run(applied.hash, applied.created_at, applied.version)
+      }
+    },
+  }
+}
+
 test("machine update clears a dead holder's marker before deciding", async () => {
   setMigrationDrain(db(), '0155_rebuild', 'draining', {
     pid: 4_200_000,
@@ -38,13 +65,8 @@ test("machine update clears a dead holder's marker before deciding", async () =>
 
 test('a non-additive update waits for an admitted resume, then migrates behind the fence', async () => {
   const database = db()
-  const pending = migrationJournal().at(-1)!
-  const applied = database
-    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
-      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
-    )
-    .get(pending.when)!
-  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const held = holdBackLastNonAdditiveMigration(database)
+  const pending = held.pending
   const events: string[] = []
   const lines: string[] = []
   const runId = randomUUID()
@@ -110,9 +132,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
     if (!released) lease.release()
     removeFreeRunLease(runId)
     database.query('DELETE FROM run WHERE record_id=?').run(resumeId)
-    database
-      .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
-      .run(applied.hash, applied.created_at, applied.version)
+    held.restore()
   }
   expect(events).toEqual(['resume-admitted', 'resume-finished', 'pull', 'migrate'])
   expect(lines).toContain(
@@ -124,13 +144,7 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
 
 test('machine update clears the drain marker when the bounded wait expires', async () => {
   const database = db()
-  const pending = migrationJournal().at(-1)!
-  const applied = database
-    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
-      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
-    )
-    .get(pending.when)!
-  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const held = holdBackLastNonAdditiveMigration(database)
   const runId = randomUUID()
   database
     .query(
@@ -169,9 +183,7 @@ test('machine update clears the drain marker when the bounded wait expires', asy
     lease.release()
     removeFreeRunLease(runId)
     database.query('DELETE FROM run WHERE record_id=?').run(runId)
-    database
-      .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
-      .run(applied.hash, applied.created_at, applied.version)
+    held.restore()
   }
 })
 

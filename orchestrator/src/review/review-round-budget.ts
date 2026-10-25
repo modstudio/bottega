@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { DB_PATH } from '../database/db.ts'
 import { reviewRunEvidenceSql } from './review-evidence-sql.ts'
 import { reviewLineage } from './review-lineage-store.ts'
+import { reviewCountsAsRound } from './review-role.ts'
 import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from './review-yield.ts'
 export type ReviewTierNumber = 0 | 1 | 2 | 3
 
@@ -64,20 +65,23 @@ type BranchEvidence = {
   unclassifiableReviews: Set<string>
 }
 
+type ReviewBudgetEvidenceRow = ReviewRoundEvidenceRow
+
 export function eligibleReviewRoundRows(
   database: Database,
   since?: string,
   target?: { project: string; branch: string },
-): ReviewRoundEvidenceRow[] {
+): ReviewBudgetEvidenceRow[] {
   const lineage = target ? reviewLineage(database, target.project, target.branch) : []
   const targetFilter = target
     ? `AND run.project_record_id=(SELECT record_id FROM project WHERE name=?)
        AND run.branch IN (${lineage.map(() => '?').join(',')})`
     : ''
-  return database
+  const rows = database
     .query(
       `SELECT rl.record_id AS lens_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier,
-              r.patch_id, r.path_set, p.name AS project, run.repo AS run_repo,
+              r.patch_id, r.path_set, r.role, p.name AS project,
+              run.repo AS run_repo,
               run.launch_key, run.branch, rl.lens, rl.agent, rl.model,
               run.latency_ms, run.input_tree, run.head_commit, rl.overlap
          FROM review_lens rl
@@ -93,7 +97,8 @@ export function eligibleReviewRoundRows(
       since ?? null,
       since ?? null,
       ...(target ? [target.project, ...lineage] : []),
-    ) as ReviewRoundEvidenceRow[]
+    ) as ReviewBudgetEvidenceRow[]
+  return rows.filter((row) => reviewCountsAsRound(row.role))
 }
 
 const branchKey = (project: string | null, branch: string): string =>
@@ -120,7 +125,8 @@ function branchEvidence(
 ): Map<string, BranchEvidence> {
   const branches = new Map<string, BranchEvidence>()
   const lineageRoots = new Map<string, string>()
-  for (const row of eligibleReviewRoundRows(database, since, target)) {
+  const rows = eligibleReviewRoundRows(database, since, target)
+  for (const row of rows) {
     if (!row.branch) continue
     const evidenceBranch =
       target?.branch ?? lineageRoot(database, lineageRoots, row.run_repo, row.branch)

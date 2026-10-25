@@ -20,6 +20,7 @@ import {
   retiredProjectByName,
   retiredProjectRefusal,
 } from '../project/projects.ts'
+import type { ReviewRole } from '../review/review-role.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
@@ -179,6 +180,27 @@ type DispatchPresentation = {
   ): Promise<string>
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
+}
+
+export function reviewRoleForDispatch(
+  findings: boolean | undefined,
+  supplementary: boolean,
+): ReviewRole | undefined {
+  if (supplementary && !findings) {
+    throw new Error('--supplementary is only valid for findings-producing jobs')
+  }
+  return supplementary ? 'supplementary' : undefined
+}
+
+function requestedJobName(
+  argv: string[],
+  usage: () => void,
+  doUsage: () => void,
+): string | undefined {
+  const jobName = argv[1]
+  if (!jobName) usage()
+  if (jobName === '--help' || jobName === '-h') doUsage()
+  return jobName
 }
 
 export function resolveDispatchBase(
@@ -365,18 +387,15 @@ export async function dispatchCommand(
     detach,
     follow,
   } = presentation
-  const jobName = argv[1]
-  if (!jobName) {
-    usage()
-    return
-  }
-  if (jobName === '--help' || jobName === '-h') doUsage()
+  const jobName = requestedJobName(argv, usage, doUsage)
+  if (!jobName) return
   const porcelain = has('porcelain')
   if (porcelain && has('follow')) {
     throw new Error('--porcelain cannot be combined with --follow')
   }
   const requested = job(jobName),
     resolved = await resolveDispatchOptions(jobName)
+  const reviewRole = reviewRoleForDispatch(requested.findings, has('supplementary'))
   const { agent, agentExplicit, transport, transportExplicit, avoid, distinctModels } = resolved
   const requestedCwd = flag('cwd')
   if (requestedCwd && !existsSync(requestedCwd))
@@ -522,6 +541,7 @@ export async function dispatchCommand(
       schema,
       label: flag('label'),
       lens,
+      reviewRole,
       mcp: resolved.mcp,
       model: flag('model'),
       probe: has('probe'),
@@ -579,6 +599,7 @@ export async function dispatchCommand(
    */
   const id = await detach(jobName, prompt, true, {
     ...{ agent, agentExplicit, schema, lens },
+    reviewRole,
     label: flag('label'),
     mcp: resolved.mcp,
     model: flag('model'),

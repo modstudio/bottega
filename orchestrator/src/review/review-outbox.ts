@@ -33,7 +33,7 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
     .query<Record<string, unknown>, [string]>(
       `SELECT review.record_id,review.number,review.recorded_at,review.completed_at,review.tier,
               review.tier_risk,review.tier_size,review.tier_reasons,review.tier_reason,review.patch_id,
-              review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,
+              review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,review.role,
               project.name AS project_name, project.record_id AS project_record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
     )
@@ -57,6 +57,7 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
       tierSize: row.tier_size,
       tierReasons: json(row.tier_reasons),
       tierReason: row.tier_reason,
+      role: row.role,
       patchId: row.patch_id,
       pathSet: json(row.path_set),
       commitMessage: row.commit_message,
@@ -233,7 +234,23 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
        (SELECT 1 FROM outbox WHERE kind='review' AND row_id=review.record_id) ORDER BY number`,
     )
     .all()
+  const reclassified = database
+    .query<{ record_id: string }, []>(
+      `SELECT review.record_id FROM review
+       WHERE review.role='supplementary'
+         AND EXISTS (
+           SELECT 1 FROM outbox WHERE outbox.kind='review' AND outbox.row_id=review.record_id
+         )
+         AND COALESCE((
+           SELECT json_extract(outbox.payload,'$.role') FROM outbox
+            WHERE outbox.kind='review' AND outbox.row_id=review.record_id
+            ORDER BY outbox.id DESC LIMIT 1
+         ), '')<>'supplementary'
+       ORDER BY review.number`,
+    )
+    .all()
   for (const row of reviews) enqueueReview(database, row.record_id)
+  for (const row of reclassified) enqueueReview(database, row.record_id)
   const reads = database
     .query<{ record_id: string }, []>(
       `SELECT record_id FROM review_read WHERE NOT EXISTS
@@ -242,7 +259,7 @@ export function backfillReviewRecords(database: Database): ReviewRecordBackfillR
     .all()
   for (const row of reads) enqueueReviewRead(database, row.record_id)
   return {
-    enqueuedReviews: reviews.length,
+    enqueuedReviews: reviews.length + reclassified.length,
     enqueuedReads: reads.length,
   }
 }

@@ -9,6 +9,7 @@ import {
   reviewRunEvidenceSql,
 } from './review-evidence-sql.ts'
 import { reviewLensGraded } from './review-group.ts'
+import { type ReviewRole, reviewCountsAsRound } from './review-role.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {
@@ -111,6 +112,7 @@ export type ReviewRoundEvidenceRow = {
   recorded_at: string
   completed_at: string | null
   tier: 0 | 1 | 2 | 3 | null
+  role: ReviewRole
   tier_risk: number | null
   tier_size: number | null
   patch_id: string | null
@@ -183,7 +185,7 @@ function classifyRounds(
   const seen = new Map<string, number>()
   for (const row of rows) {
     const { task, identity } = reviewRoundIdentity(row)
-    if (!identity) {
+    if (!reviewCountsAsRound(row.role) || !identity) {
       result.set(row.lens_id, { task, round: null })
       continue
     }
@@ -256,7 +258,7 @@ export function reviewYield(
 ): ReviewYieldReport {
   const lensRows = database
     .query(
-      `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.tier_risk, r.tier_size, r.patch_id, r.path_set, p.name AS project,
+      `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.role, r.tier_risk, r.tier_size, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
             rl.model, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
             run.vendor_cost_usd, run.vendor_estimated_cost_usd, run.vendor_cost_source,

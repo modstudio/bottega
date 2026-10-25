@@ -85,6 +85,16 @@ describe('epic scoreboard', () => {
       (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
       VALUES (?,?,?,'correctness','grok','[]','[]','[]','[]')`)
       .run(newRecordId(), reviewId, lens)
+    const supplementaryReviewId = newRecordId()
+    db()
+      .query(`INSERT INTO review (record_id,number,recorded_at,completed_at,patch_id,role)
+      VALUES (?,2,'2026-09-08T10:06:30.000Z','2026-09-08T10:07:30.000Z','supplementary-change','supplementary')`)
+      .run(supplementaryReviewId)
+    db()
+      .query(`INSERT INTO review_lens
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify)
+      VALUES (?,?,?,'issue-blast-radius','grok','[]','[]','[]','[]')`)
+      .run(newRecordId(), supplementaryReviewId, first)
     db()
       .query(`INSERT INTO landing
       (record_id,project,branch,status,error,started_at,finished_at,steps)
@@ -122,7 +132,7 @@ describe('epic scoreboard', () => {
       lensRounds: 1,
       fixRounds: 0,
       landings: { attempted: 2, landed: 1, refused: 1, refusedByCause: { 'gate failed': 1 } },
-      reviews: { recorded: 1, completed: 1, outdated: 1 },
+      reviews: { recorded: 2, completed: 2, outdated: 1 },
       strandings: { count: 1 },
       idleMinutes: 2,
       continuations: { count: 1, branchDrift: 1 },
@@ -155,7 +165,7 @@ describe('epic scoreboard', () => {
       runDurationP95Ms: 120_000,
       ghostRuns: 1,
       landings: { attempted: 2, landed: 1, refused: 1 },
-      reviews: { recorded: 1, completed: 1, outdated: 1 },
+      reviews: { recorded: 2, completed: 2, outdated: 1 },
     })
     expect(reapStale(db(), () => null)).toBe(1)
     expect(

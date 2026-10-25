@@ -146,13 +146,20 @@ test('the in-flight override requires operator attribution and is unavailable to
 
 test('default migrate fences before sampling a held run lease', async () => {
   const database = db()
-  const pending = migrationJournal().at(-1)!
-  const applied = database
-    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
-      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
-    )
-    .get(pending.when)!
-  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const journal = migrationJournal()
+  const pendingIndex = journal.findLastIndex((entry) => entry.compatibility !== 'additive')
+  const pending = journal[pendingIndex]!
+  const held = journal.slice(pendingIndex).map((entry) => ({
+    entry,
+    applied: database
+      .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+        'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+      )
+      .get(entry.when)!,
+  }))
+  for (const { entry } of held) {
+    database.query('DELETE FROM orch_migrations WHERE created_at=?').run(entry.when)
+  }
   const runId = randomUUID()
   database
     .query(
@@ -183,9 +190,11 @@ test('default migrate fences before sampling a held run lease', async () => {
     lease.release()
     removeFreeRunLease(runId)
     database.query('DELETE FROM run WHERE record_id=?').run(runId)
-    database
-      .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
-      .run(applied.hash, applied.created_at, applied.version)
+    for (const { applied } of held) {
+      database
+        .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+        .run(applied.hash, applied.created_at, applied.version)
+    }
   }
 })
 

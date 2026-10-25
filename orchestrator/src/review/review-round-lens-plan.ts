@@ -8,6 +8,7 @@ import {
 } from './review-applicability.ts'
 import type { TriageReviewRow } from './review-group.ts'
 import type { PostFixReviewDecision } from './review-post-fix.ts'
+import { reviewCountsAsRound } from './review-role.ts'
 import type { ReviewRoundBudgetDecision } from './review-round-budget.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 
@@ -119,6 +120,7 @@ export function roundLensFacts(
     (review) =>
       review.completedAt !== null &&
       review.tier !== null &&
+      reviewCountsAsRound(review.role) &&
       (review.patchId !== current.patchId || review.pathSet !== current.pathSet),
   )
   prior.sort((left, right) => right.reviewNumber - left.reviewNumber)

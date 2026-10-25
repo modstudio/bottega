@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { EventEmitter } from 'node:events'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -58,6 +59,32 @@ test('detached MCP preflight ensures the declared project stack before probing',
 test('a detached worker starts in its recorded directory, or the fallback when that is gone', () => {
   expect(spawnCwd('/unregistered', null, false, true, '/fallback')).toBe('/unregistered')
   expect(spawnCwd('/unregistered', null, false, false, '/fallback')).toBe('/fallback')
+})
+
+test('a findings dispatch carries its resolved round role to the coordinator', async () => {
+  process.env.BOTTEGA_DEPTH = '0'
+  let coordinatorSpec: { reviewRole?: string } | undefined
+  const spawnCoordinator = ((_executable: string, args: string[]) => {
+    coordinatorSpec = JSON.parse(args.at(-1)!)
+    const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
+    child.pid = process.pid
+    child.unref = () => {}
+    queueMicrotask(() => child.emit('spawn'))
+    return child
+  }) as never
+
+  const runId = await detach(
+    'review-lens',
+    'resolved review role fixture',
+    { cwd: import.meta.dir, lens: 'correctness' },
+    'codex',
+    spawnCoordinator,
+  )
+
+  expect(coordinatorSpec?.reviewRole).toBe('round')
+  expect(db().query('SELECT review_role FROM run WHERE record_id=?').get(runId)).toEqual({
+    review_role: 'round',
+  })
 })
 
 test('disposable-tree mutation: a registered project coordinator starts in the main checkout', () => {

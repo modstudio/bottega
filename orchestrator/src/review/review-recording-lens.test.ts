@@ -1,5 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -7,6 +8,51 @@ import { recordReviews } from './review.ts'
 import { completeReview, gradeReviewLens, recordReview, triageFinding } from './review-triage.ts'
 
 describe('review discipline', () => {
+  test('copies the findings run role while defaulting legacy runs to round', () => {
+    const supplementaryRun = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'issue-blast-radius',
+    })
+    db().query("UPDATE run SET review_role='supplementary' WHERE record_id=?").run(supplementaryRun)
+    const supplementary = recordReview(supplementaryRun, reviewReply(0), db())
+    expect(db().query('SELECT role FROM review WHERE record_id=?').get(supplementary)).toEqual({
+      role: 'supplementary',
+    })
+
+    const roundRun = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'correctness-reviewer',
+    })
+    const round = recordReview(roundRun, reviewReply(0), db())
+    expect(db().query('SELECT role FROM review WHERE record_id=?').get(round)).toEqual({
+      role: 'round',
+    })
+  })
+
+  test('refuses mixed round and supplementary batches in either input order', () => {
+    const round = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'correctness' })
+    const supplementary = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'issue-blast-radius',
+    })
+    db().query("UPDATE run SET review_role='supplementary' WHERE record_id=?").run(supplementary)
+    const entries = [
+      { runId: round, output: reviewReply(0) },
+      { runId: supplementary, output: reviewReply(0) },
+    ]
+    for (const ordered of [entries, [...entries].reverse()]) {
+      expect(() => recordReviews(ordered)).toThrow(
+        `record the round and supplementary runs separately with one ${PLATFORM_SLUG} review record command each`,
+      )
+    }
+  })
+
   test('records each lens before triage and derives runner and model from the orchestrator run', () => {
     const first = addRun({
       agent: 'codex',

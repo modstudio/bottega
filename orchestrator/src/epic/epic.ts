@@ -4,6 +4,7 @@ import { engagedMs } from '../../../shared/interval.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
+import { type ReviewRole, reviewCountsAsRound } from '../review/review-role.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
@@ -125,6 +126,7 @@ type ReviewRow = {
   branch: string | null
   head_commit: string | null
   project_record_id: string | null
+  role: ReviewRole
 }
 
 const keyInBranch = (branch: string | null, keys: readonly string[]): string | null => {
@@ -163,7 +165,7 @@ function epicEvidence(database: Database) {
     .all() as LandingRow[]
   const reviews = database
     .query(
-      `SELECT DISTINCT review.record_id,review.completed_at,review.outdated_at,review.patch_id,run.launch_key,run.branch,
+      `SELECT DISTINCT review.record_id,review.completed_at,review.outdated_at,review.patch_id,review.role,run.launch_key,run.branch,
             run.head_commit,run.project_record_id
        FROM review JOIN review_lens ON review_lens.review_record_id=review.record_id
        JOIN run ON run.record_id=review_lens.run_record_id ORDER BY review.recorded_at,review.number`,
@@ -197,6 +199,8 @@ function addStrandingReasons(
 
 const reviewRoundKey = (review: ReviewRow) =>
   review.patch_id ?? review.head_commit ?? `review:${review.record_id}`
+const reviewRoundKeys = (reviews: ReviewRow[]) =>
+  reviews.filter((review) => reviewCountsAsRound(review.role)).map(reviewRoundKey)
 
 function epicRunCosts(taskRuns: RunRow[], subscriptionCost: SubscriptionCostContext) {
   const priced = taskRuns
@@ -295,7 +299,7 @@ export function epicScoreboard(
         tokens: taskRuns.length - tokenRows.length,
         cost: costs.unreportedCost,
       },
-      lensRounds: new Set(taskReviews.map(reviewRoundKey)).size,
+      lensRounds: new Set(reviewRoundKeys(taskReviews)).size,
       fixRounds: rootFixRuns.length,
       landings: {
         attempted: taskLandings.length,

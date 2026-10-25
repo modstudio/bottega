@@ -66,6 +66,7 @@ describe('inherited resume launch', () => {
     mcp: null as number | null,
     mcp_error: null as string | null,
     lens: null as string | null,
+    review_role: null as 'round' | 'supplementary' | null,
   }
 
   test.each([
@@ -82,6 +83,7 @@ describe('inherited resume launch', () => {
       noFailover: false,
       mcp: expected,
       lens: undefined,
+      reviewRole: undefined,
     })
   })
 
@@ -93,7 +95,14 @@ describe('inherited resume launch', () => {
       noFailover: false,
       mcp: undefined,
       lens: undefined,
+      reviewRole: undefined,
     })
+  })
+
+  test('inherits a supplementary review role', () => {
+    expect(resumeLaunchFromStored({ ...stored, review_role: 'supplementary' }).reviewRole).toBe(
+      'supplementary',
+    )
   })
 
   test('resumes from the recorded base commit after the launch branch is gone', () => {
