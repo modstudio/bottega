@@ -387,7 +387,7 @@ function reportClosedSweepRow(
           now: Date.now(),
           windowMs: UNJUDGED_OWNER_WINDOW_MS,
           ownerProcess: 'unknown',
-          ownerAnchor: null,
+          ownerProcesses: [],
         },
         'sweep',
       )

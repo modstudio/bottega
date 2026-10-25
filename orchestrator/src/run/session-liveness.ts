@@ -1,5 +1,5 @@
 // concern: session-liveness
-/** Decides owner-process liveness from stored ancestry and one supplied process probe. */
+/** Decides owner-process liveness from stored ancestry and supplied process probes. */
 
 import {
   type ProcessIdentity,
@@ -8,21 +8,55 @@ import {
 
 type OwnerProcess = 'dead' | 'live' | 'unknown'
 export type ProcessProbeResult = { alive: boolean; startTime: string | null }
+export type SessionProcessEvidence = ProcessIdentity & {
+  alive: boolean
+  observedStartTime: string | null
+}
 
 export type SessionLivenessEvidence = {
   ownerProcess: OwnerProcess
-  anchor: ProcessIdentity | null
+  candidates: SessionProcessEvidence[]
   ownerLastSeenAt: number | null
 }
 
-export function storedSessionAnchor(
-  sessionId: string,
-  storedChain: string | null,
-): { anchor: ProcessIdentity | null; malformed: boolean } {
-  const parsed = parseStoredAncestorChain(sessionId, storedChain)
+export function formatSessionLivenessEvidence(
+  evidence: Pick<SessionLivenessEvidence, 'candidates' | 'ownerLastSeenAt'>,
+): string {
+  const candidates = evidence.candidates.length
+    ? evidence.candidates
+        .map((candidate) => {
+          const process = `pid ${candidate.pid} started ${candidate.startTime}`
+          if (!candidate.alive) return `${process} gone`
+          if (candidate.observedStartTime === null) return `${process} alive (start unreadable)`
+          if (candidate.observedStartTime === candidate.startTime) return `${process} alive`
+          return `${process} reused (now started ${candidate.observedStartTime})`
+        })
+        .join('; ')
+    : 'process candidates unknown'
+  const seen =
+    evidence.ownerLastSeenAt === null
+      ? 'last_seen unknown'
+      : `last_seen ${new Date(evidence.ownerLastSeenAt).toISOString()}`
+  return `${candidates}; ${seen}`
+}
+
+export function storedSessionCandidates(input: {
+  ownerSessionId: string
+  ownerAncestorChain: string | null
+  actorSessionId: string | null
+  actorAncestorChain: string | null
+}): { candidates: ProcessIdentity[]; malformed: boolean } {
+  const owner = parseStoredAncestorChain(input.ownerSessionId, input.ownerAncestorChain)
+  const actor = input.actorSessionId
+    ? parseStoredAncestorChain(input.actorSessionId, input.actorAncestorChain)
+    : { chain: null, error: null }
+  if (owner.error || actor.error) return { candidates: [], malformed: true }
+  const shared = new Set((actor.chain ?? []).map(({ pid, startTime }) => `${pid}\0${startTime}`))
   return {
-    anchor: parsed.chain?.find(({ pid }) => pid !== 1) ?? null,
-    malformed: parsed.error !== null,
+    candidates: (owner.chain ?? []).filter(
+      ({ pid, startTime }) => pid !== 1 && !shared.has(`${pid}\0${startTime}`),
+    ),
+    malformed: false,
   }
 }
 
@@ -33,33 +67,39 @@ export function sessionLivenessDecision(input: {
   actorAncestorChain: string | null
   now: number
   liveWindowMs: number
-  probe: ProcessProbeResult | null
+  probes: SessionProcessEvidence[]
 }): SessionLivenessEvidence {
   const ownerLastSeenAt = input.ownerSeen?.lastSeenAt ?? null
-  if (!input.ownerSeen) return { ownerProcess: 'unknown', anchor: null, ownerLastSeenAt }
-  const owner = storedSessionAnchor(input.ownerSessionId, input.ownerSeen.ancestorChain)
-  if (owner.malformed || !owner.anchor)
-    return { ownerProcess: 'unknown', anchor: owner.anchor, ownerLastSeenAt }
-  if (input.actorSessionId) {
-    const actor = parseStoredAncestorChain(input.actorSessionId, input.actorAncestorChain)
-    if (actor.error) return { ownerProcess: 'unknown', anchor: owner.anchor, ownerLastSeenAt }
-    if (
-      actor.chain?.some(
-        ({ pid, startTime }) => pid === owner.anchor!.pid && startTime === owner.anchor!.startTime,
-      )
+  if (!input.ownerSeen) return { ownerProcess: 'unknown', candidates: [], ownerLastSeenAt }
+  const stored = storedSessionCandidates({
+    ownerSessionId: input.ownerSessionId,
+    ownerAncestorChain: input.ownerSeen.ancestorChain,
+    actorSessionId: input.actorSessionId,
+    actorAncestorChain: input.actorAncestorChain,
+  })
+  if (stored.malformed || !stored.candidates.length)
+    return { ownerProcess: 'unknown', candidates: [], ownerLastSeenAt }
+  const candidates = stored.candidates.flatMap((identity) => {
+    const probe = input.probes.find(
+      ({ pid, startTime }) => pid === identity.pid && startTime === identity.startTime,
     )
-      return { ownerProcess: 'unknown', anchor: owner.anchor, ownerLastSeenAt }
-  }
-  if (!input.probe) return { ownerProcess: 'unknown', anchor: owner.anchor, ownerLastSeenAt }
-  if (input.probe.alive && input.probe.startTime === null)
-    return { ownerProcess: 'unknown', anchor: owner.anchor, ownerLastSeenAt }
-  if (input.probe.alive && input.probe.startTime === owner.anchor.startTime)
-    return { ownerProcess: 'live', anchor: owner.anchor, ownerLastSeenAt }
+    return probe ? [probe] : []
+  })
+  if (candidates.length !== stored.candidates.length)
+    return { ownerProcess: 'unknown', candidates, ownerLastSeenAt }
+  if (
+    candidates.some(
+      ({ alive, startTime, observedStartTime }) => alive && observedStartTime === startTime,
+    )
+  )
+    return { ownerProcess: 'live', candidates, ownerLastSeenAt }
+  if (candidates.some(({ alive, observedStartTime }) => alive && observedStartTime === null))
+    return { ownerProcess: 'unknown', candidates, ownerLastSeenAt }
   const ownerRecentlySeen =
     ownerLastSeenAt !== null && ownerLastSeenAt >= input.now - input.liveWindowMs
   return {
     ownerProcess: ownerRecentlySeen ? 'unknown' : 'dead',
-    anchor: owner.anchor,
+    candidates,
     ownerLastSeenAt,
   }
 }

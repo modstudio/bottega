@@ -369,7 +369,7 @@ export async function fileRuling(input: FileRulingInput, stores: RulingFileStore
     now: Date.now(),
     windowMs: RUN_MUTATION_WINDOW_MS,
     ownerProcess: 'unknown' as const,
-    ownerAnchor: null,
+    ownerProcesses: [],
   }
   let adoptionReason: string | null = null
   if (row.run_record_id === null)

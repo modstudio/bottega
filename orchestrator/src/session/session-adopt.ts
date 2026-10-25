@@ -15,7 +15,10 @@ import {
 import { machineId } from '../record/machine-identity.ts'
 import { transferRunMutationOwnership } from '../run/run-authority.ts'
 import { enqueueRunRecord } from '../run/run-outbox.ts'
-import type { SessionLivenessEvidence } from '../run/session-liveness.ts'
+import {
+  formatSessionLivenessEvidence,
+  type SessionLivenessEvidence,
+} from '../run/session-liveness.ts'
 import {
   type SessionProcessProbe,
   sessionLivenessEvidence,
@@ -46,17 +49,6 @@ type Root = {
   launch_key: string | null
 }
 
-function evidenceText(evidence: SessionLivenessEvidence): string {
-  const anchor = evidence.anchor
-    ? `anchor pid ${evidence.anchor.pid} started ${evidence.anchor.startTime}`
-    : 'anchor unknown'
-  const seen =
-    evidence.ownerLastSeenAt === null
-      ? 'last_seen unknown'
-      : `last_seen ${new Date(evidence.ownerLastSeenAt).toISOString()}`
-  return `${anchor}; ${seen}`
-}
-
 function assertAdoptionConsent(
   target: string,
   evidence: SessionLivenessEvidence,
@@ -66,7 +58,7 @@ function assertAdoptionConsent(
   const closeOut = `the owner runs ${PLATFORM_SLUG} session close-out --session ${target}`
   if (evidence.ownerProcess === 'live')
     throw new Error(
-      `session ${target} is live (${evidenceText(evidence)}); ${closeOut} before adoption`,
+      `session ${target} is live (${formatSessionLivenessEvidence(evidence)}); ${closeOut} before adoption`,
     )
   if (
     consent === 'standard' &&
@@ -75,7 +67,7 @@ function assertAdoptionConsent(
     evidence.ownerLastSeenAt >= now - SESSION_LIVE_MS
   )
     throw new Error(
-      `session ${target} process is unknown (${evidenceText(evidence)}); ${closeOut}, ` +
+      `session ${target} process is unknown (${formatSessionLivenessEvidence(evidence)}); ${closeOut}, ` +
         `or wait until last_seen is older than the session live window`,
     )
 }

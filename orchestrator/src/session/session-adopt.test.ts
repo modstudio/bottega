@@ -4,7 +4,10 @@ import { db } from '../database/db.ts'
 import { adoptSessionRuns, formatSessionAdoption } from './session-adopt.ts'
 
 const machine = '00000000-0000-4000-8000-000000000001'
-const chain = JSON.stringify([{ pid: 987_654, startTime: 'owner-start' }])
+const chain = JSON.stringify([
+  { pid: 987_654, startTime: 'transient-start' },
+  { pid: 987_655, startTime: 'owner-start' },
+])
 
 function seen(session: string, lastSeen: string, ancestorChain: string | null = chain): void {
   db()
@@ -24,16 +27,21 @@ test('adopts roots and held turns, audits each root, and enqueues terminal membe
   })
   db().query("UPDATE run SET launch_key='DEV-1722' WHERE record_id=?").run(root)
   seen('former', '2026-10-24T00:00:00.000Z')
+  const probed: number[] = []
 
   const report = adoptSessionRuns('former', 'planned handoff', {
     database: db(),
     actor: 'successor',
     now: Date.parse('2026-10-24T02:00:00.000Z'),
-    probe: () => ({ alive: false, startTime: null }),
+    probe: (pid) => {
+      probed.push(pid)
+      return { alive: false, startTime: null }
+    },
     machine,
   })
 
   expect(report).toMatchObject({ totalRuns: 1, totalTurns: 2 })
+  expect(probed).toEqual([987_654, 987_655])
   expect(report.runs[0]).toMatchObject({
     recordId: root,
     job: 'implement',
@@ -66,7 +74,10 @@ test('refuses self, a live owner, and an unknown recently seen owner', () => {
       database: db(),
       actor: 'successor',
       now: Date.parse('2026-10-24T02:00:00.000Z'),
-      probe: () => ({ alive: true, startTime: 'owner-start' }),
+      probe: (pid) =>
+        pid === 987_654
+          ? { alive: false, startTime: null }
+          : { alive: true, startTime: 'owner-start' },
       machine,
     }),
   ).toThrow('session live-owner is live')

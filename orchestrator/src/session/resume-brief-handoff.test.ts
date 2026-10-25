@@ -41,7 +41,10 @@ function authorSeen(): void {
     .run(
       'brief-author',
       '2026-10-24T00:00:00.000Z',
-      JSON.stringify([{ pid: 987_654, startTime: 'author-start' }]),
+      JSON.stringify([
+        { pid: 987_654, startTime: 'transient-start' },
+        { pid: 987_655, startTime: 'author-start' },
+      ]),
     )
 }
 
@@ -82,7 +85,10 @@ test('a live author does not fail consume and names the explicit adopt command',
   const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
   const handoff = await handoffConsumedResumeBrief(consumed, {
     database: db(),
-    probe: () => ({ alive: true, startTime: 'author-start' }),
+    probe: (pid) =>
+      pid === 987_654
+        ? { alive: false, startTime: null }
+        : { alive: true, startTime: 'author-start' },
     machine,
   })
 

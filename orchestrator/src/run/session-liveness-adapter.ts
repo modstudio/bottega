@@ -5,11 +5,15 @@ import type { Database } from 'bun:sqlite'
 import { pidAlive, processStartTime } from '../../../shared/process-identity.ts'
 import { SESSION_LIVE_MS } from '../database/db.ts'
 import {
+  formatSessionLivenessEvidence,
   type ProcessProbeResult,
   type SessionLivenessEvidence,
+  type SessionProcessEvidence,
   sessionLivenessDecision,
-  storedSessionAnchor,
+  storedSessionCandidates,
 } from './session-liveness.ts'
+
+export { formatSessionLivenessEvidence, type SessionProcessEvidence }
 
 export type SessionProcessProbe = (pid: number) => ProcessProbeResult
 
@@ -42,9 +46,16 @@ export function sessionLivenessEvidence(
         )
         .get(actorSessionId)
     : null
-  const anchor = ownerSeen
-    ? storedSessionAnchor(ownerSessionId, ownerSeen.ancestor_chain).anchor
-    : null
+  const candidates = ownerSeen
+    ? storedSessionCandidates({
+        ownerSessionId,
+        ownerAncestorChain: ownerSeen.ancestor_chain,
+        actorSessionId,
+        actorAncestorChain: actorSeen?.ancestor_chain ?? null,
+      }).candidates
+    : []
+  const probe = input.probe ?? processProbe
+  const observedByPid = new Map<number, ProcessProbeResult>()
   return sessionLivenessDecision({
     ownerSessionId,
     ownerSeen: ownerSeen
@@ -57,6 +68,13 @@ export function sessionLivenessEvidence(
     actorAncestorChain: actorSeen?.ancestor_chain ?? null,
     now: input.now ?? Date.now(),
     liveWindowMs: input.liveWindowMs ?? SESSION_LIVE_MS,
-    probe: anchor ? (input.probe ?? processProbe)(anchor.pid) : null,
+    probes: candidates.map((identity) => {
+      let observed = observedByPid.get(identity.pid)
+      if (!observed) {
+        observed = probe(identity.pid)
+        observedByPid.set(identity.pid, observed)
+      }
+      return { ...identity, alive: observed.alive, observedStartTime: observed.startTime }
+    }),
   })
 }
