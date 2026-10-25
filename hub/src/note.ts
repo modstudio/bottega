@@ -34,6 +34,7 @@ import {
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { setPromotedTaskTitle } from './note-promoted-title.ts'
+import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -52,16 +53,11 @@ import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
-export type NoteAnchor = {
+export type NoteAnchor = NotePromotionAnchor & {
   id?: string
-  cwd: string
   project: string
   files: { path: string; line: number; content: string }[]
-  run_id: number | null
   run_record_id?: string | null
-  branch: string | null
-  commit: string | null
-  session_id: string | null
 }
 
 export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
@@ -706,7 +702,7 @@ export async function promoteNote(
           conn,
           options.existingTaskKey!,
           row.project,
-          promotionBody(row),
+          notePromotionBody(row.text, row.sightings, row.anchors),
           at,
         )
         conn
@@ -726,7 +722,7 @@ export async function promoteNote(
         {
           project: row.project,
           title,
-          body: promotionBody(row),
+          body: notePromotionBody(row.text, row.sightings, row.anchors),
         },
         { skipDuplicateCheck: true },
       )
@@ -739,13 +735,14 @@ export async function promoteNote(
     return getNote(note.record_id)
   }
   const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
-  const hosted = await hostedPromoteNote(note.record_id, options.existingTaskKey, hostedOptions)
+  const promoteInput = { task: options.existingTaskKey, title: creating ? title : undefined }
+  const hosted = await hostedPromoteNote(note.record_id, promoteInput, hostedOptions)
   writeTransaction((conn) => {
     if (hosted.task) applyHostedTask(conn, hosted.task)
     if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
     applyHostedNote(conn, hosted.note)
   })
-  if (creating && hosted.task)
+  if (creating && hosted.task && hosted.task.title !== title)
     await setPromotedTaskTitle(hosted.task, title, {
       hosted: hostedOptions,
       attribution: options.attribution ?? UNATTRIBUTED,
@@ -754,17 +751,7 @@ export async function promoteNote(
 }
 
 export function promotionTaskInput(note: NoteRow, title: string) {
-  return { title, body: promotionBody(note) }
-}
-
-function promotionBody(note: NoteRow): string {
-  const evidence = note.anchors
-    .map(
-      (anchor, index) =>
-        `Sighting ${index + 1}: cwd=${anchor.cwd}; branch=${anchor.branch ?? '-'}; commit=${anchor.commit ?? '-'}; run=${anchor.run_id ?? '-'}; session=${anchor.session_id ?? '-'}`,
-    )
-    .join('\n')
-  return `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
+  return { title, body: notePromotionBody(note.text, note.sightings, note.anchors) }
 }
 
 export async function dropNote(

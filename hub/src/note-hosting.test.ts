@@ -25,6 +25,34 @@ const unreachable = {
 }
 
 describe('hosted-only note safety', () => {
+  test('the promote route passes the caller title to the promotion', async () => {
+    const id = '01990000-0000-7000-8000-000000000001'
+    let promotedInput: unknown
+    const response = await noteApi(
+      new Request(`https://hub.example.test/v1/notes/${id}/promote`, {
+        method: 'POST',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({ title: 'The point of the note' }),
+      }),
+      hostedRouteTestConfig,
+      {
+        fetch: (async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+          })) as unknown as typeof fetch,
+        promote: async (...args: unknown[]) => {
+          promotedInput = args[3]
+          return null
+        },
+      },
+    )
+
+    expect(response?.status).toBe(404)
+    expect(promotedInput).toEqual({ task: undefined, title: 'The point of the note' })
+  })
+
   test('every note route refuses a requested space outside the caller memberships', async () => {
     const id = '01990000-0000-7000-8000-000000000001'
     const routes = [
@@ -387,6 +415,18 @@ describe('hosted promotion title correction', () => {
     expect(pushes).toHaveLength(1)
     expect(pushes[0]!.space).toBe('space-gamma')
     expect(JSON.stringify(pushes[0]!.body)).toContain('Rate limiter counts retries')
+  })
+
+  test('a creating promotion needs no correction when the server honors the title', async () => {
+    const note = fileGammaNote('server receives the requested title')
+    const title = 'Server receives the requested title'
+    const stub = hostedPromotionStub(note, title)
+    const promoted = await promoteNote(note.id, { hosted: stub.options, title })
+
+    expect(promoted.promoted_task).toBe('GAM-1')
+    expect(showTask('GAM-1', { project: 'gamma' }).task.title).toBe(title)
+    expect(stub.seen.find((seen) => seen.path.endsWith('/promote'))?.body).toEqual({ title })
+    expect(stub.seen.filter((seen) => seen.path === '/v1/changes')).toHaveLength(0)
   })
 
   test('a refused title correction raises the finish command', async () => {

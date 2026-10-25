@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { listNotes, promoteNote } from '../../note.ts'
+import { PROMOTED_TASK_TITLE_REFUSAL } from '../../note-promotion-body.ts'
 import { machineAttribution } from '../../task-machine-attribution.ts'
 import type { Context } from '../context.ts'
 
@@ -20,7 +21,7 @@ export function createNoteRouter(deps = { listNotes, promoteNote, machineAttribu
       .input(
         z.object({
           id: z.uuid(),
-          title: z.string().trim().min(1, 'a promoted task needs a title stating its point'),
+          title: z.string().trim().min(1, PROMOTED_TASK_TITLE_REFUSAL),
         }),
       )
       .mutation(async ({ input }) => {

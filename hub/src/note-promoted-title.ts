@@ -6,11 +6,10 @@ import type { Attribution } from './task-attribution.ts'
 import { setTaskThroughTracker } from './tracker-task-write.ts'
 
 /**
- * The hosted server titles a promoted task with the note text, so the creating client corrects it
- * through the same hosted-aware write `bottega task set --title` uses, aimed at the destination the
- * promotion itself wrote to. Only a delivered correction counts: a queued change may never arrive
- * (a destination that cannot push task rows) and a rejected one is quarantined, and either leaves
- * the hosted record titled by the note text while the promotion reported success.
+ * The creating client sends the title with the promotion. This correction runs only when the task
+ * the server returned carries a different title; a server older than this rule answers with the
+ * note text. Only a delivered correction counts: a queued or rejected change leaves the hosted
+ * record with the different title while the promotion reported success.
  */
 export async function setPromotedTaskTitle(
   task: HostedTask,
