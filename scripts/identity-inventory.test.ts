@@ -9,6 +9,7 @@ import {
   type KeyManifests,
   type KeyTable,
   readSqliteKeyTables,
+  syncedSourceRefusals,
 } from './identity-inventory.ts'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
 
@@ -18,6 +19,7 @@ const EMPTY: KeyManifests = {
   externalIdentifiers: [],
   uuids: [],
   infrastructure: [],
+  syncedSources: {},
 }
 const column = (
   table: string,
@@ -25,7 +27,85 @@ const column = (
   type: string,
   primaryKey = false,
   foreignKey = false,
-) => ({ table, name, type, required: true, primaryKey, foreignKey })
+) => ({ table, name, type, required: true, primaryKey, foreignKey, foreignTable: null })
+
+const write = (sources: readonly string[]) => ({
+  store: 'hub' as const,
+  kind: 'write' as const,
+  sources,
+  reason: sources.length ? 'rows from local tables' : 'no local table',
+})
+const schemas = [
+  { store: 'hub' as const, table: 'task', foreignTables: [] },
+  { store: 'hub' as const, table: 'child', foreignTables: ['install_binding'] },
+]
+const infrastructure = [
+  { store: 'hub' as const, table: 'install_binding', reason: 'machine binding' },
+]
+
+test('a synced method without a declaration is refused with its remedy', () => {
+  expect(syncedSourceRefusals({}, ['hub.taskClient.push'], infrastructure, schemas)).toEqual([
+    'hub.taskClient.push: synced source declaration is missing; remedy: declare it with its source tables',
+  ])
+})
+
+test('a synced source may not be machine-local infrastructure', () => {
+  expect(
+    syncedSourceRefusals(
+      { 'hub.taskClient.push': write(['install_binding']) },
+      ['hub.taskClient.push'],
+      infrastructure,
+      schemas,
+    ),
+  ).toContain(
+    'hub.taskClient.push: synced source hub.install_binding is machine-local infrastructure; remedy: give the table a UUID primary key, or stop syncing it',
+  )
+})
+
+test('a synced source must exist in its migrated store schema', () => {
+  expect(
+    syncedSourceRefusals(
+      { 'hub.taskClient.push': write(['missing']) },
+      ['hub.taskClient.push'],
+      infrastructure,
+      schemas,
+    ),
+  ).toEqual([
+    'hub.taskClient.push: synced source hub.missing does not exist in the migrated schema; remedy: declare an existing source table',
+  ])
+})
+
+test('a synced source may not reference machine-local infrastructure', () => {
+  expect(
+    syncedSourceRefusals(
+      { 'hub.taskClient.push': write(['child']) },
+      ['hub.taskClient.push'],
+      infrastructure,
+      schemas,
+    ),
+  ).toEqual([
+    'hub.taskClient.push: synced source hub.child has a foreign key into machine-local infrastructure install_binding; remedy: give the table a UUID primary key, or stop syncing it',
+  ])
+})
+
+test('complete consistent synced source declarations pass', () => {
+  expect(
+    syncedSourceRefusals(
+      {
+        'hub.taskClient.list': {
+          store: 'hub',
+          kind: 'read',
+          sources: [],
+          reason: 'read',
+        },
+        'hub.taskClient.push': write(['task']),
+      },
+      ['hub.taskClient.list', 'hub.taskClient.push'],
+      infrastructure,
+      schemas,
+    ),
+  ).toEqual([])
+})
 
 test('every non-owned UUID primary-key shape is reported', () => {
   const cases: [string, KeyTable][] = [

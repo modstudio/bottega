@@ -13,10 +13,18 @@ type KeyColumn = {
   required: boolean
   primaryKey: boolean
   foreignKey: boolean
+  foreignTable: string | null
 }
 export type KeyTable = { name: string; columns: KeyColumn[]; primaryKey: string[] }
 export type ManifestColumn = { store: KeyStore; column: string; reason: string }
 export type InfrastructureIdentity = { store: KeyStore; table: string; reason: string }
+type SyncedSource = {
+  store: Exclude<KeyStore, 'hosted'>
+  kind: 'read' | 'write' | 'snapshot'
+  sources: readonly string[]
+  reason: string
+}
+export type SyncedSources = Readonly<Record<string, SyncedSource>>
 export type KeyInventory = { findings: string[]; values: string[]; infrastructure: string[] }
 export type KeyManifests = {
   values: readonly ManifestColumn[]
@@ -24,6 +32,13 @@ export type KeyManifests = {
   externalIdentifiers: readonly ManifestColumn[]
   uuids: readonly ManifestColumn[]
   infrastructure: readonly InfrastructureIdentity[]
+  syncedSources: SyncedSources
+}
+
+export type SyncedSchemaFact = {
+  store: Exclude<KeyStore, 'hosted'>
+  table: string
+  foreignTables: readonly string[]
 }
 
 type StoreManifests = {
@@ -286,6 +301,94 @@ export function assertShrinkingKeyBaseline(
   }
 }
 
+export function syncedSourceRefusals(
+  declarations: SyncedSources,
+  methodInventory: readonly string[],
+  exemptions: readonly InfrastructureIdentity[],
+  schemaFacts: readonly SyncedSchemaFact[],
+): string[] {
+  const infrastructure = new Set(exemptions.map(({ store, table }) => `${store}.${table}`))
+  const schemas = new Map(schemaFacts.map((fact) => [`${fact.store}.${fact.table}`, fact]))
+  const missing = methodInventory.flatMap((method) =>
+    declarations[method]
+      ? []
+      : [
+          `${method}: synced source declaration is missing; remedy: declare it with its source tables`,
+        ],
+  )
+  const declared = Object.entries(declarations).flatMap(([method, declaration]) =>
+    syncedDeclarationRefusals(method, declaration, infrastructure, schemas),
+  )
+  return [...new Set([...missing, ...declared])].sort()
+}
+
+function syncedDeclarationRefusals(
+  method: string,
+  declaration: SyncedSource,
+  infrastructure: ReadonlySet<string>,
+  schemas: ReadonlyMap<string, SyncedSchemaFact>,
+): string[] {
+  if (declaration.kind === 'read') return []
+  const empty =
+    declaration.sources.length === 0 && !/\b(?:no local table|derived)\b/i.test(declaration.reason)
+      ? [
+          `${method}: an empty synced source declaration needs a reason saying no local table or derived; remedy: declare it with its source tables`,
+        ]
+      : []
+  return [
+    ...empty,
+    ...declaration.sources.flatMap((table) =>
+      syncedTableRefusals(method, declaration.store, table, infrastructure, schemas),
+    ),
+  ]
+}
+
+function syncedTableRefusals(
+  method: string,
+  store: 'orchestrator' | 'hub',
+  table: string,
+  infrastructure: ReadonlySet<string>,
+  schemas: ReadonlyMap<string, SyncedSchemaFact>,
+): string[] {
+  const address = `${store}.${table}`
+  const local = infrastructure.has(address)
+    ? [
+        `${method}: synced source ${address} is machine-local infrastructure; remedy: give the table a UUID primary key, or stop syncing it`,
+      ]
+    : []
+  const schema = schemas.get(address)
+  if (!schema)
+    return [
+      ...local,
+      `${method}: synced source ${address} does not exist in the migrated schema; remedy: declare an existing source table`,
+    ]
+  return [
+    ...local,
+    ...schema.foreignTables.flatMap((foreignTable) =>
+      infrastructure.has(`${store}.${foreignTable}`)
+        ? [
+            `${method}: synced source ${address} has a foreign key into machine-local infrastructure ${foreignTable}; remedy: give the table a UUID primary key, or stop syncing it`,
+          ]
+        : [],
+    ),
+  ]
+}
+
+export function sqliteSyncedSchemaFacts(
+  store: 'orchestrator' | 'hub',
+  tables: readonly KeyTable[],
+): SyncedSchemaFact[] {
+  return tables.map((table) => ({
+    store,
+    table: table.name,
+    foreignTables: [
+      ...new Set(
+        table.columns.flatMap((column) => (column.foreignTable ? [column.foreignTable] : [])),
+      ),
+    ].sort(),
+  }))
+}
+
 export function readSqliteKeyTables(database: Database): KeyTable[] {
   const tables = database
     .query<{ name: string }, []>(
@@ -298,11 +401,11 @@ export function readSqliteKeyTables(database: Database): KeyTable[] {
         `PRAGMA table_info('${name}')`,
       )
       .all()
-    const foreignKeys = new Set(
+    const foreignKeys = new Map(
       database
-        .query<{ from: string }, []>(`PRAGMA foreign_key_list('${name}')`)
+        .query<{ from: string; table: string }, []>(`PRAGMA foreign_key_list('${name}')`)
         .all()
-        .map((foreignKey) => foreignKey.from),
+        .map((foreignKey) => [foreignKey.from, foreignKey.table]),
     )
     return {
       name,
@@ -317,6 +420,7 @@ export function readSqliteKeyTables(database: Database): KeyTable[] {
         required: column.notnull === 1 || column.pk > 0,
         primaryKey: column.pk > 0,
         foreignKey: foreignKeys.has(column.name),
+        foreignTable: foreignKeys.get(column.name) ?? null,
       })),
     }
   })
@@ -356,6 +460,7 @@ export function hostedKeyTablesFromModules(modules: readonly SchemaModule[]): Ke
           required: column.notNull,
           primaryKey: primaryNames.has(column.name),
           foreignKey: foreignNames.has(column.name),
+          foreignTable: null,
         })),
       }
     })
