@@ -4,6 +4,7 @@
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../shared/git.ts'
+import { MAIN_CHECKOUT_MIGRATION_JOURNAL_SOURCES } from '../database/migration-journal-sources.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
@@ -51,6 +52,57 @@ export function decideMainCheckoutBranch(
   return branch === trunk ? { action: 'refresh' } : { action: 'refuse', branch }
 }
 
+type MigrationJournalTags = { source: string; tags: string[] }
+
+export type MainCheckoutMigrationRefreshDecision =
+  | { action: 'refresh' }
+  | { action: 'refuse'; migrationTags: string[] }
+
+/** Decide whether moving the main checkout would put its binary ahead of its stores. */
+export function decideMainCheckoutMigrationRefresh(input: {
+  currentJournals: MigrationJournalTags[]
+  incomingJournals: MigrationJournalTags[]
+}): MainCheckoutMigrationRefreshDecision {
+  const currentBySource = new Map(
+    input.currentJournals.map((journal) => [journal.source, journal.tags]),
+  )
+  const migrationTags = input.incomingJournals.flatMap((journal) =>
+    journal.tags.slice(currentBySource.get(journal.source)?.length ?? 0),
+  )
+  return migrationTags.length ? { action: 'refuse', migrationTags } : { action: 'refresh' }
+}
+
+function journalTagsAtRevision(treeRoot: string, revision: string): MigrationJournalTags[] {
+  return MAIN_CHECKOUT_MIGRATION_JOURNAL_SOURCES.map((source) => {
+    const value = git(['show', `${revision}:${source.path}`], treeRoot)
+    const parsed = JSON.parse(value) as { entries?: Array<{ tag?: unknown }> }
+    if (!Array.isArray(parsed.entries)) {
+      throw new Error(`${source.path} at ${revision} has no migration journal entries`)
+    }
+    return {
+      source: source.path,
+      tags: parsed.entries.map((entry, index) => {
+        if (typeof entry.tag !== 'string' || !entry.tag) {
+          throw new Error(`${source.path} at ${revision} has no tag for migration entry ${index}`)
+        }
+        return entry.tag
+      }),
+    }
+  })
+}
+
+function refuseMainCheckoutMigrationRefresh(treeRoot: string, remote: string): void {
+  const decision = decideMainCheckoutMigrationRefresh({
+    currentJournals: journalTagsAtRevision(treeRoot, 'HEAD'),
+    incomingJournals: journalTagsAtRevision(treeRoot, remote),
+  })
+  if (decision.action === 'refresh') return
+  throw new Error(
+    `refusing to refresh main checkout because incoming migrations are not applied to this machine's stores: ${decision.migrationTags.join(', ')}\n` +
+      `cleared by: ${PLATFORM_SLUG} machine update`,
+  )
+}
+
 function countCommits(range: string, cwd: string): number {
   const value = git(['rev-list', '--count', range], cwd)
   const count = Number(value)
@@ -64,7 +116,12 @@ function pathsFromGit(value: string): string[] {
   return value ? value.split('\n') : []
 }
 
-function fastForwardTree(treeRoot: string, trunk: string, branch: string): string {
+function fastForwardTree(
+  treeRoot: string,
+  trunk: string,
+  branch: string,
+  beforeFastForward?: (remote: string) => void,
+): string {
   git(['fetch', 'origin', trunk], treeRoot)
   const remote = `origin/${trunk}`
   const mergeBase = git(['merge-base', 'HEAD', remote], treeRoot)
@@ -77,6 +134,7 @@ function fastForwardTree(treeRoot: string, trunk: string, branch: string): strin
     )
   }
   if (decision.action === 'fast-forward') {
+    beforeFastForward?.(remote)
     const incomingAddedPaths = pathsFromGit(
       git(['diff', '--name-only', '--diff-filter=A', 'HEAD', remote], treeRoot),
     )
@@ -253,7 +311,11 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
     )
   }
 
-  return [fastForwardTree(treeRoot, trunk, trunk)]
+  return [
+    fastForwardTree(treeRoot, trunk, trunk, (remote) =>
+      refuseMainCheckoutMigrationRefresh(treeRoot, remote),
+    ),
+  ]
 }
 
 function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): string[] {

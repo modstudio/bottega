@@ -7,6 +7,7 @@ import { executeTrackedRefreshSteps, type RecipeSnapshot } from './tracked-recip
 import {
   collidingRefreshPaths,
   decideMainCheckoutBranch,
+  decideMainCheckoutMigrationRefresh,
   decideTreeRefresh,
   refreshStepContext,
   requireRefreshSnapshot,
@@ -53,6 +54,46 @@ describe('main checkout branch decision', () => {
       action: 'refuse',
       branch: null,
     })
+  })
+})
+
+describe('main checkout migration refresh decision', () => {
+  test('refuses and names migration tags added by incoming journals', () => {
+    expect(
+      decideMainCheckoutMigrationRefresh({
+        currentJournals: [
+          { source: 'orchestrator journal', tags: ['0000_orch'] },
+          { source: 'hub journal', tags: ['0000_hub'] },
+        ],
+        incomingJournals: [
+          { source: 'orchestrator journal', tags: ['0000_orch', '0001_orch_next'] },
+          { source: 'hub journal', tags: ['0000_hub', '0001_hub_next'] },
+        ],
+      }),
+    ).toEqual({
+      action: 'refuse',
+      migrationTags: ['0001_orch_next', '0001_hub_next'],
+    })
+  })
+
+  test('refreshes when the journals are equal', () => {
+    expect(
+      decideMainCheckoutMigrationRefresh({
+        currentJournals: [{ source: 'orchestrator journal', tags: ['0000_orch'] }],
+        incomingJournals: [{ source: 'orchestrator journal', tags: ['0000_orch'] }],
+      }),
+    ).toEqual({ action: 'refresh' })
+  })
+
+  test('refreshes when an incoming journal is not ahead', () => {
+    expect(
+      decideMainCheckoutMigrationRefresh({
+        currentJournals: [
+          { source: 'orchestrator journal', tags: ['0000_orch', '0001_orch_next'] },
+        ],
+        incomingJournals: [{ source: 'orchestrator journal', tags: ['0000_orch'] }],
+      }),
+    ).toEqual({ action: 'refresh' })
   })
 })
 

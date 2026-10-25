@@ -27,6 +27,7 @@ import {
   setMigrationDrainPhase,
 } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
+import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { migrationState, storeJournalPosition } from './migrations.ts'
 
 const MIGRATION_DRAIN_POLL_MS = 1_000
@@ -46,7 +47,7 @@ function incomingJournal(
 ): MigrationJournalEntry[] {
   const source = runGit(cwd, [
     'show',
-    `origin/${branch}:orchestrator/migrations/meta/_journal.json`,
+    `origin/${branch}:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`,
   ])
   const parsed = JSON.parse(source) as { entries?: unknown[] }
   if (!Array.isArray(parsed.entries)) throw new Error('incoming migration journal has no entries')
