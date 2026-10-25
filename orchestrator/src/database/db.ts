@@ -160,8 +160,16 @@ const storeActorFacts: Omit<StoreActorFacts, 'brokerChannel'> = {
  * The worker's ask server is the one process that writes the store from a
  * worker-classified environment, because its question, message and gate rows ARE
  * the escalation channel. It declares itself here before it opens the store: a
- * store opened read-only can never be written through afterwards. Nothing infers
- * this channel from arguments or from the environment.
+ * store opened read-only can never be written through afterwards, and nothing
+ * infers this channel from arguments or from the environment.
+ *
+ * This restriction guards against an accidental worker write or migration — a
+ * worker misreading the shared store as its own, or a schema change under a live
+ * operator — and it assumes the caller does not set out to defeat it. It is not
+ * the adversarial boundary; a same-uid process that detaches itself already has
+ * the operator's power. The broker channel is exempt from the write refusal
+ * alone: every migration entry still refuses a worker caller, this process
+ * included.
  */
 let storeBrokerChannel = false
 
