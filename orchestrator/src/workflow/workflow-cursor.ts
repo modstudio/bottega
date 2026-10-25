@@ -263,7 +263,11 @@ export function composeWorkflowWithCursor(
   }, d)
 }
 
-export function cursorComposition(row: SelectableCursorRow, d: Database, live?: LiveCursorAutonomy) {
+export function cursorComposition(
+  row: SelectableCursorRow,
+  d: Database,
+  live?: LiveCursorAutonomy,
+) {
   return composeWorkflow(
     row.workflow_slug,
     row.project,
@@ -977,7 +981,9 @@ export function awaitWorkflowRuling(
   cursor?: number,
 ): CursorSummary & { questionId: number } {
   const result = writeTransaction(
-    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor), d)
+    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
+    d,
+  )
   notify('workflow', result.cursorId, d)
   return result.summary
 }

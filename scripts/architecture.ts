@@ -55,6 +55,7 @@ import { spareModules } from './architecture-spare-modules.ts'
 import { subjectModules } from './architecture-subject-modules.ts'
 import { testSubstanceModules } from './architecture-test-substance-modules.ts'
 import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-layers.ts'
+import { workflowAutonomyModules } from './architecture-workflow-autonomy-modules.ts'
 import { workflowCommandModules } from './architecture-workflow-command-modules.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
@@ -323,30 +324,7 @@ export const modules: ArchitectureModule[] = [
     './agents.ts',
     '../database/db.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-render.ts', [
-    '../../../shared/brand.ts',
-    './autonomy.ts',
-    './workflow-cursor-format.ts',
-    './workflow-floor.ts',
-    './workflows.ts',
-  ]),
-  module('orchestrator/src/workflow/autonomy.ts', [
-    '../../../shared/autonomy.ts',
-    '../../../shared/ship-to.ts',
-  ]),
-  module('orchestrator/src/workflow/autonomy-scopes.ts', [
-    '../../../shared/brand.ts',
-    'bun:sqlite',
-    '../../../shared/config-client.ts',
-    '../../../shared/config-directory.ts',
-    '../../../shared/machine-config.ts',
-    '../database/db.ts',
-    '../project/projects.ts',
-    './autonomy.ts',
-    './session-context-cache.ts',
-    './step-catalogue.ts',
-    './workflow-cursor-autonomy.ts',
-  ]),
+  ...workflowAutonomyModules,
   ...workflowCommandModules,
   ...sessionContextModules,
   ...workflowFloorModules,

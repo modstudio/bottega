@@ -9,8 +9,8 @@ import {
   type LiveCursorAutonomy,
 } from './autonomy.ts'
 import { resolveProjectAutonomy } from './autonomy-scopes.ts'
-import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorComposition } from './workflow-cursor.ts'
+import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { selectWorkflowCursor, type WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'

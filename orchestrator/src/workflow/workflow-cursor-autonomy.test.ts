@@ -103,10 +103,10 @@ function composeShipToFlow(d: Database) {
     {},
     {
       resolution: {
-      steps: Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
-      rulings: composed.rulings,
-      shipTo: { value: 'trunk', scope: 'test' },
-    },
+        steps: Object.fromEntries(composed.steps.map((step) => [step.slug, step.resolvedAutonomy])),
+        rulings: composed.rulings,
+        shipTo: { value: 'trunk', scope: 'test' },
+      },
     },
   )
 }
