@@ -12,6 +12,7 @@ import {
   agentRows,
   type Backend,
   type Harness,
+  type RegistrationProbeResult,
   removeAgent,
   setAgent,
 } from './agent-registry.ts'
@@ -145,9 +146,10 @@ async function probeCommand(
     path: process.env.PATH,
     environment: process.env,
   })
-  if (result.ok) recordSuccessfulRegistrationProbe(name)
+  if (result.ok && !result.billingHold) recordSuccessfulRegistrationProbe(name)
   presentation.log(JSON.stringify(result, null, 2))
-  if (!result.ok) presentation.setExitCode(1)
+  if (result.refusal) presentation.log(result.refusal)
+  if (!result.ok || result.billingHold) presentation.setExitCode(1)
 }
 
 function showCommand(name: string, presentation: Presentation): void {
@@ -180,12 +182,14 @@ export function agentReadinessPresentation(facts: {
   probedAt: string | null | undefined
   available: boolean
   unavailableReason: string | null
+  probeBudgetKind?: NonNullable<RegistrationProbeResult['budget']>['kind']
 }): string {
   if (!facts.enabled) return `disabled — ${facts.disabledReason}`
   if (!facts.executableFound) return 'not installed'
   if (!facts.probedAt)
     return `installed but not probed — ${PLATFORM_SLUG} agent probe ${facts.name}`
   if (!facts.available) return `unavailable — ${facts.unavailableReason}`
+  if (facts.probeBudgetKind === 'unknown') return 'OpenRouter key budget not verified'
   return 'ready'
 }
 
@@ -205,6 +209,7 @@ export async function agentsCommand(json: boolean, presentation: Presentation): 
       probedAt: agent.probedAt,
       available: available(agent.name),
       unavailableReason: unavailableReason(agent.name),
+      probeBudgetKind: (agent.probeResult as RegistrationProbeResult | null)?.budget?.kind,
     }),
   }))
   for (const { agent, readiness } of rows)

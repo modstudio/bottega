@@ -93,8 +93,9 @@ export function writeTerminalOperationalState(
   resourceUsage: RunResourceUsage | null,
   failureKind: ReturnType<typeof classify> | null,
   agent: string,
+  billingHoldDetail?: string,
 ): void {
-  const hold = billingHoldForFailure(failureKind, agent)
+  const hold = billingHoldForFailure(failureKind, agent, billingHoldDetail)
   if (hold) {
     database
       .query('UPDATE agent SET enabled=?,disabled_reason=? WHERE name=?')
@@ -102,6 +103,22 @@ export function writeTerminalOperationalState(
     refreshAgents()
   }
   writeTerminalRunResourceUsage(database, runId, resourceUsage)
+}
+
+function writeOperationalState(
+  input: TerminalInput,
+  resourceUsage: RunResourceUsage | null,
+  failureKind: ReturnType<typeof classify> | null,
+  name: string,
+): void {
+  writeTerminalOperationalState(
+    db(),
+    input.claim.id,
+    resourceUsage,
+    failureKind,
+    name,
+    input.billingHoldDetail,
+  )
 }
 
 function closeTerminalQuestions(
@@ -208,6 +225,7 @@ export type TerminalInput = {
   worktree: Worktree | null
   launchKey: string | null
   failureKind: ReturnType<typeof classify> | null
+  billingHoldDetail?: string
   scratchDir: string
   gitConfigEnvironment: Record<string, string> | undefined
   writingAcp: boolean
@@ -872,7 +890,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           claim.id,
         )
 
-      writeTerminalOperationalState(db(), claim.id, resourceUsage, failureKind, name)
+      writeOperationalState(input, resourceUsage, failureKind, name)
       recordTerminalMcpEvidence(db(), claim.id, mcpRuling)
       /**
        * The facts, recorded without anyone's opinion.

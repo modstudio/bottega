@@ -7,6 +7,7 @@ import { which } from 'bun'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb } from '../database/db.ts'
+import { billingHoldForFailure } from '../failure/failure.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { acpHarnessProjectServersConfirmable } from '../mcp/mcp-native-attachment.ts'
 import { nextRunNumber } from '../run/run-number.ts'
@@ -19,6 +20,7 @@ import {
   type RegistrationProbeResult,
   refreshAgents,
   rowAgent,
+  setAgent,
 } from './agent-registry.ts'
 import { probeAgentResumesInSandbox, resumeCapabilityPolicy } from './agent-resume-probe.ts'
 import {
@@ -31,6 +33,7 @@ import {
 } from './agent-writing-probe.ts'
 import type { Caps } from './capabilities.ts'
 import { localReachable } from './model-host.ts'
+import { checkOpenRouterKeyBudget, openRouterProbeBudget } from './openrouter-key-budget.ts'
 
 const REGISTRATION_PROBE_FILE = 'probe.txt'
 const REGISTRATION_PROBE_SENTINEL = 'REGISTRATION_PROBE_FILE_OK'
@@ -172,6 +175,32 @@ export function recordSuccessfulRegistrationProbe(name: string): void {
 /** Prove capabilities before routing spends a worktree discovering them. */
 export type AgentProbeInputs = { path?: string; environment: ConfigEnvironment }
 
+async function recordBudgetProbe(
+  name: string,
+  row: AgentRow,
+  result: RegistrationProbeResult,
+): Promise<RegistrationProbeResult> {
+  const projection = openRouterProbeBudget(
+    await checkOpenRouterKeyBudget({
+      baseUrl: row.base_url,
+      apiKeySecret: row.api_key_secret,
+      billing: row.billing,
+    }),
+  )
+  const checked = {
+    ...result,
+    ...(projection.budget ? { budget: projection.budget } : {}),
+    billingHold: projection.billingHold,
+    ...(projection.refusal ? { refusal: projection.refusal } : {}),
+  }
+  recordAgentProbe(name, checked)
+  if (checked.billingHold) {
+    const hold = billingHoldForFailure('billing', name, checked.refusal)!
+    setAgent(name, { enabled: false, reason: hold.disabledReason })
+  }
+  return checked
+}
+
 /**
  * Whether a stored probe already answers every capability the declared jobs
  * need. A stored result whose MCP turn was skipped carries no MCP verdict, so
@@ -306,7 +335,7 @@ export async function probeAgent(
       mcpProbeRequired,
     )
   )
-    return previous as RegistrationProbeResult
+    return recordBudgetProbe(name, row, previous as RegistrationProbeResult)
   if (!HARNESSES.includes(row.harness as Harness))
     throw new Error(`legacy agent "${name}" has no runnable harness`)
   const agent = rowAgent(row)
@@ -449,6 +478,5 @@ export async function probeAgent(
     writingPolicy.jobSuccess &&
     (!needs.resumable || resumingPolicy.jobSuccess) &&
     (contextTokens !== null || !row.base_url)
-  recordAgentProbe(name, result)
-  return result
+  return recordBudgetProbe(name, row, result)
 }

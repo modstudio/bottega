@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates, pick } from '../route/route.ts'
-import { agentCommand, agentReadinessPresentation } from './agent-commands.ts'
+import { agentCommand, agentReadinessPresentation, agentsCommand } from './agent-commands.ts'
 import { refreshAgents, removeAgent } from './agent-registry.ts'
 
 test('agent presentation distinguishes installation, probe, disabled, and ready states', () => {
@@ -36,6 +36,16 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
       unavailableReason: 'disabled — retired after replacement',
     },
     {
+      name: 'unchecked',
+      enabled: true,
+      disabledReason: null,
+      executableFound: true,
+      probedAt: '2026-10-05T00:00:00.000Z',
+      available: true,
+      unavailableReason: null,
+      probeBudgetKind: 'unknown' as const,
+    },
+    {
       name: 'usable',
       enabled: true,
       disabledReason: null,
@@ -50,8 +60,43 @@ test('agent presentation distinguishes installation, probe, disabled, and ready 
     'not installed',
     `installed but not probed — ${PLATFORM_SLUG} agent probe newcomer`,
     'disabled — retired after replacement',
+    'OpenRouter key budget not verified',
     'ready',
   ])
+})
+
+test('agent presentation reports an unverified stored OpenRouter budget', async () => {
+  const original = db()
+    .query("SELECT probed_at,probe_result FROM agent WHERE name='codex'")
+    .get() as { probed_at: string | null; probe_result: string | null }
+  const probeResult = original.probe_result ? JSON.parse(original.probe_result) : {}
+  const output: string[] = []
+  const realFetch = globalThis.fetch
+  globalThis.fetch = (async () => new Response('', { status: 503 })) as unknown as typeof fetch
+  try {
+    db()
+      .query("UPDATE agent SET probed_at=?,probe_result=? WHERE name='codex'")
+      .run(
+        '2026-10-05T00:00:00.000Z',
+        JSON.stringify({
+          ...probeResult,
+          budget: { kind: 'unknown', detail: 'OpenRouter key budget not verified' },
+        }),
+      )
+    refreshAgents()
+
+    await agentsCommand(false, { log: (value) => output.push(value), setExitCode: () => {} })
+
+    expect(output.find((line) => line.startsWith('codex'))).toContain(
+      'OpenRouter key budget not verified',
+    )
+  } finally {
+    globalThis.fetch = realFetch
+    db()
+      .query("UPDATE agent SET probed_at=?,probe_result=? WHERE name='codex'")
+      .run(original.probed_at, original.probe_result)
+    refreshAgents()
+  }
 })
 
 test('agent command refuses verbs outside its declared dispatch list', async () => {
@@ -137,6 +182,75 @@ test('a successful registration probe does not clear a billing hold', async () =
       .query("UPDATE agent SET enabled=?,disabled_reason=? WHERE name='grok'")
       .run(original.enabled, original.disabled_reason)
     refreshAgents()
+  }
+})
+
+test('an exhausted OpenRouter probe does not record cooldown-clearing success', async () => {
+  const name = 'openrouter-budget-probe-test'
+  const output: string[] = []
+  let exitCode = 0
+  try {
+    await agentCommand(
+      [
+        'agent',
+        'add',
+        name,
+        '--harness',
+        'goose',
+        '--backend',
+        'vendor',
+        '--model',
+        'fixture-model',
+        '--base-url',
+        'https://openrouter.ai/api/v1',
+        '--api-key-secret',
+        'OPENROUTER_FIXTURE_KEY',
+        '--billing',
+        'metered',
+      ],
+      { log: () => {}, setExitCode: () => {} },
+    )
+    const prior = db().query("SELECT probe_result FROM agent WHERE name='codex'").get() as {
+      probe_result: string
+    }
+    await agentCommand(
+      ['agent', 'probe', name],
+      {
+        log: (value) => output.push(value),
+        setExitCode: (code) => {
+          exitCode = code
+        },
+      },
+      {
+        probeAgent: async () => ({
+          ...JSON.parse(prior.probe_result),
+          ok: true,
+          billingHold: true,
+          refusal:
+            "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
+          budget: {
+            kind: 'exhausted',
+            limitUsd: 250,
+            usedUsd: 250.02,
+            resetInterval: 'weekly',
+            resetsAt: '2026-10-26T00:00:00.000Z',
+            refusal:
+              "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
+          },
+        }),
+      },
+    )
+
+    expect(exitCode).toBe(1)
+    expect(JSON.parse(output[0]!)).toMatchObject({ ok: true })
+    expect(output[1]).toBe(
+      "the OpenRouter key's weekly limit of $250 is used ($250.02); it resets at 2026-10-26T00:00:00.000Z; raise the key's limit in OpenRouter Keys settings",
+    )
+    expect(
+      db().query("SELECT COUNT(*) count FROM run WHERE agent=? AND job='agent-probe'").get(name),
+    ).toEqual({ count: 0 })
+  } finally {
+    removeAgent(name)
   }
 })
 

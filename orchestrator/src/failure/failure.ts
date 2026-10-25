@@ -453,13 +453,15 @@ export type BillingHold = { enabled: 0; disabledReason: string }
 export function billingHoldForFailure(
   failureKind: FailureKind | null,
   agent: string,
+  detail?: string,
 ): BillingHold | null {
   if (failureKind !== 'billing') return null
   return {
     enabled: 0,
-    disabledReason:
-      `billing hold — restore the vendor balance or billing limit, then run ` +
-      `'${PLATFORM_SLUG} agent set ${agent} --enabled true'`,
+    disabledReason: detail
+      ? `billing hold — ${detail}; then run '${PLATFORM_SLUG} agent set ${agent} --enabled true'`
+      : `billing hold — restore the vendor balance or billing limit, then run ` +
+        `'${PLATFORM_SLUG} agent set ${agent} --enabled true'`,
   }
 }
 

@@ -7,6 +7,8 @@ import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { resolveEndpointApiKeyEnv } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
+import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
+import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
@@ -897,6 +899,7 @@ export async function run(opts: {
   let status: OutcomeStatus = 'failed'
   let error: string | null = null
   let failureKind: ReturnType<typeof classify> | null = null
+  let billingHoldDetail: string | undefined
   let artifactsPersisted = true,
     workerEvents: StreamEvent[] = []
   let preConfinement: string | null = null
@@ -1014,6 +1017,13 @@ export async function run(opts: {
           askLoopback,
           ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
         }))
+        if (failureKind === 'auth') {
+          ;({ failureKind, error, billingHoldDetail } = applyOpenRouterBudgetToAuthFailure(
+            failureKind,
+            error,
+            await checkOpenRouterKeyBudget(a),
+          ))
+        }
       } finally {
         const mcpRuling = finalWorkerMcpRuling(claim.id, mcpMode, mcpServerName, workerEvents)
         try {
@@ -1038,6 +1048,7 @@ export async function run(opts: {
             worktree,
             launchKey,
             failureKind,
+            billingHoldDetail,
             scratchDir,
             gitConfigEnvironment,
             ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
@@ -1088,6 +1099,7 @@ export async function run(opts: {
       }
       return await closeRun({
         failureKind,
+        billingHoldDetail,
         name,
         opts,
         claim,
