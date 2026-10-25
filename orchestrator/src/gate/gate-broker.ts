@@ -25,6 +25,7 @@ import {
   insertGateCheckExecutions,
   readGateCheckExecutions,
 } from './gate-check-executions.ts'
+import { refuseInProgressCheckout } from './gate-checkout.ts'
 import {
   type BrokerConfinement,
   boundedGateOutputTail,
@@ -430,6 +431,7 @@ function prepareGateExecution(input: {
   record: (chunk: Buffer | string) => void
 }) {
   const plan = gatePlan(input.request.run_record_id)
+  refuseInProgressCheckout(plan.worktree)
   const mainCheckout = requiredMainCheckout(input.environment, input.request.run_record_id)
   ensureMainStackStarted({
     projectId: plan.projectId,

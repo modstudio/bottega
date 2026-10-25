@@ -24,6 +24,11 @@ import {
   readGateCheckExecutions,
 } from './gate-check-executions.ts'
 import {
+  type GateCheckoutObserver,
+  gitCommandError,
+  refuseInProgressCheckout,
+} from './gate-checkout.ts'
+import {
   boundedGateOutputTail,
   decideGateHeadCommit,
   GATE_OUTPUT_TAIL_BYTES,
@@ -123,20 +128,12 @@ const observeGitState: ArchitectGateGitState = (cwd) => {
     cwd,
     encoding: 'utf8',
   })
-  if (head.status !== 0) {
-    throw new Error(
-      `${PLATFORM_SLUG} gate run needs HEAD in ${cwd}: ${head.stderr?.trim() || `git exited ${head.status}`}`,
-    )
-  }
+  if (head.status !== 0) throw new Error(gitCommandError(cwd, head, 'HEAD'))
   const status = spawnSync('git', ['status', '--porcelain', '-z', '--untracked-files=all'], {
     cwd,
     encoding: 'utf8',
   })
-  if (status.status !== 0) {
-    throw new Error(
-      `${PLATFORM_SLUG} gate run needs git status in ${cwd}: ${status.stderr?.trim() || `git exited ${status.status}`}`,
-    )
-  }
+  if (status.status !== 0) throw new Error(gitCommandError(cwd, status, 'git status'))
   return {
     headCommit: head.stdout.trim(),
     porcelainPaths: status.stdout.split('\0').filter(Boolean),
@@ -185,10 +182,12 @@ export async function runArchitectGate(input: {
   d?: Database
   runner?: ArchitectGateRunner
   gitState?: ArchitectGateGitState
+  checkout?: GateCheckoutObserver
   topLevel?: ArchitectGateTopLevel
   write?: (chunk: string) => void
 }): Promise<ArchitectGateRecord> {
   const { caller, project, gate, checkoutTopLevel } = architectGateTarget(input)
+  refuseInProgressCheckout(checkoutTopLevel, input.checkout)
   ensureMainStackStarted({
     projectId: project.recordId,
     projectName: project.name,

@@ -6,6 +6,7 @@ import {
   changedGateToolingPaths,
   decideBrokerLaunch,
   decideGateCancellation,
+  decideGateCheckoutRefusal,
   decideGateEligibility,
   decideGateExecutionFinalization,
   decideGateHeadCommit,
@@ -132,6 +133,26 @@ test('broker gate records HEAD only for a clean tree', () => {
   expect(decideGateHeadCommit({ headCommit, porcelainPaths: [] })).toBe(headCommit)
   expect(decideGateHeadCommit({ headCommit, porcelainPaths: [' M src/app.ts'] })).toBeNull()
   expect(decideGateHeadCommit({ headCommit: '', porcelainPaths: [] })).toBeNull()
+})
+
+test('a merge in progress with unmerged paths is refused, naming them', () => {
+  expect(
+    decideGateCheckoutRefusal({
+      presentMarkers: ['MERGE_HEAD'],
+      unmergedPaths: ['orchestrator/hooks/orch-heartbeat.sh', 'test_heartbeat_decision.py'],
+    }),
+  ).toBe(
+    'checkout has a merge in progress with unmerged paths: orchestrator/hooks/orch-heartbeat.sh, test_heartbeat_decision.py; finish or abort the operation',
+  )
+})
+
+test('a rebase in progress is refused', () => {
+  expect(decideGateCheckoutRefusal({ presentMarkers: ['REBASE_HEAD'], unmergedPaths: [] })).toBe(
+    'checkout has a rebase in progress; finish or abort the operation',
+  )
+  expect(decideGateCheckoutRefusal({ presentMarkers: ['rebase-merge'], unmergedPaths: [] })).toBe(
+    'checkout has a rebase in progress; finish or abort the operation',
+  )
 })
 
 test('broker tooling compares a rebased worker to the live merge-base, not its recorded base', () => {
