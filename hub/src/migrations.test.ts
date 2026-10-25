@@ -104,6 +104,7 @@ const applicationSchemaRows = (d: Database) =>
     .all(MIGRATIONS_TABLE, SCHEMA_LOCK_TABLE)
 
 const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`
+
 /** Reduce any later journal state to the baseline application-object inventory. */
 function stripPostBaselineApplicationObjects(d: Database): void {
   const foreignKeys =
@@ -929,6 +930,7 @@ describe('hub migration journal', () => {
 
   test('task identity rebuild refuses and names an unresolvable child', () => {
     const d = migratedThrough(8)
+    d.exec('PRAGMA legacy_alter_table = ON')
     d.exec('PRAGMA foreign_keys = OFF')
     d.exec(`INSERT INTO task_status_event(id,task_key,task_record_id,at,to_status) VALUES
       (1,'MISSING-42',NULL,'2026-01-01','open'),
@@ -938,6 +940,8 @@ describe('hub migration journal', () => {
       'unresolved task_status_event rows: 1:MISSING-42, 2:MISSING-43',
     )
     expect(d.query("SELECT name FROM sqlite_master WHERE name='task_new'").get()).toBeNull()
+    expect(d.query('PRAGMA foreign_keys').get()).toEqual({ foreign_keys: 1 })
+    expect(d.query('PRAGMA legacy_alter_table').get()).toEqual({ legacy_alter_table: 1 })
     d.close()
   })
 

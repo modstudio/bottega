@@ -4,6 +4,11 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readInstallAsset } from '../../../shared/embedded-assets.ts'
 import { assetPath } from '../../../shared/install-root.ts'
+import {
+  assertMigrationForeignKeyIntegrity,
+  enterMigrationConnectionPolicy,
+  leaveMigrationConnectionPolicy,
+} from '../../../shared/migration-connection-policy.ts'
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
@@ -793,7 +798,6 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   if (cached) return cached
   const d = new Database(':memory:')
   try {
-    d.exec('PRAGMA foreign_keys = ON')
     applyMigrations(d, folder)
     const hash = canonicalSchemaHash(d)
     expectedSchemaHashes.set(folder, hash)
@@ -853,10 +857,12 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
 function baselineInventory(folder = MIGRATIONS_FOLDER): SchemaInventory {
   const baseline = migrationJournal(folder)[0]!
   const d = new Database(':memory:')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
     executeMigrationSource(d, migrationSource(baseline, folder))
     return schemaInventory(d)
   } finally {
+    leaveMigrationConnectionPolicy(d, connectionSettings)
     d.close()
   }
 }
@@ -988,10 +994,7 @@ function applyMigrationRange(
     : journal.length
   if (boundary < 0) throw new Error(`unknown migration boundary ${beforeMigration}`)
   const allowedEntries = journal.slice(0, boundary)
-  const legacyAlterTable = (
-    d.query('PRAGMA legacy_alter_table').get() as { legacy_alter_table: number }
-  ).legacy_alter_table
-  d.exec('PRAGMA foreign_keys = OFF; PRAGMA legacy_alter_table = OFF')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
     d.exec('BEGIN IMMEDIATE')
     ensureSchemaLock(d)
@@ -1025,18 +1028,7 @@ function applyMigrationRange(
       0,
     )
     stampUserVersion(d, Math.max(readUserVersion(d), highestApplied))
-    const broken = d.query('PRAGMA foreign_key_check').all() as Array<{
-      table: string
-      rowid: number | null
-      parent: string
-      fkid: number
-    }>
-    if (broken.length) {
-      const first = broken[0]!
-      throw new Error(
-        `refusing to commit migration with a dangling foreign key: table ${first.table}, rowid ${first.rowid ?? 'NULL'}, parent ${first.parent}, fkid ${first.fkid}`,
-      )
-    }
+    assertMigrationForeignKeyIntegrity(d)
     d.exec('COMMIT')
     return versions
   } catch (error) {
@@ -1047,8 +1039,7 @@ function applyMigrationRange(
     }
     throw error
   } finally {
-    d.exec('PRAGMA foreign_keys = ON')
-    d.exec(`PRAGMA legacy_alter_table = ${legacyAlterTable}`)
+    leaveMigrationConnectionPolicy(d, connectionSettings)
   }
 }
 

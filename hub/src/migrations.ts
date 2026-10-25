@@ -7,6 +7,11 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { readInstallAsset } from '../../shared/embedded-assets.ts'
 import { assetPath } from '../../shared/install-root.ts'
+import {
+  assertMigrationForeignKeyIntegrity,
+  enterMigrationConnectionPolicy,
+  leaveMigrationConnectionPolicy,
+} from '../../shared/migration-connection-policy.ts'
 import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
 export const MIGRATIONS_FOLDER = assetPath('hub', 'migrations')
 export const MIGRATIONS_TABLE = 'hub_migrations'
@@ -513,8 +518,8 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
   const cached = expectedHashByFolder.get(folder)
   if (cached) return cached
   const d = new Database(':memory:')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
-    d.exec('PRAGMA foreign_keys = ON')
     for (const entry of migrationJournal(folder)) {
       if (entry.tag === '0038_workflow_cursor_uuid_key')
         d.exec(
@@ -526,6 +531,7 @@ export function expectedSchemaHash(folder = MIGRATIONS_FOLDER): string {
     expectedHashByFolder.set(folder, hash)
     return hash
   } finally {
+    leaveMigrationConnectionPolicy(d, connectionSettings)
     d.close()
   }
 }
@@ -580,10 +586,12 @@ function inventoryDiff(actual: SchemaInventory, expected: SchemaInventory): stri
 function baselineInventory(folder = MIGRATIONS_FOLDER): SchemaInventory {
   const baseline = migrationJournal(folder)[0]!
   const d = new Database(':memory:')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
     executeMigrationSource(d, migrationSource(baseline, folder))
     return schemaInventory(d)
   } finally {
+    leaveMigrationConnectionPolicy(d, connectionSettings)
     d.close()
   }
 }
@@ -712,8 +720,9 @@ export function applyMigrations(
   cursorIdentities: readonly WorkflowCursorIdentityRow[] = [],
 ): string[] {
   d.exec('PRAGMA busy_timeout = 15000')
-  d.exec('BEGIN IMMEDIATE')
+  const connectionSettings = enterMigrationConnectionPolicy(d)
   try {
+    d.exec('BEGIN IMMEDIATE')
     ensureSchemaLock(d)
     d.exec(`UPDATE ${SCHEMA_LOCK_TABLE} SET id = 1 WHERE id = 1`)
     const versions = adoptBaseline(d, folder)
@@ -782,6 +791,7 @@ export function applyMigrations(
     }
     applyBackfills(d, folder, backfillValues)
     stampUserVersion(d, migrationJournal(folder).length)
+    assertMigrationForeignKeyIntegrity(d)
     d.exec('COMMIT')
     return versions
   } catch (error) {
@@ -791,5 +801,7 @@ export function applyMigrations(
       /* statement error already aborted the transaction */
     }
     throw error
+  } finally {
+    leaveMigrationConnectionPolicy(d, connectionSettings)
   }
 }
