@@ -44,6 +44,7 @@
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/affected-tests.ts!",
         "scripts/test-focused.ts!",
         "scripts/test-preload.ts!",
         "scripts/**/*.test.ts",

@@ -23,10 +23,15 @@ function scratchDirectory(): string {
   return scratchDir
 }
 
-function emittedRequest(scratchDir: string): { id: string; paths: string[] } {
+function emittedRequest(scratchDir: string): {
+  id: string
+  paths: string[]
+  affected: boolean
+} {
   return JSON.parse(readFileSync(join(scratchDir, FOCUSED_TEST_REQUEST_FILE), 'utf8')) as {
     id: string
     paths: string[]
+    affected: boolean
   }
 }
 
@@ -155,4 +160,22 @@ test('a finished uncollected result is returned before a new request starts', as
   )
   expect(collected).toContain(expectedResult(runId, scratchDir, request))
   expect(emittedRequest(scratchDir)).toEqual(request)
+})
+
+test('an affected request travels through the same scratch file as its paths', async () => {
+  const scratchDir = scratchDirectory()
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const signal = new AbortController().signal
+  const pending = requestFocusedTests({
+    runId,
+    scratchDir,
+    paths: [],
+    affected: true,
+    signal,
+  })
+  const request = emittedRequest(scratchDir)
+  expect(request.affected).toBeTrue()
+  expect(request.paths).toEqual([])
+  answerRequest(scratchDir, request)
+  expect(await pending).toBe(expectedResult(runId, scratchDir, request))
 })

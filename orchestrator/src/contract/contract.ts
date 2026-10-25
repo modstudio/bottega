@@ -805,7 +805,7 @@ than what you expect would happen.
 
 ${CHANGE_GUIDE_INSTRUCTION}
 
-When the \`run_tests\` tool is available, use it with project-relative paths to execute the tests you add or change. If it says focused tests are still running, call \`run_tests\` again to collect their result. A focused test run is evidence for this run; it is never the completion gate and does not replace the mandatory \`run_gate\` call below. When the \`run_gate\` tool is available, run it before reporting done,
+When the \`run_tests\` tool is available, use it with project-relative paths to execute the tests you add or change. If it says focused tests are still running, call \`run_tests\` again to collect their result. When \`run_tests\` accepts \`affected\`, call it once with \`affected: true\` after your own focused tests and before \`run_gate\`, and report its result in the tests section. A focused test run is evidence for this run; it is never the completion gate and does not replace the mandatory \`run_gate\` call below. When the \`run_gate\` tool is available, run it before reporting done,
 call it again while its reply says the gate is still running, and report done only with a finished result or a refusal, recording that last result in your reply's tests section.
 
 REPORT WHAT STOPPED YOU, IN "blockers"

@@ -4,7 +4,7 @@
 import type { RepositoryVisibility } from '../../../shared/repository-visibility.ts'
 import type { TrackerSettings } from '../../../shared/trackers.ts'
 import type { MechanicalCheckEntry } from '../enforcement/mechanical-check-declaration.ts'
-import type { FocusedTestRunner } from '../focused-test/focused-test-decision.ts'
+import type { FocusedTestDeclaration } from '../focused-test/focused-test-decision.ts'
 import type { GateInput } from '../gate/gate-decision.ts'
 import type { Recipe } from '../recipe/recipe.ts'
 import type { AutonomySettings, StoredAutonomySettings } from '../workflow/autonomy.ts'
@@ -168,7 +168,7 @@ export type ProjectSettings = {
   /** Git state consumed by the gate. Absent keeps existing registrations compatible. */
   gateInput?: GateInput
   /** Fixed executable and argv prefix for writer-requested project-relative test paths. */
-  focusedTests?: FocusedTestRunner
+  focusedTests?: FocusedTestDeclaration
   /** Ordered promotion and remote-admission facts after the landing branch merges. */
   release?: ReleaseSettings
   /** Where shared workflows read and write this project's docs and canon. */

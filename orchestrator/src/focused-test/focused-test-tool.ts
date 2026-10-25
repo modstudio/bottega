@@ -20,18 +20,25 @@ export function registerFocusedTestTool(input: {
     {
       description:
         "Run this project's registered focused test runner with project-relative paths. " +
-        'The executable and argv prefix are fixed by orch; paths are appended as distinct argv values.',
-      inputSchema: z.object({ paths: z.array(z.string()) }),
+        'The executable and argv prefix are fixed by orch; paths are appended as distinct argv values. ' +
+        'Set affected to also run the tests of every module that imports what this run changed, ' +
+        "which the project's registered focusedTests.affected command selects.",
+      inputSchema: z.object({
+        paths: z.array(z.string()).optional(),
+        affected: z.boolean().optional(),
+      }),
     },
-    async ({ paths }, context) => {
+    async ({ paths, affected }, context) => {
       try {
-        const decision = focusedTestEligibility(input.runId, input.token)
+        const requestedAffected = affected === true
+        const decision = focusedTestEligibility(input.runId, input.token, requestedAffected)
         if (!decision.eligible) return input.text(decision.message)
         return input.text(
           await requestFocusedTests({
             runId: input.runId,
             scratchDir: runScratchDir(input.runId),
-            paths,
+            paths: paths ?? [],
+            affected: requestedAffected,
             signal: context.mcpReq.signal,
           }),
         )

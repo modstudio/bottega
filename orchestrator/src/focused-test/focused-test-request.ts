@@ -123,8 +123,9 @@ function decideCurrentExecution(scratchDir: string): {
 function startFocusedTestExecution(
   scratchDir: string,
   paths: string[],
+  affected: boolean,
 ): ReturnType<typeof decideCurrentExecution> {
-  const request = { id: randomUUID(), paths }
+  const request = { id: randomUUID(), paths, affected }
   if (!tryCreateExecution(scratchDir, request)) return decideCurrentExecution(scratchDir)
   try {
     writeFocusedTestFileAtomic(join(scratchDir, FOCUSED_TEST_REQUEST_FILE), JSON.stringify(request))
@@ -142,11 +143,12 @@ function startFocusedTestExecution(
 function admitFocusedTestExecution(
   scratchDir: string,
   paths: string[],
+  affected: boolean,
 ): ReturnType<typeof decideCurrentExecution> {
   const current = decideCurrentExecution(scratchDir)
   if (current.decision.action !== 'start') return current
   if (current.execution) clearExecution(scratchDir, current.execution)
-  const admitted = startFocusedTestExecution(scratchDir, paths)
+  const admitted = startFocusedTestExecution(scratchDir, paths, affected)
   if (!admitted.execution) throw new Error('focused test execution lock has no request')
   return admitted
 }
@@ -202,6 +204,8 @@ export async function requestFocusedTests(
     runId: string
     scratchDir: string
     paths: string[]
+    /** Also run the tests of every module that imports what this run changed. */
+    affected?: boolean
     signal: AbortSignal
   },
   dependencies: FocusedTestWaitDependencies = defaultWaitDependencies,
@@ -210,6 +214,7 @@ export async function requestFocusedTests(
   const { execution, resultPath, decision } = admitFocusedTestExecution(
     input.scratchDir,
     input.paths,
+    input.affected === true,
   )
   if (!execution || !resultPath) throw new Error('focused test request has no execution')
   const introduction = formatFocusedTestRequestDecision(decision, input.paths)

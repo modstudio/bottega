@@ -179,6 +179,7 @@ export const ROOT_TEST_FILES = [
   'scripts/architecture-hub-packages.test.ts',
   'scripts/import-scanner.test.ts',
   'scripts/quality/test-timing-decision.test.ts',
+  'scripts/affected-tests.test.ts',
   'scripts/test-focused.test.ts',
   'scripts/check-sql-literal-schema.test.ts',
   'scripts/check-hosted-sql-schema.test.ts',
