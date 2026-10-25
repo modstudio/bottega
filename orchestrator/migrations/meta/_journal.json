@@ -1214,6 +1214,13 @@
       "when": 1793577600025,
       "tag": "0160_agent_port_baseline_uuid_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "6",
+      "when": 1793577600026,
+      "tag": "0161_metric_receipt_cache_uuid_keys",
+      "breakpoints": true
     }
   ]
 }

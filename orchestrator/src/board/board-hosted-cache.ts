@@ -1,6 +1,7 @@
 // concern: hosted-board-read-cache
 /** Refreshes the hosted read cache and narrows visible rows to this machine's readers. */
 import type { Database } from 'bun:sqlite'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { db, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
 import {
   type RecordApiClient,
@@ -137,8 +138,8 @@ export function cacheHostedBoardReceipt(
   database
     .query(
       `INSERT INTO hosted_board_receipt_cache
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       SELECT ?,?,?,?,?,0 WHERE EXISTS (
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       SELECT ?,?,?,?,?,?,0 WHERE EXISTS (
          SELECT 1 FROM hosted_board_message_cache WHERE id=?
        ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        audience_at_posting=excluded.audience_at_posting,
@@ -151,6 +152,7 @@ export function cacheHostedBoardReceipt(
        sync_error=NULL`,
     )
     .run(
+      newRecordId(),
       receipt.messageId,
       receipt.readerSession,
       receipt.audienceAtPosting ? 1 : 0,
@@ -170,8 +172,8 @@ export function queueHostedBoardAcknowledgement(
   const result = database
     .query(
       `INSERT INTO hosted_board_receipt_cache
-       (message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       SELECT ?,?,?,?, ?,1 WHERE EXISTS (
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       SELECT ?,?,?,?,?, ?,1 WHERE EXISTS (
          SELECT 1 FROM hosted_board_message_cache WHERE id=?
        ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        audience_at_posting=excluded.audience_at_posting,
@@ -180,6 +182,7 @@ export function queueHostedBoardAcknowledgement(
        pending_sync=1,sync_error=NULL`,
     )
     .run(
+      newRecordId(),
       messageId,
       readerSession,
       audienceAtPosting ? 1 : 0,
@@ -662,13 +665,13 @@ function takeHostedReportReplySuccessor(
     context.database
       .query(
         `INSERT INTO hosted_board_receipt_cache
-         (message_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
-         VALUES (?,?,0,1,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         (record_id,message_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
+         VALUES (?,?,?,0,1,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
          successor=1,
          pending_sync=1`,
       )
-      .run(message.id, context.reader, new Date(context.clock).toISOString())
+      .run(newRecordId(), message.id, context.reader, new Date(context.clock).toISOString())
     context.claimFacts.set(message.id, {
       rootAuthorReceivedReply: context.claimFacts.get(message.id)?.rootAuthorReceivedReply ?? false,
       successorDelivered: true,
@@ -929,11 +932,11 @@ export async function markCachedHostedDelivered(
     writeTransaction(() => {
       database
         .query(
-          `INSERT INTO hosted_board_receipt_cache(message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       VALUES (?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+          `INSERT INTO hosted_board_receipt_cache(record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
         )
-        .run(id, reader, posting ? 1 : 0, at)
+        .run(newRecordId(), id, reader, posting ? 1 : 0, at)
     }, database)
     await syncCachedHostedReceipt(reader, id, posting, { client, database, deadline })
   }

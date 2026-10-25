@@ -10,6 +10,7 @@ import {
   lensPortReferenceOrphanCounts,
   portStaleCopyConflicts,
 } from './lens-port-migration-preflight.ts'
+import { assertMetricIdentities } from './metric-receipt-cache-uuid-migration-preflight.ts'
 import {
   CONNECTION_SCHEMA_INVARIANT,
   type MigrationJournalEntry,
@@ -971,6 +972,7 @@ function prepareMigrationEntry(
   }
   if (entry.tag === WORKFLOW_UUID_KEY_MIGRATION) prepareWorkflowUuidMigration(d)
   if (entry.tag === '0160_agent_port_baseline_uuid_keys') assertAgentPortBaselineIdentities(d)
+  if (entry.tag === '0161_metric_receipt_cache_uuid_keys') assertMetricIdentities(d)
 }
 
 function applyMigrationRange(
