@@ -232,12 +232,9 @@ async function detachResolved(
    */
   // A retry names the directory the original ran in; everything else is here.
   const cwd = spec.cwd ?? process.cwd()
-  const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName))
-  const firstTurn = resumeFacts(
-    spec.resume?.kind ?? null,
-    '',
-    spec.resume?.parent ?? null,
-  ).isFirstTurn
+  const detachedLinks = await detachedRunLinks(jobName, cwd, spec)
+  const mcpRequest = effectiveMcpRequest(spec.mcp, job(jobName)),
+    firstTurn = resumeFacts(spec.resume?.kind ?? null, '', spec.resume?.parent ?? null).isFirstTurn
   const seed = !firstTurn
     ? spec.seed
     : preflight(
@@ -257,7 +254,7 @@ async function detachResolved(
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
-  const { identity, pendingRecordId, detached, links } = await detachedRunLinks(jobName, cwd, spec)
+  const { identity, pendingRecordId, detached, links } = detachedLinks
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
