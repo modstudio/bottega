@@ -2,6 +2,7 @@
 /** One tracker task read as the floor verifier consumes it. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { isTrackerCommentId } from '../../../shared/trackers.ts'
 
 export type HubTaskRead = {
   key: string
@@ -25,11 +26,7 @@ type HubTaskReadJson = {
 
 /** The ids a task read carries, dropping the entries that name no comment. */
 function carriedCommentIds(ids: Array<number | string | undefined>): string[] {
-  return ids
-    .filter((id): id is number | string =>
-      typeof id === 'string' ? id.length > 0 : Number.isInteger(id),
-    )
-    .map(String)
+  return ids.filter(isTrackerCommentId).map(String)
 }
 
 /**

@@ -346,15 +346,17 @@ const workspaceCreatedTaskKey = (result: unknown): string | undefined => {
   return nonEmptyUppercase(record.short_id)
 }
 
+/** Whether a tracker reply entry names a comment: a non-empty string or an integer. */
+export const isTrackerCommentId = (id: unknown): id is string | number =>
+  typeof id === 'string' ? id.length > 0 : Number.isInteger(id)
+
 /** The ids a tracker task read reports, or null when that read carries no comments. */
 const trackerTaskCommentIds = (reply: unknown): string[] | null => {
   const comments = (reply as { comments?: { id?: string | number }[] } | null)?.comments
   if (!Array.isArray(comments)) return null
   return comments
     .map((comment) => comment?.id)
-    .filter((id): id is string | number =>
-      typeof id === 'string' ? id.length > 0 : Number.isInteger(id),
-    )
+    .filter(isTrackerCommentId)
     .map(String)
 }
 
