@@ -432,8 +432,8 @@ function AutonomySection({ project, options, onProject, showChooser }: AutonomyS
             label="Preset"
             hint={
               userPreset === undefined
-                ? 'Unknown until you sign in.'
-                : 'Choosing a preset clears your stage overrides, so every stage follows it.'
+                ? 'Unknown until you sign in. A stricter setting applies to workflows already running; a looser one applies to workflows composed afterwards.'
+                : 'Choosing a preset clears your stage overrides, so every stage follows it. A stricter setting applies to workflows already running; a looser one applies to workflows composed afterwards.'
             }
             control={
               <Segmented
@@ -593,7 +593,7 @@ function HostedAutonomySection({ project, options, onProject, showChooser }: Aut
         <div className="space-y-3">
           <SettingBlock
             label="Preset"
-            hint="Choosing a preset clears your stage overrides, so every stage follows it."
+            hint="Choosing a preset clears your stage overrides, so every stage follows it. A stricter setting applies to workflows already running; a looser one applies to workflows composed afterwards."
             control={
               <Segmented
                 label="Autonomy preset"

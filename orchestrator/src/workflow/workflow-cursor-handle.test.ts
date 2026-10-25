@@ -54,7 +54,14 @@ function installKeylessWorkflow(d: Database, slug: string): void {
       title: 'Keyless fixture',
       description: 'Exercises independent keyless runs.',
       arguments: [{ name: 'key', required: false, description: 'Task key.' }],
-      modes: [{ slug: 'default', title: 'Default', default: true, steps: ['score', 'complete'] }],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: ['score', 'complete'],
+        },
+      ],
     },
     'test fixture',
     'test',
@@ -73,6 +80,8 @@ test('two keyless runs in one session have distinct handles and advance independ
     {},
     context,
     d,
+    {},
+    {},
   )
   const secondComposition = composeWorkflowWithCursor(
     'keyless-runs',
@@ -81,6 +90,8 @@ test('two keyless runs in one session have distinct handles and advance independ
     {},
     context,
     d,
+    {},
+    {},
   )
   const first = { cursor: firstComposition.cursor!.id, notice: '' }
   const second = { cursor: secondComposition.cursor!.id, notice: '' }
@@ -94,7 +105,7 @@ test('two keyless runs in one session have distinct handles and advance independ
       'default',
       context,
       d,
-      undefined,
+      {},
       first.cursor,
     ),
   ).toThrow(`--mode default --cursor ${first.cursor}`)
@@ -136,6 +147,8 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
     {},
     context,
     d,
+    {},
+    {},
   )
   const first = getWorkflowStepWithCursor(
     'compose-then-step',
@@ -145,9 +158,12 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
     'default',
     context,
     d,
+    {},
   )
   expect(first.cursor).toBe(composed.cursor!.id)
-  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 1 })
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
+    n: 1,
+  })
 
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   nextWorkflowStep(
@@ -170,9 +186,12 @@ test('step 1 reuses one untouched composed keyless cursor but opens after it adv
     'default',
     context,
     d,
+    {},
   )
   expect(second.cursor).not.toBe(first.cursor)
-  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 2 })
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
+    n: 2,
+  })
 })
 
 test('step 1 ignores two advanced keyless cursors and opens a third', () => {
@@ -185,6 +204,8 @@ test('step 1 ignores two advanced keyless cursors and opens a third', () => {
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
   const second = composeWorkflowWithCursor(
     'advanced-keyless-runs',
@@ -193,6 +214,8 @@ test('step 1 ignores two advanced keyless cursors and opens a third', () => {
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   for (const cursor of [first, second])
@@ -217,9 +240,12 @@ test('step 1 ignores two advanced keyless cursors and opens a third', () => {
     'default',
     context,
     d,
+    {},
   )
   expect([first, second]).not.toContain(third.cursor)
-  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 3 })
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
+    n: 3,
+  })
 })
 
 test('step 1 reuses the untouched cursor when another keyless cursor is advanced', () => {
@@ -232,6 +258,8 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
   const untouched = composeWorkflowWithCursor(
     'mixed-keyless-runs',
@@ -240,6 +268,8 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   nextWorkflowStep(
@@ -263,9 +293,12 @@ test('step 1 reuses the untouched cursor when another keyless cursor is advanced
     'default',
     context,
     d,
+    {},
   )
   expect(fetched.cursor).toBe(untouched)
-  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 2 })
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
+    n: 2,
+  })
 })
 
 test('step 1 reuses a cursor whose trail contains only an argument rebound', () => {
@@ -278,6 +311,8 @@ test('step 1 reuses a cursor whose trail contains only an argument rebound', () 
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
   d.query('UPDATE workflow_cursor SET closed=? WHERE number=?').run(
     JSON.stringify([
@@ -300,9 +335,12 @@ test('step 1 reuses a cursor whose trail contains only an argument rebound', () 
     'default',
     context,
     d,
+    {},
   )
   expect(fetched.cursor).toBe(opened)
-  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 1 })
+  expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
+    n: 1,
+  })
 })
 
 test('step 1 refuses when two untouched keyless cursors match', () => {
@@ -315,6 +353,8 @@ test('step 1 refuses when two untouched keyless cursors match', () => {
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
   const second = composeWorkflowWithCursor(
     'untouched-keyless-runs',
@@ -323,6 +363,8 @@ test('step 1 refuses when two untouched keyless cursors match', () => {
     {},
     context,
     d,
+    {},
+    {},
   ).cursor!.id
 
   expect(() =>
@@ -334,6 +376,7 @@ test('step 1 refuses when two untouched keyless cursors match', () => {
       'default',
       context,
       d,
+      {},
     ),
   ).toThrow(
     `more than one open keyless workflow cursor matches; pass a cursor handle:\n` +
@@ -354,6 +397,7 @@ test('a handle to a done or abandoned cursor never opens a replacement', () => {
       'default',
       context,
       d,
+      {},
     )
     d.query('UPDATE workflow_cursor SET state=? WHERE number=?').run(state, opened.cursor)
     expect(() =>
@@ -365,20 +409,35 @@ test('a handle to a done or abandoned cursor never opens a replacement', () => {
         'default',
         context,
         d,
-        undefined,
+        {},
         opened.cursor,
       ),
     ).toThrow(
       `cursor ${opened.cursor} is ${state}; a new run is opened by fetching step 1 without a handle`,
     )
-    expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({ n: 1 })
+    expect(d.query('SELECT count(*) AS n FROM workflow_cursor').get()).toEqual({
+      n: 1,
+    })
   }
 })
 
 test('a handle validates supplied identity and serves the active step for an earlier request', () => {
   const d = database()
-  const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-  const opened = getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+  const args = {
+    key: 'DEV-822',
+    branch: 'DEV-822-work',
+    worktree: '/tmp/work',
+  }
+  const opened = getWorkflowStepWithCursor(
+    'flow',
+    'fixture',
+    'rebase',
+    args,
+    'default',
+    context,
+    d,
+    {},
+  )
   d.query("UPDATE workflow_cursor SET enforcement='note-only' WHERE number=?").run(opened.cursor)
   nextWorkflowStep(
     'flow',
@@ -400,7 +459,7 @@ test('a handle validates supplied identity and serves the active step for an ear
     'default',
     context,
     d,
-    undefined,
+    {},
     opened.cursor,
   )
   expect(served.slug).toBe('lens')
@@ -414,7 +473,7 @@ test('a handle validates supplied identity and serves the active step for an ear
       'default',
       context,
       d,
-      undefined,
+      {},
       opened.cursor,
     ),
   ).toThrow(`cursor ${opened.cursor} project mismatch`)
@@ -431,6 +490,7 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
     'default',
     context,
     d,
+    {},
   )
   awaitWorkflowRuling(
     'adopt-key',
@@ -458,22 +518,40 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
   )
   const adopted = d
     .query('SELECT workflow_key,instance_id,args FROM workflow_cursor WHERE number=?')
-    .get(opened.cursor) as { workflow_key: string; instance_id: string; args: string }
+    .get(opened.cursor) as {
+    workflow_key: string
+    instance_id: string
+    args: string
+  }
   expect(adopted.workflow_key).toBe('DEV-1082')
   expect(adopted.instance_id).toBe('')
   expect(JSON.parse(adopted.args).key).toBe('DEV-1082')
-  expect(d.query('SELECT workflow_key FROM question').get()).toEqual({ workflow_key: 'DEV-1082' })
+  expect(d.query('SELECT workflow_key FROM question').get()).toEqual({
+    workflow_key: 'DEV-1082',
+  })
   const outbox = d
     .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
     .get()!
-  expect(JSON.parse(outbox.payload)).toMatchObject({ workflowKey: 'DEV-1082', revision: 3 })
+  expect(JSON.parse(outbox.payload)).toMatchObject({
+    workflowKey: 'DEV-1082',
+    revision: 3,
+  })
   const keyedArgs = { key: 'DEV-1082' }
   expect(
-    getWorkflowStepWithCursor('adopt-key', 'fixture', 'complete', keyedArgs, 'default', context, d)
-      .cursor,
+    getWorkflowStepWithCursor(
+      'adopt-key',
+      'fixture',
+      'complete',
+      keyedArgs,
+      'default',
+      context,
+      d,
+      {},
+    ).cursor,
   ).toBe(opened.cursor)
   expect(
-    composeWorkflowWithCursor('adopt-key', 'fixture', 'default', keyedArgs, context, d).cursor?.id,
+    composeWorkflowWithCursor('adopt-key', 'fixture', 'default', keyedArgs, context, d, {}, {})
+      .cursor?.id,
   ).toBe(opened.cursor)
   expect(
     awaitWorkflowRuling('adopt-key', 'fixture', 'default', keyedArgs, 'Done?', context, d, () => {})
@@ -510,6 +588,7 @@ test('adoption refuses a key held by another open cursor', () => {
     'default',
     context,
     d,
+    {},
   )
   const keyless = getWorkflowStepWithCursor(
     'adopt-conflict',
@@ -519,6 +598,7 @@ test('adoption refuses a key held by another open cursor', () => {
     'default',
     context,
     d,
+    {},
   )
   d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
   expect(() =>

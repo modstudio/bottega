@@ -1,7 +1,5 @@
-import type { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
@@ -12,215 +10,24 @@ import {
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
-  listWorkflowCursors,
   nextWorkflowStep,
   ruleWorkflow,
-  workflowCursorProjectScope,
 } from './workflow-cursor.ts'
-import { decideCursorArguments } from './workflow-cursor-arguments.ts'
-import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
+import { listWorkflowCursors } from './workflow-cursor-list.ts'
+import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
+import {
+  args,
+  closeStep,
+  context,
+  database,
+  installEvidence,
+  matchingCheckout,
+  testPorts,
+} from './workflow-cursor-test.fixture.ts'
 import { renderWorkflowComposition } from './workflow-render.ts'
-import { seedWorkflows } from './workflow-seeds.ts'
-import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
-const database = testDatabaseFixture((d) => {
-  seedWorkflows(d)
-  installWorkflowStoreFixture(d)
-  d.query(
-    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
-  ).run(
-    'fixture',
-    '/fixture',
-    'bun',
-    JSON.stringify({
-      gate: 'bun run check',
-      trunk: 'develop',
-      docs: { protocol: 'orch-docs' },
-      tracker: { protocol: 'hub' },
-    }),
-  )
-})
-
-const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-const context = { session: 'session-one' }
-const matchingCheckout = {
-  headIsTipOrAncestor: true,
-  landingBranch: 'main',
-  ...{ project: 'fixture', branch: args.branch, checkoutPath: '/tmp/work' },
-}
-
-const testPorts = {
-  readTask: (key: string) => ({
-    key,
-    status: 'done' as const,
-    statusCategory: 'done' as const,
-    commentIds: [1],
-  }),
-  runHasArtifacts: () => true,
-  resolveCheckout: () => matchingCheckout,
-  viewPullRequest: () => ({
-    state: 'MERGED',
-    mergedAt: '2026-09-01',
-    headRefName: 'DEV-822-work',
-    baseRefName: 'main',
-    url: 'https://github.com/acme/app/pull/1',
-  }),
-  resolveTreeCommit: () => 'abc',
-}
-
-function installEvidence(
-  d: Database,
-  project: string,
-  slug: string,
-  mode: string,
-  callArgs: Record<string, string>,
-  callContext: { session?: string | null; instance?: string },
-): WorkflowEvidenceInput {
-  const key = callArgs.key?.trim() ?? ''
-  const instance = key ? '' : (callContext.session ?? callContext.instance ?? '')
-  const row = d
-    .query<{ record_id: string; ordinal: number; step_slug: string; state: string }, string[]>(
-      `SELECT record_id,ordinal,step_slug,state FROM workflow_cursor
-        WHERE project=? AND workflow_slug=? AND mode_slug=? AND workflow_key=?
-          AND ${key ? 'instance_id=?' : 'session_id=?'} ORDER BY number DESC`,
-    )
-    .get(project, slug, mode, key, instance)
-  if (!row || row.state === 'done' || row.state === 'abandoned') return {}
-  const gate =
-    d
-      .query<{ number: number }, []>(
-        `SELECT number FROM gate_execution WHERE finished_at IS NOT NULL AND exit_code=0 LIMIT 1`,
-      )
-      .get()?.number ??
-    (() => {
-      const recordId = newRecordId()
-      d.query(
-        `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-         VALUES (?, NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/tmp/work','abc')`,
-      ).run(recordId)
-      return d
-        .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
-        .get(recordId)!.number
-    })()
-  const probe =
-    d.query<{ number: number }, []>('SELECT number FROM probe LIMIT 1').get()?.number ??
-    (
-      d
-        .query<{ number: number }, []>(
-          `INSERT INTO probe (record_id,number,command,cwd,head_commit,exit_code,output_tail,created_at)
-           VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM probe),'["true"]','/tmp','abc',0,'','2026-09-01') RETURNING number`,
-        )
-        .get() as { number: number }
-    ).number
-  const taskKey = key || 'DEV-822'
-  d.query(
-    `INSERT OR IGNORE INTO branch_landing_record
-      (record_id,project,project_record_id,branch,tip,pr_number,merge_commit,merged_at,recorded_at)
-     VALUES (?,?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?)`,
-  ).run(
-    newRecordId(),
-    project,
-    project,
-    `${taskKey}-work`,
-    'abc',
-    1,
-    'def',
-    '2026-09-01',
-    '2026-09-01',
-  )
-  const ruling = d
-    .query<{ number: number }, (string | number | null)[]>(
-      `INSERT INTO question
-        (number,record_id,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,answered_at,answer,
-         workflow_step_ordinal,workflow_step_slug)
-       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?, 'workflow', ?, 'yes', ?, ?) RETURNING number`,
-    )
-    .get(
-      row.record_id,
-      key || null,
-      '2026-09-01',
-      'floor ruling?',
-      '2026-09-01',
-      row.ordinal + 1,
-      row.step_slug,
-    ) as { number: number }
-  return { gate, artifact: `probe:${probe}`, ruling: ruling.number, task: taskKey }
-}
-
-function closeStep(
-  slug: string,
-  project: string,
-  mode: string,
-  callArgs: Record<string, string>,
-  note: string | undefined,
-  callContext: { session?: string | null; instance?: string },
-  d: Database,
-) {
-  return nextWorkflowStep(
-    slug,
-    project,
-    mode,
-    callArgs,
-    note,
-    callContext,
-    d,
-    installEvidence(d, project, slug, mode, callArgs, callContext),
-    testPorts,
-  )
-}
-
 describe('workflow cursor adapter', () => {
-  test('late cursor arguments merge into empty slots and conflicting values refuse', () => {
-    const none = new Set<string>()
-    expect(decideCursorArguments({ key: 'DEV-822' }, { branch: 'DEV-822-work' }, none)).toEqual({
-      action: 'merge',
-      args: { key: 'DEV-822', branch: 'DEV-822-work' },
-      rebindings: [],
-    })
-    expect(
-      decideCursorArguments({ key: 'DEV-822', branch: ' ' }, { branch: 'work' }, none),
-    ).toEqual({
-      action: 'merge',
-      args: { key: 'DEV-822', branch: 'work' },
-      rebindings: [],
-    })
-    expect(
-      decideCursorArguments(
-        { key: 'DEV-822', worktree: '/tmp/old' },
-        { worktree: '/tmp/new' },
-        new Set(['worktree']),
-      ),
-    ).toEqual({
-      action: 'merge',
-      args: { key: 'DEV-822', worktree: '/tmp/new' },
-      rebindings: [{ name: 'worktree', oldValue: '/tmp/old', newValue: '/tmp/new' }],
-    })
-    expect(
-      decideCursorArguments(
-        { key: 'DEV-822', branch: 'DEV-822-work' },
-        { branch: 'DEV-999-work' },
-        none,
-      ),
-    ).toEqual({
-      action: 'refuse',
-      reason:
-        'workflow argument "branch" conflicts with the cursor: stored value "DEV-822-work", supplied value "DEV-999-work"',
-    })
-    expect(decideCursorArguments({ key: 'DEV-822' }, { key: 'DEV-999' }, new Set(['key']))).toEqual(
-      {
-        action: 'refuse',
-        reason:
-          'workflow argument "key" conflicts with the cursor: stored value "DEV-822", supplied value "DEV-999"',
-      },
-    )
-    expect(decideCursorArguments({}, { key: 'DEV-822' }, none)).toEqual({
-      action: 'merge',
-      args: {},
-      rebindings: [],
-    })
-  })
-
   test('next advances with a rebound argument from the pinned workflow and records the event', () => {
     const d = database()
     const draft = setWorkflowLocal(
@@ -230,7 +37,12 @@ describe('workflow cursor adapter', () => {
         description: 'Exercises cursor argument rebinding.',
         arguments: [
           { name: 'key', required: true, description: 'Task key.' },
-          { name: 'worktree', required: true, rebind: true, description: 'Worktree path.' },
+          {
+            name: 'worktree',
+            required: true,
+            rebind: true,
+            description: 'Worktree path.',
+          },
           { name: 'branch', required: false, description: 'Review branch.' },
         ],
         modes: [
@@ -254,6 +66,8 @@ describe('workflow cursor adapter', () => {
       { key: 'DEV-822', worktree: '/tmp/old' },
       context,
       d,
+      {},
+      {},
     )
 
     expect(
@@ -311,6 +125,8 @@ describe('workflow cursor adapter', () => {
       { key: 'DEV-822', worktree: '/tmp/old' },
       context,
       d,
+      {},
+      {},
     )
     const current = setWorkflowLocal(
       'policy-fixture',
@@ -337,7 +153,9 @@ describe('workflow cursor adapter', () => {
         d,
       ),
     ).toContain('this is the last step of policy-fixture')
-    const row = d.query('SELECT args FROM workflow_cursor').get() as { args: string }
+    const row = d.query('SELECT args FROM workflow_cursor').get() as {
+      args: string
+    }
     expect(JSON.parse(row.args).worktree).toBe('/tmp/new')
   })
 
@@ -366,13 +184,22 @@ describe('workflow cursor adapter', () => {
 
   test('compose creates once and recompose reports an advanced cursor', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     expect(
       d.query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor').get()?.record_id,
     ).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
-    const recomposed = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const recomposed = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
 
     expect(d.query('SELECT count(*) count FROM workflow_cursor').get()).toEqual({ count: 1 })
     expect(renderWorkflowComposition(recomposed)).toContain(
@@ -382,7 +209,7 @@ describe('workflow cursor adapter', () => {
 
   test('recompose persists and renders a rebound argument while refusing other conflicts', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
 
     const reopenedArgs = { ...args, worktree: '/tmp/reopened' }
     const recomposed = composeWorkflowWithCursor(
@@ -392,6 +219,8 @@ describe('workflow cursor adapter', () => {
       reopenedArgs,
       context,
       d,
+      {},
+      {},
     )
 
     expect(recomposed.arguments.worktree).toBe('/tmp/reopened')
@@ -417,56 +246,122 @@ describe('workflow cursor adapter', () => {
         { ...reopenedArgs, branch: 'DEV-822-other' },
         context,
         d,
+        {},
+        {},
       ),
     ).toThrow('workflow argument "branch" conflicts with the cursor')
   })
 
   test('abandoned cursor is retired and compose starts a fresh run', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
 
-    const recomposed = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const recomposed = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
 
-    expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
+    expect(recomposed.cursor).toMatchObject({
+      n: 1,
+      slug: 'rebase',
+      state: 'running',
+    })
     const rows = d
       .query('SELECT number id,instance_id,state,closed FROM workflow_cursor ORDER BY number')
-      .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
+      .all() as Array<{
+      id: number
+      instance_id: string
+      state: string
+      closed: string
+    }>
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ instance_id: `#${rows[0]!.id}`, state: 'abandoned' })
+    expect(rows[0]).toMatchObject({
+      instance_id: `#${rows[0]!.id}`,
+      state: 'abandoned',
+    })
     expect(JSON.parse(rows[0]!.closed)).toMatchObject([
       { n: 1, slug: 'rebase', note: 'abandoned: operator stopped' },
     ])
-    expect(rows[1]).toMatchObject({ instance_id: '', state: 'running', closed: '[]' })
+    expect(rows[1]).toMatchObject({
+      instance_id: '',
+      state: 'running',
+      closed: '[]',
+    })
   })
 
   test('done cursor is retired and compose starts a fresh run', () => {
     const d = database()
-    const composition = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const composition = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
     for (const step of composition.steps)
       closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
 
-    const recomposed = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const recomposed = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
 
-    expect(recomposed.cursor).toMatchObject({ n: 1, slug: 'rebase', state: 'running' })
+    expect(recomposed.cursor).toMatchObject({
+      n: 1,
+      slug: 'rebase',
+      state: 'running',
+    })
     const rows = d
       .query('SELECT number id,instance_id,state,closed FROM workflow_cursor ORDER BY number')
-      .all() as Array<{ id: number; instance_id: string; state: string; closed: string }>
+      .all() as Array<{
+      id: number
+      instance_id: string
+      state: string
+      closed: string
+    }>
     expect(rows).toHaveLength(2)
-    expect(rows[0]).toMatchObject({ instance_id: `#${rows[0]!.id}`, state: 'done' })
-    const closed = JSON.parse(rows[0]!.closed) as Array<{ slug: string; note: string }>
+    expect(rows[0]).toMatchObject({
+      instance_id: `#${rows[0]!.id}`,
+      state: 'done',
+    })
+    const closed = JSON.parse(rows[0]!.closed) as Array<{
+      slug: string
+      note: string
+    }>
     expect(closed).toHaveLength(composition.steps.length)
     expect(closed[0]).toMatchObject({ slug: 'rebase', note: 'closed rebase' })
-    expect(closed.at(-1)).toMatchObject({ slug: composition.steps.at(-1)!.slug })
-    expect(rows[1]).toMatchObject({ instance_id: '', state: 'running', closed: '[]' })
+    expect(closed.at(-1)).toMatchObject({
+      slug: composition.steps.at(-1)!.slug,
+    })
+    expect(rows[1]).toMatchObject({
+      instance_id: '',
+      state: 'running',
+      closed: '[]',
+    })
   })
 
   test('first step fetch retires a terminal cursor and starts a fresh run', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
 
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
 
     expect(
       d.query("SELECT count(*) count FROM workflow_cursor WHERE state='running'").get(),
@@ -480,20 +375,20 @@ describe('workflow cursor adapter', () => {
 
   test('step fetch on a terminal cursor directs the caller to compose again', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
 
     expect(() =>
-      getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d),
+      getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d, {}),
     ).toThrow('workflow flow for DEV-822 is abandoned; compose it again to start a new run')
   })
 
   test('fetch ahead refuses, next records a note and advances', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     expect(() =>
-      getWorkflowStepWithCursor('flow', 'fixture', 'score', args, 'default', context, d),
+      getWorkflowStepWithCursor('flow', 'fixture', 'score', args, 'default', context, d, {}),
     ).toThrow(/at step 1 rebase.*workflow next flow/)
 
     expect(closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)).toContain(
@@ -505,14 +400,27 @@ describe('workflow cursor adapter', () => {
     })
     expect(
       JSON.parse(
-        (d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }).closed,
+        (
+          d.query('SELECT closed FROM workflow_cursor').get() as {
+            closed: string
+          }
+        ).closed,
       )[0],
     ).toMatchObject({ n: 1, slug: 'rebase', note: 'rebased' })
   })
 
   test('last next marks done and open listing omits it', () => {
     const d = database()
-    const composition = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const composition = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
     getWorkflowStepWithCursor(
       'flow',
       'fixture',
@@ -521,6 +429,7 @@ describe('workflow cursor adapter', () => {
       'default',
       context,
       d,
+      {},
     )
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toHaveLength(1)
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!.line).toBe(
@@ -534,7 +443,9 @@ describe('workflow cursor adapter', () => {
       `Workflow flow for DEV-822 is finished: ${composition.steps.length} steps closed.`,
     )
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
-    expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({ state: 'done' })
+    expect(d.query('SELECT state FROM workflow_cursor').get()).toEqual({
+      state: 'done',
+    })
   })
 
   test('keyless cursor finish text names its mode', () => {
@@ -568,6 +479,8 @@ describe('workflow cursor adapter', () => {
       keylessArgs,
       keylessContext,
       d,
+      {},
+      {},
     )
     let output = ''
 
@@ -589,7 +502,7 @@ describe('workflow cursor adapter', () => {
 
   test('await records a question and fetching the current step resumes', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Which ruling?', context, d, () => {})
     expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
       state: 'awaiting-ruling',
@@ -605,7 +518,7 @@ describe('workflow cursor adapter', () => {
       closed_at: null,
     })
 
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({
       state: 'running',
       question: null,
@@ -617,7 +530,7 @@ describe('workflow cursor adapter', () => {
 
   test('re-ask is idempotent and rule records the answer before resuming the same step', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     const first = awaitWorkflowRuling(
       'flow',
       'fixture',
@@ -640,7 +553,9 @@ describe('workflow cursor adapter', () => {
     )
     expect(first.questionId).toBe(1)
     expect(updated.questionId).toBe(1)
-    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 1 })
+    expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
+      count: 1,
+    })
 
     expect(
       ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', true, 'mcp', context, d),
@@ -666,7 +581,7 @@ describe('workflow cursor adapter', () => {
 
   test('workflow rule requires owner authority or operator override and audits the actual actor', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     process.env.CLAUDE_CODE_SESSION_ID = 'foreign-session'
@@ -686,14 +601,16 @@ describe('workflow cursor adapter', () => {
 
   test('a plain operator may rule when the workflow owner is gone', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
     d.query('UPDATE workflow_cursor SET updated_at=?').run('2020-01-01T00:00:00.000Z')
     const prior = process.env.CLAUDE_CODE_SESSION_ID
     delete process.env.CLAUDE_CODE_SESSION_ID
     try {
       ruleWorkflow('flow', 'fixture', 'default', args, 'Proceed.', false, 'cli', context, d)
-      expect(d.query('SELECT answer FROM question').get()).toEqual({ answer: 'Proceed.' })
+      expect(d.query('SELECT answer FROM question').get()).toEqual({
+        answer: 'Proceed.',
+      })
       expect(d.query('SELECT actor_session FROM question_mutation_audit').get()).toEqual({
         actor_session: expect.stringMatching(/^operator:/),
       })
@@ -705,7 +622,7 @@ describe('workflow cursor adapter', () => {
 
   test("an adopted workflow rule keeps the gone owner's session", () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Proceed?', context, d, () => {})
     d.query('UPDATE workflow_cursor SET updated_at=?').run('2020-01-01T00:00:00.000Z')
     const prior = process.env.CLAUDE_CODE_SESSION_ID
@@ -726,7 +643,7 @@ describe('workflow cursor adapter', () => {
 
   test('await persists a rebound argument while refusing other conflicts', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
 
     const reopenedArgs = { ...args, worktree: '/tmp/reopened' }
     awaitWorkflowRuling('flow', 'fixture', 'default', reopenedArgs, 'Which ruling?', context, d)
@@ -756,7 +673,7 @@ describe('workflow cursor adapter', () => {
 
   test('abandon closes a running cursor and terminal operations refuse it', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
 
     expect(
       abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d),
@@ -768,7 +685,11 @@ describe('workflow cursor adapter', () => {
       closed: string
       session_id: string | null
     }
-    expect(row).toMatchObject({ state: 'abandoned', question: null, session_id: 'session-one' })
+    expect(row).toMatchObject({
+      state: 'abandoned',
+      question: null,
+      session_id: 'session-one',
+    })
     expect(JSON.parse(row.closed)).toMatchObject([
       { n: 1, slug: 'rebase', note: 'abandoned: operator stopped' },
     ])
@@ -785,7 +706,7 @@ describe('workflow cursor adapter', () => {
 
   test('abandon clears an awaiting cursor question and records the current session', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Which ruling?', context, d, () => {})
 
     abandonWorkflowCursor(
@@ -811,7 +732,7 @@ describe('workflow cursor adapter', () => {
 
   test('abandon dispositions open obligations in the same transaction', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     const cursor = d
       .query<{ record_id: string }, []>('SELECT record_id FROM workflow_cursor')
       .get()!
@@ -840,7 +761,16 @@ describe('workflow cursor adapter', () => {
 
   test('abandon requires a non-blank reason and refuses done cursors', () => {
     const d = database()
-    const composition = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const composition = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
     expect(() =>
       abandonWorkflowCursor('flow', 'fixture', 'default', args, '   ', context, d),
     ).toThrow('--reason is required')
@@ -853,8 +783,8 @@ describe('workflow cursor adapter', () => {
 
   test('an advanced cursor keeps its pinned versions and args when production moves on', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const currentCatalogue = productionStepCatalogue(d).definition
     const catalogueDraft = setStepCatalogueLocal(
@@ -883,7 +813,7 @@ describe('workflow cursor adapter', () => {
     promoteWorkflowLocal('flow', draft.n, 'publish', 'test', d)
 
     expect(
-      getWorkflowStepWithCursor('flow', 'fixture', '2', args, 'default', context, d).slug,
+      getWorkflowStepWithCursor('flow', 'fixture', '2', args, 'default', context, d, {}).slug,
     ).toBe('lens')
 
     const recomposed = composeWorkflowWithCursor(
@@ -893,6 +823,8 @@ describe('workflow cursor adapter', () => {
       { ...args, worktree: '/tmp/other' },
       context,
       d,
+      {},
+      {},
     )
     expect(recomposed.workflow.title).toBe('Fixture workflow')
     expect(recomposed.arguments.worktree).toBe('/tmp/other')
@@ -905,8 +837,8 @@ describe('workflow cursor adapter', () => {
 
   test('a second session takes a keyed cursor over and is told so', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
     const recomposed = composeWorkflowWithCursor(
       'flow',
@@ -915,6 +847,8 @@ describe('workflow cursor adapter', () => {
       args,
       { session: 'session-two' },
       d,
+      {},
+      {},
     )
     expect(renderWorkflowComposition(recomposed)).toContain(
       'Cursor 1 is already open at step 2 lens for DEV-822. This cursor was driven by session session-one and is now yours.',
@@ -928,7 +862,16 @@ describe('workflow cursor adapter', () => {
 
   test('next uses the cursor autonomy snapshot and finish lists review steps', () => {
     const d = database()
-    const preliminary = composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    const preliminary = composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      {},
+    )
     d.query('DELETE FROM workflow_cursor').run()
     const resolution = {
       steps: Object.fromEntries(
@@ -942,7 +885,10 @@ describe('workflow cursor adapter', () => {
       ),
       rulings: { value: 'agent' as const, scope: 'built-in' },
       shipTo: { value: 'trunk' as const, scope: 'built-in' },
-      session: { steps: { rebase: 'review' as const }, shipTo: 'production' as const },
+      session: {
+        steps: { rebase: 'review' as const },
+        shipTo: 'production' as const,
+      },
     }
     const composition = composeWorkflowWithCursor(
       'flow',
@@ -952,10 +898,14 @@ describe('workflow cursor adapter', () => {
       context,
       d,
       {},
-      resolution,
+      { resolution: resolution },
     )
     const snapshot = JSON.parse(
-      (d.query('SELECT autonomy FROM workflow_cursor').get() as { autonomy: string }).autonomy,
+      (
+        d.query('SELECT autonomy FROM workflow_cursor').get() as {
+          autonomy: string
+        }
+      ).autonomy,
     ) as { session: Record<string, unknown> }
     expect(snapshot.session.shipTo).toBeUndefined()
     getWorkflowStepWithCursor(
@@ -966,6 +916,7 @@ describe('workflow cursor adapter', () => {
       'default',
       context,
       d,
+      {},
     )
     let message = ''
     for (const step of composition.steps) {
@@ -976,7 +927,7 @@ describe('workflow cursor adapter', () => {
 
   test('floors enforcement refuses a note-only close and names the flag', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     expect(() =>
       nextWorkflowStep('flow', 'fixture', 'default', args, 'rebased', context, d),
     ).toThrow(/floor command-exit is unmet; pass --gate/)
@@ -984,7 +935,7 @@ describe('workflow cursor adapter', () => {
 
   test('next gathers each external floor fact once outside the write transaction', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     const evidence = installEvidence(d, 'fixture', 'flow', 'default', args, context)
     const calls: Array<{ port: string; inTransaction: boolean }> = []
     const output = nextWorkflowStep(
@@ -999,11 +950,22 @@ describe('workflow cursor adapter', () => {
       {
         ...testPorts,
         readTask: (key) => {
-          calls.push({ port: `readTask:${key}`, inTransaction: d.inTransaction })
-          return { key, status: 'done', statusCategory: 'done', commentIds: [1] }
+          calls.push({
+            port: `readTask:${key}`,
+            inTransaction: d.inTransaction,
+          })
+          return {
+            key,
+            status: 'done',
+            statusCategory: 'done',
+            commentIds: [1],
+          }
         },
         viewPullRequest: () => {
-          calls.push({ port: 'viewPullRequest', inTransaction: d.inTransaction })
+          calls.push({
+            port: 'viewPullRequest',
+            inTransaction: d.inTransaction,
+          })
           return {
             state: 'MERGED',
             mergedAt: '2026-09-01',
@@ -1013,11 +975,17 @@ describe('workflow cursor adapter', () => {
           }
         },
         resolveCheckout: () => {
-          calls.push({ port: 'resolveCheckout', inTransaction: d.inTransaction })
+          calls.push({
+            port: 'resolveCheckout',
+            inTransaction: d.inTransaction,
+          })
           return matchingCheckout
         },
         resolveTreeCommit: () => {
-          calls.push({ port: 'resolveTreeCommit', inTransaction: d.inTransaction })
+          calls.push({
+            port: 'resolveTreeCommit',
+            inTransaction: d.inTransaction,
+          })
           return 'abc'
         },
       },
@@ -1028,12 +996,14 @@ describe('workflow cursor adapter', () => {
     expect(calls.filter(({ port }) => port.startsWith('readTask:'))).toHaveLength(1)
     expect(calls.filter(({ port }) => port === 'viewPullRequest')).toHaveLength(1)
     expect(calls.filter(({ port }) => port === 'resolveTreeCommit')).toHaveLength(1)
-    expect(d.query('SELECT ordinal FROM workflow_cursor').get()).toEqual({ ordinal: 1 })
+    expect(d.query('SELECT ordinal FROM workflow_cursor').get()).toEqual({
+      ordinal: 1,
+    })
   })
 
   test('a pre-change cursor keeps note-only closure', () => {
     const d = database()
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d)
+    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
     expect(nextWorkflowStep('flow', 'fixture', 'default', args, 'rebased', context, d)).toContain(
       'serves step 3 score',
@@ -1047,11 +1017,22 @@ describe('workflow cursor adapter', () => {
       rulings: { value: 'agent' as const, scope: 'built-in' },
       shipTo: { value: 'trunk' as const, scope: 'built-in' },
     }
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, resolution)
+    composeWorkflowWithCursor(
+      'flow',
+      'fixture',
+      'default',
+      args,
+      context,
+      d,
+      {},
+      { resolution: resolution },
+    )
     d.query('UPDATE workflow_cursor SET autonomy=NULL').run()
-    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d)
+    getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     closeStep('flow', 'fixture', 'default', args, 'rebased', context, d)
-    const row = d.query('SELECT closed FROM workflow_cursor').get() as { closed: string }
+    const row = d.query('SELECT closed FROM workflow_cursor').get() as {
+      closed: string
+    }
     expect(JSON.parse(row.closed)[0].review).toBeUndefined()
   })
 })

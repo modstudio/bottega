@@ -1,0 +1,98 @@
+// concern: MCP workflow advance adapter
+/** Resolves MCP evidence and live autonomy before closing a workflow step. */
+
+import type { z } from 'zod'
+import { db } from '../database/db.ts'
+import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { resolveReviewIdentifier } from '../review/review-identifier.ts'
+import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
+import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
+import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
+import {
+  mcpWorkflowCursorContext,
+  resolveWorkflowCursorMode,
+} from '../workflow/workflow-cursor-selection.ts'
+import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
+
+const workflowRunEvidence = (run: string | number | undefined) =>
+  run === undefined ? undefined : resolveRunIdentifier(db(), run)
+
+export async function advanceWorkflow({
+  slug,
+  project,
+  mode,
+  args,
+  note,
+  outcome,
+  ruling,
+  self_ruling,
+  self_ruling_basis,
+  question,
+  review,
+  gate,
+  run,
+  artifact,
+  task,
+  defer,
+  satisfies,
+  cursor,
+}: z.infer<typeof nextWorkflowStepInputSchema>) {
+  if (self_ruling_basis !== undefined && self_ruling === undefined)
+    throw new Error(
+      'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
+    )
+  const workflowArgs = args ?? {}
+  const context = mcpWorkflowCursorContext()
+  const effectiveMode = resolveWorkflowCursorMode(
+    slug,
+    project,
+    mode,
+    workflowArgs,
+    context,
+    'next_workflow_step',
+    'pass the mode argument',
+    undefined,
+    cursor,
+  )
+  const live = await resolveCursorLiveAutonomy({
+    slug,
+    project,
+    mode: effectiveMode,
+    args: workflowArgs,
+    context,
+    cursor,
+  })
+  const result = nextWorkflowStep(
+    slug,
+    project,
+    effectiveMode,
+    workflowArgs,
+    note,
+    context,
+    undefined,
+    {
+      ruling,
+      review: review === undefined ? undefined : resolveReviewIdentifier(db(), review),
+      gate: gate === undefined ? undefined : resolveGateIdentifier(db(), gate),
+      run: workflowRunEvidence(run),
+      artifact: resolveProbeArtifact(db(), artifact),
+      task,
+      defer,
+      satisfies,
+    },
+    undefined,
+    cursor,
+    self_ruling === undefined
+      ? undefined
+      : {
+          ruling: self_ruling,
+          basis: self_ruling_basis ?? '',
+          question,
+          channel: 'mcp',
+        },
+    outcome,
+    live,
+  )
+  return { content: [{ type: 'text' as const, text: result }] }
+}

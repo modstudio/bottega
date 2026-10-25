@@ -23,6 +23,7 @@ import {
   sharedStepCataloguePromotionPorts,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import { cursorAutonomyOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
@@ -870,6 +871,7 @@ export function composeWorkflow(
     needs,
     rulings: effectiveAutonomy.rulings,
     autonomyNote: autonomy?.note,
+    ...cursorAutonomyOutput(autonomy),
   }
 }
 
@@ -985,6 +987,7 @@ export function getWorkflowStep(
     facts,
     body: templates.body,
     next,
+    ...cursorAutonomyOutput(autonomy),
   }
 }
 

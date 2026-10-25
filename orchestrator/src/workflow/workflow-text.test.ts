@@ -32,7 +32,10 @@ const database = testDatabaseFixture((d) => {
     'fixture',
     '/fixture',
     'bun',
-    JSON.stringify({ tracker: { protocol: 'hub' }, docs: { protocol: 'orch-docs' } }),
+    JSON.stringify({
+      tracker: { protocol: 'hub' },
+      docs: { protocol: 'orch-docs' },
+    }),
   )
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -87,6 +90,7 @@ function open(d: Database): number {
     'default',
     context,
     d,
+    {},
   ).cursor
 }
 
@@ -110,7 +114,10 @@ describe('workflow text decisions', () => {
         attachmentBytes: 1,
         cursorBytes: 0,
       }),
-    ).toMatchObject({ action: 'refuse', message: expect.stringContaining('another session') })
+    ).toMatchObject({
+      action: 'refuse',
+      message: expect.stringContaining('another session'),
+    })
     expect(
       decideWorkflowTextAttach({
         state: 'running',

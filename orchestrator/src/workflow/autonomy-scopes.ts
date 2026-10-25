@@ -28,6 +28,7 @@ import {
 } from './autonomy.ts'
 import { type CachedSessionContext, readSessionContextCache } from './session-context-cache.ts'
 import type { CatalogueStep } from './step-catalogue.ts'
+import { combineCursorRulings } from './workflow-cursor-autonomy.ts'
 
 export const HOSTED_AUTONOMY_TIMEOUT_MS = 2000
 
@@ -231,18 +232,23 @@ export async function resolveAnswerRulings(
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
 ): Promise<AutonomyResolution['rulings']> {
   const snapshot = workflowRulingsSnapshot(project, launchKey, d)
-  if (snapshot) return snapshot
-  return (
-    await resolveProjectAutonomy(
-      project,
-      undefined,
-      undefined,
-      [],
-      {},
-      clientFactory,
-      d,
-      env,
-      timeoutMs,
-    )
-  ).rulings
+  try {
+    const current = (
+      await resolveProjectAutonomy(
+        project,
+        undefined,
+        undefined,
+        [],
+        {},
+        clientFactory,
+        d,
+        env,
+        timeoutMs,
+      )
+    ).rulings
+    return snapshot ? combineCursorRulings(snapshot, current) : current
+  } catch (error) {
+    if (snapshot) return snapshot
+    throw error
+  }
 }

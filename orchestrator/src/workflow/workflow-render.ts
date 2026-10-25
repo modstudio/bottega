@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { CursorAutonomyNotice } from './autonomy.ts'
 import {
   formatCursorOpened,
   formatCursorResumed,
@@ -82,6 +83,7 @@ function renderRunnableComposition(result: WorkflowComposition): string {
     '',
     rulingsHeader(result),
     ...(result.autonomyNote ? [result.autonomyNote] : []),
+    ...cursorAutonomyLines(result),
     '',
     legend,
     '',
@@ -118,6 +120,7 @@ function renderIncompleteComposition(result: WorkflowComposition): string {
     `${result.workflow.title} — ${result.mode?.title ?? 'choose a mode'}`,
     rulingsHeader(result),
     ...(result.autonomyNote ? [result.autonomyNote] : []),
+    ...cursorAutonomyLines(result),
     ...modeChoiceLines(result),
     ...(result.needs.arguments
       ? [
@@ -214,6 +217,23 @@ function flowSoFar(step: WorkflowStep): string {
   return flow.length ? `Flow so far: ${flow.join(', ')}\n` : ''
 }
 
+export function cursorAutonomyLines(value: CursorAutonomyNotice): string[] {
+  const command = value.autonomyComposeCommand
+  return [
+    ...(value.autonomyUnavailableReason
+      ? [
+          `Current autonomy settings could not be resolved; using pinned settings: ${value.autonomyUnavailableReason}`,
+        ]
+      : []),
+    ...(command
+      ? (value.autonomyDifferences ?? []).map(
+          ({ subject, pinned, live }) =>
+            `${subject}: pinned ${pinned}; your current setting is ${live}; it takes effect when this workflow next starts; to adopt it now: ${PLATFORM_SLUG} workflow abandon --cursor ${value.autonomyCursor} --reason "<why>"; then ${command}`,
+        )
+      : []),
+  ]
+}
+
 export function renderWorkflowStep(step: WorkflowStep): string {
   const autonomy = autonomyInstruction(step)
   const close = closeContract(step)
@@ -222,5 +242,7 @@ export function renderWorkflowStep(step: WorkflowStep): string {
       `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
-  return `${notice}${flowSoFar(step)}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${nextPointer(step, close)}`
+  const autonomyLines = cursorAutonomyLines(step)
+  const liveNotice = autonomyLines.length ? `${autonomyLines.join('\n')}\n` : ''
+  return `${notice}${liveNotice}${flowSoFar(step)}facts: ${JSON.stringify(step.facts)}\nAutonomy: ${step.resolvedAutonomy.value} (${step.resolvedAutonomy.scope}) — ${autonomy}\n${step.body}\n\n${guidance.join('\n')}\n\n${nextPointer(step, close)}`
 }

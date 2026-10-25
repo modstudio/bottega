@@ -65,8 +65,21 @@ export type StoredAutonomyResolution = Omit<AutonomyResolution, 'shipTo'> & {
   shipTo?: AutonomyResolution['shipTo']
   release?: LegacyReleaseResolution
 }
+export type CursorAutonomyDifference = { subject: string; pinned: string; live: string }
 export type CursorAutonomyResolution = StoredAutonomyResolution & {
   cursor: { id: number; composeCommand: string }
+  looserLiveDifferences?: CursorAutonomyDifference[]
+  liveUnavailableReason?: string
+}
+export type LiveCursorAutonomy = {
+  resolution?: AutonomyResolution
+  unavailableReason?: string
+}
+export type CursorAutonomyNotice = {
+  autonomyCursor?: number
+  autonomyComposeCommand?: string
+  autonomyDifferences?: CursorAutonomyDifference[]
+  autonomyUnavailableReason?: string
 }
 export type WorkflowAutonomyResolution = AutonomyResolution | CursorAutonomyResolution
 export type RulingsResolution = {

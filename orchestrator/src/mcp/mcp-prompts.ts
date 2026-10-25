@@ -229,7 +229,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
                   mcpWorkflowCursorContext(),
                   undefined,
                   {},
-                  resolved,
+                  { resolution: resolved },
                 ),
               ),
             ].join('\n'),
