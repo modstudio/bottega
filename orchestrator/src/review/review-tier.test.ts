@@ -278,15 +278,65 @@ describe('review tier classification', () => {
     expect(actual.reasons[0]).not.toContain('cross-concern shared code')
   })
 
-  test('an excluded path keeps the risk named by the declared map', () => {
+  test('a test-only hook change carries no declared risk, while product code names the risk', () => {
+    const risk = {
+      paths: [{ pattern: '^orchestrator/hooks/', tier: 3 as const, reason: 'repository hooks' }],
+      unlisted: 2 as const,
+    }
+    expect(
+      classifyReviewTier({
+        files: [{ path: 'orchestrator/hooks/test_x.py', insertions: 500, deletions: 0 }],
+        risk,
+      }),
+    ).toMatchObject({ risk: 0, size: 0, tier: 0 })
+
     const actual = classifyReviewTier({
-      files: [{ path: 'src/value.test.ts', insertions: 500, deletions: 0 }],
+      files: [
+        { path: 'orchestrator/hooks/test_x.py', insertions: 500, deletions: 0 },
+        { path: 'orchestrator/hooks/x.py', insertions: 1, deletions: 0 },
+      ],
+      risk,
+    })
+    expect(actual).toMatchObject({ risk: 3, size: 0, tier: 3 })
+    expect(actual.reasons[0]).toBe('risk 3: orchestrator/hooks/x.py (repository hooks)')
+  })
+
+  test('tests and fixtures under declared source paths carry no risk', () => {
+    const actual = classifyReviewTier({
+      files: [
+        { path: 'orchestrator/src/a/a.test.ts', insertions: 500, deletions: 0 },
+        { path: 'orchestrator/src/a/fixtures/f.json', insertions: 500, deletions: 0 },
+      ],
       risk: {
-        paths: [{ pattern: '.*', tier: 3, reason: 'everything' }],
+        paths: [{ pattern: '^orchestrator/src/', tier: 2, reason: 'orchestrator source' }],
         unlisted: 2,
       },
     })
-    expect(actual).toMatchObject({ risk: 3, size: 0, tier: 3 })
+    expect(actual).toMatchObject({ risk: 0, size: 0, tier: 0 })
+  })
+
+  test('agent instructions keep their universal tier ahead of test and fixture exclusions', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: '.agents/skills/test_x.py', insertions: 1, deletions: 0 }],
+      risk: {
+        paths: [{ pattern: '.*', tier: 3, reason: 'project catch-all' }],
+        unlisted: 2,
+      },
+    })
+    expect(actual).toMatchObject({ risk: 1, tier: 1 })
+    expect(actual.reasons[0]).toBe('risk 1: .agents/skills/test_x.py (agent skill)')
+  })
+
+  test('documentation under a declared risk path keeps that risk', () => {
+    const actual = classifyReviewTier({
+      files: [{ path: 'orchestrator/src/README.md', insertions: 500, deletions: 0 }],
+      risk: {
+        paths: [{ pattern: '^orchestrator/src/', tier: 2, reason: 'orchestrator source' }],
+        unlisted: 2,
+      },
+    })
+    expect(actual).toMatchObject({ risk: 2, size: 0, tier: 2 })
+    expect(actual.reasons[0]).toBe('risk 2: orchestrator/src/README.md (orchestrator source)')
   })
 
   test('names only paths whose surface risk is tier three', () => {
@@ -305,7 +355,7 @@ describe('review tier classification', () => {
           unlisted: 1,
         },
       ),
-    ).toEqual(['src/security.ts', 'src/security.test.ts'])
+    ).toEqual(['src/security.ts'])
   })
 
   const precedenceCases: {
