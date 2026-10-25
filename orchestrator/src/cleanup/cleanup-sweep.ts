@@ -24,6 +24,7 @@ import {
 import {
   automaticOrphanReclaimDecision,
   liveRunWorktrees,
+  orphansWithOwnershipEvidence,
   reclaimOrphanProcess,
 } from '../reclaim/orphan-process-reclaim.ts'
 import type { DockerResource } from '../resources/docker-resources.ts'
@@ -102,8 +103,13 @@ async function sweepOrphanProcesses(
     failed = true
   }
   const liveWorktrees = liveRunWorktrees()
-  for (const process of inventory.orphans) {
-    if (!automaticOrphanReclaimDecision(process, liveWorktrees).reclaim) continue
+  const orphans = orphansWithOwnershipEvidence(inventory.orphans)
+  for (const process of orphans) {
+    const decision = automaticOrphanReclaimDecision(process, liveWorktrees)
+    if (!decision.reclaim) {
+      presentation.log(`kept process ${process.pid}: ${decision.reason}`)
+      continue
+    }
     const result = await reclaimOrphanProcess(String(process.pid), dryRun)
     if (result.ok) presentation.log(result.action)
     else {

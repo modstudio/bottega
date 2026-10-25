@@ -43,6 +43,7 @@ export const focusedTestModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/focused-test/focused-test-broker.ts', [
     '../../../shared/git.ts',
+    '../../../shared/run-process-marker.ts',
     'node:child_process',
     'node:fs',
     'node:path',

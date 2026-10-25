@@ -1,8 +1,9 @@
 // concern: lifecycle process inventory
 /** Gathers the process table and applies pure missing-worktree classification. */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
+import { RUN_PROCESS_ENV_NAMES } from '../../../shared/run-process-marker.ts'
 
 export type ProcessFact = {
   pid: number
@@ -15,14 +16,43 @@ export type ProcessFact = {
   cwd: string | null
   cwdVerified: boolean
 }
-export type OrphanProcess = ProcessFact & {
+
+export type OrphanCandidate = ProcessFact & {
   missingTree: string
   project: string
   match: 'cwd' | 'argument'
 }
 
+/**
+ * Whether ownership evidence proves a run started the process.
+ *
+ * The inventory itself reads the environment names only. Reclaim also counts
+ * the run's recorded process group — its `agent_pgid` paired with the worktree
+ * it used — which `orphansWithOwnershipEvidence` folds into this field before
+ * any decision, so a consumer downstream of that entry point reads 'present'
+ * for either proof. Automatic reclaim enforces the fold by accepting only the
+ * branded `OwnedOrphanProcess` that entry point returns.
+ */
+export type RunMarkerEvidence = 'present' | 'absent' | 'unknown'
+export type OrphanProcess = OrphanCandidate & { runMarker: RunMarkerEvidence }
+
+/**
+ * The environment names that prove a run started a process: the delegation
+ * marker, and the marker a host broker stamps on the gate and focused-test
+ * children it starts for a run once the gate environment scrub has withheld the
+ * delegation marker. Neither is present in an operator's own shell.
+ */
+const RUN_MARKER_ENTRY = new RegExp(`^(?:${RUN_PROCESS_ENV_NAMES.join('|')})=.`)
+/** `ps -E` joins the environment entries it prints with whitespace. */
+const PS_ENVIRONMENT_SEPARATOR = /\s+/
+/** `/proc/<pid>/environ` separates entries with NUL bytes. */
+const PROCFS_ENVIRONMENT_SEPARATOR = '\0'
+/** Any environment entry, which is the only proof an environment was printed at all. */
+const ENVIRONMENT_ENTRY = /(?:^|\s)[A-Za-z_][A-Za-z0-9_]*=\S/
+
 const PROCESS_CWD_LSOF_TIMEOUT_MS = 10_000
 const PROCESS_TABLE_PS_TIMEOUT_MS = 10_000
+const PROCESS_ENVIRONMENT_PS_TIMEOUT_MS = 10_000
 
 function elapsedSeconds(value: string): number | null {
   const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/.exec(value)
@@ -156,7 +186,7 @@ export function orphanProcesses(
   facts: readonly ProcessFact[],
   projects: readonly { name: string; path: string }[],
   pathExists: (path: string) => boolean,
-): OrphanProcess[] {
+): OrphanCandidate[] {
   return facts.flatMap((fact) => {
     const candidates = [
       ...(fact.cwd ? [{ path: fact.cwd, match: 'cwd' as const }] : []),
@@ -185,7 +215,155 @@ export function orphanProcesses(
   })
 }
 
+/**
+ * Whether an environment text carries a run marker.
+ *
+ * The separator belongs to the platform's format, so the caller supplies it:
+ * `/proc/<pid>/environ` is NUL-separated, where a value containing a space — a
+ * copied environment string stored in another variable, say — never starts an
+ * entry that reads as a marker. `ps -E` joins its entries with whitespace, a
+ * boundary it has already destroyed, so a marker name cut out of a value may
+ * read as ownership evidence there. A name with an empty value is not a marker
+ * in either shape.
+ */
+export function environmentCarriesRunMarker(
+  environment: string,
+  separator: string | RegExp,
+): boolean {
+  return environment.split(separator).some((entry) => RUN_MARKER_ENTRY.test(entry))
+}
+
+/**
+ * Parse `ps -E` output into per-pid marker evidence.
+ *
+ * `ps -E` prints the environment of processes this user owns appended to the
+ * command in one column, so the command the inventory already observed is
+ * subtracted first: an argument that merely spells a marker name must not read
+ * as ownership. A line whose command cannot be separated is unknown, because
+ * nothing was read to prove a run started the process.
+ *
+ * Some platforms print no environment at all, which would otherwise read as
+ * every candidate lacking the marker. `probePid` names a process whose
+ * environment is known to be non-empty — this process, which always carries
+ * PATH — so a probe line with no NAME=value entry after its command means the
+ * platform cannot read environments: every candidate is unknown, not absent.
+ */
+export function parseProcessEnvironmentEvidence(
+  output: string,
+  commands: ReadonlyMap<number, string>,
+  probePid: number,
+): Map<number, RunMarkerEvidence> {
+  const evidence = new Map<number, RunMarkerEvidence>()
+  const environments = new Map<number, string>()
+  for (const line of output.split('\n')) {
+    const match = /^\s*(\d+)\s+(.*)$/.exec(line)
+    if (!match) continue
+    const pid = Number(match[1])
+    const observed = match[2]!
+    const command = commands.get(pid)
+    if (!command || !observed.startsWith(command)) {
+      evidence.set(pid, 'unknown')
+      continue
+    }
+    const environment = observed.slice(command.length)
+    environments.set(pid, environment)
+    evidence.set(
+      pid,
+      environmentCarriesRunMarker(environment, PS_ENVIRONMENT_SEPARATOR) ? 'present' : 'absent',
+    )
+  }
+  const probe = environments.get(probePid)
+  if (probe === undefined || !ENVIRONMENT_ENTRY.test(probe))
+    return new Map<number, RunMarkerEvidence>(
+      [...new Set([...commands.keys(), probePid])].map((pid): [number, RunMarkerEvidence] => [
+        pid,
+        'unknown',
+      ]),
+    )
+  return evidence
+}
+
+/** macOS prints the environment of this user's processes after their command. */
+function psRunMarkerEvidence(
+  candidates: readonly OrphanCandidate[],
+  commands: ReadonlyMap<number, string>,
+): Map<number, RunMarkerEvidence> {
+  const probeCommand = commands.get(process.pid)
+  if (!probeCommand) return new Map()
+  const queried = new Map<number, string>(
+    candidates.map(({ pid, command }) => [pid, command] as const),
+  )
+  queried.set(process.pid, probeCommand)
+  for (const flag of ['-Eww', 'eww']) {
+    try {
+      const { process: found, error } = observeBoundedSubprocess(
+        'ps',
+        ['ps', flag, '-o', 'pid=,command=', '-p', [...queried.keys()].join(',')],
+        {
+          env: { PATH: process.env.PATH ?? '', LC_ALL: 'C', LANG: 'C' },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+        PROCESS_ENVIRONMENT_PS_TIMEOUT_MS,
+      )
+      if (!error)
+        return parseProcessEnvironmentEvidence(found.stdout?.toString() ?? '', queried, process.pid)
+    } catch {
+      // A platform without this ps form leaves every candidate unknown.
+    }
+  }
+  return new Map()
+}
+
+/** Linux exposes the environment of every process as one procfs file. */
+function procRunMarkerEvidence(pids: readonly number[]): Map<number, RunMarkerEvidence> {
+  const evidence = new Map<number, RunMarkerEvidence>()
+  for (const pid of pids) {
+    try {
+      evidence.set(
+        pid,
+        environmentCarriesRunMarker(
+          readFileSync(`/proc/${pid}/environ`, 'utf8'),
+          PROCFS_ENVIRONMENT_SEPARATOR,
+        )
+          ? 'present'
+          : 'absent',
+      )
+    } catch {
+      // Exited between snapshots, or unreadable to this user: unknown, not absent.
+    }
+  }
+  return evidence
+}
+
+/** Read only the candidate orphans' environments, in one read per inventory. */
+function processRunMarkerEvidence(
+  candidates: readonly OrphanCandidate[],
+  commands: ReadonlyMap<number, string>,
+): Map<number, RunMarkerEvidence> {
+  if (!candidates.length) return new Map()
+  if (process.platform === 'darwin') return psRunMarkerEvidence(candidates, commands)
+  if (process.platform === 'linux') return procRunMarkerEvidence(candidates.map(({ pid }) => pid))
+  return new Map()
+}
+
+/** Attach ownership evidence; an environment that was not read stays unknown. */
+export function joinRunMarker(
+  candidates: readonly OrphanCandidate[],
+  evidence: ReadonlyMap<number, RunMarkerEvidence>,
+): OrphanProcess[] {
+  return candidates.map((candidate) => ({
+    ...candidate,
+    runMarker: evidence.get(candidate.pid) ?? 'unknown',
+  }))
+}
+
 export function currentOrphanProcesses(projects: readonly { name: string; path: string }[]) {
   const observed = observeProcesses()
-  return { ...observed, orphans: orphanProcesses(observed.facts, projects, existsSync) }
+  const candidates = orphanProcesses(observed.facts, projects, existsSync)
+  const commands = new Map(observed.facts.map(({ pid, command }) => [pid, command] as const))
+  return {
+    ...observed,
+    orphans: joinRunMarker(candidates, processRunMarkerEvidence(candidates, commands)),
+  }
 }

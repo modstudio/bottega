@@ -25,6 +25,7 @@ export const gateModules: GateModule[] = [
   module('orchestrator/src/gate/gate-broker.ts', [
     '../../../shared/check-execution.ts',
     '../../../shared/git.ts',
+    '../../../shared/run-process-marker.ts',
     'node:child_process',
     'node:fs',
     'node:path',
