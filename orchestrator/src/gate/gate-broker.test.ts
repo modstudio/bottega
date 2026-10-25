@@ -227,26 +227,28 @@ test('broker refuses a merge in progress before the gate runs', async () => {
       id: string
     }
   ).id
-  const gateId = (
+  const gateRecordId = (
     db()
       .query(
-        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING id`,
+        `INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES ('${newRecordId()}',?,?) RETURNING record_id`,
       )
-      .get(runId, new Date().toISOString()) as { id: number }
-  ).id
+      .get(runId, new Date().toISOString()) as { record_id: string }
+  ).record_id
 
   const broker = startGateBroker({
     runId,
     scratchDir: scratch,
-    environment: { ORCH_MAIN_CHECKOUT: root },
+    environment: { BOTTEGA_MAIN_CHECKOUT: root },
     confinement: { kind: 'host' },
     withHostSlot: async (run) => run(),
   })
   try {
-    await waitForFinishedGate(gateId)
+    await waitForFinishedGate(gateRecordId)
     const row = db()
-      .query(`SELECT exit_code,timed_out,head_commit,output_tail FROM gate_execution WHERE id=?`)
-      .get(gateId) as {
+      .query(
+        `SELECT exit_code,timed_out,head_commit,output_tail FROM gate_execution WHERE record_id=?`,
+      )
+      .get(gateRecordId) as {
       exit_code: number
       timed_out: number
       head_commit: string | null
