@@ -1,6 +1,5 @@
 // concern: run-startup-failure
 /** Records and publishes startup failures before or after a run is claimed. */
-
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
