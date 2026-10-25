@@ -130,6 +130,10 @@ function reportSlowTestPhases(tests: TestRow[], reporter: Reporter): void {
   }
 }
 
+function reportPhaseTimingNotices(notices: string[], reporter: Reporter): void {
+  for (const notice of notices) reporter.log(notice)
+}
+
 function publishBaselineDisposition({
   disposition,
   currentFileCount,
@@ -172,7 +176,9 @@ export function publishTimingSummary(
   unitElapsedMs: number,
   sharded = false,
   reporter: Reporter = console,
+  phaseTimingNotices: string[] = [],
 ): boolean {
+  reportPhaseTimingNotices(phaseTimingNotices, reporter)
   reportSlowTestPhases(tests, reporter)
   const current = summaryRows(files)
   const runDecision = decideTestTimingRun({ sharded, files, tests })

@@ -3,8 +3,25 @@ import { SINGLE_TEST_WALL_CEILING_MS } from '../../scripts/quality/test-timing-d
 const SLOW_TEST_PHASE_TOTAL_THRESHOLD_MS = SINGLE_TEST_WALL_CEILING_MS
 
 export type TestPhaseTiming = {
+  file: string
   setupMs?: number
   teardownMs?: number
+}
+
+export type SpawnCounts = {
+  spawn: number
+  spawnSync: number
+  bootstraps: number
+  cli: number
+  git: number
+  other: number
+  argv0: Record<string, number>
+}
+
+export type GateTimingSidecar = {
+  elapsedMs?: number
+  files?: Record<string, SpawnCounts>
+  testPhases?: TestPhaseTiming[]
 }
 
 export function slowTestPhaseReport(test: {
