@@ -117,10 +117,8 @@ export const trackerReviewStagesShape = {
   active: trackerNameSchema,
 }
 
-// The two inner objects stay strict here, which is a register writer's verdict
-// on an action or a stage this binary does not know. A register reader builds
-// its own objects over these same shapes in the mode it declares, so a row a
-// newer binary wrote is read instead of refused.
+// The two inner objects are strict here; a consumer that must accept a newer
+// key rebuilds them over these shapes.
 export const trackerSettingsShape = {
   kind: trackerNameSchema.optional(),
   protocol: z.string().trim().min(1).optional(),

@@ -41,9 +41,16 @@ const mechanicalCheckIssue = (
 function optOutIssues(
   identifier: string,
   entry: Record<string, unknown>,
+  mode: 'strict' | 'strip',
 ): MechanicalCheckValidationIssue[] {
   const issues: MechanicalCheckValidationIssue[] = []
-  const mixed = Object.keys(entry).filter((key) => key !== 'optOut')
+  // A known override field beside optOut is always a mistake; a key this
+  // binary does not know is a mistake only where a write is being judged.
+  const mixed = Object.keys(entry).filter(
+    (key) =>
+      key !== 'optOut' &&
+      (mode === 'strict' || MECHANICAL_CHECK_OVERRIDE_FIELDS.includes(key as never)),
+  )
   if (mixed.length) {
     issues.push(
       mechanicalCheckIssue(
@@ -53,11 +60,13 @@ function optOutIssues(
     )
   }
   const optOut = entry.optOut
+  const optOutObject = Boolean(optOut) && typeof optOut === 'object' && !Array.isArray(optOut)
   const valid =
-    optOut &&
-    typeof optOut === 'object' &&
-    !Array.isArray(optOut) &&
-    Object.keys(optOut).every((key) => key === 'reason') &&
+    optOutObject &&
+    // Strip mode judges only the known opt-out shape; a key a newer binary
+    // added beside `reason` is dropped like any other unknown key.
+    (mode === 'strip' ||
+      Object.keys(optOut as Record<string, unknown>).every((key) => key === 'reason')) &&
     typeof (optOut as Record<string, unknown>).reason === 'string' &&
     Boolean((optOut as { reason: string }).reason.trim())
   if (!valid) {
@@ -177,7 +186,7 @@ export function mechanicalCheckEntryIssues(
   }
   const entry = raw as Record<string, unknown>
   const keys = Object.keys(entry)
-  if (Object.hasOwn(entry, 'optOut')) return optOutIssues(identifier, entry)
+  if (Object.hasOwn(entry, 'optOut')) return optOutIssues(identifier, entry, mode)
   if (keys.length === 0) {
     return [
       mechanicalCheckIssue(
