@@ -94,8 +94,9 @@ export type WorkerMcpLaunch = {
 
 /**
  * Probe each launch the run will actually get and refuse an affirmatively
- * failed one, which is the only outcome `--mcp require` refuses. The refusal
- * carries the kind a run that never started must be recorded with.
+ * failed one or a required server the run was not handed, which are the only
+ * outcomes `--mcp require` refuses. A refusal raised here carries no failure
+ * kind: the run concern decides how a refusal is recorded.
  */
 async function refuseRequiredProjectMcpLaunch(input: {
   mcpMode: McpMode | null
@@ -112,6 +113,11 @@ async function refuseRequiredProjectMcpLaunch(input: {
     mode: input.mcpMode,
     project: input.project,
     failures,
+    // The required server, resolved the way run.ts resolves it: the project's
+    // configured `mcpServer`, or the project's own name by default.
+    requiredServer: projectMcpServerName(null, input.project),
+    selectedServers: Object.keys(input.projectSelection?.servers ?? {}),
+    withheld: input.projectSelection?.withheld ?? [],
   })
   if (refusal) throw refusal
 }

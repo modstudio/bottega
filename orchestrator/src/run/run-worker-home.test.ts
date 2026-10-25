@@ -13,7 +13,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveHubDatabase } from '../../../shared/state-directory.ts'
 import type { Agent } from '../agent/agents.ts'
+import type { Project } from '../project/projects.ts'
+import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
+import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import { prepareClaimedWorkerMcpConfig, prepareWorkerHomeLaunch } from './run-worker-home.ts'
 
 const FRONT_DOOR = join('/', 'bin', PLATFORM_SLUG)
@@ -136,4 +139,82 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   expect(readFileSync(join(writerRun, 'config.toml'), 'utf8')).toContain('writer-direct')
   expect(readFileSync(join(writer, '.mcp.json'), 'utf8')).toContain('writer-tree')
   expect(writerLaunch.environment.GROK_CURSOR_MCPS_ENABLED).toBeUndefined()
+})
+
+const hostAgent = { name: 'qwen', harness: 'qwen' } as Agent
+const starship = { name: 'starship', path: '/opt/starship', settings: {} } as unknown as Project
+
+/**
+ * One launch at the refusal seam: no run directory is prepared for a host
+ * agent, so the only thing this tree does is decide whether the run may start.
+ */
+function starshipLaunch(input: {
+  mcpMode: 'require' | null
+  projectSelection: Parameters<typeof prepareWorkerHomeLaunch>[0]['mcpLaunch']['projectSelection']
+  project: Project
+}) {
+  return prepareWorkerHomeLaunch({
+    agent: hostAgent,
+    sandbox: 'host',
+    runDir: join(tmpdir(), 'orch-refusal-run'),
+    runNumber: 43,
+    runRecordId: '43000000-0000-4000-8000-000000000000',
+    runToken: 'token',
+    environment: {},
+    grokEnvironment: {},
+    includeStore: false,
+    mcpLaunch: { codex: null, grok: null, projectSelection: input.projectSelection },
+    mcpMode: input.mcpMode,
+    project: input.project,
+  })
+}
+
+/** The rejection a failed launch gave the run, or null when it resolved. */
+async function rejection(promise: Promise<unknown>): Promise<Error | null> {
+  return promise.then(
+    () => null,
+    (cause: unknown) => cause as Error,
+  )
+}
+
+test('--mcp require refuses a run whose required project launch cannot start', async () => {
+  // A closed loopback port: the launch affirmatively fails and nothing is spawned.
+  const selection = {
+    kind: 'direct' as const,
+    servers: { starship: { url: 'http://127.0.0.1:1/mcp' } },
+    withheld: [],
+  }
+  const error = await rejection(
+    starshipLaunch({ mcpMode: 'require', projectSelection: selection, project: starship }),
+  )
+
+  expect(error).toBeInstanceOf(RequiredMcpProbeRefusalError)
+  expect(error?.message).toContain(
+    '--mcp require was asked for, but the project MCP launch did not start',
+  )
+  expect(error?.message).toContain('starship:')
+  // The kind is what run.ts's launch catch records, so the row reads
+  // mcp_unverified and routing never reads the agent as the failure.
+  expect(carriedRefusalFailure(error)?.failureKind).toBe('mcp_unverified')
+
+  // The same launch under no requested mode resolves: only require refuses.
+  await expect(
+    starshipLaunch({ mcpMode: null, projectSelection: selection, project: starship }),
+  ).resolves.toBeDefined()
+})
+
+test('--mcp require refuses a required server the selection never handed over', async () => {
+  const error = await rejection(
+    starshipLaunch({
+      mcpMode: 'require',
+      projectSelection: { kind: 'direct', servers: {}, withheld: [] },
+      project: starship,
+    }),
+  )
+
+  // The default required name is the project's own; no probe can see it when
+  // the selection never had it, which is the DEV-1586 hole.
+  expect(error).toBeInstanceOf(RequiredMcpProbeRefusalError)
+  expect(error?.message).toContain('starship: not configured in the tree')
+  expect(carriedRefusalFailure(error)?.failureKind).toBe('mcp_unverified')
 })

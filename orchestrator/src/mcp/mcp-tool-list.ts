@@ -40,8 +40,14 @@ export function launchFailureReason(error: unknown): string {
     .trim()
 }
 
-/** The launch failure a caller sees, with the child's own diagnostics appended. */
-function launchFailure(error: unknown, tail: string): Error {
+/**
+ * The launch failure a caller sees, with the child's own diagnostics appended.
+ *
+ * Pure shaping, so it is testable without a child: the message is flattened to
+ * one line and secret-shaped stderr lines are withheld, because this text
+ * reaches a refusal, the stored run record and the Codex setup header.
+ */
+export function launchFailure(error: unknown, tail: string): Error {
   const message = String((error as Error)?.message ?? error)
   const diagnostic = tail ? `${message}\nstderr: ${withholdSecretShapedLines(tail)}` : message
   const failure = new Error(launchFailureReason(diagnostic))

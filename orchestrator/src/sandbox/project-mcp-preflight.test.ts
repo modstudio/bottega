@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test'
-import { requiredMcpProbeRefusal, requiredMcpProbeRefusalError } from './project-mcp-preflight.ts'
+import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import {
+  type RequiredMcpProbeFacts,
+  RequiredMcpProbeRefusalError,
+  requiredMcpProbeRefusal,
+  requiredMcpProbeRefusalError,
+} from './project-mcp-preflight.ts'
 
 const project = { name: 'starship', path: '/opt/starship' }
 const failure = { server: 'starship', error: 'Connection closed\nstderr: not configured' }
@@ -22,14 +28,76 @@ test('the refusal names the server, its error and the edit that clears it', () =
   expect(refusal).toContain('mcpServer')
 })
 
-test('a refused probe carries the mcp_unverified kind its record needs', () => {
+test('a required server the selection did not hand over is refused, and named', () => {
+  const facts: RequiredMcpProbeFacts = {
+    mode: 'require',
+    project,
+    failures: [],
+    requiredServer: 'starship',
+    selectedServers: [],
+    withheld: [],
+  }
+
+  // A probe list derived from the selection cannot see a server the selection
+  // never had: this is the DEV-1586 shape, where the project's primary was
+  // absent from .mcp.json and the run reviewed without its required server.
+  const refusal = requiredMcpProbeRefusal(facts)!
+  expect(refusal).toContain('starship: not configured in the tree')
+  expect(refusal).toContain('/opt/starship/.mcp.json')
+}
+
+test('a withheld required server says why the run did not get it', () => {
+  const refusal = requiredMcpProbeRefusal({
+    mode: 'require',
+    project,
+    failures: [],
+    requiredServer: 'starship',
+    selectedServers: [],
+    withheld: ['starship'],
+  })!
+
+  expect(refusal).toContain('starship: withheld from this run')
+})
+
+test('a handed-over required server, and the platform server, are never refused', () => {
+  expect(
+    requiredMcpProbeRefusal({
+      mode: 'require',
+      project,
+      failures: [],
+      requiredServer: 'starship',
+      selectedServers: ['starship'],
+    }),
+  ).toBeNull()
+  // The platform installs its own server, so it is not the tree's to configure.
+  expect(
+    requiredMcpProbeRefusal({
+      mode: 'require',
+      project,
+      failures: [],
+      requiredServer: MCP_SERVER_NAME,
+      selectedServers: [],
+    }),
+  ).toBeNull()
+  expect(
+    requiredMcpProbeRefusal({
+      mode: 'prefer',
+      project,
+      failures: [],
+      requiredServer: 'starship',
+      selectedServers: [],
+    }),
+  ).toBeNull()
+})
+
+test('the refusal error carries only the reason, never the run failure kind', () => {
   const refusal = requiredMcpProbeRefusalError({ mode: 'require', project, failures: [failure] })
 
-  // The kind is what routing and failover must see: the agent never ran, so a
-  // before-launch refusal can never be recorded as 'harness'.
-  expect(refusal?.failureKind).toBe('mcp_unverified')
-  expect(refusal?.mcpError).toBe(refusal?.message)
-  expect(refusal?.mcpError).toContain('starship: Connection closed')
+  // The run concern owns the failure-kind vocabulary, so a refusal cannot be
+  // recorded with a kind this module chose.
+  expect(refusal).toBeInstanceOf(RequiredMcpProbeRefusalError)
+  expect(refusal?.message).toContain('starship: Connection closed')
+  expect((refusal as unknown as { failureKind?: string }).failureKind).toBeUndefined()
   expect(requiredMcpProbeRefusalError({ mode: 'require', project, failures: [] })).toBeNull()
   expect(requiredMcpProbeRefusalError({ mode: 'prefer', project, failures: [failure] })).toBeNull()
 })
