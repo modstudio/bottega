@@ -25,6 +25,7 @@ import {
   insertGateCheckExecutions,
   readGateCheckExecutions,
 } from './gate-check-executions.ts'
+import { refuseInProgressCheckout } from './gate-checkout.ts'
 import {
   type BrokerConfinement,
   boundedGateOutputTail,
@@ -42,7 +43,6 @@ import {
   resolveGateCommand,
 } from './gate-decision.ts'
 import { prepareSyntheticGateIndex } from './gate-index.ts'
-import { refuseInProgressCheckout } from './gate-run.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */

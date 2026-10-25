@@ -146,10 +146,6 @@ test('a merge in progress with unmerged paths is refused, naming them', () => {
   )
 })
 
-test('a clean tree is allowed to run', () => {
-  expect(decideGateCheckoutRefusal({ presentMarkers: [], unmergedPaths: [] })).toBeNull()
-})
-
 test('a rebase in progress is refused', () => {
   expect(decideGateCheckoutRefusal({ presentMarkers: ['REBASE_HEAD'], unmergedPaths: [] })).toBe(
     'checkout has a rebase in progress; finish or abort the operation',

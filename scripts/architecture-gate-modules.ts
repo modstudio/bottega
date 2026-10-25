@@ -15,6 +15,13 @@ const module = (file: string, allowed: string[]): GateModule => ({
 
 export const gateModules: GateModule[] = [
   module('orchestrator/src/gate/gate-decision.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/gate/gate-checkout.ts', [
+    '../../../shared/brand.ts',
+    'node:child_process',
+    'node:fs',
+    'node:path',
+    './gate-decision.ts',
+  ]),
   module('orchestrator/src/gate/gate-broker.ts', [
     '../../../shared/check-execution.ts',
     '../../../shared/git.ts',
@@ -33,9 +40,9 @@ export const gateModules: GateModule[] = [
     '../run/run-child-priority.ts',
     '../sandbox/sandbox.ts',
     './gate-check-executions.ts',
+    './gate-checkout.ts',
     './gate-decision.ts',
     './gate-index.ts',
-    './gate-run.ts',
     './host-slot-wait.ts',
   ]),
   module('orchestrator/src/gate/gate-index.ts', [
@@ -62,6 +69,7 @@ export const gateModules: GateModule[] = [
     '../resources/main-stack.ts',
     '../secret-shaped-output.ts',
     './gate-check-executions.ts',
+    './gate-checkout.ts',
     './gate-decision.ts',
   ]),
   module('orchestrator/src/gate/gate-check-executions.ts', [
