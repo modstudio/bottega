@@ -1,7 +1,7 @@
 /** Durable, non-authoritative messages attached to a run conversation. */
 
 import { newRecordId } from '../../../shared/record-id.ts'
-import { db, linkedWorktreeReadOnly, writableDb, writeTransaction } from '../database/db.ts'
+import { db, storeWritesRefused, writableDb, writeTransaction } from '../database/db.ts'
 import { adoptRunMutation, auditRunMutation, authorizeRunMutation } from '../run/run-authority.ts'
 import type { TransportName } from '../transport/transport.ts'
 
@@ -133,7 +133,7 @@ export function checkMessages(runId: string): RunMessage[] {
       )
       .all(run.root_record_id) as RunMessage[]
     if (!rows.length) return []
-    if (linkedWorktreeReadOnly) return rows
+    if (storeWritesRefused()) return rows
     const readAt = nowIso()
     const ids = rows.map(() => '?').join(',')
     db()
@@ -158,7 +158,7 @@ export function unreadWorkerMessages(runId: string): RunMessage[] {
 
 /** Receipt only messages already placed into a prompt submitted to the worker. */
 export function receiptWorkerMessages(runId: string, ids: string[]): void {
-  if (!ids.length || linkedWorktreeReadOnly) return
+  if (!ids.length || storeWritesRefused()) return
   const run = identity(runId)
   if (run?.status !== 'running') return
   const slots = ids.map(() => '?').join(',')

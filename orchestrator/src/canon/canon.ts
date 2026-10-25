@@ -8,7 +8,7 @@ import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
-import { db, linkedWorktreeReadOnly, nowIso, writeTransaction } from '../database/db.ts'
+import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
 import { isDocInjectedForRun } from '../doc/doc-injection.ts'
 import { type Doc, docsForRun, listDocs } from '../doc/docs.ts'
 import { type GateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
@@ -672,7 +672,7 @@ function getDocForPack(packed: PackDoc): Doc {
 }
 
 export function recordPack(pack: Pack): void {
-  if (linkedWorktreeReadOnly) return
+  if (storeWritesRefused()) return
   const findings = findingsForPack(pack).reduce((sum, row) => sum + row.findings.length, 0)
   const projectId = pack.project ? (projectByName(pack.project)?.recordId ?? null) : null
   writeTransaction(() => {
@@ -714,10 +714,11 @@ export type PackDiff = {
 /** Store the pack the diff compiled as the new snapshot; null when it matches the stored one. */
 export function acceptPackDiff(diff: PackDiff): Pack | null {
   if (diff.stored?.sha256 === diff.current.sha256) return null
-  if (linkedWorktreeReadOnly) {
+  if (storeWritesRefused()) {
     throw new Error(
-      'refusing canon acceptance: linked-worktree binary has read-only store access\n' +
-        `remedy: run this command with the main checkout's bin/${PLATFORM_SLUG}`,
+      'refusing canon acceptance: this process opens the store read-only\n' +
+        'invariant: Canon is accepted by the process that may write the shared store.\n' +
+        `cleared by: run this command with the main checkout's bin/${PLATFORM_SLUG}`,
     )
   }
   recordPack(diff.current)

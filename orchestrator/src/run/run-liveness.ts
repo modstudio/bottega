@@ -5,7 +5,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { linkedWorktreeReadOnly, writeTransaction } from '../database/db.ts'
+import { storeWritesRefused, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
@@ -385,7 +385,7 @@ export function reapStale(
     .all() as RunningRow[]
 
   const { dead, abandonedBootstraps, setupDeaths, recordedCauseDeaths } = groupReapedRuns(rows, now)
-  if (linkedWorktreeReadOnly) {
+  if (storeWritesRefused()) {
     return [
       ...dead.map((id) => {
         const row = rows.find((candidate) => candidate.record_id === id)!

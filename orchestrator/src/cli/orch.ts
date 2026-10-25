@@ -40,6 +40,14 @@ async function fullCli(
   recoverMissingWorkingDirectory()
   const { registerStandardRuntime } = await import('../runtime/runtime-registration.ts')
   registerStandardRuntime()
+  // The worker's ask server declares the one store broker channel before anything
+  // opens the store: a store opened read-only can never be written through
+  // afterwards, and this process's question, message and gate rows ARE the
+  // escalation channel its worker uses.
+  if (isAskServerInvocation(argv, invocation)) {
+    const { declareStoreBrokerChannel } = await import('../database/db.ts')
+    declareStoreBrokerChannel()
+  }
   if (!storeFree && argv[0] !== 'migrate' && argv[0] !== 'update') {
     const { ensureDatabase } = await import('../database/db.ts')
     ensureDatabase()
@@ -47,6 +55,18 @@ async function fullCli(
   const { recordInvocationSession, run } = await import('./program.ts')
   if (!storeFree) recordInvocationSession(argv)
   return run(argv, invocation)
+}
+
+/** The one invocation that writes the store from a worker-classified environment: the ask server. */
+export function isAskServerInvocation(
+  argv: readonly string[],
+  invocation?: PublicCommandInvocation,
+): boolean {
+  const ownerPath = invocation?.ownerPath ?? argv
+  const publicPath = invocation?.publicPath ?? argv
+  return (
+    ownerPath[0] === 'ask-server' || (publicPath[0] === 'mcp' && publicPath[1] === 'ask-server')
+  )
 }
 
 /** The one outer-boundary decision that keeps informational invocations store-free. */
@@ -136,7 +156,7 @@ async function cliEntry(
   try {
     return await enterFullCli(argv, storeFree)
   } catch (error) {
-    if (argv[0] === 'ask-server') {
+    if (isAskServerInvocation(argv, invocation)) {
       const { writeAskServerFailure } = await import('../ask/ask-failure.ts')
       writeAskServerFailure(error)
     }

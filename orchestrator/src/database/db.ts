@@ -27,6 +27,7 @@ import {
   linkedWorktreeDatabaseInitializationMessage,
   linkedWorktreeMigrationAllowed,
   missingDatabaseMessage,
+  workerStoreMigrationRefusal,
 } from './database-location.ts'
 import { carryMachineIdentity } from './machine-identity-store.ts'
 import {
@@ -82,7 +83,7 @@ function registeredOpenHooks(): OpenHooks {
   )
 }
 function requireOpenHooksForWritableMode(): void {
-  if (!linkedWorktreeReadOnly) registeredOpenHooks()
+  if (!storeWritesRefused()) registeredOpenHooks()
 }
 function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
   for (const hook of registeredOpenHooks()[moment] ?? []) hook(database)
@@ -91,6 +92,11 @@ const LINKED_WORKTREE_WRITE_REFUSAL =
   'refusing to write run or project rows to the registered main store from a linked worktree\n' +
   'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
   'cleared by: orch <command> with BOTTEGA_ORCHESTRATOR_DB_WRITE=1, or set BOTTEGA_ORCHESTRATOR_DB to a scratch copy'
+
+const WORKER_STORE_WRITE_REFUSAL =
+  'refusing to write orchestrator rows from a worker process\n' +
+  'invariant: A worker writes the store only through its ask server, the one declared broker channel.\n' +
+  'cleared by: ask, message or note through the worker channel, or run the command as an operator from the main checkout'
 
 /**
  * Two paths name one file when their real paths agree. The file may not exist
@@ -110,34 +116,81 @@ function sameStore(a: string, b: string): boolean {
   return real(a) === real(b)
 }
 
+/** Who is calling, and how the store was named. Gathered once; the decision is pure. */
+export type StoreActorFacts = {
+  /** A linked-worktree binary is using this store. */
+  linkedWorktreeBinary: boolean
+  /** BOTTEGA_ORCHESTRATOR_DB named the store. */
+  namedStoreOverride: boolean
+  /** The named store is the registered main store. */
+  namedStoreIsMainStore: boolean
+  /** BOTTEGA_ORCHESTRATOR_DB_WRITE=1 is the operator's recorded insistence, which lifts the linked-worktree condition alone. */
+  operatorWriteInsistence: boolean
+  workerCaller: boolean
+  /** The ask server, the one declared broker channel. */
+  brokerChannel: boolean
+}
+
 /**
- * BOTTEGA_ORCHESTRATOR_DB used to authorize a linked-worktree binary to write whatever it named,
- * and the dispatcher exports the live path to every worker. A worker's own test
- * leg therefore held a write handle on the live store from a tree whose binary
- * should only ever have read it. Location and write authority are separate:
- * a linked binary may read the main store under any name and never writes it.
- * BOTTEGA_ORCHESTRATOR_DB_WRITE=1 is the operator's explicit, recorded insistence.
+ * Location and write authority are separate: a restricted actor reads the store
+ * under any name and never writes it. A linked-worktree binary is restricted
+ * unless the operator insists; a worker caller always is. The operator's
+ * insistence lifts the linked-worktree condition alone, so a worker cannot lift
+ * its own restriction with it.
  */
-const restrictedLinkedWorktreeActor =
-  DATABASE_RESOLUTION.linkedWorktreeBinary &&
-  process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1' &&
-  (DATABASE_RESOLUTION.method !== 'BOTTEGA_ORCHESTRATOR_DB' ||
-    sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
+export function restrictedStoreActor(facts: StoreActorFacts): boolean {
+  if (facts.brokerChannel) return false
+  if (facts.workerCaller) return true
+  return (
+    facts.linkedWorktreeBinary &&
+    !facts.operatorWriteInsistence &&
+    (!facts.namedStoreOverride || facts.namedStoreIsMainStore)
+  )
+}
+
+const storeActorFacts: Omit<StoreActorFacts, 'brokerChannel'> = {
+  linkedWorktreeBinary: DATABASE_RESOLUTION.linkedWorktreeBinary,
+  namedStoreOverride: DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB',
+  namedStoreIsMainStore: sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath),
+  operatorWriteInsistence: process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE === '1',
+  workerCaller: classifyCaller(process.env).kind === 'worker',
+}
+
+/**
+ * The worker's ask server is the one process that writes the store from a
+ * worker-classified environment, because its question, message and gate rows ARE
+ * the escalation channel. It declares itself here before it opens the store: a
+ * store opened read-only can never be written through afterwards. Nothing infers
+ * this channel from arguments or from the environment.
+ */
+let storeBrokerChannel = false
+
+export function declareStoreBrokerChannel(): void {
+  storeBrokerChannel = true
+}
+
+/** The refusal a refused write reports, naming the condition that refused it. */
+export function storeWriteRefusal(workerCaller: boolean): string {
+  return workerCaller ? WORKER_STORE_WRITE_REFUSAL : LINKED_WORKTREE_WRITE_REFUSAL
+}
 
 function orchestratorStoreAccess(walOrShmSidecarPresent: boolean) {
   return decideStoreAccess({
-    restrictedActor: restrictedLinkedWorktreeActor,
+    restrictedActor: restrictedStoreActor({ ...storeActorFacts, brokerChannel: storeBrokerChannel }),
     storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
     walOrShmSidecarPresent,
   })
 }
 
-export const linkedWorktreeReadOnly = orchestratorStoreAccess(false).writesRefused
+/** Whether this process may write the store, or open it for writing at all. */
+export function storeWritesRefused(): boolean {
+  return orchestratorStoreAccess(false).writesRefused
+}
 
 let registeredStoreWriteProtected = false
 
-export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
-  return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
+export function databaseOpenMode(): 'read-write' | 'read-only restricted caller' {
+  return storeWritesRefused() ? 'read-only restricted caller' : 'read-write'
 }
 
 /**
@@ -200,7 +253,7 @@ export function writableDb(): Database {
 function openWritableHandle(): Database | null {
   if (
     !handle ||
-    linkedWorktreeReadOnly ||
+    storeWritesRefused() ||
     registeredStoreWriteProtected ||
     connectionWritable !== true
   ) {
@@ -363,7 +416,8 @@ export function db(writable = false): Database {
 }
 
 function defaultDatabase(writable: boolean): Database {
-  if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+  if (writable && storeWritesRefused())
+    throw new Error(storeWriteRefusal(storeActorFacts.workerCaller))
   if (handle) {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
     return refuseOrReloadStaleSchema(handle, writable)
@@ -399,7 +453,7 @@ function defaultDatabase(writable: boolean): Database {
 
 function refuseOpenMigration(d: Database, refused: string): never {
   try {
-    if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
+    if (contentionTableExists(d) && !storeWritesRefused()) {
       writeTransaction(
         () =>
           insertContention(d, {
@@ -429,7 +483,7 @@ function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
       sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
       process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1',
   )
-  if (!linkedWorktreeReadOnly && !registeredStoreWriteProtected && databaseWritable(d)) {
+  if (!storeWritesRefused() && !registeredStoreWriteProtected && databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -467,7 +521,7 @@ export function tryWriteContention(
   opts?: { busyTimeoutMs?: number },
 ): void {
   try {
-    if (linkedWorktreeReadOnly || registeredStoreWriteProtected) return
+    if (storeWritesRefused() || registeredStoreWriteProtected) return
     if (opts?.busyTimeoutMs === 0) {
       const d = new Database(DB_PATH, { readwrite: true, create: false })
       try {
@@ -634,9 +688,16 @@ export function migrateDatabase(
 }
 
 /** Give machine migrate a handle while the store is intentionally mid-journal. */
+/** Migration entries refuse a worker caller: the store's schema belongs to the operator. */
+function refuseStoreMigrationFromWorkerCaller(): void {
+  if (storeActorFacts.workerCaller && !linkedWorktreeMigrationAllowed(DB_PATH))
+    throw new Error(workerStoreMigrationRefusal(DB_PATH))
+}
+
 export async function withDatabaseForMigrationStep<T>(
   action: (database: Database) => Promise<T>,
 ): Promise<T> {
+  refuseStoreMigrationFromWorkerCaller()
   const database = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
@@ -648,6 +709,7 @@ export async function withDatabaseForMigrationStep<T>(
 
 /** Give a synchronous migration adapter a handle while the store is intentionally mid-journal. */
 export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Database) => T): T {
+  refuseStoreMigrationFromWorkerCaller()
   const database = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
