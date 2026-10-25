@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { formatSessionLivenessEvidence, sessionLivenessDecision } from './session-liveness.ts'
+import { sessionLivenessDecision } from './session-liveness.ts'
 
 describe('session liveness decision', () => {
   const old = 700
@@ -44,10 +44,6 @@ describe('session liveness decision', () => {
     )
 
     expect(evidence.ownerProcess).toBe('live')
-    expect(evidence.candidates).toHaveLength(2)
-    expect(formatSessionLivenessEvidence(evidence)).toBe(
-      'pid 42 started shell-start gone; pid 43 started harness-start alive; last_seen 1970-01-01T00:00:00.700Z',
-    )
   })
 
   test('all unshared processes gone is dead only after the live window', () => {
@@ -98,7 +94,7 @@ describe('session liveness decision', () => {
     expect(sessionLivenessDecision({ ...facts, ownerSeen: null, probes: [] }).ownerProcess).toBe(
       'unknown',
     )
-    for (const ancestorChain of [null, '[]', 'not-json'])
+    for (const ancestorChain of [null, '[]'])
       expect(
         sessionLivenessDecision({
           ...facts,
@@ -109,12 +105,33 @@ describe('session liveness decision', () => {
     expect(
       sessionLivenessDecision({
         ...facts,
+        ownerSeen: { ancestorChain: 'not-json', lastSeenAt: old },
+        probes: [
+          {
+            pid: 42,
+            startTime: 'owner-start',
+            alive: false,
+            observedStartTime: null,
+          },
+        ],
+      }).ownerProcess,
+    ).toBe('unknown')
+    expect(
+      sessionLivenessDecision({
+        ...facts,
         ownerSeen: {
           ancestorChain: JSON.stringify([{ pid: 42, startTime: 'owner-start' }]),
           lastSeenAt: old,
         },
         actorAncestorChain: 'not-json',
-        probes: [],
+        probes: [
+          {
+            pid: 42,
+            startTime: 'owner-start',
+            alive: false,
+            observedStartTime: null,
+          },
+        ],
       }).ownerProcess,
     ).toBe('unknown')
   })

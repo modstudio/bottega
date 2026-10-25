@@ -3,6 +3,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import type { ConsumeDocHandoff } from '../doc/doc-consume-command.ts'
 import { consumeDoc } from '../doc/docs.ts'
 import { handoffConsumedResumeBrief } from '../session/resume-brief-handoff.ts'
 import { decideMcpDocWrite } from './mcp-doc-write.ts'
@@ -11,7 +12,10 @@ const text = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
 })
 
-export function registerMcpDocConsumeTool(server: McpServer): void {
+export function registerMcpDocConsumeTool(
+  server: McpServer,
+  handoff: ConsumeDocHandoff = handoffConsumedResumeBrief,
+): void {
   server.registerTool(
     'consume_doc',
     {
@@ -29,11 +33,8 @@ export function registerMcpDocConsumeTool(server: McpServer): void {
       const result = await consumeDoc(scope, subject ?? null, slug, {
         reason: 'consumed by session',
       })
-      const handoff =
-        scope === 'resume' && !result.already_consumed
-          ? await handoffConsumedResumeBrief(result)
-          : null
-      return text({ ...result, handoff })
+      const handoffResult = await handoff(result)
+      return text({ ...result, handoff: handoffResult })
     },
   )
 }

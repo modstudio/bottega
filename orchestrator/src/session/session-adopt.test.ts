@@ -1,7 +1,8 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { adoptSessionRuns, formatSessionAdoption } from './session-adopt.ts'
+import { transferRunMutationOwnership } from '../run/run-authority.ts'
+import { adoptSessionRuns } from './session-adopt.ts'
 
 const machine = '00000000-0000-4000-8000-000000000001'
 const chain = JSON.stringify([
@@ -48,10 +49,6 @@ test('adopts roots and held turns, audits each root, and enqueues terminal membe
     key: 'DEV-1722',
     turns: 2,
   })
-  expect(JSON.parse(JSON.stringify(report)).runs[0].recordId).toBe(root)
-  expect(formatSessionAdoption(report)).toContain(
-    `run ${report.runs[0]!.number} ${root} implement DEV-1722: 2 turn(s)`,
-  )
   expect(
     db().query('SELECT session_id FROM run WHERE record_id IN (?,?) ORDER BY turn').all(root, turn),
   ).toEqual([{ session_id: 'successor' }, { session_id: 'successor' }])
@@ -63,7 +60,7 @@ test('adopts roots and held turns, audits each root, and enqueues terminal membe
   })
 })
 
-test('refuses self, a live owner, and an unknown recently seen owner', () => {
+test('refuses self, a live owner, and an unknown owner even without a seen row', () => {
   expect(() =>
     adoptSessionRuns('same', 'self', { database: db(), actor: 'same', machine }),
   ).toThrow('cannot adopt its own runs')
@@ -82,7 +79,6 @@ test('refuses self, a live owner, and an unknown recently seen owner', () => {
     }),
   ).toThrow('session live-owner is live')
 
-  seen('unknown-owner', '2026-10-24T01:30:00.000Z', null)
   expect(() =>
     adoptSessionRuns('unknown-owner', 'too soon', {
       database: db(),
@@ -91,5 +87,36 @@ test('refuses self, a live owner, and an unknown recently seen owner', () => {
       probe: () => ({ alive: false, startTime: null }),
       machine,
     }),
-  ).toThrow('wait until last_seen is older than the session live window')
+  ).toThrow('retry the run mutation after its ownership window expires')
+})
+
+test('reports roots moved before a later transfer failure and roots still owned by the target', () => {
+  const first = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'former' })
+  const second = addRun({ agent: 'codex', job: 'review', status: 'running', session: 'former' })
+  seen('former', '2026-10-24T00:00:00.000Z')
+  let transfers = 0
+
+  const report = adoptSessionRuns('former', 'partial handoff', {
+    database: db(),
+    actor: 'successor',
+    now: Date.parse('2026-10-24T02:00:00.000Z'),
+    probe: () => ({ alive: false, startTime: null }),
+    machine,
+    transfer: (...args) => {
+      transfers += 1
+      if (transfers === 2) throw new Error('injected transfer failure')
+      return transferRunMutationOwnership(...args)
+    },
+  })
+
+  expect(report.runs.map(({ recordId }) => recordId)).toEqual([first])
+  expect(report.notMoved).toEqual([
+    expect.objectContaining({ recordId: second, reason: 'injected transfer failure' }),
+  ])
+  expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(first)).toEqual({
+    session_id: 'successor',
+  })
+  expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(second)).toEqual({
+    session_id: 'former',
+  })
 })

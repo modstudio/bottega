@@ -84,14 +84,13 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
   const row = database
     .query(
       `SELECT requested.record_id run_record_id, root.record_id root_id, root.session_id owner,
-              root.job, root.label, seen.last_seen,
+              root.job, root.label,
               (SELECT COALESCE(turn.last_event_at,turn.started_at)
                  FROM run turn
                 WHERE turn.record_id=root.record_id OR turn.parent_run_record_id=root.record_id
                 ORDER BY turn.turn DESC,turn.number DESC LIMIT 1) chain_last_activity
        FROM run requested
        JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
-       LEFT JOIN session_seen seen ON seen.session_id=root.session_id
       WHERE requested.record_id = ?`,
     )
     .get(runId) as {
@@ -100,7 +99,6 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
     owner: string | null
     job: string
     label: string | null
-    last_seen: string | null
     chain_last_activity: string
   } | null
   if (!row) throw new Error(`no run ${runId}`)
@@ -108,13 +106,13 @@ export function runMutationAuthority(database: Database, runId: string): RootAut
   const liveness =
     row.owner && row.owner !== actor
       ? sessionLivenessEvidence(database, row.owner, actor)
-      : { ownerProcess: 'unknown' as const, candidates: [] }
+      : { ownerProcess: 'unknown' as const, candidates: [], ownerLastSeenAt: null }
   return {
     runId: row.run_record_id,
     rootId: row.root_id,
     owner: row.owner,
     actor,
-    ownerLastSeenAt: row.last_seen === null ? null : Date.parse(row.last_seen),
+    ownerLastSeenAt: liveness.ownerLastSeenAt,
     chainLastActivityAt: Date.parse(row.chain_last_activity),
     coordinatorRun: filedIssueLoopRun({ id: row.root_id, job: row.job, label: row.label }) !== null,
     now: Date.now(),

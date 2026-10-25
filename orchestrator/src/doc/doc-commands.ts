@@ -23,7 +23,7 @@ import { checkDoc, repoRootForDoc } from '../canon/canon.ts'
 import type { CanonLintInputCollector } from '../canon/canon-files.ts'
 import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
-import { handleDocConsumeCommand } from './doc-consume-command.ts'
+import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
@@ -76,10 +76,7 @@ type DocCommandPorts = {
     cwd?: string
   }): SelectedDocWriteTree | undefined
   collectCanonLintInput: CanonLintInputCollector
-  consumeResumeHandoff?(doc: Awaited<ReturnType<typeof import('./docs.ts').consumeDoc>>): Promise<{
-    lines: string[]
-    [key: string]: unknown
-  }>
+  consumeResumeHandoff: ConsumeDocHandoff
 }
 
 function revisionAuthorName(author: string, user: ReturnType<typeof cachedSignedInRecordUser>) {

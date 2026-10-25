@@ -111,6 +111,7 @@ export const mcpModules: McpModule[] = [
   module('orchestrator/src/mcp/mcp-doc-consume-tool.ts', [
     '@modelcontextprotocol/server',
     'zod',
+    '../doc/doc-consume-command.ts',
     '../doc/docs.ts',
     '../session/resume-brief-handoff.ts',
     './mcp-doc-write.ts',

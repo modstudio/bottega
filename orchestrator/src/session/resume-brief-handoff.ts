@@ -4,9 +4,8 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, sessionId } from '../database/db.ts'
-import { hostedDocClient } from '../doc/doc-hosted-client.ts'
-import type { Doc } from '../doc/doc-read-store.ts'
-import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
+import type { ConsumedDoc } from '../doc/docs.ts'
+import { resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
 import type { SessionProcessProbe } from '../run/session-liveness-adapter.ts'
 import { adoptSessionRuns, type SessionAdoptionReport } from './session-adopt.ts'
 
@@ -17,36 +16,28 @@ export type ResumeBriefHandoff = {
   lines: string[]
 }
 
-async function earliestAuthorSession(doc: Doc, database: Database): Promise<string | null> {
-  const local = database
-    .query<{ session_id: string }, [string]>(
-      `SELECT session_id FROM doc_revision
-       WHERE doc_record_id=? AND session_id IS NOT NULL
-       ORDER BY number LIMIT 1`,
-    )
-    .get(doc.record_id)
-  if (local?.session_id) return local.session_id
-  if (currentRecordWriteDecision(database) !== 'hosted') return null
-  const revisions = await (await hostedDocClient(doc.scope, doc.subject)).listRevisions(
-    doc.record_id,
-  )
-  return (
-    (revisions
-      .filter((revision) => typeof revision.sessionId === 'string' && revision.sessionId)
-      .sort((left, right) => String(left.at).localeCompare(String(right.at)))[0]?.sessionId as
-      | string
-      | undefined) ?? null
-  )
-}
-
 export async function handoffConsumedResumeBrief(
-  doc: Doc,
+  doc: ConsumedDoc,
   options: { database?: Database; probe?: SessionProcessProbe; machine?: string } = {},
 ): Promise<ResumeBriefHandoff> {
   const database = options.database ?? db()
+  if (doc.scope !== 'resume')
+    return {
+      authorSession: null,
+      status: 'skipped',
+      report: null,
+      lines: ['resume handoff skipped: consumed document is not a resume brief'],
+    }
+  if (doc.already_consumed)
+    return {
+      authorSession: null,
+      status: 'skipped',
+      report: null,
+      lines: ['resume handoff skipped: resume brief was already consumed'],
+    }
   let author: string | null
   try {
-    author = await earliestAuthorSession(doc, database)
+    author = await resumeBriefAuthorSession(doc, database)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     return {
@@ -78,15 +69,21 @@ export async function handoffConsumedResumeBrief(
       `resume brief ${doc.subject}/${doc.slug} consumed by ${actor}`,
       { consent: 'resume-handoff', database, probe: options.probe, machine: options.machine },
     )
+    const remaining = report.notMoved.length
+    const moved = report.totalRuns > 0
     return {
       authorSession: author,
-      status: 'moved',
+      status: moved ? 'moved' : remaining ? 'refused' : 'moved',
       report,
-      lines: report.runs.length
+      lines: moved
         ? [
-            `resume handoff moved ${report.totalRuns} run(s) and ${report.totalTurns} turn(s) from ${author} to ${report.toSession}`,
+            `resume handoff moved ${report.totalRuns} run(s) and ${report.totalTurns} turn(s) from ${author} to ${report.toSession}${remaining ? `; ${remaining} run(s) remain with ${author}; run ${command}` : ''}`,
           ]
-        : [`resume handoff: session ${author} owns no runs`],
+        : remaining
+          ? [
+              `resume handoff did not move runs: ${remaining} run(s) remain with ${author}; run ${command}`,
+            ]
+          : [`resume handoff: session ${author} owns no runs`],
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

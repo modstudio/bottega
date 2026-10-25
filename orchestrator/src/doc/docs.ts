@@ -655,12 +655,14 @@ export async function removeDoc(
  * recovery artifact. Patch only the three named fields instead of parsing and
  * serializing YAML, which would rewrite unrelated whitespace and ordering.
  */
+export type ConsumedDoc = Doc & { already_consumed: boolean }
+
 export async function consumeDoc(
   scope: string,
   subject: string | null,
   slug: string,
   context: DocWriteContext,
-): Promise<Doc & { already_consumed: boolean }> {
+): Promise<ConsumedDoc> {
   assertWorkerDocStoreWriteAllowed('consumeDoc')
   writableDb()
   validateHistoricDocAddress(scope, slug)

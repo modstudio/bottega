@@ -338,6 +338,7 @@ export const importBoundaries: ImportBoundary[] = [
     'local-doc-revisions-boundary',
     'orchestrator/src/doc/doc-revision-store.ts',
     [
+      'bun:sqlite',
       '../../../shared/docs.ts',
       '../database/db.ts',
       '../database/entity-number.ts',

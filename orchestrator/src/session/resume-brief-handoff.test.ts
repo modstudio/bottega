@@ -4,6 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { consumeDoc, setDoc } from '../../test/fixtures/docs.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { listDocRevisions, restoreDoc } from '../doc/docs.ts'
 import { upsertProject } from '../project/projects.ts'
 import { handoffConsumedResumeBrief } from './resume-brief-handoff.ts'
 
@@ -69,12 +70,69 @@ test("a successor consuming a resume brief receives the author's runs", async ()
   })
 })
 
+test('a resume handoff with unknown process evidence still moves the author runs', async () => {
+  const stored = await brief()
+  const root = addRun({ agent: 'codex', job: 'implement', status: 'ok', session: 'brief-author' })
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, { database: db(), machine })
+
+  expect(handoff.status).toBe('moved')
+  expect(handoff.report?.runs.map(({ recordId }) => recordId)).toEqual([root])
+})
+
+test('a reopened brief hands off runs from the session that authored the current lifecycle', async () => {
+  const stored = await brief()
+  const openRevision = listDocRevisions('resume', 'handoff-project', stored.slug)[0]!.record_id
+  await consumeDoc('resume', 'handoff-project', stored.slug)
+  process.env.CLAUDE_CODE_SESSION_ID = 'second-brief-author'
+  await restoreDoc('resume', 'handoff-project', stored.slug, openRevision, {
+    reason: 'reopen for the next author',
+  })
+  const root = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    session: 'second-brief-author',
+  })
+  process.env.CLAUDE_CODE_SESSION_ID = 'third-brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, { database: db(), machine })
+
+  expect(handoff).toMatchObject({ status: 'moved', authorSession: 'second-brief-author' })
+  expect(handoff.report?.runs.map(({ recordId }) => recordId)).toEqual([root])
+})
+
 test('the author consuming their own brief transfers nothing', async () => {
   const stored = await brief()
   const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
   const handoff = await handoffConsumedResumeBrief(consumed, { database: db() })
 
   expect(handoff).toMatchObject({ status: 'skipped', authorSession: 'brief-author', report: null })
+})
+
+test('handoff skips non-resume and already-consumed documents inside the service', async () => {
+  const global = await setDoc({
+    scope: 'global',
+    subject: null,
+    slug: 'not-a-resume',
+    title: 'Not a resume',
+    body: '---\nstatus: open\n---\n\nBODY\n',
+  })
+  const consumedGlobal = await consumeDoc('global', null, global.slug)
+  expect(
+    await handoffConsumedResumeBrief(consumedGlobal, { database: db(), machine }),
+  ).toMatchObject({ status: 'skipped', authorSession: null })
+
+  const stored = await brief()
+  await consumeDoc('resume', 'handoff-project', stored.slug)
+  const alreadyConsumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+  expect(alreadyConsumed.already_consumed).toBe(true)
+  expect(
+    await handoffConsumedResumeBrief(alreadyConsumed, { database: db(), machine }),
+  ).toMatchObject({ status: 'skipped', authorSession: null })
 })
 
 test('a live author does not fail consume and names the explicit adopt command', async () => {

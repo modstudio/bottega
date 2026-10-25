@@ -75,7 +75,11 @@ async function command(args: string[], stdin = '') {
           code = value
         },
       },
-      { selectDocWriteTree, collectCanonLintInput },
+      {
+        selectDocWriteTree,
+        collectCanonLintInput,
+        consumeResumeHandoff: async () => ({ lines: [] }),
+      },
     )
   } catch (error) {
     code = 1

@@ -2,7 +2,9 @@
 /** Applies and presents one document consume, delegating resume handoff through a port. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { consumeDoc } from './docs.ts'
+import { type ConsumedDoc, consumeDoc } from './docs.ts'
+
+export type ConsumeDocHandoff = (doc: ConsumedDoc) => Promise<{ lines: string[] }>
 
 type ConsumeFlags = {
   has(name: string): boolean
@@ -16,10 +18,7 @@ export async function handleDocConsumeCommand(input: {
   subject: string | null
   flags: ConsumeFlags
   log(...values: unknown[]): void
-  handoff?(doc: Awaited<ReturnType<typeof consumeDoc>>): Promise<{
-    lines: string[]
-    [key: string]: unknown
-  }>
+  handoff: ConsumeDocHandoff
 }): Promise<boolean> {
   if (input.sub !== 'consume') return false
   const slug = input.argv[2]
@@ -32,10 +31,7 @@ export async function handleDocConsumeCommand(input: {
     author: input.flags.flag('author'),
     expectedRevision: input.flags.flag('expect'),
   })
-  const handoff =
-    input.scope === 'resume' && !result.already_consumed && input.handoff
-      ? await input.handoff(result)
-      : null
+  const handoff = await input.handoff(result)
   if (input.flags.has('json')) input.log(JSON.stringify({ ...result, handoff }))
   else {
     input.log(
@@ -43,7 +39,7 @@ export async function handleDocConsumeCommand(input: {
         ? `already consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`
         : `consumed ${result.scope}/${result.subject ?? '_'}/${result.slug}`,
     )
-    for (const line of handoff?.lines ?? []) input.log(line)
+    for (const line of handoff.lines) input.log(line)
   }
   return true
 }
