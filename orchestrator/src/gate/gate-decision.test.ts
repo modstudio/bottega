@@ -147,12 +147,15 @@ test('a merge in progress with unmerged paths is refused, naming them', () => {
 })
 
 test('a rebase in progress is refused', () => {
-  expect(decideGateCheckoutRefusal({ presentMarkers: ['REBASE_HEAD'], unmergedPaths: [] })).toBe(
-    'checkout has a rebase in progress; finish or abort the operation',
-  )
   expect(decideGateCheckoutRefusal({ presentMarkers: ['rebase-merge'], unmergedPaths: [] })).toBe(
     'checkout has a rebase in progress; finish or abort the operation',
   )
+})
+
+test('a leftover REBASE_HEAD over a clean tree is not a rebase in progress', () => {
+  expect(
+    decideGateCheckoutRefusal({ presentMarkers: ['REBASE_HEAD'], unmergedPaths: [] }),
+  ).toBeNull()
 })
 
 test('broker tooling compares a rebased worker to the live merge-base, not its recorded base', () => {

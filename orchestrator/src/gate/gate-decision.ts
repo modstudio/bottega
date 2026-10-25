@@ -107,9 +107,13 @@ export function decideWorkerGateInput(
   }
 }
 
+/**
+ * Git's own test for a rebase in progress is the `rebase-merge` or
+ * `rebase-apply` directory; `REBASE_HEAD` can outlive the rebase that wrote it,
+ * so it is not a marker here.
+ */
 export const GATE_CHECKOUT_OPERATION_MARKERS = [
   'MERGE_HEAD',
-  'REBASE_HEAD',
   'rebase-merge',
   'rebase-apply',
   'CHERRY_PICK_HEAD',
@@ -121,7 +125,6 @@ const CHECKOUT_OPERATION_BY_MARKER: Record<
   string
 > = {
   MERGE_HEAD: 'merge',
-  REBASE_HEAD: 'rebase',
   'rebase-merge': 'rebase',
   'rebase-apply': 'rebase',
   CHERRY_PICK_HEAD: 'cherry-pick',
