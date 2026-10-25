@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { db, writeTransaction } from '../database/db.ts'
+import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projects } from '../project/projects.ts'
 
 export type HubTaskReference = { key: string; record_id: string; project: string }
@@ -38,6 +38,7 @@ export type RunTaskLinkReport = {
   task_links_by_source: Record<TaskLinkSource, number>
   project_links_by_source: Record<ProjectLinkSource, number>
   without_task_by_job: Record<string, number>
+  keys_without_task: Record<string, number>
   without_task_or_project_by_job: Record<string, number>
 }
 
@@ -107,7 +108,7 @@ function deriveTaskLink(
   tasks: ReadonlyMap<string, HubTaskReference>,
   resolvedTasks: ReadonlyMap<string, string | null>,
 ): Pick<DerivedRunLinks, 'task_record_id' | 'task_source'> {
-  if (run.task_record_id !== null) return {}
+  if (run.task_record_id !== null || run.probe === 1) return {}
   const sources = [
     ['launch_key', run.launch_key ? tasks.get(run.launch_key) : undefined],
     ['review_ref', firstKnownTask(run.review_ref, tasks)],
@@ -221,6 +222,7 @@ function emptyReport(dryRun: boolean): RunTaskLinkReport {
     task_links_by_source: { launch_key: 0, review_ref: 0, branch: 0, turn: 0 },
     project_links_by_source: { 'task-project': 0, cwd: 0, 'scratchpad-cwd': 0 },
     without_task_by_job: {},
+    keys_without_task: {},
     without_task_or_project_by_job: {},
   }
 }
@@ -237,7 +239,7 @@ export async function linkRunTasks(
     hubReader?: HubTaskReader
   } = {},
 ): Promise<RunTaskLinkReport> {
-  const database = dependencies.database ?? db()
+  const database = dependencies.database ?? (options.dryRun ? db() : writableDb())
   const registered = dependencies.registeredProjects ?? projects(undefined, database)
   const tasks = await hubTaskMap(registered, dependencies.hubReader)
   const runs = database
@@ -257,6 +259,7 @@ export async function linkRunTasks(
     const taskId = link.task_record_id ?? run.task_record_id
     const projectId = link.project_record_id ?? run.project_record_id
     if (taskId === null) increment(report.without_task_by_job, run.job)
+    if (taskId === null && run.launch_key) increment(report.keys_without_task, run.launch_key)
     if (run.probe !== 1 && taskId === null && projectId === null) {
       increment(report.without_task_or_project_by_job, run.job)
     }
@@ -300,6 +303,7 @@ export function formatRunTaskLinkReport(report: RunTaskLinkReport): string[] {
     `task links: ${format(report.task_links_by_source)}`,
     `project links: ${format(report.project_links_by_source)}`,
     `without task by job: ${format(report.without_task_by_job)}`,
+    `keys naming no task: ${format(report.keys_without_task)}`,
     `without task or project by job: ${format(report.without_task_or_project_by_job)}`,
   ]
 }

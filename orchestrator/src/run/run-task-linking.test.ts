@@ -115,11 +115,11 @@ describe('run link derivation', () => {
     ).toEqual({ record_id: 'run-1' })
   })
 
-  test('never overwrites links and never assigns a project to a probe', () => {
+  test('never overwrites links and never links a probe', () => {
     const result = deriveRunLinks(
       [
         facts({ task_record_id: 'existing-task', project_record_id: 'existing-project' }),
-        facts({ record_id: 'probe', probe: 1, cwd: '/work/alpha' }),
+        facts({ record_id: 'probe', probe: 1, launch_key: 'DEV-6', cwd: '/work/alpha' }),
       ],
       taskMap(task('DEV-6')),
       [project('alpha', '/work/alpha')],
@@ -163,6 +163,8 @@ describe('run task linking service', () => {
     addProject('link-dry', '/work/link-dry')
     const runId = addRun({ agent: 'codex', job: 'review-lens' })
     db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('DRY-2', runId)
+    const orphanId = addRun({ agent: 'codex', job: 'review-lens' })
+    db().query('UPDATE run SET launch_key=? WHERE record_id=?').run('GONE-7', orphanId)
 
     const report = await linkRunTasks(
       { dryRun: true },
@@ -171,6 +173,7 @@ describe('run task linking service', () => {
       },
     )
     expect(report.task_links_by_source.launch_key).toBe(1)
+    expect(report.keys_without_task['GONE-7']).toBe(1)
     expect(db().query('SELECT task_record_id FROM run WHERE record_id=?').get(runId)).toEqual({
       task_record_id: null,
     })
