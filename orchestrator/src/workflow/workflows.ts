@@ -59,7 +59,6 @@ import {
 } from './workflow-version-selection.ts'
 
 export type { WorkflowDefinition } from './workflow-definition.ts'
-export { showPinnedWorkflow } from './workflow-version-selection.ts'
 
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
