@@ -24,7 +24,7 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import {
   continuationCheckoutForAnswer,
-  requireContinuationCheckout,
+  continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
@@ -515,9 +515,8 @@ export async function retryRun(
     worktree: string | null
     base_commit: string | null
   }
-  const checkout = requireContinuationCheckout({
+  const checkout = continuationCheckoutForRetry(neverStarted, {
     rootId: row.root_record_id,
-    operation: 'retried',
     requiresRepo: readsRepo,
     latestCwd: latestCheckout.cwd,
     rootCwd: row.root_cwd,
@@ -541,14 +540,14 @@ export async function retryRun(
     retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
     return adoptRunMutation(retryAuthority, 'retry')
   })
-  const retryTree = retryTreeForNeverStarted(neverStarted, checkout.cwd, () =>
+  const retryTree = retryTreeForNeverStarted(neverStarted, row.cwd ?? process.cwd(), () =>
     resolveRetryTree({
       rootId: row.root_record_id,
       projectName: row.repo,
-      projectPath: checkout.project?.path ?? null,
+      projectPath: checkout!.project?.path ?? null,
       readsRepo,
       writesRepo,
-      checkoutCwd: checkout.cwd,
+      checkoutCwd: checkout!.cwd,
       recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
       baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
       agent: agent!,

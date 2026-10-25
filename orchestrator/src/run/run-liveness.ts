@@ -30,11 +30,6 @@ import {
   sharedGitConfigCheckSkipReason,
 } from './shared-git-config-check.ts'
 
-/**
- * The outer ceiling for a run and for callers waiting on one. Liveness itself
- * comes from the coordinator's kernel lease; elapsed time is not evidence that
- * a quiet worker, including one blocked on a ruling, has died.
- */
 /** The common bound for callers following a detached run to its terminal state. */
 export const RUN_FOLLOW_TIMEOUT_MS = STALE_AFTER_MS + 60_000
 

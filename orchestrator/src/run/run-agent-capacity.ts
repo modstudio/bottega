@@ -7,11 +7,11 @@ import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { type RunningRunCounts, runningRunCountsForAgents } from '../route/running-runs.ts'
 import {
-  DETACHED_AGENT_CAPACITY_WAIT_MAX_MS,
   RUN_HOST_WAIT_MAX_MS,
   RUN_HOST_WAIT_POLL_CAP_MS,
   RUN_HOST_WAIT_POLL_MS,
 } from './run-host-capacity.ts'
+import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS } from './run-liveness-policy.ts'
 
 export type CapacityWaitDecision = 'wait' | 'refuse'
 
@@ -76,14 +76,15 @@ function selectAtCapacityBound<T>(
   select: () => T,
   lastError: AgentCapacityError,
   noWait: boolean,
+  detached: boolean,
   maxWaitMs: number,
 ): T {
-  if (noWait) throw refusalAtWaitBound(lastError, true, maxWaitMs)
+  if (noWait) throw refusalAtWaitBound(lastError, true, detached, maxWaitMs)
   try {
     return select()
   } catch (error) {
     if (!(error instanceof AgentCapacityError)) throw error
-    throw refusalAtWaitBound(error, false, maxWaitMs)
+    throw refusalAtWaitBound(error, false, detached, maxWaitMs)
   }
 }
 
@@ -121,6 +122,7 @@ export async function waitForAgentSelection<T>(input: {
         input.select,
         lastCapacityError,
         Boolean(input.noWait),
+        detached,
         maxWaitMs,
       )
     announced = announceCapacityWait(announced, input.onWait, now())
@@ -136,13 +138,16 @@ export async function waitForAgentSelection<T>(input: {
 function refusalAtWaitBound(
   error: AgentCapacityError,
   noWait: boolean,
+  detached: boolean,
   maxWaitMs: number,
 ): AgentCapacityError {
   return noWait
     ? error
     : new AgentCapacityError(
-        `${error.message}; capacity wait bound reached after ${maxWaitMs}ms\n` +
-          `cleared by: retry this command with ${PLATFORM_SLUG} run start --detach`,
+        `${error.message}; capacity wait bound reached after ${maxWaitMs}ms` +
+          (detached
+            ? ''
+            : `\ncleared by: retry this command with ${PLATFORM_SLUG} run start --detach`),
         error.runningCounts,
       )
 }

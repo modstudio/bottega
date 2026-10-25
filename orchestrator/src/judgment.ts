@@ -754,7 +754,7 @@ function refusePendingAgentScore(
   failureKind: string | null,
   flags: JudgmentFlags,
 ): void {
-  if (agent === '(pending)' && !(flags.has('void') && failureKind === 'harness')) {
+  if (agent === '(pending)' && !(flags.has('void') && isNotEvidenceFailure(failureKind))) {
     throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
   }
 }

@@ -144,15 +144,27 @@ describe('score ruling', () => {
     expect(db().query('SELECT * FROM score WHERE run_record_id=?').get(id)).toBeNull()
   })
 
-  test("score --void accepts only a harness-failed '(pending)' run", async () => {
+  test("score --void accepts not-evidence failures for a '(pending)' run", async () => {
     const harness = insert('failed')
     db()
       .query("UPDATE run SET agent='(pending)',failure_kind='harness' WHERE record_id=?")
       .run(harness)
     await score(harness, ['none'], { void: true })
-    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(harness)).toEqual({
-      evidence_excluded: VOID_EXCLUSION_REASON,
-    })
+    const capacity = insert('failed')
+    db()
+      .query("UPDATE run SET agent='(pending)',failure_kind='capacity' WHERE record_id=?")
+      .run(capacity)
+    await score(capacity, ['none'], { void: true })
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(capacity)).toEqual(
+      {
+        evidence_excluded: VOID_EXCLUSION_REASON,
+      },
+    )
+    const nonVoidCapacity = insert('failed')
+    db()
+      .query("UPDATE run SET agent='(pending)',failure_kind='capacity' WHERE record_id=?")
+      .run(nonVoidCapacity)
+    await expect(score(nonVoidCapacity, ['none'])).rejects.toThrow("placeholder '(pending)'")
     const other = insert('failed')
     db().query("UPDATE run SET agent='(pending)',failure_kind='other' WHERE record_id=?").run(other)
     await expect(score(other, ['none'], { void: true })).rejects.toThrow(
