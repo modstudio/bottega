@@ -11,5 +11,5 @@ export const TERMINAL_RUN_STATUSES = ['ok', 'failed', 'stale', 'stopped'] as con
 /** The same statuses for callers that test whether a recorded run status is terminal. */
 export const TERMINAL_RUN_STATUS_SET: ReadonlySet<string> = new Set<string>(TERMINAL_RUN_STATUSES)
 
-/** The same statuses as the quoted, parenthesised SQL list a run `IN` or `NOT IN` test needs. */
+/** The same statuses as the quoted, parenthesized SQL list a run `IN` or `NOT IN` test needs. */
 export const TERMINAL_RUN_STATUS_SQL = `(${TERMINAL_RUN_STATUSES.map((status) => `'${status}'`).join(',')})`

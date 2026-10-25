@@ -21,7 +21,7 @@ describe('terminal run statuses', () => {
    * A query that carries this fragment must prepare against the store, so the rendered list is
    * asserted byte-for-byte: quoted, comma-separated, inside parentheses.
    */
-  test('renders the parenthesised quoted list a run IN test needs', () => {
+  test('renders the parenthesized quoted list a run IN test needs', () => {
     expect(TERMINAL_RUN_STATUS_SQL).toBe("('ok','failed','stale','stopped')")
   })
 })
