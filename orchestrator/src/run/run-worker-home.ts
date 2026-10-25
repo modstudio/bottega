@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
+import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import type { Project } from '../project/projects.ts'
 import { trackedRecipeEnvironment } from '../recipe/tracked-recipe.ts'
@@ -15,6 +16,12 @@ import {
   projectReaderProxyServersForRun,
   type ReaderProxyServer,
 } from '../sandbox/mcp-reader-scope.ts'
+import {
+  probeProjectMcpLaunches,
+  projectMcpProbeLaunches,
+  requiredMcpProbeRefusalError,
+} from '../sandbox/project-mcp-preflight.ts'
+import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import {
   prepareProjectGrokMcpScope,
   prepareSandboxHome,
@@ -78,6 +85,43 @@ export function projectMcpServerName(
   return connection?.server ?? project?.settings.mcpServer ?? project?.name ?? null
 }
 
+/** The MCP scope one launch got: the harness selections and the project selection. */
+export type WorkerMcpLaunch = {
+  codex: CodexMcpScope | null
+  grok: Record<string, ReaderProxyServer> | null
+  projectSelection: ProjectMcpSelection | null
+}
+
+/**
+ * Probe each launch the run will actually get and refuse an affirmatively
+ * failed one or a required server the run was not handed, which are the only
+ * outcomes `--mcp require` refuses. A refusal raised here carries no failure
+ * kind: the run concern decides how a refusal is recorded.
+ */
+async function refuseRequiredProjectMcpLaunch(input: {
+  mcpMode: McpMode | null
+  projectSelection: ProjectMcpSelection | null
+  project: Project | null
+  environment: Record<string, string>
+}): Promise<void> {
+  if (input.mcpMode !== 'require') return
+  const failures = await probeProjectMcpLaunches(
+    projectMcpProbeLaunches(input.projectSelection),
+    input.environment,
+  )
+  const refusal = requiredMcpProbeRefusalError({
+    mode: input.mcpMode,
+    project: input.project,
+    failures,
+    // The required server, resolved the way run.ts resolves it: the project's
+    // configured `mcpServer`, or the project's own name by default.
+    requiredServer: projectMcpServerName(null, input.project),
+    selectedServers: Object.keys(input.projectSelection?.servers ?? {}),
+    withheld: input.projectSelection?.withheld ?? [],
+  })
+  if (refusal) throw refusal
+}
+
 /** Give cwd-discovered project MCP configuration only to a repository writer. */
 export function prepareClaimedWorkerMcpConfig(input: {
   cwd: string
@@ -113,8 +157,9 @@ export async function prepareWorkerHomeLaunch(input: {
   environment: Record<string, string>
   grokEnvironment: Record<string, string>
   includeStore: boolean
-  codexMcpScope: CodexMcpScope | null
-  grokReaderServers: Record<string, ReaderProxyServer> | null
+  mcpLaunch: WorkerMcpLaunch
+  mcpMode: McpMode | null
+  project: Project | null
 }) {
   const harness = workerHarnessName(input.agent)
   const hasRunScopedHome = harness === 'codex' || harness === 'grok' || input.sandbox === 'srt'
@@ -125,7 +170,7 @@ export async function prepareWorkerHomeLaunch(input: {
     harness,
     input.runDir,
     input.sandbox,
-    input.grokReaderServers,
+    input.mcpLaunch.grok,
   )
   const environment = childEnv(
     input.agent,
@@ -144,7 +189,13 @@ export async function prepareWorkerHomeLaunch(input: {
     input.runNumber,
     input.environment,
   )
-  const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.codexMcpScope, environment)
+  const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.mcpLaunch.codex, environment)
+  await refuseRequiredProjectMcpLaunch({
+    mcpMode: input.mcpMode,
+    projectSelection: input.mcpLaunch.projectSelection,
+    project: input.project,
+    environment,
+  })
   return {
     codexMcpCatalogues,
     environment,

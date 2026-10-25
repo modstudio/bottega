@@ -12,26 +12,16 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
-import { selectReviewApplicability } from './review-applicability.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
-import { measureChangeIdentity, reviewPins } from './review-pins.ts'
-import { gatherPostFixReviewFacts, postFixReviewDecision } from './review-post-fix.ts'
-import {
-  type BudgetedReviewPlan,
-  budgetedRoundApplicabilityForChange,
-} from './review-round-lens-service.ts'
-import {
-  resolveReviewBase,
-  reviewRemoteTrunkRefExists,
-  reviewTrunkRef,
-  spawnGitProbe,
-} from './review-target.ts'
+import { reviewPins } from './review-pins.ts'
+import { reviewCeilingGuidance } from './review-round-budget.ts'
+import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
+import { resolveReviewBase } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
-import { reviewTierForRange } from './review-tier-service.ts'
 import { completeReview, MIN_REVIEW_TRIAGED, triageFinding } from './review-triage.ts'
 import { DISPOSITIONS, type Disposition, REVIEW_SEVERITY } from './review-vocabulary.ts'
 import type { ReviewYieldCostContext } from './review-yield.ts'
@@ -40,39 +30,6 @@ type ReviewFlags = { has(name: string): boolean; flag(name: string): string | un
 type ReviewPresentation = { log(...values: unknown[]): void }
 const TIER_RUN_SQL =
   'SELECT repo, job, branch, base_commit, input_tree, head_commit FROM run WHERE record_id=?'
-
-function roundApplicabilityForTierOutput(input: {
-  output: ReturnType<typeof reviewTierForRange>
-  identity: ReturnType<typeof measureChangeIdentity>
-  project: string
-  branch: string
-  postFix: ReturnType<typeof postFixReviewDecision>
-  review: Parameters<typeof reviewTierForRange>[3]
-}): BudgetedReviewPlan {
-  const relevant = selectReviewApplicability(input.output, input.output.lenses)
-  if (!input.identity) {
-    return budgetedRoundApplicabilityForChange({
-      database: db(),
-      project: input.project,
-      branch: input.branch,
-      relevant,
-      tier: input.output.tier,
-    })
-  }
-  return budgetedRoundApplicabilityForChange({
-    database: db(),
-    group: {
-      project: input.project,
-      branch: input.branch,
-      patchId: input.identity.patchId,
-      pathSet: input.identity.paths,
-    },
-    relevant,
-    postFix: input.postFix,
-    review: input.review,
-    tier: input.output.tier,
-  })
-}
 
 function printReviewFinding(
   finding: ReturnType<typeof getReview>['findings'][number],
@@ -240,31 +197,15 @@ function resolveTierTarget(
 
 function reviewTierOutput(value: string, cwd: string) {
   const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
-  const trunk = typeof project.settings.trunk === 'string' ? project.settings.trunk.trim() : ''
-  if (!trunk) throw new Error(`project ${project.name} has no trunk configured`)
-  const remoteTrackingRefExists = reviewRemoteTrunkRefExists(trunk, spawnGitProbe(repo))
-  const output = reviewTierForRange(repo, from, to, project.settings.review)
-  const identity = measureChangeIdentity(repo, from, to)
-  const postFix = postFixReviewDecision({
-    facts: gatherPostFixReviewFacts({
+  const { output, postFix, reviewPlan, reviewBudget, creditedByArchitectRead } =
+    budgetedReviewPlanForResolvedChange({
       database: db(),
-      repo,
-      to,
-      trunkRef: reviewTrunkRef(remoteTrackingRefExists, trunk),
-      project: project.name,
+      cwd: repo,
+      base: from,
+      commit: to,
+      project,
       branch,
-    }),
-    tier: output.tier,
-    review: project.settings.review,
-  })
-  const { reviewPlan, reviewBudget, creditedByArchitectRead } = roundApplicabilityForTierOutput({
-    output,
-    identity,
-    project: project.name,
-    branch,
-    postFix,
-    review: project.settings.review,
-  })
+    })
   const round = reviewPlan.round
   return {
     ...output,
@@ -283,8 +224,10 @@ function reviewTierOutput(value: string, cwd: string) {
     lens_profiles: round.lenses.map((id) => ({
       id,
       basis: round.lensBases?.[id] ?? null,
+      reason: round.lensReasons?.[id] ?? null,
       profiles: resolveLens(id, project.name)?.profiles ?? [],
     })),
+    lensReasons: round.lensReasons,
   }
 }
 
@@ -322,15 +265,9 @@ function printCeilingArchitectCredit(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): boolean {
-  if (
-    output.review_budget.unclassifiableReviewCount > 0 ||
-    !output.review_budget.wouldExceedCeiling
-  ) {
-    return false
-  }
-  log(
-    `a new round would exceed the ceiling: the architect rules. Read the fix (${PLATFORM_SLUG} review read), land with test-only fixes, and file the rest`,
-  )
+  const guidance = reviewCeilingGuidance(output.review_budget)
+  if (!guidance) return false
+  log(guidance)
   if (output.post_fix.kind === 're-lens') {
     log(
       `tier-3 paths touched since review ${output.post_fix.reviewNumber}: ${output.post_fix.tierThreePaths.join(', ')}`,
@@ -374,14 +311,16 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  if (!printCeilingArchitectCredit(output, log)) {
+  if (!printCeilingArchitectCredit(output, log) || output.review_budget.currentChangeCounted) {
     printReviewRoundStatus(output, log)
   }
   for (const lens of output.lens_profiles) {
     const sources = lens.profiles
       .map((profile) => formatLensProfileSource(profile, 'source'))
       .join(', ')
-    log(`lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}`)
+    log(
+      `lens ${lens.id}${basisLabel(lens.basis)}${sources ? `  ${sources}` : ''}${reasonLabel(lens.reason)}`,
+    )
   }
   if (output.secondOpinion) {
     log(
@@ -395,6 +334,8 @@ function printReviewTier(
 }
 
 const basisLabel = (basis: string | null | undefined): string => (basis ? `  basis: ${basis}` : '')
+const reasonLabel = (reason: string | null | undefined): string =>
+  reason ? `  reason: ${reason}` : ''
 
 export function listReviewCommand(flags: ReviewFlags, presentation: ReviewPresentation): void {
   const { has, flag } = flags

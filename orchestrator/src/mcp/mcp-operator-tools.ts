@@ -1,5 +1,5 @@
 // concern: operator-waiting
-/** Registers MCP adapters for operator-ruling mutations. */
+/** Registers MCP adapters for rulings recorded by a person. */
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'

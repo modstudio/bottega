@@ -81,7 +81,7 @@ import { resolveReadOnlyBase } from '../worktree/worktree-caller.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
 import * as acpWriter from './run-acp-writer.ts'
-import { selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
+import { capacityStartupFailure, selectAgentWithCapacityEvents } from './run-agent-capacity.ts'
 import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-artifacts.ts'
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
@@ -109,7 +109,7 @@ import {
   initialDispatchPrompt,
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
-import { refuseUnstartedRun } from './run-prelaunch-refusal.ts'
+import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { bindSignals, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -486,7 +486,8 @@ export async function run(opts: {
       job: opts.job,
       projectName: runProjectName ?? undefined,
       preflightedAgent: opts.dispatchMcpPreflightedAgent,
-      onFailure: (cause) => recordRunStartupFailure(opts.reserveId, cause),
+      onFailure: (cause) =>
+        recordRunStartupFailure(opts.reserveId, ...capacityStartupFailure(cause, opts.reserveId)),
     })
   const source = resume.isFirstTurn
     ? {
@@ -705,8 +706,9 @@ export async function run(opts: {
         },
         grokEnvironment: grokMcpEnvironment,
         includeStore: repoJob,
-        codexMcpScope: mcpLaunch.codex,
-        grokReaderServers: mcpLaunch.grok,
+        mcpLaunch,
+        mcpMode,
+        project: runProject,
       })
       ;({
         codexMcpCatalogues,
@@ -718,7 +720,9 @@ export async function run(opts: {
       removeNewSandboxHomeAfterFailure(runtimeDir, runtimeDirExisted)
       const why = String((e as Error)?.message ?? e)
       try {
-        recordRunStartupFailure(claim.id, e, started)
+        // A pre-launch refusal carries its own failure kind: the agent never
+        // ran, so routing and failover must not read this as 'harness'.
+        recordRunStartupFailure(claim.id, e, started, carriedRefusalFailure(e))
       } finally {
         teardownTerminalRunResources(db(), claim.id)
       }

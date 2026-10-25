@@ -5,7 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { decideLandingTaskKey } from '../branch/branch-landing-service.ts'
 import { type Project, projects } from '../project/projects.ts'
 import { eligibleReviewRoundRows } from '../review/review-round-budget.ts'
-import { type ReviewRoundEvidenceRow, reviewRoundIdentity } from '../review/review-yield.ts'
+import { reviewRoundIdentity } from '../review/review-round-identity.ts'
+import type { ReviewRoundEvidenceRow } from '../review/review-yield.ts'
 import {
   type CycleCostCiRecord,
   type CycleCostLanding,

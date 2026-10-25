@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type HeldTreeInFlightFacts,
+  type HeldTreeWorkFacts,
   heldTreeInFlight,
+  heldTreeWorkIsUnique,
   LANDING_TREE_JOB,
   landingTreeCommandBase,
   landingTreeCommandCapability,
@@ -271,6 +273,54 @@ describe('landing-tree decisions', () => {
   })
 })
 
+describe('held-tree unique work', () => {
+  const facts = (overrides: Partial<HeldTreeWorkFacts> = {}): HeldTreeWorkFacts => ({
+    hold: 'unique-work',
+    treeClean: true,
+    openPrHead: 'sha-head',
+    treeHead: 'sha-head',
+    ...overrides,
+  })
+
+  test('a clean tree whose HEAD is its open pull request head is not unique work', () => {
+    expect(heldTreeWorkIsUnique(facts())).toBe(false)
+  })
+
+  test('a tree with uncommitted work is unique work', () => {
+    expect(heldTreeWorkIsUnique(facts({ treeClean: false }))).toBe(true)
+  })
+
+  test('a pull request head other than the tree HEAD is unique work', () => {
+    expect(heldTreeWorkIsUnique(facts({ openPrHead: 'sha-other' }))).toBe(true)
+  })
+
+  test('no open pull request is unique work', () => {
+    expect(heldTreeWorkIsUnique(facts({ openPrHead: null }))).toBe(true)
+  })
+
+  test('an unreadable tree HEAD is unique work', () => {
+    expect(heldTreeWorkIsUnique(facts({ treeHead: null }))).toBe(true)
+    expect(heldTreeWorkIsUnique(facts({ treeHead: null, openPrHead: null }))).toBe(true)
+  })
+
+  test('an other hold judges by the same facts', () => {
+    expect(heldTreeWorkIsUnique(facts({ hold: 'other' }))).toBe(false)
+    expect(heldTreeWorkIsUnique(facts({ hold: 'other', treeClean: false }))).toBe(true)
+    expect(heldTreeWorkIsUnique(facts({ hold: 'other', openPrHead: null }))).toBe(true)
+  })
+
+  test('a landing-progress hold is in flight whatever the facts say', () => {
+    expect(
+      heldTreeWorkIsUnique({
+        hold: 'landing-progress',
+        treeClean: false,
+        openPrHead: null,
+        treeHead: null,
+      }),
+    ).toBe(false)
+  })
+})
+
 describe('held-tree in-flight landing', () => {
   const cursor = (overrides: Partial<NonNullable<HeldTreeInFlightFacts['cursor']>> = {}) => ({
     id: 459,
@@ -288,7 +338,9 @@ describe('held-tree in-flight landing', () => {
     branch: 'DEV-1594-ship',
     cursor: cursor(),
     openPr: null,
-    uniqueWork: false,
+    hold: 'landing-progress',
+    treeClean: false,
+    treeHead: null,
     ...overrides,
   })
 
@@ -304,17 +356,43 @@ describe('held-tree in-flight landing', () => {
   })
 
   test('a dirty unique-work hold still carries the matching cursor without suppressing', () => {
-    expect(heldTreeInFlight(facts({ uniqueWork: true }))).toEqual({
+    expect(heldTreeInFlight(facts({ hold: 'unique-work' }))).toEqual({
       ref: 'cursor 459 merge-pr',
       suppressBlock: false,
     })
   })
 
+  test('a clean other hold at its open pull request head suppresses, and the cursor names the line', () => {
+    expect(
+      heldTreeInFlight(
+        facts({
+          hold: 'other',
+          treeClean: true,
+          treeHead: 'sha-head',
+          openPr: { ref: '#88', headOid: 'sha-head' },
+        }),
+      ),
+    ).toEqual({ ref: 'cursor 459 merge-pr', suppressBlock: true })
+  })
+
   test('an open PR without a cursor is in flight and does not block', () => {
-    expect(heldTreeInFlight(facts({ cursor: null, openPr: '#88' }))).toEqual({
-      ref: '#88',
-      suppressBlock: true,
-    })
+    expect(
+      heldTreeInFlight(facts({ cursor: null, openPr: { ref: '#88', headOid: null } })),
+    ).toEqual({ ref: '#88', suppressBlock: true })
+  })
+
+  test('an other hold whose pull request head is another commit keeps blocking', () => {
+    expect(
+      heldTreeInFlight(
+        facts({
+          cursor: null,
+          hold: 'other',
+          treeClean: true,
+          treeHead: 'sha-tree',
+          openPr: { ref: '#88', headOid: 'sha-pr' },
+        }),
+      ),
+    ).toEqual({ ref: '#88', suppressBlock: false })
   })
 
   test('neither cursor nor PR is not in flight', () => {

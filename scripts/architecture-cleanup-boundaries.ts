@@ -90,7 +90,11 @@ export const cleanupBoundarySpecs = [
   {
     name: 'ship-cleanup-decision-boundary',
     file: 'orchestrator/src/ship-cleanup/ship-cleanup-decision.ts',
-    allowed: ['../cleanup/unjudged-run-remedy.ts', '../run/synthetic-lifecycle-job.ts'],
+    allowed: [
+      '../cleanup/unjudged-run-remedy.ts',
+      '../run/run-status.ts',
+      '../run/synthetic-lifecycle-job.ts',
+    ],
     typeOnlyAllowed: ['../branch/branch-state.ts'],
     reason:
       'Keep ship cleanup selection pure and independent of filesystems, stores, commands, and processes.',
@@ -165,6 +169,7 @@ export const cleanupBoundarySpecs = [
       '../resources/resource-ownership.ts',
       '../resources/main-stack.ts',
       '../run/run-alive.ts',
+      '../run/run-status.ts',
       '../run/run-artifacts.ts',
       '../run/run-authority.ts',
       '../run/run-lease.ts',
@@ -189,7 +194,7 @@ export const cleanupBoundarySpecs = [
   {
     name: 'run-leftover-decision-boundary',
     file: 'orchestrator/src/cleanup/run-leftover-decision.ts',
-    allowed: ['../run/run-artifact-limits.ts', './unjudged-run-remedy.ts'],
+    allowed: ['../run/run-artifact-limits.ts', '../run/run-status.ts', './unjudged-run-remedy.ts'],
     typeOnlyAllowed: [],
     reason:
       'Keep scheduled leftover selection pure and independent of filesystems, stores, commands, and processes.',
@@ -228,7 +233,11 @@ export const cleanupBoundarySpecs = [
   {
     name: 'cleanup-sweep-decisions-boundary',
     file: 'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
-    allowed: ['../../../shared/brand.ts', '../../../shared/caller-classification.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/caller-classification.ts',
+      '../run/run-status.ts',
+    ],
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup sweep decisions pure and independent of filesystems, stores, commands, and processes.',

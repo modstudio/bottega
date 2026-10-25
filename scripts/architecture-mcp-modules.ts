@@ -72,6 +72,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/client/index.js',
     '@modelcontextprotocol/sdk/client/stdio.js',
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
+    '../secret-shaped-output.ts',
   ]),
   module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
     '../../../shared/brand.ts',
@@ -95,6 +96,13 @@ export const mcpModules: McpModule[] = [
     'node:path',
     '../mcp/mcp-probe.ts',
     './mcp-reader-scope.ts',
+  ]),
+  module('orchestrator/src/sandbox/project-mcp-preflight.ts', [
+    '../../../shared/brand.ts',
+    'node:path',
+    '../mcp/mcp-preflight.ts',
+    '../mcp/mcp-tool-list.ts',
+    './project-mcp-scope.ts',
   ]),
   module('orchestrator/src/sandbox/grok-reader-mcp-home.ts', [
     '../../../shared/brand.ts',

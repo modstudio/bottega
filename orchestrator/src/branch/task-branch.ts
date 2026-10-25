@@ -11,6 +11,7 @@ import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git
 import type { Project } from '../project/projects.ts'
 import { projectAt, projects } from '../project/projects.ts'
 import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
+import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
@@ -472,7 +473,7 @@ function resolvedTaskBranchWorktree(input: {
       `SELECT record_id,worktree,worktree_source,job,status
          FROM run
         WHERE project_record_id=? AND worktree IS NOT NULL
-        ORDER BY CASE WHEN status IN ('ok','failed','stale','stopped') THEN 1 ELSE 0 END, number DESC`,
+        ORDER BY CASE WHEN status IN ${TERMINAL_RUN_STATUS_SQL} THEN 1 ELSE 0 END, number DESC`,
     )
     .all(input.projectId) as TaskBranchWorktreeOwnerRow[]
   const owner = owners.find(

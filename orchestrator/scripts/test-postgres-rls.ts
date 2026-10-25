@@ -15,14 +15,20 @@ import {
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
 
 const falsify = process.argv.includes('--falsify')
+const withoutLiveImport = process.argv.includes('--without-live-import')
 const falsifyMode = falsify
   ? 'revoke-project-select'
   : (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY ?? '')
-const container = `dev-445-postgres-${randomUUID().slice(0, 8)}`
+const provisionedContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
+const container = provisionedContainer ?? `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
 const LIVE_COPY_PHASE_TIMEOUT_MS = 900_000
+// Migrate never calls the API; this placeholder only declares a hosted-record install.
+const RECORD_API_URL = 'http://127.0.0.1:9'
+if (withoutLiveImport)
+  console.log('copied-live-SQLite import proof omitted: no operator store on the runner')
 class EarlyExit {
   readonly code: number
   constructor(code: number) {
@@ -37,9 +43,12 @@ function copyDatabase(source: string, target: string): void {
 }
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith('BOTTEGA_RECORD_')),
+  )
   const child = Bun.spawn(argv, {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
-    env: { ...process.env, ...env },
+    env: { ...inheritedEnv, ...env },
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -129,29 +138,33 @@ process.on('SIGINT', signalHandlers.SIGINT)
 process.on('SIGTERM', signalHandlers.SIGTERM)
 
 try {
-  copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
-  copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
-  launched = true
-  // Synchronous so no signal handler runs between the container starting and `started` being set.
-  const start = Bun.spawnSync(
-    [
-      'docker',
-      'run',
-      '--rm',
-      '--name',
-      container,
-      '-e',
-      'POSTGRES_PASSWORD=postgres',
-      '-p',
-      '127.0.0.1::5432',
-      '-d',
-      'postgres:18-alpine',
-      '-c',
-      'max_connections=200',
-    ],
-    { stdout: 'inherit', stderr: 'inherit' },
-  ).exitCode
-  if (start !== 0) throw new EarlyExit(start)
+  if (!withoutLiveImport) {
+    copyDatabase(resolveOrchestratorDatabase(process.env), sourceOrchDb)
+    copyDatabase(resolveHubDatabase(process.env), sourceHubDb)
+  }
+  if (!provisionedContainer) {
+    launched = true
+    // Synchronous so no signal handler runs between the container starting and `started` being set.
+    const start = Bun.spawnSync(
+      [
+        'docker',
+        'run',
+        '--rm',
+        '--name',
+        container,
+        '-e',
+        'POSTGRES_PASSWORD=postgres',
+        '-p',
+        '127.0.0.1::5432',
+        '-d',
+        'postgres:18-alpine',
+        '-c',
+        'max_connections=200',
+      ],
+      { stdout: 'inherit', stderr: 'inherit' },
+    ).exitCode
+    if (start !== 0) throw new EarlyExit(start)
+  }
   started = true
 
   let ready = false
@@ -383,6 +396,7 @@ try {
     if (readOnlyMembership !== 0) process.exitCode = readOnlyMembership
     else {
       const remigrate = await run(['bun', 'src/cli/orch.ts', 'record', 'migrate'], {
+        BOTTEGA_RECORD_API_URL: RECORD_API_URL,
         BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
       })
       if (remigrate !== 0) process.exitCode = remigrate
@@ -422,7 +436,7 @@ try {
             RECORD_AUTH_DATABASE_URL: authUrl,
           })
           if (evidence !== 0) process.exitCode = evidence
-          else
+          else if (!withoutLiveImport)
             process.exitCode = await run(
               [
                 'bun',

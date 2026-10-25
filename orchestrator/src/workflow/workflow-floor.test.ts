@@ -211,7 +211,7 @@ test('an unfinished review round refusal names every unfinished review id', () =
   })
 })
 
-test('an operator ruling floor requires a bound operator answer', () => {
+test("a person's ruling floor requires a bound operator answer", () => {
   const agentAnswer = answeredRuling
   const operatorAnswer: ValidatedEvidence = {
     ruling: { ...answeredRuling.ruling!, answeredByOperator: true },

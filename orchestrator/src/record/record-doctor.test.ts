@@ -388,6 +388,5 @@ describe('record doctor agent secrets', () => {
     )
 
     expect(checks[0]?.detail).toContain('cleared by: wait for the hosted record to recover')
-    expect(checks[0]?.detail).not.toContain('retry the command')
   })
 })

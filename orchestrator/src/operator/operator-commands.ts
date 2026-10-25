@@ -1,5 +1,5 @@
 // concern: operator-waiting
-/** Thin CLI adapters for relaying and listing operator rulings. */
+/** Thin CLI adapters for relaying and listing people's rulings. */
 
 import type {
   ClaimedOperatorNotification,

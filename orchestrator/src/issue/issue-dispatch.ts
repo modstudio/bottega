@@ -9,6 +9,7 @@ import { db } from '../database/db.ts'
 import { UNSCORED_WHERE } from '../evidence/evidence-query.ts'
 import { type KernelLease, projectGitCommonDir, tryKernelLease } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
+import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { workIssue } from './issue.ts'
 import { parseFiledIssue } from './issue-file.ts'
@@ -178,7 +179,7 @@ function heldIssueTrees(): HeldIssueTree[] {
     .query(
       `SELECT record_id, worktree, keep_tree, keep_tree_reason, status FROM run
        WHERE job IN ('diagnose','issue-worker') AND worktree IS NOT NULL
-         AND status IN ('ok','failed','stale','stopped') ORDER BY number`,
+         AND status IN ${TERMINAL_RUN_STATUS_SQL} ORDER BY number`,
     )
     .all() as {
     record_id: string

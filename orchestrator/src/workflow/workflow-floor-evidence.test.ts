@@ -959,7 +959,7 @@ test('a missing obligation is gathered as not-found without a floor', () => {
   )
 })
 
-test('an obligation preserves its operator ruling requirement', () => {
+test("an obligation preserves its person's ruling requirement", () => {
   const d = database()
   d.query(
     `INSERT INTO workflow_obligation

@@ -2,7 +2,52 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { applyMigrations } from '../database/migrations.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
-import { backfillReviewRecords } from './review-outbox.ts'
+import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
+import { backfillReviewRecords, enqueueReview, enqueueReviewLens } from './review-outbox.ts'
+
+test('review payload keys conform to the hosted review-family contracts', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  database
+    .query(
+      `INSERT INTO project (record_id,name,path,settings)
+       VALUES ('01990000-0000-7000-8000-000000000001','project','/project','{}')`,
+    )
+    .run()
+  database
+    .query(`INSERT INTO run
+      (number,record_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
+      VALUES (1,'01990000-0000-7000-8000-000000000002','2026-09-15T00:00:00Z',
+        'codex','review-lens','sha',1,'head','ok','01990000-0000-7000-8000-000000000001')`)
+    .run()
+  database
+    .query(`INSERT INTO review
+      (number,record_id,recorded_at,project_record_id,role,round)
+      VALUES (1,'01990000-0000-7000-8000-000000000003','2026-09-15T01:00:00Z',
+        '01990000-0000-7000-8000-000000000001','round',1)`)
+    .run()
+  database
+    .query(`INSERT INTO review_lens
+      (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,commands_run,could_not_verify,selection_reason)
+      VALUES ('01990000-0000-7000-8000-000000000004','01990000-0000-7000-8000-000000000003',
+        '01990000-0000-7000-8000-000000000002','craft','codex','[]','[]','[]','[]','initial')`)
+    .run()
+
+  enqueueReview(database, '01990000-0000-7000-8000-000000000003')
+  enqueueReviewLens(database, '01990000-0000-7000-8000-000000000004')
+
+  for (const kind of ['review', 'review_lens'] as const) {
+    const payload = database
+      .query<{ payload: string }, [string]>(
+        'SELECT payload FROM outbox WHERE kind=? ORDER BY id DESC LIMIT 1',
+      )
+      .get(kind)
+    expect(Object.keys(JSON.parse(payload!.payload)).sort()).toEqual(
+      [...OUTBOX_PAYLOAD_CONTRACTS[kind].columns].sort(),
+    )
+  }
+  database.close()
+})
 
 test('review backfill enqueues the graph once and is idempotent', () => {
   const database = new Database(':memory:')

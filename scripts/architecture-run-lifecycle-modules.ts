@@ -21,6 +21,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/resources/resource-claims.ts', [
     '../../../shared/record-id.ts',
+    '../run/run-status.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
   module('orchestrator/src/run/synthetic-lifecycle-job.ts', []),
@@ -46,6 +47,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-retry.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-status.ts', []),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
     '../route/route.ts',
@@ -57,7 +59,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../events.ts',
     './run-artifact-limits.ts',
   ]),
-  module('orchestrator/src/run/run-chain.ts', ['bun:sqlite']),
+  module('orchestrator/src/run/run-chain.ts', ['bun:sqlite', './run-status.ts']),
+  module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
@@ -259,6 +262,15 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-child-priority.ts', ['node:os']),
   module('orchestrator/src/run/run-test-workers.ts', ['node:os']),
+  module('orchestrator/src/run/run-agent-capacity.ts', [
+    '../../../shared/brand.ts',
+    '../database/db.ts',
+    '../events.ts',
+    '../route/routing-refusal.ts',
+    '../route/running-runs.ts',
+    './run-host-capacity.ts',
+    './run-liveness-policy.ts',
+  ]),
   module('orchestrator/src/run/run-host-capacity.ts', [
     'bun:sqlite',
     '../database/db.ts',
@@ -285,6 +297,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'node:path',
     '../agent/agents.ts',
     '../agent/worker-launch-env.ts',
+    '../mcp/mcp-preflight.ts',
     '../mcp/mcp-probe.ts',
     '../project/projects.ts',
     '../recipe/tracked-recipe.ts',
@@ -293,6 +306,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../sandbox/grok-reader-mcp-home.ts',
     '../sandbox/grok-reader-mcp-inspect.ts',
     '../sandbox/mcp-reader-scope.ts',
+    '../sandbox/project-mcp-preflight.ts',
+    '../sandbox/project-mcp-scope.ts',
     '../sandbox/sandbox.ts',
     '../worktree/worktree-mcp.ts',
     '../worktree/worktree-types.ts',

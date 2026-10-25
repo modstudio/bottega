@@ -75,6 +75,8 @@ function buildLandingOverrideRecordPayload(row: LocalRow, machineId: string, at:
     patchId: row.patch_id,
     pathSet: json(row.path_set),
     reason: row.reason,
+    attribution: row.attribution,
+    missingLenses: json(row.missing_lenses),
     sessionId: row.session_id,
     at: row.at,
     createdAt: row.at,
@@ -247,6 +249,7 @@ export function enqueueLandingOverride(database: Database, recordId: string, at 
     .query<LocalRow, [string]>(
       `SELECT landing_override.record_id,landing_override.branch,landing_override.tip,landing_override.tree,
               landing_override.patch_id,landing_override.path_set,landing_override.reason,
+              landing_override.attribution,landing_override.missing_lenses,
               landing_override.session_id,landing_override.at,
               project.name AS project_name, project.record_id AS project_record_id FROM landing_override
        LEFT JOIN project ON project.record_id=landing_override.project_record_id WHERE landing_override.record_id=?`,

@@ -248,7 +248,7 @@ always: true
 
 **Lens** — one narrow, named review viewpoint with a stable identity, one question, and explicit exclusions.
 
-**Review tier** — the review breadth and round budget selected from the higher of change risk and cognitive size.
+**Review tier** — breadth and round budget from path risk and size, one lower at size `0` except `firm`.
 
 **Fidelity** — the writing-job judgment of whether the delivered change built what the specification asked for.
 
@@ -377,9 +377,9 @@ search.
 
 ## Review rounds are a funnel
 
-`review-tier-classifier.ts:classifyReviewTier` sets a change's tier from the higher of
-risk and cognitive size; the project's declaration selects its lenses, and
-tier `0` runs none. Check the tier before every round.
+`review-tier-classifier.ts:classifyReviewTier` sets the tier from path risk
+and size, one lower at size `0` unless `firm`; the project's declaration
+selects its lenses; tier `0` runs none. Check the tier before every round.
 
 The initial review is the only full review. A later round runs only when a
 tier `3` fix touched a tier `3` path, as a regression check: only the lenses

@@ -48,7 +48,7 @@ Precision measures false positives among findings raised. It says nothing about 
 
 `bottega run start` detaches so concurrent review can run.
 
-Review breadth follows a tier computed as the higher of risk and cognitive size (`review-tier-classifier.ts:classifyReviewTier`). Risk comes from the surface touched, never from line count. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Bottega's mapping from change shape and tier to lenses is its `review` register setting, read with `bottega review tier`.
+Review breadth follows a tier from `review-tier-classifier.ts:classifyReviewTier`. Path risk comes from the surface touched. A size-`0` change lowers that risk by one, except on a risk-map path marked `firm`. A `firm` path (`project-injection.ts:reviewRiskSchema`) keeps its declared risk for a size-`0` change, so a firm risk-`3` path stays at combined tier `3`. Tier `0` means the architect reads the diff and runs no lens; until tier-`0` recording has its own mechanism, land it as unreviewed with a reason. Bottega's mapping from change shape and tier to lenses is its `review` register setting, read with `bottega review tier`.
 
 When a project's review declaration requests a second opinion at the applicable tier, run that lens again after its first result on the same tip with `--distinct-from` naming the first run so a different model produces the second result, and count both results toward the review.
 
@@ -84,7 +84,7 @@ Run the local gate on the reviewed branch, push it, and open a GitHub pull reque
 
 ## End
 
-The loop ends when the board is empty or every task left is held by a named operator ruling recorded on that task, or owned by another session's announced sequence. Follow the orch-status skill `CLOSE OUT` section: discard each landed run's worktree, remove its branch, close every landed task still open, and offer a resume brief. A session with unscored runs, unclosed landed tasks, or held worktrees has paused; it has not ended. The Stop hook closes out every terminal tree owned by the session: clean trees and their provisioned resources are released while branches survive; dirty trees and explicit `--keep-tree` holds are named with their resolving command.
+The loop ends when the board is empty or every task left is held by a named person's ruling recorded on that task, or owned by another session's announced sequence. Follow the orch-status skill `CLOSE OUT` section: discard each landed run's worktree, remove its branch, close every landed task still open, and offer a resume brief. A session with unscored runs, unclosed landed tasks, or held worktrees has paused; it has not ended. The Stop hook closes out every terminal tree owned by the session: clean trees and their provisioned resources are released while branches survive; dirty trees and explicit `--keep-tree` holds are named with their resolving command.
 
 # You file it, you fix it
 

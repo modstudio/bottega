@@ -2,6 +2,7 @@ import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { readWorktreeMarker } from '../worktree/worktree-attribution.ts'
 import { markMainCheckoutResources } from './docker-main-checkout.ts'
 
@@ -592,12 +593,7 @@ export function classifiedDockerResources(
   const byId = new Map(owners.map((owner) => [owner.record_id, owner]))
   return resources.flatMap((resource) => {
     const owner = byId.get(resource.runId)
-    if (
-      owner &&
-      !owner.retentionReason &&
-      !['ok', 'failed', 'stale', 'stopped'].includes(owner.status)
-    )
-      return []
+    if (owner && !owner.retentionReason && !TERMINAL_RUN_STATUS_SET.has(owner.status)) return []
     return [
       {
         resource,

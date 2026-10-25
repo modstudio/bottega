@@ -400,7 +400,7 @@ describe('workflow rendering', () => {
       next: { n: 11, slug: 'open-pr', title: 'Open the pull request' },
     })
     expect(rendered).toContain(
-      `Autonomy: auto (built-in) — this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put an operator ruling with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`,
+      `Autonomy: auto (built-in) — this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put a ruling recorded with \`--from-operator\` with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`,
     )
     expect(rendered).toContain(
       `Evidence for ruling: call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`.`,
@@ -434,6 +434,6 @@ describe('workflow rendering', () => {
     expect(rendered).toContain(
       `Autonomy: auto (built-in) — meet this step's floor with tracker-transition evidence; a design or product-direction decision still goes to the operator (\`${PLATFORM_SLUG} workflow await\`).`,
     )
-    expect(rendered).not.toContain('put an operator ruling')
+    expect(rendered).not.toContain('put a ruling recorded with `--from-operator`')
   })
 })

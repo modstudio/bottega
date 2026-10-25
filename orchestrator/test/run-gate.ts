@@ -86,5 +86,7 @@ const timingPassed = publishTimingSummary(
   timing.tests,
   timing.elapsedMs,
   shardArguments.length > 0,
+  console,
+  timing.phaseTimingNotices,
 )
 process.exit(timing.exitCode !== 0 || !timingPassed ? 1 : 0)

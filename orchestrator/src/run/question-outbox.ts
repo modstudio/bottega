@@ -15,6 +15,8 @@ type QuestionRow = Record<string, unknown> & {
   project_name: string | null
   project_record_id: string | null
   workflow_cursor_record_id: string | null
+  answered_by_name: string | null
+  overturned_by_name: string | null
 }
 
 const json = (value: unknown): unknown => (value == null ? null : JSON.parse(String(value)))
@@ -75,12 +77,14 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     answerBasis: row.answer_basis,
     answeredAt: row.answered_at,
     answeredBy: row.answered_by,
+    answeredByName: row.answered_by_name,
     answererKind: row.answerer_kind,
     answerChannel: row.answer_channel,
     awaitingOperatorAt: row.awaiting_operator_at,
     relayedBy: row.relayed_by,
     overturnedAt: row.overturned_at,
     overturnedBy: row.overturned_by,
+    overturnedByName: row.overturned_by_name,
     overturnReason: row.overturn_reason,
     replacement: row.replacement,
     filedAs: row.filed_as,

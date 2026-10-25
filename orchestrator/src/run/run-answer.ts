@@ -24,22 +24,21 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import {
   continuationCheckoutForAnswer,
-  requireContinuationCheckout,
+  continuationCheckoutForRetry,
 } from './continuation-checkout-service.ts'
 import { appendQuestionDeliveries } from './question-delivery.ts'
 import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
-  answererKindFromAnsweredBy,
   QUESTION_DELIVERY_MODE_LIVE,
   QUESTION_DELIVERY_MODE_RECORD_ONLY,
   QUESTION_DELIVERY_MODE_RESUME,
   QUESTION_DELIVERY_MODE_RETRY,
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
   QUESTION_DELIVERY_OUTCOME_FAILED,
-  rulingActor,
 } from './question-vocabulary.ts'
+import { answerAttributions } from './ruling-attribution.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
@@ -66,9 +65,10 @@ import { packedResumePrompt } from './run-resume-prompt.ts'
 const RUN_STATUS_SQL = 'SELECT status FROM run WHERE record_id = ?'
 
 import {
-  decideRetryConversation,
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
+  retryConversationPath,
+  retryTarget,
   retryTransport,
 } from './run-retry.ts'
 import { resolveRetryTree, resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
@@ -200,15 +200,6 @@ function answerRoot(requestedId: string): AnswerRootRow | null {
     WHERE requested.record_id = ?`,
     )
     .get(requestedId) as AnswerRootRow | null
-}
-
-function answeredBy(
-  operatorAuthorized: boolean,
-  fromOperator: boolean,
-  callerSession: string | null,
-): string {
-  if (operatorAuthorized && fromOperator) return 'operator via hub'
-  return rulingActor(fromOperator, callerSession)
 }
 
 function requireAnswerAuthority(
@@ -393,6 +384,54 @@ function retryReviewBindings(row: Pick<RetryRunRow, 'lens' | 'review_role'>) {
   return { lens: row.lens ?? undefined, reviewRole: row.review_role ?? undefined }
 }
 
+function retryAgentBindings(
+  row: Pick<RetryRunRow, 'root_record_id' | 'agent' | 'agent_explicit' | 'model'>,
+  options: { agent?: string; model?: string },
+) {
+  const neverStarted = row.agent === '(pending)'
+  const agent = options.agent ?? (neverStarted ? undefined : row.agent)
+  if (!agent)
+    return {
+      agent,
+      agentExplicit: false,
+      model: options.model,
+      transport: undefined,
+      neverStarted,
+    }
+  return {
+    agent,
+    agentExplicit: Boolean(options.agent || row.agent_explicit),
+    model: retryModelForAgent(row.agent, row.model, agent, options.model),
+    transport: retryTransport(agent !== row.agent, agent, transportTurns(row.root_record_id)),
+    neverStarted,
+  }
+}
+
+function retryTreeForNeverStarted<T>(neverStarted: boolean, cwd: string, resolve: () => T) {
+  if (neverStarted) return { cwd, resume: undefined }
+  return resolve()
+}
+
+function writingRetryWorkspace(
+  id: string,
+  row: RetryRunRow,
+  needed: boolean,
+  strandedRecordOnly: boolean,
+) {
+  if (!needed) return null
+  return resolveWritingRetryWorkspace({
+    id,
+    rootId: row.root_record_id,
+    job: row.job,
+    launchKey: row.launch_key,
+    repo: row.repo,
+    projectId: row.project_record_id,
+    branchKept: row.branch_kept,
+    branchKeptTip: row.branch_kept_tip,
+    strandedRecordOnly,
+  })
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -428,12 +467,15 @@ export async function retryRun(
     .all(row.root_record_id, row.root_record_id) as RecordedRuling[]
   const writesRepo = Boolean(job(row.job).needs.writesRepo)
   const readsRepo = Boolean(job(row.job).needs.readsRepo)
-  const agent = options.agent ?? row.agent
-  const preliminaryPath = decideRetryConversation({
+  const bindings = retryAgentBindings(row, options)
+  const { agent, neverStarted } = bindings
+  const preliminaryPath = retryConversationPath(
     writesRepo,
-    rulingsPresent: recordedRulings.length > 0,
-    agentChanged: agent !== row.agent,
-  })
+    recordedRulings.length > 0,
+    agent,
+    row.agent,
+    neverStarted,
+  )
   if (preliminaryPath?.action === 'continue') {
     const resumed = await continueRun(id, undefined, helpers.argvResumeLimit)
     auditRunMutation(
@@ -463,9 +505,8 @@ export async function retryRun(
     worktree: string | null
     base_commit: string | null
   }
-  const checkout = requireContinuationCheckout({
+  const checkout = continuationCheckoutForRetry(neverStarted, {
     rootId: row.root_record_id,
-    operation: 'retried',
     requiresRepo: readsRepo,
     latestCwd: latestCheckout.cwd,
     rootCwd: row.root_cwd,
@@ -474,40 +515,35 @@ export async function retryRun(
   const instructions = continuationInstructionsForFreshRetry(writesRepo, id, row.root_record_id)
   // The same agent remains the default. An explicit replacement gets a fresh
   // vendor conversation while the retained writing workspace travels with it.
-  const workspace = writesRepo
-    ? resolveWritingRetryWorkspace({
-        id,
-        rootId: row.root_record_id,
-        job: row.job,
-        launchKey: row.launch_key,
-        repo: row.repo,
-        projectId: row.project_record_id,
-        branchKept: row.branch_kept,
-        branchKeptTip: row.branch_kept_tip,
-        strandedRecordOnly: recordedRulings.length > 0 && latestTurn.status === 'asking',
-      })
-    : null
+  const workspace = writingRetryWorkspace(
+    id,
+    row,
+    preliminaryPath.action === 'needs-writing-workspace',
+    recordedRulings.length > 0 && latestTurn.status === 'asking',
+  )
   console.error(
     `— retrying run ${id} (${row.agent}/${row.job}` +
       (row.failure_kind ? `, ${row.failure_kind}` : '') +
-      `) on ${agent}`,
+      `)${retryTarget(agent)}`,
   )
   retryAuthority = writeTransaction(() => {
     retryAuthority = reauthorizeRunMutation(retryAuthority, 'retry')
     return adoptRunMutation(retryAuthority, 'retry')
   })
-  const retryTree = resolveRetryTree({
-    rootId: row.root_record_id,
-    projectName: row.repo,
-    projectPath: checkout.project?.path ?? null,
-    readsRepo,
-    writesRepo,
-    checkoutCwd: checkout.cwd,
-    recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
-    baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
-    agent,
-    sessionId: retryAuthority.owner,
-  })
+  const retryTree = retryTreeForNeverStarted(neverStarted, row.cwd ?? process.cwd(), () =>
+    resolveRetryTree({
+      rootId: row.root_record_id,
+      projectName: row.repo,
+      projectPath: checkout!.project?.path ?? null,
+      readsRepo,
+      writesRepo,
+      checkoutCwd: checkout!.cwd,
+      recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
+      baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
+      agent: agent!,
+      sessionId: retryAuthority.owner,
+    }),
+  )
   // Detached and followed, exactly like `do`. A retry is usually started
   // BECAUSE the first attempt died; running it as a child of this process
   // would leave it dying the same way.
@@ -537,10 +573,10 @@ export async function retryRun(
       retryPrompt,
       {
         agent,
-        agentExplicit: Boolean(options.agent || row.agent_explicit),
+        agentExplicit: bindings.agentExplicit,
         schema: row.schema_path ?? undefined,
         mcp: mcpRequestFromStored(row.mcp, row.mcp_error),
-        model: retryModelForAgent(row.agent, row.model, agent, options.model),
+        model: bindings.model,
         ...retryReviewBindings(row),
         review: row.review_ref ?? undefined,
         probe: !!row.probe,
@@ -552,7 +588,7 @@ export async function retryRun(
         base: resumeLaunch.base,
         launchBase: row.launch_base ?? undefined,
         noFailover: !!row.no_failover,
-        transport: retryTransport(agent !== row.agent, agent, transportTurns(row.root_record_id)),
+        transport: bindings.transport,
         keepTree: row.keep_tree
           ? (() => {
               const decision = keepTreeHold({
@@ -577,7 +613,7 @@ export async function retryRun(
           ? {
               kind: 'retry-root',
               parent: row.root_record_id,
-              agent,
+              agent: agent!,
               retireAsking: recordedRulings.length > 0 && latestTurn.status === 'asking',
               turn: 1,
               sessionId: retryAuthority.owner,
@@ -865,11 +901,16 @@ export async function answerRun(
     rootCwd: row.cwd,
     rootRepo: row.repo,
   })
-
   const now = new Date(Date.now()).toISOString()
+  const attributions = answerAttributions(
+    authorityDecision.kind,
+    input.channel,
+    answers,
+    callerSession,
+  )
   const upd = db().query(
     `UPDATE question
-      SET answer=?, answered_at=?, answered_by=?, answerer_kind=?, answer_channel=?, revision=revision+1,
+      SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,
           delivery_pending_at=?, awaiting_operator_at=NULL
     WHERE record_id=?`,
   )
@@ -878,17 +919,11 @@ export async function answerRun(
       answerAuthority = reauthorizeRunMutation(answerAuthority, 'answer')
       answerAuthority = adoptRunMutation(answerAuthority, 'answer')
     }
-    answers.forEach((answer) => {
-      const answeringIdentity = answeredBy(
-        authorityDecision.kind === 'allow-as-operator' && input.channel === 'ui',
-        answer.fromOperator,
-        callerSession,
-      )
+    answers.forEach((answer, index) => {
       upd.run(
         answer.answer,
         now,
-        answeringIdentity,
-        answererKindFromAnsweredBy(answeringIdentity),
+        ...attributions[index]!,
         input.channel,
         ownersLive ? null : now,
         answer.record_id,
@@ -999,7 +1034,7 @@ export async function answerRun(
         db()
           .query(
             `UPDATE question
-            SET answer=NULL, answered_at=NULL, answered_by=NULL, answerer_kind=NULL,
+            SET answer=NULL, answered_at=NULL, answered_by=NULL, answered_by_name=NULL, answerer_kind=NULL,
                 revision=revision+1,
                 answer_channel=NULL, delivery_pending_at=NULL, awaiting_operator_at=?
           WHERE record_id=?`,

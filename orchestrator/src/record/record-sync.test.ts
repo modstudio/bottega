@@ -603,6 +603,8 @@ test('an old-shape landing override syncs with a null change group', async () =>
   const local = localLandingOverrideOutbox((payload) => {
     delete payload.patchId
     delete payload.pathSet
+    delete payload.attribution
+    delete payload.missingLenses
   })
   const remote = fakePostgres()
 
@@ -611,6 +613,8 @@ test('an old-shape landing override syncs with a null change group', async () =>
     failed: 0,
   })
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
+  expect(values).toContain('operator')
+  expect(values).toContain('[]')
   expect(values?.filter((value) => value === null)).toHaveLength(6)
   local.close()
 })

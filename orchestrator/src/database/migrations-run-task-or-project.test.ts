@@ -3,7 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
 import { migrationBoundaryTestDatabase } from './test-database.fixture.ts'
 
-const MIGRATION = '0164_run_task_or_project'
+const MIGRATION = '0167_run_task_or_project'
 const REFUSAL =
   'a run that is not a probe must reference a task or a project; run from a registered project or pass a task key'
 

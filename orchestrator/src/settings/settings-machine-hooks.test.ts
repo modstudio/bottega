@@ -69,9 +69,10 @@ test('typed profile hooks and an empty profile render the same canonical product
   const groups = Object.values(
     fromProfile.settings.hooks as Record<string, Array<{ hooks: unknown[] }>>,
   ).flat()
-  expect(groups.flatMap((group) => group.hooks)).toHaveLength(17)
+  expect(groups.flatMap((group) => group.hooks)).toHaveLength(19)
   expect(commands).not.toContain(OLD_ROOT)
   expect(commands.match(/git-guard\.py/g)).toHaveLength(1)
+  expect(commands.match(/protect-main-checkout\.py/g)).toHaveLength(2)
   expect(commands.match(/heartbeat-remind\.py/g)).toHaveLength(3)
   expect(commands).toContain(`Bash(${PLATFORM_SLUG} run start:*)`)
   expect(commands).toContain(`Bash(./bin/${PLATFORM_SLUG} run start:*)`)

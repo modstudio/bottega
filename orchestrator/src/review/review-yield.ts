@@ -1,5 +1,4 @@
 import type { Database } from 'bun:sqlite'
-import { attributedTaskKey } from '../epic/epic.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { median } from '../state/statistics.ts'
 import { applicableReview } from './review-applicability.ts'
@@ -9,7 +8,8 @@ import {
   reviewRunEvidenceSql,
 } from './review-evidence-sql.ts'
 import { reviewLensGraded } from './review-group.ts'
-import { type ReviewRole, reviewCountsAsRound } from './review-role.ts'
+import type { ReviewRole } from './review-role.ts'
+import { reviewRoundIdentity } from './review-round-identity.ts'
 import { identifySecondOpinionRun } from './review-second-opinion.ts'
 import { reviewTriageBag } from './review-triage.ts'
 import {
@@ -100,6 +100,8 @@ export type ReviewYieldReport = {
   byArea: ReviewYieldRow[]
   lensPairs: ReviewYieldLensPair[]
   rounds: ReviewYieldRow[]
+  lensRounds: ReviewYieldRow[]
+  selectionReasons: ReviewYieldRow[]
   agents: ReviewYieldRow[]
   models: ReviewYieldRow[]
   notRecorded: { metric: string; needed: string; count?: number }[]
@@ -138,6 +140,8 @@ export type ReviewRoundEvidenceRow = {
   coverage: string | null
   limits: string | null
   project_settings: string | null
+  stored_round: number | null
+  selection_reason: string | null
 }
 
 type FindingRow = {
@@ -162,40 +166,12 @@ type ComputedLens = ReviewRoundEvidenceRow & {
 
 const normalized = (value: string | null | undefined) => value?.trim().toLowerCase() ?? null
 
-/**
- * A round is one canonical patch for one attributed task. Classification runs
- * before view filters, so every grouping and filtered view shares its ordinal.
- */
-export function reviewRoundIdentity(
-  row: Pick<ReviewRoundEvidenceRow, 'launch_key' | 'branch' | 'patch_id' | 'path_set'>,
-): { task: string | null; identity: string | null } {
-  const task = attributedTaskKey(row.launch_key, row.branch)
-  return {
-    task,
-    identity:
-      task && row.patch_id ? `${normalized(task)}\0${row.patch_id}\0${row.path_set ?? ''}` : null,
-  }
-}
-
 function classifyRounds(
   rows: ReviewRoundEvidenceRow[],
 ): Map<string, { task: string | null; round: number | null }> {
   const result = new Map<string, { task: string | null; round: number | null }>()
-  const ordinal = new Map<string, number>()
-  const seen = new Map<string, number>()
   for (const row of rows) {
-    const { task, identity } = reviewRoundIdentity(row)
-    if (!reviewCountsAsRound(row.role) || !identity) {
-      result.set(row.lens_id, { task, round: null })
-      continue
-    }
-    let round = ordinal.get(identity)
-    if (round === undefined) {
-      round = (seen.get(normalized(task)!) ?? 0) + 1
-      seen.set(normalized(task)!, round)
-      ordinal.set(identity, round)
-    }
-    result.set(row.lens_id, { task, round })
+    result.set(row.lens_id, { task: reviewRoundIdentity(row).task, round: row.stored_round })
   }
   return result
 }
@@ -263,7 +239,8 @@ export function reviewYield(
             rl.model, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
             run.vendor_cost_usd, run.vendor_estimated_cost_usd, run.vendor_cost_source,
             run.input_tree, run.head_commit, rl.overlap,rl.reproduced,
-            rl.coverage,rl.limits,p.settings AS project_settings
+            rl.coverage,rl.limits,p.settings AS project_settings,r.round AS stored_round,
+            rl.selection_reason
        FROM review_lens rl
        JOIN review r ON r.record_id=rl.review_record_id
        JOIN run ON run.record_id=rl.run_record_id
@@ -321,6 +298,15 @@ export function reviewYield(
       rows.filter((row) => row.round !== null),
       (row) => `round ${row.round}`,
       (_a, _b, aRows, bRows) => aRows[0]!.round! - bRows[0]!.round!,
+    ),
+    lensRounds: grouped(
+      rows.filter((row) => row.round !== null),
+      (row) => `${displayLens(row)} round ${row.round}`,
+      (a, b) => a.localeCompare(b, undefined, { numeric: true }),
+    ),
+    selectionReasons: grouped(
+      rows.filter((row) => row.selection_reason !== null),
+      (row) => row.selection_reason!,
     ),
     agents: grouped(rows, (row) => row.agent),
     models: grouped(rows, (row) => row.model ?? '(not recorded)'),
@@ -671,6 +657,10 @@ export function renderReviewYieldHuman(report: ReviewYieldReport): string {
   else lines.push(...pairs.slice(1))
   lines.push('')
   section('BY ROUND ORDINAL', report.rounds)
+  lines.push('')
+  section('BY LENS ROUND', report.lensRounds)
+  lines.push('')
+  section('BY SELECTION REASON', report.selectionReasons)
   lines.push('')
   section('BY AGENT', report.agents)
   lines.push('')

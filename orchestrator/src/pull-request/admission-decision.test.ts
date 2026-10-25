@@ -36,6 +36,8 @@ const change = {
 
 const override = (values: Partial<AdmissionOverride> = {}): AdmissionOverride => ({
   recordId: 'override-17',
+  attribution: 'operator',
+  missingLenses: [],
   ...change,
   ...values,
 })
@@ -47,6 +49,65 @@ describe('pull-request admission decision', () => {
       overrideId: 'override-17',
       triage: incomplete,
     })
+  })
+
+  test('an architect ruling admits only the exact recorded missing-lens gap', () => {
+    const ceiling = override({
+      recordId: 'ceiling-ruling',
+      attribution: 'architect-ceiling',
+      missingLenses: ['correctness'],
+    })
+    const ceilingGap = { ...incomplete, noCompleteReviewRound: false }
+    expect(decideAdmission(change, ceilingGap, [ceiling]).overrideId).toBe('ceiling-ruling')
+    expect(
+      decideAdmission(
+        change,
+        {
+          ...ceilingGap,
+          missingLenses: [...incomplete.missingLenses, { lens: 'craft', recordedOnBranch: false }],
+        },
+        [ceiling],
+      ).overrideId,
+    ).toBeNull()
+    expect(
+      decideAdmission({ ...change, tip: 'different-head' }, ceilingGap, [ceiling]).overrideId,
+    ).toBeNull()
+    expect(
+      decideAdmission(
+        change,
+        {
+          ...ceilingGap,
+          undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }],
+        },
+        [ceiling],
+      ).overrideId,
+    ).toBeNull()
+  })
+
+  test('a missing second-opinion ruling does not admit a missing primary lens', () => {
+    const ceiling = override({
+      recordId: 'ceiling-ruling',
+      attribution: 'architect-ceiling',
+      missingLenses: ['second-opinion:correctness'],
+    })
+    const ceilingGap = {
+      ...incomplete,
+      noCompleteReviewRound: false,
+      missingLenses: [],
+      missingSecondOpinion: { lens: 'correctness', firstRunId: 'run-1' },
+    }
+    expect(decideAdmission(change, ceilingGap, [ceiling]).overrideId).toBe('ceiling-ruling')
+    expect(
+      decideAdmission(
+        change,
+        {
+          ...ceilingGap,
+          missingLenses: [{ lens: 'correctness', recordedOnBranch: false }],
+          missingSecondOpinion: null,
+        },
+        [ceiling],
+      ).overrideId,
+    ).toBeNull()
   })
 
   test.each([

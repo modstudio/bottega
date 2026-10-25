@@ -9,6 +9,7 @@ import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { type GitRefObservation, observeGitRef } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { decideAbsentClaim } from './cleanup-sweep-decisions.ts'
@@ -203,7 +204,6 @@ function conversationFacts(
     branch_kept: string | null
     branch_kept_tip: string | null
   }[]
-  const terminal = new Set(['ok', 'failed', 'stale', 'stopped'])
   const keptTurns =
     row.kind === 'branch'
       ? turns.filter(
@@ -215,7 +215,7 @@ function conversationFacts(
   )
   const tipTurn = claimTurn ?? keptTurns.findLast((turn) => turn.branch_kept_tip)
   return {
-    allTurnsTerminal: turns.every((turn) => terminal.has(turn.status)),
+    allTurnsTerminal: turns.every((turn) => TERMINAL_RUN_STATUS_SET.has(turn.status)),
     liveLeaseOrPid: turns.some(
       (turn) =>
         observers.leaseState(turn.record_id) === 'held' ||

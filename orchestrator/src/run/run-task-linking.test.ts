@@ -134,7 +134,7 @@ describe('run task linking service', () => {
   test('writes derived links once and is idempotent', async () => {
     const projectId = addProject('link-write', '/work/link-write')
     const migrationSql = readFileSync(
-      new URL('../../migrations/0164_run_task_or_project.sql', import.meta.url),
+      new URL('../../migrations/0167_run_task_or_project.sql', import.meta.url),
       'utf8',
     )
     const insertTriggerSql = migrationSql.split('--> statement-breakpoint')[0]!
