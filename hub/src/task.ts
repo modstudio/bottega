@@ -815,7 +815,12 @@ export async function setTask(
   scope: TaskScope,
   changes: TaskChanges,
   attribution: Attribution,
-  options: { force?: boolean; hosted?: HostedOptions } & DoneTransitionOptions = {},
+  options: {
+    force?: boolean
+    hosted?: HostedOptions
+    /** Receives the hosted drain result; a throw here propagates to the caller. */
+    onHostedDelivery?: (delivery: HostedEditDelivery) => void
+  } & DoneTransitionOptions = {},
 ): Promise<TaskRow> {
   const upper = key.toUpperCase()
   const current = showTask(upper, scope).task

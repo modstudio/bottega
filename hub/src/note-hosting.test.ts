@@ -241,7 +241,6 @@ describe('hosted-only note safety', () => {
   })
 })
 
-
 describe('hosted promotion title correction', () => {
   const at = '2026-10-09T00:00:00.000Z'
   const taskId = '01990000-0000-7000-8000-000000000901'
@@ -393,10 +392,10 @@ describe('hosted promotion title correction', () => {
   test('a refused title correction raises the finish command', async () => {
     const note = fileGammaNote('refused correction')
     const stub = hostedPromotionStub(note, note.text)
-    const failure = await promoteNote(note.id, {
+    const failure = (await promoteNote(note.id, {
       hosted: stub.refusing,
       title: 'Refused correction',
-    }).catch((cause: Error) => cause)
+    }).catch((cause: Error) => cause)) as Error
     expect(failure.message).toContain('the correction was not delivered (rejected: title refused)')
     expect(failure.message).toContain(
       `Finish with: ${PLATFORM_SLUG} task set GAM-1 --title "Refused correction"`,
@@ -408,10 +407,10 @@ describe('hosted promotion title correction', () => {
   test('a correction the destination cannot push raises the finish command', async () => {
     const note = fileGammaNote('undeliverable correction')
     const stub = hostedPromotionStub(note, note.text)
-    const failure = await promoteNote(note.id, {
+    const failure = (await promoteNote(note.id, {
       hosted: stub.unpushable,
       title: 'Undeliverable correction',
-    }).catch((cause: Error) => cause)
+    }).catch((cause: Error) => cause)) as Error
     expect(failure.message).toContain('the correction was not delivered (queued:')
     expect(failure.message).toContain(
       `Finish with: ${PLATFORM_SLUG} task set GAM-1 --title "Undeliverable correction"`,

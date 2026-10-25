@@ -13,10 +13,9 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
-import { ARRAY_MCP_STATUS_WRITE_CONFIRM } from '../../shared/trackers.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { confirmCount, type HostedTask } from './hosted-tasks.ts'
+import { confirmCount } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
   hostedUnavailableRemedy,
@@ -34,6 +33,7 @@ import {
 } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
+import { setPromotedTaskTitle } from './note-promoted-title.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -51,7 +51,6 @@ import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { hostedTaskIdentity } from './task-client.ts'
 import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
-import { setTaskThroughTracker } from './tracker-task-write.ts'
 
 export type NoteAnchor = {
   id?: string
@@ -766,40 +765,6 @@ function promotionBody(note: NoteRow): string {
     )
     .join('\n')
   return `${note.text}\n\nSIGHTINGS (${note.sightings})\n${evidence}`
-}
-
-/**
- * The hosted server titles a promoted task with the note text, so the creating client corrects it
- * through the same hosted-aware write `bottega task set --title` uses, aimed at the destination the
- * promotion itself wrote to. Only a delivered correction counts: a queued change may never arrive
- * (a destination that cannot push task rows) and a rejected one is quarantined, and either leaves
- * the hosted record titled by the note text while the promotion reported success.
- */
-async function setPromotedTaskTitle(
-  task: HostedTask,
-  title: string,
-  options: { hosted: NoteClientOptions; attribution: Attribution },
-): Promise<void> {
-  try {
-    await setTaskThroughTracker(
-      task.key,
-      { recordId: task.id },
-      { title },
-      options.attribution,
-      {
-        confirm: ARRAY_MCP_STATUS_WRITE_CONFIRM,
-        hosted: options.hosted,
-        onHostedDelivery: (delivery) => {
-          if (delivery.kind !== 'sent')
-            throw new Error(`the correction was not delivered (${delivery.kind}: ${delivery.reason})`)
-        },
-      },
-    )
-  } catch (error) {
-    throw new Error(
-      `hosted task ${task.key} was created with the note text as its title, but setting the title failed: ${(error as Error).message}. Finish with: ${PLATFORM_SLUG} task set ${task.key} --title "${title}"`,
-    )
-  }
 }
 
 export async function dropNote(
