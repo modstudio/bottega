@@ -142,17 +142,6 @@ test('remaining hosted tables mint UUID keys and preserve their old conflict key
     )
     expect(after).toEqual(before)
 
-    const ids = await Promise.all(
-      tables.map(async (table) => {
-        const result = await database.query<{ id: string }>(`SELECT id::text FROM ${table}`)
-        expect(result.rows[0]?.id).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-        )
-        return result.rows[0]!.id
-      }),
-    )
-    expect(new Set(ids).size).toBe(tables.length)
-
     const duplicates = [
       `INSERT INTO board_message_tag(message_id,kind,value,origin) VALUES
         ('01990000-0000-7000-8000-000000001001','task','DEV-1726','sender')`,
@@ -184,6 +173,33 @@ test('remaining hosted tables mint UUID keys and preserve their old conflict key
     ]
     for (const statement of duplicates) {
       await expect(database.exec(statement)).rejects.toThrow('duplicate key value')
+    }
+
+    for (const table of tables) {
+      const primaryKeys = await database.query<{ oid: string }>(
+        `SELECT constraint_row.oid::text
+         FROM pg_constraint constraint_row
+         JOIN pg_class table_row ON table_row.oid=constraint_row.conrelid
+         JOIN pg_namespace namespace_row ON namespace_row.oid=table_row.relnamespace
+         WHERE namespace_row.nspname='public' AND table_row.relname=$1
+           AND constraint_row.contype='p'`,
+        [table],
+      )
+      expect(primaryKeys.rows).toHaveLength(1)
+
+      const columns = await database.query<{ column_name: string }>(
+        `SELECT attribute_row.attname AS column_name
+         FROM pg_constraint constraint_row
+         JOIN unnest(constraint_row.conkey) WITH ORDINALITY
+           AS key_column(attribute_number,position) ON true
+         JOIN pg_attribute attribute_row
+           ON attribute_row.attrelid=constraint_row.conrelid
+          AND attribute_row.attnum=key_column.attribute_number
+         WHERE constraint_row.oid=$1::oid
+         ORDER BY key_column.position`,
+        [primaryKeys.rows[0]!.oid],
+      )
+      expect(columns.rows).toEqual([{ column_name: 'id' }])
     }
 
     for (const [table, columns] of Object.entries(formerPrimaryKeyColumns)) {
