@@ -20,6 +20,7 @@ type Fixture = {
     done: Record<string, unknown>
   }
   expected: { writing: string; nonWriting: string; longNonWriting: string }
+  texts: { narratedThenRefused: string }
 }
 
 const fixture = JSON.parse(
@@ -49,6 +50,12 @@ describe('refusal score guidance', () => {
     )
     expect(refusalScoreGuidance(JSON.stringify(fixture.replies.longRefused), 'craft')).toBe(
       fixture.expected.longNonWriting,
+    )
+  })
+
+  test('the newest reply decides, not an earlier reply-shaped object', () => {
+    expect(refusalScoreGuidance(fixture.texts.narratedThenRefused, 'implement')).toBe(
+      fixture.expected.writing,
     )
   })
 

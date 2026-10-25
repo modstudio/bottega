@@ -59,6 +59,15 @@ class RefusalScoreGuidanceTest(unittest.TestCase):
             self.fixture["expected"]["longNonWriting"],
         )
 
+    def test_newest_reply_decides_not_an_earlier_reply_shaped_object(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reply.txt"
+            path.write_text(self.fixture["texts"]["narratedThenRefused"])
+            self.assertEqual(
+                refusal_score_guidance(str(path), "implement"),
+                self.fixture["expected"]["writing"],
+            )
+
     def test_done_absent_and_unreadable_replies_have_no_mark(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "reply.txt"

@@ -361,13 +361,6 @@ describe('collection records', () => {
     }
   })
 
-  test('an absent reply adds no refusal mark and does not throw', () => {
-    const absent = addRun({ agent: 'codex', job: 'implement' })
-    const output = join(dir, `absent-${absent}.txt`)
-    db().query('UPDATE run SET output_path=? WHERE record_id=?').run(output, absent)
-    expect(recordedResult(absent).errors.join('\n')).not.toContain('refused:')
-  })
-
   test.each([
     ['tree present', { writingRun: true, worktree: '/tmp/tree' }, ''],
     [

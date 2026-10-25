@@ -47,5 +47,8 @@
     "writing": "refused: \"evidence at a.ts:2\"; judge the refusal on its merits (correct with evidence: full right faithful; should have asked: full mixed faithful; false evidence: full wrong; no evidence: none), or rule and continue the chain and score it after.",
     "nonWriting": "refused: \"evidence at a.ts:2\"; judge the refusal on its merits (correct with evidence: full right; should have asked: full mixed; false evidence: full wrong; no evidence: none), or rule and continue the chain and score it after.",
     "longNonWriting": "refused: \"word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word…\"; judge the refusal on its merits (correct with evidence: full right; should have asked: full mixed; false evidence: full wrong; no evidence: none), or rule and continue the chain and score it after."
+  },
+  "texts": {
+    "narratedThenRefused": "{\"status\": \"done\", \"summary\": \"complete\", \"files_changed\": null, \"change_guide\": null, \"questions\": null, \"deviations\": null, \"blockers\": null, \"tests\": null}\nworker narration\n{\"status\": \"refused\", \"summary\": \"evidence at a.ts:2\\nmore\", \"files_changed\": null, \"change_guide\": null, \"questions\": null, \"deviations\": null, \"blockers\": null, \"tests\": null}"
   }
 }
