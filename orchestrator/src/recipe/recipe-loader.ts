@@ -1,5 +1,5 @@
 // concern: tracked worktree recipe loading
-/** Knows how to resolve, read, parse, and validate one tracked recipe. Must not execute it or know register persistence. */
+/** Knows how to resolve, read, parse, and validate one tracked recipe, and the base a project's lifecycle declares. Must not execute it or know register persistence. */
 import { readFileSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import { git, gitOk, resolveBase } from '../git/git-environment.ts'
@@ -74,6 +74,15 @@ export function loadRecipeAtBase(input: {
 }): {
   base: string
   recipe: TrackedRecipe
+  /**
+   * The `baseRef` the recipe read at `base` declared; null when it named none.
+   *
+   * Taken from the FIRST read, before the base a recipe names is followed, so
+   * it answers what the recipe at `base` says rather than what the commit it
+   * points at happens to repeat. A recipe that names a base is not repeated
+   * there in general: the commit it points at may name none.
+   */
+  declaredBaseRef: string | null
   snapshot: { source: { path: string; commit: string }; recipe: TrackedRecipe }
 } {
   const pointer = input.recipePath
@@ -94,11 +103,53 @@ export function loadRecipeAtBase(input: {
     return loaded.recipe ?? { create: [] }
   }
   let recipe = read()
+  const declaredBaseRef = recipe.baseRef ?? null
   if (!input.baseRef && recipe.baseRef) {
     base =
       gitOk(['rev-parse', recipe.baseRef], input.repoRoot) ??
       git(['rev-parse', 'HEAD'], input.repoRoot)
     recipe = read()
   }
-  return { base, recipe, snapshot: { source: { path: pointer, commit: base }, recipe } }
+  return {
+    base,
+    recipe,
+    declaredBaseRef,
+    snapshot: { source: { path: pointer, commit: base }, recipe },
+  }
+}
+
+/**
+ * The base a project's lifecycle declares for a new tree; null when it names
+ * none.
+ *
+ * A declared recipe carries `baseRef` so a project that branches from
+ * `origin/develop` can say so, and the register's inline recipe and the tracked
+ * recipe are two spellings of one declaration: a base named in either is the
+ * project's own floor, and creation follows it. Both spellings are passed in
+ * rather than looked up, because which project declares which belongs to the
+ * register and not here.
+ *
+ * The tracked recipe's declaration comes from the read at `repoRoot`'s HEAD,
+ * before the base it names is followed, because following it lands on a commit
+ * whose recipe may name nothing.
+ *
+ * A recipe that cannot be read here is not refused here: creation reads the
+ * same file for real and reports its own refusal, so this falls open to null.
+ */
+export function declaredRecipeBaseRef(input: {
+  /** The register's inline recipe, when the project declares one. */
+  registerRecipe?: { baseRef?: string } | null
+  /** The tracked recipe pointer, when the project declares one. */
+  recipePath?: string | null
+  /** The repository the tracked recipe is read in. */
+  repoRoot: string
+}): string | null {
+  if (input.registerRecipe?.baseRef) return input.registerRecipe.baseRef
+  if (!input.recipePath) return null
+  try {
+    return loadRecipeAtBase({ recipePath: input.recipePath, repoRoot: input.repoRoot })
+      .declaredBaseRef
+  } catch {
+    return null
+  }
 }

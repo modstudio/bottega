@@ -121,6 +121,50 @@ test('observed changes without an explicit bound still use the trunk merge-base'
   expect(calls).toContain('diff --cached trunk-merge-base')
 })
 
+test('a branch cut ahead of the local trunk never diffs below its recorded base', () => {
+  const calls: string[] = []
+  const result = changesInIndex(
+    {
+      path: '/tree',
+      branch: 'DEV-1257-work',
+      base: 'run-base',
+      repoRoot: '/repo',
+      source: 'git',
+      mintedBranch: 'DEV-1257-work',
+    },
+    false,
+    undefined,
+    (args) => {
+      calls.push(args.join(' '))
+      return ''
+    },
+    (args) => {
+      calls.push(args.join(' '))
+      if (args[0] === 'merge-base') {
+        // The local trunk still points at the caller's HEAD, below the base
+        // this run's tree was cut from.
+        return args.includes('--is-ancestor') ? null : 'caller-trunk-tip'
+      }
+      const since = args.at(-1)
+      if (args.includes('--name-only'))
+        return since === 'run-base' ? 'work.txt' : 'landed.txt\nwork.txt'
+      if (args.includes('--numstat'))
+        return since === 'run-base' ? '1\t0\twork.txt' : '1\t0\tlanded.txt\n1\t0\twork.txt'
+      return ''
+    },
+    (args) => {
+      calls.push(args.join(' '))
+      return args[0] === 'diff' ? 'run patch' : ''
+    },
+  )
+
+  expect(result.since).toBe('run-base')
+  expect(result.files).toEqual(['work.txt'])
+  expect(result.insertions).toBe(1)
+  expect(calls).toContain('merge-base --is-ancestor run-base caller-trunk-tip')
+  expect(calls).toContain('diff --cached run-base')
+})
+
 describe('worktree removal safety', () => {
   test('finds an exact branch that remains checked out in a registered worktree', () => {
     const porcelain = `worktree /projects/example

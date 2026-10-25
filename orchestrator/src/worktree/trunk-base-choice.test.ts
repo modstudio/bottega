@@ -141,6 +141,11 @@ test('an unreadable caller HEAD leaves the base unresolved', () => {
  * `writerTreeBaseRef` is the value run claiming hands to creation, so building
  * the tree's base through the loader with it is the same expression creation
  * evaluates.
+ *
+ * `recipeAtRecipeBase` is the recipe committed at the base the declaration
+ * points at, which is where following the declaration reads next. It defaults
+ * to the same recipe, and a project whose target commit names no base of its
+ * own passes a recipe that omits `baseRef`.
  */
 function withStaleMainCheckout(
   recipe: string,
@@ -150,6 +155,7 @@ function withStaleMainCheckout(
     upstreamTip: string
     recipeBaseTip: string
   }) => void,
+  recipeAtRecipeBase = recipe,
 ): void {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'trunk-base-choice-')))
   const git = (cwd: string, ...args: string[]): string => {
@@ -169,6 +175,7 @@ function withStaleMainCheckout(
     git(repo, 'commit', '--quiet', '-m', 'base')
     const base = git(repo, 'rev-parse', 'HEAD')
     git(repo, 'checkout', '--quiet', '-b', 'recipe-base')
+    writeFileSync(join(repo, recipePath), recipeAtRecipeBase)
     writeFileSync(join(repo, 'recipe-base.txt'), 'the base this project names\n')
     git(repo, 'add', '.')
     git(repo, 'commit', '--quiet', '-m', 'recipe base')
@@ -212,6 +219,24 @@ test('a stale main checkout whose tracked recipe names a base keeps the recipe b
       }).base,
     ).toBe(fixture.recipeBaseTip)
   })
+})
+
+test('a declared base whose target commit names none still keeps the recipe base', () => {
+  withStaleMainCheckout(
+    '{ "worktree": { "create": [], "baseRef": "recipe-base" } }',
+    (fixture) => {
+      // The caller's trunk is behind the upstream, so the substitution is live
+      // for this caller and the declared base winning is the guard's doing.
+      expect(resolveNewTreeBase({ cwd: fixture.repo, ref: null })).toBe(fixture.upstreamTip)
+
+      const baseRef = writerTreeBaseRef(toolFor(fixture.repo), fixture.repo, fixture.repo, false)
+      expect(baseRef).toBeUndefined()
+      expect(
+        loadRecipeAtBase({ recipePath: fixture.recipePath, repoRoot: fixture.repo, baseRef }).base,
+      ).toBe(fixture.recipeBaseTip)
+    },
+    '{ "worktree": { "create": [] } }',
+  )
 })
 
 test('a tracked recipe that names no base takes the landing upstream', () => {

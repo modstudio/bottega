@@ -23,7 +23,7 @@
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { gitOk, gitToplevel } from '../git/git-environment.ts'
 import { projectAt, type WorktreeTool } from '../project/projects.ts'
-import { loadRecipeAtBase } from '../recipe/recipe-loader.ts'
+import { declaredRecipeBaseRef } from '../recipe/recipe-loader.ts'
 import { landingUpstreamRef, resolveReadOnlyBase } from './worktree-caller.ts'
 
 /** Abbreviated commit length in the line naming the chosen base. */
@@ -173,12 +173,11 @@ export type DispatchBaseInput = {
  *
  * The read-only path, and the writer path through `writerTreeBaseRef`, reach
  * the substitution through here rather than resolving the implicit HEAD
- * themselves, so it happens once. A case it does not apply to either falls
- * through to the caller's own HEAD, resolved in exactly the directory and from
- * exactly the ref it was resolved in before, or — where the lifecycle named a
- * base of its own — never arrives here at all. The chosen upstream is named on
- * stderr so a run never silently starts somewhere other than the caller's
- * checkout.
+ * themselves, so it happens once. A case the substitution does not apply to
+ * falls through to the caller's own HEAD, in the directory and from the ref
+ * that dispatch names; a writer whose lifecycle declared a base of its own is
+ * never sent here. The chosen upstream is named on stderr so a run never
+ * silently starts somewhere other than the caller's checkout.
  */
 export function resolveNewTreeBase(input: DispatchBaseInput): string {
   const choice = chooseTrunkBase(trunkBaseFacts(input))
@@ -197,31 +196,6 @@ export function resolveNewTreeBase(input: DispatchBaseInput): string {
 }
 
 /**
- * Whether the project's own lifecycle names the base its tree is cut from.
- *
- * A declared recipe carries `baseRef` so a project that branches from
- * `origin/develop` can say so. A tracked recipe is read here at the base the
- * lifecycle itself would read it at — the repository's HEAD — because the
- * question is what the recipe says before any base is chosen. Either kind
- * answers: the register's recipe and the tracked recipe are two spellings of
- * one declaration, and a base named in one of them is the project's choice.
- *
- * A recipe that cannot be read here is not refused here. Creation reads the
- * same file for real and reports its own refusal; this only asks whether a base
- * was declared, so it falls open to the caller's own HEAD.
- */
-function lifecycleNamesBase(tool: WorktreeTool | null, repoRoot: string): boolean {
-  if (!tool) return false
-  if (tool.recipe?.baseRef) return true
-  if (!tool.recipePath) return false
-  try {
-    return loadRecipeAtBase({ recipePath: tool.recipePath, repoRoot }).recipe.baseRef !== undefined
-  } catch {
-    return false
-  }
-}
-
-/**
  * The `baseRef` a fresh writer tree's creation is given; undefined when the
  * lifecycle is to choose the base itself.
  *
@@ -231,7 +205,9 @@ function lifecycleNamesBase(tool: WorktreeTool | null, repoRoot: string): boolea
  * upstream into a project that declared its own floor would not merely add a
  * preference — it would silently cut the tree from somewhere the project did
  * not choose. Where a base is declared, nothing is passed and the project's
- * lifecycle keeps its own answer.
+ * lifecycle keeps its own answer. `declaredRecipeBaseRef` owns that question
+ * for both spellings of the declaration, the register's recipe and the tracked
+ * one.
  *
  * `cwd` is the caller's directory; `repoRoot` the repository whose tracked
  * recipe is read; `tool` the lifecycle that will cut the tree, null when plain
@@ -243,6 +219,11 @@ export function writerTreeBaseRef(
   repoRoot: string,
   carry: boolean,
 ): string | undefined {
-  if (lifecycleNamesBase(tool, repoRoot)) return undefined
+  const declared = declaredRecipeBaseRef({
+    registerRecipe: tool?.recipe,
+    recipePath: tool?.recipePath,
+    repoRoot,
+  })
+  if (declared !== null) return undefined
   return resolveNewTreeBase({ cwd, ref: null, carry })
 }

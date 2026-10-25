@@ -61,16 +61,13 @@ export function assertCallerAncestry(cwd: string, worktree: Worktree): void {
 export type CallerDrift = { callerHead: string; base: string; baseRef: string }
 
 /**
- * The landing branch's upstream ref, read exactly as it stands and never
- * fetched.
+ * The landing branch's upstream ref, as it stands locally and never fetched.
  *
  * ONE READER, because two callers ask this one question: `callerDrift` previews
  * the floor a project tool would choose, and the trunk base choice compares the
- * caller's trunk with it. They used to read `@{upstream}` separately and had
- * already drifted apart on what to do when a branch configures none — one fell
- * back to `origin/<trunk>` and the other gave up — so an edit to upstream
- * resolution that landed in one silently left the other comparing against a
- * ref that does not exist. The fallback belongs here, where both paths get it.
+ * caller's trunk with it. A branch that configures no upstream answers
+ * `origin/<landingBranch>`, and that fallback belongs here where both paths get
+ * it.
  */
 export function landingUpstreamRef(directory: string, landingBranch: string): string {
   return (
