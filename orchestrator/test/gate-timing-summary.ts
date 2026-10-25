@@ -9,6 +9,7 @@ import {
   decideTestTiming,
   decideTestTimingRun,
 } from '../../scripts/quality/test-timing-decision.ts'
+import { slowTestPhaseReport } from './gate-phase-timing.ts'
 import { decideTimingGrowthPublication } from './gate-timing-summary-decision.ts'
 import type { FileRow, TestRow } from './record-gate-timings.ts'
 
@@ -117,6 +118,22 @@ function summaryRows(files: FileRow[]): CommittedTestTiming[] {
     .sort((a, b) => a.path.localeCompare(b.path))
 }
 
+function reportSlowTestPhases(tests: TestRow[], reporter: Reporter): void {
+  for (const test of tests) {
+    if (test.setupMs === undefined || test.teardownMs === undefined) continue
+    const report = slowTestPhaseReport({
+      ...test,
+      setupMs: test.setupMs,
+      teardownMs: test.teardownMs,
+    })
+    if (report) reporter.log(`test fixture timing: ${report}`)
+  }
+}
+
+function reportPhaseTimingNotices(notices: string[], reporter: Reporter): void {
+  for (const notice of notices) reporter.log(notice)
+}
+
 function publishBaselineDisposition({
   disposition,
   currentFileCount,
@@ -159,7 +176,10 @@ export function publishTimingSummary(
   unitElapsedMs: number,
   sharded = false,
   reporter: Reporter = console,
+  phaseTimingNotices: string[] = [],
 ): boolean {
+  reportPhaseTimingNotices(phaseTimingNotices, reporter)
+  reportSlowTestPhases(tests, reporter)
   const current = summaryRows(files)
   const runDecision = decideTestTimingRun({ sharded, files, tests })
   const longPoles = runDecision.longPoles
