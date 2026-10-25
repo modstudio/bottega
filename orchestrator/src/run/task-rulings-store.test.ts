@@ -105,7 +105,11 @@ describe('task ruling candidate query', () => {
   })
 
   test('carries the operator name, preferring the overturner of a replaced ruling', () => {
-    upsertProject({ recordId: newRecordId(), name: PLATFORM_SLUG, path: `/fixture/${PLATFORM_SLUG}` })
+    upsertProject({
+      recordId: newRecordId(),
+      name: PLATFORM_SLUG,
+      path: `/fixture/${PLATFORM_SLUG}`,
+    })
     const run = root(PLATFORM_SLUG, 'DEV-960')
     db()
       .query(
@@ -132,9 +136,15 @@ describe('task ruling candidate query', () => {
         'new answer',
       )
 
-    const selected = taskRulingsForDispatch({ resume: false, project: PLATFORM_SLUG, launchKey: 'DEV-960' })
+    const selected = taskRulingsForDispatch({
+      resume: false,
+      project: PLATFORM_SLUG,
+      launchKey: 'DEV-960',
+    })
 
-    const ruledBy = Object.fromEntries(selected.rulings.map((ruling) => [ruling.question, ruling.ruledBy]))
+    const ruledBy = Object.fromEntries(
+      selected.rulings.map((ruling) => [ruling.question, ruling.ruledBy]),
+    )
     expect(ruledBy).toEqual({
       answered: 'Ada Lovelace (operator)',
       replaced: 'Grace Hopper (operator)',

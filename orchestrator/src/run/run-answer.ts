@@ -31,16 +31,14 @@ import { questionOpenSql } from './question-open.ts'
 import { enqueueQuestionRecord } from './question-outbox.ts'
 import {
   type AnswerChannel,
-  answererKindFromAnsweredBy,
   QUESTION_DELIVERY_MODE_LIVE,
   QUESTION_DELIVERY_MODE_RECORD_ONLY,
   QUESTION_DELIVERY_MODE_RESUME,
   QUESTION_DELIVERY_MODE_RETRY,
   QUESTION_DELIVERY_OUTCOME_DELIVERED,
   QUESTION_DELIVERY_OUTCOME_FAILED,
-  rulingActor,
 } from './question-vocabulary.ts'
-import { resolvedRulingPersonName } from './ruling-attribution.ts'
+import { answerAttributions } from './ruling-attribution.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
@@ -202,42 +200,6 @@ function answerRoot(requestedId: string): AnswerRootRow | null {
     WHERE requested.record_id = ?`,
     )
     .get(requestedId) as AnswerRootRow | null
-}
-
-function answeredBy(
-  operatorAuthorized: boolean,
-  fromOperator: boolean,
-  callerSession: string | null,
-): string {
-  if (operatorAuthorized && fromOperator) return 'operator via hub'
-  return rulingActor(fromOperator, callerSession)
-}
-
-function answerAttribution(
-  operatorAuthorized: boolean,
-  answer: Pick<AnsweredQuestion, 'fromOperator'>,
-  callerSession: string | null,
-  personName: string | null,
-) {
-  const identity = answeredBy(operatorAuthorized, answer.fromOperator, callerSession)
-  return [identity, personName, answererKindFromAnsweredBy(identity)] as const
-}
-
-function answerAttributions(
-  authorityDecision: ReturnType<typeof answerAuthorityDecision>,
-  channel: AnswerChannel,
-  answers: readonly AnsweredQuestion[],
-  callerSession: string | null,
-) {
-  const operatorAuthorized = authorityDecision.kind === 'allow-as-operator' && channel === 'ui'
-  return answers.map((answer) =>
-    answerAttribution(
-      operatorAuthorized,
-      answer,
-      callerSession,
-      resolvedRulingPersonName(answer.fromOperator),
-    ),
-  )
 }
 
 function requireAnswerAuthority(
@@ -940,7 +902,12 @@ export async function answerRun(
     rootRepo: row.repo,
   })
   const now = new Date(Date.now()).toISOString()
-  const attributions = answerAttributions(authorityDecision, input.channel, answers, callerSession)
+  const attributions = answerAttributions(
+    authorityDecision.kind,
+    input.channel,
+    answers,
+    callerSession,
+  )
   const upd = db().query(
     `UPDATE question
       SET answer=?, answered_at=?, answered_by=?, answered_by_name=?, answerer_kind=?, answer_channel=?, revision=revision+1,

@@ -45,6 +45,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     'node:os',
     '../database/db.ts',
     '../record/record-session.ts',
+    './question-vocabulary.ts',
   ]),
   module('orchestrator/src/run/ruling-overturn.ts', [
     '../../../shared/brand.ts',

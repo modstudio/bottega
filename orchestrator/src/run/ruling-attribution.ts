@@ -4,6 +4,7 @@
 import { userInfo } from 'node:os'
 import { db } from '../database/db.ts'
 import { cachedSignedInRecordUser } from '../record/record-session.ts'
+import { answererKindFromAnsweredBy, rulingActor } from './question-vocabulary.ts'
 
 export function rulingPersonName(
   fromOperator: boolean,
@@ -21,4 +22,31 @@ export function resolvedRulingPersonName(fromOperator: boolean): string | null {
   } catch {
     return rulingPersonName(true, null, userInfo().username)
   }
+}
+
+function answeredBy(
+  operatorAuthorized: boolean,
+  fromOperator: boolean,
+  callerSession: string | null,
+): string {
+  if (operatorAuthorized && fromOperator) return 'operator via hub'
+  return rulingActor(fromOperator, callerSession)
+}
+
+/** The answered_by, answered_by_name and answerer_kind columns for each answer, in order. */
+export function answerAttributions(
+  authorityKind: string,
+  channel: string,
+  answers: readonly { fromOperator: boolean }[],
+  callerSession: string | null,
+) {
+  const operatorAuthorized = authorityKind === 'allow-as-operator' && channel === 'ui'
+  return answers.map((answer) => {
+    const identity = answeredBy(operatorAuthorized, answer.fromOperator, callerSession)
+    return [
+      identity,
+      resolvedRulingPersonName(answer.fromOperator),
+      answererKindFromAnsweredBy(identity),
+    ] as const
+  })
 }
