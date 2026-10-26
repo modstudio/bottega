@@ -37,15 +37,10 @@ export async function initialQuestionWaitingAt(
     task_record_id: string | null
   } | null
   if (!row?.repo) return null
-  const rulings = await resolveAnswerRulings(
-    row.repo,
-    row.launch_key,
-    undefined,
-    d,
-    undefined,
-    undefined,
-    row.task_record_id,
-  )
+  const rulings = await resolveAnswerRulings(row.repo, {
+    taskRecordId: row.task_record_id,
+    database: d,
+  })
   return questionAwaitingOperator({ rulings: rulings.value, relayed: false, answered: false })
     ? at
     : null

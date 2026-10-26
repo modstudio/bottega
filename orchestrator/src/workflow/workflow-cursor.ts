@@ -33,6 +33,7 @@ import {
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
+import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -126,6 +127,17 @@ function findCursor(
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
+
+function linkResolvedWorkflowTask(
+  project: string,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  d: Database,
+): void {
+  const workflowKey = keyOf(args)
+  if (!workflowKey || !context.taskRecordId) return
+  linkWorkflowTaskLabel(d, { project, workflowKey, taskRecordId: context.taskRecordId })
+}
 
 /**
  * Create, or resume, the cursor a composition opens.
@@ -259,6 +271,7 @@ export function composeWorkflowWithCursor(
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
+    linkResolvedWorkflowTask(project, args, context, d)
     const existing = keyOf(composition.arguments)
       ? findCursor(
           composition.project,
@@ -464,8 +477,9 @@ export function getWorkflowStepWithCursor(
 ) {
   const autonomy = live.resolution
   return writeTransaction(
-    () =>
-      getWorkflowStepWithCursorImpl(
+    () => {
+      linkResolvedWorkflowTask(project, args, context, d)
+      return getWorkflowStepWithCursorImpl(
         slug,
         project,
         stepSlug,
@@ -477,7 +491,8 @@ export function getWorkflowStepWithCursor(
         cursor,
         live,
         commitCount,
-      ),
+      )
+    },
     d,
   )
 }
@@ -794,8 +809,9 @@ export function nextWorkflowStep(
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     writeTransaction(
-      () =>
-        nextWorkflowStepImpl(
+      () => {
+        linkResolvedWorkflowTask(project, args, context, d)
+        return nextWorkflowStepImpl(
           slug,
           project,
           mode,
@@ -809,7 +825,8 @@ export function nextWorkflowStep(
           selfRuling,
           outcome,
           live,
-        ),
+        )
+      },
       d,
     ),
   )
@@ -876,7 +893,10 @@ export function abandonWorkflowCursor(
   cursor?: number,
 ): string {
   return writeTransaction(
-    () => abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
+    () => {
+      linkResolvedWorkflowTask(project, args, context, d)
+      return abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor)
+    },
     d,
   )
 }
@@ -957,6 +977,7 @@ export function ruleWorkflow(
   if (!ruling?.trim()) throw new Error('--ruling is required')
   const personName = resolvedRulingPersonName(fromOperator)
   return writeTransaction(() => {
+    linkResolvedWorkflowTask(project, args, context, d)
     const row = findCursor(project, slug, mode, args, context, d, cursor)
     if (!row)
       throw new Error(
@@ -1020,7 +1041,10 @@ export function awaitWorkflowRuling(
   cursor?: number,
 ): CursorSummary & { questionId: number } {
   const result = writeTransaction(
-    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
+    () => {
+      linkResolvedWorkflowTask(project, args, context, d)
+      return awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor)
+    },
     d,
   )
   notify('workflow', result.cursorId, d)

@@ -225,13 +225,21 @@ function workflowRulingsSnapshot(
 
 export async function resolveAnswerRulings(
   project: string,
-  _launchKey: string | null,
-  clientFactory?: (signal: AbortSignal) => ConfigClient,
-  d: Database = db(),
-  env: ConfigEnvironment = process.env,
-  timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
-  taskRecordId: string | null = null,
+  options: {
+    taskRecordId?: string | null
+    clientFactory?: (signal: AbortSignal) => ConfigClient
+    database?: Database
+    env?: ConfigEnvironment
+    timeoutMs?: number
+  } = {},
 ): Promise<AutonomyResolution['rulings']> {
+  const {
+    taskRecordId = null,
+    clientFactory,
+    database: d = db(),
+    env = process.env,
+    timeoutMs = HOSTED_AUTONOMY_TIMEOUT_MS,
+  } = options
   const snapshot = workflowRulingsSnapshot(project, taskRecordId, d)
   try {
     const current = (

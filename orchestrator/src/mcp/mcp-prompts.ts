@@ -4,7 +4,7 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
-import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorContext,
@@ -188,7 +188,7 @@ const promptArgsSchema = (prompt: WorkflowPromptDefinition) =>
 
 export function registerWorkflowPrompts(
   server: McpServer,
-  hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3],
+  hubTaskReader?: HubTaskReader,
 ): void {
   for (const workflow of resolveMcpWorkflowSpace(process.cwd()).workflows) {
     const prompt = workflowPromptDefinitions([workflow])[0]!
@@ -226,7 +226,7 @@ export function registerWorkflowPrompts(
           )
           const context = await resolveWorkflowCursorContext(
             projectName,
-            workflowKeyOf(args),
+            args,
             mcpWorkflowCursorContext(),
             hubTaskReader,
           )

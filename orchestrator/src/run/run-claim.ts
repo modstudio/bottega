@@ -156,6 +156,7 @@ export type ClaimInput = {
   startedByUserId: string | null
   replySchemaName: string
   carriedQuestionIds: string[]
+  precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null }
   assertDispatchAllowed(): void
   recordDispatchRefusal?(cause: unknown): void
 }
@@ -199,6 +200,7 @@ async function claimLinks(
   launchCwd: string,
   inherited: { task_record_id: string | null; project_record_id: string | null } | null,
 ) {
+  if (!inherited && input.precomputedLinks) return input.precomputedLinks
   return admitNewRunReference({
     inheritedTaskRecordId: inherited?.task_record_id,
     inheritedProjectRecordId: inherited?.project_record_id,

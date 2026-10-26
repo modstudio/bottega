@@ -8,13 +8,14 @@ afterEach(() => {
 describe('run task reference', () => {
   test('resolves a record id within the recorded project for the run claim', async () => {
     const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-      stdout: JSON.stringify({
-        task: {
+      stdout: JSON.stringify([
+        {
           record_id: '01990000-0000-7000-8000-000000000895',
           key: 'SHARED-42',
           project: 'beta',
         },
-      }),
+      ]),
+      stderr: '',
       exited: Promise.resolve(0),
       args,
     })) as unknown as typeof Bun.spawn)
@@ -30,7 +31,7 @@ describe('run task reference', () => {
       }),
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
     expect(spawn.mock.calls[0]![0]).toEqual(
-      expect.arrayContaining(['task', 'show', 'SHARED-42', '--project', 'beta', '--json']),
+      expect.arrayContaining(['task', 'list', '--project', 'beta', '--json']),
     )
   })
 

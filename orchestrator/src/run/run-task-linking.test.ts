@@ -218,10 +218,10 @@ describe('run task linking service', () => {
       db()
         .query(
           `INSERT INTO question
-          (record_id,number,run_record_id,workflow_key,asked_at,question,asked_via)
-         VALUES ('question-related',991,?,'REL-1','t','question','live')`,
+          (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
+         VALUES ('question-related',991,'cursor-related','REL-1','t','question','live')`,
         )
-        .run(runId)
+        .run()
       db()
         .query(
           `INSERT INTO port_ref

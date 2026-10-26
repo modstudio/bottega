@@ -41,6 +41,7 @@ const identityOf = (key: string, taskId: string | null, branch: string | null): 
 })
 
 const identity = identityOf('DEV-977', 'task-DEV-977', 'DEV-977-work')
+const unlinkedIdentity = identityOf('DEV-977', null, 'DEV-977-work')
 const planningIdentity = identityOf('', null, null)
 
 const matchingCheckout = {
@@ -834,6 +835,25 @@ test('a task artifact requires the fresh task key to match the cursor', () => {
   expect(() => gather(d, { artifact: 'task:DEV-1' })).toThrow(
     "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
+})
+
+test('an unlinked keyed cursor accepts only its own task label as task evidence', () => {
+  const d = database()
+  expect(() => gather(d, { task: 'DEV-1' }, {}, unlinkedIdentity)).toThrow(
+    "--task DEV-1 is not this cursor's task DEV-977",
+  )
+  expect(gather(d, { task: 'DEV-977' }, {}, unlinkedIdentity).task?.key).toBe('DEV-977')
+})
+
+test('an unlinked keyed cursor accepts only its own task label as an artifact', () => {
+  const d = database()
+  expect(() => gather(d, { artifact: 'task:DEV-1' }, {}, unlinkedIdentity)).toThrow(
+    "--artifact task:DEV-1 task is not this cursor's DEV-977",
+  )
+  expect(gather(d, { artifact: 'task:DEV-977' }, {}, unlinkedIdentity).artifact).toEqual({
+    ref: 'task:DEV-977',
+    exists: true,
+  })
 })
 
 test('every workflow task read requests a fresh tracker read through its port', () => {

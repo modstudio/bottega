@@ -12,7 +12,6 @@ import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../run/run-task-linking.ts'
 import { parseAutonomy } from './autonomy.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
 import {
@@ -68,6 +67,7 @@ import {
 } from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
+import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -247,7 +247,7 @@ export async function attachCommand(
   const args = workflowArgs(argv)
   context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     context,
     options.hubTaskReader,
   )
@@ -418,7 +418,7 @@ export async function ruleCommand(
   )
   context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     context,
     options.hubTaskReader,
   )
@@ -464,7 +464,7 @@ export async function abandonCommand(
   )
   context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     context,
     options.hubTaskReader,
   )
@@ -518,7 +518,7 @@ export async function stepCommand(
   const { project, workflow: slug } = target
   context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     context,
     options.hubTaskReader,
   )
@@ -595,7 +595,7 @@ export async function nextCommand(
   const evidence = evidenceFromArgv(argv)
   context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     context,
     options.hubTaskReader,
   )
@@ -656,7 +656,7 @@ export async function awaitCommand(
   )
   context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     context,
     options.hubTaskReader,
   )
@@ -882,7 +882,7 @@ export async function composeCommand(
   const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
   const context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args),
+    args,
     cliWorkflowCursorContext(),
     options.hubTaskReader,
   )

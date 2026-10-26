@@ -300,15 +300,7 @@ async function refuseUserRuling(
   fromOperator: boolean,
 ): Promise<void> {
   if (!project) return
-  const rulings = await resolveAnswerRulings(
-    project,
-    launchKey,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    taskRecordId,
-  )
+  const rulings = await resolveAnswerRulings(project, { taskRecordId })
   const refusal = answerRulingRefusal(rulings, fromOperator)
   if (refusal) throw new Error(refusal)
 }

@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
+import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 
 export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
@@ -176,6 +177,12 @@ export function attachWorkflowText(
   d: Database = writableDb(),
 ): string {
   return writeTransaction(() => {
+    if (identity.key && context.taskRecordId)
+      linkWorkflowTaskLabel(d, {
+        project: identity.project,
+        workflowKey: identity.key,
+        taskRecordId: context.taskRecordId,
+      })
     const row = selectWorkflowCursor(identity, cursor, context.session, d) as AttachCursorRow | null
     if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
     return attachSelectedWorkflowText(row, body, context, d)

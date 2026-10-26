@@ -1,22 +1,20 @@
 // concern: run dispatch rulings
 /** Resolves and renders the task rulings inherited by a dispatched run. */
 
-import { resolveHubTaskReference } from './run-task-linking.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
-export async function runDispatchRulingsSection(input: {
+export function runDispatchRulingsSection(input: {
   resume: boolean
   project: string | null
   key: string | null
-}): Promise<{ section: string; questionIds: string[] }> {
-  const task =
-    input.key && input.project ? await resolveHubTaskReference(input.project, input.key) : null
+  taskRecordId: string | null
+}): { section: string; questionIds: string[] } {
   const rulings = taskRulingsForDispatch({
     resume: input.resume,
     project: input.project,
     launchKey: input.key,
-    taskRecordId: task?.record_id ?? null,
+    taskRecordId: input.resume ? null : input.taskRecordId,
   })
   return {
     section: renderTaskRulings(rulings),

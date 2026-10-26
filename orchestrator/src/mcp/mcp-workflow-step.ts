@@ -3,14 +3,13 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import type { HubTaskReader } from '../run/run-task-linking.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { parseAutonomy } from '../workflow/autonomy.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
 } from '../workflow/workflow-compose-branch.ts'
 import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
-import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
@@ -39,7 +38,7 @@ async function workflowStep(
   const { slug, project, step, mode, args, autonomy, cursor } = input
   const context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(args ?? {}),
+    args ?? {},
     mcpWorkflowCursorContext(),
     hubTaskReader,
   )

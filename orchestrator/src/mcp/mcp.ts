@@ -49,7 +49,6 @@ import {
   awaitWorkflowRuling,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
-import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorContext,
@@ -60,6 +59,7 @@ import {
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
 } from '../workflow/workflow-text.ts'
 import { composeWorkflow, listResolvedWorkflows } from '../workflow/workflows.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
 import { registerBoardTools } from './mcp-board-tools.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
@@ -71,23 +71,10 @@ import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
-
-const resolvedMcpCursorContext = (
-  project: string,
-  args: Record<string, string>,
-  hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3],
-) =>
-  resolveWorkflowCursorContext(
-    project,
-    workflowKeyOf(args),
-    mcpWorkflowCursorContext(),
-    hubTaskReader,
-  )
-
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 type DocsMcpPorts = LandingBranchPorts & {
-  hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3]
+  hubTaskReader?: HubTaskReader
 }
 
 const portLedgerSources = (
@@ -564,7 +551,12 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolvedMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
+      const context = await resolveWorkflowCursorContext(
+        project,
+        workflowArgs,
+        mcpWorkflowCursorContext(),
+        ports.hubTaskReader,
+      )
       const effectiveMode = resolveWorkflowCursorMode(
         slug,
         project,
@@ -608,7 +600,12 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolvedMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
+      const context = await resolveWorkflowCursorContext(
+        project,
+        workflowArgs,
+        mcpWorkflowCursorContext(),
+        ports.hubTaskReader,
+      )
       return text(
         ruleWorkflow(
           slug,

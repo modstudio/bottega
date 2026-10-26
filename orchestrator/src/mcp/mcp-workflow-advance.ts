@@ -6,10 +6,9 @@ import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../run/run-task-linking.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
-import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
@@ -51,7 +50,7 @@ export async function advanceWorkflow(
   const workflowArgs = args ?? {}
   const context = await resolveWorkflowCursorContext(
     project,
-    workflowKeyOf(workflowArgs),
+    workflowArgs,
     mcpWorkflowCursorContext(),
     hubTaskReader,
   )

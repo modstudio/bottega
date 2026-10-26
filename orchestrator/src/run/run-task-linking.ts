@@ -2,12 +2,16 @@
 /** Derives durable run task and project references from facts already recorded on the run. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projects } from '../project/projects.ts'
+import {
+  type HubTaskReader,
+  type HubTaskReference,
+  readHubTasks,
+  taskReadRefusal,
+} from '../workflow/workflow-task-reference.ts'
+import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 
-export type HubTaskReference = { key: string; record_id: string; project: string }
 type TaskLinkSource = 'launch_key' | 'review_ref' | 'branch' | 'turn'
 type ProjectLinkSource = 'task-project' | 'cwd' | 'scratchpad-cwd'
 
@@ -53,29 +57,83 @@ export type RunTaskLinkReport = {
   local_task_links: Record<LocalTaskLinkTable, LocalTaskLinkResult>
 }
 
-export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
-
 type LocalTaskLinkTable = 'workflow_cursor' | 'question' | 'port_ref' | 'presence'
 type LocalTaskLinkResult = { linked: number; unmatched_keys: Record<string, number> }
 type PendingLocalTaskLink = {
   table: LocalTaskLinkTable
   id: string
   taskId: string
+  project: string
+  taskKey: string
 }
 
-export async function resolveHubTaskReference(
-  project: string,
-  key: string,
-  reader: HubTaskReader = readHubTasks,
-): Promise<HubTaskReference | null> {
-  let rows: HubTaskReference[]
-  try {
-    rows = await reader(project)
-  } catch (error) {
-    throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
-  }
-  return rows.find((task) => task.key === key) ?? null
+type LocalTaskLinkRow = { id: string; task_key: string; project: string }
+type LocalTaskLinkConfig = {
+  pendingSql: string
+  linkedSql: string
+  write(database: Database, update: PendingLocalTaskLink): void
 }
+
+const LOCAL_TASK_LINKS = {
+  workflow_cursor: {
+    pendingSql: `SELECT c.record_id id,c.workflow_key task_key,p.name project
+      FROM workflow_cursor c JOIN project p ON p.record_id=c.project_record_id
+      WHERE c.task_record_id IS NULL AND c.workflow_key<>''`,
+    linkedSql: `SELECT c.task_record_id,p.name project FROM workflow_cursor c
+      JOIN project p ON p.record_id=c.project_record_id WHERE c.task_record_id IS NOT NULL`,
+    write: (database, update) => {
+      linkWorkflowTaskLabel(database, {
+        project: update.project,
+        workflowKey: update.taskKey,
+        taskRecordId: update.taskId,
+      })
+    },
+  },
+  question: {
+    pendingSql: `SELECT q.record_id id,q.workflow_key task_key,p.name project
+      FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
+      JOIN project p ON p.record_id=c.project_record_id
+      WHERE q.workflow_task_record_id IS NULL AND q.workflow_key IS NOT NULL`,
+    linkedSql: `SELECT q.workflow_task_record_id task_record_id,p.name project
+      FROM question q JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
+      JOIN project p ON p.record_id=c.project_record_id
+      WHERE q.workflow_task_record_id IS NOT NULL`,
+    write: (database, update) => {
+      linkWorkflowTaskLabel(database, {
+        project: update.project,
+        workflowKey: update.taskKey,
+        taskRecordId: update.taskId,
+      })
+    },
+  },
+  port_ref: {
+    pendingSql: `SELECT r.record_id id,r.task_key,p.name project FROM port_ref r
+      JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NULL`,
+    linkedSql: `SELECT r.task_record_id,p.name project FROM port_ref r
+      JOIN project p ON p.record_id=r.target_project_record_id WHERE r.task_record_id IS NOT NULL`,
+    write: (database, update) => {
+      database
+        .query('UPDATE port_ref SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL')
+        .run(update.taskId, update.id)
+    },
+  },
+  presence: {
+    pendingSql: `SELECT s.session_id id,s.current_task_key task_key,p.name project FROM presence s
+      JOIN project p ON p.record_id=s.project_record_id
+      WHERE s.current_task_record_id IS NULL AND s.current_task_key IS NOT NULL`,
+    linkedSql: `SELECT s.current_task_record_id task_record_id,p.name project FROM presence s
+      JOIN project p ON p.record_id=s.project_record_id WHERE s.current_task_record_id IS NOT NULL`,
+    write: (database, update) => {
+      database
+        .query(
+          'UPDATE presence SET current_task_record_id=? WHERE session_id=? AND current_task_record_id IS NULL',
+        )
+        .run(update.taskId, update.id)
+    },
+  },
+} satisfies Record<LocalTaskLinkTable, LocalTaskLinkConfig>
+
+const localTaskLinkTables = () => Object.keys(LOCAL_TASK_LINKS) as LocalTaskLinkTable[]
 
 const TASK_TOKEN = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-[0-9]+)(?![0-9])/g
 
@@ -226,44 +284,19 @@ export function deriveNewRunLinks(
   }
 }
 
-function taskReadRefusal(project: string, detail: string): Error {
-  return new Error(
-    `could not read task data for project ${project}: ${detail}; retry: ${PLATFORM_SLUG} task list --project ${project} --json`,
-  )
-}
-
-export async function readHubTasks(project: string): Promise<HubTaskReference[]> {
-  const child = Bun.spawn(
-    [...bottegaEntryArgv(PLATFORM_SLUG), 'task', 'list', '--project', project, '--json'],
-    { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } },
-  )
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0) throw new Error(stderr.trim() || `exit status ${code}`)
-  const rows: unknown = JSON.parse(stdout)
-  if (!Array.isArray(rows)) throw new Error('response was not an array')
-  return rows.map((row) => {
-    if (
-      !row ||
-      typeof row !== 'object' ||
-      typeof (row as HubTaskReference).key !== 'string' ||
-      typeof (row as HubTaskReference).record_id !== 'string' ||
-      typeof (row as HubTaskReference).project !== 'string'
-    ) {
-      throw new Error('response contained an invalid task row')
-    }
-    return row as HubTaskReference
-  })
-}
-
 async function hubTaskMap(
   registered: readonly Project[],
   reader: HubTaskReader = readHubTasks,
-): Promise<Map<string, HubTaskReference>> {
-  const taskMap = new Map<string, HubTaskReference>()
+): Promise<{
+  byKey: Map<string, HubTaskReference>
+  byProjectKey: Map<string, HubTaskReference>
+  byProjectId: Map<string, HubTaskReference>
+  ambiguousKeys: Set<string>
+}> {
+  const byKey = new Map<string, HubTaskReference>()
+  const byProjectKey = new Map<string, HubTaskReference>()
+  const byProjectId = new Map<string, HubTaskReference>()
+  const projectsByKey = new Map<string, Set<string>>()
   for (const project of registered) {
     let rows: HubTaskReference[]
     try {
@@ -271,9 +304,23 @@ async function hubTaskMap(
     } catch (error) {
       throw taskReadRefusal(project.name, error instanceof Error ? error.message : String(error))
     }
-    for (const task of rows) taskMap.set(task.key, task)
+    for (const task of rows) {
+      byKey.set(task.key, task)
+      byProjectKey.set(`${task.project}\0${task.key}`, task)
+      byProjectId.set(`${task.project}\0${task.record_id}`, task)
+      const owners = projectsByKey.get(task.key) ?? new Set<string>()
+      owners.add(task.project)
+      projectsByKey.set(task.key, owners)
+    }
   }
-  return taskMap
+  return {
+    byKey,
+    byProjectKey,
+    byProjectId,
+    ambiguousKeys: new Set(
+      [...projectsByKey].filter(([, owners]) => owners.size > 1).map(([key]) => key),
+    ),
+  }
 }
 
 function emptyReport(dryRun: boolean): RunTaskLinkReport {
@@ -284,12 +331,9 @@ function emptyReport(dryRun: boolean): RunTaskLinkReport {
     without_task_by_job: {},
     keys_without_task: {},
     without_task_or_project_by_job: {},
-    local_task_links: {
-      workflow_cursor: { linked: 0, unmatched_keys: {} },
-      question: { linked: 0, unmatched_keys: {} },
-      port_ref: { linked: 0, unmatched_keys: {} },
-      presence: { linked: 0, unmatched_keys: {} },
-    },
+    local_task_links: Object.fromEntries(
+      localTaskLinkTables().map((table) => [table, { linked: 0, unmatched_keys: {} }]),
+    ) as Record<LocalTaskLinkTable, LocalTaskLinkResult>,
   }
 }
 
@@ -307,7 +351,8 @@ export async function linkRunTasks(
 ): Promise<RunTaskLinkReport> {
   const database = dependencies.database ?? (options.dryRun ? db() : writableDb())
   const registered = dependencies.registeredProjects ?? projects(undefined, database)
-  const tasks = await hubTaskMap(registered, dependencies.hubReader)
+  const taskIndex = await hubTaskMap(registered, dependencies.hubReader)
+  const tasks = taskIndex.byKey
   const runs = database
     .query<RunLinkFacts, []>(
       `SELECT record_id,job,launch_key,review_ref,branch,cwd,launch_cwd,probe,
@@ -332,7 +377,7 @@ export async function linkRunTasks(
       increment(report.without_task_or_project_by_job, run.job)
     }
   }
-  const pendingUpdates = deriveLocalTaskLinks(database, tasks, report)
+  const pendingUpdates = deriveLocalTaskLinks(database, taskIndex, report)
   if (!options.dryRun) {
     writeTransaction(() => {
       const update = database.query(
@@ -354,77 +399,38 @@ export async function linkRunTasks(
 
 function deriveLocalTaskLinks(
   database: Database,
-  tasks: ReadonlyMap<string, HubTaskReference>,
+  tasks: Awaited<ReturnType<typeof hubTaskMap>>,
   report: RunTaskLinkReport,
 ): PendingLocalTaskLink[] {
   const pending: PendingLocalTaskLink[] = []
-  const tables: LocalTaskLinkTable[] = ['workflow_cursor', 'question', 'port_ref', 'presence']
-  for (const table of tables) {
+  for (const table of localTaskLinkTables()) {
     for (const row of localTaskLinkRows(database, table)) {
-      const task = tasks.get(row.task_key)
+      const task = tasks.ambiguousKeys.has(row.task_key)
+        ? undefined
+        : tasks.byProjectKey.get(`${row.project}\0${row.task_key}`)
       if (!task) {
         increment(report.local_task_links[table].unmatched_keys, row.task_key)
         continue
       }
       report.local_task_links[table].linked++
-      pending.push({ table, id: row.id, taskId: task.record_id })
+      pending.push({
+        table,
+        id: row.id,
+        taskId: task.record_id,
+        project: row.project,
+        taskKey: row.task_key,
+      })
     }
   }
   return pending
 }
 
-function localTaskLinkRows(
-  database: Database,
-  table: LocalTaskLinkTable,
-): Array<{ id: string; task_key: string }> {
-  if (table === 'workflow_cursor')
-    return database
-      .query<{ id: string; task_key: string }, []>(
-        "SELECT record_id id,workflow_key task_key FROM workflow_cursor WHERE task_record_id IS NULL AND workflow_key<>''",
-      )
-      .all()
-  if (table === 'question')
-    return database
-      .query<{ id: string; task_key: string }, []>(
-        'SELECT record_id id,workflow_key task_key FROM question WHERE workflow_task_record_id IS NULL AND workflow_key IS NOT NULL',
-      )
-      .all()
-  if (table === 'port_ref')
-    return database
-      .query<{ id: string; task_key: string }, []>(
-        'SELECT record_id id,task_key FROM port_ref WHERE task_record_id IS NULL',
-      )
-      .all()
-  return database
-    .query<{ id: string; task_key: string }, []>(
-      'SELECT session_id id,current_task_key task_key FROM presence WHERE current_task_record_id IS NULL AND current_task_key IS NOT NULL',
-    )
-    .all()
+function localTaskLinkRows(database: Database, table: LocalTaskLinkTable): LocalTaskLinkRow[] {
+  return database.query<LocalTaskLinkRow, []>(LOCAL_TASK_LINKS[table].pendingSql).all()
 }
 
 function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): void {
-  if (update.table === 'workflow_cursor')
-    database
-      .query(
-        'UPDATE workflow_cursor SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL',
-      )
-      .run(update.taskId, update.id)
-  else if (update.table === 'question')
-    database
-      .query(
-        'UPDATE question SET workflow_task_record_id=? WHERE record_id=? AND workflow_task_record_id IS NULL',
-      )
-      .run(update.taskId, update.id)
-  else if (update.table === 'port_ref')
-    database
-      .query('UPDATE port_ref SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL')
-      .run(update.taskId, update.id)
-  else
-    database
-      .query(
-        'UPDATE presence SET current_task_record_id=? WHERE session_id=? AND current_task_record_id IS NULL',
-      )
-      .run(update.taskId, update.id)
+  LOCAL_TASK_LINKS[update.table].write(database, update)
 }
 
 function invalidRunTaskReferenceCount(
@@ -499,46 +505,19 @@ export async function sweepRunTaskLinks(
 export async function runTaskReferenceDoctorLine(): Promise<string> {
   try {
     const tasks = await hubTaskMap(projects())
-    const ids = new Set([...tasks.values()].map((task) => task.record_id))
     const database = db()
-    const related = [
-      [
-        'workflow_cursor',
-        database
-          .query<{ task_record_id: string }, []>(
-            'SELECT task_record_id FROM workflow_cursor WHERE task_record_id IS NOT NULL',
-          )
-          .all(),
-      ],
-      [
-        'question',
-        database
-          .query<{ task_record_id: string }, []>(
-            'SELECT workflow_task_record_id task_record_id FROM question WHERE workflow_task_record_id IS NOT NULL',
-          )
-          .all(),
-      ],
-      [
-        'port_ref',
-        database
-          .query<{ task_record_id: string }, []>(
-            'SELECT task_record_id FROM port_ref WHERE task_record_id IS NOT NULL',
-          )
-          .all(),
-      ],
-      [
-        'presence',
-        database
-          .query<{ task_record_id: string }, []>(
-            'SELECT current_task_record_id task_record_id FROM presence WHERE current_task_record_id IS NOT NULL',
-          )
-          .all(),
-      ],
-    ].map(
-      ([table, rows]) =>
-        `${table} ${(rows as { task_record_id: string }[]).filter((row) => !ids.has(row.task_record_id)).length}`,
-    )
-    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks)} run; ${related.join(', ')} name no task in hub`
+    const related = localTaskLinkTables().map((table) => {
+      const rows = database
+        .query<{ task_record_id: string; project: string }, []>(LOCAL_TASK_LINKS[table].linkedSql)
+        .all()
+      const invalid = rows.filter(
+        (row) =>
+          tasks.byProjectId.get(`${row.project}\0${row.task_record_id}`)?.record_id !==
+          row.task_record_id,
+      ).length
+      return `${table} ${invalid}`
+    })
+    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks.byKey)} run; ${related.join(', ')} name no task in hub`
   } catch (error) {
     return `run task refs  unavailable — ${error instanceof Error ? error.message : String(error)}`
   }

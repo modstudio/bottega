@@ -3,6 +3,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
+import { composeWorkflowWithCursor } from './workflow-cursor.ts'
 import { resolveWorkflowCursorMode } from './workflow-cursor-selection.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
@@ -12,7 +13,37 @@ const definition = (mode: string) => ({
   title: 'Space default mode',
   description: 'Exercises cursor default-mode lookup routing.',
   arguments: [],
-  modes: [{ slug: mode, title: mode, default: true, steps: ['verify'] }],
+  modes: [
+    { slug: mode, title: mode, default: true, steps: ['verify'] },
+    { slug: 'non-default', title: 'Non-default', steps: ['verify'] },
+  ],
+})
+
+test('a keyless cursor composed in a non-default mode resolves that mode', () => {
+  const d = database()
+  const context = { session: 'keyless-mode-session' }
+  composeWorkflowWithCursor(
+    SLUG,
+    'local-mode-project',
+    'non-default',
+    {},
+    context,
+    d,
+    {},
+    {},
+  )
+  expect(
+    resolveWorkflowCursorMode(
+      SLUG,
+      'local-mode-project',
+      undefined,
+      {},
+      context,
+      'test caller',
+      'pass a mode',
+      d,
+    ),
+  ).toBe('non-default')
 })
 
 const database = testDatabaseFixture((d) => {
@@ -23,7 +54,7 @@ const database = testDatabaseFixture((d) => {
       project,
       `/fixture/${project}`,
       'bun',
-      '{}',
+      JSON.stringify({ gate: 'bun run check', docs: { protocol: 'orch-docs' } }),
     )
   const local = setWorkflowLocal(SLUG, definition('local'), 'local fixture', 'test', d)
   promoteWorkflowLocal(SLUG, local.n, 'publish local fixture', 'test', d)

@@ -408,10 +408,21 @@ export async function run(opts: {
     key: opts.key,
     cwd: callerCwd,
   })
-  const dispatchRulings = await runDispatchRulingsSection({
+  const dispatchLinks = resume.isFirstTurn
+    ? await admitNewRunReference({
+        projectName: runProjectName,
+        projectRecordId: runProjectId,
+        key: dispatchKey,
+        cwd: repoJob ? null : callerCwd,
+        launchCwd: opts.launchCwd ?? callerCwd,
+        probe: Boolean(opts.probe),
+      })
+    : null
+  const dispatchRulings = runDispatchRulingsSection({
     resume: !resume.isFirstTurn,
     project: runProjectName,
     key: dispatchKey,
+    taskRecordId: dispatchLinks?.taskRecordId ?? null,
   })
   const rulingsSection = dispatchRulings.section
   let prompt =
@@ -644,6 +655,7 @@ export async function run(opts: {
     startedByUserId,
     replySchemaName,
     carriedQuestionIds: dispatchRulings.questionIds,
+    ...(dispatchLinks ? { precomputedLinks: dispatchLinks } : {}),
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })
