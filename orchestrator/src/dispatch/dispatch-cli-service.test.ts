@@ -73,7 +73,7 @@ test('selectBeforeDetach carries the composed pre-pick prompt size on the routed
   const text = 'rank me on the raw spec, not the composed pack'
   const jobName = 'craft'
   const evidence = runEvidence(jobName, false, [])
-  const replySchemaName = 'craft-reply'
+  const replySchemaName = basename('anything-craft-reply.json')
   const expectedPromptBytes = routedPromptBytes(
     routedPromptText(text, evidence.readerInstruction, true),
     replySchemaName,
