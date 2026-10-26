@@ -7,6 +7,7 @@ import type { CallToolResult, Tool } from '@modelcontextprotocol/client'
 import { Server } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { STATE_HOME_ENV } from '../../../shared/state-directory.ts'
 import {
   type Project,
   projectByName,
@@ -14,10 +15,12 @@ import {
   retiredProjectRefusal,
 } from '../project/projects.ts'
 import {
+  bottegaMcpBinary,
   type McpConfigReadResult,
-  type McpServerConfig,
+  type McpServerLaunchResolution,
   probeSecrets,
   readMcpConfigResult,
+  resolveMcpServerLaunchFromRead,
   sanitizeProbeError,
 } from './mcp-probe.ts'
 import { type ReaderToolDecision, readerMayCallTool } from './mcp-reader-policy.ts'
@@ -35,15 +38,34 @@ export const MCP_UPSTREAM_INHERITED_ENV = [
   'SHELL',
 ] as const
 
-/** Give an upstream only its declared environment and ordinary process launch variables. */
+/**
+ * Names the platform's own server needs to reach the operator's store. A worker
+ * HOME is run-scoped, so without these the built-in upstream would serve a
+ * fresh empty store instead of the operator's.
+ */
+export const MCP_UPSTREAM_STORE_ENV = [
+  'BOTTEGA_ORCHESTRATOR_DB',
+  'BOTTEGA_HUB_DB',
+  STATE_HOME_ENV,
+  'XDG_STATE_HOME',
+] as const
+
+/**
+ * Give an upstream only its declared environment and the variables its launch
+ * needs. A `.mcp.json` entry carries its own credentials, so it keeps the
+ * narrow allowlist; the platform's built-in server also inherits the store
+ * names, which is how it finds the operator's store rather than a fresh one.
+ */
 export function readerMcpUpstreamEnvironment(
   environment: Record<string, string | undefined>,
   declared: Record<string, string> | undefined,
+  builtInPlatformServer = false,
 ): Record<string, string> {
+  const names: readonly string[] = builtInPlatformServer
+    ? [...MCP_UPSTREAM_INHERITED_ENV, ...MCP_UPSTREAM_STORE_ENV]
+    : MCP_UPSTREAM_INHERITED_ENV
   const inherited = Object.fromEntries(
-    MCP_UPSTREAM_INHERITED_ENV.flatMap((name) =>
-      environment[name] === undefined ? [] : [[name, environment[name]!]],
-    ),
+    names.flatMap((name) => (environment[name] === undefined ? [] : [[name, environment[name]!]])),
   )
   return { ...inherited, ...declared }
 }
@@ -167,23 +189,31 @@ function runTreePath(runTree: string, mainCheckout: string): string {
   return tree
 }
 
-function configuredUpstream(result: McpConfigReadResult, serverName: string): McpServerConfig {
-  if (!result.ok) {
-    if (result.reason === 'missing')
-      throw new Error(`MCP configuration is missing at ${result.path}`)
-    if (result.reason === 'invalid')
-      throw new Error(`MCP configuration is not valid JSON at ${result.path}`)
-    throw new Error(
-      `MCP configuration could not be read at ${result.path}${result.detail ? `: ${result.detail}` : ''}`,
-    )
-  }
-  const config = result.config[serverName]
-  if (!config) {
-    throw new Error(
-      `server ${JSON.stringify(serverName)} is not configured in ${result.path}; add its launch definition there`,
-    )
-  }
-  return config
+/** How a launch file that could not be read is refused, naming the file and why. */
+function unreadableLaunchFileRefusal(result: Extract<McpConfigReadResult, { ok: false }>): string {
+  if (result.reason === 'missing') return `MCP configuration is missing at ${result.path}`
+  if (result.reason === 'invalid') return `MCP configuration is not valid JSON at ${result.path}`
+  return `MCP configuration could not be read at ${result.path}${result.detail ? `: ${result.detail}` : ''}`
+}
+
+/**
+ * Resolve the upstream through the one resolution the reader selection uses.
+ * An absent launch file is no evidence about any name and Bottega's own server
+ * is registered at user scope rather than in the tree, so that name still
+ * starts the built-in launch; every other name keeps the missing-file refusal.
+ * A file that could not be read is reported for every name, the platform's
+ * included, instead of being read as an absent one.
+ */
+function resolvedUpstream(
+  result: McpConfigReadResult,
+  serverName: string,
+): McpServerLaunchResolution {
+  const resolved = resolveMcpServerLaunchFromRead(result, serverName, bottegaMcpBinary())
+  if (resolved) return resolved
+  if (!result.ok) throw new Error(unreadableLaunchFileRefusal(result))
+  throw new Error(
+    `server ${JSON.stringify(serverName)} is not configured in ${result.path}; add its launch definition there`,
+  )
 }
 
 /** Resolve credentials in-process, connect upstream, then serve only the filtered tool surface. */
@@ -202,13 +232,16 @@ async function serveReaderMcpProxy(
     )
   }
   const cwd = runTreePath(runTree, project.path)
-  const config = configuredUpstream(dependencies.readMcpConfigResult(project.path), serverName)
+  const { config, builtIn } = resolvedUpstream(
+    dependencies.readMcpConfigResult(project.path),
+    serverName,
+  )
   const launch: McpToolListLaunch = { ...config, cwd }
   let connected: Awaited<ReturnType<typeof connectMcpToolClient>>
   try {
     connected = await dependencies.connectMcpToolClient(
       launch,
-      readerMcpUpstreamEnvironment(dependencies.environment, config.env),
+      readerMcpUpstreamEnvironment(dependencies.environment, config.env, builtIn),
     )
   } catch (error) {
     throw new Error(

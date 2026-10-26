@@ -1,9 +1,17 @@
 // concern: reader MCP server scope
 /** Selects the project MCP servers a reading harness reaches through the shared proxy. */
 
+import { resolve } from 'node:path'
 import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { disabledProjectMcpServers, type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
+import {
+  bottegaMcpBinary,
+  disabledProjectMcpServers,
+  type McpConfigReadResult,
+  type McpServerConfig,
+  readMcpConfigResult,
+  resolveMcpServerLaunchFromRead,
+} from '../mcp/mcp-probe.ts'
 
 export type ReaderProxyServer = {
   command: string
@@ -33,35 +41,49 @@ export function grokReaderMcpServerTable(
 }
 
 /**
- * Select project server names without consulting the filesystem or process installation.
+ * Select project server names without consulting the process installation.
  *
- * A configured primary stays even when the allow-list would disable it. An
- * unconfigured primary is not a project server at all — bottega's own is
- * installed by the platform — and a proxy synthesized for a name no `.mcp.json`
- * defines exits at start, so the primary joins the selection only when the
- * configuration names it.
+ * A configured primary stays even when the allow-list would disable it. A
+ * primary the resolution serves without a tree entry keeps its place too:
+ * bottega's own MCP server is installed by the platform, and its proxy resolves
+ * the built-in launch, so it needs no `.mcp.json` entry. Any other
+ * unconfigured primary is not a project server at all — a proxy synthesized for
+ * a name nothing starts exits at start — so it joins only when the
+ * configuration names it. A launch file that could not be read names no server,
+ * so the platform's own name is not served either.
  */
 export function projectReaderServerNames(
-  configuredNames: string[],
+  read: McpConfigReadResult,
   allowed: string[] | undefined,
   primary: string,
+  bottegaBinary: string,
 ): string[] {
+  const configuredNames = read.ok ? Object.keys(read.config) : []
   const disabled = new Set(disabledProjectMcpServers(configuredNames, allowed))
   const kept = configuredNames.filter((name) => !disabled.has(name))
-  return [...new Set(configuredNames.includes(primary) ? [...kept, primary] : kept)]
+  const primaryServed = resolveMcpServerLaunchFromRead(read, primary, bottegaBinary) !== null
+  return [...new Set(primaryServed ? [...kept, primary] : kept)]
 }
 
-/** Resolve the checkout fallback used by every harness for one run. */
-export function mcpConfigForRun(
+/**
+ * The launch file one run resolves against, with the outcome of reading the
+ * checkout's copy preserved: the run tree's own configuration when it names a
+ * server, otherwise the registered checkout's `.mcp.json`.
+ */
+export function mcpConfigReadForRun(
   treeConfig: Record<string, McpServerConfig>,
   project: { path: string } | null,
-): Record<string, McpServerConfig> {
-  return Object.keys(treeConfig).length || !project ? treeConfig : readMcpConfig(project.path)
+  cwd: string,
+): McpConfigReadResult {
+  if (Object.keys(treeConfig).length || !project) {
+    return { ok: true, path: resolve(cwd, '.mcp.json'), config: treeConfig }
+  }
+  return readMcpConfigResult(project.path)
 }
 
 /** Build the credential-free proxy definitions shared by every reading harness. */
 export function projectReaderProxyServers(
-  config: Record<string, McpServerConfig>,
+  read: McpConfigReadResult,
   project: {
     name: string
     settings: { workerMcpServers?: string[]; mcpServer?: string }
@@ -70,9 +92,10 @@ export function projectReaderProxyServers(
 ): Record<string, ReaderProxyServer> {
   if (!project) return {}
   const names = projectReaderServerNames(
-    Object.keys(config),
+    read,
     project.settings.workerMcpServers,
     project.settings.mcpServer ?? project.name,
+    bottegaMcpBinary(),
   )
   const argv = bottegaEntryArgv('mcp-reader-proxy')
   const command = argv[0]!
@@ -95,6 +118,6 @@ export function projectReaderProxyServersForRun(
   cwd: string,
 ): Record<string, ReaderProxyServer> | null {
   if (!enabled || writesRepository) return null
-  const config = mcpConfigForRun(treeConfig, project)
-  return projectReaderProxyServers(config, project, cwd)
+  const read = mcpConfigReadForRun(treeConfig, project, cwd)
+  return projectReaderProxyServers(read, project, cwd)
 }
