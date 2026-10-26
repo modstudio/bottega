@@ -335,7 +335,7 @@ export const REVIEW_SEVERITY_INSTRUCTION = `Every finding severity must use the 
 export const COULD_NOT_VERIFY_INSTRUCTION =
   'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
   'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
-  'A review which could not execute the suite must say so there and must not present static reasoning as an executed check.'
+  'A review does not run suites, so an unrun suite is not listed in could_not_verify, and static reasoning is never presented as an executed check.'
 
 export const REVIEW_PROVENANCE_INSTRUCTION =
   'Review provenance must include provenance.mcp_tools, provenance.docs_read, and provenance.substitutes as string arrays. ' +
@@ -705,7 +705,7 @@ PROJECT INFRASTRUCTURE RECOVERY
 The project register says how this worktree's infrastructure is brought up:
 use the register's \`worktree.recipe.serve\` step when the project declares one,
 otherwise the serve instructions in its \`worktree.notes\`.
-A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
+A reader MAY run that serve step only for a focused probe tied to one specific finding and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
 
 ${COULD_NOT_VERIFY_INSTRUCTION}
 `.trim()
@@ -1020,13 +1020,17 @@ behind a blocked one; a run that returns only "I could not do X" when Y and Z
 were answerable is a failed run. For findings-producing jobs, record the same
 detail in could_not_verify for that sub-question and continue with the others.
 
-Edit and test freely when that helps you verify a finding. Your findings are the
-deliverable, not your diff: every change you make here is scratch work and must
-never be treated as a proposed change to land. Do not commit, push, or merge.
+Read the change and the code around it. Do not run test suites, test directories,
+related or affected test sets, the gate, or the project's check. One focused
+probe tied to one specific finding is allowed: a single test file or a single
+command that demonstrates that finding. When the \`run_tests\` tool is offered,
+run the probe through it, since it runs on the host under a capacity slot. Your
+findings are the deliverable, not your diff: every change you make here is
+scratch work and must never be treated as a proposed change to land. Do not
+commit, push, or merge.
 
 Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
-run Docker or \`scripts/gate\` yourself. Record an unrun gate in
-\`could_not_verify\`.
+run Docker or \`scripts/gate\` yourself.
 
 ${INFRASTRUCTURE_RECOVERY}
 
