@@ -188,6 +188,60 @@ test.each([
   }
 })
 
+test('issue verification returns the finished gate row when the wait times out', async () => {
+  const fixture = issueGateRun('issue-gate-finished-after-timeout', 'true')
+  try {
+    let brokerExecution: string | undefined
+    const written = new Date().toISOString()
+    const result = await runIssueGate(fixture.run, fixture.scratch, {
+      startBroker: (input) => {
+        brokerExecution = input.executionRecordId
+        const pending = db()
+          .query<{ record_id: string }, [string]>(
+            'SELECT record_id FROM gate_execution WHERE run_record_id=? AND finished_at IS NULL',
+          )
+          .get(fixture.run.record_id)!
+        db()
+          .query(
+            `UPDATE gate_execution
+             SET started_at=?,finished_at=?,exit_code=0,timed_out=0,elapsed_ms=12,output_tail=?
+             WHERE record_id=?`,
+          )
+          .run(written, written, 'gate passed\n', pending.record_id)
+        return { close: async () => {} }
+      },
+      wait: async () => false,
+    })
+
+    expect(result).toEqual({
+      number: expect.any(Number),
+      ok: true,
+      text: 'gate passed',
+      fixTreeSafeToRelease: true,
+    })
+    const row = db()
+      .query<{ record_id: string }, [number]>('SELECT record_id FROM gate_execution WHERE number=?')
+      .get(result.number)!
+    expect(brokerExecution).toBe(row.record_id)
+    expect(
+      db()
+        .query(
+          'SELECT exit_code,timed_out,cancelled_reason,finished_at,output_tail FROM gate_execution WHERE number=?',
+        )
+        .get(result.number),
+    ).toEqual({
+      exit_code: 0,
+      timed_out: 0,
+      cancelled_reason: null,
+      finished_at: written,
+      output_tail: 'gate passed\n',
+    })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
 test('issue verification bounds an unfinished broker gate and records its cancellation', async () => {
   const main = mkdtempSync(join(dir, 'issue-gate-expiry-main-'))
   const root = join(main, '.claude', 'worktrees', 'issue-gate-expiry')

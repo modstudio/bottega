@@ -41,6 +41,39 @@ type IssueGateDependencies = {
   wait?: IssueGateWait
 }
 
+type GateExecutionRow = {
+  exit_code: number | null
+  timed_out: number | null
+  output_tail: string | null
+  cancelled_reason: string | null
+}
+
+function readGateExecutionRow(recordId: string): GateExecutionRow | null {
+  return db()
+    .query<GateExecutionRow, [string]>(
+      'SELECT exit_code,timed_out,output_tail,cancelled_reason FROM gate_execution WHERE record_id=?',
+    )
+    .get(recordId)
+}
+
+/** What a row that stopped being pending means, whichever path noticed it. */
+function finishedGateVerdict(number: number, row: GateExecutionRow): IssueGateResult {
+  return {
+    number,
+    ok: row.exit_code === 0 && row.timed_out === 0 && row.cancelled_reason === null,
+    fixTreeSafeToRelease: true,
+    text:
+      row.output_tail?.trim() ||
+      row.cancelled_reason ||
+      (row.timed_out ? 'gate timed out' : `exit ${String(row.exit_code)}`),
+  }
+}
+
+/** A row that ran and was recorded, as opposed to one still waiting or running. */
+function gateRowFinished(row: GateExecutionRow): boolean {
+  return row.exit_code !== null || row.timed_out !== null
+}
+
 export async function runIssueGate(
   fixRun: RunResult,
   scratchDir: string,
@@ -69,6 +102,8 @@ export async function runIssueGate(
         ...trackedWorkerEnvironment(true, true, fixRun.worktree, fixRun.record_id),
       }),
       confinement: { kind: 'host' },
+      // This request only: a pending execution left by a crashed fix worker is not ours to run.
+      executionRecordId: inserted.recordId,
       onExecutionFinish: ({ executionRecordId }) => {
         if (executionRecordId === inserted.recordId) finish()
       },
@@ -91,6 +126,10 @@ export async function runIssueGate(
         fixTreeSafeToRelease: false,
       }
     }
+    // The wait can lose a race to a gate that finished anyway; that row is a result, not a timeout.
+    const row = readGateExecutionRow(inserted.recordId)
+    if (!row) throw new Error(`issue coordinator gate execution ${inserted.number} disappeared`)
+    if (gateRowFinished(row)) return finishedGateVerdict(inserted.number, row)
     cancelPendingGateExecution(inserted.recordId, reason)
     return { number: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: true }
   }
@@ -101,28 +140,7 @@ export async function runIssueGate(
     cancelPendingGateExecution(inserted.recordId, reason)
     return { number: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: false }
   }
-  const row = db()
-    .query<
-      {
-        exit_code: number | null
-        timed_out: number | null
-        output_tail: string | null
-        cancelled_reason: string | null
-      },
-      [string]
-    >(
-      'SELECT exit_code,timed_out,output_tail,cancelled_reason FROM gate_execution WHERE record_id=?',
-    )
-    .get(inserted.recordId)
+  const row = readGateExecutionRow(inserted.recordId)
   if (!row) throw new Error(`issue coordinator gate execution ${inserted.number} disappeared`)
-  const ok = row.exit_code === 0 && row.timed_out === 0 && row.cancelled_reason === null
-  return {
-    number: inserted.number,
-    ok,
-    fixTreeSafeToRelease: true,
-    text:
-      row.output_tail?.trim() ||
-      row.cancelled_reason ||
-      (row.timed_out ? 'gate timed out' : `exit ${String(row.exit_code)}`),
-  }
+  return finishedGateVerdict(inserted.number, row)
 }
