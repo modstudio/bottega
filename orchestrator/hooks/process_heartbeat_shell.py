@@ -31,6 +31,7 @@ SUCCESSOR = {"number": 900, "agent": "grok"}
 # up to a whole second and never below two seconds, because a guard finer than a
 # couple of seconds measures a cold runner's process launch rather than a hang.
 SHELL_RUN_GUARD_SECONDS = 5  # one orch-heartbeat.sh run; slowest healthy 1.20s
+FOUR_TICK_GUARD_SECONDS = 15  # one four-tick orch-heartbeat.sh run; slowest healthy 3.73s
 HELPER_RUN_GUARD_SECONDS = 2  # one observation helper child; slowest healthy 0.02s
 REAP_START_GUARD_SECONDS = 2  # the monitor and the watchdog starting; slowest healthy 0.25s
 REAP_EXIT_GUARD_SECONDS = 2  # the signaled heartbeat leaving; slowest healthy 0.01s
@@ -86,6 +87,10 @@ class GuardedChildTest(unittest.TestCase):
     def run_shell(self, wait, argv, **kwargs):
         """One `orch-heartbeat.sh` run, guarded as one heartbeat tick."""
         return self.guard(wait, SHELL_RUN_GUARD_SECONDS, argv, **kwargs)
+
+    def run_shell_four_ticks(self, wait, argv, **kwargs):
+        """One `orch-heartbeat.sh` run of four ticks, guarded as a four-tick run."""
+        return self.guard(wait, FOUR_TICK_GUARD_SECONDS, argv, **kwargs)
 
     def run_helper(self, wait, argv, **kwargs):
         """One heartbeat helper process, guarded as one helper child."""
@@ -839,7 +844,7 @@ esac
                 "FAKE_COMPLETION_CALLS": str(calls),
             }
 
-            completed = self.run_shell(
+            completed = self.run_shell_four_ticks(
                 "the watched-failure fixture's four ticks",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
                 cwd=checkout,
@@ -972,7 +977,7 @@ esac
                 "FAKE_INBOX_CALLS": str(checkout / "inbox-calls"),
                 "FAKE_INBOX_FAIL_CALL": "" if degraded_inbox_call is None else str(degraded_inbox_call),
             }
-            completed = self.run_shell(
+            completed = self.run_shell_four_ticks(
                 "the failover fixture's four ticks",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
                 cwd=checkout,
@@ -1180,7 +1185,7 @@ esac
                 "FAKE_FIRST_MISSING": str(checkout / "first-missing"),
                 "FAKE_SECOND_LIVE": str(checkout / "second-live"),
             }
-            completed = self.run_shell(
+            completed = self.run_shell_four_ticks(
                 "the continued-chain fixture's four ticks",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "4"],
                 cwd=checkout,

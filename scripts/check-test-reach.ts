@@ -9,8 +9,18 @@ const EXEMPTIONS_PATH = `${ROOT}/${EXEMPTIONS_FILE}`
 
 export type TestReachExemption = { file: string; reason: string }
 
+/**
+ * The process-suite globs the declared CI-only suites collect. A `process_*.py`
+ * counts as a test only where one of these names it, so the reach predicate and
+ * the suite that runs the file answer the same question from one declaration.
+ */
+const CI_ONLY_TEST_PATTERNS = CI_ONLY_SUITES.flatMap((suite) => suite.testPatterns)
+
 function testFile(path: string): boolean {
-  return /(?:\.test\.tsx?|(?:^|\/)(?:test|process)_[^/]+\.py)$/.test(path)
+  return (
+    /(?:\.test\.tsx?|(?:^|\/)test_[^/]+\.py)$/.test(path) ||
+    CI_ONLY_TEST_PATTERNS.some((pattern) => matchesPattern(pattern, path))
+  )
 }
 
 /** The reach every declared CI-only suite claims, shaped as a gate leg. */
