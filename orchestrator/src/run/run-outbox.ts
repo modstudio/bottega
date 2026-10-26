@@ -241,16 +241,22 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
     } catch {
       latest = {}
     }
-    if (shouldRefreshRunRecordLinks(latest, row.project_record_id, row.task_record_id)) {
-      enqueueRunRecord(database, row.record_id, machineId, row.finished_at)
-      refreshedLinks++
-      continue
-    }
-    if (row.parent_run_record_id !== null) continue
-    if (latest.status === row.status && latest.failureKind === row.failure_kind) continue
-    const chainTermination = chainTerminationAtForRoot(database, row.record_id) ?? row.finished_at
-    enqueueRunRecord(database, row.record_id, machineId, chainTermination)
-    refreshedRoots++
+    const refreshLinks = shouldRefreshRunRecordLinks(
+      latest,
+      row.project_record_id,
+      row.task_record_id,
+    )
+    const isRoot = row.parent_run_record_id === null
+    const outcomeChanged =
+      isRoot && (latest.status !== row.status || latest.failureKind !== row.failure_kind)
+    if (!refreshLinks && !outcomeChanged) continue
+    // A root's record carries its chain's outcome, so it is stamped at the chain's end.
+    const finishedAt = isRoot
+      ? (chainTerminationAtForRoot(database, row.record_id) ?? row.finished_at)
+      : row.finished_at
+    enqueueRunRecord(database, row.record_id, machineId, finishedAt)
+    if (refreshLinks) refreshedLinks++
+    else refreshedRoots++
   }
 
   const skippedLive = database
