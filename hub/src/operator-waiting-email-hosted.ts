@@ -148,6 +148,12 @@ async function claimOperatorWaitingEmail(
   }
 
   await assertSendBudget(tx, caller.userId, now)
+  const taskId = input.task_id
+    ? ((
+        await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
+          WHERE space_id=${caller.spaceId}::uuid AND id=${input.task_id}::uuid`
+      )[0]?.id ?? null)
+    : null
   const id = newRecordId()
   const inserted = rows<OperatorWaitingEmailResult & { email: string }>(
     await tx`WITH inserted AS (
@@ -155,7 +161,7 @@ async function claimOperatorWaitingEmail(
         (id,space_id,user_id,kind,item_id,episode,project,task_key,task_id,question,options,
          recommendation,why,waiting_since,link,status,reason,attempts,created_at,updated_at,sent_at)
       SELECT ${id}::uuid,${caller.spaceId}::uuid,${caller.userId}::uuid,${input.kind},
-        ${input.item_id},${input.episode},${input.project},${input.task_key},${input.task_id}::uuid,${input.question},
+        ${input.item_id},${input.episode},${input.project},${input.task_key},${taskId}::uuid,${input.question},
         ${bindJsonb(tx, input.options)},${input.recommendation},${input.why},
         ${input.waiting_since}::timestamptz,${input.link},'intent',NULL,1,
         ${now.toISOString()}::timestamptz,${now.toISOString()}::timestamptz,NULL

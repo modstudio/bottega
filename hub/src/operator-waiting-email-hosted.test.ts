@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import type { SQL } from 'bun'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
@@ -8,6 +9,7 @@ import {
   OPERATOR_EMAIL_MAX_ATTEMPTS,
   type OperatorWaitingEmailInput,
   renderOperatorWaitingEmail,
+  sendOperatorWaitingEmail,
 } from './operator-waiting-email-hosted.ts'
 
 const input: OperatorWaitingEmailInput = {
@@ -24,6 +26,39 @@ const input: OperatorWaitingEmailInput = {
   waiting_since: '2026-09-25T10:00:00.000Z',
   link: 'http://127.0.0.1:7778/inbox/question/7',
   answer_command: `${PLATFORM_SLUG} question answer 42 --q7 --from-operator "<ruling>"`,
+}
+
+function waitingEmailSql(hostedTask: { id: string; spaceId: string } | null) {
+  let storedTaskId: unknown
+  const tx = (async (parts: TemplateStringsArray, ...values: unknown[]) => {
+    const source = parts.join('?')
+    if (source.includes('SELECT count(*)::int AS count')) return [{ count: 0 }]
+    if (source.includes('SELECT id::text AS id FROM hub_task')) {
+      return hostedTask && hostedTask.spaceId === values[0] && hostedTask.id === values[1]
+        ? [{ id: hostedTask.id }]
+        : []
+    }
+    if (source.includes('WITH inserted AS')) {
+      storedTaskId = values[8]
+      return [
+        {
+          id: '01990000-0000-7000-8000-000000000777',
+          user_id: values[2],
+          status: 'intent',
+          reason: null,
+          email: 'operator@example.test',
+        },
+      ]
+    }
+    if (source.includes('UPDATE operator_waiting_email SET status=')) {
+      return [{ id: values[3], status: values[0], reason: values[1] }]
+    }
+    return []
+  }) as unknown as SQL
+  const sql = Object.assign(tx, {
+    begin: async (work: (transaction: SQL) => unknown) => work(tx),
+  }) as unknown as SQL
+  return { sql, storedTaskId: () => storedTaskId }
 }
 
 test('rendered HTML contains the decision and obeys email CSS rules', () => {
@@ -117,3 +152,33 @@ test('hosted endpoint binds space and user from the credential', async () => {
     },
   ])
 })
+
+test.each([
+  [
+    'a same-space task',
+    input.task_id,
+    { id: input.task_id!, spaceId: '01990000-0000-7000-8000-00000000070a' },
+  ],
+  ['an absent task', null, null],
+  [
+    'a task in another space',
+    null,
+    { id: input.task_id!, spaceId: '01990000-0000-7000-8000-00000000070b' },
+  ],
+] as const)(
+  'the hosted waiting-email edge stores the resolved UUID for %s',
+  async (_label, expected, task) => {
+    const database = waitingEmailSql(task)
+    const caller = {
+      userId: '01990000-0000-7000-8000-000000000701',
+      spaceId: '01990000-0000-7000-8000-00000000070a',
+    }
+    expect(
+      await sendOperatorWaitingEmail(database.sql, caller, input, {
+        mail: { send: async () => undefined },
+        now: new Date('2026-09-25T11:00:00.000Z'),
+      }),
+    ).toMatchObject({ status: 'sent' })
+    expect(database.storedTaskId()).toBe(expected)
+  },
+)

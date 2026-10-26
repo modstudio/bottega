@@ -57,6 +57,8 @@ import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
 import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
+const rowsSupplyingWorkflowTaskId = new WeakSet<object>()
+
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
   let parsed: unknown
   try {
@@ -67,10 +69,12 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new OutboxRowError('outbox payload must be a JSON object', 'payload')
   }
+  const carriesWorkflowTaskId = Object.hasOwn(parsed, 'workflowTaskId')
   for (const [column, fill] of Object.entries(recordKinds[kind].laterAdded)) {
     if (!Object.hasOwn(parsed, column)) Object.assign(parsed, { [column]: fill })
   }
   assertRecordPayloadColumns(kind, parsed as Payload, recordKinds[kind].columns)
+  if (carriesWorkflowTaskId) rowsSupplyingWorkflowTaskId.add(parsed)
   return parsed as Payload
 }
 
@@ -366,12 +370,12 @@ function reviewValues(row: Payload, projectId: string | null) {
   }
 }
 
-const questionValues = (row: Payload, projectId: string | null) => ({
+const questionValues = (row: Payload, projectId: string | null, workflowTaskId: string | null) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   runId: nullableString(row.runId),
   workflowKey: nullableString(row.workflowKey),
-  workflowTaskId: nullableUuid(row.workflowTaskId, 'question.workflowTaskId'),
+  workflowTaskId,
   workflowCursorRecordId: nullableUuid(
     row.workflowCursorRecordId,
     'question.workflowCursorRecordId',
@@ -594,7 +598,18 @@ const recordKinds = {
     ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const values = questionValues(row, await projectRecordId(tx, row, principal, projectIds))
+        const carriesWorkflowTaskId = rowsSupplyingWorkflowTaskId.has(row)
+        const incomingWorkflowTaskId = carriesWorkflowTaskId
+          ? nullableUuid(row.workflowTaskId, 'question.workflowTaskId')
+          : null
+        const workflowTaskId = incomingWorkflowTaskId
+          ? ((
+              await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
+                WHERE space_id=${principal.spaceId}::uuid AND id=${incomingWorkflowTaskId}::uuid`
+            )[0]?.id ?? null)
+          : null
+        const projectId = await projectRecordId(tx, row, principal, projectIds)
+        const values = questionValues(row, projectId, workflowTaskId)
         const existingOwned = await existingEvidenceOwned(
           tx,
           'question',
@@ -603,6 +618,7 @@ const recordKinds = {
           principal,
         )
         const { id: _id, createdAt: _createdAt, ...updates } = values
+        if (!carriesWorkflowTaskId) delete (updates as Partial<typeof updates>).workflowTaskId
         const incomingQuestionWins = hostedQuestionWins(
           drizzleSql`excluded.revision`,
           questionRecord.revision,
@@ -948,6 +964,7 @@ async function pushHostedRow(input: {
       spaceId: rowPrincipal.spaceId,
       ...(kind === 'run' ? { startedByUserId: identity.user.id } : {}),
     }
+    if (rowsSupplyingWorkflowTaskId.has(parsed)) rowsSupplyingWorkflowTaskId.add(record)
     if (String(record.machineId) !== input.machineId) {
       throw new OutboxRowError(
         `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${input.machineId}`,

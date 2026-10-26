@@ -38,6 +38,18 @@ export type FakeRecordScore = {
   onWrite?: () => void
 }
 
+function hostedTaskResult(
+  source: string,
+  values: unknown[],
+  hostedTasks: readonly { id: string; spaceId: string }[],
+) {
+  if (!source.includes('SELECT id::text AS id FROM hub_task')) return null
+  const task = hostedTasks.find(
+    (candidate) => candidate.spaceId === values[0] && candidate.id === values[1],
+  )
+  return task ? [{ id: task.id }] : []
+}
+
 export function fakePostgres(
   failFirstRun: false | Error = false,
   principal: string = RECORD_ACTOR_ROLE,
@@ -53,6 +65,7 @@ export function fakePostgres(
     name: PLATFORM_NAME,
   },
   evidenceCollisionId?: string,
+  hostedTasks: readonly { id: string; spaceId: string }[] = [],
 ): {
   sql: SQL
   statements: string[]
@@ -110,6 +123,8 @@ export function fakePostgres(
     if (source.includes('SELECT reason FROM run_exclusion')) return []
     if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
     if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
+    const hostedTask = hostedTaskResult(source, values, hostedTasks)
+    if (hostedTask) return hostedTask
     return source.includes('FROM project')
       ? [
           {
