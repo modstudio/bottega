@@ -24,6 +24,7 @@ import {
   standingPostingRefusal,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
+import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import {
   type BoardTag,
   inferredBoardTags,
@@ -34,7 +35,6 @@ import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,
   noteFilingLeaseDecision,
-  parseReplyAudienceOption,
   replyRefusal,
 } from '../board/board-thread-policy.ts'
 import {

@@ -64,6 +64,22 @@ function registerBoardPostTool(server: McpServer): void {
   )
 }
 
+function registerBoardReplyTool(server: McpServer): void {
+  server.registerTool(
+    'board_reply',
+    {
+      description: 'Reply to a board notice or question thread.',
+      inputSchema: z.object({
+        root_id: z.string().min(1),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        audience: z.string().min(1).optional(),
+      }),
+    },
+    async ({ root_id, body, audience }) =>
+      result(await boardReply(root_id, body, undefined, audience)),
+  )
+}
+
 export function registerBoardTools(server: McpServer): void {
   registerBoardClaimTools(server)
   registerBoardPostTool(server)
@@ -94,19 +110,7 @@ export function registerBoardTools(server: McpServer): void {
         }),
       ),
   )
-  server.registerTool(
-    'board_reply',
-    {
-      description: 'Reply to a board notice or question thread.',
-      inputSchema: z.object({
-        root_id: z.string().min(1),
-        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
-        audience: z.string().min(1).optional(),
-      }),
-    },
-    async ({ root_id, body, audience }) =>
-      result(await boardReply(root_id, body, undefined, audience)),
-  )
+  registerBoardReplyTool(server)
   server.registerTool(
     'board_thread',
     {

@@ -60,6 +60,7 @@ import {
   parseAudience,
   standingPostingRefusal,
 } from './board-policy.ts'
+import { parseReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
   markSessionMessagesDelivered,
@@ -69,7 +70,7 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
-import { boardThreadState, parseReplyAudienceOption } from './board-thread-policy.ts'
+import { boardThreadState } from './board-thread-policy.ts'
 import {
   acceptAnswer,
   askQuestion,

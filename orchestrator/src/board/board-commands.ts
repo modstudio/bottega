@@ -232,6 +232,22 @@ function registerBoardSuggestionCommands(board: Command): void {
     .action((id) => declineBoardSuggestion(resolveLocalBoardMessageIdentifier(db(), String(id))))
 }
 
+function registerBoardReplyCommand(board: Command): void {
+  board
+    .command('reply <root-id>')
+    .description(BOARD_DESCRIPTIONS.reply)
+    .requiredOption('--body <text>', 'set the reply body')
+    .option(
+      '--audience <choice>',
+      'participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+    )
+    .action(async (id, options) =>
+      console.log(
+        JSON.stringify(await boardReply(String(id), options.body, undefined, options.audience)),
+      ),
+    )
+}
+
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board').description(BOARD_DESCRIPTIONS.board)
   registerBoardClaimCommands(board, parseBoardDuration)
@@ -314,19 +330,7 @@ export function registerBoardCommands(program: Command): void {
         ),
       )
     })
-  board
-    .command('reply <root-id>')
-    .description(BOARD_DESCRIPTIONS.reply)
-    .requiredOption('--body <text>', 'set the reply body')
-    .option(
-      '--audience <choice>',
-      'participants, acknowledged, audience, operator, session:<id>, or run:<id>',
-    )
-    .action(async (id, options) =>
-      console.log(
-        JSON.stringify(await boardReply(String(id), options.body, undefined, options.audience)),
-      ),
-    )
+  registerBoardReplyCommand(board)
   board
     .command('thread <id>')
     .description(BOARD_DESCRIPTIONS.thread)

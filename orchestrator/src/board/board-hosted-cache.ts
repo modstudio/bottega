@@ -27,9 +27,9 @@ import {
   selectPushNotices,
 } from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
+import { parseReplyAudienceOption, resolveReplyReaders } from './board-reply-audience.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
-import { parseReplyAudienceOption, resolveReplyReaders } from './board-thread-policy.ts'
 import {
   renderBoardQuestion,
   renderBoardReply,
@@ -618,10 +618,10 @@ const replyAddressesReader = (
   const thread = context.threadMessages.get(rootId) ?? []
   const root = thread.find((candidate) => candidate.id === rootId)
   if (!root || !hostedMessageIsLive(root, context.clock)) return false
-  const authorReader = (candidate: HostedBoardMessage): string => {
-    if (candidate.authorUserId !== context.signedIn) return `user:${candidate.authorUserId}`
-    return candidate.authorSession ?? OPERATOR_READER
-  }
+  const authorReader = (candidate: HostedBoardMessage): string =>
+    candidate.authorUserId === context.signedIn
+      ? (candidate.authorSession ?? OPERATOR_READER)
+      : `user:${candidate.authorUserId}`
   const rootTags = context.rows.find((row) => row.message.id === rootId)?.tags ?? []
   const rootAudienceReaders = root.audience
     ? recipients(
@@ -634,10 +634,8 @@ const replyAddressesReader = (
       )
     : []
   const cachedReceipts = context.database
-    .query(
-      `SELECT reader_session,audience_at_posting,acknowledged_at
-       FROM hosted_board_receipt_cache WHERE message_id=? ORDER BY rowid`,
-    )
+    .query(`SELECT reader_session,audience_at_posting,acknowledged_at
+            FROM hosted_board_receipt_cache WHERE message_id=? ORDER BY rowid`)
     .all(rootId) as Array<{
     reader_session: string
     audience_at_posting: number
@@ -654,11 +652,10 @@ const replyAddressesReader = (
     ]),
   )
   for (const reader of rootAudienceReaders) {
-    const current = receipts.get(reader)
     receipts.set(reader, {
       reader,
       audienceAtPosting: true,
-      acknowledged: current?.acknowledged ?? false,
+      acknowledged: receipts.get(reader)?.acknowledged ?? false,
     })
   }
   return resolveReplyReaders({

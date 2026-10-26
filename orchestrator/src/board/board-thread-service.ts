@@ -17,6 +17,11 @@ import {
   parseAudience,
 } from './board-policy.ts'
 import {
+  parseReplyAudienceOption,
+  type ReplyAudienceOption,
+  resolveReplyReaders,
+} from './board-reply-audience.ts'
+import {
   addressed,
   authorWindowDecision,
   BOARD_MESSAGE_COLUMNS,
@@ -36,10 +41,7 @@ import {
   BOARD_NOTE_FILING_LEASE_MS,
   boardThreadState,
   noteFilingLeaseDecision,
-  parseReplyAudienceOption,
-  type ReplyAudienceOption,
   replyRefusal,
-  resolveReplyReaders,
 } from './board-thread-policy.ts'
 
 type Environment = Record<string, string | undefined>

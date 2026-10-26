@@ -7,7 +7,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { cachedHostedBoardMessages } from './board-hosted-cache.ts'
 import { type Audience, parseAudience } from './board-policy.ts'
 import { BOARD_MESSAGE_COLUMNS, type MessageRow } from './board-store.ts'
 
@@ -441,7 +440,11 @@ function localReplyReachRows(windowStart: string, database: Database): BoardRepl
 }
 
 function hostedReplyReachRows(windowStart: string, database: Database): BoardReplyReachRow[] {
-  const messages = cachedHostedBoardMessages(database)
+  const messages = (
+    database.query('SELECT payload FROM hosted_board_message_cache ORDER BY rowid').all() as Array<{
+      payload: string
+    }>
+  ).map((row) => JSON.parse(row.payload) as HostedBoardMessage)
   const roots = new Map(messages.map((message) => [message.id, message]))
   return messages
     .filter((message) => {

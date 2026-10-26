@@ -377,6 +377,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../../../shared/record-project-identity.ts',
       '../../../shared/secret-shaped.ts',
       '../board/board-policy.ts',
+      '../board/board-reply-audience.ts',
       '../board/board-tags.ts',
       '../board/board-thread-policy.ts',
       './record-board-contract.ts',
