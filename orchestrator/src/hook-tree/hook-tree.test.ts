@@ -17,6 +17,8 @@ describe('hook-tree lifecycle decisions', () => {
       held: true,
       until: null,
       reason: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      inFlightRef: 'hook tree, kept by its owner',
+      suppressBlock: true,
     })
     expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: false }, ordinary)).toBe(ordinary)
     expect(hookTreeHoldDecision({ job: 'implement', treeExists: true }, ordinary)).toBe(ordinary)
@@ -29,6 +31,22 @@ describe('hook-tree lifecycle decisions', () => {
       reason: 'explicit --keep-tree',
     }
     expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: false }, explicit)).toBe(explicit)
+  })
+
+  test('suppresses a held hook tree without suppressing a held ordinary run tree', () => {
+    const ordinary = {
+      held: true as const,
+      until: null,
+      reason: 'ordinary hold',
+      inFlightRef: null,
+      suppressBlock: false,
+    }
+    expect(hookTreeHoldDecision({ job: HOOK_TREE_JOB, treeExists: true }, ordinary)).toMatchObject({
+      held: true,
+      inFlightRef: 'hook tree, kept by its owner',
+      suppressBlock: true,
+    })
+    expect(hookTreeHoldDecision({ job: 'implement', treeExists: true }, ordinary)).toBe(ordinary)
   })
 
   test('keeps hook trees out of sweep without changing ordinary runs', () => {

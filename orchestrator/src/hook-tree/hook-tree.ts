@@ -21,12 +21,22 @@ function isHookTree(run: HookTreeIdentity): boolean {
 export function hookTreeHoldDecision<T>(
   run: HookTreeHoldFacts,
   ordinary: T,
-): T | { held: true; until: null; reason: string } {
+):
+  | T
+  | {
+      held: true
+      until: null
+      reason: string
+      inFlightRef: string
+      suppressBlock: true
+    } {
   return isHookTree(run) && run.treeExists
     ? {
         held: true,
         until: null,
         reason: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+        inFlightRef: 'hook tree, kept by its owner',
+        suppressBlock: true,
       }
     : ordinary
 }

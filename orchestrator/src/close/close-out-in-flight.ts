@@ -186,6 +186,7 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTr
 
 export function annotateHeldLandingInFlight(result: CloseOutReportResult): CloseOutReportResult {
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
+  if (result.suppressBlock && result.inFlightRef) return result
   const run = lookupRun(result.runId)
   if (!run) return result
   const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other')

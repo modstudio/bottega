@@ -4,8 +4,20 @@ import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import type { KeepTreeHoldDecision } from '../worktree/keep-tree-hold.ts'
 
 export type ConversationKeepTreeHold =
-  | (KeepTreeHoldDecision & { reason?: string; hold?: LandingTreeHoldKind })
-  | { held: true; until: null; reason: string; hold?: LandingTreeHoldKind }
+  | (KeepTreeHoldDecision & {
+      reason?: string
+      hold?: LandingTreeHoldKind
+      inFlightRef?: string | null
+      suppressBlock?: boolean
+    })
+  | {
+      held: true
+      until: null
+      reason: string
+      hold?: LandingTreeHoldKind
+      inFlightRef?: string | null
+      suppressBlock?: boolean
+    }
   | { held: false; kept: true; reason: string }
 
 /** Separates the clean landing tree's report word from its persisted outcome. */
@@ -42,6 +54,8 @@ export function heldConversationCloseOutResult(
   outcome: 'held'
   detail: string
   hold?: LandingTreeHoldKind
+  inFlightRef?: string | null
+  suppressBlock?: boolean
 } {
   return {
     runId,
@@ -52,6 +66,8 @@ export function heldConversationCloseOutResult(
         ? hold.reason
         : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`,
     hold: hold.hold,
+    inFlightRef: hold.inFlightRef,
+    suppressBlock: hold.suppressBlock,
   }
 }
 
