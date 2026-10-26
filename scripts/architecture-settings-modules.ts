@@ -72,11 +72,13 @@ export const settingsModules: SettingsModule[] = [
     'commander',
     '../settings/settings-apply-commands.ts',
     '../settings/settings-commands.ts',
+    '../settings/settings-env-commands.ts',
     '../settings/settings-machine-apply.ts',
     '../settings/settings-machine-permissions.ts',
     './support.ts',
   ]),
   module('orchestrator/src/settings/settings-auto-mode.ts', ['./settings.ts']),
+  module('orchestrator/src/settings/settings-env-commands.ts', ['../doc/docs.ts', './settings.ts']),
   module('orchestrator/src/settings/settings-permission.ts', ['./settings.ts']),
   module('orchestrator/src/settings/settings-permission-overlay.ts', [
     '../../../shared/machine-config.ts',

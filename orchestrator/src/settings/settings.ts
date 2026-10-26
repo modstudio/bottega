@@ -29,6 +29,7 @@ export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
   autoMode?: OwnedAutoMode
+  env?: Record<string, string>
   envKeys?: string[]
 }
 
@@ -39,6 +40,7 @@ const ownedSettingsSchema = z
     permissions: z.unknown(),
     hooks: z.unknown(),
     autoMode: ownedAutoModeSchema.optional(),
+    env: z.record(z.string().regex(ENV_NAME), z.string()).default({}),
     envKeys: z
       .array(z.string().regex(ENV_NAME))
       .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
@@ -71,6 +73,7 @@ export function serializeOwnedSettings(owned: OwnedSettings): string {
       permissions: owned.permissions,
       hooks: owned.hooks,
       ...(owned.autoMode === undefined ? {} : { autoMode: owned.autoMode }),
+      env: owned.env ?? {},
       envKeys: owned.envKeys ?? [],
     },
     null,
@@ -84,16 +87,17 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
     parsed = JSON.parse(body) as unknown
   } catch {
     throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, and envKeys',
+      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, env, and envKeys',
     )
   }
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) {
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with permissions, hooks, optional autoMode, and sorted envKeys names',
+        'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names',
     )
   }
+  assertValidEnvironment(result.data, 'settings body')
   return result.data
 }
 
@@ -104,9 +108,11 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
   } catch {
     throw new Error('refusing stored settings row: cannot parse JSON')
   }
+  if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'env')) parsed.env = {}
   if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'envKeys')) parsed.envKeys = []
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) throw new Error('refusing stored settings row: invalid owned settings shape')
+  assertValidEnvironment(result.data, 'stored settings row')
   return result.data
 }
 
@@ -151,8 +157,24 @@ export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): b
       (left.autoMode !== undefined &&
         right.autoMode !== undefined &&
         deepEqual(left.autoMode, right.autoMode))) &&
+    deepEqual(left.env ?? {}, right.env ?? {}) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
+}
+
+function assertValidEnvironment(owned: OwnedSettings, subject: string): void {
+  const plainNames = Object.keys(owned.env ?? {})
+  const duplicate = plainNames.find((name) => (owned.envKeys ?? []).includes(name))
+  if (duplicate) {
+    throw new Error(`refusing ${subject}: ${duplicate} appears in both env and envKeys`)
+  }
+  const secret = plainNames.find((name) => containsSecretShaped(owned.env![name]!))
+  if (secret) {
+    throw new Error(
+      `refusing ${subject}: ${secret} has a secret-shaped value\n` +
+        'cleared by: put secrets in envKeys and the secrets file',
+    )
+  }
 }
 
 function secretShapedSettingsRefusal(owned: OwnedSettings): string | null {

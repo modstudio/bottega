@@ -294,9 +294,12 @@ export async function settingsRenderCheckCommand(
       ? { ...parsed.owned, envKeys: parsed.envKeys }
       : parsed.owned
     : emptyOwned()
-  if (target.kind === 'project' && (storeOwned.envKeys?.length ?? 0) > 0) {
+  if (
+    target.kind === 'project' &&
+    ((storeOwned.envKeys?.length ?? 0) > 0 || Object.keys(storeOwned.env ?? {}).length > 0)
+  ) {
     throw new Error(
-      'refusing settings render: env is user-only; remove project envKeys from the row',
+      'refusing settings render: env is user-only; remove project env and envKeys from the row',
     )
   }
   const environment =
@@ -306,8 +309,11 @@ export async function settingsRenderCheckCommand(
           storeOwned.envKeys ?? [],
         )
       : undefined
-  if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, environment)
-  const drifted = !ownedSettingsEqual(fileOwned, storeOwned)
+  const renderedEnvironment =
+    environment === undefined ? undefined : { ...(storeOwned.env ?? {}), ...environment }
+  if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, renderedEnvironment)
+  const comparableFileOwned = { ...fileOwned, env: storeOwned.env ?? {} }
+  const drifted = !ownedSettingsEqual(comparableFileOwned, storeOwned)
   const findings = lintSettings(lintTargets(target, parsed?.owned ?? emptyOwned(), cwd))
   if (flags.has('json')) {
     const drift = diffOwnedSettings(fileOwned, storeOwned)

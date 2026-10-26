@@ -46,6 +46,8 @@ upkeep of this machine
 - [bottega machine settings env](#bottega-machine-settings-env)
 - [bottega machine settings env help](#bottega-machine-settings-env-help)
 - [bottega machine settings env import](#bottega-machine-settings-env-import)
+- [bottega machine settings env set](#bottega-machine-settings-env-set)
+- [bottega machine settings env unset](#bottega-machine-settings-env-unset)
 - [bottega machine settings help](#bottega-machine-settings-help)
 - [bottega machine settings import](#bottega-machine-settings-import)
 - [bottega machine settings permission](#bottega-machine-settings-permission)
@@ -659,6 +661,8 @@ manage settings environment values
 - [bottega machine settings](./machine.md#bottega-machine-settings)
 - [bottega machine settings env help](./machine.md#bottega-machine-settings-env-help)
 - [bottega machine settings env import](./machine.md#bottega-machine-settings-env-import)
+- [bottega machine settings env set](./machine.md#bottega-machine-settings-env-set)
+- [bottega machine settings env unset](./machine.md#bottega-machine-settings-env-unset)
 
 ## bottega machine settings env help
 
@@ -681,6 +685,26 @@ move user settings environment values into the secrets file
 - `--user`: target the user settings file
 - `--project <name>`: project target, which environment import refuses
 - `--dry-run`: report the import without writing files or settings
+
+### Related
+
+- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
+
+## bottega machine settings env set
+
+**Synopsis:** `bottega machine settings env set <name> <value>`
+
+set a plain canonical user settings environment value
+
+### Related
+
+- [bottega machine settings env](./machine.md#bottega-machine-settings-env)
+
+## bottega machine settings env unset
+
+**Synopsis:** `bottega machine settings env unset <name>`
+
+unset a plain canonical user settings environment value
 
 ### Related
 

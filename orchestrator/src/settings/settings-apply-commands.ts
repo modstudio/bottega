@@ -217,7 +217,11 @@ export async function settingsRenderWriteCommand(
   if (target.kind === 'user') {
     const secretsPath = userSettingsEnvPath(root)
     const secrets = readSettingsEnv(secretsPath)
-    const removed = parsed.envKeys.filter((name) => !(owned.envKeys ?? []).includes(name))
+    const ownedEnvironmentNames = new Set([
+      ...Object.keys(owned.env ?? {}),
+      ...(owned.envKeys ?? []),
+    ])
+    const removed = parsed.envKeys.filter((name) => !ownedEnvironmentNames.has(name))
     const unprotected = removed.filter((name) => !secrets.has(name) && !droppedEnv.includes(name))
     if (unprotected.length > 0) {
       throw new Error(
@@ -230,7 +234,10 @@ export async function settingsRenderWriteCommand(
   }
   const environment =
     target.kind === 'user'
-      ? selectedSettingsEnvironment(userSettingsEnvPath(root), owned.envKeys ?? [])
+      ? {
+          ...(owned.env ?? {}),
+          ...selectedSettingsEnvironment(userSettingsEnvPath(root), owned.envKeys ?? []),
+        }
       : undefined
   const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
   const plan = planSettingsWrite(path, rendered)

@@ -114,7 +114,11 @@ function applyUserSettings(
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
-    const removed = parsed.envKeys.filter((name) => !(owned.envKeys ?? []).includes(name))
+    const ownedEnvironmentNames = new Set([
+      ...Object.keys(owned.env ?? {}),
+      ...(owned.envKeys ?? []),
+    ])
+    const removed = parsed.envKeys.filter((name) => !ownedEnvironmentNames.has(name))
     const unprotected = removed.filter((name) => !secrets.has(name))
     if (unprotected.length) {
       throw new Error(
@@ -122,7 +126,10 @@ function applyUserSettings(
           `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
       )
     }
-    const environment = selectedSettingsEnvironment(secretsPath, owned.envKeys ?? [])
+    const environment = {
+      ...(owned.env ?? {}),
+      ...selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
+    }
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
     const plan = planSettingsWrite(path, rendered)
     if (plan.currentText === plan.renderedText) {

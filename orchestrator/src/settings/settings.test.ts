@@ -52,12 +52,18 @@ describe('validateOwnedSettingsBody', () => {
 
   test('accepts exactly permissions and hooks', () => {
     const owned = extractOwnedSettings(extra)
-    expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual(owned)
+    expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual({
+      ...owned,
+      env: {},
+    })
   })
 
   test('accepts auto-mode as an optional member', () => {
     const withoutAutoMode = { permissions: {}, hooks: {}, envKeys: [] }
-    expect(validateOwnedSettingsBody(JSON.stringify(withoutAutoMode))).toEqual(withoutAutoMode)
+    expect(validateOwnedSettingsBody(JSON.stringify(withoutAutoMode))).toEqual({
+      ...withoutAutoMode,
+      env: {},
+    })
   })
 
   test('refuses unknown auto-mode members and non-string lists', () => {
@@ -86,6 +92,49 @@ describe('validateOwnedSettingsBody', () => {
         JSON.stringify({ permissions: {}, hooks: {}, envKeys: { ALPHA: 'secret' } }),
       ),
     ).toThrow(/unknown or missing/)
+  })
+
+  test('round-trips plain env values', () => {
+    const owned = {
+      permissions: {},
+      hooks: {},
+      env: { ALPHA: 'one', BETA_2: 'two' },
+      envKeys: ['PRIVATE'],
+    }
+    expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual(owned)
+  })
+
+  test('refuses overlap between plain and secret-file environment names', () => {
+    expect(() =>
+      validateOwnedSettingsBody(
+        JSON.stringify({
+          permissions: {},
+          hooks: {},
+          env: { SHARED: 'plain' },
+          envKeys: ['SHARED'],
+        }),
+      ),
+    ).toThrow(/SHARED appears in both env and envKeys/)
+  })
+
+  test('refuses a secret-shaped plain value without echoing it', () => {
+    const sentinel = 'sk-value-must-not-be-echoed'
+    let message = ''
+    try {
+      validateOwnedSettingsBody(
+        JSON.stringify({
+          permissions: {},
+          hooks: {},
+          env: { API_TOKEN: sentinel },
+          envKeys: [],
+        }),
+      )
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error)
+    }
+    expect(message).toContain('API_TOKEN')
+    expect(message).toContain('envKeys and the secrets file')
+    expect(message).not.toContain(sentinel)
   })
 
   test('refuseSettingsBody ignores other scopes', () => {
@@ -140,6 +189,14 @@ test('a stored row without auto-mode round trips without gaining ownership', () 
   const parsed = parseStoredOwnedSettings(body)
   expect(parsed).not.toHaveProperty('autoMode')
   expect(JSON.parse(serializeOwnedSettings(parsed))).not.toHaveProperty('autoMode')
+})
+
+test('a stored row without env parses with an empty plain environment', () => {
+  const parsed = parseStoredOwnedSettings(
+    JSON.stringify({ permissions: {}, hooks: {}, envKeys: ['PRIVATE'] }),
+  )
+  expect(parsed.env).toEqual({})
+  expect(parsed.envKeys).toEqual(['PRIVATE'])
 })
 
 function jwtSentinel() {

@@ -14,6 +14,7 @@ import {
   settingsPermissionCommand,
   settingsRenderCheckCommand,
 } from '../settings/settings-commands.ts'
+import { settingsEnvCommand } from '../settings/settings-env-commands.ts'
 import {
   applyMachineSettings,
   printMachineSettingsApplyResults,
@@ -90,6 +91,48 @@ function registerAutoMode(settings: Command): void {
         else log(result.message ?? `updated autoMode.${options.list} at ${result.revision}`)
       })
   }
+}
+
+function registerEnvironment(settings: Command): void {
+  const env = settings.command('env').description('manage settings environment values')
+  env
+    .command('set')
+    .description('set a plain canonical user settings environment value')
+    .argument('<name>')
+    .argument('<value>')
+    .action(async (name: string, value: string) => {
+      const result = await settingsEnvCommand('set', name, value)
+      log(result.message)
+      log(
+        `settings environment values take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+      )
+    })
+  env
+    .command('unset')
+    .description('unset a plain canonical user settings environment value')
+    .argument('<name>')
+    .action(async (name: string) => {
+      const result = await settingsEnvCommand('unset', name)
+      log(result.message)
+      log(
+        `settings environment values take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
+      )
+    })
+  env
+    .command('import')
+    .description('move user settings environment values into the secrets file')
+    .option('--user', 'target the user settings file')
+    .option('--project <name>', 'project target, which environment import refuses')
+    .option('--dry-run', 'report the import without writing files or settings')
+    .action(async (options) => {
+      await settingsEnvImportCommand(optionFlags(options), {
+        log,
+        cwd: process.cwd,
+        exitCode: (code: number) => {
+          process.exitCode = code
+        },
+      })
+    })
 }
 
 export function register(program: Command): void {
@@ -196,22 +239,7 @@ export function register(program: Command): void {
         },
       })
     })
-  const env = settings.command('env').description('manage settings environment values')
-  env
-    .command('import')
-    .description('move user settings environment values into the secrets file')
-    .option('--user', 'target the user settings file')
-    .option('--project <name>', 'project target, which environment import refuses')
-    .option('--dry-run', 'report the import without writing files or settings')
-    .action(async (options) => {
-      await settingsEnvImportCommand(optionFlags(options), {
-        log,
-        cwd: process.cwd,
-        exitCode: (code: number) => {
-          process.exitCode = code
-        },
-      })
-    })
+  registerEnvironment(settings)
   settings
     .command('render')
     .description('compare or write canonical settings to a settings file')

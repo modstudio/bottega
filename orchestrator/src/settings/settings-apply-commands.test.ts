@@ -82,14 +82,19 @@ function shown(cwd = root) {
   }
 }
 
-async function seedUser() {
+async function seedUser(environment: { env?: Record<string, string>; envKeys?: string[] } = {}) {
   await setDoc({
     scope: 'settings',
     subject: null,
     owner: OWNER,
     slug: 'settings',
     title: 'settings',
-    body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
+    body: serializeOwnedSettings({
+      permissions: {},
+      hooks: {},
+      env: environment.env,
+      envKeys: environment.envKeys ?? [],
+    }),
     delivery: 'demand',
     reason: 'fixture',
   })
@@ -270,6 +275,27 @@ describe('settings render write', () => {
       () => false,
     )
     expect(JSON.parse(readFileSync(settings, 'utf8')).env).toEqual({})
+  })
+
+  test('renders canonical plain values with selected secrets and owns both names', async () => {
+    const settings = join(claude, 'settings.json')
+    writeFileSync(
+      settings,
+      `${JSON.stringify({ env: { PLAIN: 'old', PRIVATE: 'old' }, permissions: {}, hooks: {} }, null, 2)}\n`,
+    )
+    writeFileSync(join(claude, 'settings.env'), 'PRIVATE="from-secrets-file"\n', { mode: 0o600 })
+    await seedUser({ env: { PLAIN: 'canonical' }, envKeys: ['PRIVATE'] })
+
+    await settingsRenderWriteCommand(
+      flags({ user: true, write: true, yes: true }),
+      shown().port,
+      () => false,
+    )
+
+    expect(JSON.parse(readFileSync(settings, 'utf8')).env).toEqual({
+      PLAIN: 'canonical',
+      PRIVATE: 'from-secrets-file',
+    })
   })
 })
 

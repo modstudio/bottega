@@ -164,6 +164,8 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine settings env',
   'machine settings env help',
   'machine settings env import',
+  'machine settings env set',
+  'machine settings env unset',
   'machine settings help',
   'machine settings import',
   'machine settings permission',
