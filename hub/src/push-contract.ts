@@ -40,6 +40,7 @@ export type PushedStatusEvent = {
 export type PushedInterval = {
   id: string
   task_key: string | null
+  task_id?: string | null
   project_name: string | null
   projectId?: string | null
   source: string
@@ -374,6 +375,9 @@ function parseIntervalRow(value: unknown, id: string): PushedInterval | string {
       return `${HOSTED_INTERVAL_TABLE} row.${field} must be an ISO timestamp`
   if (typeof row.user_id === 'string' && !UUID.test(row.user_id))
     return `${HOSTED_INTERVAL_TABLE} row.user_id must be a UUID, null, or absent`
+  const taskId = row.task_id
+  if (taskId !== undefined && taskId !== null && (typeof taskId !== 'string' || !UUID.test(taskId)))
+    return `${HOSTED_INTERVAL_TABLE} row.task_id must be a UUID, null, or absent`
   return row as PushedInterval
 }
 

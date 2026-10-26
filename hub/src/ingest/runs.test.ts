@@ -11,6 +11,7 @@ import {
   runFixture,
 } from '../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../db.ts'
+import { loadOutboxChange } from '../outbox-row.ts'
 import { runRef } from '../run-ref.ts'
 import { chainVendorTokens, convertLegacyRunRefs, executionSpans } from './runs.ts'
 
@@ -129,6 +130,15 @@ describe('run ingest', () => {
     })
   })
   test('the interval writer and UUID ref parser round-trip root and turn identities', async () => {
+    const taskRecordId = fixtureRecordId(118)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+           VALUES (?, 'ALP-118', 'alpha', 'local', '2026-09-03', '2026-09-03')`,
+        )
+        .run(taskRecordId),
+    )
     await ingestRunFixtures(
       runFixture({
         id: 9090,
@@ -136,12 +146,21 @@ describe('run ingest', () => {
       }),
     )
     const refs = db()
-      .query<{ ref: string }, []>("SELECT ref FROM interval WHERE source='orch' ORDER BY ref")
-      .all()
+      .query<{ record_id: string; ref: string; task_record_id: string | null }, [string]>(
+        'SELECT record_id,ref,task_record_id FROM interval WHERE ref LIKE ? ORDER BY ref',
+      )
+      .all(`${ref(9090)}%`)
     expect(refs.map(({ ref }) => runRef(ref))).toEqual([
       { root: fixtureRecordId(9090), turn: fixtureRecordId(9090) },
       { root: fixtureRecordId(9090), turn: fixtureRecordId(9091) },
     ])
+    expect(refs.map(({ task_record_id }) => task_record_id)).toEqual([taskRecordId, taskRecordId])
+    const pushed = loadOutboxChange(db(), {
+      table_name: 'hub_interval',
+      row_id: refs[0]!.record_id,
+      operation: 'upsert',
+    })
+    expect(pushed?.change).toMatchObject({ row: { task_id: taskRecordId } })
   })
   test('workflow rulings ingest with nullable run provenance', async () => {
     await ingestStdout(

@@ -174,13 +174,13 @@ async function windowFacts(databaseUrl: SQL, identity: TaskIdentity, from: strin
     const windowRows = rows<RawWindow>(
       await tx`
       SELECT i.space_id, s.name AS space_name, i.task_key, i.project_name AS project,
-        i.source, i.agent, i.job,
+        i.task_id AS task_record_id, i.source, i.agent, i.job,
         i.start_at, i.end_at, i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd, i.open,
         t.project AS task_project, t.title AS task_title, t.status AS task_status,
         t.status_category AS task_status_category, t.source AS task_source,
         t.updated_at AS task_updated_at, t.closed_at AS task_closed_at
       FROM hub_interval i JOIN space s ON s.id=i.space_id LEFT JOIN hub_task t
-        ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
+        ON t.id=i.task_id AND t.space_id=i.space_id AND t.deleted_at IS NULL
       WHERE i.end_at >= ${from}::timestamptz
         AND i.start_at < ${to}::timestamptz ORDER BY i.start_at`,
     )
@@ -313,19 +313,19 @@ export async function hostedBoard(
       }
     >(
       await tx`
-      SELECT t.space_id,s.name AS space_name,t.key,t.project,t.title,t.assignee,t.status,
+      SELECT t.id::text AS record_id,t.space_id,s.name AS space_name,t.key,t.project,t.title,t.assignee,t.status,
         t.status_category,t.source,t.updated_at,t.last_seen,t.closed_at
       FROM hub_task t JOIN space s ON s.id=t.space_id WHERE t.deleted_at IS NULL`,
     )
-    const live = rows<{ space_id: string; task_key: string }>(
+    const live = rows<{ task_id: string }>(
       await tx`
-      SELECT DISTINCT space_id,task_key FROM hub_interval
-      WHERE open=1 AND task_key IS NOT NULL`,
+      SELECT DISTINCT task_id FROM hub_interval
+      WHERE open=1 AND task_id IS NOT NULL`,
     )
-    const recent = rows<{ space_id: string; task_key: string }>(
+    const recent = rows<{ task_id: string }>(
       await tx`
-      SELECT DISTINCT space_id,task_key FROM hub_interval
-      WHERE task_key IS NOT NULL AND start_at >= ${since}::timestamptz`,
+      SELECT DISTINCT task_id FROM hub_interval
+      WHERE task_id IS NOT NULL AND start_at >= ${since}::timestamptz`,
     )
     return projectBoard({
       rows: sourceRows.map((row) => ({
@@ -334,8 +334,8 @@ export async function hostedBoard(
         last_seen: iso(row.last_seen)!,
         closed_at: iso(row.closed_at),
       })),
-      recentKeys: recent.map((row) => `${row.space_id}\0${row.task_key}`),
-      liveKeys: live.map((row) => `${row.space_id}\0${row.task_key}`),
+      recentKeys: recent.map((row) => row.task_id),
+      liveKeys: live.map((row) => row.task_id),
       projects: projectRows,
       cap: 250,
       since,
@@ -403,7 +403,7 @@ export async function hostedTaskDetail(
       await tx`
       SELECT id::text,task_key,project_name AS project,source,agent,job,start_at,end_at,claude_tokens,
         vendor_tokens,vendor_cost_usd,open,user_id FROM hub_interval
-      WHERE space_id=${spaceId}::uuid AND task_key=${key} ORDER BY start_at DESC`,
+      WHERE space_id=${spaceId}::uuid AND task_id=${String(task.id)}::uuid ORDER BY start_at DESC`,
     )
     return hostedTaskDetailFromRows(
       hostedDetailRows(task, comments, documents, statusHistory, intervals, key),

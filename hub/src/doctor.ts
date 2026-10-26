@@ -8,6 +8,15 @@ import { projects } from './projects.ts'
 import { formatServiceRevisionDoctor } from './service-revision.ts'
 import { formatTaskIdentityDoctor, taskIdentityDoctor } from './task-identity.ts'
 
+function intervalTaskLinkDoctor(): string {
+  const count = db()
+    .query<{ count: number }, []>(
+      `SELECT COUNT(*) count FROM interval WHERE task_key IS NOT NULL AND task_record_id IS NULL`,
+    )
+    .get()!.count
+  return `interval links ${count} task-key interval${count === 1 ? '' : 's'} unlinked`
+}
+
 export async function hubDoctorLines(): Promise<string[]> {
   const outbox = await hostedOutboxDoctorLines()
   return [
@@ -15,6 +24,7 @@ export async function hubDoctorLines(): Promise<string[]> {
     `schema hash    ${canonicalSchemaHash(db()) === expectedSchemaHash() ? 'match' : 'DRIFT'}`,
     `schema version ${schemaVersionLabel(db())}`,
     ...formatTaskIdentityDoctor(taskIdentityDoctor()),
+    intervalTaskLinkDoctor(),
     ...formatServiceRevisionDoctor(),
     ...formatProjectWriteModes(projects(), readInstallBinding(), resolveHostedUrl()),
     ...outbox,

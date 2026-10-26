@@ -547,7 +547,7 @@ export async function ingestTrackers(
   const missing = d
     .query<{ task_key: string; project: string }, []>(
       `SELECT DISTINCT i.task_key, i.project
-       FROM interval i LEFT JOIN task t ON t.key = i.task_key AND t.project = i.project
+       FROM interval i LEFT JOIN task t ON t.record_id=i.task_record_id
       WHERE i.task_key IS NOT NULL
         AND (t.key IS NULL OR t.source <> 'mcp')
         AND i.start_at >= datetime('now', '-30 days')`,

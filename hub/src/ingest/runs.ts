@@ -7,6 +7,7 @@ import { intervalOwningProject } from '../interval-project-correction.ts'
 import { readRunIdentityMap, readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
+import { intervalTaskRecordId } from '../task-identity.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -388,14 +389,14 @@ function applyOrchReplace(
 ) {
   const decision = decideCollectorReplace(existing, recomputed, preservedRefs)
   const update = conn.query(
-    `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?,
+    `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?, task_record_id=?,
        project=?, project_record_id=?, job=?, via=?, open=?, session_id=?, user_id=?
      WHERE record_id=?`,
   )
   const insert = conn.query(
-    `INSERT INTO interval (record_id, task_key, project, project_record_id, source, agent, job, start_at, end_at,
+    `INSERT INTO interval (record_id, task_key, task_record_id, project, project_record_id, source, agent, job, start_at, end_at,
                            claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id)
-     VALUES (?, ?, ?, ?, 'orch', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'orch', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const remove = conn.query(`DELETE FROM interval WHERE record_id=?`)
   for (const row of decision.updates)
@@ -404,6 +405,7 @@ function applyOrchReplace(
       row.vendor_tokens,
       row.vendor_cost_usd,
       row.task_key,
+      intervalTaskRecordId(conn, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.job,
@@ -417,6 +419,7 @@ function applyOrchReplace(
     insert.run(
       newRecordId(),
       row.task_key,
+      intervalTaskRecordId(conn, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.agent,

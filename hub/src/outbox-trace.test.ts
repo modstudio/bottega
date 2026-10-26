@@ -31,8 +31,8 @@ function insertInterval(id: string, ref: string): void {
   writeTransaction((conn) =>
     conn
       .query(
-        `INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
-         VALUES (?,'fixture','orch','2026-10-12T12:00:00.000Z',
+        `INSERT INTO interval(record_id,project,project_record_id,source,start_at,end_at,ref)
+         VALUES (?,'fixture','project-id','orch','2026-10-12T12:00:00.000Z',
            '2026-10-12T12:01:00.000Z',?)`,
       )
       .run(id, ref),

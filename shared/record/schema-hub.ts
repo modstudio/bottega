@@ -559,6 +559,7 @@ export const hubInterval = pgTable.withRLS(
     id: identity(),
     spaceId: spaceIdentity(),
     taskKey: text('task_key'),
+    taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'set null' }),
     projectName: text('project_name'),
     projectId: uuid('project_id').references(() => project.id, { onDelete: 'set null' }),
     source: text().notNull(),
@@ -578,6 +579,7 @@ export const hubInterval = pgTable.withRLS(
   },
   (table) => [
     unique('hub_interval_natural_key').on(table.spaceId, table.source, table.ref, table.startAt),
+    index('hub_interval_task_id_idx').on(table.taskId),
     ...tenantPolicies('hub_interval', table.spaceId),
   ],
 )

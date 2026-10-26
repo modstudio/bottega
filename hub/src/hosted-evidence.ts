@@ -33,6 +33,7 @@ export function hostedDayWrite(
 function intervalValues(row: IntervalEvidence, projectId: string | null) {
   return {
     task_key: row.task_key,
+    task_id: row.task_id ?? null,
     project_name: row.project_name,
     project_id: projectId,
     source: row.source,
@@ -61,10 +62,10 @@ async function insertHostedInterval(
   const value = intervalValues(row, projectId)
   await tx`
     INSERT INTO hub_interval
-      (id, space_id, task_key, project_name, project_id, source, agent, job, start_at, end_at,
+      (id, space_id, task_key, task_id, project_name, project_id, source, agent, job, start_at, end_at,
        claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id, updated_at)
     VALUES
-      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.project_name}, ${value.project_id}::uuid,
+      (${id}::uuid, ${identity.spaceId}::uuid, ${value.task_key}, ${value.task_id}::uuid, ${value.project_name}, ${value.project_id}::uuid,
        ${value.source}, ${value.agent}, ${value.job}, ${value.start_at}::timestamptz,
        ${value.end_at}::timestamptz, ${value.claude_tokens}, ${value.vendor_tokens},
        ${value.vendor_cost_usd}, ${value.ref}, ${value.via}, ${value.open}, ${value.session_id},
@@ -80,6 +81,21 @@ async function updateHostedInterval(
   projectId: string | null,
 ) {
   const value = intervalValues(row, projectId)
+  if ('task_id' in row) {
+    await tx`
+      UPDATE hub_interval SET
+        task_key=${value.task_key}, task_id=${value.task_id}::uuid,
+        project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
+        agent=${value.agent}, job=${value.job},
+        start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
+        claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},
+        vendor_cost_usd=${value.vendor_cost_usd}, ref=${value.ref}, via=${value.via},
+        open=${value.open}, session_id=${value.session_id}, user_id=${value.user_id}::uuid,
+        updated_at=now()
+      WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid
+    `
+    return
+  }
   await tx`
     UPDATE hub_interval SET
       task_key=${value.task_key}, project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
@@ -120,6 +136,7 @@ async function upsertOneInterval(
     const matches = await tx`SELECT 1 FROM hub_interval
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
         AND task_key IS NOT DISTINCT FROM ${row.task_key}
+        AND (${!('task_id' in row)} OR task_id IS NOT DISTINCT FROM ${row.task_id ?? null}::uuid)
         AND project_name IS NOT DISTINCT FROM ${row.project_name}
         AND project_id IS NOT DISTINCT FROM ${projectId}::uuid AND source=${row.source}
         AND agent IS NOT DISTINCT FROM ${row.agent} AND job IS NOT DISTINCT FROM ${row.job}
