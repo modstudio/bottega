@@ -14,7 +14,7 @@ The worktree is the safety boundary. A repository agent gets workspace-write for
 
 **A registered main checkout stays clean.** A dispatch from the main checkout refreshes its index and refuses tracked modifications, naming the dirty paths and the worktree (both anchored lines); other trees go unchecked. Untracked files warn; ignored files are silent. Default on; opt out with `requireCleanMain` false. Resumes skip the check. Bare-main end state: project doc `bare-main-end-state`.
 
-Review agents may edit and test as unlanded scratch; they never commit, push or merge. Writers commit to run branches but never push, merge into trunk or rewrite history. Trunk admits work only by GitHub pull request through the merge queue; after merging a reworked run, run `bottega tree branch landed`.
+Readers never commit, push or merge; a findings review runs no suites, one probe per finding. Writers commit to run branches but never push, merge into trunk or rewrite history. Trunk admits work only by GitHub pull request through the merge queue; after merging a reworked run, run `bottega tree branch landed`.
 
 `hooks/protect-main-checkout.py` blocks tracked writes and ruled Bash Git mutations in registered main (`-C` else cwd); worktrees excluded; `requireCleanMain` false exempts; unparsed pass. `hooks/git-guard.py` asks before a destructive push and allows git in a project worktree, also via `bottega workflow exec`. `hooks/no-attribution.py` denies `git commit`/`git merge`/`gh pr create` crediting an AI, also `-F`/`--body-file`; `.githooks/commit-msg` does too. Enable with `git config core.hooksPath .githooks`.
 
@@ -119,3 +119,4 @@ It reports emptiness only after looking at the right data. Otherwise it exits no
 # Prompts and replies age out
 
 `KEEP_RUN_FILES_DAYS` bounds verbatim packs and answers under `runs/`. The row stays; only the text ages out.
+
