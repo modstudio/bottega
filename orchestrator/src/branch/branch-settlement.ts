@@ -26,6 +26,8 @@ export type ReclaimRun = {
   keep_tree: number
   keep_tree_until: string | null
   started_at: string
+  executor: 'external' | 'harness'
+  job: string
 }
 
 export function branchRows(
@@ -39,7 +41,7 @@ export function branchRows(
             COALESCE(r.worktree, '') worktree, r.branch, r.branch_kept,
             r.branch_kept_tip, r.minted_branch,
             r.base_commit, r.worktree_source, r.status, r.pid, r.agent_pid,
-            r.session_id, seen.last_seen session_last_seen,
+            r.session_id, seen.last_seen session_last_seen, r.executor, r.job,
             ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id

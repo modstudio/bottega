@@ -4,6 +4,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
+import { HARNESS_EVIDENCE_EXCLUSION } from '../../../shared/evidence-exclusion.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 
@@ -59,17 +60,18 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
  * A void closes the ledger whether or not a verdict was stored: excluded
  * evidence is not an owed judgment.
  */
-export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
+function unscoredWhere(exclusion: string): string {
+  return `r.status = 'ok' AND ${exclusion} AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
    AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_record_id = r.record_id
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
                             FROM run c WHERE c.parent_run_record_id = r.record_id))`
+}
 
-const PENDING_SCORE_WHERE = UNSCORED_WHERE.replace(
-  'r.evidence_excluded IS NULL',
-  "(r.evidence_excluded IS NULL OR r.executor='harness')",
-)
+export const UNSCORED_WHERE = unscoredWhere('r.evidence_excluded IS NULL')
+
+const PENDING_SCORE_WHERE = unscoredWhere("(r.evidence_excluded IS NULL OR r.executor='harness')")
 
 /**
  * The evidence boundary: a run leaves the owed-judgment ledger in two ways,
@@ -96,7 +98,7 @@ export const EVIDENCE_CLOSED_SQL = `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUD
  * Inbox filtering and rendering consume these flags; do not restate them.
  */
 export function voidedSql(alias = 'r'): string {
-  return `${alias}.evidence_excluded IS NOT NULL`
+  return `(${alias}.evidence_excluded IS NOT NULL AND ${alias}.evidence_excluded <> '${HARNESS_EVIDENCE_EXCLUSION}')`
 }
 
 export const VOIDED_SQL = voidedSql()

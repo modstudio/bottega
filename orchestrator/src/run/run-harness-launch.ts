@@ -1,10 +1,9 @@
 // concern: harness run launch
 /** Supplies the reserved harness marker and the synchronous post-claim handoff. */
 
-import { dirname, join } from 'node:path'
 import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import type { Agent } from '../agent/agents.ts'
-import { delegationMode } from '../jobs/delegation.ts'
+import { isHarnessDelegated } from '../jobs/delegation.ts'
 import { effectiveMcpRequest, type McpRequest } from '../mcp/mcp-preflight.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import type { ClaimResult } from './run-claim-types.ts'
@@ -46,10 +45,10 @@ export function harnessAgent(): Agent {
 }
 
 export function harnessDispatch(
-  needs: Parameters<typeof delegationMode>[0] & { mcp?: boolean },
+  needs: Parameters<typeof isHarnessDelegated>[0] & { mcp?: boolean },
   request?: McpRequest,
 ) {
-  const harness = delegationMode(needs, readDelegationSettings()) === 'harness'
+  const harness = isHarnessDelegated(needs, readDelegationSettings())
   return { harness, mcpRequest: harness ? undefined : effectiveMcpRequest(request, { needs }) }
 }
 
@@ -94,6 +93,5 @@ export function harnessRunningResult(
     changes: input.changes,
     contract: null,
     status: 'running',
-    handoff: { promptPath: join(dirname(input.promptPath), 'bound-prompt.txt'), cwd: input.cwd },
   }
 }

@@ -5,7 +5,6 @@
  * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
@@ -47,6 +46,8 @@ import {
   reauthorizeRunMutation,
 } from './run-authority.ts'
 import { detach } from './run-dispatch.ts'
+import { harnessContinuationWorker } from './run-harness-continuation.ts'
+import { harnessHandoff, printHarnessHandoff } from './run-harness-handoff.ts'
 import { RUN_FOLLOW_TIMEOUT_MS, reapStale } from './run-liveness.ts'
 import { continuationResumeKind } from './run-resume-kind.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
@@ -306,7 +307,8 @@ export type ChainTurn = {
 }
 
 function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
-  if (latest.executor === 'harness') return { agent: 'harness', session: undefined }
+  const harness = harnessContinuationWorker(latest.executor)
+  if (harness) return harness
   if (hasCheckpoint) return { agent: latest.agent, session: undefined }
   const source = latest.vendor_session
     ? latest
@@ -808,21 +810,8 @@ export async function reportContinuedRun(
 }
 
 export function reportHarnessHandoff(id: string): boolean {
-  const row = db()
-    .query('SELECT number,record_id,prompt_path,cwd,executor FROM run WHERE record_id=?')
-    .get(id) as {
-    number: number
-    record_id: string
-    prompt_path: string | null
-    cwd: string | null
-    executor: string
-  } | null
-  if (!row || row.executor !== 'harness') return false
-  if (!row.prompt_path || !row.cwd) throw new Error(`harness run ${id} has no prompt path or cwd`)
-  console.log(`run: ${row.number}`)
-  console.log(`record_id: ${row.record_id}`)
-  console.log(`prompt: ${join(dirname(row.prompt_path), 'bound-prompt.txt')}`)
-  console.log(`working_directory: ${row.cwd}`)
-  console.log(`finish: ${PLATFORM_SLUG} run finish ${row.record_id}`)
+  const handoff = harnessHandoff(db(), id)
+  if (!handoff) return false
+  printHarnessHandoff(handoff)
   return true
 }

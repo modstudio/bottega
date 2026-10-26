@@ -14,6 +14,8 @@ import {
 } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
 import { claimRun } from './run-claim.ts'
+import { HARNESS_EVIDENCE_EXCLUSION } from './run-executor.ts'
+import { harnessAgent } from './run-harness-launch.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 test('a later claim records a UUID ruling identity and never resurrects a failed reservation', async () => {
@@ -131,6 +133,26 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     expect(
       db().query('SELECT transport_explicit FROM run WHERE record_id=?').get(implicit.claim.id),
     ).toEqual({ transport_explicit: 0 })
+
+    const harness = await claimRun({
+      ...claimInput,
+      opts: { job: 'review-lens' },
+      stamp: 'harness-claim',
+      name: 'harness',
+      a: harnessAgent(),
+      carriedQuestionIds: [],
+    })
+    expect(
+      db()
+        .query('SELECT agent,executor,evidence_excluded,pid,agent_pid FROM run WHERE record_id=?')
+        .get(harness.claim.id),
+    ).toEqual({
+      agent: 'harness',
+      executor: 'harness',
+      evidence_excluded: HARNESS_EVIDENCE_EXCLUSION,
+      pid: null,
+      agent_pid: null,
+    })
 
     const refusedPrompt = 'migrating fresh claim'
     const refusalsBefore = db()

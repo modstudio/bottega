@@ -17,6 +17,7 @@ import {
 } from './continuation-tree-service.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { runAlive } from './run-alive.ts'
+import { recordedRunLivenessFacts } from './run-alive-facts.ts'
 import { refuseHeldContinuationBranch } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
@@ -96,7 +97,8 @@ export function resolveWritingRetryWorkspace(input: {
 }): WritingRetryWorkspace {
   const latest = db()
     .query(
-      `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid
+      `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid,
+              executor,session_id,started_at,job
        FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
     .get(input.rootId, input.rootId) as {
@@ -109,6 +111,10 @@ export function resolveWritingRetryWorkspace(input: {
     branch_kept_tip: string | null
     status: string
     pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
   }
   const project = input.repo ? projectByName(input.repo) : null
   if (!project) {
@@ -139,6 +145,7 @@ export function resolveWritingRetryWorkspace(input: {
         status: latest.status,
         lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+        ...recordedRunLivenessFacts(db(), latest),
       }),
     branchTipRelation: relation,
   })

@@ -82,7 +82,10 @@ function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
 }
 
-function replyContract(schemaPath: string | undefined, textContract: boolean): ReplyContract {
+export function replyContract(
+  schemaPath: string | undefined,
+  textContract: boolean,
+): ReplyContract {
   if (schemaPath) return 'custom'
   return textContract ? 'text' : 'none'
 }

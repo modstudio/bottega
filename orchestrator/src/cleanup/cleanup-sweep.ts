@@ -32,6 +32,7 @@ import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts } from '../run/run-alive-facts.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
 import {
   removeFreeRunCloseOutLease,
@@ -208,11 +209,19 @@ function namedRun(name: string, project: Project): NamedRunLookup {
     }
   const latest = db()
     .query(
-      `SELECT record_id,status,pid FROM run
+      `SELECT record_id,status,pid,executor,session_id,started_at,job FROM run
       WHERE record_id=? OR parent_run_record_id=?
       ORDER BY turn DESC, number DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { record_id: string; status: string; pid: number | null }
+    .get(rootId, rootId) as {
+    record_id: string
+    status: string
+    pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+  }
   return {
     outcome: 'owned',
     run: {
@@ -222,6 +231,7 @@ function namedRun(name: string, project: Project): NamedRunLookup {
         status: latest.status,
         lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+        ...recordedRunLivenessFacts(db(), latest),
       }),
     },
   }

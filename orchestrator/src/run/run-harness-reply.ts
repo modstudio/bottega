@@ -10,6 +10,7 @@ import { collectReplySource, type ReplyContract } from './run-reply-source.ts'
 export function decideHarnessReply(
   replyText: string | null,
   dialect: ReplyDialect,
+  writesJob: boolean,
   contract: ReplyContract = 'none',
   schema: unknown = null,
 ) {
@@ -27,7 +28,7 @@ export function decideHarnessReply(
   const missingError = replyText === null ? `${REPLY_FILE_NAME} is missing` : null
   const acceptedQuestions = statusReply ? realQuestions(reply as never) : []
   const derived = deriveLiveOutcome({
-    writesJob: true,
+    writesJob,
     contractStatus: (statusReply?.status as 'done' | 'asking' | 'refused' | undefined) ?? null,
     replyError: missingError,
     output: source.output,

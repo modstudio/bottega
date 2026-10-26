@@ -15,6 +15,7 @@ import { processStartTime, projectGitCommonDir } from '../project/project-lock.t
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
 import { gitLockOwnerPids, shellQuote } from '../resources/git-locks.ts'
 import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts } from '../run/run-alive-facts.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { processTable } from '../run/run-process.ts'
@@ -211,7 +212,7 @@ function conversationRows(runId: string) {
   const root = owner.parent_run_record_id ?? owner.record_id
   return db()
     .query(
-      'SELECT record_id,status,worktree,pid,agent_pid,agent_pgid FROM run WHERE record_id=? OR parent_run_record_id=?',
+      'SELECT record_id,status,worktree,pid,agent_pid,agent_pgid,executor,session_id,started_at,job FROM run WHERE record_id=? OR parent_run_record_id=?',
     )
     .all(root, root) as {
     record_id: string
@@ -220,6 +221,10 @@ function conversationRows(runId: string) {
     pid: number | null
     agent_pid: number | null
     agent_pgid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
   }[]
 }
 
@@ -264,6 +269,7 @@ function reclaimRefGuard(subject: string, options: Options) {
         status: row.status,
         lease: runLeaseState(row.record_id),
         pidAlive: pidAlive(row.pid),
+        ...recordedRunLivenessFacts(db(), row),
       }),
     ),
   })

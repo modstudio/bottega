@@ -6,6 +6,7 @@ import { nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../databa
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import type { Project } from '../project/projects.ts'
 import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts } from '../run/run-alive-facts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
   decideMainStackEnsure,
@@ -312,14 +313,23 @@ function latestActivity(
 } {
   const liveRows = database
     .query(
-      "SELECT record_id,status,pid FROM run WHERE project_record_id=? AND status IN ('running','asking')",
+      "SELECT record_id,status,pid,executor,session_id,started_at,job FROM run WHERE project_record_id=? AND status IN ('running','asking')",
     )
-    .all(projectId) as { record_id: string; status: string; pid: number | null }[]
+    .all(projectId) as {
+    record_id: string
+    status: string
+    pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+  }[]
   const liveRun = liveRows.some((row) =>
     runAlive({
       status: row.status,
       lease: runLeaseState(row.record_id),
       pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+      ...recordedRunLivenessFacts(database, row, nowMs),
     }),
   )
   const created = database

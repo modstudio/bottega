@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, dirname } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -396,6 +396,7 @@ export async function run(opts: {
           mcp: storedMcpRequest(mcpRequest),
           startedByUserId,
           agentExplicit: Number(Boolean(opts.agentExplicit)),
+          executor: harnessDelegation ? 'harness' : 'external',
         })
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
@@ -472,7 +473,7 @@ export async function run(opts: {
       opts.probe,
       opts.lens,
       Math.random,
-      resume.isFirstTurn,
+      { allowHarness: resume.isFirstTurn },
     )
   const selectFirstTurnAgent = () =>
     selectAgentAndPreflightMcp({
@@ -644,6 +645,28 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   if (name === HARNESS_AGENT) {
+    const runProject = projectAt(callerCwd)
+    const writableRoots = acpWriter.runRoots(worktree, writesJob, false, scratchDir, runtimeDir)
+    const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
+      srtProfile: null,
+      agent: name,
+      cwd,
+      writableRoots,
+      tmpDir: process.env.TMPDIR,
+      codexSandbox: 'danger-full-access',
+      callerCwd,
+      isolatedCwd,
+      runProject,
+      activeWorktree: worktree?.path,
+      runProjectName,
+    })
+    const confinementFailures = [...candidates.failures, ...beforeFreeze.failures]
+    for (const line of runConfinement.confinementSkipLines(confinementFailures)) console.error(line)
+    runConfinement.writeHarnessConfinementSnapshot(dirname(scratchDir), {
+      callerCheckout,
+      watchedCheckouts: beforeFreeze.snapshots,
+      confinementFailures,
+    })
     return harness.harnessRunningResult(claimedRun, reason, writesJob)
   }
   const runProject = projectAt(callerCwd)

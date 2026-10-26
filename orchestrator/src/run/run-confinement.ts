@@ -1,6 +1,8 @@
 // concern: run confinement adapter
 /** Gathers launch facts for the pure checkout classifier and removal attribution. */
 import type { Database } from 'bun:sqlite'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   callerCheckoutWatch,
@@ -12,6 +14,27 @@ import { gitContext } from '../git/git-environment.ts'
 import { checkoutRemovalAttribution } from '../resources/resource-claims.ts'
 import { confinementRoots } from './run-acp-writer.ts'
 import { callerWatch } from './run-caller-watch.ts'
+
+const HARNESS_CONFINEMENT_FILE = 'harness-confinement.json'
+
+export type HarnessConfinementSnapshot = {
+  callerCheckout: string | null
+  watchedCheckouts: import('../confinement/confinement.ts').FrozenCheckout[]
+  confinementFailures: FreezeFailure[]
+}
+
+export function writeHarnessConfinementSnapshot(
+  runDirectory: string,
+  snapshot: HarnessConfinementSnapshot,
+): void {
+  writeFileSync(join(runDirectory, HARNESS_CONFINEMENT_FILE), JSON.stringify(snapshot))
+}
+
+export function readHarnessConfinementSnapshot(runDirectory: string): HarnessConfinementSnapshot {
+  return JSON.parse(
+    readFileSync(join(runDirectory, HARNESS_CONFINEMENT_FILE), 'utf8'),
+  ) as HarnessConfinementSnapshot
+}
 
 export function confinementSkipLines(failures: FreezeFailure[]): string[] {
   return failures.map(

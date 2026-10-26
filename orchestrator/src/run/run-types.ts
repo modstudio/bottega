@@ -25,5 +25,4 @@ export type RunResult = {
   contract: WorkerReply | null
   /** Terminal state, so a caller can tell `asking` from `ok` without re-reading the row. */
   status: string
-  handoff?: { promptPath: string; cwd: string }
 }

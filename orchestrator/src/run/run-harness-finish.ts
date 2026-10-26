@@ -8,6 +8,7 @@ import {
   REPLY_FILE_NAME,
   realQuestions,
   resolveReplyDialect,
+  TEXT_REPLY_SCHEMA,
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
@@ -19,9 +20,17 @@ import type { Worktree } from '../worktree/worktree-types.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { closeRun } from './run-close.ts'
+import {
+  callerRemovalAtRunEnd,
+  readHarnessConfinementSnapshot,
+  type HarnessConfinementSnapshot,
+} from './run-confinement.ts'
 import { HARNESS_EXECUTOR } from './run-executor.ts'
 import { decideHarnessReply } from './run-harness-reply.ts'
 import { finishRun } from './run-terminal.ts'
+import { replyContract } from './run-live.ts'
+import { withRunCloseOutLease } from './run-lease.ts'
+import { checksReviewedCommit } from './run-pack-prompt.ts'
 
 type HarnessRow = {
   record_id: string
@@ -80,6 +89,7 @@ type FinishFacts = {
   workerReply: WorkerReply | null
   acceptedQuestions: ReturnType<typeof realQuestions>
   error: string | null
+  confinement: HarnessConfinementSnapshot
 }
 
 function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[0] {
@@ -107,10 +117,10 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
       join(dirname(owned.prompt_path), 'runtime'),
     ),
     opts: { job: owned.job },
-    watchedCheckouts: [],
-    confinementFailures: [],
-    frozenBefore: [],
-    callerRemoval: { attribution: 'unattributed', removalSession: null, removalRun: null },
+    watchedCheckouts: facts.confinement.watchedCheckouts,
+    confinementFailures: facts.confinement.confinementFailures,
+    frozenBefore: facts.confinement.watchedCheckouts,
+    callerRemoval: callerRemovalAtRunEnd(db(), facts.confinement.callerCheckout, facts.started),
     removeIsolatedCwd: null,
     changes: null,
     provisionedMcpConfig: null,
@@ -123,7 +133,10 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
     vendorTerminatedStream: null,
     acceptedQuestions,
     requestedJob,
-    checkReviewedCommit: Boolean(requestedJob.findings && requestedJob.needs.readsRepo),
+    checkReviewedCommit: checksReviewedCommit(
+      Boolean(requestedJob.findings),
+      Boolean(requestedJob.needs.readsRepo),
+    ),
     output: decision.output,
     confinementEvent: null,
     parsedReply: facts.workerReply as never,
@@ -204,21 +217,27 @@ export async function finishHarnessRun(id: string) {
     RUNS_DIR,
   ).scratchDir
   const replyPath = join(scratchDir, REPLY_FILE_NAME)
-  const replyText = existsSync(replyPath) ? readFileSync(replyPath, 'utf8') : null
+  if (!existsSync(replyPath)) {
+    throw new Error(
+      `run ${complete.number} has no ${REPLY_FILE_NAME}; remedy: have the harness sub-agent write ${replyPath}, then run ${PLATFORM_SLUG} run finish ${complete.record_id}`,
+    )
+  }
+  const replyText = readFileSync(replyPath, 'utf8')
   const schema = complete.schema_path
     ? JSON.parse(readFileSync(complete.schema_path, 'utf8'))
     : null
   const decision = decideHarnessReply(
     replyText,
     dialect,
-    complete.schema_path ? 'custom' : 'none',
+    Boolean(requestedJob.needs.writesRepo),
+    replyContract(
+      complete.schema_path ?? undefined,
+      !complete.schema_path && dialect.schema === TEXT_REPLY_SCHEMA,
+    ),
     schema,
   )
   const workerReply = decision.reply as FinishFacts['workerReply']
-  const error =
-    replyText !== null
-      ? decision.error
-      : `${decision.error}; remedy: have the harness sub-agent write ${replyPath}, then run ${PLATFORM_SLUG} run finish ${complete.record_id}`
+  const error = decision.error
   const facts: FinishFacts = {
     owned: complete,
     requestedJob,
@@ -230,7 +249,12 @@ export async function finishHarnessRun(id: string) {
     workerReply,
     acceptedQuestions: workerReply ? realQuestions(workerReply as never) : [],
     error,
+    confinement: readHarnessConfinementSnapshot(dirname(scratchDir)),
   }
   writeFileSync(facts.outPath, decision.output)
-  return closeHarnessRun(facts, await finishRun(harnessTerminalInput(facts)))
+  return withRunCloseOutLease(
+    complete.record_id,
+    () => {},
+    async () => closeHarnessRun(facts, await finishRun(harnessTerminalInput(facts))),
+  )
 }

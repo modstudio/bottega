@@ -23,6 +23,7 @@ import { projectAt, projectByName, resolvedWorktreeTool } from '../project/proje
 import { settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts } from '../run/run-alive-facts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -74,6 +75,7 @@ function runRows(path: string): ReclaimRun[] {
             r.branch, r.branch_kept, r.branch_kept_tip, r.minted_branch,
             r.base_commit, r.worktree_source, r.status,
             r.pid, r.agent_pid, r.session_id, seen.last_seen session_last_seen,
+            r.executor, r.job,
             ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
@@ -96,6 +98,7 @@ function liveOwner(row: ReclaimRun): string | null {
     status: row.status,
     lease: runLeaseState(row.record_id),
     pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+    ...recordedRunLivenessFacts(db(), row),
   })
     ? `run ${row.record_id} is alive`
     : null

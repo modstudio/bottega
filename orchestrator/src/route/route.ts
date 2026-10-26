@@ -1020,10 +1020,10 @@ export function pick(
   /** Stable findings viewpoint used for reviewer-precision calibration. */
   lens?: string,
   rng: () => number = Math.random,
-  allowHarness = true,
+  policy: { allowHarness: boolean } = { allowHarness: true },
 ): { agent: string; reason: string } {
   return (
-    harnessSelection(jobName, allowHarness) ??
+    harnessSelection(jobName, policy.allowHarness) ??
     pickExternal(jobName, override, promptBytes, explore, stack, avoid, probe, lens, rng)
   )
 }

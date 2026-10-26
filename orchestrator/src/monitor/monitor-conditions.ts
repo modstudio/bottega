@@ -34,6 +34,7 @@ import type { ReclaimKind } from '../reclaim/reclaim-kind.ts'
 import { liveMemberStall, liveRunMembers } from '../run/live-run-member.ts'
 import { questionOpenSql } from '../run/question-open.ts'
 import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts } from '../run/run-alive-facts.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { isFreshRunHostWait } from '../run/run-host-capacity.ts'
 import { runLeaseState } from '../run/run-lease.ts'
@@ -501,7 +502,7 @@ export function deadRunningProcessConditions(
 ): MonitorCondition[] {
   const running = database
     .query(
-      `SELECT record_id, started_at, pid, agent_pid, output_bytes, session_id FROM run WHERE status='running'`,
+      `SELECT record_id, started_at, pid, agent_pid, output_bytes, session_id,executor,job FROM run WHERE status='running'`,
     )
     .all() as {
     record_id: string
@@ -510,6 +511,8 @@ export function deadRunningProcessConditions(
     agent_pid: number | null
     output_bytes: number | null
     session_id: string | null
+    executor: 'external' | 'harness'
+    job: string
   }[]
   return running.flatMap((run): MonitorCondition[] => {
     // PID reuse makes this deliberately conservative: a reused pid looks live
@@ -523,6 +526,7 @@ export function deadRunningProcessConditions(
       status: 'running',
       lease,
       pidAlive: Boolean(run.pid && pidAlive(run.pid)),
+      ...recordedRunLivenessFacts(database, run, clock),
     })
     const worker = coordinatorAlive
       ? lease === 'held'
@@ -790,8 +794,18 @@ export function dockerConditions(clock: number): {
 
 function liveRunIds(database: ReturnType<typeof db>): Set<string> {
   const rows = database
-    .query(`SELECT record_id,status,pid FROM run WHERE status IN ('running','asking')`)
-    .all() as { record_id: string; status: string; pid: number | null }[]
+    .query(
+      `SELECT record_id,status,pid,executor,session_id,started_at,job FROM run WHERE status IN ('running','asking')`,
+    )
+    .all() as {
+    record_id: string
+    status: string
+    pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+  }[]
   return new Set(
     rows
       .filter((row) =>
@@ -799,6 +813,7 @@ function liveRunIds(database: ReturnType<typeof db>): Set<string> {
           status: row.status,
           lease: runLeaseState(row.record_id),
           pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+          ...recordedRunLivenessFacts(database, row),
         }),
       )
       .map((row) => row.record_id),

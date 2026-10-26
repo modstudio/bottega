@@ -173,6 +173,7 @@ describe('session scoping', () => {
         )
         .get(),
     ).toEqual({ n: 0 })
+    expect(runTotals()).toMatchObject({ voided: 0 })
   })
   test("only this session's own unscored runs are raised", () => {
     const mine = addRun({ agent: 'grok', job: 'craft' })

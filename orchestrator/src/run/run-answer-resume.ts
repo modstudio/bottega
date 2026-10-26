@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AnswerWaitingResult } from '../../../shared/orch-contract.ts'
 import { db } from '../database/db.ts'
 import { failureReason } from '../outcome.ts'
+import { harnessContinuationWorker } from './run-harness-continuation.ts'
 import { follow, type RunControlPresentation, reportHarnessHandoff } from './run-control.ts'
 
 export function answerResumeWorker(
@@ -12,9 +13,7 @@ export function answerResumeWorker(
   resumeAgent: string,
   vendorSession: string,
 ) {
-  return executor === 'harness'
-    ? { agent: 'harness', session: undefined }
-    : { agent: resumeAgent, session: vendorSession }
+  return harnessContinuationWorker(executor) ?? { agent: resumeAgent, session: vendorSession }
 }
 
 export function answerResumeUnavailable(input: {

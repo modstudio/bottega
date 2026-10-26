@@ -22,6 +22,7 @@ import { join } from 'node:path'
  * with it, and `setsid` does not exist on macOS.
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
@@ -32,16 +33,19 @@ import {
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
+import { isHarnessDelegated } from '../jobs/delegation.ts'
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { runAlive } from './run-alive.ts'
+import { recordedRunLivenessFacts } from './run-alive-facts.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
+import { EXTERNAL_EXECUTOR, HARNESS_EVIDENCE_EXCLUSION, HARNESS_EXECUTOR } from './run-executor.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
@@ -67,7 +71,7 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
   const tree = spec.resume.worktree?.path ?? null
   const possibleOwners = db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree FROM run
+      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree,executor,session_id,started_at,job FROM run
        WHERE record_id=? OR parent_run_record_id=?
           OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
     )
@@ -79,6 +83,10 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
     pid: number | null
     branch: string | null
     worktree: string | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
   }[]
   const liveOwner = possibleOwners.find((owner) => {
     const inOriginal =
@@ -88,6 +96,7 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
       status: owner.status,
       lease: runLeaseState(owner.record_id),
       pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
+      ...recordedRunLivenessFacts(db(), owner),
     })
   })
   if (!liveOwner) return
@@ -251,6 +260,8 @@ async function detachResolved(
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
+  const harness = isHarnessDelegated(job(jobName).needs, readDelegationSettings())
+  const executor = harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR
   const { identity, pendingRecordId, detached, links } = detachedLinks
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
@@ -270,8 +281,9 @@ async function detachResolved(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason,
+                      executor, evidence_excluded)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -304,6 +316,8 @@ async function detachResolved(
         spec.resume?.session ?? null,
         startedByUserId,
         ...detachedReviewBindings(spec),
+        executor,
+        harness ? HARNESS_EVIDENCE_EXCLUSION : null,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,

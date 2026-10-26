@@ -89,6 +89,7 @@ export function recordNeverStartedRunFailure(input: {
   mcp: number
   startedByUserId: string | null
   agentExplicit: number
+  executor: 'external' | 'harness'
 }): string {
   const message = input.error instanceof Error ? input.error.message : String(input.error)
   const finishedAt = nowIso()
@@ -100,8 +101,8 @@ export function recordNeverStartedRunFailure(input: {
         `INSERT INTO run
          (record_id,number,started_at,agent,job,repo,project_record_id,task_record_id,probe,cwd,prompt_sha,spec_sha,
           prompt_bytes,prompt_head,status,failure_kind,error,latency_ms,session_id,docs_injected,mcp,
-          started_by_user_id,agent_explicit)
-         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?)`,
+          started_by_user_id,agent_explicit,executor)
+         VALUES (?,?,?,'(pending)',?,?,?,?,?,?,?,?,?,?,'failed','harness',?,0,?,0,?,?,?,?)`,
       )
       .run(
         input.recordId,
@@ -122,6 +123,7 @@ export function recordNeverStartedRunFailure(input: {
         input.mcp,
         input.startedByUserId,
         input.agentExplicit,
+        input.executor,
       )
     enqueueFailedReservedRun(input.recordId, database, localMachineId, finishedAt)
     return input.recordId
