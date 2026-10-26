@@ -3,11 +3,12 @@
 
 import { db } from '../database/db.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
-import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
+import { GATE_CLOSE_REASON, GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
 import {
+  cancelGateExecutions,
   cancelPendingGateExecution,
-  cancelUnfinishedGateExecutions,
   requestGateExecution,
+  unfinishedGateExecutions,
 } from '../gate/gate-run.ts'
 import { workerGitConfigEnvironment } from '../run/run-git-guard.ts'
 import { runTestWorkerEnvironment } from '../run/run-test-workers.ts'
@@ -78,6 +79,60 @@ function gateRowFinished(row: GateExecutionRow): boolean {
   return row.exit_code !== null || row.timed_out !== null
 }
 
+/**
+ * Clear the gate requests a dead fix worker left, or refuse when one was started.
+ *
+ * This run is over and its worker is gone. A request no broker claimed is dead
+ * by construction, so the coordinator reclaims it before requesting its own. A
+ * started execution may still have a live gate process the coordinator cannot
+ * prove dead; racing it on the same worktree is what the one-active-execution
+ * index prevents, so the coordinator stops visibly instead.
+ */
+function reclaimDeadWorkerGateRequests(runId: string): IssueGateResult | null {
+  const unfinished = unfinishedGateExecutions(runId, { includeStarted: true })
+  const started = unfinished.filter((execution) => execution.startedAt !== null)
+  if (started.length > 0) {
+    const held = started
+      .map((execution) => `execution ${execution.number} (started ${execution.startedAt})`)
+      .join(', ')
+    return {
+      number: -1,
+      ok: false,
+      fixTreeSafeToRelease: false,
+      text:
+        `run ${runId} still holds ${held}, whose gate process could not be established dead; ` +
+        `a gate process may still be running in the fix tree, so the worktree is retained`,
+    }
+  }
+  cancelGateExecutions(
+    runId,
+    (execution) =>
+      `issue coordinator reclaimed a dead fix worker's unfinished gate execution: run ${execution.runId} execution ${execution.number}`,
+    { includeStarted: false },
+  )
+  return null
+}
+
+/**
+ * The verdict after a timed-out wait whose broker has been closed.
+ *
+ * close() cancels the coordinator's own execution with GATE_CLOSE_REASON, so a
+ * finished row carrying that reason is this timeout and keeps the timeout
+ * diagnosis; a row finished any other way won the race and is a real result.
+ * A row still unfinished is cancelled with the timeout reason.
+ */
+function timedOutGateVerdict(number: number, recordId: string, reason: string): IssueGateResult {
+  const row = readGateExecutionRow(recordId)
+  if (!row) throw new Error(`issue coordinator gate execution ${number} disappeared`)
+  if (!gateRowFinished(row)) {
+    cancelPendingGateExecution(recordId, reason)
+    return { number, ok: false, text: reason, fixTreeSafeToRelease: true }
+  }
+  if (row.cancelled_reason === GATE_CLOSE_REASON)
+    return { number, ok: false, text: reason, fixTreeSafeToRelease: true }
+  return finishedGateVerdict(number, row)
+}
+
 export async function runIssueGate(
   fixRun: RunResult,
   scratchDir: string,
@@ -90,14 +145,8 @@ export async function runIssueGate(
       text: 'fix worktree is unavailable',
       fixTreeSafeToRelease: true,
     }
-  // This run is over and its worker is gone, so any execution it still holds
-  // unfinished is a dead request; one unfinished execution per run is allowed,
-  // and a stale one would block the request below.
-  cancelUnfinishedGateExecutions(
-    fixRun.record_id,
-    (execution) =>
-      `issue coordinator reclaimed a dead fix worker's unfinished gate execution: run ${execution.runId} execution ${execution.number}`,
-  )
+  const held = reclaimDeadWorkerGateRequests(fixRun.record_id)
+  if (held) return held
   let inserted: ReturnType<typeof requestGateExecution>
   try {
     inserted = requestGateExecution(fixRun.record_id)
@@ -148,12 +197,7 @@ export async function runIssueGate(
         fixTreeSafeToRelease: false,
       }
     }
-    // The wait can lose a race to a gate that finished anyway; that row is a result, not a timeout.
-    const row = readGateExecutionRow(inserted.recordId)
-    if (!row) throw new Error(`issue coordinator gate execution ${inserted.number} disappeared`)
-    if (gateRowFinished(row)) return finishedGateVerdict(inserted.number, row)
-    cancelPendingGateExecution(inserted.recordId, reason)
-    return { number: inserted.number, ok: false, text: reason, fixTreeSafeToRelease: true }
+    return timedOutGateVerdict(inserted.number, inserted.recordId, reason)
   }
   try {
     await broker.close()

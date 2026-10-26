@@ -44,6 +44,7 @@ import {
   resolveGateCommand,
 } from './gate-decision.ts'
 import { prepareSyntheticGateIndex } from './gate-index.ts'
+import { cancelGateExecutions } from './gate-run.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
@@ -750,12 +751,8 @@ export function startGateBroker(input: {
       }
       writeTransaction(() => {
         db().query('UPDATE run SET gate_requests_closed=1 WHERE record_id=?').run(input.runId)
-        db()
-          .query(
-            `UPDATE gate_execution SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=0,
-             cancelled_reason=? WHERE run_record_id=? AND finished_at IS NULL`,
-          )
-          .run(nowIso(), GATE_CLOSE_REASON, input.runId)
+        // Closing cancels every execution the run still holds, claimed or not.
+        cancelGateExecutions(input.runId, () => GATE_CLOSE_REASON, { includeStarted: true })
       })
     },
   }

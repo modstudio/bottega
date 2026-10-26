@@ -90,29 +90,56 @@ export function cancelPendingGateExecution(recordId: string, reason: string): bo
   )
 }
 
-export type UnfinishedGateExecution = { runId: string; recordId: string; number: number }
+export type UnfinishedGateExecution = {
+  runId: string
+  recordId: string
+  number: number
+  startedAt: string | null
+}
 
 /**
- * Cancel every execution a run still holds unfinished.
+ * Every execution a run still holds unfinished, oldest first.
+ *
+ * `includeStarted` separates what two callers may assume. A request no broker
+ * has claimed (started_at NULL) is dead by construction once its supervising
+ * run is gone; a started row may still have a live gate process, so a caller
+ * that cannot prove that process dead must leave it alone.
+ */
+export function unfinishedGateExecutions(
+  runId: string,
+  options: { includeStarted: boolean },
+): UnfinishedGateExecution[] {
+  return db()
+    .query<{ record_id: string; number: number; started_at: string | null }, [string, number]>(
+      `SELECT record_id,number,started_at FROM gate_execution
+       WHERE run_record_id=? AND finished_at IS NULL AND (? OR started_at IS NULL)
+       ORDER BY requested_at,record_id`,
+    )
+    .all(runId, options.includeStarted ? 1 : 0)
+    .map((row) => ({
+      runId,
+      recordId: row.record_id,
+      number: row.number,
+      startedAt: row.started_at,
+    }))
+}
+
+/**
+ * Cancel the unfinished executions of a run, optionally including ones a broker
+ * already claimed.
  *
  * A run outlives its worker: one killed while a gate was queued leaves a
  * request nobody will run, and the one-unfinished-execution index makes it
  * block the next request for that run. The caller decides what that means and
  * says so per row, so each cancelled execution carries its own reason.
  */
-export function cancelUnfinishedGateExecutions(
+export function cancelGateExecutions(
   runId: string,
   reason: (execution: UnfinishedGateExecution) => string,
+  options: { includeStarted: boolean },
 ): UnfinishedGateExecution[] {
-  const unfinished = db()
-    .query<{ record_id: string; number: number }, [string]>(
-      `SELECT record_id,number FROM gate_execution
-       WHERE run_record_id=? AND finished_at IS NULL ORDER BY requested_at,record_id`,
-    )
-    .all(runId)
   const cancelled: UnfinishedGateExecution[] = []
-  for (const row of unfinished) {
-    const execution = { runId, recordId: row.record_id, number: row.number }
+  for (const execution of unfinishedGateExecutions(runId, options)) {
     if (cancelPendingGateExecution(execution.recordId, reason(execution))) cancelled.push(execution)
   }
   return cancelled

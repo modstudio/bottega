@@ -115,8 +115,12 @@ export function createReadOnlyWorktreeForTool(input: {
   record?: RecordWorktree
   provisionTimeoutMs?: number
 }): Worktree {
-  return input.tool?.readonly_create
-    ? createReadOnlyWithTool(input.tool, input.cwd, input.runId, input.readOnlyBase, input.record)
+  const tool = input.tool
+  // The dispatch and the source a caller records before creation come from the
+  // one decision, so the lifecycle a half-created tree is released by cannot
+  // drift from the lifecycle that created it.
+  return tool && readOnlyWorktreeSource(tool) === 'readonly_recipe'
+    ? createReadOnlyWithTool(tool, input.cwd, input.runId, input.readOnlyBase, input.record)
     : createReadOnlyWorktree(
         input.cwd,
         input.runId,
