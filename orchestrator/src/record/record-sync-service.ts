@@ -54,6 +54,7 @@ import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
+import { runTaskIdentityDecision } from './record-sync-run-task-identity.ts'
 import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -312,33 +313,39 @@ async function pushRun(
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const projectId = await projectRecordId(tx, row, principal, projectIds)
-    const carriesTaskId = row.taskId !== undefined
-    const taskId =
-      carriesTaskId && row.taskId
-        ? ((
-            await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
-              WHERE space_id=${principal.spaceId}::uuid AND id=${row.taskId}::uuid`
-          )[0]?.id ?? null)
-        : null
-    const values = runValues(row, projectId, taskId)
     const existingOwned = await existingEvidenceOwned(
       tx,
       'run',
-      values.id,
-      values.machineId,
+      String(row.id),
+      String(row.machineId),
       principal,
     )
+    const taskFacts = (
+      await tx`SELECT
+        (SELECT id::text FROM hub_task WHERE space_id=${principal.spaceId}::uuid
+          AND id=${nullableString(row.taskId)}::uuid) AS task_found_by_id,
+        (SELECT id::text FROM hub_task WHERE space_id=${principal.spaceId}::uuid
+          AND key=${nullableString(row.taskKey)}) AS task_found_by_key,
+        (SELECT task_id::text FROM run WHERE space_id=${principal.spaceId}::uuid
+          AND id=${String(row.id)}::uuid) AS existing_task_id`
+    )[0]!
+    const taskId = runTaskIdentityDecision({
+      payloadTaskId: row.taskId == null ? null : String(row.taskId),
+      payloadTaskKey: row.taskKey == null ? null : String(row.taskKey),
+      taskFoundById: taskFacts.task_found_by_id,
+      taskFoundByKey: taskFacts.task_found_by_key,
+      existingTaskId: taskFacts.existing_task_id,
+      write: existingOwned ? 'update' : 'insert',
+    })
+    const values = runValues(row, projectId, taskId)
     const evidenceUnvoid = row.evidenceUnvoid
-    if (evidenceUnvoid !== null) {
-      await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
-    }
+    if (evidenceUnvoid !== null) await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
     const exclusion = await tx`
       SELECT reason FROM run_exclusion WHERE run_id=${values.id}::uuid
         AND space_id=${principal.spaceId}::uuid AND superseded_at IS NULL
     `
     if (exclusion[0]?.reason) values.evidenceExcluded = String(exclusion[0].reason)
-    const { id: _id, createdAt: _createdAt, taskId: _taskId, ...existingUpdates } = values
-    const updates = carriesTaskId ? { ...existingUpdates, taskId } : existingUpdates
+    const { id: _id, createdAt: _createdAt, ...updates } = values
     const written = await drizzle({ client: tx })
       .insert(runRecord)
       .values(values)

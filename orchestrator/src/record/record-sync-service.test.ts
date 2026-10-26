@@ -16,6 +16,9 @@ const TASK_ID = '01990000-0000-7000-8000-000000001776'
 const UNKNOWN_TASK_ID = '01990000-0000-7000-8000-000000001777'
 const LINKED_RUN_ID = '01990000-0000-7000-8000-000000001778'
 const UNKNOWN_RUN_ID = '01990000-0000-7000-8000-000000001779'
+const OTHER_SPACE_ID = '01990000-0000-7000-8000-000000001780'
+const OTHER_SPACE_TASK_ID = '01990000-0000-7000-8000-000000001781'
+const CROSS_SPACE_RUN_ID = '01990000-0000-7000-8000-000000001782'
 const STAMP = '2026-10-26T06:00:00.000Z'
 
 function runPayload(id: string, taskId: string | null) {
@@ -67,12 +70,14 @@ async function push(client: SQL, id: number, payload: Record<string, unknown>) {
 }
 
 realPostgres('hosted run task references', () => {
-  test('sets a known task, preserves it when omitted, and clears an unknown task', async () => {
+  test('resolves task ids and keys in the run space without clearing an existing link', async () => {
     const admin = new SQL(adminUrl!)
     const actor = new SQL(actorUrl!)
     try {
       await admin`INSERT INTO space (id,name,slug,created_at)
         VALUES (${SPACE_ID}::uuid,'Run task proof','run-task-proof',now())`
+      await admin`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${OTHER_SPACE_ID}::uuid,'Other run task proof','other-run-task-proof',now())`
       await admin`INSERT INTO "user" (id,email,name,created_at)
         VALUES (${USER_ID}::uuid,'run-task-proof@example.test','Run Task Proof',now())`
       await admin`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
@@ -83,34 +88,49 @@ realPostgres('hosted run task references', () => {
         (id,space_id,project_name,project_id,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
         VALUES (${TASK_ID}::uuid,${SPACE_ID}::uuid,'run-task-proof',${PROJECT_ID}::uuid,'DEV-1771','run-task-proof',
           'Run task proof','active','active','local',now(),now(),now(),now())`
+      await admin`INSERT INTO hub_task
+        (id,space_id,project_name,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
+        VALUES (${OTHER_SPACE_TASK_ID}::uuid,${OTHER_SPACE_ID}::uuid,'other-run-task-proof','OTHER-1771','other-run-task-proof',
+          'Other run task proof','active','active','local',now(),now(),now(),now())`
 
       expect(await push(actor, 1, runPayload(LINKED_RUN_ID, TASK_ID))).toEqual({
         results: [{ id: 1, status: 'synced' }],
       })
-      const omitted = runPayload(LINKED_RUN_ID, null)
-      Reflect.deleteProperty(omitted, 'taskId')
-      expect(await push(actor, 2, omitted)).toEqual({
+      expect(await push(actor, 2, runPayload(LINKED_RUN_ID, null))).toEqual({
         results: [{ id: 2, status: 'synced' }],
       })
-      expect(await push(actor, 3, runPayload(UNKNOWN_RUN_ID, UNKNOWN_TASK_ID))).toEqual({
+      const omitted = runPayload(LINKED_RUN_ID, null)
+      Reflect.deleteProperty(omitted, 'taskId')
+      expect(await push(actor, 3, omitted)).toEqual({
         results: [{ id: 3, status: 'synced' }],
+      })
+      expect(await push(actor, 4, runPayload(UNKNOWN_RUN_ID, UNKNOWN_TASK_ID))).toEqual({
+        results: [{ id: 4, status: 'synced' }],
+      })
+      const crossSpace = runPayload(CROSS_SPACE_RUN_ID, OTHER_SPACE_TASK_ID)
+      crossSpace.taskKey = 'OTHER-MISSING'
+      expect(await push(actor, 5, crossSpace)).toEqual({
+        results: [{ id: 5, status: 'synced' }],
       })
 
       const rows = await admin<{ id: string; task_id: string | null }[]>`
         SELECT id::text,task_id::text FROM run
-        WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid)
+        WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid)
         ORDER BY id`
       expect([...rows]).toEqual([
         { id: LINKED_RUN_ID, task_id: TASK_ID },
-        { id: UNKNOWN_RUN_ID, task_id: null },
+        { id: UNKNOWN_RUN_ID, task_id: TASK_ID },
+        { id: CROSS_SPACE_RUN_ID, task_id: null },
       ])
     } finally {
-      await admin`DELETE FROM run WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid)`
+      await admin`DELETE FROM run WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid)`
       await admin`DELETE FROM hub_task WHERE id=${TASK_ID}::uuid`
+      await admin`DELETE FROM hub_task WHERE id=${OTHER_SPACE_TASK_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM membership WHERE id=${MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM space WHERE id=${OTHER_SPACE_ID}::uuid`
       await admin`DELETE FROM "user" WHERE id=${USER_ID}::uuid`
       await Promise.all([actor.close(), admin.close()])
     }

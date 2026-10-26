@@ -890,8 +890,7 @@ async function proofDocumentMigration(
 async function proofIdentityMigration(transaction: Transaction, name: string): Promise<void> {
   if (name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
   if (name === hubProjectIdentityBackfill) await proofHubProjectIdentityBackfill(transaction)
-  if (name === runTaskReferenceBackfill)
-    await proofRunTaskReferenceBackfill(transaction, hubProjectMatchTaskId)
+  if (name === runTaskReferenceBackfill) await proofRunTaskReferenceBackfill(transaction)
 }
 
 async function applyAndProveMigration(
