@@ -84,7 +84,7 @@ export type CloseInput = {
   name: string
   opts: CloseOptions
   /** The prompt size this run's pick ranked on, for a failover successor to reuse. */
-  pickPromptBytes: number
+  pickBytes: number
   claim: { id: string; number: number }
   idleUnkillable: boolean
   status: string
@@ -175,7 +175,7 @@ async function selectFailoverSuccessor(input: {
    * the successor on the same bytes, so it lands in the same prompt-size bucket
    * and against the same per-agent limit as the original route.
    */
-  pickPromptBytes: number
+  pickBytes: number
   lens: string | null
   launchCwd: string | null
   callerCwd: string
@@ -190,7 +190,7 @@ async function selectFailoverSuccessor(input: {
       return pick(
         input.job,
         undefined,
-        input.pickPromptBytes,
+        input.pickBytes,
         true,
         stackAt(input.launchCwd ?? input.callerCwd),
         {
@@ -352,7 +352,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         const selected = await selectFailoverSuccessor({
           runId: claim.id,
           job: opts.job,
-          pickPromptBytes: input.pickPromptBytes,
+          pickBytes: input.pickBytes,
           lens: first.lens,
           launchCwd: first.launch_cwd,
           callerCwd,

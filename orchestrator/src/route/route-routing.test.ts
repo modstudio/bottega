@@ -415,9 +415,9 @@ test('a routed pick keeps its reason when the routed agent is already proven', (
   for (let i = 0; i < MIN_SAMPLE; i++) {
     score(addRun({ agent: 'codex', job: 'summarize' }), 'full', 'right')
   }
-  expect(
-    candidates('summarize').find((candidate) => candidate.agent === 'codex'),
-  ).toMatchObject({ evidence: MIN_SAMPLE })
+  expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+    evidence: MIN_SAMPLE,
+  })
   expect(
     pick('summarize', undefined, 0, false, undefined, {
       routed: { agent: 'codex', reason: 'surface route' },

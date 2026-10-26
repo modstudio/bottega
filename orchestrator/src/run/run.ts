@@ -446,19 +446,14 @@ export async function run(opts: {
   prompt = routedPromptText(prompt, evidencePrompt.readerInstruction, resume.isFirstTurn)
   const requiresCanonSource = evidencePrompt.requiresCanonSource
   /**
-   * The bytes this run's pick ranks on, kept for the failover pick below.
+   * The prompt size this run's pick ranks on, kept for the failover pick below.
    *
    * A failover re-dispatches the same prompt through another agent, so it must
    * route on the size the original pick measured rather than on a size taken
-   * from the raw spec it re-reads. Computed here, before the bound line is
+   * from the raw spec it re-reads. Measured here, before the bound line is
    * appended, because that is the prompt the pick was given.
    */
-  const pickPromptBytes = routedPromptBytes(
-    prompt,
-    replySchemaName,
-    requestedJob,
-    requiresCanonSource,
-  )
+  const pickBytes = routedPromptBytes(prompt, replySchemaName, requestedJob, requiresCanonSource)
   const transportPin = runTransportPin(opts.transport, process.env.BOTTEGA_TRANSPORT),
     transportPinFacts = {
       explicitTransport: transportPin.transportPinSource === 'explicit',
@@ -469,7 +464,7 @@ export async function run(opts: {
     pick(
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
-      pickPromptBytes,
+      pickBytes,
       true,
       stackAt(callerCwd),
       {
@@ -1117,7 +1112,7 @@ export async function run(opts: {
         endpointKey: endpoint.key,
         name,
         opts,
-        pickPromptBytes,
+        pickBytes,
         claim,
         idleUnkillable,
         status,
