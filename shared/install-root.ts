@@ -11,6 +11,10 @@ export const INSTALL_HOME_ENV = `${PLATFORM_SLUG.toUpperCase()}_HOME`
 
 export const DIST_MANIFEST = `.${PLATFORM_SLUG}-dist.json`
 
+/** Product CLI paths inside an installed release payload. */
+export const PRODUCT_CLI_PAYLOAD = `cli/${PLATFORM_SLUG}`
+export const PRODUCT_CLI_ENTRYPOINT = `${PRODUCT_CLI_PAYLOAD}/entry.ts`
+
 export type DistributionManifest = {
   name: typeof PLATFORM_NAME
   version: string

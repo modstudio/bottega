@@ -3,15 +3,18 @@ import { chmod } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
-import { DIST_MANIFEST, type DistributionManifest } from '../shared/install-root.ts'
+import {
+  DIST_MANIFEST,
+  type DistributionManifest,
+  PRODUCT_CLI_ENTRYPOINT,
+  PRODUCT_CLI_PAYLOAD,
+} from '../shared/install-root.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
 import { resolveStateRoot } from '../shared/state-directory.ts'
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 export const ORCH_CLI_PAYLOAD = 'orchestrator/src/cli/orch'
 export const ORCH_CLI_ENTRYPOINT = `${ORCH_CLI_PAYLOAD}/entry.ts`
-export const PRODUCT_CLI_PAYLOAD = `cli/${PLATFORM_SLUG}`
-export const PRODUCT_CLI_ENTRYPOINT = `${PRODUCT_CLI_PAYLOAD}/entry.ts`
 
 const RELEASE_CLI_BUNDLES = [
   {
