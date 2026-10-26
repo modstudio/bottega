@@ -44,7 +44,7 @@ import {
   REVIEW_REPRODUCED,
 } from '../review/review-vocabulary.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { pick } from '../route/route.ts'
+import { pick, type RoutedSelection } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { run } from '../run/run.ts'
@@ -477,7 +477,7 @@ export async function selectBeforeDetach(
 
 export function detachSpecWithRoutedSelection(
   spec: DetachSpec,
-  selected: { agent: string; reason: string; promptBytes: number } | undefined,
+  selected: RoutedSelection | undefined,
 ): DetachSpec {
   return selected && !spec.agent ? { ...spec, routedAgent: selected } : spec
 }

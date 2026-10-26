@@ -164,13 +164,17 @@ export function promptSizeBucket(promptBytes: number): PromptSizeBucket {
 
 /**
  * Whether a surface-routed pick's measured size lands in the same evidence
- * bucket as the run's own composed pack. The pre-pick ranks on the raw spec
- * while the run records evidence on `pickBytes`; a routed selection only
- * describes the cell it ranked in, so the run honors it solely when both sizes
- * fall on the same side of the boundary.
+ * bucket as the run's own measurement. Both sides are estimates of prompt
+ * size, not the recorded `run.prompt_bytes`: the pre-pick ranks on the raw
+ * caller text, while the run measures its composed pack before the bound
+ * line, review-calibration suffix, and the other text appended after the
+ * pick. A run within that appended band of `PROMPT_SIZE_BOUNDARY` can still
+ * land on the other side. A routed selection only describes the cell it
+ * ranked in, so the run honors it solely when both estimates fall on the
+ * same side of the boundary.
  */
-export function samePromptSizeBucket(routedBytes: number, pickBytes: number): boolean {
-  return promptSizeBucket(routedBytes) === promptSizeBucket(pickBytes)
+export function samePromptSizeBucket(routedBytes: number, runPromptBytes: number): boolean {
+  return promptSizeBucket(routedBytes) === promptSizeBucket(runPromptBytes)
 }
 
 export function promptSizeBucketLabel(bucket: PromptSizeBucket): string {

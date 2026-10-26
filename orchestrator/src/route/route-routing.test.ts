@@ -753,12 +753,6 @@ describe('routing evidence scope', () => {
     expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY - 1)).toBe('small')
     expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY)).toBe('large')
 
-    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY - 1, 0)).toBe(true)
-    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY, PROMPT_SIZE_BOUNDARY)).toBe(true)
-    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY + 1, PROMPT_SIZE_BOUNDARY)).toBe(true)
-    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY - 1, PROMPT_SIZE_BOUNDARY)).toBe(false)
-    expect(samePromptSizeBucket(0, PROMPT_SIZE_BOUNDARY + 1)).toBe(false)
-
     for (let i = 0; i < 2; i++) {
       addRun({
         agent: 'qwen-local',

@@ -42,7 +42,7 @@ export type DetachSpec = {
   agent?: string
   agentExplicit?: boolean
   /** Surface routing result; unlike agent, this is not a caller pin. */
-  routedAgent?: { agent: string; reason: string; promptBytes: number }
+  routedAgent?: RoutedSelection
   schema?: string
   mcp?: McpRequest
   model?: string

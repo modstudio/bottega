@@ -179,8 +179,10 @@ function cellsFor(
   operations: OperationalEvent[],
   cooldowns: boolean,
 ): Cell[] {
-  const bucket = (e: Event) => e.promptBytes < PROMPT_SIZE_BOUNDARY
-  const sameBucket = history.filter((e) => e.job === event.job && bucket(e) === bucket(event))
+  const bucket = (e: Event) => promptSizeBucket(e.promptBytes)
+  const sameBucket = history.filter(
+    (e) => e.job === event.job && samePromptSizeBucket(e.promptBytes, event.promptBytes),
+  )
   const build = (stack?: string | null) =>
     Object.keys(AGENTS)
       .filter(
