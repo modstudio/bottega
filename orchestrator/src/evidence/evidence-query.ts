@@ -4,8 +4,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { HARNESS_EVIDENCE_EXCLUSION } from '../../../shared/evidence-exclusion.ts'
-import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { HARNESS_EVIDENCE_EXCLUSION, NOT_EVIDENCE } from '../failure/failure.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 
 /**

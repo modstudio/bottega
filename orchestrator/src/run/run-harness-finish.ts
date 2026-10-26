@@ -22,15 +22,15 @@ import { RUNS_DIR } from './run-artifacts.ts'
 import { closeRun } from './run-close.ts'
 import {
   callerRemovalAtRunEnd,
-  readHarnessConfinementSnapshot,
   type HarnessConfinementSnapshot,
+  readHarnessConfinementSnapshot,
 } from './run-confinement.ts'
 import { HARNESS_EXECUTOR } from './run-executor.ts'
 import { decideHarnessReply } from './run-harness-reply.ts'
-import { finishRun } from './run-terminal.ts'
-import { replyContract } from './run-live.ts'
 import { withRunCloseOutLease } from './run-lease.ts'
+import { replyContract } from './run-live.ts'
 import { checksReviewedCommit } from './run-pack-prompt.ts'
+import { finishRun } from './run-terminal.ts'
 
 type HarnessRow = {
   record_id: string

@@ -11,7 +11,7 @@ import {
   classifyMintedBranch,
   classifyMintedBranchFromReport,
 } from '../branch/branches.ts'
-import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import {
@@ -22,8 +22,7 @@ import {
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
-import { runAlive } from '../run/run-alive.ts'
-import { recordedRunLivenessFacts } from '../run/run-alive-facts.ts'
+import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -98,7 +97,7 @@ function liveOwner(row: ReclaimRun): string | null {
     status: row.status,
     lease: runLeaseState(row.record_id),
     pidAlive: Boolean(row.pid && pidAlive(row.pid)),
-    ...recordedRunLivenessFacts(db(), row),
+    ...recordedRunLivenessFacts(row, Date.now(), SESSION_LIVE_MS),
   })
     ? `run ${row.record_id} is alive`
     : null

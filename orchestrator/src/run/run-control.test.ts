@@ -17,6 +17,7 @@ import {
   type ChainTurn,
   continuationTurn,
   continueRun,
+  harnessHandoff,
   resumeLaunchFromStored,
 } from './run-control.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
@@ -24,6 +25,22 @@ import { packedResumePrompt } from './run-resume-prompt.ts'
 const trackResidue = trackedTestResidue()
 
 const limit = () => ARGV_PROMPT_BYTES
+
+test('the harness handoff builder returns the synchronous command fields', () => {
+  const id = addRun({ agent: 'harness', job: 'implement', status: 'running' })
+  db()
+    .query(
+      "UPDATE run SET executor='harness',prompt_path='/runs/prompt.txt',cwd='/work/tree' WHERE record_id=?",
+    )
+    .run(id)
+  expect(harnessHandoff(db(), id)).toEqual({
+    run: expect.any(Number),
+    record_id: id,
+    prompt_path: '/runs/bound-prompt.txt',
+    working_directory: '/work/tree',
+    finish_command: `${PLATFORM_SLUG} run finish ${id}`,
+  })
+})
 
 function insert(status: string, job = 'file-question'): string {
   return (

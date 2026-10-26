@@ -4,7 +4,7 @@
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db } from '../database/db.ts'
+import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
 import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -16,8 +16,7 @@ import {
   requireContinuationTree,
 } from './continuation-tree-service.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
-import { runAlive } from './run-alive.ts'
-import { recordedRunLivenessFacts } from './run-alive-facts.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { refuseHeldContinuationBranch } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
@@ -98,7 +97,8 @@ export function resolveWritingRetryWorkspace(input: {
   const latest = db()
     .query(
       `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid,
-              executor,session_id,started_at,job
+              executor,session_id,started_at,job,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
        FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
     .get(input.rootId, input.rootId) as {
@@ -115,6 +115,7 @@ export function resolveWritingRetryWorkspace(input: {
     session_id: string | null
     started_at: string
     job: string
+    session_last_seen: string | null
   }
   const project = input.repo ? projectByName(input.repo) : null
   if (!project) {
@@ -145,7 +146,7 @@ export function resolveWritingRetryWorkspace(input: {
         status: latest.status,
         lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
-        ...recordedRunLivenessFacts(db(), latest),
+        ...recordedRunLivenessFacts(latest, Date.now(), SESSION_LIVE_MS),
       }),
     branchTipRelation: relation,
   })

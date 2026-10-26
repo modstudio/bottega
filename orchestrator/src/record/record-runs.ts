@@ -1,10 +1,9 @@
 // concern: record-runs
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
-import { HARNESS_EVIDENCE_EXCLUSION } from '../../../shared/evidence-exclusion.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
-import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { HARNESS_EVIDENCE_EXCLUSION, NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import type { RecordCursor } from './record-cursor.ts'
 import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'

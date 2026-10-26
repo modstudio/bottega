@@ -20,8 +20,8 @@ import {
   resolveReplyDialect,
   TEXT_REPLY_SCHEMA,
   WORKER_SCHEMA,
-  workerPreamble,
   type WorkerReply,
+  workerPreamble,
 } from './contract.ts'
 import { parseWorkerReplyWithCount, VERIFY_CLAIM_SCHEMA } from './contract-reply.ts'
 

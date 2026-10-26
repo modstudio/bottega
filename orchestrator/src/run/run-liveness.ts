@@ -6,7 +6,6 @@
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { SESSION_LIVE_MS, storeWritesRefused, writeTransaction } from '../database/db.ts'
-import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
@@ -18,8 +17,7 @@ import {
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import { questionOpenSql } from './question-open.ts'
-import { runAlive } from './run-alive.ts'
-import { readDispatchState } from './run-artifacts.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
@@ -272,17 +270,11 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   let disposition: RunningDisposition
   if (row.executor === 'harness') {
-    const timeoutMinutes = readDispatchState(row.record_id)?.timeoutMinutes ?? undefined
-    const wallBound = resolveJobTimeoutMs(job(row.job), Number.POSITIVE_INFINITY, timeoutMinutes)
     disposition = runAlive({
       status: 'running',
       lease: leaseState,
       pidAlive: coordinatorPidAlive,
-      executor: row.executor,
-      ownerSessionAlive:
-        row.session_last_seen !== null &&
-        Date.parse(row.session_last_seen) >= now - SESSION_LIVE_MS,
-      wallBoundExceeded: now - Date.parse(row.started_at) > wallBound,
+      ...recordedRunLivenessFacts(row, now, SESSION_LIVE_MS),
     })
       ? 'alive'
       : 'dead'

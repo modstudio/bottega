@@ -47,7 +47,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './branch-owner-guard.ts',
     './run-retry.ts',
   ]),
-  module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-alive.ts', ['../jobs/jobs.ts']),
   module('orchestrator/src/run/run-status.ts', []),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
@@ -287,28 +287,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../contract/contract-reply.ts',
     '../transport/transport.ts',
   ]),
-  module('orchestrator/src/run/run-executor.ts', ['../../../shared/evidence-exclusion.ts']),
-  module('orchestrator/src/run/run-alive-facts.ts', [
-    'bun:sqlite',
-    'node:fs',
-    'node:path',
-    '../database/db.ts',
-    '../database/database-location.ts',
-    '../jobs/jobs.ts',
-  ]),
-  module('orchestrator/src/run/run-harness-continuation.ts', ['./run-executor.ts']),
-  module('orchestrator/src/run/run-harness-handoff.ts', [
-    'bun:sqlite',
-    'node:path',
-    '../../../shared/brand.ts',
-    './run-executor.ts',
-  ]),
+  module('orchestrator/src/run/run-executor.ts', ['../failure/failure.ts']),
   module('orchestrator/src/run/run-answer-resume.ts', [
     '../../../shared/brand.ts',
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
     '../outcome.ts',
-    './run-harness-continuation.ts',
     './run-control.ts',
   ]),
   module('orchestrator/src/run/run-harness-reply.ts', [

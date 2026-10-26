@@ -22,30 +22,26 @@ import { join } from 'node:path'
  * with it, and `setsid` does not exist on macOS.
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import { db, nowIso, SESSION_LIVE_MS, sessionId, writableDb } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
-import { isHarnessDelegated } from '../jobs/delegation.ts'
 import { job } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { runAlive } from './run-alive.ts'
-import { recordedRunLivenessFacts } from './run-alive-facts.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { RUNS_DIR } from './run-artifacts.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
-import { EXTERNAL_EXECUTOR, HARNESS_EVIDENCE_EXCLUSION, HARNESS_EXECUTOR } from './run-executor.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
@@ -71,7 +67,8 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
   const tree = spec.resume.worktree?.path ?? null
   const possibleOwners = db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree,executor,session_id,started_at,job FROM run
+      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree,executor,session_id,started_at,job,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen FROM run
        WHERE record_id=? OR parent_run_record_id=?
           OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
     )
@@ -87,6 +84,7 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
     session_id: string | null
     started_at: string
     job: string
+    session_last_seen: string | null
   }[]
   const liveOwner = possibleOwners.find((owner) => {
     const inOriginal =
@@ -96,7 +94,7 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
       status: owner.status,
       lease: runLeaseState(owner.record_id),
       pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
-      ...recordedRunLivenessFacts(db(), owner),
+      ...recordedRunLivenessFacts(owner, Date.now(), SESSION_LIVE_MS),
     })
   })
   if (!liveOwner) return
@@ -260,8 +258,8 @@ async function detachResolved(
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
   const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
-  const harness = isHarnessDelegated(job(jobName).needs, readDelegationSettings())
-  const executor = harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR
+  const harness = spec.resume?.agent === 'harness'
+  const executor = harness ? 'harness' : 'external'
   const { identity, pendingRecordId, detached, links } = detachedLinks
   mkdirSync(runsDir, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
@@ -317,7 +315,7 @@ async function detachResolved(
         startedByUserId,
         ...detachedReviewBindings(spec),
         executor,
-        harness ? HARNESS_EVIDENCE_EXCLUSION : null,
+        harness ? 'harness execution' : null,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,

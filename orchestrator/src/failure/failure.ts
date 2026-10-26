@@ -1,6 +1,8 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isCodexThrottleNotice } from '../transport/codex-throttle.ts'
 
+export const HARNESS_EVIDENCE_EXCLUSION = 'harness execution'
+
 /**
  * Why a run failed, and whether a human needs to know.
  *

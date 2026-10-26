@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { HARNESS_EVIDENCE_EXCLUSION } from '../../../shared/evidence-exclusion.ts'
+import { HARNESS_EVIDENCE_EXCLUSION } from '../failure/failure.ts'
 import type { RecordRun } from './record-runs.ts'
 import { recordRunsWindow } from './record-runs.ts'
 
