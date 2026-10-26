@@ -6,13 +6,13 @@ import { chainTerminationAt } from '../run/run-liveness.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { samePromptSizeBucket } from './prompt-size-bucket.ts'
 import {
   COOLDOWN_MIN,
   currentPolicySelection,
   isRoutingEvidence,
   MIN_SAMPLE,
   OUTPUT_RESERVE,
-  PROMPT_SIZE_BOUNDARY,
   routingEvidenceWindow,
   thompsonRank,
 } from './route.ts'
@@ -143,7 +143,6 @@ function priorLatency(
   history: History,
   stack?: string | null,
 ): number | null {
-  const small = event.promptBytes < PROMPT_SIZE_BOUNDARY
   return median(
     history
       .filter(
@@ -152,7 +151,7 @@ function priorLatency(
           row.job === event.job &&
           row.status === 'ok' &&
           row.latencyMs !== null &&
-          row.promptBytes < PROMPT_SIZE_BOUNDARY === small &&
+          samePromptSizeBucket(row.promptBytes, event.promptBytes) &&
           (!stack || row.stack === stack),
       )
       .map((row) => row.latencyMs!),
@@ -179,8 +178,9 @@ function cellsFor(
   operations: OperationalEvent[],
   cooldowns: boolean,
 ): Cell[] {
-  const bucket = (e: Event) => e.promptBytes < PROMPT_SIZE_BOUNDARY
-  const sameBucket = history.filter((e) => e.job === event.job && bucket(e) === bucket(event))
+  const sameBucket = history.filter(
+    (e) => e.job === event.job && samePromptSizeBucket(e.promptBytes, event.promptBytes),
+  )
   const build = (stack?: string | null) =>
     Object.keys(AGENTS)
       .filter(

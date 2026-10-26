@@ -65,6 +65,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/route/prompt-size-bucket.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/route/routing-refusal.ts',
     allowed: ['../refusal-error.ts'],
   },

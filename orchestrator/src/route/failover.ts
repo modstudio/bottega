@@ -14,6 +14,7 @@ import { questionOpenSql } from '../run/question-open.ts'
 import type { ResumeTreePlan } from '../run/resume-tree.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
 import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
+import type { RoutedSelection } from './route.ts'
 
 type TransportName = 'cli' | 'acp'
 type RetryWorktree = {
@@ -42,7 +43,7 @@ export type DetachSpec = {
   agent?: string
   agentExplicit?: boolean
   /** Surface routing result; unlike agent, this is not a caller pin. */
-  routedAgent?: { agent: string; reason: string }
+  routedAgent?: RoutedSelection
   schema?: string
   mcp?: McpRequest
   model?: string

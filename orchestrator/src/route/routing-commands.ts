@@ -7,7 +7,8 @@ import { projectAt } from '../project/projects.ts'
 import { bradleyTerry } from '../score/agreement.ts'
 import { duelMatrices } from '../score/duel.ts'
 import { guide, type JobGuide } from '../state/guide.ts'
-import { evidenceFor, MIN_SAMPLE, pick, promptSizeBucketLabel, scoreboard } from './route.ts'
+import { promptSizeBucketLabel } from './prompt-size-bucket.ts'
+import { evidenceFor, MIN_SAMPLE, pick, scoreboard } from './route.ts'
 import {
   type RoutingBacktest,
   routingBacktest,

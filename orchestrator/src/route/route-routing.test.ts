@@ -14,15 +14,14 @@ import { upsertProject } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
+import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import {
   candidates,
   EVIDENCE_WINDOW,
   evidenceFor,
   MIN_SAMPLE,
   meteredRouteEligibility,
-  PROMPT_SIZE_BOUNDARY,
   pick,
-  promptSizeBucket,
   scoreboard,
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
@@ -381,7 +380,7 @@ test('automatic routing excludes metered billing without opt-in while a named ag
 test('a routed pick keeps its reason without becoming an explicit pin', () => {
   expect(
     pick('summarize', undefined, 0, false, undefined, {
-      routed: { agent: 'codex', reason: 'surface route' },
+      routed: { agent: 'codex', reason: 'surface route', promptBytes: 0 },
     }),
   ).toEqual({ agent: 'codex', reason: 'surface route' })
 })
@@ -398,9 +397,18 @@ test('a routed pick keeps its reason when the routed agent is already proven', (
   })
   expect(
     pick('summarize', undefined, 0, false, undefined, {
-      routed: { agent: 'codex', reason: 'surface route' },
+      routed: { agent: 'codex', reason: 'surface route', promptBytes: 0 },
     }),
   ).toEqual({ agent: 'codex', reason: 'surface route' })
+})
+
+test('a routed pick from the other prompt-size bucket ranks without it', () => {
+  const free = pick('summarize', undefined, 0, false)
+  const reranked = pick('summarize', undefined, 0, false, undefined, {
+    routed: { agent: 'codex', reason: 'surface route', promptBytes: PROMPT_SIZE_BOUNDARY },
+  })
+  expect(reranked).toEqual(free)
+  expect(reranked.reason).not.toBe('surface route')
 })
 
 test('metered routing opt-in admits read-only work and still excludes writer jobs', () => {
