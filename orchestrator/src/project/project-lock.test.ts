@@ -31,6 +31,19 @@ function repository(processStartTime: string | null = null): string {
   return root
 }
 
+/** A repository whose git answers the given common directory. */
+function repositoryAnsweringCommonDir(answer: string): string {
+  const root = mkdtempSync(join(tmpdir(), 'orch-project-lock-'))
+  roots.push(root)
+  mkdirSync(join(root, '.git'))
+  spawnSpy = spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[]) => {
+    if (argv[0] === 'git') return spawnResult(answer)
+    if (argv[0] === 'ps') return spawnResult('unknown\n')
+    throw new Error(`unexpected child process: ${argv.join(' ')}`)
+  }) as typeof Bun.spawnSync)
+  return root
+}
+
 function spawnResult(stdout: string): ReturnType<typeof Bun.spawnSync> {
   return {
     exitCode: 0,
@@ -195,4 +208,31 @@ test('legacy acquisition retries when an ownerless directory disappears before s
 
   expect(withWorktreeCreateLock(root, () => 'acquired', 0)).toBe('acquired')
   expect(removed).toBe(true)
+})
+
+test('an empty common-dir answer refuses instead of locking inside the working tree', () => {
+  const root = repositoryAnsweringCommonDir('')
+  let message = ''
+  try {
+    withWorktreeCreateLock(root, () => 'acquired', 0)
+  } catch (error) {
+    message = (error as Error).message
+  }
+
+  expect(message).toContain('cannot establish the git common directory')
+  expect(message).toContain(root)
+  expect(message).toContain('answered nothing')
+  expect(existsSync(join(root, 'orch'))).toBe(false)
+})
+
+test('a common dir that resolves to the project root itself refuses', () => {
+  const root = repositoryAnsweringCommonDir('.')
+
+  expect(() => withWorktreeCreateLock(root, () => 'acquired', 0)).toThrow(
+    `cannot establish the git common directory of ${root}: git rev-parse --git-common-dir answered "."`,
+  )
+  expect(() => projectLockState(root, 'create')).toThrow(
+    'cannot establish the git common directory',
+  )
+  expect(existsSync(join(root, 'orch'))).toBe(false)
 })

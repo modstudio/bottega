@@ -660,6 +660,7 @@ test('an absent tracked-recipe tree tears resources down without Git worktree re
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     commands.push(args.join(' '))
     return spawnResult()
   }) as typeof Bun.spawnSync)
@@ -722,6 +723,7 @@ test('a failed absent-tree teardown stays pending and retries', () => {
   const fixture = absentRecipeFixture()
   let attempts = 0
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     if (args.join(' ') === 'teardown-marker') {
       attempts++
       return spawnResult('', attempts === 1 ? 1 : 0)
@@ -759,6 +761,7 @@ test('a legacy absent tracked-recipe tree with null teardown state is not torn d
   db().query('UPDATE run SET resource_teardown=NULL WHERE record_id=?').run(fixture.id)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     commands.push(args.join(' '))
     if (args.includes('--show-toplevel')) return spawnResult(fixture.repo)
     return spawnResult()
@@ -784,6 +787,7 @@ test('an absent attached tree does not run its registered remove command', () =>
   })
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     commands.push(args.join(' '))
     return spawnResult()
   }) as typeof Bun.spawnSync)
@@ -807,6 +811,7 @@ test('an absent recipe tree runs its registered remove command without Git remov
   })
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     commands.push(args.join(' '))
     if (args.includes('--show-toplevel')) return spawnResult(fixture.repo)
     return spawnResult()
@@ -839,6 +844,7 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
     .run(fixture.tree, process.pid, sharer)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     commands.push(args.join(' '))
     return spawnResult()
   }) as typeof Bun.spawnSync)
@@ -854,6 +860,7 @@ test('absent-tree dry run reports teardown without executing it', () => {
   const fixture = absentRecipeFixture()
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args.includes('--git-common-dir')) return spawnResult('.git')
     commands.push(args.join(' '))
     return spawnResult()
   }) as typeof Bun.spawnSync)
