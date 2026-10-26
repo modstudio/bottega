@@ -41,13 +41,17 @@ export type FakeRecordScore = {
 function hostedTaskResult(
   source: string,
   values: unknown[],
-  hostedTasks: readonly { id: string; spaceId: string }[],
+  hostedTasks: readonly { id: string; spaceId: string; key?: string; project?: string }[],
 ) {
   if (!source.includes('SELECT id::text AS id FROM hub_task')) return null
-  const task = hostedTasks.find(
-    (candidate) => candidate.spaceId === values[0] && candidate.id === values[1],
+  const matches = hostedTasks.filter((candidate) =>
+    source.includes('AND key=')
+      ? candidate.spaceId === values[0] &&
+        candidate.key === values[1] &&
+        (values[2] == null || candidate.project === values[3])
+      : candidate.spaceId === values[0] && candidate.id === values[1],
   )
-  return task ? [{ id: task.id }] : []
+  return matches.map(({ id }) => ({ id }))
 }
 
 export function fakePostgres(
@@ -65,7 +69,7 @@ export function fakePostgres(
     name: PLATFORM_NAME,
   },
   evidenceCollisionId?: string,
-  hostedTasks: readonly { id: string; spaceId: string }[] = [],
+  hostedTasks: readonly { id: string; spaceId: string; key?: string; project?: string }[] = [],
 ): {
   sql: SQL
   statements: string[]

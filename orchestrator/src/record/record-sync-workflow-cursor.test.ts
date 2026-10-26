@@ -105,7 +105,7 @@ test('the hosted question edge stores an optional workflow task UUID', async () 
   local.close()
 })
 
-test('the hosted question edge stores null when an older client omits the workflow task UUID', async () => {
+test('the hosted question edge accepts an older client and never clears the hosted task link', async () => {
   const { cursorId, local } = workflowQuestionOutbox()
   replaceQuestionPayload(local, (payload) => {
     delete payload.workflowTaskId
@@ -117,9 +117,32 @@ test('the hosted question edge stores null when an older client omits the workfl
   const write = remote.statements.find((sql) =>
     sql.toLowerCase().includes('insert into "question"'),
   )!
-  expect(write.slice(write.toLowerCase().indexOf('do update set'))).not.toContain(
-    'workflow_task_id',
+  expect(write.slice(write.toLowerCase().indexOf('do update set')).toLowerCase()).toContain(
+    '"workflow_task_id" = coalesce(excluded.workflow_task_id, "question"."workflow_task_id")',
   )
+  local.close()
+})
+
+test('the hosted question edge falls back to one matching workflow key', async () => {
+  const workflowTaskId = '01990000-0000-7000-8000-000000000943'
+  const { cursorId, local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    payload.workflowTaskId = '01990000-0000-7000-8000-000000000944'
+    payload.workflowKey = 'DEV-943'
+  })
+  const payload = questionPayload(local)
+  const remote = fakePostgres(
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    [{ id: workflowTaskId, spaceId: String(payload.spaceId), key: 'DEV-943' }],
+  )
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(hostedQuestionCursor(remote, cursorId).valueFor('workflow_task_id')).toBe(workflowTaskId)
   local.close()
 })
 

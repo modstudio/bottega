@@ -334,6 +334,16 @@ try {
 
     const identity = { userId: USER, spaceId: SPACE_A }
     const stamp = '2026-09-17T12:10:00.000Z'
+    const waitingTaskA = '01990000-0000-7000-8000-000000000693'
+    const waitingTaskB = '01990000-0000-7000-8000-000000000694'
+    const unknownWaitingTask = '01990000-0000-7000-8000-000000000695'
+    await admin`INSERT INTO hub_task
+      (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+       first_seen,last_seen,created_at,updated_at) VALUES
+      (${waitingTaskA}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,'DEV-943',${PLATFORM_SLUG},
+       'waiting task A','active','active','local',now(),now(),now(),now()),
+      (${waitingTaskB}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},${PROJECT_B}::uuid,'DEV-943',${PLATFORM_SLUG},
+       'waiting task B','active','active','local',now(),now(),now(),now())`
     const waitingInput: OperatorWaitingEmailInput = {
       kind: 'question',
       item_id: 943_001,
@@ -350,6 +360,57 @@ try {
       answer_command: `${PLATFORM_SLUG} question answer 943 --q943001 --from-operator "Proceed"`,
     }
     const waitingNow = new Date()
+    const linkedInput = {
+      ...waitingInput,
+      item_id: 943_010,
+      episode: 'linked',
+      task_id: waitingTaskA,
+    }
+    const linkedFailure = await sendOperatorWaitingEmail(actorUrl, identity, linkedInput, {
+      mail: { send: async () => Promise.reject(new Error('linked retry fixture')) },
+      now: waitingNow,
+    })
+    if (linkedFailure.status !== 'failed') throw new Error('linked waiting email did not fail')
+    const foreignInput = {
+      ...waitingInput,
+      item_id: 943_011,
+      episode: 'foreign-task',
+      task_key: 'DEV-ABSENT',
+      task_id: waitingTaskB,
+    }
+    await sendOperatorWaitingEmail(actorUrl, identity, foreignInput, {
+      mail: { send: async () => undefined },
+      now: waitingNow,
+    })
+    const keyFallbackInput = {
+      ...waitingInput,
+      item_id: 943_012,
+      episode: 'key-fallback',
+      task_id: unknownWaitingTask,
+    }
+    await sendOperatorWaitingEmail(actorUrl, identity, keyFallbackInput, {
+      mail: { send: async () => undefined },
+      now: waitingNow,
+    })
+    await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      { ...linkedInput, task_id: null, task_key: null },
+      { mail: { send: async () => undefined }, now: new Date(waitingNow.getTime() + 1) },
+    )
+    const waitingTaskLinks = await admin<{ episode: string; task_id: string | null }[]>`
+      SELECT episode,task_id::text FROM operator_waiting_email
+      WHERE space_id=${SPACE_A}::uuid AND episode IN ('linked','foreign-task','key-fallback')
+      ORDER BY episode`
+    if (
+      JSON.stringify([...waitingTaskLinks]) !==
+      JSON.stringify([
+        { episode: 'foreign-task', task_id: null },
+        { episode: 'key-fallback', task_id: waitingTaskA },
+        { episode: 'linked', task_id: waitingTaskA },
+      ])
+    )
+      throw new Error(`operator waiting task links were ${JSON.stringify([...waitingTaskLinks])}`)
     const sent: string[] = []
     const sentCount = () => sent.length
     const mail = { send: async () => void sent.push('sent') }

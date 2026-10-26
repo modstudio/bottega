@@ -2,6 +2,7 @@
 /** Persists retryable email intents and outcomes and renders operator-waiting mail. */
 
 import type { SQL } from 'bun'
+import { hostedTaskIdForReference } from '../../shared/record/hosted-task-id.ts'
 import { bindJsonb } from '../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { withHostedTenant } from './hosted-tenant.ts'
@@ -112,6 +113,11 @@ async function claimOperatorWaitingEmail(
   now: Date,
 ): Promise<ClaimedIntent> {
   await tx`SELECT pg_advisory_xact_lock(hashtextextended(${caller.userId}, 0))`
+  const taskId = await hostedTaskIdForReference(tx, caller.spaceId, {
+    id: input.task_id,
+    key: input.task_key,
+    project: input.project,
+  })
   const existing = rows<StoredIntent>(
     await tx`SELECT id,status,reason,attempts,updated_at FROM operator_waiting_email
       WHERE space_id=${caller.spaceId}::uuid AND user_id=${caller.userId}::uuid
@@ -136,6 +142,7 @@ async function claimOperatorWaitingEmail(
     const reclaimed = rows<OperatorWaitingEmailResult & { email: string }>(
       await tx`UPDATE operator_waiting_email e
         SET status='intent',reason=NULL,attempts=attempts+1,
+          task_id=COALESCE(${taskId}::uuid,e.task_id),
           updated_at=${now.toISOString()}::timestamptz,sent_at=NULL
         FROM "user" u
         WHERE e.id=${existing.id}::uuid AND e.user_id=u.id AND e.status=${existing.status}
@@ -148,12 +155,6 @@ async function claimOperatorWaitingEmail(
   }
 
   await assertSendBudget(tx, caller.userId, now)
-  const taskId = input.task_id
-    ? ((
-        await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
-          WHERE space_id=${caller.spaceId}::uuid AND id=${input.task_id}::uuid`
-      )[0]?.id ?? null)
-    : null
   const id = newRecordId()
   const inserted = rows<OperatorWaitingEmailResult & { email: string }>(
     await tx`WITH inserted AS (

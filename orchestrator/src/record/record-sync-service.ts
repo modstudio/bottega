@@ -4,6 +4,7 @@ import { SQL } from 'bun'
 import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   contention as contentionRecord,
   landingOverride as landingOverrideRecord,
@@ -57,8 +58,6 @@ import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
 import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
-const rowsSupplyingWorkflowTaskId = new WeakSet<object>()
-
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
   let parsed: unknown
   try {
@@ -69,12 +68,10 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new OutboxRowError('outbox payload must be a JSON object', 'payload')
   }
-  const carriesWorkflowTaskId = Object.hasOwn(parsed, 'workflowTaskId')
   for (const [column, fill] of Object.entries(recordKinds[kind].laterAdded)) {
     if (!Object.hasOwn(parsed, column)) Object.assign(parsed, { [column]: fill })
   }
   assertRecordPayloadColumns(kind, parsed as Payload, recordKinds[kind].columns)
-  if (carriesWorkflowTaskId) rowsSupplyingWorkflowTaskId.add(parsed)
   return parsed as Payload
 }
 
@@ -598,16 +595,10 @@ const recordKinds = {
     ) =>
       postgres.begin(async (tx) => {
         await bindPrincipal(tx, principal)
-        const carriesWorkflowTaskId = rowsSupplyingWorkflowTaskId.has(row)
-        const incomingWorkflowTaskId = carriesWorkflowTaskId
-          ? nullableUuid(row.workflowTaskId, 'question.workflowTaskId')
-          : null
-        const workflowTaskId = incomingWorkflowTaskId
-          ? ((
-              await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
-                WHERE space_id=${principal.spaceId}::uuid AND id=${incomingWorkflowTaskId}::uuid`
-            )[0]?.id ?? null)
-          : null
+        const workflowTaskId = await hostedTaskIdForReference(tx, principal.spaceId, {
+          id: nullableUuid(row.workflowTaskId, 'question.workflowTaskId'),
+          key: nullableString(row.workflowKey),
+        })
         const projectId = await projectRecordId(tx, row, principal, projectIds)
         const values = questionValues(row, projectId, workflowTaskId)
         const existingOwned = await existingEvidenceOwned(
@@ -617,8 +608,16 @@ const recordKinds = {
           values.machineId,
           principal,
         )
-        const { id: _id, createdAt: _createdAt, ...updates } = values
-        if (!carriesWorkflowTaskId) delete (updates as Partial<typeof updates>).workflowTaskId
+        const {
+          id: _id,
+          createdAt: _createdAt,
+          workflowTaskId: _workflowTaskId,
+          ...existingUpdates
+        } = values
+        const updates = {
+          ...existingUpdates,
+          workflowTaskId: drizzleSql`COALESCE(excluded.workflow_task_id, ${questionRecord.workflowTaskId})`,
+        }
         const incomingQuestionWins = hostedQuestionWins(
           drizzleSql`excluded.revision`,
           questionRecord.revision,
@@ -964,7 +963,6 @@ async function pushHostedRow(input: {
       spaceId: rowPrincipal.spaceId,
       ...(kind === 'run' ? { startedByUserId: identity.user.id } : {}),
     }
-    if (rowsSupplyingWorkflowTaskId.has(parsed)) rowsSupplyingWorkflowTaskId.add(record)
     if (String(record.machineId) !== input.machineId) {
       throw new OutboxRowError(
         `${kind} outbox machine ${String(record.machineId)} does not match invoking machine ${input.machineId}`,

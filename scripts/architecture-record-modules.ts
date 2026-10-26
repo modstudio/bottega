@@ -223,6 +223,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-sync-service.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record/hosted-task-id.ts',
     '../../../shared/record-id.ts',
     'bun',
     'drizzle-orm',

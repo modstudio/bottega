@@ -580,7 +580,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
     'postgres-schema-question-boundary',
     'shared/record/schema-question.ts',
     ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts', './schema-hub.ts', './schema-run.ts'],
-    'Enforce the hosted question schema concern boundary.',
+    'Enforce the hosted question schema concern boundary; the hosted question references its task by UUID with ON DELETE SET NULL.',
   ),
   boundary(
     'postgres-schema-snapshots-boundary',

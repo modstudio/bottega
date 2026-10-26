@@ -18,7 +18,7 @@ export const operatorWaitingEmailRequestSchema = z
     episode: field,
     project: field.nullable(),
     task_key: nullableField,
-    task_id: z.string().uuid().nullable(),
+    task_id: z.string().uuid().nullable().default(null),
     question: z.string().min(1).max(OPERATOR_EMAIL_MAX_TEXT),
     options: z.array(field).max(OPERATOR_EMAIL_MAX_OPTIONS),
     recommendation: nullableField,
