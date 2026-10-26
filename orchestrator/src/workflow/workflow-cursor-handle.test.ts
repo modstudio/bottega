@@ -518,7 +518,9 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
     opened.cursor,
   )
   const adopted = d
-    .query('SELECT workflow_key,task_record_id,instance_id,args FROM workflow_cursor WHERE number=?')
+    .query(
+      'SELECT workflow_key,task_record_id,instance_id,args FROM workflow_cursor WHERE number=?',
+    )
     .get(opened.cursor) as {
     workflow_key: string
     task_record_id: string
@@ -564,8 +566,7 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
       d,
       {},
       {},
-    )
-      .cursor?.id,
+    ).cursor?.id,
   ).toBe(opened.cursor)
   expect(
     awaitWorkflowRuling(
@@ -577,8 +578,7 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
       adoptedContext,
       d,
       () => {},
-    )
-      .id,
+    ).id,
   ).toBe(opened.cursor)
   expect(() =>
     nextWorkflowStep(

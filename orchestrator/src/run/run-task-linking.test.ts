@@ -202,6 +202,76 @@ describe('run task linking service', () => {
     })
   })
 
+  test('links related task references once and reports unmatched keys per table', async () => {
+    const projectId = addProject('related-links', '/work/related-links')
+    const runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
+    db().exec('PRAGMA foreign_keys=OFF')
+    try {
+      db()
+        .query(
+          `INSERT INTO workflow_cursor
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
+         VALUES ('cursor-related',991,'related-links',?,'flow','default','REL-1','','workflow-version','catalogue-version','{}',0,'step','running','[]',1,'t','t')`,
+        )
+        .run(projectId)
+      db()
+        .query(
+          `INSERT INTO question
+          (record_id,number,run_record_id,workflow_key,asked_at,question,asked_via)
+         VALUES ('question-related',991,?,'REL-1','t','question','live')`,
+        )
+        .run(runId)
+      db()
+        .query(
+          `INSERT INTO port_ref
+          (record_id,task_key,target_project_record_id,note,created_at)
+         VALUES ('port-related','MISSING-1',?,'note','t')`,
+        )
+        .run(projectId)
+      db()
+        .query(
+          `INSERT INTO presence
+          (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+         VALUES ('related-session','claude','architect','machine','related-links',?,'/work/related-links','REL-1','t')`,
+        )
+        .run(projectId)
+    } finally {
+      db().exec('PRAGMA foreign_keys=ON')
+    }
+    const hubReader = async () => [
+      { key: 'REL-1', record_id: 'related-task-id', project: 'related-links' },
+    ]
+
+    const first = await linkRunTasks({ dryRun: false }, { hubReader })
+    expect(first.local_task_links).toEqual({
+      workflow_cursor: { linked: 1, unmatched_keys: {} },
+      question: { linked: 1, unmatched_keys: {} },
+      port_ref: { linked: 0, unmatched_keys: { 'MISSING-1': 1 } },
+      presence: { linked: 1, unmatched_keys: {} },
+    })
+    expect(
+      db()
+        .query(
+          `SELECT
+          (SELECT task_record_id FROM workflow_cursor WHERE record_id='cursor-related') cursor_task,
+          (SELECT workflow_task_record_id FROM question WHERE record_id='question-related') question_task,
+          (SELECT current_task_record_id FROM presence WHERE session_id='related-session') presence_task`,
+        )
+        .get(),
+    ).toEqual({
+      cursor_task: 'related-task-id',
+      question_task: 'related-task-id',
+      presence_task: 'related-task-id',
+    })
+
+    const second = await linkRunTasks({ dryRun: false }, { hubReader })
+    expect(second.local_task_links.workflow_cursor.linked).toBe(0)
+    expect(second.local_task_links.question.linked).toBe(0)
+    expect(second.local_task_links.presence.linked).toBe(0)
+    expect(second.local_task_links.port_ref.unmatched_keys).toEqual({ 'MISSING-1': 1 })
+  })
+
   test('refuses with a project-scoped remedy when the hub reader fails', async () => {
     addProject('link-failure', '/work/link-failure')
     await expect(

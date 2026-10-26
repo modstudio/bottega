@@ -532,13 +532,8 @@ function resolveTaskArtifact(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
     )
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
-  if (
-    identity.workflowTaskRecordId &&
-    task.recordId !== identity.workflowTaskRecordId
-  )
-    throw new Error(
-      `--artifact ${raw} task is not this cursor's ${identity.workflowKey}`,
-    )
+  if (identity.workflowTaskRecordId && task.recordId !== identity.workflowTaskRecordId)
+    throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
   if (task.commentsVerifiable === false)
     throw new Error(

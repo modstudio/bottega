@@ -323,7 +323,7 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
      VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
   expect(() => gather(d, { review: '1' })).toThrow(
-    '--review 1 has no lens run on branch DEV-977-work or launch_key DEV-977',
+    '--review 1 has no lens run on branch DEV-977-work or task DEV-977',
   )
 })
 
@@ -790,7 +790,7 @@ test('a legacy resume doc without a project id is scoped by its project subject'
 test('a foreign task comment is refused and a matching comment is allowed', () => {
   const d = database()
   expect(() => gather(d, { artifact: 'task:DEV-1#comment:4' })).toThrow(
-    "--artifact task:DEV-1#comment:4 task key is DEV-1, not this cursor's DEV-977",
+    "--artifact task:DEV-1#comment:4 task is not this cursor's DEV-977",
   )
   expect(gather(d, { artifact: 'task:DEV-977#comment:4' }).artifact).toEqual({
     ref: 'task:DEV-977#comment:4',
@@ -840,7 +840,7 @@ test('a task artifact requires the fresh task key to match the cursor', () => {
     exists: true,
   })
   expect(() => gather(d, { artifact: 'task:DEV-1' })).toThrow(
-    "--artifact task:DEV-1 task key is DEV-1, not this cursor's DEV-977",
+    "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
 })
 
@@ -1059,7 +1059,7 @@ test('a keyed cursor refuses a same-session run whose key and branch both mismat
     startedAt: '2026-09-02',
   })
   expect(() => gather(d, { run: mismatched })).toThrow(
-    `--run ${mismatched} launch_key is DEV-1, not this cursor's DEV-977, and branch is other-branch, not this cursor's DEV-977-work`,
+    `--run ${mismatched} task reference is task-DEV-1, not this cursor's DEV-977, and branch is other-branch, not this cursor's DEV-977-work`,
   )
 })
 

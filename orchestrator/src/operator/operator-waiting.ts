@@ -29,7 +29,9 @@ export async function initialQuestionWaitingAt(
   at: string,
   d: Database = db(),
 ): Promise<string | null> {
-  const row = d.query('SELECT repo, launch_key, task_record_id FROM run WHERE record_id=?').get(runId) as {
+  const row = d
+    .query('SELECT repo, launch_key, task_record_id FROM run WHERE record_id=?')
+    .get(runId) as {
     repo: string | null
     launch_key: string | null
     task_record_id: string | null

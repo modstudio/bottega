@@ -357,7 +357,13 @@ export async function linkRunTasks(
       where: 'current_task_key IS NOT NULL',
     },
   ] as const
-  const pendingUpdates: Array<{ table: LocalTaskLinkTable; idColumn: string; uuidColumn: string; id: string; taskId: string }> = []
+  const pendingUpdates: Array<{
+    table: LocalTaskLinkTable
+    idColumn: string
+    uuidColumn: string
+    id: string
+    taskId: string
+  }> = []
   for (const shape of localLinks) {
     const rows = database
       .query<{ id: string; task_key: string }, []>(
@@ -393,7 +399,9 @@ export async function linkRunTasks(
       }
       for (const update of pendingUpdates) {
         database
-          .query(`UPDATE ${update.table} SET ${update.uuidColumn}=? WHERE ${update.idColumn}=? AND ${update.uuidColumn} IS NULL`)
+          .query(
+            `UPDATE ${update.table} SET ${update.uuidColumn}=? WHERE ${update.idColumn}=? AND ${update.uuidColumn} IS NULL`,
+          )
           .run(update.taskId, update.id)
       }
     }, database)
@@ -474,15 +482,15 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
       ['port_ref', 'task_record_id'],
       ['presence', 'current_task_record_id'],
     ] as const
-    const related = shapes.reduce((sum, [table, column]) => {
+    const related = shapes.map(([table, column]) => {
       const rows = db()
         .query<{ task_record_id: string }, []>(
           `SELECT ${column} task_record_id FROM ${table} WHERE ${column} IS NOT NULL`,
         )
         .all()
-      return sum + rows.filter((row) => !ids.has(row.task_record_id)).length
-    }, 0)
-    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks)} run and ${related} related rows name no task in hub`
+      return `${table} ${rows.filter((row) => !ids.has(row.task_record_id)).length}`
+    })
+    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks)} run; ${related.join(', ')} name no task in hub`
   } catch (error) {
     return `run task refs  unavailable — ${error instanceof Error ? error.message : String(error)}`
   }

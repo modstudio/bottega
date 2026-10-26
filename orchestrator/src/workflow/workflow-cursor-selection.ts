@@ -3,10 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
-import {
-  type HubTaskReader,
-  resolveHubTaskReference,
-} from '../run/run-task-linking.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../run/run-task-linking.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'

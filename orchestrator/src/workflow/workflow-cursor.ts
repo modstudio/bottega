@@ -188,53 +188,47 @@ function insertCursor(
           : {}),
       }
     : undefined
-  d.query(
-    `INSERT INTO workflow_cursor
+  const stored = d
+    .query<{ record_id: string }, (string | number | null)[]>(
+      `INSERT INTO workflow_cursor
       (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,
        workflow_version_record_id,catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
      VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
      ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
-       updated_at=excluded.updated_at`,
-  ).run(
-    cursorRecordId,
-    composition.project,
-    composition.project,
-    composition.workflow.slug,
-    composition.mode!.slug,
-    key,
-    context.taskRecordId ?? null,
-    instance,
-    context.session ?? null,
-    composition.workflow.record_id,
-    composition.catalogue.record_id,
-    JSON.stringify(composition.arguments),
-    JSON.stringify(
-      autonomySnapshot ?? {
-        steps: Object.fromEntries(
-          composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
-        ),
-        rulings: composition.rulings,
-      },
-    ),
-    composition.steps[0]!.slug,
-    composition.steps.length,
-    at,
-    at,
-  )
-  return key
-    ? findCursor(
-        composition.project,
-        composition.workflow.slug,
-        composition.mode!.slug,
-        composition.arguments,
-        context,
-        d,
-      )!
-    : (d
-        .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-        .get(cursorRecordId) as CursorRow)
+       updated_at=excluded.updated_at
+     RETURNING record_id`,
+    )
+    .get(
+      cursorRecordId,
+      composition.project,
+      composition.project,
+      composition.workflow.slug,
+      composition.mode!.slug,
+      key,
+      context.taskRecordId ?? null,
+      instance,
+      context.session ?? null,
+      composition.workflow.record_id,
+      composition.catalogue.record_id,
+      JSON.stringify(composition.arguments),
+      JSON.stringify(
+        autonomySnapshot ?? {
+          steps: Object.fromEntries(
+            composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
+          ),
+          rulings: composition.rulings,
+        },
+      ),
+      composition.steps[0]!.slug,
+      composition.steps.length,
+      at,
+      at,
+    )
+  return d
+    .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
+    .get(stored!.record_id) as CursorRow
 }
 
 export type CursorSummary = {

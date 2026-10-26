@@ -52,11 +52,7 @@ function assignWorkflowTaskKey(
   for (const question of questions) {
     d.query(
       'UPDATE question SET workflow_key=?,workflow_task_record_id=?,revision=revision+1 WHERE record_id=?',
-    ).run(
-      key,
-      taskRecordId,
-      question.record_id,
-    )
+    ).run(key, taskRecordId, question.record_id)
     enqueueQuestionRecord(d, question.record_id)
   }
 }
