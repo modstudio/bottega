@@ -48,7 +48,7 @@ const catalogue = [
   ],
   [
     'After',
-    'Ship a task',
+    'Land a built branch',
     'Rebase, review, triage, gate, open, merge, promote, close — the ten steps above.',
   ],
   [
@@ -65,7 +65,7 @@ const catalogue = [
 const composition = [
   'One catalogue, versioned, shared by every project.',
   'Project facts resolved at compose time, never hardcoded in a prompt.',
-  'Modes select how far to go — plan only, review only, ship and promote.',
+  'Modes select how far to go — plan only, review only, Land and promote, or Land through merge.',
   'A step that needs a capability the project lacks is not silently skipped.',
 ]
 const surface = [
@@ -103,8 +103,8 @@ export function WorkflowsPage() {
               <span>Modes</span>
             </div>
             <div className="shot-head">
-              <h4>Ship a task</h4>
-              <span>mode full · 10 steps · workflow v4</span>
+              <h4>Land a built branch</h4>
+              <span>mode Land and promote · 10 steps · workflow v4</span>
             </div>
             <div className="shot-scroll">
               <table className="tbl">

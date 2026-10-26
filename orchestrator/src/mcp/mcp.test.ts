@@ -135,7 +135,9 @@ describe('orch MCP', () => {
 
   test('serves the same tools to legacy initialize and a pinned 2026 client', async () => {
     const [legacyClientTransport, legacyServerTransport] = InMemoryTransport.createLinkedPair()
-    const legacyServer = serveStdio(createDocsMcpServer, { transport: legacyServerTransport })
+    const legacyServer = serveStdio(() => createDocsMcpServer(), {
+      transport: legacyServerTransport,
+    })
     await legacyClientTransport.start()
 
     let requestId = 0
@@ -175,7 +177,9 @@ describe('orch MCP', () => {
         { versionNegotiation: { mode: { pin: '2026-07-28' } } },
       )
       const [modernClientTransport, modernServerTransport] = InMemoryTransport.createLinkedPair()
-      const modernServer = serveStdio(createDocsMcpServer, { transport: modernServerTransport })
+      const modernServer = serveStdio(() => createDocsMcpServer(), {
+        transport: modernServerTransport,
+      })
       await modernClient.connect(modernClientTransport)
       try {
         const modernTools = await modernClient.listTools()

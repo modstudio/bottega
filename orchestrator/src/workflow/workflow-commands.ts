@@ -21,7 +21,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
-import { workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
+import { type CommitCountPort } from './workflow-compose-branch.ts'
 import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
@@ -93,6 +93,8 @@ export type WorkflowCommandOptions = {
   probeRunner?: ProbeRunner
   stdinText?: () => Promise<string>
   stdinIsTTY?: () => boolean | undefined
+  /** Where a landing workflow reads the branch's commit count; the registered checkout's git by default. */
+  commitCount?: CommitCountPort
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -477,6 +479,7 @@ export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): 
 export async function stepCommand(
   argv: string[],
   print: (value: unknown, line?: string) => void,
+  options: WorkflowCommandOptions = {},
 ): Promise<void> {
   const requestedMode = flagValue(argv, 'mode')
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
@@ -530,6 +533,7 @@ export async function stepCommand(
         undefined,
         live,
         cursor,
+        options.commitCount,
       )
     : getWorkflowStep(slug, project, stepSlug, args, undefined, selection, live.resolution)
   print(step, renderWorkflowStep(step))
@@ -804,13 +808,12 @@ export async function composeCommand(
   json: boolean,
   print: (value: unknown, line?: string) => void,
   presentation: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
 ): Promise<void> {
   const project = flagValue(argv, 'project')
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
   const args = workflowArgs(argv)
-  const branchRefusal = workflowComposeBranchRefusal({ workflow: argv[2]!, project, args })
-  if (branchRefusal) throw new Error(branchRefusal)
   const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),
@@ -840,6 +843,7 @@ export async function composeCommand(
           undefined,
           selection,
           live,
+          options.commitCount,
         )
       : pure
   print(result, json ? undefined : renderWorkflowComposition(result))

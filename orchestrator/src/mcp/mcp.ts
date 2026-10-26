@@ -39,7 +39,11 @@ import { getReview, listReviews } from '../review/review.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
-import { workflowComposeBranchRefusal } from '../workflow/workflow-compose-branch.ts'
+import {
+  type CommitCountPort,
+  type LandingBranchPorts,
+  workflowComposeBranchRefusal,
+} from '../workflow/workflow-compose-branch.ts'
 import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
@@ -368,19 +372,23 @@ export async function fileIssue(
 }
 
 /** Composes a workflow for the MCP caller, refusing one whose branch carries nothing to land. */
-async function composeWorkflowToolResult(input: {
-  slug: string
-  project: string
-  mode?: string
-  args?: Record<string, string>
-  version?: number
-  catalogue_version?: number
-  autonomy?: string
-}) {
+async function composeWorkflowToolResult(
+  input: {
+    slug: string
+    project: string
+    mode?: string
+    args?: Record<string, string>
+    version?: number
+    catalogue_version?: number
+    autonomy?: string
+  },
+  commitCount?: CommitCountPort,
+) {
   const refusal = workflowComposeBranchRefusal({
     workflow: input.slug,
     project: input.project,
     args: input.args ?? {},
+    ...(commitCount ? { commitCount } : {}),
   })
   if (refusal) throw new Error(refusal)
   const selection = { version: input.version, catalogueVersion: input.catalogue_version }
@@ -411,7 +419,7 @@ async function composeWorkflowToolResult(input: {
   )
 }
 
-export function createDocsMcpServer(): McpServer {
+export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
     console.error(
@@ -444,8 +452,21 @@ export function createDocsMcpServer(): McpServer {
     'list_workflows',
     {
       description: 'List workflow identities and their production and draft versions.',
+      inputSchema: z.object({
+        retired: z
+          .boolean()
+          .optional()
+          .describe('include workflows whose only versions are retired'),
+      }),
     },
-    async () => text(listResolvedWorkflows(resolveMcpWorkflowSpace(process.cwd()).spaceId)),
+    async ({ retired }) =>
+      text(
+        listResolvedWorkflows(
+          resolveMcpWorkflowSpace(process.cwd()).spaceId,
+          undefined,
+          retired ?? false,
+        ),
+      ),
   )
 
   server.registerTool(
@@ -463,10 +484,10 @@ export function createDocsMcpServer(): McpServer {
         autonomy: z.string().optional(),
       }),
     },
-    async (input) => text(await composeWorkflowToolResult(input)),
+    async (input) => text(await composeWorkflowToolResult(input, ports.commitCount)),
   )
 
-  registerWorkflowStepTool(server)
+  registerWorkflowStepTool(server, ports.commitCount)
 
   server.registerTool(
     'attach_workflow_text',
@@ -932,5 +953,5 @@ export function createDocsMcpServer(): McpServer {
 }
 
 export async function serveDocsMcp(): Promise<void> {
-  serveStdio(createDocsMcpServer)
+  serveStdio(() => createDocsMcpServer())
 }

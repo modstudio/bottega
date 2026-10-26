@@ -182,6 +182,7 @@ function registerWorkflowVersions({
 function registerWorkflowRendering({
   workflow,
   workflowPresentation,
+  handlerOptions,
   output,
 }: WorkflowRegistration): void {
   jsonOption(
@@ -198,7 +199,13 @@ function registerWorkflowRendering({
     .allowExcessArguments(false)
     .action((slug, options) => {
       const argv = workflowArgv('compose', [slug], options)
-      return composeCommand(argv, Boolean(options.json), output(options), workflowPresentation)
+      return composeCommand(
+        argv,
+        Boolean(options.json),
+        output(options),
+        workflowPresentation,
+        handlerOptions,
+      )
     })
 
   jsonOption(
@@ -216,7 +223,7 @@ function registerWorkflowRendering({
     .allowExcessArguments(false)
     .action((slug, step, options) => {
       const args = [slug, step].filter((value): value is string => value !== undefined)
-      return stepCommand(workflowArgv('step', args, options), output(options))
+      return stepCommand(workflowArgv('step', args, options), output(options), handlerOptions)
     })
 }
 

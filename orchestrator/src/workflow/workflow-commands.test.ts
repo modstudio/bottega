@@ -1049,3 +1049,69 @@ test('workflow list hides a retired workflow until --retired asks for it', async
   await workflowCommand(['workflow', 'list', '--retired', '--json'], presentation(shown))
   expect(listed(shown)).toContain(slug)
 })
+
+test('compose refuses a landing workflow whose branch carries nothing to land', async () => {
+  const project = 'compose-landing-branch'
+  const key = 'DEV-1575-EMPTY'
+  const branch = 'DEV-1575-empty'
+  upsertProject({
+    recordId: newRecordId(),
+    name: project,
+    path: `/fixture/${project}`,
+    stack: 'bun',
+    settings: {
+      gate: 'bun run check',
+      trunk: 'main',
+      docs: { protocol: 'orch-docs' },
+      tracker: { kind: 'hub', protocol: 'hub' },
+    },
+  })
+  const draft = setWorkflowLocal(
+    'ship-task',
+    {
+      title: 'Land a built branch',
+      description: 'Lands a branch an implementation run built.',
+      arguments: [
+        { name: 'key', required: true, description: 'The task key.' },
+        { name: 'branch', required: true, description: 'The branch to land.' },
+      ],
+      modes: [{ slug: 'merge', title: 'Land through merge', steps: ['diagnose'] }],
+    },
+    'landing branch refusal fixture',
+    'test',
+  )
+  promoteWorkflowLocal('ship-task', draft.n, 'publish landing branch refusal fixture', 'test')
+  const cursorState = () =>
+    db()
+      .query<{ state: string }, [string]>(
+        "SELECT state FROM workflow_cursor WHERE workflow_slug='ship-task' AND workflow_key=?",
+      )
+      .get(key)?.state ?? null
+  const compose = (commitCount: () => number | null) =>
+    workflowCommand(
+      [
+        'workflow',
+        'compose',
+        'ship-task',
+        '--project',
+        project,
+        '--mode',
+        'merge',
+        '--arg',
+        `key=${key}`,
+        '--arg',
+        `branch=${branch}`,
+      ],
+      presentation([]),
+      { commitCount },
+    )
+
+  await expect(compose(() => 0)).rejects.toThrow(
+    `refusing to compose ship-task for branch ${branch}: it has no commits past main, and ` +
+      `ship-task lands a built branch; build the change first with \`${PLATFORM_SLUG} run start implement --key <key>\``,
+  )
+  expect(cursorState()).toBeNull()
+
+  await compose(() => 1)
+  expect(cursorState()).toBe('running')
+})

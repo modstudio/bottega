@@ -4,6 +4,10 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { parseAutonomy } from '../workflow/autonomy.ts'
+import {
+  type CommitCountPort,
+  readCommitsPastLanding,
+} from '../workflow/workflow-compose-branch.ts'
 import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
@@ -24,7 +28,10 @@ const inputSchema = z.object({
   cursor: z.number().int().positive().optional(),
 })
 
-async function workflowStep(input: z.infer<typeof inputSchema>) {
+async function workflowStep(
+  input: z.infer<typeof inputSchema>,
+  commitCount: CommitCountPort,
+) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
   const context = mcpWorkflowCursorContext()
   const effectiveMode = cursor
@@ -65,12 +72,16 @@ async function workflowStep(input: z.infer<typeof inputSchema>) {
         undefined,
         live,
         cursor,
+        commitCount,
       )
     : getWorkflowStep(slug, project, stepSlug, args ?? {}, undefined, { mode }, live.resolution)
   return { content: [{ type: 'text' as const, text: renderWorkflowStep(result) }] }
 }
 
-export function registerWorkflowStepTool(server: McpServer): void {
+export function registerWorkflowStepTool(
+  server: McpServer,
+  commitCount: CommitCountPort = readCommitsPastLanding,
+): void {
   server.registerTool(
     'get_workflow_step',
     {
@@ -78,6 +89,6 @@ export function registerWorkflowStepTool(server: McpServer): void {
         'Fetch one workflow step body with argument substitutions applied. Step accepts a slug or a 1-based position from compose_workflow. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
       inputSchema,
     },
-    workflowStep,
+    (input) => workflowStep(input, commitCount),
   )
 }

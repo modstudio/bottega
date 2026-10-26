@@ -34,17 +34,32 @@ export function landingBranchRefusal(facts: LandingBranchFacts): string | null {
 }
 
 /**
+ * Commits a branch carries past the landing branch, or null when no checkout can answer.
+ *
+ * Injected so a caller can prove the refusal without a repository; `readCommitsPastLanding` is the
+ * default.
+ */
+export type CommitCountPort = (
+  checkout: string,
+  branch: string,
+  landingBranch: string,
+) => number | null
+
+/** The world a landing-branch refusal reads through; every port defaults to the real one. */
+export type LandingBranchPorts = { commitCount?: CommitCountPort }
+
+/**
  * Commits the landing branch does not have, or null when no checkout can answer.
  *
  * The remote-tracking ref is the landing branch's current tip; a checkout that has only the local
  * branch answers against the local one, which reports the same empty branch and errs toward
  * answering. A missing branch, an unread checkout and a missing ref all answer null.
  */
-function commitsPastLanding(
+export const readCommitsPastLanding: CommitCountPort = (
   checkout: string,
   branch: string,
   landingBranch: string,
-): number | null {
+): number | null => {
   const upstream = `origin/${landingBranch}`
   const landingRef =
     observeGitRef(checkout, upstream).outcome === 'present'
@@ -67,6 +82,7 @@ export function workflowComposeBranchRefusal(input: {
   project: string
   args: Record<string, string>
   d?: Database
+  commitCount?: CommitCountPort
 }): string | null {
   if (!LANDS_A_BUILT_BRANCH.has(input.workflow)) return null
   const branch = input.args.branch?.trim()
@@ -75,13 +91,14 @@ export function workflowComposeBranchRefusal(input: {
   if (!registered) return null
   const landingBranch = registered.settings.trunk?.trim()
   if (!landingBranch) return null
+  const commitCount = input.commitCount ?? readCommitsPastLanding
   for (const checkout of [input.args.worktree?.trim(), registered.path]) {
     if (!checkout) continue
     const facts = {
       workflow: input.workflow,
       branch,
       landingBranch,
-      commitsPastLanding: commitsPastLanding(checkout, branch, landingBranch),
+      commitsPastLanding: commitCount(checkout, branch, landingBranch),
     }
     const refusal = landingBranchRefusal(facts)
     if (refusal) return refusal
