@@ -279,7 +279,7 @@ async function pushRun(
     if (identity.refusal !== null) {
       throw new OutboxRowError(identity.refusal, 'row-validation')
     }
-    const values = runRecordValues(row, identity.projectId, identity.taskId)
+    const values = runRecordValues(row, identity.projectId, identity.taskId, principal.userId)
     const evidenceUnvoid = row.evidenceUnvoid
     if (evidenceUnvoid !== null) await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
     const exclusion = await tx`
