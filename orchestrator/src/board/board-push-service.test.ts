@@ -25,7 +25,7 @@ import {
   writeTranscript,
 } from '../../test/fixtures/board-hook.ts'
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { db } from '../database/db.ts'
+import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
@@ -214,6 +214,61 @@ test('mid-session local delivery includes an ordinary notice, question, and part
       })
     ).delivery,
   ).toEqual([])
+})
+
+test('a successor claim receipt is stamped only by the push acknowledgement', async () => {
+  ensurePostingProject()
+  const clock = Date.parse('2026-10-16T12:00:00.000Z')
+  const postedAtMs = clock - SESSION_LIVE_MS - 60_000
+  const replyAt = postedAtMs + 30_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const putPresence = db().query(
+    `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+     VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+  )
+  putPresence.run('successor-author', iso(postedAtMs - 1_000), iso(postedAtMs))
+  const posted = postNotice(
+    {
+      audience: 'session:successor-author',
+      title: 'Report',
+      body: 'The work is blocked.',
+      purpose: 'request',
+    },
+    { CLAUDE_CODE_SESSION_ID: 'successor-author' },
+    postedAtMs,
+    postingCwd,
+  )
+  db()
+    .query('UPDATE presence SET last_seen=? WHERE session_id=?')
+    .run(iso(postedAtMs), 'successor-author')
+  const reply = replyToThread(posted.recordId, 'The ruling is in.', {}, replyAt, postingCwd)
+  putPresence.run('successor-later', iso(replyAt + 1_000), iso(clock))
+  const receipt = () =>
+    db()
+      .query(
+        'SELECT successor,delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(reply.recordId, 'successor-later') as { successor: number; delivered_at: string | null }
+
+  const first = await pendingBoardDelivery({ session: 'successor-later', budgetMs: 0, clock })
+  expect(first.delivery.map((message) => message.id)).toEqual([String(reply.number)])
+  expect(receipt()).toEqual({ successor: 1, delivered_at: null })
+
+  await markBoardDeliveryDelivered({
+    session: 'successor-later',
+    ids: first.delivery.map((message) => message.id),
+    clock: clock + 1,
+  })
+  const stamped = receipt()
+  expect(stamped.successor).toBe(1)
+  expect(stamped.delivered_at).not.toBeNull()
+
+  const next = await pendingBoardDelivery({
+    session: 'successor-later',
+    budgetMs: 0,
+    clock: clock + 2,
+  })
+  expect(next.delivery).toEqual([])
 })
 
 test('mid-session hosted delivery includes an ordinary notice, question, and participant reply once', async () => {
