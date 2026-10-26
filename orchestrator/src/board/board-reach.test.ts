@@ -314,7 +314,7 @@ test('reach report includes delivered and never-delivered reply rows', () => {
   expect(replies.rows.map((reply) => reply.replyId)).toEqual([deliveredId, neverId])
 })
 
-test('reach report includes hosted reply rows and excludes the hosted root author', () => {
+test('hosted reply reach distinguishes sessions belonging to the same author user', () => {
   const clock = Date.parse('2026-10-13T14:00:00.000Z')
   const rootId = newRecordId()
   const deliveredId = newRecordId()
@@ -355,15 +355,17 @@ test('reach report includes hosted reply rows and excludes the hosted root autho
     ackDeadline: null,
     ...overrides,
   })
+  const root = hosted(rootId, { authorSession: null })
   const messages = [
-    hosted(rootId),
+    root,
     hosted(deliveredId, {
       kind: 'reply',
       threadRootId: rootId,
       title: null,
       audience: null,
-      authorUserId: newRecordId(),
-      authorSession: 'hosted-replier',
+      authorUserId: rootUserId,
+      authorSession: null,
+      origin: { ...root.origin, session: 'hosted-replier' },
       createdAt: new Date(clock + 1_000).toISOString(),
       expiresAt: null,
       state: null,
@@ -384,6 +386,7 @@ test('reach report includes hosted reply rows and excludes the hosted root autho
       threadRootId: rootId,
       title: null,
       audience: null,
+      authorSession: null,
       createdAt: new Date(clock + 2_500).toISOString(),
       expiresAt: null,
       state: null,

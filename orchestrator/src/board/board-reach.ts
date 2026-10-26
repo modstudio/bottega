@@ -440,6 +440,18 @@ function localReplyReachRows(windowStart: string, database: Database): BoardRepl
   }))
 }
 
+function hostedAuthorSession(message: HostedBoardMessage): string | null {
+  return message.authorSession ?? message.origin.session
+}
+
+function isSameHostedAuthorSession(message: HostedBoardMessage, root: HostedBoardMessage): boolean {
+  const messageSession = hostedAuthorSession(message)
+  const rootSession = hostedAuthorSession(root)
+  if (messageSession !== null || rootSession !== null)
+    return messageSession !== null && messageSession === rootSession
+  return message.authorUserId === root.authorUserId
+}
+
 function hostedReplyReachRows(windowStart: string, database: Database): BoardReplyReachRow[] {
   const messages = (
     database.query('SELECT payload FROM hosted_board_message_cache ORDER BY rowid').all() as Array<{
@@ -456,12 +468,14 @@ function hostedReplyReachRows(windowStart: string, database: Database): BoardRep
       )
         return false
       const root = roots.get(message.threadRootId)
-      return Boolean(
-        root && root.authorSession !== null && message.authorUserId !== root.authorUserId,
-      )
+      if (!root) return false
+      const rootAuthorSession = hostedAuthorSession(root)
+      if (rootAuthorSession === null) return false
+      return !isSameHostedAuthorSession(message, root)
     })
     .map((message) => {
       const root = roots.get(message.threadRootId!)!
+      const rootAuthorSession = hostedAuthorSession(root)
       const receipts = database
         .query(
           `SELECT reader_session,successor,delivered_at FROM hosted_board_receipt_cache
@@ -478,7 +492,7 @@ function hostedReplyReachRows(windowStart: string, database: Database): BoardRep
         title: root.title,
         createdAt: message.createdAt,
         rootAuthorDeliveredAt:
-          receipts.find((receipt) => receipt.reader_session === root.authorSession)?.delivered_at ??
+          receipts.find((receipt) => receipt.reader_session === rootAuthorSession)?.delivered_at ??
           null,
         successorDeliveredAt:
           receipts.find((receipt) => receipt.successor === 1)?.delivered_at ?? null,
