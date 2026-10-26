@@ -93,6 +93,18 @@ test('record outbox refuses bare ids and hands every verb to the owning command'
   expect(calls).toEqual(['orchestrator: record outbox discard 17'])
 })
 
+test('record outbox retry --matching reaches the orchestrator without a row id', async () => {
+  const calls: string[] = []
+  for (const form of [['--matching', 'parent run'], ['--matching=parent run']])
+    expect(
+      await dispatchBinary(['record', 'outbox', 'retry', ...form], entries(calls), () => ''),
+    ).toBe(0)
+  expect(calls).toEqual([
+    'orchestrator: record outbox retry --matching parent run',
+    'orchestrator: record outbox retry --matching=parent run',
+  ])
+})
+
 test('routes public and composite commands with unchanged remaining arguments', async () => {
   const calls: string[] = []
   const dispatch = entries(calls)

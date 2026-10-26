@@ -20,6 +20,12 @@ import {
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
 import {
+  proofRunOwnerRequired,
+  runOwnerBackfill,
+  runOwnerRequired,
+  seedRunOwnerBackfill,
+} from './record-run-owner-backfill-proof.ts'
+import {
   proofRunTaskReferenceBackfill,
   runTaskReferenceBackfill,
   seedRunTaskReferenceBackfill,
@@ -901,6 +907,7 @@ async function proofIdentityMigration(transaction: Transaction, name: string): P
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })
+  if (name === runOwnerRequired) await proofRunOwnerRequired(transaction)
 }
 
 async function applyAndProveMigration(
@@ -939,6 +946,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })
+  if (name === runOwnerBackfill) await seedRunOwnerBackfill(transaction, PLATFORM_SPACE_ID)
   await seedHostedProjectCleanupProof(transaction, name)
 }
 

@@ -10,13 +10,18 @@ const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
-export function runRecordValues(row: Payload, projectId: string | null, taskId: string | null) {
+export function runRecordValues(
+  row: Payload,
+  projectId: string | null,
+  taskId: string | null,
+  startedByUserId: string,
+) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
     projectId,
     machineId: String(row.machineId),
-    startedByUserId: nullableString(row.startedByUserId),
+    startedByUserId,
     startedAt: date(row.startedAt),
     finishedAt: nullableDate(row.finishedAt),
     agent: String(row.agent),

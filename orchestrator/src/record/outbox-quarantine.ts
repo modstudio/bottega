@@ -132,6 +132,25 @@ export function retryOutboxRow(
   }, database)
 }
 
+export function retryOutboxRowsMatching(
+  matching: string,
+  database: Database = db(),
+  at = nowIso(),
+  actorSession = sessionId(),
+): number {
+  const rows = database
+    .query<{ id: number }, [string]>(
+      `SELECT id FROM outbox
+       WHERE quarantined_at IS NOT NULL
+         AND retired_at IS NULL
+         AND instr(quarantine_reason, ?) > 0
+       ORDER BY id`,
+    )
+    .all(matching)
+  for (const row of rows) retryOutboxRow(row.id, database, at, actorSession)
+  return rows.length
+}
+
 export function retireOutboxRow(
   rowId: number,
   reason: string,

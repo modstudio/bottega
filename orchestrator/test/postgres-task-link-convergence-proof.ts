@@ -74,10 +74,10 @@ export function registerHostedTaskLinkConvergenceProof(
         ('${ids.otherSpaceQuestion}','${fixture.spaceId}','DEV-1773-OTHER-SPACE',NULL,'${proofIds.MACHINE_A}',1,
          now(),'other space?','[]'::jsonb,now(),now());
        INSERT INTO run
-        (id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+        (id,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
          task_key,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
        VALUES
-        ('${ids.run}','${fixture.spaceId}','${fixture.projectId}','${proofIds.MACHINE_A}',now(),'proof','proof',
+        ('${ids.run}','${fixture.spaceId}','${fixture.projectId}','${proofIds.MACHINE_A}','${proofIds.USER_A}',now(),'proof','proof',
          'sha',1,'proof','DEV-1773-LIVE',false,'ok',1,false,false,false,now(),now());
        INSERT INTO operator_waiting_email
         (id,space_id,user_id,kind,item_id,item_record_id,episode,project,task_key,question,options,
@@ -176,9 +176,9 @@ export function registerHostedTaskLinkConvergenceProof(
       VALUES ('${ids.backfillQuestion}','${fixture.spaceId}','DEV-1773-BACKFILL','${proofIds.MACHINE_A}',1,
        now(),'backfill?','[]'::jsonb,now(),now());
       INSERT INTO run
-       (id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+       (id,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
         task_key,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
-      VALUES ('${ids.backfillRun}','${fixture.spaceId}','${fixture.projectId}','${proofIds.MACHINE_A}',now(),
+      VALUES ('${ids.backfillRun}','${fixture.spaceId}','${fixture.projectId}','${proofIds.MACHINE_A}','${proofIds.USER_A}',now(),
        'proof','proof','sha',1,'proof','DEV-1773-BACKFILL',false,'ok',1,false,false,false,now(),now());
       INSERT INTO operator_waiting_email
        (id,space_id,user_id,kind,item_id,item_record_id,episode,project,task_key,question,options,

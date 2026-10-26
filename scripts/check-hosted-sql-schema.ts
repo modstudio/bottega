@@ -56,7 +56,7 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
   },
   {
     file: 'orchestrator/src/postgres/postgres-migrate-rls.test.ts',
-    fingerprint: '0a70fb7bc3dbf904',
+    fingerprint: 'a6b355e16019d11a',
     reason: 'RLS seed composes the reviewed Better Auth invitation fixture statements',
   },
   {

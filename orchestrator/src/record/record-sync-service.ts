@@ -279,7 +279,7 @@ async function pushRun(
     if (identity.refusal !== null) {
       throw new OutboxRowError(identity.refusal, 'row-validation')
     }
-    const values = runRecordValues(row, identity.projectId, identity.taskId)
+    const values = runRecordValues(row, identity.projectId, identity.taskId, principal.userId)
     const evidenceUnvoid = row.evidenceUnvoid
     if (evidenceUnvoid !== null) await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
     const exclusion = await tx`
@@ -919,7 +919,6 @@ async function pushHostedRow(input: {
     const record: Payload = {
       ...parsed,
       spaceId: rowPrincipal.spaceId,
-      ...(kind === 'run' ? { startedByUserId: identity.user.id } : {}),
     }
     if (String(record.machineId) !== input.machineId) {
       throw new OutboxRowError(

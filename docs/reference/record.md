@@ -170,9 +170,13 @@ retire an outbox row after proving its dependencies
 
 ## bottega record outbox retry
 
-**Synopsis:** `bottega record outbox retry <row-id>`
+**Synopsis:** `bottega record outbox retry [row-id] [--matching <text>]`
 
 queue an outbox row for another delivery attempt
+
+### Options
+
+- `--matching <text>`: retry quarantined orchestrator rows whose reason contains the text
 
 ### Related
 

@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
-import { retryOutboxRow } from '../record/outbox-quarantine.ts'
+import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
   recordAuditSecretsCommand,
@@ -229,6 +229,27 @@ function registerSpaceCommands(record: Command): void {
     )
 }
 
+function retryOutboxCommand(rowId: string | undefined, matching: string | undefined): void {
+  if ((rowId === undefined) === (matching === undefined)) {
+    throw new Error(
+      `exactly one retry form is required: \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retry --matching <text>\``,
+    )
+  }
+  if (rowId !== undefined) {
+    retryOutboxRow(Number(rowId))
+    log(`outbox row ${String(rowId)} will retry on the next sync`)
+    return
+  }
+  // An empty needle matches every reason, which would retry the whole quarantine.
+  if (matching!.trim() === '') {
+    throw new Error(
+      `--matching requires non-empty text; name part of an orchestrator quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
+    )
+  }
+  const count = retryOutboxRowsMatching(matching!)
+  log(`${count} orchestrator outbox rows will retry on the next sync`)
+}
+
 export function register(program: Command): void {
   const record = program.command('record').description('manage the hosted record and its outbox')
   registerUseCommand(record)
@@ -265,11 +286,17 @@ export function register(program: Command): void {
   outbox
     .command('retry')
     .description('queue an outbox row for another delivery attempt')
-    .argument('<row-id>')
-    .action((rowId) => {
-      retryOutboxRow(Number(rowId))
-      log(`outbox row ${String(rowId)} will retry on the next sync`)
-    })
+    .argument('[row-id]')
+    .option(
+      '--matching <text>',
+      'retry quarantined orchestrator rows whose reason contains the text',
+    )
+    .action((rowId, options) =>
+      retryOutboxCommand(
+        rowId,
+        options.matching === undefined ? undefined : String(options.matching),
+      ),
+    )
   outbox
     .command('retire')
     .description('retire an outbox row after proving its dependencies')

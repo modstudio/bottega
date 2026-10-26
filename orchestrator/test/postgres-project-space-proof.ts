@@ -149,11 +149,11 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
          ('${project}','${source}','move-proof',ARRAY['MOVE'],now()),
          ('${otherProject}','${source}','stay-proof',ARRAY['STAY'],now());
        INSERT INTO run
-         (id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,
+         (id,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,
           prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
           work_preserved,created_at,updated_at) VALUES
-         ('${run}','${source}','${project}','${input.machineId}',now(),'proof','proof','m',1,'m',false,'ok',1,false,false,false,now(),now()),
-         ('${otherRun}','${source}','${otherProject}','${input.machineId}',now(),'proof','proof','s',1,'s',false,'ok',1,false,false,false,now(),now());
+         ('${run}','${source}','${project}','${input.machineId}','${input.userId()}',now(),'proof','proof','m',1,'m',false,'ok',1,false,false,false,now(),now()),
+         ('${otherRun}','${source}','${otherProject}','${input.machineId}','${input.userId()}',now(),'proof','proof','s',1,'s',false,'ok',1,false,false,false,now(),now());
        INSERT INTO review
          (id,space_id,project_id,machine_id,recorded_at,created_at,updated_at)
          VALUES ('${review}','${source}','${project}','${input.machineId}',now(),now(),now());
@@ -706,9 +706,9 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     input.admin(
       `INSERT INTO project(id,space_id,name,created_at) VALUES ('${project}','${source}','atomic-proof',now());
        INSERT INTO run
-         (id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,prompt_bytes,
+         (id,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
           prompt_head,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
-         VALUES ('${run}','${source}','${project}','${input.machineId}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now());
+         VALUES ('${run}','${source}','${project}','${input.machineId}','${input.userId()}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now());
        INSERT INTO hub_task(id,space_id,project_name,key,project,source,first_seen,last_seen,created_at,updated_at) VALUES
          ('${newRecordId()}','${source}','atomic-proof','${key}','atomic-proof','local',now(),now(),now(),now()),
          ('${newRecordId()}','${destination.id}','other','${key}','other','local',now(),now(),now(),now());`,
