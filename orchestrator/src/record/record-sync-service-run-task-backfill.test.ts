@@ -51,10 +51,10 @@ realPostgres('populated run task_id expand and backfill', () => {
         INSERT INTO hub_task
           (id, space_id, project_name, key, project, source, first_seen, last_seen, created_at, updated_at)
         VALUES
-          ('${ownTaskId}', '${PLATFORM_SPACE_ID}', 'dev-1771', 'OWN-1', 'dev-1771', 'proof', now(), now(), now(), now()),
-          ('${otherOnlyTaskId}', '${otherSpaceId}', 'dev-1771', 'OTHER-1', 'dev-1771', 'proof', now(), now(), now(), now()),
-          ('${platformSharedTaskId}', '${PLATFORM_SPACE_ID}', 'dev-1771', 'SHARED-1', 'dev-1771', 'proof', now(), now(), now(), now()),
-          ('${otherSharedTaskId}', '${otherSpaceId}', 'dev-1771', 'SHARED-1', 'dev-1771', 'proof', now(), now(), now(), now());
+          ('${ownTaskId}', '${PLATFORM_SPACE_ID}', 'dev-1771', 'OWN-1', 'dev-1771', 'local', now(), now(), now(), now()),
+          ('${otherOnlyTaskId}', '${otherSpaceId}', 'dev-1771', 'OTHER-1', 'dev-1771', 'local', now(), now(), now(), now()),
+          ('${platformSharedTaskId}', '${PLATFORM_SPACE_ID}', 'dev-1771', 'SHARED-1', 'dev-1771', 'local', now(), now(), now(), now()),
+          ('${otherSharedTaskId}', '${otherSpaceId}', 'dev-1771', 'SHARED-1', 'dev-1771', 'local', now(), now(), now(), now());
         ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
         ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY;
         INSERT INTO "run"

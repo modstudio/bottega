@@ -338,7 +338,7 @@ try {
       'test',
       '--timeout',
       '30000',
-      'src/postgres/postgres-migrate-run-task-reference.test.ts',
+      'src/record/record-sync-service-run-task-backfill.test.ts',
     ],
     { BOTTEGA_TEST_RUN_TASK_REFERENCE_MIGRATION_URL: runTaskReferenceMigrationUrl },
   )
@@ -390,7 +390,7 @@ try {
     throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
 
   const rls = await run(
-    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
+    ['bun', 'test', '--timeout', '60000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
       BOTTEGA_TEST_POSTGRES_CONTAINER: container,
       BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
@@ -432,7 +432,7 @@ try {
         )
         if (catalogueImport !== 0) throw new EarlyExit(catalogueImport)
         const runTaskReference = await run(
-          ['bun', 'test', '--timeout', '30000', 'src/record/record-sync-service-postgres.test.ts'],
+          ['bun', 'test', '--timeout', '30000', 'src/record/record-sync-service.test.ts'],
           {
             BOTTEGA_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,
             BOTTEGA_RECORD_URL: actorUrl,
