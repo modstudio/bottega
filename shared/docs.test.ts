@@ -59,5 +59,7 @@ describe('docScopeIsProjectless', () => {
     expect(docScopeIsProjectless('machine')).toBe(true)
     expect(docScopeIsProjectless('project')).toBe(false)
     expect(docScopeIsProjectless('stack')).toBe(false)
+    expect(docScopeIsProjectless('agent')).toBe(false)
+    expect(docScopeIsProjectless('job')).toBe(false)
   })
 })
