@@ -353,14 +353,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
   const identity = claimIdentity(opts.resume)
-  const ownerSession =
-    resume.workspaceSource === 'retained'
-      ? opts.resume!.sessionId
-      : (opts.ownerSession ?? sessionId())
-  if (name === HARNESS_AGENT && !ownerSession)
-    throw new Error(
-      `a harness run requires an owning agent session; remedy: run ${PLATFORM_SLUG} run start from an agent session`,
-    )
+  const ownerSession = requiredOwnerSession(name, opts, resume.workspaceSource)
   const execution = executorClaimFacts(name, mcpRequest, transportName, timeoutMs)
   const updateReservedRun = () =>
     db()
@@ -1011,6 +1004,20 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     usingMcp,
   }
 }
+function requiredOwnerSession(
+  name: string,
+  opts: ClaimOptions,
+  workspaceSource: ReturnType<typeof resumeFacts>['workspaceSource'],
+): string | null {
+  const ownerSession =
+    workspaceSource === 'retained' ? opts.resume!.sessionId : (opts.ownerSession ?? sessionId())
+  if (name === HARNESS_AGENT && !ownerSession)
+    throw new Error(
+      `a harness run requires an owning agent session; remedy: run ${PLATFORM_SLUG} run start from an agent session`,
+    )
+  return ownerSession
+}
+
 function executorClaimFacts(
   name: string,
   mcpRequest: McpRequest | undefined,

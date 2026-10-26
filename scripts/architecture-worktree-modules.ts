@@ -31,6 +31,7 @@ export const worktreeModules: WorktreeModule[] = [
     '../run/run-artifacts.ts',
     '../run/run-identifier.ts',
     '../run/run-lease.ts',
+    '../run/run-owner-session-liveness.ts',
     '../run/run-process.ts',
     '../run/run-status.ts',
     '../sandbox/grok-trust.ts',

@@ -9,6 +9,14 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/close/conversation-liveness.ts', [
+    'node:fs',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../run/run-alive.ts',
+    '../run/run-lease.ts',
+    '../run/run-owner-session-liveness.ts',
+  ]),
   module('orchestrator/src/worktree/worktree-seed.ts', [
     '../cli/args.ts',
     '../project/projects.ts',
@@ -48,6 +56,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-retry.ts',
   ]),
   module('orchestrator/src/run/run-alive.ts', []),
+  module('orchestrator/src/run/run-owner-session-liveness.ts', [
+    '../database/db.ts',
+    './session-liveness-adapter.ts',
+    'bun:sqlite',
+  ]),
   module('orchestrator/src/run/run-status.ts', []),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
@@ -77,6 +90,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './branch-conversation-owner.ts',
   ]),
   module('orchestrator/src/run/run-claim.ts', [
+    '../../../shared/brand.ts',
     '../agent/agents.ts',
     '../branch/create-time-settlement.ts',
     '../contract/codex-schema.ts',
@@ -332,7 +346,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-executor.ts',
     './run-harness-reply.ts',
     './run-lease.ts',
-    './run-live.ts',
+    './run-reply-source.ts',
     './run-pack-prompt.ts',
     './run-terminal.ts',
   ]),
