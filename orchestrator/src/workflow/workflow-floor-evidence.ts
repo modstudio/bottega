@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
+import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
@@ -35,6 +35,7 @@ import {
   DEFAULT_EXPECTED_EXIT_CODE,
   DEFAULT_EXPECTED_STATUS,
   type Floor,
+  flagForFloor,
   githubPullRequestUrlIn,
   isFloorKind,
   type OpenObligation,
@@ -461,6 +462,22 @@ function gatherRun(
   }
 }
 
+/**
+ * Whether a document address is admissible as evidence on a project's cursor. A document in a
+ * project-less scope (global, machine) belongs to no project, so it is admissible on any
+ * cursor; a document scoped to another project is not.
+ */
+export function docAdmissibleAsCursorEvidence(
+  address: { scope: string; subject: string | null; projectName: string | null },
+  project: string,
+): boolean {
+  return (
+    docScopeIsProjectless(address.scope) ||
+    address.projectName === project ||
+    (docScopeHasProjectSubject(address.scope) && address.subject === project)
+  )
+}
+
 function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database): string {
   const row = resolveDocReference(value, d)
   const flag = `--artifact doc:${value}`
@@ -468,14 +485,19 @@ function resolveDocArtifact(value: string, identity: CursorIdentity, d: Database
     throw new Error(
       `${flag} does not exist; use doc:<scope>/<subject-or-_>/<slug> or doc:<document-UUID>`,
     )
-  const scoped =
-    row.projectName === identity.project ||
-    (docScopeHasProjectSubject(row.scope) && row.subject === identity.project)
-  if (!scoped)
+  if (!docAdmissibleAsCursorEvidence(row, identity.project))
     throw new Error(
       `${flag} is scoped to ${row.projectName ?? row.subject ?? row.scope}, not this cursor's ${identity.project}`,
     )
   return row.address
+}
+
+function resolveRunArtifactIdentifier(input: string, raw: string, d: Database): string {
+  try {
+    return resolveRunIdentifier(d, input)
+  } catch {
+    throw new Error(`--artifact ${raw} is not a run; pass ${flagForFloor('recorded-artifact')}`)
+  }
 }
 
 function resolveNumericArtifact(
@@ -602,10 +624,10 @@ function resolveArtifact(
     return { ref: raw, exists: true }
   }
   if (ref.kind === 'run') {
-    const recordId = resolveRunIdentifier(d, ref.id)
+    const recordId = resolveRunArtifactIdentifier(ref.id, raw, d)
     const run = loadRunBinding(recordId, d)
-    if (!run) throw new Error(`--artifact run:${ref.id} does not exist`)
-    requireRunBinding(`--artifact run:${ref.id}`, run, identity, binding.cursorId, d)
+    if (!run) throw new Error(`--artifact ${raw} does not exist`)
+    requireRunBinding(`--artifact ${raw}`, run, identity, binding.cursorId, d)
     return {
       ref: raw,
       exists: (ports.runHasArtifacts ?? runHasRecordedArtifacts)(recordId),

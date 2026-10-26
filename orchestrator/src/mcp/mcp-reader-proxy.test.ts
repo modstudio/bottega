@@ -3,9 +3,12 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client, InMemoryTransport, type Tool } from '@modelcontextprotocol/client'
+import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { McpServerConfig } from './mcp-probe.ts'
 import {
   createReaderMcpProxy,
   MCP_UPSTREAM_INHERITED_ENV,
+  MCP_UPSTREAM_STORE_ENV,
   type ReaderMcpUpstream,
   readerMcpProxyCommand,
   readerMcpUpstreamEnvironment,
@@ -33,6 +36,41 @@ test('upstream environment contains only declared and allowlisted values', () =>
     TRACKER_TOKEN: 'declared-secret',
   })
   expect(MCP_UPSTREAM_INHERITED_ENV).toEqual(['PATH', 'HOME', 'LANG', 'TMPDIR', 'USER', 'SHELL'])
+})
+
+test('only the built-in upstream inherits the names that locate the operator store', () => {
+  const environment = {
+    PATH: '/bin',
+    HOME: '/run/home',
+    BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    BOTTEGA_HUB_DB: '/state/hub/hub.db',
+    BOTTEGA_STATE_HOME: '/state',
+    XDG_STATE_HOME: '/xdg',
+    BOTTEGA_RUN_TOKEN: 'run-token-secret',
+  }
+  // A `.mcp.json` entry brings its own values and keeps the narrow allowlist.
+  expect(readerMcpUpstreamEnvironment(environment, undefined)).toEqual({
+    PATH: '/bin',
+    HOME: '/run/home',
+  })
+  // A worker HOME is run-scoped, so the platform's own server also inherits the
+  // names that locate the operator's store instead of a fresh empty one.
+  expect(readerMcpUpstreamEnvironment(environment, undefined, true)).toEqual({
+    PATH: '/bin',
+    HOME: '/run/home',
+    BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    BOTTEGA_HUB_DB: '/state/hub/hub.db',
+    BOTTEGA_STATE_HOME: '/state',
+    XDG_STATE_HOME: '/xdg',
+  })
+  // Only a set name is inherited; an unset one never appears.
+  expect(readerMcpUpstreamEnvironment({ PATH: '/bin' }, undefined, true)).toEqual({ PATH: '/bin' })
+  expect(MCP_UPSTREAM_STORE_ENV).toEqual([
+    'BOTTEGA_ORCHESTRATOR_DB',
+    'BOTTEGA_HUB_DB',
+    'BOTTEGA_STATE_HOME',
+    'XDG_STATE_HOME',
+  ])
 })
 
 test('proxy exhausts listing pages, refuses guessed names, and forwards allowed calls unchanged', async () => {
@@ -130,6 +168,121 @@ test('command sanitizes a configured credential from an upstream startup failure
     expect(errors.join('\n')).not.toContain('credential-value-123')
     expect(errors.join('\n')).not.toContain('argument-credential-456')
     expect(exitCodes).toEqual([1])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('command resolves the platform’s own server without a tree entry, and a tree entry still wins', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-platform-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  await Bun.write(join(main, '.keep'), '')
+  await Bun.write(join(tree, '.keep'), '')
+  const launches: Array<{ command?: string; args?: string[]; cwd?: string }> = []
+  const upstreamEnvironments: Record<string, string>[] = []
+  const errors: string[] = []
+  const common = {
+    projectByName: () => ({ name: PLATFORM_SLUG, path: main, settings: {} }),
+    retiredProjectByName: () => null,
+    environment: {
+      PATH: '/bin',
+      HOME: '/run/home',
+      BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    },
+    error: (line: string) => errors.push(line),
+    setExitCode: () => {},
+    connectMcpToolClient: async (
+      launch: { command?: string; args?: string[]; cwd?: string },
+      environment: Record<string, string>,
+    ) => {
+      launches.push(launch)
+      upstreamEnvironments.push(environment)
+      throw new Error('upstream unavailable in this test')
+    },
+  }
+  try {
+    const configs: Record<string, McpServerConfig>[] = [
+      {},
+      {
+        [MCP_SERVER_NAME]: {
+          name: MCP_SERVER_NAME,
+          command: '/project/bin/own-server',
+          args: ['--own'],
+        },
+      },
+    ]
+    for (const config of configs) {
+      await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+        ...common,
+        readMcpConfigResult: () => ({ ok: true, path: join(main, '.mcp.json'), config }),
+      })
+    }
+    expect(errors.join('\n')).not.toContain('is not configured in')
+    expect(launches.map((launch) => launch.args)).toEqual([['mcp', 'serve'], ['--own']])
+    expect(launches[0]!.cwd).toBe(tree)
+    expect(launches[0]!.command?.endsWith(join('bin', PLATFORM_SLUG))).toBe(true)
+    // The built-in upstream reaches the operator's store; the tree's own entry
+    // is a project launch and keeps the narrow allowlist.
+    expect(upstreamEnvironments[0]).toEqual({
+      PATH: '/bin',
+      HOME: '/run/home',
+      BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    })
+    expect(upstreamEnvironments[1]).toEqual({ PATH: '/bin', HOME: '/run/home' })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('command falls back to the built-in launch when the launch file is absent and still reports a broken one', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-fallback-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  await Bun.write(join(main, '.keep'), '')
+  await Bun.write(join(tree, '.keep'), '')
+  const path = join(main, '.mcp.json')
+  const launches: Array<{ command?: string; args?: string[]; cwd?: string }> = []
+  const errors: string[] = []
+  const common = {
+    projectByName: () => ({ name: PLATFORM_SLUG, path: main, settings: {} }),
+    retiredProjectByName: () => null,
+    environment: {},
+    error: (line: string) => errors.push(line),
+    setExitCode: () => {},
+    connectMcpToolClient: async (launch: { command?: string; args?: string[]; cwd?: string }) => {
+      launches.push(launch)
+      throw new Error('upstream unavailable in this test')
+    },
+  }
+  try {
+    // The platform's own server is registered at user scope, so a tree with no
+    // launch file at all still starts the installed binary serving it.
+    await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+      ...common,
+      readMcpConfigResult: () => ({ ok: false, path, reason: 'missing' }),
+    })
+    // The same absence still refuses a name no installation answers for.
+    await readerMcpProxyCommand(PLATFORM_SLUG, 'tracker', tree, {
+      ...common,
+      readMcpConfigResult: () => ({ ok: false, path, reason: 'missing' }),
+    })
+    // A broken file is reported for every name, the platform's included.
+    await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+      ...common,
+      readMcpConfigResult: () => ({ ok: false, path, reason: 'invalid' }),
+    })
+    expect(launches.map((launch) => launch.args)).toEqual([['mcp', 'serve']])
+    expect(launches[0]!.cwd).toBe(tree)
+    expect(launches[0]!.command?.endsWith(join('bin', PLATFORM_SLUG))).toBe(true)
+    expect(errors.filter((line) => !line.endsWith('upstream unavailable in this test'))).toEqual([
+      `MCP reader proxy for tracker could not start: MCP configuration is missing at ${path}`,
+      `MCP reader proxy for ${MCP_SERVER_NAME} could not start: MCP configuration is not valid JSON at ${path}`,
+    ])
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

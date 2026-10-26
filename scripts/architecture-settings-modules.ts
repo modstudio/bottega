@@ -45,6 +45,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/hosted-secret-opening.ts',
     '../../../shared/machine-key-id.ts',
     '../../../shared/record-remedies.ts',
+    '../../../shared/sealed-value.ts',
     '../../../shared/secret-envelope.ts',
     '../../../shared/machine-key-store.ts',
     '../../../shared/machine-config.ts',

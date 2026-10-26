@@ -2,7 +2,7 @@
 /** Resolves named secrets into a child environment and runs the requested command. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
+import { resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import { secretResolutionFailure } from '../../../shared/secret-resolution-failure.ts'
 import { assertRecordConnectionResolutionAllowed } from '../sandbox/record-connection-env.ts'
 export const SECRET_RUN_WORKING_FORM = `${PLATFORM_SLUG} machine config secret run --name <KEY> [--name <KEY> ...] -- <argv...>`
@@ -77,29 +77,40 @@ export function childEnvironmentForNamedSecrets(
   return { ok: true, env }
 }
 
-function namedSecretUnresolvedRefusal(unresolved: readonly string[]): string {
-  const keys = unresolved.join(', ')
+/** A resolved name is added to the child; a name the resolver could not produce is refused. */
+export function namedSecretUnresolvedRefusal(
+  unresolved: readonly string[],
+  sealedEmpty: readonly string[],
+): string {
+  const sealed = new Set(sealedEmpty)
+  const empty = unresolved.filter((key) => sealed.has(key))
+  const unset = unresolved.filter((key) => !sealed.has(key))
+  const states = [
+    ...(empty.length ? [`${empty.join(', ')} is sealed empty`] : []),
+    ...(unset.length ? [`${unset.join(', ')} not set`] : []),
+  ]
   const sets = unresolved
     .map((key) => `${PLATFORM_SLUG} machine config secret set ${key}`)
     .join(', ')
   return (
-    `named secret${unresolved.length === 1 ? '' : 's'} ${keys} not set\n` +
+    `named secret${unresolved.length === 1 ? '' : 's'} ${states.join(', ')}\n` +
     `cleared by: ${sets}, or add it to an env file the resolver reads`
   )
 }
 
 export async function runNamedSecrets(input: SecretRunInvocation): Promise<number> {
   assertRecordConnectionResolutionAllowed(input.names, process.env)
-  let resolved: Record<string, string | undefined>
+  let resolution: Awaited<ReturnType<typeof resolveEnvValuesWithHosted>>
   try {
-    resolved = await readEnvValuesWithHosted(input.names)
+    resolution = await resolveEnvValuesWithHosted(input.names)
   } catch (error) {
     const failure = secretResolutionFailure(error)
     if (failure) throw new Error(failure)
     throw error
   }
-  const child = childEnvironmentForNamedSecrets(input.names, resolved, process.env)
-  if (!child.ok) throw new Error(namedSecretUnresolvedRefusal(child.unresolved))
+  const child = childEnvironmentForNamedSecrets(input.names, resolution.values, process.env)
+  if (!child.ok)
+    throw new Error(namedSecretUnresolvedRefusal(child.unresolved, resolution.sealedEmpty))
   const spawned = Bun.spawn(input.argv, {
     env: child.env,
     stdin: 'inherit',

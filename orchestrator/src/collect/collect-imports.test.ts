@@ -23,6 +23,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../outcome.ts',
   '../run-owned-paths.ts',
   '../run/question-open.ts',
+  '../run/run-identifier-grammar.ts',
   '../run/run-identifier.ts',
   '../score/refusal-guidance.ts',
   '../collect/result-output.ts',
