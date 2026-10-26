@@ -270,13 +270,14 @@ function events(includeVoided = false): Event[] {
     quality: Parameters<typeof weigh>[1]
     fidelity: Parameters<typeof weigh>[2]
     scoredAt: string | null
+    executor: 'external' | 'harness'
   }
   const database = db()
   const rows = database
     .query(
       `SELECT r.record_id, r.agent, r.job, r.stack, r.model, r.prompt_bytes AS promptBytes,
             r.started_at AS startedAt, r.latency_ms AS latencyMs, r.status,
-            r.failure_kind AS failureKind,
+            r.failure_kind AS failureKind, r.executor,
             s.delivery, s.quality, s.fidelity, s.scored_at AS scoredAt
        FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
       WHERE r.parent_run_record_id IS NULL AND r.probe=0
@@ -297,6 +298,7 @@ function events(includeVoided = false): Event[] {
       status: row.status,
       delivery: row.delivery,
       failureKind: row.failureKind,
+      executor: row.executor,
     })
       ? (row.scoredAt ?? chainTerminationAt(database, row.record_id))
       : null

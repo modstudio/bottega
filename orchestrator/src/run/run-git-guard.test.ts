@@ -1,9 +1,79 @@
 import { expect, test } from 'bun:test'
-import { accessSync, constants, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  accessSync,
+  constants,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { git, gitOk } from '../git/git-environment.ts'
-import { workerGitConfigEnvironment } from './run-git-guard.ts'
+import { git, gitOk, worktreeGitDir } from '../git/git-environment.ts'
+import {
+  HARNESS_RUN_MARKER,
+  installHarnessPushGuard,
+  workerGitConfigEnvironment,
+} from './run-git-guard.ts'
+
+test('harness marker makes the tracked pre-push hook refuse only its worktree', () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'orch-harness-guard-main-'))
+  const path = join(repoRoot, '.claude', 'worktrees', 'orch-harness')
+  const hook = join(import.meta.dir, '..', '..', '..', '.githooks', 'pre-push')
+  try {
+    git(['init', '--initial-branch=main'], repoRoot)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '--allow-empty',
+        '-m',
+        'initial',
+      ],
+      repoRoot,
+    )
+    git(['worktree', 'add', '-b', 'DEV-1765-harness', path], repoRoot)
+    const worktree = {
+      path,
+      branch: 'DEV-1765-harness',
+      base: 'HEAD',
+      repoRoot,
+      source: 'git' as const,
+    }
+    const marker = join(worktreeGitDir(path), HARNESS_RUN_MARKER)
+
+    installHarnessPushGuard(worktree, 'run-record-1765')
+
+    expect(readFileSync(marker, 'utf8')).toBe('run-record-1765\n')
+    expect(gitOk(['config', '--get', 'extensions.worktreeConfig'], repoRoot)).toBeNull()
+    expect(gitOk(['config', '--get', 'core.hooksPath'], path)).toBeNull()
+    const refused = Bun.spawnSync([hook, 'origin', repoRoot], {
+      cwd: path,
+      stdin: new Uint8Array(),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    expect(refused.exitCode).not.toBe(0)
+    expect(refused.stderr.toString()).toContain(
+      "harness run run-record-1765 refused: a harness run's tree never pushes",
+    )
+
+    unlinkSync(marker)
+    const allowed = Bun.spawnSync([hook, 'origin', repoRoot], {
+      cwd: path,
+      stdin: new Uint8Array(),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    expect(allowed.exitCode).toBe(0)
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true })
+  }
+})
 
 test('reader launch installs and selects a worker pre-push guard for the guarded origin', () => {
   const repoRoot = mkdtempSync(join(tmpdir(), 'orch-reader-guard-main-'))

@@ -1,8 +1,11 @@
 // concern: record-board-receipts
 /** Owns hosted board receipt writes. Must not know HTTP or local stores. */
 
+import type { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
+  BOARD_MESSAGE_REVISION_LOCK_KEY,
   type HostedBoardReceipt,
   type HostedBoardReceiptInput,
   type HostedBoardStatus,
@@ -12,6 +15,11 @@ import { hostedBoardMessageView, loadHostedBoardMessage } from './record-board-m
 import { type BoardTenant, withBoardTenant } from './record-board-tx.ts'
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
+
+/** The migration that adds the definer function a reader's acknowledgement needs. */
+const BOARD_RECEIPT_REVISION_MIGRATION = '20261026044618_dev_1766_board_ack_revision'
+
+const BOARD_RECEIPT_REVISION_MIGRATION_REMEDY = `board acknowledgement requires record migration ${BOARD_RECEIPT_REVISION_MIGRATION}; apply it with \`${PLATFORM_SLUG} record migrate\`, then retry`
 
 export function hostedBoardReceiptView(row: Record<string, unknown>): HostedBoardReceipt {
   return {
@@ -57,6 +65,12 @@ export async function putHostedBoardReceipt(
   return withBoardTenant(input, false, async (tx) => {
     const message = await loadHostedBoardMessage(tx, input.messageId)
     if (!message) throw new RecordBoardError(`board message ${input.messageId} not found`, 404)
+    const prior = (await tx`
+      SELECT acknowledged_at FROM board_receipt
+      WHERE message_id=${input.messageId}::uuid
+        AND reader_user_id=${input.userId}::uuid
+        AND reader_session=${input.readerSession}
+    `) as { acknowledged_at: unknown }[]
     const deliveredAt = input.delivered ? clock : null
     const acknowledgedAt = input.acknowledged ? clock : null
     const rows = await tx`
@@ -74,6 +88,29 @@ export async function putHostedBoardReceipt(
     `
     if (!rows[0])
       throw new RecordBoardError(`board receipt for ${input.messageId} was not stored`, 409)
+    // A first acknowledgement is the only receipt write another reader must learn about, so
+    // it advances the message revision the change feed pages on. Delivery stays per session.
+    if (acknowledgedAt !== null && (prior[0]?.acknowledged_at ?? null) === null) {
+      await advanceReceiptRevision(tx, input.messageId)
+    }
     return hostedBoardReceiptView(rows[0] as Record<string, unknown>)
   })
+}
+
+async function advanceReceiptRevision(tx: SQL, messageId: string): Promise<void> {
+  const available = (await tx`
+    SELECT to_regprocedure('public.board_message_advance_receipt_revision(uuid)') IS NOT NULL AS available
+  `) as { available: boolean }[]
+  if (!available[0]?.available)
+    throw new RecordBoardError(BOARD_RECEIPT_REVISION_MIGRATION_REMEDY, 409)
+  // Order the bump with the writers' lock, so it cannot commit below an advanced feed cursor.
+  await tx`SELECT pg_advisory_xact_lock(${BOARD_MESSAGE_REVISION_LOCK_KEY})`
+  const rows = (await tx`
+    SELECT public.board_message_advance_receipt_revision(${messageId}::uuid) AS advanced
+  `) as { advanced: boolean }[]
+  if (!rows[0]?.advanced)
+    throw new RecordBoardError(
+      `board acknowledgement for message ${messageId} did not advance its revision; the receipt was not stored, retry once the record answers`,
+      409,
+    )
 }

@@ -204,13 +204,6 @@ export const modules: ArchitectureModule[] = [
     '../worktree/worktree.ts',
     '../worktree/worktree-remove.ts',
   ]),
-  module('orchestrator/src/close/conversation-liveness.ts', [
-    'node:fs',
-    '../../../shared/process-identity.ts',
-    '../database/db.ts',
-    '../run/run-alive.ts',
-    '../run/run-lease.ts',
-  ]),
   module('orchestrator/src/close/close-out-release-holds.ts', [
     'node:fs',
     '../database/db.ts',
@@ -361,6 +354,7 @@ export const modules: ArchitectureModule[] = [
     '../run/live-run-member.ts',
     '../run/run-lease.ts',
     '../run/run-number.ts',
+    '../run/run-owner-session-liveness.ts',
     '../run/question-open.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),

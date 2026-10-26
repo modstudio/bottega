@@ -7,14 +7,15 @@ import type { Database } from 'bun:sqlite'
 import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { nowIso, sessionId } from '../database/db.ts'
+import { nowIso, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { runEventsPath } from '../events.ts'
 import { EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { withCleanupLock, withWorktreeLease } from '../project/project-lock.ts'
-import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import {
   type DockerInventory,
@@ -30,6 +31,17 @@ import {
 } from './main-stack-decision.ts'
 
 export type WorktreeSharerRow = { record_id: string; status: string; scored: number }
+type RecordedLiveRow = {
+  record_id: string
+  status: string
+  pid: number | null
+  executor: 'external' | 'harness'
+  session_id: string | null
+  started_at: string
+  job: string
+  session_last_seen: string | null
+  harness_wall_bound_ms: number | null
+}
 
 function worktreeSharers(
   database: Database,
@@ -44,7 +56,9 @@ function worktreeSharers(
   const candidates = database
     .query(
       `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id,
-            r.status, r.pid, ${EVIDENCE_CLOSED_SQL} AS scored
+            r.status, r.pid, r.executor, r.session_id, r.started_at, r.job, r.harness_wall_bound_ms,
+            (SELECT last_seen FROM session_seen WHERE session_id=r.session_id) session_last_seen,
+            ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r LEFT JOIN score s ON s.run_record_id=COALESCE(r.parent_run_record_id,r.record_id)
       WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
         AND COALESCE(r.parent_run_record_id, r.record_id) <>
@@ -55,6 +69,11 @@ function worktreeSharers(
     .all(...spellings, row.record_id, row.record_id, liveOnly ? 1 : 0) as (WorktreeSharerRow & {
     root_record_id: string
     pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+    session_last_seen: string | null
   })[]
   const roots = new Set<string>()
   return candidates.flatMap((candidate) => {
@@ -64,6 +83,12 @@ function worktreeSharers(
         status: candidate.status,
         lease: runLeaseState(candidate.record_id),
         pidAlive: Boolean(candidate.pid && pidAlive(candidate.pid)),
+        ...recordedRunLivenessFacts(
+          candidate,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(database, candidate.session_id),
+        ),
       })
     )
       return []
@@ -231,15 +256,23 @@ function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
   const identity = worktreeIdentity(worktree)
   const live = database
     .query(
-      "SELECT record_id,status,pid,worktree FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')",
+      `SELECT record_id,status,pid,worktree,executor,session_id,started_at,job,harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
+         FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')`,
     )
-    .all() as { record_id: string; status: string; pid: number | null; worktree: string }[]
+    .all() as (RecordedLiveRow & { worktree: string })[]
   return live.some(
     (row) =>
       runAlive({
         status: row.status,
         lease: runLeaseState(row.record_id),
         pidAlive: Boolean(row.pid && pidAlive(row.pid)),
+        ...recordedRunLivenessFacts(
+          row,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(database, row.session_id),
+        ),
       }) && worktreeIdentity(row.worktree) === identity,
   )
 }
@@ -267,16 +300,24 @@ type TerminalDockerRemovalResult = {
 function chainHasLiveRun(database: Database, runId: string): boolean {
   const candidates = database
     .query(
-      `SELECT record_id,status,pid FROM run WHERE COALESCE(parent_run_record_id,record_id)=
+      `SELECT record_id,status,pid,executor,session_id,started_at,job,harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
+         FROM run WHERE COALESCE(parent_run_record_id,record_id)=
        (SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?)
        AND status IN ('running','asking')`,
     )
-    .all(runId) as { record_id: string; status: string; pid: number | null }[]
+    .all(runId) as RecordedLiveRow[]
   return candidates.some((candidate) =>
     runAlive({
       status: candidate.status,
       lease: runLeaseState(candidate.record_id),
       pidAlive: Boolean(candidate.pid && pidAlive(candidate.pid)),
+      ...recordedRunLivenessFacts(
+        candidate,
+        Date.now(),
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(database, candidate.session_id),
+      ),
     }),
   )
 }

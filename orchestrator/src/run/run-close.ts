@@ -205,6 +205,8 @@ async function selectFailoverSuccessor(input: {
         },
         false,
         input.lens ?? undefined,
+        Math.random,
+        { allowHarness: false },
       )
     } catch (error) {
       if (!input.pinnedTransport || error instanceof AgentCapacityError) throw error

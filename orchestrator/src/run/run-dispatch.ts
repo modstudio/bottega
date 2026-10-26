@@ -25,26 +25,28 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
-import { db, nowIso, sessionId, writableDb } from '../database/db.ts'
+import { db, nowIso, SESSION_LIVE_MS, sessionId, writableDb } from '../database/db.ts'
 import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
-import { job } from '../jobs/jobs.ts'
+import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
-import { runAlive } from './run-alive.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
+import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
+import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
@@ -67,7 +69,8 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
   const tree = spec.resume.worktree?.path ?? null
   const possibleOwners = db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree FROM run
+      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree,executor,session_id,started_at,job,harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen FROM run
        WHERE record_id=? OR parent_run_record_id=?
           OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
     )
@@ -79,6 +82,12 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
     pid: number | null
     branch: string | null
     worktree: string | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+    session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
   const liveOwner = possibleOwners.find((owner) => {
     const inOriginal =
@@ -88,6 +97,12 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
       status: owner.status,
       lease: runLeaseState(owner.record_id),
       pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
+      ...recordedRunLivenessFacts(
+        owner,
+        Date.now(),
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(db(), owner.session_id),
+      ),
     })
   })
   if (!liveOwner) return
@@ -165,6 +180,20 @@ function detachedReviewBindings(spec: ResolvedDetachSpec) {
     spec.reviewRole ?? null,
     spec.selectionReason ?? null,
   ] as const
+}
+
+function placeholderExecution(
+  spec: DetachSpec,
+  jobName: string,
+): [RunExecutor, string | null, number | null] {
+  if (spec.resume?.agent !== 'harness') return [EXTERNAL_EXECUTOR, null, null]
+  const inheritedTimeout = readDispatchState(spec.resume.parent)?.timeoutMinutes ?? undefined
+  const wallBoundMs = resolveJobTimeoutMs(
+    job(jobName),
+    Number.POSITIVE_INFINITY,
+    spec.timeoutMinutes ?? inheritedTimeout,
+  )
+  return [HARNESS_EXECUTOR, null, wallBoundMs]
 }
 
 async function detachedRunLinks(cwd: string, spec: DetachSpec) {
@@ -249,10 +278,9 @@ async function detachResolved(
       )
   const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
-  const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
   const { identity, pendingRecordId, detached, links } = detachedLinks
-  mkdirSync(runsDir, { recursive: true })
+  mkdirSync(RUNS_DIR, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
   // them then read whichever prompt was written last. Six review lenses fired at
@@ -270,8 +298,8 @@ async function detachResolved(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -304,6 +332,7 @@ async function detachResolved(
         spec.resume?.session ?? null,
         startedByUserId,
         ...detachedReviewBindings(spec),
+        ...placeholderExecution(spec, jobName),
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
@@ -366,7 +395,7 @@ async function detachResolved(
   try {
     // The row now exists, so its id replaces that temporary random name and is
     // also stored on the row for run() to reuse rather than creating a second file.
-    const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
+    const promptPath = writeDetachedPrompt(RUNS_DIR, recordId, prompt)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
     /**
@@ -407,7 +436,7 @@ async function detachResolved(
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)
     handoffStep = 'open coordinator log'
-    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, runsDir), 'a', 0o600)
+    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, RUNS_DIR), 'a', 0o600)
     const spawnOpts = {
       cwd: spawnCwd(
         cwd,

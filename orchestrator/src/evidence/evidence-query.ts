@@ -59,12 +59,18 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
  * A void closes the ledger whether or not a verdict was stored: excluded
  * evidence is not an owed judgment.
  */
-export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
+function unscoredWhere(exclusion: string): string {
+  return `r.status = 'ok' AND ${exclusion} AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
    AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_record_id = r.record_id
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
                             FROM run c WHERE c.parent_run_record_id = r.record_id))`
+}
+
+export const UNSCORED_WHERE = unscoredWhere('r.evidence_excluded IS NULL')
+
+const PENDING_SCORE_WHERE = UNSCORED_WHERE
 
 /**
  * The evidence boundary: a run leaves the owed-judgment ledger in two ways,
@@ -238,7 +244,7 @@ export function pendingForSession(sid: string | null) {
             ${newestTurnOutputPathSql('r')} AS output_path,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
        FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
-      WHERE r.session_id = ? AND ${UNSCORED_WHERE}
+      WHERE r.session_id = ? AND ${PENDING_SCORE_WHERE}
       ORDER BY r.number`,
     )
     .all(sid) as {

@@ -441,7 +441,7 @@ export function terminateRunProcesses(
 let signalsBound = false
 let terminating = false
 
-export function bindSignals() {
+function bindSignals() {
   if (signalsBound) return
   signalsBound = true
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
@@ -475,6 +475,11 @@ export function bindSignals() {
       process.exit(130)
     })
   }
+}
+
+export function completeRunStartup(): true {
+  bindSignals()
+  return true
 }
 
 export const sha = (s: string) => createHash('sha256').update(s).digest('hex').slice(0, 16)

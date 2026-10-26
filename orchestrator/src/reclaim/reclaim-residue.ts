@@ -7,16 +7,17 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive, processSignalOutcome } from '../../../shared/process-identity.ts'
 import { concernStateDirectory } from '../../../shared/state-directory.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
-import { db, nowIso, writableDb } from '../database/db.ts'
+import { db, nowIso, SESSION_LIVE_MS, writableDb } from '../database/db.ts'
 import { settleRunEvidence } from '../evidence/unjudged-expiry.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { runHasLiveDescendants } from '../idle-kill.ts'
 import { processStartTime, projectGitCommonDir } from '../project/project-lock.ts'
 import { isProjectRepository, projectByName, projects } from '../project/projects.ts'
 import { gitLockOwnerPids, shellQuote } from '../resources/git-locks.ts'
-import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { processTable } from '../run/run-process.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import {
@@ -211,7 +212,9 @@ function conversationRows(runId: string) {
   const root = owner.parent_run_record_id ?? owner.record_id
   return db()
     .query(
-      'SELECT record_id,status,worktree,pid,agent_pid,agent_pgid FROM run WHERE record_id=? OR parent_run_record_id=?',
+      `SELECT record_id,status,worktree,pid,agent_pid,agent_pgid,executor,session_id,started_at,job,harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
+         FROM run WHERE record_id=? OR parent_run_record_id=?`,
     )
     .all(root, root) as {
     record_id: string
@@ -220,6 +223,12 @@ function conversationRows(runId: string) {
     pid: number | null
     agent_pid: number | null
     agent_pgid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+    session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
 }
 
@@ -264,6 +273,12 @@ function reclaimRefGuard(subject: string, options: Options) {
         status: row.status,
         lease: runLeaseState(row.record_id),
         pidAlive: pidAlive(row.pid),
+        ...recordedRunLivenessFacts(
+          row,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(db(), row.session_id),
+        ),
       }),
     ),
   })

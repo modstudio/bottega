@@ -4,7 +4,7 @@
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { db } from '../database/db.ts'
+import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { branchOf, gitContext, gitOk } from '../git/git-environment.ts'
 import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -16,9 +16,10 @@ import {
   requireContinuationTree,
 } from './continuation-tree-service.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
-import { runAlive } from './run-alive.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { refuseHeldContinuationBranch } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { decideWritingRetryWorkspace, type RetryBranchTipRelation } from './run-retry.ts'
 
@@ -83,6 +84,24 @@ function branchTipRelation(
     : 'diverged'
 }
 
+type RetryWorkspaceRow = {
+  record_id: string
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  worktree_source: Worktree['source'] | null
+  branch_kept_tip: string | null
+  status: string
+  pid: number | null
+  executor: 'external' | 'harness'
+  session_id: string | null
+  started_at: string
+  job: string
+  session_last_seen: string | null
+  harness_wall_bound_ms: number | null
+}
+
 export function resolveWritingRetryWorkspace(input: {
   id: string
   rootId: string
@@ -96,20 +115,13 @@ export function resolveWritingRetryWorkspace(input: {
 }): WritingRetryWorkspace {
   const latest = db()
     .query(
-      `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid
+      `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid,
+              executor,session_id,started_at,job,
+              harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
        FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
-    .get(input.rootId, input.rootId) as {
-    record_id: string
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: Worktree['source'] | null
-    branch_kept_tip: string | null
-    status: string
-    pid: number | null
-  }
+    .get(input.rootId, input.rootId) as RetryWorkspaceRow
   const project = input.repo ? projectByName(input.repo) : null
   if (!project) {
     throw new Error(
@@ -139,6 +151,12 @@ export function resolveWritingRetryWorkspace(input: {
         status: latest.status,
         lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+        ...recordedRunLivenessFacts(
+          latest,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(db(), latest.session_id),
+        ),
       }),
     branchTipRelation: relation,
   })

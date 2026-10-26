@@ -190,15 +190,18 @@ export function resolveJobTimeoutMs(
 }
 
 /** One sentence naming this job's bound and where to write long tables. */
-export function jobBoundInstruction(j: Job, boundMs: number): string {
+export function jobBoundInstruction(j: Job, boundMs: number, scratchDir: string): string {
   const minutes = Math.round(boundMs / 60_000)
   return (
     `This job's bound is ${minutes} minutes. When a step is long, write tables ` +
-    `incrementally to a named file under $BOTTEGA_SCRATCH rather than holding them only in the final reply.`
+    `incrementally to a named file under ${scratchDir} rather than holding them only in the final reply.`
   )
 }
 
-export function jobBoundInstructionForContract(j: Job): string {
+export function jobBoundInstructionForContract(
+  j: Job,
+  scratchDir = '<run scratch directory>',
+): string {
   const defaults = JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS]
   const bound =
     defaults?.defaultMinutes != null
@@ -206,7 +209,7 @@ export function jobBoundInstructionForContract(j: Job): string {
       : `the selected agent's bound, capped at ${jobTimeoutCeilingMinutes(j)} minutes`
   return (
     `This job's bound is ${bound}. When a step is long, write tables ` +
-    `incrementally to a named file under $BOTTEGA_SCRATCH rather than holding them only in the final reply.`
+    `incrementally to a named file under ${scratchDir} rather than holding them only in the final reply.`
   )
 }
 

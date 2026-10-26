@@ -1,4 +1,7 @@
 // concern: run git guard
+import { writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
@@ -51,4 +54,12 @@ export function assertConfiguredGitGuard(
   writableRoots: string[],
 ): void {
   if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
+}
+
+export const HARNESS_RUN_MARKER = `${PLATFORM_SLUG}-harness-run`
+
+/** Mark one harness run's worktree metadata for the tracked pre-push hook. */
+export function installHarnessPushGuard(worktree: Worktree | null, recordId: string): void {
+  if (!worktree) return
+  writeFileSync(join(worktreeGitDir(worktree.path), HARNESS_RUN_MARKER), `${recordId}\n`)
 }

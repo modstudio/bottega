@@ -19,6 +19,13 @@ export function delegationMode(
   return settings[DELEGATION_SETTING_KEYS[delegationClass(capabilities)]]
 }
 
+export function isHarnessDelegated(
+  capabilities: { writesRepo?: boolean },
+  settings: DelegationSettings,
+): boolean {
+  return delegationMode(capabilities, settings) === 'harness'
+}
+
 export function harnessDelegationRefusal(
   requestedJob: Pick<Job, 'needs'>,
   settings: DelegationSettings,

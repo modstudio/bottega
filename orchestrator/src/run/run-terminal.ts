@@ -222,6 +222,7 @@ function nullableBooleanColumn(value: boolean | null): number | null {
 }
 
 export type TerminalInput = {
+  processless?: boolean
   timer: ReturnType<typeof setTimeout> | null
   checkpointTimer: ReturnType<typeof setInterval> | null
   resourceObserver: RunResourceObserver | null
@@ -879,9 +880,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         )
         .run(
           Date.now() - started,
-          exitCode,
+          input.processless ? null : exitCode,
           new TextEncoder().encode(output).byteLength,
-          outPath,
+          input.processless ? null : outPath,
           promptPath,
           vendorTokens,
           costUsd,

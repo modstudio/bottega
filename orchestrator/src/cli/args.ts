@@ -418,6 +418,7 @@ export const CLI_COMMANDS = new Set([
   'discard',
   'do',
   'doc',
+  'finish',
   'doctor',
   'epic',
   'enforcement',

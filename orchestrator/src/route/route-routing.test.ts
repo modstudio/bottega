@@ -27,28 +27,6 @@ import {
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
-test('the shared routing path refuses a writesRepo job assigned to the harness', () => {
-  setMachineDelegation('delegation.implement', 'harness')
-  try {
-    expect(() => pick('implement', 'not-an-agent')).toThrow(
-      "this machine runs implement work through the harness's own sub-agent (delegation.implement=harness)",
-    )
-  } finally {
-    setMachineDelegation('delegation.implement', 'external')
-  }
-})
-
-test('the shared routing path refuses a review job assigned to the harness', () => {
-  setMachineDelegation('delegation.review', 'harness')
-  try {
-    expect(() => pick('review-lens', 'not-an-agent')).toThrow(
-      "this machine runs review work through the harness's own sub-agent (delegation.review=harness)",
-    )
-  } finally {
-    setMachineDelegation('delegation.review', 'external')
-  }
-})
-
 test('guide reports harness work without dropping externally delegated jobs', () => {
   setMachineDelegation('delegation.implement', 'harness')
   try {

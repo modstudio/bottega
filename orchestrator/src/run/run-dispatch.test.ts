@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { EventEmitter } from 'node:events'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { dir } from '../../test/fixtures/store.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
+import { writeDispatchState } from './run-artifacts.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
@@ -99,6 +100,51 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
   expect(coordinatorSpec?.reviewRole).toBe('round')
   expect(db().query('SELECT review_role FROM run WHERE record_id=?').get(runId)).toEqual({
     review_role: 'round',
+  })
+})
+
+test('a harness continuation placeholder carries its executor before coordinator claim', async () => {
+  process.env.BOTTEGA_DEPTH = '0'
+  const root = addRun({ agent: 'harness', job: 'review-lens', status: 'asking' })
+  writeDispatchState(root, { deliverables: [], timeoutMinutes: 17 })
+  let placeholder: unknown
+  const spawnCoordinator = (() => {
+    placeholder = db()
+      .query(
+        `SELECT executor,evidence_excluded,harness_wall_bound_ms FROM run
+          WHERE parent_run_record_id=? ORDER BY number DESC LIMIT 1`,
+      )
+      .get(root)
+    const child = new EventEmitter() as EventEmitter & { pid: number; unref(): void }
+    child.pid = process.pid
+    child.unref = () => {}
+    queueMicrotask(() => child.emit('spawn'))
+    return child
+  }) as never
+
+  await detach(
+    'review-lens',
+    'harness continuation placeholder fixture',
+    {
+      cwd: import.meta.dir,
+      lens: 'correctness',
+      resume: {
+        kind: 'continue',
+        parent: root,
+        agent: 'harness',
+        turn: 2,
+        sessionId: null,
+        worktree: null,
+      },
+    },
+    undefined,
+    spawnCoordinator,
+  )
+
+  expect(placeholder).toEqual({
+    executor: 'harness',
+    evidence_excluded: null,
+    harness_wall_bound_ms: 17 * 60_000,
   })
 })
 

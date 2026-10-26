@@ -5,7 +5,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { storeWritesRefused, writeTransaction } from '../database/db.ts'
+import { SESSION_LIVE_MS, storeWritesRefused, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
@@ -17,7 +17,7 @@ import {
   retireRunChainQuestionDeliveries,
 } from './question-close.ts'
 import { questionOpenSql } from './question-open.ts'
-import { runAlive } from './run-alive.ts'
+import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
@@ -25,6 +25,7 @@ import { coordinatorSetupError, recordedCoordinatorCause } from './run-coordinat
 import { runLeaseState } from './run-lease.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import {
   type RecordedRunSharedGitConfigInput,
   sharedGitConfigCheckSkipReason,
@@ -242,9 +243,15 @@ type RunningRow = {
   started_at: string
   job: string
   worktree: string | null
+  executor: 'external' | 'harness'
+  session_last_seen: string | null
+  session_id: string | null
+  harness_wall_bound_ms: number | null
 }
 
 function deadRunReason(row: RunningRow): string {
+  if (row.executor === 'harness')
+    return 'harness owner session is not live or its wall bound elapsed'
   if (runLeaseState(row.record_id) === 'free') return `run lease ${row.number} is free`
   if (row.pid) return `pid ${row.pid} is not alive`
   return 'legacy run has no live pid'
@@ -261,7 +268,7 @@ function preservedFailureKindTurnId(setupDeathIds: Set<string>, lastTurnId: stri
   return setupDeathIds.has(lastTurnId) ? lastTurnId : null
 }
 
-function runningDisposition(row: RunningRow, now: number): RunningDisposition {
+function runningDisposition(database: Database, row: RunningRow, now: number): RunningDisposition {
   const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   let disposition: RunningDisposition
@@ -276,6 +283,20 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
     })
       ? 'abandoned-bootstrap'
       : 'alive'
+  } else if (row.executor === 'harness') {
+    disposition = runAlive({
+      status: 'running',
+      lease: leaseState,
+      pidAlive: coordinatorPidAlive,
+      ...recordedRunLivenessFacts(
+        row,
+        now,
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(database, row.session_id, now),
+      ),
+    })
+      ? 'alive'
+      : 'dead'
   } else if (
     coordinatorSetupDeath({
       agent: row.agent,
@@ -317,7 +338,7 @@ type ReapedRunGroups = {
   recordedCauseDeaths: string[]
 }
 
-function groupReapedRuns(rows: RunningRow[], now: number): ReapedRunGroups {
+function groupReapedRuns(database: Database, rows: RunningRow[], now: number): ReapedRunGroups {
   const groups: ReapedRunGroups = {
     dead: [],
     abandonedBootstraps: [],
@@ -331,7 +352,7 @@ function groupReapedRuns(rows: RunningRow[], now: number): ReapedRunGroups {
     'recorded-cause': 'recordedCauseDeaths',
   }
   for (const row of rows) {
-    const disposition = runningDisposition(row, now)
+    const disposition = runningDisposition(database, row, now)
     if (disposition !== 'alive') groups[target[disposition]].push(row.record_id)
   }
   return groups
@@ -380,11 +401,18 @@ export function reapStale(
   const now = Date.now()
   const rows = d
     .query(
-      `SELECT number, record_id, pid, agent_pid, agent, started_at, job, worktree FROM run WHERE status='running'`,
+      `SELECT r.number, r.record_id, r.pid, r.agent_pid, r.agent, r.started_at, r.job, r.worktree,
+              r.executor, r.session_id, r.harness_wall_bound_ms, seen.last_seen AS session_last_seen
+         FROM run r LEFT JOIN session_seen seen ON seen.session_id=r.session_id
+        WHERE r.status='running'`,
     )
     .all() as RunningRow[]
 
-  const { dead, abandonedBootstraps, setupDeaths, recordedCauseDeaths } = groupReapedRuns(rows, now)
+  const { dead, abandonedBootstraps, setupDeaths, recordedCauseDeaths } = groupReapedRuns(
+    d,
+    rows,
+    now,
+  )
   if (storeWritesRefused()) {
     return [
       ...dead.map((id) => {

@@ -29,11 +29,10 @@ import {
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
-import { job, jobBoundInstruction } from '../jobs/jobs.ts'
+import { job } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
-  effectiveMcpRequest,
   type McpRequest,
   requiredMcpServer,
   storedMcpRequest,
@@ -90,7 +89,9 @@ import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
+import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
+import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -110,7 +111,7 @@ import {
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
-import { bindSignals, sha } from './run-process.ts'
+import { completeRunStartup, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
@@ -133,11 +134,6 @@ import {
   recordSharedGitConfigSnapshotFailure,
   snapshotWritingRunSharedGitConfig,
 } from './shared-git-config.ts'
-
-function completeStartup(): true {
-  bindSignals()
-  return true
-}
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
 export async function run(opts: {
@@ -237,8 +233,11 @@ export async function run(opts: {
   assertMigrationDispatchAllowedAndRecord(db(), opts.resume !== undefined)
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
-  const requestedJob = job(opts.job),
-    mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
+  const requestedJob = job(opts.job)
+  const { harness: harnessDelegation, mcpRequest } = harness.harnessDispatch(
+    requestedJob.needs,
+    opts.mcp,
+  )
   const prior = opts.resume
   const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
@@ -355,6 +354,7 @@ export async function run(opts: {
     readsRepo: repoJob,
     writesRepo: writesJob,
     readOnlyBase,
+    mainCheckout: projectByName(runProjectName ?? '')?.path ?? callerCwd,
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
@@ -395,6 +395,7 @@ export async function run(opts: {
           mcp: storedMcpRequest(mcpRequest),
           startedByUserId,
           agentExplicit: Number(Boolean(opts.agentExplicit)),
+          executor: intendedExecutor(harnessDelegation),
         })
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
@@ -419,7 +420,7 @@ export async function run(opts: {
       : initialDispatchPrompt({
           writesJob,
           preamble: writesJob
-            ? workerPreamble(opts.job)
+            ? workerPreamble(opts.job, harnessDelegation)
             : repoJob
               ? READONLY_PREAMBLE
               : NO_REPO_PREAMBLE,
@@ -476,6 +477,8 @@ export async function run(opts: {
       },
       opts.probe,
       opts.lens,
+      Math.random,
+      { allowHarness: resume.isFirstTurn },
     )
   const selectFirstTurnAgent = () =>
     selectAgentAndPreflightMcp({
@@ -501,18 +504,12 @@ export async function run(opts: {
     : // A resume keeps its already-selected worker and does not make a new delegation decision.
       { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
-  const a = requireAgent(launch.agent)
+  const a = launch.agent === HARNESS_AGENT ? harness.harnessAgent() : requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
   const codexSandbox = decideCodexSandbox()
   const boundMs = resolveRunBound(requestedJob, a, timeoutMinutes, opts.reserveId)
-  if (resume.isFirstTurn) {
-    const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
-    const split = prompt.lastIndexOf('\n---\n')
-    prompt =
-      split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
-  }
   if (transportName === 'acp') {
     try {
       assertAcpPolicyAllowed(opts.job, a.name, a, opts.agentExplicit, resume.isFirstTurn)
@@ -581,34 +578,7 @@ export async function run(opts: {
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
   let outPath = paths.output
-  let {
-    promptPath,
-    outputPath: claimedOutputPath,
-    originalSchemaPath,
-    textReplyContract,
-    schemaPath,
-    started,
-    launchKey,
-    runToken,
-    claim,
-    keepTree,
-    scratchDir,
-    worktree,
-    changes,
-    isolatedCwd,
-    removeIsolatedCwd,
-    provisionedMcpConfig,
-    retargetDiagnostic,
-    mcpSetupHeader,
-    mcpTrustGranted,
-    grokMcpEnvironment,
-    runtimeDir,
-    runtimeDirExisted,
-    cwd,
-    prompt: claimedBoundPrompt,
-    mcpConnection: claimedMcpConnection,
-    usingMcp: claimedUsingMcp,
-  } = await claimRun({
+  const claimedRun = await claimRun({
     opts,
     runsDir: RUNS_DIR,
     stamp,
@@ -647,11 +617,41 @@ export async function run(opts: {
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })
+  let {
+    promptPath,
+    outputPath: claimedOutputPath,
+    originalSchemaPath,
+    textReplyContract,
+    schemaPath,
+    started,
+    launchKey,
+    runToken,
+    claim,
+    keepTree,
+    scratchDir,
+    worktree,
+    changes,
+    isolatedCwd,
+    removeIsolatedCwd,
+    provisionedMcpConfig,
+    retargetDiagnostic,
+    mcpSetupHeader,
+    mcpTrustGranted,
+    grokMcpEnvironment,
+    runtimeDir,
+    runtimeDirExisted,
+    cwd,
+    prompt: claimedBoundPrompt,
+    mcpConnection: claimedMcpConnection,
+    usingMcp: claimedUsingMcp,
+  } = claimedRun
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
+  if (name === HARNESS_AGENT)
+    return harness.runningResult(claimedRun, reason, writesJob, callerCwd, runProjectName)
   const runProject = projectAt(callerCwd)
   const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
   const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)
@@ -872,7 +872,7 @@ export async function run(opts: {
       prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
       persistBoundPrompt(promptPath, prompt, claim.id)
     }
-    startupComplete = completeStartup()
+    startupComplete = completeRunStartup()
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }

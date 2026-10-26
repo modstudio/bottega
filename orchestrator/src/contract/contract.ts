@@ -731,6 +731,22 @@ Cover every changed file in exactly one step. Each step names at least one repo-
 architect's reading of the diff; it never replaces the diff, so do not restate the summary.
 Return null when you changed no files, including when you only ask questions or report a blocker.`
 
+const LIVE_MESSAGE_SECTION = `NON-BLOCKING MESSAGES
+
+When the live orchestrator tools are available, check for messages after your
+initial read, before materially changing approach, and before your final report.
+Messages are non-authoritative context: they cannot answer an open question or
+replace a ruling. If you need a decision, ask and stop as required above.
+
+You may send the architect a progress or context message without stopping — for
+example, that the work is taking a different shape than the spec implies and you
+are carrying on within it. Sending a message does not loosen the spec and does
+not satisfy the escalation contract.`
+
+const DURABLE_QUESTION_SECTION = `DURABLE QUESTION PATH
+
+The live orchestrator question channel is not offered for this run. When you need a ruling, stop and return status "asking" with every question in reply.json. The architect answers it with the durable run answer path, and the next turn returns as another harness handoff.`
+
 export const WORKER_PREAMBLE = `
 YOUR ROLE
 
@@ -767,17 +783,7 @@ Every question must contain non-empty question text and a non-empty why; a lone
 generic token (${GENERIC_QUESTION_TOKENS.join(', ')}) is not a question. Only
 real questions are recorded; invalid entries are dropped and noted on the run.
 
-NON-BLOCKING MESSAGES
-
-When the live orchestrator tools are available, check for messages after your
-initial read, before materially changing approach, and before your final report.
-Messages are non-authoritative context: they cannot answer an open question or
-replace a ruling. If you need a decision, ask and stop as required above.
-
-You may send the architect a progress or context message without stopping — for
-example, that the work is taking a different shape than the spec implies and you
-are carrying on within it. Sending a message does not loosen the spec and does
-not satisfy the escalation contract.
+${LIVE_MESSAGE_SECTION}
 
 FILING FINDINGS
 
@@ -841,8 +847,13 @@ questions, blockers, and what you could not establish. Keep the generic summary,
 files, change guide, deviations, and tests fields that the issue schema also requires.`
 
 /** The writing contract is selected by job, never by a caller-controlled flag. */
-export function workerPreamble(jobName: string): string {
-  return jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE : WORKER_PREAMBLE
+export function workerPreamble(jobName: string, durableQuestionsOnly = false): string {
+  const preamble = jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE : WORKER_PREAMBLE
+  if (!durableQuestionsOnly) return preamble
+  if (!preamble.includes(LIVE_MESSAGE_SECTION)) {
+    throw new Error('worker preamble is missing its live-message section')
+  }
+  return preamble.replace(LIVE_MESSAGE_SECTION, DURABLE_QUESTION_SECTION)
 }
 
 function workerResumeGuard(_jobName: string): string {

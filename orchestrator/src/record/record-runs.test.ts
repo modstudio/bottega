@@ -73,4 +73,15 @@ describe('record run window', () => {
       { agent: 'grok', tokens: null, runs: 1 },
     ])
   })
+
+  test('hosted totals do not count an unexcluded harness run as voided', () => {
+    const result = recordRunsWindow([run('1', { agent: 'harness' })], {
+      agent: '',
+      project: '',
+      search: '',
+      offset: 0,
+      limit: 25,
+    })
+    expect(result.totals).toMatchObject({ runs: 1, voided: 0 })
+  })
 })

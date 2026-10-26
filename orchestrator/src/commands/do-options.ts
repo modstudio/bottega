@@ -110,6 +110,7 @@ export const ORCH_DO_OPTIONS = [
   { flags: '--follow', description: 'wait for the detached run and print its result' },
   { flags: '--detach', description: 'return after starting the run' },
   { flags: '--porcelain', description: 'print only the run identifier' },
+  { flags: '--json', description: 'write the harness handoff as JSON' },
   { flags: '--no-failover', description: 'disable automatic failover to another agent' },
   {
     flags: '--keep-tree [hours]',

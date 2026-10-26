@@ -15,7 +15,6 @@ import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { callerIdentity, db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
-import { failureReason } from '../outcome.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -41,6 +40,11 @@ import {
 import { answerAttributions } from './ruling-attribution.ts'
 import { answerAuthorityDecision } from './run-answer-authority.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
+import {
+  answerResumeUnavailable,
+  answerResumeWorker,
+  reportAnswerResume,
+} from './run-answer-resume.ts'
 import { KEEP_RUN_FILES_DAYS, readDispatchState, runScratchDir } from './run-artifacts.ts'
 import {
   adoptRunMutation,
@@ -61,8 +65,6 @@ import {
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
-
-const RUN_STATUS_SQL = 'SELECT status FROM run WHERE record_id = ?'
 
 import {
   previousAttemptTaskPointer,
@@ -754,7 +756,7 @@ export async function answerRun(
 
   const latest = db()
     .query(
-      `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+      `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor
      FROM run WHERE record_id = ? OR parent_run_record_id = ?
     ORDER BY turn DESC LIMIT 1`,
     )
@@ -768,6 +770,7 @@ export async function answerRun(
     branch: string | null
     base_commit: string | null
     worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+    executor: 'external' | 'harness'
   }
   const sessionFrom = latest.vendor_session
     ? latest
@@ -862,9 +865,13 @@ export async function answerRun(
   if (incomplete) throw new Error(incomplete)
 
   if (
-    !ownersLive &&
-    !skipResume &&
-    (!sessionFrom?.vendor_session || AGENTS[resumeAgent]?.caps.resumable === false)
+    answerResumeUnavailable({
+      ownersLive,
+      skipResume,
+      executor: latest.executor,
+      vendorSession: sessionFrom?.vendor_session,
+      resumable: AGENTS[resumeAgent]?.caps.resumable,
+    })
   ) {
     throw new Error(
       `run ${id} cannot be resumed: no vendor session (agent ${resumeAgent}); ` +
@@ -991,6 +998,11 @@ export async function answerRun(
    * own section says loses the work.
    */
   let childId: string
+  const resumeWorker = answerResumeWorker(
+    latest.executor,
+    resumeAgent,
+    sessionFrom?.vendor_session ?? '',
+  )
   try {
     childId = await (helpers.dispatch ?? detach)(row.job, rulingPrompt(answers), {
       cwd: checkout!.cwd,
@@ -1000,8 +1012,8 @@ export async function answerRun(
       resume: {
         kind: 'continue',
         parent: id,
-        agent: resumeAgent,
-        session: sessionFrom!.vendor_session!,
+        agent: resumeWorker.agent,
+        session: resumeWorker.session,
         turn: latest.turn + 1,
         sessionId: row.session_id,
         worktree: worktreePath
@@ -1058,39 +1070,14 @@ export async function answerRun(
     },
   )
   auditRunMutation(answerAuthority, 'answer', null, db(), childId)
-  if (!input.json)
-    console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
-  if (input.flags.detach || !input.flags.follow) {
-    if (!input.flags.quiet) {
-      console.error(
-        `\n— ${row.job} runs detached; a foreground one dies with its shell.` +
-          `\n  ${PLATFORM_SLUG} run wait ${childId}      then:  ${PLATFORM_SLUG} run result ${childId}` +
-          `\n  ${PLATFORM_SLUG} question inbox          if it stops to ask` +
-          `\n  --follow            to watch it here instead`,
-      )
-    }
-    return answerResult('resumed', id, row.number, childId)
-  }
-  const resumedStatus = await follow(childId, input.flags.quiet, false, helpers.presentation)
-  if (resumedStatus !== 'ok' && resumedStatus !== 'asking') {
-    const failed = db()
-      .query(`SELECT status, error, failure_kind, exit_code FROM run WHERE record_id=?`)
-      .get(childId) as {
-      status: string
-      error: string | null
-      failure_kind: string | null
-      exit_code: number | null
-    }
-    throw new Error(
-      `the rulings ARE recorded and were not lost, but resumed run ${childId} failed: ` +
-        `${failureReason(failed)}\nRetry it with: ${PLATFORM_SLUG} run continue ${id}`,
-    )
-  }
-  const done = db().query(RUN_STATUS_SQL).get(id) as { status: string }
-  console.error(
-    done.status === 'asking'
-      ? `\n  STILL ASKING — ${PLATFORM_SLUG} question inbox`
-      : `\n  ${PLATFORM_SLUG} run diff ${id}    then score it: ${helpers.presentation.scoreHint(id, row.job, null)}`,
-  )
-  return answerResult('resumed', id, row.number, childId)
+  return reportAnswerResume({
+    rootId: id,
+    rootNumber: row.number,
+    childId,
+    job: row.job,
+    answerCount: answers.length,
+    json: input.json,
+    flags: input.flags,
+    presentation: helpers.presentation,
+  })
 }

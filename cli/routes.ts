@@ -72,6 +72,7 @@ export const ROUTES = (
       'waiting',
       'peek',
       'result',
+      'finish',
       'wait',
       'retry',
       'continue',
