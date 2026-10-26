@@ -14,6 +14,7 @@ import {
   retiredProjectByName,
   retiredProjectRefusal,
 } from '../project/projects.ts'
+import { resolveMcpHeaders } from './mcp-headers-helper.ts'
 import {
   bottegaMcpBinary,
   type McpConfigReadResult,
@@ -236,17 +237,17 @@ async function serveReaderMcpProxy(
     dependencies.readMcpConfigResult(project.path),
     serverName,
   )
-  const launch: McpToolListLaunch = { ...config, cwd }
+  const environment = readerMcpUpstreamEnvironment(dependencies.environment, config.env, builtIn)
+  const headers = config.url
+    ? await resolveMcpHeaders(config, project.path, environment)
+    : undefined
+  const launch: McpToolListLaunch = { ...config, cwd, headers }
+  const secrets = probeSecrets({ ...config, headers })
   let connected: Awaited<ReturnType<typeof connectMcpToolClient>>
   try {
-    connected = await dependencies.connectMcpToolClient(
-      launch,
-      readerMcpUpstreamEnvironment(dependencies.environment, config.env, builtIn),
-    )
+    connected = await dependencies.connectMcpToolClient(launch, environment)
   } catch (error) {
-    throw new Error(
-      sanitizeProbeError(String((error as Error)?.message ?? error), probeSecrets(config)),
-    )
+    throw new Error(sanitizeProbeError(String((error as Error)?.message ?? error), secrets))
   }
   const registeredTools = project.settings.mcp?.reader_tools?.[serverName] ?? []
   let proxy: ReaderMcpProxy
@@ -258,9 +259,7 @@ async function serveReaderMcpProxy(
     })
   } catch (error) {
     await connected.close().catch(() => undefined)
-    throw new Error(
-      sanitizeProbeError(String((error as Error)?.message ?? error), probeSecrets(config)),
-    )
+    throw new Error(sanitizeProbeError(String((error as Error)?.message ?? error), secrets))
   }
   serveStdio(() => proxy.server)
 }

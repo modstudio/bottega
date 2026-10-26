@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
+import { McpHeadersHelperError, resolveMcpHeaders } from '../mcp/mcp-headers-helper.ts'
 import {
   type McpServerConfig,
   probeSecrets,
@@ -24,8 +25,10 @@ const processEnvironment = (): Record<string, string> =>
     ),
   )
 
-export const trackerLookupFailureCondition = (cause: unknown, config: McpServerConfig): string =>
-  `tracker lookup failed: ${sanitizeProbeError(errorText(cause), probeSecrets(config))}`
+export const trackerLookupFailureCondition = (cause: unknown, config: McpServerConfig): string => {
+  const detail = sanitizeProbeError(errorText(cause), probeSecrets(config))
+  return cause instanceof McpHeadersHelperError ? detail : `tracker lookup failed: ${detail}`
+}
 
 export function classifyHubTaskLookup(
   key: string,
@@ -85,23 +88,28 @@ async function lookupRemoteTask(project: Project, key: string): Promise<TaskKeyL
       condition: `MCP server ${server} is not configured in ${project.path}/.mcp.json`,
     }
   }
+  let credentialConfig = config
   try {
     const task = await source.lookup(
       {
-        callTool: (name, args) =>
-          callMcpTool(
+        callTool: async (name, args) => {
+          const environment = processEnvironment()
+          const headers = await resolveMcpHeaders(config, project.path, environment)
+          credentialConfig = { ...config, headers }
+          return callMcpTool(
             {
               command: config.command,
               args: config.args,
               cwd: project.path,
               url: config.url,
-              headers: config.headers,
+              headers,
               env: config.env,
             },
-            processEnvironment(),
+            environment,
             name,
             args,
-          ),
+          )
+        },
       },
       key,
     )
@@ -109,7 +117,7 @@ async function lookupRemoteTask(project: Project, key: string): Promise<TaskKeyL
   } catch (cause) {
     return {
       state: 'unreachable',
-      condition: trackerLookupFailureCondition(cause, config),
+      condition: trackerLookupFailureCondition(cause, credentialConfig),
     }
   }
 }

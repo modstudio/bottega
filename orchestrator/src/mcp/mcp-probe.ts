@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaMcpServeArgv, sourceBunExecutable } from '../../../shared/self-spawn.ts'
+import { resolveMcpHeaders } from './mcp-headers-helper.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -72,6 +73,7 @@ export type McpProbeResult = {
 /** One server's launch as an `.mcp.json` entry holds it, before the key names it. */
 export type McpServerEntry = {
   url?: string
+  headersHelper?: string
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -118,6 +120,9 @@ export function namesSeenAt(cwd: string): string[] {
   return [...new Set([...Object.keys(readMcpConfig(cwd)), ...ALLOWED_EXTRA_SERVERS])]
 }
 
+const parsedHeadersHelper = (value: unknown): string | undefined =>
+  typeof value === 'string' && value.length > 0 ? value : undefined
+
 function parsedMcpConfig(parsed: unknown): Record<string, McpServerConfig> {
   if (!parsed || typeof parsed !== 'object') return {}
   const root = parsed as Record<string, unknown>
@@ -137,6 +142,7 @@ function parsedMcpConfig(parsed: unknown): Record<string, McpServerConfig> {
     out[name] = {
       name,
       url: typeof entry.url === 'string' ? entry.url : undefined,
+      headersHelper: parsedHeadersHelper(entry.headersHelper),
       command: typeof entry.command === 'string' ? entry.command : undefined,
       args: Array.isArray(entry.args)
         ? entry.args.filter((item): item is string => typeof item === 'string')
@@ -480,14 +486,81 @@ function finishToolCall(
   return result
 }
 
-export async function probeMcpServer(input: {
+type ProbeRpcResult = { ok: boolean; messages: unknown[]; error: string | null }
+type ProbeInput = {
   server: string
   config: McpServerConfig | undefined
   cwd: string
   env: Record<string, string>
   probeTool?: string | null
   wrap?: (command: string, args: string[]) => string[] | Promise<string[]>
-}): Promise<McpProbeResult> {
+}
+
+async function dynamicHeaderHttpRpc(
+  input: {
+    config: McpServerConfig
+    cwd: string
+    env: Record<string, string>
+    wrap?: (command: string, args: string[]) => string[] | Promise<string[]>
+  },
+  messages: unknown[],
+  secrets: string[],
+): Promise<ProbeRpcResult> {
+  const headers = await resolveMcpHeaders(input.config, input.cwd, input.env)
+  secrets.push(...probeSecrets({ ...input.config, headers }))
+  return httpRpc(input.config.url!, messages, headers, input.cwd, input.env, input.wrap)
+}
+
+function rpcMessageError(messages: unknown[]): string | undefined {
+  return messages
+    .map((message) => (message as { error?: { message?: string } })?.error?.message)
+    .find(Boolean)
+}
+
+async function initialProbeRpc(
+  input: ProbeInput & { config: McpServerConfig },
+  messages: unknown[],
+  secrets: string[],
+): Promise<ProbeRpcResult | null> {
+  if (input.config.url) return dynamicHeaderHttpRpc(input, messages, secrets)
+  if (!input.config.command) return null
+  const raw = [input.config.command, ...(input.config.args ?? [])]
+  const command = input.wrap ? await input.wrap(raw[0]!, raw.slice(1)) : raw
+  const bin = command[0]!
+  const args = command.slice(1)
+  const resolved = isAbsolute(bin) || bin.includes('/') ? bin : (Bun.which(bin) ?? bin)
+  return stdioRpc(
+    resolved,
+    args,
+    input.cwd,
+    { ...input.env, ...(input.config.env ?? {}) },
+    messages,
+  )
+}
+
+const toolCallMessage = (tool: string) => ({
+  jsonrpc: '2.0',
+  id: 3,
+  method: 'tools/call',
+  params: { name: tool, arguments: {} },
+})
+
+const initialProbeMessages = () => [
+  {
+    jsonrpc: '2.0',
+    id: 1,
+    method: 'initialize',
+    params: {
+      protocolVersion: '2024-11-05',
+      capabilities: {},
+      clientInfo: { name: MCP_SERVER_NAME, version: '0.1.0' },
+    },
+  },
+  { jsonrpc: '2.0', method: 'notifications/initialized' },
+  { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+]
+
+export async function probeMcpServer(input: ProbeInput): Promise<McpProbeResult> {
   const started = Date.now()
   const namesSeen = namesSeenAt(input.cwd)
   const secrets = probeSecrets(input.config)
@@ -501,50 +574,17 @@ export async function probeMcpServer(input: {
     namesSeen,
   })
   if (!input.config) return fail(`MCP server '${input.server}' is not in .mcp.json`)
-  const initialize = {
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2024-11-05',
-      capabilities: {},
-      clientInfo: { name: MCP_SERVER_NAME, version: '0.1.0' },
-    },
+  const initialMessages = initialProbeMessages()
+  let rpc: ProbeRpcResult | null
+  try {
+    rpc = await initialProbeRpc({ ...input, config: input.config }, initialMessages, secrets)
+  } catch (error) {
+    return fail(String((error as Error)?.message ?? error))
   }
-  const initialized = { jsonrpc: '2.0', method: 'notifications/initialized' }
-  const list = { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }
-  let rpc: { ok: boolean; messages: unknown[]; error: string | null }
-  if (input.config.url) {
-    rpc = await httpRpc(
-      input.config.url,
-      [initialize, initialized, list],
-      input.config.headers,
-      input.cwd,
-      input.env,
-      input.wrap,
-    )
-  } else if (input.config.command) {
-    const raw = [input.config.command, ...(input.config.args ?? [])]
-    const command = input.wrap ? await input.wrap(raw[0]!, raw.slice(1)) : raw
-    const bin = command[0]!
-    const args = command.slice(1)
-    const resolved = isAbsolute(bin) || bin.includes('/') ? bin : (Bun.which(bin) ?? bin)
-    rpc = await stdioRpc(resolved, args, input.cwd, { ...input.env, ...(input.config.env ?? {}) }, [
-      initialize,
-      initialized,
-      list,
-    ])
-  } else {
-    return fail(`MCP server '${input.server}' has neither url nor command`)
-  }
+  if (!rpc) return fail(`MCP server '${input.server}' has neither url nor command`)
   if (!rpc.ok) return fail(rpc.error ?? 'MCP probe failed')
   const listed = toolNames(rpc.messages)
-  const listError = rpc.messages
-    .map((message) => {
-      const error = (message as { error?: { message?: string } })?.error
-      return error?.message
-    })
-    .find(Boolean)
+  const listError = rpcMessageError(rpc.messages)
   if (listError && !listed.length) return fail(listError)
   const result: McpProbeResult = {
     server: input.server,
@@ -557,35 +597,36 @@ export async function probeMcpServer(input: {
     listedTools: listed,
   }
   if (!input.probeTool) return result
-  const call = {
-    jsonrpc: '2.0',
-    id: 3,
-    method: 'tools/call',
-    params: { name: input.probeTool, arguments: {} },
-  }
+  const call = toolCallMessage(input.probeTool)
   const stdioArgv = input.config.command
     ? input.wrap
       ? await input.wrap(input.config.command, input.config.args ?? [])
       : [input.config.command, ...(input.config.args ?? [])]
     : null
-  const called = input.config.url
-    ? await httpRpc(
-        input.config.url,
+  let called: ProbeRpcResult
+  if (input.config.url) {
+    try {
+      called = await dynamicHeaderHttpRpc(
+        input as typeof input & { config: McpServerConfig },
         [call],
-        input.config.headers,
-        input.cwd,
-        input.env,
-        input.wrap,
+        secrets,
       )
-    : stdioArgv
+    } catch (error) {
+      result.ok = false
+      result.error = sanitizeProbeError(String((error as Error)?.message ?? error), secrets)
+      return result
+    }
+  } else {
+    called = stdioArgv
       ? await stdioRpc(
           stdioArgv[0]!,
           stdioArgv.slice(1),
           input.cwd,
           { ...input.env, ...(input.config.env ?? {}) },
-          [initialize, initialized, call],
+          [...initialMessages.slice(0, 2), call],
         )
       : { ok: false, messages: [], error: 'no transport' }
+  }
   result.tool = input.probeTool
   result.durationMs = Date.now() - started
   if (!called.ok) {
@@ -593,12 +634,7 @@ export async function probeMcpServer(input: {
     result.error = called.error === null ? null : sanitizeProbeError(called.error, secrets)
     return result
   }
-  const callError = called.messages
-    .map((message) => {
-      const error = (message as { error?: { message?: string } })?.error
-      return error?.message
-    })
-    .find(Boolean)
+  const callError = rpcMessageError(called.messages)
   if (callError) {
     result.ok = false
     result.error = sanitizeProbeError(callError, secrets)

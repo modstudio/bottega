@@ -76,6 +76,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
     '../secret-shaped-output.ts',
   ]),
+  module('orchestrator/src/mcp/mcp-headers-helper.ts', []),
   module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
     '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',
@@ -85,6 +86,7 @@ export const mcpModules: McpModule[] = [
     'node:fs',
     'node:path',
     '../project/projects.ts',
+    './mcp-headers-helper.ts',
     './mcp-probe.ts',
     './mcp-reader-policy.ts',
     './mcp-tool-list.ts',

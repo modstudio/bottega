@@ -16,6 +16,11 @@ const CONFIG: Record<string, McpServerConfig> = {
     url: 'https://example.test/secret',
     headers: { Authorization: 'literal-secret' },
   },
+  helperHeader: {
+    name: 'helperHeader',
+    url: 'https://example.test/helper',
+    headersHelper: './headers helperHeader',
+  },
   noLaunch: { name: 'noLaunch' },
 }
 const PROJECT = { name: 'starship', path: '/project', settings: {} }
@@ -30,7 +35,7 @@ test('a writing run attaches every project server except the withheld ones', () 
     cwd: '/project',
   })
   expect(selection.servers.remote).toEqual({ url: 'https://example.test/mcp' })
-  expect(selection.withheld).toEqual(['secretEnv', 'secretHeader', 'noLaunch'])
+  expect(selection.withheld).toEqual(['secretEnv', 'secretHeader', 'helperHeader', 'noLaunch'])
   expect(JSON.stringify(selection)).not.toContain('literal-secret')
 })
 

@@ -56,7 +56,11 @@ function selectDirectProjectMcpServers(
   const withheld: string[] = []
   for (const [name, entry] of Object.entries(projectServers)) {
     if (disabled.has(name)) continue
-    if (Object.keys(entry.env ?? {}).length || Object.keys(entry.headers ?? {}).length) {
+    if (
+      Object.keys(entry.env ?? {}).length ||
+      Object.keys(entry.headers ?? {}).length ||
+      entry.headersHelper
+    ) {
       withheld.push(name)
     } else if (entry.url) {
       servers[name] = { url: entry.url }
