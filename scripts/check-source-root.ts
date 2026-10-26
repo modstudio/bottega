@@ -18,7 +18,7 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
   },
   {
     path: 'orchestrator/src/database/database-location.ts',
-    line: 34,
+    line: 33,
     reason: 'defines the empty installed source root used by explicit embedded-manifest branches',
   },
   {
