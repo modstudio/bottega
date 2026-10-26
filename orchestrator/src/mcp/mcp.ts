@@ -47,12 +47,12 @@ import {
 import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
+  resolveLinkedWorkflowCursorMode,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorContext,
-  resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor-selection.ts'
 import {
   attachWorkflowTextByHandle,
@@ -557,7 +557,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
         mcpWorkflowCursorContext(),
         ports.hubTaskReader,
       )
-      const effectiveMode = resolveWorkflowCursorMode(
+      const effectiveMode = resolveLinkedWorkflowCursorMode(
         slug,
         project,
         mode,
@@ -610,7 +610,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
         ruleWorkflow(
           slug,
           project,
-          resolveWorkflowCursorMode(
+          resolveLinkedWorkflowCursorMode(
             slug,
             project,
             mode,

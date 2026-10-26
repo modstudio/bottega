@@ -8,12 +8,11 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
-import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
+import { nextWorkflowStep, resolveLinkedWorkflowCursorMode } from '../workflow/workflow-cursor.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorContext,
-  resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor-selection.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
@@ -56,7 +55,7 @@ export async function advanceWorkflow(
   )
   const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
   const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
-  const effectiveMode = resolveWorkflowCursorMode(
+  const effectiveMode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     mode,

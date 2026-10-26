@@ -28,6 +28,7 @@ import {
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
   nextWorkflowStep,
+  resolveLinkedWorkflowCursorMode,
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -40,7 +41,6 @@ import {
 import {
   cliWorkflowCursorContext,
   resolveWorkflowCursorContext,
-  resolveWorkflowCursorMode,
   selectWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
@@ -251,7 +251,7 @@ export async function attachCommand(
     context,
     options.hubTaskReader,
   )
-  const mode = resolveWorkflowCursorMode(
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -422,7 +422,7 @@ export async function ruleCommand(
     context,
     options.hubTaskReader,
   )
-  const mode = resolveWorkflowCursorMode(
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -468,7 +468,7 @@ export async function abandonCommand(
     context,
     options.hubTaskReader,
   )
-  const mode = resolveWorkflowCursorMode(
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -523,7 +523,7 @@ export async function stepCommand(
     options.hubTaskReader,
   )
   const mode = cursor
-    ? resolveWorkflowCursorMode(
+    ? resolveLinkedWorkflowCursorMode(
         slug,
         project,
         requestedMode,
@@ -603,7 +603,7 @@ export async function nextCommand(
     ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
     : null
   context = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
-  const mode = resolveWorkflowCursorMode(
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -660,7 +660,7 @@ export async function awaitCommand(
     context,
     options.hubTaskReader,
   )
-  const mode = resolveWorkflowCursorMode(
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),

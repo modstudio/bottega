@@ -9,12 +9,14 @@ import {
   type CommitCountPort,
   readCommitsPastLanding,
 } from '../workflow/workflow-compose-branch.ts'
-import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
+import {
+  getWorkflowStepWithCursor,
+  resolveLinkedWorkflowCursorMode,
+} from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
   resolveWorkflowCursorContext,
-  resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
@@ -43,7 +45,7 @@ async function workflowStep(
     hubTaskReader,
   )
   const effectiveMode = cursor
-    ? resolveWorkflowCursorMode(
+    ? resolveLinkedWorkflowCursorMode(
         slug,
         project,
         mode,

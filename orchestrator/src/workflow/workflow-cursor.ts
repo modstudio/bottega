@@ -30,6 +30,7 @@ import {
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
+  resolveWorkflowCursorMode,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
@@ -137,6 +138,34 @@ function linkResolvedWorkflowTask(
   const workflowKey = keyOf(args)
   if (!workflowKey || !context.taskRecordId) return
   linkWorkflowTaskLabel(d, { project, workflowKey, taskRecordId: context.taskRecordId })
+}
+
+/** Resolves a mode after applying the one-key rollout link in the same cursor-service transaction. */
+export function resolveLinkedWorkflowCursorMode(
+  slug: string,
+  project: string,
+  requested: string | undefined,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  caller: string,
+  remedy: string,
+  d: Database = writableDb(),
+  cursor?: number,
+): string {
+  return writeTransaction(() => {
+    linkResolvedWorkflowTask(project, args, context, d)
+    return resolveWorkflowCursorMode(
+      slug,
+      project,
+      requested,
+      args,
+      context,
+      caller,
+      remedy,
+      d,
+      cursor,
+    )
+  }, d)
 }
 
 /**
