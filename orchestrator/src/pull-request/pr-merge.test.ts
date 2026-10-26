@@ -694,7 +694,7 @@ test('a GitHub branch-policy merge refusal names pending and failing checks', ()
       }),
     ),
   ).toThrow(
-    `refusing merge: GitHub's branch policy blocks the merge: Check pending, Build demo failing; cleared by: wait for pending checks and rerun ${PLATFORM_SLUG} pr merge 42, or fix failing checks with gh pr checks 42`,
+    `refusing merge: GitHub's branch policy blocks the merge: Check pending, Build demo failing; cleared by: wait for pending checks, or fix failing checks with gh pr checks 42, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 

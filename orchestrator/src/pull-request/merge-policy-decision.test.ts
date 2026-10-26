@@ -23,7 +23,7 @@ const input = (
   ...values,
 })
 
-const waitOrRerun = `wait for pending checks and rerun ${PLATFORM_SLUG} pr merge 42, or fix failing checks with gh pr checks 42`
+const rerun = `then rerun ${PLATFORM_SLUG} pr merge 42`
 const otherRequirement =
   "GitHub's branch policy blocks the merge: the block is not a check, but another branch requirement such as a review approval, conversation resolution or a required deployment; " +
   `cleared by: gh pr view 42 to see the unmet requirement, then rerun ${PLATFORM_SLUG} pr merge 42`
@@ -60,14 +60,14 @@ describe('GitHub branch-policy merge classification', () => {
       ),
     ).toEqual({
       policy: true,
-      refusal: `GitHub's branch policy blocks the merge: Check pending, Build demo failing, lint cancelled; cleared by: ${waitOrRerun}`,
+      refusal: `GitHub's branch policy blocks the merge: Check pending, Build demo failing, lint cancelled; cleared by: wait for pending checks, or fix failing checks with gh pr checks 42, or re-run cancelled checks from gh pr checks 42, ${rerun}`,
     })
   })
 
-  test('a cancelled check keeps the wait-or-rerun remedy', () => {
+  test('a cancelled check is cleared by re-running it, not by waiting', () => {
     expect(decideMergePolicyRefusal(input({ checks: [check('lint', 'cancel')] }))).toEqual({
       policy: true,
-      refusal: `GitHub's branch policy blocks the merge: lint cancelled; cleared by: ${waitOrRerun}`,
+      refusal: `GitHub's branch policy blocks the merge: lint cancelled; cleared by: re-run cancelled checks from gh pr checks 42, ${rerun}`,
     })
   })
 

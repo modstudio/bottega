@@ -33,6 +33,16 @@ function blockedCheckLabels(checks: readonly PullRequestCheck[]): string[] {
   })
 }
 
+/** One clearing action per blocking bucket present, so each named state has its own remedy. */
+function blockedCheckRemedies(checks: readonly PullRequestCheck[], inspect: string): string[] {
+  const buckets = new Set(checks.map((check) => check.bucket))
+  const remedies: string[] = []
+  if (buckets.has('pending')) remedies.push('wait for pending checks')
+  if (buckets.has('fail')) remedies.push(`fix failing checks with gh pr checks ${inspect}`)
+  if (buckets.has('cancel')) remedies.push(`re-run cancelled checks from gh pr checks ${inspect}`)
+  return remedies
+}
+
 function inspectRef(number: number | null, target: string): string {
   return String(number ?? target)
 }
@@ -58,7 +68,7 @@ function policyRefusal(input: {
   if (labels.length > 0) {
     return (
       `GitHub's branch policy blocks the merge: ${labels.join(', ')}; ` +
-      `cleared by: wait for pending checks and rerun ${retry}, or fix failing checks with gh pr checks ${inspect}`
+      `cleared by: ${blockedCheckRemedies(input.checks, inspect).join(', or ')}, then rerun ${retry}`
     )
   }
   return (
