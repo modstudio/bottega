@@ -6,6 +6,7 @@ import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../run/run-task-linking.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
 import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
@@ -39,7 +40,7 @@ export async function advanceWorkflow({
   defer,
   satisfies,
   cursor,
-}: z.infer<typeof nextWorkflowStepInputSchema>) {
+}: z.infer<typeof nextWorkflowStepInputSchema>, hubTaskReader?: HubTaskReader) {
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
@@ -47,15 +48,21 @@ export async function advanceWorkflow({
   const workflowArgs = args ?? {}
   const context = await resolveWorkflowCursorContext(
     project,
-    task ?? workflowKeyOf(workflowArgs),
+    workflowKeyOf(workflowArgs),
     mcpWorkflowCursorContext(),
+    hubTaskReader,
   )
+  const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
+  const advanceContext = {
+    ...context,
+    adoptionTaskRecordId: adoptedTask?.record_id ?? null,
+  }
   const effectiveMode = resolveWorkflowCursorMode(
     slug,
     project,
     mode,
     workflowArgs,
-    context,
+    advanceContext,
     'next_workflow_step',
     'pass the mode argument',
     undefined,
@@ -66,7 +73,7 @@ export async function advanceWorkflow({
     project,
     mode: effectiveMode,
     args: workflowArgs,
-    context,
+    context: advanceContext,
     cursor,
   })
   const result = nextWorkflowStep(
@@ -75,7 +82,7 @@ export async function advanceWorkflow({
     effectiveMode,
     workflowArgs,
     note,
-    context,
+    advanceContext,
     undefined,
     {
       ruling,

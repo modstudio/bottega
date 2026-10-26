@@ -280,11 +280,12 @@ function registerWorkflowAdvancement({
       return nextCommand(
         workflowArgv('next', slug === undefined ? [] : [slug], resolvedOptions),
         output(options),
+        handlerOptions,
       )
     })
 }
 
-function registerWorkflowRulings({ workflow, output }: WorkflowRegistration): void {
+function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowRegistration): void {
   jsonOption(
     workflow
       .command('await [workflow]')
@@ -300,6 +301,7 @@ function registerWorkflowRulings({ workflow, output }: WorkflowRegistration): vo
       awaitCommand(
         workflowArgv('await', slug === undefined ? [] : [slug], options),
         output(options),
+        handlerOptions,
       ),
     )
 
@@ -316,11 +318,15 @@ function registerWorkflowRulings({ workflow, output }: WorkflowRegistration): vo
   )
     .allowExcessArguments(false)
     .action((slug, options) =>
-      ruleCommand(workflowArgv('rule', slug === undefined ? [] : [slug], options), output(options)),
+      ruleCommand(
+        workflowArgv('rule', slug === undefined ? [] : [slug], options),
+        output(options),
+        handlerOptions,
+      ),
     )
 }
 
-function registerWorkflowCursorAdmin({ workflow, output }: WorkflowRegistration): void {
+function registerWorkflowCursorAdmin({ workflow, handlerOptions, output }: WorkflowRegistration): void {
   workflow
     .command('cursor identity-map')
     .description('print numeric workflow cursor identities and their durable record ids as JSON')
@@ -342,6 +348,7 @@ function registerWorkflowCursorAdmin({ workflow, output }: WorkflowRegistration)
       abandonCommand(
         workflowArgv('abandon', slug === undefined ? [] : [slug], options),
         output(options),
+        handlerOptions,
       ),
     )
 

@@ -2,7 +2,7 @@
 /** Selects one open workflow cursor by public handle or declared identity. */
 import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
-import { db, sessionId } from '../database/db.ts'
+import { db, sessionId, writeTransaction } from '../database/db.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../run/run-task-linking.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
@@ -24,6 +24,7 @@ export type WorkflowCursorContext = {
   session?: string | null
   instance?: string
   taskRecordId?: string | null
+  adoptionTaskRecordId?: string | null
 }
 
 const MCP_INSTANCE = randomUUID()
@@ -40,10 +41,35 @@ export async function resolveWorkflowCursorContext(
   key: string | null | undefined,
   context: WorkflowCursorContext,
   reader?: HubTaskReader,
+  d: Database = db(),
 ): Promise<WorkflowCursorContext> {
   if (!key) return { ...context, taskRecordId: null }
   const task = await resolveHubTaskReference(project, key, reader)
+  if (task) linkWorkflowTaskLabel(project, key, task.record_id, d)
   return { ...context, taskRecordId: task?.record_id ?? null }
+}
+
+function linkWorkflowTaskLabel(
+  project: string,
+  key: string,
+  taskRecordId: string,
+  d: Database,
+): void {
+  writeTransaction(() => {
+    d.query(
+      `UPDATE workflow_cursor SET task_record_id=?
+       WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND workflow_key=? AND task_record_id IS NULL`,
+    ).run(taskRecordId, project, key)
+    d.query(
+      `UPDATE question SET workflow_task_record_id=?
+       WHERE workflow_key=? AND workflow_task_record_id IS NULL
+         AND workflow_cursor_record_id IN (
+           SELECT record_id FROM workflow_cursor
+           WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+         )`,
+    ).run(taskRecordId, key, project)
+  }, d)
 }
 
 export function workflowCursorProjectScope(

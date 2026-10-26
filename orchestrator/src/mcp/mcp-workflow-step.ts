@@ -3,6 +3,7 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
+import type { HubTaskReader } from '../run/run-task-linking.ts'
 import { parseAutonomy } from '../workflow/autonomy.ts'
 import {
   type CommitCountPort,
@@ -30,12 +31,17 @@ const inputSchema = z.object({
   cursor: z.number().int().positive().optional(),
 })
 
-async function workflowStep(input: z.infer<typeof inputSchema>, commitCount: CommitCountPort) {
+async function workflowStep(
+  input: z.infer<typeof inputSchema>,
+  commitCount: CommitCountPort,
+  hubTaskReader?: HubTaskReader,
+) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
   const context = await resolveWorkflowCursorContext(
     project,
     workflowKeyOf(args ?? {}),
     mcpWorkflowCursorContext(),
+    hubTaskReader,
   )
   const effectiveMode = cursor
     ? resolveWorkflowCursorMode(
@@ -84,6 +90,7 @@ async function workflowStep(input: z.infer<typeof inputSchema>, commitCount: Com
 export function registerWorkflowStepTool(
   server: McpServer,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  hubTaskReader?: HubTaskReader,
 ): void {
   server.registerTool(
     'get_workflow_step',
@@ -92,6 +99,6 @@ export function registerWorkflowStepTool(
         'Fetch one workflow step body with argument substitutions applied. Step accepts a slug or a 1-based position from compose_workflow. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
       inputSchema,
     },
-    (input) => workflowStep(input, commitCount),
+    (input) => workflowStep(input, commitCount, hubTaskReader),
   )
 }

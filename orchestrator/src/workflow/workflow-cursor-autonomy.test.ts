@@ -19,7 +19,7 @@ import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-const context = { session: 'session-one' }
+const context = { session: 'session-one', taskRecordId: 'task-DEV-822' }
 
 const pinnedAutonomy = (): CursorAutonomyResolution => ({
   steps: { lens: { value: 'auto', scope: 'pinned step' } },

@@ -734,6 +734,9 @@ test('next resolves an omitted mode to the composed cursor default', async () =>
     {},
     {},
   )
+  expect(db().query('SELECT task_record_id FROM workflow_cursor').get()).toEqual({
+    task_record_id: null,
+  })
   const lines: string[] = []
 
   await workflowCommand(
@@ -753,6 +756,9 @@ test('next resolves an omitted mode to the composed cursor default', async () =>
   )
 
   expect(lines.join('\n')).toContain(`Workflow ${slug} for DEV-937-default is finished`)
+  expect(db().query('SELECT task_record_id FROM workflow_cursor').get()).toEqual({
+    task_record_id: 'task-DEV-937-default',
+  })
 })
 
 test('cursor command without a default mode names the available modes', async () => {
@@ -1022,6 +1028,64 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
     `${PLATFORM_SLUG} workflow next cannot resolve a mode for workflow "${slug}"; ` +
       'active cursor modes: repair, report; pass --mode <slug>',
   )
+})
+
+test('next selects by the argument key before refusing a different task evidence key', async () => {
+  const slug = 'cursor-selector-before-task'
+  const project = 'cursor-selector-before-task-project'
+  const step = productionStepCatalogue().definition.steps.find(
+    ({ slug }) => slug === 'blast-radius',
+  )!
+  registerFixtureProject(project)
+  publishCursorWorkflow(slug, [
+    { slug: 'report', title: 'Report', default: true, steps: [step.slug] },
+  ])
+  for (const key of ['DEV-A', 'DEV-B']) {
+    composeWorkflowWithCursor(
+      slug,
+      project,
+      'report',
+      { key },
+      { taskRecordId: `task-${key}` },
+      undefined,
+      {},
+      {},
+    )
+  }
+  const cursorA = db()
+    .query<{ number: number }, []>("SELECT number FROM workflow_cursor WHERE workflow_key='DEV-A'")
+    .get()!.number
+
+  await expect(
+    workflowCommand(
+      [
+        'workflow',
+        'next',
+        slug,
+        '--project',
+        project,
+        '--arg',
+        'key=DEV-A',
+        '--task',
+        'DEV-B',
+        '--note',
+        'must refuse the mismatch',
+      ],
+      presentation([]),
+      {
+        hubTaskReader: async () => [
+          { key: 'DEV-A', record_id: 'task-DEV-A', project },
+          { key: 'DEV-B', record_id: 'task-DEV-B', project },
+        ],
+      },
+    ),
+  ).rejects.toThrow(`cursor ${cursorA} is already assigned to DEV-A; it cannot adopt DEV-B`)
+  expect(
+    db().query('SELECT workflow_key,ordinal FROM workflow_cursor ORDER BY workflow_key').all(),
+  ).toEqual([
+    { workflow_key: 'DEV-A', ordinal: 0 },
+    { workflow_key: 'DEV-B', ordinal: 0 },
+  ])
 })
 
 test('workflow list hides a retired workflow until --retired asks for it', async () => {

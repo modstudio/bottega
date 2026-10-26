@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import type { HubTaskReader } from '../run/run-task-linking.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
 registerStandardRuntime()
@@ -72,8 +73,17 @@ import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 
-const resolvedMcpCursorContext = (project: string, args: Record<string, string>) =>
-  resolveWorkflowCursorContext(project, workflowKeyOf(args), mcpWorkflowCursorContext())
+const resolvedMcpCursorContext = (
+  project: string,
+  args: Record<string, string>,
+  hubTaskReader?: HubTaskReader,
+) =>
+  resolveWorkflowCursorContext(
+    project,
+    workflowKeyOf(args),
+    mcpWorkflowCursorContext(),
+    hubTaskReader,
+  )
 
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
@@ -452,7 +462,9 @@ function registerWorkflowListTool(server: McpServer): void {
   )
 }
 
-export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
+export function createDocsMcpServer(
+  ports: LandingBranchPorts & { hubTaskReader?: HubTaskReader } = {},
+): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
     console.error(
@@ -475,7 +487,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
       return handler(...args)
     })) as typeof server.registerTool
 
-  registerWorkflowPrompts(server)
+  registerWorkflowPrompts(server, ports.hubTaskReader)
   registerSearchTools(server)
   registerOperatorTools(server)
   registerBoardTools(server)
@@ -500,7 +512,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     async (input) => text(await composeWorkflowToolResult(input, ports.commitCount)),
   )
 
-  registerWorkflowStepTool(server, ports.commitCount)
+  registerWorkflowStepTool(server, ports.commitCount, ports.hubTaskReader)
 
   server.registerTool(
     'attach_workflow_text',
@@ -523,7 +535,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    advanceWorkflow,
+    (input) => advanceWorkflow(input, ports.hubTaskReader),
   )
 
   server.registerTool(
@@ -541,7 +553,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolvedMcpCursorContext(project, workflowArgs)
+      const context = await resolvedMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       const effectiveMode = resolveWorkflowCursorMode(
         slug,
         project,
@@ -585,7 +597,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolvedMcpCursorContext(project, workflowArgs)
+      const context = await resolvedMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       return text(
         ruleWorkflow(
           slug,
