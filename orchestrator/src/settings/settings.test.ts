@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   containsSecretShaped,
+  editSettingsEnv,
   extractOwnedSettings,
   ownedSettingsEqual,
   parseStoredOwnedSettings,
@@ -94,16 +95,6 @@ describe('validateOwnedSettingsBody', () => {
     ).toThrow(/unknown or missing/)
   })
 
-  test('round-trips plain env values', () => {
-    const owned = {
-      permissions: {},
-      hooks: {},
-      env: { ALPHA: 'one', BETA_2: 'two' },
-      envKeys: ['PRIVATE'],
-    }
-    expect(validateOwnedSettingsBody(serializeOwnedSettings(owned))).toEqual(owned)
-  })
-
   test('refuses overlap between plain and secret-file environment names', () => {
     expect(() =>
       validateOwnedSettingsBody(
@@ -191,12 +182,52 @@ test('a stored row without auto-mode round trips without gaining ownership', () 
   expect(JSON.parse(serializeOwnedSettings(parsed))).not.toHaveProperty('autoMode')
 })
 
-test('a stored row without env parses with an empty plain environment', () => {
-  const parsed = parseStoredOwnedSettings(
-    JSON.stringify({ permissions: {}, hooks: {}, envKeys: ['PRIVATE'] }),
-  )
-  expect(parsed.env).toEqual({})
-  expect(parsed.envKeys).toEqual(['PRIVATE'])
+describe('editSettingsEnv', () => {
+  test('set then unset sorts names and preserves other owned settings', () => {
+    const original = {
+      permissions: { allow: ['Bash(git status)'] },
+      hooks: { PreToolUse: [{ matcher: 'Bash' }] },
+      env: { ZED: 'last' },
+      envKeys: ['PRIVATE'],
+    }
+    const set = editSettingsEnv(original, { operation: 'set', name: 'ALPHA', value: 'first' })
+    expect(set).toEqual({
+      settings: { ...original, env: { ALPHA: 'first', ZED: 'last' } },
+      changed: true,
+      message: 'set ALPHA',
+    })
+    expect(original.env).toEqual({ ZED: 'last' })
+
+    const unset = editSettingsEnv(set.settings, { operation: 'unset', name: 'ALPHA' })
+    expect(unset).toEqual({
+      settings: original,
+      changed: true,
+      message: 'unset ALPHA',
+    })
+  })
+
+  test('current set and absent unset report unchanged', () => {
+    const owned = { permissions: {}, hooks: {}, env: { CURRENT: 'value' }, envKeys: [] }
+    expect(editSettingsEnv(owned, { operation: 'set', name: 'CURRENT', value: 'value' })).toEqual({
+      settings: owned,
+      changed: false,
+      message: 'CURRENT is already current',
+    })
+    expect(editSettingsEnv(owned, { operation: 'unset', name: 'ABSENT' })).toEqual({
+      settings: owned,
+      changed: false,
+      message: 'ABSENT is absent',
+    })
+  })
+
+  test('unset identifies a secrets-file name', () => {
+    const owned = { permissions: {}, hooks: {}, env: {}, envKeys: ['PRIVATE'] }
+    expect(editSettingsEnv(owned, { operation: 'unset', name: 'PRIVATE' })).toEqual({
+      settings: owned,
+      changed: false,
+      message: 'PRIVATE is a secrets-file name, not a plain value',
+    })
+  })
 })
 
 function jwtSentinel() {

@@ -1,6 +1,7 @@
 // concern: settings
 /** Pure owned Claude settings shape. Must not know filesystems, stores, commands, or transports. */
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -31,6 +32,14 @@ export type OwnedSettings = {
   autoMode?: OwnedAutoMode
   env?: Record<string, string>
   envKeys?: string[]
+}
+
+export type SettingsEnvOperation = 'set' | 'unset'
+
+export type SettingsEnvEdit = {
+  settings: OwnedSettings
+  changed: boolean
+  message: string
 }
 
 export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -162,11 +171,55 @@ export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): b
   )
 }
 
+export function ownedEnvironmentNames(owned: OwnedSettings): string[] {
+  return [...new Set([...Object.keys(owned.env ?? {}), ...(owned.envKeys ?? [])])].sort()
+}
+
+export function editSettingsEnv(
+  owned: OwnedSettings,
+  input: { operation: SettingsEnvOperation; name: string; value?: string },
+): SettingsEnvEdit {
+  if (!ENV_NAME.test(input.name)) {
+    throw new Error(`refusing settings env ${input.operation}: invalid name ${input.name}`)
+  }
+  if (input.operation === 'set' && input.value === undefined) {
+    throw new Error('refusing settings env set: value is required')
+  }
+  const current = owned.env ?? {}
+  if (input.operation === 'unset' && !Object.hasOwn(current, input.name)) {
+    return {
+      settings: owned,
+      changed: false,
+      message: (owned.envKeys ?? []).includes(input.name)
+        ? `${input.name} is a secrets-file name, not a plain value`
+        : `${input.name} is absent`,
+    }
+  }
+  if (input.operation === 'set' && current[input.name] === input.value) {
+    return { settings: owned, changed: false, message: `${input.name} is already current` }
+  }
+  const entries =
+    input.operation === 'set'
+      ? Object.entries({ ...current, [input.name]: input.value! })
+      : Object.entries(current).filter(([name]) => name !== input.name)
+  return {
+    settings: {
+      ...owned,
+      env: Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))),
+    },
+    changed: true,
+    message: `${input.operation === 'set' ? 'set' : 'unset'} ${input.name}`,
+  }
+}
+
 function assertValidEnvironment(owned: OwnedSettings, subject: string): void {
   const plainNames = Object.keys(owned.env ?? {})
   const duplicate = plainNames.find((name) => (owned.envKeys ?? []).includes(name))
   if (duplicate) {
-    throw new Error(`refusing ${subject}: ${duplicate} appears in both env and envKeys`)
+    throw new Error(
+      `refusing ${subject}: ${duplicate} appears in both env and envKeys\n` +
+        `cleared by: run \`${PLATFORM_SLUG} machine settings env unset ${duplicate}\` to keep the secrets-file name, or remove ${duplicate} from envKeys`,
+    )
   }
   const secret = plainNames.find((name) => containsSecretShaped(owned.env![name]!))
   if (secret) {

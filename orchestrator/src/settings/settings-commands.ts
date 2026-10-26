@@ -47,8 +47,10 @@ import {
   diffOwnedSettings,
   displayHookDrift,
   displaySettingsValue,
+  renderedSettingsEnvironment,
   renderOwnedSettingsFile,
   type SettingsDrift,
+  settingsFileOwnedSettings,
 } from './settings-render.ts'
 
 type SettingsFlags = {
@@ -289,11 +291,6 @@ export async function settingsRenderCheckCommand(
   const parsed = flags.has('json') ? tryReadSettingsFile(path) : readSettingsFile(path)
   const existing = settingsRow(target, owner)
   const storeOwned = effectiveStoredSettings(target, existing?.body)
-  const fileOwned = parsed
-    ? target.kind === 'user'
-      ? { ...parsed.owned, envKeys: parsed.envKeys }
-      : parsed.owned
-    : emptyOwned()
   if (
     target.kind === 'project' &&
     ((storeOwned.envKeys?.length ?? 0) > 0 || Object.keys(storeOwned.env ?? {}).length > 0)
@@ -310,13 +307,17 @@ export async function settingsRenderCheckCommand(
         )
       : undefined
   const renderedEnvironment =
-    environment === undefined ? undefined : { ...(storeOwned.env ?? {}), ...environment }
+    environment === undefined ? undefined : renderedSettingsEnvironment(storeOwned, environment)
   if (parsed) renderOwnedSettingsFile(parsed.text, storeOwned, renderedEnvironment)
-  const comparableFileOwned = { ...fileOwned, env: storeOwned.env ?? {} }
-  const drifted = !ownedSettingsEqual(comparableFileOwned, storeOwned)
+  const fileOwned = parsed
+    ? target.kind === 'user'
+      ? settingsFileOwnedSettings(parsed, storeOwned)
+      : parsed.owned
+    : emptyOwned()
+  const drift = diffOwnedSettings(fileOwned, storeOwned)
+  const drifted = !ownedSettingsEqual(fileOwned, storeOwned)
   const findings = lintSettings(lintTargets(target, parsed?.owned ?? emptyOwned(), cwd))
   if (flags.has('json')) {
-    const drift = diffOwnedSettings(fileOwned, storeOwned)
     presentation.log(
       JSON.stringify({
         target,
@@ -335,7 +336,7 @@ export async function settingsRenderCheckCommand(
     if (drifted || !existing) presentation.exitCode(1)
     return
   }
-  logDrift(fileOwned, storeOwned, presentation.log)
+  logDrift(fileOwned, storeOwned, drift, presentation.log)
   printFindings(findings, presentation.log)
   if (!existing) {
     presentation.log(`no settings row for ${targetLabel(target)}`)
@@ -506,13 +507,13 @@ function logAdoption(
 function logDrift(
   file: OwnedSettings,
   store: OwnedSettings,
+  drift: SettingsDrift,
   log: (...values: unknown[]) => void,
 ): void {
   if (ownedSettingsEqual(file, store)) {
     log('drift: none')
     return
   }
-  const drift: SettingsDrift = diffOwnedSettings(file, store)
   log('drift')
   let listed = 0
   for (const name of PERMISSION_LISTS) {
@@ -540,6 +541,10 @@ function logDrift(
   }
   for (const name of drift.env.removed) {
     log(`  removed env key ${name}`)
+    listed++
+  }
+  for (const name of drift.env.changed) {
+    log(`  changed plain env value ${name}`)
     listed++
   }
   if (listed === 0) log('  owned settings structure differs')

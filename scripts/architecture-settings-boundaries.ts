@@ -6,7 +6,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-boundary',
     file: `${source}settings.ts`,
-    allowed: ['zod', 'shared/secret-shaped.ts', 'shared/settings-summary.ts'],
+    allowed: ['zod', 'shared/brand.ts', 'shared/secret-shaped.ts', 'shared/settings-summary.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep owned settings schema and extraction pure.',
   },

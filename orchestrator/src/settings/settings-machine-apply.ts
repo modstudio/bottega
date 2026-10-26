@@ -27,7 +27,12 @@ import { tryKernelLease } from '../project/project-lock.ts'
 import { pullRecordCache } from '../record/record-cache.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { isOrchWorkerProcess } from '../run/run-process.ts'
-import { parseStoredOwnedSettings, SETTINGS_SCOPE, SETTINGS_SLUG } from './settings.ts'
+import {
+  ownedEnvironmentNames,
+  parseStoredOwnedSettings,
+  SETTINGS_SCOPE,
+  SETTINGS_SLUG,
+} from './settings.ts'
 import {
   readSettingsEnv,
   selectedSettingsEnvironment,
@@ -37,7 +42,7 @@ import { claudeHomeFromEnvironment, readSettingsFile, userSettingsPath } from '.
 import { type SupersededProfileHook, withMachineProductHooks } from './settings-machine-hooks.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import { renderOwnedSettingsFile } from './settings-render.ts'
+import { renderedSettingsEnvironment, renderOwnedSettingsFile } from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite } from './settings-write.ts'
 
 export type MachineSettingsApplyResult = {
@@ -114,11 +119,8 @@ function applyUserSettings(
     const owned = productHooks.settings
     const secretsPath = userSettingsEnvPath(home)
     const secrets = readSettingsEnv(secretsPath)
-    const ownedEnvironmentNames = new Set([
-      ...Object.keys(owned.env ?? {}),
-      ...(owned.envKeys ?? []),
-    ])
-    const removed = parsed.envKeys.filter((name) => !ownedEnvironmentNames.has(name))
+    const names = new Set(ownedEnvironmentNames(owned))
+    const removed = parsed.envKeys.filter((name) => !names.has(name))
     const unprotected = removed.filter((name) => !secrets.has(name))
     if (unprotected.length) {
       throw new Error(
@@ -126,10 +128,10 @@ function applyUserSettings(
           `cleared by: run \`${PLATFORM_SLUG} machine settings env import --user\` first`,
       )
     }
-    const environment = {
-      ...(owned.env ?? {}),
-      ...selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
-    }
+    const environment = renderedSettingsEnvironment(
+      owned,
+      selectedSettingsEnvironment(secretsPath, owned.envKeys ?? []),
+    )
     const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
     const plan = planSettingsWrite(path, rendered)
     if (plan.currentText === plan.renderedText) {

@@ -33,6 +33,7 @@ function ownedKey(value: string): (typeof OWNED_KEYS)[number] | null {
 export type ParsedSettingsFile = {
   text: string
   owned: OwnedSettings
+  environment: Record<string, unknown>
   envKeys: string[]
   open: number
   close: number
@@ -43,7 +44,7 @@ export type SettingsDrift = {
   rules: Record<PermissionList, { added: string[]; removed: string[] }>
   autoMode: Record<AutoModeList, { added: string[]; removed: string[] }>
   hooks: { added: HookDrift[]; removed: HookDrift[] }
-  env: { added: string[]; removed: string[] }
+  env: { added: string[]; removed: string[]; changed: string[] }
 }
 
 export type HookDrift = {
@@ -65,10 +66,36 @@ export function parseSettingsFile(text: string): ParsedSettingsFile {
   return {
     text,
     owned: extractOwnedSettings(parsed),
+    environment: isPlainObject(parsed.env) ? parsed.env : {},
     envKeys: isPlainObject(parsed.env) ? Object.keys(parsed.env).sort() : [],
     open: span.open,
     close: span.close,
     members: span.members,
+  }
+}
+
+export function renderedSettingsEnvironment(
+  owned: OwnedSettings,
+  selected: Record<string, string>,
+): Record<string, string> {
+  return { ...(owned.env ?? {}), ...selected }
+}
+
+export function settingsFileOwnedSettings(
+  parsed: ParsedSettingsFile,
+  stored: OwnedSettings,
+): OwnedSettings {
+  const plainNames = new Set(Object.keys(stored.env ?? {}))
+  const env = Object.fromEntries(
+    [...plainNames].flatMap((name) => {
+      const value = parsed.environment[name]
+      return typeof value === 'string' ? [[name, value]] : []
+    }),
+  )
+  return {
+    ...parsed.owned,
+    env,
+    envKeys: parsed.envKeys.filter((name) => !plainNames.has(name)),
   }
 }
 
@@ -159,6 +186,9 @@ export function diffOwnedSettings(file: OwnedSettings, store: OwnedSettings): Se
     env: {
       added: subtract(file.envKeys ?? [], store.envKeys ?? []),
       removed: subtract(store.envKeys ?? [], file.envKeys ?? []),
+      changed: Object.keys(store.env ?? {}).filter(
+        (name) => !Object.hasOwn(file.env ?? {}, name) || file.env?.[name] !== store.env?.[name],
+      ),
     },
   }
 }
