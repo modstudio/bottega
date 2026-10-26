@@ -12,6 +12,7 @@ import {
   collectResult,
   collectWait,
   collectWaitForRuns,
+  failoverSuccessors,
   mintedBranchForRun,
   noCommitNote,
   releasedWritingTreeNote,
@@ -673,5 +674,34 @@ describe('collection records', () => {
     expect(unknown).not.toContain('connected')
     expect(known).toContain('mcp:       fixture-project connected')
     expect(known).not.toContain('UNVERIFIED')
+  })
+})
+
+describe('failover successors', () => {
+  const runNumber = (recordId: string): number =>
+    db()
+      .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+      .get(recordId)!.number
+
+  const automaticSuccessor = (retrying: string, agent: string): string => {
+    const successor = addRun({ agent, job: 'review-lens' })
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(retrying, successor)
+    return successor
+  }
+
+  test('a root takes its lowest-numbered automatic failover successor', () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed', kind: 'contract' })
+    const first = automaticSuccessor(root, 'grok')
+    const later = automaticSuccessor(root, 'claude')
+    expect(runNumber(first)).toBeLessThan(runNumber(later))
+
+    const successors = failoverSuccessors(db(), [root])
+    expect(successors.get(root)).toEqual({
+      record_id: first,
+      number: runNumber(first),
+      agent: 'grok',
+    })
   })
 })

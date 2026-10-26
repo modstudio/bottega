@@ -191,18 +191,21 @@ export function failoverSuccessors(
 ): Map<string, FailoverSuccessor> {
   const successors = new Map<string, FailoverSuccessor>()
   if (!rootIds.length) return successors
-  const marks = rootIds.map(() => '?').join(',')
+  // Numbered so both predicates share one binding per root and the list keeps
+  // SQLite's whole variable ceiling.
+  const marks = rootIds.map((_, index) => `?${index + 1}`).join(',')
   const rows = database
     .query<FailoverSuccessor & { root_id: string }, string[]>(
-      `SELECT member_root.root_id, successor.record_id, successor.number, successor.agent
-         FROM run successor
-         JOIN (
-           SELECT member.record_id,
-                  COALESCE(member.parent_run_record_id, member.record_id) root_id
-             FROM run member
-            WHERE COALESCE(member.parent_run_record_id, member.record_id) IN (${marks})
-         ) member_root ON member_root.record_id = successor.retry_of_record_id
-        WHERE successor.automatic_failover = 1
+      // Driven from the member columns so each side of the OR reads an index:
+      // a derived table over COALESCE would force a scan of every run.
+      `SELECT COALESCE(member.parent_run_record_id, member.record_id) root_id,
+              successor.record_id, successor.number, successor.agent
+         FROM run member
+         JOIN run successor
+           ON successor.retry_of_record_id = member.record_id
+          AND successor.automatic_failover = 1
+        WHERE (member.record_id IN (${marks}) AND member.parent_run_record_id IS NULL)
+           OR member.parent_run_record_id IN (${marks})
         ORDER BY successor.number`,
     )
     .all(...rootIds)
