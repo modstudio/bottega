@@ -27,6 +27,7 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import type { FailedMergeGroupRun } from './merge-group-run.ts'
+import { decideMergePolicyRefusal } from './merge-policy-decision.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
@@ -389,11 +390,88 @@ function collectMergeProof(
   }
 }
 
+function readCheckRollup(
+  adapter: PullRequestMergeAdapter,
+  cwd: string,
+  number: number | undefined,
+): PullRequestCheck[] | null {
+  if (number === undefined) return null
+  try {
+    return adapter.checks(cwd, number)
+  } catch {
+    return null
+  }
+}
+
+type MergeErrorContext = {
+  cwd: string
+  target: string
+  number: number | undefined
+  adapter: PullRequestMergeAdapter
+}
+
+function throwMergeOperationError(
+  cause: unknown,
+  input: MergeErrorContext & { fallback: (message: string) => Error },
+): never {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  const decision = decideMergePolicyRefusal({
+    message,
+    checks: readCheckRollup(input.adapter, input.cwd, input.number),
+    target: input.target,
+    number: input.number ?? null,
+  })
+  if (decision.policy) throw new Error(`refusing merge: ${decision.refusal}`)
+  throw input.fallback(message)
+}
+
+function refuseUncaughtMergeError(cause: unknown, input: MergeErrorContext): never {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  if (message.startsWith('refusing merge:')) throw cause
+  throwMergeOperationError(cause, {
+    ...input,
+    fallback: (error) =>
+      new Error(
+        `refusing merge because the pull request proof was not checked: ${error}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${input.target}`,
+      ),
+  })
+}
+
+function mergeAdmittedHead(input: {
+  pullRequest: PullRequestMergeFacts
+  project: Project
+  mergeQueue: boolean
+  mergeMethod: 'squash' | 'merge' | 'rebase'
+  cwd: string
+  adapter: PullRequestMergeAdapter
+  target: string
+}): { mergeCommit: string; requeueOutput?: string } {
+  if (input.mergeQueue) {
+    return waitForQueuedMerge(
+      input.pullRequest,
+      input.cwd,
+      input.adapter.repository(input.project),
+      input.adapter,
+      input.target,
+    )
+  }
+  return {
+    mergeCommit: input.adapter.merge(
+      input.cwd,
+      input.pullRequest.number,
+      input.mergeMethod,
+      `${input.pullRequest.title} (#${input.pullRequest.number})`,
+      input.pullRequest.headCommit,
+    ),
+  }
+}
+
 function waitForQueuedMerge(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   repository: string | null,
   adapter: PullRequestMergeAdapter,
+  target: string,
 ): { mergeCommit: string; requeueOutput?: string } {
   const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
   let waitState: MergeQueueWaitState = {
@@ -424,7 +502,7 @@ function waitForQueuedMerge(
       throw new Error(`refusing merge: ${action.refusal}${evidence}; cleared by: ${action.remedy}`)
     }
     if (action.action === 'enqueue') {
-      enqueueForMergeQueue(pullRequest, cwd, adapter)
+      enqueueForMergeQueue(pullRequest, cwd, adapter, target)
       continue
     }
     if (action.action === 'requeue') {
@@ -435,7 +513,7 @@ function waitForQueuedMerge(
         observation.enqueuedAt,
         adapter,
       )
-      requeueForMergeQueue(pullRequest, cwd, adapter, evidence)
+      requeueForMergeQueue(pullRequest, cwd, adapter, evidence, target)
       requeueOutput = `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
       continue
     }
@@ -475,14 +553,21 @@ function requeueForMergeQueue(
   cwd: string,
   adapter: PullRequestMergeAdapter,
   evidence: string,
+  target: string,
 ): void {
   try {
     adapter.requeue(cwd, pullRequest.nodeId, pullRequest.headCommit)
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    throw new Error(
-      `refusing merge: pull request #${pullRequest.number} could not be requeued after ${evidence}: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
-    )
+    throwMergeOperationError(cause, {
+      cwd,
+      target,
+      number: pullRequest.number,
+      adapter,
+      fallback: (message) =>
+        new Error(
+          `refusing merge: pull request #${pullRequest.number} could not be requeued after ${evidence}: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
+        ),
+    })
   }
 }
 
@@ -490,14 +575,21 @@ function enqueueForMergeQueue(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   adapter: PullRequestMergeAdapter,
+  target: string,
 ): void {
   try {
     adapter.enqueue(cwd, pullRequest.number, pullRequest.headCommit)
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    throw new Error(
-      `refusing merge: pull request #${pullRequest.number} could not be added to the merge queue: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
-    )
+    throwMergeOperationError(cause, {
+      cwd,
+      target,
+      number: pullRequest.number,
+      adapter,
+      fallback: (message) =>
+        new Error(
+          `refusing merge: pull request #${pullRequest.number} could not be added to the merge queue: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
+        ),
+    })
   }
 }
 
@@ -624,6 +716,100 @@ function recordPostMergeEvidence(input: {
   return recordingError
 }
 
+function refuseUnlessAdmitted(decision: MergeDecision): void {
+  if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
+}
+
+function admitViewedPullRequest(
+  pullRequest: PullRequestMergeFacts,
+  input: {
+    cwd: string
+    adapter: PullRequestMergeAdapter
+    database: Database
+    landingBranch: string
+    requiredChecks: readonly string[]
+    mergeQueue: boolean
+  },
+): PullRequestChange {
+  refuseUnlessAdmitted(
+    decidePullRequestIdentity({
+      number: pullRequest.number,
+      state: pullRequest.state,
+      baseBranch: pullRequest.baseBranch,
+      landingBranch: input.landingBranch,
+    }),
+  )
+  const admission = collectMergeAdmission(pullRequest, input.cwd, input.adapter, input.database)
+  refuseUnlessAdmitted(admission.decision)
+  refuseUnlessAdmitted(
+    decideMergeProof(
+      collectMergeProof(
+        pullRequest,
+        input.landingBranch,
+        input.requiredChecks,
+        input.mergeQueue,
+        input.cwd,
+        input.adapter,
+        input.database,
+      ),
+    ),
+  )
+  input.adapter.recordAdmission(
+    admission.checked!.change,
+    admission.checked!.decision,
+    pullRequest.number,
+    input.database,
+  )
+  return admission.checked!.change
+}
+
+function completeMerge(input: {
+  target: string
+  cwd: string
+  adapter: PullRequestMergeAdapter
+  database: Database
+  project: Project
+  landingBranch: string
+  requiredChecks: readonly string[]
+  mergeQueue: boolean
+  mergeMethod: 'squash' | 'merge' | 'rebase'
+}): PullRequestMergeOutcome {
+  let pullRequest: PullRequestMergeFacts | undefined
+  let mergeCommit: string
+  let requeueOutput: string | undefined
+  let admittedChange: PullRequestChange
+  try {
+    pullRequest = input.adapter.view(input.cwd, input.target)
+    admittedChange = admitViewedPullRequest(pullRequest, input)
+    const merged = mergeAdmittedHead({ ...input, pullRequest })
+    mergeCommit = merged.mergeCommit
+    requeueOutput = merged.requeueOutput
+  } catch (cause) {
+    refuseUncaughtMergeError(cause, {
+      cwd: input.cwd,
+      target: input.target,
+      number: pullRequest?.number,
+      adapter: input.adapter,
+    })
+  }
+  return mergedPullRequestOutput({
+    adapter: input.adapter,
+    database: input.database,
+    project: input.project.name,
+    branch: pullRequest!.headBranch,
+    prNumber: pullRequest!.number,
+    mergeCommit,
+    recordingError: recordPostMergeEvidence({
+      adapter: input.adapter,
+      change: admittedChange!,
+      pullRequest: pullRequest!,
+      database: input.database,
+      projectName: input.project.name,
+    }),
+    requeueOutput,
+  })
+}
+
 export function mergePullRequest(
   target: string,
   cwd = process.cwd(),
@@ -645,81 +831,15 @@ export function mergePullRequest(
       `project ${project.name} has no landing branch and release policy; cleared by: ${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
     )
   }
-
-  let pullRequest: PullRequestMergeFacts
-  let mergeCommit: string
-  let requeueOutput: string | undefined
-  let admittedChange: PullRequestChange
-  try {
-    pullRequest = adapter.view(cwd, target)
-    const identityDecision = decidePullRequestIdentity({
-      number: pullRequest.number,
-      state: pullRequest.state,
-      baseBranch: pullRequest.baseBranch,
-      landingBranch,
-    })
-    if (!identityDecision.admitted) {
-      throw new Error(`refusing merge: ${identityDecision.refusal}`)
-    }
-    const admission = collectMergeAdmission(pullRequest, cwd, adapter, database)
-    if (!admission.decision.admitted) {
-      throw new Error(`refusing merge: ${admission.decision.refusal}`)
-    }
-    admittedChange = admission.checked!.change
-    const input = collectMergeProof(
-      pullRequest,
-      landingBranch,
-      release.requiredChecks,
-      release.mergeQueue ?? false,
-      cwd,
-      adapter,
-      database,
-    )
-    const decision = decideMergeProof(input)
-    if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
-    adapter.recordAdmission(
-      admission.checked!.change,
-      admission.checked!.decision,
-      pullRequest.number,
-      database,
-    )
-    if (release.mergeQueue) {
-      const repository = adapter.repository(project)
-      const queued = waitForQueuedMerge(pullRequest, cwd, repository, adapter)
-      mergeCommit = queued.mergeCommit
-      requeueOutput = queued.requeueOutput
-    } else {
-      const subject = `${pullRequest.title} (#${pullRequest.number})`
-      mergeCommit = adapter.merge(
-        cwd,
-        pullRequest.number,
-        release.mergeMethod,
-        subject,
-        pullRequest.headCommit,
-      )
-    }
-  } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    if (message.startsWith('refusing merge:')) throw cause
-    throw new Error(
-      `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
-    )
-  }
-  const recordingError = recordPostMergeEvidence({
-    adapter,
-    change: admittedChange!,
-    pullRequest,
-    database,
-    projectName: project.name,
-  })
-  return mergedPullRequestOutput({
+  return completeMerge({
+    target,
+    cwd,
     adapter,
     database,
-    project: project.name,
-    branch: pullRequest.headBranch,
-    prNumber: pullRequest.number,
-    mergeCommit,
-    recordingError,
-    requeueOutput,
+    project,
+    landingBranch,
+    requiredChecks: release.requiredChecks,
+    mergeQueue: release.mergeQueue ?? false,
+    mergeMethod: release.mergeMethod,
   })
 }

@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
+import type { PullRequestCheck } from './merge-decision.ts'
 import {
   MERGE_QUEUE_DEQUEUE_CONFIRM_MS,
   MERGE_QUEUE_REQUEUE_CONFIRM_MS,
@@ -61,13 +62,15 @@ function adapter(input: {
   wait?: (milliseconds: number) => void
   now?: () => number
   landingState?: () => { remoteLandingTip: string; mergeBase: string }
+  checks?: PullRequestCheck[]
 }): PullRequestMergeAdapter {
   return {
     repository: () => 'example/repository',
     view: () => pullRequest,
-    checks: () => [
-      { name: 'ci', bucket: 'pass', state: 'SUCCESS', link: 'https://checks.example/ci' },
-    ],
+    checks: () =>
+      input.checks ?? [
+        { name: 'ci', bucket: 'pass', state: 'SUCCESS', link: 'https://checks.example/ci' },
+      ],
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: () => true,
     admission: () => ({
@@ -361,6 +364,40 @@ test('an enqueue failure reports the queue operation and its specific remedy', (
     ),
   ).toThrow(
     `refusing merge: pull request #42 could not be added to the merge queue: Auto merge is not allowed for this repository (enablePullRequestAutoMerge); cleared by: enable auto-merge on the repository (allow_auto_merge), then ${PLATFORM_SLUG} pr merge 42`,
+  )
+})
+
+test('a GitHub branch-policy enqueue refusal names pending checks and does not restore forge access', () => {
+  registerProject(['ci'])
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        queueStates: [{ pullRequestState: 'OPEN', mergeCommit: null, entryState: null }],
+        checks: [
+          {
+            name: 'Check',
+            bucket: 'pending',
+            state: 'IN_PROGRESS',
+            link: 'https://checks.example/check',
+          },
+          {
+            name: 'ci',
+            bucket: 'pass',
+            state: 'SUCCESS',
+            link: 'https://checks.example/ci',
+          },
+        ],
+        enqueue: () => {
+          throw new Error(
+            'merge-queue enqueue failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+          )
+        },
+      }),
+    ),
+  ).toThrow(
+    `refusing merge: GitHub's branch policy blocks the merge: Check pending; cleared by: wait for pending checks, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 
