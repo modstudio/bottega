@@ -8,6 +8,7 @@ import type { McpServerConfig } from './mcp-probe.ts'
 import {
   createReaderMcpProxy,
   MCP_UPSTREAM_INHERITED_ENV,
+  MCP_UPSTREAM_STORE_ENV,
   type ReaderMcpUpstream,
   readerMcpProxyCommand,
   readerMcpUpstreamEnvironment,
@@ -35,6 +36,41 @@ test('upstream environment contains only declared and allowlisted values', () =>
     TRACKER_TOKEN: 'declared-secret',
   })
   expect(MCP_UPSTREAM_INHERITED_ENV).toEqual(['PATH', 'HOME', 'LANG', 'TMPDIR', 'USER', 'SHELL'])
+})
+
+test('only the built-in upstream inherits the names that locate the operator store', () => {
+  const environment = {
+    PATH: '/bin',
+    HOME: '/run/home',
+    BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    BOTTEGA_HUB_DB: '/state/hub/hub.db',
+    BOTTEGA_STATE_HOME: '/state',
+    XDG_STATE_HOME: '/xdg',
+    BOTTEGA_RUN_TOKEN: 'run-token-secret',
+  }
+  // A `.mcp.json` entry brings its own values and keeps the narrow allowlist.
+  expect(readerMcpUpstreamEnvironment(environment, undefined)).toEqual({
+    PATH: '/bin',
+    HOME: '/run/home',
+  })
+  // A worker HOME is run-scoped, so the platform's own server also inherits the
+  // names that locate the operator's store instead of a fresh empty one.
+  expect(readerMcpUpstreamEnvironment(environment, undefined, true)).toEqual({
+    PATH: '/bin',
+    HOME: '/run/home',
+    BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    BOTTEGA_HUB_DB: '/state/hub/hub.db',
+    BOTTEGA_STATE_HOME: '/state',
+    XDG_STATE_HOME: '/xdg',
+  })
+  // Only a set name is inherited; an unset one never appears.
+  expect(readerMcpUpstreamEnvironment({ PATH: '/bin' }, undefined, true)).toEqual({ PATH: '/bin' })
+  expect(MCP_UPSTREAM_STORE_ENV).toEqual([
+    'BOTTEGA_ORCHESTRATOR_DB',
+    'BOTTEGA_HUB_DB',
+    'BOTTEGA_STATE_HOME',
+    'XDG_STATE_HOME',
+  ])
 })
 
 test('proxy exhausts listing pages, refuses guessed names, and forwards allowed calls unchanged', async () => {
@@ -146,15 +182,24 @@ test('command resolves the platform’s own server without a tree entry, and a t
   await Bun.write(join(main, '.keep'), '')
   await Bun.write(join(tree, '.keep'), '')
   const launches: Array<{ command?: string; args?: string[]; cwd?: string }> = []
+  const upstreamEnvironments: Record<string, string>[] = []
   const errors: string[] = []
   const common = {
     projectByName: () => ({ name: PLATFORM_SLUG, path: main, settings: {} }),
     retiredProjectByName: () => null,
-    environment: {},
+    environment: {
+      PATH: '/bin',
+      HOME: '/run/home',
+      BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    },
     error: (line: string) => errors.push(line),
     setExitCode: () => {},
-    connectMcpToolClient: async (launch: { command?: string; args?: string[]; cwd?: string }) => {
+    connectMcpToolClient: async (
+      launch: { command?: string; args?: string[]; cwd?: string },
+      environment: Record<string, string>,
+    ) => {
       launches.push(launch)
+      upstreamEnvironments.push(environment)
       throw new Error('upstream unavailable in this test')
     },
   }
@@ -179,6 +224,14 @@ test('command resolves the platform’s own server without a tree entry, and a t
     expect(launches.map((launch) => launch.args)).toEqual([['mcp', 'serve'], ['--own']])
     expect(launches[0]!.cwd).toBe(tree)
     expect(launches[0]!.command?.endsWith(join('bin', PLATFORM_SLUG))).toBe(true)
+    // The built-in upstream reaches the operator's store; the tree's own entry
+    // is a project launch and keeps the narrow allowlist.
+    expect(upstreamEnvironments[0]).toEqual({
+      PATH: '/bin',
+      HOME: '/run/home',
+      BOTTEGA_ORCHESTRATOR_DB: '/state/orchestrator/orchestrator.db',
+    })
+    expect(upstreamEnvironments[1]).toEqual({ PATH: '/bin', HOME: '/run/home' })
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

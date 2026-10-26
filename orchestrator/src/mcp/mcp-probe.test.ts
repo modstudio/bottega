@@ -12,6 +12,7 @@ import {
   probeMcpServer,
   readMcpConfig,
   resolveMcpServerLaunch,
+  resolveMcpServerLaunchFromRead,
 } from './mcp-probe.ts'
 
 test('computes the complement only for declared worker MCP scope', () => {
@@ -44,6 +45,45 @@ test('a tree entry wins, the platform serves its own name, and nothing else reso
   // nothing in the tree or the installation starts them under that name.
   expect(resolveMcpServerLaunch({}, WORKER_MCP_SERVER_NAME, binary)).toBeNull()
   expect(resolveMcpServerLaunch({}, 'tracker', binary)).toBeNull()
+})
+
+test('only an absent launch file lets the platform name resolve to the built-in launch', () => {
+  const binary = `/opt/${PLATFORM_SLUG}/bin/${PLATFORM_SLUG}`
+  const path = '/project/.mcp.json'
+
+  // An absent file is no evidence about any name, so the platform's own server
+  // still starts, from the installed binary.
+  expect(
+    resolveMcpServerLaunchFromRead({ ok: false, path, reason: 'missing' }, MCP_SERVER_NAME, binary),
+  ).toEqual({
+    config: { name: MCP_SERVER_NAME, command: binary, args: ['mcp', 'serve'] },
+    builtIn: true,
+  })
+
+  // A file that could not be read names no server, the platform's included.
+  for (const reason of ['invalid', 'unreadable'] as const) {
+    expect(
+      resolveMcpServerLaunchFromRead({ ok: false, path, reason }, MCP_SERVER_NAME, binary),
+    ).toBeNull()
+  }
+
+  // A tree entry wins, and is a project launch rather than the built-in one.
+  const ownEntry: McpServerConfig = { name: MCP_SERVER_NAME, command: '/project/bin/own-server' }
+  expect(
+    resolveMcpServerLaunchFromRead(
+      { ok: true, path, config: { [MCP_SERVER_NAME]: ownEntry } },
+      MCP_SERVER_NAME,
+      binary,
+    ),
+  ).toEqual({ config: ownEntry, builtIn: false })
+
+  // Any other name is served only when a readable file names it.
+  expect(
+    resolveMcpServerLaunchFromRead({ ok: true, path, config: {} }, 'tracker', binary),
+  ).toBeNull()
+  expect(
+    resolveMcpServerLaunchFromRead({ ok: false, path, reason: 'missing' }, 'tracker', binary),
+  ).toBeNull()
 })
 
 test('a successful orchestrator tool probe leaves worker attachment unverified', () => {

@@ -8,8 +8,8 @@ import { decideMcpCompatibility, type McpCompatibilityVerdict } from './mcp-comp
 import {
   bottegaMcpBinary,
   parseMcpProbe,
-  readMcpConfig,
-  resolveMcpServerLaunch,
+  readMcpConfigResult,
+  resolveMcpServerLaunchFromRead,
 } from './mcp-probe.ts'
 
 export type McpListingObservation = {
@@ -91,7 +91,13 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
     (entry) => !projectFilter || entry.name === projectFilter,
   )) {
     const server = project.settings.mcpServer ?? project.name
-    const config = resolveMcpServerLaunch(readMcpConfig(project.path), server, bottegaMcpBinary())
+    // One resolution with the reader proxy and the reader selection: a launch
+    // file that could not be read names no server, the platform's included.
+    const config = resolveMcpServerLaunchFromRead(
+      readMcpConfigResult(project.path),
+      server,
+      bottegaMcpBinary(),
+    )?.config
     const listing = latestMcpListing(project.recordId, server)
     const headers = config?.headers ?? {}
     const auth = Object.entries(headers).some(

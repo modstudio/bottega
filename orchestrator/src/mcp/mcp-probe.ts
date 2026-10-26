@@ -220,6 +220,38 @@ export function resolveMcpServerLaunch(
   return { name: serverName, ...bottegaMcpServerEntry(bottegaBinary) }
 }
 
+/** One name's launch, and whether the platform's built-in server stands in for it. */
+export type McpServerLaunchResolution = {
+  config: McpServerConfig
+  /**
+   * The built-in launch answers this name rather than a `.mcp.json` entry, so
+   * the upstream needs the platform's own launch variables to find its store.
+   */
+  builtIn: boolean
+}
+
+/**
+ * Resolve one server name from how the tree's launch file read.
+ *
+ * The built-in launch stands in for Bottega's own server name only where the
+ * file is absent. A file that could not be read names no server — the
+ * platform's own included — so a broken `.mcp.json` is reported rather than
+ * read as an absent one, and every caller judges that file the same way. Null
+ * means no launch starts the name at all.
+ */
+export function resolveMcpServerLaunchFromRead(
+  read: McpConfigReadResult,
+  serverName: string,
+  bottegaBinary: string,
+): McpServerLaunchResolution | null {
+  const configured = read.ok ? read.config[serverName] : undefined
+  if (configured) return { config: configured, builtIn: false }
+  if (serverName !== MCP_SERVER_NAME) return null
+  if (!read.ok && read.reason !== 'missing') return null
+  const builtIn = resolveMcpServerLaunch({}, serverName, bottegaBinary)
+  return builtIn ? { config: builtIn, builtIn: true } : null
+}
+
 function mcpEndpointAllowlist(url: string | null | undefined): string[] {
   if (!url) return []
   try {

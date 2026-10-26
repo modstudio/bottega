@@ -76,6 +76,7 @@ export const mcpModules: McpModule[] = [
   ]),
   module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/state-directory.ts',
     '@modelcontextprotocol/client',
     '@modelcontextprotocol/server',
     '@modelcontextprotocol/server/stdio',
