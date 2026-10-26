@@ -370,7 +370,13 @@ function workflowSlugs(d: Database, spaceId: string | null): string[] {
   ).map(({ slug }) => slug)
 }
 
-export function listResolvedWorkflows(spaceId: string | null, d: Database = db()) {
+/**
+ * Every workflow a space resolves, with the title of its selected version.
+ *
+ * A workflow with no production and no draft version has nothing left to run, so it is left out
+ * unless `retired` asks for the rows whose only versions are retired.
+ */
+export function listResolvedWorkflows(spaceId: string | null, d: Database = db(), retired = false) {
   return workflowSlugs(d, spaceId).flatMap((slug) => {
     const row = d
       .query(`SELECT w.record_id,w.slug,
@@ -383,7 +389,7 @@ export function listResolvedWorkflows(spaceId: string | null, d: Database = db()
       production_n: number | null
       draft_n: number | null
     } | null
-    if (!row) return []
+    if (!row || (!retired && row.production_n === null && row.draft_n === null)) return []
     const selected = versionRow(row.slug, row.production_n ?? row.draft_n ?? undefined, d, spaceId)
     return [
       {

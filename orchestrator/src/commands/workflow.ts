@@ -88,9 +88,16 @@ function registerWorkflowDefinitions({
   output,
   handlerOptions,
 }: WorkflowRegistration): void {
-  jsonOption(workflow.command('list').description('list workflow definitions'))
+  jsonOption(
+    workflow
+      .command('list')
+      .description('list workflow definitions')
+      .option('--retired', 'include workflows whose only versions are retired'),
+  )
     .allowExcessArguments(false)
-    .action((options) => listWorkflowCommand(output(options), handlerOptions))
+    .action((options) =>
+      listWorkflowCommand(output(options), handlerOptions, Boolean(options.retired)),
+    )
 
   jsonOption(
     workflow
@@ -175,6 +182,7 @@ function registerWorkflowVersions({
 function registerWorkflowRendering({
   workflow,
   workflowPresentation,
+  handlerOptions,
   output,
 }: WorkflowRegistration): void {
   jsonOption(
@@ -191,7 +199,13 @@ function registerWorkflowRendering({
     .allowExcessArguments(false)
     .action((slug, options) => {
       const argv = workflowArgv('compose', [slug], options)
-      return composeCommand(argv, Boolean(options.json), output(options), workflowPresentation)
+      return composeCommand(
+        argv,
+        Boolean(options.json),
+        output(options),
+        workflowPresentation,
+        handlerOptions,
+      )
     })
 
   jsonOption(
@@ -209,7 +223,7 @@ function registerWorkflowRendering({
     .allowExcessArguments(false)
     .action((slug, step, options) => {
       const args = [slug, step].filter((value): value is string => value !== undefined)
-      return stepCommand(workflowArgv('step', args, options), output(options))
+      return stepCommand(workflowArgv('step', args, options), output(options), handlerOptions)
     })
 }
 

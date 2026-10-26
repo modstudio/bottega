@@ -28,6 +28,7 @@ import {
 import {
   promoteWorkflowLocal,
   resolvedWorkflowVersions,
+  retireWorkflowLocal,
   setWorkflowLocal,
   showResolvedWorkflow,
 } from './workflows.ts'
@@ -1021,4 +1022,30 @@ test('mode-less cursor command refuses active cursors in multiple modes', async 
     `${PLATFORM_SLUG} workflow next cannot resolve a mode for workflow "${slug}"; ` +
       'active cursor modes: repair, report; pass --mode <slug>',
   )
+})
+
+test('workflow list hides a retired workflow until --retired asks for it', async () => {
+  const slug = 'retired-listing'
+  const draft = setWorkflowLocal(
+    slug,
+    {
+      title: 'Retired listing',
+      description: 'Exercises the retired listing filter.',
+      arguments: [],
+      modes: [],
+    },
+    'retired listing fixture',
+    'test',
+  )
+  retireWorkflowLocal(slug, draft.n, 'superseded', 'test')
+
+  const hidden: string[] = []
+  await workflowCommand(['workflow', 'list', '--json'], presentation(hidden))
+  const listed = (lines: string[]) =>
+    (JSON.parse(lines[0]!) as { slug: string }[]).map((r) => r.slug)
+
+  expect(listed(hidden)).not.toContain(slug)
+  const shown: string[] = []
+  await workflowCommand(['workflow', 'list', '--retired', '--json'], presentation(shown))
+  expect(listed(shown)).toContain(slug)
 })

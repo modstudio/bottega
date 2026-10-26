@@ -81,6 +81,92 @@ describe('orch MCP', () => {
     }
   })
 
+  test('get_workflow_step refuses a landing workflow whose branch carries nothing to land', async () => {
+    const project = 'mcp-landing-branch'
+    const key = 'DEV-1575-MCP'
+    const branch = 'DEV-1575-mcp'
+    upsertProject({
+      recordId: newRecordId(),
+      name: project,
+      path: `/${project}`,
+      stack: 'bun',
+      settings: {
+        gate: 'bun run check',
+        trunk: 'main',
+        docs: { protocol: 'orch-docs' },
+        tracker: { kind: 'hub', protocol: 'hub' },
+      },
+    })
+    const draft = setWorkflowLocal(
+      'ship-task',
+      {
+        title: 'Land a built branch',
+        description: 'Lands a branch an implementation run built.',
+        arguments: [
+          { name: 'key', required: true, description: 'The task key.' },
+          { name: 'branch', required: true, description: 'The branch to land.' },
+        ],
+        modes: [
+          {
+            slug: 'merge',
+            title: 'Land through merge',
+            entry: 'Does the branch stop at the merge into the landing branch?',
+            steps: ['diagnose'],
+          },
+        ],
+      },
+      'mcp landing branch fixture',
+      'test',
+    )
+    promoteWorkflowLocal('ship-task', draft.n, 'publish mcp landing branch fixture', 'test')
+    const cursorState = () =>
+      db()
+        .query<{ state: string }, [string]>(
+          "SELECT state FROM workflow_cursor WHERE workflow_slug='ship-task' AND workflow_key=?",
+        )
+        .get(key)?.state ?? null
+    const stepFor = async (commitCount: number) => {
+      const server = createDocsMcpServer({ commitCount: () => commitCount })
+      const client = new Client({ name: 'orch-test', version: '1.0.0' })
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+      await server.connect(serverTransport)
+      await client.connect(clientTransport)
+      try {
+        return await client.callTool({
+          name: 'get_workflow_step',
+          arguments: {
+            slug: 'ship-task',
+            project,
+            step: 'diagnose',
+            mode: 'merge',
+            args: { key, branch },
+          },
+        })
+      } finally {
+        await client.close()
+        await server.close()
+      }
+    }
+    try {
+      const refused = await stepFor(0)
+      expect(refused.isError).toBe(true)
+      expect((refused.content as { text: string }[])[0]!.text).toContain(
+        `refusing to compose ship-task for branch ${branch}: it has no commits past main,`,
+      )
+      expect(cursorState()).toBeNull()
+
+      const served = await stepFor(1)
+      expect(served.isError).toBeFalsy()
+      expect((served.content as { text: string }[])[0]!.text).toContain(
+        'was opened for workflow ship-task',
+      )
+      expect(cursorState()).toBe('running')
+    } finally {
+      db().query('DELETE FROM workflow_cursor WHERE project=?').run(project)
+      removeProject(project)
+    }
+  })
+
   test('workflow ruling tools return the durable question id', async () => {
     upsertProject({ recordId: newRecordId(), name: 'fixture', path: '/fixture', settings: {} })
     db()
@@ -135,7 +221,9 @@ describe('orch MCP', () => {
 
   test('serves the same tools to legacy initialize and a pinned 2026 client', async () => {
     const [legacyClientTransport, legacyServerTransport] = InMemoryTransport.createLinkedPair()
-    const legacyServer = serveStdio(createDocsMcpServer, { transport: legacyServerTransport })
+    const legacyServer = serveStdio(() => createDocsMcpServer(), {
+      transport: legacyServerTransport,
+    })
     await legacyClientTransport.start()
 
     let requestId = 0
@@ -175,7 +263,9 @@ describe('orch MCP', () => {
         { versionNegotiation: { mode: { pin: '2026-07-28' } } },
       )
       const [modernClientTransport, modernServerTransport] = InMemoryTransport.createLinkedPair()
-      const modernServer = serveStdio(createDocsMcpServer, { transport: modernServerTransport })
+      const modernServer = serveStdio(() => createDocsMcpServer(), {
+        transport: modernServerTransport,
+      })
       await modernClient.connect(modernClientTransport)
       try {
         const modernTools = await modernClient.listTools()

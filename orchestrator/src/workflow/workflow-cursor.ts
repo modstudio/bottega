@@ -12,6 +12,11 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
+import {
+  type CommitCountPort,
+  readCommitsPastLanding,
+  workflowComposeBranchRefusal,
+} from './workflow-compose-branch.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
@@ -125,12 +130,28 @@ function findCursor(
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
 
+/**
+ * Create, or resume, the cursor a composition opens.
+ *
+ * Every door that opens a cursor comes through here, so the empty-branch refusal is taken once
+ * rather than at each caller: a workflow that lands a built branch is not opened for a branch that
+ * carries nothing to land.
+ */
 function insertCursor(
   composition: ReturnType<typeof composeWorkflow>,
   context: WorkflowCursorContext,
   d: Database,
   autonomy?: AutonomyResolution,
+  commitCount: CommitCountPort = readCommitsPastLanding,
 ): CursorRow {
+  const refusal = workflowComposeBranchRefusal({
+    workflow: composition.workflow.slug,
+    project: composition.project,
+    args: composition.arguments,
+    d,
+    commitCount,
+  })
+  if (refusal) throw new Error(refusal)
   const cursorRecordId = newRecordId()
   const key = keyOf(composition.arguments)
   const instance = key ? '' : randomUUID()
@@ -232,6 +253,7 @@ export function composeWorkflowWithCursor(
   d: Database = db(),
   selection: { version?: number; catalogueVersion?: number } = {},
   live: LiveCursorAutonomy,
+  commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const autonomy = live.resolution
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
@@ -249,7 +271,7 @@ export function composeWorkflowWithCursor(
       : null
     const start = decideCursorStart(existing?.state ?? null)
     if (existing && start === 'reuse') applyCursorArguments(existing, args, d)
-    const row = insertCursor(composition, context, d, autonomy)
+    const row = insertCursor(composition, context, d, autonomy, commitCount)
     return {
       ...cursorComposition(row, d, live),
       cursor: {
@@ -296,6 +318,7 @@ function prepareStepServe(
   autonomy: AutonomyResolution | undefined,
   cursor: number | undefined,
   live?: LiveCursorAutonomy,
+  commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const handled =
     cursor === undefined ? null : findCursor(project, slug, mode, args, context, d, cursor)
@@ -336,7 +359,7 @@ function prepareStepServe(
   if (index < 0) throw new Error(`workflow "${slug}" has no step "${resolvedStepSlug}"`)
   const requested = composition.steps[index]!
   if (index === 0 && startDecision === 'retire')
-    row = insertCursor(composition, context, d, autonomy)
+    row = insertCursor(composition, context, d, autonomy, commitCount)
   return { row, opensCursor, composition, requested, index, input }
 }
 
@@ -351,6 +374,7 @@ function getWorkflowStepWithCursorImpl(
   autonomy?: AutonomyResolution,
   cursor?: number,
   live?: LiveCursorAutonomy,
+  commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const prepared = prepareStepServe(
     slug,
@@ -363,6 +387,7 @@ function getWorkflowStepWithCursorImpl(
     autonomy,
     cursor,
     live,
+    commitCount,
   )
   let { row } = prepared
   const { opensCursor, composition, requested, index, input } = prepared
@@ -372,7 +397,7 @@ function getWorkflowStepWithCursorImpl(
   )
   refuseInvalidServe(decision, row, composition, slug, mode, args)
   if (decision.action !== 'serve') throw new Error('invalid serve transition')
-  if (!row) row = insertCursor(composition, context, d, autonomy)
+  if (!row) row = insertCursor(composition, context, d, autonomy, commitCount)
   if (decision.move || decision.resume) {
     if (row.state === 'awaiting-ruling')
       closeOpenWorkflowQuestion(row.record_id, 'advanced-without-ruling', nowIso(), d)
@@ -435,6 +460,7 @@ export function getWorkflowStepWithCursor(
   d: Database = writableDb(),
   live: LiveCursorAutonomy,
   cursor?: number,
+  commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const autonomy = live.resolution
   return writeTransaction(
@@ -450,6 +476,7 @@ export function getWorkflowStepWithCursor(
         autonomy,
         cursor,
         live,
+        commitCount,
       ),
     d,
   )

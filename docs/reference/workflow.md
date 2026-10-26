@@ -379,12 +379,13 @@ import a project workflow tree as draft definitions
 
 ## bottega workflow list
 
-**Synopsis:** `bottega workflow list [--json]`
+**Synopsis:** `bottega workflow list [--retired] [--json]`
 
 list workflow definitions
 
 ### Options
 
+- `--retired`: include workflows whose only versions are retired
 - `--json`: print JSON output
 
 ### Related
