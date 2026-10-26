@@ -79,7 +79,7 @@ const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
-function runValues(row: Payload, projectId: string | null) {
+function runValues(row: Payload, projectId: string | null, taskId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
@@ -95,6 +95,7 @@ function runValues(row: Payload, projectId: string | null) {
     promptBytes: bigint(row.promptBytes),
     promptHead: String(row.promptHead),
     taskKey: nullableString(row.taskKey),
+    taskId,
     label: nullableString(row.label),
     lens: nullableString(row.lens),
     latencyMs: nullableBigint(row.latencyMs),
@@ -311,7 +312,15 @@ async function pushRun(
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const projectId = await projectRecordId(tx, row, principal, projectIds)
-    const values = runValues(row, projectId)
+    const carriesTaskId = row.taskId !== undefined
+    const taskId =
+      carriesTaskId && row.taskId
+        ? ((
+            await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
+              WHERE space_id=${principal.spaceId}::uuid AND id=${row.taskId}::uuid`
+          )[0]?.id ?? null)
+        : null
+    const values = runValues(row, projectId, taskId)
     const existingOwned = await existingEvidenceOwned(
       tx,
       'run',
@@ -328,7 +337,8 @@ async function pushRun(
         AND space_id=${principal.spaceId}::uuid AND superseded_at IS NULL
     `
     if (exclusion[0]?.reason) values.evidenceExcluded = String(exclusion[0].reason)
-    const { id: _id, createdAt: _createdAt, ...updates } = values
+    const { id: _id, createdAt: _createdAt, taskId: _taskId, ...existingUpdates } = values
+    const updates = carriesTaskId ? { ...existingUpdates, taskId } : existingUpdates
     const written = await drizzle({ client: tx })
       .insert(runRecord)
       .values(values)
