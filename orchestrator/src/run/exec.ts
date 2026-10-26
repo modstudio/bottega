@@ -51,7 +51,7 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
     const database = new Database(path, { readwrite: true, create: false })
     database.exec('PRAGMA busy_timeout = 15000')
     // Every writable open keeps the store's -wal/-shm sidecars after it closes — the one rule
-    // ./database/wal-persistence.ts holds, imported here because this entry deliberately loads
+    // ../database/wal-persistence.ts holds, imported here because this entry deliberately loads
     // as little of the store as it can. The last writer to close decides, and a sidecar-less WAL
     // store cannot be opened read-only afterwards.
     keepJournalSidecars(database)

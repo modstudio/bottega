@@ -434,7 +434,7 @@ export function storeSchemaVersions(): { opened: number; store: number } | null 
   return { opened: openedUserVersion, store: readUserVersion(handle) }
 }
 
-/** The facts the process-handle open reads: the gathered actor facts plus where the store sits. */
+/** The facts the process-handle open is given: the actor facts plus where the store sits. */
 export type ProcessHandleFacts = StoreActorFacts & {
   /** Whether the store sits under OS temporary state, where any caller may write it. */
   storePathUnderTemporaryRoot: boolean
@@ -444,8 +444,8 @@ export type ProcessHandleFacts = StoreActorFacts & {
 export type ProcessStoreHandle = { database: Database; openMode: StoreOpenMode }
 
 /**
- * Open the process's store handle from gathered facts and a path. The adapter gathers; this
- * decides nothing the facts do not carry, so the open is exercisable on a scratch store. A
+ * Open the process's store handle from gathered actor facts and a path. It probes the path
+ * for journal sidecars itself and opens the connection, so it is exercised on a scratch store. A
  * persistent handle never takes the immutable snapshot — a long-lived reader must see every
  * later writer — and a store whose plain read-only open cannot be established is refused by
  * name rather than silently degraded.
