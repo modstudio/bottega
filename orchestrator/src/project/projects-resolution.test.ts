@@ -137,13 +137,19 @@ describe('projects are data, not code', () => {
   })
 
   test('main stack consumers are explicit and validated', () => {
+    const prefixRefusal =
+      'mainStack.worktreeComposeProjectPrefix must be a lowercase Compose project prefix ending in "_" or "-", so it cannot also match this project\'s own main-stack Compose project, which the settings do not name'
     expect(
       validateProjectSettings({ mainStack: { consumers: ['gate', 'worktree-create'] } }, 'strict'),
     ).toEqual([])
     expect(
       validateProjectSettings(
         {
-          mainStack: { consumers: ['mcp'], requiredServices: ['db', 'cache'] },
+          mainStack: {
+            consumers: ['mcp'],
+            requiredServices: ['db', 'cache'],
+            worktreeComposeProjectPrefix: 'starship_wt_',
+          },
         },
         'strict',
       ),
@@ -156,6 +162,26 @@ describe('projects are data, not code', () => {
         'strict',
       ),
     ).toEqual(['mainStack.consumers entries must be gate, mcp, or worktree-create'])
+    expect(
+      validateProjectSettings(
+        { mainStack: { consumers: [], worktreeComposeProjectPrefix: 'Starship worktree' } },
+        'strict',
+      ),
+    ).toEqual([prefixRefusal])
+    // A prefix without a separator also matches this project's own main-stack Compose
+    // project, which would keep the shared stack forever.
+    expect(
+      validateProjectSettings(
+        { mainStack: { consumers: [], worktreeComposeProjectPrefix: 'starship' } },
+        'strict',
+      ),
+    ).toEqual([prefixRefusal])
+    expect(
+      validateProjectSettings(
+        { mainStack: { consumers: [], worktreeComposeProjectPrefix: 'starship-' } },
+        'strict',
+      ),
+    ).toEqual([])
   })
 
   test('checks accept the optional policy shapes', () => {

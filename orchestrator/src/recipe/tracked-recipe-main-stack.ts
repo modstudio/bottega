@@ -37,6 +37,12 @@ export function stopTrackedTeardownMainStack(started: TrackedTeardownMainStack):
       projectPath: started.project.path,
       consumer: 'worktree-create',
       startedServices: started.startedServices,
+      ...(started.project.settings.mainStack?.worktreeComposeProjectPrefix !== undefined
+        ? {
+            worktreeComposeProjectPrefix:
+              started.project.settings.mainStack.worktreeComposeProjectPrefix,
+          }
+        : {}),
     })
     return {
       failure: null,
