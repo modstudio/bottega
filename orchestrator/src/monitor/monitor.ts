@@ -1,6 +1,7 @@
 // concern: monitor
 /** Owns monitor pass composition, persistence, history, and human-readable reporting. */
 
+import type { Database } from 'bun:sqlite'
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -77,6 +78,7 @@ import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
+import { runTokenJumpConditions } from './monitor-run-token-jump.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import type {
   AddressedMonitorCondition,
@@ -625,6 +627,17 @@ function terminalCloseOutDetail(run: {
   return run.close_out_detail ?? `terminal run ${run.record_id} close-out ${run.close_out_outcome}`
 }
 
+function appendRunConditions(
+  conditions: MonitorCondition[],
+  database: Database,
+  clock: number,
+): void {
+  conditions.push(
+    ...staleRunConditions(database, clock),
+    ...runTokenJumpConditions(database, clock),
+  )
+}
+
 export async function monitor(
   trigger: 'invoked' | 'backstop' = 'invoked',
   clock = Date.now(),
@@ -752,8 +765,7 @@ export async function monitor(
     })
   }
 
-  conditions.push(...staleRunConditions(database, clock))
-
+  appendRunConditions(conditions, database, clock)
   conditions.push(...terminalProcessAliveConditions(clock))
   appendOrphanProcessObservations(conditions, errors, clock)
 

@@ -206,6 +206,16 @@ function isMessageUsageUpdate(update: AcpUpdate): update is AcpMessageUsageUpdat
   return update.sessionUpdate === 'message_usage'
 }
 
+function acpUsageEvent(
+  tokens: number,
+  costUsd: number | null,
+  usageUpdates: readonly AcpMessageUsageUpdate[],
+  promptUsage: AcpTurnInput['usage'],
+): Extract<NormalizedEvent, { kind: 'usage' }> {
+  const per = usageUpdates.length === 1 && promptUsage == null ? 'call' : 'turn'
+  return { kind: 'usage', tokens, costUsd, per }
+}
+
 function textOf(content: AcpUpdate['content']): string {
   if (
     content &&
@@ -345,7 +355,7 @@ export function normalizeAcpTurn(
   }
 
   const { tokens, costUsd, vendorUsage } = acpRunUsage(usageUpdates, input.usage ?? null, billing)
-  if (tokens !== null) events.push({ kind: 'usage', tokens, costUsd })
+  if (tokens !== null) events.push(acpUsageEvent(tokens, costUsd, usageUpdates, input.usage))
 
   if (input.elicitation) {
     events.push({ kind: 'elicitation', message: input.elicitation.message })

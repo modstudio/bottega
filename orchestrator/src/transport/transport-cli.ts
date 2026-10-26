@@ -235,6 +235,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
             kind: 'usage',
             tokens,
             costUsd: usage.costUsd,
+            per: 'turn',
           })
         if (replyError) terminalEvents.push({ kind: 'error', error: replyError })
         if (stopReason) terminalEvents.push({ kind: 'stop', reason: stopReason })

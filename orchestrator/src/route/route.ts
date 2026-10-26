@@ -35,6 +35,7 @@ import {
   rankThompson,
   selectCurrentPolicy,
 } from './route-policy.ts'
+import { aggregateEvidence, type RunUsageMedians, runUsageMedians } from './route-statistics.ts'
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
@@ -69,6 +70,7 @@ export type Candidate = {
   /** Median run time for this job, robust to the one call that hung. */
   latencyMs: number | null
   tokens: number
+  usage: RunUsageMedians
   costUsd: number
   free: boolean
   eligible: boolean
@@ -436,7 +438,9 @@ export function candidates(
       .query(
         `SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
               r.executor,
-              r.failure_kind AS failureKind, s.delivery, ${weightCase()} AS pts
+              r.failure_kind AS failureKind, r.vendor_tokens AS vendorTokens,
+              r.model_calls AS modelCalls, r.peak_call_tokens AS peakCallTokens,
+              s.delivery, ${weightCase()} AS pts
          FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
@@ -456,21 +460,11 @@ export function candidates(
       failureKind: string | null
       delivery: string | null
       pts: number | null
+      vendorTokens: number | null
+      modelCalls: number | null
+      peakCallTokens: number | null
     }[]
   ).filter(isRoutingEvidence)
-  type Evidence = {
-    scored: number
-    failures: number
-    none: number
-    pts: number
-  }
-  const aggregate = (rs: typeof evidenceRows): Evidence => ({
-    scored: rs.filter((r) => r.delivery !== null).length,
-    failures: rs.filter((r) => r.delivery === null).length,
-    none: rs.filter((r) => r.delivery === 'none').length,
-    pts: rs.reduce((sum, r) => sum + (r.pts ?? 0), 0),
-  })
-
   const lat = db()
     .query(
       `SELECT agent, latency_ms FROM run
@@ -528,7 +522,7 @@ export function candidates(
     const cooling = failure ? coolingPhrase(failure) : null
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel)
-    const recent = aggregate(window.rows)
+    const recent = aggregateEvidence(window.rows)
     const scored = recent.scored
     const failures = recent.failures
     const evidence = scored + failures
@@ -601,6 +595,7 @@ export function candidates(
       shrunk: null,
       latencyMs: median(latByAgent.get(name) ?? []),
       tokens: h?.tokens ?? 0,
+      usage: runUsageMedians(window.rows),
       costUsd: h?.cost ?? 0,
       // A free or no-cost agent spends no metered quota, so on a genuine tie it
       // keeps the paid subscriptions in reserve for work that needs them.

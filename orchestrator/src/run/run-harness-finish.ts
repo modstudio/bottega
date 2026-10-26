@@ -155,6 +155,7 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
     promptPath: owned.prompt_path,
     exitCode: refused ? 0 : decision.status === 'failed' ? 1 : 0,
     vendorTokens: null,
+    callUsage: null,
     costUsd: null,
     vendorUsage: EMPTY_VENDOR_USAGE,
     effectiveModel: null,

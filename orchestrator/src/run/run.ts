@@ -10,7 +10,7 @@ import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-fai
 import { checkOpenRouterKeyBudget } from '../agent/openrouter-key-budget.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
-import { compilePack, type Pack, recordPack } from '../canon/canon.ts'
+import { compilePack, recordPack } from '../canon/canon.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   NO_REPO_PREAMBLE,
@@ -33,7 +33,6 @@ import { job } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
-  type McpRequest,
   requiredMcpServer,
   storedMcpRequest,
 } from '../mcp/mcp-preflight.ts'
@@ -49,14 +48,12 @@ import {
   calibrationLine,
   reviewCalibration,
 } from '../review/review-calibration.ts'
-import type { ReviewRole } from '../review/review-role.ts'
 import {
   attributedLaunchKey,
   implicitReviewClaim,
   resolveReviewTarget,
 } from '../review/review-target.ts'
-import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick, type RoutedSelection } from '../route/route.ts'
+import { pick } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'
@@ -73,9 +70,7 @@ import {
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
-  type TransportName,
 } from '../transport/transport.ts'
-import type { KeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { resolveNewTreeBase } from '../worktree/trunk-base-choice.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
@@ -104,6 +99,7 @@ import {
   workerMcpLaunchScope,
 } from './run-mcp-launch-scope.ts'
 import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
+import type { RunOptions } from './run-options.ts'
 import {
   bindReviewInstructions,
   checksReviewedCommit,
@@ -115,7 +111,6 @@ import { completeRunStartup, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
-import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
 import { routedPromptBytes, routedPromptText } from './run-routing-input.ts'
@@ -136,99 +131,7 @@ import {
 } from './shared-git-config.ts'
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
-export async function run(opts: {
-  job: string
-  prompt: string
-  agent?: string
-  /** True only when the caller selected the agent rather than routing it. */
-  agentExplicit?: boolean
-  routedAgent?: RoutedSelection
-  /** Agent whose detached foreground selection completed MCP startup checks. */
-  dispatchMcpPreflightedAgent?: string
-  schemaPath?: string
-  mcp?: McpRequest
-  /** A calibration probe: recorded and scorable, but never routing evidence. */
-  probe?: boolean
-  /** A caller-supplied name for distinguishing sibling runs in a fan-out. */
-  label?: string
-  /** Stable identity used to calibrate findings-producing review jobs. */
-  lens?: string
-  reviewRole?: ReviewRole
-  model?: string
-  /** Pilot opt-in. Default `cli`. */
-  transport?: TransportName
-  cwd?: string
-  /** Internal override for callers whose execution cwd is not their canon source. */
-  canonPack?: Pack
-  /** Persisted origin: shell cwd in the selected project, else its registered path, else shell cwd. */
-  launchCwd?: string
-  /** Explicit routing attribution when the caller is outside the registered project. */
-  repo?: string
-  /** The run this one re-attempts, for `bottega run retry`. */
-  retryOf?: string
-  noFailover?: boolean
-  noWaitCapacity?: boolean
-  ownerSession?: string | null
-  automaticFailover?: boolean
-  /**
-   * How much database the worker's worktree gets, where the project asks.
-   *
-   * The ARCHITECT'S call, not the worker's, and not orchestrator's. It depends on what
-   * the task touches — docs need none, a migration needs every table, a report
-   * needs the tables it reads — which is a fact about the design rather than
-   * about the code, and the worker has not seen the design.
-   */
-  seed?: string
-  /** A ticket key, where the project's branch convention requires one. */
-  key?: string
-  /** A caller-selected git floor, used only by lifecycle tools that accept it. */
-  base?: string
-  /** Internal readable base name when a resumed chain resolves from its recorded commit. */
-  launchBase?: string
-  /** The task branch resolution already performed by dispatch for this launch. */
-  resolvedTaskBranch?: ResolvedTaskBranch | null
-  /** Fan-out diversity constraints, resolved by the CLI before a row exists. */
-  avoid?: string[]
-  distinctModels?: string[]
-  /**
-   * Carry the caller's uncommitted work into a newly cut worktree.
-   *
-   * Opt-in, default off. See the call site in this function for why.
-   */
-  carry?: boolean
-  /** Branch or run id whose tip is the base of a findings review. */
-  review?: string
-  /**
-   * A row already claimed by the caller, to be filled in rather than inserted.
-   *
-   * `bottega run start --detach` needs to print a run id BEFORE the work starts, which it
-   * cannot do if the id is allocated in here after routing. So the caller
-   * claims a placeholder row, hands the id over, and this fills it in once the
-   * agent is picked.
-   */
-  reserveId?: string
-  /**
-   * Continue a worker that stopped to ask, instead of starting a new one.
-   * Threaded through `run()` rather than given its own function because
-   * everything after the command line is identical — the same spawn, the same
-   * timeout, the same reaping, the same `finally` that must write a terminal
-   * row whatever happened. A second copy of that machinery would be a second
-   * place for the bug this system has already had twice: a run that never says
-   * it stopped.
-   * What a resume changes is only the front: no routing (the conversation
-   * belongs to the agent that started it), no new worktree (the worker is
-   * mid-edit in one), and `resumeArgv` in place of `argv`.
-   */
-  resume?: RunResumeOptions
-  /** Declared reader deliverable names, from repeated `--deliverable`. */
-  deliverables?: string[]
-  /** `bottega run start --timeout` in minutes. */
-  timeoutMinutes?: number
-  /** Opt out of reclaim-at-terminalisation for lens and reader jobs. */
-  keepTree?: KeepTreeExemption
-  /** Immutable explicit-review target inherited only by automatic failover. */
-  resolvedReviewTarget?: { branch: string; commit: string; base: string }
-}): Promise<RunResult> {
+export async function run(opts: RunOptions): Promise<RunResult> {
   writableDb()
   assertMigrationDispatchAllowedAndRecord(db(), opts.resume !== undefined)
   runMigration.enableRunSchemaReload(opts.reserveId)
@@ -895,9 +798,10 @@ export async function run(opts: {
   let idleTreePids: number[] = []
   let idleTreePgid: number | null = null
   let exitCode = -1
-  let output = ''
-  let vendorTokens: number | null = null
-  let costUsd: number | null = null
+  let output = '',
+    vendorTokens: number | null = null,
+    callUsage: Awaited<ReturnType<typeof runLive>>['callUsage'] = null,
+    costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
@@ -964,6 +868,7 @@ export async function run(opts: {
           exitCode,
           output,
           vendorTokens,
+          callUsage,
           costUsd,
           vendorUsage,
           resolvedSession,
@@ -1093,6 +998,7 @@ export async function run(opts: {
             promptPath,
             exitCode,
             vendorTokens,
+            callUsage,
             costUsd,
             vendorUsage,
             effectiveModel,

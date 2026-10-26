@@ -187,6 +187,7 @@ beforeAll(async () => {
       exitCode: 1,
       output: '',
       vendorTokens: null,
+      callUsage: null,
       costUsd: null,
       vendorUsage: EMPTY_VENDOR_USAGE,
       resolvedSession: null,

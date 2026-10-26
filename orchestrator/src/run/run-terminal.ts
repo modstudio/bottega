@@ -62,6 +62,7 @@ import {
   type TerminalSnapshot,
   terminalRunArtifactPaths,
 } from './run-artifacts.ts'
+import type { RunCallUsage } from './run-call-usage.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
@@ -271,6 +272,7 @@ export type TerminalInput = {
   promptPath: string
   exitCode: number
   vendorTokens: number | null
+  callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
   effectiveModel: string | null
@@ -291,6 +293,22 @@ export type TerminalResult = {
   confinementEvent: ConfinementEvent | null
   preConfinement: string | null
   artifactsPersisted: boolean
+}
+
+function terminalUsageSnapshot(
+  vendorTokens: number | null,
+  callUsage: RunCallUsage | null,
+  costUsd: number | null,
+  vendorUsage: VendorUsage,
+  name: string,
+) {
+  return {
+    vendorTokens,
+    modelCalls: callUsage?.modelCalls ?? null,
+    peakCallTokens: callUsage?.peakCallTokens ?? null,
+    vendorCostUsd: costUsd,
+    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
+  }
 }
 
 type TerminalCheckpointInput = Pick<
@@ -657,7 +675,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
     }
   }
-
   const turnChanged = terminalTurnChanged({
     database: db(),
     runId: claim.id,
@@ -665,7 +682,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     worktreePath: worktree?.path ?? null,
     measurementScope: provisionedMcpConfig,
   })
-
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,
@@ -678,7 +694,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       removal: confinement.after.removal,
     })
   }
-
   if (retargetDiagnostic) error = error ? `${error}\n${retargetDiagnostic}` : retargetDiagnostic
   const finalization = finalizeWorkerReply({
     reply: contract,
@@ -739,7 +754,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   error = evidenceAssessment.error
   failureKind = evidenceAssessment.failureKind
   const provenanceWrongProjectTool = evidenceAssessment.provenanceWrongProjectTool
-
   ;({ status, error, failureKind } = applyPrematureFinalFailure(
     { status, error, failureKind },
     terminalPrematureFinalRefusal({
@@ -752,7 +766,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-
   /**
    * Questions are deliberately inserted BEFORE the terminal row is written.
    * This is ordering, not a transaction: a lost terminal write can leave the
@@ -841,9 +854,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     promptPath,
     exitCode,
     latencyMs: Date.now() - started,
-    vendorTokens,
-    vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
+    ...terminalUsageSnapshot(vendorTokens, input.callUsage, costUsd, vendorUsage, name),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -868,7 +879,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                        vendor_tokens=?, model_calls=?, peak_call_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                         vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
@@ -885,6 +896,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           input.processless ? null : outPath,
           promptPath,
           vendorTokens,
+          input.callUsage?.modelCalls ?? null,
+          input.callUsage?.peakCallTokens ?? null,
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,

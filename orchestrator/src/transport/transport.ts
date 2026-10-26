@@ -142,7 +142,7 @@ export type TransportAgent = {
 
 export type NormalizedEvent =
   | { kind: 'text'; text: string }
-  | { kind: 'usage'; tokens: number; costUsd: number | null }
+  | { kind: 'usage'; tokens: number; costUsd: number | null; per: 'call' | 'turn' }
   | { kind: 'session'; sessionId: string }
   | {
       kind: 'tool'

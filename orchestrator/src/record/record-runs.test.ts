@@ -17,6 +17,8 @@ const run = (id: string, overrides: Partial<RecordRun> = {}): RecordRun => ({
   taskKey: `DEV-${id}`,
   failureKind: null,
   vendorTokens: 100,
+  modelCalls: 2,
+  peakCallTokens: 60,
   vendorCostUsd: 0.1,
   vendorInputTokens: 75,
   vendorOutputTokens: 25,
