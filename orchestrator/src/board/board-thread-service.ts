@@ -18,8 +18,8 @@ import {
   parseAudience,
 } from './board-policy.ts'
 import {
+  loopedInSessionFromReplyAudience,
   type ReplyAudienceOption,
-  replyAudienceReachRefusal,
   resolveReplyReaders,
 } from './board-reply-audience.ts'
 import {
@@ -101,6 +101,7 @@ function addReplyReceipts(
   const recipients = resolveReplyReaders({
     rootAuthor: authorReader(root),
     threadAuthors: facts.threadAuthors,
+    loopedInSessions: facts.loopedInSessions,
     rootReceipts: facts.rootReceipts,
     audience,
     replier: reader,
@@ -117,12 +118,13 @@ function addReplyReceipts(
 function replyAudienceFacts(root: MessageRow, database: ReturnType<typeof writableDb>) {
   const earlierAuthors = database
     .query(
-      `SELECT author_session,author_kind FROM board_message
+      `SELECT author_session,author_kind,audience FROM board_message
        WHERE thread_root_record_id=? ORDER BY created_at,number`,
     )
     .all(root.record_id) as {
     author_session: string | null
     author_kind: string
+    audience: string | null
   }[]
   const rootReceipts = database
     .query(
@@ -136,27 +138,16 @@ function replyAudienceFacts(root: MessageRow, database: ReturnType<typeof writab
   }>
   return {
     threadAuthors: earlierAuthors.map((row) => row.author_session ?? OPERATOR_READER),
+    loopedInSessions: earlierAuthors.flatMap((row) => {
+      const session = loopedInSessionFromReplyAudience(row.audience)
+      return session === null ? [] : [session]
+    }),
     rootReceipts: rootReceipts.map((receipt) => ({
       reader: receipt.reader_session,
       audienceAtPosting: receipt.audience_at_posting === 1,
       acknowledged: receipt.acknowledged_at !== null,
     })),
   }
-}
-
-function allowedReplyAudienceFacts(
-  root: MessageRow,
-  audience: ReplyAudienceOption | null,
-  database: ReturnType<typeof writableDb>,
-) {
-  const facts = replyAudienceFacts(root, database)
-  const refusal = replyAudienceReachRefusal(audience, {
-    rootAuthor: authorReader(root),
-    threadAuthors: facts.threadAuthors,
-    rootReceiptReaders: facts.rootReceipts.map((receipt) => receipt.reader),
-  })
-  if (refusal) throw new Error(refusal)
-  return facts
 }
 
 export function replyToThread(
@@ -177,6 +168,7 @@ export function replyToThread(
   const database = writableDb()
   return writeTransaction(() => {
     const root = threadRoot(recordId)
+    const facts = replyAudienceFacts(root, database)
     const refusal = replyRefusal({
       actor: { kind: actor.kind, reader },
       root: {
@@ -188,10 +180,9 @@ export function replyToThread(
         accepted: root.accepted_reply_record_id !== null,
       },
       addressed: addressed(root, reader, clock),
-      hasReceipt: hasReceipt(root.record_id, reader),
+      hasReceipt: hasReceipt(root.record_id, reader) || facts.loopedInSessions.includes(reader),
     })
     if (refusal) throw new Error(refusal)
-    const facts = allowedReplyAudienceFacts(root, audience, database)
     const storedAudience = audience === null ? null : replyAudienceValue(audience)
     const duplicate = database
       .query(
@@ -266,11 +257,13 @@ export function readThread(recordId: string, env: Environment = process.env, clo
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const root = threadRoot(recordId)
+  const loopedIn = replyAudienceFacts(root, db()).loopedInSessions.includes(reader)
   if (
     actor.kind !== 'operator' &&
     authorReader(root) !== reader &&
     !addressed(root, reader, clock) &&
-    !hasReceipt(root.record_id, reader)
+    !hasReceipt(root.record_id, reader) &&
+    !loopedIn
   )
     throw new Error(`board thread ${root.number} is not readable by this session`)
   const replies = db()

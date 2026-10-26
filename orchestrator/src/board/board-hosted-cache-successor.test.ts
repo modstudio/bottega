@@ -1,9 +1,14 @@
 import { expect, test } from 'bun:test'
 import { existsSync, rmSync, writeFileSync } from 'node:fs'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { DB_PATH, db, SESSION_LIVE_MS } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
-import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
+import {
+  BOARD_CACHE_OWNER_KEY,
+  claimCachedHostedForPush,
+  markCachedHostedDelivered,
+} from './board-hosted-cache.ts'
 
 const userId = '01990000-0000-7000-8000-000000000001'
 
@@ -174,3 +179,76 @@ test('two database connections cannot both claim the hosted report reply success
       .all(reply.id),
   ).toHaveLength(1)
 }, 15_000)
+
+test('an unacknowledged hosted successor claim is re-offered until delivery is marked', async () => {
+  const clock = Date.parse('2026-10-16T12:00:00.000Z')
+  const postedAt = clock - SESSION_LIVE_MS - 60_000
+  const replyAt = postedAt + 30_000
+  const iso = (ms: number) => new Date(ms).toISOString()
+  db()
+    .query(
+      'INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+    )
+    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
+  const putPresence = db().query(
+    `INSERT INTO presence
+      (session_id,harness,role,machine,project,cwd,first_seen,last_seen)
+      VALUES (?,'claude','architect','machine','cache-project','/tmp',?,?)`,
+  )
+  putPresence.run('hosted-reoffer-author', iso(postedAt - 1_000), iso(postedAt))
+  putPresence.run('hosted-reoffer-later', iso(replyAt + 1_000), iso(clock))
+  const root = message({
+    audience: 'session:hosted-reoffer-author',
+    authorSession: 'hosted-reoffer-author',
+    purpose: 'request',
+    createdAt: iso(postedAt),
+  })
+  const reply = message({
+    kind: 'reply',
+    threadRootId: root.id,
+    audience: null,
+    createdAt: iso(replyAt),
+  })
+  const putMessage = db().query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  putMessage.run(root.id, root.kind, null, root.revision, JSON.stringify(root))
+  putMessage.run(reply.id, reply.kind, root.id, reply.revision, JSON.stringify(reply))
+  const reader = 'hosted-reoffer-later'
+  const receipt = () =>
+    db()
+      .query(
+        'SELECT successor,delivered_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
+      )
+      .get(reply.id, reader) as { successor: number; delivered_at: string | null }
+
+  expect(claimCachedHostedForPush(reader, false, clock).notices.map((n) => n.id)).toEqual([
+    reply.id,
+  ])
+  expect(receipt()).toEqual({ successor: 1, delivered_at: null })
+
+  expect(claimCachedHostedForPush(reader, false, clock + 1).notices.map((n) => n.id)).toEqual([
+    reply.id,
+  ])
+  expect(receipt()).toEqual({ successor: 1, delivered_at: null })
+
+  await markCachedHostedDelivered(reader, [reply.id], {
+    client: {
+      ...createMemoryRecordApiClient(),
+      putBoardReceipt: async (input) => ({
+        messageId: input.messageId,
+        readerUserId: userId,
+        readerSession: input.readerSession,
+        audienceAtPosting: input.audienceAtPosting,
+        deliveredAt: new Date(clock + 2).toISOString(),
+        acknowledgedAt: null,
+      }),
+    },
+    database: db(),
+    clock: clock + 2,
+  })
+  expect(receipt().delivered_at).not.toBeNull()
+  expect(receipt().successor).toBe(1)
+
+  expect(claimCachedHostedForPush(reader, false, clock + 3).notices).toEqual([])
+})

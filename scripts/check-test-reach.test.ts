@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test'
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
-import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
+import { categorizeFile } from '../shared/file-kind.ts'
+import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES, suiteReachPatterns } from './check-plan.ts'
 import {
   assertExemptionBaselineShrinks,
+  ciOnlySuiteLegs,
   parseTestReachExemptions,
   testReach,
 } from './check-test-reach.ts'
@@ -42,6 +44,33 @@ test('the Python hook leg runs unittest discovery over its declared reach', () =
       },
     ],
   })
+})
+
+test('each CI-only suite derives its reach from the command it runs', () => {
+  expect(ciOnlySuiteLegs().flatMap((leg) => leg.testPatterns)).toEqual([
+    'orchestrator/hooks/process_*.py',
+  ])
+  expect(
+    suiteReachPatterns([
+      'python3',
+      '-m',
+      'unittest',
+      'discover',
+      '-s',
+      'orchestrator/hooks',
+      '-p',
+      'process_heartbeat_*.py',
+    ]),
+  ).toEqual(['orchestrator/hooks/process_heartbeat_*.py'])
+  expect(() =>
+    suiteReachPatterns(['python3', '-m', 'unittest', 'discover', '-s', 'orchestrator/hooks']),
+  ).toThrow('must carry -s <dir> and -p <pattern>')
+})
+
+test('every file a CI-only suite collects is classified as a test', () => {
+  for (const pattern of CI_ONLY_SUITES.flatMap((suite) => suite.testPatterns)) {
+    expect(categorizeFile(pattern.replaceAll('*', 'example'))).toBe('test')
+  }
 })
 
 test('the orchestrator gate selectors are anchored and cover every declared exclusion', () => {
@@ -128,6 +157,27 @@ test('reports tracked tests outside a leg or root batch unless exempted', () => 
   ).toEqual({
     unreached: ['orchestrator/hooks/test_guard.py', 'scripts/unreached.test.ts'],
     unexempted: ['scripts/unreached.test.ts'],
+    staleExemptions: [],
+  })
+})
+
+test('a CI-only suite counts its own process file as reached and no other process file as a test', () => {
+  const tracked = [
+    'orchestrator/hooks/process_heartbeat_shell.py',
+    'orchestrator/hooks/nested/process_extra.py',
+    'scripts/process_monitor.py',
+  ]
+  expect(
+    testReach({
+      tracked,
+      rootTests: [],
+      legs: [...CHECK_LEGS, ...ciOnlySuiteLegs()],
+      exemptions: [],
+    }),
+  ).toEqual({ unreached: [], unexempted: [], staleExemptions: [] })
+  expect(testReach({ tracked, rootTests: [], legs: CHECK_LEGS, exemptions: [] })).toEqual({
+    unreached: ['orchestrator/hooks/process_heartbeat_shell.py'],
+    unexempted: ['orchestrator/hooks/process_heartbeat_shell.py'],
     staleExemptions: [],
   })
 })

@@ -3,14 +3,38 @@ import { chmod } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../shared/brand.ts'
-import { DIST_MANIFEST, type DistributionManifest } from '../shared/install-root.ts'
+import {
+  DIST_MANIFEST,
+  type DistributionManifest,
+  PRODUCT_CLI_ENTRYPOINT,
+  PRODUCT_CLI_PAYLOAD,
+} from '../shared/install-root.ts'
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../shared/release-tag.ts'
 import { resolveStateRoot } from '../shared/state-directory.ts'
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url))
 export const ORCH_CLI_PAYLOAD = 'orchestrator/src/cli/orch'
 export const ORCH_CLI_ENTRYPOINT = `${ORCH_CLI_PAYLOAD}/entry.ts`
-export const PRODUCT_CLI_ENTRYPOINT = `cli/${PLATFORM_SLUG}.ts`
+
+const RELEASE_CLI_BUNDLES = [
+  {
+    source: 'orchestrator/src/cli/orch.ts',
+    payload: ORCH_CLI_PAYLOAD,
+    output: 'directory',
+  },
+  { source: 'hub/src/cli.ts', payload: 'hub/src/cli.ts', output: 'file' },
+  { source: `cli/${PLATFORM_SLUG}.ts`, payload: PRODUCT_CLI_PAYLOAD, output: 'directory' },
+  {
+    source: 'orchestrator/src/run/exec.ts',
+    payload: 'orchestrator/src/run/exec.ts',
+    output: 'file',
+  },
+  {
+    source: 'retrieval/src/search-cli.ts',
+    payload: 'retrieval/src/search-cli.ts',
+    output: 'file',
+  },
+] as const
 
 export function releaseVersion(tag: string): string {
   const version = releaseTagVersion(tag)
@@ -101,11 +125,14 @@ export async function buildRelease(tag: string): Promise<string> {
   rmSync(archive, { force: true })
 
   await run(['bun', 'run', 'build'], join(repositoryRoot, 'hub/web'))
-  await bundleDirectory('orchestrator/src/cli/orch.ts', join(payloadRoot, ORCH_CLI_PAYLOAD))
-  await bundle('hub/src/cli.ts', join(payloadRoot, 'hub/src/cli.ts'))
-  await bundle(PRODUCT_CLI_ENTRYPOINT, join(payloadRoot, PRODUCT_CLI_ENTRYPOINT))
-  await bundle('orchestrator/src/run/exec.ts', join(payloadRoot, 'orchestrator/src/run/exec.ts'))
-  await bundle('retrieval/src/search-cli.ts', join(payloadRoot, 'retrieval/src/search-cli.ts'))
+  for (const releaseBundle of RELEASE_CLI_BUNDLES) {
+    const destination = join(payloadRoot, releaseBundle.payload)
+    if (releaseBundle.output === 'directory') {
+      await bundleDirectory(releaseBundle.source, destination)
+    } else {
+      await bundle(releaseBundle.source, destination)
+    }
+  }
 
   copyDirectory('orchestrator/migrations', join(payloadRoot, 'orchestrator/migrations'))
   copyFile(

@@ -116,7 +116,23 @@ export type ProjectSettings = {
   /** Canonical owner/name whose visibility was verified at declaration time. */
   visibilityRepository?: string
   /** Main-checkout stack consumers that require start-on-demand. */
-  mainStack?: { consumers: MainStackConsumer[]; requiredServices?: string[] }
+  mainStack?: {
+    consumers: MainStackConsumer[]
+    requiredServices?: string[]
+    /**
+     * Compose project-name prefix used by this project's served worktree stacks.
+     *
+     * A served worktree stack is one Bottega did not start and holds no record of —
+     * a worktree serving compose from the main checkout records that checkout as its
+     * working directory — so the only way to see it is the name Compose gives its
+     * containers. It is matched as a literal prefix and must end in `_` or `-`,
+     * because a prefix without a separator also matches this project's own main-stack
+     * Compose project and would then hold the shared stack forever. That own name is
+     * not declarable here: Compose derives it from the checkout and its Compose files,
+     * so settings cannot refuse a collision and the separator rule stands in its place.
+     */
+    worktreeComposeProjectPrefix?: string
+  }
   /** Local opt-ins for semantic search corpora. */
   search?: { code?: boolean }
   autonomy?: AutonomySettings

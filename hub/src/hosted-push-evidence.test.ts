@@ -23,6 +23,7 @@ const spaceId = '01990000-0000-7000-8000-000000008301'
 const userId = '01990000-0000-7000-8000-000000008302'
 const intervalId = '01990000-0000-7000-8000-000000008303'
 const projectId = '01990000-0000-7000-8000-000000008305'
+const taskId = '01990000-0000-7000-8000-000000008306'
 const dayId = '01990000-0000-7000-8000-000000008304'
 const secondMachineId = '01990000-0000-7000-8000-000000008320'
 const foreignUserId = '01990000-0000-7000-8000-000000008321'
@@ -83,6 +84,10 @@ beforeAll(async () => {
     RESET ROLE;
     INSERT INTO project (id,space_id,name,created_at)
     VALUES ('${projectId}','${spaceId}','workshop',now());
+    INSERT INTO hub_task
+      (id,space_id,project_name,project_id,key,project,source,first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${taskId}','${spaceId}','workshop','${projectId}','DEV-1764','workshop','local',now(),now(),now(),now());
     INSERT INTO "user" (id,email,name,created_at)
     VALUES ('${foreignUserId}','foreign@example.test','Foreign',now());
     INSERT INTO machine (id,user_id,name,registered_at,last_seen) VALUES
@@ -126,6 +131,32 @@ test('the edge accepts evidence and unchanged resends append no hosted changes',
     )
   ).rows[0]!.count
   expect(after).toBe(before)
+})
+
+test('interval pushes carry task UUIDs and an older omitted field preserves the link', async () => {
+  const id = '01990000-0000-7000-8000-000000008307'
+  const linked = { ...interval, id, ref: 'orch:8307', task_key: 'DEV-1764', task_id: taskId }
+  expect(await apply([{ table: 'hub_interval', id, op: 'upsert', row: linked }])).toEqual([
+    { id, status: 'applied' },
+  ])
+  expect(
+    await apply([
+      {
+        table: 'hub_interval',
+        id,
+        op: 'upsert',
+        row: { ...interval, id, ref: 'orch:8307', task_key: 'legacy-label', vendor_tokens: 21 },
+      },
+    ]),
+  ).toEqual([{ id, status: 'applied' }])
+  expect(
+    (
+      await database.query<{ task_id: string; task_key: string; vendor_tokens: number }>(
+        `SELECT task_id::text,task_key,vendor_tokens::int FROM hub_interval WHERE id=$1::uuid`,
+        [id],
+      )
+    ).rows[0],
+  ).toEqual({ task_id: taskId, task_key: 'legacy-label', vendor_tokens: 21 })
 })
 
 test('day identity is per machine and legacy rows are claimed', async () => {
@@ -250,8 +281,8 @@ test('an absent interval delete is duplicate and a present interval delete appli
 test('real and legacy machine day timestamps serialize through the strict edge', async () => {
   writeTransaction((conn) => {
     conn
-      .query(`INSERT INTO interval(record_id,source,start_at,end_at,claude_tokens,ref)
-        VALUES ('01990000-0000-7000-8000-000000008310','claude',
+      .query(`INSERT INTO interval(record_id,project_record_id,source,start_at,end_at,claude_tokens,ref)
+        VALUES ('01990000-0000-7000-8000-000000008310','project-id','claude',
           '2026-10-09T10:00:00.000Z','2026-10-09T10:01:00.000Z',10,'claude:day-wire')`)
       .run()
   })

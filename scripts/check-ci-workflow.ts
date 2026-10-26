@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS, CI_ONLY_JOBS } from './check-plan.ts'
+import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
@@ -40,6 +40,25 @@ function aggregateNeeds(source: string): string[] {
     .flatMap((line) => line.match(/^ {6}-\s+([a-z][a-z0-9-]*)\s*$/)?.[1] ?? [])
 }
 
+/** The shell rendering of a declared suite's argv, for the workflow `run:` line. */
+export function suiteRunLine(argv: readonly string[]): string {
+  return argv
+    .map((argument) => (/^[\w./=@-]+$/.test(argument) ? argument : `'${argument}'`))
+    .join(' ')
+}
+
+/** Pins each declared CI-only suite job: its Python, and the exact command it runs. */
+function checkCiOnlySuiteJobs(source: string): void {
+  for (const suite of CI_ONLY_SUITES) {
+    const job = workflowJob(source, suite.job)
+    if (!job.includes('uses: actions/setup-python@v6') || !job.includes("python-version: '3.12'"))
+      throw new Error(`the ${suite.job} job must use Python 3.12`)
+    const command = `run: ${suiteRunLine(suite.argv)}`
+    if (!job.includes(command))
+      throw new Error(`the ${suite.job} job must run its declared suite: ${command}`)
+  }
+}
+
 export function expectedWorkflowJobNames(): string[] {
   return [
     'secrets',
@@ -77,6 +96,7 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('orchestrator-hooks job must use Python 3.12')
   if (!hooks.includes('run: $SUITE_COMMAND --only=orchestrator/hooks'))
     throw new Error('orchestrator-hooks job must run its check-plan leg')
+  checkCiOnlySuiteJobs(source)
   const postgres = workflowJob(source, 'postgres')
   if (!postgres.includes('image: postgres:18-alpine'))
     throw new Error('postgres job must use Postgres 18')

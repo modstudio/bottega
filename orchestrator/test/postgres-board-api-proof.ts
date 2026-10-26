@@ -16,6 +16,8 @@ import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-bo
 import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
+import { registerBoardReceiptRevisionProofs } from './postgres-board-receipt-revision-proof.ts'
+import { registerBoardReplyProof } from './postgres-board-reply-proof.ts'
 import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
 import { registerBoardStreamProof } from './postgres-board-stream-proof.ts'
@@ -269,6 +271,18 @@ export function registerBoardApiProofs(input: {
     }
   })
 
+  registerBoardReceiptRevisionProofs({
+    origin: () => origin,
+    authorToken: () => tokenA,
+    readerToken: () => tokenB,
+    project: PROJECT,
+    projectId: IDS.project,
+    cacheStore,
+    cacheClient,
+    caseSession,
+    succeeds: input.succeeds,
+  })
+
   registerBoardSharedSpaceApiProof(
     () => origin,
     () => tokenD,
@@ -276,6 +290,12 @@ export function registerBoardApiProofs(input: {
     PROJECT,
     (id) => post(tokenA, notice(id, 'spaces', caseSession('spaces-feed'))),
   )
+  registerBoardReplyProof({
+    origin: () => origin,
+    token: () => tokenA,
+    project: PROJECT,
+    caseSession,
+  })
 
   test('one machine cache changes owners and exposes only the new user view', async () => {
     const session = caseSession('cache-user-switch')

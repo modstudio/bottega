@@ -755,6 +755,21 @@ export function hasReceipt(messageRecordId: string, reader: string, database = d
   )
 }
 
+/** A participant holds a receipt for the message that is not its successor claim. */
+export function hasNonSuccessorReceipt(
+  messageRecordId: string,
+  reader: string,
+  database = db(),
+): boolean {
+  return Boolean(
+    database
+      .query(
+        'SELECT 1 FROM board_receipt WHERE message_record_id=? AND reader_session=? AND successor=0',
+      )
+      .get(messageRecordId, reader),
+  )
+}
+
 export function boardOrigin(message: MessageRow): BoardOrigin {
   return {
     kind: message.author_kind,

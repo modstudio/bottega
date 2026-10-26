@@ -760,7 +760,7 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
     branch: 'DEV-1535-no-round',
     tip: 'tip',
     group: { patchId: 'patch' },
-    tier: 0,
+    tier: 1,
   } as PullRequestChange
   // No applicable lens and an unfinished exact review: the refusal names that review's remedy
   // and the generic remedy that no earlier complete review round exists on the branch.
@@ -781,7 +781,7 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
     patchId: 'patch',
     pathSet: '["a.ts"]',
     tip: 'tip',
-    tier: 0,
+    tier: 1,
     applicableReview: { lenses: [] },
     branchOwnerSession: 'owner-session',
     reviews: [unfinished],
@@ -802,6 +802,33 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
   expect(message).toContain('no earlier complete review round exists on DEV-1535-no-round')
   expect(message).not.toContain('applicable lens')
   expect(message).not.toContain('do not need to run again')
+})
+
+test('tier zero without a read names the architect-read command', () => {
+  const change = {
+    project: { name: 'fixture' },
+    branch: 'DEV-1582-tier-zero',
+    tip: 'tip-abc',
+    group: { patchId: 'patch' },
+    tier: 0,
+  } as PullRequestChange
+  const decision = decideTriage({
+    patchId: 'patch-a',
+    pathSet: '["a.ts"]',
+    tip: 'tip-abc',
+    tier: 0,
+    applicableReview: { lenses: [] },
+    branchOwnerSession: 'owner-session',
+    reviews: [],
+    branchReviewGroups: [],
+    reads: [],
+  })
+  expect(decision).toMatchObject({ complete: false, architectReadRequired: true })
+  if (decision.complete) throw new Error('expected incomplete triage')
+  const message = triageRefusal(change, decision)
+  expect(message).toContain(`${PLATFORM_SLUG} review read --sha tip-abc --note`)
+  expect(message).not.toContain('run start review-lens')
+  expect(message).not.toContain('no earlier complete review round')
 })
 
 test('a creditable composed round refusal names only the architect read', () => {

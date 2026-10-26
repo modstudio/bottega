@@ -7,6 +7,7 @@ import { intervalOwningProject } from '../interval-project-correction.ts'
 import { readRunIdentityMap, readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
+import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -191,14 +192,15 @@ function deliveryRunRef(run: OrchRun, receivingRunId: string | null): string | n
 function questionReplacer(conn: Database) {
   const upsertQuestion = conn.query(
     `INSERT INTO question
-      (record_id, number, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
+      (record_id, number, run_ref, root_ref, task_key, task_record_id, session_id, asked_at, answered_at,
        asked_via, answerer_kind, answer_channel, overturned_at, closed_at, close_reason)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
    ON CONFLICT(record_id) DO UPDATE SET
      number         = excluded.number,
      run_ref        = excluded.run_ref,
      root_ref       = excluded.root_ref,
      task_key       = excluded.task_key,
+     task_record_id = excluded.task_record_id,
      session_id     = excluded.session_id,
      asked_at       = excluded.asked_at,
      answered_at    = excluded.answered_at,
@@ -229,6 +231,7 @@ function questionReplacer(conn: Database) {
         runRef(run.record_id, question.run_record_id, hasTurns),
         root,
         taskKey,
+        uniqueTaskRecordIdForKey(conn, taskKey),
         run.session_id,
         question.asked_at,
         question.answered_at,
@@ -257,17 +260,19 @@ function questionReplacer(conn: Database) {
 function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListRow[]): void {
   const upsert = conn.query(
     `INSERT INTO question
-      (record_id,number,run_ref,root_ref,workflow_cursor_id,workflow_key,project,project_record_id,task_key,
+      (record_id,number,run_ref,root_ref,workflow_cursor_id,workflow_key,workflow_task_record_id,project,project_record_id,task_key,task_record_id,
        session_id,asked_at,answered_at,asked_via,answerer_kind,answer_channel,
        overturned_at,closed_at,close_reason)
-     VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(record_id) DO UPDATE SET
        number=excluded.number,
        workflow_cursor_id=excluded.workflow_cursor_id,
        workflow_key=excluded.workflow_key,
+       workflow_task_record_id=excluded.workflow_task_record_id,
        project=excluded.project,
        project_record_id=COALESCE(excluded.project_record_id,question.project_record_id),
        task_key=excluded.task_key,
+       task_record_id=excluded.task_record_id,
        session_id=excluded.session_id,
        asked_at=excluded.asked_at,
        answered_at=excluded.answered_at,
@@ -279,14 +284,18 @@ function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListR
        close_reason=excluded.close_reason`,
   )
   for (const question of questions) {
+    // The workflow cursor's display key and task link name the same task.
+    const taskRecordId = uniqueTaskRecordIdForKey(conn, question.workflow_key)
     upsert.run(
       question.record_id,
       question.id,
       question.workflow_cursor_id,
       question.workflow_key,
+      taskRecordId,
       question.project,
       projectRecordIdFor(question.project),
       question.workflow_key,
+      taskRecordId,
       question.session_id,
       question.asked_at,
       question.answered_at,
@@ -385,17 +394,43 @@ function applyOrchReplace(
   existing: ExistingIntervalRow[],
   recomputed: readonly OrchIntervalRow[],
   preservedRefs: ReadonlySet<string> = new Set(),
-) {
-  const decision = decideCollectorReplace(existing, recomputed, preservedRefs)
+): { skippedUnlinked: number } {
+  const linked = recomputed.map((row) => {
+    const current = existing.find(
+      (candidate) =>
+        candidate.source === row.source &&
+        candidate.ref === row.ref &&
+        candidate.start_at === row.start_at,
+    )
+    return {
+      row,
+      taskRecordId: current
+        ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
+        : uniqueTaskRecordIdForKey(conn, row.task_key),
+      projectRecordId: projectRecordIdFor(row.project),
+    }
+  })
+  const skipped = linked.filter(
+    ({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId,
+  )
+  const valid = linked.filter(
+    ({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId,
+  )
+  const keepRefs = new Set([...preservedRefs, ...skipped.map(({ row }) => row.ref)])
+  const decision = decideCollectorReplace(
+    existing,
+    valid.map(({ row }) => row),
+    keepRefs,
+  )
   const update = conn.query(
-    `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?,
+    `UPDATE interval SET end_at=?, vendor_tokens=?, vendor_cost_usd=?, task_key=?, task_record_id=?,
        project=?, project_record_id=?, job=?, via=?, open=?, session_id=?, user_id=?
      WHERE record_id=?`,
   )
   const insert = conn.query(
-    `INSERT INTO interval (record_id, task_key, project, project_record_id, source, agent, job, start_at, end_at,
+    `INSERT INTO interval (record_id, task_key, task_record_id, project, project_record_id, source, agent, job, start_at, end_at,
                            claude_tokens, vendor_tokens, vendor_cost_usd, ref, via, open, session_id, user_id)
-     VALUES (?, ?, ?, ?, 'orch', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, 'orch', ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const remove = conn.query(`DELETE FROM interval WHERE record_id=?`)
   for (const row of decision.updates)
@@ -404,6 +439,7 @@ function applyOrchReplace(
       row.vendor_tokens,
       row.vendor_cost_usd,
       row.task_key,
+      intervalTaskRecordIdForUpdate(conn, row.record_id, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.job,
@@ -417,6 +453,7 @@ function applyOrchReplace(
     insert.run(
       newRecordId(),
       row.task_key,
+      uniqueTaskRecordIdForKey(conn, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.agent,
@@ -432,6 +469,7 @@ function applyOrchReplace(
       row.user_id,
     )
   for (const recordId of decision.deletes) remove.run(recordId)
+  return { skippedUnlinked: skipped.length }
 }
 
 function orchIntervalWriter(conn: Database) {
@@ -459,7 +497,7 @@ function orchIntervalWriter(conn: Database) {
       rows: readonly OrchIntervalRow[],
       preservedRefs: ReadonlySet<string>,
     ) {
-      applyOrchReplace(
+      return applyOrchReplace(
         conn,
         selectChain.all(`orch:${rootId}`, `orch:${rootId}:turn:%`),
         rows,
@@ -467,7 +505,7 @@ function orchIntervalWriter(conn: Database) {
       )
     },
     replaceRef(ref: string, rows: readonly OrchIntervalRow[]) {
-      applyOrchReplace(conn, selectRef.all(ref), rows)
+      return applyOrchReplace(conn, selectRef.all(ref), rows)
     },
   }
 }
@@ -477,7 +515,7 @@ function ingestOneRun(
   attribution: OrchAttribution,
   writer: ReturnType<typeof orchIntervalWriter>,
   now: number,
-): { rows: number; skipped: number } {
+): { rows: number; skipped: number; skippedUnlinked?: number } {
   const turns = run.turns ?? [run]
   if (run.turns) {
     const recomputed: OrchIntervalRow[] = []
@@ -492,16 +530,22 @@ function ingestOneRun(
       }
       recomputed.push(built.value)
     }
-    writer.replaceChain(run.record_id, recomputed, preservedRefs)
-    return { rows: recomputed.length, skipped }
+    const written = writer.replaceChain(run.record_id, recomputed, preservedRefs)
+    return {
+      rows: recomputed.length - written.skippedUnlinked,
+      skipped: skipped + written.skippedUnlinked,
+      ...(written.skippedUnlinked ? { skippedUnlinked: written.skippedUnlinked } : {}),
+    }
   }
   const built = orchIntervalRow(run, turns[0]!, attribution, now)
   if (built.status === 'skip') {
     if (built.close) writer.close(`orch:${run.record_id}`)
     return { rows: 0, skipped: 1 }
   }
-  writer.replaceRef(`orch:${run.record_id}`, [built.value])
-  return { rows: 1, skipped: 0 }
+  const written = writer.replaceRef(`orch:${run.record_id}`, [built.value])
+  return written.skippedUnlinked
+    ? { rows: 0, skipped: 1, skippedUnlinked: 1 }
+    : { rows: 1, skipped: 0 }
 }
 
 function ingestRunRows(
@@ -510,12 +554,13 @@ function ingestRunRows(
   workflowQuestions: readonly RulingListRow[],
   now: number,
   snapshot: string,
-): { rows: number; skipped: number } {
+): { rows: number; skipped: number; skippedUnlinked?: number } {
   const writer = orchIntervalWriter(conn)
   const replaceQuestions = questionReplacer(conn)
   upsertWorkflowQuestions(conn, workflowQuestions)
   let rows = 0
   let skipped = 0
+  let skippedUnlinked = 0
   const registered = projects()
   for (const run of runs) {
     const attributed = attributeRun(run)
@@ -541,15 +586,18 @@ function ingestRunRows(
     const result = ingestOneRun(run, attribution, writer, now)
     rows += result.rows
     skipped += result.skipped
+    skippedUnlinked += result.skippedUnlinked ?? 0
   }
   conn
     .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
               ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
     .run(JSON.stringify(snapshot))
-  return { rows, skipped }
+  return { rows, skipped, ...(skippedUnlinked ? { skippedUnlinked } : {}) }
 }
 
-export async function ingestRuns(since: string): Promise<{ rows: number; skipped: number }> {
+export async function ingestRuns(
+  since: string,
+): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
   refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is
   // re-fetched next time. Overlap is cheap; a missed answer is not.

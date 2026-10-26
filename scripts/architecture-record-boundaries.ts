@@ -392,6 +392,8 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'record-board-receipts-boundary',
     'orchestrator/src/record/record-board-receipts.ts',
     [
+      'bun',
+      '../../../shared/brand.ts',
       '../../../shared/record-id.ts',
       './record-board-contract.ts',
       './record-board-messages.ts',

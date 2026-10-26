@@ -8,7 +8,7 @@ import {
   reportReplySuccessorDecision,
   selectPushNotices,
 } from './board-push-policy.ts'
-import { claimPushNotices, postNotice } from './board-service.ts'
+import { claimPushNotices, markNoticesDelivered, postNotice } from './board-service.ts'
 import { replyToThread } from './board-thread-service.ts'
 
 const clock = Date.parse('2026-10-16T12:00:00.000Z')
@@ -37,7 +37,7 @@ const successorDecision = (
     readerProject: 'project',
     rootProject: 'project',
     readerIsParticipant: false,
-    successorAlreadyReceived: false,
+    successorClaimed: false,
     readerBeganAt: '2026-10-16T12:00:00.000Z',
     authorLastActivityAt: Date.parse('2026-10-16T10:00:00.000Z'),
     replyPostedAt: '2026-10-16T11:00:00.000Z',
@@ -196,11 +196,13 @@ test('a report reply reaches the first later architect session of the posting pr
   expect(
     db()
       .query(
-        `SELECT reader_session,audience_at_posting,successor FROM board_receipt
-         WHERE message_record_id=? AND delivered_at IS NOT NULL AND successor=1`,
+        `SELECT reader_session,audience_at_posting,successor,delivered_at FROM board_receipt
+         WHERE message_record_id=? AND successor=1`,
       )
       .all(reply.recordId),
-  ).toEqual([{ reader_session: 'later-first', audience_at_posting: 0, successor: 1 }])
+  ).toEqual([
+    { reader_session: 'later-first', audience_at_posting: 0, successor: 1, delivered_at: null },
+  ])
 })
 
 test('a session which began before the reply does not receive it as the successor', () => {
@@ -266,4 +268,54 @@ test('an ordinary non-audience delivery does not block the report reply successo
       )
       .all(reply.recordId),
   ).toEqual([{ reader_session: 'ordinary-later', successor: 1 }])
+})
+
+function successorThreadFixture(label: string) {
+  const project = ensurePostingProject().name
+  const postedAtMs = clock - SESSION_LIVE_MS - 60_000
+  const replyAt = postedAtMs + 30_000
+  insertArchitect(`${label}-author`, project, postedAtMs - 1_000, postedAtMs)
+  const posted = postNotice(
+    {
+      audience: `session:${label}-author`,
+      title: `${label} report`,
+      body: 'The work is blocked.',
+      purpose: 'request',
+    },
+    { CLAUDE_CODE_SESSION_ID: `${label}-author` },
+    postedAtMs,
+    postingCwd,
+  )
+  db()
+    .query('UPDATE presence SET last_seen=? WHERE session_id=?')
+    .run(new Date(postedAtMs).toISOString(), `${label}-author`)
+  const reply = replyToThread(posted.recordId, 'The ruling is in.', {}, replyAt, postingCwd)
+  insertArchitect(`${label}-later`, project, replyAt + 1_000, clock)
+  return { replyId: reply.recordId, reader: `${label}-later` }
+}
+
+function successorReceipt(replyId: string, reader: string) {
+  return db()
+    .query(
+      'SELECT successor,delivered_at FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+    )
+    .get(replyId, reader) as { successor: number; delivered_at: string | null }
+}
+
+test('a claimant who began after the reply is re-offered until acknowledged', () => {
+  const { replyId, reader } = successorThreadFixture('reoffer-ack')
+  const env = { CLAUDE_CODE_SESSION_ID: reader }
+  expect(claimPushNotices(false, env, clock).notices.map((notice) => notice.recordId)).toEqual([
+    replyId,
+  ])
+  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
+  expect(claimPushNotices(false, env, clock + 1).notices.map((notice) => notice.recordId)).toEqual([
+    replyId,
+  ])
+  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
+  markNoticesDelivered([replyId], env, clock + 2)
+  const stamped = successorReceipt(replyId, reader)
+  expect(stamped.successor).toBe(1)
+  expect(stamped.delivered_at).not.toBeNull()
+  expect(claimPushNotices(false, env, clock + 3).notices).toEqual([])
 })

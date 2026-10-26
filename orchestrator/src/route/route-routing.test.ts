@@ -430,6 +430,23 @@ test('a routed pick keeps its reason without becoming an explicit pin', () => {
   ).toEqual({ agent: 'codex', reason: 'surface route' })
 })
 
+test('a routed pick keeps its reason when the routed agent is already proven', () => {
+  // The unproven corner above reaches mode 'only'; a proven agent reaches
+  // 'best', which used to recompute a reason for a comparison the routing
+  // surface never made.
+  for (let i = 0; i < MIN_SAMPLE; i++) {
+    score(addRun({ agent: 'codex', job: 'summarize' }), 'full', 'right')
+  }
+  expect(candidates('summarize').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+    evidence: MIN_SAMPLE,
+  })
+  expect(
+    pick('summarize', undefined, 0, false, undefined, {
+      routed: { agent: 'codex', reason: 'surface route' },
+    }),
+  ).toEqual({ agent: 'codex', reason: 'surface route' })
+})
+
 test('metered routing opt-in admits read-only work and still excludes writer jobs', () => {
   const original = db()
     .query("SELECT billing,route_metered FROM agent WHERE name='codex'")

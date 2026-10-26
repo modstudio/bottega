@@ -1021,8 +1021,8 @@ test('a hosted report reply reaches the first later architect session of the pos
   expect(
     db()
       .query(
-        'SELECT reader_session,successor FROM hosted_board_receipt_cache WHERE message_id=? AND successor=1',
+        'SELECT reader_session,successor,delivered_at FROM hosted_board_receipt_cache WHERE message_id=? AND successor=1',
       )
       .all(reply.id),
-  ).toEqual([{ reader_session: 'hosted-later-first', successor: 1 }])
+  ).toEqual([{ reader_session: 'hosted-later-first', successor: 1, delivered_at: null }])
 })

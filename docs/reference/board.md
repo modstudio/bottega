@@ -359,7 +359,7 @@ reply to a board notice or question
 
 ### Options
 
-- `--audience <choice>`: participants, acknowledged, audience, operator, or session:<id>
+- `--audience <choice>`: participants, acknowledged, audience, operator, or session:<id>; session:<id> loops that session into the thread
 - `--body <text>`: set the reply body
 
 ### Related
