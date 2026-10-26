@@ -4,7 +4,11 @@
 import { db } from '../database/db.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'
 import { GATE_COMMAND_TIMEOUT_MS } from '../gate/gate-decision.ts'
-import { cancelPendingGateExecution, requestGateExecution } from '../gate/gate-run.ts'
+import {
+  cancelPendingGateExecution,
+  cancelUnfinishedGateExecutions,
+  requestGateExecution,
+} from '../gate/gate-run.ts'
 import { workerGitConfigEnvironment } from '../run/run-git-guard.ts'
 import { runTestWorkerEnvironment } from '../run/run-test-workers.ts'
 import type { RunResult } from '../run/run-types.ts'
@@ -86,7 +90,27 @@ export async function runIssueGate(
       text: 'fix worktree is unavailable',
       fixTreeSafeToRelease: true,
     }
-  const inserted = requestGateExecution(fixRun.record_id)
+  // This run is over and its worker is gone, so any execution it still holds
+  // unfinished is a dead request; one unfinished execution per run is allowed,
+  // and a stale one would block the request below.
+  cancelUnfinishedGateExecutions(
+    fixRun.record_id,
+    (execution) =>
+      `issue coordinator reclaimed a dead fix worker's unfinished gate execution: run ${execution.runId} execution ${execution.number}`,
+  )
+  let inserted: ReturnType<typeof requestGateExecution>
+  try {
+    inserted = requestGateExecution(fixRun.record_id)
+  } catch (error) {
+    return {
+      number: -1,
+      ok: false,
+      text:
+        `issue coordinator could not request a gate for run ${fixRun.record_id}: ${String(error)}; ` +
+        `that run still holds an unfinished gate execution, which must be cleared before it can be gated again`,
+      fixTreeSafeToRelease: true,
+    }
+  }
 
   let finish!: () => void
   const finished = new Promise<void>((resolve) => {
@@ -102,8 +126,6 @@ export async function runIssueGate(
         ...trackedWorkerEnvironment(true, true, fixRun.worktree, fixRun.record_id),
       }),
       confinement: { kind: 'host' },
-      // This request only: a pending execution left by a crashed fix worker is not ours to run.
-      executionRecordId: inserted.recordId,
       onExecutionFinish: ({ executionRecordId }) => {
         if (executionRecordId === inserted.recordId) finish()
       },

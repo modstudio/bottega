@@ -90,6 +90,34 @@ export function cancelPendingGateExecution(recordId: string, reason: string): bo
   )
 }
 
+export type UnfinishedGateExecution = { runId: string; recordId: string; number: number }
+
+/**
+ * Cancel every execution a run still holds unfinished.
+ *
+ * A run outlives its worker: one killed while a gate was queued leaves a
+ * request nobody will run, and the one-unfinished-execution index makes it
+ * block the next request for that run. The caller decides what that means and
+ * says so per row, so each cancelled execution carries its own reason.
+ */
+export function cancelUnfinishedGateExecutions(
+  runId: string,
+  reason: (execution: UnfinishedGateExecution) => string,
+): UnfinishedGateExecution[] {
+  const unfinished = db()
+    .query<{ record_id: string; number: number }, [string]>(
+      `SELECT record_id,number FROM gate_execution
+       WHERE run_record_id=? AND finished_at IS NULL ORDER BY requested_at,record_id`,
+    )
+    .all(runId)
+  const cancelled: UnfinishedGateExecution[] = []
+  for (const row of unfinished) {
+    const execution = { runId, recordId: row.record_id, number: row.number }
+    if (cancelPendingGateExecution(execution.recordId, reason(execution))) cancelled.push(execution)
+  }
+  return cancelled
+}
+
 export function architectGateProcessExitCode(recordedExitCode: number): number {
   return recordedExitCode >= 0 ? recordedExitCode : 1
 }

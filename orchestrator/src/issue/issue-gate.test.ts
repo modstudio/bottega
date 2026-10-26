@@ -191,11 +191,9 @@ test.each([
 test('issue verification returns the finished gate row when the wait times out', async () => {
   const fixture = issueGateRun('issue-gate-finished-after-timeout', 'true')
   try {
-    let brokerExecution: string | undefined
     const written = new Date().toISOString()
     const result = await runIssueGate(fixture.run, fixture.scratch, {
-      startBroker: (input) => {
-        brokerExecution = input.executionRecordId
+      startBroker: () => {
         const pending = db()
           .query<{ record_id: string }, [string]>(
             'SELECT record_id FROM gate_execution WHERE run_record_id=? AND finished_at IS NULL',
@@ -219,10 +217,6 @@ test('issue verification returns the finished gate row when the wait times out',
       text: 'gate passed',
       fixTreeSafeToRelease: true,
     })
-    const row = db()
-      .query<{ record_id: string }, [number]>('SELECT record_id FROM gate_execution WHERE number=?')
-      .get(result.number)!
-    expect(brokerExecution).toBe(row.record_id)
     expect(
       db()
         .query(
@@ -235,6 +229,47 @@ test('issue verification returns the finished gate row when the wait times out',
       cancelled_reason: null,
       finished_at: written,
       output_tail: 'gate passed\n',
+    })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification reclaims a dead fix worker unfinished gate execution before requesting its own', async () => {
+  const fixture = issueGateRun('issue-gate-reclaim', 'true')
+  try {
+    const staleAt = new Date(Date.now() - 60_000).toISOString()
+    const staleRecordId = newRecordId()
+    db()
+      .query(
+        'INSERT INTO gate_execution (record_id,run_record_id,requested_at,started_at) VALUES (?,?,?,?)',
+      )
+      .run(staleRecordId, fixture.run.record_id, staleAt, staleAt)
+    const stale = db()
+      .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+      .get(staleRecordId)!
+
+    const result = await runIssueGate(fixture.run, fixture.scratch)
+
+    expect(result.ok).toBe(true)
+    expect(
+      db()
+        .query<
+          { finished_at: string | null; exit_code: number; cancelled_reason: string | null },
+          [string]
+        >('SELECT finished_at,exit_code,cancelled_reason FROM gate_execution WHERE record_id=?')
+        .get(staleRecordId)!,
+    ).toEqual({
+      finished_at: expect.any(String),
+      exit_code: -1,
+      cancelled_reason: `issue coordinator reclaimed a dead fix worker's unfinished gate execution: run ${fixture.run.record_id} execution ${stale.number}`,
+    })
+    expect(result.number).toBeGreaterThan(stale.number)
+    expect(
+      db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.number),
+    ).toEqual({
+      exit_code: 0,
     })
   } finally {
     rmSync(fixture.main, { recursive: true, force: true })

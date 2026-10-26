@@ -88,19 +88,9 @@ const PENDING_GATE_SQL = `SELECT record_id,number,run_record_id FROM gate_execut
   WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL
   ORDER BY requested_at,record_id LIMIT 1`
 
-/** The drain narrowed to the one requested execution the caller named. */
-const RESTRICTED_PENDING_GATE_SQL = `SELECT record_id,number,run_record_id FROM gate_execution
-  WHERE run_record_id=? AND record_id=? AND started_at IS NULL AND finished_at IS NULL
-  ORDER BY requested_at,record_id LIMIT 1`
-
-function claimPendingGate(runId: string, executionRecordId?: string): PendingGate | null {
+function claimPendingGate(runId: string): PendingGate | null {
   const readPending = () =>
-    (executionRecordId === undefined
-      ? db().query(PENDING_GATE_SQL).get(runId)
-      : db().query(RESTRICTED_PENDING_GATE_SQL).get(runId, executionRecordId)) as Omit<
-      PendingGate,
-      'startedAt'
-    > | null
+    db().query(PENDING_GATE_SQL).get(runId) as Omit<PendingGate, 'startedAt'> | null
   if (!readPending()) return null
   return writeTransaction(() => {
     const row = readPending()
@@ -718,15 +708,13 @@ export function startGateBroker(input: {
   onExecutionFinish?: (moment: GateExecutionMoment) => void
   withHostSlot?: HostSlotRunner
   refreshBase?: GateBaseRefresh
-  /** Drain only this requested execution; omitted drains the run's queue as before. */
-  executionRecordId?: string
 }): GateBroker {
   let closed = false
   let active: ActiveGate | null = null
   const registerActive = input.registerActive ?? (() => () => {})
   const poll = () => {
     if (closed || active) return
-    const request = claimPendingGate(input.runId, input.executionRecordId)
+    const request = claimPendingGate(input.runId)
     if (!request) return
     input.onExecutionStart?.({
       executionRecordId: request.record_id,

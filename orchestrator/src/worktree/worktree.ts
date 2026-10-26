@@ -97,6 +97,16 @@ function recordedWorktree(runId: string): string | null {
   return row?.worktree ?? null
 }
 
+/**
+ * The lifecycle read-only creation records, decided from the tool alone.
+ *
+ * A caller that must name the tree before creation exists — so a half-created
+ * checkout is still releaseable — needs the same answer the creator will give.
+ */
+export function readOnlyWorktreeSource(tool: WorktreeTool | null): NonNullable<Worktree['source']> {
+  return tool?.readonly_create ? 'readonly_recipe' : 'clone'
+}
+
 export function createReadOnlyWorktreeForTool(input: {
   tool: WorktreeTool | null
   cwd: string

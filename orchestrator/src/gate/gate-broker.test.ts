@@ -191,56 +191,6 @@ test('records machine-readable checks emitted by a worker gate against its execu
   }
 })
 
-test('a broker restricted to one execution drains no other gate for its run', async () => {
-  fixtureProjectRecordId(db())
-  const runId = (
-    db()
-      .query(
-        `INSERT INTO run
-         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
-         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'fixture','running',
-                 (SELECT record_id FROM project ORDER BY name LIMIT 1))
-         RETURNING record_id AS id`,
-      )
-      .get(newRecordId(), new Date().toISOString()) as { id: string }
-  ).id
-  // Only one execution may stay unfinished for a run, so the older one is finished here on purpose.
-  const stray = requestGateExecution(runId)
-  db()
-    .query(
-      'UPDATE gate_execution SET started_at=?,finished_at=?,exit_code=0,timed_out=0,elapsed_ms=1 WHERE record_id=?',
-    )
-    .run(new Date().toISOString(), new Date().toISOString(), stray.recordId)
-  const requested = requestGateExecution(runId)
-  const scratch = mkdtempSync(join(dir, 'gate-broker-one-execution-scratch-'))
-
-  const broker = startGateBroker({
-    runId,
-    scratchDir: scratch,
-    environment: { BOTTEGA_MAIN_CHECKOUT: '/' },
-    confinement: { kind: 'host' },
-    executionRecordId: stray.recordId,
-    withHostSlot: async (run) => run(),
-  })
-  try {
-    // The first poll is synchronous, so a broker that drained the run's queue
-    // would have claimed this pending execution before startGateBroker returned.
-    expect(
-      db()
-        .query(
-          'SELECT started_at,finished_at,resolved_command FROM gate_execution WHERE record_id=?',
-        )
-        .get(requested.recordId),
-    ).toEqual({ started_at: null, finished_at: null, resolved_command: null })
-    expect(
-      db().query('SELECT exit_code FROM gate_execution WHERE record_id=?').get(stray.recordId),
-    ).toEqual({ exit_code: 0 })
-  } finally {
-    await broker.close()
-    rmSync(scratch, { recursive: true, force: true })
-  }
-})
-
 test('broker refuses a merge in progress before the gate runs', async () => {
   const root = mkdtempSync(join(dir, 'gate-broker-merge-in-progress-'))
   const scratch = join(root, 'scratch')

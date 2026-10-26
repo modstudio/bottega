@@ -9,7 +9,7 @@ import { type Project, resolvedWorktreeTool, stackAt } from '../project/projects
 import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { ISSUE_BEFORE_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { createReadOnlyWorktreeForTool } from '../worktree/worktree.ts'
+import { createReadOnlyWorktreeForTool, readOnlyWorktreeSource } from '../worktree/worktree.ts'
 import { readOnlyWorktreePath } from '../worktree/worktree-readonly.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 
@@ -69,33 +69,25 @@ export function createIssueBeforeTree(
       claimedAt: nowIso(),
     })
   /**
-   * Name the checkout before it exists.
+   * Record the tree this run owns: the intended path before it exists, the
+   * created facts after.
    *
    * Creation and cleanup can both fail, and a tree nobody recorded is one no
-   * sweep can release; the intended path is the orchestrator's own choice, so
-   * it is known before the creator runs. The callback below then writes the
-   * facts creation established.
+   * sweep can release; the intended path and the lifecycle that will own it
+   * are the orchestrator's own choice, known before the creator runs. The
+   * success callback below then writes the same facts creation established.
    */
-  const recordIntended = (path: string) =>
-    writeTransaction(() => {
-      const recorded = db()
-        .query('UPDATE run SET cwd=?,worktree=?,base_commit=? WHERE record_id=?')
-        .run(path, path, base, inserted.record_id)
-      if (recorded.changes !== 1)
-        throw new Error(`run ${inserted.record_id} could not record its before-measurement tree`)
-      recordClaims(path, base)
-    })
-  const record = (created: Worktree) =>
+  const recordTree = (facts: { path: string; base: string; source: Worktree['source'] | null }) =>
     writeTransaction(() => {
       const recorded = db()
         .query(
           `UPDATE run SET cwd=?,worktree=?,branch=NULL,minted_branch=NULL,base_commit=?,worktree_source=?
            WHERE record_id=?`,
         )
-        .run(created.path, created.path, created.base, created.source ?? null, inserted.record_id)
+        .run(facts.path, facts.path, facts.base, facts.source ?? null, inserted.record_id)
       if (recorded.changes !== 1)
         throw new Error(`run ${inserted.record_id} could not record its before-measurement tree`)
-      recordClaims(created.path, created.base)
+      recordClaims(facts.path, facts.base)
     })
   try {
     const resolveRoot =
@@ -105,7 +97,11 @@ export function createIssueBeforeTree(
       throw new Error(
         `issue before-measurement checkout for run ${inserted.record_id} needs a git repository: ${target.path} is not one`,
       )
-    recordIntended(readOnlyWorktreePath(repoRoot, inserted.record_id))
+    recordTree({
+      path: readOnlyWorktreePath(repoRoot, inserted.record_id),
+      base,
+      source: readOnlyWorktreeSource(tool),
+    })
     return {
       runId: inserted.record_id,
       worktree: (dependencies.createWorktree ?? createReadOnlyWorktreeForTool)({
@@ -113,7 +109,8 @@ export function createIssueBeforeTree(
         cwd: target.path,
         runId: inserted.record_id,
         readOnlyBase: base,
-        record,
+        record: (created) =>
+          recordTree({ path: created.path, base: created.base, source: created.source ?? null }),
       }),
     }
   } catch (error) {

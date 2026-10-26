@@ -31,12 +31,14 @@ type BeforeTreeRunRow = {
   exit_code: number | null
   error: string | null
   worktree: string | null
+  base_commit: string | null
+  worktree_source: string | null
 }
 
 function latestBeforeTreeRun(): BeforeTreeRunRow | null {
   return db()
     .query<BeforeTreeRunRow, [string]>(
-      `SELECT record_id,job,status,exit_code,error,worktree FROM run WHERE job=? ORDER BY number DESC LIMIT 1`,
+      `SELECT record_id,job,status,exit_code,error,worktree,base_commit,worktree_source FROM run WHERE job=? ORDER BY number DESC LIMIT 1`,
     )
     .get(ISSUE_BEFORE_TREE_JOB)
 }
@@ -80,7 +82,7 @@ describe('issue before-measurement lifecycle', () => {
     expect(
       db()
         .query(
-          'SELECT job,status,evidence_excluded,worktree,branch,minted_branch,base_commit FROM run WHERE record_id=?',
+          'SELECT job,status,evidence_excluded,worktree,branch,minted_branch,base_commit,worktree_source FROM run WHERE record_id=?',
         )
         .get(result.runId),
     ).toEqual({
@@ -91,6 +93,7 @@ describe('issue before-measurement lifecycle', () => {
       branch: null,
       minted_branch: null,
       base_commit: created.base,
+      worktree_source: 'clone',
     })
     expect(
       db()
@@ -135,7 +138,7 @@ describe('issue before-measurement lifecycle', () => {
     })
   })
 
-  test('a creation that throws leaves the intended checkout and its claim recorded', () => {
+  test('a creation that throws leaves the intended checkout, its source and its claim recorded', () => {
     const target = targetProject()
 
     expect(() =>
@@ -149,7 +152,13 @@ describe('issue before-measurement lifecycle', () => {
 
     const row = latestBeforeTreeRun()!
     const intended = `/target/.claude/worktrees/orch-${row.record_id}`
-    expect(row).toMatchObject({ status: 'failed', worktree: intended })
+    expect(row).toMatchObject({
+      status: 'failed',
+      worktree: intended,
+      base_commit: 'base-commit',
+      // The resolved tool declares no readonly_create, so the tree is a plain clone.
+      worktree_source: 'clone',
+    })
     expect(
       db()
         .query(
