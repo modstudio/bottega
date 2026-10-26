@@ -1,6 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -171,20 +171,15 @@ test('a restricted persistent handle sees a write made after it opened', () => {
   }
 })
 
-test('a sidecar-less WAL store sends a restricted persistent handle to the named refusal', () => {
+test('a store whose plain read-only open fails sends a restricted persistent handle to the named refusal', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-persistent-reader-'))
   const path = join(root, 'orchestrator.db')
   try {
-    const writable = new Database(path, { create: true })
-    writable.exec('PRAGMA journal_mode = WAL; CREATE TABLE t (n INTEGER);')
-    writable.close()
-    // A WAL store with its sidecars removed is the state a persistent reader must never read as
-    // a snapshot.
-    rmSync(`${path}-wal`, { force: true })
-    rmSync(`${path}-shm`, { force: true })
-    expect(existsSync(`${path}-wal`)).toBeFalse()
-    // The immutable snapshot would read it, but a persistent reader must never take it, so the
-    // open is refused by name.
+    // Whether SQLite can read a sidecar-less WAL store read-only differs by platform build, so
+    // the failed open is made deterministic: a file that is not a database fails on every build.
+    writeFileSync(path, 'not a sqlite database'.repeat(64))
+    // The immutable snapshot is never the fallback for a persistent reader, so the open is
+    // refused by name.
     expect(() => openProcessStoreHandle(restrictedHandleFacts, path, 'persistent')).toThrow(
       /refusing to read the orchestrator store from a long-lived restricted process/,
     )
