@@ -22,7 +22,7 @@ REFUSAL_FIXTURE = PATH.parents[1] / "src" / "score" / "refusal-guidance.fixture.
 class HeldTreeDecisionTest(unittest.TestCase):
     def test_fixture_shape_feeds_the_decision(self):
         rows = json.loads(FIXTURE.read_text())
-        in_flight, unique_work, other = rows
+        in_flight, unique_work, other, hook_tree = rows
         listed = decide_held_tree(in_flight)
         self.assertFalse(listed.block)
         self.assertEqual(
@@ -31,6 +31,12 @@ class HeldTreeDecisionTest(unittest.TestCase):
         )
         self.assertTrue(decide_held_tree(unique_work).block)
         self.assertTrue(decide_held_tree(other).block)
+        kept = decide_held_tree(hook_tree)
+        self.assertFalse(kept.block)
+        self.assertEqual(
+            kept.in_flight_line,
+            f"in flight: {hook_tree['worktree']} ({hook_tree['inFlightRef']})",
+        )
 
 
 class RefusalScoreGuidanceTest(unittest.TestCase):

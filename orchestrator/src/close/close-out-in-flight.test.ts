@@ -70,6 +70,7 @@ function ordinaryRunHolding(): { id: string; tree: string; project: string; bran
 function mockGitAndGh(input: {
   statusOutput: string
   headCommit: string
+  statusExitCode?: number
   calls?: string[][]
 }): void {
   const answer = (argv: string[]): ReturnType<typeof Bun.spawnSync> => {
@@ -82,11 +83,12 @@ function mockGitAndGh(input: {
         : isStatus
           ? input.statusOutput
           : input.headCommit
+    const exitCode = isStatus ? (input.statusExitCode ?? 0) : 0
     return {
-      exitCode: 0,
+      exitCode,
       stdout: Buffer.from(stdout),
       stderr: Buffer.from("git: error: couldn't create cache file (errno=Operation not permitted)"),
-      success: true,
+      success: exitCode === 0,
       exitedDueToTimeout: false,
     } as ReturnType<typeof Bun.spawnSync>
   }
@@ -208,6 +210,28 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.suppressBlock).toBe(false)
   })
 
+  test('a complete held in-flight annotation is preserved unchanged', () => {
+    const { id, tree, project, branch } = ordinaryRunHolding()
+    mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
+    try {
+      insertCursor({ project, session: 'owner', branch, worktree: tree })
+      const held = {
+        ...heldResult(
+          id,
+          tree,
+          `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+          'other',
+        ),
+        inFlightRef: 'hook tree, kept by its owner',
+        suppressBlock: true,
+      }
+
+      expect(annotateHeldLandingInFlight(held)).toBe(held)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
   test('lookupOpenPr reads an open PR number and head commit', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'close-out-pr-'))
     mkdirSync(cwd, { recursive: true })
@@ -279,6 +303,21 @@ describe('close-out in-flight hold annotation', () => {
       expect(calls.map(([bin]) => bin)).not.toContain('gh')
       expect(calls.some(([bin, ...args]) => bin === 'git' && args[0] === 'status')).toBe(true)
       expect(annotated.suppressBlock).toBe(false)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('an other hold keeps blocking when git status cannot be read', () => {
+    const { id, tree } = ordinaryRunHolding()
+    mockGitAndGh({ statusOutput: '', headCommit: 'sha-head', statusExitCode: 128 })
+    try {
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, 'ordinary run tree is held', 'other'),
+      )
+
+      expect(annotated.suppressBlock).toBe(false)
+      expect(annotated.inFlightRef).toBeNull()
     } finally {
       rmSync(tree, { recursive: true, force: true })
     }

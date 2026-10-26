@@ -216,6 +216,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/close/close-out-report.ts', [
     '../../../shared/brand.ts',
+    '../hook-tree/hook-tree.ts',
     '../landing-tree/landing-tree.ts',
     '../worktree/keep-tree-hold.ts',
   ]),

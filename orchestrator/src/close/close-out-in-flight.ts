@@ -10,7 +10,11 @@ import {
   type LandingTreeHoldKind,
   pullRequestLookupNeeded,
 } from '../landing-tree/landing-tree.ts'
-import { annotateHeldTreeDetail, type CloseOutReportResult } from './close-out-report.ts'
+import {
+  annotateHeldTreeDetail,
+  type CloseOutReportResult,
+  hasHeldInFlightAnnotation,
+} from './close-out-report.ts'
 
 const OPEN_PR_TIMEOUT_MS = 3000
 
@@ -186,7 +190,7 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTr
 
 export function annotateHeldLandingInFlight(result: CloseOutReportResult): CloseOutReportResult {
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
-  if (result.suppressBlock && result.inFlightRef) return result
+  if (hasHeldInFlightAnnotation(result)) return result
   const run = lookupRun(result.runId)
   if (!run) return result
   const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other')

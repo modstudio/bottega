@@ -19,5 +19,12 @@
     "hold": "other",
     "inFlightRef": null,
     "suppressBlock": false
+  },
+  {
+    "runId": "abc-4",
+    "worktree": "/hook-tree",
+    "hold": "other",
+    "inFlightRef": "hook tree, kept by its owner",
+    "suppressBlock": true
   }
 ]
