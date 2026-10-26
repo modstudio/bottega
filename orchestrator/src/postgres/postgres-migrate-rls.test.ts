@@ -32,6 +32,7 @@ import { registerCustomerAuthProof } from '../../test/postgres-customer-auth-pro
 import { registerLandingEvidenceRlsProof } from '../../test/postgres-landing-evidence-proof.ts'
 import { registerProjectSpaceProofs } from '../../test/postgres-project-space-proof.ts'
 import { registerPublicDocProofs } from '../../test/postgres-public-doc-proof.ts'
+import { registerQuestionTaskRecordSyncProof } from '../../test/postgres-question-task-proof.ts'
 import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-proof.ts'
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
@@ -1034,6 +1035,15 @@ realPostgres('RLS proof against real Postgres', () => {
     ...{ projectName: 'auth-a-project', projectId: authProjectA },
     projectSpace: authSpaceA,
     asSpace,
+  }))
+
+  registerQuestionTaskRecordSyncProof(() => ({
+    actorRole: RECORD_ACTOR_ROLE,
+    spaceId: authSpaceA,
+    projectName: 'auth-a-project',
+    projectId: authProjectA,
+    asSpace,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
   }))
 
   test('same prefix is allowed in separate projects', () => {
