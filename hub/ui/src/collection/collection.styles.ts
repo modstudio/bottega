@@ -5,6 +5,7 @@ export const collectionStyles = variant({
     column: '',
     heading: 'font-semibold text-md',
     count: 'text-text-muted tabular-nums',
+    actionsLabel: 'sr-only',
   },
   variants: {
     grow: { true: { column: 'w-full max-w-0' } },

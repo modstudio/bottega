@@ -332,6 +332,7 @@ function TaskTable({
   fetchedAt,
   filters,
   filtersActive,
+  empty,
   selectedKey,
   onOpenTask,
   panel,
@@ -343,6 +344,7 @@ function TaskTable({
   fetchedAt: number
   filters: ReactNode
   filtersActive: number
+  empty: { title: string; hint?: string }
   selectedKey?: string
   onOpenTask(row: TaskRow): void
   panel?: ReactNode
@@ -414,7 +416,7 @@ function TaskTable({
           cells: runCells(run, now, waitingByRun, renderWaiting),
         }))
       }}
-      empty={{ title: 'No tasks.' }}
+      empty={empty}
     />
   )
 }
@@ -495,12 +497,18 @@ export function TaskContent({
   const hasRows = data.rows.length > 0
   return (
     <>
-      {tasks.length ? (
+      {/* While filters are active the table stays, because its toolbar is the
+          only place the filters can be seen and cleared. */}
+      {tasks.length || filtered ? (
         <TaskTable
           rows={tasks}
           fetchedAt={fetchedAt}
           filters={filters}
           filtersActive={filtersActive}
+          empty={{
+            title: 'No tasks match these filters.',
+            hint: 'Clear the filters or widen the window.',
+          }}
           selectedKey={selectedKey}
           onOpenTask={onOpenTask}
           panel={panel}
@@ -511,18 +519,12 @@ export function TaskContent({
       ) : (
         <EmptyState
           title={
-            filtered
-              ? 'No tasks match these filters.'
-              : name === 'flight'
-                ? 'No work is in flight.'
-                : 'No tasks were completed in this window.'
+            name === 'flight' ? 'No work is in flight.' : 'No tasks were completed in this window.'
           }
           hint={
-            filtered
-              ? 'Clear the filters or widen the window.'
-              : name === 'flight'
-                ? 'Work appears here when a task becomes active.'
-                : 'Widen the window to see earlier completed work.'
+            name === 'flight'
+              ? 'Work appears here when a task becomes active.'
+              : 'Widen the window to see earlier completed work.'
           }
         />
       )}
