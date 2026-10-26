@@ -340,6 +340,7 @@ try {
       episode: 'fresh-send',
       project: PLATFORM_SLUG,
       task_key: 'DEV-943',
+      task_id: null,
       question: 'Should this delivery proceed?',
       options: ['Proceed', 'Stop'],
       recommendation: 'Proceed',

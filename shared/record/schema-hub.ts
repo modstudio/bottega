@@ -522,6 +522,7 @@ export const operatorWaitingEmail = pgTable.withRLS(
     episode: text().notNull(),
     project: text(),
     taskKey: text('task_key'),
+    taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'set null' }),
     question: text().notNull(),
     options: jsonb().notNull(),
     recommendation: text(),
@@ -549,6 +550,7 @@ export const operatorWaitingEmail = pgTable.withRLS(
       sql`${table.status} IN ('intent','sent','failed','abandoned')`,
     ),
     check('operator_waiting_email_attempts_check', sql`${table.attempts} > 0`),
+    index('operator_waiting_email_task_id_idx').on(table.taskId),
     ...tenantPolicies('operator_waiting_email', table.spaceId),
   ],
 )

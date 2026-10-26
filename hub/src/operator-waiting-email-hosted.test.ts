@@ -16,6 +16,7 @@ const input: OperatorWaitingEmailInput = {
   episode: 'episode-1',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
+  task_id: '01990000-0000-7000-8000-000000000943',
   question: 'Should this be enabled?',
   options: ['Enable it', 'Disable it'],
   recommendation: 'Enable it',
@@ -36,7 +37,7 @@ test('rendered HTML contains the decision and obeys email CSS rules', () => {
 
 test('a no-project waiting item renders without a project placeholder', () => {
   const rendered = renderOperatorWaitingEmail(
-    { ...input, project: null, task_key: null },
+    { ...input, project: null, task_key: null, task_id: null },
     new Date('2026-09-25T11:00:00.000Z'),
   )
   expect(rendered.subject).toBe('Waiting on you: question')

@@ -152,10 +152,10 @@ async function claimOperatorWaitingEmail(
   const inserted = rows<OperatorWaitingEmailResult & { email: string }>(
     await tx`WITH inserted AS (
       INSERT INTO operator_waiting_email
-        (id,space_id,user_id,kind,item_id,episode,project,task_key,question,options,
+        (id,space_id,user_id,kind,item_id,episode,project,task_key,task_id,question,options,
          recommendation,why,waiting_since,link,status,reason,attempts,created_at,updated_at,sent_at)
       SELECT ${id}::uuid,${caller.spaceId}::uuid,${caller.userId}::uuid,${input.kind},
-        ${input.item_id},${input.episode},${input.project},${input.task_key},${input.question},
+        ${input.item_id},${input.episode},${input.project},${input.task_key},${input.task_id}::uuid,${input.question},
         ${bindJsonb(tx, input.options)},${input.recommendation},${input.why},
         ${input.waiting_since}::timestamptz,${input.link},'intent',NULL,1,
         ${now.toISOString()}::timestamptz,${now.toISOString()}::timestamptz,NULL

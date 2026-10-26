@@ -355,6 +355,18 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
     sibling: 'hub_interval.task_id',
     reason: 'display label beside the task UUID reference',
   },
+  {
+    store: 'hosted',
+    column: 'operator_waiting_email.task_key',
+    sibling: 'operator_waiting_email.task_id',
+    reason: 'display label beside the task UUID reference',
+  },
+  {
+    store: 'hosted',
+    column: 'question.workflow_key',
+    sibling: 'question.workflow_task_id',
+    reason: 'display label beside the workflow task UUID reference',
+  },
 ]
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
@@ -493,8 +505,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'landing_triage_snapshot.review_ids',
     'machine_public_key.key_id',
     'operator_waiting_email.item_id',
-    'operator_waiting_email.task_key',
-    'question.workflow_key',
     'question.filed_ref',
     'run.task_key',
     'secret_dek_wrap.recipient_key_id',

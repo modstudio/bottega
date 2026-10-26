@@ -63,9 +63,7 @@
     "landing_triage_snapshot.review_ids:reference",
     "machine_public_key.key_id:reference",
     "operator_waiting_email.item_id:reference",
-    "operator_waiting_email.task_key:reference",
     "question.filed_ref:reference",
-    "question.workflow_key:reference",
     "secret_dek_wrap.recipient_key_id:reference",
     "secret_dek_wrap.sender_key_id:reference",
     "run.task_key:reference"

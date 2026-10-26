@@ -7,6 +7,7 @@ import type { OperatorWaitingItem } from '../../shared/orch-contract.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import { waiting } from './orch.ts'
 import { hostedCreateOperatorWaitingEmail, hostedSignedInUserId } from './task-client.ts'
+import { uniqueTaskRecordIdForKey } from './task-identity.ts'
 
 const DEFAULT_OPERATOR_EMAIL_DELAY_MINUTES = 30
 const OPERATOR_EMAIL_DELAY_SETTING = 'operator_email_delay_minutes'
@@ -103,6 +104,7 @@ export async function deliverOperatorWaitingEmails(
     now?: () => Date
     delay?: () => number
     ledger?: () => WaitingEmailLedgerKey[]
+    taskRecordId?: (taskKey: string | null) => string | null
     record?: (item: OperatorWaitingItem) => void
     error?: (message: string) => void
   } = {},
@@ -133,6 +135,9 @@ export async function deliverOperatorWaitingEmails(
         episode: item.episode,
         project: item.project,
         task_key: item.task_key,
+        task_id: (dependencies.taskRecordId ?? ((key) => uniqueTaskRecordIdForKey(db(), key)))(
+          item.task_key,
+        ),
         question: item.question,
         options: item.options,
         recommendation: item.recommendation,

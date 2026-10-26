@@ -102,6 +102,7 @@ export const operatorWaitingModules: OperatorWaitingModule[] = [
     './db.ts',
     './orch.ts',
     './task-client.ts',
+    './task-identity.ts',
   ]),
   module('hub/src/operator-waiting-email-hosted.ts', [
     'bun',
