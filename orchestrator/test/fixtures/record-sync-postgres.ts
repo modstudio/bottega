@@ -125,8 +125,6 @@ export function fakePostgres(
     const exclusionResult = hostedExclusionResult(source, hostedExclusion)
     if (exclusionResult) return exclusionResult
     if (source.includes('SELECT reason FROM run_exclusion')) return []
-    if (source.includes('task_found_by_id'))
-      return [{ task_found_by_id: null, task_found_by_key: null, existing_task_id: null }]
     if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
     if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
     const hostedTask = hostedTaskResult(source, values, hostedTasks)

@@ -36,7 +36,6 @@ import { pushQuestionAudits } from './record-question-audit.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
 import { commonReviewRecordValues } from './record-review-values.ts'
-import { runUsageRecordValues } from './record-run-usage.ts'
 import { pushBranchDisposal } from './record-sync-branch-disposal.ts'
 import type {
   RecordPayload as Payload,
@@ -56,6 +55,7 @@ import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
 import { runTaskIdentityDecision } from './record-sync-run-task-identity.ts'
+import { runRecordValues } from './record-sync-run-values.ts'
 import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -78,86 +78,8 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
 
 const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))
-const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
-function runValues(row: Payload, projectId: string | null, taskId: string | null) {
-  return {
-    id: String(row.id),
-    spaceId: String(row.spaceId),
-    projectId,
-    machineId: String(row.machineId),
-    startedByUserId: nullableString(row.startedByUserId),
-    startedAt: date(row.startedAt),
-    finishedAt: nullableDate(row.finishedAt),
-    agent: String(row.agent),
-    job: String(row.job),
-    promptSha: String(row.promptSha),
-    specSha: nullableString(row.specSha),
-    promptBytes: bigint(row.promptBytes),
-    promptHead: String(row.promptHead),
-    taskKey: nullableString(row.taskKey),
-    taskId,
-    label: nullableString(row.label),
-    lens: nullableString(row.lens),
-    latencyMs: nullableBigint(row.latencyMs),
-    exitCode: nullableNumber(row.exitCode),
-    outputBytes: nullableBigint(row.outputBytes),
-    ...runUsageRecordValues(row),
-    probe: Boolean(row.probe),
-    failureKind: nullableString(row.failureKind),
-    status: String(row.status),
-    error: nullableString(row.error),
-    retryOf: nullableString(row.retryOf),
-    parentRunId: nullableString(row.parentRunId),
-    turn: Number(row.turn),
-    filesChanged: nullableNumber(row.filesChanged),
-    changedPaths: jsonString(row.changedPaths),
-    linesAdded: nullableNumber(row.linesAdded),
-    linesRemoved: nullableNumber(row.linesRemoved),
-    testsRan: nullableNumber(row.testsRan),
-    testsPassed: nullableNumber(row.testsPassed),
-    testsClaimDisagrees: row.testsClaimDisagrees == null ? null : Boolean(row.testsClaimDisagrees),
-    deviations: nullableNumber(row.deviations),
-    escalations: nullableNumber(row.escalations),
-    stack: nullableString(row.stack),
-    model: nullableString(row.model),
-    evidenceExcluded: nullableString(row.evidenceExcluded),
-    inputTree: nullableString(row.inputTree),
-    headCommit: nullableString(row.headCommit),
-    reviewRef: nullableString(row.reviewRef),
-    reviewRole: nullableString(row.reviewRole),
-    branch: nullableString(row.branch),
-    baseCommit: nullableString(row.baseCommit),
-    mintedBranch: nullableString(row.mintedBranch),
-    docsInjected: nullableNumber(row.docsInjected),
-    docRevisions: jsonString(row.docRevisions),
-    canonSha: nullableString(row.canonSha),
-    transport: nullableString(row.transport),
-    sessionId: nullableString(row.sessionId),
-    routeReason: nullableString(row.routeReason),
-    noFailover: Boolean(row.noFailover),
-    automaticFailover: Boolean(row.automaticFailover),
-    outsideWorktreeWrites: jsonString(row.outsideWorktreeWrites),
-    reviewProvenance: jsonString(row.reviewProvenance),
-    provenanceStatus: nullableString(row.provenanceStatus),
-    workPreserved: Boolean(row.workPreserved),
-    closeOutOutcome: nullableString(row.closeOutOutcome),
-    closeOutDetail: nullableString(row.closeOutDetail),
-    provisioningKind: nullableString(row.provisioningKind),
-    provisioningMs: nullableBigint(row.provisioningMs),
-    provisioningPhases: jsonString(row.provisioningPhases),
-    provisioningEntries: nullableBigint(row.provisioningEntries),
-    provisioningEntriesLimited:
-      row.provisioningEntriesLimited == null ? null : Boolean(row.provisioningEntriesLimited),
-    provisioningHostLoad: jsonString(row.provisioningHostLoad),
-    provisioningOutcome: nullableString(row.provisioningOutcome),
-    provisioningEntryRoots: jsonString(row.provisioningEntryRoots),
-    withheldFields: jsonString(row.withheldFields),
-    createdAt: date(row.createdAt),
-    updatedAt: date(row.updatedAt),
-  }
-}
 
 function evidenceCollision(kind: string, id: string): OutboxRowError {
   return new OutboxRowError(
@@ -321,24 +243,20 @@ async function pushRun(
       String(row.machineId),
       principal,
     )
-    const taskFacts = (
-      await tx`SELECT
-        (SELECT id::text FROM hub_task WHERE space_id=${principal.spaceId}::uuid
-          AND id=${nullableString(row.taskId)}::uuid) AS task_found_by_id,
-        (SELECT id::text FROM hub_task WHERE space_id=${principal.spaceId}::uuid
-          AND key=${nullableString(row.taskKey)}) AS task_found_by_key,
-        (SELECT task_id::text FROM run WHERE space_id=${principal.spaceId}::uuid
-          AND id=${String(row.id)}::uuid) AS existing_task_id`
-    )[0]!
+    const resolvedTaskId = await hostedTaskIdForReference(tx, principal.spaceId, {
+      id: nullableString(row.taskId),
+      key: nullableString(row.taskKey),
+    })
+    const existingTask = (
+      await tx<{ task_id: string | null }[]>`SELECT task_id::text AS task_id FROM run
+        WHERE space_id=${principal.spaceId}::uuid AND id=${String(row.id)}::uuid`
+    )[0]
     const taskId = runTaskIdentityDecision({
-      payloadTaskId: row.taskId == null ? null : String(row.taskId),
-      payloadTaskKey: row.taskKey == null ? null : String(row.taskKey),
-      taskFoundById: taskFacts.task_found_by_id,
-      taskFoundByKey: taskFacts.task_found_by_key,
-      existingTaskId: taskFacts.existing_task_id,
+      resolvedTaskId,
+      existingTaskId: existingTask?.task_id ?? null,
       write: existingOwned ? 'update' : 'insert',
     })
-    const values = runValues(row, projectId, taskId)
+    const values = runRecordValues(row, projectId, taskId)
     const evidenceUnvoid = row.evidenceUnvoid
     if (evidenceUnvoid !== null) await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
     const exclusion = await tx`

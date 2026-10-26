@@ -19,6 +19,8 @@ const UNKNOWN_RUN_ID = '01990000-0000-7000-8000-000000001779'
 const OTHER_SPACE_ID = '01990000-0000-7000-8000-000000001780'
 const OTHER_SPACE_TASK_ID = '01990000-0000-7000-8000-000000001781'
 const CROSS_SPACE_RUN_ID = '01990000-0000-7000-8000-000000001782'
+const AMBIGUOUS_TASK_ID = '01990000-0000-7000-8000-000000001783'
+const AMBIGUOUS_RUN_ID = '01990000-0000-7000-8000-000000001784'
 const STAMP = '2026-10-26T06:00:00.000Z'
 
 function runPayload(id: string, taskId: string | null) {
@@ -112,19 +114,27 @@ realPostgres('hosted run task references', () => {
       expect(await push(actor, 5, crossSpace)).toEqual({
         results: [{ id: 5, status: 'synced' }],
       })
+      await admin`INSERT INTO hub_task
+        (id,space_id,project_name,project_id,key,project,title,status,status_category,source,first_seen,last_seen,created_at,updated_at)
+        VALUES (${AMBIGUOUS_TASK_ID}::uuid,${SPACE_ID}::uuid,'run-task-proof',${PROJECT_ID}::uuid,'DEV-1771','run-task-proof',
+          'Ambiguous run task proof','active','active','local',now(),now(),now(),now())`
+      expect(await push(actor, 6, runPayload(AMBIGUOUS_RUN_ID, null))).toEqual({
+        results: [{ id: 6, status: 'synced' }],
+      })
 
       const rows = await admin<{ id: string; task_id: string | null }[]>`
         SELECT id::text,task_id::text FROM run
-        WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid)
+        WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid,${AMBIGUOUS_RUN_ID}::uuid)
         ORDER BY id`
       expect([...rows]).toEqual([
         { id: LINKED_RUN_ID, task_id: TASK_ID },
         { id: UNKNOWN_RUN_ID, task_id: TASK_ID },
         { id: CROSS_SPACE_RUN_ID, task_id: null },
+        { id: AMBIGUOUS_RUN_ID, task_id: null },
       ])
     } finally {
-      await admin`DELETE FROM run WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid)`
-      await admin`DELETE FROM hub_task WHERE id=${TASK_ID}::uuid`
+      await admin`DELETE FROM run WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid,${AMBIGUOUS_RUN_ID}::uuid)`
+      await admin`DELETE FROM hub_task WHERE id IN (${TASK_ID}::uuid,${AMBIGUOUS_TASK_ID}::uuid)`
       await admin`DELETE FROM hub_task WHERE id=${OTHER_SPACE_TASK_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`
