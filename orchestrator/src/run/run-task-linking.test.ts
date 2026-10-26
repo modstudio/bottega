@@ -256,12 +256,16 @@ describe('run task linking service', () => {
           `SELECT
           (SELECT task_record_id FROM workflow_cursor WHERE record_id='cursor-related') cursor_task,
           (SELECT workflow_task_record_id FROM question WHERE record_id='question-related') question_task,
+          (SELECT revision FROM question WHERE record_id='question-related') question_revision,
+          (SELECT COUNT(*) FROM outbox WHERE kind='question' AND row_id='question-related') question_outbox,
           (SELECT current_task_record_id FROM presence WHERE session_id='related-session') presence_task`,
         )
         .get(),
     ).toEqual({
       cursor_task: 'related-task-id',
       question_task: 'related-task-id',
+      question_revision: 2,
+      question_outbox: 1,
       presence_task: 'related-task-id',
     })
 
@@ -270,6 +274,37 @@ describe('run task linking service', () => {
     expect(second.local_task_links.question.linked).toBe(0)
     expect(second.local_task_links.presence.linked).toBe(0)
     expect(second.local_task_links.port_ref.unmatched_keys).toEqual({ 'MISSING-1': 1 })
+  })
+
+  test('leaves a task key shared by projects unlinked and reports it as unmatched', async () => {
+    const alpha = addProject('ambiguous-alpha', '/work/ambiguous-alpha')
+    const beta = addProject('ambiguous-beta', '/work/ambiguous-beta')
+    const insert = db().query(
+      `INSERT INTO port_ref (record_id,task_key,target_project_record_id,note,created_at)
+       VALUES (?,?,?,?, 't')`,
+    )
+    insert.run('ambiguous-ref-alpha', 'SHARED-1', alpha, 'alpha')
+    insert.run('ambiguous-ref-beta', 'SHARED-1', beta, 'beta')
+
+    const report = await linkRunTasks(
+      { dryRun: false },
+      {
+        hubReader: async (project) =>
+          project.startsWith('ambiguous-')
+            ? [{ key: 'SHARED-1', record_id: `task-${project}`, project }]
+            : [],
+      },
+    )
+
+    expect(report.local_task_links.port_ref).toEqual({
+      linked: 0,
+      unmatched_keys: { 'SHARED-1': 2 },
+    })
+    expect(
+      db()
+        .query('SELECT task_record_id FROM port_ref WHERE task_key=? ORDER BY record_id')
+        .all('SHARED-1'),
+    ).toEqual([{ task_record_id: null }, { task_record_id: null }])
   })
 
   test('refuses with a project-scoped remedy when the hub reader fails', async () => {
