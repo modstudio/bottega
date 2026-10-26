@@ -58,11 +58,7 @@ export function completeRunStartup(): true {
   return true
 }
 
-function harnessRunningResult(
-  input: ClaimResult,
-  reason: string,
-  writesJob: boolean,
-): RunResult {
+function harnessRunningResult(input: ClaimResult, reason: string, writesJob: boolean): RunResult {
   const roots = acpWriter.runRoots(
     input.worktree,
     writesJob,
