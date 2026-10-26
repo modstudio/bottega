@@ -45,6 +45,28 @@ class DetachedDispatchTest(unittest.TestCase):
             )
         )
 
+    def test_ack_required_defaults_a_post_to_request(self):
+        self.assertEqual(
+            heartbeat_remind.detached_dispatch(
+                "bottega board post --ack-required --audience architects"
+            ),
+            "board post request",
+        )
+        self.assertIsNone(
+            heartbeat_remind.detached_dispatch(
+                "bottega board post --purpose information --ack-required --audience architects"
+            )
+        )
+
+    def test_compound_command_finds_later_request(self):
+        self.assertEqual(
+            heartbeat_remind.detached_dispatch(
+                "bottega run start implement task --follow && "
+                "bottega board post --purpose request --audience architects"
+            ),
+            "board post request",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

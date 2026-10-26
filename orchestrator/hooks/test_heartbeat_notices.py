@@ -83,6 +83,8 @@ def run_heartbeat(rows, ack_result=""):
         for name in (
             "orch-heartbeat.sh",
             "heartbeat-decision.py",
+            "heartbeat-board-observation.py",
+"heartbeat-decision.py",
             "heartbeat-run-observation.py",
             "inbox_question_decision.py",
             "notice_transport.py",

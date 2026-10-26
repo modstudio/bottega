@@ -48,7 +48,7 @@ class HeartbeatGuardRunIdentityTest(unittest.TestCase):
         ):
             self.assertIsNone(heartbeat_guard.live_run_ids("session"))
 
-    def test_open_request_blocks_once_and_names_the_thread(self):
+    def test_open_request_never_blocks_and_names_the_thread(self):
         output = io.StringIO()
         with (
             patch.object(heartbeat_guard, "live_run_ids", return_value=[]),
@@ -65,9 +65,32 @@ class HeartbeatGuardRunIdentityTest(unittest.TestCase):
         ):
             self.assertEqual(heartbeat_guard.main(), 0)
         message = json.loads(output.getvalue())
-        self.assertEqual(message["decision"], "block")
-        self.assertIn("1 open request: board:12 Need a ruling", message["reason"])
-        self.assertIn("orch-heartbeat.sh session", message["reason"])
+        self.assertNotIn("decision", message)
+        self.assertIn("1 open request: board:12 Need a ruling", message["systemMessage"])
+        self.assertIn("orch-heartbeat.sh session", message["systemMessage"])
+
+    def test_unreadable_board_policy_never_blocks_by_itself(self):
+        output = io.StringIO()
+        original_loader = heartbeat_guard.load_hook_module
+
+        def load(name, filename):
+            if filename == "heartbeat-decision.py":
+                raise ImportError("decision unavailable")
+            return original_loader(name, filename)
+
+        with (
+            patch.object(heartbeat_guard, "load_hook_module", side_effect=load),
+            patch.object(heartbeat_guard, "live_run_ids", return_value=[]),
+            patch.object(heartbeat_guard, "live_landing_ids", return_value=[]),
+            patch.object(heartbeat_guard, "heartbeat_armed", return_value=False),
+            patch.object(sys, "stdin", io.StringIO('{"session_id":"session"}')),
+            redirect_stdout(output),
+        ):
+            self.assertEqual(heartbeat_guard.main(), 0)
+        message = json.loads(output.getvalue())
+        self.assertNotIn("decision", message)
+        self.assertIn("board store unreadable", message["systemMessage"])
+        self.assertIn("orch-heartbeat.sh session", message["systemMessage"])
 
 
 if __name__ == "__main__":

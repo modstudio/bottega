@@ -1,7 +1,7 @@
-import { resolve } from 'node:path'
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
+import { assetPath } from '../../../shared/install-root.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
 import { resolveLocalBoardMessageIdentifier } from '../board/board-message-identifier.ts'
 import {
@@ -38,7 +38,7 @@ function boardHeartbeatGuidance(
 ): string | null {
   const session = architectIdentity(env)?.session
   if (!session) return null
-  return `Arm under Monitor from the main checkout: ${resolve(import.meta.dir, '../../hooks/orch-heartbeat.sh')} ${session}`
+  return `Arm under Monitor from the main checkout: ${assetPath('orchestrator', 'hooks', 'orch-heartbeat.sh')} ${session}`
 }
 
 function withHeartbeatGuidance<T>(value: T, required: boolean): T | (T & { heartbeat: string }) {

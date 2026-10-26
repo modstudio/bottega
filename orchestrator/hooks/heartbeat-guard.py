@@ -27,11 +27,15 @@ DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
-DECISION_SPEC = importlib.util.spec_from_file_location(
-    "heartbeat_decision", os.path.join(os.path.dirname(__file__), "heartbeat-decision.py")
-)
-heartbeat_decision = importlib.util.module_from_spec(DECISION_SPEC)
-DECISION_SPEC.loader.exec_module(heartbeat_decision)
+
+
+def load_hook_module(name: str, filename: str):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(__file__), filename))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {filename}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def heartbeat_path() -> str:
@@ -145,93 +149,15 @@ def live_run_ids(session_id: str):
         return None
 
 
-def open_request_threads(session_id: str):
+def open_request_threads(session_id: str, board_observation, heartbeat_decision):
     """Open requests authored here, [] if none, None if the store cannot answer."""
-    if not os.path.exists(DB):
-        return []
     try:
-        connection = sqlite3.connect(f"file:{DB}?mode=ro", uri=True, timeout=2)
-        try:
-            receipts = {
-                row[0]: row[1]
-                for row in connection.execute(
-                    "SELECT message_record_id,delivered_at FROM board_receipt WHERE reader_session=?",
-                    (session_id,),
-                )
-            }
-            roots, replies = [], []
-            for row in connection.execute(
-                "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,thread_root_record_id "
-                "FROM board_message"
-            ):
-                record_id, number, kind, purpose, author, title, expires, withdrawn, root_id = row
-                if root_id is None:
-                    if author == session_id:
-                        title = (
-                            str(title).replace("\t", " ").replace("\r", " ").replace("\n", " ")
-                        )
-                        roots.append(
-                            {
-                                "id": record_id,
-                                "label": f"board:{number} {title}",
-                                "kind": kind,
-                                "purpose": purpose,
-                                "expires_at": expires,
-                                "withdrawn_at": withdrawn,
-                            }
-                        )
-                else:
-                    replies.append(
-                        {
-                            "root_id": root_id,
-                            "author_session": author,
-                            "delivered_at": receipts.get(record_id),
-                        }
-                    )
-            hosted_receipts = {
-                row[0]: row[1]
-                for row in connection.execute(
-                    "SELECT message_id,delivered_at FROM hosted_board_receipt_cache WHERE reader_session=?",
-                    (session_id,),
-                )
-            }
-            for message_id, kind, root_id, payload in connection.execute(
-                "SELECT id,kind,thread_root_id,payload FROM hosted_board_message_cache"
-            ):
-                message = json.loads(payload)
-                author = message.get("authorSession")
-                if author is None and isinstance(message.get("origin"), dict):
-                    author = message["origin"].get("session")
-                if root_id is None:
-                    if author == session_id:
-                        title = (
-                            str(message.get("title"))
-                            .replace("\t", " ")
-                            .replace("\r", " ")
-                            .replace("\n", " ")
-                        )
-                        roots.append(
-                            {
-                                "id": message_id,
-                                "label": f"board:{message_id} {title}",
-                                "kind": kind,
-                                "purpose": message.get("purpose"),
-                                "expires_at": message.get("expiresAt"),
-                                "withdrawn_at": message.get("withdrawnAt"),
-                            }
-                        )
-                else:
-                    replies.append(
-                        {
-                            "root_id": root_id,
-                            "author_session": author,
-                            "delivered_at": hosted_receipts.get(message_id),
-                        }
-                    )
-        finally:
-            connection.close()
+        rows = board_observation.observe_board_requests(
+            DB, session_id, heartbeat_decision.contains_secret_shaped
+        )
+        roots = [root for root in rows["roots"] if root.get("author_session") == session_id]
         return heartbeat_decision.open_board_requests(
-            roots, replies, session_id, __import__("time").time()
+            roots, rows["replies"], session_id, __import__("time").time()
         )
     except Exception:
         return None
@@ -258,22 +184,29 @@ def first_observation(session_id: str, run_ids) -> bool:
 
 def main() -> int:
     try:
+        try:
+            heartbeat_decision = load_hook_module("heartbeat_decision", "heartbeat-decision.py")
+            board_observation = load_hook_module(
+                "heartbeat_board_observation", "heartbeat-board-observation.py"
+            )
+        except Exception:
+            heartbeat_decision = board_observation = None
         payload = json.load(sys.stdin)
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not isinstance(sid, str) or not sid:
             return 0
         run_ids = live_run_ids(sid) or []
         landing_ids = live_landing_ids(sid)
-        request_rows = open_request_threads(sid)
+        request_rows = (
+            None
+            if board_observation is None or heartbeat_decision is None
+            else open_request_threads(sid, board_observation, heartbeat_decision)
+        )
         # None from the landing query is uncertainty, not absence: count it as
         # live so an unreadable store cannot be reported as quiescence.
         landings = ["unknown"] if landing_ids is None else [str(i) for i in landing_ids]
-        requests = (
-            [{"id": "unknown", "label": "unknown (board store unreadable)"}]
-            if request_rows is None
-            else request_rows
-        )
-        if not run_ids and not landings and not requests:
+        requests = [] if request_rows is None else request_rows
+        if not run_ids and not landings and not requests and request_rows is not None:
             return 0
 
         arm = f"{heartbeat_path()} {sid}"
@@ -292,7 +225,7 @@ def main() -> int:
         if landing_ids is None:
             work += " (landing store unreadable; assuming live)"
         if request_rows is None:
-            work += " (board store unreadable; assuming an open request)"
+            work += " (board store unreadable; open requests unknown)"
         elif requests:
             work += ": " + " | ".join(str(row["label"]) for row in requests)
         observed = [
@@ -300,15 +233,21 @@ def main() -> int:
             *[f"landing:{item}" for item in landings],
             *[f"request:{row['id']}" for row in requests],
         ]
-        if first_observation(sid, observed):
+        blocking_work = bool(run_ids or landings)
+        if blocking_work and first_observation(sid, observed):
             reason = (
                 f"{work} for this session have no heartbeat. "
                 f"Arm under Monitor from the main checkout: {arm}"
             )
             sys.stdout.write(json.dumps({"decision": "block", "reason": reason}) + "\n")
         else:
+            prefix = (
+                "Allowing stop after the one-shot heartbeat guard: "
+                if blocking_work
+                else "Allowing stop: "
+            )
             warning = (
-                f"Allowing stop after the one-shot heartbeat guard: {work} remain unarmed. "
+                f"{prefix}{work} remain unarmed. "
                 f"Arm under Monitor: {arm}"
             )
             sys.stdout.write(json.dumps({"systemMessage": warning}) + "\n")

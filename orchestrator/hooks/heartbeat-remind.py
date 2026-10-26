@@ -74,32 +74,43 @@ def detached_dispatch(command: object):
             None,
         )
         if match is None:
-            continue
-        kind, width = match
+            if executable != "bottega" or tuple(words[index + 1 : index + 3]) != (
+                "board",
+                "post",
+            ):
+                continue
+            kind, width = "board post", 3
+        else:
+            kind, width = match
         args = []
         for arg in words[index + width :]:
             if arg in (";", "&", "|", "&&", "||"):
                 break
             args.append(arg)
         if kind == "run start":
-            return kind if "--follow" not in args else None
-        return kind
-    for index, word in enumerate(words):
-        if (
-            os.path.basename(word) == "bottega"
-            and tuple(words[index + 1 : index + 3]) == ("board", "post")
-        ):
+            if "--follow" not in args:
+                return kind
+            continue
+        if kind == "board ask":
+            return kind
+        if kind == "board post":
+            purpose = None
             args = []
-            for arg in words[index + 3 :]:
+            for arg in words[index + width :]:
                 if arg in (";", "&", "|", "&&", "||"):
                     break
                 args.append(arg)
-            if "--purpose=request" in args:
+            for arg_index, arg in enumerate(args):
+                if arg.startswith("--purpose="):
+                    purpose = arg.partition("=")[2]
+                elif arg == "--purpose" and arg_index + 1 < len(args):
+                    purpose = args[arg_index + 1]
+            if purpose == "request":
                 return "board post request"
-            for arg_index, arg in enumerate(args[:-1]):
-                if arg == "--purpose" and args[arg_index + 1] == "request":
-                    return "board post request"
-            return None
+            if purpose is None and (
+                "--ack-required" in args or "--ack-required=true" in args
+            ):
+                return "board post request"
     return None
 
 

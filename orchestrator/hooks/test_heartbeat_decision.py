@@ -234,6 +234,7 @@ class HeartbeatDecisionTest(unittest.TestCase):
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             root_started = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
@@ -302,6 +303,7 @@ esac
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             started = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
@@ -387,6 +389,7 @@ esac
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             fake = binary / "bottega"
@@ -428,6 +431,7 @@ esac
             shutil.copy2(PATH, helper)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             started = (datetime.now(timezone.utc) - timedelta(seconds=5)).isoformat()
@@ -498,6 +502,7 @@ esac
             hooks.mkdir(parents=True)
             binary.mkdir()
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
@@ -617,6 +622,8 @@ esac
             for name in (
                 "orch-heartbeat.sh",
                 "heartbeat-decision.py",
+                "heartbeat-board-observation.py",
+"heartbeat-decision.py",
                 "heartbeat-run-observation.py",
                 "notice_transport.py",
                 "inbox_question_decision.py",
@@ -735,6 +742,8 @@ esac
             for name in (
                 "orch-heartbeat.sh",
                 "heartbeat-decision.py",
+                "heartbeat-board-observation.py",
+"heartbeat-decision.py",
                 "heartbeat-run-observation.py",
                 "notice_transport.py",
                 "inbox_question_decision.py",
@@ -860,6 +869,7 @@ esac
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             record_id = "01990000-0000-7000-8000-000000000001"
@@ -949,6 +959,8 @@ esac
             for name in (
                 PATH.name,
                 "orch-heartbeat.sh",
+                "heartbeat-board-observation.py",
+"orch-heartbeat.sh",
                 "heartbeat-run-observation.py",
                 "notice_transport.py",
                 "inbox_question_decision.py",
@@ -1068,6 +1080,8 @@ esac
             for name in (
                 PATH.name,
                 "orch-heartbeat.sh",
+                "heartbeat-board-observation.py",
+"orch-heartbeat.sh",
                 "heartbeat-run-observation.py",
                 "notice_transport.py",
                 "inbox_question_decision.py",
@@ -1228,6 +1242,7 @@ esac
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             fake = binary / "bottega"
@@ -1431,6 +1446,7 @@ esac
             shutil.copy2(PATH, hooks / PATH.name)
             shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)
             shutil.copy2(PATH.with_name("orch-heartbeat.sh"), hooks / "orch-heartbeat.sh")
+            shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
             shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
             shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
             calls = checkout / "monitor-calls"
@@ -1496,6 +1512,7 @@ esac
                 hooks.mkdir(parents=True)
                 binary.mkdir()
                 shutil.copy2(PATH, hooks / PATH.name)
+                shutil.copy2(PATH.with_name("heartbeat-board-observation.py"), hooks)
                 shutil.copy2(PATH.with_name("heartbeat-run-observation.py"), hooks)
                 shutil.copy2(PATH.with_name("notice_transport.py"), hooks)
                 shutil.copy2(PATH.with_name("inbox_question_decision.py"), hooks)

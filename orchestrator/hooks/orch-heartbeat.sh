@@ -111,6 +111,7 @@ ACTIVE_WATCHDOG_PID=""
 
 heartbeat_source_fingerprint() {
   cksum "$SCRIPT_PATH" "$ROOT/hooks/heartbeat-decision.py" \
+    "$ROOT/hooks/heartbeat-board-observation.py" \
     "$ROOT/hooks/heartbeat-run-observation.py" \
     "$ROOT/hooks/inbox_question_decision.py" \
     "$ROOT/hooks/notice_transport.py" 2>/dev/null
@@ -347,62 +348,8 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     requests_rc=0
     requests_parse_rc=0
   else
-    request_rows=$(SID="$SID" BOTTEGA_ORCHESTRATOR_DB_PATH="$DB_PATH" python3 -c '
-import json, os, sqlite3
-path = os.environ["BOTTEGA_ORCHESTRATOR_DB_PATH"]
-if not os.path.exists(path):
-    print(json.dumps({"roots": [], "replies": []}))
-    raise SystemExit(0)
-connection = sqlite3.connect("file:" + path + "?mode=ro", uri=True, timeout=2)
-try:
-    local_receipts = {
-        row[0]: row[1]
-        for row in connection.execute(
-            "SELECT message_record_id,delivered_at FROM board_receipt WHERE reader_session=?",
-            (os.environ["SID"],),
-        )
-    }
-    roots, replies = [], []
-    for row in connection.execute(
-        "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,thread_root_record_id "
-        "FROM board_message"
-    ):
-        record_id, number, kind, purpose, author, title, expires, withdrawn, root_id = row
-        if root_id is None:
-            title = str(title).replace("\t", " ").replace("\r", " ").replace("\n", " ")
-            roots.append({"id": record_id, "label": "board:%s %s" % (number, title), "kind": kind,
-                          "purpose": purpose, "author_session": author, "expires_at": expires,
-                          "withdrawn_at": withdrawn})
-        else:
-            replies.append({"root_id": root_id, "author_session": author,
-                            "delivered_at": local_receipts.get(record_id)})
-    hosted_receipts = {
-        row[0]: row[1]
-        for row in connection.execute(
-            "SELECT message_id,delivered_at FROM hosted_board_receipt_cache WHERE reader_session=?",
-            (os.environ["SID"],),
-        )
-    }
-    for message_id, kind, root_id, payload in connection.execute(
-        "SELECT id,kind,thread_root_id,payload FROM hosted_board_message_cache"
-    ):
-        message = json.loads(payload)
-        author = message.get("authorSession")
-        if author is None and isinstance(message.get("origin"), dict):
-            author = message["origin"].get("session")
-        if root_id is None:
-            title = str(message.get("title")).replace("\t", " ").replace("\r", " ").replace("\n", " ")
-            roots.append({"id": message_id, "label": "board:%s %s" % (message_id, title),
-                          "kind": kind, "purpose": message.get("purpose"),
-                          "author_session": author, "expires_at": message.get("expiresAt"),
-                          "withdrawn_at": message.get("withdrawnAt")})
-        else:
-            replies.append({"root_id": root_id, "author_session": author,
-                            "delivered_at": hosted_receipts.get(message_id)})
-    print(json.dumps({"roots": roots, "replies": replies}))
-finally:
-    connection.close()
-' 2>/dev/null); requests_rc=$?
+    request_rows=$(python3 "$ROOT/hooks/heartbeat-board-observation.py" \
+      "$DB_PATH" "$SID" 2>/dev/null); requests_rc=$?
     requests_observed=$(printf '%s' "$request_rows" | \
       python3 "$ROOT/hooks/heartbeat-decision.py" requests "$SID" 2>/dev/null); requests_parse_rc=$?
   fi
