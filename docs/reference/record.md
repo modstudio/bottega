@@ -176,7 +176,7 @@ queue an outbox row for another delivery attempt
 
 ### Options
 
-- `--matching <text>`: retry quarantined rows whose reason contains the text
+- `--matching <text>`: retry quarantined orchestrator rows whose reason contains the text
 
 ### Related
 

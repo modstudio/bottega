@@ -243,11 +243,11 @@ function retryOutboxCommand(rowId: string | undefined, matching: string | undefi
   // An empty needle matches every reason, which would retry the whole quarantine.
   if (matching!.trim() === '') {
     throw new Error(
-      `--matching requires non-empty text; name part of a quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
+      `--matching requires non-empty text; name part of an orchestrator quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
     )
   }
   const count = retryOutboxRowsMatching(matching!)
-  log(`${count} outbox rows will retry on the next sync`)
+  log(`${count} orchestrator outbox rows will retry on the next sync`)
 }
 
 export function register(program: Command): void {
@@ -287,7 +287,10 @@ export function register(program: Command): void {
     .command('retry')
     .description('queue an outbox row for another delivery attempt')
     .argument('[row-id]')
-    .option('--matching <text>', 'retry quarantined rows whose reason contains the text')
+    .option(
+      '--matching <text>',
+      'retry quarantined orchestrator rows whose reason contains the text',
+    )
     .action((rowId, options) =>
       retryOutboxCommand(
         rowId,
