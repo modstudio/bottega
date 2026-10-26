@@ -14,10 +14,11 @@ BEGIN
 END;
 --> statement-breakpoint
 INSERT INTO question_run_ref_migration_guard(detail)
-SELECT 'unparseable question.run_ref values: ' || group_concat(record_id || ':' || run_ref, ', ')
+SELECT 'unparseable question.run_ref values: ' || group_concat(record_id || ':' || run_ref, ', ') ||
+  '; repair or delete these hub question rows, then run bottega machine migrate'
 FROM question
 WHERE run_ref IS NOT NULL AND NOT (
-  length(run_ref)=83 AND substr(run_ref,1,5)='orch:' AND substr(run_ref,42,6)=':turn:'
+  (length(run_ref)=83 AND substr(run_ref,1,5)='orch:' AND substr(run_ref,42,6)=':turn:'
   AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
   AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
   AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
@@ -25,12 +26,18 @@ WHERE run_ref IS NOT NULL AND NOT (
   AND substr(run_ref,48,36) NOT GLOB '*[^0-9A-Fa-f-]*'
   AND substr(run_ref,56,1)='-' AND substr(run_ref,61,1)='-'
   AND substr(run_ref,66,1)='-' AND substr(run_ref,71,1)='-'
-  AND substr(run_ref,62,1) GLOB '[1-8]' AND substr(run_ref,67,1) GLOB '[89AaBb]'
+  AND substr(run_ref,62,1) GLOB '[1-8]' AND substr(run_ref,67,1) GLOB '[89AaBb]')
+  OR (length(run_ref)=41 AND substr(run_ref,1,5)='orch:'
+  AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+  AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
+  AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
+  AND substr(run_ref,20,1) GLOB '[1-8]' AND substr(run_ref,25,1) GLOB '[89AaBb]')
 )
 HAVING count(*) > 0;
 --> statement-breakpoint
 INSERT INTO question_run_ref_migration_guard(detail)
-SELECT 'unparseable question.root_ref values: ' || group_concat(record_id || ':' || root_ref, ', ')
+SELECT 'unparseable question.root_ref values: ' || group_concat(record_id || ':' || root_ref, ', ') ||
+  '; repair or delete these hub question rows, then run bottega machine migrate'
 FROM question
 WHERE root_ref IS NOT NULL AND NOT (
   length(root_ref)=41 AND substr(root_ref,1,5)='orch:'
@@ -43,10 +50,11 @@ HAVING count(*) > 0;
 --> statement-breakpoint
 INSERT INTO question_run_ref_migration_guard(detail)
 SELECT 'unparseable question_delivery.run_ref values: ' ||
-  group_concat(question_record_id || ':' || run_ref, ', ')
+  group_concat(question_record_id || ':' || run_ref, ', ') ||
+  '; repair or delete these hub question rows, then run bottega machine migrate'
 FROM question_delivery
 WHERE run_ref IS NOT NULL AND NOT (
-  length(run_ref)=83 AND substr(run_ref,1,5)='orch:' AND substr(run_ref,42,6)=':turn:'
+  (length(run_ref)=83 AND substr(run_ref,1,5)='orch:' AND substr(run_ref,42,6)=':turn:'
   AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
   AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
   AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
@@ -54,16 +62,23 @@ WHERE run_ref IS NOT NULL AND NOT (
   AND substr(run_ref,48,36) NOT GLOB '*[^0-9A-Fa-f-]*'
   AND substr(run_ref,56,1)='-' AND substr(run_ref,61,1)='-'
   AND substr(run_ref,66,1)='-' AND substr(run_ref,71,1)='-'
-  AND substr(run_ref,62,1) GLOB '[1-8]' AND substr(run_ref,67,1) GLOB '[89AaBb]'
+  AND substr(run_ref,62,1) GLOB '[1-8]' AND substr(run_ref,67,1) GLOB '[89AaBb]')
+  OR (length(run_ref)=41 AND substr(run_ref,1,5)='orch:'
+  AND substr(run_ref,6,36) NOT GLOB '*[^0-9A-Fa-f-]*'
+  AND substr(run_ref,14,1)='-' AND substr(run_ref,19,1)='-'
+  AND substr(run_ref,24,1)='-' AND substr(run_ref,29,1)='-'
+  AND substr(run_ref,20,1) GLOB '[1-8]' AND substr(run_ref,25,1) GLOB '[89AaBb]')
 )
 HAVING count(*) > 0;
 --> statement-breakpoint
 UPDATE question SET
   root_run_record_id=substr(root_ref,6,36),
-  run_record_id=substr(run_ref,48,36)
+  run_record_id=CASE WHEN length(run_ref)=83 THEN substr(run_ref,48,36) ELSE substr(run_ref,6,36) END
 WHERE run_ref IS NOT NULL;
 --> statement-breakpoint
-UPDATE question_delivery SET run_record_id=substr(run_ref,48,36) WHERE run_ref IS NOT NULL;
+UPDATE question_delivery SET run_record_id=
+  CASE WHEN length(run_ref)=83 THEN substr(run_ref,48,36) ELSE substr(run_ref,6,36) END
+WHERE run_ref IS NOT NULL;
 --> statement-breakpoint
 DROP TRIGGER question_run_ref_migration_refusal;
 --> statement-breakpoint

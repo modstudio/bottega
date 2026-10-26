@@ -39,6 +39,10 @@ test('question run refs migrate to UUID columns while workflow questions and con
       VALUES ('run-question','orch:${ROOT}:turn:${TURN}','resume','delivered','2026-10-26');
       INSERT INTO operator_waiting_email(kind,question_record_id,episode,pushed_at)
       VALUES ('question','run-question','episode','2026-10-26');
+      INSERT INTO question(record_id,number,run_ref,root_ref,asked_at)
+      VALUES ('root-only-question',3,'orch:${CURSOR}','orch:${CURSOR}','2026-10-26');
+      INSERT INTO question_delivery(question_record_id,run_ref,mode,outcome,at)
+      VALUES ('root-only-question','orch:${CURSOR}','live','delivered','2026-10-26');
     `)
 
     expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toContain(
@@ -64,10 +68,16 @@ test('question run refs migrate to UUID columns while workflow questions and con
         root_run_record_id: null,
         workflow_cursor_id: CURSOR,
       },
+      {
+        record_id: 'root-only-question',
+        run_record_id: CURSOR,
+        root_run_record_id: CURSOR,
+        workflow_cursor_id: null,
+      },
     ])
-    expect(d.query('SELECT run_record_id FROM question_delivery').get()).toEqual({
-      run_record_id: TURN,
-    })
+    expect(
+      d.query('SELECT run_record_id FROM question_delivery ORDER BY question_record_id').all(),
+    ).toEqual([{ run_record_id: CURSOR }, { run_record_id: TURN }])
     expect(d.query('SELECT question_record_id FROM operator_waiting_email').get()).toEqual({
       question_record_id: 'run-question',
     })
@@ -99,7 +109,7 @@ const UNPARSEABLE_CASES = [
     column: 'question_delivery.run_ref',
     runRef: GOOD_RUN_REF,
     rootRef: `orch:${ROOT}`,
-    deliveryRef: `orch:${ROOT}`,
+    deliveryRef: 'orch:17:turn:18',
   },
 ]
 
