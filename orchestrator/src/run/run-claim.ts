@@ -935,7 +935,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       db()
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
-      installExecutorPushGuard(execution.harness, worktree)
+      installExecutorPushGuard(execution.harness, worktree, claim.id)
     }
     ;({
       provisionedMcpConfig,
@@ -1037,6 +1037,10 @@ function bindRunBound(
   return split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
 }
 
-function installExecutorPushGuard(harness: boolean, worktree: Worktree | null): void {
-  if (harness) installHarnessPushGuard(worktree)
+function installExecutorPushGuard(
+  harness: boolean,
+  worktree: Worktree | null,
+  recordId: string,
+): void {
+  if (harness) installHarnessPushGuard(worktree, recordId)
 }

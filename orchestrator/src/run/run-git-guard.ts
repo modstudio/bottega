@@ -1,7 +1,8 @@
 // concern: run git guard
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { worktreeGitDir } from '../git/git-environment.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   ensureWorkerBranchNamespaceDirs,
@@ -55,17 +56,10 @@ export function assertConfiguredGitGuard(
   if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
 }
 
-/** Install an unconditional push refusal in one harness run's worktree metadata. */
-export function installHarnessPushGuard(worktree: Worktree | null): void {
+export const HARNESS_RUN_MARKER = `${PLATFORM_SLUG}-harness-run`
+
+/** Mark one harness run's worktree metadata for the tracked pre-push hook. */
+export function installHarnessPushGuard(worktree: Worktree | null, recordId: string): void {
   if (!worktree) return
-  const hooks = join(worktreeGitDir(worktree.path), 'harness-hooks')
-  mkdirSync(hooks, { recursive: true })
-  const hook = join(hooks, 'pre-push')
-  writeFileSync(
-    hook,
-    '#!/bin/sh\necho "push refused: this worktree belongs to a harness run" >&2\nexit 1\n',
-  )
-  chmodSync(hook, 0o755)
-  gitContext(worktree.path, 'config', 'extensions.worktreeConfig', 'true')
-  gitContext(worktree.path, 'config', '--worktree', 'core.hooksPath', hooks)
+  writeFileSync(join(worktreeGitDir(worktree.path), HARNESS_RUN_MARKER), `${recordId}\n`)
 }
