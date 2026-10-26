@@ -193,8 +193,8 @@ export function WorkflowsPage() {
                 $ <b>{PLATFORM_SLUG} workflow compose</b> ship-task --project atlas{`\n\n`}
                 <span className="c">
                   {' '}
-                  workflow ship-task v4 · mode full{`\n`} catalogue v16{`\n`} steps 10 (6 auto · 4
-                  ask){`\n`} needs key · branch · worktree
+                  workflow ship-task v4 · mode Land and promote{`\n`} catalogue v16{`\n`} steps 10
+                  (6 auto · 4 ask){`\n`} needs key · branch · worktree
                 </span>
               </pre>
             </Panel>
