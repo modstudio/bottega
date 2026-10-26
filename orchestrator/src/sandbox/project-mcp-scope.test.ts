@@ -106,7 +106,7 @@ test('MCP off attaches no project server at all', () => {
 test('withheld names are reported in the harness that loses them, and not when none are', () => {
   expect(projectMcpWithheldLine('goose', [])).toBeNull()
   expect(projectMcpWithheldLine('goose', ['a', 'b'])).toBe(
-    'MCP scope: goose withheld a, b (inline env/headers or no launch definition)',
+    'MCP scope: goose withheld a, b (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them',
   )
 })
 

@@ -90,7 +90,7 @@ test('MCP off leaves every rendering empty', () => {
 test('only a transport that renders the selection reports the servers it withheld', () => {
   const selection: ProjectMcpSelection = { kind: 'direct', servers: {}, withheld: ['secret'] }
   expect(withheldScopeLine('acp', 'goose', selection)).toBe(
-    'MCP scope: goose withheld secret (inline env/headers or no launch definition)',
+    'MCP scope: goose withheld secret (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them',
   )
   // Codex CLI renders its own header, and any other CLI renders no selection.
   expect(withheldScopeLine('cli', 'codex', selection)).toBeNull()

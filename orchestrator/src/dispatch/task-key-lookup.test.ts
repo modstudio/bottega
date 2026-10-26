@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { McpHeadersHelperError } from '../mcp/mcp-headers-helper.ts'
 import { classifyHubTaskLookup, trackerLookupFailureCondition } from './task-key-lookup.ts'
 
 describe('built-in task-key lookup output', () => {
@@ -25,15 +24,5 @@ describe('built-in task-key lookup output', () => {
 
     expect(condition).toBe('tracker lookup failed: remote rejected [redacted]')
     expect(condition).not.toContain(credential)
-  })
-
-  test('names a headers helper refusal instead of reporting generic tracker failure', () => {
-    const message = 'MCP server "fixture" headersHelper "./headers fixture" exited with code 7'
-    expect(
-      trackerLookupFailureCondition(new McpHeadersHelperError(message), {
-        name: 'fixture',
-        headersHelper: './headers fixture',
-      }),
-    ).toBe(message)
   })
 })

@@ -94,7 +94,9 @@ async function lookupRemoteTask(project: Project, key: string): Promise<TaskKeyL
       {
         callTool: async (name, args) => {
           const environment = processEnvironment()
-          const headers = await resolveMcpHeaders(config, project.path, environment)
+          const headers = config.url
+            ? await resolveMcpHeaders(config, project.path, environment)
+            : config.headers
           credentialConfig = { ...config, headers }
           return callMcpTool(
             {

@@ -159,6 +159,7 @@ type ReaderMcpProxyDependencies = {
   retiredProjectByName(name: string): ReaderProxyProject | null
   readMcpConfigResult(cwd: string): McpConfigReadResult
   connectMcpToolClient: typeof connectMcpToolClient
+  resolveMcpHeaders: typeof resolveMcpHeaders
   environment: Record<string, string | undefined>
 }
 
@@ -167,6 +168,7 @@ const readerMcpProxyDependencies: ReaderMcpProxyDependencies = {
   retiredProjectByName,
   readMcpConfigResult,
   connectMcpToolClient,
+  resolveMcpHeaders,
   environment: process.env,
 }
 
@@ -238,9 +240,16 @@ async function serveReaderMcpProxy(
     serverName,
   )
   const environment = readerMcpUpstreamEnvironment(dependencies.environment, config.env, builtIn)
-  const headers = config.url
-    ? await resolveMcpHeaders(config, project.path, environment)
-    : undefined
+  let headers: Record<string, string> | undefined
+  try {
+    headers = config.url
+      ? await dependencies.resolveMcpHeaders(config, project.path, environment)
+      : config.headers
+  } catch (error) {
+    throw new Error(
+      sanitizeProbeError(String((error as Error)?.message ?? error), probeSecrets(config)),
+    )
+  }
   const launch: McpToolListLaunch = { ...config, cwd, headers }
   const secrets = probeSecrets({ ...config, headers })
   let connected: Awaited<ReturnType<typeof connectMcpToolClient>>

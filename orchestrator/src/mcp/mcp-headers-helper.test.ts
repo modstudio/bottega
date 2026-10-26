@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
-import { effectiveMcpHeaders, McpHeadersHelperError } from './mcp-headers-helper.ts'
-import type { McpServerConfig } from './mcp-probe.ts'
+import {
+  effectiveMcpHeaders,
+  type McpHeadersConfig,
+  McpHeadersHelperError,
+} from './mcp-headers-helper.ts'
 
-const config: McpServerConfig = {
+const config: McpHeadersConfig = {
   name: 'starship',
   url: 'https://example.test/mcp',
   headersHelper: '/secret/helper starship',

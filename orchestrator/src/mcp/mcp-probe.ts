@@ -4,7 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaMcpServeArgv, sourceBunExecutable } from '../../../shared/self-spawn.ts'
-import { resolveMcpHeaders } from './mcp-headers-helper.ts'
+import { type McpHeadersConfig, resolveMcpHeaders } from './mcp-headers-helper.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -71,16 +71,13 @@ export type McpProbeResult = {
 }
 
 /** One server's launch as an `.mcp.json` entry holds it, before the key names it. */
-export type McpServerEntry = {
-  url?: string
-  headersHelper?: string
+export type McpServerConfig = McpHeadersConfig & {
   command?: string
   args?: string[]
   env?: Record<string, string>
-  headers?: Record<string, string>
 }
 
-export type McpServerConfig = McpServerEntry & { name: string }
+export type McpServerEntry = Omit<McpServerConfig, 'name'>
 
 /** Return checkout servers withheld from this project's workers. */
 export function disabledProjectMcpServers(
@@ -113,7 +110,9 @@ export function probeSecrets(config: McpServerConfig | undefined): string[] {
   const env = Object.values(config?.env ?? {}).filter((value) => value.length >= 8)
   // A launch argument can carry a credential as readily as an environment value.
   const args = (config?.args ?? []).filter((value) => value.length >= 8)
-  return [...headers.filter(Boolean), ...headerTokens, ...env, ...args]
+  const helper = config?.headersHelper ?? ''
+  const helperTokens = helper.split(/\s+/).filter((token) => token.length >= 8)
+  return [...headers.filter(Boolean), ...headerTokens, ...env, ...args, helper, ...helperTokens]
 }
 
 export function namesSeenAt(cwd: string): string[] {
@@ -506,7 +505,7 @@ async function dynamicHeaderHttpRpc(
   messages: unknown[],
   secrets: string[],
 ): Promise<ProbeRpcResult> {
-  const headers = await resolveMcpHeaders(input.config, input.cwd, input.env)
+  const headers = await resolveMcpHeaders(input.config, input.cwd, input.env, input.wrap)
   secrets.push(...probeSecrets({ ...input.config, headers }))
   return httpRpc(input.config.url!, messages, headers, input.cwd, input.env, input.wrap)
 }
