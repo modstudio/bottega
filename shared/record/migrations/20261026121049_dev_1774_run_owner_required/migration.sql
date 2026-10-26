@@ -1,1 +1,0 @@
-ALTER TABLE "run" ALTER COLUMN "started_by_user_id" SET NOT NULL;
