@@ -945,7 +945,8 @@ function namedCandidate(
 /**
  * The model this request would run the candidate on: the caller's `--model` pin
  * wins over the agent's registered default. The capacity and avoidance filters
- * ask the same question about the same agent, so they resolve it here once.
+ * and the reviewer calibration lookup in `pick` ask the same question about the
+ * same agent, so they resolve it here once.
  */
 function effectiveModel(
   candidate: Pick<Candidate, 'agent'>,
@@ -1064,11 +1065,8 @@ export function pick(
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,
-      precision: calibrationFor(
-        lens.trim(),
-        candidate.agent,
-        avoid.model ?? AGENTS[candidate.agent]!.model,
-      ).precision,
+      precision: calibrationFor(lens.trim(), candidate.agent, effectiveModel(candidate, avoid))
+        .precision,
     }))
   }
   const failingEvals = failingDefaultCanonEvals()
