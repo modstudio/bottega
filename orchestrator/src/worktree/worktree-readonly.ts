@@ -23,6 +23,11 @@ import { removeReadOnlyDirectory, removeReadOnlyTree } from './worktree-remove.t
 import { assertCreateVarsAvailable } from './worktree-template.ts'
 import type { Worktree } from './worktree-types.ts'
 
+/** The read-only checkout orchestrator chooses under a project's worktrees root. */
+export function readOnlyWorktreePath(repoRoot: string, runId: string): string {
+  return join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+}
+
 export function createReadOnlyWorktree(
   cwd: string,
   runId: string,
@@ -33,7 +38,7 @@ export function createReadOnlyWorktree(
 ): Worktree {
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
-  const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+  const path = readOnlyWorktreePath(repoRoot, runId)
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
@@ -140,7 +145,7 @@ export function createReadOnlyWithTool(
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
   if (!tool.readonly_create) throw new Error('project declares no readonly_create command')
-  const path = join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
+  const path = readOnlyWorktreePath(repoRoot, runId)
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
   const vars = { path, base }
