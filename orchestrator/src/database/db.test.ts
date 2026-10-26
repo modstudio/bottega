@@ -1,11 +1,14 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import {
+  checkpointAndCloseDatabase,
   closeDatabaseForFixture,
   DB_PATH,
   db,
   registerOpenHooks,
   withReadOnlyDatabaseAccess,
+  writableDb,
 } from './db.ts'
 
 test('a writable open refuses when no hooks are registered', () => {
@@ -106,5 +109,20 @@ test('a failed stale-probe sweep does not make the connection read-only', () => 
   } finally {
     restore()
     closeDatabaseForFixture()
+  }
+})
+
+test('a writable open leaves the WAL sidecars behind so a plain read-only open succeeds', () => {
+  writableDb()
+  checkpointAndCloseDatabase()
+  // SQLite deletes these when the last connection closes unless that connection asked for a
+  // persistent WAL, and a sidecar-less WAL store cannot be opened read-only at all.
+  expect(existsSync(`${DB_PATH}-wal`)).toBeTrue()
+  expect(existsSync(`${DB_PATH}-shm`)).toBeTrue()
+  const reader = new Database(DB_PATH, { readonly: true })
+  try {
+    expect(reader.query('SELECT count(*) AS tables FROM sqlite_master').get()).toBeTruthy()
+  } finally {
+    reader.close()
   }
 })

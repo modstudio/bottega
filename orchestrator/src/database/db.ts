@@ -427,6 +427,18 @@ export function storeSchemaVersions(): { opened: number; store: number } | null 
   return { opened: openedUserVersion, store: readUserVersion(handle) }
 }
 
+/**
+ * SQLite deletes -wal and -shm when the last connection to a WAL store closes, unless that
+ * connection asked for a persistent WAL. The store's ordinary idle state has no writer holding
+ * it, and a sidecar-less WAL store cannot be opened read-only at all, so a reader that arrives
+ * afterwards — a worker's persistent handle — would find the store unopenable. The last writer
+ * to close decides, so every writable open sets the flag, not only the one that first
+ * established WAL journaling.
+ */
+function keepJournalSidecars(database: Database): void {
+  database.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, 1)
+}
+
 export function db(writable = false): Database {
   if (databaseAccess.active()) {
     if (writable) throw new Error('refusing a write from a read-only command')
@@ -466,6 +478,7 @@ function defaultDatabase(writable: boolean): Database {
   // process holds a connection open for hours, and a long-lived reader blocks
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  if (openMode === 'read-write') keepJournalSidecars(d)
   const refused = migrationRefusal(d)
   if (refused) refuseOpenMigration(d, refused)
   finishDefaultDatabaseOpen(d, writable)
@@ -547,6 +560,7 @@ export function tryWriteContention(
       const d = new Database(DB_PATH, { readwrite: true, create: false })
       try {
         d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
+        keepJournalSidecars(d)
         // The one-shot connection sits outside writeTransaction's stale-schema
         // guard, so it checks the same invariant itself: a process writes only
         // the schema version it opened.
@@ -603,6 +617,7 @@ export function createDatabasePrivately<T>(
   })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(database)
     const result = initialize(database)
     database.exec('PRAGMA wal_checkpoint(TRUNCATE);')
     database.close()
@@ -687,6 +702,7 @@ export function migrateDatabase(
       const winner = new Database(DB_PATH, { readwrite: true, create: false })
       try {
         winner.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+        keepJournalSidecars(winner)
         const refused = migrationRefusal(winner)
         if (refused) throw new Error(refused)
       } finally {
@@ -698,6 +714,7 @@ export function migrateDatabase(
   const d = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(d)
     const versions = input.beforeMigration
       ? applyMigrationsBefore(d, input.beforeMigration)
       : applyMigrations(d, undefined, input.beforeApply)
@@ -734,6 +751,7 @@ export async function withDatabaseForMigrationStep<T>(
   const database = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(database)
     return await action(database)
   } finally {
     database.close()
@@ -746,6 +764,7 @@ export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Da
   const database = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(database)
     return action(database)
   } finally {
     database.close()

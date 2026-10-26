@@ -27,7 +27,7 @@
  * current rule is that recording the local failure must not depend on imports,
  * migrations, machine identity, or hosted-record publication all being healthy.
  */
-import { Database } from 'bun:sqlite'
+import { constants, Database } from 'bun:sqlite'
 import { RefusalError } from '../refusal-error.ts'
 
 type RunDispatchSpec = import('../route/failover.ts').DetachSpec & {
@@ -49,6 +49,11 @@ async function recordStartupFailure(id: string, reason: string): Promise<void> {
   try {
     const database = new Database(path, { readwrite: true, create: false })
     database.exec('PRAGMA busy_timeout = 15000')
+    // Every writable open keeps the store's -wal/-shm sidecars after it closes — the one-liner
+    // db.ts's keepJournalSidecars holds, repeated here because this entry deliberately loads as
+    // little of the store as it can. The last writer to close decides, and a sidecar-less WAL
+    // store cannot be opened read-only afterwards.
+    database.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, 1)
     changed = database
       .query(
         `UPDATE run SET status='failed', error=?, failure_kind='harness', latency_ms=0
