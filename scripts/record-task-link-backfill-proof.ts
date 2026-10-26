@@ -93,6 +93,10 @@ export async function proofTaskLinkBackfill(
     SELECT 'run', id::text, task_id::text FROM "run" WHERE id = '${ids.run}'
     ORDER BY kind, id
   `)
+  await transaction.exec(`
+    SELECT set_config('app.space_id', '', true);
+    SELECT set_config('app.user_id', '', true);
+  `)
   const expected = [
     { kind: 'email', id: ids.email, task_id: ids.task },
     { kind: 'question', id: ids.question, task_id: ids.task },
