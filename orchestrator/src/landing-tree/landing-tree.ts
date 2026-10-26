@@ -172,11 +172,17 @@ export function landingTreeHoldDecision<T>(
 const SHIP_TASK_WORKFLOW = 'ship-task'
 const AFTER_FINISH_SHIP_CLEANUP = new Set(['finish-ship-cleanup', 'promote-release', 'close-task'])
 
+/**
+ * A ship-task cursor's own facts for one tree.
+ *
+ * `claimed` answers "does a running or awaiting-ruling ship-task cursor claim this tree?" — a
+ * recorded pointer, not a measurement of whether the session that wrote it is still alive.
+ */
 type HeldTreeCursorFacts = {
   id: number
   workflow: string | null
   step: string | null
-  live: boolean
+  claimed: boolean
   project: string | null
   branch: string | null
   worktree: string | null
@@ -218,11 +224,12 @@ export function heldTreeWorkIsUnique(facts: HeldTreeWorkFacts): boolean {
 
 type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
 
+/** Whether a claiming ship-task cursor still has its own landing steps ahead of it. */
 function shipTaskCursorIsInFlight(
-  cursor: Pick<HeldTreeCursorFacts, 'workflow' | 'step' | 'live'>,
+  cursor: Pick<HeldTreeCursorFacts, 'workflow' | 'step' | 'claimed'>,
 ): boolean {
   return (
-    cursor.live &&
+    cursor.claimed &&
     cursor.workflow === SHIP_TASK_WORKFLOW &&
     !AFTER_FINISH_SHIP_CLEANUP.has(cursor.step ?? '')
   )

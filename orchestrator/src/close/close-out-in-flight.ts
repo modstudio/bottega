@@ -127,13 +127,19 @@ function treeHead(treePath: string): string | null {
   return head.ok && value ? value : null
 }
 
+/**
+ * The cursor row's own facts.
+ *
+ * Only a running or awaiting-ruling row is looked up at all, so the row that arrives claims this
+ * tree rather than proving its session alive.
+ */
 function cursorFacts(row: CursorRow | null) {
   if (!row) return null
   return {
     id: row.id,
     workflow: row.workflow_slug,
     step: row.step_slug,
-    live: true,
+    claimed: true,
     project: row.project,
     branch: cursorArg(row.args, 'branch'),
     worktree: cursorArg(row.args, 'worktree'),
@@ -158,6 +164,13 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTr
   if (hold === 'landing-progress') {
     const matched = heldTreeInFlight({ ...base, openPr: null, treeClean: false, treeHead: null })
     if (matched) return matched
+  }
+  // Any other hold is settled by cleanliness before the pull request is consulted: uncommitted
+  // work is the tree's only copy, so `heldTreeWorkIsUnique` keeps the hold blocking whatever the
+  // pull request says, and a lookup that cannot change the answer is not made. The hold then
+  // annotates only from a cursor already matched to this tree.
+  if (hold !== 'landing-progress' && !treeIsClean(worktree)) {
+    return heldTreeInFlight({ ...base, openPr: null, treeClean: false, treeHead: null })
   }
   const openPr = run.branch ? lookupOpenPr(worktree, run.branch) : null
   const compareHead = hold !== 'landing-progress' && Boolean(openPr?.headOid)

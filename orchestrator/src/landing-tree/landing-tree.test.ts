@@ -326,7 +326,7 @@ describe('held-tree in-flight landing', () => {
     id: 459,
     workflow: 'ship-task',
     step: 'merge-pr',
-    live: true,
+    claimed: true,
     project: 'fixture',
     branch: 'DEV-1594-ship',
     worktree: '/landing-tree',
