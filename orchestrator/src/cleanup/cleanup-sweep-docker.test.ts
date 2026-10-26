@@ -315,6 +315,7 @@ test('an orphan container pulls in its Compose network and volume while remnants
 
 test('ship cleanup removes only the attributable Compose stack for its just-removed tree', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-shipped-'))
+  mkdirSync(join(projectPath, '.git'))
   const shipped = join(projectPath, '.claude/worktrees/DEV-1435-shipped')
   const other = join(projectPath, '.claude/worktrees/DEV-1435-other')
   const name = `docker-shipped-group-${Date.now()}`
@@ -325,6 +326,7 @@ test('ship cleanup removes only the attributable Compose stack for its just-remo
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     commands.push(command)
+    if (command.endsWith('rev-parse --git-common-dir')) return result('.git')
     if (command.endsWith('rev-parse --path-format=absolute --show-toplevel'))
       return result(projectPath)
     if (command.startsWith('docker ps -a --format'))
@@ -346,6 +348,7 @@ test('ship cleanup removes only the attributable Compose stack for its just-remo
 
 test('ship cleanup removes a Compose volume after its run tree and containers are gone', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-shipped-volume-'))
+  mkdirSync(join(projectPath, '.git'))
   const shipped = join(projectPath, '.claude/worktrees/DEV-1462-shipped')
   upsertProject({
     recordId: newRecordId(),
@@ -357,6 +360,7 @@ test('ship cleanup removes a Compose volume after its run tree and containers ar
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     commands.push(command)
+    if (command.endsWith('rev-parse --git-common-dir')) return result('.git')
     if (command.startsWith('docker ps -a --format')) return result('')
     if (command.startsWith('docker volume ls --format'))
       return result(`shipped_data\t\tshipped-stack\t${shipped}`)
