@@ -6,7 +6,10 @@ const machineId = '01990000-0000-7000-8000-000000000053'
 const matchedRunId = '01990000-0000-7000-8000-000000000054'
 const unmatchedRunId = '01990000-0000-7000-8000-000000000055'
 const matchedTaskId = '01990000-0000-7000-8000-000000000056'
+const otherSpaceId = '01990000-0000-7000-8000-000000000057'
+const otherSpaceTaskId = '01990000-0000-7000-8000-000000000058'
 const matchedTaskKey = 'DEV-1771-PROOF'
+const unmatchedTaskKey = 'HUB-MISSING'
 
 export async function seedRunTaskReferenceBackfill(
   transaction: Transaction,
@@ -15,11 +18,17 @@ export async function seedRunTaskReferenceBackfill(
   await transaction.exec(`
     INSERT INTO machine (id, user_id, name, registered_at, last_seen)
     VALUES ('${machineId}', '${input.userId}', 'run-task-proof', now(), now());
+    ALTER TABLE space NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO space (id, name, slug, created_at)
+    VALUES ('${otherSpaceId}', 'DEV-1771 other-space proof', 'dev-1771-other-space-proof', now());
+    ALTER TABLE space FORCE ROW LEVEL SECURITY;
     ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
     INSERT INTO hub_task
       (id, space_id, project_name, key, project, source, first_seen, last_seen, created_at, updated_at)
     VALUES
       ('${matchedTaskId}', '${input.spaceId}', 'run-task-proof', '${matchedTaskKey}',
+       'run-task-proof', 'local', now(), now(), now(), now()),
+      ('${otherSpaceTaskId}', '${otherSpaceId}', 'run-task-proof', '${unmatchedTaskKey}',
        'run-task-proof', 'local', now(), now(), now(), now());
     ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
     ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY;
@@ -30,7 +39,7 @@ export async function seedRunTaskReferenceBackfill(
       ('${matchedRunId}', '${input.spaceId}', '${machineId}', now(),
        'migration-check', 'proof', 'prompt', 6, 'prompt', '${matchedTaskKey}', false, 'ok', 1, false, false, false, now(), now()),
       ('${unmatchedRunId}', '${input.spaceId}', '${machineId}', now(),
-       'migration-check', 'proof', 'prompt', 6, 'prompt', 'HUB-MISSING', false, 'ok', 1, false, false, false, now(), now());
+       'migration-check', 'proof', 'prompt', 6, 'prompt', '${unmatchedTaskKey}', false, 'ok', 1, false, false, false, now(), now());
     ALTER TABLE "run" FORCE ROW LEVEL SECURITY;
   `)
 }
