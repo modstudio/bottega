@@ -275,27 +275,23 @@ test('an invalid project ship-to falls through without discarding its stage sett
 })
 
 test('answer proceeds when hosted is not configured', async () => {
-  const rulings = await resolveAnswerRulings(
-    'fixture',
-    null,
-    () => {
+  const rulings = await resolveAnswerRulings('fixture', {
+    clientFactory: () => {
       throw new ConfigClientError('not-configured', '/v1/config')
     },
-    database(),
-    missingConfig,
-  )
+    database: database(),
+    env: missingConfig,
+  })
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
 test('answer refuses an unavailable hosted resolution without a cached copy or higher ruling', async () => {
-  const rulings = await resolveAnswerRulings(
-    'fixture',
-    null,
-    timeoutClient,
-    database(),
-    missingConfig,
-    10,
-  )
+  const rulings = await resolveAnswerRulings('fixture', {
+    clientFactory: timeoutClient,
+    database: database(),
+    env: missingConfig,
+    timeoutMs: 10,
+  })
   expect(answerRulingRefusal(rulings, false)).toStartWith('rulings could not be resolved:')
 })
 
@@ -312,14 +308,12 @@ test('answer resolves an unavailable hosted read from the session-context cache'
     environment,
   )
 
-  const rulings = await resolveAnswerRulings(
-    'fixture',
-    null,
-    timeoutClient,
-    database(),
-    environment,
-    10,
-  )
+  const rulings = await resolveAnswerRulings('fixture', {
+    clientFactory: timeoutClient,
+    database: database(),
+    env: environment,
+    timeoutMs: 10,
+  })
 
   expect(rulings).toEqual({ value: 'agent', scope: 'hosted user (stale)' })
   expect(answerRulingRefusal(rulings, false)).toBeNull()
@@ -328,14 +322,12 @@ test('answer resolves an unavailable hosted read from the session-context cache'
 test('answer proceeds after unavailable hosted config when local project decides rulings', async () => {
   const config = mkdtempSync(join(tmpdir(), 'autonomy-scopes-'))
   writeFileSync(join(config, 'machine.toml'), '[projects.fixture.autonomy]\nrulings = "agent"\n')
-  const rulings = await resolveAnswerRulings(
-    'fixture',
-    null,
-    timeoutClient,
-    database(),
-    { BOTTEGA_CONFIG_HOME: config },
-    10,
-  )
+  const rulings = await resolveAnswerRulings('fixture', {
+    clientFactory: timeoutClient,
+    database: database(),
+    env: { BOTTEGA_CONFIG_HOME: config },
+    timeoutMs: 10,
+  })
   expect(rulings).toMatchObject({ value: 'agent', scope: 'local project', complete: true })
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
@@ -354,10 +346,10 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
   const d = database(JSON.stringify({ autonomy: { rulings: 'agent' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
-      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version_record_id,
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,workflow_version_record_id,
        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-866',?,NULL,?,?,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-866','task-866',?,NULL,?,?,'{}',?,0,'design',?,'[]',NULL,1,?,?)`,
   )
   insert.run(
     newRecordId(),
@@ -379,10 +371,13 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
     '2',
     '2',
   )
-  expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
-    value: 'user',
-    scope: 'session',
-  })
+  expect(
+    await resolveAnswerRulings('fixture', {
+      taskRecordId: 'task-866',
+      database: d,
+      env: missingConfig,
+    }),
+  ).toEqual({ value: 'user', scope: 'session' })
   insert.run(
     newRecordId(),
     'incomplete',
@@ -400,28 +395,32 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
     '3',
     '3',
   )
-  expect(await resolveAnswerRulings('fixture', 'DEV-866', undefined, d, missingConfig)).toEqual({
+  expect(
+    await resolveAnswerRulings('fixture', {
+      taskRecordId: 'task-866',
+      database: d,
+      env: missingConfig,
+    }),
+  ).toEqual({
     value: 'agent',
     scope: 'hosted user',
     complete: false,
     unavailableReason: 'offline',
   })
-  expect(await resolveAnswerRulings('fixture', 'OTHER', undefined, d, missingConfig)).toMatchObject(
-    {
-      value: 'agent',
-      scope: 'project',
-    },
-  )
+  expect(await resolveAnswerRulings('fixture', { database: d, env: missingConfig })).toMatchObject({
+    value: 'agent',
+    scope: 'project',
+  })
 })
 
 test('answer combines a cursor rulings snapshot with a stricter current setting', async () => {
   const d = database(JSON.stringify({ autonomy: { rulings: 'user' } }))
   const insert = d.query(
     `INSERT INTO workflow_cursor
-      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,workflow_version_record_id,
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,workflow_version_record_id,
        catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,total_steps,
        created_at,updated_at)
-     VALUES (?,1,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-867','current',NULL,?,?,'{}',?,0,'design','running','[]',NULL,1,'1','1')`,
+     VALUES (?,1,'fixture',(SELECT record_id FROM project WHERE name='fixture'),'flow','default','DEV-867','task-867','current',NULL,?,?,'{}',?,0,'design','running','[]',NULL,1,'1','1')`,
   )
   insert.run(
     newRecordId(),
@@ -429,10 +428,13 @@ test('answer combines a cursor rulings snapshot with a stricter current setting'
     catalogueVersionRecordId(d),
     JSON.stringify({ rulings: { value: 'agent', scope: 'session' } }),
   )
-  expect(await resolveAnswerRulings('fixture', 'DEV-867', undefined, d, missingConfig)).toEqual({
-    value: 'user',
-    scope: 'project',
-  })
+  expect(
+    await resolveAnswerRulings('fixture', {
+      taskRecordId: 'task-867',
+      database: d,
+      env: missingConfig,
+    }),
+  ).toEqual({ value: 'user', scope: 'project' })
 
   d.query('UPDATE project SET settings=? WHERE name=?').run(
     JSON.stringify({ autonomy: { rulings: 'agent' } }),
@@ -442,8 +444,11 @@ test('answer combines a cursor rulings snapshot with a stricter current setting'
     JSON.stringify({ rulings: { value: 'user', scope: 'session' } }),
     'DEV-867',
   )
-  expect(await resolveAnswerRulings('fixture', 'DEV-867', undefined, d, missingConfig)).toEqual({
-    value: 'user',
-    scope: 'session',
-  })
+  expect(
+    await resolveAnswerRulings('fixture', {
+      taskRecordId: 'task-867',
+      database: d,
+      env: missingConfig,
+    }),
+  ).toEqual({ value: 'user', scope: 'session' })
 })

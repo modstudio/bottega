@@ -81,20 +81,21 @@ export function recordPresence(
     throw new Error(`no registered project contains ${cwd}; run ${PLATFORM_SLUG} project add first`)
   const current = db()
     .query(
-      `SELECT launch_key FROM run
+      `SELECT launch_key,task_record_id FROM run
        WHERE session_id=? AND status IN ('running','asking') AND launch_key IS NOT NULL
        ORDER BY number DESC LIMIT 1`,
     )
-    .get(identity.session) as { launch_key: string } | null
+    .get(identity.session) as { launch_key: string; task_record_id: string | null } | null
   writableDb()
     .query(
       `INSERT INTO presence
-       (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
-       VALUES (?,?,'architect',?, ?,?, ?,?,?,?)
+       (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,current_task_record_id,first_seen,last_seen)
+       VALUES (?,?,'architect',?,?,?,?,?,?,?,?)
        ON CONFLICT(session_id) DO UPDATE SET harness=excluded.harness, role=excluded.role,
          machine=excluded.machine, project=excluded.project,
          project_record_id=excluded.project_record_id, cwd=excluded.cwd,
-         current_task_key=excluded.current_task_key, last_seen=excluded.last_seen`,
+         current_task_key=excluded.current_task_key,
+         current_task_record_id=excluded.current_task_record_id, last_seen=excluded.last_seen`,
     )
     .run(
       identity.session,
@@ -104,6 +105,7 @@ export function recordPresence(
       project.recordId,
       cwd,
       current?.launch_key ?? null,
+      current?.task_record_id ?? null,
       beganAt ?? at,
       at,
     )

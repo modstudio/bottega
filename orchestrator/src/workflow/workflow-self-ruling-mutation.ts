@@ -19,6 +19,7 @@ export function recordWorkflowSelfRuling(
   input: {
     cursorId: string
     workflowKey: string
+    workflowTaskRecordId: string | null
     stepOrdinal: number
     stepSlug: string
     stepTitle: string
@@ -38,6 +39,7 @@ export function recordWorkflowSelfRuling(
     {
       cursorId: input.cursorId,
       workflowKey: input.workflowKey,
+      workflowTaskRecordId: input.workflowTaskRecordId,
       stepOrdinal: input.stepOrdinal,
       stepSlug: input.stepSlug,
       question: input.selfRuling.question?.trim() || input.stepTitle,

@@ -17,20 +17,16 @@
     "outbox_quarantine_audit:primary-key",
     "outbox_redaction_audit.outbox_id:reference",
     "outbox_redaction_audit:primary-key",
-    "port_ref.task_key:reference",
     "presence:primary-key",
-    "presence.current_task_key:reference",
     "project_lens_profile.selected_version:reference",
     "project_lens_profile_revision.prior_selected_version:reference",
     "question.filed_ref:reference",
-    "question.workflow_key:reference",
     "question_delivery:primary-key",
     "record_install_binding:primary-key",
     "run.launch_key:reference",
     "schema_meta:primary-key",
     "session_seen:primary-key",
-    "workflow_cursor.instance_id:reference",
-    "workflow_cursor.workflow_key:reference"
+    "workflow_cursor.instance_id:reference"
   ],
   "hub": [
     "commit_key:primary-key",

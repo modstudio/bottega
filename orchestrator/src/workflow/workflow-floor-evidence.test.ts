@@ -8,46 +8,23 @@ import {
   type CursorIdentity,
   type FloorEvidencePorts,
   gatherValidatedEvidence,
-  hubTaskReadRefusal,
 } from './workflow-floor-evidence.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
-test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () => {
-  expect(hubTaskReadRefusal('DEV-1070', 1, 'no task DEV-1070\n', '')).toBe(
-    `--task DEV-1070 was not found in the project's tracker; ${PLATFORM_SLUG} task show DEV-1070 --json --fresh attempted the registered tracker read: no task DEV-1070`,
-  )
-})
-
-test.each([
-  'tracker failed with token=abcdefghijklmnopqrstuvwxyz123456',
-  'tracker failed with Authorization: Bearer fixture-value',
-])('fresh tracker refusal withholds sensitive detail: %s', (detail) => {
-  const refusal = hubTaskReadRefusal('DEV-1070', 1, detail, '')
-  expect(refusal).toBe(
-    `--task DEV-1070 could not be read through the project's tracker by ${PLATFORM_SLUG} task show DEV-1070 --json --fresh: detail withheld`,
-  )
-  expect(refusal).not.toContain(detail)
-})
-
-const identity: CursorIdentity = {
+const identityOf = (key: string, taskId: string | null, branch: string | null): CursorIdentity => ({
   project: 'fixture',
-  workflowKey: 'DEV-977',
-  branch: 'DEV-977-work',
+  workflowKey: key,
+  workflowTaskRecordId: taskId,
+  branch,
   worktree: '/fixture/work',
   session: 's',
   createdAt: '2026-09-01',
   stepActivatedAt: '2026-09-01',
-}
+})
 
-const planningIdentity: CursorIdentity = {
-  project: 'fixture',
-  workflowKey: '',
-  branch: null,
-  worktree: '/fixture/work',
-  session: 's',
-  createdAt: '2026-09-01',
-  stepActivatedAt: '2026-09-01',
-}
+const identity = identityOf('DEV-977', 'task-DEV-977', 'DEV-977-work')
+const unlinkedIdentity = identityOf('DEV-977', null, 'DEV-977-work')
+const planningIdentity = identityOf('', null, null)
 
 const matchingCheckout = {
   project: 'fixture',
@@ -59,6 +36,7 @@ const matchingCheckout = {
 
 const ports: FloorEvidencePorts = {
   readTask: (key) => ({
+    recordId: `task-${key}`,
     key,
     status: 'done',
     statusCategory: 'done',
@@ -127,8 +105,8 @@ const insertRun = (
   (
     d
       .query<{ id: string }, (string | number | null)[]>(
-        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
-         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING record_id AS id`,
+        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,task_record_id,branch,session_id)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         input.startedAt ?? '2026-09-01',
@@ -136,6 +114,7 @@ const insertRun = (
         projectId(d, input.project),
         input.status ?? 'ok',
         input.launchKey ?? null,
+        input.launchKey ? `task-${input.launchKey}` : null,
         input.branch ?? null,
         input.sessionId ?? null,
       ) as { id: string }
@@ -319,7 +298,7 @@ test('a same-project review whose lenses miss the branch and key is refused', ()
      VALUES ('${newRecordId()}',(SELECT record_id FROM review WHERE number=1),?, 'correctness','codex','[]','[]','[]','[]','all','adequate','named','unique')`,
   ).run(runId)
   expect(() => gather(d, { review: '1' })).toThrow(
-    '--review 1 has no lens run on branch DEV-977-work or launch_key DEV-977',
+    '--review 1 has no lens run on branch DEV-977-work or task DEV-977',
   )
 })
 
@@ -786,7 +765,7 @@ test('a legacy resume doc without a project id is scoped by its project subject'
 test('a foreign task comment is refused and a matching comment is allowed', () => {
   const d = database()
   expect(() => gather(d, { artifact: 'task:DEV-1#comment:4' })).toThrow(
-    "--artifact task:DEV-1#comment:4 task key is DEV-1, not this cursor's DEV-977",
+    "--artifact task:DEV-1#comment:4 task is not this cursor's DEV-977",
   )
   expect(gather(d, { artifact: 'task:DEV-977#comment:4' }).artifact).toEqual({
     ref: 'task:DEV-977#comment:4',
@@ -806,7 +785,7 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   const d = database()
   const trackerComment = '01a16517-2274-71fc-998f-2be4a598791b'
   const trackerRead = hubTaskReadFromJson('DEV-977', {
-    task: { key: 'DEV-977', status: 'done', status_category: 'done' },
+    task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
     comments: [{ id: 4 }],
     tracker_comment_ids: [trackerComment],
     tracker_comments_verifiable: true,
@@ -821,7 +800,7 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   )
 
   const hubRead = hubTaskReadFromJson('DEV-977', {
-    task: { key: 'DEV-977', status: 'done', status_category: 'done' },
+    task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
     comments: [{ id: 4 }],
   })
   expect(
@@ -836,8 +815,27 @@ test('a task artifact requires the fresh task key to match the cursor', () => {
     exists: true,
   })
   expect(() => gather(d, { artifact: 'task:DEV-1' })).toThrow(
-    "--artifact task:DEV-1 task key is DEV-1, not this cursor's DEV-977",
+    "--artifact task:DEV-1 task is not this cursor's DEV-977",
   )
+})
+
+test('an unlinked keyed cursor accepts only its own task label as task evidence', () => {
+  const d = database()
+  expect(() => gather(d, { task: 'DEV-1' }, {}, unlinkedIdentity)).toThrow(
+    "--task DEV-1 is not this cursor's task DEV-977",
+  )
+  expect(gather(d, { task: 'DEV-977' }, {}, unlinkedIdentity).task?.key).toBe('DEV-977')
+})
+
+test('an unlinked keyed cursor accepts only its own task label as an artifact', () => {
+  const d = database()
+  expect(() => gather(d, { artifact: 'task:DEV-1' }, {}, unlinkedIdentity)).toThrow(
+    "--artifact task:DEV-1 task is not this cursor's DEV-977",
+  )
+  expect(gather(d, { artifact: 'task:DEV-977' }, {}, unlinkedIdentity).artifact).toEqual({
+    ref: 'task:DEV-977',
+    exists: true,
+  })
 })
 
 test('every workflow task read requests a fresh tracker read through its port', () => {
@@ -849,6 +847,7 @@ test('every workflow task read requests a fresh tracker read through its port', 
       readTask: (key, options) => {
         calls.push({ key, ...options })
         return {
+          recordId: `task-${key}`,
           key,
           status: 'done',
           statusCategory: 'done',
@@ -883,6 +882,7 @@ test('a tracker without comment ids names the task artifact remedy', () => {
       { artifact: 'task:DEV-977#comment:uuid' },
       {
         readTask: (key) => ({
+          recordId: `task-${key}`,
           key,
           status: 'done',
           statusCategory: 'done',
@@ -1053,7 +1053,7 @@ test('a keyed cursor refuses a same-session run whose key and branch both mismat
     startedAt: '2026-09-02',
   })
   expect(() => gather(d, { run: mismatched })).toThrow(
-    `--run ${mismatched} launch_key is DEV-1, not this cursor's DEV-977, and branch is other-branch, not this cursor's DEV-977-work`,
+    `--run ${mismatched} task reference is task-DEV-1, not this cursor's DEV-977, and branch is other-branch, not this cursor's DEV-977-work`,
   )
 })
 

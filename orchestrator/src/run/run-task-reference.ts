@@ -1,10 +1,14 @@
 // concern: run task reference
 /** Resolves an optional durable bottega task identity without making hub availability a dispatch prerequisite. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { projects } from '../project/projects.ts'
-import { deriveNewRunLinks, type HubTaskReference } from './run-task-linking.ts'
+import {
+  type HubTaskByKeyReader,
+  type HubTaskReader,
+  type HubTaskReference,
+  resolveHubTaskReference,
+} from '../workflow/workflow-task-reference.ts'
+import { deriveNewRunLinks } from './run-task-linking.ts'
 
 export const RUN_REFERENCE_REFUSAL =
   'a run that is not a probe must reference a task or a project; run from a registered project or pass a task key'
@@ -20,43 +24,14 @@ function assertRunHasTaskOrProject(input: {
   }
 }
 
-async function resolveTaskReference(
+async function bestEffortTaskReference(
   project: string | null,
   key: string,
+  reader?: HubTaskReader,
+  keyReader?: HubTaskByKeyReader,
 ): Promise<HubTaskReference | null> {
   try {
-    const child = Bun.spawn(
-      [
-        ...bottegaEntryArgv(PLATFORM_SLUG),
-        'task',
-        'show',
-        key,
-        ...(project ? ['--project', project] : []),
-        '--json',
-      ],
-      {
-        stdout: 'pipe',
-        stderr: 'ignore',
-        env: { ...process.env },
-      },
-    )
-    const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited])
-    if (code !== 0) return null
-    const shown: unknown = JSON.parse(stdout)
-    if (!shown || typeof shown !== 'object' || !('task' in shown)) return null
-    const task = shown.task
-    if (
-      !task ||
-      typeof task !== 'object' ||
-      !('record_id' in task) ||
-      !('key' in task) ||
-      !('project' in task) ||
-      typeof task.record_id !== 'string' ||
-      typeof task.key !== 'string' ||
-      typeof task.project !== 'string'
-    )
-      return null
-    return { record_id: task.record_id, key: task.key, project: task.project }
+    return await resolveHubTaskReference(project, key, reader, keyReader)
   } catch {
     return null
   }
@@ -72,8 +47,17 @@ export async function admitNewRunReference(input: {
   cwd: string | null
   launchCwd: string | null
   probe: boolean
+  hubTaskReader?: HubTaskReader
+  hubTaskByKeyReader?: HubTaskByKeyReader
 }): Promise<{ taskRecordId: string | null; projectRecordId: string | null }> {
-  const task = input.key ? await resolveTaskReference(input.projectName, input.key) : null
+  const task = input.key
+    ? await bestEffortTaskReference(
+        input.projectName,
+        input.key,
+        input.hubTaskReader,
+        input.hubTaskByKeyReader,
+      )
+    : null
   const taskMap = new Map<string, HubTaskReference>()
   if (task) taskMap.set(task.key, task)
   const links = deriveNewRunLinks(

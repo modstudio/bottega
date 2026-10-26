@@ -87,6 +87,7 @@ import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
+import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
@@ -133,8 +134,6 @@ import {
   recordSharedGitConfigSnapshotFailure,
   snapshotWritingRunSharedGitConfig,
 } from './shared-git-config.ts'
-import { renderTaskRulings } from './task-rulings.ts'
-import { taskRulingsForDispatch } from './task-rulings-store.ts'
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
 export async function run(opts: {
@@ -404,18 +403,19 @@ export async function run(opts: {
       })
     }
   }
-  const docsSection = operatorKnowledgeSection(pack ?? null)
-  const dispatchKey = attributedLaunchKey({
-    writesJob,
-    key: opts.key,
-    cwd: callerCwd,
+  const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
+  const dispatchRulings = await prepareRunDispatchRulings({
+    firstTurn: resume.isFirstTurn,
+    workspaceSource: resume.workspaceSource,
+    parentRunRecordId: opts.resume?.parent ?? null,
+    projectName: runProjectName,
+    projectRecordId: runProjectId,
+    key: dispatchKey,
+    repoJob,
+    callerCwd,
+    launchCwd: opts.launchCwd,
+    probe: Boolean(opts.probe),
   })
-  const carriedRulings = taskRulingsForDispatch({
-    resume: !resume.isFirstTurn,
-    project: runProjectName,
-    launchKey: dispatchKey,
-  })
-  const rulingsSection = renderTaskRulings(carriedRulings)
   let prompt =
     opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
@@ -427,8 +427,8 @@ export async function run(opts: {
               ? READONLY_PREAMBLE
               : NO_REPO_PREAMBLE,
           infrastructure: infra,
-          operatorKnowledge: docsSection,
-          taskRulings: rulingsSection,
+          operatorKnowledge: operatorKnowledgeSection(pack ?? null),
+          taskRulings: dispatchRulings.section,
           spec: originalPrompt,
         })
   prompt = bindReviewInstructions({
@@ -614,7 +614,8 @@ export async function run(opts: {
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
+    carriedQuestionIds: dispatchRulings.questionIds,
+    precomputedLinks: dispatchRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })

@@ -9,42 +9,46 @@ import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import {
-  mcpWorkflowCursorContext,
-  resolveWorkflowCursorMode,
-} from '../workflow/workflow-cursor-selection.ts'
+import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
+import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
 
-export async function advanceWorkflow({
-  slug,
-  project,
-  mode,
-  args,
-  note,
-  outcome,
-  ruling,
-  self_ruling,
-  self_ruling_basis,
-  question,
-  review,
-  gate,
-  run,
-  artifact,
-  task,
-  defer,
-  satisfies,
-  cursor,
-}: z.infer<typeof nextWorkflowStepInputSchema>) {
+export async function advanceWorkflow(
+  {
+    slug,
+    project,
+    mode,
+    args,
+    note,
+    outcome,
+    ruling,
+    self_ruling,
+    self_ruling_basis,
+    question,
+    review,
+    gate,
+    run,
+    artifact,
+    task,
+    defer,
+    satisfies,
+    cursor,
+  }: z.infer<typeof nextWorkflowStepInputSchema>,
+  hubTaskReader?: HubTaskReader,
+) {
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
     )
   const workflowArgs = args ?? {}
-  const context = mcpWorkflowCursorContext()
-  const effectiveMode = resolveWorkflowCursorMode(
+  const context = await resolveMcpCursorContext(project, workflowArgs, hubTaskReader)
+  const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
+  const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
+  const effectiveMode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     mode,
@@ -69,7 +73,7 @@ export async function advanceWorkflow({
     effectiveMode,
     workflowArgs,
     note,
-    context,
+    advanceContext,
     undefined,
     {
       ruling,
