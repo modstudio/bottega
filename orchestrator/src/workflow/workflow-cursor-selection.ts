@@ -24,7 +24,6 @@ export type WorkflowCursorContext = {
   session?: string | null
   instance?: string
   taskRecordId?: string | null
-  adoptionTaskRecordId?: string | null
 }
 
 const MCP_INSTANCE = randomUUID()

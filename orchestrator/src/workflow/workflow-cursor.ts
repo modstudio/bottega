@@ -746,12 +746,7 @@ function nextWorkflowStepImpl(
   mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
-  adoptWorkflowTask(
-    row,
-    evidence.task,
-    context.adoptionTaskRecordId ?? context.taskRecordId,
-    d,
-  )
+  adoptWorkflowTask(row, evidence.task, context.taskRecordId, d)
   const composition = cursorComposition(row, d, live)
   if (!note?.trim()) {
     const step = composition.steps[row.ordinal]!

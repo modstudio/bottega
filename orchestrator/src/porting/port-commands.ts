@@ -66,6 +66,7 @@ export async function portCommand(
   argv: string[],
   flags: PortFlags,
   presentation: PortPresentation,
+  hubTaskReader?: Parameters<typeof setLedgerRef>[1],
 ): Promise<void> {
   const { has, flag } = flags
   const { log, writeStdout, exitCode } = presentation
@@ -384,12 +385,15 @@ export async function portCommand(
         note: source.note,
       }
     })
-    const ref = await setLedgerRef({
-      taskKey,
-      targetProjectId: namedPortProject(projectName).recordId,
-      note,
-      sources,
-    })
+    const ref = await setLedgerRef(
+      {
+        taskKey,
+        targetProjectId: namedPortProject(projectName).recordId,
+        note,
+        sources,
+      },
+      hubTaskReader,
+    )
     output(ref, `recorded provenance for ${taskKey} from ${sources.length} source project(s)`)
     return
   }

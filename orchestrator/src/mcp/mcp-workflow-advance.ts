@@ -53,16 +53,12 @@ export async function advanceWorkflow({
     hubTaskReader,
   )
   const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
-  const advanceContext = {
-    ...context,
-    adoptionTaskRecordId: adoptedTask?.record_id ?? null,
-  }
   const effectiveMode = resolveWorkflowCursorMode(
     slug,
     project,
     mode,
     workflowArgs,
-    advanceContext,
+    context,
     'next_workflow_step',
     'pass the mode argument',
     undefined,
@@ -73,9 +69,10 @@ export async function advanceWorkflow({
     project,
     mode: effectiveMode,
     args: workflowArgs,
-    context: advanceContext,
+    context,
     cursor,
   })
+  const advanceContext = { ...context, taskRecordId: adoptedTask?.record_id ?? null }
   const result = nextWorkflowStep(
     slug,
     project,

@@ -4,7 +4,7 @@ import { activeRecordSpace, effectiveProjectSpace } from '../project-space.ts'
 import { recordApiClient } from '../record/record-api-client.ts'
 import { applyPortWriteResponse } from '../record/record-cache-port.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
-import { resolveHubTaskReference } from '../run/run-task-linking.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../run/run-task-linking.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
 
 export type PortPair = {
@@ -471,15 +471,22 @@ export function addSkip(
   })
 }
 
-export async function setLedgerRef(input: {
-  taskKey: string
-  targetProjectId: string
-  note: string
-  sources: LedgerSource[]
-  createdAt?: string
-}) {
+export async function setLedgerRef(
+  input: {
+    taskKey: string
+    targetProjectId: string
+    note: string
+    sources: LedgerSource[]
+    createdAt?: string
+  },
+  hubTaskReader?: HubTaskReader,
+) {
   assertPortWriteAllowed('set port ledger ref')
-  const task = await resolveHubTaskReference(projectName(input.targetProjectId), input.taskKey)
+  const task = await resolveHubTaskReference(
+    projectName(input.targetProjectId),
+    input.taskKey,
+    hubTaskReader,
+  )
   return applyRecordWriteAuthority({
     local: () => setLedgerRefLocal({ ...input, taskRecordId: task?.record_id ?? null }),
     hosted: async () => {

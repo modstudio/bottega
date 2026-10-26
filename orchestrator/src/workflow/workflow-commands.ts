@@ -602,7 +602,6 @@ export async function nextCommand(
   const adoptedTask = evidence.task
     ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
     : null
-  context = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
   const mode = resolveWorkflowCursorMode(
     slug,
     project,
@@ -615,13 +614,14 @@ export async function nextCommand(
     cursor,
   )
   const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
+  const advanceContext = { ...context, taskRecordId: adoptedTask?.record_id ?? null }
   const result = nextWorkflowStep(
     slug,
     project,
     mode,
     args,
     flagValue(argv, 'note'),
-    context,
+    advanceContext,
     undefined,
     evidence,
     productionFloorPorts() as FloorEvidencePorts,

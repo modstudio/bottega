@@ -111,8 +111,7 @@ describe('workflow cursor task reference', () => {
         'must refuse mismatch',
         {
           ...context,
-          taskRecordId: 'task-DEV-A',
-          adoptionTaskRecordId: 'task-DEV-B',
+          taskRecordId: 'task-DEV-B',
         },
         d,
         { task: 'DEV-B' },

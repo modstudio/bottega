@@ -126,7 +126,10 @@ describe('orch MCP', () => {
         )
         .get(key)?.state ?? null
     const stepFor = async (commitCount: number) => {
-      const server = createDocsMcpServer({ commitCount: () => commitCount })
+      const server = createDocsMcpServer({
+        commitCount: () => commitCount,
+        hubTaskReader: async () => [{ key, record_id: `task-${key}`, project }],
+      })
       const client = new Client({ name: 'orch-test', version: '1.0.0' })
       const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
       await server.connect(serverTransport)
@@ -179,7 +182,11 @@ describe('orch MCP', () => {
                0,'diagnose','running','[]',NULL,1,'2026-10-01','2026-10-01','floors')`,
       )
       .run(workflowVersionRecordId(db(), 'fix-defect'), catalogueVersionRecordId(db()))
-    const server = createDocsMcpServer()
+    const server = createDocsMcpServer({
+      hubTaskReader: async () => [
+        { key: 'DEV-1069', record_id: 'task-DEV-1069', project: 'fixture' },
+      ],
+    })
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)
@@ -482,7 +489,14 @@ describe('orch MCP', () => {
     ) as {
       id: number
     }
-    const server = createDocsMcpServer()
+    const server = createDocsMcpServer({
+      hubTaskReader: async () =>
+        ['DEV-1082-MCP-A', 'DEV-1082-MCP-B'].map((key) => ({
+          key,
+          record_id: `task-${key}`,
+          project,
+        })),
+    })
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)

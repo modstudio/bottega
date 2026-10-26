@@ -4,7 +4,6 @@ import { z } from 'zod'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { db, enableSchemaReload, sessionId } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import type { HubTaskReader } from '../run/run-task-linking.ts'
 import { registerStandardRuntime } from '../runtime/runtime-registration.ts'
 
 registerStandardRuntime()
@@ -76,7 +75,7 @@ import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 const resolvedMcpCursorContext = (
   project: string,
   args: Record<string, string>,
-  hubTaskReader?: HubTaskReader,
+  hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3],
 ) =>
   resolveWorkflowCursorContext(
     project,
@@ -463,7 +462,9 @@ function registerWorkflowListTool(server: McpServer): void {
 }
 
 export function createDocsMcpServer(
-  ports: LandingBranchPorts & { hubTaskReader?: HubTaskReader } = {},
+  ports: LandingBranchPorts & {
+    hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3]
+  } = {},
 ): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
@@ -797,17 +798,20 @@ export function createDocsMcpServer(
     },
     async ({ project, task_key, note, sources }) =>
       text(
-        await setLedgerRef({
-          taskKey: task_key,
-          targetProjectId: registeredProject(project).recordId,
-          note,
-          sources: sources.map((source) => ({
-            source_project_record_id: registeredProject(source.project).recordId,
-            commits: source.commits,
-            paths: source.paths,
-            note: source.note,
-          })),
-        }),
+        await setLedgerRef(
+          {
+            taskKey: task_key,
+            targetProjectId: registeredProject(project).recordId,
+            note,
+            sources: sources.map((source) => ({
+              source_project_record_id: registeredProject(source.project).recordId,
+              commits: source.commits,
+              paths: source.paths,
+              note: source.note,
+            })),
+          },
+          ports.hubTaskReader,
+        ),
       ),
   )
 
