@@ -10,6 +10,7 @@ import {
   taskIdentityDecision,
   taskIdentityDoctor,
   taskKeyPrefix,
+  writeCommitKey,
 } from './task-identity.ts'
 
 test('interval task identity resolves only one matching task', () => {
@@ -24,6 +25,28 @@ test('interval task identity resolves only one matching task', () => {
   expect(intervalTaskRecordId(conn, 'MISSING-1')).toBeNull()
   expect(intervalTaskRecordId(conn, 'MANY-1')).toBeNull()
   expect(intervalTaskRecordId(conn, 'ONE-1')).toBe('one-a')
+  conn.close()
+})
+
+test('commit key writes carry the exact unique task UUID and keep unmatched labels', () => {
+  const conn = new Database(':memory:')
+  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+  conn.exec(`
+    INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+      ('one-a','ONE-1','alpha','local','2026-01-01','2026-01-01'),
+      ('many-a','MANY-1','alpha','local','2026-01-01','2026-01-01'),
+      ('many-b','MANY-1','beta','local','2026-01-01','2026-01-01');
+  `)
+  writeCommitKey(conn, { sha: 'one', repo: 'alpha', key: 'ONE-1', at: '2026-01-01' })
+  writeCommitKey(conn, { sha: 'missing', repo: 'alpha', key: 'MISSING-1', at: '2026-01-01' })
+  writeCommitKey(conn, { sha: 'many', repo: 'alpha', key: 'MANY-1', at: '2026-01-01' })
+  expect(
+    conn.query(`SELECT sha,task_key,task_record_id FROM commit_key ORDER BY sha`).all(),
+  ).toEqual([
+    { sha: 'many', task_key: 'MANY-1', task_record_id: null },
+    { sha: 'missing', task_key: 'MISSING-1', task_record_id: null },
+    { sha: 'one', task_key: 'ONE-1', task_record_id: 'one-a' },
+  ])
   conn.close()
 })
 

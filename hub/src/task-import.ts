@@ -28,7 +28,7 @@ export async function importTasks(file: string): Promise<number> {
       .filter(Boolean)
       .map((line) => line.split('\t') as [string, string]),
   )
-  const imported: Array<{ key: string; shas: string[] }> = []
+  const imported: Array<{ key: string; taskRecordId: string; shas: string[] }> = []
   for (const item of items) {
     const row = await createTask(
       {
@@ -40,7 +40,7 @@ export async function importTasks(file: string): Promise<number> {
       },
       { skipDuplicateCheck: true },
     )
-    imported.push({ key: row.key, shas: item.shas })
+    imported.push({ key: row.key, taskRecordId: row.record_id, shas: item.shas })
   }
   writeTransaction((conn) => {
     for (const item of imported)
@@ -48,8 +48,11 @@ export async function importTasks(file: string): Promise<number> {
         const at = stamps.get(sha)
         if (at)
           conn
-            .query(`INSERT OR IGNORE INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)`)
-            .run(sha, project, item.key, at)
+            .query(
+              `INSERT OR IGNORE INTO commit_key (sha,repo,task_key,task_record_id,at)
+               VALUES (?,?,?,?,?)`,
+            )
+            .run(sha, project, item.key, item.taskRecordId, at)
       }
   })
   return items.length
