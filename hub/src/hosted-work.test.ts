@@ -1,8 +1,5 @@
 import { expect, test } from 'bun:test'
-import {
-  createHostedRecordFixture,
-  pgliteSql,
-} from '../test/hosted-record-fixture.ts'
+import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
 import { hostedBoard, hostedDayRow, interval, parseHostedIntervalRows } from './hosted-work.ts'
 
 const DAY_TOKENS = 8_338_668_790
@@ -106,13 +103,15 @@ test('hosted board attributes intervals only through task UUID and uses the task
       [spaceId, linkedTaskId, projectId, startAt, endAt],
     )
 
-    const page = await hostedBoard(pgliteSql(database), { userId, spaceId }, {
-      hours: 720,
-      filters: { agent: '', project: '', source: '' },
-      projects: [
-        { spaceId, spaceName: 'Mirror test', name: 'workshop', keyPrefixes: ['DEV'] },
-      ],
-    })
+    const page = await hostedBoard(
+      pgliteSql(database),
+      { userId, spaceId },
+      {
+        hours: 720,
+        filters: { agent: '', project: '', source: '' },
+        projects: [{ spaceId, spaceName: 'Mirror test', name: 'workshop', keyPrefixes: ['DEV'] }],
+      },
+    )
 
     expect(page.data.cards.map((card) => card.recordId)).toEqual([linkedTaskId])
     expect(page.data.cards[0]?.key).toBe('DEV-1')

@@ -206,8 +206,12 @@ export function replaceTranscriptWindow(
       projectRecordId: projectRecordIdFor(row.project),
     }
   })
-  const skipped = linked.filter(({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId)
-  const valid = linked.filter(({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId)
+  const skipped = linked.filter(
+    ({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId,
+  )
+  const valid = linked.filter(
+    ({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId,
+  )
   const decision = decideCollectorReplace(
     existing,
     valid.map(({ row }) => row),

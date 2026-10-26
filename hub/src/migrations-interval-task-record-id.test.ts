@@ -105,7 +105,9 @@ test('a legacy interval with neither link remains updatable but cannot lose an e
       VALUES ('interval-project','project-id','orch','2026-10-25','2026-10-25','project');
     `)
     applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
-    d.exec(`UPDATE interval SET task_record_id=NULL,end_at='2026-10-26' WHERE record_id='interval-legacy'`)
+    d.exec(
+      `UPDATE interval SET task_record_id=NULL,end_at='2026-10-26' WHERE record_id='interval-legacy'`,
+    )
     expect(d.query(`SELECT end_at FROM interval WHERE record_id='interval-legacy'`).get()).toEqual({
       end_at: '2026-10-26',
     })

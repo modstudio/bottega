@@ -87,13 +87,11 @@ async function updateHostedInterval(
   taskId: string | null,
 ) {
   const value = intervalValues(row, projectId, taskId)
-  const taskIdAssignment =
-    'task_id' in row
-      ? tx.unsafe(`task_id=${value.task_id ? `'${value.task_id}'::uuid` : 'NULL'},`)
-      : tx.unsafe('')
+  const carriesTaskId = 'task_id' in row
   await tx`
     UPDATE hub_interval SET
-      task_key=${value.task_key}, ${taskIdAssignment}
+      task_key=${value.task_key},
+      task_id=CASE WHEN ${carriesTaskId} THEN ${value.task_id}::uuid ELSE task_id END,
       project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
       agent=${value.agent}, job=${value.job},
       start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,

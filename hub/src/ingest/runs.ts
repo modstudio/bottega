@@ -402,8 +402,12 @@ function applyOrchReplace(
       projectRecordId: projectRecordIdFor(row.project),
     }
   })
-  const skipped = linked.filter(({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId)
-  const valid = linked.filter(({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId)
+  const skipped = linked.filter(
+    ({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId,
+  )
+  const valid = linked.filter(
+    ({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId,
+  )
   const keepRefs = new Set([...preservedRefs, ...skipped.map(({ row }) => row.ref)])
   const decision = decideCollectorReplace(
     existing,

@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import type { SQL } from 'bun'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { bindTenant } from '../../shared/record/tenant.ts'
 import { createHostedRecordFixture, pgliteSql } from '../test/hosted-record-fixture.ts'
@@ -93,6 +94,8 @@ const intervalRow = (id: string, startAt = '2026-10-12T16:54:46.612Z'): PushedIn
 const apply = (inputs: HostedPushChange[], selectedIdentity = identity) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
+    sql.unsafe = (async (statement: string) =>
+      (await transaction.query(statement)).rows) as SQL['unsafe']
     return applyHostedPushChangesInTransaction(sql, selectedIdentity, inputs)
   })
 
@@ -514,6 +517,8 @@ test('real policies reject a push into a space without write membership', async 
   `)
   const outcomes = await database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
+    sql.unsafe = (async (statement: string) =>
+      (await transaction.query(statement)).rows) as SQL['unsafe']
     await bindTenant(sql, { userId, spaceId: refusedSpace, spaceIds: [spaceId] })
     const event = { ...row(eventId, '2026-10-09T15:00:00.000Z'), task_id: null }
     return applyHostedPushChangesInTransaction(sql, { userId, spaceId: refusedSpace }, [

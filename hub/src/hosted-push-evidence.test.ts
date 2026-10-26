@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import {
   createHostedRecordFixture,
@@ -72,6 +73,8 @@ const day: PushedDay = {
 const apply = (inputs: HostedPushChange[]) =>
   database.transaction(async (transaction) => {
     const sql = pgliteSql(transaction as unknown as PGlite)
+    sql.unsafe = (async (statement: string) =>
+      (await transaction.query(statement)).rows) as SQL['unsafe']
     return applyHostedPushChangesInTransaction(sql, identity, inputs)
   })
 
