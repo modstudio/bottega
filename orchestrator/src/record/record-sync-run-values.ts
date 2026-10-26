@@ -1,7 +1,7 @@
 // concern: record-sync-run-values
 /** Maps one validated run payload onto its hosted record values. */
-import type { RecordPayload as Payload } from './record-sync-contract.ts'
 import { runUsageRecordValues } from './record-run-usage.ts'
+import type { RecordPayload as Payload } from './record-sync-contract.ts'
 import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
 
 const date = (value: unknown) => new Date(String(value))
