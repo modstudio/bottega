@@ -310,19 +310,9 @@ export const JOBS: Record<string, Job> = {
     name: 'review-lens',
     what: 'Review a change through one named dimension, under a fixed return contract.',
     /**
-     * Thirty minutes, because a lens EXECUTES now.
-     *
-     * codex's own bound is twenty, measured when a lens read source and
-     * reasoned. Since registered projects grant their toolchain, a lens runs
-     * the suite in Docker instead — and the numbers moved with it: four lenses
-     * that completed took 5 to 9 minutes running only the changed test files,
-     * and the dead-code lens was killed at twenty with a gate script still
-     * going seven minutes in. A lens running a wider slice does not fit.
-     *
-     * Matched to `fix` rather than to `implement`: a review is bounded work on
-     * a known diff, not an open-ended build. The number is the reporting
-     * session's, from its own measurements, not my estimate. Defaults and
-     * ceilings live in JOB_TIMEOUTS.
+     * A lens reads the change and runs at most one focused probe per finding,
+     * never suites. Its bounded review of a known diff uses the `fix` timeout;
+     * defaults and ceilings live in JOB_TIMEOUTS.
      */
     // A pack NAMES its sources rather than quoting them — quoting would mean the
     // orchestrator read them, which is the cost delegation exists to avoid. So a

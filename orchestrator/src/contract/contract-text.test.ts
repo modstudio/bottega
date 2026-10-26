@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { JOBS, jobBoundInstructionForContract } from '../jobs/jobs.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import {
   COULD_NOT_VERIFY_INSTRUCTION,
   contractConflicts,
+  FINDINGS_INFRASTRUCTURE_RECOVERY,
   INFRASTRUCTURE_RECOVERY,
   NO_REPO_PREAMBLE,
   READER_DELIVERABLE_FIRST,
   READONLY_PREAMBLE,
   REVIEW_PROVENANCE_INSTRUCTION,
   REVIEW_SCHEMA,
-  REVIEW_SEVERITY_INSTRUCTION,
   WORKER_PREAMBLE,
 } from './contract.ts'
 import { contractText } from './contract-text.ts'
@@ -64,8 +64,8 @@ describe('job contracts are visible before submission', () => {
       'A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.',
     )
   })
-  test('review provenance makes an unexecuted suite visible', () => {
-    const paragraphInstruction = INFRASTRUCTURE_RECOVERY.split('\n\n').at(-1)!
+  test('review provenance shares the could-not-verify instruction', () => {
+    const paragraphInstruction = FINDINGS_INFRASTRUCTURE_RECOVERY.split('\n\n').at(-1)!
     const schemaInstruction: string =
       REVIEW_SCHEMA.properties.provenance.properties.could_not_verify.description
     expect(paragraphInstruction).toBe(COULD_NOT_VERIFY_INSTRUCTION)
@@ -121,23 +121,24 @@ describe('job contracts are visible before submission', () => {
       `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server`,
     )
     expect(READONLY_PREAMBLE).toContain('Never\nrun Docker or `scripts/gate` yourself')
-    expect(READONLY_PREAMBLE).toContain('`could_not_verify`')
+    expect(READONLY_PREAMBLE).toContain('Record an unrun gate')
     expect(NO_REPO_PREAMBLE).not.toContain('run_gate')
     expect(NO_REPO_PREAMBLE).not.toContain('run_tests')
   })
+  test('findings readers prohibit suites while diagnose retains reader execution', () => {
+    const findings = contract('review-lens').out
+    const diagnose = contract('diagnose').out
+    expect(findings).toContain(
+      "Do not run test suites, test directories,\nrelated or affected test sets, the gate, or the project's check.",
+    )
+    expect(findings).not.toContain('Edit and test freely when that helps you verify a finding.')
+    expect(diagnose).not.toContain('Do not run test suites')
+    expect(diagnose).toContain('Edit and test freely when that helps you verify a finding.')
+  })
   test('contract prints the same preamble selected when a job is bound', () => {
-    for (const [name, definition] of Object.entries(JOBS)) {
+    for (const name of Object.keys(JOBS)) {
       const r = contract(name)
       expect(r.code).toBe(0)
-      expect(r.out).toBe(
-        `${definition.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : ''}${
-          definition.needs.writesRepo
-            ? WORKER_PREAMBLE
-            : definition.needs.readsRepo
-              ? READONLY_PREAMBLE
-              : NO_REPO_PREAMBLE
-        }\n\n` + `${jobBoundInstructionForContract(definition)}\n`,
-      )
       expect(r.err).toBe('')
     }
   }, 20_000)

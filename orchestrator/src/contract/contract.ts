@@ -332,10 +332,13 @@ export type CanonSource = (typeof CANON_SOURCE_SCHEMA.enum)[number]
 /** Generated from the architect's closed scale so prompt and triage cannot drift. */
 export const REVIEW_SEVERITY_INSTRUCTION = `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
 
-export const COULD_NOT_VERIFY_INSTRUCTION =
+const PROVENANCE_INSTRUCTION_PREFIX =
   'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
-  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
-  'A review which could not execute the suite must say so there and must not present static reasoning as an executed check.'
+  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. '
+
+export const COULD_NOT_VERIFY_INSTRUCTION =
+  PROVENANCE_INSTRUCTION_PREFIX +
+  'A review does not run suites, so an unrun suite is not listed in could_not_verify, and static reasoning is never presented as an executed check.'
 
 export const REVIEW_PROVENANCE_INSTRUCTION =
   'Review provenance must include provenance.mcp_tools, provenance.docs_read, and provenance.substitutes as string arrays. ' +
@@ -694,21 +697,30 @@ export function missingDeclaredDeliverables(
   return missing
 }
 
-/**
- * The one infrastructure recovery instruction shared by repository writers and
- * readers. Keep this as one string: differing recovery language is how a
- * reader ends up treating an unavailable suite as a completed check.
- */
-export const INFRASTRUCTURE_RECOVERY = `
+const RUN_COULD_NOT_VERIFY_INSTRUCTION =
+  PROVENANCE_INSTRUCTION_PREFIX +
+  'A run which could not execute the suite must say so there and must not present static reasoning as an executed check.'
+
+/** Build the infrastructure recovery instruction for the selected reader variant. */
+function infrastructureRecovery(findings: boolean): string {
+  const serveStep = findings
+    ? 'A reader MAY run that serve step only for a focused probe tied to one specific finding and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.'
+    : 'A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.'
+  const couldNotVerify = findings ? COULD_NOT_VERIFY_INSTRUCTION : RUN_COULD_NOT_VERIFY_INSTRUCTION
+  return `
 PROJECT INFRASTRUCTURE RECOVERY
 
 The project register says how this worktree's infrastructure is brought up:
 use the register's \`worktree.recipe.serve\` step when the project declares one,
 otherwise the serve instructions in its \`worktree.notes\`.
-A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
+${serveStep}
 
-${COULD_NOT_VERIFY_INSTRUCTION}
+${couldNotVerify}
 `.trim()
+}
+
+export const INFRASTRUCTURE_RECOVERY = infrastructureRecovery(false)
+export const FINDINGS_INFRASTRUCTURE_RECOVERY = infrastructureRecovery(true)
 
 /**
  * The standing instructions a worker gets on top of its spec.
@@ -1006,7 +1018,28 @@ export function readerDeliverablesInstruction(names: string[]): string {
   ].join('\n')
 }
 
-export const READONLY_PREAMBLE = `
+const READER_EDIT_AND_TEST = `Edit and test freely when that helps you verify a finding. Your findings are the
+deliverable, not your diff: every change you make here is scratch work and must
+never be treated as a proposed change to land. Do not commit, push, or merge.`
+
+const FINDINGS_REVIEW_EXECUTION = `Read the change and the code around it. Do not run test suites, test directories,
+related or affected test sets, the gate, or the project's check. One focused
+probe tied to one specific finding is allowed: a single test file or a single
+command that demonstrates that finding. The probe runs inside this run's own
+tree, never against another tree's server, database or stack; a probe that could
+not run is recorded in \`could_not_verify\`. Your findings are the deliverable,
+not your diff: every change you make here is scratch work and must never be
+treated as a proposed change to land. Do not commit, push, or merge.`
+
+const READER_GATE_RESULT = `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
+run Docker or \`scripts/gate\` yourself. Record an unrun gate in
+\`could_not_verify\`.`
+
+const FINDINGS_GATE_RESULT = `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
+run Docker or \`scripts/gate\` yourself.`
+
+function readonlyPreamble(findings: boolean): string {
+  return `
 You are working in your own disposable worktree. It is a fresh checkout of this
 run's commit to read. If the caller chose to carry their uncommitted work into it,
 that work is present and is not yours: do not report it as your change.
@@ -1020,15 +1053,11 @@ behind a blocked one; a run that returns only "I could not do X" when Y and Z
 were answerable is a failed run. For findings-producing jobs, record the same
 detail in could_not_verify for that sub-question and continue with the others.
 
-Edit and test freely when that helps you verify a finding. Your findings are the
-deliverable, not your diff: every change you make here is scratch work and must
-never be treated as a proposed change to land. Do not commit, push, or merge.
+${findings ? FINDINGS_REVIEW_EXECUTION : READER_EDIT_AND_TEST}
 
-Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
-run Docker or \`scripts/gate\` yourself. Record an unrun gate in
-\`could_not_verify\`.
+${findings ? FINDINGS_GATE_RESULT : READER_GATE_RESULT}
 
-${INFRASTRUCTURE_RECOVERY}
+${findings ? FINDINGS_INFRASTRUCTURE_RECOVERY : INFRASTRUCTURE_RECOVERY}
 
 ${REVIEW_PROVENANCE_INSTRUCTION}
 
@@ -1039,6 +1068,14 @@ it in the next round, and a task for it outlives the fix. When you do file,
 do not leave it only as a mailbox note, where it depends on somebody reading
 this run to be discovered. When file_issue is not available, report an outside-artifact defect in the reply and stop there; never file it through another server's tool.
 `.trim()
+}
+
+export const READONLY_PREAMBLE = readonlyPreamble(false)
+const FINDINGS_READONLY_PREAMBLE = readonlyPreamble(true)
+
+export function repositoryReaderPreamble(findings: boolean): string {
+  return findings ? FINDINGS_READONLY_PREAMBLE : READONLY_PREAMBLE
+}
 
 /** Jobs whose whole input is inline do not pay for or claim a repository tree. */
 export const NO_REPO_PREAMBLE = `

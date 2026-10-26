@@ -3,8 +3,8 @@
 import { job, jobBoundInstructionForContract } from '../jobs/jobs.ts'
 import {
   NO_REPO_PREAMBLE,
-  READONLY_PREAMBLE,
   REVIEW_SEVERITY_INSTRUCTION,
+  repositoryReaderPreamble,
   WORKER_PREAMBLE,
 } from './contract.ts'
 
@@ -14,7 +14,7 @@ export function contractText(jobName: string): string {
   const preamble = selected.needs.writesRepo
     ? WORKER_PREAMBLE
     : selected.needs.readsRepo
-      ? READONLY_PREAMBLE
+      ? repositoryReaderPreamble(Boolean(selected.findings))
       : NO_REPO_PREAMBLE
   return (
     (selected.findings ? `${REVIEW_SEVERITY_INSTRUCTION}\n\n` : '') +
