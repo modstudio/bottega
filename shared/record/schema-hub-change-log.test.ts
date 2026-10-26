@@ -150,6 +150,7 @@ test('change-log triggers cover every synced table and recipient changes map to 
       JOIN pg_proc p ON p.oid=t.tgfoid
       WHERE NOT t.tgisinternal
         AND c.relname = ANY($1::text[])
+        AND p.proname IN ('hub_change_log_row', 'hub_change_log_send_recipient')
       ORDER BY c.relname
     `,
       [[...HUB_CHANGE_SOURCES.rows, ...Object.keys(HUB_CHANGE_SOURCES.children)]],
