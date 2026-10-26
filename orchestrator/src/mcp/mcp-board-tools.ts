@@ -69,7 +69,8 @@ function registerBoardReplyTool(server: McpServer): void {
   server.registerTool(
     'board_reply',
     {
-      description: 'Reply to a board notice or question thread.',
+      description:
+        'Reply to a board notice or question thread. Audience may be participants, acknowledged, audience, operator, or session:<id>.',
       inputSchema: z.object({
         root_id: z.string().min(1),
         audience: z.string().min(1).optional(),

@@ -78,6 +78,66 @@ test('question replies reach the prior participants but never the replier', () =
   ).toContain(second.recordId)
 })
 
+test('reply receipts select acknowledged readers or the root audience', () => {
+  ensurePostingProject()
+  const clock = Date.now() + 150_000
+  const project = 'thread-selected-audience'
+  for (const session of ['selected-asker', 'selected-replier'])
+    addArchitect(session, project, clock)
+  const question = askQuestion(
+    {
+      audience: `project:${project}`,
+      title: 'Who should receive this?',
+      body: 'Select readers from the root receipts.',
+    },
+    architect('selected-asker'),
+    clock,
+    cwd,
+  )
+  db().query('DELETE FROM board_receipt WHERE message_record_id=?').run(question.recordId)
+  const addRootReceipt = db().query(
+    `INSERT INTO board_receipt
+     (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,?,?,NULL,?)`,
+  )
+  addRootReceipt.run(
+    newRecordId(),
+    question.recordId,
+    'acknowledged-reader',
+    0,
+    new Date(clock + 1).toISOString(),
+  )
+  addRootReceipt.run(newRecordId(), question.recordId, 'root-audience-reader', 1, null)
+
+  const acknowledged = replyToThread(
+    question.recordId,
+    'Acknowledged readers only',
+    architect('selected-replier'),
+    clock + 2,
+    cwd,
+    'acknowledged',
+  )
+  const rootAudience = replyToThread(
+    question.recordId,
+    'Original audience only',
+    architect('selected-replier'),
+    clock + 3,
+    cwd,
+    'audience',
+  )
+  const readers = (messageId: string) =>
+    (
+      db()
+        .query(
+          'SELECT reader_session FROM board_receipt WHERE message_record_id=? ORDER BY reader_session',
+        )
+        .all(messageId) as Array<{ reader_session: string }>
+    ).map((row) => row.reader_session)
+
+  expect(readers(acknowledged.recordId)).toEqual(['acknowledged-reader', 'selected-asker'])
+  expect(readers(rootAudience.recordId)).toEqual(['root-audience-reader', 'selected-asker'])
+})
+
 test('questions are withheld from run readers and architect broadcasts reject non-author replies', () => {
   ensurePostingProject()
   fixtureProjectRecordId(db())
@@ -112,44 +172,6 @@ test('questions are withheld from run readers and architect broadcasts reject no
     ),
   ).toThrow(/broadcast/)
   expect(workerQuestion.reached).toBe(0)
-})
-
-test("a reply cannot address another session's run", () => {
-  ensurePostingProject()
-  const clock = Date.now() + 250_000
-  const projectRecordId = fixtureProjectRecordId(db())
-  addArchitect('reply-run-owner', 'thread-run-audience', clock)
-  addArchitect('reply-run-foreign', 'thread-run-audience', clock)
-  const runId = newRecordId()
-  db()
-    .query(
-      `INSERT INTO run
-       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,
-        session_id,turn,project_record_id)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','thread-fixture',
-               'sha',1,'prompt','running','reply-run-owner',1,?)`,
-    )
-    .run(runId, new Date(clock).toISOString(), projectRecordId)
-  const question = askQuestion(
-    {
-      audience: 'project:thread-run-audience',
-      title: 'Run audience',
-      body: 'Do not cross session ownership.',
-    },
-    {},
-    clock,
-  )
-
-  expect(() =>
-    replyToThread(
-      question.recordId,
-      'Foreign run reply',
-      architect('reply-run-foreign'),
-      clock + 1,
-      cwd,
-      `run:${runId}`,
-    ),
-  ).toThrow(`run ${runId} is owned by session reply-run-owner`)
 })
 
 test('acceptance closes a question, persists through filing failure, and retry files once', async () => {

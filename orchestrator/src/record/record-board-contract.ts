@@ -5,6 +5,7 @@ import {
   type BoardPurpose,
   defaultBoardPurpose,
 } from '../../../shared/board-purpose.ts'
+import type { ReplyAudienceOption } from '../board/board-reply-audience.ts'
 
 export { BOARD_PURPOSES, defaultBoardPurpose }
 
@@ -212,7 +213,7 @@ export type HostedBoardPostInput = {
 export type HostedBoardReplyInput = {
   id: string
   body: string
-  audience?: string
+  audience?: ReplyAudienceOption
   authorSession?: string | null
   authorHarness?: string | null
   authorMachineId?: string | null

@@ -417,6 +417,7 @@ function localReplyReachRows(windowStart: string, database: Database): BoardRepl
          JOIN board_message root ON root.record_id=reply.thread_root_record_id
          LEFT JOIN board_receipt receipt ON receipt.message_record_id=reply.record_id
          WHERE reply.kind='reply' AND reply.created_at>=? AND root.author_session IS NOT NULL
+           AND (reply.author_session IS NULL OR reply.author_session<>root.author_session)
          GROUP BY reply.record_id,root.title,reply.created_at
          ORDER BY reply.created_at,reply.record_id`,
       )
@@ -455,7 +456,9 @@ function hostedReplyReachRows(windowStart: string, database: Database): BoardRep
       )
         return false
       const root = roots.get(message.threadRootId)
-      return Boolean(root && root.authorSession !== null)
+      return Boolean(
+        root && root.authorSession !== null && message.authorUserId !== root.authorUserId,
+      )
     })
     .map((message) => {
       const root = roots.get(message.threadRootId!)!

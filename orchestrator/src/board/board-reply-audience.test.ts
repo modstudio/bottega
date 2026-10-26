@@ -3,10 +3,13 @@ import { parseReplyAudienceOption, resolveReplyReaders } from './board-reply-aud
 
 test('invalid and empty reply audiences use the reply vocabulary', () => {
   expect(() => parseReplyAudienceOption('')).toThrow(
-    'use participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+    'use participants, acknowledged, audience, operator, or session:<id>',
   )
   expect(() => parseReplyAudienceOption('project:other')).toThrow(
-    'use participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+    'use participants, acknowledged, audience, operator, or session:<id>',
+  )
+  expect(() => parseReplyAudienceOption('run:123')).toThrow(
+    "address session:<id> of the run's owner, or post a notice to run:<id>",
   )
 })
 
@@ -37,7 +40,6 @@ test('reply audience choices resolve participants, acknowledgements, root audien
     'asker',
     'recipient',
   ])
-  expect(resolveReplyReaders({ ...facts, audience: 'run:123' })).toEqual(['asker', 'run:123'])
   expect(resolveReplyReaders({ ...facts, audience: 'operator' })).toEqual(['asker', 'operator'])
 })
 

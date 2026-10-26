@@ -591,7 +591,10 @@ export const recordModules: RecordModule[] = [
     './record-session.ts',
     './record-space.ts',
   ]),
-  module('orchestrator/src/record/record-board-contract.ts', ['../../../shared/board-purpose.ts']),
+  module('orchestrator/src/record/record-board-contract.ts', [
+    '../../../shared/board-purpose.ts',
+    '../board/board-reply-audience.ts',
+  ]),
   module('orchestrator/src/record/record-board-scope.ts', [
     '../board/board-policy.ts',
     '../board/board-tags.ts',

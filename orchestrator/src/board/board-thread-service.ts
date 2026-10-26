@@ -31,7 +31,6 @@ import {
   originText,
   type PostNoticeInput,
   rowIsLive,
-  validateRunAudience,
 } from './board-store.ts'
 import {
   acceptRefusal,
@@ -150,7 +149,6 @@ export function replyToThread(
   const database = writableDb()
   return writeTransaction(() => {
     const root = threadRoot(recordId)
-    if (audience?.startsWith('run:')) validateRunAudience(parseAudience(audience), actor, database)
     const refusal = replyRefusal({
       actor: { kind: actor.kind, reader },
       root: {

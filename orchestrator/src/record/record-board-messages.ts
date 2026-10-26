@@ -21,11 +21,9 @@ import {
   messageIsLive,
   postDecision,
   requireRealSession,
-  runAudienceRefusal,
   standingPostingRefusal,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
-import type { ReplyAudienceOption } from '../board/board-reply-audience.ts'
 import {
   type BoardTag,
   inferredBoardTags,
@@ -713,7 +711,7 @@ export async function replyHostedBoardMessage(
 ): Promise<HostedBoardMessage> {
   const bodyRefusal = replyBodyRefusal(input.body)
   if (bodyRefusal) throw new RecordBoardError(bodyRefusal, 400)
-  const audience = (input.audience ?? null) as ReplyAudienceOption | null
+  const audience = input.audience ?? null
   const session = sessionOrNull(input.authorSession)
   const actor = hostedBoardActor(session)
   const clock = Date.now()
@@ -737,18 +735,6 @@ export async function replyHostedBoardMessage(
   return withBoardTenant(input, true, async (tx) => {
     const rootRow = await loadThreadRoot(tx, input.rootId)
     if (!rootRow) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
-    if (audience?.startsWith('run:')) {
-      const runId = audience.slice('run:'.length)
-      const rows = await tx`SELECT session_id FROM run WHERE id::text=${runId}`
-      const ownerSession = rows[0]?.session_id == null ? null : String(rows[0].session_id)
-      const refusal = runAudienceRefusal(
-        { kind: 'run', value: runId },
-        actor.kind,
-        actor.session,
-        ownerSession,
-      )
-      if (refusal) throw new RecordBoardError(refusal, 400)
-    }
     requested.scopeProjectIds = hostedUuidList(rootRow.row.scope_project_ids)
     requested.threadRootId = String(rootRow.row.id)
     requested.recipientUserIds = hostedUuidList(rootRow.row.recipient_user_ids)

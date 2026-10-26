@@ -246,6 +246,7 @@ test('reach report includes delivered and never-delivered reply rows', () => {
   const rootId = newRecordId()
   const deliveredId = newRecordId()
   const neverId = newRecordId()
+  const rootAuthorReplyId = newRecordId()
   const insert = db().query(
     `INSERT INTO board_message
      (record_id,number,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,
@@ -282,6 +283,19 @@ test('reach report includes delivered and never-delivered reply rows', () => {
       new Date(createdAt).toISOString(),
       rootId,
     )
+  insert.run(
+    rootAuthorReplyId,
+    'reply',
+    'architect',
+    'reach-root-author',
+    null,
+    null,
+    'Root author follow-up',
+    0,
+    null,
+    new Date(clock + 2_500).toISOString(),
+    rootId,
+  )
   db()
     .query(
       `INSERT INTO board_receipt

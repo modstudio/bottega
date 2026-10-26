@@ -352,7 +352,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
   boundary(
     'record-board-contract-boundary',
     'orchestrator/src/record/record-board-contract.ts',
-    ['../../../shared/board-purpose.ts'],
+    ['../../../shared/board-purpose.ts', '../board/board-reply-audience.ts'],
     'Keep the hosted board JSON contract free of SQL and local stores.',
   ),
   boundary(

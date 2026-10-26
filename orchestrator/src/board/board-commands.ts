@@ -239,7 +239,7 @@ function registerBoardReplyCommand(board: Command): void {
     .description(BOARD_DESCRIPTIONS.reply)
     .option(
       '--audience <choice>',
-      'participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+      'participants, acknowledged, audience, operator, or session:<id>',
     )
     .requiredOption('--body <text>', 'set the reply body')
     .action(async (id, options) =>

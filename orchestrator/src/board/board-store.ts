@@ -390,7 +390,7 @@ function validateArchitectAudience(
     )
 }
 
-export function validateRunAudience(
+function validateRunAudience(
   audience: Audience,
   actor: BoardActor,
   database: ReturnType<typeof writableDb>,

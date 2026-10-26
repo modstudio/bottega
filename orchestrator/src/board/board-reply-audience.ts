@@ -8,19 +8,18 @@ export type ReplyAudienceOption =
   | 'audience'
   | 'operator'
   | `session:${string}`
-  | `run:${string}`
 
 export function parseReplyAudienceOption(value: string): ReplyAudienceOption {
   if (value === 'participants' || value === 'acknowledged' || value === 'audience') return value
   try {
     const audience = parseAudience(value)
-    if (audience.kind === 'operator' || audience.kind === 'session' || audience.kind === 'run')
+    if (audience.kind === 'operator' || audience.kind === 'session')
       return value as ReplyAudienceOption
   } catch {
     // Reply choices have a narrower vocabulary than root-message audiences.
   }
   throw new Error(
-    `unsupported reply audience ${value}; use participants, acknowledged, audience, operator, session:<id>, or run:<id>`,
+    `unsupported reply audience ${value}; use participants, acknowledged, audience, operator, or session:<id>; address session:<id> of the run's owner, or post a notice to run:<id>`,
   )
 }
 
@@ -47,7 +46,6 @@ export function resolveReplyReaders(input: {
       .filter((receipt) => receipt.audienceAtPosting)
       .map((receipt) => receipt.reader)
   else if (chosen === 'operator') readers = ['operator']
-  else if (chosen.startsWith('session:')) readers = [chosen.slice('session:'.length)]
-  else readers = [chosen]
+  else readers = [chosen.slice('session:'.length)]
   return [...new Set([input.rootAuthor, ...readers])].filter((reader) => reader !== input.replier)
 }

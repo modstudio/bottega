@@ -26,6 +26,7 @@ export const boardModules: BoardModule[] = [
     './board-claim-policy.ts',
     './board-mode.ts',
     './board-policy.ts',
+    './board-reply-audience.ts',
     './board-store.ts',
   ]),
   module('orchestrator/src/board/board-adoption-policy.ts', []),
