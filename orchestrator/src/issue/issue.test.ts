@@ -204,7 +204,7 @@ describe('filed issue coordinator inputs', () => {
         },
       ),
     ).rejects.toThrow(
-      'could not release before-measurement checkout: run before-run: removal refused',
+      'could not release before-measurement checkout for run before-run; the checkout is retained: run before-run: removal refused',
     )
     expect(created).toEqual([{ target, base: 'base' }])
   })

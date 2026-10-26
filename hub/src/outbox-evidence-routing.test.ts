@@ -35,8 +35,8 @@ function insert(id: string, project = 'old-project') {
   writeTransaction((conn) =>
     conn
       .query(`INSERT INTO interval
-      (record_id,project,source,start_at,end_at,ref)
-      VALUES (?,?, 'orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
+      (record_id,project,project_record_id,source,start_at,end_at,ref)
+      VALUES (?,?,'project-id','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
       .run(id, project),
   )
 }
@@ -114,8 +114,8 @@ test('delete precedes a recreated interval with the same natural tuple', async (
     conn.query(`DELETE FROM hosted_outbox`).run()
     conn.query(`DELETE FROM interval WHERE record_id=?`).run(oldId)
     conn
-      .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
-      VALUES (?,'new-project','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
+      .query(`INSERT INTO interval(record_id,project,project_record_id,source,start_at,end_at,ref)
+      VALUES (?,'new-project','project-id','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
       .run(newId)
   })
   const order: string[] = []
@@ -137,8 +137,8 @@ test('recreating an acknowledged interval id carries its old space into the move
     conn.query(`DELETE FROM hosted_outbox`).run()
     conn.query(`DELETE FROM interval WHERE record_id=?`).run(oldId)
     conn
-      .query(`INSERT INTO interval(record_id,project,source,start_at,end_at,ref)
-      VALUES (?,'new-project','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
+      .query(`INSERT INTO interval(record_id,project,project_record_id,source,start_at,end_at,ref)
+      VALUES (?,'new-project','project-id','orch','2026-10-11T10:00:00.000Z','2026-10-11T10:01:00.000Z','orch:move')`)
       .run(oldId)
   })
   expect(db().query(`SELECT hosted_space_id FROM interval WHERE record_id=?`).get(oldId)).toEqual({

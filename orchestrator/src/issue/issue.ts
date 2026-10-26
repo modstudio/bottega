@@ -483,7 +483,9 @@ export async function measureIssueBefore(
     dependencies.releaseTree ?? (async (runId) => release({ record_id: runId }))
   )(beforeTree.runId)
   if (releaseFailure)
-    throw new Error(`could not release before-measurement checkout: ${releaseFailure}`)
+    throw new Error(
+      `could not release before-measurement checkout for run ${beforeTree.runId}; the checkout is retained: ${releaseFailure}`,
+    )
   if (measurementError) throw measurementError
   if (!measurement) throw new Error('before measurement returned no result')
   return measurement

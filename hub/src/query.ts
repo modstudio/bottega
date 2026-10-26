@@ -4,7 +4,6 @@ import { storedMachineId } from '../../shared/machine-config.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
-import { taskIdentityDecision } from './task-identity.ts'
 import {
   BOARD_RECENT_WINDOW_DAYS,
   type BoardFilters,
@@ -33,53 +32,16 @@ export function intervalsInWindow(from: string, to: string): WindowIntervalRow[]
     .query<WindowIntervalRow, [string, string]>(
       `SELECT i.task_key, i.project, i.source, i.agent, i.job, i.start_at, i.end_at, i.open, i.ref,
             i.claude_tokens, i.vendor_tokens, i.vendor_cost_usd,
-            NULL AS task_record_id, NULL AS task_project, NULL AS task_title, NULL AS task_status,
-            NULL AS task_status_category, NULL AS task_source,
-            NULL AS task_updated_at, NULL AS task_closed_at
+            i.task_record_id, t.project AS task_project, t.title AS task_title, t.status AS task_status,
+            t.status_category AS task_status_category, t.source AS task_source,
+            t.updated_at AS task_updated_at, t.closed_at AS task_closed_at
        FROM interval i
+       LEFT JOIN task t ON t.record_id=i.task_record_id
       WHERE i.end_at >= ? AND i.start_at < ?
       ORDER BY i.start_at`,
     )
     .all(from, to)
-  return rows.map((row) => {
-    if (!row.task_key) return row
-    const decision = taskIdentityDecision(conn, row.task_key, row.project ?? undefined)
-    if ('several' in decision) {
-      throw new Error(`task ${row.task_key} is ambiguous; pass --project`)
-    }
-    if ('one' in decision) {
-      const recordId = decision.one
-      const task = conn
-        .query<
-          {
-            project: string
-            title: string | null
-            status: string | null
-            status_category: string | null
-            source: string
-            updated_at: string | null
-            closed_at: string | null
-          },
-          [string]
-        >(
-          `SELECT project,title,status,status_category,source,updated_at,closed_at FROM task WHERE record_id=?`,
-        )
-        .get(recordId)
-      if (!task) return row
-      return {
-        ...row,
-        task_record_id: recordId,
-        task_project: task.project,
-        task_title: task.title,
-        task_status: task.status,
-        task_status_category: task.status_category,
-        task_source: task.source,
-        task_updated_at: task.updated_at,
-        task_closed_at: task.closed_at,
-      }
-    }
-    return row
-  })
+  return rows
 }
 
 /**
@@ -365,21 +327,15 @@ export function boardTasks(
     )
     .all()
 
-  const intervalIdentity = (row: { task_key: string; project: string | null }) => {
-    const decision = taskIdentityDecision(db(), row.task_key, row.project ?? undefined)
-    if ('one' in decision) {
-      return taskIdentity({
-        recordId: decision.one,
-        key: row.task_key,
-        project: row.project,
-      })
-    }
-    if ('several' in decision) throw new Error(`task ${row.task_key} is ambiguous; pass --project`)
-    return null
-  }
+  const intervalIdentity = (row: {
+    task_key: string
+    task_record_id: string
+    project: string | null
+  }) => taskIdentity({ recordId: row.task_record_id, key: row.task_key, project: row.project })
   const recent = db()
-    .query<{ task_key: string; project: string | null }, [string]>(
-      `SELECT DISTINCT task_key,project FROM interval WHERE task_key IS NOT NULL AND start_at >= ?`,
+    .query<{ task_key: string; task_record_id: string; project: string | null }, [string]>(
+      `SELECT DISTINCT task_key,task_record_id,project FROM interval
+       WHERE task_record_id IS NOT NULL AND start_at >= ?`,
     )
     .all(since)
     .map(intervalIdentity)
@@ -388,9 +344,9 @@ export function boardTasks(
   // Who is being worked on right now, in ONE query rather than one per row.
   const live = new Set(
     db()
-      .query<{ task_key: string; project: string | null }, []>(
-        `SELECT DISTINCT task_key,project FROM interval
-        WHERE open = 1 AND task_key IS NOT NULL`,
+      .query<{ task_key: string; task_record_id: string; project: string | null }, []>(
+        `SELECT DISTINCT task_key,task_record_id,project FROM interval
+        WHERE open = 1 AND task_record_id IS NOT NULL`,
       )
       .all()
       .map(intervalIdentity)

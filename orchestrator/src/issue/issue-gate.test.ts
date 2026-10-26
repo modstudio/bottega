@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { GATE_CLOSE_REASON } from '../gate/gate-decision.ts'
 import type { RunResult } from '../run/run-types.ts'
 import { ISSUE_GATE_WAIT_MS, runIssueGate } from './issue-gate.ts'
 
@@ -182,6 +183,167 @@ test.each([
       timed_out: gateResult.timedOut,
       cancelled_reason: gateResult.cancelledReason,
     })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification returns the finished gate row when the wait times out', async () => {
+  const fixture = issueGateRun('issue-gate-finished-after-timeout', 'true')
+  try {
+    const written = new Date().toISOString()
+    const result = await runIssueGate(fixture.run, fixture.scratch, {
+      startBroker: () => {
+        const pending = db()
+          .query<{ record_id: string }, [string]>(
+            'SELECT record_id FROM gate_execution WHERE run_record_id=? AND finished_at IS NULL',
+          )
+          .get(fixture.run.record_id)!
+        db()
+          .query(
+            `UPDATE gate_execution
+             SET started_at=?,finished_at=?,exit_code=0,timed_out=0,elapsed_ms=12,output_tail=?
+             WHERE record_id=?`,
+          )
+          .run(written, written, 'gate passed\n', pending.record_id)
+        return { close: async () => {} }
+      },
+      wait: async () => false,
+    })
+
+    expect(result).toEqual({
+      number: expect.any(Number),
+      ok: true,
+      text: 'gate passed',
+      fixTreeSafeToRelease: true,
+    })
+    expect(
+      db()
+        .query(
+          'SELECT exit_code,timed_out,cancelled_reason,finished_at,output_tail FROM gate_execution WHERE number=?',
+        )
+        .get(result.number),
+    ).toEqual({
+      exit_code: 0,
+      timed_out: 0,
+      cancelled_reason: null,
+      finished_at: written,
+      output_tail: 'gate passed\n',
+    })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification reclaims a dead fix worker pending gate execution before requesting its own', async () => {
+  const fixture = issueGateRun('issue-gate-reclaim', 'true')
+  try {
+    const staleAt = new Date(Date.now() - 60_000).toISOString()
+    const staleRecordId = newRecordId()
+    // A request no broker ever claimed: started_at stays NULL, so it is dead by construction.
+    db()
+      .query('INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?)')
+      .run(staleRecordId, fixture.run.record_id, staleAt)
+    const stale = db()
+      .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+      .get(staleRecordId)!
+
+    const result = await runIssueGate(fixture.run, fixture.scratch)
+
+    expect(result.ok).toBe(true)
+    expect(
+      db()
+        .query<
+          { finished_at: string | null; exit_code: number; cancelled_reason: string | null },
+          [string]
+        >('SELECT finished_at,exit_code,cancelled_reason FROM gate_execution WHERE record_id=?')
+        .get(staleRecordId)!,
+    ).toEqual({
+      finished_at: expect.any(String),
+      exit_code: -1,
+      cancelled_reason: `issue coordinator reclaimed a dead fix worker's unfinished gate execution: run ${fixture.run.record_id} execution ${stale.number}`,
+    })
+    expect(result.number).toBeGreaterThan(stale.number)
+    expect(
+      db().query('SELECT exit_code FROM gate_execution WHERE number=?').get(result.number),
+    ).toEqual({
+      exit_code: 0,
+    })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification refuses when the fix run holds a started unfinished gate execution', async () => {
+  const fixture = issueGateRun('issue-gate-started-stale', 'true')
+  try {
+    const startedAt = new Date(Date.now() - 60_000).toISOString()
+    const staleRecordId = newRecordId()
+    // A claimed-but-unfinished execution: its gate process may still be alive.
+    db()
+      .query(
+        'INSERT INTO gate_execution (record_id,run_record_id,requested_at,started_at) VALUES (?,?,?,?)',
+      )
+      .run(staleRecordId, fixture.run.record_id, startedAt, startedAt)
+    const stale = db()
+      .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+      .get(staleRecordId)!
+
+    const result = await runIssueGate(fixture.run, fixture.scratch)
+
+    expect(result.ok).toBe(false)
+    expect(result.fixTreeSafeToRelease).toBe(false)
+    expect(result.text).toContain(`run ${fixture.run.record_id}`)
+    expect(result.text).toContain(`execution ${stale.number}`)
+    expect(result.text).toContain('a gate process may still be running in the fix tree')
+    expect(
+      db()
+        .query<{ finished_at: string | null; started_at: string | null }, [string]>(
+          'SELECT finished_at,started_at FROM gate_execution WHERE record_id=?',
+        )
+        .get(staleRecordId)!,
+    ).toEqual({ finished_at: null, started_at: startedAt })
+    expect(
+      db()
+        .query('SELECT COUNT(*) AS count FROM gate_execution WHERE run_record_id=?')
+        .get(fixture.run.record_id),
+    ).toEqual({ count: 1 })
+  } finally {
+    rmSync(fixture.main, { recursive: true, force: true })
+    rmSync(fixture.scratch, { recursive: true, force: true })
+  }
+})
+
+test('issue verification reports the timeout when the broker close stamps the gate row', async () => {
+  const fixture = issueGateRun('issue-gate-close-stamped', 'true')
+  try {
+    const result = await runIssueGate(fixture.run, fixture.scratch, {
+      startBroker: (input) => {
+        // Mirror gate-broker.ts close(): it stamps every unfinished row cancelled.
+        db()
+          .query(
+            `UPDATE gate_execution SET finished_at=?,exit_code=-1,timed_out=0,elapsed_ms=0,
+             cancelled_reason=? WHERE run_record_id=? AND finished_at IS NULL`,
+          )
+          .run(new Date().toISOString(), GATE_CLOSE_REASON, input.runId)
+        return { close: async () => {} }
+      },
+      wait: async () => false,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      fixTreeSafeToRelease: true,
+      text: `issue coordinator gate did not finish within ${ISSUE_GATE_WAIT_MS}ms`,
+    })
+    expect(
+      db()
+        .query('SELECT exit_code,cancelled_reason FROM gate_execution WHERE number=?')
+        .get(result.number),
+    ).toEqual({ exit_code: -1, cancelled_reason: GATE_CLOSE_REASON })
   } finally {
     rmSync(fixture.main, { recursive: true, force: true })
     rmSync(fixture.scratch, { recursive: true, force: true })

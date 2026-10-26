@@ -54,10 +54,7 @@ export function requireBranchRunOwner(
       `${PLATFORM_SLUG} review read is reserved for the branch run owner; ${callerIdentityRefusal(callerIdentity(), 'record an architect read')}`,
     )
   const owner = branchRunOwnerSession(database, project, branch)
-  if (!owner)
-    throw new Error(
-      `${PLATFORM_SLUG} review read is reserved for the branch run owner; ${branch} has no owned root run`,
-    )
+  if (!owner) return caller
   if (caller !== owner)
     throw new Error(
       `${PLATFORM_SLUG} review read is reserved for the branch run owner; calling session does not own ${branch}`,

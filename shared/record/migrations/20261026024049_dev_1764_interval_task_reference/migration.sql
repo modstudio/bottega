@@ -1,0 +1,2 @@
+ALTER TABLE "hub_interval" ADD COLUMN "task_id" uuid;--> statement-breakpoint
+ALTER TABLE "hub_interval" ADD CONSTRAINT "hub_interval_task_id_hub_task_id_fkey" FOREIGN KEY ("task_id") REFERENCES "hub_task"("id") ON DELETE SET NULL;

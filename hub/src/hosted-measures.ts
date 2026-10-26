@@ -87,7 +87,7 @@ export async function loadHostedMeasureRows(
       SELECT t.id AS task_id, i.task_key, i.project_name, p.id AS project_id, i.source, i.start_at, i.end_at, i.open, i.user_id,
         i.vendor_tokens, i.vendor_cost_usd
       FROM hub_interval i
-      LEFT JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
+      LEFT JOIN hub_task t ON t.id=i.task_id AND t.space_id=i.space_id AND t.deleted_at IS NULL
       LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
       WHERE i.start_at < ${window.to}::timestamptz AND i.end_at >= ${window.from}::timestamptz`,
     )
@@ -97,7 +97,7 @@ export async function loadHostedMeasureRows(
           SELECT t.id AS task_id, i.task_key, i.project_name, p.id AS project_id, i.source, i.start_at, i.end_at, i.open, i.user_id,
             i.vendor_tokens, i.vendor_cost_usd
           FROM hub_interval i
-          JOIN hub_task t ON t.space_id=i.space_id AND t.key=i.task_key AND t.deleted_at IS NULL
+          JOIN hub_task t ON t.id=i.task_id AND t.space_id=i.space_id AND t.deleted_at IS NULL
           LEFT JOIN project p ON p.id=COALESCE(t.project_id,i.project_id) AND p.retired_at IS NULL
           WHERE t.id IN ${tx(shippedIds)} AND i.start_at < ${window.from}::timestamptz`,
         )

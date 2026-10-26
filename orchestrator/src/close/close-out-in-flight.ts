@@ -8,6 +8,7 @@ import {
   type HeldTreeOpenPr,
   heldTreeInFlight,
   type LandingTreeHoldKind,
+  pullRequestLookupNeeded,
 } from '../landing-tree/landing-tree.ts'
 import { annotateHeldTreeDetail, type CloseOutReportResult } from './close-out-report.ts'
 
@@ -66,7 +67,7 @@ function lookupShipTaskCursor(
         ORDER BY number`,
     )
     .all(sessionId, project, branch) as CursorRow[]
-  return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? rows[0] ?? null
+  return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? null
 }
 
 function parseOpenPr(stdout: string): HeldTreeOpenPr | null {
@@ -127,13 +128,19 @@ function treeHead(treePath: string): string | null {
   return head.ok && value ? value : null
 }
 
+/**
+ * The cursor row's own facts.
+ *
+ * Only a running or awaiting-ruling row is looked up at all, so the row that arrives claims this
+ * tree rather than proving its session alive.
+ */
 function cursorFacts(row: CursorRow | null) {
   if (!row) return null
   return {
     id: row.id,
     workflow: row.workflow_slug,
     step: row.step_slug,
-    live: true,
+    claimed: true,
     project: row.project,
     branch: cursorArg(row.args, 'branch'),
     worktree: cursorArg(row.args, 'worktree'),
@@ -153,18 +160,26 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTr
     cursor: cursorFacts(lookupCursor(run, worktree)),
     hold,
   }
+  // Cleanliness is measured once here and reused below: `pullRequestLookupNeeded` says whether a
+  // pull request can change this hold's verdict, and the same measurement is the uniqueness fact.
+  const treeClean = treeIsClean(worktree)
   // A landing-progress hold is in flight already, so only the ref the line prints is at stake, and
   // a cursor that matched this tree supplies it without a pull-request lookup.
   if (hold === 'landing-progress') {
-    const matched = heldTreeInFlight({ ...base, openPr: null, treeClean: false, treeHead: null })
+    const matched = heldTreeInFlight({ ...base, openPr: null, treeClean, treeHead: null })
     if (matched) return matched
   }
+  // A hold whose verdict the pull request cannot change annotates only from a cursor already
+  // matched to this tree: the lookup is skipped rather than made and discarded.
+  if (!pullRequestLookupNeeded(hold, treeClean)) {
+    return heldTreeInFlight({ ...base, openPr: null, treeClean, treeHead: null })
+  }
   const openPr = run.branch ? lookupOpenPr(worktree, run.branch) : null
-  const compareHead = hold !== 'landing-progress' && Boolean(openPr?.headOid)
+  const compareHead = hold !== 'landing-progress' && treeClean && Boolean(openPr?.headOid)
   return heldTreeInFlight({
     ...base,
     openPr,
-    treeClean: compareHead ? treeIsClean(worktree) : false,
+    treeClean: compareHead ? treeClean : false,
     treeHead: compareHead ? treeHead(worktree) : null,
   })
 }

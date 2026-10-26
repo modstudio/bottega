@@ -1,0 +1,1 @@
+CREATE INDEX "hub_interval_task_id_idx" ON "hub_interval" ("task_id");
