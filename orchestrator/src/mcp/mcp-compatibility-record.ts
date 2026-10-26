@@ -5,7 +5,12 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { projects } from '../project/projects.ts'
 import { decideMcpCompatibility, type McpCompatibilityVerdict } from './mcp-compatibility.ts'
-import { parseMcpProbe, readMcpConfig } from './mcp-probe.ts'
+import {
+  bottegaMcpBinary,
+  parseMcpProbe,
+  readMcpConfigResult,
+  resolveMcpServerLaunchFromRead,
+} from './mcp-probe.ts'
 
 export type McpListingObservation = {
   runId: string
@@ -86,7 +91,13 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
     (entry) => !projectFilter || entry.name === projectFilter,
   )) {
     const server = project.settings.mcpServer ?? project.name
-    const config = readMcpConfig(project.path)[server]
+    // One resolution with the reader proxy and the reader selection: a launch
+    // file that could not be read names no server, the platform's included.
+    const config = resolveMcpServerLaunchFromRead(
+      readMcpConfigResult(project.path),
+      server,
+      bottegaMcpBinary(),
+    )?.config
     const listing = latestMcpListing(project.recordId, server)
     const headers = config?.headers ?? {}
     const auth = Object.entries(headers).some(

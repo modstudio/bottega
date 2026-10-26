@@ -87,3 +87,13 @@ export function bottegaEntryArgv(
   }
   return argv
 }
+
+/**
+ * The argv one process is entered by to serve the platform's own MCP server:
+ * the platform entry, then its `mcp serve` verb. One definition, so the
+ * user-scope harness registration, `mcp --config` and a reader launch cannot
+ * drift. The ruled direct overlay routes for Codex and Grok build their own.
+ */
+export function bottegaMcpServeArgv(sourceExecutable?: string): string[] {
+  return [...bottegaEntryArgv(PLATFORM_SLUG, sourceExecutable), 'mcp', 'serve']
+}

@@ -23,6 +23,7 @@ import {
   machineRevoke,
   machineShow,
   machineTrust,
+  sealSecretDecision,
   setEntry,
   setMachineEntry,
   setSecret,
@@ -163,6 +164,15 @@ function registerMachineCommands(config: Command): void {
     })
 }
 
+/** Read the piped value, refuse a blank one, and seal the rest in the requested scope. */
+async function sealPipedSecret(key: string, options: { space?: boolean }): Promise<void> {
+  if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
+  const chosen = scope(options)
+  const decision = sealSecretDecision(key, await Bun.stdin.text(), chosen)
+  if (decision.kind === 'refuse') throw new Error(decision.refusal)
+  await setSecret(key, decision.value, chosen)
+}
+
 export function register(program: Command): void {
   const config = program.command('config').description('manage scoped configuration values')
   registerMachineCommands(config)
@@ -228,11 +238,7 @@ export function register(program: Command): void {
     .command('set <key>')
     .description('set a sealed value from standard input')
     .option('--space', 'write the value in the active space scope')
-    .action(async (key, options) => {
-      if (process.stdin.isTTY) throw new Error('secret value must be provided on stdin')
-      const value = await Bun.stdin.text()
-      await setSecret(key, value.replace(/\r?\n$/, ''), scope(options))
-    })
+    .action(async (key, options) => sealPipedSecret(key, options))
   secret
     .command('list')
     .description('list sealed configuration keys')

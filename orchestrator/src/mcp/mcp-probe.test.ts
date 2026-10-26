@@ -2,14 +2,17 @@ import { expect, test } from 'bun:test'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   decodeMessages,
   disabledProjectMcpServers,
+  type McpServerConfig,
   mcpCallEvidence,
   mintStdioPingServer,
   probeMcpServer,
   readMcpConfig,
+  resolveMcpServerLaunch,
+  resolveMcpServerLaunchFromRead,
 } from './mcp-probe.ts'
 
 test('computes the complement only for declared worker MCP scope', () => {
@@ -17,6 +20,70 @@ test('computes the complement only for declared worker MCP scope', () => {
   expect(disabledProjectMcpServers(names, undefined)).toEqual([])
   expect(disabledProjectMcpServers(names, [])).toEqual(names)
   expect(disabledProjectMcpServers(names, ['starship'])).toEqual(['orch', 'stopal'])
+})
+
+test('a tree entry wins, the platform serves its own name, and nothing else resolves', () => {
+  const binary = `/opt/${PLATFORM_SLUG}/bin/${PLATFORM_SLUG}`
+  // Bottega's own server is registered at user scope, so a reader launch for it
+  // needs no tree entry: the name resolves to the installed binary serving it.
+  expect(resolveMcpServerLaunch({}, MCP_SERVER_NAME, binary)).toEqual({
+    name: MCP_SERVER_NAME,
+    command: binary,
+    args: ['mcp', 'serve'],
+  })
+
+  const ownEntry: McpServerConfig = {
+    name: MCP_SERVER_NAME,
+    command: '/project/bin/own-server',
+    args: ['--own'],
+  }
+  expect(resolveMcpServerLaunch({ [MCP_SERVER_NAME]: ownEntry }, MCP_SERVER_NAME, binary)).toEqual(
+    ownEntry,
+  )
+
+  // The worker ask channel and an unknown project server are not resolved here:
+  // nothing in the tree or the installation starts them under that name.
+  expect(resolveMcpServerLaunch({}, WORKER_MCP_SERVER_NAME, binary)).toBeNull()
+  expect(resolveMcpServerLaunch({}, 'tracker', binary)).toBeNull()
+})
+
+test('only an absent launch file lets the platform name resolve to the built-in launch', () => {
+  const binary = `/opt/${PLATFORM_SLUG}/bin/${PLATFORM_SLUG}`
+  const path = '/project/.mcp.json'
+
+  // An absent file is no evidence about any name, so the platform's own server
+  // still starts, from the installed binary.
+  expect(
+    resolveMcpServerLaunchFromRead({ ok: false, path, reason: 'missing' }, MCP_SERVER_NAME, binary),
+  ).toEqual({
+    config: { name: MCP_SERVER_NAME, command: binary, args: ['mcp', 'serve'] },
+    builtIn: true,
+  })
+
+  // A file that could not be read names no server, the platform's included.
+  for (const reason of ['invalid', 'unreadable'] as const) {
+    expect(
+      resolveMcpServerLaunchFromRead({ ok: false, path, reason }, MCP_SERVER_NAME, binary),
+    ).toBeNull()
+  }
+
+  // A tree entry wins, and is a project launch rather than the built-in one.
+  const ownEntry: McpServerConfig = { name: MCP_SERVER_NAME, command: '/project/bin/own-server' }
+  expect(
+    resolveMcpServerLaunchFromRead(
+      { ok: true, path, config: { [MCP_SERVER_NAME]: ownEntry } },
+      MCP_SERVER_NAME,
+      binary,
+    ),
+  ).toEqual({ config: ownEntry, builtIn: false })
+
+  // Any other name is served only when a readable file names it.
+  expect(
+    resolveMcpServerLaunchFromRead({ ok: true, path, config: {} }, 'tracker', binary),
+  ).toBeNull()
+  expect(
+    resolveMcpServerLaunchFromRead({ ok: false, path, reason: 'missing' }, 'tracker', binary),
+  ).toBeNull()
 })
 
 test('a successful orchestrator tool probe leaves worker attachment unverified', () => {

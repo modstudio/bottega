@@ -53,6 +53,10 @@ export const runModuleSpecs = [
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },
   {
+    file: 'orchestrator/src/run/run-identifier-grammar.ts',
+    allowed: ['../../../shared/record-id.ts'],
+  },
+  {
     file: 'orchestrator/src/run/question-number.ts',
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },

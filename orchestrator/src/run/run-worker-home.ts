@@ -12,7 +12,7 @@ import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import { scopeGrokReaderMcpHome } from '../sandbox/grok-reader-mcp-home.ts'
 import { inspectGrokReaderMcp } from '../sandbox/grok-reader-mcp-inspect.ts'
 import {
-  mcpConfigForRun,
+  mcpConfigReadForRun,
   projectReaderProxyServersForRun,
   type ReaderProxyServer,
 } from '../sandbox/mcp-reader-scope.ts'
@@ -234,7 +234,8 @@ export function prepareClaimedGrokMcpScope(
   try {
     const harness = workerHarnessName(input.agent)
     const config = input.config
-    const projectConfig = mcpConfigForRun(input.treeConfig, input.project)
+    const projectRead = mcpConfigReadForRun(input.treeConfig, input.project, input.cwd)
+    const projectConfig = projectRead.ok ? projectRead.config : {}
     const readerServers = input.readerServers
     if (config?.error) {
       return {

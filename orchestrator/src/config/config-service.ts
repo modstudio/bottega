@@ -40,6 +40,7 @@ import {
   pinnedUserMismatchRemedy,
   RECORD_ACTIVE_SPACE_REMEDY,
 } from '../../../shared/record-remedies.ts'
+import { sealedValueIsEmpty, stripTrailingNewline } from '../../../shared/sealed-value.ts'
 import {
   generateDataKey,
   generateMachineKeyPair,
@@ -367,12 +368,63 @@ export async function machineRevoke(keyId: string, client = configClient()): Pro
   }
 }
 
+/** The scope flag one `machine config secret` repair carries: the verbs declare only `--space`. */
+function secretScopeFlag(scope: ConfigScope): string {
+  return scope === 'space' ? ' --space' : ''
+}
+
+/** The one spelling of the repair that pipes a value into `secret set` in the given scope. */
+export function secretSetRemedy(key: string, scope: ConfigScope): string {
+  return `${PLATFORM_SLUG} machine config secret set ${key}${secretScopeFlag(scope)}`
+}
+
+/** The one spelling of the repair that removes a sealed value in the given scope. */
+export function secretDeleteRemedy(key: string, scope: ConfigScope): string {
+  return `${PLATFORM_SLUG} machine config secret delete ${key}${secretScopeFlag(scope)}`
+}
+
+/**
+ * The one refusal for a value that would be sealed blank: it names the key, says no value was
+ * sealed, and names both repairs in the scope the write would have used. A blank copy is refused
+ * wherever it would enter the store, so the service and the command render the same text.
+ */
+export function sealedEmptyRefusal(key: string, scope: ConfigScope): string {
+  return (
+    `refusing to seal ${key}: the value piped on stdin is empty, so no value was sealed\n` +
+    `cleared by: pipe the value on stdin to \`${secretSetRemedy(key, scope)}\`, or remove the sealed value with \`${secretDeleteRemedy(key, scope)}\``
+  )
+}
+
+export type SealedSecretSetDecision =
+  | { kind: 'seal'; value: string }
+  | { kind: 'refuse'; refusal: string }
+
+/**
+ * Decide `machine config secret set` from the text piped on stdin, before anything is written.
+ *
+ * A blank value is the mistake `secret set` used to seal: `echo | ... secret set KEY` stored an
+ * empty copy that later resolved as a present secret.
+ */
+export function sealSecretDecision(
+  key: string,
+  piped: string,
+  scope: ConfigScope,
+): SealedSecretSetDecision {
+  if (!sealedValueIsEmpty(piped)) return { kind: 'seal', value: stripTrailingNewline(piped) }
+  return { kind: 'refuse', refusal: sealedEmptyRefusal(key, scope) }
+}
+
+/**
+ * Seal one secret. The service owns the invariant that a sealed value is never blank, so a blank
+ * value is refused here before any read or write, not only at the command that pipes stdin.
+ */
 export async function setSecret(
   key: string,
   value: string,
   scope: ConfigScope,
   client = configClient(),
 ) {
+  if (sealedValueIsEmpty(value)) throw new Error(sealedEmptyRefusal(key, scope))
   const { key: dataKey, dek } = await currentOrCreate(client)
   let existing: ConfigSecret | null = null
   try {
@@ -451,7 +503,7 @@ async function applySecretEnvironmentDecision(
 ): Promise<void> {
   if (decision.kind === 'refuse') {
     throw new Error(
-      `refusing sealed environment migration: ${oldName} and ${newName} differ in ${scope} scope; run \`${PLATFORM_SLUG} machine config secret delete ${oldName} --scope ${scope}\`, then re-run ${PLATFORM_SLUG} machine setup apply`,
+      `refusing sealed environment migration: ${oldName} and ${newName} differ in ${scope} scope; run \`${secretDeleteRemedy(oldName, scope)}\`, then re-run ${PLATFORM_SLUG} machine setup apply`,
     )
   }
   if (decision.kind === 'write-verify-delete') {
@@ -564,7 +616,7 @@ export async function restoreLegacyEnvironmentSecrets(
     const newValue = await read(newName, scope)
     if (oldValue !== null) {
       throw new Error(
-        `refusing setup restore: sealed secret ${oldName} already exists in ${scope} scope; run \`${PLATFORM_SLUG} machine config secret delete ${oldName} --scope ${scope}\`, then re-run ${PLATFORM_SLUG} machine setup restore`,
+        `refusing setup restore: sealed secret ${oldName} already exists in ${scope} scope; run \`${secretDeleteRemedy(oldName, scope)}\`, then re-run ${PLATFORM_SLUG} machine setup restore`,
       )
     }
     if (newValue === null) {

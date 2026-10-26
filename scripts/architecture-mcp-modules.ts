@@ -26,6 +26,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/server',
     'zod',
     '../../../shared/board-purpose.ts',
+    '../../../shared/install-root.ts',
     '../board/board-delivery.ts',
     '../board/board-message-identifier.ts',
     '../board/board-operations.ts',
@@ -76,6 +77,7 @@ export const mcpModules: McpModule[] = [
   ]),
   module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/state-directory.ts',
     '@modelcontextprotocol/client',
     '@modelcontextprotocol/server',
     '@modelcontextprotocol/server/stdio',
