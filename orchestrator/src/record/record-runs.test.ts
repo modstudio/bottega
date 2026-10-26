@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { HARNESS_EVIDENCE_EXCLUSION } from '../failure/failure.ts'
 import type { RecordRun } from './record-runs.ts'
 import { recordRunsWindow } from './record-runs.ts'
 
@@ -75,11 +74,14 @@ describe('record run window', () => {
     ])
   })
 
-  test('hosted totals do not count harness execution as voided', () => {
-    const result = recordRunsWindow(
-      [run('1', { agent: 'harness', evidenceExcluded: HARNESS_EVIDENCE_EXCLUSION })],
-      { agent: '', project: '', search: '', offset: 0, limit: 25 },
-    )
+  test('hosted totals do not count an unexcluded harness run as voided', () => {
+    const result = recordRunsWindow([run('1', { agent: 'harness' })], {
+      agent: '',
+      project: '',
+      search: '',
+      offset: 0,
+      limit: 25,
+    })
     expect(result.totals).toMatchObject({ runs: 1, voided: 0 })
   })
 })

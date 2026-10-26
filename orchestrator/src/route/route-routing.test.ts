@@ -90,6 +90,18 @@ test('candidate running-run map matches per-agent fixture counts from one groupe
   expect(Object.values(running).reduce((sum, count) => sum + count, 0)).toBe(3)
 })
 
+test('a scored harness run does not change external routing evidence', () => {
+  const external = addRun({ agent: 'codex', job: 'craft', status: 'ok' })
+  score(external, 'full', 'right', 'faithful')
+  const before = candidates('craft')
+
+  const harness = addRun({ agent: 'harness', job: 'craft', status: 'ok' })
+  db().query("UPDATE run SET executor='harness' WHERE record_id=?").run(harness)
+  score(harness, 'none')
+
+  expect(candidates('craft')).toEqual(before)
+})
+
 test('training-data eligibility requires a declared public project even when named', () => {
   const base = {
     agent: 'or-free',

@@ -15,7 +15,7 @@ export function recordedRunLivenessFacts(
   row: RecordedRunLiveness,
   now: number,
   sessionLiveMs: number,
-  ownerProcess: 'live' | 'dead' | 'missing' = 'missing',
+  ownerProcess: 'live' | 'dead' | 'unknown' | 'missing' = 'missing',
 ): {
   executor?: 'external' | 'harness'
   ownerSessionAlive?: boolean
@@ -26,7 +26,7 @@ export function recordedRunLivenessFacts(
     executor: 'harness',
     ownerSessionAlive:
       ownerProcess === 'live' ||
-      (ownerProcess === 'missing' &&
+      ((ownerProcess === 'missing' || ownerProcess === 'unknown') &&
         row.session_last_seen !== null &&
         row.session_last_seen !== undefined &&
         Date.parse(row.session_last_seen) >= now - sessionLiveMs),

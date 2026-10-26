@@ -50,6 +50,22 @@ describe('runAlive', () => {
       }),
     ).toBe(false)
   })
+  test('unknown owner process evidence falls back to a fresh session stamp', () => {
+    const now = Date.parse('2026-10-26T12:00:00.000Z')
+    expect(
+      recordedRunLivenessFacts(
+        {
+          executor: 'harness',
+          session_last_seen: '2026-10-26T11:59:00.000Z',
+          started_at: '2026-10-26T11:45:00.000Z',
+          harness_wall_bound_ms: 30 * 60_000,
+        },
+        now,
+        5 * 60_000,
+        'unknown',
+      ),
+    ).toEqual({ executor: 'harness', ownerSessionAlive: true, wallBoundExceeded: false })
+  })
   test.each([
     ['asking', 'held', false, true],
     ['asking', 'free', false, true],

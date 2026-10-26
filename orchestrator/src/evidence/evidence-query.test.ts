@@ -160,11 +160,7 @@ describe('evidence totals', () => {
 describe('session scoping', () => {
   test('harness execution remains pending for judgment without becoming routing evidence', () => {
     const id = addRun({ agent: 'harness', job: 'implement', session: 'session-A' })
-    db()
-      .query(
-        "UPDATE run SET executor='harness',evidence_excluded='harness execution' WHERE record_id=?",
-      )
-      .run(id)
+    db().query("UPDATE run SET executor='harness' WHERE record_id=?").run(id)
     expect(pendingForSession('session-A').map((row) => row.record_id)).toEqual([id])
     expect(
       db()
@@ -172,7 +168,7 @@ describe('session scoping', () => {
           `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id WHERE ${UNSCORED_WHERE}`,
         )
         .get(),
-    ).toEqual({ n: 0 })
+    ).toEqual({ n: 1 })
     expect(runTotals()).toMatchObject({ voided: 0 })
   })
   test("only this session's own unscored runs are raised", () => {

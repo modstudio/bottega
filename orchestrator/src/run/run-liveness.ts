@@ -272,7 +272,18 @@ function runningDisposition(database: Database, row: RunningRow, now: number): R
   const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   let disposition: RunningDisposition
-  if (row.executor === 'harness') {
+  if (row.agent === '(pending)') {
+    disposition = abandonedBootstrap({
+      agent: row.agent,
+      pid: row.pid,
+      pidAlive: coordinatorPidAlive,
+      leaseState,
+      startedAt: row.started_at,
+      now,
+    })
+      ? 'abandoned-bootstrap'
+      : 'alive'
+  } else if (row.executor === 'harness') {
     disposition = runAlive({
       status: 'running',
       lease: leaseState,
@@ -286,17 +297,6 @@ function runningDisposition(database: Database, row: RunningRow, now: number): R
     })
       ? 'alive'
       : 'dead'
-  } else if (row.agent === '(pending)') {
-    disposition = abandonedBootstrap({
-      agent: row.agent,
-      pid: row.pid,
-      pidAlive: coordinatorPidAlive,
-      leaseState,
-      startedAt: row.started_at,
-      now,
-    })
-      ? 'abandoned-bootstrap'
-      : 'alive'
   } else if (
     coordinatorSetupDeath({
       agent: row.agent,

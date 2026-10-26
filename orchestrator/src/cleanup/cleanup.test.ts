@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { repoRootOf } from '../git/git-environment.ts'
 import { terminalCloseOutRuns } from '../monitor/monitor-conditions.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
@@ -11,6 +12,7 @@ import {
   type CleanupRow,
   discardRun,
   discardWorktree,
+  evidenceOwningBranchOwners,
 } from './cleanup.ts'
 
 const originalSession = process.env.CLAUDE_CODE_SESSION_ID
@@ -40,6 +42,23 @@ const presentation = (): CleanupPresentation => ({
   error: () => {},
   setExitCode: () => {},
   keptBranchLine: (branch) => `kept branch ${branch}`,
+})
+
+test('a live harness run remains an evidence-owning branch owner', () => {
+  const worktreeRoot = join(import.meta.dir, '../../..')
+  const repoRoot = repoRootOf(worktreeRoot)!
+  const subject = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const owner = addRun({ agent: 'harness', job: 'implement', status: 'running' })
+  db()
+    .query("UPDATE run SET branch='DEV-1765-shared',cwd=? WHERE record_id IN (?,?)")
+    .run(worktreeRoot, subject, owner)
+  db().query("UPDATE run SET executor='harness' WHERE record_id=?").run(owner)
+
+  expect(
+    evidenceOwningBranchOwners({ record_id: subject, branch: 'DEV-1765-shared' }, repoRoot).map(
+      (row) => row.record_id,
+    ),
+  ).toEqual([owner])
 })
 
 function heldCleanup(id: string): { project: string; repo: string; tree: string; row: CleanupRow } {

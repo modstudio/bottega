@@ -5,6 +5,7 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
+import { writeDispatchState } from './run-artifacts.ts'
 import { detach, spawnCwd } from './run-dispatch.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
@@ -105,11 +106,12 @@ test('a findings dispatch carries its resolved round role to the coordinator', a
 test('a harness continuation placeholder carries its executor before coordinator claim', async () => {
   process.env.BOTTEGA_DEPTH = '0'
   const root = addRun({ agent: 'harness', job: 'review-lens', status: 'asking' })
+  writeDispatchState(root, { deliverables: [], timeoutMinutes: 17 })
   let placeholder: unknown
   const spawnCoordinator = (() => {
     placeholder = db()
       .query(
-        `SELECT executor,evidence_excluded FROM run
+        `SELECT executor,evidence_excluded,harness_wall_bound_ms FROM run
           WHERE parent_run_record_id=? ORDER BY number DESC LIMIT 1`,
       )
       .get(root)
@@ -141,7 +143,8 @@ test('a harness continuation placeholder carries its executor before coordinator
 
   expect(placeholder).toEqual({
     executor: 'harness',
-    evidence_excluded: 'harness execution',
+    evidence_excluded: null,
+    harness_wall_bound_ms: 17 * 60_000,
   })
 })
 

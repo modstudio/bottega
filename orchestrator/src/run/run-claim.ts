@@ -80,12 +80,7 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
-import {
-  EXTERNAL_EXECUTOR,
-  HARNESS_AGENT,
-  HARNESS_EVIDENCE_EXCLUSION,
-  HARNESS_EXECUTOR,
-} from './run-executor.ts'
+import { EXTERNAL_EXECUTOR, HARNESS_AGENT, HARNESS_EXECUTOR } from './run-executor.ts'
 import { installHarnessPushGuard } from './run-git-guard.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail, sha } from './run-process.ts'
@@ -1034,7 +1029,7 @@ function executorClaimFacts(
     ] as const,
     identityColumns: [
       harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR,
-      harness ? HARNESS_EVIDENCE_EXCLUSION : null,
+      null,
       harness ? timeoutMs : null,
     ] as const,
   }

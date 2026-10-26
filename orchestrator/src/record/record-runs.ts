@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
-import { HARNESS_EVIDENCE_EXCLUSION, NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import type { RecordCursor } from './record-cursor.ts'
 import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'
@@ -205,9 +205,7 @@ export function recordRunsWindow(
         run.evidenceExcluded === null &&
         !NOT_EVIDENCE.includes(run.failureKind as (typeof NOT_EVIDENCE)[number]),
     ).length,
-    voided: eligible.filter(
-      (run) => run.evidenceExcluded !== null && run.evidenceExcluded !== HARNESS_EVIDENCE_EXCLUSION,
-    ).length,
+    voided: eligible.filter((run) => run.evidenceExcluded !== null).length,
     failed: eligible.filter((run) => run.status === 'failed').length,
   }
   const unscored = eligible.filter((run) => {

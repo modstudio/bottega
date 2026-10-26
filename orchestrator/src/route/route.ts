@@ -179,7 +179,7 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
       `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
        FROM run
       WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
-        AND evidence_excluded IS NULL AND parent_run_record_id IS NULL
+        AND evidence_excluded IS NULL AND executor <> 'harness' AND parent_run_record_id IS NULL
         AND agent != '(pending)'`,
     )
     .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
@@ -230,10 +230,12 @@ export type RoutingEvidenceInput = {
   status: string
   delivery: string | null
   failureKind: string | null
+  executor?: 'external' | 'harness'
 }
 
 /** The production quality-evidence predicate, shared with causal replay. */
 export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
+  if (row.executor === 'harness') return false
   if (!['ok', 'failed', 'stale'].includes(row.status)) return false
   if (NOT_EVIDENCE.includes(row.failureKind as (typeof NOT_EVIDENCE)[number])) return false
   return row.delivery !== null || ['failed', 'stale'].includes(row.status)
@@ -438,6 +440,7 @@ export function candidates(
         -- turn would let an agent cross MIN_SAMPLE by asking questions.
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
+          AND r.executor <> 'harness'
           AND r.parent_run_record_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
@@ -458,10 +461,12 @@ export function candidates(
     db()
       .query(
         `SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
+              r.executor,
               r.failure_kind AS failureKind, s.delivery, ${weightCase()} AS pts
          FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
+          AND r.executor <> 'harness'
           AND r.parent_run_record_id IS NULL
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
@@ -473,6 +478,7 @@ export function candidates(
       model: string | null
       startedAt: string
       status: string
+      executor: 'external' | 'harness'
       failureKind: string | null
       delivery: string | null
       pts: number | null

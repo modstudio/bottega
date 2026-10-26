@@ -5,7 +5,7 @@ import type { Database } from 'bun:sqlite'
 import { sessionId } from '../database/db.ts'
 import { type SessionProcessProbe, sessionLivenessEvidence } from './session-liveness-adapter.ts'
 
-export type RecordedOwnerProcess = 'live' | 'dead' | 'missing'
+export type RecordedOwnerProcess = 'live' | 'dead' | 'unknown' | 'missing'
 
 export function recordedOwnerProcess(
   database: Database,
@@ -25,5 +25,6 @@ export function recordedOwnerProcess(
     },
   )
   if (evidence.ownerProcess === 'live') return 'live'
+  if (evidence.ownerProcess === 'unknown') return 'unknown'
   return evidence.candidates.length ? 'dead' : 'missing'
 }

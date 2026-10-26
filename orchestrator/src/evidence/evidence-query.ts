@@ -4,7 +4,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { HARNESS_EVIDENCE_EXCLUSION, NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 
 /**
@@ -70,7 +70,7 @@ function unscoredWhere(exclusion: string): string {
 
 export const UNSCORED_WHERE = unscoredWhere('r.evidence_excluded IS NULL')
 
-const PENDING_SCORE_WHERE = unscoredWhere("(r.evidence_excluded IS NULL OR r.executor='harness')")
+const PENDING_SCORE_WHERE = UNSCORED_WHERE
 
 /**
  * The evidence boundary: a run leaves the owed-judgment ledger in two ways,
@@ -97,7 +97,7 @@ export const EVIDENCE_CLOSED_SQL = `(s.delivery IS NOT NULL OR ${EVIDENCE_EXCLUD
  * Inbox filtering and rendering consume these flags; do not restate them.
  */
 export function voidedSql(alias = 'r'): string {
-  return `(${alias}.evidence_excluded IS NOT NULL AND ${alias}.evidence_excluded <> '${HARNESS_EVIDENCE_EXCLUSION}')`
+  return `${alias}.evidence_excluded IS NOT NULL`
 }
 
 export const VOIDED_SQL = voidedSql()

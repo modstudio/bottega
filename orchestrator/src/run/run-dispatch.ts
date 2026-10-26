@@ -32,22 +32,17 @@ import {
   recordMigrationDispatchRefusal,
 } from '../database/migration-drain.ts'
 import { callerCheckoutFacts, preflight } from '../dispatch/dispatch-preflight.ts'
-import { job } from '../jobs/jobs.ts'
+import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { effectiveMcpRequest, type McpRequest, storedMcpRequest } from '../mcp/mcp-preflight.ts'
 import { projectByName } from '../project/projects.ts'
 import { signedInRecordUserId } from '../record/record-attribution.ts'
 import type { DetachSpec } from '../route/failover.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
-import { RUNS_DIR } from './run-artifacts.ts'
+import { RUNS_DIR, readDispatchState } from './run-artifacts.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
-import {
-  EXTERNAL_EXECUTOR,
-  HARNESS_EVIDENCE_EXCLUSION,
-  HARNESS_EXECUTOR,
-  type RunExecutor,
-} from './run-executor.ts'
+import { EXTERNAL_EXECUTOR, HARNESS_EXECUTOR, type RunExecutor } from './run-executor.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
@@ -187,10 +182,18 @@ function detachedReviewBindings(spec: ResolvedDetachSpec) {
   ] as const
 }
 
-function placeholderExecution(spec: DetachSpec): [RunExecutor, string | null] {
-  return spec.resume?.agent === 'harness'
-    ? [HARNESS_EXECUTOR, HARNESS_EVIDENCE_EXCLUSION]
-    : [EXTERNAL_EXECUTOR, null]
+function placeholderExecution(
+  spec: DetachSpec,
+  jobName: string,
+): [RunExecutor, string | null, number | null] {
+  if (spec.resume?.agent !== 'harness') return [EXTERNAL_EXECUTOR, null, null]
+  const inheritedTimeout = readDispatchState(spec.resume.parent)?.timeoutMinutes ?? undefined
+  const wallBoundMs = resolveJobTimeoutMs(
+    job(jobName),
+    Number.POSITIVE_INFINITY,
+    spec.timeoutMinutes ?? inheritedTimeout,
+  )
+  return [HARNESS_EXECUTOR, null, wallBoundMs]
 }
 
 async function detachedRunLinks(cwd: string, spec: DetachSpec) {
@@ -295,8 +298,8 @@ async function detachResolved(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded)
-       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded, harness_wall_bound_ms)
+       SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
           AND NOT EXISTS (
@@ -329,7 +332,7 @@ async function detachResolved(
         spec.resume?.session ?? null,
         startedByUserId,
         ...detachedReviewBindings(spec),
-        ...placeholderExecution(spec),
+        ...placeholderExecution(spec, jobName),
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,

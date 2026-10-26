@@ -14,7 +14,6 @@ import {
 } from '../database/migration-drain.ts'
 import { upsertProject } from '../project/projects.ts'
 import { claimRun } from './run-claim.ts'
-import { HARNESS_EVIDENCE_EXCLUSION } from './run-executor.ts'
 import { harnessAgent } from './run-harness-launch.ts'
 import { RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
@@ -151,7 +150,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     ).toEqual({
       agent: 'harness',
       executor: 'harness',
-      evidence_excluded: HARNESS_EVIDENCE_EXCLUSION,
+      evidence_excluded: null,
       pid: null,
       agent_pid: null,
       harness_wall_bound_ms: 60_000,
