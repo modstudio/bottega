@@ -66,7 +66,7 @@ function lookupShipTaskCursor(
         ORDER BY number`,
     )
     .all(sessionId, project, branch) as CursorRow[]
-  return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? rows[0] ?? null
+  return rows.find((row) => cursorArg(row.args, 'worktree') === treePath) ?? null
 }
 
 function parseOpenPr(stdout: string): HeldTreeOpenPr | null {
