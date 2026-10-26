@@ -128,6 +128,8 @@ realPostgres('hosted run task references', () => {
       await admin`DELETE FROM hub_task WHERE id=${OTHER_SPACE_TASK_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`
+      await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
+      await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
       await admin`DELETE FROM membership WHERE id=${MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${OTHER_SPACE_ID}::uuid`
