@@ -82,6 +82,77 @@ test('a workflow question pushes only the cursor UUID', async () => {
   local.close()
 })
 
+test('the hosted question edge stores an optional workflow task UUID', async () => {
+  const workflowTaskId = '01990000-0000-7000-8000-000000000943'
+  const { cursorId, local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    payload.workflowTaskId = workflowTaskId
+  })
+  const payload = questionPayload(local)
+
+  const remote = fakePostgres(
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    [{ id: workflowTaskId, spaceId: String(payload.spaceId) }],
+  )
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(hostedQuestionCursor(remote, cursorId).valueFor('workflow_task_id')).toBe(workflowTaskId)
+  local.close()
+})
+
+test('the hosted question edge accepts an older client and never clears the hosted task link', async () => {
+  const { cursorId, local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    delete payload.workflowTaskId
+  })
+
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(hostedQuestionCursor(remote, cursorId).valueFor('workflow_task_id')).toBeNull()
+  local.close()
+})
+
+test('the hosted question edge falls back to one matching workflow key', async () => {
+  const workflowTaskId = '01990000-0000-7000-8000-000000000943'
+  const { cursorId, local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    payload.workflowTaskId = '01990000-0000-7000-8000-000000000944'
+    payload.workflowKey = 'DEV-943'
+  })
+  const payload = questionPayload(local)
+  const remote = fakePostgres(
+    false,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    [{ id: workflowTaskId, spaceId: String(payload.spaceId), key: 'DEV-943' }],
+  )
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(hostedQuestionCursor(remote, cursorId).valueFor('workflow_task_id')).toBe(workflowTaskId)
+  local.close()
+})
+
+test('the hosted question edge nulls a workflow task UUID absent from the hosted record', async () => {
+  const workflowTaskId = '01990000-0000-7000-8000-000000000943'
+  const { cursorId, local } = workflowQuestionOutbox()
+  replaceQuestionPayload(local, (payload) => {
+    payload.workflowTaskId = workflowTaskId
+  })
+
+  const remote = fakePostgres()
+  expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 1, failed: 0 })
+  expect(hostedQuestionCursor(remote, cursorId).valueFor('workflow_task_id')).toBeNull()
+  local.close()
+})
+
 test('a K7c-1 question payload syncs and its cursor number is discarded', async () => {
   for (const workflowCursorId of [null, 37]) {
     const { cursorId, local } = workflowQuestionOutbox()

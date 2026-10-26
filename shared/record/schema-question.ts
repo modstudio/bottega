@@ -1,8 +1,9 @@
 // concern: postgres-schema-question
 /** Knows the hosted question evidence shape. Must not know local execution or synchronization. */
 import { type SQLWrapper, sql } from 'drizzle-orm'
-import { integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
+import { index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
+import { hubTask } from './schema-hub.ts'
 import { run } from './schema-run.ts'
 
 export function hostedQuestionWins(incoming: SQLWrapper, hosted: SQLWrapper) {
@@ -16,6 +17,9 @@ export const question = pgTable.withRLS(
     spaceId: spaceIdentity(),
     runId: uuid('run_id').references(() => run.id),
     workflowKey: text('workflow_key'),
+    workflowTaskId: uuid('workflow_task_id').references(() => hubTask.id, {
+      onDelete: 'set null',
+    }),
     workflowCursorRecordId: uuid('workflow_cursor_record_id'),
     projectId: uuid('project_id').references(() => project.id),
     machineId: uuid('machine_id')
@@ -53,7 +57,10 @@ export const question = pgTable.withRLS(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
-  (table) => [...tenantPolicies('question', table.spaceId)],
+  (table) => [
+    index('question_workflow_task_id_idx').on(table.workflowTaskId),
+    ...tenantPolicies('question', table.spaceId),
+  ],
 )
 
 export const questionMutationAudit = pgTable.withRLS(

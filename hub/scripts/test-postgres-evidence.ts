@@ -334,12 +334,27 @@ try {
 
     const identity = { userId: USER, spaceId: SPACE_A }
     const stamp = '2026-09-17T12:10:00.000Z'
+    const waitingTaskA = '01990000-0000-7000-8000-000000000693'
+    const waitingTaskB = '01990000-0000-7000-8000-000000000694'
+    const unknownWaitingTask = '01990000-0000-7000-8000-000000000695'
+    const deletedWaitingTask = '01990000-0000-7000-8000-000000000696'
+    await admin`INSERT INTO hub_task
+      (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+       first_seen,last_seen,created_at,updated_at) VALUES
+      (${waitingTaskA}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,'DEV-656',${PLATFORM_SLUG},
+       'waiting task A','active','active','local',now(),now(),now(),now()),
+      (${waitingTaskB}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},${PROJECT_B}::uuid,'DEV-656',${PLATFORM_SLUG},
+       'waiting task B','active','active','local',now(),now(),now(),now()),
+      (${deletedWaitingTask}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,'DEV-657',${PLATFORM_SLUG},
+       'deleted waiting task','active','active','local',now(),now(),now(),now())`
+    await admin`UPDATE hub_task SET deleted_at=now() WHERE id=${deletedWaitingTask}::uuid`
     const waitingInput: OperatorWaitingEmailInput = {
       kind: 'question',
       item_id: 943_001,
       episode: 'fresh-send',
       project: PLATFORM_SLUG,
-      task_key: 'DEV-943',
+      task_key: 'DEV-656',
+      task_id: null,
       question: 'Should this delivery proceed?',
       options: ['Proceed', 'Stop'],
       recommendation: 'Proceed',
@@ -349,6 +364,86 @@ try {
       answer_command: `${PLATFORM_SLUG} question answer 943 --q943001 --from-operator "Proceed"`,
     }
     const waitingNow = new Date()
+    const linkedInput = {
+      ...waitingInput,
+      item_id: 943_010,
+      episode: 'linked',
+      task_id: waitingTaskA,
+    }
+    const linkedFailure = await sendOperatorWaitingEmail(actorUrl, identity, linkedInput, {
+      mail: { send: async () => Promise.reject(new Error('linked retry fixture')) },
+      now: waitingNow,
+    })
+    if (linkedFailure.status !== 'failed') throw new Error('linked waiting email did not fail')
+    const foreignInput = {
+      ...waitingInput,
+      item_id: 943_011,
+      episode: 'foreign-task',
+      task_key: 'DEV-ABSENT',
+      task_id: waitingTaskB,
+    }
+    await sendOperatorWaitingEmail(actorUrl, identity, foreignInput, {
+      mail: { send: async () => undefined },
+      now: waitingNow,
+    })
+    const keyFallbackInput = {
+      ...waitingInput,
+      item_id: 943_012,
+      episode: 'key-fallback',
+      task_id: unknownWaitingTask,
+    }
+    await sendOperatorWaitingEmail(actorUrl, identity, keyFallbackInput, {
+      mail: { send: async () => undefined },
+      now: waitingNow,
+    })
+    await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      {
+        ...waitingInput,
+        item_id: 943_013,
+        episode: 'deleted-key',
+        task_key: 'DEV-657',
+        task_id: null,
+      },
+      { mail: { send: async () => undefined }, now: waitingNow },
+    )
+    await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      {
+        ...waitingInput,
+        item_id: 943_014,
+        episode: 'deleted-id',
+        task_key: null,
+        task_id: deletedWaitingTask,
+      },
+      { mail: { send: async () => undefined }, now: waitingNow },
+    )
+    await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      { ...linkedInput, task_id: null, task_key: null },
+      { mail: { send: async () => undefined }, now: new Date(waitingNow.getTime() + 1) },
+    )
+    const waitingTaskLinks = await admin<{ episode: string; task_id: string | null }[]>`
+      SELECT episode,task_id::text FROM operator_waiting_email
+      WHERE space_id=${SPACE_A}::uuid
+        AND episode IN ('linked','foreign-task','key-fallback','deleted-key','deleted-id')
+      ORDER BY episode`
+    if (
+      JSON.stringify([...waitingTaskLinks]) !==
+      JSON.stringify([
+        { episode: 'deleted-id', task_id: null },
+        { episode: 'deleted-key', task_id: null },
+        { episode: 'foreign-task', task_id: null },
+        { episode: 'key-fallback', task_id: waitingTaskA },
+        { episode: 'linked', task_id: waitingTaskA },
+      ])
+    )
+      throw new Error(`operator waiting task links were ${JSON.stringify([...waitingTaskLinks])}`)
+    await admin`DELETE FROM hub_task WHERE id IN
+      (${waitingTaskA}::uuid,${waitingTaskB}::uuid,${deletedWaitingTask}::uuid)`
     const sent: string[] = []
     const sentCount = () => sent.length
     const mail = { send: async () => void sent.push('sent') }

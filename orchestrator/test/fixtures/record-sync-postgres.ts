@@ -38,6 +38,22 @@ export type FakeRecordScore = {
   onWrite?: () => void
 }
 
+function hostedTaskResult(
+  source: string,
+  values: unknown[],
+  hostedTasks: readonly { id: string; spaceId: string; key?: string; project?: string }[],
+) {
+  if (!source.includes('SELECT id::text AS id FROM hub_task')) return null
+  const matches = hostedTasks.filter((candidate) =>
+    source.includes('AND key=')
+      ? candidate.spaceId === values[0] &&
+        candidate.key === values[1] &&
+        (values[2] == null || candidate.project === values[3])
+      : candidate.spaceId === values[0] && candidate.id === values[1],
+  )
+  return matches.map(({ id }) => ({ id }))
+}
+
 export function fakePostgres(
   failFirstRun: false | Error = false,
   principal: string = RECORD_ACTOR_ROLE,
@@ -53,6 +69,7 @@ export function fakePostgres(
     name: PLATFORM_NAME,
   },
   evidenceCollisionId?: string,
+  hostedTasks: readonly { id: string; spaceId: string; key?: string; project?: string }[] = [],
 ): {
   sql: SQL
   statements: string[]
@@ -108,10 +125,10 @@ export function fakePostgres(
     const exclusionResult = hostedExclusionResult(source, hostedExclusion)
     if (exclusionResult) return exclusionResult
     if (source.includes('SELECT reason FROM run_exclusion')) return []
-    if (source.includes('task_found_by_id'))
-      return [{ task_found_by_id: null, task_found_by_key: null, existing_task_id: null }]
     if (source.includes('INSERT INTO machine')) return [{ user_id: values[1] }]
     if (source.includes('SELECT user_id FROM machine')) return [{ user_id: values[0] }]
+    const hostedTask = hostedTaskResult(source, values, hostedTasks)
+    if (hostedTask) return hostedTask
     return source.includes('FROM project')
       ? [
           {

@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
+import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   decideOperatorWaitingEmailReclaim,
   OPERATOR_EMAIL_INTENT_STALE_MS,
@@ -16,6 +17,7 @@ const input: OperatorWaitingEmailInput = {
   episode: 'episode-1',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
+  task_id: '01990000-0000-7000-8000-000000000943',
   question: 'Should this be enabled?',
   options: ['Enable it', 'Disable it'],
   recommendation: 'Enable it',
@@ -36,7 +38,7 @@ test('rendered HTML contains the decision and obeys email CSS rules', () => {
 
 test('a no-project waiting item renders without a project placeholder', () => {
   const rendered = renderOperatorWaitingEmail(
-    { ...input, project: null, task_key: null },
+    { ...input, project: null, task_key: null, task_id: null },
     new Date('2026-09-25T11:00:00.000Z'),
   )
   expect(rendered.subject).toBe('Waiting on you: question')
@@ -115,4 +117,10 @@ test('hosted endpoint binds space and user from the credential', async () => {
       spaceId: '01990000-0000-7000-8000-00000000070a',
     },
   ])
+})
+
+test('an older waiting-email body defaults an omitted task UUID to null', () => {
+  const older = { ...input } as Partial<typeof input>
+  delete older.task_id
+  expect(operatorWaitingEmailRequestSchema.parse(older).task_id).toBeNull()
 })

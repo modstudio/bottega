@@ -124,7 +124,7 @@ realPostgres('hosted run task references', () => {
       ])
     } finally {
       await admin`DELETE FROM run WHERE id IN (${LINKED_RUN_ID}::uuid,${UNKNOWN_RUN_ID}::uuid,${CROSS_SPACE_RUN_ID}::uuid)`
-      await admin`DELETE FROM hub_task WHERE id=${TASK_ID}::uuid`
+      await admin`DELETE FROM hub_task WHERE id IN (${TASK_ID}::uuid)`
       await admin`DELETE FROM hub_task WHERE id=${OTHER_SPACE_TASK_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`

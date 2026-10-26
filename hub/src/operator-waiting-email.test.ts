@@ -64,6 +64,7 @@ test('local loop records only successful pushes and logs failures for retry', as
     readWaiting: async () => [item(), item({ id: 8, episode: 'episode-2' })],
     ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
+    taskRecordId: () => null,
     push: async (body) => {
       if ((body as { item_id: number }).item_id === 8) throw new Error('offline')
       return { id: 'mail', status: 'sent', reason: null }
@@ -73,6 +74,29 @@ test('local loop records only successful pushes and logs failures for retry', as
   })
   expect(recorded).toEqual([7])
   expect(errors).toEqual(['hub: operator waiting email push failed: Error: offline'])
+})
+
+test('local loop sends a task UUID only when the waiting key resolves', async () => {
+  const bodies: Array<{ task_key: string | null; task_id: string | null }> = []
+  const taskId = '01990000-0000-7000-8000-000000000943'
+  await deliverOperatorWaitingEmails({
+    delay: () => 30,
+    signedIn: async () => 'user',
+    readWaiting: async () => [item(), item({ id: 8, task_key: 'MISSING-8', episode: 'episode-2' })],
+    ledger: () => [],
+    now: () => new Date('2026-09-25T11:00:00.000Z'),
+    taskRecordId: (key) => (key === 'DEV-943' ? taskId : null),
+    push: async (body) => {
+      const pushed = body as { task_key: string | null; task_id: string | null }
+      bodies.push({ task_key: pushed.task_key, task_id: pushed.task_id })
+      return { id: 'mail', status: 'sent', reason: null }
+    },
+    record: () => undefined,
+  })
+  expect(bodies).toEqual([
+    { task_key: 'DEV-943', task_id: taskId },
+    { task_key: 'MISSING-8', task_id: null },
+  ])
 })
 
 test('local loop records abandonment once but leaves intent and failed results retryable', async () => {
@@ -85,6 +109,7 @@ test('local loop records abandonment once but leaves intent and failed results r
     readWaiting: async () => statuses.map((_, id) => item({ id: id + 1, episode: `e-${id}` })),
     ledger: () => [],
     now: () => new Date('2026-09-25T11:00:00.000Z'),
+    taskRecordId: () => null,
     push: async (body) => {
       const status = statuses[(body as { item_id: number }).item_id - 1]!
       return { id: 'mail', status, reason: status === 'intent' ? null : 'delivery refused' }

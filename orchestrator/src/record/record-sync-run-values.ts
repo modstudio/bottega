@@ -1,0 +1,89 @@
+// concern: record-sync-run-values
+/** Maps one validated run payload onto its hosted record values. */
+import { runUsageRecordValues } from './record-run-usage.ts'
+import type { RecordPayload as Payload } from './record-sync-contract.ts'
+import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
+
+const date = (value: unknown) => new Date(String(value))
+const nullableDate = (value: unknown) => (value == null ? null : date(value))
+const bigint = (value: unknown) => BigInt(String(value))
+const nullableString = (value: unknown) => (value == null ? null : String(value))
+const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
+
+export function runRecordValues(row: Payload, projectId: string | null, taskId: string | null) {
+  return {
+    id: String(row.id),
+    spaceId: String(row.spaceId),
+    projectId,
+    machineId: String(row.machineId),
+    startedByUserId: nullableString(row.startedByUserId),
+    startedAt: date(row.startedAt),
+    finishedAt: nullableDate(row.finishedAt),
+    agent: String(row.agent),
+    job: String(row.job),
+    promptSha: String(row.promptSha),
+    specSha: nullableString(row.specSha),
+    promptBytes: bigint(row.promptBytes),
+    promptHead: String(row.promptHead),
+    taskKey: nullableString(row.taskKey),
+    taskId,
+    label: nullableString(row.label),
+    lens: nullableString(row.lens),
+    latencyMs: nullableBigint(row.latencyMs),
+    exitCode: nullableNumber(row.exitCode),
+    outputBytes: nullableBigint(row.outputBytes),
+    ...runUsageRecordValues(row),
+    probe: Boolean(row.probe),
+    failureKind: nullableString(row.failureKind),
+    status: String(row.status),
+    error: nullableString(row.error),
+    retryOf: nullableString(row.retryOf),
+    parentRunId: nullableString(row.parentRunId),
+    turn: Number(row.turn),
+    filesChanged: nullableNumber(row.filesChanged),
+    changedPaths: jsonString(row.changedPaths),
+    linesAdded: nullableNumber(row.linesAdded),
+    linesRemoved: nullableNumber(row.linesRemoved),
+    testsRan: nullableNumber(row.testsRan),
+    testsPassed: nullableNumber(row.testsPassed),
+    testsClaimDisagrees: row.testsClaimDisagrees == null ? null : Boolean(row.testsClaimDisagrees),
+    deviations: nullableNumber(row.deviations),
+    escalations: nullableNumber(row.escalations),
+    stack: nullableString(row.stack),
+    model: nullableString(row.model),
+    evidenceExcluded: nullableString(row.evidenceExcluded),
+    inputTree: nullableString(row.inputTree),
+    headCommit: nullableString(row.headCommit),
+    reviewRef: nullableString(row.reviewRef),
+    reviewRole: nullableString(row.reviewRole),
+    branch: nullableString(row.branch),
+    baseCommit: nullableString(row.baseCommit),
+    mintedBranch: nullableString(row.mintedBranch),
+    docsInjected: nullableNumber(row.docsInjected),
+    docRevisions: jsonString(row.docRevisions),
+    canonSha: nullableString(row.canonSha),
+    transport: nullableString(row.transport),
+    sessionId: nullableString(row.sessionId),
+    routeReason: nullableString(row.routeReason),
+    noFailover: Boolean(row.noFailover),
+    automaticFailover: Boolean(row.automaticFailover),
+    outsideWorktreeWrites: jsonString(row.outsideWorktreeWrites),
+    reviewProvenance: jsonString(row.reviewProvenance),
+    provenanceStatus: nullableString(row.provenanceStatus),
+    workPreserved: Boolean(row.workPreserved),
+    closeOutOutcome: nullableString(row.closeOutOutcome),
+    closeOutDetail: nullableString(row.closeOutDetail),
+    provisioningKind: nullableString(row.provisioningKind),
+    provisioningMs: nullableBigint(row.provisioningMs),
+    provisioningPhases: jsonString(row.provisioningPhases),
+    provisioningEntries: nullableBigint(row.provisioningEntries),
+    provisioningEntriesLimited:
+      row.provisioningEntriesLimited == null ? null : Boolean(row.provisioningEntriesLimited),
+    provisioningHostLoad: jsonString(row.provisioningHostLoad),
+    provisioningOutcome: nullableString(row.provisioningOutcome),
+    provisioningEntryRoots: jsonString(row.provisioningEntryRoots),
+    withheldFields: jsonString(row.withheldFields),
+    createdAt: date(row.createdAt),
+    updatedAt: date(row.updatedAt),
+  }
+}
