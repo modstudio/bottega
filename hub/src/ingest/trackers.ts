@@ -526,6 +526,37 @@ async function backfillTrackerTasks(
   return { filled, activity }
 }
 
+function recentIntervalsNeedingTracker(conn: Database) {
+  return conn
+    .query<{ task_key: string; project: string }, []>(
+      `SELECT DISTINCT i.task_key, i.project
+       FROM interval i LEFT JOIN task t ON t.record_id=i.task_record_id
+      WHERE i.task_key IS NOT NULL
+        AND (t.key IS NULL OR t.source <> 'mcp')
+        AND i.start_at >= datetime('now', '-30 days')`,
+    )
+    .all()
+}
+
+function finishTrackerResults(
+  results: { result: TrackerResult; filled: number }[],
+  at: string,
+): TrackerResult[] {
+  const filled = results.reduce((sum, item) => sum + item.filled, 0)
+  const out = results.map((item) => item.result)
+  if (filled) out.push({ project: 'backfill', tasks: filled, changed: 0, activity: true })
+  if (!trackerLegError(out))
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        )
+        .run(JSON.stringify(at)),
+    )
+  return out
+}
+
 /**
  * Snapshot every reachable tracker into the task table, recording transitions.
  *
@@ -544,15 +575,7 @@ export async function ingestTrackers(
     ? registrations.filter((tracker) => only.has(tracker.project))
     : registrations
 
-  const missing = d
-    .query<{ task_key: string; project: string }, []>(
-      `SELECT DISTINCT i.task_key, i.project
-       FROM interval i LEFT JOIN task t ON t.record_id=i.task_record_id
-      WHERE i.task_key IS NOT NULL
-        AND (t.key IS NULL OR t.source <> 'mcp')
-        AND i.start_at >= datetime('now', '-30 days')`,
-    )
-    .all()
+  const missing = recentIntervalsNeedingTracker(d)
 
   // A tracker row always wins over a git-derived one: git knows a key, never a
   // title or a status.
@@ -656,24 +679,5 @@ export async function ingestTrackers(
   // of finished tasks on the chance one is needed, ask for exactly the handful
   // that recent spans name - typically tens of lookups, against the 99 pages
   // fetching everything would cost.
-  const filled = results.reduce((sum, item) => sum + item.filled, 0)
-  const out = results.map((item) => item.result)
-  if (filled)
-    out.push({
-      project: 'backfill',
-      tasks: filled,
-      changed: 0,
-      activity: true,
-    })
-
-  if (!trackerLegError(out))
-    writeTransaction((conn) =>
-      conn
-        .query(
-          `INSERT INTO setting (key, value) VALUES ('collect.trackers.at', ?)
-                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
-        )
-        .run(JSON.stringify(at)),
-    )
-  return out
+  return finishTrackerResults(results, at)
 }

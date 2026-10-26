@@ -108,7 +108,7 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
     if (!cwd) continue
 
     if (!cur || cur.cwd !== cwd) {
-      if (cur && cur.stamps.length) legs.push(cur)
+      if (cur?.stamps.length) legs.push(cur)
       cur = { cwd, ref, stamps: [], prompts: [], spend: [], sessionId: d.sessionId ?? null }
     }
     cur.stamps.push(ts)
@@ -121,7 +121,7 @@ async function legsOf(file: string, ref: string, sinceMs: number): Promise<Leg[]
       if (text && !isInjected(text)) cur.prompts.push(text.slice(0, 4000))
     }
   }
-  if (cur && cur.stamps.length) legs.push(cur)
+  if (cur?.stamps.length) legs.push(cur)
   return legs
 }
 
@@ -272,7 +272,7 @@ export async function ingestTranscripts(
     }
     files++
 
-    const ref = file.startsWith(root.path + '/') ? file.slice(root.path.length + 1) : file
+    const ref = file.startsWith(`${root.path}/`) ? file.slice(root.path.length + 1) : file
     const legs = (await legsOf(file, ref, sinceMs))
       // Work outside registered projects is left out rather than charged to a
       // project it never touched.
