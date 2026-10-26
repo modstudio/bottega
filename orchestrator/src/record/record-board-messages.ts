@@ -7,10 +7,7 @@ import {
   defaultBoardPurpose,
   parseBoardPurpose,
 } from '../../../shared/board-purpose.ts'
-import {
-  type ReplyAudienceOption,
-  replyAudienceValue,
-} from '../../../shared/board-reply-audience-options.ts'
+import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
@@ -28,7 +25,6 @@ import {
   standingPostingRefusal,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
-import { replyAudienceReachRefusal } from '../board/board-reply-audience.ts'
 import {
   type BoardTag,
   inferredBoardTags,
@@ -712,19 +708,6 @@ async function insertReplyCopyingRoot(
   return viewById(tx, input.id, clock)
 }
 
-export function hostedReplyAudienceReachRefusal(input: {
-  audience: ReplyAudienceOption | null
-  rootAuthorSession: string | null
-  threadAuthorSessions: readonly (string | null)[]
-  rootReceiptSessions: readonly string[]
-}): string | null {
-  return replyAudienceReachRefusal(input.audience, {
-    rootAuthor: input.rootAuthorSession ?? '',
-    threadAuthors: input.threadAuthorSessions.filter((session) => session !== null),
-    rootReceiptReaders: input.rootReceiptSessions,
-  })
-}
-
 export async function replyHostedBoardMessage(
   input: BoardTenant & HostedBoardReplyInput & { rootId: string },
 ): Promise<HostedBoardMessage> {
@@ -782,24 +765,6 @@ export async function replyHostedBoardMessage(
       hasReceipt: false,
     })
     if (refusal) throw new RecordBoardError(refusal, 400)
-    const threadAuthors = (await tx`
-      SELECT author_session FROM board_message
-      WHERE thread_root_id=${String(rootRow.row.id)}::uuid
-      ORDER BY created_at,id
-    `) as Array<{ author_session: string | null }>
-    const rootReceipts = (await tx`
-      SELECT reader_session FROM board_receipt
-      WHERE message_id=${String(rootRow.row.id)}::uuid
-      ORDER BY reader_session
-    `) as Array<{ reader_session: string }>
-    const audienceRefusal = hostedReplyAudienceReachRefusal({
-      audience: parsedAudience,
-      rootAuthorSession:
-        rootRow.row.author_session === null ? null : String(rootRow.row.author_session),
-      threadAuthorSessions: threadAuthors.map((row) => row.author_session),
-      rootReceiptSessions: rootReceipts.map((row) => String(row.reader_session)),
-    })
-    if (audienceRefusal) throw new RecordBoardError(audienceRefusal, 400)
     const duplicateSince = new Date(clock - BOARD_DUPLICATE_WINDOW_MS).toISOString()
     const duplicate = (await tx`
       SELECT id FROM board_message

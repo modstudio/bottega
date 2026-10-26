@@ -27,7 +27,7 @@ import {
   selectPushNotices,
 } from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
-import { parseReplyAudienceOption, resolveReplyReaders } from './board-reply-audience.ts'
+import * as replyAudience from './board-reply-audience.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import {
@@ -634,39 +634,34 @@ const replyAddressesReader = (
       )
     : []
   const cachedReceipts = context.database
-    .query(`SELECT reader_session,audience_at_posting,acknowledged_at
+    .query(`SELECT reader_session AS reader,audience_at_posting AS audienceAtPosting,
+                   acknowledged_at AS acknowledged
             FROM hosted_board_receipt_cache WHERE message_id=? ORDER BY rowid`)
     .all(rootId) as Array<{
-    reader_session: string
-    audience_at_posting: number
-    acknowledged_at: string | null
+    reader: string
+    audienceAtPosting: number
+    acknowledged: string | null
   }>
-  const receipts = new Map(
-    cachedReceipts.map((receipt) => [
-      receipt.reader_session,
-      {
-        reader: receipt.reader_session,
-        audienceAtPosting: receipt.audience_at_posting === 1,
-        acknowledged: receipt.acknowledged_at !== null,
-      },
-    ]),
+  const receipts = replyAudience.mergeReplyAudienceReceipts(cachedReceipts, rootAudienceReaders)
+  const earlierReplies = thread.filter(
+    (candidate) =>
+      candidate.kind === 'reply' &&
+      (candidate.createdAt < message.createdAt ||
+        (candidate.createdAt === message.createdAt && candidate.id < message.id)),
   )
-  for (const reader of rootAudienceReaders) {
-    receipts.set(reader, {
-      reader,
-      audienceAtPosting: true,
-      acknowledged: receipts.get(reader)?.acknowledged ?? false,
+  return replyAudience
+    .resolveReplyReaders({
+      rootAuthor: authorReader(root),
+      threadAuthors: earlierReplies.map(authorReader),
+      loopedInSessions: earlierReplies.flatMap((candidate) => {
+        const session = replyAudience.loopedInSessionFromReplyAudience(candidate.audience)
+        return session === null ? [] : [session]
+      }),
+      rootReceipts: receipts,
+      audience: message.audience ? replyAudience.parseReplyAudienceOption(message.audience) : null,
+      replier: authorReader(message),
     })
-  }
-  return resolveReplyReaders({
-    rootAuthor: authorReader(root),
-    threadAuthors: thread
-      .filter((candidate) => candidate.kind === 'reply' && candidate.createdAt < message.createdAt)
-      .map(authorReader),
-    rootReceipts: [...receipts.values()],
-    audience: message.audience ? parseReplyAudienceOption(message.audience) : null,
-    replier: authorReader(message),
-  }).includes(context.reader)
+    .includes(context.reader)
 }
 
 function hostedReplySuccessorPush(
