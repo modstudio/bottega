@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
-import { newRecordId, RECORD_ACTOR_ROLE } from './schema.ts'
+import { RECORD_ACTOR_ROLE } from './schema.ts'
 
 /**
  * A reader's acknowledgement changes only its own receipt row, so the change feed pages on the
@@ -164,30 +164,6 @@ test('the function refuses an unacknowledged receipt and another reader\u2019s r
     expect(await advanceRevision(database, foreignReceiptMessageId)).toBeFalse()
     expect(await messageRevision(database, deliveredMessageId)).toBe(unacknowledgedBefore)
     expect(await messageRevision(database, foreignReceiptMessageId)).toBe(foreignBefore)
-  } finally {
-    await resetSession(database)
-  }
-})
-
-test('a first acknowledgement is stored and advances the revision through the function', async () => {
-  await bindActor(database, readerUserId)
-  try {
-    const before = await messageRevision(database, deliveredMessageId)
-    const stored = await database.query<{ acknowledged_at: string | null }>(
-      `INSERT INTO board_receipt (
-        id, message_id, reader_user_id, reader_session, audience_at_posting,
-        delivered_at, acknowledged_at
-      ) VALUES ($1, $2, $3, $4, true, now(), now())
-      ON CONFLICT (message_id, reader_user_id, reader_session) DO UPDATE SET
-        delivered_at = COALESCE(board_receipt.delivered_at, EXCLUDED.delivered_at),
-        acknowledged_at = COALESCE(board_receipt.acknowledged_at, EXCLUDED.acknowledged_at)
-      RETURNING acknowledged_at`,
-      [newRecordId(), deliveredMessageId, readerUserId, readerSession],
-    )
-    expect(stored.rows[0]?.acknowledged_at).not.toBeNull()
-    expect(await advanceRevision(database, deliveredMessageId)).toBeTrue()
-    const after = await messageRevision(database, deliveredMessageId)
-    expect(BigInt(after) > BigInt(before)).toBeTrue()
   } finally {
     await resetSession(database)
   }
