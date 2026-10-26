@@ -21,7 +21,6 @@ import {
   projectMcpProbeLaunches,
   RequiredMcpProbeRefusalError,
   requiredMcpProbeDecision,
-  requiredMcpProbeRefusal,
 } from '../sandbox/project-mcp-preflight.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import {
@@ -130,8 +129,7 @@ async function refuseRequiredProjectMcpLaunch(input: {
         `the run continues past this failure because --mcp require applies only to ${requiredServer}`,
     )
   }
-  const refusal = requiredMcpProbeRefusal(facts)
-  if (refusal) throw new RequiredMcpProbeRefusalError(refusal)
+  if (decision.refusal) throw new RequiredMcpProbeRefusalError(decision.refusal)
 }
 
 /** Give cwd-discovered project MCP configuration only to a repository writer. */

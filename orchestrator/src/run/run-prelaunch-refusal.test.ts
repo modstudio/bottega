@@ -3,7 +3,7 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   RequiredMcpProbeRefusalError,
-  requiredMcpProbeRefusal,
+  requiredMcpProbeDecision,
 } from '../sandbox/project-mcp-preflight.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
@@ -59,11 +59,11 @@ test('an MCP prelaunch refusal publishes the child and rolls up its root once', 
 test('a refusal carried on the error is recorded as mcp_unverified, never harness', () => {
   const runId = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
   const refusal = new RequiredMcpProbeRefusalError(
-    requiredMcpProbeRefusal({
+    requiredMcpProbeDecision({
       mode: 'require',
       project: { name: 'starship', path: '/opt/starship' },
       failures: [{ server: 'starship', error: 'Connection closed\nstderr: not configured' }],
-    })!,
+    }).refusal!,
   )
 
   // This is the call run.ts's launch catch makes: the error's own kind is what

@@ -112,11 +112,6 @@ export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): Required
   }
 }
 
-/** The required-server refusal from the scoped probe decision, when there is one. */
-export function requiredMcpProbeRefusal(facts: RequiredMcpProbeFacts): string | null {
-  return requiredMcpProbeDecision(facts).refusal
-}
-
 /**
  * A required project launch that affirmatively failed before the run started.
  *
