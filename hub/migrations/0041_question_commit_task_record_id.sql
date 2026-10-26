@@ -13,6 +13,12 @@ CREATE INDEX question_workflow_task_record_id ON question(workflow_task_record_i
 --> statement-breakpoint
 CREATE INDEX commit_key_task_record_id ON commit_key(task_record_id);
 --> statement-breakpoint
+CREATE INDEX question_task_key ON question(task_key);
+--> statement-breakpoint
+CREATE INDEX question_workflow_key ON question(workflow_key);
+--> statement-breakpoint
+CREATE INDEX commit_key_task_key ON commit_key(task_key);
+--> statement-breakpoint
 -- BACKFILL
 UPDATE question
 SET task_record_id = (

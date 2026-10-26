@@ -3,7 +3,12 @@ import { resolve } from 'node:path'
 import { db } from './db.ts'
 import type { OrchRun } from './ingest/runs.ts'
 import { type Project, projectRoot, projects } from './projects.ts'
-import { isTaskKeyPrefix, observedTaskKeyPrefixes, taskIdentityDecision } from './task-identity.ts'
+import {
+  isTaskKeyPrefix,
+  observedTaskKeyPrefixes,
+  taskIdentityDecision,
+  uniqueTaskRecordIdForKey,
+} from './task-identity.ts'
 
 /** Every ticket prefix registered or observed in this process's attribution pass. */
 let cachedKeyPrefixes: string | null = null
@@ -33,6 +38,19 @@ function keyPrefixes(): string {
 export function keyPattern(): RegExp {
   const keys = keyPrefixes()
   return new RegExp(keys ? `\\b(?:${keys})-\\d+` : '(?!)', 'g')
+}
+
+/** Persist a commit's claimed task label together with its exact unique task reference. */
+export function writeCommitKey(
+  conn: ReturnType<typeof db>,
+  row: { sha: string; repo: string; key: string; at: string },
+): void {
+  conn
+    .query(
+      `INSERT INTO commit_key (sha,repo,task_key,task_record_id,at) VALUES (?,?,?,?,?)
+       ON CONFLICT(sha) DO NOTHING`,
+    )
+    .run(row.sha, row.repo, row.key, uniqueTaskRecordIdForKey(conn, row.key), row.at)
 }
 
 /** The worktree directory's own name, whatever is nested below it. */

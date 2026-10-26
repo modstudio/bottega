@@ -7,11 +7,7 @@ import { intervalOwningProject } from '../interval-project-correction.ts'
 import { readRunIdentityMap, readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
-import {
-  intervalTaskRecordId,
-  intervalTaskRecordIdForUpdate,
-  uniqueTaskRecordIdForKey,
-} from '../task-identity.ts'
+import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -288,16 +284,18 @@ function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListR
        close_reason=excluded.close_reason`,
   )
   for (const question of questions) {
+    // The workflow cursor's display key and task link name the same task.
+    const taskRecordId = uniqueTaskRecordIdForKey(conn, question.workflow_key)
     upsert.run(
       question.record_id,
       question.id,
       question.workflow_cursor_id,
       question.workflow_key,
-      uniqueTaskRecordIdForKey(conn, question.workflow_key),
+      taskRecordId,
       question.project,
       projectRecordIdFor(question.project),
       question.workflow_key,
-      uniqueTaskRecordIdForKey(conn, question.workflow_key),
+      taskRecordId,
       question.session_id,
       question.asked_at,
       question.answered_at,
@@ -408,7 +406,7 @@ function applyOrchReplace(
       row,
       taskRecordId: current
         ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
-        : intervalTaskRecordId(conn, row.task_key),
+        : uniqueTaskRecordIdForKey(conn, row.task_key),
       projectRecordId: projectRecordIdFor(row.project),
     }
   })
@@ -455,7 +453,7 @@ function applyOrchReplace(
     insert.run(
       newRecordId(),
       row.task_key,
-      intervalTaskRecordId(conn, row.task_key),
+      uniqueTaskRecordIdForKey(conn, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.agent,

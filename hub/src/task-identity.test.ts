@@ -1,16 +1,16 @@
 import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
+import { writeCommitKey } from './attribute.ts'
 import { applyMigrations } from './migrations.ts'
 import {
   formatTaskIdentityDoctor,
-  intervalTaskRecordId,
   observedTaskKeyPrefixes,
   resolveTask,
   taskIdentityDecision,
   taskIdentityDoctor,
   taskKeyPrefix,
-  writeCommitKey,
+  uniqueTaskRecordIdForKey,
 } from './task-identity.ts'
 
 test('interval task identity resolves only one matching task', () => {
@@ -22,9 +22,9 @@ test('interval task identity resolves only one matching task', () => {
       ('many-a','MANY-1','alpha','local','2026-01-01','2026-01-01'),
       ('many-b','MANY-1','beta','local','2026-01-01','2026-01-01');
   `)
-  expect(intervalTaskRecordId(conn, 'MISSING-1')).toBeNull()
-  expect(intervalTaskRecordId(conn, 'MANY-1')).toBeNull()
-  expect(intervalTaskRecordId(conn, 'ONE-1')).toBe('one-a')
+  expect(uniqueTaskRecordIdForKey(conn, 'MISSING-1')).toBeNull()
+  expect(uniqueTaskRecordIdForKey(conn, 'MANY-1')).toBeNull()
+  expect(uniqueTaskRecordIdForKey(conn, 'ONE-1')).toBe('one-a')
   conn.close()
 })
 

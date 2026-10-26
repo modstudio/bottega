@@ -40,6 +40,23 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
     expect(await hubDoctorLines()).toContain('interval links unlinked task keys MISSING-1 (1)')
   })
 
+  test('reports each unlinked question and commit task-key column', async () => {
+    writeTransaction((conn) =>
+      conn.exec(`
+        INSERT INTO question(record_id,number,run_ref,task_key,workflow_key,asked_at)
+        VALUES
+          ('question-missing-a',1,'orch:missing-a','TASK-MISSING','WORKFLOW-MISSING','2026-10-25'),
+          ('question-missing-b',2,'orch:missing-b','TASK-MISSING',NULL,'2026-10-25');
+        INSERT INTO commit_key(sha,repo,task_key,at)
+        VALUES ('commit-missing','alpha','COMMIT-MISSING','2026-10-25');
+      `),
+    )
+    const lines = await hubDoctorLines()
+    expect(lines).toContain('question.task_key links unlinked task keys TASK-MISSING (2)')
+    expect(lines).toContain('question.workflow_key links unlinked task keys WORKFLOW-MISSING (1)')
+    expect(lines).toContain('commit_key.task_key links unlinked task keys COMMIT-MISSING (1)')
+  })
+
   test('caps named unlinked keys and separately reports intervals with neither link', async () => {
     writeTransaction((conn) => {
       const insert = conn.query(

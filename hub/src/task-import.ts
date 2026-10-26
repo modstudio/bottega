@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { assetPath } from '../../shared/install-root.ts'
-import { projectOf } from './attribute.ts'
+import { projectOf, writeCommitKey } from './attribute.ts'
 import { writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
 import { createTask } from './task.ts'
@@ -28,7 +28,7 @@ export async function importTasks(file: string): Promise<number> {
       .filter(Boolean)
       .map((line) => line.split('\t') as [string, string]),
   )
-  const imported: Array<{ key: string; taskRecordId: string; shas: string[] }> = []
+  const imported: Array<{ key: string; shas: string[] }> = []
   for (const item of items) {
     const row = await createTask(
       {
@@ -40,19 +40,13 @@ export async function importTasks(file: string): Promise<number> {
       },
       { skipDuplicateCheck: true },
     )
-    imported.push({ key: row.key, taskRecordId: row.record_id, shas: item.shas })
+    imported.push({ key: row.key, shas: item.shas })
   }
   writeTransaction((conn) => {
     for (const item of imported)
       for (const sha of item.shas) {
         const at = stamps.get(sha)
-        if (at)
-          conn
-            .query(
-              `INSERT OR IGNORE INTO commit_key (sha,repo,task_key,task_record_id,at)
-               VALUES (?,?,?,?,?)`,
-            )
-            .run(sha, project, item.key, item.taskRecordId, at)
+        if (at) writeCommitKey(conn, { sha, repo: project, key: item.key, at })
       }
   })
   return items.length

@@ -26,22 +26,6 @@ export function uniqueTaskRecordIdForKey(conn: Database, taskKey: string | null)
   return matches.length === 1 ? matches[0]!.record_id : null
 }
 
-/** Resolve an interval's display key only when it names exactly one local task row. */
-export const intervalTaskRecordId = uniqueTaskRecordIdForKey
-
-/** Persist a commit's claimed task label together with its exact unique task reference. */
-export function writeCommitKey(
-  conn: Database,
-  row: { sha: string; repo: string; key: string; at: string },
-): void {
-  conn
-    .query(
-      `INSERT INTO commit_key (sha,repo,task_key,task_record_id,at) VALUES (?,?,?,?,?)
-       ON CONFLICT(sha) DO NOTHING`,
-    )
-    .run(row.sha, row.repo, row.key, uniqueTaskRecordIdForKey(conn, row.key), row.at)
-}
-
 /** Keep an established link until its display key changes; otherwise resolve exactly one task. */
 export function intervalTaskRecordIdForUpdate(
   conn: Database,
@@ -54,7 +38,7 @@ export function intervalTaskRecordIdForUpdate(
     )
     .get(recordId)
   if (current?.task_key === taskKey && current.task_record_id) return current.task_record_id
-  return intervalTaskRecordId(conn, taskKey)
+  return uniqueTaskRecordIdForKey(conn, taskKey)
 }
 
 /** Prefixes observed in canonical task identity storage. */

@@ -97,6 +97,28 @@ test('late tasks link rows and task deletion clears links without deleting evide
       task_record_id: 'task-late',
     })
 
+    d.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+        ('task-ambiguous-a','AMBIGUOUS-1','alpha','local','2026-10-25','2026-10-25'),
+        ('task-ambiguous-b','AMBIGUOUS-1','beta','local','2026-10-25','2026-10-25');
+      INSERT INTO question(record_id,number,run_ref,task_key,workflow_key,asked_at)
+      VALUES ('question-ambiguous',2,'orch:ambiguous','AMBIGUOUS-1','AMBIGUOUS-1','2026-10-25');
+      INSERT INTO commit_key(sha,repo,task_key,at)
+      VALUES ('commit-ambiguous','alpha','AMBIGUOUS-1','2026-10-25');
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+      VALUES ('task-ambiguous-c','AMBIGUOUS-1','gamma','local','2026-10-25','2026-10-25');
+    `)
+    expect(
+      d
+        .query(
+          `SELECT task_record_id,workflow_task_record_id FROM question WHERE record_id='question-ambiguous'`,
+        )
+        .get(),
+    ).toEqual({ task_record_id: null, workflow_task_record_id: null })
+    expect(
+      d.query(`SELECT task_record_id FROM commit_key WHERE sha='commit-ambiguous'`).get(),
+    ).toEqual({ task_record_id: null })
+
     d.exec(`DELETE FROM task WHERE record_id='task-late'`)
     expect(
       d
