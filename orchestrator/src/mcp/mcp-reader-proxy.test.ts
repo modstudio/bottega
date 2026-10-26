@@ -173,6 +173,48 @@ test('command sanitizes a configured credential from an upstream startup failure
   }
 })
 
+test('command sanitizes a helper-resolved header from an upstream startup failure', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-helper-header-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  await Bun.write(join(main, '.keep'), '')
+  await Bun.write(join(tree, '.keep'), '')
+  const errors: string[] = []
+  const sentinel = 'sentinel-helper-header-token'
+  try {
+    await readerMcpProxyCommand('project', 'tracker', tree, {
+      projectByName: () => ({ name: 'project', path: main, settings: {} }),
+      retiredProjectByName: () => null,
+      readMcpConfigResult: () => ({
+        ok: true,
+        path: join(main, '.mcp.json'),
+        config: {
+          tracker: {
+            name: 'tracker',
+            url: 'https://example.test/mcp',
+            headersHelper: './resolve-headers tracker',
+          },
+        },
+      }),
+      resolveMcpHeaders: async () => ({ Authorization: sentinel }),
+      connectMcpToolClient: async () => {
+        throw new Error(`upstream rejected ${sentinel}`)
+      },
+      environment: { PATH: '/bin' },
+      error: (line) => errors.push(line),
+      setExitCode: () => {},
+    })
+    expect(errors).toEqual([
+      'MCP reader proxy for tracker could not start: upstream rejected [redacted]',
+    ])
+    expect(errors.join('\n')).not.toContain(sentinel)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('command resolves the platform’s own server without a tree entry, and a tree entry still wins', async () => {
   const root = mkdtempSync(join(tmpdir(), 'reader-proxy-platform-'))
   const main = join(root, 'main')

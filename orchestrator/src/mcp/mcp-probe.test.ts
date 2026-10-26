@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
@@ -84,6 +84,25 @@ test('only an absent launch file lets the platform name resolve to the built-in 
   expect(
     resolveMcpServerLaunchFromRead({ ok: false, path, reason: 'missing' }, 'tracker', binary),
   ).toBeNull()
+})
+
+test('headersHelper survives parsing only when it is a non-empty string', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mcp-helper-parse-'))
+  writeFileSync(
+    join(dir, '.mcp.json'),
+    JSON.stringify({
+      mcpServers: {
+        valid: { url: 'https://example.test/mcp', headersHelper: './headers valid' },
+        numeric: { url: 'https://example.test/mcp', headersHelper: 42 },
+        empty: { url: 'https://example.test/mcp', headersHelper: '' },
+      },
+    }),
+  )
+
+  const parsed = readMcpConfig(dir)
+  expect(parsed.valid?.headersHelper).toBe('./headers valid')
+  expect(parsed.numeric?.headersHelper).toBeUndefined()
+  expect(parsed.empty?.headersHelper).toBeUndefined()
 })
 
 test('a successful orchestrator tool probe leaves worker attachment unverified', () => {

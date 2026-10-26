@@ -10,6 +10,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/install-root.ts',
   '../../../shared/process-identity.ts',
   '../../../shared/record-id.ts',
+  '../../../shared/secret-shaped.ts',
   '../../../shared/self-spawn.ts',
   '../../../shared/state-directory.ts',
   '../artifact-paths.ts',
@@ -18,6 +19,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../contract/contract-reply.ts',
   '../failure/failure.ts',
   '../jobs/job-fidelity.ts',
+  '../mcp/mcp-headers-helper.ts',
   '../mcp/mcp-probe.ts',
   'orch.ts',
   '../outcome.ts',
@@ -27,6 +29,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../run/run-identifier-grammar.ts',
   '../run/run-identifier.ts',
   '../score/refusal-guidance.ts',
+  '../secret-shaped-output.ts',
   '../collect/result-output.ts',
   '../transport/codex-throttle.ts',
 ] as const

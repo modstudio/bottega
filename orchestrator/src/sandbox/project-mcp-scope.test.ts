@@ -16,6 +16,11 @@ const CONFIG: Record<string, McpServerConfig> = {
     url: 'https://example.test/secret',
     headers: { Authorization: 'literal-secret' },
   },
+  helperHeader: {
+    name: 'helperHeader',
+    url: 'https://example.test/helper',
+    headersHelper: './headers helperHeader',
+  },
   noLaunch: { name: 'noLaunch' },
 }
 const PROJECT = { name: 'starship', path: '/project', settings: {} }
@@ -30,7 +35,7 @@ test('a writing run attaches every project server except the withheld ones', () 
     cwd: '/project',
   })
   expect(selection.servers.remote).toEqual({ url: 'https://example.test/mcp' })
-  expect(selection.withheld).toEqual(['secretEnv', 'secretHeader', 'noLaunch'])
+  expect(selection.withheld).toEqual(['secretEnv', 'secretHeader', 'helperHeader', 'noLaunch'])
   expect(JSON.stringify(selection)).not.toContain('literal-secret')
 })
 
@@ -101,7 +106,7 @@ test('MCP off attaches no project server at all', () => {
 test('withheld names are reported in the harness that loses them, and not when none are', () => {
   expect(projectMcpWithheldLine('goose', [])).toBeNull()
   expect(projectMcpWithheldLine('goose', ['a', 'b'])).toBe(
-    'MCP scope: goose withheld a, b (inline env/headers or no launch definition)',
+    'MCP scope: goose withheld a, b (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them',
   )
 })
 

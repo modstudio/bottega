@@ -56,7 +56,11 @@ function selectDirectProjectMcpServers(
   const withheld: string[] = []
   for (const [name, entry] of Object.entries(projectServers)) {
     if (disabled.has(name)) continue
-    if (Object.keys(entry.env ?? {}).length || Object.keys(entry.headers ?? {}).length) {
+    if (
+      Object.keys(entry.env ?? {}).length ||
+      Object.keys(entry.headers ?? {}).length ||
+      entry.headersHelper
+    ) {
       withheld.push(name)
     } else if (entry.url) {
       servers[name] = { url: entry.url }
@@ -98,7 +102,7 @@ export function selectProjectMcpServers(
 /** The visible reason one harness does not have a withheld project server. */
 export function projectMcpWithheldLine(harness: string, withheld: string[]): string | null {
   if (!withheld.length) return null
-  return `MCP scope: ${harness} withheld ${withheld.join(', ')} (inline env/headers or no launch definition)`
+  return `MCP scope: ${harness} withheld ${withheld.join(', ')} (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them`
 }
 
 /**

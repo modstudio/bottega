@@ -272,20 +272,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep task-key admission a pure decision over tracker lookup evidence.',
   ),
   boundary(
-    'task-key-lookup-boundary',
-    'orchestrator/src/dispatch/task-key-lookup.ts',
-    [
-      '../../../shared/brand.ts',
-      '../../../shared/self-spawn.ts',
-      '../../../shared/trackers.ts',
-      '../mcp/mcp-probe.ts',
-      '../mcp/mcp-tool-list.ts',
-      '../project/projects.ts',
-      './task-key-admission.ts',
-    ],
-    'Keep tracker access in an adapter that returns evidence to the pure admission decision.',
-  ),
-  boundary(
     'execution-requirement-boundary',
     'orchestrator/src/dispatch/execution-requirement.ts',
     ['../../../shared/brand.ts'],

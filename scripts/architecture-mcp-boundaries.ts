@@ -21,6 +21,21 @@ const boundary = (
 
 export const mcpBoundarySpecs: ImportBoundary[] = [
   boundary(
+    'task-key-lookup-boundary',
+    'orchestrator/src/dispatch/task-key-lookup.ts',
+    [
+      '../../../shared/brand.ts',
+      '../../../shared/self-spawn.ts',
+      '../../../shared/trackers.ts',
+      '../mcp/mcp-headers-helper.ts',
+      '../mcp/mcp-probe.ts',
+      '../mcp/mcp-tool-list.ts',
+      '../project/projects.ts',
+      './task-key-admission.ts',
+    ],
+    'Keep tracker access in an adapter that returns evidence to the pure admission decision.',
+  ),
+  boundary(
     'mcp-commands-boundary',
     'orchestrator/src/mcp/mcp-commands.ts',
     ['../../../shared/brand.ts', './mcp.ts', './mcp-compatibility-record.ts', './mcp-probe.ts'],

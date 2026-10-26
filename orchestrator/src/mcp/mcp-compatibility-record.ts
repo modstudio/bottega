@@ -7,6 +7,7 @@ import { projects } from '../project/projects.ts'
 import { decideMcpCompatibility, type McpCompatibilityVerdict } from './mcp-compatibility.ts'
 import {
   bottegaMcpBinary,
+  type McpServerConfig,
   parseMcpProbe,
   readMcpConfigResult,
   resolveMcpServerLaunchFromRead,
@@ -60,8 +61,20 @@ export type McpCompatibilityRow = {
   verdict: McpCompatibilityVerdict
   pattern: string | null
   transport: 'url' | 'command' | 'unknown'
-  auth: 'bearer' | 'header' | 'none'
+  auth: 'bearer' | 'header' | 'helper' | 'none'
   lastObservation: { runId: string; time: string; connected: number | null } | null
+}
+
+function mcpAuth(config: McpServerConfig | undefined): McpCompatibilityRow['auth'] {
+  if (config?.headersHelper) return 'helper'
+  const headers = config?.headers ?? {}
+  if (
+    Object.entries(headers).some(
+      ([name, value]) => name.toLowerCase() === 'authorization' && /^bearer\s+/i.test(value),
+    )
+  )
+    return 'bearer'
+  return Object.keys(headers).length ? 'header' : 'none'
 }
 
 function latestAgentObservation(
@@ -99,14 +112,7 @@ export function mcpCompatibilityRows(projectFilter?: string): McpCompatibilityRo
       bottegaMcpBinary(),
     )?.config
     const listing = latestMcpListing(project.recordId, server)
-    const headers = config?.headers ?? {}
-    const auth = Object.entries(headers).some(
-      ([name, value]) => name.toLowerCase() === 'authorization' && /^bearer\s+/i.test(value),
-    )
-      ? 'bearer'
-      : Object.keys(headers).length
-        ? 'header'
-        : 'none'
+    const auth = mcpAuth(config)
     for (const [agent, declaration] of Object.entries(AGENTS)) {
       const compatibility = decideMcpCompatibility(
         listing?.listedTools,
