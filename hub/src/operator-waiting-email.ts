@@ -132,6 +132,8 @@ export async function deliverOperatorWaitingEmails(
       const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)({
         kind: item.kind,
         item_id: item.id,
+        item_record_id:
+          item.kind === 'workflow' ? item.workflow_cursor_record_id : item.question_record_id,
         episode: item.episode,
         project: item.project,
         task_key: item.task_key,

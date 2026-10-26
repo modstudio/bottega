@@ -351,6 +351,7 @@ try {
     const waitingInput: OperatorWaitingEmailInput = {
       kind: 'question',
       item_id: 943_001,
+      item_record_id: null,
       episode: 'fresh-send',
       project: PLATFORM_SLUG,
       task_key: 'DEV-656',

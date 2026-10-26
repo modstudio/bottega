@@ -381,6 +381,12 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
   },
   {
     store: 'hosted',
+    column: 'operator_waiting_email.item_id',
+    sibling: 'operator_waiting_email.item_record_id',
+    reason: 'display label beside the waiting item UUID reference',
+  },
+  {
+    store: 'hosted',
     column: 'operator_waiting_email.task_key',
     sibling: 'operator_waiting_email.task_id',
     reason: 'display label beside the task UUID reference',
@@ -530,7 +536,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'hub_task_status_event.task_key',
     'landing_triage_snapshot.review_ids',
     'machine_public_key.key_id',
-    'operator_waiting_email.item_id',
     'question.filed_ref',
     'secret_dek_wrap.recipient_key_id',
     'secret_dek_wrap.sender_key_id',

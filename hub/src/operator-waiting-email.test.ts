@@ -99,6 +99,37 @@ test('local loop sends a task UUID only when the waiting key resolves', async ()
   ])
 })
 
+test('local loop names each waiting item by its kind-specific UUID', async () => {
+  const bodies: Array<{ kind: string; item_record_id: string | null }> = []
+  const workflowRecordId = '01990000-0000-7000-8000-000000000008'
+  await deliverOperatorWaitingEmails({
+    delay: () => 30,
+    signedIn: async () => 'user',
+    readWaiting: async () => [
+      item(),
+      item({
+        kind: 'workflow',
+        id: 8,
+        workflow_cursor_record_id: workflowRecordId,
+        episode: 'episode-2',
+      }),
+    ],
+    ledger: () => [],
+    now: () => new Date('2026-09-25T11:00:00.000Z'),
+    taskRecordId: () => null,
+    push: async (body) => {
+      const pushed = body as { kind: string; item_record_id: string | null }
+      bodies.push({ kind: pushed.kind, item_record_id: pushed.item_record_id })
+      return { id: 'mail', status: 'sent', reason: null }
+    },
+    record: () => undefined,
+  })
+  expect(bodies).toEqual([
+    { kind: 'question', item_record_id: item().question_record_id },
+    { kind: 'workflow', item_record_id: workflowRecordId },
+  ])
+})
+
 test('local loop records abandonment once but leaves intent and failed results retryable', async () => {
   const recorded: number[] = []
   const errors: string[] = []

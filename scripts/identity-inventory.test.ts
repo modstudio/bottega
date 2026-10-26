@@ -312,6 +312,32 @@ test('a display label beside a UUID sibling produces no reference finding', () =
   )
 })
 
+test('an integer display label beside a UUID sibling is a classified identity label', () => {
+  const table = {
+    name: 'item',
+    primaryKey: ['id'],
+    columns: [
+      column('item', 'id', 'uuid', true),
+      column('item', 'item_id', 'integer'),
+      column('item', 'item_record_id', 'uuid'),
+    ],
+  }
+  const manifests = {
+    ...EMPTY,
+    displayLabels: [
+      {
+        store: 'hosted' as const,
+        column: 'item.item_id',
+        sibling: 'item.item_record_id',
+        reason: 'displayed local item number',
+      },
+    ],
+  }
+  expect(classifyKeyInventory('hosted', [table], manifests).findings).not.toContain(
+    'item.item_id:reference',
+  )
+})
+
 test('a display label may name a foreign key to a UUID primary key as its sibling', () => {
   const parent = {
     name: 'project',

@@ -1,9 +1,11 @@
 import { expect, test } from 'bun:test'
+import type { SQL } from 'bun'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { operatorWaitingEmailApi } from './operator-waiting-email-api.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
+  claimOperatorWaitingEmail,
   decideOperatorWaitingEmailReclaim,
   OPERATOR_EMAIL_INTENT_STALE_MS,
   OPERATOR_EMAIL_MAX_ATTEMPTS,
@@ -14,6 +16,7 @@ import {
 const input: OperatorWaitingEmailInput = {
   kind: 'question',
   item_id: 7,
+  item_record_id: '01990000-0000-7000-8000-000000000007',
   episode: 'episode-1',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
@@ -119,8 +122,87 @@ test('hosted endpoint binds space and user from the credential', async () => {
   ])
 })
 
-test('an older waiting-email body defaults an omitted task UUID to null', () => {
+test('an older waiting-email body defaults omitted UUIDs to null', () => {
   const older = { ...input } as Partial<typeof input>
   delete older.task_id
-  expect(operatorWaitingEmailRequestSchema.parse(older).task_id).toBeNull()
+  delete older.item_record_id
+  expect(operatorWaitingEmailRequestSchema.parse(older)).toMatchObject({
+    task_id: null,
+    item_record_id: null,
+  })
+})
+
+test('claim uses the item UUID when present and the local label only for an older client', async () => {
+  type Intent = {
+    id: string
+    status: 'sent'
+    reason: null
+    attempts: number
+    updated_at: string
+  }
+  const intents = new Map<string, Intent>()
+  const query = (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const statement = strings.join('?')
+    if (statement === '?::jsonb') return { sql: statement, values }
+    if (statement.includes('pg_advisory_xact_lock')) return Promise.resolve([])
+    if (statement.includes('SELECT id,status,reason,attempts,updated_at')) {
+      const itemRecordId = values[4] as string | null
+      const key = itemRecordId ?? `label:${String(values[6])}`
+      const existing = intents.get(key)
+      return Promise.resolve(existing ? [existing] : [])
+    }
+    if (statement.includes('SELECT count(*)::int AS count')) return Promise.resolve([{ count: 0 }])
+    if (statement.includes('WITH inserted AS')) {
+      const itemRecordId = values[5] as string | null
+      const key = itemRecordId ?? `label:${String(values[4])}`
+      const intent: Intent = {
+        id: String(values[0]),
+        status: 'sent',
+        reason: null,
+        attempts: 1,
+        updated_at: String(values[17]),
+      }
+      intents.set(key, intent)
+      return Promise.resolve([{ ...intent, email: 'operator@example.test' }])
+    }
+    throw new Error(`unexpected SQL in claim fixture: ${statement}`)
+  }
+  const tx = query as unknown as SQL
+  const caller = {
+    spaceId: '01990000-0000-7000-8000-000000000701',
+    userId: '01990000-0000-7000-8000-000000000702',
+  }
+  const now = new Date('2026-09-25T11:00:00.000Z')
+  const firstRecordId = '01990000-0000-7000-8000-000000000711'
+  const secondRecordId = '01990000-0000-7000-8000-000000000712'
+  const withoutTask = { ...input, task_key: null, task_id: null }
+
+  await claimOperatorWaitingEmail(
+    tx,
+    caller,
+    { ...withoutTask, item_record_id: firstRecordId },
+    now,
+  )
+  await claimOperatorWaitingEmail(
+    tx,
+    caller,
+    { ...withoutTask, item_record_id: secondRecordId },
+    now,
+  )
+  const olderFirst = await claimOperatorWaitingEmail(
+    tx,
+    caller,
+    { ...withoutTask, item_record_id: null },
+    now,
+  )
+  const olderAgain = await claimOperatorWaitingEmail(
+    tx,
+    caller,
+    { ...withoutTask, item_record_id: null },
+    now,
+  )
+
+  expect([...intents.keys()]).toEqual([firstRecordId, secondRecordId, 'label:7'])
+  expect(olderAgain.id).toBe(olderFirst.id)
+  expect(olderAgain.action).toBe('return')
 })

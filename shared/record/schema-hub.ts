@@ -519,6 +519,7 @@ export const operatorWaitingEmail = pgTable.withRLS(
       .references(() => user.id),
     kind: text().notNull(),
     itemId: bigint('item_id', { mode: 'number' }).notNull(),
+    itemRecordId: uuid('item_record_id'),
     episode: text().notNull(),
     project: text(),
     taskKey: text('task_key'),
@@ -537,13 +538,12 @@ export const operatorWaitingEmail = pgTable.withRLS(
     sentAt: timestamp('sent_at', { withTimezone: true }),
   },
   (table) => [
-    unique('operator_waiting_email_episode_unique').on(
-      table.spaceId,
-      table.userId,
-      table.kind,
-      table.itemId,
-      table.episode,
-    ),
+    uniqueIndex('operator_waiting_email_record_episode_unique')
+      .on(table.spaceId, table.userId, table.kind, table.itemRecordId, table.episode)
+      .where(sql`${table.itemRecordId} IS NOT NULL`),
+    uniqueIndex('operator_waiting_email_label_episode_unique')
+      .on(table.spaceId, table.userId, table.kind, table.itemId, table.episode)
+      .where(sql`${table.itemRecordId} IS NULL`),
     check('operator_waiting_email_kind_check', sql`${table.kind} IN ('question','workflow')`),
     check(
       'operator_waiting_email_status_check',

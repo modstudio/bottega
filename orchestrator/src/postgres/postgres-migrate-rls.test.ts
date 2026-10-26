@@ -37,6 +37,7 @@ import { registerActiveSpaceProofs } from '../../test/postgres-remembered-space-
 import * as ids from '../../test/postgres-rls-values.ts'
 import { proveHostedDocs, registerScoreRecordSyncProof } from '../../test/postgres-score-proof.ts'
 import { registerStaleMembershipProof } from '../../test/postgres-stale-membership-proof.ts'
+import { registerHostedTaskLinkConvergenceProof } from '../../test/postgres-task-link-convergence-proof.ts'
 import { startRecordApiServer } from '../record/record-api-server.ts'
 import {
   bearerHeaders,
@@ -1042,6 +1043,18 @@ realPostgres('RLS proof against real Postgres', () => {
     spaceId: authSpaceA,
     projectName: 'auth-a-project',
     projectId: authProjectA,
+    asSpace,
+    admin: (statement) => succeeds('postgres', 'postgres', statement),
+  }))
+
+  registerHostedTaskLinkConvergenceProof(() => ({
+    actorRole: RECORD_ACTOR_ROLE,
+    spaceId: ids.SPACE_A,
+    otherSpaceId: ids.SPACE_B,
+    projectName: 'alpha',
+    projectId: ids.PROJECT_A,
+    machineId: ids.MACHINE_A,
+    userId: ids.USER_A,
     asSpace,
     admin: (statement) => succeeds('postgres', 'postgres', statement),
   }))

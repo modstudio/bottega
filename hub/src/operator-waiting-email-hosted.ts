@@ -106,7 +106,7 @@ async function assertSendBudget(tx: SQL, userId: string, now: Date) {
 }
 
 /** Claims one send attempt inside an already tenant-bound transaction. */
-async function claimOperatorWaitingEmail(
+export async function claimOperatorWaitingEmail(
   tx: SQL,
   caller: { spaceId: string; userId: string },
   input: OperatorWaitingEmailInput,
@@ -121,7 +121,11 @@ async function claimOperatorWaitingEmail(
   const existing = rows<StoredIntent>(
     await tx`SELECT id,status,reason,attempts,updated_at FROM operator_waiting_email
       WHERE space_id=${caller.spaceId}::uuid AND user_id=${caller.userId}::uuid
-        AND kind=${input.kind} AND item_id=${input.item_id} AND episode=${input.episode}`,
+        AND kind=${input.kind} AND episode=${input.episode}
+        AND CASE WHEN ${input.item_record_id}::uuid IS NOT NULL
+          THEN item_record_id=${input.item_record_id}::uuid
+          ELSE item_record_id IS NULL AND item_id=${input.item_id}
+        END`,
   )[0]
   if (existing) {
     const decision = decideOperatorWaitingEmailReclaim(existing, now)
@@ -159,10 +163,10 @@ async function claimOperatorWaitingEmail(
   const inserted = rows<OperatorWaitingEmailResult & { email: string }>(
     await tx`WITH inserted AS (
       INSERT INTO operator_waiting_email
-        (id,space_id,user_id,kind,item_id,episode,project,task_key,task_id,question,options,
+        (id,space_id,user_id,kind,item_id,item_record_id,episode,project,task_key,task_id,question,options,
          recommendation,why,waiting_since,link,status,reason,attempts,created_at,updated_at,sent_at)
       SELECT ${id}::uuid,${caller.spaceId}::uuid,${caller.userId}::uuid,${input.kind},
-        ${input.item_id},${input.episode},${input.project},${input.task_key},${taskId}::uuid,${input.question},
+        ${input.item_id},${input.item_record_id}::uuid,${input.episode},${input.project},${input.task_key},${taskId}::uuid,${input.question},
         ${bindJsonb(tx, input.options)},${input.recommendation},${input.why},
         ${input.waiting_since}::timestamptz,${input.link},'intent',NULL,1,
         ${now.toISOString()}::timestamptz,${now.toISOString()}::timestamptz,NULL
