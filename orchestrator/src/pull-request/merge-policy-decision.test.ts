@@ -60,7 +60,7 @@ describe('GitHub branch-policy merge classification', () => {
       ),
     ).toEqual({
       policy: true,
-      refusal: `GitHub's branch policy blocks the merge: Check pending, Build demo failing, lint cancelled; cleared by: wait for pending checks, or fix failing checks with gh pr checks 42, or re-run cancelled checks from gh pr checks 42, ${rerun}`,
+      refusal: `GitHub's branch policy blocks the merge: Check pending, Build demo failing, lint cancelled; cleared by: wait for pending checks, and fix failing checks with gh pr checks 42, and re-run cancelled checks from gh pr checks 42, ${rerun}`,
     })
   })
 

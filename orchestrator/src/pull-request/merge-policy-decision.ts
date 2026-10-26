@@ -33,7 +33,7 @@ function blockedCheckLabels(checks: readonly PullRequestCheck[]): string[] {
   })
 }
 
-/** One clearing action per blocking bucket present, so each named state has its own remedy. */
+/** One clearing action per blocking bucket present; every one is needed before the merge can pass. */
 function blockedCheckRemedies(checks: readonly PullRequestCheck[], inspect: string): string[] {
   const buckets = new Set(checks.map((check) => check.bucket))
   const remedies: string[] = []
@@ -68,7 +68,7 @@ function policyRefusal(input: {
   if (labels.length > 0) {
     return (
       `GitHub's branch policy blocks the merge: ${labels.join(', ')}; ` +
-      `cleared by: ${blockedCheckRemedies(input.checks, inspect).join(', or ')}, then rerun ${retry}`
+      `cleared by: ${blockedCheckRemedies(input.checks, inspect).join(', and ')}, then rerun ${retry}`
     )
   }
   return (
