@@ -326,7 +326,11 @@ function registerWorkflowRulings({ workflow, handlerOptions, output }: WorkflowR
     )
 }
 
-function registerWorkflowCursorAdmin({ workflow, handlerOptions, output }: WorkflowRegistration): void {
+function registerWorkflowCursorAdmin({
+  workflow,
+  handlerOptions,
+  output,
+}: WorkflowRegistration): void {
   workflow
     .command('cursor identity-map')
     .description('print numeric workflow cursor identities and their durable record ids as JSON')

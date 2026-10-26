@@ -34,6 +34,7 @@ type PortPresentation = {
   log(...values: unknown[]): void
   writeStdout(value: string): Promise<void>
   exitCode(code: number): void
+  hubTaskReader?: Parameters<typeof setLedgerRef>[1]
 }
 
 function refusePortUsage(usage: string): never {
@@ -51,6 +52,15 @@ function namedPortProject(name: string) {
   return project
 }
 
+function namedPortPair(sourceName: string, targetName: string) {
+  const source = namedPortProject(sourceName)
+  const target = namedPortProject(targetName)
+  if (source.recordId === target.recordId)
+    throw new Error('a port source and target must be different projects')
+  const pair = pairByProjects(source.recordId, target.recordId)
+  return { pair, source, target }
+}
+
 const portProjectLabel = (recordId: string) =>
   projects().find((candidate) => candidate.recordId === recordId)?.name ?? `project:${recordId}`
 
@@ -60,24 +70,20 @@ const portRefListLine = (row: LedgerRef) =>
 const portRefSourceLine = (source: LedgerSource) =>
   `  ${portProjectLabel(source.source_project_record_id)}  commits=${source.commits.join(',')}  paths=${source.paths.join(',')}  ${source.note}`
 
+const setCommandLedgerRef = (
+  input: Parameters<typeof setLedgerRef>[0],
+  reader: Parameters<typeof setLedgerRef>[1],
+) => setLedgerRef(input, reader)
+
 export async function portCommand(
   group: string | undefined,
   action: string | undefined,
   argv: string[],
   flags: PortFlags,
   presentation: PortPresentation,
-  hubTaskReader?: Parameters<typeof setLedgerRef>[1],
 ): Promise<void> {
   const { has, flag } = flags
-  const { log, writeStdout, exitCode } = presentation
-  const namedPair = (sourceName: string, targetName: string) => {
-    const source = namedPortProject(sourceName)
-    const target = namedPortProject(targetName)
-    if (source.recordId === target.recordId)
-      throw new Error('a port source and target must be different projects')
-    const pair = pairByProjects(source.recordId, target.recordId)
-    return { pair, source, target }
-  }
+  const { log, writeStdout, exitCode, hubTaskReader } = presentation
   const output = (value: unknown, line: string) => log(has('json') ? JSON.stringify(value) : line)
 
   if (group === 'import') {
@@ -248,7 +254,7 @@ export async function portCommand(
     const targetName = argv[4]
     if (!sourceName || !targetName)
       throw new Error(`${PLATFORM_SLUG} doc port baseline show <source> <target> [--json]`)
-    const { pair } = namedPair(sourceName, targetName)
+    const { pair } = namedPortPair(sourceName, targetName)
     if (!pair) {
       output(null, `no port pair from "${sourceName}" to "${targetName}"`)
       return
@@ -272,7 +278,7 @@ export async function portCommand(
       refusePortUsage('baseline set <source> <target> <commit> [--json] | --clear')
     }
     const commit = clear ? null : (rawCommit ?? null)
-    const { source, target } = namedPair(sourceName, targetName)
+    const { source, target } = namedPortPair(sourceName, targetName)
     const ids = [source.recordId, target.recordId] as const
     const { pair, baseline } = await setBaselineForProjects(...ids, commit)
     output(
@@ -289,7 +295,7 @@ export async function portCommand(
     const targetName = argv[4]
     if (!sourceName || !targetName)
       throw new Error(`${PLATFORM_SLUG} doc port skip list <source> <target> [--json]`)
-    const { pair } = namedPair(sourceName, targetName)
+    const { pair } = namedPortPair(sourceName, targetName)
     const rows = pair ? listSkips(pair.record_id) : []
     if (has('json')) {
       log(JSON.stringify(rows))
@@ -307,7 +313,7 @@ export async function portCommand(
     if (!sourceName || !targetName || !candidate || reason === undefined) {
       refusePortUsage('skip add <source> <target> <candidate> --reason TEXT [--json]')
     }
-    const { pair } = namedPair(sourceName, targetName)
+    const { pair } = namedPortPair(sourceName, targetName)
     if (!pair)
       throw new Error(
         `no port pair from "${sourceName}" to "${targetName}"; set its baseline first`,
@@ -385,7 +391,7 @@ export async function portCommand(
         note: source.note,
       }
     })
-    const ref = await setLedgerRef(
+    const ref = await setCommandLedgerRef(
       {
         taskKey,
         targetProjectId: namedPortProject(projectName).recordId,

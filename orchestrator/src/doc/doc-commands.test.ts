@@ -111,9 +111,10 @@ async function command(args: string[], stdin = '') {
         consumeResumeHandoff: resumeBriefHandoff,
       })
     else if (args[0] === 'port')
-      await portCommand(args[1], args[2], args, flags, presentation, async (project) => [
-        { key: 'TGT-7', record_id: 'task-TGT-7', project },
-      ])
+      await portCommand(args[1], args[2], args, flags, {
+        ...presentation,
+        hubTaskReader: async (project) => [{ key: 'TGT-7', record_id: 'task-TGT-7', project }],
+      })
     else if (args[0] === 'review') {
       const program = new Command().exitOverride()
       registerReviewCommand(program, presentation)

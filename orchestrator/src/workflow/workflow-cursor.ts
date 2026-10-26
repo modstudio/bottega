@@ -101,13 +101,8 @@ function closeOpenWorkflowQuestion(
        WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
     .all(cursorId)
-  closeQuestions(
-    d,
-    questions.map((question) => question.record_id),
-    reason,
-    sessionId(),
-    at,
-  )
+  const ids = questions.map((question) => question.record_id)
+  closeQuestions(d, ids, reason, sessionId(), at)
 }
 
 function findCursor(
@@ -746,7 +741,8 @@ function nextWorkflowStepImpl(
   mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
-  adoptWorkflowTask(row, evidence.task, context.taskRecordId, d)
+  const adoptionTaskRecordId = context.adoptionTaskRecordId ?? context.taskRecordId
+  adoptWorkflowTask(row, evidence.task, adoptionTaskRecordId, d)
   const composition = cursorComposition(row, d, live)
   if (!note?.trim()) {
     const step = composition.steps[row.ordinal]!

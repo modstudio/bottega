@@ -86,6 +86,20 @@ const resolvedMcpCursorContext = (
 
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
+type DocsMcpPorts = LandingBranchPorts & {
+  hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3]
+}
+
+const portLedgerSources = (
+  sources: Array<{ project: string; commits: string[]; paths: string[]; note: string }>,
+) =>
+  sources.map((source) => ({
+    source_project_record_id: registeredProject(source.project).recordId,
+    commits: source.commits,
+    paths: source.paths,
+    note: source.note,
+  }))
+
 const text = (value: unknown, isError = false) => ({
   content: [
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
@@ -461,11 +475,7 @@ function registerWorkflowListTool(server: McpServer): void {
   )
 }
 
-export function createDocsMcpServer(
-  ports: LandingBranchPorts & {
-    hubTaskReader?: Parameters<typeof resolveWorkflowCursorContext>[3]
-  } = {},
-): McpServer {
+export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
     console.error(
@@ -803,12 +813,7 @@ export function createDocsMcpServer(
             taskKey: task_key,
             targetProjectId: registeredProject(project).recordId,
             note,
-            sources: sources.map((source) => ({
-              source_project_record_id: registeredProject(source.project).recordId,
-              commits: source.commits,
-              paths: source.paths,
-              note: source.note,
-            })),
+            sources: portLedgerSources(sources),
           },
           ports.hubTaskReader,
         ),

@@ -21,26 +21,29 @@ import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 const workflowRunEvidence = (run: string | number | undefined) =>
   run === undefined ? undefined : resolveRunIdentifier(db(), run)
 
-export async function advanceWorkflow({
-  slug,
-  project,
-  mode,
-  args,
-  note,
-  outcome,
-  ruling,
-  self_ruling,
-  self_ruling_basis,
-  question,
-  review,
-  gate,
-  run,
-  artifact,
-  task,
-  defer,
-  satisfies,
-  cursor,
-}: z.infer<typeof nextWorkflowStepInputSchema>, hubTaskReader?: HubTaskReader) {
+export async function advanceWorkflow(
+  {
+    slug,
+    project,
+    mode,
+    args,
+    note,
+    outcome,
+    ruling,
+    self_ruling,
+    self_ruling_basis,
+    question,
+    review,
+    gate,
+    run,
+    artifact,
+    task,
+    defer,
+    satisfies,
+    cursor,
+  }: z.infer<typeof nextWorkflowStepInputSchema>,
+  hubTaskReader?: HubTaskReader,
+) {
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
@@ -53,6 +56,7 @@ export async function advanceWorkflow({
     hubTaskReader,
   )
   const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
+  const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
   const effectiveMode = resolveWorkflowCursorMode(
     slug,
     project,
@@ -72,7 +76,6 @@ export async function advanceWorkflow({
     context,
     cursor,
   })
-  const advanceContext = { ...context, taskRecordId: adoptedTask?.record_id ?? null }
   const result = nextWorkflowStep(
     slug,
     project,
