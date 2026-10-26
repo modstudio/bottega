@@ -2,7 +2,16 @@
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { constants, Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import {
+  accessSync,
+  existsSync,
+  constants as fileConstants,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -44,6 +53,18 @@ import {
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 import {
+  cachedHandleWriteRefusal,
+  LINKED_WORKTREE_WRITE_REFUSAL,
+  persistentReadOnlyRefusal,
+  type ReaderLifetime,
+  readerOpenMode,
+  restrictedStoreActor,
+  type StoreActorFacts,
+  type StoreOpenMode,
+  storeWriteRefusal,
+} from './store-actor.ts'
+import { keepJournalSidecars } from './wal-persistence.ts'
+import {
   isWriteProbeTable,
   staleWriteProbe,
   WRITE_PROBE_TABLE_PREFIX,
@@ -53,6 +74,8 @@ import {
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
 let handle: Database | null = null
+/** The open mode the cached process handle was opened with; a read-only handle cannot be written. */
+let handleOpenMode: StoreOpenMode | null = null
 let readOnlyHandle: Database | null = null
 const databaseAccess = createReadOnlyDatabaseAccess()
 let connectionWritable: boolean | null = null
@@ -82,16 +105,11 @@ function registeredOpenHooks(): OpenHooks {
   )
 }
 function requireOpenHooksForWritableMode(): void {
-  if (!linkedWorktreeReadOnly) registeredOpenHooks()
+  if (!storeWritesRefused()) registeredOpenHooks()
 }
 function runOpenHooks(moment: keyof OpenHooks, database: Database): void {
   for (const hook of registeredOpenHooks()[moment] ?? []) hook(database)
 }
-const LINKED_WORKTREE_WRITE_REFUSAL =
-  'refusing to write run or project rows to the registered main store from a linked worktree\n' +
-  'invariant: A linked-worktree binary cannot write lifecycle rows to the registered main store.\n' +
-  'cleared by: orch <command> with BOTTEGA_ORCHESTRATOR_DB_WRITE=1, or set BOTTEGA_ORCHESTRATOR_DB to a scratch copy'
-
 /**
  * Two paths name one file when their real paths agree. The file may not exist
  * yet, so the directory is what gets resolved and the name is appended: a
@@ -110,39 +128,62 @@ function sameStore(a: string, b: string): boolean {
   return real(a) === real(b)
 }
 
+/** The caller facts this adapter gathers once at load; the write-authority decision is pure. */
+const storeActorFacts: Omit<StoreActorFacts, 'brokerChannel'> = {
+  linkedWorktreeBinary: DATABASE_RESOLUTION.linkedWorktreeBinary,
+  namedStoreOverride: DATABASE_RESOLUTION.method === 'BOTTEGA_ORCHESTRATOR_DB',
+  namedStoreIsMainStore: sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath),
+  operatorWriteInsistence: process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE === '1',
+  workerCaller: classifyCaller(process.env).kind === 'worker',
+}
+
 /**
- * BOTTEGA_ORCHESTRATOR_DB used to authorize a linked-worktree binary to write whatever it named,
- * and the dispatcher exports the live path to every worker. A worker's own test
- * leg therefore held a write handle on the live store from a tree whose binary
- * should only ever have read it. Location and write authority are separate:
- * a linked binary may read the main store under any name and never writes it.
- * BOTTEGA_ORCHESTRATOR_DB_WRITE=1 is the operator's explicit, recorded insistence.
+ * The worker's ask server is the one process that writes the store from a
+ * worker-classified environment, because its question, message and gate rows ARE
+ * the escalation channel. Its own entry point (orchestrator/src/ask) declares it
+ * before it opens the store: a store opened read-only can never be written
+ * through afterwards, and nothing here infers this channel from arguments or from
+ * the environment.
+ *
+ * This restriction guards against an accidental worker write or migration — a
+ * worker misreading the shared store as its own, or a schema change under a live
+ * operator — and it assumes the caller does not set out to defeat it. It is not
+ * the adversarial boundary; a same-uid process that detaches itself already has
+ * the operator's power. The broker channel is exempt from the write refusal
+ * alone: every migration entry still refuses a worker caller, this process
+ * included.
  */
-const restrictedLinkedWorktreeActor =
-  DATABASE_RESOLUTION.linkedWorktreeBinary &&
-  process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1' &&
-  (DATABASE_RESOLUTION.method !== 'BOTTEGA_ORCHESTRATOR_DB' ||
-    sameStore(DB_PATH, DATABASE_RESOLUTION.mainStorePath))
+let storeBrokerChannel = false
+
+export function declareStoreBrokerChannel(): void {
+  storeBrokerChannel = true
+}
 
 function orchestratorStoreAccess(walOrShmSidecarPresent: boolean) {
   return decideStoreAccess({
-    restrictedActor: restrictedLinkedWorktreeActor,
+    restrictedActor: restrictedStoreActor({
+      ...storeActorFacts,
+      brokerChannel: storeBrokerChannel,
+    }),
     storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
     walOrShmSidecarPresent,
   })
 }
 
-export const linkedWorktreeReadOnly = orchestratorStoreAccess(false).writesRefused
+/** Whether this process may write the store, or open it for writing at all. */
+export function storeWritesRefused(): boolean {
+  return orchestratorStoreAccess(false).writesRefused
+}
 
 let registeredStoreWriteProtected = false
 
-export function databaseOpenMode(): 'read-write' | 'read-only linked worktree' {
-  return linkedWorktreeReadOnly ? 'read-only linked worktree' : 'read-write'
+export function databaseOpenMode(): 'read-write' | 'read-only restricted caller' {
+  return storeWritesRefused() ? 'read-only restricted caller' : 'read-write'
 }
 
 /**
  * Open a caller-owned connection that SQLite itself will refuse to write through.
- * Without WAL sidecars it opens immutable, so it reads the store as of the open and never sees a later writer; a short-lived check tolerates that and a long-lived reader must not use it.
+ * Without WAL sidecars it opens immutable, so it reads the store as of the open and never sees a later writer; a short-lived check tolerates that and a long-lived reader must not use it — the process handle takes plain read-only for exactly that reason (see openPersistentReadOnlyDatabase).
  */
 export function openReadOnlyDatabase(path = DB_PATH): Database {
   if (path === DB_PATH) {
@@ -175,6 +216,44 @@ export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
   return databaseAccess.run(action)
 }
 
+/**
+ * The process handle is this process's persistent reader, so it takes plain read-only: the
+ * immutable snapshot (openReadOnlyStore's URI open) stays on the one-shot reader path. A
+ * read-only WAL reader that cannot build its -shm sidecar opens and then fails on its first
+ * read, so the reach is proved here and named in the refusal, rather than surfacing later as an
+ * unexplained failure — and never by silently reading a snapshot.
+ */
+function openPersistentReadOnlyDatabase(path: string): Database {
+  const storeDirectory = dirname(path)
+  const walOrShmSidecarPresent = existsSync(`${path}-wal`) || existsSync(`${path}-shm`)
+  let database: Database | null = null
+  try {
+    database = openReadOnlyStore(path, false)
+    database.query('SELECT count(*) AS tables FROM sqlite_master').get()
+    return database
+  } catch (error) {
+    database?.close()
+    throw new Error(
+      persistentReadOnlyRefusal({
+        path,
+        storeDirectory,
+        walOrShmSidecarPresent,
+        storeDirectoryWritable: storeDirectoryIsWritable(storeDirectory),
+        failure: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+}
+
+function storeDirectoryIsWritable(directory: string): boolean {
+  try {
+    accessSync(directory, fileConstants.W_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
 function commandReadOnlyDatabase(): Database {
   if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
   const legacyRefusal = legacyDatabaseRefusal()
@@ -200,7 +279,7 @@ export function writableDb(): Database {
 function openWritableHandle(): Database | null {
   if (
     !handle ||
-    linkedWorktreeReadOnly ||
+    storeWritesRefused() ||
     registeredStoreWriteProtected ||
     connectionWritable !== true
   ) {
@@ -283,6 +362,7 @@ export function closeDatabaseForFixture(): void {
   readOnlyHandle = null
   connectionWritable = null
   openedUserVersion = null
+  handleOpenMode = null
   schemaReload = null
   schemaReloadRefusal = null
 }
@@ -354,6 +434,42 @@ export function storeSchemaVersions(): { opened: number; store: number } | null 
   return { opened: openedUserVersion, store: readUserVersion(handle) }
 }
 
+/** The facts the process-handle open is given: the actor facts plus where the store sits. */
+export type ProcessHandleFacts = StoreActorFacts & {
+  /** Whether the store sits under OS temporary state, where any caller may write it. */
+  storePathUnderTemporaryRoot: boolean
+}
+
+/** The process's one store handle, and the mode it was opened with. */
+export type ProcessStoreHandle = { database: Database; openMode: StoreOpenMode }
+
+/**
+ * Open the process's store handle from gathered actor facts and a path. It probes the path
+ * for journal sidecars itself and opens the connection, so it is exercised on a scratch store. A
+ * persistent handle never takes the immutable snapshot — a long-lived reader must see every
+ * later writer — and a store whose plain read-only open cannot be established is refused by
+ * name rather than silently degraded.
+ */
+export function openProcessStoreHandle(
+  facts: ProcessHandleFacts,
+  path: string,
+  lifetime: ReaderLifetime,
+): ProcessStoreHandle {
+  const access = decideStoreAccess({
+    restrictedActor: restrictedStoreActor(facts),
+    storePathUnderTemporaryRoot: facts.storePathUnderTemporaryRoot,
+    walOrShmSidecarPresent: existsSync(`${path}-wal`) || existsSync(`${path}-shm`),
+  })
+  const openMode = readerOpenMode(lifetime, access.openMode)
+  if (openMode === 'read-write') {
+    return { database: new Database(path, { readwrite: true, create: false }), openMode }
+  }
+  if (openMode === 'read-only-immutable') {
+    return { database: openReadOnlyStore(path, true), openMode }
+  }
+  return { database: openPersistentReadOnlyDatabase(path), openMode }
+}
+
 export function db(writable = false): Database {
   if (databaseAccess.active()) {
     if (writable) throw new Error('refusing a write from a read-only command')
@@ -363,22 +479,28 @@ export function db(writable = false): Database {
 }
 
 function defaultDatabase(writable: boolean): Database {
-  if (writable && linkedWorktreeReadOnly) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+  if (writable && storeWritesRefused())
+    throw new Error(storeWriteRefusal(storeActorFacts.workerCaller))
   if (handle) {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+    const cachedRefusal = cachedHandleWriteRefusal(handleOpenMode, writable, DB_PATH)
+    if (cachedRefusal) throw new Error(cachedRefusal)
     return refuseOrReloadStaleSchema(handle, writable)
   }
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   ensureDatabase()
   requireOpenHooksForWritableMode()
-  const access = orchestratorStoreAccess(
-    existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`),
+  const processStore = openProcessStoreHandle(
+    {
+      ...storeActorFacts,
+      brokerChannel: storeBrokerChannel,
+      storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
+    },
+    DB_PATH,
+    'persistent',
   )
-  const d =
-    access.openMode === 'read-write'
-      ? new Database(DB_PATH, { readwrite: true, create: false })
-      : openReadOnlyStore(DB_PATH, access.openMode === 'read-only-immutable')
+  const { database: d, openMode } = processStore
   // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record
@@ -391,15 +513,16 @@ function defaultDatabase(writable: boolean): Database {
   // process holds a connection open for hours, and a long-lived reader blocks
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+  if (openMode === 'read-write') keepJournalSidecars(d)
   const refused = migrationRefusal(d)
   if (refused) refuseOpenMigration(d, refused)
-  finishDefaultDatabaseOpen(d, writable)
+  finishDefaultDatabaseOpen(d, openMode, writable)
   return d
 }
 
 function refuseOpenMigration(d: Database, refused: string): never {
   try {
-    if (contentionTableExists(d) && !linkedWorktreeReadOnly) {
+    if (contentionTableExists(d) && !storeWritesRefused()) {
       writeTransaction(
         () =>
           insertContention(d, {
@@ -418,7 +541,7 @@ function refuseOpenMigration(d: Database, refused: string): never {
   throw new Error(refused)
 }
 
-function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
+function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writable: boolean): void {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
     path: string
   } | null
@@ -429,7 +552,7 @@ function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
       sameStore(DATABASE_RESOLUTION.registeredPath, DB_PATH) &&
       process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE !== '1',
   )
-  if (!linkedWorktreeReadOnly && !registeredStoreWriteProtected && databaseWritable(d)) {
+  if (!storeWritesRefused() && !registeredStoreWriteProtected && databaseWritable(d)) {
     d.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
@@ -439,6 +562,7 @@ function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
     seedProjects(d)
   }
   handle = d
+  handleOpenMode = openMode
   openedUserVersion = readUserVersion(d)
   if (connectionWritable) runOpenHooks('afterWritableOpen', d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
@@ -467,11 +591,12 @@ export function tryWriteContention(
   opts?: { busyTimeoutMs?: number },
 ): void {
   try {
-    if (linkedWorktreeReadOnly || registeredStoreWriteProtected) return
+    if (storeWritesRefused() || registeredStoreWriteProtected) return
     if (opts?.busyTimeoutMs === 0) {
       const d = new Database(DB_PATH, { readwrite: true, create: false })
       try {
         d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
+        keepJournalSidecars(d)
         // The one-shot connection sits outside writeTransaction's stale-schema
         // guard, so it checks the same invariant itself: a process writes only
         // the schema version it opened.
@@ -528,6 +653,7 @@ export function createDatabasePrivately<T>(
   })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(database)
     const result = initialize(database)
     database.exec('PRAGMA wal_checkpoint(TRUNCATE);')
     database.close()
@@ -587,9 +713,11 @@ export function migrateDatabase(
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   const create = !existsSync(DB_PATH)
-  const creationRefusal = create ? implicitDatabaseCreationRefusal() : null
+  const creationRefusal = create
+    ? implicitDatabaseCreationRefusal(DATABASE_RESOLUTION, DB_PATH, storeActorFacts.workerCaller)
+    : null
   if (creationRefusal) throw new Error(creationRefusal)
-  const existingRefusal = !create ? existingDatabaseMigrationRefusal() : null
+  const existingRefusal = !create ? migrationAuthorityRefusal() : null
   if (existingRefusal) throw new Error(existingRefusal)
   registeredOpenHooks()
   if (create) {
@@ -610,6 +738,7 @@ export function migrateDatabase(
       const winner = new Database(DB_PATH, { readwrite: true, create: false })
       try {
         winner.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+        keepJournalSidecars(winner)
         const refused = migrationRefusal(winner)
         if (refused) throw new Error(refused)
       } finally {
@@ -621,6 +750,7 @@ export function migrateDatabase(
   const d = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(d)
     const versions = input.beforeMigration
       ? applyMigrationsBefore(d, input.beforeMigration)
       : applyMigrations(d, undefined, input.beforeApply)
@@ -633,13 +763,31 @@ export function migrateDatabase(
   }
 }
 
+/**
+ * The one migration authority decision for this process: the worker fact this adapter gathered
+ * goes in, and the pure decision in database-location.ts names the refusal. Every migration
+ * entry routes through here — the migrate command, the machine update, and the step handles
+ * below — so the rule is defined once and reads one fact, gathered once.
+ */
+export function migrationAuthorityRefusal(): string | null {
+  return existingDatabaseMigrationRefusal(DATABASE_RESOLUTION, storeActorFacts.workerCaller)
+}
+
+/** A restricted caller does not migrate the store: its schema belongs to the operator. */
+function refuseStoreMigrationFromRestrictedCaller(): void {
+  const refusal = migrationAuthorityRefusal()
+  if (refusal) throw new Error(refusal)
+}
+
 /** Give machine migrate a handle while the store is intentionally mid-journal. */
 export async function withDatabaseForMigrationStep<T>(
   action: (database: Database) => Promise<T>,
 ): Promise<T> {
+  refuseStoreMigrationFromRestrictedCaller()
   const database = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(database)
     return await action(database)
   } finally {
     database.close()
@@ -648,9 +796,11 @@ export async function withDatabaseForMigrationStep<T>(
 
 /** Give a synchronous migration adapter a handle while the store is intentionally mid-journal. */
 export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Database) => T): T {
+  refuseStoreMigrationFromRestrictedCaller()
   const database = new Database(DB_PATH, { readwrite: true, create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
+    keepJournalSidecars(database)
     return action(database)
   } finally {
     database.close()

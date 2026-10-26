@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { FROZEN_STATE_NAMES, PLATFORM_NAME } from '../../../shared/brand.ts'
+import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
 import {
   decideOrchestratorDatabasePath,
@@ -14,6 +14,8 @@ import {
   missingDatabaseMessage,
   missingWorkingDirectoryFallback,
   unauthorizedDatabaseInitializationMessage,
+  workerStoreCreationRefusal,
+  workerStoreMigrationRefusal,
 } from './database-location.ts'
 
 test('default open refuses legacy-only state and accepts the current filename', () => {
@@ -216,18 +218,27 @@ test('implicit creation uses the existing installation authority decision', () =
     linkedWorktreeBinary: false,
     mainStorePath: '/state/orchestrator.db',
   }
-  expect(implicitDatabaseCreationRefusal(authorized)).toBeNull()
+  expect(implicitDatabaseCreationRefusal(authorized, authorized.path, false)).toBeNull()
   expect(
     implicitDatabaseCreationRefusal(
       { ...authorized, linkedWorktreeBinary: true },
       '/installation/state/orchestrator.db',
+      false,
     ),
   ).toBe(linkedWorktreeDatabaseInitializationMessage())
-  expect(implicitDatabaseCreationRefusal({ ...authorized, initializable: false })).toBe(
-    unauthorizedDatabaseInitializationMessage('/state/orchestrator.db'),
-  )
   expect(
-    implicitDatabaseCreationRefusal({ ...authorized, method: 'BOTTEGA_ORCHESTRATOR_DB' }),
+    implicitDatabaseCreationRefusal(
+      { ...authorized, initializable: false },
+      authorized.path,
+      false,
+    ),
+  ).toBe(unauthorizedDatabaseInitializationMessage('/state/orchestrator.db'))
+  expect(
+    implicitDatabaseCreationRefusal(
+      { ...authorized, method: 'BOTTEGA_ORCHESTRATOR_DB' },
+      authorized.path,
+      false,
+    ),
   ).toBe(missingDatabaseMessage('/state/orchestrator.db'))
 })
 
@@ -243,10 +254,61 @@ test('migrating an existing store retains the linked-worktree refusal', () => {
     mainStorePath: '/state/orchestrator.db',
   }
 
-  expect(existingDatabaseMigrationRefusal(existing)).toBe(
+  expect(existingDatabaseMigrationRefusal(existing, false)).toBe(
     linkedWorktreeDatabaseInitializationMessage(),
   )
-  expect(existingDatabaseMigrationRefusal({ ...existing, linkedWorktreeBinary: false })).toBeNull()
+  expect(
+    existingDatabaseMigrationRefusal({ ...existing, linkedWorktreeBinary: false }, false),
+  ).toBeNull()
+})
+
+test('a worker caller may not migrate the shared store, the ask server included', () => {
+  const shared = {
+    path: '/state/orchestrator.db',
+    method: 'state-root' as const,
+    tried: ['/state/orchestrator.db'],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: '/state/orchestrator.db',
+  }
+
+  // The migration decision takes no broker-channel fact, so the ask server's worker environment is refused here too.
+  expect(existingDatabaseMigrationRefusal(shared, true)).toBe(
+    workerStoreMigrationRefusal(shared.path),
+  )
+  // Creating the store is a different condition from changing one, and says so.
+  expect(implicitDatabaseCreationRefusal(shared, shared.path, true)).toBe(
+    workerStoreCreationRefusal(shared.path),
+  )
+  expect(workerStoreCreationRefusal(shared.path)).toBe(
+    `refusing to create the orchestrator store from a worker: ${shared.path}\n` +
+      'invariant: A worker never creates the shared store it reads; an isolated store under OS temporary state is not the shared store.\n' +
+      `cleared by: the operator runs ${PLATFORM_SLUG} machine update from the main checkout`,
+  )
+  expect(workerStoreMigrationRefusal(shared.path)).toBe(
+    `refusing to migrate the orchestrator store from a worker: ${shared.path}\n` +
+      'invariant: A worker never changes the store it reads, because a schema change under a live process breaks every run in flight.\n' +
+      `cleared by: the operator runs ${PLATFORM_SLUG} machine update from the main checkout`,
+  )
+})
+
+test('a worker caller may still create and migrate the isolated store its test leg mints under temporary state', () => {
+  const path = join(tmpdir(), `orch-worker-scratch-${randomUUID()}`, 'orchestrator.db')
+  const scratch = {
+    path,
+    method: 'state-root' as const,
+    tried: [path],
+    registeredPath: null,
+    repositoryRoot: '/checkout',
+    initializable: true,
+    linkedWorktreeBinary: false,
+    mainStorePath: path,
+  }
+
+  expect(existingDatabaseMigrationRefusal(scratch, true)).toBeNull()
+  expect(implicitDatabaseCreationRefusal(scratch, path, true)).toBeNull()
 })
 
 test('a linked-worktree binary may create and migrate a temporary store', () => {
@@ -262,8 +324,8 @@ test('a linked-worktree binary may create and migrate a temporary store', () => 
     mainStorePath: path,
   }
 
-  expect(implicitDatabaseCreationRefusal(scratch)).toBeNull()
-  expect(existingDatabaseMigrationRefusal(scratch)).toBeNull()
+  expect(implicitDatabaseCreationRefusal(scratch, scratch.path, false)).toBeNull()
+  expect(existingDatabaseMigrationRefusal(scratch, false)).toBeNull()
 })
 
 test('the migrate and init-db creation decision refuses an absent BOTTEGA_ORCHESTRATOR_DB before touching its parent', () => {
@@ -280,7 +342,7 @@ test('the migrate and init-db creation decision refuses an absent BOTTEGA_ORCHES
     mainStorePath: path,
   }
 
-  expect(implicitDatabaseCreationRefusal(explicit)).toBe(missingDatabaseMessage(path))
+  expect(implicitDatabaseCreationRefusal(explicit, path, false)).toBe(missingDatabaseMessage(path))
   expect(existsSync(path)).toBeFalse()
   expect(existsSync(parent)).toBeFalse()
 })

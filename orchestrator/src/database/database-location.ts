@@ -250,25 +250,57 @@ export function linkedWorktreeMigrationAllowed(path: string): boolean {
   )
 }
 
+/** A worker reads the store; a schema change belongs to the operator's own update. */
+export function workerStoreMigrationRefusal(path = DB_PATH): string {
+  return (
+    `refusing to migrate the orchestrator store from a worker: ${path}\n` +
+    'invariant: A worker never changes the store it reads, because a schema change under a live process breaks every run in flight.\n' +
+    `cleared by: the operator runs ${PLATFORM_SLUG} machine update from the main checkout`
+  )
+}
+
+/** A worker is given the store it reads; creating the shared one belongs to the operator. */
+export function workerStoreCreationRefusal(path = DB_PATH): string {
+  return (
+    `refusing to create the orchestrator store from a worker: ${path}\n` +
+    'invariant: A worker never creates the shared store it reads; an isolated store under OS temporary state is not the shared store.\n' +
+    `cleared by: the operator runs ${PLATFORM_SLUG} machine update from the main checkout`
+  )
+}
+
+/**
+ * The worker fact is a plain argument, gathered once by the adapter that owns the process
+ * environment: a decision does not read the environment itself.
+ */
 export function implicitDatabaseCreationRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
   path = resolution.path,
+  workerCaller: boolean,
 ): string | null {
   if (resolution.method === 'BOTTEGA_ORCHESTRATOR_DB') return missingDatabaseMessage(path)
+  const temporaryStore = linkedWorktreeMigrationAllowed(path)
+  if (workerCaller && !temporaryStore) return workerStoreCreationRefusal(path)
   if (resolution.linkedWorktreeBinary) {
-    return linkedWorktreeMigrationAllowed(path)
-      ? null
-      : linkedWorktreeDatabaseInitializationMessage()
+    return temporaryStore ? null : linkedWorktreeDatabaseInitializationMessage()
   }
   if (!resolution.initializable) return unauthorizedDatabaseInitializationMessage(path)
   return null
 }
 
-/** Existing stores retain the linked-worktree migration refusal unless they live in the OS temporary directory. */
+/**
+ * Existing stores retain the linked-worktree migration refusal unless they live in the OS
+ * temporary directory. A worker caller never migrates them: an isolated store under OS
+ * temporary state is the one a worker test leg may still create and migrate.
+ *
+ * `workerCaller` is required, so a caller cannot fall back to reading the environment itself.
+ */
 export function existingDatabaseMigrationRefusal(
   resolution: DatabaseResolution = DATABASE_RESOLUTION,
+  workerCaller: boolean,
 ): string | null {
-  return resolution.linkedWorktreeBinary && !linkedWorktreeMigrationAllowed(resolution.path)
+  const temporaryStore = linkedWorktreeMigrationAllowed(resolution.path)
+  if (workerCaller && !temporaryStore) return workerStoreMigrationRefusal(resolution.path)
+  return resolution.linkedWorktreeBinary && !temporaryStore
     ? linkedWorktreeDatabaseInitializationMessage()
     : null
 }

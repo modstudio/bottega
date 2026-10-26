@@ -29,6 +29,7 @@
  * so the fast path degrades into the slow one rather than into a hang.
  */
 
+import type { Database } from 'bun:sqlite'
 import { createConnection, createServer, type Socket } from 'node:net'
 import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/server'
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
@@ -40,7 +41,13 @@ import {
   claimRunBoardNotices,
   markRunBoardNoticesDelivered,
 } from '../board/board-delivery.ts'
-import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import {
+  db,
+  declareStoreBrokerChannel,
+  nowIso,
+  writableDb,
+  writeTransaction,
+} from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { registerFocusedTestTool } from '../focused-test/focused-test-tool.ts'
 import {
@@ -910,10 +917,31 @@ async function proxyAsk(urlValue: string): Promise<void> {
   })
 }
 
-export async function serveAsk(): Promise<void> {
+/**
+ * The two store-facing steps of the ask-server entry, in the order it must run them.
+ *
+ * The declaration is FIRST. This process runs from a worker-classified environment, and its
+ * question, message and gate rows ARE the worker's escalation channel, so it is the one
+ * declared broker channel that may write the store. A store opened before the declaration
+ * would open read-only and could never be written through afterwards. Migration stays refused
+ * here, this process included. Injectable so a beside-test can pin that order without
+ * spawning a server.
+ */
+export type AskServerStoreSteps = {
+  declareBrokerChannel(): void
+  openStore(): Database
+}
+
+const askServerStoreSteps: AskServerStoreSteps = {
+  declareBrokerChannel: declareStoreBrokerChannel,
+  openStore: db,
+}
+
+export async function serveAsk(steps: AskServerStoreSteps = askServerStoreSteps): Promise<void> {
   const loopback = process.env.BOTTEGA_ASK_URL
   if (loopback) return proxyAsk(loopback)
-  const runId = resolveRunIdentifier(db(), process.env.BOTTEGA_RUN_ID ?? '')
+  steps.declareBrokerChannel()
+  const runId = resolveRunIdentifier(steps.openStore(), process.env.BOTTEGA_RUN_ID ?? '')
   enableRunSchemaReload(runId)
   const token = process.env.BOTTEGA_RUN_TOKEN ?? ''
   serveStdio(() => createAskMcpServer(runId, token), {

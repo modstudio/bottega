@@ -136,7 +136,11 @@ async function cliEntry(
   try {
     return await enterFullCli(argv, storeFree)
   } catch (error) {
-    if (argv[0] === 'ask-server') {
+    // The ask concern owns the identity of its own invocation; the CLI surface reads it for
+    // the one thing it decides here, so a failure before the ask action — a store this
+    // process may not open, say — still reaches the run's scratch directory.
+    const { isAskServerInvocation } = await import('../ask/ask-invocation.ts')
+    if (isAskServerInvocation(argv, invocation)) {
       const { writeAskServerFailure } = await import('../ask/ask-failure.ts')
       writeAskServerFailure(error)
     }

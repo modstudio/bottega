@@ -10,12 +10,12 @@ import {
   formatMigrationInFlightRun,
   migrationInFlightRuns,
 } from '../run/migration-in-flight-runs.ts'
+import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {
-  DATABASE_RESOLUTION,
-  existingDatabaseMigrationRefusal,
-  missingDatabaseMessage,
-} from './database-location.ts'
-import { DB_PATH, withSynchronousDatabaseForMigrationStep } from './db.ts'
+  DB_PATH,
+  migrationAuthorityRefusal,
+  withSynchronousDatabaseForMigrationStep,
+} from './db.ts'
 import {
   type MigrationJournalEntry,
   validatedMigrationJournalEntries,
@@ -120,7 +120,7 @@ export async function machineUpdateCommand(
       `refusing machine update through BOTTEGA_ORCHESTRATOR_DB; run it from the main checkout without the override`,
     )
   }
-  const authorityRefusal = (deps.authorityRefusal ?? existingDatabaseMigrationRefusal)()
+  const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
   const cwd = deps.cwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
