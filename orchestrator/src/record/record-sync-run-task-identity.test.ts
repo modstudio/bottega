@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { runTaskIdentityDecision } from './record-sync-run-task-identity.ts'
 
 const TASK_BY_ID = '01990000-0000-7000-8000-000000001771'
-const TASK_BY_KEY = '01990000-0000-7000-8000-000000001772'
 const EXISTING_TASK = '01990000-0000-7000-8000-000000001773'
 
 function decide(overrides: Partial<Parameters<typeof runTaskIdentityDecision>[0]>): string | null {
@@ -17,10 +16,6 @@ function decide(overrides: Partial<Parameters<typeof runTaskIdentityDecision>[0]
 describe('run task identity', () => {
   test('uses a task reference that resolves in the run space', () => {
     expect(decide({ resolvedTaskId: TASK_BY_ID })).toBe(TASK_BY_ID)
-  })
-
-  test('uses a task resolved by fallback key', () => {
-    expect(decide({ resolvedTaskId: TASK_BY_KEY })).toBe(TASK_BY_KEY)
   })
 
   test('stores null when neither identity resolves on insert', () => {
