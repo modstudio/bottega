@@ -174,6 +174,10 @@ function detachedReviewBindings(spec: ResolvedDetachSpec) {
   ] as const
 }
 
+function placeholderExecution(spec: DetachSpec): ['harness' | 'external', string | null] {
+  return spec.resume?.agent === 'harness' ? ['harness', 'harness execution'] : ['external', null]
+}
+
 async function detachedRunLinks(cwd: string, spec: DetachSpec) {
   const identity = claimIdentity(spec.resume)
   const pendingRecordId = newRecordId()
@@ -256,12 +260,9 @@ async function detachResolved(
       )
   const mcpDispatch = { selectedAgent, mcpRequest, firstTurn }
   const dispatchMcpPreflightedAgent = preflightDetachMcp(jobName, spec, mcpDispatch)
-  const runsDir = RUNS_DIR
   const startedByUserId = await signedInRecordUserId()
-  const harness = spec.resume?.agent === 'harness'
-  const executor = harness ? 'harness' : 'external'
   const { identity, pendingRecordId, detached, links } = detachedLinks
-  mkdirSync(runsDir, { recursive: true })
+  mkdirSync(RUNS_DIR, { recursive: true })
   // Named by the clock alone, this collided: concurrent `bottega run start` calls for the
   // same job inside one millisecond wrote the SAME prompt file, and every one of
   // them then read whichever prompt was written last. Six review lenses fired at
@@ -279,8 +280,7 @@ async function detachResolved(
     const inserted = db()
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, task_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, agent_explicit, parent_run_record_id, turn, mcp,
-                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason,
-                      executor, evidence_excluded)
+                      vendor_session, started_by_user_id, continuation_message_sha, review_role, selection_reason, executor, evidence_excluded)
        SELECT ?, ?, ?, '(pending)', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         WHERE ? IS NULL OR (
           EXISTS (SELECT 1 FROM run root WHERE root.record_id = ? AND root.status <> 'stale')
@@ -314,8 +314,7 @@ async function detachResolved(
         spec.resume?.session ?? null,
         startedByUserId,
         ...detachedReviewBindings(spec),
-        executor,
-        harness ? 'harness execution' : null,
+        ...placeholderExecution(spec),
         identity.parent_run_record_id,
         identity.parent_run_record_id,
         identity.parent_run_record_id,
@@ -378,7 +377,7 @@ async function detachResolved(
   try {
     // The row now exists, so its id replaces that temporary random name and is
     // also stored on the row for run() to reuse rather than creating a second file.
-    const promptPath = writeDetachedPrompt(runsDir, recordId, prompt)
+    const promptPath = writeDetachedPrompt(RUNS_DIR, recordId, prompt)
     handoffStep = 'record prompt artifact'
     db().query('UPDATE run SET prompt_path=? WHERE record_id=?').run(promptPath, recordId)
     /**
@@ -419,7 +418,7 @@ async function detachResolved(
     handoffStep = 'resolve coordinator working directory'
     const spawnFacts = callerCheckoutFacts(cwd)
     handoffStep = 'open coordinator log'
-    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, runsDir), 'a', 0o600)
+    coordinatorLogFd = openSync(runCoordinatorLogPath(recordId, RUNS_DIR), 'a', 0o600)
     const spawnOpts = {
       cwd: spawnCwd(
         cwd,

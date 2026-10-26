@@ -10,6 +10,7 @@ dispatch and inspect runs
 - [bottega run continue](#bottega-run-continue)
 - [bottega run diff](#bottega-run-diff)
 - [bottega run discard](#bottega-run-discard)
+- [bottega run finish](#bottega-run-finish)
 - [bottega run identity-map](#bottega-run-identity-map)
 - [bottega run link-tasks](#bottega-run-link-tasks)
 - [bottega run list](#bottega-run-list)
@@ -41,6 +42,7 @@ dispatch and inspect runs
 - [bottega run continue](./run.md#bottega-run-continue)
 - [bottega run diff](./run.md#bottega-run-diff)
 - [bottega run discard](./run.md#bottega-run-discard)
+- [bottega run finish](./run.md#bottega-run-finish)
 - [bottega run identity-map](./run.md#bottega-run-identity-map)
 - [bottega run link-tasks](./run.md#bottega-run-link-tasks)
 - [bottega run list](./run.md#bottega-run-list)
@@ -128,6 +130,16 @@ remove a run worktree and discard its branch
 ### Options
 
 - `--force`: discard a branch with unique commits
+
+### Related
+
+- [bottega run](./run.md#bottega-run)
+
+## bottega run finish
+
+**Synopsis:** `bottega run finish <id>`
+
+record the reply from a harness-executed run
 
 ### Related
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { basename, dirname } from 'node:path'
+import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { minimumCliVersionRefusal } from '../agent/agents.ts'
@@ -88,7 +88,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
-import { HARNESS_AGENT } from './run-executor.ts'
+import { HARNESS_AGENT, intendedExecutor } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
@@ -396,7 +396,7 @@ export async function run(opts: {
           mcp: storedMcpRequest(mcpRequest),
           startedByUserId,
           agentExplicit: Number(Boolean(opts.agentExplicit)),
-          executor: harnessDelegation ? 'harness' : 'external',
+          executor: intendedExecutor(harnessDelegation),
         })
       }
       throw Object.assign(new Error(`run ${failedId} could not start: ${message}`), {
@@ -644,31 +644,8 @@ export async function run(opts: {
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
-  if (name === HARNESS_AGENT) {
-    const runProject = projectAt(callerCwd)
-    const writableRoots = acpWriter.runRoots(worktree, writesJob, false, scratchDir, runtimeDir)
-    const { callerCheckout, candidates, beforeFreeze } = runConfinement.freezeBeforeRunCheckouts({
-      srtProfile: null,
-      agent: name,
-      cwd,
-      writableRoots,
-      tmpDir: process.env.TMPDIR,
-      codexSandbox: 'danger-full-access',
-      callerCwd,
-      isolatedCwd,
-      runProject,
-      activeWorktree: worktree?.path,
-      runProjectName,
-    })
-    const confinementFailures = [...candidates.failures, ...beforeFreeze.failures]
-    for (const line of runConfinement.confinementSkipLines(confinementFailures)) console.error(line)
-    runConfinement.writeHarnessConfinementSnapshot(dirname(scratchDir), {
-      callerCheckout,
-      watchedCheckouts: beforeFreeze.snapshots,
-      confinementFailures,
-    })
-    return harness.harnessRunningResult(claimedRun, reason, writesJob)
-  }
+  if (name === HARNESS_AGENT)
+    return harness.runningResult(claimedRun, reason, writesJob, callerCwd, runProjectName)
   const runProject = projectAt(callerCwd)
   const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
   const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)

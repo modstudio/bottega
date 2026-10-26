@@ -308,6 +308,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../mcp/mcp-preflight.ts',
     './run-acp-writer.ts',
     './run-claim-types.ts',
+    './run-confinement.ts',
     './run-executor.ts',
     './run-process.ts',
     './run-types.ts',

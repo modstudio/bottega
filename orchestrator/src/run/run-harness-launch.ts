@@ -7,6 +7,7 @@ import { isHarnessDelegated } from '../jobs/delegation.ts'
 import { effectiveMcpRequest, type McpRequest } from '../mcp/mcp-preflight.ts'
 import * as acpWriter from './run-acp-writer.ts'
 import type { ClaimResult } from './run-claim-types.ts'
+import { prepareHarnessConfinement } from './run-confinement.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
 import { bindSignals } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
@@ -94,4 +95,25 @@ export function harnessRunningResult(
     contract: null,
     status: 'running',
   }
+}
+
+export function runningResult(
+  input: ClaimResult,
+  reason: string,
+  writesJob: boolean,
+  callerCwd: string,
+  runProjectName: string | null,
+): RunResult {
+  prepareHarnessConfinement({
+    agent: HARNESS_AGENT,
+    cwd: input.cwd,
+    worktree: input.worktree,
+    writesRepo: writesJob,
+    scratchDir: input.scratchDir,
+    runtimeDir: input.runtimeDir,
+    callerCwd,
+    isolatedCwd: input.isolatedCwd,
+    runProjectName,
+  })
+  return harnessRunningResult(input, reason, writesJob)
 }

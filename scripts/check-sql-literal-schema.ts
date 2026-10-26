@@ -151,7 +151,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/branch/branch-settlement.ts',
-    ['d960c156a7b69340'],
+    ['4e82a216176bb62e'],
     'query composes the shared chain-score join fragment',
   ),
   ...exempt(
@@ -270,7 +270,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/reclaim/reclaim.ts',
-    ['23389\u0062a364b4c75f'],
+    ['1fcbcb5b9dd863da'],
     'reclaim query composes the shared run-voiding expression',
   ),
   ...exempt(

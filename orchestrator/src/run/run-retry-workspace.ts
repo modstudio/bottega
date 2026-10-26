@@ -83,6 +83,23 @@ function branchTipRelation(
     : 'diverged'
 }
 
+type RetryWorkspaceRow = {
+  record_id: string
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  worktree_source: Worktree['source'] | null
+  branch_kept_tip: string | null
+  status: string
+  pid: number | null
+  executor: 'external' | 'harness'
+  session_id: string | null
+  started_at: string
+  job: string
+  session_last_seen: string | null
+}
+
 export function resolveWritingRetryWorkspace(input: {
   id: string
   rootId: string
@@ -101,22 +118,7 @@ export function resolveWritingRetryWorkspace(input: {
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
        FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
-    .get(input.rootId, input.rootId) as {
-    record_id: string
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: Worktree['source'] | null
-    branch_kept_tip: string | null
-    status: string
-    pid: number | null
-    executor: 'external' | 'harness'
-    session_id: string | null
-    started_at: string
-    job: string
-    session_last_seen: string | null
-  }
+    .get(input.rootId, input.rootId) as RetryWorkspaceRow
   const project = input.repo ? projectByName(input.repo) : null
   if (!project) {
     throw new Error(
