@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test'
+import { setMachineDelegation } from '../../../shared/machine-config.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { recordDuels } from '../score/duel.ts'
 import { MIN_SAMPLE } from './route.ts'
-import { pickCommand, statsCommand } from './routing-commands.ts'
+import { guideCommand, pickCommand, statsCommand } from './routing-commands.ts'
 
 const preview = (avoid: string[] = [], distinctModels: string[] = [], lens?: string) => {
   const lines: string[] = []
@@ -61,4 +62,24 @@ test('pick reports the source of each resolved lens profile', () => {
   expect(preview([], [], 'correctness')).toContain(
     'selected profiles: framework=default@1 source=generic',
   )
+})
+
+test('guide continues across harness and external delegation classes', () => {
+  setMachineDelegation('delegation.implement', 'harness')
+  try {
+    const lines: string[] = []
+    guideCommand(
+      { flag: () => undefined, has: () => false },
+      { log: (...parts) => lines.push(parts.join(' ')), dur: String },
+    )
+    const output = lines.join('\n')
+    expect(output).toContain('implement')
+    expect(output).toContain(
+      "handled by the harness's own sub-agent   (delegation.implement=harness)",
+    )
+    expect(output).toContain('review-lens')
+    expect(output).toContain('routes to')
+  } finally {
+    setMachineDelegation('delegation.implement', 'external')
+  }
 })

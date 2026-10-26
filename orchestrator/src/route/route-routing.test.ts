@@ -38,6 +38,23 @@ test('the shared routing path refuses a writesRepo job assigned to the harness',
   }
 })
 
+test('guide reports harness work without dropping externally delegated jobs', () => {
+  setMachineDelegation('delegation.implement', 'harness')
+  try {
+    const rows = guide()
+    expect(rows.find((row) => row.job === 'implement')).toMatchObject({
+      delegation: 'harness',
+      routesTo: null,
+    })
+    expect(rows.find((row) => row.job === 'review-lens')).toMatchObject({
+      delegation: 'external',
+    })
+    expect(rows.find((row) => row.job === 'review-lens')?.routesTo).not.toBeNull()
+  } finally {
+    setMachineDelegation('delegation.implement', 'external')
+  }
+})
+
 test('candidate running-run map matches per-agent fixture counts from one grouped snapshot', () => {
   addRun({ agent: 'codex', job: 'craft', status: 'running' })
   addRun({ agent: 'codex', job: 'craft', status: 'running' })
