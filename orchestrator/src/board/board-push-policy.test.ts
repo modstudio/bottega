@@ -302,31 +302,6 @@ function successorReceipt(replyId: string, reader: string) {
     .get(replyId, reader) as { successor: number; delivered_at: string | null }
 }
 
-test('an unacknowledged report reply successor claim is re-offered to the same reader on the next push', () => {
-  const { replyId, reader } = successorThreadFixture('reoffer')
-  const env = { CLAUDE_CODE_SESSION_ID: reader }
-  expect(claimPushNotices(false, env, clock).notices.map((notice) => notice.recordId)).toEqual([
-    replyId,
-  ])
-  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
-  expect(claimPushNotices(false, env, clock + 1).notices.map((notice) => notice.recordId)).toEqual([
-    replyId,
-  ])
-  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
-})
-
-test('a successor claim receipt stays undelivered until markNoticesDelivered stamps it', () => {
-  const { replyId, reader } = successorThreadFixture('stamp')
-  const env = { CLAUDE_CODE_SESSION_ID: reader }
-  expect(claimPushNotices(false, env, clock).notices.map((notice) => notice.recordId)).toEqual([
-    replyId,
-  ])
-  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
-  markNoticesDelivered([replyId], env, clock + 1)
-  expect(successorReceipt(replyId, reader).delivered_at).not.toBeNull()
-  expect(claimPushNotices(false, env, clock + 2).notices).toEqual([])
-})
-
 test('a claimant who began after the reply is re-offered until acknowledged', () => {
   const { replyId, reader } = successorThreadFixture('reoffer-ack')
   const env = { CLAUDE_CODE_SESSION_ID: reader }

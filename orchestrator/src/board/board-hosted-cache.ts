@@ -499,6 +499,19 @@ function claimContext(
   }
 }
 
+// The one definition of "a different reader holds a successor claim for this reply".
+// loadClaimContext's per-message successor_claimed fact and the transaction-time
+// recheck in takeHostedReportReplySuccessor both interpolate this fragment, so the
+// meaning of "claimed" cannot drift between the two sites. It correlates on the
+// given message-id expression and binds the reader session as one ? parameter.
+const successorClaimedByOther = (messageId: string) =>
+  `EXISTS (
+      SELECT 1 FROM hosted_board_receipt_cache successor_receipt
+      WHERE successor_receipt.message_id=${messageId}
+        AND successor_receipt.successor=1
+        AND successor_receipt.reader_session<>?
+    )`
+
 function loadClaimContext(
   database: Database,
   reader: string,
@@ -517,12 +530,7 @@ function loadClaimContext(
     database
       .query(
         `SELECT message.id,message.payload,receipt.delivered_at,receipt.acknowledged_at,
-                EXISTS (
-                  SELECT 1 FROM hosted_board_receipt_cache successor_receipt
-                  WHERE successor_receipt.message_id=message.id
-                    AND successor_receipt.successor=1
-                    AND successor_receipt.reader_session<>?
-                ) AS successor_claimed,
+                ${successorClaimedByOther('message.id')} AS successor_claimed,
                 EXISTS (
                   SELECT 1
                   FROM hosted_board_receipt_cache author_receipt
@@ -698,14 +706,12 @@ function takeHostedReportReplySuccessor(
   context: HostedClaimContext,
 ): boolean {
   return writeTransaction(() => {
-    const successorClaimed = Boolean(
-      context.database
-        .query(
-          `SELECT 1 AS ok FROM hosted_board_receipt_cache
-           WHERE message_id=? AND successor=1 AND reader_session<>?`,
-        )
-        .get(message.id, context.reader),
-    )
+    // Transaction-time recheck through the same fragment loadClaimContext reads:
+    // another reader may have claimed this reply since the claim context loaded.
+    const recheck = context.database
+      .query(`SELECT ${successorClaimedByOther('?')} AS successor_claimed`)
+      .get(message.id, context.reader) as { successor_claimed: number }
+    const successorClaimed = recheck.successor_claimed === 1
     if (successorClaimed) return false
     if (!hostedReplySuccessorPush(message, context)) return false
     context.database
