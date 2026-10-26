@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import type { CallToolResult, Tool } from '@modelcontextprotocol/client'
 import { Server } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   type Project,
   projectByName,
@@ -169,17 +169,33 @@ function runTreePath(runTree: string, mainCheckout: string): string {
   return tree
 }
 
+/**
+ * The servers an upstream launch resolves against. An absent launch file is no
+ * evidence about any name, and Bottega's own server is registered at user scope
+ * rather than in the tree, so for that name the resolution still runs; every
+ * other name keeps the missing-file refusal. A broken file is reported for
+ * every name, the platform's included, instead of being read as an absent one.
+ */
+function upstreamServers(
+  result: McpConfigReadResult,
+  serverName: string,
+): Record<string, McpServerConfig> {
+  if (result.ok) return result.config
+  if (result.reason === 'missing' && serverName === MCP_SERVER_NAME) return {}
+  if (result.reason === 'missing') throw new Error(`MCP configuration is missing at ${result.path}`)
+  if (result.reason === 'invalid')
+    throw new Error(`MCP configuration is not valid JSON at ${result.path}`)
+  throw new Error(
+    `MCP configuration could not be read at ${result.path}${result.detail ? `: ${result.detail}` : ''}`,
+  )
+}
+
 function resolvedUpstream(result: McpConfigReadResult, serverName: string): McpServerConfig {
-  if (!result.ok) {
-    if (result.reason === 'missing')
-      throw new Error(`MCP configuration is missing at ${result.path}`)
-    if (result.reason === 'invalid')
-      throw new Error(`MCP configuration is not valid JSON at ${result.path}`)
-    throw new Error(
-      `MCP configuration could not be read at ${result.path}${result.detail ? `: ${result.detail}` : ''}`,
-    )
-  }
-  const config = resolveMcpServerLaunch(result.config, serverName, bottegaMcpBinary())
+  const config = resolveMcpServerLaunch(
+    upstreamServers(result, serverName),
+    serverName,
+    bottegaMcpBinary(),
+  )
   if (!config) {
     throw new Error(
       `server ${JSON.stringify(serverName)} is not configured in ${result.path}; add its launch definition there`,

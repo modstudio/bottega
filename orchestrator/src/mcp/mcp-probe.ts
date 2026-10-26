@@ -3,7 +3,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { bottegaEntryArgv, sourceBunExecutable } from '../../../shared/self-spawn.ts'
+import { bottegaMcpServeArgv, sourceBunExecutable } from '../../../shared/self-spawn.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
   output: string,
@@ -187,16 +187,18 @@ export function readMcpConfig(cwd: string): Record<string, McpServerConfig> {
 }
 
 /**
- * The launch Bottega's own MCP server is entered by, and the single place that
- * launch is written: `bottega mcp --config` prints exactly this entry.
+ * Bottega's own MCP server launch as one `.mcp.json` entry, from the argv
+ * written once in shared/self-spawn.ts. The binary is injectable because the
+ * caller names the installation that serves it.
  */
 export function bottegaMcpServerEntry(binary: string): McpServerEntry {
-  return { command: binary, args: ['mcp', 'serve'] }
+  const [command, ...args] = bottegaMcpServeArgv(binary)
+  return { command: command!, args }
 }
 
 /** The executable of the running installation, which serves Bottega's own MCP server. */
 export function bottegaMcpBinary(): string {
-  return bottegaEntryArgv(PLATFORM_SLUG)[0]!
+  return bottegaMcpServeArgv()[0]!
 }
 
 /**

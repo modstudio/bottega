@@ -184,6 +184,57 @@ test('command resolves the platform’s own server without a tree entry, and a t
   }
 })
 
+test('command falls back to the built-in launch when the launch file is absent and still reports a broken one', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'reader-proxy-fallback-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  await Bun.write(join(main, '.keep'), '')
+  await Bun.write(join(tree, '.keep'), '')
+  const path = join(main, '.mcp.json')
+  const launches: Array<{ command?: string; args?: string[]; cwd?: string }> = []
+  const errors: string[] = []
+  const common = {
+    projectByName: () => ({ name: PLATFORM_SLUG, path: main, settings: {} }),
+    retiredProjectByName: () => null,
+    environment: {},
+    error: (line: string) => errors.push(line),
+    setExitCode: () => {},
+    connectMcpToolClient: async (launch: { command?: string; args?: string[]; cwd?: string }) => {
+      launches.push(launch)
+      throw new Error('upstream unavailable in this test')
+    },
+  }
+  try {
+    // The platform's own server is registered at user scope, so a tree with no
+    // launch file at all still starts the installed binary serving it.
+    await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+      ...common,
+      readMcpConfigResult: () => ({ ok: false, path, reason: 'missing' }),
+    })
+    // The same absence still refuses a name no installation answers for.
+    await readerMcpProxyCommand(PLATFORM_SLUG, 'tracker', tree, {
+      ...common,
+      readMcpConfigResult: () => ({ ok: false, path, reason: 'missing' }),
+    })
+    // A broken file is reported for every name, the platform's included.
+    await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+      ...common,
+      readMcpConfigResult: () => ({ ok: false, path, reason: 'invalid' }),
+    })
+    expect(launches.map((launch) => launch.args)).toEqual([['mcp', 'serve']])
+    expect(launches[0]!.cwd).toBe(tree)
+    expect(launches[0]!.command?.endsWith(join('bin', PLATFORM_SLUG))).toBe(true)
+    expect(errors.filter((line) => !line.endsWith('upstream unavailable in this test'))).toEqual([
+      `MCP reader proxy for tracker could not start: MCP configuration is missing at ${path}`,
+      `MCP reader proxy for ${MCP_SERVER_NAME} could not start: MCP configuration is not valid JSON at ${path}`,
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('command distinguishes unavailable launch files and refuses the registered checkout', async () => {
   const root = mkdtempSync(join(tmpdir(), 'reader-proxy-paths-'))
   const errors: string[] = []
