@@ -85,11 +85,15 @@ describe('task ruling candidate query', () => {
       )
       .run(cursor.record_id)
     db().query("UPDATE project SET name='renamed-fixture' WHERE name=?").run(PLATFORM_SLUG)
+    db().query("UPDATE run SET task_record_id='task-960' WHERE launch_key='DEV-960'").run()
+    db().query("UPDATE workflow_cursor SET task_record_id='task-960' WHERE workflow_key='DEV-960'").run()
+    db().query("UPDATE question SET workflow_task_record_id='task-960' WHERE workflow_key='DEV-960'").run()
 
     const selected = taskRulingsForDispatch({
       resume: false,
       project: 'renamed-fixture',
       launchKey: 'DEV-960',
+      taskRecordId: 'task-960',
     })
 
     expect(selected.rulings).toHaveLength(TASK_RULINGS_MAX_COUNT)
@@ -135,11 +139,13 @@ describe('task ruling candidate query', () => {
         'Grace Hopper',
         'new answer',
       )
+    db().query("UPDATE run SET task_record_id='task-960' WHERE launch_key='DEV-960'").run()
 
     const selected = taskRulingsForDispatch({
       resume: false,
       project: PLATFORM_SLUG,
       launchKey: 'DEV-960',
+      taskRecordId: 'task-960',
     })
 
     const ruledBy = Object.fromEntries(

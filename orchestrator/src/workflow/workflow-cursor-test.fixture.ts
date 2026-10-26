@@ -25,7 +25,7 @@ export const database = testDatabaseFixture((d) => {
 })
 
 export const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-export const context = { session: 'session-one' }
+export const context = { session: 'session-one', taskRecordId: 'task-DEV-822' }
 export const matchingCheckout = {
   headIsTipOrAncestor: true,
   landingBranch: 'main',
@@ -34,6 +34,7 @@ export const matchingCheckout = {
 
 export const testPorts = {
   readTask: (key: string) => ({
+    recordId: `task-${key}`,
     key,
     status: 'done' as const,
     statusCategory: 'done' as const,

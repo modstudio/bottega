@@ -49,8 +49,10 @@ import {
   awaitWorkflowRuling,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
+import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import {
   mcpWorkflowCursorContext,
+  resolveWorkflowCursorContext,
   resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor-selection.ts'
 import {
@@ -535,7 +537,11 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = mcpWorkflowCursorContext()
+      const context = await resolveWorkflowCursorContext(
+        project,
+        workflowKeyOf(workflowArgs),
+        mcpWorkflowCursorContext(),
+      )
       const effectiveMode = resolveWorkflowCursorMode(
         slug,
         project,
@@ -579,7 +585,11 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = mcpWorkflowCursorContext()
+      const context = await resolveWorkflowCursorContext(
+        project,
+        workflowKeyOf(workflowArgs),
+        mcpWorkflowCursorContext(),
+      )
       return text(
         ruleWorkflow(
           slug,

@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isTrackerCommentId } from '../../../shared/trackers.ts'
 
 export type HubTaskRead = {
+  recordId?: string
   key: string
   status: string | null
   statusCategory: string | null
@@ -15,6 +16,7 @@ export type HubTaskRead = {
 type HubTaskReadJson = {
   task?: {
     key?: string
+    record_id?: string
     status?: string | null
     status_category?: string | null
   }
@@ -36,8 +38,10 @@ function carriedCommentIds(ids: Array<number | string | undefined>): string[] {
  */
 export function hubTaskReadFromJson(key: string, parsed: unknown): HubTaskRead {
   const read = (parsed ?? {}) as HubTaskReadJson
-  if (!read.task?.key) throw new Error(`--task ${key} was not a ${PLATFORM_SLUG} task show record`)
+  if (!read.task?.key || !read.task.record_id)
+    throw new Error(`--task ${key} was not a ${PLATFORM_SLUG} task show record`)
   return {
+    recordId: read.task.record_id,
     key: read.task.key,
     status: read.task.status ?? null,
     statusCategory: read.task.status_category ?? null,

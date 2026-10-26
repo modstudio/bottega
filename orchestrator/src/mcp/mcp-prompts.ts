@@ -4,7 +4,11 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { composeWorkflowWithCursor } from '../workflow/workflow-cursor.ts'
-import { mcpWorkflowCursorContext } from '../workflow/workflow-cursor-selection.ts'
+import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
+import {
+  mcpWorkflowCursorContext,
+  resolveWorkflowCursorContext,
+} from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowComposition } from '../workflow/workflow-render.ts'
 import { composeWorkflow, type WorkflowDefinition } from '../workflow/workflows.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
@@ -217,6 +221,11 @@ export function registerWorkflowPrompts(server: McpServer): void {
             catalogueStepsForAutonomy(preliminary.steps),
             parseAutonomy(autonomy, 'session'),
           )
+          const context = await resolveWorkflowCursorContext(
+            projectName,
+            workflowKeyOf(args),
+            mcpWorkflowCursorContext(),
+          )
           return promptMessage(
             [
               ...reread,
@@ -226,7 +235,7 @@ export function registerWorkflowPrompts(server: McpServer): void {
                   projectName,
                   mode,
                   args,
-                  mcpWorkflowCursorContext(),
+                  context,
                   undefined,
                   {},
                   { resolution: resolved },

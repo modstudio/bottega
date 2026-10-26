@@ -11,6 +11,7 @@ type AdoptionCursor = {
   workflow_slug: string
   mode_slug: string
   workflow_key: string
+  task_record_id: string | null
   args: string
 }
 
@@ -29,13 +30,19 @@ export function vacateRetiredWorkflowKeySlot(
   ).run(project, workflow, mode, key)
 }
 
-function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): void {
+function assignWorkflowTaskKey(
+  row: AdoptionCursor,
+  key: string,
+  taskRecordId: string | null,
+  d: Database,
+): void {
   vacateRetiredWorkflowKeySlot(row.project, row.workflow_slug, row.mode_slug, key, d)
   const adoptedArgs = { ...(JSON.parse(row.args) as Record<string, string>), key }
   d.query(
-    "UPDATE workflow_cursor SET workflow_key=?,instance_id='',args=?,updated_at=? WHERE record_id=?",
-  ).run(key, JSON.stringify(adoptedArgs), nowIso(), row.record_id)
+    "UPDATE workflow_cursor SET workflow_key=?,task_record_id=?,instance_id='',args=?,updated_at=? WHERE record_id=?",
+  ).run(key, taskRecordId, JSON.stringify(adoptedArgs), nowIso(), row.record_id)
   row.workflow_key = key
+  row.task_record_id = taskRecordId
   row.args = JSON.stringify(adoptedArgs)
   const questions = d
     .query<{ record_id: string }, [string]>(
@@ -43,8 +50,11 @@ function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): v
     )
     .all(row.record_id)
   for (const question of questions) {
-    d.query('UPDATE question SET workflow_key=?,revision=revision+1 WHERE record_id=?').run(
+    d.query(
+      'UPDATE question SET workflow_key=?,workflow_task_record_id=?,revision=revision+1 WHERE record_id=?',
+    ).run(
       key,
+      taskRecordId,
       question.record_id,
     )
     enqueueQuestionRecord(d, question.record_id)
@@ -54,6 +64,7 @@ function assignWorkflowTaskKey(row: AdoptionCursor, key: string, d: Database): v
 export function adoptWorkflowTask(
   row: AdoptionCursor,
   suppliedTask: string | undefined,
+  taskRecordId: string | null | undefined,
   d: Database,
 ): void {
   const key = suppliedTask?.trim()
@@ -77,5 +88,5 @@ export function adoptWorkflowTask(
     throw new Error(
       `cursor ${row.id} cannot adopt ${key}; open cursor ${conflict.id} already holds it`,
     )
-  assignWorkflowTaskKey(row, key, d)
+  assignWorkflowTaskKey(row, key, taskRecordId ?? null, d)
 }

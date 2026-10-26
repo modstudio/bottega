@@ -108,6 +108,7 @@ export function upsertWorkflowQuestion(
   input: {
     cursorId: string
     workflowKey: string
+    workflowTaskRecordId: string | null
     stepOrdinal: number
     stepSlug: string
     question: string
@@ -124,12 +125,13 @@ export function upsertWorkflowQuestion(
   if (open) {
     database
       .query(
-        `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
+        `UPDATE question SET question=?,workflow_key=?,workflow_task_record_id=?,workflow_step_ordinal=?,workflow_step_slug=?,
          revision=revision+1 WHERE record_id=?`,
       )
       .run(
         input.question,
         input.workflowKey || null,
+        input.workflowTaskRecordId,
         input.stepOrdinal,
         input.stepSlug,
         open.record_id,
@@ -141,15 +143,16 @@ export function upsertWorkflowQuestion(
   const inserted = database
     .query<{ record_id: string; number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+        (record_id,number,workflow_cursor_record_id,workflow_key,workflow_task_record_id,asked_at,question,asked_via,awaiting_operator_at,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
+       VALUES (?,?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
     )
     .get(
       recordId,
       nextQuestionNumber(database),
       input.cursorId,
       input.workflowKey || null,
+      input.workflowTaskRecordId,
       input.at,
       input.question,
       input.at,

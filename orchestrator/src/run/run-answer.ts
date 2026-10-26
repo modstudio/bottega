@@ -186,6 +186,7 @@ type AnswerRootRow = {
   evidence_excluded: string | null
   repo: string | null
   launch_key: string | null
+  task_record_id: string | null
 }
 
 function answerRoot(requestedId: string): AnswerRootRow | null {
@@ -194,7 +195,7 @@ function answerRoot(requestedId: string): AnswerRootRow | null {
       `SELECT root.record_id, root.number, root.record_id, root.agent, root.job, root.cwd, root.worktree, root.branch,
           root.base_commit, root.vendor_session, root.status, root.session_id,
           root.turn, root.parent_run_record_id, root.worktree_source, root.evidence_excluded, root.repo,
-          root.launch_key
+          root.launch_key, root.task_record_id
      FROM run requested
      JOIN run root ON root.record_id = COALESCE(requested.parent_run_record_id, requested.record_id)
     WHERE requested.record_id = ?`,
@@ -295,24 +296,33 @@ function reportUnownedAdoption(
 async function refuseUserRuling(
   project: string | null,
   launchKey: string | null,
+  taskRecordId: string | null,
   fromOperator: boolean,
 ): Promise<void> {
   if (!project) return
-  const rulings = await resolveAnswerRulings(project, launchKey)
+  const rulings = await resolveAnswerRulings(
+    project,
+    launchKey,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    taskRecordId,
+  )
   const refusal = answerRulingRefusal(rulings, fromOperator)
   if (refusal) throw new Error(refusal)
 }
 
 async function requireRulingAttributions(
-  row: Pick<AnswerRootRow, 'repo' | 'launch_key'>,
+  row: Pick<AnswerRootRow, 'repo' | 'launch_key' | 'task_record_id'>,
   input: AnswerRunInput,
 ): Promise<boolean> {
   if (!Array.isArray(input.rulings)) {
-    await refuseUserRuling(row.repo, row.launch_key, input.fromOperator)
+    await refuseUserRuling(row.repo, row.launch_key, row.task_record_id, input.fromOperator)
     return input.fromOperator
   }
   for (const ruling of input.rulings) {
-    await refuseUserRuling(row.repo, row.launch_key, ruling.fromOperator)
+    await refuseUserRuling(row.repo, row.launch_key, row.task_record_id, ruling.fromOperator)
   }
   return input.rulings.some((ruling) => ruling.fromOperator)
 }

@@ -8,9 +8,11 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
+import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
+  resolveWorkflowCursorContext,
   resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor-selection.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
@@ -43,7 +45,11 @@ export async function advanceWorkflow({
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
     )
   const workflowArgs = args ?? {}
-  const context = mcpWorkflowCursorContext()
+  const context = await resolveWorkflowCursorContext(
+    project,
+    task ?? workflowKeyOf(workflowArgs),
+    mcpWorkflowCursorContext(),
+  )
   const effectiveMode = resolveWorkflowCursorMode(
     slug,
     project,

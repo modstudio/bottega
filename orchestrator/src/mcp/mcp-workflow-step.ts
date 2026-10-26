@@ -9,9 +9,11 @@ import {
   readCommitsPastLanding,
 } from '../workflow/workflow-compose-branch.ts'
 import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
+import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import {
   mcpWorkflowCursorContext,
+  resolveWorkflowCursorContext,
   resolveWorkflowCursorMode,
 } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
@@ -30,7 +32,11 @@ const inputSchema = z.object({
 
 async function workflowStep(input: z.infer<typeof inputSchema>, commitCount: CommitCountPort) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
-  const context = mcpWorkflowCursorContext()
+  const context = await resolveWorkflowCursorContext(
+    project,
+    workflowKeyOf(args ?? {}),
+    mcpWorkflowCursorContext(),
+  )
   const effectiveMode = cursor
     ? resolveWorkflowCursorMode(
         slug,

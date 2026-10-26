@@ -4,6 +4,7 @@
 type RunBindingIdentity = {
   project: string
   workflowKey: string
+  workflowTaskRecordId?: string | null
   branch: string | null
   session: string | null
   createdAt: string
@@ -11,7 +12,7 @@ type RunBindingIdentity = {
 
 export type BoundRun = {
   project: string | null
-  launchKey: string | null
+  taskRecordId: string | null
   branch: string | null
   sessionId: string | null
   createdAt: string
@@ -53,7 +54,7 @@ function projectRefusal(flag: string, run: BoundRun, identity: RunBindingIdentit
 
 function keyedRefusal(flag: string, run: BoundRun, identity: RunBindingIdentity): string {
   return (
-    `${flag} launch_key is ${run.launchKey ?? 'unset'}, not this cursor's ${identity.workflowKey || 'task'}, ` +
+    `${flag} task reference is ${run.taskRecordId ?? 'unset'}, not this cursor's ${identity.workflowKey || 'task'}, ` +
     `and branch is ${run.branch ?? 'unset'}, not this cursor's ${identity.branch ?? 'branch'}`
   )
 }
@@ -80,7 +81,8 @@ export function decideRunBinding(input: {
   if (input.run.project !== input.identity.project)
     return projectRefusal(input.flag, input.run, input.identity)
   const keyOk =
-    Boolean(input.identity.workflowKey) && input.run.launchKey === input.identity.workflowKey
+    Boolean(input.identity.workflowTaskRecordId) &&
+    input.run.taskRecordId === input.identity.workflowTaskRecordId
   const branchOk = Boolean(input.identity.branch) && input.run.branch === input.identity.branch
   if (keyOk || branchOk) return null
   if (!keylessCursor(input.identity)) return keyedRefusal(input.flag, input.run, input.identity)

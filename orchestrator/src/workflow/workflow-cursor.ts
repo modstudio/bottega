@@ -124,6 +124,7 @@ function findCursor(
     cursor,
     context.session,
     d,
+    context.taskRecordId,
   ) as CursorRow | null
 }
 
@@ -189,10 +190,10 @@ function insertCursor(
     : undefined
   d.query(
     `INSERT INTO workflow_cursor
-      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,
        workflow_version_record_id,catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
      ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
        updated_at=excluded.updated_at`,
@@ -203,6 +204,7 @@ function insertCursor(
     composition.workflow.slug,
     composition.mode!.slug,
     key,
+    context.taskRecordId ?? null,
     instance,
     context.session ?? null,
     composition.workflow.record_id,
@@ -497,6 +499,7 @@ function applyFloorDecision(
     identity: {
       project: row.project,
       workflowKey: row.workflow_key,
+      workflowTaskRecordId: row.task_record_id,
       branch: args.branch?.trim() || null,
       worktree: args.worktree?.trim() || null,
       session: row.session_id,
@@ -642,6 +645,7 @@ function closeFloorsForStep(
         {
           cursorId: row.record_id,
           workflowKey: row.workflow_key,
+          workflowTaskRecordId: row.task_record_id,
           stepOrdinal: row.ordinal + 1,
           stepSlug: row.step_slug,
           stepTitle: currentStep.title,
@@ -739,7 +743,7 @@ function nextWorkflowStepImpl(
   mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
-  adoptWorkflowTask(row, evidence.task, d)
+  adoptWorkflowTask(row, evidence.task, context.taskRecordId, d)
   const composition = cursorComposition(row, d, live)
   if (!note?.trim()) {
     const step = composition.steps[row.ordinal]!
@@ -918,6 +922,7 @@ function awaitWorkflowRulingImpl(
     {
       cursorId: row.record_id,
       workflowKey: row.workflow_key,
+      workflowTaskRecordId: row.task_record_id,
       stepOrdinal: row.ordinal + 1,
       stepSlug: row.step_slug,
       question: question.trim(),

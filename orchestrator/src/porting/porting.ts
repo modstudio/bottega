@@ -5,6 +5,7 @@ import { recordApiClient } from '../record/record-api-client.ts'
 import { applyPortWriteResponse } from '../record/record-cache-port.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { workerStoreWriteRefusal } from '../worker-store-write.ts'
+import { resolveHubTaskReference } from '../run/run-task-linking.ts'
 
 export type PortPair = {
   record_id: string
@@ -264,6 +265,7 @@ export function setLedgerRefLocal(input: {
   note: string
   sources: LedgerSource[]
   createdAt?: string
+  taskRecordId?: string | null
 }): LedgerRef {
   writableDb()
   if (input.sources.length === 0) throw new Error('a ledger ref needs at least one source project')
@@ -276,12 +278,14 @@ export function setLedgerRefLocal(input: {
   writeTransaction(() => {
     db()
       .query(
-        `INSERT INTO port_ref (record_id, task_key, target_project_record_id, note, created_at) VALUES (?,?,?,?,?)
-       ON CONFLICT(target_project_record_id,task_key) WHERE space_id IS NULL DO UPDATE SET note=excluded.note`,
+        `INSERT INTO port_ref (record_id, task_key, task_record_id, target_project_record_id, note, created_at) VALUES (?,?,?,?,?,?)
+       ON CONFLICT(target_project_record_id,task_key) WHERE space_id IS NULL DO UPDATE SET
+         task_record_id=excluded.task_record_id,note=excluded.note`,
       )
       .run(
         newRecordId(),
         input.taskKey,
+        input.taskRecordId ?? null,
         input.targetProjectId,
         input.note,
         input.createdAt ?? nowIso(),
@@ -467,7 +471,7 @@ export function addSkip(
   })
 }
 
-export function setLedgerRef(input: {
+export async function setLedgerRef(input: {
   taskKey: string
   targetProjectId: string
   note: string
@@ -475,8 +479,9 @@ export function setLedgerRef(input: {
   createdAt?: string
 }) {
   assertPortWriteAllowed('set port ledger ref')
+  const task = await resolveHubTaskReference(projectName(input.targetProjectId), input.taskKey)
   return applyRecordWriteAuthority({
-    local: () => setLedgerRefLocal(input),
+    local: () => setLedgerRefLocal({ ...input, taskRecordId: task?.record_id ?? null }),
     hosted: async () => {
       const spaceId = await hostedSpace(input.targetProjectId)
       const current = storedRef(input.targetProjectId, input.taskKey)

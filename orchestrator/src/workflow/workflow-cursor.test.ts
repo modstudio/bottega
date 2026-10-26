@@ -719,7 +719,7 @@ describe('workflow cursor adapter', () => {
       'default',
       args,
       'no ruling needed',
-      { session: 'session-two' },
+      { session: 'session-two', taskRecordId: context.taskRecordId },
       d,
     )
 
@@ -849,7 +849,7 @@ describe('workflow cursor adapter', () => {
       'fixture',
       'default',
       args,
-      { session: 'session-two' },
+      { session: 'session-two', taskRecordId: context.taskRecordId },
       d,
       {},
       {},
@@ -959,6 +959,7 @@ describe('workflow cursor adapter', () => {
             inTransaction: d.inTransaction,
           })
           return {
+            recordId: `task-${key}`,
             key,
             status: 'done',
             statusCategory: 'done',

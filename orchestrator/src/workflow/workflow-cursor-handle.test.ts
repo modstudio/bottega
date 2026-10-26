@@ -12,9 +12,10 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-const context = { session: 'session-one' }
+const context = { session: 'session-one', taskRecordId: 'task-DEV-822' }
 const ports: FloorEvidencePorts = {
   readTask: (key: string) => ({
+    recordId: `task-${key}`,
     key,
     status: 'done' as const,
     statusCategory: 'done' as const,
@@ -510,24 +511,27 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
     'default',
     {},
     'task created',
-    context,
+    { ...context, taskRecordId: 'task-DEV-1082' },
     d,
     { task: 'DEV-1082' },
     ports,
     opened.cursor,
   )
   const adopted = d
-    .query('SELECT workflow_key,instance_id,args FROM workflow_cursor WHERE number=?')
+    .query('SELECT workflow_key,task_record_id,instance_id,args FROM workflow_cursor WHERE number=?')
     .get(opened.cursor) as {
     workflow_key: string
+    task_record_id: string
     instance_id: string
     args: string
   }
   expect(adopted.workflow_key).toBe('DEV-1082')
+  expect(adopted.task_record_id).toBe('task-DEV-1082')
   expect(adopted.instance_id).toBe('')
   expect(JSON.parse(adopted.args).key).toBe('DEV-1082')
-  expect(d.query('SELECT workflow_key FROM question').get()).toEqual({
+  expect(d.query('SELECT workflow_key,workflow_task_record_id FROM question').get()).toEqual({
     workflow_key: 'DEV-1082',
+    workflow_task_record_id: 'task-DEV-1082',
   })
   const outbox = d
     .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
@@ -537,6 +541,7 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
     revision: 3,
   })
   const keyedArgs = { key: 'DEV-1082' }
+  const adoptedContext = { ...context, taskRecordId: 'task-DEV-1082' }
   expect(
     getWorkflowStepWithCursor(
       'adopt-key',
@@ -544,17 +549,35 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
       'complete',
       keyedArgs,
       'default',
-      context,
+      adoptedContext,
       d,
       {},
     ).cursor,
   ).toBe(opened.cursor)
   expect(
-    composeWorkflowWithCursor('adopt-key', 'fixture', 'default', keyedArgs, context, d, {}, {})
+    composeWorkflowWithCursor(
+      'adopt-key',
+      'fixture',
+      'default',
+      keyedArgs,
+      adoptedContext,
+      d,
+      {},
+      {},
+    )
       .cursor?.id,
   ).toBe(opened.cursor)
   expect(
-    awaitWorkflowRuling('adopt-key', 'fixture', 'default', keyedArgs, 'Done?', context, d, () => {})
+    awaitWorkflowRuling(
+      'adopt-key',
+      'fixture',
+      'default',
+      keyedArgs,
+      'Done?',
+      adoptedContext,
+      d,
+      () => {},
+    )
       .id,
   ).toBe(opened.cursor)
   expect(() =>
@@ -571,7 +594,17 @@ test('closing with task adopts a key once and rekeys cursor questions', () => {
       opened.cursor,
     ),
   ).toThrow(`cursor ${opened.cursor} is already assigned to DEV-1082`)
-  nextWorkflowStep('adopt-key', 'fixture', 'default', keyedArgs, 'completed', context, d, {}, ports)
+  nextWorkflowStep(
+    'adopt-key',
+    'fixture',
+    'default',
+    keyedArgs,
+    'completed',
+    adoptedContext,
+    d,
+    {},
+    ports,
+  )
   expect(
     d.query('SELECT count(*) AS n FROM workflow_cursor WHERE workflow_key=?').get('DEV-1082'),
   ).toEqual({ n: 1 })

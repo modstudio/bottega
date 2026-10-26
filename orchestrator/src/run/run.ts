@@ -135,6 +135,7 @@ import {
 } from './shared-git-config.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
+import { resolveHubTaskReference } from './run-task-linking.ts'
 
 function completeStartup(): true {
   bindSignals()
@@ -410,10 +411,15 @@ export async function run(opts: {
     key: opts.key,
     cwd: callerCwd,
   })
+  const dispatchTask =
+    dispatchKey && runProjectName
+      ? await resolveHubTaskReference(runProjectName, dispatchKey)
+      : null
   const carriedRulings = taskRulingsForDispatch({
     resume: !resume.isFirstTurn,
     project: runProjectName,
     launchKey: dispatchKey,
+    taskRecordId: dispatchTask?.record_id ?? null,
   })
   const rulingsSection = renderTaskRulings(carriedRulings)
   let prompt =

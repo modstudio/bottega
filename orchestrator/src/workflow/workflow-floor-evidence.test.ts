@@ -32,6 +32,7 @@ test.each([
 const identity: CursorIdentity = {
   project: 'fixture',
   workflowKey: 'DEV-977',
+  workflowTaskRecordId: 'task-DEV-977',
   branch: 'DEV-977-work',
   worktree: '/fixture/work',
   session: 's',
@@ -42,6 +43,7 @@ const identity: CursorIdentity = {
 const planningIdentity: CursorIdentity = {
   project: 'fixture',
   workflowKey: '',
+  workflowTaskRecordId: null,
   branch: null,
   worktree: '/fixture/work',
   session: 's',
@@ -59,6 +61,7 @@ const matchingCheckout = {
 
 const ports: FloorEvidencePorts = {
   readTask: (key) => ({
+    recordId: `task-${key}`,
     key,
     status: 'done',
     statusCategory: 'done',
@@ -127,8 +130,8 @@ const insertRun = (
   (
     d
       .query<{ id: string }, (string | number | null)[]>(
-        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
-         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?) RETURNING record_id AS id`,
+        `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,task_record_id,branch,session_id)
+         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement',?,?, 'sha',1,'p',?,0,?,?,?,?) RETURNING record_id AS id`,
       )
       .get(
         input.startedAt ?? '2026-09-01',
@@ -136,6 +139,7 @@ const insertRun = (
         projectId(d, input.project),
         input.status ?? 'ok',
         input.launchKey ?? null,
+        input.launchKey ? `task-${input.launchKey}` : null,
         input.branch ?? null,
         input.sessionId ?? null,
       ) as { id: string }
@@ -806,7 +810,7 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   const d = database()
   const trackerComment = '01a16517-2274-71fc-998f-2be4a598791b'
   const trackerRead = hubTaskReadFromJson('DEV-977', {
-    task: { key: 'DEV-977', status: 'done', status_category: 'done' },
+    task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
     comments: [{ id: 4 }],
     tracker_comment_ids: [trackerComment],
     tracker_comments_verifiable: true,
@@ -821,7 +825,7 @@ test('a fresh tracker task read verifies its own comment ids and refuses another
   )
 
   const hubRead = hubTaskReadFromJson('DEV-977', {
-    task: { key: 'DEV-977', status: 'done', status_category: 'done' },
+    task: { record_id: 'task-DEV-977', key: 'DEV-977', status: 'done', status_category: 'done' },
     comments: [{ id: 4 }],
   })
   expect(
@@ -849,6 +853,7 @@ test('every workflow task read requests a fresh tracker read through its port', 
       readTask: (key, options) => {
         calls.push({ key, ...options })
         return {
+          recordId: `task-${key}`,
           key,
           status: 'done',
           statusCategory: 'done',
@@ -883,6 +888,7 @@ test('a tracker without comment ids names the task artifact remedy', () => {
       { artifact: 'task:DEV-977#comment:uuid' },
       {
         readTask: (key) => ({
+          recordId: `task-${key}`,
           key,
           status: 'done',
           statusCategory: 'done',

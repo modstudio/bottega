@@ -202,18 +202,18 @@ export async function resolveProjectAutonomy(
 
 function workflowRulingsSnapshot(
   project: string,
-  launchKey: string | null,
+  taskRecordId: string | null,
   d: Database = db(),
 ): AutonomyResolution['rulings'] | null {
-  if (!launchKey) return null
+  if (!taskRecordId) return null
   const rows = d
     .query(
       `SELECT autonomy FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_key=? AND state IN ('running','awaiting-ruling')
+         AND task_record_id=? AND state IN ('running','awaiting-ruling')
        ORDER BY updated_at DESC,number DESC`,
     )
-    .all(project, launchKey) as { autonomy: string | null }[]
+    .all(project, taskRecordId) as { autonomy: string | null }[]
   return combineRulingsSnapshots(
     rows.flatMap((row) => {
       if (!row.autonomy) return []
@@ -230,8 +230,9 @@ export async function resolveAnswerRulings(
   d: Database = db(),
   env: ConfigEnvironment = process.env,
   timeoutMs: number = HOSTED_AUTONOMY_TIMEOUT_MS,
+  taskRecordId: string | null = null,
 ): Promise<AutonomyResolution['rulings']> {
-  const snapshot = workflowRulingsSnapshot(project, launchKey, d)
+  const snapshot = workflowRulingsSnapshot(project, taskRecordId, d)
   try {
     const current = (
       await resolveProjectAutonomy(

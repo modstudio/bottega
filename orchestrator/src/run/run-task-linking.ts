@@ -50,9 +50,27 @@ export type RunTaskLinkReport = {
   without_task_by_job: Record<string, number>
   keys_without_task: Record<string, number>
   without_task_or_project_by_job: Record<string, number>
+  local_task_links: Record<LocalTaskLinkTable, LocalTaskLinkResult>
 }
 
 export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
+
+type LocalTaskLinkTable = 'workflow_cursor' | 'question' | 'port_ref' | 'presence'
+type LocalTaskLinkResult = { linked: number; unmatched_keys: Record<string, number> }
+
+export async function resolveHubTaskReference(
+  project: string,
+  key: string,
+  reader: HubTaskReader = readHubTasks,
+): Promise<HubTaskReference | null> {
+  let rows: HubTaskReference[]
+  try {
+    rows = await reader(project)
+  } catch (error) {
+    throw taskReadRefusal(project, error instanceof Error ? error.message : String(error))
+  }
+  return rows.find((task) => task.key === key) ?? null
+}
 
 const TASK_TOKEN = /(?<![A-Za-z0-9])([A-Z][A-Z0-9]+-[0-9]+)(?![0-9])/g
 
@@ -261,6 +279,12 @@ function emptyReport(dryRun: boolean): RunTaskLinkReport {
     without_task_by_job: {},
     keys_without_task: {},
     without_task_or_project_by_job: {},
+    local_task_links: {
+      workflow_cursor: { linked: 0, unmatched_keys: {} },
+      question: { linked: 0, unmatched_keys: {} },
+      port_ref: { linked: 0, unmatched_keys: {} },
+      presence: { linked: 0, unmatched_keys: {} },
+    },
   }
 }
 
@@ -303,6 +327,59 @@ export async function linkRunTasks(
       increment(report.without_task_or_project_by_job, run.job)
     }
   }
+  const localLinks = [
+    {
+      table: 'workflow_cursor',
+      id: 'record_id',
+      key: 'workflow_key',
+      uuid: 'task_record_id',
+      where: "workflow_key<>''",
+    },
+    {
+      table: 'question',
+      id: 'record_id',
+      key: 'workflow_key',
+      uuid: 'workflow_task_record_id',
+      where: 'workflow_key IS NOT NULL',
+    },
+    {
+      table: 'port_ref',
+      id: 'record_id',
+      key: 'task_key',
+      uuid: 'task_record_id',
+      where: '1=1',
+    },
+    {
+      table: 'presence',
+      id: 'session_id',
+      key: 'current_task_key',
+      uuid: 'current_task_record_id',
+      where: 'current_task_key IS NOT NULL',
+    },
+  ] as const
+  const pendingUpdates: Array<{ table: LocalTaskLinkTable; idColumn: string; uuidColumn: string; id: string; taskId: string }> = []
+  for (const shape of localLinks) {
+    const rows = database
+      .query<{ id: string; task_key: string }, []>(
+        `SELECT ${shape.id} id,${shape.key} task_key FROM ${shape.table} WHERE ${shape.uuid} IS NULL AND ${shape.where}`,
+      )
+      .all()
+    for (const row of rows) {
+      const task = tasks.get(row.task_key)
+      if (task) {
+        report.local_task_links[shape.table].linked++
+        pendingUpdates.push({
+          table: shape.table,
+          idColumn: shape.id,
+          uuidColumn: shape.uuid,
+          id: row.id,
+          taskId: task.record_id,
+        })
+      } else {
+        increment(report.local_task_links[shape.table].unmatched_keys, row.task_key)
+      }
+    }
+  }
   if (!options.dryRun) {
     writeTransaction(() => {
       const update = database.query(
@@ -313,6 +390,11 @@ export async function linkRunTasks(
       for (const link of links) {
         if (!link.task_record_id && !link.project_record_id) continue
         update.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
+      }
+      for (const update of pendingUpdates) {
+        database
+          .query(`UPDATE ${update.table} SET ${update.uuidColumn}=? WHERE ${update.idColumn}=? AND ${update.uuidColumn} IS NULL`)
+          .run(update.taskId, update.id)
       }
     }, database)
   }
@@ -338,12 +420,17 @@ export function formatRunTaskLinkReport(report: RunTaskLinkReport): string[] {
       .filter(([, count]) => count > 0)
       .map(([name, count]) => `${name} ${count}`)
       .join(', ') || 'none'
+  const local = Object.entries(report.local_task_links).flatMap(([table, result]) => [
+    `${table} task links: ${result.linked}`,
+    `${table} keys naming no task: ${format(result.unmatched_keys)}`,
+  ])
   return [
     `task links: ${format(report.task_links_by_source)}`,
     `project links: ${format(report.project_links_by_source)}`,
     `without task by job: ${format(report.without_task_by_job)}`,
     `keys naming no task: ${format(report.keys_without_task)}`,
     `without task or project by job: ${format(report.without_task_or_project_by_job)}`,
+    ...local,
   ]
 }
 
@@ -361,7 +448,14 @@ export async function sweepRunTaskLinks(
       (sum, count) => sum + count,
       0,
     )
-    return { kind: 'log', line: `run links: task ${taskLinks}, project ${projectLinks}` }
+    const localLinks = Object.values(linked.local_task_links).reduce(
+      (sum, result) => sum + result.linked,
+      0,
+    )
+    return {
+      kind: 'log',
+      line: `run links: task ${taskLinks}, project ${projectLinks}, related rows ${localLinks}`,
+    }
   } catch (error) {
     return {
       kind: 'error',
@@ -373,7 +467,22 @@ export async function sweepRunTaskLinks(
 export async function runTaskReferenceDoctorLine(): Promise<string> {
   try {
     const tasks = await hubTaskMap(projects())
-    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks)} name no task in hub`
+    const ids = new Set([...tasks.values()].map((task) => task.record_id))
+    const shapes = [
+      ['workflow_cursor', 'task_record_id'],
+      ['question', 'workflow_task_record_id'],
+      ['port_ref', 'task_record_id'],
+      ['presence', 'current_task_record_id'],
+    ] as const
+    const related = shapes.reduce((sum, [table, column]) => {
+      const rows = db()
+        .query<{ task_record_id: string }, []>(
+          `SELECT ${column} task_record_id FROM ${table} WHERE ${column} IS NOT NULL`,
+        )
+        .all()
+      return sum + rows.filter((row) => !ids.has(row.task_record_id)).length
+    }, 0)
+    return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks)} run and ${related} related rows name no task in hub`
   } catch (error) {
     return `run task refs  unavailable — ${error instanceof Error ? error.message : String(error)}`
   }
