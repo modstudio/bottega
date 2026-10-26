@@ -170,7 +170,9 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
     )
 
-    // Seed Git-only tasks before resolving the commit's task UUID.
+    // Seed Git-only tasks before resolving the commit's task UUID. Never downgrade a
+    // tracker's row to a git-derived one. The cache adapter also queues only inserts
+    // and meaningful changes in this transaction.
     upsertGitTasks(conn, tasks.values(), at)
     for (const c of commits) writeCommitKey(conn, c)
     for (const [day, a] of days) {
@@ -189,8 +191,6 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
         at,
       )
     }
-    // Never downgrade a tracker's row to a git-derived one. The cache adapter
-    // also queues only inserts and meaningful changes in this transaction.
     conn
       .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
