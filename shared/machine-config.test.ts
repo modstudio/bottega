@@ -2,16 +2,20 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
+  deleteMachineDelegation,
   editMachinePermission,
   editMachinePermissionTable,
   MACHINE_CONFIG,
   machineId,
+  readDelegationSettings,
   readMachinePermissions,
   readMachineValue,
   resolveMachineValue,
   setMachineAutonomy,
+  setMachineDelegation,
   storedMachineId,
 } from './machine-config.ts'
 
@@ -195,6 +199,48 @@ describe('machine config resolution', () => {
       mkdirSync(config)
       writeFileSync(join(config, 'machine.toml'), '[hub]\nport = 9000\n')
       expect(readMachineValue('hub.port', env)).toBe(9000)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('delegation modes default external and persist per machine', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-delegation-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      expect(readDelegationSettings(env)).toEqual({
+        'delegation.implement': 'external',
+        'delegation.review': 'external',
+      })
+      setMachineDelegation('delegation.review', 'harness', env)
+      expect(readDelegationSettings(env)).toEqual({
+        'delegation.implement': 'external',
+        'delegation.review': 'harness',
+      })
+      expect(() => setMachineDelegation('delegation.review', 'sometimes', env)).toThrow(
+        'key delegation.review must be one of external, harness',
+      )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('a malformed delegation value is actionable and remains repairable', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-delegation-invalid-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      mkdirSync(config)
+      writeFileSync(join(config, 'machine.toml'), '[delegation]\nreview = "sometimes"\n')
+      expect(() => readDelegationSettings(env)).toThrow(
+        `key delegation.review must be one of external, harness; cleared by: ${PLATFORM_SLUG} machine config set --machine delegation.review external`,
+      )
+      setMachineDelegation('delegation.review', 'harness', env)
+      expect(readDelegationSettings(env)['delegation.review']).toBe('harness')
+      writeFileSync(join(config, 'machine.toml'), '[delegation]\nreview = "sometimes"\n')
+      deleteMachineDelegation('delegation.review', env)
+      expect(readDelegationSettings(env)['delegation.review']).toBe('external')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

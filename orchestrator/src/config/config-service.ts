@@ -11,6 +11,7 @@ import {
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
@@ -22,8 +23,11 @@ import {
 } from '../../../shared/hosted-secret-opening.ts'
 import {
   deleteMachineAutonomy,
+  deleteMachineDelegation,
   listMachineAutonomy,
+  listMachineEntries,
   setMachineAutonomy,
+  setMachineDelegation,
 } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
@@ -692,17 +696,21 @@ export async function deleteEntry(
 }
 
 export function setMachineEntry(key: string, value: string) {
+  if (isDelegationKey(key)) {
+    setMachineDelegation(key, value)
+    return listMachineEntries().find((row) => row.key === key)!
+  }
   setMachineAutonomy(key, value)
   const storedKey = isShipToConfigKey(key) ? SHIP_TO_CONFIG_KEY : key
   return listMachineAutonomy().find((row) => row.key === storedKey)!
 }
 
 export function deleteMachineEntry(key: string): void {
+  if (isDelegationKey(key)) {
+    deleteMachineDelegation(key)
+    return
+  }
   deleteMachineAutonomy(key)
-}
-
-export function listMachineEntries() {
-  return listMachineAutonomy()
 }
 
 export async function listSecrets(client = configClient()) {

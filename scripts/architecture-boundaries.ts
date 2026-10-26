@@ -372,6 +372,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       'node:fs',
       '../../../shared/brand.ts',
+      '../../../shared/machine-config.ts',
       '../agent/agent-auth.ts',
       '../agent/endpoint-api-key.ts',
       '../agent/agent-registry.ts',
@@ -380,6 +381,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../resources/docker-resources.ts',
       '../evidence/evidence-query.ts',
+      '../jobs/jobs.ts',
       '../worktree/keep-tree-hold.ts',
       '../agent/model-host.ts',
       '../resources/resource-claims.ts',
@@ -396,6 +398,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../sandbox/sandbox-runtime.ts',
       '../database/migrations.ts',
       './health.ts',
+      './delegation-doctor.ts',
       '../project/projects.ts',
       '../run/run-task-linking.ts',
     ],

@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
@@ -9,6 +10,7 @@ import {
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { harnessDelegationRefusal, noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
@@ -978,10 +980,7 @@ function admittedCandidates(
         `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
         capacityCounts(capacityBlocked),
       )
-    throw new RoutingRefusalError(
-      `no eligible agent for job "${jobName}"` +
-        (excluded.length ? `\n${excluded.join('\n')}` : ''),
-    )
+    throw new RoutingRefusalError(noEligibleAgentRefusal(jobName, job(jobName).needs, excluded))
   }
   const constrained = eligible.filter(
     (candidate) =>
@@ -1005,6 +1004,12 @@ function admittedCandidates(
   )
 }
 
+function assertExternalDelegation(jobName: string): void {
+  // Automatic failover also enters here: it is a new dispatch to a new agent, not a resume.
+  const refusal = harnessDelegationRefusal(job(jobName), readDelegationSettings())
+  if (refusal) throw new RoutingRefusalError(refusal)
+}
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: routing presentation follows the pure admission and policy decisions
 export function pick(
   jobName: string,
@@ -1024,6 +1029,7 @@ export function pick(
   rng: () => number = Math.random,
 ): { agent: string; reason: string } {
   const j = job(jobName)
+  assertExternalDelegation(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
   // Named in every reason below, so a route drawn from four PHP runs is never
   // mistaken for one drawn from thirty mixed ones.
