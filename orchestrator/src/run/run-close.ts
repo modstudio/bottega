@@ -19,10 +19,9 @@ import {
   NEEDS_HUMAN_TITLE,
   notify,
 } from '../failure/failure.ts'
-import { type Job, reclaimsTreeByDefault } from '../jobs/jobs.ts'
+import { reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
-import { CALIBRATION_SUFFIX_RESERVE_BYTES } from '../review/review-calibration.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import {
   decideFailover,
@@ -84,6 +83,8 @@ export type CloseInput = {
   endpointKey: EffectiveBillingKey
   name: string
   opts: CloseOptions
+  /** The prompt size this run's pick ranked on, for a failover successor to reuse. */
+  pickPromptBytes: number
   claim: { id: string; number: number }
   idleUnkillable: boolean
   status: string
@@ -93,7 +94,6 @@ export type CloseInput = {
   artifactsPersisted: boolean
   idleTreePids: number[]
   idleTreePgid: number | null
-  requestedJob: Job
   callerCwd: string
   repoJob: boolean
   declaredDeliverables: string[]
@@ -170,8 +170,12 @@ function storedFailoverSelectionConstraints(
 async function selectFailoverSuccessor(input: {
   runId: string
   job: string
-  prompt: string
-  findings: boolean | undefined
+  /**
+   * The prompt size the pick that chose this agent measured. A failover ranks
+   * the successor on the same bytes, so it lands in the same prompt-size bucket
+   * and against the same per-agent limit as the original route.
+   */
+  pickPromptBytes: number
   lens: string | null
   launchCwd: string | null
   callerCwd: string
@@ -186,7 +190,7 @@ async function selectFailoverSuccessor(input: {
       return pick(
         input.job,
         undefined,
-        Buffer.byteLength(input.prompt) + (input.findings ? CALIBRATION_SUFFIX_RESERVE_BYTES : 0),
+        input.pickPromptBytes,
         true,
         stackAt(input.launchCwd ?? input.callerCwd),
         {
@@ -265,7 +269,6 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     artifactsPersisted,
     idleTreePids,
     idleTreePgid,
-    requestedJob,
     callerCwd,
     repoJob,
     declaredDeliverables,
@@ -349,8 +352,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         const selected = await selectFailoverSuccessor({
           runId: claim.id,
           job: opts.job,
-          prompt: originalPrompt,
-          findings: requestedJob.findings,
+          pickPromptBytes: input.pickPromptBytes,
           lens: first.lens,
           launchCwd: first.launch_cwd,
           callerCwd,

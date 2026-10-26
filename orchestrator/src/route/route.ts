@@ -942,6 +942,18 @@ function namedCandidate(
   return candidate
 }
 
+/**
+ * The model this request would run the candidate on: the caller's `--model` pin
+ * wins over the agent's registered default. The capacity and avoidance filters
+ * ask the same question about the same agent, so they resolve it here once.
+ */
+function effectiveModel(
+  candidate: Pick<Candidate, 'agent'>,
+  constraints: RouteConstraints,
+): string {
+  return constraints.model ?? AGENTS[candidate.agent]!.model
+}
+
 function admittedCandidates(
   jobName: string,
   candidates: Candidate[],
@@ -973,7 +985,7 @@ function admittedCandidates(
       (candidate) =>
         candidate.why.startsWith('at capacity') &&
         !requested.has(candidate.agent) &&
-        !models.has(AGENTS[candidate.agent]!.model),
+        !models.has(effectiveModel(candidate, constraints)),
     )
     if (capacityBlocked.length)
       throw new AgentCapacityError(
@@ -984,16 +996,15 @@ function admittedCandidates(
   }
   const constrained = eligible.filter(
     (candidate) =>
-      !requested.has(candidate.agent) &&
-      !models.has(constraints.model ?? AGENTS[candidate.agent]!.model),
+      !requested.has(candidate.agent) && !models.has(effectiveModel(candidate, constraints)),
   )
   if (constrained.length || (!requested.size && !models.size))
     return routeSurfaceSelection(constrained, constraints.routed)
   const avoided = eligible.map((candidate) => {
+    const model = effectiveModel(candidate, constraints)
     const reasons = []
     if (requested.has(candidate.agent)) reasons.push(`--avoid named ${candidate.agent}`)
-    if (models.has(constraints.model ?? AGENTS[candidate.agent]!.model))
-      reasons.push(`model ${constraints.model ?? AGENTS[candidate.agent]!.model} was excluded`)
+    if (models.has(model)) reasons.push(`model ${model} was excluded`)
     return `${candidate.agent}: ${reasons.join(' and ')}`
   })
   throw new RoutingRefusalError(
@@ -1084,32 +1095,38 @@ export function pick(
   )
   const chosen = selected.chosen
   const policy = explore ? 'thompson' : 'mean'
+  /**
+   * A routed pick already decided this route and stated why, so every mode
+   * returns that reason instead of one recomputed for a comparison the routing
+   * surface never made. `withConstraint` is the fallback for a pick that
+   * computed its own reason.
+   */
+  const carriedReason = (computed: string) => chosen.routedReason ?? withConstraint(computed)
   if (selected.mode === 'challenger')
     return {
       agent: chosen.agent,
-      reason: withConstraint(
+      reason: carriedReason(
         `${policy}; challenger (${chosen.evidence}/${MIN_SAMPLE} judged${scope(chosen)}, exploring)`,
       ),
     }
   if (selected.mode === 'standing-challenger')
     return {
       agent: chosen.agent,
-      reason: withConstraint(
+      reason: carriedReason(
         `${policy}; standing challenger (${chosen.evidence} judged${scope(chosen)}, exploring)`,
       ),
     }
   if (selected.mode === 'preference')
     return {
       agent: chosen.agent,
-      reason: withConstraint(
+      reason: carriedReason(
         `${policy}; preference (only ${chosen.evidence} judged${scope(chosen)}, need ${MIN_SAMPLE})`,
       ),
     }
   if (selected.mode === 'only') {
     return {
       agent: chosen.agent,
-      reason:
-        chosen.routedReason ?? withConstraint(`${policy}; only eligible agent in ${evidenceCell}`),
+      reason: carriedReason(`${policy}; only eligible agent in ${evidenceCell}`),
     }
   }
   const pct =
@@ -1123,7 +1140,7 @@ export function pick(
   if (selected.tied === 1)
     return {
       agent: chosen.agent,
-      reason: withConstraint(`${policy}; best score ${pct}${precision}`),
+      reason: carriedReason(`${policy}; best score ${pct}${precision}`),
     }
   const edge =
     chosenPrecision !== null
@@ -1133,7 +1150,7 @@ export function pick(
         : `fastest at ${Math.round((chosen.latencyMs ?? 0) / 1000)}s`
   return {
     agent: chosen.agent,
-    reason: withConstraint(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
+    reason: carriedReason(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
   }
 }
 

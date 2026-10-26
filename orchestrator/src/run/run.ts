@@ -117,7 +117,7 @@ import { resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 import { rootRunRecordId } from './run-root-record.ts'
-import { routedPromptBytes } from './run-routing-input.ts'
+import { routedPromptBytes, routedPromptText } from './run-routing-input.ts'
 import * as runMigration from './run-schema-reload-cause.ts'
 import {
   enforceRunStartupRefusal,
@@ -443,10 +443,22 @@ export async function run(opts: {
     repo: runProjectName,
   })
   const evidencePrompt = runEvidence(opts.job, Boolean(requestedJob.findings), declaredDeliverables)
-  if (evidencePrompt.readerInstruction && resume.isFirstTurn) {
-    prompt = `${evidencePrompt.readerInstruction}\n\n${prompt}`
-  }
+  prompt = routedPromptText(prompt, evidencePrompt.readerInstruction, resume.isFirstTurn)
   const requiresCanonSource = evidencePrompt.requiresCanonSource
+  /**
+   * The bytes this run's pick ranks on, kept for the failover pick below.
+   *
+   * A failover re-dispatches the same prompt through another agent, so it must
+   * route on the size the original pick measured rather than on a size taken
+   * from the raw spec it re-reads. Computed here, before the bound line is
+   * appended, because that is the prompt the pick was given.
+   */
+  const pickPromptBytes = routedPromptBytes(
+    prompt,
+    replySchemaName,
+    requestedJob,
+    requiresCanonSource,
+  )
   const transportPin = runTransportPin(opts.transport, process.env.BOTTEGA_TRANSPORT),
     transportPinFacts = {
       explicitTransport: transportPin.transportPinSource === 'explicit',
@@ -457,7 +469,7 @@ export async function run(opts: {
     pick(
       opts.job,
       selectAgentForTransport(requestedTransport, opts.agent),
-      routedPromptBytes(prompt, replySchemaName, requestedJob, requiresCanonSource),
+      pickPromptBytes,
       true,
       stackAt(callerCwd),
       {
@@ -1105,6 +1117,7 @@ export async function run(opts: {
         endpointKey: endpoint.key,
         name,
         opts,
+        pickPromptBytes,
         claim,
         idleUnkillable,
         status,
@@ -1114,7 +1127,6 @@ export async function run(opts: {
         artifactsPersisted,
         idleTreePids,
         idleTreePgid,
-        requestedJob,
         callerCwd,
         repoJob,
         declaredDeliverables,
