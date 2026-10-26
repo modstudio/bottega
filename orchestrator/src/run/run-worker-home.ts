@@ -19,7 +19,8 @@ import {
 import {
   probeProjectMcpLaunches,
   projectMcpProbeLaunches,
-  requiredMcpProbeRefusalError,
+  RequiredMcpProbeRefusalError,
+  requiredMcpProbeDecision,
 } from '../sandbox/project-mcp-preflight.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import {
@@ -93,12 +94,14 @@ export type WorkerMcpLaunch = {
 }
 
 /**
- * Probe each launch the run will actually get and refuse an affirmatively
- * failed one or a required server the run was not handed, which are the only
- * outcomes `--mcp require` refuses. A refusal raised here carries no failure
- * kind: the run concern decides how a refusal is recorded.
+ * Probe each launch the run will actually get. A scoped `--mcp require` refuses
+ * only when its required server failed or was not handed over; other failures
+ * warn and continue. Without a scoped project server, any failed launch refuses.
+ * A refusal raised here carries no failure kind: the run concern decides how a
+ * refusal is recorded.
  */
 async function refuseRequiredProjectMcpLaunch(input: {
+  runNumber: number
   mcpMode: McpMode | null
   projectSelection: ProjectMcpSelection | null
   project: Project | null
@@ -109,17 +112,25 @@ async function refuseRequiredProjectMcpLaunch(input: {
     projectMcpProbeLaunches(input.projectSelection),
     input.environment,
   )
-  const refusal = requiredMcpProbeRefusalError({
+  const requiredServer = projectMcpServerName(null, input.project)
+  const facts = {
     mode: input.mcpMode,
     project: input.project,
     failures,
     // The required server, resolved the way run.ts resolves it: the project's
     // configured `mcpServer`, or the project's own name by default.
-    requiredServer: projectMcpServerName(null, input.project),
+    requiredServer,
     selectedServers: Object.keys(input.projectSelection?.servers ?? {}),
     withheld: input.projectSelection?.withheld ?? [],
-  })
-  if (refusal) throw refusal
+  }
+  const decision = requiredMcpProbeDecision(facts)
+  if (decision.refusal) throw new RequiredMcpProbeRefusalError(decision.refusal)
+  for (const failure of decision.unrelatedFailures) {
+    console.error(
+      `orch: run ${input.runNumber} project MCP server ${failure.server} failed before launch: ${failure.error}; ` +
+        `the run continues because --mcp require applies only to ${requiredServer}`,
+    )
+  }
 }
 
 /** Give cwd-discovered project MCP configuration only to a repository writer. */
@@ -191,6 +202,7 @@ export async function prepareWorkerHomeLaunch(input: {
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.mcpLaunch.codex, environment)
   await refuseRequiredProjectMcpLaunch({
+    runNumber: input.runNumber,
     mcpMode: input.mcpMode,
     projectSelection: input.mcpLaunch.projectSelection,
     project: input.project,

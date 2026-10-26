@@ -3,9 +3,11 @@ import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   type RequiredMcpProbeFacts,
   RequiredMcpProbeRefusalError,
-  requiredMcpProbeRefusal,
-  requiredMcpProbeRefusalError,
+  requiredMcpProbeDecision,
 } from './project-mcp-preflight.ts'
+
+const requiredMcpProbeRefusal = (facts: RequiredMcpProbeFacts) =>
+  requiredMcpProbeDecision(facts).refusal
 
 const project = { name: 'starship', path: '/opt/starship' }
 const failure = { server: 'starship', error: 'Connection closed\nstderr: not configured' }
@@ -44,6 +46,46 @@ test('a required server the selection did not hand over is refused, and named', 
   const refusal = requiredMcpProbeRefusal(facts)!
   expect(refusal).toContain('starship: not configured in the tree')
   expect(refusal).toContain('/opt/starship/.mcp.json')
+})
+
+test('a started required server does not refuse another server failure and reports it', () => {
+  const unrelated = { server: 'stripe', error: 'missing credentials' }
+  const decision = requiredMcpProbeDecision({
+    mode: 'require',
+    project,
+    failures: [unrelated],
+    requiredServer: 'starship',
+    selectedServers: ['starship', 'stripe'],
+  })
+
+  expect(decision).toEqual({ refusal: null, unrelatedFailures: [unrelated] })
+})
+
+test('a failed required server refuses only its failure and reports another failure', () => {
+  const unrelated = { server: 'youtrack', error: 'Connection closed' }
+  const decision = requiredMcpProbeDecision({
+    mode: 'require',
+    project,
+    failures: [failure, unrelated],
+    requiredServer: 'starship',
+    selectedServers: ['starship', 'youtrack'],
+  })
+
+  expect(decision.refusal).toContain('starship: Connection closed')
+  expect(decision.refusal).not.toContain('youtrack')
+  expect(decision.unrelatedFailures).toEqual([unrelated])
+})
+
+test('an unscoped required server keeps refusing any affirmative failure', () => {
+  const decision = requiredMcpProbeDecision({
+    mode: 'require',
+    project,
+    failures: [{ server: 'stripe', error: 'missing credentials' }],
+    requiredServer: null,
+  })
+
+  expect(decision.refusal).toContain('stripe: missing credentials')
+  expect(decision.unrelatedFailures).toEqual([])
 })
 
 test('a withheld required server says why the run did not get it', () => {
@@ -91,13 +133,12 @@ test('a handed-over required server, and the platform server, are never refused'
 })
 
 test('the refusal error carries only the reason, never the run failure kind', () => {
-  const refusal = requiredMcpProbeRefusalError({ mode: 'require', project, failures: [failure] })
+  const refusal = new RequiredMcpProbeRefusalError(
+    requiredMcpProbeRefusal({ mode: 'require', project, failures: [failure] })!,
+  )
 
   // The run concern owns the failure-kind vocabulary, so a refusal cannot be
   // recorded with a kind this module chose.
-  expect(refusal).toBeInstanceOf(RequiredMcpProbeRefusalError)
-  expect(refusal?.message).toContain('starship: Connection closed')
+  expect(refusal.message).toContain('starship: Connection closed')
   expect((refusal as unknown as { failureKind?: string }).failureKind).toBeUndefined()
-  expect(requiredMcpProbeRefusalError({ mode: 'require', project, failures: [] })).toBeNull()
-  expect(requiredMcpProbeRefusalError({ mode: 'prefer', project, failures: [failure] })).toBeNull()
 })

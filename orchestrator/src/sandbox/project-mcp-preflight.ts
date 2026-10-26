@@ -54,6 +54,11 @@ export type RequiredMcpProbeFacts = {
   withheld?: readonly string[]
 }
 
+export type RequiredMcpProbeDecision = {
+  refusal: string | null
+  unrelatedFailures: readonly ProjectMcpProbeFailure[]
+}
+
 /** True when the name belongs to a server the platform installs, not the tree. */
 function isPlatformServer(name: string): boolean {
   return name === MCP_SERVER_NAME || name === WORKER_MCP_SERVER_NAME
@@ -71,28 +76,40 @@ function missingRequiredServerFailure(facts: RequiredMcpProbeFacts): ProjectMcpP
 }
 
 /**
- * Decide whether a probe outcome refuses the run.
+ * Decide whether a probe outcome refuses the run and which failures may warn.
  *
- * Only `--mcp require` refuses, and only an affirmatively failed launch or a
- * required server the selection did not hand over does: a server whose
- * connection is merely unverifiable, which is what an agent with no connection
- * diagnostic gives the run, is not evidence of failure.
+ * A scoped `--mcp require` refusal includes only its required server: either its
+ * affirmatively failed launch or the selection's failure to hand it over. Other
+ * failed launches are returned for non-refusing warnings. Without a scoped
+ * project server, any affirmative failure refuses as before. A server whose
+ * connection is merely unverifiable is not evidence of failure.
  */
-export function requiredMcpProbeRefusal(facts: RequiredMcpProbeFacts): string | null {
-  if (facts.mode !== 'require') return null
+export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): RequiredMcpProbeDecision {
+  if (facts.mode !== 'require') return { refusal: null, unrelatedFailures: [] }
   const missing = missingRequiredServerFailure(facts)
-  const failures = missing ? [missing, ...facts.failures] : facts.failures
-  if (!failures.length) return null
+  const required = facts.requiredServer
+  const scoped = Boolean(required && !isPlatformServer(required))
+  const failures = missing
+    ? [missing]
+    : scoped
+      ? facts.failures.filter((failure) => failure.server === required)
+      : facts.failures
+  const unrelatedFailures = scoped
+    ? facts.failures.filter((failure) => failure.server !== required)
+    : []
+  if (!failures.length) return { refusal: null, unrelatedFailures }
   const configPath = facts.project ? join(facts.project.path, '.mcp.json') : '.mcp.json'
   const projectName = facts.project?.name ?? '<project>'
   const failureLines = failures.map((failure) => `${failure.server}: ${failure.error}`).join('\n')
-  return (
-    `--mcp require was asked for, but the project MCP launch did not start:\n${failureLines}` +
-    `\ninvariant: --mcp require refuses a launch that affirmatively failed or a required server` +
-    ` the run did not get, never a merely unverified connection` +
-    `\ncleared by: the server's entry in ${configPath}, or by naming the server this project` +
-    ` provides with ${PLATFORM_SLUG} project set ${projectName} --settings '{"mcpServer":"<server>"}'`
-  )
+  return {
+    refusal:
+      `--mcp require was asked for, but the project MCP launch did not start:\n${failureLines}` +
+      `\ninvariant: --mcp require refuses a launch that affirmatively failed or a required server` +
+      ` the run did not get, never a merely unverified connection` +
+      `\ncleared by: the server's entry in ${configPath}, or by naming the server this project` +
+      ` provides with ${PLATFORM_SLUG} project set ${projectName} --settings '{"mcpServer":"<server>"}'`,
+    unrelatedFailures,
+  }
 }
 
 /**
@@ -107,12 +124,4 @@ export class RequiredMcpProbeRefusalError extends Error {
     super(refusal)
     this.name = 'RequiredMcpProbeRefusalError'
   }
-}
-
-/** The refusal a strict run raises, or null when the outcome does not refuse one. */
-export function requiredMcpProbeRefusalError(
-  facts: RequiredMcpProbeFacts,
-): RequiredMcpProbeRefusalError | null {
-  const refusal = requiredMcpProbeRefusal(facts)
-  return refusal === null ? null : new RequiredMcpProbeRefusalError(refusal)
 }
