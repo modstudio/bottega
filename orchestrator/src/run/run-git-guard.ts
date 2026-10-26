@@ -1,5 +1,5 @@
 // concern: run git guard
-import { writeFileSync } from 'node:fs'
+import { statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { worktreeGitDir } from '../git/git-environment.ts'
@@ -19,7 +19,13 @@ export function provisionWriterSharedGitRoots(
 ): string[] {
   if (!worktree || !writesRepo) return []
   ensureWorkerBranchNamespaceDirs(worktree.path, worktree.branch)
-  return [worktreeGitDir(worktree.path), ...workerSharedGitRoots(worktree.path, worktree.branch)]
+  const roots = [
+    worktreeGitDir(worktree.path),
+    ...workerSharedGitRoots(worktree.path, worktree.branch),
+  ]
+  const agentsPath = join(worktree.path, '.agents')
+  if (statSync(agentsPath, { throwIfNoEntry: false })?.isDirectory()) roots.push(agentsPath)
+  return roots
 }
 
 /** Give writers their shared-ref guard and readers an unconditional push refusal. */
