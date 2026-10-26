@@ -15,6 +15,7 @@ type QuestionRow = Record<string, unknown> & {
   project_name: string | null
   project_record_id: string | null
   workflow_cursor_record_id: string | null
+  workflow_task_record_id: string | null
   answered_by_name: string | null
   overturned_by_name: string | null
 }
@@ -60,6 +61,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     spaceId: PLATFORM_SPACE_ID,
     runId: row.run_record_id,
     workflowKey: row.workflow_key,
+    workflowTaskId: row.workflow_task_record_id,
     workflowCursorId: null,
     workflowCursorRecordId: row.workflow_cursor_record_id,
     projectId: row.project_record_id,

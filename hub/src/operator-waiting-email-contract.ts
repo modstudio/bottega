@@ -15,6 +15,7 @@ export const operatorWaitingEmailRequestSchema = z
   .object({
     kind: z.enum(['question', 'workflow']),
     item_id: z.number().int().positive(),
+    item_record_id: z.string().uuid().nullable().default(null),
     episode: field,
     project: field.nullable(),
     task_key: nullableField,

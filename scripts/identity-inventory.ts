@@ -174,7 +174,14 @@ function classifyKeyColumn(
     (column.foreignKey || (!externalIdentifier && shapedReference) || explicitReference)
   if (manifests.values.has(address)) seen.values.add(address)
   if (column.type === 'integer')
-    classifyIntegerColumn(store, address, column, reference, manifests.values, seen.values)
+    classifyIntegerColumn(
+      store,
+      address,
+      column,
+      reference || displayLabel,
+      manifests.values,
+      seen.values,
+    )
   return reference && !uuid ? [`${address}:reference`] : []
 }
 

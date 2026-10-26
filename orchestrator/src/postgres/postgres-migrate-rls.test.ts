@@ -1040,6 +1040,7 @@ realPostgres('RLS proof against real Postgres', () => {
   registerQuestionTaskRecordSyncProof(() => ({
     actorRole: RECORD_ACTOR_ROLE,
     spaceId: authSpaceA,
+    otherSpaceId: ids.SPACE_B,
     projectName: 'auth-a-project',
     projectId: authProjectA,
     asSpace,

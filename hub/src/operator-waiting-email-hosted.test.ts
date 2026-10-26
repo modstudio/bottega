@@ -14,6 +14,7 @@ import {
 const input: OperatorWaitingEmailInput = {
   kind: 'question',
   item_id: 7,
+  item_record_id: '01990000-0000-7000-8000-000000000007',
   episode: 'episode-1',
   project: PLATFORM_NAME.toLowerCase(),
   task_key: 'DEV-943',
@@ -119,8 +120,12 @@ test('hosted endpoint binds space and user from the credential', async () => {
   ])
 })
 
-test('an older waiting-email body defaults an omitted task UUID to null', () => {
+test('an older waiting-email body defaults omitted UUIDs to null', () => {
   const older = { ...input } as Partial<typeof input>
   delete older.task_id
-  expect(operatorWaitingEmailRequestSchema.parse(older).task_id).toBeNull()
+  delete older.item_record_id
+  expect(operatorWaitingEmailRequestSchema.parse(older)).toMatchObject({
+    task_id: null,
+    item_record_id: null,
+  })
 })
