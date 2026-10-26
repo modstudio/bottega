@@ -37,10 +37,126 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 })
 
 describe('pull-request triage decision', () => {
-  test('tier zero needs no review', () => {
+  const ownerRead = (overrides: Partial<TriageEvidence['reads'][number]> = {}) => ({
+    recordId: 'record-9',
+    tip: 'tip-a',
+    patchId: 'patch-a',
+    pathSet: '["a.ts"]',
+    recordedAt: '2026-09-25T02:00:00Z',
+    sessionId: 'owner-session',
+    ...overrides,
+  })
+
+  test('tier zero without a read refuses', () => {
     expect(
       decideTriage(evidence({ tier: 0, applicableReview: { lenses: [] }, reviews: [] })),
-    ).toMatchObject({ complete: true })
+    ).toMatchObject({ complete: false, architectReadRequired: true })
+  })
+
+  test('tier zero admits an exact owner-recorded read of the tip', () => {
+    expect(
+      decideTriage(
+        evidence({
+          tier: 0,
+          applicableReview: { lenses: [] },
+          reviews: [],
+          reads: [ownerRead()],
+        }),
+      ),
+    ).toEqual({
+      complete: true,
+      snapshot: {
+        reviewRecordIds: [],
+        patchId: 'patch-a',
+        tier: 0,
+        lensRounds: 0,
+        findingCount: 0,
+        admissionPath: 'architect_read',
+        readRecordId: 'record-9',
+      },
+    })
+  })
+
+  test('tier zero refuses a read of another tip', () => {
+    expect(
+      decideTriage(
+        evidence({
+          tier: 0,
+          applicableReview: { lenses: [] },
+          reviews: [],
+          reads: [ownerRead({ tip: 'tip-other' })],
+        }),
+      ),
+    ).toMatchObject({ complete: false, architectReadRequired: true })
+  })
+
+  test('tier zero refuses a read not recorded by the branch run owner', () => {
+    expect(
+      decideTriage(
+        evidence({
+          tier: 0,
+          applicableReview: { lenses: [] },
+          reviews: [],
+          reads: [ownerRead({ sessionId: 'foreign-session' })],
+        }),
+      ),
+    ).toMatchObject({ complete: false, architectReadRequired: true })
+  })
+
+  const tierZero = (overrides: Partial<TriageEvidence> = {}) =>
+    evidence({ tier: 0, applicableReview: { lenses: [] }, reviews: [], ...overrides })
+
+  test('tier zero refuses a read of another path set', () => {
+    expect(decideTriage(tierZero({ reads: [ownerRead({ pathSet: '["b.ts"]' })] }))).toMatchObject({
+      complete: false,
+      architectReadRequired: true,
+    })
+  })
+
+  test('tier zero admits an identified read on a branch no run owns', () => {
+    expect(
+      decideTriage(
+        tierZero({
+          branchOwnerSession: null,
+          reads: [ownerRead({ sessionId: 'architect-session' })],
+        }),
+      ),
+    ).toMatchObject({
+      complete: true,
+      snapshot: { admissionPath: 'architect_read', readRecordId: 'record-9' },
+    })
+  })
+
+  test.each([
+    ['an owned branch', 'owner-session'],
+    ['a branch no run owns', null],
+  ])('tier zero refuses a read with no session on %s', (_label, branchOwnerSession) => {
+    expect(
+      decideTriage(tierZero({ branchOwnerSession, reads: [ownerRead({ sessionId: null })] })),
+    ).toMatchObject({ complete: false, architectReadRequired: true })
+  })
+
+  test('tier zero refuses a matching read while the exact patch has an unfinished review', () => {
+    expect(
+      decideTriage(
+        tierZero({
+          reviews: [review({ patchId: 'patch-a', completedAt: null })],
+          reads: [ownerRead()],
+        }),
+      ),
+    ).toMatchObject({ complete: false, unfinishedReviewNumbers: [4] })
+  })
+
+  test('tier zero refuses a matching read while the exact patch has an undisposed finding', () => {
+    const finding = { recordId: 'finding-12', ordinal: 1, disposition: null }
+    expect(
+      decideTriage(
+        tierZero({
+          reviews: [review({ patchId: 'patch-a', findings: [finding] })],
+          reads: [ownerRead()],
+        }),
+      ),
+    ).toMatchObject({ complete: false, undisposedFindings: [{ reviewNumber: 4, ordinal: 1 }] })
   })
 
   test('path a admits unchanged complete exact evidence', () => {

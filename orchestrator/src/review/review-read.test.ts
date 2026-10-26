@@ -63,6 +63,28 @@ test('only the root run session owns architect reads for its branch', () => {
   )
 })
 
+test('a branch no run owns accepts the identified calling session for architect reads', () => {
+  const d = new Database(':memory:')
+  applyMigrations(d)
+  d.query(
+    "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+  ).run(newRecordId())
+  expect(requireBranchRunOwner(d, 'fixture', 'DEV-1621-inline-fix', 'architect-session')).toBe(
+    'architect-session',
+  )
+})
+
+test('a branch no run owns still requires a caller for architect reads', () => {
+  const d = new Database(':memory:')
+  applyMigrations(d)
+  d.query(
+    "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+  ).run(newRecordId())
+  expect(() => requireBranchRunOwner(d, 'fixture', 'DEV-1621-inline-fix', null)).toThrow(
+    'reserved for the branch run owner',
+  )
+})
+
 test('the latest architect read is selected for one project branch', () => {
   const d = new Database(':memory:')
   applyMigrations(d)
