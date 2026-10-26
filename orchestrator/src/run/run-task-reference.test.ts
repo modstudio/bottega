@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test'
+import { parseHubTaskResponse } from '../workflow/workflow-task-reference.ts'
 import { admitNewRunReference, RUN_REFERENCE_REFUSAL } from './run-task-reference.ts'
 
 afterEach(() => {
@@ -43,11 +44,15 @@ describe('run task reference', () => {
         probe: false,
         hubTaskByKeyReader: async (key) =>
           key === 'SHARED-42'
-            ? {
-                record_id: '01990000-0000-7000-8000-000000000895',
-                key: 'SHARED-42',
-                project: 'beta',
-              }
+            ? parseHubTaskResponse({
+                task: {
+                  record_id: '01990000-0000-7000-8000-000000000895',
+                  key: 'SHARED-42',
+                  project: 'beta',
+                },
+                comments: [],
+                documents: [],
+              })
             : null,
       }),
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })

@@ -53,8 +53,15 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   return response.map(taskReference)
 }
 
+export function parseHubTaskResponse(response: unknown): HubTaskReference {
+  if (!response || typeof response !== 'object' || !('task' in response)) {
+    throw new Error('response did not contain a task')
+  }
+  return taskReference((response as { task: unknown }).task)
+}
+
 async function readHubTask(key: string): Promise<HubTaskReference | null> {
-  return taskReference(await taskCommand(['task', 'show', key, '--json']))
+  return parseHubTaskResponse(await taskCommand(['task', 'show', key, '--json']))
 }
 
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */
