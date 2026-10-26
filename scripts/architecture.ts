@@ -430,6 +430,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/env-values.ts', ['node:fs', 'node:util', './config-directory.ts']),
   module('shared/record-client-addresses.ts', []),
+  module('shared/delegation-mode.ts', []),
   module('shared/machine-config.ts', [
     '@decimalturn/toml-patch',
     'node:fs',
@@ -437,6 +438,7 @@ export const modules: ArchitectureModule[] = [
     'zod',
     './autonomy.ts',
     './config-directory.ts',
+    './delegation-mode.ts',
     './ship-to.ts',
     './secret-shaped.ts',
     './settings-summary.ts',

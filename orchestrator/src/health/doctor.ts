@@ -3,6 +3,7 @@
 
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
 import { AGENTS, type AgentRow, agentRows } from '../agent/agent-registry.ts'
 import { cliVersion, versionBelow } from '../agent/agents.ts'
@@ -23,6 +24,7 @@ import {
 } from '../agent/model-host.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
+import { JOBS } from '../jobs/jobs.ts'
 import {
   classifiedDockerResources,
   dockerRemovalCommand,
@@ -42,12 +44,13 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
+import { delegationDoctorLines } from './delegation-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
-  candidates(job: string): { agent: string; cooling?: string | null }[]
+  candidates(job: string): { agent: string; eligible: boolean; cooling?: string | null }[]
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
@@ -226,6 +229,21 @@ async function reportAgents(
   await reportProjectAgentKeys(presentation.log)
 }
 
+async function reportAgentsAndDelegation(
+  presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
+  agentStatus: typeof doctorAgentStatus,
+): Promise<void> {
+  await reportAgents(presentation, agentStatus)
+  presentation.log('delegation')
+  for (const line of delegationDoctorLines(
+    readDelegationSettings(),
+    Object.values(JOBS),
+    presentation.candidates,
+  )) {
+    presentation.log(`  ${line}`)
+  }
+}
+
 export async function doctorCommand(
   flags: DoctorFlags,
   presentation: DoctorPresentation,
@@ -367,7 +385,7 @@ export async function doctorCommand(
         `run ${PLATFORM_SLUG} score recalibrate --n 12`,
     )
   }
-  await reportAgents({ log, candidates }, agentStatus)
+  await reportAgentsAndDelegation({ log, candidates }, agentStatus)
   const configuredUrl = modelHostUrl()
   for (const row of agentRows()) {
     if (row.operated_by !== 'self' || !row.enabled) continue

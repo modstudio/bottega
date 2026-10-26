@@ -22,8 +22,11 @@ import {
 } from '../../../shared/hosted-secret-opening.ts'
 import {
   deleteMachineAutonomy,
+  deleteMachineDelegation,
   listMachineAutonomy,
+  readDelegationSettings,
   setMachineAutonomy,
+  setMachineDelegation,
 } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
@@ -640,17 +643,33 @@ export async function deleteEntry(
 }
 
 export function setMachineEntry(key: string, value: string) {
+  if (key.startsWith('delegation.')) {
+    setMachineDelegation(key, value)
+    return listMachineEntries().find((row) => row.key === key)!
+  }
   setMachineAutonomy(key, value)
   const storedKey = isShipToConfigKey(key) ? SHIP_TO_CONFIG_KEY : key
   return listMachineAutonomy().find((row) => row.key === storedKey)!
 }
 
 export function deleteMachineEntry(key: string): void {
+  if (key.startsWith('delegation.')) {
+    deleteMachineDelegation(key)
+    return
+  }
   deleteMachineAutonomy(key)
 }
 
 export function listMachineEntries() {
-  return listMachineAutonomy()
+  const delegation = readDelegationSettings()
+  return [
+    ...Object.entries(delegation).map(([key, value]) => ({
+      key,
+      value,
+      scope: 'machine' as const,
+    })),
+    ...listMachineAutonomy(),
+  ].sort((left, right) => left.key.localeCompare(right.key))
 }
 
 export async function listSecrets(client = configClient()) {

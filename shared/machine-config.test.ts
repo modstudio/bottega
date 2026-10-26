@@ -8,10 +8,12 @@ import {
   editMachinePermissionTable,
   MACHINE_CONFIG,
   machineId,
+  readDelegationSettings,
   readMachinePermissions,
   readMachineValue,
   resolveMachineValue,
   setMachineAutonomy,
+  setMachineDelegation,
   storedMachineId,
 } from './machine-config.ts'
 
@@ -195,6 +197,29 @@ describe('machine config resolution', () => {
       mkdirSync(config)
       writeFileSync(join(config, 'machine.toml'), '[hub]\nport = 9000\n')
       expect(readMachineValue('hub.port', env)).toBe(9000)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('delegation modes default external and persist per machine', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-delegation-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      expect(readDelegationSettings(env)).toEqual({
+        'delegation.implement': 'external',
+        'delegation.review': 'external',
+      })
+      setMachineDelegation('delegation.review', 'harness', env)
+      expect(readDelegationSettings(env)).toEqual({
+        'delegation.implement': 'external',
+        'delegation.review': 'harness',
+      })
+      expect(readFileSync(join(config, 'machine.toml'), 'utf8')).toContain('review = "harness"')
+      expect(() => setMachineDelegation('delegation.review', 'sometimes', env)).toThrow(
+        'values: external, harness',
+      )
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

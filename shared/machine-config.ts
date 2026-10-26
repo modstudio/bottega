@@ -14,6 +14,12 @@ import { patch as patchToml } from '@decimalturn/toml-patch'
 import { z } from 'zod'
 import { AUTONOMY_PRESETS, AUTONOMY_STAGES, AUTONOMY_VALUES } from './autonomy.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
+import {
+  DELEGATION_MODES,
+  DELEGATION_SETTING_KEYS,
+  type DelegationMode,
+  type DelegationSettings,
+} from './delegation-mode.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
 import {
@@ -28,6 +34,7 @@ type MachineConfigEntry = {
   legacyEnvironment?: string
   type: 'string' | 'integer'
   default: string | number
+  values?: readonly string[]
 }
 
 /**
@@ -47,6 +54,12 @@ export const MACHINE_CONFIG = {
   },
   'hub.port': { environment: 'BOTTEGA_HUB_PORT', type: 'integer', default: 7778 },
   'machine.id': { type: 'string', default: '' },
+  'delegation.implement': {
+    type: 'string',
+    default: 'external',
+    values: DELEGATION_MODES,
+  },
+  'delegation.review': { type: 'string', default: 'external', values: DELEGATION_MODES },
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',
     legacyEnvironment: 'BOTTEGA_LOCAL_BASE_URL',
@@ -106,7 +119,8 @@ const permissionsSchema = permissionListsSchema
   .strict()
 
 function valueSchema(entry: MachineConfigEntry, environmentValue: boolean) {
-  if (entry.type === 'string') return z.string()
+  if (entry.type === 'string')
+    return entry.values ? z.string().refine((value) => entry.values!.includes(value)) : z.string()
   return environmentValue
     ? z
         .string()
@@ -595,6 +609,45 @@ export function readMachineValue<Key extends MachineConfigKey>(
     (message) => process.stderr.write(`${message}\n`),
     warnedLegacyVariables,
   )
+}
+
+export function readDelegationSettings(env: ConfigEnvironment = process.env): DelegationSettings {
+  return {
+    'delegation.implement': readMachineValue('delegation.implement', env) as DelegationMode,
+    'delegation.review': readMachineValue('delegation.review', env) as DelegationMode,
+  }
+}
+
+function delegationKey(key: string): key is keyof DelegationSettings {
+  return Object.values(DELEGATION_SETTING_KEYS).includes(key as keyof DelegationSettings)
+}
+
+export function setMachineDelegation(
+  key: string,
+  value: string,
+  env: ConfigEnvironment = process.env,
+): void {
+  if (!delegationKey(key) || !DELEGATION_MODES.includes(value as never)) {
+    throw new Error(
+      `accepted machine delegation keys: delegation.implement, delegation.review; values: ${DELEGATION_MODES.join(', ')}`,
+    )
+  }
+  atomicPatch((root) => {
+    const delegation = (root.delegation as Record<string, unknown> | undefined) ?? {}
+    delegation[key.split('.')[1]!] = value
+    root.delegation = delegation
+  }, env)
+}
+
+export function deleteMachineDelegation(key: string, env: ConfigEnvironment = process.env): void {
+  if (!delegationKey(key))
+    throw new Error('accepted machine delegation keys: delegation.implement, delegation.review')
+  atomicPatch((root) => {
+    const delegation = root.delegation as Record<string, unknown> | undefined
+    if (!delegation) return
+    delete delegation[key.split('.')[1]!]
+    if (!Object.keys(delegation).length) delete root.delegation
+  }, env)
 }
 
 const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i

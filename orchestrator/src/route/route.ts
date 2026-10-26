@@ -21,6 +21,7 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { noEligibleAgentRefusal } from './no-eligible-agent-refusal.ts'
 import {
   type PolicyCandidate,
   type PolicySelection,
@@ -978,10 +979,7 @@ function admittedCandidates(
         `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
         capacityCounts(capacityBlocked),
       )
-    throw new RoutingRefusalError(
-      `no eligible agent for job "${jobName}"` +
-        (excluded.length ? `\n${excluded.join('\n')}` : ''),
-    )
+    throw new RoutingRefusalError(noEligibleAgentRefusal(jobName, job(jobName).needs, excluded))
   }
   const constrained = eligible.filter(
     (candidate) =>

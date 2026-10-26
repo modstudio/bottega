@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import json
 import os
 import sqlite3
 import tempfile
@@ -87,6 +88,31 @@ class SpawnIdentityTest(unittest.TestCase):
             self.assertEqual(len(row), 1)
             self.assertTrue(row[0].startswith("\t"))
             self.assertIn("\tallowed\ttest", row[0])
+
+    def test_machine_harness_setting_admits_native_agent_with_distinct_decision(self):
+        with tempfile.TemporaryDirectory() as folder:
+            block_agent = self.load_hook(os.path.join(folder, "orchestrator.db"))
+            payload = {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Agent",
+                "tool_input": {"description": "implement the change", "prompt": "work"},
+            }
+            with (
+                patch("sys.stdin", io.StringIO(json.dumps(payload))),
+                patch.object(block_agent, "harness_delegation", return_value=["delegation.implement"]),
+                patch.object(block_agent, "log") as logged,
+                patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            ):
+                self.assertEqual(block_agent.main(), 0)
+
+            self.assertEqual(stdout.getvalue(), "")
+            self.assertEqual(logged.call_args.args[0:2], ("harness-delegation", "delegation.implement"))
+
+    def test_machine_config_read_failure_keeps_the_existing_gate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            block_agent = self.load_hook(os.path.join(folder, "orchestrator.db"))
+            with patch.object(block_agent.subprocess, "run", side_effect=OSError("unavailable")):
+                self.assertEqual(block_agent.harness_delegation(), [])
 
 
 if __name__ == "__main__":

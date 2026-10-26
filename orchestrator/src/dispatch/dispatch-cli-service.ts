@@ -4,6 +4,8 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { DelegationSettings } from '../../../shared/delegation-mode.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -22,6 +24,7 @@ import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { branchOf } from '../git/git-environment.ts'
+import { harnessDelegationRefusal } from '../jobs/delegation.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import {
@@ -414,9 +417,12 @@ export async function selectBeforeDetach(
   spec: DetachSpec,
   presentation: Pick<Presentation, 'cwd' | 'error'>,
   waitForCapacityBeforeDetach = false,
+  delegationSettings: DelegationSettings = readDelegationSettings(),
 ): Promise<{ agent: string; reason: string } | undefined> {
   if (spec.resume) return undefined
   const requestedJob = job(jobName)
+  const delegationRefusal = harnessDelegationRefusal(requestedJob, delegationSettings)
+  if (delegationRefusal) throw new Error(delegationRefusal)
   const mcpRequest = effectiveMcpRequest(spec.mcp, requestedJob)
   const replySchemaName = spec.schema
     ? basename(spec.schema)
