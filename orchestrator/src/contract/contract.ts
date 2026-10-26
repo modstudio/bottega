@@ -332,9 +332,12 @@ export type CanonSource = (typeof CANON_SOURCE_SCHEMA.enum)[number]
 /** Generated from the architect's closed scale so prompt and triage cannot drift. */
 export const REVIEW_SEVERITY_INSTRUCTION = `Every finding severity must use the architect's closed scale: ${REVIEW_SEVERITY.join(' | ')}.`
 
-export const COULD_NOT_VERIFY_INSTRUCTION =
+const PROVENANCE_INSTRUCTION_PREFIX =
   'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
-  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
+  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. '
+
+export const COULD_NOT_VERIFY_INSTRUCTION =
+  PROVENANCE_INSTRUCTION_PREFIX +
   'A review does not run suites, so an unrun suite is not listed in could_not_verify, and static reasoning is never presented as an executed check.'
 
 export const REVIEW_PROVENANCE_INSTRUCTION =
@@ -694,36 +697,30 @@ export function missingDeclaredDeliverables(
   return missing
 }
 
-/**
- * The infrastructure recovery instruction shared by repository writers and
- * non-findings readers. Findings readers receive the restricted variant below.
- */
 const RUN_COULD_NOT_VERIFY_INSTRUCTION =
-  'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
-  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
+  PROVENANCE_INSTRUCTION_PREFIX +
   'A run which could not execute the suite must say so there and must not present static reasoning as an executed check.'
 
-export const INFRASTRUCTURE_RECOVERY = `
+/** Build the infrastructure recovery instruction for the selected reader variant. */
+function infrastructureRecovery(findings: boolean): string {
+  const serveStep = findings
+    ? 'A reader MAY run that serve step only for a focused probe tied to one specific finding and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.'
+    : 'A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.'
+  const couldNotVerify = findings ? COULD_NOT_VERIFY_INSTRUCTION : RUN_COULD_NOT_VERIFY_INSTRUCTION
+  return `
 PROJECT INFRASTRUCTURE RECOVERY
 
 The project register says how this worktree's infrastructure is brought up:
 use the register's \`worktree.recipe.serve\` step when the project declares one,
 otherwise the serve instructions in its \`worktree.notes\`.
-A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
+${serveStep}
 
-${RUN_COULD_NOT_VERIFY_INSTRUCTION}
+${couldNotVerify}
 `.trim()
+}
 
-export const FINDINGS_INFRASTRUCTURE_RECOVERY = `
-PROJECT INFRASTRUCTURE RECOVERY
-
-The project register says how this worktree's infrastructure is brought up:
-use the register's \`worktree.recipe.serve\` step when the project declares one,
-otherwise the serve instructions in its \`worktree.notes\`.
-A reader MAY run that serve step only for a focused probe tied to one specific finding and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
-
-${COULD_NOT_VERIFY_INSTRUCTION}
-`.trim()
+export const INFRASTRUCTURE_RECOVERY = infrastructureRecovery(false)
+export const FINDINGS_INFRASTRUCTURE_RECOVERY = infrastructureRecovery(true)
 
 /**
  * The standing instructions a worker gets on top of its spec.
@@ -1028,11 +1025,11 @@ never be treated as a proposed change to land. Do not commit, push, or merge.`
 const FINDINGS_REVIEW_EXECUTION = `Read the change and the code around it. Do not run test suites, test directories,
 related or affected test sets, the gate, or the project's check. One focused
 probe tied to one specific finding is allowed: a single test file or a single
-command that demonstrates that finding. When the \`run_tests\` tool is offered,
-run the probe through it, since it runs on the host under a capacity slot. Your
-findings are the deliverable, not your diff: every change you make here is
-scratch work and must never be treated as a proposed change to land. Do not
-commit, push, or merge.`
+command that demonstrates that finding. The probe runs inside this run's own
+tree, never against another tree's server, database or stack; a probe that could
+not run is recorded in \`could_not_verify\`. Your findings are the deliverable,
+not your diff: every change you make here is scratch work and must never be
+treated as a proposed change to land. Do not commit, push, or merge.`
 
 const READER_GATE_RESULT = `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
 run Docker or \`scripts/gate\` yourself. Record an unrun gate in
