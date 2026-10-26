@@ -9,7 +9,7 @@ import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
-// The hosted edge accepts workflowTaskId; the local producer starts sending it in DEV-1772 slice b.
+// The hosted edge accepts workflowTaskId before the local question producer sends it.
 const UNSENT_QUESTION_COLUMNS = new Set(['workflowTaskId'])
 
 const RUN_RECORD_ID = '01990000-0000-7000-8000-000000000042'
