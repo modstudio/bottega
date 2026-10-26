@@ -146,13 +146,7 @@ export function projectGitCommonDir(repoRoot: string): string {
 }
 
 function projectLockDir(repoRoot: string): string {
-  const common = projectGitCommonDir(repoRoot)
-  if (existsSync(join(common, '.git'))) {
-    throw new Error(
-      `DIAGNOSTIC lock dir inside a working tree: repoRoot=${repoRoot} common=${common}\n${new Error().stack}`,
-    )
-  }
-  return join(common, 'orch', 'locks')
+  return join(projectGitCommonDir(repoRoot), 'orch', 'locks')
 }
 
 function legacyProjectLockPath(repoRoot: string, name: string): string {
