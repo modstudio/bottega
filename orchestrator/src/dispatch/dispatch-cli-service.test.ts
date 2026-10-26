@@ -72,7 +72,7 @@ test('detached selection waits in the coordinator only for a capacity refusal', 
 test('selectBeforeDetach carries the composed pre-pick prompt size on the routed selection', async () => {
   const text = 'rank me on the raw spec, not the composed pack'
   const jobName = 'craft'
-  const evidence = runEvidence(jobName, false, [])
+  const evidence = runEvidence(jobName, Boolean(job(jobName).findings), [])
   const replySchemaName = basename('anything-craft-reply.json')
   const expectedPromptBytes = routedPromptBytes(
     routedPromptText(text, evidence.readerInstruction, true),
