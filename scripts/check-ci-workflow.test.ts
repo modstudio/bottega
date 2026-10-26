@@ -9,6 +9,7 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'hub-ui-stories')
         return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
+      if (job === 'orchestrator-hooks-process') return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
@@ -48,6 +49,18 @@ test('pins the Python hook leg', () => {
       workflow.replace('run: $SUITE_COMMAND --only=orchestrator/hooks', 'run: python3 -m unittest'),
     ),
   ).toThrow('must run its check-plan leg')
+})
+
+test('pins the process-case hook job', () => {
+  const workflow = readWorkflowFixture()
+  expect(() =>
+    checkCiWorkflow(
+      workflow.replace(
+        "run: python3 -m unittest discover -s orchestrator/hooks -p 'process_*.py'",
+        'run: python3 -m unittest',
+      ),
+    ),
+  ).toThrow('must run the process-case discovery')
 })
 
 test('pins the real-Postgres leg', () => {
@@ -103,6 +116,7 @@ function readWorkflowFixture() {
       if (job === 'hub-ui-stories')
         return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
+      if (job === 'orchestrator-hooks-process') return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
@@ -135,4 +149,13 @@ function hooksJobFixture() {
         with:
           python-version: '3.12'
       - run: $SUITE_COMMAND --only=orchestrator/hooks`
+}
+
+function processHooksJobFixture() {
+  return `  orchestrator-hooks-process:
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s orchestrator/hooks -p 'process_*.py'`
 }

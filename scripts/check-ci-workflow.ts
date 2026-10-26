@@ -77,6 +77,18 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('orchestrator-hooks job must use Python 3.12')
   if (!hooks.includes('run: $SUITE_COMMAND --only=orchestrator/hooks'))
     throw new Error('orchestrator-hooks job must run its check-plan leg')
+  const processHooks = workflowJob(source, 'orchestrator-hooks-process')
+  if (
+    !processHooks.includes('uses: actions/setup-python@v6') ||
+    !processHooks.includes("python-version: '3.12'")
+  )
+    throw new Error('orchestrator-hooks-process job must use Python 3.12')
+  if (
+    !processHooks.includes(
+      "run: python3 -m unittest discover -s orchestrator/hooks -p 'process_*.py'",
+    )
+  )
+    throw new Error('orchestrator-hooks-process job must run the process-case discovery')
   const postgres = workflowJob(source, 'postgres')
   if (!postgres.includes('image: postgres:18-alpine'))
     throw new Error('postgres job must use Postgres 18')
