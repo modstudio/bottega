@@ -17,8 +17,11 @@ export type WaitingEmailLedgerKey = Pick<
   'kind' | 'id' | 'workflow_cursor_record_id' | 'question_record_id' | 'episode'
 >
 
+const waitingItemRecordId = (item: WaitingEmailLedgerKey) =>
+  item.kind === 'question' ? item.question_record_id : item.workflow_cursor_record_id
+
 const ledgerKey = (item: WaitingEmailLedgerKey) =>
-  `${item.kind}\u0000${item.kind === 'question' ? item.question_record_id : item.workflow_cursor_record_id}\u0000${item.episode}`
+  `${item.kind}\u0000${waitingItemRecordId(item)}\u0000${item.episode}`
 
 /** Question text reaches the caller only after this pure decision says the episode is due. */
 export function dueOperatorWaitingEmails(
@@ -132,8 +135,7 @@ export async function deliverOperatorWaitingEmails(
       const result = await (dependencies.push ?? hostedCreateOperatorWaitingEmail)({
         kind: item.kind,
         item_id: item.id,
-        item_record_id:
-          item.kind === 'workflow' ? item.workflow_cursor_record_id : item.question_record_id,
+        item_record_id: waitingItemRecordId(item),
         episode: item.episode,
         project: item.project,
         task_key: item.task_key,

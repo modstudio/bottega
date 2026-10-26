@@ -24,6 +24,11 @@ import {
   runTaskReferenceBackfill,
   seedRunTaskReferenceBackfill,
 } from './record-run-task-backfill-proof.ts'
+import {
+  proofTaskLinkBackfill,
+  seedTaskLinkBackfill,
+  taskLinkBackfill,
+} from './record-task-link-backfill-proof.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
@@ -891,6 +896,11 @@ async function proofIdentityMigration(transaction: Transaction, name: string): P
   if (name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
   if (name === hubProjectIdentityBackfill) await proofHubProjectIdentityBackfill(transaction)
   if (name === runTaskReferenceBackfill) await proofRunTaskReferenceBackfill(transaction)
+  if (name === taskLinkBackfill)
+    await proofTaskLinkBackfill(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
 }
 
 async function applyAndProveMigration(
@@ -921,6 +931,11 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === hubProjectIdentityExpand) await seedHubProjectIdentityBackfill(transaction)
   if (name === runTaskReferenceBackfill)
     await seedRunTaskReferenceBackfill(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
+  if (name === taskLinkBackfill)
+    await seedTaskLinkBackfill(transaction, {
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })

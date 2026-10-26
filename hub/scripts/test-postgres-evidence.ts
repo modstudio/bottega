@@ -459,6 +459,105 @@ try {
     if (fresh.status !== 'sent' || duplicate.status !== 'sent' || sentCount() !== 1)
       throw new Error('operator waiting fresh send was not idempotent after sent')
 
+    const firstItemRecordId = '01990000-0000-7000-8000-000000000697'
+    const secondItemRecordId = '01990000-0000-7000-8000-000000000698'
+    const recordIdentityInput = {
+      ...waitingInput,
+      item_id: 943_020,
+      item_record_id: firstItemRecordId,
+      episode: 'item-record-identity',
+    }
+    const identityMail = { send: async () => undefined }
+    const firstRecord = await sendOperatorWaitingEmail(actorUrl, identity, recordIdentityInput, {
+      mail: identityMail,
+      now: waitingNow,
+    })
+    const repeatedRecord = await sendOperatorWaitingEmail(actorUrl, identity, recordIdentityInput, {
+      mail: identityMail,
+      now: waitingNow,
+    })
+    const secondRecord = await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      { ...recordIdentityInput, item_record_id: secondItemRecordId },
+      { mail: identityMail, now: waitingNow },
+    )
+    const olderRecord = await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      { ...recordIdentityInput, item_record_id: null },
+      { mail: identityMail, now: waitingNow },
+    )
+    const repeatedOlderRecord = await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      { ...recordIdentityInput, item_record_id: null },
+      { mail: identityMail, now: waitingNow },
+    )
+    const recordIdentityRows = await admin<
+      {
+        id: string
+        item_record_id: string | null
+        status: string
+      }[]
+    >`SELECT id::text,item_record_id::text,status FROM operator_waiting_email
+      WHERE space_id=${SPACE_A}::uuid AND user_id=${USER}::uuid
+        AND kind='question' AND item_id=943020 AND episode='item-record-identity'
+      ORDER BY item_record_id NULLS LAST`
+    if (
+      [firstRecord, repeatedRecord, secondRecord, olderRecord, repeatedOlderRecord].some(
+        (result) => result.status !== 'sent',
+      ) ||
+      repeatedRecord.id !== firstRecord.id ||
+      repeatedOlderRecord.id !== olderRecord.id ||
+      secondRecord.id === firstRecord.id ||
+      olderRecord.id === firstRecord.id ||
+      recordIdentityRows.length !== 3 ||
+      recordIdentityRows.some((row) => row.status !== 'sent') ||
+      JSON.stringify(recordIdentityRows.map((row) => row.item_record_id)) !==
+        JSON.stringify([firstItemRecordId, secondItemRecordId, null])
+    )
+      throw new Error(
+        `operator waiting item UUID claims were ${JSON.stringify({ firstRecord, repeatedRecord, secondRecord, olderRecord, repeatedOlderRecord, recordIdentityRows })}`,
+      )
+
+    const upgradedItemRecordId = '01990000-0000-7000-8000-000000000699'
+    const legacyInput = {
+      ...waitingInput,
+      item_id: 943_021,
+      item_record_id: null,
+      episode: 'legacy-upgrade',
+    }
+    const legacy = await sendOperatorWaitingEmail(actorUrl, identity, legacyInput, {
+      mail: identityMail,
+      now: waitingNow,
+    })
+    const upgraded = await sendOperatorWaitingEmail(
+      actorUrl,
+      identity,
+      { ...legacyInput, item_record_id: upgradedItemRecordId },
+      { mail: identityMail, now: waitingNow },
+    )
+    const upgradeRows = await admin<
+      { id: string; item_record_id: string | null; status: string }[]
+    >`
+      SELECT id::text,item_record_id::text,status FROM operator_waiting_email
+      WHERE space_id=${SPACE_A}::uuid AND user_id=${USER}::uuid
+        AND kind='question' AND item_id=943021 AND episode='legacy-upgrade'
+      ORDER BY item_record_id NULLS LAST`
+    if (
+      legacy.status !== 'sent' ||
+      upgraded.status !== 'sent' ||
+      legacy.id === upgraded.id ||
+      upgradeRows.length !== 2 ||
+      upgradeRows.some((row) => row.status !== 'sent') ||
+      JSON.stringify(upgradeRows.map((row) => row.item_record_id)) !==
+        JSON.stringify([upgradedItemRecordId, null])
+    )
+      throw new Error(
+        `operator waiting legacy upgrade claims were ${JSON.stringify({ legacy, upgraded, upgradeRows })}`,
+      )
+
     const staleInput = { ...waitingInput, item_id: 943_002, episode: 'stale-intent' }
     const failed = await sendOperatorWaitingEmail(actorUrl, identity, staleInput, {
       mail: { send: async () => Promise.reject(new Error('stale fixture')) },

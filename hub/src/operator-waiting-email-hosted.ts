@@ -106,7 +106,7 @@ async function assertSendBudget(tx: SQL, userId: string, now: Date) {
 }
 
 /** Claims one send attempt inside an already tenant-bound transaction. */
-export async function claimOperatorWaitingEmail(
+async function claimOperatorWaitingEmail(
   tx: SQL,
   caller: { spaceId: string; userId: string },
   input: OperatorWaitingEmailInput,

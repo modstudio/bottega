@@ -541,6 +541,7 @@ export const operatorWaitingEmail = pgTable.withRLS(
     uniqueIndex('operator_waiting_email_record_episode_unique')
       .on(table.spaceId, table.userId, table.kind, table.itemRecordId, table.episode)
       .where(sql`${table.itemRecordId} IS NOT NULL`),
+    // Serves clients that omit item_record_id and rows written before it existed.
     uniqueIndex('operator_waiting_email_label_episode_unique')
       .on(table.spaceId, table.userId, table.kind, table.itemId, table.episode)
       .where(sql`${table.itemRecordId} IS NULL`),
