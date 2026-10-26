@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join } from 'node:path'
 import { Readable, Writable } from 'node:stream'
 import * as acp from '@agentclientprotocol/sdk'
@@ -620,11 +620,16 @@ function observeAcpUpdate(
   billing: AgentBilling,
 ): void {
   updates.push(params)
-  persistAcpUpdates(outPath, sessionId, updates)
   const folded = normalizeAcpTurn({ sessionId, updates: [params] }, billing)
+  if (folded.output) appendFileSync(outPath, folded.output)
   for (const event of folded.events) {
     if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
   }
+}
+
+function beginAcpTurn(updates: unknown[], outPath: string): void {
+  updates.length = 0
+  writeFileSync(outPath, '')
 }
 
 export function configuredAcpAsk(
@@ -919,7 +924,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
           /* schema is best-effort on the wire; run.ts validates */
         }
       }
-      updates.length = 0
+      beginAcpTurn(updates, opts.outPath)
       const promptWork = ctx.request(acp.methods.agent.session.prompt, {
         // orchestrator sends the bound prompt as text blocks; schema is also inlined.
         sessionId,
