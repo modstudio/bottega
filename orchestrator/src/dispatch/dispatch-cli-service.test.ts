@@ -26,11 +26,16 @@ test('detached selection waits only after a capacity-only foreground result', ()
 })
 
 test('a routed selection is handed off separately from the caller pin', () => {
-  expect(detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route' })).toEqual({
-    routedAgent: { agent: 'codex', reason: 'surface route' },
+  expect(
+    detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route', promptBytes: 64 }),
+  ).toEqual({
+    routedAgent: { agent: 'codex', reason: 'surface route', promptBytes: 64 },
   })
   expect(
-    detachSpecWithRoutedSelection({ agent: 'grok' }, { agent: 'codex', reason: 'route' }),
+    detachSpecWithRoutedSelection(
+      { agent: 'grok' },
+      { agent: 'codex', reason: 'route', promptBytes: 64 },
+    ),
   ).toEqual({ agent: 'grok' })
 })
 

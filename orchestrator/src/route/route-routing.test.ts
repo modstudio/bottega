@@ -23,6 +23,7 @@ import {
   PROMPT_SIZE_BOUNDARY,
   pick,
   promptSizeBucket,
+  samePromptSizeBucket,
   scoreboard,
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
@@ -381,7 +382,7 @@ test('automatic routing excludes metered billing without opt-in while a named ag
 test('a routed pick keeps its reason without becoming an explicit pin', () => {
   expect(
     pick('summarize', undefined, 0, false, undefined, {
-      routed: { agent: 'codex', reason: 'surface route' },
+      routed: { agent: 'codex', reason: 'surface route', promptBytes: 0 },
     }),
   ).toEqual({ agent: 'codex', reason: 'surface route' })
 })
@@ -398,9 +399,18 @@ test('a routed pick keeps its reason when the routed agent is already proven', (
   })
   expect(
     pick('summarize', undefined, 0, false, undefined, {
-      routed: { agent: 'codex', reason: 'surface route' },
+      routed: { agent: 'codex', reason: 'surface route', promptBytes: 0 },
     }),
   ).toEqual({ agent: 'codex', reason: 'surface route' })
+})
+
+test('a routed pick from the other prompt-size bucket ranks without it', () => {
+  const free = pick('summarize', undefined, 0, false)
+  const reranked = pick('summarize', undefined, 0, false, undefined, {
+    routed: { agent: 'codex', reason: 'surface route', promptBytes: PROMPT_SIZE_BOUNDARY },
+  })
+  expect(reranked).toEqual(free)
+  expect(reranked.reason).not.toBe('surface route')
 })
 
 test('metered routing opt-in admits read-only work and still excludes writer jobs', () => {
@@ -742,6 +752,12 @@ describe('routing evidence scope', () => {
   test('prompt evidence is partitioned at the provisional 16 KiB boundary', () => {
     expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY - 1)).toBe('small')
     expect(promptSizeBucket(PROMPT_SIZE_BOUNDARY)).toBe('large')
+
+    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY - 1, 0)).toBe(true)
+    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY, PROMPT_SIZE_BOUNDARY)).toBe(true)
+    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY + 1, PROMPT_SIZE_BOUNDARY)).toBe(true)
+    expect(samePromptSizeBucket(PROMPT_SIZE_BOUNDARY - 1, PROMPT_SIZE_BOUNDARY)).toBe(false)
+    expect(samePromptSizeBucket(0, PROMPT_SIZE_BOUNDARY + 1)).toBe(false)
 
     for (let i = 0; i < 2; i++) {
       addRun({

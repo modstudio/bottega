@@ -417,7 +417,7 @@ export async function selectBeforeDetach(
   spec: DetachSpec,
   presentation: Pick<Presentation, 'cwd' | 'error'>,
   waitForCapacityBeforeDetach = false,
-): Promise<{ agent: string; reason: string } | undefined> {
+): Promise<{ agent: string; reason: string; promptBytes: number } | undefined> {
   if (spec.resume) return undefined
   const requestedJob = job(jobName)
   const mcpRequest = effectiveMcpRequest(spec.mcp, requestedJob)
@@ -425,16 +425,22 @@ export async function selectBeforeDetach(
     ? basename(spec.schema)
     : resolveReplyDialect(requestedJob).schemaName
   const evidence = runEvidence(jobName, Boolean(requestedJob.findings), spec.deliverables ?? [])
+  /**
+   * The size this pre-pick ranks on, carried on the routed selection so the
+   * run can tell whether its own composed pack landed in the same
+   * prompt-size bucket before honoring the pick.
+   */
+  const pickBytes = routedPromptBytes(
+    routedPromptText(text, evidence.readerInstruction, true),
+    replySchemaName,
+    requestedJob,
+    evidence.requiresCanonSource,
+  )
   const select = () =>
     pick(
       jobName,
       spec.agent,
-      routedPromptBytes(
-        routedPromptText(text, evidence.readerInstruction, true),
-        replySchemaName,
-        requestedJob,
-        evidence.requiresCanonSource,
-      ),
+      pickBytes,
       true,
       stackAt(spec.cwd ?? presentation.cwd()),
       {
@@ -449,14 +455,15 @@ export async function selectBeforeDetach(
       spec.lens,
     )
   if (waitForCapacityBeforeDetach) {
-    return waitForAgentSelection({
+    const selection = await waitForAgentSelection({
       select,
       noWait: spec.noWaitCapacity,
       onWait: () => presentation.error('waiting for capacity'),
     })
+    return selection && { ...selection, promptBytes: pickBytes }
   }
   try {
-    return select()
+    return { ...select(), promptBytes: pickBytes }
   } catch (error) {
     const selection = error instanceof AgentCapacityError ? 'capacity-wait' : 'hard-refusal'
     const decision = decidePreDetachSelection({
@@ -470,7 +477,7 @@ export async function selectBeforeDetach(
 
 export function detachSpecWithRoutedSelection(
   spec: DetachSpec,
-  selected: { agent: string; reason: string } | undefined,
+  selected: { agent: string; reason: string; promptBytes: number } | undefined,
 ): DetachSpec {
   return selected && !spec.agent ? { ...spec, routedAgent: selected } : spec
 }

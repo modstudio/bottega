@@ -90,7 +90,7 @@ type RouteConstraints = {
   pinnedTransport?: 'cli' | 'acp'
   transportPinSource?: McpTransportPinFacts['transportPinSource']
   project?: string | null
-  routed?: { agent: string; reason: string }
+  routed?: { agent: string; reason: string; promptBytes: number }
 }
 
 /**
@@ -160,6 +160,17 @@ export type PromptSizeBucket = 'small' | 'large'
 
 export function promptSizeBucket(promptBytes: number): PromptSizeBucket {
   return promptBytes < PROMPT_SIZE_BOUNDARY ? 'small' : 'large'
+}
+
+/**
+ * Whether a surface-routed pick's measured size lands in the same evidence
+ * bucket as the run's own composed pack. The pre-pick ranks on the raw spec
+ * while the run records evidence on `pickBytes`; a routed selection only
+ * describes the cell it ranked in, so the run honors it solely when both sizes
+ * fall on the same side of the boundary.
+ */
+export function samePromptSizeBucket(routedBytes: number, pickBytes: number): boolean {
+  return promptSizeBucket(routedBytes) === promptSizeBucket(pickBytes)
 }
 
 export function promptSizeBucketLabel(bucket: PromptSizeBucket): string {
@@ -915,9 +926,10 @@ function capacityCounts(
 
 function routeSurfaceSelection(
   candidates: readonly Candidate[],
-  routed: { agent: string; reason: string } | undefined,
+  routed: { agent: string; reason: string; promptBytes: number } | undefined,
+  promptBytes: number,
 ): Candidate[] {
-  if (!routed) return [...candidates]
+  if (!routed || !samePromptSizeBucket(routed.promptBytes, promptBytes)) return [...candidates]
   const candidate = candidates.find((item) => item.agent === routed.agent)
   return candidate ? [{ ...candidate, routedReason: routed.reason }] : [...candidates]
 }
@@ -965,6 +977,7 @@ function admittedCandidates(
   jobName: string,
   candidates: Candidate[],
   constraints: RouteConstraints,
+  promptBytes: number,
 ): Candidate[] {
   const requested = new Set(constraints.agents ?? [])
   const models = new Set(constraints.models ?? [])
@@ -1006,7 +1019,7 @@ function admittedCandidates(
       !requested.has(candidate.agent) && !models.has(effectiveModel(candidate, constraints)),
   )
   if (constrained.length || (!requested.size && !models.size))
-    return routeSurfaceSelection(constrained, constraints.routed)
+    return routeSurfaceSelection(constrained, constraints.routed, promptBytes)
   const avoided = eligible.map((candidate) => {
     const model = effectiveModel(candidate, constraints)
     const reasons = []
@@ -1079,7 +1092,7 @@ function pickExternal(
       throw new RoutingRefusalError(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
-  let eligible = admittedCandidates(jobName, ev.cands, avoid)
+  let eligible = admittedCandidates(jobName, ev.cands, avoid, promptBytes)
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,

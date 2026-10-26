@@ -143,7 +143,7 @@ export async function run(opts: {
   agent?: string
   /** True only when the caller selected the agent rather than routing it. */
   agentExplicit?: boolean
-  routedAgent?: { agent: string; reason: string }
+  routedAgent?: { agent: string; reason: string; promptBytes: number }
   /** Agent whose detached foreground selection completed MCP startup checks. */
   dispatchMcpPreflightedAgent?: string
   schemaPath?: string
