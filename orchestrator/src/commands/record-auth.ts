@@ -6,7 +6,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isHttpAddress } from '../../../shared/record-client-addresses.ts'
 import { projects } from '../project/projects.ts'
 import { retireOutboxRowWithDependencyProof } from '../record/outbox-operator.ts'
-import { retryOutboxRow } from '../record/outbox-quarantine.ts'
+import { retryOutboxRow, retryOutboxRowsMatching } from '../record/outbox-quarantine.ts'
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import {
   recordAuditSecretsCommand,
@@ -265,10 +265,22 @@ export function register(program: Command): void {
   outbox
     .command('retry')
     .description('queue an outbox row for another delivery attempt')
-    .argument('<row-id>')
-    .action((rowId) => {
-      retryOutboxRow(Number(rowId))
-      log(`outbox row ${String(rowId)} will retry on the next sync`)
+    .argument('[row-id]')
+    .option('--matching <text>', 'retry quarantined rows whose reason contains the text')
+    .action((rowId, options) => {
+      const matching = options.matching === undefined ? undefined : String(options.matching)
+      if ((rowId === undefined) === (matching === undefined)) {
+        throw new Error(
+          `exactly one retry form is required: \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retry --matching <text>\``,
+        )
+      }
+      if (rowId !== undefined) {
+        retryOutboxRow(Number(rowId))
+        log(`outbox row ${String(rowId)} will retry on the next sync`)
+        return
+      }
+      const count = retryOutboxRowsMatching(matching!)
+      log(`${count} outbox rows will retry on the next sync`)
     })
   outbox
     .command('retire')

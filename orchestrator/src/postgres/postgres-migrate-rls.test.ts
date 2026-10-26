@@ -116,13 +116,13 @@ realPostgres('RLS proof against real Postgres', () => {
       INSERT INTO machine (id, user_id, name, registered_at, last_seen)
         VALUES ('${ids.MACHINE_A}', '${ids.USER_A}', 'proof-machine', now(), now());
       INSERT INTO run (
-        id, space_id, project_id, machine_id, started_at, agent, job,
+        id, space_id, project_id, machine_id, started_by_user_id, started_at, agent, job,
         prompt_sha, prompt_bytes, prompt_head, probe, status, turn, no_failover,
         automatic_failover, work_preserved, created_at, updated_at
       ) VALUES
-        ('${ids.RUN_A}', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', now(), 'proof', 'proof',
+        ('${ids.RUN_A}', '${ids.SPACE_A}', '${ids.PROJECT_A}', '${ids.MACHINE_A}', '${ids.USER_A}', now(), 'proof', 'proof',
          'a', 1, 'a', false, 'ok', 1, false, false, false, now(), now()),
-        ('${ids.RUN_B}', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', now(), 'proof', 'proof',
+        ('${ids.RUN_B}', '${ids.SPACE_B}', '${ids.PROJECT_B}', '${ids.MACHINE_A}', '${ids.USER_A}', now(), 'proof', 'proof',
          'b', 1, 'b', false, 'ok', 1, false, false, false, now(), now());
       INSERT INTO seq (id, space_id, project_id, name, next) VALUES
         ('${newRecordId()}', '${ids.SPACE_A}', '${ids.PROJECT_A}', 'task:DEV', 446),
@@ -245,12 +245,12 @@ realPostgres('RLS proof against real Postgres', () => {
         ('${authProjectA}','${authSpaceA}','auth-a-project',ARRAY['AA'],now()),
         ('${authProjectB}','${authSpaceB}','auth-b-project',ARRAY['BB'],now());
        INSERT INTO run (
-         id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,
+         id,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,
          prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
          work_preserved,created_at,updated_at
        ) VALUES
-        ('${authRunA}','${authSpaceA}','${authProjectA}','${ids.MACHINE_A}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
-        ('${authRunB}','${authSpaceB}','${authProjectB}','${ids.MACHINE_A}',now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
+        ('${authRunA}','${authSpaceA}','${authProjectA}','${ids.MACHINE_A}','${ids.USER_A}',now(),'proof','proof','a',1,'a',false,'ok',1,false,false,false,now(),now()),
+        ('${authRunB}','${authSpaceB}','${authProjectB}','${ids.MACHINE_A}','${ids.USER_A}',now(),'proof','proof','b',1,'b',false,'ok',1,false,false,false,now(),now());`,
     )
 
     recordSession.setToken(tokenA)
@@ -684,13 +684,13 @@ realPostgres('RLS proof against real Postgres', () => {
       `INSERT INTO project (id,space_id,name,key_prefixes,created_at)
            VALUES ('${httpProject}','${identity.activeSpaceId}','auth-http-project',ARRAY['HTTP'],now());
          INSERT INTO run (
-           id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,
+           id,space_id,project_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,
            prompt_bytes,prompt_head,probe,status,turn,no_failover,automatic_failover,
            work_preserved,created_at,updated_at
          ) VALUES
-           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now(),
+           ('${httpRun}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}','${ids.USER_A}',now(),
             'proof','proof','http',1,'http',false,'ok',1,false,false,false,now(),now()),
-           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}',now() - interval '1 minute',
+           ('${httpRunOlder}','${identity.activeSpaceId}','${httpProject}','${ids.MACHINE_A}','${ids.USER_A}',now() - interval '1 minute',
             'proof','proof','older',1,'older',false,'ok',1,false,false,false,now(),now());
          INSERT INTO run_score (run_id,space_id,delivery,quality,fidelity,note,scored_at,scored_by,updated_at)
            VALUES ('${httpRun}','${identity.activeSpaceId}','full','right','faithful','good',now(),'architect',now());

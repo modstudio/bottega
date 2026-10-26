@@ -24,6 +24,12 @@ import {
   runTaskReferenceBackfill,
   seedRunTaskReferenceBackfill,
 } from './record-run-task-backfill-proof.ts'
+import {
+  proofRunOwnerRequired,
+  runOwnerBackfill,
+  runOwnerRequired,
+  seedRunOwnerBackfill,
+} from './record-run-owner-backfill-proof.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
@@ -891,6 +897,7 @@ async function proofIdentityMigration(transaction: Transaction, name: string): P
   if (name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
   if (name === hubProjectIdentityBackfill) await proofHubProjectIdentityBackfill(transaction)
   if (name === runTaskReferenceBackfill) await proofRunTaskReferenceBackfill(transaction)
+  if (name === runOwnerRequired) await proofRunOwnerRequired(transaction)
 }
 
 async function applyAndProveMigration(
@@ -924,6 +931,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })
+  if (name === runOwnerBackfill) await seedRunOwnerBackfill(transaction, PLATFORM_SPACE_ID)
   await seedHostedProjectCleanupProof(transaction, name)
 }
 

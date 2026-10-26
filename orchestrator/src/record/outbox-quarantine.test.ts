@@ -4,7 +4,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { retireOutboxRowWithDependencyProof } from './outbox-operator.ts'
-import { quarantineOutboxRow, retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
+import {
+  quarantineOutboxRow,
+  retireOutboxRow,
+  retryOutboxRow,
+  retryOutboxRowsMatching,
+} from './outbox-quarantine.ts'
 
 function fixture(): Database {
   const database = migratedTestDatabase()
@@ -75,6 +80,47 @@ describe('outbox quarantine exits', () => {
       .all()
     expect(new Set(auditIds.map((row) => row.record_id)).size).toBe(2)
     expect(auditIds.every((row) => row.record_id !== row.row_id)).toBe(true)
+    database.close()
+  })
+
+  test('matching retry clears and audits only quarantined rows containing the text', () => {
+    const database = fixture()
+    database
+      .query(
+        `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at,quarantined_at,quarantine_reason,last_error)
+         VALUES
+           (?,8,'run','record-8','{}','2026-09-28T00:00:00.000Z','2026-09-28T00:01:00.000Z','parent is absent','parent is absent'),
+           (?,9,'run','record-9','{}','2026-09-28T00:00:00.000Z','2026-09-28T00:01:00.000Z','different refusal','different refusal'),
+           (?,10,'run','record-10','{}','2026-09-28T00:00:00.000Z',NULL,'parent is absent','parent is absent')`,
+      )
+      .run(newRecordId(), newRecordId(), newRecordId())
+
+    expect(
+      retryOutboxRowsMatching(
+        'parent is absent',
+        database,
+        '2026-09-28T00:02:00.000Z',
+        'operator-session',
+      ),
+    ).toBe(1)
+    expect(
+      database
+        .query('SELECT id,quarantined_at FROM outbox WHERE id BETWEEN 7 AND 10 ORDER BY id')
+        .all(),
+    ).toEqual([
+      { id: 7, quarantined_at: '2026-09-28T00:01:00.000Z' },
+      { id: 8, quarantined_at: null },
+      { id: 9, quarantined_at: '2026-09-28T00:01:00.000Z' },
+      { id: 10, quarantined_at: null },
+    ])
+    expect(
+      database
+        .query(
+          `SELECT outbox_id,disposition,actor_session FROM outbox_quarantine_audit
+           WHERE disposition='retry' ORDER BY outbox_id`,
+        )
+        .all(),
+    ).toEqual([{ outbox_id: 8, disposition: 'retry', actor_session: 'operator-session' }])
     database.close()
   })
 
