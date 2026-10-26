@@ -218,6 +218,49 @@ export { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 
 /**
+ * Room a job needs ON TOP OF its working set, for the model to answer in.
+ *
+ * Eligibility requires room beyond the working set: vLLM allows
+ * `max_model_len − prompt_tokens` for the reply, so an agent that can just
+ * barely hold the job has nothing left to say anything with.
+ *
+ * It went unnoticed because for most of this system's life the two numbers were
+ * far apart (64K agent, 128K job). Serving the local model at 131,072 made them
+ * equal, and equality silently re-admitted it to every deep job — the exact
+ * outcome the ceiling had been introduced to prevent.
+ *
+ * 16K is a FLOOR read off that failure, not a measurement: a reasoning model's
+ * think-then-answer for a review lens is comfortably five figures of tokens, and
+ * nothing here has ever produced a useful reply in less. The honest way to
+ * refine it is to record `finish_reason` per run and read the real distribution;
+ * until then it is deliberately generous, because being wrong in this direction
+ * costs an eligible agent and being wrong in the other costs a whole run.
+ */
+export const OUTPUT_RESERVE = 16_384
+
+/**
+ * Bytes per token, assumed when a prompt's size is estimated from its bytes.
+ *
+ * Three over-counts tokens for English prose and code, and over-counting is the
+ * safe direction: an over-estimate only loosens the cap a prompt imposes, while
+ * an under-estimate starves the run it was meant to protect.
+ */
+export const PROMPT_BYTES_PER_TOKEN = 3
+
+/**
+ * Everything a job's window must hold: its declared working set PLUS the room
+ * the reply needs.
+ *
+ * One function because three callers ask the same question — routing
+ * eligibility, its backtest, and the Goose run's own context cap — and a job's
+ * ceiling must not be one number when the agent is chosen and another when the
+ * run starts.
+ */
+export function jobContextBudget(contextTokens: number): number {
+  return contextTokens + OUTPUT_RESERVE
+}
+
+/**
  * A short bounded errand: one question, a handful of files, an answer.
  * Measured: file-question on the 64K local model runs in 8 seconds and 25k
  * cumulative tokens, and is judged `right`.

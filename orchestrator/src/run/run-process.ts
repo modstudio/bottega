@@ -34,6 +34,8 @@ export function childEnv(
   includeStore = true,
   runNumber?: number,
   endpointEnvironment: Record<string, string> = {},
+  jobContextTokens?: number | null,
+  promptBytes?: number | null,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -76,7 +78,7 @@ export function childEnv(
   if (includeStore) env.BOTTEGA_ORCHESTRATOR_DB = DB_PATH
   const child: Record<string, string> = {
     ...env,
-    ...(a.env?.() ?? {}),
+    ...(a.env?.(jobContextTokens ?? null, promptBytes ?? null) ?? {}),
     ...(includeStore ? runTestWorkerEnvironment(extra) : extra),
     ...endpointEnvironment,
     ...workerLaunchEnv(workerHarnessName(a)),

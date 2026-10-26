@@ -10,7 +10,7 @@ import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { noEligibleAgentRefusal } from '../jobs/delegation.ts'
-import { JOBS, job } from '../jobs/jobs.ts'
+import { JOBS, job, jobContextBudget, OUTPUT_RESERVE } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
 import {
@@ -194,27 +194,6 @@ function routingPassFacts(
     routeProject: projectName ? projectByName(projectName) : null,
   }
 }
-
-/**
- * Room a job needs ON TOP OF its working set, for the model to answer in.
- *
- * Eligibility requires room beyond the working set: vLLM allows
- * `max_model_len − prompt_tokens` for the reply, so an agent that can just
- * barely hold the job has nothing left to say anything with.
- *
- * It went unnoticed because for most of this system's life the two numbers were
- * far apart (64K agent, 128K job). Serving the local model at 131,072 made them
- * equal, and equality silently re-admitted it to every deep job — the exact
- * outcome the ceiling had been introduced to prevent.
- *
- * 16K is a FLOOR read off that failure, not a measurement: a reasoning model's
- * think-then-answer for a review lens is comfortably five figures of tokens, and
- * nothing here has ever produced a useful reply in less. The honest way to
- * refine it is to record `finish_reason` per run and read the real distribution;
- * until then it is deliberately generous, because being wrong in this direction
- * costs an eligible agent and being wrong in the other costs a whole run.
- */
-export const OUTPUT_RESERVE = 16_384
 
 /** NOT_EVIDENCE as a SQL list, so the two definitions cannot drift apart. */
 function notEvidenceSql(): string {
@@ -590,7 +569,7 @@ export function candidates(
     // between them they spent forty minutes and 1.8M vendor tokens to produce
     // three partial answers and two non-answers. The ceiling was knowable before
     // any of them started.
-    else if (a.contextTokens < j.contextTokens + OUTPUT_RESERVE) {
+    else if (a.contextTokens < jobContextBudget(j.contextTokens)) {
       eligible = false
       why =
         `${Math.round(a.contextTokens / 1024)}K context is short of the ` +
