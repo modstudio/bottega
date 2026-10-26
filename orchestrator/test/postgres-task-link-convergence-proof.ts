@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import * as proofIds from './postgres-rls-values.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -42,8 +43,6 @@ export function registerHostedTaskLinkConvergenceProof(
     otherSpaceId: string
     projectName: string
     projectId: string
-    machineId: string
-    userId: string
     asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
     admin: (statement: string) => string
   },
@@ -64,25 +63,25 @@ export function registerHostedTaskLinkConvergenceProof(
         (id,space_id,workflow_key,workflow_task_id,machine_id,revision,asked_at,question,
          withheld_fields,created_at,updated_at)
        VALUES
-        ('${ids.question}','${fixture.spaceId}','DEV-1773-LIVE',NULL,'${fixture.machineId}',1,now(),'link?',
+        ('${ids.question}','${fixture.spaceId}','DEV-1773-LIVE',NULL,'${proofIds.MACHINE_A}',1,now(),'link?',
          '[]'::jsonb,now(),now()),
         ('${ids.linkedQuestion}','${fixture.spaceId}','DEV-1773-LIVE','${ids.existingTask}',
-         '${fixture.machineId}',1,now(),'preserve?','[]'::jsonb,now(),now()),
-        ('${ids.deletedQuestion}','${fixture.spaceId}','DEV-1773-DELETED',NULL,'${fixture.machineId}',1,now(),
+         '${proofIds.MACHINE_A}',1,now(),'preserve?','[]'::jsonb,now(),now()),
+        ('${ids.deletedQuestion}','${fixture.spaceId}','DEV-1773-DELETED',NULL,'${proofIds.MACHINE_A}',1,now(),
          'deleted?','[]'::jsonb,now(),now()),
-        ('${ids.otherSpaceQuestion}','${fixture.spaceId}','DEV-1773-OTHER-SPACE',NULL,'${fixture.machineId}',1,
+        ('${ids.otherSpaceQuestion}','${fixture.spaceId}','DEV-1773-OTHER-SPACE',NULL,'${proofIds.MACHINE_A}',1,
          now(),'other space?','[]'::jsonb,now(),now());
        INSERT INTO run
         (id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
          task_key,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
        VALUES
-        ('${ids.run}','${fixture.spaceId}','${fixture.projectId}','${fixture.machineId}',now(),'proof','proof',
+        ('${ids.run}','${fixture.spaceId}','${fixture.projectId}','${proofIds.MACHINE_A}',now(),'proof','proof',
          'sha',1,'proof','DEV-1773-LIVE',false,'ok',1,false,false,false,now(),now());
        INSERT INTO operator_waiting_email
         (id,space_id,user_id,kind,item_id,item_record_id,episode,project,task_key,question,options,
          waiting_since,link,status,attempts,created_at,updated_at)
        VALUES
-        ('${ids.email}','${fixture.spaceId}','${fixture.userId}','question',1773,'${ids.question}',
+        ('${ids.email}','${fixture.spaceId}','${proofIds.USER_A}','question',1773,'${ids.question}',
          'proof','${fixture.projectName}','DEV-1773-LIVE','link?','[]'::jsonb,now(),'http://localhost',
          'intent',1,now(),now());
        INSERT INTO hub_task
@@ -133,17 +132,17 @@ export function registerHostedTaskLinkConvergenceProof(
       ALTER TABLE hub_task ENABLE TRIGGER hub_task_link_references;
       INSERT INTO question
        (id,space_id,workflow_key,machine_id,revision,asked_at,question,withheld_fields,created_at,updated_at)
-      VALUES ('${ids.backfillQuestion}','${fixture.spaceId}','DEV-1773-BACKFILL','${fixture.machineId}',1,
+      VALUES ('${ids.backfillQuestion}','${fixture.spaceId}','DEV-1773-BACKFILL','${proofIds.MACHINE_A}',1,
        now(),'backfill?','[]'::jsonb,now(),now());
       INSERT INTO run
        (id,space_id,project_id,machine_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
         task_key,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
-      VALUES ('${ids.backfillRun}','${fixture.spaceId}','${fixture.projectId}','${fixture.machineId}',now(),
+      VALUES ('${ids.backfillRun}','${fixture.spaceId}','${fixture.projectId}','${proofIds.MACHINE_A}',now(),
        'proof','proof','sha',1,'proof','DEV-1773-BACKFILL',false,'ok',1,false,false,false,now(),now());
       INSERT INTO operator_waiting_email
        (id,space_id,user_id,kind,item_id,item_record_id,episode,project,task_key,question,options,
         waiting_since,link,status,attempts,created_at,updated_at)
-      VALUES ('${ids.backfillEmail}','${fixture.spaceId}','${fixture.userId}','workflow',1773,
+      VALUES ('${ids.backfillEmail}','${fixture.spaceId}','${proofIds.USER_A}','workflow',1773,
        '${ids.backfillRun}','backfill','${fixture.projectName}','DEV-1773-BACKFILL','backfill?',
        '[]'::jsonb,now(),'http://localhost','intent',1,now(),now());`)
     fixture.admin(backfillSql)
