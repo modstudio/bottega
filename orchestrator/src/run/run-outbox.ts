@@ -31,9 +31,8 @@ export function shouldRefreshRunRecordLinks(
   localTaskId: string | null,
 ): boolean {
   return (
-    (localProjectId !== null || localTaskId !== null) &&
-    latestPayload.projectId == null &&
-    latestPayload.taskId == null
+    (localProjectId !== null && latestPayload.projectId == null) ||
+    (localTaskId !== null && latestPayload.taskId == null)
   )
 }
 

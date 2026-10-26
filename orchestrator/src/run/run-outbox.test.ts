@@ -22,6 +22,8 @@ test('link refresh requires a new local link absent from the latest payload', ()
   expect(shouldRefreshRunRecordLinks({ taskId }, null, taskId)).toBe(false)
   expect(shouldRefreshRunRecordLinks({}, null, null)).toBe(false)
   expect(shouldRefreshRunRecordLinks({ projectName: 'project' }, projectId, null)).toBe(true)
+  expect(shouldRefreshRunRecordLinks({ projectId }, projectId, taskId)).toBe(true)
+  expect(shouldRefreshRunRecordLinks({ projectId, taskId }, projectId, taskId)).toBe(false)
 })
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
