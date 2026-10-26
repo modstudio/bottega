@@ -6,7 +6,7 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
   {
     name: 'settings-boundary',
     file: `${source}settings.ts`,
-    allowed: ['zod', 'shared/secret-shaped.ts', 'shared/settings-summary.ts'],
+    allowed: ['zod', 'shared/brand.ts', 'shared/secret-shaped.ts', 'shared/settings-summary.ts'],
     typeOnlyAllowed: [],
     reason: 'Keep owned settings schema and extraction pure.',
   },
@@ -37,6 +37,13 @@ export const settingsBoundarySpecs: ImportBoundary[] = [
     allowed: ['node:fs', 'node:path', `${source}settings.ts`],
     typeOnlyAllowed: [],
     reason: 'Keep settings secrets-file access independent of stores and commands.',
+  },
+  {
+    name: 'settings-env-commands-boundary',
+    file: `${source}settings-env-commands.ts`,
+    allowed: ['orchestrator/src/doc/docs.ts', `${source}settings.ts`],
+    typeOnlyAllowed: [],
+    reason: 'Keep plain canonical environment edits independent of files, runs, and the CLI.',
   },
   {
     name: 'settings-write-boundary',

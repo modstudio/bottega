@@ -1,6 +1,7 @@
 // concern: settings
 /** Pure owned Claude settings shape. Must not know filesystems, stores, commands, or transports. */
 import { z } from 'zod'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   SETTINGS_PERMISSION_LISTS,
@@ -29,7 +30,16 @@ export type OwnedSettings = {
   permissions: unknown
   hooks: unknown
   autoMode?: OwnedAutoMode
+  env?: Record<string, string>
   envKeys?: string[]
+}
+
+export type SettingsEnvOperation = 'set' | 'unset'
+
+export type SettingsEnvEdit = {
+  settings: OwnedSettings
+  changed: boolean
+  message: string
 }
 
 export const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -39,6 +49,7 @@ const ownedSettingsSchema = z
     permissions: z.unknown(),
     hooks: z.unknown(),
     autoMode: ownedAutoModeSchema.optional(),
+    env: z.record(z.string().regex(ENV_NAME), z.string()).default({}),
     envKeys: z
       .array(z.string().regex(ENV_NAME))
       .refine((names) => names.every((name, index) => index === 0 || names[index - 1]! < name)),
@@ -71,6 +82,7 @@ export function serializeOwnedSettings(owned: OwnedSettings): string {
       permissions: owned.permissions,
       hooks: owned.hooks,
       ...(owned.autoMode === undefined ? {} : { autoMode: owned.autoMode }),
+      env: owned.env ?? {},
       envKeys: owned.envKeys ?? [],
     },
     null,
@@ -84,16 +96,17 @@ export function validateOwnedSettingsBody(body: string): OwnedSettings {
     parsed = JSON.parse(body) as unknown
   } catch {
     throw new Error(
-      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, and envKeys',
+      'refusing settings body: cannot parse JSON\ncleared by: write a JSON object with only permissions, hooks, autoMode, env, and envKeys',
     )
   }
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) {
     throw new Error(
       'refusing settings body: unknown or missing top-level keys\n' +
-        'cleared by: write a JSON object with permissions, hooks, optional autoMode, and sorted envKeys names',
+        'cleared by: write a JSON object with permissions, hooks, optional autoMode, env string values, and sorted envKeys names',
     )
   }
+  assertValidEnvironment(result.data, 'settings body')
   return result.data
 }
 
@@ -104,9 +117,11 @@ export function parseStoredOwnedSettings(body: string): OwnedSettings {
   } catch {
     throw new Error('refusing stored settings row: cannot parse JSON')
   }
+  if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'env')) parsed.env = {}
   if (isPlainObject(parsed) && !Object.hasOwn(parsed, 'envKeys')) parsed.envKeys = []
   const result = ownedSettingsSchema.safeParse(parsed)
   if (!result.success) throw new Error('refusing stored settings row: invalid owned settings shape')
+  assertValidEnvironment(result.data, 'stored settings row')
   return result.data
 }
 
@@ -151,8 +166,68 @@ export function ownedSettingsEqual(left: OwnedSettings, right: OwnedSettings): b
       (left.autoMode !== undefined &&
         right.autoMode !== undefined &&
         deepEqual(left.autoMode, right.autoMode))) &&
+    deepEqual(left.env ?? {}, right.env ?? {}) &&
     deepEqual(left.envKeys ?? [], right.envKeys ?? [])
   )
+}
+
+export function ownedEnvironmentNames(owned: OwnedSettings): string[] {
+  return [...new Set([...Object.keys(owned.env ?? {}), ...(owned.envKeys ?? [])])].sort()
+}
+
+export function editSettingsEnv(
+  owned: OwnedSettings,
+  input: { operation: SettingsEnvOperation; name: string; value?: string },
+): SettingsEnvEdit {
+  if (!ENV_NAME.test(input.name)) {
+    throw new Error(`refusing settings env ${input.operation}: invalid name ${input.name}`)
+  }
+  if (input.operation === 'set' && input.value === undefined) {
+    throw new Error('refusing settings env set: value is required')
+  }
+  const current = owned.env ?? {}
+  if (input.operation === 'unset' && !Object.hasOwn(current, input.name)) {
+    return {
+      settings: owned,
+      changed: false,
+      message: (owned.envKeys ?? []).includes(input.name)
+        ? `${input.name} is a secrets-file name, not a plain value`
+        : `${input.name} is absent`,
+    }
+  }
+  if (input.operation === 'set' && current[input.name] === input.value) {
+    return { settings: owned, changed: false, message: `${input.name} is already current` }
+  }
+  const entries =
+    input.operation === 'set'
+      ? Object.entries({ ...current, [input.name]: input.value! })
+      : Object.entries(current).filter(([name]) => name !== input.name)
+  return {
+    settings: {
+      ...owned,
+      env: Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))),
+    },
+    changed: true,
+    message: `${input.operation === 'set' ? 'set' : 'unset'} ${input.name}`,
+  }
+}
+
+function assertValidEnvironment(owned: OwnedSettings, subject: string): void {
+  const plainNames = Object.keys(owned.env ?? {})
+  const duplicate = plainNames.find((name) => (owned.envKeys ?? []).includes(name))
+  if (duplicate) {
+    throw new Error(
+      `refusing ${subject}: ${duplicate} appears in both env and envKeys\n` +
+        `cleared by: run \`${PLATFORM_SLUG} machine settings env unset ${duplicate}\` to keep the secrets-file name, or remove ${duplicate} from envKeys`,
+    )
+  }
+  const secret = plainNames.find((name) => containsSecretShaped(owned.env![name]!))
+  if (secret) {
+    throw new Error(
+      `refusing ${subject}: ${secret} has a secret-shaped value\n` +
+        'cleared by: put secrets in envKeys and the secrets file',
+    )
+  }
 }
 
 function secretShapedSettingsRefusal(owned: OwnedSettings): string | null {

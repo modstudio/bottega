@@ -12,9 +12,11 @@ import { isOrchWorkerProcess } from '../run/run-process.ts'
 import {
   isPlainObject,
   type OwnedSettings,
+  ownedEnvironmentNames,
   PERMISSION_LISTS,
   parseStoredOwnedSettings,
   permissionLists,
+  refuseSettingsBody,
   SETTINGS_SCOPE,
   SETTINGS_SLUG,
   serializeOwnedSettings,
@@ -38,7 +40,11 @@ import {
 import { withMachineProductHooks } from './settings-machine-hooks.ts'
 import { assertCurrentMachineHomeWriteAuthority } from './settings-machine-write-authority.ts'
 import { mergeMachinePermissionOverlay } from './settings-permission-overlay.ts'
-import { displaySettingsValue, renderOwnedSettingsFile } from './settings-render.ts'
+import {
+  displaySettingsValue,
+  renderedSettingsEnvironment,
+  renderOwnedSettingsFile,
+} from './settings-render.ts'
 import { applySettingsWrite, planSettingsWrite, restoreSettingsBackup } from './settings-write.ts'
 
 type Flags = {
@@ -86,20 +92,32 @@ export async function settingsEnvImportCommand(
   const settingsPath = userSettingsPath(home)
   const secretsPath = userSettingsEnvPath(home)
   const imported = settingsEnvironmentFromJson(settingsPath)
-  const result = mergeSettingsEnv(secretsPath, imported, flags.has('dry-run'))
+  const owned = parseStoredOwnedSettings(row.body)
+  const plainNames = new Set(Object.keys(owned.env ?? {}))
+  const skipped = Object.keys(imported)
+    .filter((name) => plainNames.has(name))
+    .sort()
+  const selected = Object.fromEntries(
+    Object.entries(imported).filter(([name]) => !plainNames.has(name)),
+  )
+  const nextOwned = { ...owned, envKeys: Object.keys(selected).sort() }
+  const refusal = refuseSettingsBody(SETTINGS_SCOPE, serializeOwnedSettings(nextOwned))
+  if (refusal) throw new Error(refusal)
+  const result = mergeSettingsEnv(secretsPath, selected, flags.has('dry-run'))
   presentation.log(
     `env keys: ${result.names.length}${result.names.length ? ` ${result.names.join(', ')}` : ''}`,
   )
   presentation.log(`new: ${result.added}; already present: ${result.present}`)
+  presentation.log(
+    `skipped plain env: ${skipped.length}${skipped.length ? ` ${skipped.join(', ')}` : ''}`,
+  )
   if (flags.has('dry-run')) {
     presentation.log('dry-run: settings.env and the settings row were not changed')
     return
   }
-  const owned = parseStoredOwnedSettings(row.body)
-  owned.envKeys = result.names
   await writeOwned(
     targetAddress({ kind: 'user' }, owner),
-    owned,
+    nextOwned,
     'imported env key names',
     row.revision!,
   )
@@ -217,7 +235,8 @@ export async function settingsRenderWriteCommand(
   if (target.kind === 'user') {
     const secretsPath = userSettingsEnvPath(root)
     const secrets = readSettingsEnv(secretsPath)
-    const removed = parsed.envKeys.filter((name) => !(owned.envKeys ?? []).includes(name))
+    const names = new Set(ownedEnvironmentNames(owned))
+    const removed = parsed.envKeys.filter((name) => !names.has(name))
     const unprotected = removed.filter((name) => !secrets.has(name) && !droppedEnv.includes(name))
     if (unprotected.length > 0) {
       throw new Error(
@@ -230,7 +249,10 @@ export async function settingsRenderWriteCommand(
   }
   const environment =
     target.kind === 'user'
-      ? selectedSettingsEnvironment(userSettingsEnvPath(root), owned.envKeys ?? [])
+      ? renderedSettingsEnvironment(
+          owned,
+          selectedSettingsEnvironment(userSettingsEnvPath(root), owned.envKeys ?? []),
+        )
       : undefined
   const rendered = renderOwnedSettingsFile(parsed.text, owned, environment)
   const plan = planSettingsWrite(path, rendered)
@@ -431,7 +453,7 @@ function logWritePlan(
   for (const name of PERMISSION_LISTS) log(`permissions.${name}: ${lists[name].length}`)
   log(`hooks: ${hookCount(owned.hooks)}`)
   if (target.kind === 'user') {
-    const names = owned.envKeys ?? []
+    const names = ownedEnvironmentNames(owned)
     log(`env keys: ${names.length}${names.length ? ` ${names.join(', ')}` : ''}`)
     const removed = fileEnvKeys.filter((name) => !names.includes(name))
     if (removed.length) log(`env keys removed: ${removed.length} ${removed.join(', ')}`)

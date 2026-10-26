@@ -43,7 +43,7 @@ export type SettingsDrift = {
   rules: Record<PermissionList, { added: string[]; removed: string[] }>
   autoMode: Record<AutoModeList, { added: string[]; removed: string[] }>
   hooks: { added: HookDrift[]; removed: HookDrift[] }
-  env: { added: string[]; removed: string[] }
+  env: { added: string[]; removed: string[]; changed: string[] }
 }
 
 export type HookDrift = {
@@ -69,6 +69,46 @@ export function parseSettingsFile(text: string): ParsedSettingsFile {
     open: span.open,
     close: span.close,
     members: span.members,
+  }
+}
+
+export function plainSettingsEnvironment(
+  text: string,
+  plainNames: readonly string[],
+): Record<string, string> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text) as unknown
+  } catch {
+    throw new Error(SETTINGS_PARSE_REFUSAL)
+  }
+  if (!isPlainObject(parsed)) throw new Error(SETTINGS_PARSE_REFUSAL)
+  const environment = isPlainObject(parsed.env) ? parsed.env : {}
+  return Object.fromEntries(
+    plainNames.flatMap((name) => {
+      const value = environment[name]
+      return typeof value === 'string' ? [[name, value]] : []
+    }),
+  )
+}
+
+export function renderedSettingsEnvironment(
+  owned: OwnedSettings,
+  selected: Record<string, string>,
+): Record<string, string> {
+  return { ...(owned.env ?? {}), ...selected }
+}
+
+export function settingsFileOwnedSettings(
+  parsed: ParsedSettingsFile,
+  stored: OwnedSettings,
+): OwnedSettings {
+  const plainNames = new Set(Object.keys(stored.env ?? {}))
+  const env = plainSettingsEnvironment(parsed.text, [...plainNames])
+  return {
+    ...parsed.owned,
+    env,
+    envKeys: parsed.envKeys.filter((name) => !plainNames.has(name)),
   }
 }
 
@@ -159,6 +199,9 @@ export function diffOwnedSettings(file: OwnedSettings, store: OwnedSettings): Se
     env: {
       added: subtract(file.envKeys ?? [], store.envKeys ?? []),
       removed: subtract(store.envKeys ?? [], file.envKeys ?? []),
+      changed: Object.keys(store.env ?? {}).filter(
+        (name) => !Object.hasOwn(file.env ?? {}, name) || file.env?.[name] !== store.env?.[name],
+      ),
     },
   }
 }

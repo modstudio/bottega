@@ -82,14 +82,19 @@ function shown(cwd = root) {
   }
 }
 
-async function seedUser() {
+async function seedUser(environment: { env?: Record<string, string>; envKeys?: string[] } = {}) {
   await setDoc({
     scope: 'settings',
     subject: null,
     owner: OWNER,
     slug: 'settings',
     title: 'settings',
-    body: serializeOwnedSettings({ permissions: {}, hooks: {}, envKeys: [] }),
+    body: serializeOwnedSettings({
+      permissions: {},
+      hooks: {},
+      env: environment.env,
+      envKeys: environment.envKeys ?? [],
+    }),
     delivery: 'demand',
     reason: 'fixture',
   })
@@ -166,6 +171,23 @@ describe('settings env import', () => {
     await expect(
       settingsEnvImportCommand(flags({ project: 'fixture' }), shown().port),
     ).rejects.toThrow(/project settings are tracked in git/)
+  })
+
+  test('skips names already owned as plain canonical values', async () => {
+    writeFileSync(
+      join(claude, 'settings.json'),
+      JSON.stringify({ env: { PLAIN: 'canonical', PRIVATE: 'from-file' } }),
+    )
+    await seedUser({ env: { PLAIN: 'canonical' } })
+    const output = shown()
+    await settingsEnvImportCommand(flags({ user: true }), output.port)
+
+    const stored = parseStoredOwnedSettings(getDoc('settings', null, 'settings', OWNER)!.body)
+    expect(stored.env).toEqual({ PLAIN: 'canonical' })
+    expect(stored.envKeys).toEqual(['PRIVATE'])
+    expect(readFileSync(join(claude, 'settings.env'), 'utf8')).toContain('PRIVATE=')
+    expect(readFileSync(join(claude, 'settings.env'), 'utf8')).not.toContain('PLAIN=')
+    expect(output.logs.join('\n')).toContain('skipped plain env: 1 PLAIN')
   })
 
   test('malformed JSON never exposes a sentinel in command output or error', async () => {
@@ -270,6 +292,55 @@ describe('settings render write', () => {
       () => false,
     )
     expect(JSON.parse(readFileSync(settings, 'utf8')).env).toEqual({})
+  })
+
+  test('renders canonical plain values with selected secrets and owns both names', async () => {
+    const settings = join(claude, 'settings.json')
+    writeFileSync(
+      settings,
+      `${JSON.stringify({ env: { PLAIN: 'old', PRIVATE: 'old' }, permissions: {}, hooks: {} }, null, 2)}\n`,
+    )
+    writeFileSync(join(claude, 'settings.env'), 'PRIVATE="from-secrets-file"\n', { mode: 0o600 })
+    await seedUser({ env: { PLAIN: 'canonical' }, envKeys: ['PRIVATE'] })
+
+    await settingsRenderWriteCommand(
+      flags({ user: true, write: true, yes: true }),
+      shown().port,
+      () => false,
+    )
+
+    expect(JSON.parse(readFileSync(settings, 'utf8')).env).toEqual({
+      PLAIN: 'canonical',
+      PRIVATE: 'from-secrets-file',
+    })
+  })
+
+  test('render check compares canonical plain environment values without claiming their names', async () => {
+    const settings = join(claude, 'settings.json')
+    writeFileSync(
+      settings,
+      `${JSON.stringify({ env: { PLAIN: 'old' }, permissions: {}, hooks: {} }, null, 2)}\n`,
+    )
+    await seedUser({ env: { PLAIN: 'canonical' } })
+    await settingsRenderWriteCommand(
+      flags({ user: true, write: true, yes: true }),
+      shown().port,
+      () => false,
+    )
+
+    const current = shown()
+    await settingsRenderCheckCommand(flags({ user: true, check: true }), current.port)
+    expect(current.logs.join('\n')).toContain('drift: none')
+    expect(current.logs.join('\n')).not.toContain('added env key PLAIN')
+    expect(current.code()).toBe(0)
+
+    const parsed = JSON.parse(readFileSync(settings, 'utf8')) as Record<string, unknown>
+    writeFileSync(settings, `${JSON.stringify({ ...parsed, env: { PLAIN: 'stale' } }, null, 2)}\n`)
+    const stale = shown()
+    await settingsRenderCheckCommand(flags({ user: true, check: true }), stale.port)
+    expect(stale.logs.join('\n')).toContain('changed plain env value PLAIN')
+    expect(stale.logs.join('\n')).not.toContain('added env key PLAIN')
+    expect(stale.code()).toBe(1)
   })
 })
 
