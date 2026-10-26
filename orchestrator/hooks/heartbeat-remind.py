@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """PostToolUse hook: detached work without a watcher disappears from view.
 
-`bottega run start` returns before its worker does. Unless the session arms the heartbeat
-under Monitor, waiting work and a worker asking for a ruling look exactly like
-an abandoned session to the operator. Dispatch creates that obligation, so this
-hook puts the runnable command back in the model's context at that moment.
+Detached runs and board requests need a watcher. Unless the session arms the heartbeat
+under Monitor, waiting work and replies look exactly like an abandoned session to the
+operator. The command creating that obligation puts the runnable command back in the
+model's context through this hook.
 """
 from __future__ import annotations  # bool | None must parse on macOS system python 3.9
 
@@ -18,6 +18,7 @@ PROCESS_LIST_PS_TIMEOUT_SECONDS = 2
 
 DETACHED_DISPATCHES = {
     ("bottega", "run", "start"): ("run start", 3),
+    ("bottega", "board", "ask"): ("board ask", 3),
 }
 
 
@@ -73,14 +74,43 @@ def detached_dispatch(command: object):
             None,
         )
         if match is None:
-            continue
-        kind, width = match
+            if executable != "bottega" or tuple(words[index + 1 : index + 3]) != (
+                "board",
+                "post",
+            ):
+                continue
+            kind, width = "board post", 3
+        else:
+            kind, width = match
         args = []
         for arg in words[index + width :]:
             if arg in (";", "&", "|", "&&", "||"):
                 break
             args.append(arg)
-        return kind if "--follow" not in args else None
+        if kind == "run start":
+            if "--follow" not in args:
+                return kind
+            continue
+        if kind == "board ask":
+            return kind
+        if kind == "board post":
+            purpose = None
+            args = []
+            for arg in words[index + width :]:
+                if arg in (";", "&", "|", "&&", "||"):
+                    break
+                args.append(arg)
+            for arg_index, arg in enumerate(args):
+                if arg.startswith("--purpose="):
+                    purpose = arg.partition("=")[2]
+                elif arg == "--purpose" and arg_index + 1 < len(args):
+                    purpose = args[arg_index + 1]
+            if purpose == "request":
+                return "board post request"
+            if purpose is None and (
+                "--ack-required" in args or "--ack-required=true" in args
+            ):
+                return "board post request"
     return None
 
 

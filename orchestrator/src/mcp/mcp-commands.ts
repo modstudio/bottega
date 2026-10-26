@@ -3,6 +3,7 @@
 import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { serveDocsMcp } from './mcp.ts'
 import { mcpCompatibilityRows } from './mcp-compatibility-record.ts'
+import { bottegaMcpServerEntry } from './mcp-probe.ts'
 
 export async function mcpCommand(
   config: boolean,
@@ -41,11 +42,7 @@ export async function mcpCommand(
     throw new Error(`unknown mcp verb "${verb}"`)
   } else if (config)
     presentation.log(
-      JSON.stringify(
-        { mcpServers: { [MCP_SERVER_NAME]: { command: binary, args: ['mcp', 'serve'] } } },
-        null,
-        2,
-      ),
+      JSON.stringify({ mcpServers: { [MCP_SERVER_NAME]: bottegaMcpServerEntry(binary) } }, null, 2),
     )
   else await serveDocsMcp()
 }

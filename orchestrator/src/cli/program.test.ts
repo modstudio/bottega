@@ -45,6 +45,10 @@ test('the outer CLI classifies every informational invocation without consulting
   expect(isStoreFreeInvocation(['setup'])).toBeTrue()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
   expect(
+    isStoreFreeInvocation(['machine', 'config', 'get', 'delegation.review', '--json']),
+  ).toBeTrue()
+  expect(isStoreFreeInvocation(['machine', 'config', 'list', '--machine', '--json'])).toBeTrue()
+  expect(
     isStoreFreeInvocation(['gate', 'check', '--enabled'], {
       BOTTEGA_GATE_FACTS: '/tmp/facts.json',
     }),

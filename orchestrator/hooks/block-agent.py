@@ -46,6 +46,7 @@ let through cannot be tuned. A write that fails says so on stderr and falls back
 to a sidecar log rather than vanishing.
 
 Allowed through:
+  - delegation.implement or delegation.review = harness on this machine
   - NEEDS-WEB in the first 200 characters of the prompt or description
   - subagent_type in ALLOW                   Claude-specific knowledge
   - BOTTEGA_ALLOW_AGENT=1                       the human's override
@@ -66,11 +67,37 @@ DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
 # what it did is the thing this table exists to prevent, so a failed write has
 # to leave a mark somewhere rather than evaporate.
 FALLBACK_LOG = os.path.join(os.path.dirname(DB), "spawn-fallback.log")
+BOTTEGA_BIN = os.path.abspath(os.path.join(ORCHESTRATOR_ROOT, "..", "bin", "bottega"))
 
 # A declaration, not a vocabulary match. The old fuzzy list ("online", "docs",
 # "benchmark", "pricing") is gone: it is what made rewording work.
 DECLARED = re.compile(r"\bNEEDS[-_ ]?WEB\b", re.I)
 URL = re.compile(r"https?://")
+
+
+DELEGATION_KEYS = ("delegation.implement", "delegation.review")
+
+
+def harness_delegated_keys():
+    """Admit any native spawn when either class is harness; any read failure preserves the gate."""
+    try:
+        result = subprocess.run(
+            [BOTTEGA_BIN, "machine", "config", "list", "--machine", "--json"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        rows = json.loads(result.stdout)
+        enabled = [
+            row["key"]
+            for row in rows
+            if row.get("key") in DELEGATION_KEYS
+            and row.get("value") == "harness"
+        ]
+        return enabled
+    except Exception:
+        return []
 
 
 def mint_uuid7():
@@ -195,6 +222,11 @@ def main() -> int:
         log("ignored", f"unmatched tool {payload.get('tool_name')!r}", payload.get("tool_input") or {}, event, payload)
         return 0
     inp = payload.get("tool_input") or {}
+
+    harness_settings = harness_delegated_keys()
+    if harness_settings:
+        log("harness-delegation", ",".join(harness_settings), inp, event, payload)
+        return 0
 
     declaration_fields = (
         str(inp.get("description") or "")[:200],

@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
 import { BOARD_PURPOSES, defaultBoardPurpose } from '../../../shared/board-purpose.ts'
+import { assetPath } from '../../../shared/install-root.ts'
 import { readBoardNotices } from '../board/board-delivery.ts'
 import { resolveLocalBoardMessageIdentifier } from '../board/board-message-identifier.ts'
 import {
@@ -14,7 +15,11 @@ import {
   boardThread,
   boardWithdraw,
 } from '../board/board-operations.ts'
-import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
+import {
+  architectIdentity,
+  BOARD_BODY_MAX_CHARS,
+  BOARD_TITLE_MAX_CHARS,
+} from '../board/board-policy.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
 import { db } from '../database/db.ts'
@@ -28,6 +33,20 @@ const result = (value: unknown) => ({
     { type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value) },
   ],
 })
+
+function boardHeartbeatGuidance(
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const session = architectIdentity(env)?.session
+  if (!session) return null
+  return `Arm under Monitor from the main checkout: ${assetPath('orchestrator', 'hooks', 'orch-heartbeat.sh')} ${session}`
+}
+
+function withHeartbeatGuidance<T>(value: T, required: boolean): T | (T & { heartbeat: string }) {
+  if (!required) return value
+  const heartbeat = boardHeartbeatGuidance()
+  return heartbeat && typeof value === 'object' && value !== null ? { ...value, heartbeat } : value
+}
 
 function registerBoardPostTool(server: McpServer): void {
   server.registerTool(
@@ -47,20 +66,58 @@ function registerBoardPostTool(server: McpServer): void {
         expires_ms: z.number().int().positive().optional(),
       }),
     },
+    async (input) => {
+      const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ack_required))
+      return result(
+        withHeartbeatGuidance(
+          await boardPost({
+            audience: input.audience,
+            title: input.title,
+            body: input.body,
+            purpose,
+            task: input.task,
+            paths: input.path,
+            topics: input.topic,
+            ackRequired: input.ack_required,
+            deadlineMs: input.deadline_ms,
+            expiresMs: input.expires_ms,
+          }),
+          purpose === 'request',
+        ),
+      )
+    },
+  )
+}
+
+function registerBoardAskTool(server: McpServer): void {
+  server.registerTool(
+    'board_ask',
+    {
+      description: `Ask an architect-board question. ${ARCHITECTS_AUDIENCE_HELP}`,
+      inputSchema: z.object({
+        audience: z.string().min(1),
+        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
+        task: z.string().min(1).optional(),
+        path: z.array(z.string()).optional(),
+        topic: z.array(z.string()).optional(),
+        expires_ms: z.number().int().positive().optional(),
+      }),
+    },
     async (input) =>
       result(
-        await boardPost({
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          purpose: defaultBoardPurpose(input.purpose, Boolean(input.ack_required)),
-          task: input.task,
-          paths: input.path,
-          topics: input.topic,
-          ackRequired: input.ack_required,
-          deadlineMs: input.deadline_ms,
-          expiresMs: input.expires_ms,
-        }),
+        withHeartbeatGuidance(
+          await boardAsk({
+            audience: input.audience,
+            title: input.title,
+            body: input.body,
+            task: input.task,
+            paths: input.path,
+            topics: input.topic,
+            expiresMs: input.expires_ms,
+          }),
+          true,
+        ),
       ),
   )
 }
@@ -89,37 +146,7 @@ function registerBoardReplyTool(server: McpServer): void {
   )
 }
 
-export function registerBoardTools(server: McpServer): void {
-  registerBoardClaimTools(server)
-  registerBoardPostTool(server)
-  server.registerTool(
-    'board_ask',
-    {
-      description: `Ask an architect-board question. ${ARCHITECTS_AUDIENCE_HELP}`,
-      inputSchema: z.object({
-        audience: z.string().min(1),
-        title: z.string().min(1).max(BOARD_TITLE_MAX_CHARS),
-        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
-        task: z.string().min(1).optional(),
-        path: z.array(z.string()).optional(),
-        topic: z.array(z.string()).optional(),
-        expires_ms: z.number().int().positive().optional(),
-      }),
-    },
-    async (input) =>
-      result(
-        await boardAsk({
-          audience: input.audience,
-          title: input.title,
-          body: input.body,
-          task: input.task,
-          paths: input.path,
-          topics: input.topic,
-          expiresMs: input.expires_ms,
-        }),
-      ),
-  )
-  registerBoardReplyTool(server)
+function registerBoardThreadTool(server: McpServer): void {
   server.registerTool(
     'board_thread',
     {
@@ -129,6 +156,9 @@ export function registerBoardTools(server: McpServer): void {
     },
     async ({ id }) => result(await boardThread(id)),
   )
+}
+
+function registerBoardAcceptTool(server: McpServer): void {
   server.registerTool(
     'board_accept',
     {
@@ -140,6 +170,15 @@ export function registerBoardTools(server: McpServer): void {
     },
     async ({ question_id, reply_id }) => result(await boardAccept(question_id, reply_id)),
   )
+}
+
+export function registerBoardTools(server: McpServer): void {
+  registerBoardClaimTools(server)
+  registerBoardPostTool(server)
+  registerBoardAskTool(server)
+  registerBoardReplyTool(server)
+  registerBoardThreadTool(server)
+  registerBoardAcceptTool(server)
   server.registerTool(
     'board_file_note',
     {

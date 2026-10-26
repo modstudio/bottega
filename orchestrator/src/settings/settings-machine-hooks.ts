@@ -32,7 +32,7 @@ const SCRIPT_FILES = [
 
 type ScriptFile = (typeof SCRIPT_FILES)[number]
 type HookEvent = 'PreToolUse' | 'SubagentStart' | 'PostToolUse' | 'Stop' | 'SessionStart'
-type HookCondition = string | { absoluteBottega: 'run start' }
+type HookCondition = string | { absoluteBottega: 'run start' | 'board ask' | 'board post' }
 type ProductHookDeclaration = {
   event: HookEvent
   matcher?: string
@@ -91,6 +91,42 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     event: 'PostToolUse',
     matcher: 'Bash',
     if: { absoluteBottega: 'run start' },
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: `Bash(${PLATFORM_SLUG} board ask:*)`,
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: `Bash(./bin/${PLATFORM_SLUG} board ask:*)`,
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: { absoluteBottega: 'board ask' },
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: `Bash(${PLATFORM_SLUG} board post:*)`,
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: `Bash(./bin/${PLATFORM_SLUG} board post:*)`,
+    script: 'heartbeat-remind.py',
+  },
+  {
+    event: 'PostToolUse',
+    matcher: 'Bash',
+    if: { absoluteBottega: 'board post' },
     script: 'heartbeat-remind.py',
   },
   {

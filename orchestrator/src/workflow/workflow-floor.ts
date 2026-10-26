@@ -2,6 +2,8 @@
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { classifyRunIdentifier } from '../run/run-identifier-grammar.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 import {
   commandExitBindingRefusal,
@@ -12,8 +14,6 @@ import {
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
-const hasRecordIdShape = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
 export const floorKinds = [
   'ruling',
@@ -29,7 +29,7 @@ export const floorGuidance = {
   ruling: `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`; where you rule the step yourself, pass \`self_ruling\` with \`self_ruling_basis\` (or \`--self-ruling <text>\` with \`--basis <text>\`) on the closing call`,
   'command-exit': `run it with \`${PLATFORM_SLUG} workflow exec -- <command>\` and pass \`--artifact exec:<id>\``,
   'recorded-artifact':
-    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>`',
+    'record or attach the artifact and pass `--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>`',
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
@@ -183,7 +183,7 @@ export function flagForFloor(kind: FloorKind): string {
   if (kind === 'command-exit')
     return '--gate <gate execution id> or --run <run id> or --artifact probe:<id> or --artifact exec:<id>'
   if (kind === 'recorded-artifact')
-    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>'
+    return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
@@ -209,9 +209,11 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (attachedText && hasRecordIdShape(attachedText[1]!))
     return { kind: 'attached-text', id: attachedText[1]!.toLowerCase() }
   if (githubPullRequestUrlIn(trimmed) === trimmed) return { kind: 'pull-request', url: trimmed }
-  if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
+  const runIdentifier = classifyRunIdentifier(trimmed)
+  if (runIdentifier?.kind === 'number') return { kind: 'id', id: runIdentifier.number }
+  if (runIdentifier?.kind === 'record-id') return { kind: 'run', id: runIdentifier.recordId }
   return {
-    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number, probe:<id>, exec:<id>, attached-text:<UUID>, or a GitHub pull-request link`,
+    error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number or run id, probe:<id>, exec:<id>, attached-text:<UUID>, or a GitHub pull-request link`,
   }
 }
 

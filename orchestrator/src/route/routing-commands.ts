@@ -6,7 +6,7 @@ import { formatLensProfileSource, resolveLens } from '../lens/lenses.ts'
 import { projectAt } from '../project/projects.ts'
 import { bradleyTerry } from '../score/agreement.ts'
 import { duelMatrices } from '../score/duel.ts'
-import { guide } from '../state/guide.ts'
+import { guide, type JobGuide } from '../state/guide.ts'
 import { evidenceFor, MIN_SAMPLE, pick, promptSizeBucketLabel, scoreboard } from './route.ts'
 import {
   type RoutingBacktest,
@@ -37,6 +37,10 @@ type PickPresentation = {
       }
     | undefined
   >
+}
+
+function guideRouteLine(g: JobGuide): string {
+  return g.delegation === 'harness' ? `  ${g.reason}` : `  routes to ${g.routesTo}   (${g.reason})`
 }
 
 export function routingBacktestCommand(
@@ -262,7 +266,7 @@ export function guideCommand(flags: RoutingFlags, presentation: RoutingPresentat
             : 'no judgments'),
       )
     }
-    log(`  routes to ${g.routesTo}   (${g.reason})`)
+    log(guideRouteLine(g))
   }
 
   if (tradeoffs.length) {

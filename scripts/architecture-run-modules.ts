@@ -1,5 +1,13 @@
 export const runModuleSpecs = [
   {
+    file: 'orchestrator/src/jobs/delegation.ts',
+    allowed: ['../../../shared/brand.ts', '../../../shared/delegation-mode.ts', './jobs.ts'],
+  },
+  {
+    file: 'orchestrator/src/health/delegation-doctor.ts',
+    allowed: ['../../../shared/delegation-mode.ts', '../jobs/delegation.ts', '../jobs/jobs.ts'],
+  },
+  {
     file: 'orchestrator/src/run/run-subscription-cost.ts',
     allowed: ['../agent/agents.ts'],
   },
@@ -43,6 +51,10 @@ export const runModuleSpecs = [
   {
     file: 'orchestrator/src/run/run-number.ts',
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
+  },
+  {
+    file: 'orchestrator/src/run/run-identifier-grammar.ts',
+    allowed: ['../../../shared/record-id.ts'],
   },
   {
     file: 'orchestrator/src/run/question-number.ts',

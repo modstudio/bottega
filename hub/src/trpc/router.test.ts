@@ -99,12 +99,12 @@ const configList = mock(
 )
 const configDelete = mock(async (_key: string, _expected?: number) => '')
 const machineConfigList = mock(
-  async () => [] as Array<{ key: string; value: string; scope: 'local user' }>,
+  async () => [] as Array<{ key: string; value: string; scope: 'machine' }>,
 )
 const machineConfigSet = mock(async (key: string, value: string) => ({
   key,
   value,
-  scope: 'local user' as const,
+  scope: 'machine' as const,
 }))
 const machineConfigDelete = mock(async (_key: string) => '')
 const machinePermissions = mock(async () => ({
@@ -897,9 +897,9 @@ describe('managed context', () => {
 
   test('writes and removes machine autonomy and reports machine values on reads', async () => {
     machineConfigList.mockResolvedValueOnce([
-      { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
-      { key: 'autonomy.ship-to', value: 'production', scope: 'local user' },
-      { key: 'autonomy.rulings', value: 'agent', scope: 'local user' },
+      { key: 'autonomy.stage.review', value: 'auto', scope: 'machine' },
+      { key: 'autonomy.ship-to', value: 'production', scope: 'machine' },
+      { key: 'autonomy.rulings', value: 'agent', scope: 'machine' },
     ])
     const read = await caller.context.autonomy.get({ project: 'alpha' })
     expect(read.registered && read.stages[0]?.machineValue).toBe('auto')
@@ -907,9 +907,9 @@ describe('managed context', () => {
     expect(read.registered && read.rulings.machineValue).toBe('agent')
 
     machineConfigList.mockResolvedValueOnce([
-      { key: 'autonomy.stage.review', value: 'invalid-stage', scope: 'local user' },
-      { key: 'autonomy.ship-to', value: 'invalid-ship-to', scope: 'local user' },
-      { key: 'autonomy.rulings', value: 'invalid-rulings', scope: 'local user' },
+      { key: 'autonomy.stage.review', value: 'invalid-stage', scope: 'machine' },
+      { key: 'autonomy.ship-to', value: 'invalid-ship-to', scope: 'machine' },
+      { key: 'autonomy.rulings', value: 'invalid-rulings', scope: 'machine' },
     ])
     const invalidRead = await caller.context.autonomy.get({ project: 'alpha' })
     expect(invalidRead.registered && invalidRead.stages[0]?.machineValue).toBeUndefined()
@@ -917,7 +917,7 @@ describe('managed context', () => {
     expect(invalidRead.registered && invalidRead.rulings.machineValue).toBeUndefined()
 
     machineConfigList.mockResolvedValueOnce([
-      { key: 'autonomy.stage.review', value: 'review', scope: 'local user' },
+      { key: 'autonomy.stage.review', value: 'review', scope: 'machine' },
     ])
     await caller.context.autonomy.setMachine({
       project: 'alpha',
@@ -928,7 +928,7 @@ describe('managed context', () => {
     expect(machineConfigSet).toHaveBeenLastCalledWith('autonomy.stage.review', 'review')
 
     machineConfigList
-      .mockResolvedValueOnce([{ key: 'autonomy.ship-to', value: 'trunk', scope: 'local user' }])
+      .mockResolvedValueOnce([{ key: 'autonomy.ship-to', value: 'trunk', scope: 'machine' }])
       .mockResolvedValueOnce([])
     const cleared = await caller.context.autonomy.clearMachine({
       project: 'alpha',

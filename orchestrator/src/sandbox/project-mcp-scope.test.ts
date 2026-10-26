@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { McpServerConfig } from '../mcp/mcp-probe.ts'
 import {
   mergeMcpSetupHeader,
@@ -44,6 +44,23 @@ test('a reading run attaches the credential-free reader proxy and withholds noth
   expect(selection.servers.local!.args).toContain('starship')
   expect(selection.withheld).toEqual([])
   expect(JSON.stringify(selection)).not.toContain('literal-secret')
+})
+
+test('a reading run of the project that owns the platform server is handed its proxy with no tree entry', () => {
+  const selection = selectProjectMcpServers(
+    'reader',
+    {},
+    { name: PLATFORM_SLUG, path: '/project', settings: {} },
+    '/project',
+  )
+  expect(selection?.kind).toBe('reader')
+  if (selection?.kind !== 'reader') return
+  expect(Object.keys(selection.servers)).toEqual([MCP_SERVER_NAME])
+  expect(selection.servers[MCP_SERVER_NAME]!.args.slice(-3)).toEqual([
+    PLATFORM_SLUG,
+    MCP_SERVER_NAME,
+    '/project',
+  ])
 })
 
 test('the run allowlist decides which servers attach and is checked before withholding', () => {

@@ -47,7 +47,7 @@ test('an orchestrator worker run cannot write autonomy while an operator process
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'promote', { BOTTEGA_RUN_ID: '6731' }),
   ).toThrow(
-    `refusing autonomy config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config set autonomy.ship-to production`,
+    `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config set autonomy.ship-to production`,
   )
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'promote', {}, operatorPid, operatorInventory),
@@ -69,11 +69,24 @@ test('a descendant of an orchestrator run executor cannot write autonomy after u
     ],
   }
   expect(() => assertConfigWriteAllowed('autonomy.release', 'promote', {}, 300, inventory)).toThrow(
-    'refusing autonomy config write from an orchestrator worker run',
+    'refusing operator-only machine config write from an orchestrator worker run',
   )
   expect(() =>
     assertConfigWriteAllowed('autonomy.release', 'promote', {}, 400, inventory),
   ).not.toThrow()
+})
+
+test('an orchestrator worker run cannot change machine delegation', () => {
+  expect(() =>
+    assertConfigWriteAllowed('delegation.implement', 'harness', { BOTTEGA_RUN_ID: '6731' }),
+  ).toThrow(
+    `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config set --machine delegation.implement harness`,
+  )
+  expect(() =>
+    assertConfigWriteAllowed('delegation.review', undefined, { BOTTEGA_RUN_ID: '6731' }),
+  ).toThrow(
+    `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config delete --machine delegation.review`,
+  )
 })
 
 test('an explicit invalid ship-to write is refused with the shared allowed list', () => {

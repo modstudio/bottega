@@ -84,7 +84,7 @@ describe('versioned lifecycle retirement', () => {
     ).toThrow('workflow "retired-state" version 1 is retired')
   })
 
-  test('does not list a withdrawn draft as the current draft', () => {
+  test('lists a withdrawn draft only when the listing asks for retired workflows', () => {
     const d = database()
     const draft = setWorkflowLocal(
       'draft-listing',
@@ -95,8 +95,9 @@ describe('versioned lifecycle retirement', () => {
     )
     retireWorkflowLocal('draft-listing', draft.n, 'withdraw', 'architect', d)
 
+    expect(listResolvedWorkflows(null, d).map(({ slug }) => slug)).not.toContain('draft-listing')
     expect(
-      listResolvedWorkflows(null, d).find(({ slug }) => slug === 'draft-listing'),
+      listResolvedWorkflows(null, d, true).find(({ slug }) => slug === 'draft-listing'),
     ).toMatchObject({
       production_n: null,
       draft_n: null,

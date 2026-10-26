@@ -11,6 +11,7 @@ import sys
 import base64
 import binascii
 import json
+import datetime
 from enum import Enum, auto
 from typing import NamedTuple
 
@@ -21,7 +22,10 @@ NOTICE_REASON_MAX_CHARS = 240
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS = 0
 HEARTBEAT_CLEAR_EXIT_STATUS = 10
 
-SECRET_ASSIGNMENT = re.compile(r"\b(?:token|key|secret|password)\s*=\s*\S+", re.IGNORECASE)
+SECRET_ASSIGNMENT = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_-])*(?:token|key|secret|password)\s*[:=]\s*\S+",
+    re.IGNORECASE,
+)
 SECRET_BEARER = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
 SECRET_AUTHORIZATION = re.compile(r"\bAuthorization\s*[:=]\s*\S+", re.IGNORECASE)
 SECRET_TOKEN_PREFIX = re.compile(
@@ -86,6 +90,37 @@ class HeartbeatState(Enum):
     CLEAR = auto()
 
 
+def _timestamp(value: str) -> float:
+    return datetime.datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+
+
+def open_board_requests(
+    roots: list[dict], replies: list[dict], author_session: str, now: float
+) -> list[dict]:
+    """Return authored request roots still waiting for a delivered external reply."""
+    answered = {
+        reply.get("root_id")
+        for reply in replies
+        if reply.get("author_session") != author_session and reply.get("delivered_at")
+    }
+    open_roots = []
+    for root in roots:
+        if root.get("author_session") != author_session:
+            continue
+        if root.get("kind") != "question" and root.get("purpose") != "request":
+            continue
+        expires_at = root.get("expires_at")
+        if (
+            not isinstance(expires_at, str)
+            or root.get("withdrawn_at") is not None
+            or _timestamp(expires_at) <= now
+            or root.get("id") in answered
+        ):
+            continue
+        open_roots.append(root)
+    return sorted(open_roots, key=lambda root: str(root.get("id")))
+
+
 def heartbeat_decision(
     timestamp: str,
     inbox: list[dict],
@@ -94,6 +129,8 @@ def heartbeat_decision(
     stalled_count: int,
     stalled_detail: str,
     waiting_detail: str,
+    open_request_count: int = 0,
+    open_request_detail: str = "",
 ) -> HeartbeatDecision:
     product = "bottega"
     lines = []
@@ -105,7 +142,12 @@ def heartbeat_decision(
         state = HeartbeatState.BLOCKED
     elif stalled_count > 0:
         state = HeartbeatState.STALLED
-    elif run_count > 0 or landing_count > 0 or inbox_decision.parked_here > 0:
+    elif (
+        run_count > 0
+        or landing_count > 0
+        or inbox_decision.parked_here > 0
+        or open_request_count > 0
+    ):
         state = HeartbeatState.WAITING
     else:
         state = HeartbeatState.CLEAR
@@ -123,9 +165,15 @@ def heartbeat_decision(
             if inbox_decision.parked_here
             else ""
         )
-        detail = f": {waiting_detail}" if waiting_detail else ""
+        details = [detail for detail in (waiting_detail, open_request_detail) if detail]
+        detail = f": {' | '.join(details)}" if details else ""
+        requests = (
+            f" and {open_request_count} open request(s)"
+            if open_request_count
+            else ""
+        )
         lines.append(
-            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s){parked}, "
+            f"[{timestamp}] WAITING - {run_count} run(s) and {landing_count} landing(s){parked}{requests}, "
             f"nothing needed from you{detail}"
         )
     return HeartbeatDecision(lines=lines, should_exit=state == HeartbeatState.CLEAR)
@@ -155,6 +203,8 @@ if __name__ == "__main__":
             int(os.environ["HEARTBEAT_STALLED"]),
             os.environ["HEARTBEAT_STALLED_DETAIL"],
             os.environ["HEARTBEAT_WAITING_DETAIL"],
+            int(os.environ.get("HEARTBEAT_OPEN_REQUESTS", "0")),
+            os.environ.get("HEARTBEAT_OPEN_REQUEST_DETAIL", ""),
         )
         rendered = "\n".join(decision.lines)
         if rendered:
@@ -167,5 +217,20 @@ if __name__ == "__main__":
     elif sys.argv[1:] == ["inbox"]:
         decision = decide_inbox_questions(json.load(sys.stdin))
         print(decision.state_key)
+    elif sys.argv[1:] and sys.argv[1] == "requests" and len(sys.argv) == 3:
+        rows = json.load(sys.stdin)
+        requests = open_board_requests(
+            rows["roots"],
+            rows["replies"],
+            sys.argv[2],
+            datetime.datetime.now(datetime.timezone.utc).timestamp(),
+        )
+        print(
+            "STATE",
+            len(requests),
+            " | ".join(str(root.get("label")) for root in requests),
+            ",".join(str(root.get("id")) for root in requests),
+            sep="\t",
+        )
     else:
         print(monitor_failure_reason(sys.stdin.buffer.read()))

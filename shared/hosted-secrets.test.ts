@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { ConfigClient } from './config-client.ts'
+import { type ConfigClient, ConfigClientError } from './config-client.ts'
 import { HostedSecretError, readHostedSecrets } from './hosted-secrets.ts'
 import { machineKeyId } from './machine-key-id.ts'
 import {
@@ -24,28 +24,35 @@ async function fixture() {
     senderPublicKey: machine.publicKey,
     recipientPublicKey: machine.publicKey,
   })
-  const envelope = sealValue({
-    dek,
-    plaintext: new TextEncoder().encode('hosted-value'),
-    valueContext: {
-      spaceId,
-      userId,
-      keyName: 'TOKEN',
-      environment: 'default',
-      dekId,
-      rowVersion: 1,
-    },
+  const rowFor = (key: string, scope: 'user' | 'space', plaintext: string) => ({
+    key,
+    environment: 'default',
+    scope,
+    dekId,
+    rowVersion: 1,
+    updatedAt: '2026-09-18T12:00:00.000Z',
+    envelope: Buffer.from(
+      sealValue({
+        dek,
+        plaintext: new TextEncoder().encode(plaintext),
+        valueContext: {
+          spaceId,
+          userId: scope === 'user' ? userId : null,
+          keyName: key,
+          environment: 'default',
+          dekId,
+          rowVersion: 1,
+        },
+      }),
+    ).toString('base64url'),
   })
+  const rows = new Map([['user:TOKEN', rowFor('TOKEN', 'user', 'hosted-value')]])
   const client = {
-    getSecret: async () => ({
-      key: 'TOKEN',
-      environment: 'default',
-      scope: 'user' as const,
-      dekId,
-      rowVersion: 1,
-      updatedAt: '2026-09-18T12:00:00.000Z',
-      envelope: Buffer.from(envelope).toString('base64url'),
-    }),
+    getSecret: async (name: string, scope: string) => {
+      const row = rows.get(`${scope}:${name}`)
+      if (!row) throw new ConfigClientError('response', `/v1/config/secrets/${name}`, 404)
+      return row
+    },
     getDataKey: async () => ({
       id: dekId,
       version: 1,
@@ -67,6 +74,8 @@ async function fixture() {
     pinnedIdentity: { spaceId, userId },
     dek,
     client,
+    rows,
+    rowFor,
     trust: {
       [keyId]: {
         public_key: Buffer.from(machine.publicKey).toString('base64url'),
@@ -79,7 +88,42 @@ async function fixture() {
 
 test('hosted resolver fetches, unwraps and opens a sealed value', async () => {
   const deps = await fixture()
-  await expect(readHostedSecrets(['TOKEN'], deps)).resolves.toEqual({ TOKEN: 'hosted-value' })
+  await expect(readHostedSecrets(['TOKEN'], deps)).resolves.toEqual({
+    values: { TOKEN: 'hosted-value' },
+    sealedEmpty: [],
+  })
+})
+
+test('a sealed copy that is blank resolves as absent and reports itself sealed empty', async () => {
+  const deps = await fixture()
+  deps.rows.set('user:TOKEN', deps.rowFor('TOKEN', 'user', '   '))
+  await expect(readHostedSecrets(['TOKEN'], deps)).resolves.toEqual({
+    values: { TOKEN: undefined },
+    sealedEmpty: ['TOKEN'],
+  })
+})
+
+test('a blank user-scope copy opens the space-scope copy exactly as an absent row would', async () => {
+  const deps = await fixture()
+  deps.rows.delete('user:TOKEN')
+  deps.rows.set('space:TOKEN', deps.rowFor('TOKEN', 'space', 'space-value'))
+  await expect(readHostedSecrets(['TOKEN'], deps)).resolves.toEqual({
+    values: { TOKEN: 'space-value' },
+    sealedEmpty: [],
+  })
+  deps.rows.set('user:TOKEN', deps.rowFor('TOKEN', 'user', ''))
+  await expect(readHostedSecrets(['TOKEN'], deps)).resolves.toEqual({
+    values: { TOKEN: 'space-value' },
+    sealedEmpty: [],
+  })
+})
+
+test('a name no scope holds is absent without being reported sealed empty', async () => {
+  const deps = await fixture()
+  await expect(readHostedSecrets(['ABSENT'], deps)).resolves.toEqual({
+    values: { ABSENT: undefined },
+    sealedEmpty: [],
+  })
 })
 
 test('untrusted sender refusal carries the requested secret name', async () => {

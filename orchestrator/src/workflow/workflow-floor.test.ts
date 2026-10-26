@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 const OBLIGATION_UUID = '00000000-0000-4000-8000-000000000011'
 const MISSING_OBLIGATION_UUID = '00000000-0000-4000-8000-000000000099'
 const ATTACHMENT_UUID = '00000000-0000-4000-8000-000000000014'
+const RUN_RECORD_ID = '00000000-0000-4000-8000-00000000008a'
 
 import {
   catalogueFloors,
@@ -324,7 +325,7 @@ test('a run offered to an artifact floor names the same run artifact form', () =
   expect(decision).toEqual({
     action: 'refuse',
     message:
-      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
+      'floor recorded-artifact is unmet; pass --artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>; run 8 is accepted as --artifact 8 when it has a reply or a recorded artifact',
   })
 })
 
@@ -1015,7 +1016,10 @@ test('parseArtifactRef accepts each recorded-artifact form', () => {
     url: 'https://github.com/acme/app/pull/15',
   })
   expect(parseArtifactRef('8')).toEqual({ kind: 'id', id: 8 })
-  expect(parseArtifactRef('nope')).toMatchObject({ error: expect.stringContaining('--artifact') })
+  expect(parseArtifactRef(RUN_RECORD_ID)).toEqual({ kind: 'run', id: RUN_RECORD_ID })
+  expect(parseArtifactRef('nope')).toMatchObject({
+    error: expect.stringContaining('a run number or run id'),
+  })
 })
 
 test('catalogueFloors marks deferrable kinds and pull-request tracker floors', () => {

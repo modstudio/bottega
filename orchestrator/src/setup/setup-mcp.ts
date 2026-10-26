@@ -3,7 +3,7 @@
 
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { bottegaEntryArgv, bottegaMcpServeArgv } from '../../../shared/self-spawn.ts'
 import { LEGACY_MCP_SERVER_NAMES, type LegacyMcpServerName } from './setup-mcp-config.ts'
 
 export type { LegacyMcpServerName } from './setup-mcp-config.ts'
@@ -78,8 +78,9 @@ export type HarnessMcpFacts = {
 /** The stable entries persisted in harness configuration. */
 export function stableMcpServers(): McpServer[] {
   const [command, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
+  const [serving, ...servingArgs] = bottegaMcpServeArgv()
   return [
-    { name: MCP_SERVER_NAME, command: command!, args: [...prefix, 'mcp', 'serve'] },
+    { name: MCP_SERVER_NAME, command: serving!, args: servingArgs },
     {
       name: WORKER_MCP_SERVER_NAME,
       command: command!,

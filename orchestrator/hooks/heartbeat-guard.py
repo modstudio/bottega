@@ -10,6 +10,7 @@ session on every later stop.
 from __future__ import annotations  # bool | None must parse on macOS system python 3.9
 
 import hashlib
+import importlib.util
 import json
 import os
 import shlex
@@ -26,6 +27,15 @@ DB = os.environ.get("BOTTEGA_ORCHESTRATOR_DB") or subprocess.check_output(
     ["bun", "--no-env-file", os.path.join(ROOT, "shared", "state-directory.ts"), "orchestrator", "database"],
     text=True,
 ).strip()
+
+
+def load_hook_module(name: str, filename: str):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(os.path.dirname(__file__), filename))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {filename}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def heartbeat_path() -> str:
@@ -139,6 +149,19 @@ def live_run_ids(session_id: str):
         return None
 
 
+def open_request_threads(session_id: str, board_observation, heartbeat_decision):
+    """Open requests authored here, [] if none, None if the store cannot answer."""
+    try:
+        rows = board_observation.observe_board_requests(
+            DB, session_id, heartbeat_decision.contains_secret_shaped
+        )
+        return heartbeat_decision.open_board_requests(
+            rows["roots"], rows["replies"], session_id, __import__("time").time()
+        )
+    except Exception:
+        return None
+
+
 def first_observation(session_id: str, run_ids) -> bool:
     key = json.dumps([session_id, run_ids], separators=(",", ":"))
     name = hashlib.sha256(key.encode()).hexdigest()
@@ -160,16 +183,29 @@ def first_observation(session_id: str, run_ids) -> bool:
 
 def main() -> int:
     try:
+        try:
+            heartbeat_decision = load_hook_module("heartbeat_decision", "heartbeat-decision.py")
+            board_observation = load_hook_module(
+                "heartbeat_board_observation", "heartbeat-board-observation.py"
+            )
+        except Exception:
+            heartbeat_decision = board_observation = None
         payload = json.load(sys.stdin)
         sid = payload.get("session_id") or os.environ.get("CLAUDE_CODE_SESSION_ID")
         if not isinstance(sid, str) or not sid:
             return 0
         run_ids = live_run_ids(sid) or []
         landing_ids = live_landing_ids(sid)
+        request_rows = (
+            None
+            if board_observation is None or heartbeat_decision is None
+            else open_request_threads(sid, board_observation, heartbeat_decision)
+        )
         # None from the landing query is uncertainty, not absence: count it as
         # live so an unreadable store cannot be reported as quiescence.
         landings = ["unknown"] if landing_ids is None else [str(i) for i in landing_ids]
-        if not run_ids and not landings:
+        requests = [] if request_rows is None else request_rows
+        if not run_ids and not landings and not requests and request_rows is not None:
             return 0
 
         arm = f"{heartbeat_path()} {sid}"
@@ -179,21 +215,38 @@ def main() -> int:
             return 0
         count = len(run_ids)
         landing_count = len(landings)
+        request_count = len(requests)
         work = (
             f"{count} live bottega run{'s' if count != 1 else ''}"
             f" and {landing_count} landing{'s' if landing_count != 1 else ''}"
+            f" and {request_count} open request{'s' if request_count != 1 else ''}"
         )
         if landing_ids is None:
             work += " (landing store unreadable; assuming live)"
-        if first_observation(sid, [*run_ids, *[f"landing:{item}" for item in landings]]):
+        if request_rows is None:
+            work += " (board store unreadable; open requests unknown)"
+        elif requests:
+            work += ": " + " | ".join(str(row["label"]) for row in requests)
+        observed = [
+            *run_ids,
+            *[f"landing:{item}" for item in landings],
+            *[f"request:{row['id']}" for row in requests],
+        ]
+        blocking_work = bool(run_ids or landings)
+        if blocking_work and first_observation(sid, observed):
             reason = (
                 f"{work} for this session have no heartbeat. "
                 f"Arm under Monitor from the main checkout: {arm}"
             )
             sys.stdout.write(json.dumps({"decision": "block", "reason": reason}) + "\n")
         else:
+            prefix = (
+                "Allowing stop after the one-shot heartbeat guard: "
+                if blocking_work
+                else "Allowing stop: "
+            )
             warning = (
-                f"Allowing stop after the one-shot heartbeat guard: {work} remain unarmed. "
+                f"{prefix}{work} remain unarmed. "
                 f"Arm under Monitor: {arm}"
             )
             sys.stdout.write(json.dumps({"systemMessage": warning}) + "\n")

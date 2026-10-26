@@ -47,6 +47,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-floor.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/record-id.ts',
+    '../run/run-identifier-grammar.ts',
     './probe-identifier.ts',
     './workflow-floor-refusal.ts',
   ]),
@@ -184,6 +186,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-result.ts',
     './workflow-cursor-autonomy.ts',
     './workflow-cursor-adoption.ts',
+    './workflow-compose-branch.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-selection.ts',
     './workflow-step-reference.ts',

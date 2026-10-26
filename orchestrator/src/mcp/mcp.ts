@@ -40,6 +40,11 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import {
+  type CommitCountPort,
+  type LandingBranchPorts,
+  workflowComposeBranchRefusal,
+} from '../workflow/workflow-compose-branch.ts'
+import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
   ruleWorkflow,
@@ -366,7 +371,82 @@ export async function fileIssue(
   }
 }
 
-export function createDocsMcpServer(): McpServer {
+/** Composes a workflow for the MCP caller, refusing one whose branch carries nothing to land. */
+async function composeWorkflowToolResult(
+  input: {
+    slug: string
+    project: string
+    mode?: string
+    args?: Record<string, string>
+    version?: number
+    catalogue_version?: number
+    autonomy?: string
+  },
+  commitCount?: CommitCountPort,
+) {
+  const refusal = workflowComposeBranchRefusal({
+    workflow: input.slug,
+    project: input.project,
+    args: input.args ?? {},
+    ...(commitCount ? { commitCount } : {}),
+  })
+  if (refusal) throw new Error(refusal)
+  const selection = { version: input.version, catalogueVersion: input.catalogue_version }
+  const args = input.args ?? {}
+  const preliminary = composeWorkflow(
+    input.slug,
+    input.project,
+    input.mode,
+    args,
+    undefined,
+    selection,
+  )
+  const resolved = await resolveProjectAutonomy(
+    input.project,
+    preliminary.workflow.slug,
+    preliminary.workflow.defaultPreset,
+    catalogueStepsForAutonomy(preliminary.steps),
+    parseAutonomy(input.autonomy, 'session'),
+  )
+  return composeWorkflow(
+    input.slug,
+    input.project,
+    input.mode,
+    args,
+    undefined,
+    selection,
+    resolved,
+  )
+}
+
+/**
+ * Registers the workflow identity listing, which hides retired rows unless the caller asks for
+ * them with `retired`.
+ */
+function registerWorkflowListTool(server: McpServer): void {
+  server.registerTool(
+    'list_workflows',
+    {
+      description: 'List workflow identities and their production and draft versions.',
+      inputSchema: z.object({
+        retired: z
+          .boolean()
+          .optional()
+          .describe('include workflows whose only versions are retired'),
+      }),
+    },
+    async ({ retired }) =>
+      text(
+        listResolvedWorkflows(
+          resolveMcpWorkflowSpace(process.cwd()).spaceId,
+          undefined,
+          retired ?? false,
+        ),
+      ),
+  )
+}
+
+export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
     console.error(
@@ -394,14 +474,7 @@ export function createDocsMcpServer(): McpServer {
   registerOperatorTools(server)
   registerBoardTools(server)
   registerSetupTools(server)
-
-  server.registerTool(
-    'list_workflows',
-    {
-      description: 'List workflow identities and their production and draft versions.',
-    },
-    async () => text(listResolvedWorkflows(resolveMcpWorkflowSpace(process.cwd()).spaceId)),
-  )
+  registerWorkflowListTool(server)
 
   server.registerTool(
     'compose_workflow',
@@ -418,21 +491,10 @@ export function createDocsMcpServer(): McpServer {
         autonomy: z.string().optional(),
       }),
     },
-    async ({ slug, project, mode, args, version, catalogue_version, autonomy }) => {
-      const selection = { version, catalogueVersion: catalogue_version }
-      const preliminary = composeWorkflow(slug, project, mode, args ?? {}, undefined, selection)
-      const resolved = await resolveProjectAutonomy(
-        project,
-        preliminary.workflow.slug,
-        preliminary.workflow.defaultPreset,
-        catalogueStepsForAutonomy(preliminary.steps),
-        parseAutonomy(autonomy, 'session'),
-      )
-      return text(composeWorkflow(slug, project, mode, args ?? {}, undefined, selection, resolved))
-    },
+    async (input) => text(await composeWorkflowToolResult(input, ports.commitCount)),
   )
 
-  registerWorkflowStepTool(server)
+  registerWorkflowStepTool(server, ports.commitCount)
 
   server.registerTool(
     'attach_workflow_text',
@@ -898,5 +960,5 @@ export function createDocsMcpServer(): McpServer {
 }
 
 export async function serveDocsMcp(): Promise<void> {
-  serveStdio(createDocsMcpServer)
+  serveStdio(() => createDocsMcpServer())
 }

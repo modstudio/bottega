@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { resolve } from 'node:path'
 import { Client } from '@modelcontextprotocol/client'
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record/schema.ts'
 import { BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
@@ -9,6 +11,7 @@ import { registerBoardTools } from './mcp-board-tools.ts'
 
 let identityKeys: string[] = []
 let identityEnvironment: Record<string, string | undefined> = {}
+const postingCwd = resolve(import.meta.dir, '../../..')
 
 beforeEach(() => {
   identityKeys = [
@@ -82,7 +85,7 @@ test('board_post MCP schema mirrors the title size ceiling before service storag
 
 test('board_reply MCP stores and applies its audience option through the shared service', async () => {
   const root = postNotice(
-    { audience: 'operator', title: 'MCP reply audience', body: 'Address the chosen reader.' },
+    { audience: 'operator', title: 'MCP reply audience', body: 'Pass the audience through.' },
     {},
   )
   const result = await withBoardClient((client) =>
@@ -91,7 +94,7 @@ test('board_reply MCP stores and applies its audience option through the shared 
       arguments: {
         root_id: String(root.recordId),
         body: 'Directed reply',
-        audience: 'session:chosen-reader',
+        audience: 'operator',
       },
     }),
   )
@@ -102,12 +105,48 @@ test('board_reply MCP stores and applies its audience option through the shared 
        WHERE thread_root_record_id=? AND kind='reply'`,
     )
     .get(root.recordId) as { record_id: string; audience: string }
-  expect(reply.audience).toBe('session:chosen-reader')
+  expect(reply.audience).toBe('operator')
   expect(
     db()
       .query('SELECT reader_session FROM board_receipt WHERE message_record_id=?')
       .all(reply.record_id),
-  ).toEqual([{ reader_session: 'chosen-reader' }])
+  ).toEqual([])
+})
+
+test('request-posting MCP tools return the same heartbeat guidance', async () => {
+  process.env.CLAUDE_CODE_SESSION_ID = 'mcp-request-session'
+  db()
+    .query('INSERT INTO project(record_id,name,path,settings) VALUES (?,?,?,?)')
+    .run(newRecordId(), 'mcp-request-project', postingCwd, '{}')
+  const previousCwd = process.cwd()
+  process.chdir(postingCwd)
+  const call = async (name: 'board_post' | 'board_ask') => {
+    const response = await withBoardClient((client) =>
+      client.callTool({
+        name,
+        arguments: {
+          audience: 'operator',
+          title: `MCP ${name}`,
+          body: 'Wait for a reply.',
+          ...(name === 'board_post' ? { purpose: 'request' } : {}),
+        },
+      }),
+    )
+    const text = (response.content as { type: 'text'; text: string }[])[0]!.text
+    if (response.isError) throw new Error(text)
+    return JSON.parse(text) as {
+      heartbeat: string
+    }
+  }
+  try {
+    const posted = await call('board_post')
+    const asked = await call('board_ask')
+    expect(posted.heartbeat).toBe(asked.heartbeat)
+    expect(posted.heartbeat).toContain('mcp-request-session')
+    expect(posted.heartbeat).toContain('orch-heartbeat.sh')
+  } finally {
+    process.chdir(previousCwd)
+  }
 })
 
 test('board_read MCP result is the delivery envelope with one normalized notice shape', async () => {

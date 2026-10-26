@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { setMachineDelegation } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
@@ -25,6 +26,45 @@ import {
   scoreboard,
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
+
+test('the shared routing path refuses a writesRepo job assigned to the harness', () => {
+  setMachineDelegation('delegation.implement', 'harness')
+  try {
+    expect(() => pick('implement', 'not-an-agent')).toThrow(
+      "this machine runs implement work through the harness's own sub-agent (delegation.implement=harness)",
+    )
+  } finally {
+    setMachineDelegation('delegation.implement', 'external')
+  }
+})
+
+test('the shared routing path refuses a review job assigned to the harness', () => {
+  setMachineDelegation('delegation.review', 'harness')
+  try {
+    expect(() => pick('review-lens', 'not-an-agent')).toThrow(
+      "this machine runs review work through the harness's own sub-agent (delegation.review=harness)",
+    )
+  } finally {
+    setMachineDelegation('delegation.review', 'external')
+  }
+})
+
+test('guide reports harness work without dropping externally delegated jobs', () => {
+  setMachineDelegation('delegation.implement', 'harness')
+  try {
+    const rows = guide()
+    expect(rows.find((row) => row.job === 'implement')).toMatchObject({
+      delegation: 'harness',
+      routesTo: null,
+    })
+    expect(rows.find((row) => row.job === 'review-lens')).toMatchObject({
+      delegation: 'external',
+    })
+    expect(rows.find((row) => row.job === 'review-lens')?.routesTo).not.toBeNull()
+  } finally {
+    setMachineDelegation('delegation.implement', 'external')
+  }
+})
 
 test('candidate running-run map matches per-agent fixture counts from one grouped snapshot', () => {
   addRun({ agent: 'codex', job: 'craft', status: 'running' })
@@ -581,9 +621,12 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
     const exclusions = candidates('implement')
       .filter((candidate) => !candidate.eligible)
       .map((candidate) => `${candidate.agent}: ${candidate.why}`)
-    expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
+    expect(message).toContain(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
     expect(message).toContain(`run ${PLATFORM_SLUG} agent probe codex`)
     expect(message).toContain('disabled for routing refusal test')
+    expect(message).toContain(
+      `remedy: register and probe an agent with ${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe, or switch implement work to the harness with ${PLATFORM_SLUG} machine config set --machine delegation.implement harness`,
+    )
   } finally {
     const restore = db().query(
       'UPDATE agent SET enabled=?,disabled_reason=?,probed_at=?,probe_result=? WHERE name=?',

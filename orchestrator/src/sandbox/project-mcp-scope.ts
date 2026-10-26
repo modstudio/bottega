@@ -4,9 +4,13 @@
  * must not know argv, transports, or credentials.
  */
 import { isAbsolute, resolve } from 'node:path'
-import { disabledProjectMcpServers, type McpServerConfig } from '../mcp/mcp-probe.ts'
 import {
-  mcpConfigForRun,
+  disabledProjectMcpServers,
+  type McpConfigReadResult,
+  type McpServerConfig,
+} from '../mcp/mcp-probe.ts'
+import {
+  mcpConfigReadForRun,
   projectReaderProxyServers,
   READER_PLATFORM_MCP_SERVERS,
   type ReaderProxyServer,
@@ -16,11 +20,13 @@ import {
  * The platform's own MCP identities. A project configuration never occupies
  * them: a project server named like the worker channel could shadow it.
  */
-function withoutPlatformServers(
-  config: Record<string, McpServerConfig>,
-): Record<string, McpServerConfig> {
+function withoutPlatformServers(read: McpConfigReadResult): McpConfigReadResult {
+  if (!read.ok) return read
   const platform = new Set<string>(READER_PLATFORM_MCP_SERVERS)
-  return Object.fromEntries(Object.entries(config).filter(([name]) => !platform.has(name)))
+  return {
+    ...read,
+    config: Object.fromEntries(Object.entries(read.config).filter(([name]) => !platform.has(name))),
+  }
 }
 
 /** A project server launchable without inline credentials: a command or a url. */
@@ -39,11 +45,12 @@ export type ProjectMcpSelection =
 
 /** Select project MCP launch definitions that are safe to expose without inline credentials. */
 function selectDirectProjectMcpServers(
-  config: Record<string, McpServerConfig>,
+  read: McpConfigReadResult,
   allowed: string[] | undefined,
   cwd: string,
 ): Extract<ProjectMcpSelection, { kind: 'direct' }> {
-  const projectServers = withoutPlatformServers(config)
+  const projectRead = withoutPlatformServers(read)
+  const projectServers = projectRead.ok ? projectRead.config : {}
   const disabled = new Set(disabledProjectMcpServers(Object.keys(projectServers), allowed))
   const servers: Record<string, ProjectMcpServer> = {}
   const withheld: string[] = []
@@ -78,12 +85,12 @@ export function selectProjectMcpServers(
   cwd: string,
 ): ProjectMcpSelection | null {
   if (mcp === false) return null
-  const config = mcpConfigForRun(treeConfig, project)
+  const read = mcpConfigReadForRun(treeConfig, project, cwd)
   if (mcp === 'writer')
-    return selectDirectProjectMcpServers(config, project?.settings.workerMcpServers, cwd)
+    return selectDirectProjectMcpServers(read, project?.settings.workerMcpServers, cwd)
   return {
     kind: 'reader',
-    servers: projectReaderProxyServers(withoutPlatformServers(config), project, cwd),
+    servers: projectReaderProxyServers(withoutPlatformServers(read), project, cwd),
     withheld: [],
   }
 }

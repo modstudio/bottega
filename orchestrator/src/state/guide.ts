@@ -1,4 +1,11 @@
+import {
+  DELEGATION_SETTING_KEYS,
+  type DelegationMode,
+  type DelegationSettings,
+} from '../../../shared/delegation-mode.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { db } from '../database/db.ts'
+import { delegationClass, delegationMode } from '../jobs/delegation.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
   type candidates,
@@ -45,13 +52,48 @@ export type JobGuide = {
   /** Eligible agents nobody has tried, where a run buys the most information. */
   untried: string[]
   /** Where a run goes by default. Exploration can still divert a share elsewhere. */
-  routesTo: string
+  routesTo: string | null
+  /** Whether this machine dispatches the job externally or leaves it to the harness. */
+  delegation: DelegationMode
   reason: string
   /** Evidence cells considered for this route, including the job-wide backoff. */
   evidenceCells: { name: string; counts: { agent: string; evidence: number }[] }[]
   tried: AgentOnJob[]
   /** Agents the circuit breaker or a static capability rule removed. */
   excluded: { agent: string; why: string }[]
+}
+
+function guideRoute(
+  name: string,
+  promptBytes: number,
+  lens: string | undefined,
+  settings: DelegationSettings,
+): Pick<JobGuide, 'delegation' | 'routesTo' | 'reason'> {
+  const jobClass = delegationClass(JOBS[name]!.needs)
+  const delegation = delegationMode(JOBS[name]!.needs, settings)
+  const delegationSetting = DELEGATION_SETTING_KEYS[jobClass]
+  if (delegation === 'harness')
+    return {
+      delegation,
+      routesTo: null,
+      reason: `handled by the harness's own sub-agent   (${delegationSetting}=harness)`,
+    }
+  const chosen = pick(name, undefined, promptBytes, false, null, {}, false, lens)
+  return { delegation, routesTo: chosen.agent, reason: chosen.reason }
+}
+
+function successfulRunSamples(): {
+  job: string
+  agent: string
+  latency_ms: number
+  prompt_bytes: number
+}[] {
+  return db()
+    .query(
+      `SELECT job, agent, latency_ms, prompt_bytes FROM run
+      WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,
+    )
+    .all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
 }
 
 /**
@@ -67,12 +109,8 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
   // Scores come from candidates(), not from a second copy of the same SQL here.
   // A guide that disagrees with the router is worse than no guide, because it is
   // consulted precisely when someone wants to know what the router will do.
-  const raw = db()
-    .query(
-      `SELECT job, agent, latency_ms, prompt_bytes FROM run
-      WHERE status='ok' AND probe=0 AND latency_ms IS NOT NULL`,
-    )
-    .all() as { job: string; agent: string; latency_ms: number; prompt_bytes: number }[]
+  const raw = successfulRunSamples()
+  const delegationSettings = readDelegationSettings()
 
   const key = (j: string, a: string, bucket: PromptSizeBucket) => `${j} ${a} ${bucket}`
   const samples = new Map<string, { lat: number[]; bytes: number[] }>()
@@ -130,7 +168,7 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
                 .filter((c) => c.latencyMs !== null)
                 .sort((a, b) => a.latencyMs! - b.latencyMs!)[0] ?? null)
             : null
-        const chosen = pick(name, undefined, bucketBytes, false, null, {}, false, lens)
+        const route = guideRoute(name, bucketBytes, lens, delegationSettings)
         const counts = (rows: ReturnType<typeof candidates>) =>
           rows
             .filter((candidate) => candidate.evidence > 0)
@@ -158,8 +196,7 @@ export function guide(onlyJob?: string, promptBytes?: number, lens?: string): Jo
           untried: eligible
             .filter((c) => !tried.some((t) => t.agent === c.agent))
             .map((c) => c.agent),
-          routesTo: chosen.agent,
-          reason: chosen.reason,
+          ...route,
           evidenceCells,
           tried,
           excluded: all.filter((c) => !c.eligible).map((c) => ({ agent: c.agent, why: c.why })),
