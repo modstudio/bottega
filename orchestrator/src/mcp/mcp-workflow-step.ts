@@ -28,10 +28,7 @@ const inputSchema = z.object({
   cursor: z.number().int().positive().optional(),
 })
 
-async function workflowStep(
-  input: z.infer<typeof inputSchema>,
-  commitCount: CommitCountPort,
-) {
+async function workflowStep(input: z.infer<typeof inputSchema>, commitCount: CommitCountPort) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
   const context = mcpWorkflowCursorContext()
   const effectiveMode = cursor

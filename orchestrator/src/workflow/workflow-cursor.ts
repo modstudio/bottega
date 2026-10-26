@@ -12,6 +12,11 @@ import {
 import { questionOpenSql } from '../run/question-open.ts'
 import { resolvedRulingPersonName } from '../run/ruling-attribution.ts'
 import type { AutonomyResolution, LiveCursorAutonomy } from './autonomy.ts'
+import {
+  type CommitCountPort,
+  readCommitsPastLanding,
+  workflowComposeBranchRefusal,
+} from './workflow-compose-branch.ts'
 import { adoptWorkflowTask, vacateRetiredWorkflowKeySlot } from './workflow-cursor-adoption.ts'
 import { applyCursorArguments, workflowKeyOf as keyOf } from './workflow-cursor-arguments.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
@@ -67,11 +72,6 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import {
-  type CommitCountPort,
-  readCommitsPastLanding,
-  workflowComposeBranchRefusal,
-} from './workflow-compose-branch.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 

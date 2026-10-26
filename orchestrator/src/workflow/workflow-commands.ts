@@ -21,7 +21,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
-import { type CommitCountPort } from './workflow-compose-branch.ts'
+import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,

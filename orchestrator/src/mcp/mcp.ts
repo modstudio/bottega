@@ -419,6 +419,33 @@ async function composeWorkflowToolResult(
   )
 }
 
+/**
+ * Registers the workflow identity listing, which hides retired rows unless the caller asks for
+ * them with `retired`.
+ */
+function registerWorkflowListTool(server: McpServer): void {
+  server.registerTool(
+    'list_workflows',
+    {
+      description: 'List workflow identities and their production and draft versions.',
+      inputSchema: z.object({
+        retired: z
+          .boolean()
+          .optional()
+          .describe('include workflows whose only versions are retired'),
+      }),
+    },
+    async ({ retired }) =>
+      text(
+        listResolvedWorkflows(
+          resolveMcpWorkflowSpace(process.cwd()).spaceId,
+          undefined,
+          retired ?? false,
+        ),
+      ),
+  )
+}
+
 export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
@@ -447,27 +474,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
   registerOperatorTools(server)
   registerBoardTools(server)
   registerSetupTools(server)
-
-  server.registerTool(
-    'list_workflows',
-    {
-      description: 'List workflow identities and their production and draft versions.',
-      inputSchema: z.object({
-        retired: z
-          .boolean()
-          .optional()
-          .describe('include workflows whose only versions are retired'),
-      }),
-    },
-    async ({ retired }) =>
-      text(
-        listResolvedWorkflows(
-          resolveMcpWorkflowSpace(process.cwd()).spaceId,
-          undefined,
-          retired ?? false,
-        ),
-      ),
-  )
+  registerWorkflowListTool(server)
 
   server.registerTool(
     'compose_workflow',
