@@ -4,6 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { trackerSourceFor } from '../../../shared/trackers.ts'
+import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import { McpHeadersHelperError, resolveMcpHeaders } from '../mcp/mcp-headers-helper.ts'
 import {
   type McpServerConfig,
@@ -100,7 +101,9 @@ async function lookupRemoteTask(project: Project, key: string): Promise<TaskKeyL
           credentialConfig = { ...config, headers }
           return callMcpTool(
             {
-              command: config.command,
+              command: config.command
+                ? resolveProjectMcpCommand(config.command, project.path)
+                : undefined,
               args: config.args,
               cwd: project.path,
               url: config.url,

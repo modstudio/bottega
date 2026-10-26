@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): McpModule => ({
 })
 
 export const mcpModules: McpModule[] = [
+  module('orchestrator/src/mcp/mcp-command.ts', ['node:path']),
   module('orchestrator/src/mcp/mcp-workflow-input.ts', ['zod']),
   module('orchestrator/src/mcp/mcp-setup-tools.ts', [
     'node:fs',
@@ -75,6 +76,7 @@ export const mcpModules: McpModule[] = [
     '@modelcontextprotocol/sdk/client/stdio.js',
     '@modelcontextprotocol/sdk/client/streamableHttp.js',
     '../secret-shaped-output.ts',
+    './mcp-command.ts',
   ]),
   module('orchestrator/src/mcp/mcp-headers-helper.ts', ['../secret-shaped-output.ts']),
   module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
@@ -87,6 +89,7 @@ export const mcpModules: McpModule[] = [
     'node:path',
     '../project/projects.ts',
     './mcp-headers-helper.ts',
+    './mcp-command.ts',
     './mcp-probe.ts',
     './mcp-reader-policy.ts',
     './mcp-tool-list.ts',
@@ -98,7 +101,7 @@ export const mcpModules: McpModule[] = [
     '../mcp/mcp-probe.ts',
   ]),
   module('orchestrator/src/sandbox/project-mcp-scope.ts', [
-    'node:path',
+    '../mcp/mcp-command.ts',
     '../mcp/mcp-probe.ts',
     './mcp-reader-scope.ts',
   ]),
