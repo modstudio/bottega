@@ -30,10 +30,14 @@ export function hostedDayWrite(
   return 'insert'
 }
 
-function intervalValues(row: IntervalEvidence, projectId: string | null) {
+function intervalValues(
+  row: IntervalEvidence,
+  projectId: string | null,
+  taskId: string | null = null,
+) {
   return {
     task_key: row.task_key,
-    task_id: row.task_id ?? null,
+    task_id: taskId,
     project_name: row.project_name,
     project_id: projectId,
     source: row.source,
@@ -58,8 +62,9 @@ async function insertHostedInterval(
   id: string,
   row: IntervalEvidence,
   projectId: string | null,
+  taskId: string | null,
 ) {
-  const value = intervalValues(row, projectId)
+  const value = intervalValues(row, projectId, taskId)
   await tx`
     INSERT INTO hub_interval
       (id, space_id, task_key, task_id, project_name, project_id, source, agent, job, start_at, end_at,
@@ -79,8 +84,9 @@ async function updateHostedInterval(
   id: string,
   row: IntervalEvidence,
   projectId: string | null,
+  taskId: string | null,
 ) {
-  const value = intervalValues(row, projectId)
+  const value = intervalValues(row, projectId, taskId)
   if ('task_id' in row) {
     await tx`
       UPDATE hub_interval SET
@@ -132,11 +138,18 @@ async function upsertOneInterval(
     projectId: row.projectId,
     projectName: row.project_name,
   })
+  const taskId =
+    'task_id' in row && row.task_id
+      ? ((
+          await tx<{ id: string }[]>`SELECT id::text AS id FROM hub_task
+            WHERE space_id=${identity.spaceId}::uuid AND id=${row.task_id}::uuid`
+        )[0]?.id ?? null)
+      : null
   if (write === 'update') {
     const matches = await tx`SELECT 1 FROM hub_interval
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.id}::uuid
         AND task_key IS NOT DISTINCT FROM ${row.task_key}
-        AND (${!('task_id' in row)} OR task_id IS NOT DISTINCT FROM ${row.task_id ?? null}::uuid)
+        AND (${!('task_id' in row)} OR task_id IS NOT DISTINCT FROM ${taskId}::uuid)
         AND project_name IS NOT DISTINCT FROM ${row.project_name}
         AND project_id IS NOT DISTINCT FROM ${projectId}::uuid AND source=${row.source}
         AND agent IS NOT DISTINCT FROM ${row.agent} AND job IS NOT DISTINCT FROM ${row.job}
@@ -147,15 +160,15 @@ async function upsertOneInterval(
         AND session_id IS NOT DISTINCT FROM ${row.session_id}
         AND user_id IS NOT DISTINCT FROM ${row.user_id}::uuid`
     if (matches.length) return { status: 'duplicate' }
-    await updateHostedInterval(tx, identity, row.id, row, projectId)
+    await updateHostedInterval(tx, identity, row.id, row, projectId, taskId)
     return { status: 'applied' }
   }
   if (write === 'replace') {
     await tx`DELETE FROM hub_interval
       WHERE space_id=${identity.spaceId}::uuid AND id=${tupleHolder!}::uuid`
-    if (byId.length) await updateHostedInterval(tx, identity, row.id, row, projectId)
-    else await insertHostedInterval(tx, identity, row.id, row, projectId)
-  } else await insertHostedInterval(tx, identity, row.id, row, projectId)
+    if (byId.length) await updateHostedInterval(tx, identity, row.id, row, projectId, taskId)
+    else await insertHostedInterval(tx, identity, row.id, row, projectId, taskId)
+  } else await insertHostedInterval(tx, identity, row.id, row, projectId, taskId)
   return {
     status: 'applied',
     ...(write === 'replace' ? { replacedId: tupleHolder! } : {}),

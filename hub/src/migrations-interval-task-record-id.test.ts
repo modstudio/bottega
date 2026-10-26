@@ -87,3 +87,41 @@ test('interval link triggers enforce new writes and attach intervals when their 
     d.close()
   }
 })
+
+test('deleting a linked task preserves project evidence and refuses to orphan evidence', () => {
+  const d = migratedBeforeIntervalLink()
+  try {
+    applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+    d.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+        ('task-project','PROJECT-1','alpha','local','2026-10-25','2026-10-25'),
+        ('task-only','TASK-1','alpha','local','2026-10-25','2026-10-25');
+      INSERT INTO interval(record_id,task_key,task_record_id,project_record_id,source,start_at,end_at,ref)
+      VALUES ('project-evidence','PROJECT-1','task-project','project-id','orch','2026-10-25','2026-10-25','project-evidence');
+      INSERT INTO interval(record_id,task_key,task_record_id,source,start_at,end_at,ref)
+      VALUES ('task-evidence','TASK-1','task-only','orch','2026-10-25','2026-10-25','task-evidence');
+      DELETE FROM task WHERE record_id='task-project';
+    `)
+    expect(
+      d
+        .query(
+          `SELECT task_record_id,project_record_id FROM interval WHERE record_id='project-evidence'`,
+        )
+        .get(),
+    ).toEqual({ task_record_id: null, project_record_id: 'project-id' })
+
+    expect(() => d.exec(`DELETE FROM task WHERE record_id='task-only'`)).toThrow(REMEDY)
+    expect(d.query(`SELECT record_id FROM task WHERE record_id='task-only'`).get()).toEqual({
+      record_id: 'task-only',
+    })
+    expect(
+      d
+        .query(
+          `SELECT task_record_id,project_record_id FROM interval WHERE record_id='task-evidence'`,
+        )
+        .get(),
+    ).toEqual({ task_record_id: 'task-only', project_record_id: null })
+  } finally {
+    d.close()
+  }
+})

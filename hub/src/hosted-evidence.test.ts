@@ -95,7 +95,7 @@ function pgliteSql(database: PGlite): SQL {
   return query as unknown as SQL
 }
 
-test('hosted evidence accepts token totals above the 32-bit range', async () => {
+async function hostedEvidenceDatabase() {
   const database = new PGlite()
   await database.exec(`
     CREATE ROLE record_owner LOGIN NOSUPERUSER NOBYPASSRLS;
@@ -134,6 +134,11 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
     SELECT set_config('app.space_id','${spaceId}',false);
     SELECT set_config('app.space_ids','${spaceId}',false);
   `)
+  return database
+}
+
+test('hosted evidence accepts token totals above the 32-bit range', async () => {
+  const database = await hostedEvidenceDatabase()
   const sql = pgliteSql(database)
   const identity = { userId, spaceId }
   const collectedAt = '2026-10-05T19:50:00.000Z'
@@ -209,4 +214,51 @@ test('hosted evidence accepts token totals above the 32-bit range', async () => 
   expect(hubChangeReadability('hub_interval')).toBe('not-yet-readable')
   expect(hubChangeReadability('hub_day')).toBe('not-yet-readable')
   await database.close()
+})
+
+test('hosted interval nulls a task id absent from the caller space', async () => {
+  const database = await hostedEvidenceDatabase()
+  const absentTaskId = '01990000-0000-7000-8000-000000001499'
+  try {
+    expect(
+      await applyIntervalChangeInTransaction(
+        pgliteSql(database),
+        { userId, spaceId },
+        {
+          id: intervalId,
+          op: 'upsert',
+          row: {
+            id: intervalId,
+            task_key: 'DEV-1764',
+            task_id: absentTaskId,
+            project_name: 'workshop',
+            projectId,
+            source: 'orch',
+            agent: null,
+            job: null,
+            start_at: '2026-10-25T10:00:00.000Z',
+            end_at: '2026-10-25T11:00:00.000Z',
+            claude_tokens: 1,
+            vendor_tokens: 1,
+            vendor_cost_usd: null,
+            ref: 'run:dev-1764',
+            via: null,
+            open: 0,
+            session_id: null,
+            user_id: null,
+          },
+        },
+      ),
+    ).toEqual({ status: 'applied' })
+    expect(
+      (
+        await database.query<{ task_id: string | null }>(
+          `SELECT task_id::text FROM hub_interval WHERE id=$1`,
+          [intervalId],
+        )
+      ).rows[0],
+    ).toEqual({ task_id: null })
+  } finally {
+    await database.close()
+  }
 })

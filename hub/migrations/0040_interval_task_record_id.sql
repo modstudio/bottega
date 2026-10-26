@@ -1,5 +1,5 @@
 ALTER TABLE interval ADD COLUMN task_record_id TEXT
-  REFERENCES task(record_id) ON UPDATE CASCADE ON DELETE CASCADE;
+  REFERENCES task(record_id) ON UPDATE CASCADE ON DELETE SET NULL;
 --> statement-breakpoint
 CREATE INDEX interval_task_record_id ON interval(task_record_id);
 --> statement-breakpoint
