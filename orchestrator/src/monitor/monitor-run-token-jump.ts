@@ -6,7 +6,7 @@ import { MIN_SAMPLE } from '../route/route.ts'
 import { median } from '../state/statistics.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
-export const TOKENS_PER_RUN_JUMP_RATIO = 1.5
+const TOKENS_PER_RUN_JUMP_RATIO = 1.5
 const DAY_MS = 24 * 60 * 60 * 1000
 const BASELINE_DAYS = 7
 

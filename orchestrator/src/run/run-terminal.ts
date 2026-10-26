@@ -295,6 +295,22 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
+function terminalUsageSnapshot(
+  vendorTokens: number | null,
+  callUsage: RunCallUsage | null,
+  costUsd: number | null,
+  vendorUsage: VendorUsage,
+  name: string,
+) {
+  return {
+    vendorTokens,
+    modelCalls: callUsage?.modelCalls ?? null,
+    peakCallTokens: callUsage?.peakCallTokens ?? null,
+    vendorCostUsd: costUsd,
+    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
+  }
+}
+
 type TerminalCheckpointInput = Pick<
   TerminalInput,
   | 'writesJob'
@@ -611,7 +627,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     promptPath,
     exitCode,
     vendorTokens,
-    callUsage,
     costUsd,
     vendorUsage,
     effectiveModel,
@@ -660,7 +675,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       console.error(`orch: could not read the diff for run ${claim.id}: ${e}`)
     }
   }
-
   const turnChanged = terminalTurnChanged({
     database: db(),
     runId: claim.id,
@@ -668,7 +682,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     worktreePath: worktree?.path ?? null,
     measurementScope: provisionedMcpConfig,
   })
-
   if (confinement.before.length && !confinement.failures.length) {
     confinementEvent = classifyCheckoutChanges({
       before: confinement.before,
@@ -681,7 +694,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       removal: confinement.after.removal,
     })
   }
-
   if (retargetDiagnostic) error = error ? `${error}\n${retargetDiagnostic}` : retargetDiagnostic
   const finalization = finalizeWorkerReply({
     reply: contract,
@@ -742,7 +754,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   error = evidenceAssessment.error
   failureKind = evidenceAssessment.failureKind
   const provenanceWrongProjectTool = evidenceAssessment.provenanceWrongProjectTool
-
   ;({ status, error, failureKind } = applyPrematureFinalFailure(
     { status, error, failureKind },
     terminalPrematureFinalRefusal({
@@ -755,7 +766,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       exitCode,
     }),
   ))
-
   /**
    * Questions are deliberately inserted BEFORE the terminal row is written.
    * This is ordering, not a transaction: a lost terminal write can leave the
@@ -844,11 +854,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     promptPath,
     exitCode,
     latencyMs: Date.now() - started,
-    vendorTokens,
-    modelCalls: callUsage?.modelCalls ?? null,
-    peakCallTokens: callUsage?.peakCallTokens ?? null,
-    vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
+    ...terminalUsageSnapshot(vendorTokens, input.callUsage, costUsd, vendorUsage, name),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -890,8 +896,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           input.processless ? null : outPath,
           promptPath,
           vendorTokens,
-          callUsage?.modelCalls ?? null,
-          callUsage?.peakCallTokens ?? null,
+          input.callUsage?.modelCalls ?? null,
+          input.callUsage?.peakCallTokens ?? null,
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,

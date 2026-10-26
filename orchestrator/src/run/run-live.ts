@@ -415,8 +415,21 @@ function teeLiveTransport(
   input: LiveInput,
   handle: TransportHandle,
   observe: (event: StreamEvent) => void,
+  callUsage: { value: RunCallUsage | null },
 ) {
-  return teeTransportEvents(handle.events(), input.claim.id, input.throttleConcurrency, observe)
+  return teeTransportEvents(handle.events(), input.claim.id, input.throttleConcurrency, (event) => {
+    observe(event)
+    callUsage.value = foldRunCallUsage(callUsage.value, event)
+  })
+}
+
+function runUsageResult(
+  vendorTokens: number | null,
+  callUsage: RunCallUsage | null,
+  costUsd: number | null,
+  vendorUsage: VendorUsage,
+) {
+  return { vendorTokens, callUsage, costUsd, vendorUsage }
 }
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
@@ -475,8 +488,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   }
   let exitCode = -1
   let output = ''
-  let vendorTokens: number | null = null
-  let callUsage: RunCallUsage | null = null
+  let vendorTokens: number | null = null,
+    callUsage: { value: RunCallUsage | null } = { value: null }
   let costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
@@ -718,10 +731,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       ),
     )
     const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const teeing = teeLiveTransport(input, handle, (event) => {
-      throttle.observe(event)
-      callUsage = foldRunCallUsage(callUsage, event)
-    })
+    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage)
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,
@@ -927,10 +937,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     idleTreePgid: idleKill.treePgid,
     exitCode,
     output,
-    vendorTokens,
-    callUsage,
-    costUsd,
-    vendorUsage,
+    ...runUsageResult(vendorTokens, callUsage.value, costUsd, vendorUsage),
     resolvedSession,
     effectiveModel,
     replyFileError,

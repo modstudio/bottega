@@ -60,6 +60,19 @@ function resourceValues(row: LocalRun) {
   }
 }
 
+function usageValues(row: LocalRun) {
+  return {
+    vendorTokens: row.vendor_tokens,
+    modelCalls: row.model_calls,
+    peakCallTokens: row.peak_call_tokens,
+    vendorCostUsd: row.vendor_cost_usd,
+    vendorInputTokens: row.vendor_input_tokens,
+    vendorOutputTokens: row.vendor_output_tokens,
+    vendorEstimatedCostUsd: row.vendor_estimated_cost_usd,
+    vendorCostSource: row.vendor_cost_source,
+  }
+}
+
 function reviewValues(row: LocalRun) {
   return { reviewRef: row.review_ref, reviewRole: row.review_role }
 }
@@ -99,14 +112,7 @@ export function buildRunRecordPayload(
     latencyMs: row.latency_ms,
     exitCode: row.exit_code,
     outputBytes: row.output_bytes,
-    vendorTokens: row.vendor_tokens,
-    modelCalls: row.model_calls,
-    peakCallTokens: row.peak_call_tokens,
-    vendorCostUsd: row.vendor_cost_usd,
-    vendorInputTokens: row.vendor_input_tokens,
-    vendorOutputTokens: row.vendor_output_tokens,
-    vendorEstimatedCostUsd: row.vendor_estimated_cost_usd,
-    vendorCostSource: row.vendor_cost_source,
+    ...usageValues(row),
     ...resourceValues(row),
     probe: Boolean(row.probe),
     failureKind: row.failure_kind,
