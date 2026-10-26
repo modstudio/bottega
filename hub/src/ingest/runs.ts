@@ -7,7 +7,7 @@ import { intervalOwningProject } from '../interval-project-correction.ts'
 import { readRunIdentityMap, readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
-import { intervalTaskRecordId, intervalTaskRecordIdForUpdate } from '../task-identity.ts'
+import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -192,14 +192,15 @@ function deliveryRunRef(run: OrchRun, receivingRunId: string | null): string | n
 function questionReplacer(conn: Database) {
   const upsertQuestion = conn.query(
     `INSERT INTO question
-      (record_id, number, run_ref, root_ref, task_key, session_id, asked_at, answered_at,
+      (record_id, number, run_ref, root_ref, task_key, task_record_id, session_id, asked_at, answered_at,
        asked_via, answerer_kind, answer_channel, overturned_at, closed_at, close_reason)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
    ON CONFLICT(record_id) DO UPDATE SET
      number         = excluded.number,
      run_ref        = excluded.run_ref,
      root_ref       = excluded.root_ref,
      task_key       = excluded.task_key,
+     task_record_id = excluded.task_record_id,
      session_id     = excluded.session_id,
      asked_at       = excluded.asked_at,
      answered_at    = excluded.answered_at,
@@ -230,6 +231,7 @@ function questionReplacer(conn: Database) {
         runRef(run.record_id, question.run_record_id, hasTurns),
         root,
         taskKey,
+        uniqueTaskRecordIdForKey(conn, taskKey),
         run.session_id,
         question.asked_at,
         question.answered_at,
@@ -258,17 +260,19 @@ function questionReplacer(conn: Database) {
 function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListRow[]): void {
   const upsert = conn.query(
     `INSERT INTO question
-      (record_id,number,run_ref,root_ref,workflow_cursor_id,workflow_key,project,project_record_id,task_key,
+      (record_id,number,run_ref,root_ref,workflow_cursor_id,workflow_key,workflow_task_record_id,project,project_record_id,task_key,task_record_id,
        session_id,asked_at,answered_at,asked_via,answerer_kind,answer_channel,
        overturned_at,closed_at,close_reason)
-     VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES (?,?,NULL,NULL,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(record_id) DO UPDATE SET
        number=excluded.number,
        workflow_cursor_id=excluded.workflow_cursor_id,
        workflow_key=excluded.workflow_key,
+       workflow_task_record_id=excluded.workflow_task_record_id,
        project=excluded.project,
        project_record_id=COALESCE(excluded.project_record_id,question.project_record_id),
        task_key=excluded.task_key,
+       task_record_id=excluded.task_record_id,
        session_id=excluded.session_id,
        asked_at=excluded.asked_at,
        answered_at=excluded.answered_at,
@@ -280,14 +284,18 @@ function upsertWorkflowQuestions(conn: Database, questions: readonly RulingListR
        close_reason=excluded.close_reason`,
   )
   for (const question of questions) {
+    // The workflow cursor's display key and task link name the same task.
+    const taskRecordId = uniqueTaskRecordIdForKey(conn, question.workflow_key)
     upsert.run(
       question.record_id,
       question.id,
       question.workflow_cursor_id,
       question.workflow_key,
+      taskRecordId,
       question.project,
       projectRecordIdFor(question.project),
       question.workflow_key,
+      taskRecordId,
       question.session_id,
       question.asked_at,
       question.answered_at,
@@ -398,7 +406,7 @@ function applyOrchReplace(
       row,
       taskRecordId: current
         ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
-        : intervalTaskRecordId(conn, row.task_key),
+        : uniqueTaskRecordIdForKey(conn, row.task_key),
       projectRecordId: projectRecordIdFor(row.project),
     }
   })
@@ -445,7 +453,7 @@ function applyOrchReplace(
     insert.run(
       newRecordId(),
       row.task_key,
-      intervalTaskRecordId(conn, row.task_key),
+      uniqueTaskRecordIdForKey(conn, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.agent,

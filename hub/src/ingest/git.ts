@@ -10,7 +10,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
-import { keyPattern, refreshKeyPrefixes } from '../attribute.ts'
+import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
 import { upsertGitTasks } from './git-task-cache.ts'
@@ -169,12 +169,11 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
     )
 
-    const commitStmt = conn.query(
-      `INSERT INTO commit_key (sha, repo, task_key, at) VALUES (?,?,?,?)
-     ON CONFLICT(sha) DO NOTHING`,
-    )
-
-    for (const c of commits) commitStmt.run(c.sha, c.repo, c.key, c.at)
+    // Seed Git-only tasks before resolving the commit's task UUID. Never downgrade a
+    // tracker's row to a git-derived one. The cache adapter also queues only inserts
+    // and meaningful changes in this transaction.
+    upsertGitTasks(conn, tasks.values(), at)
+    for (const c of commits) writeCommitKey(conn, c)
     for (const [day, a] of days) {
       dayStmt.run(
         newRecordId(),
@@ -191,9 +190,6 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
         at,
       )
     }
-    // Never downgrade a tracker's row to a git-derived one. The cache adapter
-    // also queues only inserts and meaningful changes in this transaction.
-    upsertGitTasks(conn, tasks.values(), at)
     conn
       .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)

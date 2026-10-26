@@ -10,7 +10,7 @@ import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribu
 import { nowIso, writeTransaction } from '../db.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { hostedSignedInUserId } from '../task-client.ts'
-import { intervalTaskRecordId, intervalTaskRecordIdForUpdate } from '../task-identity.ts'
+import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
@@ -202,7 +202,7 @@ export function replaceTranscriptWindow(
       row,
       taskRecordId: current
         ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
-        : intervalTaskRecordId(conn, row.task_key),
+        : uniqueTaskRecordIdForKey(conn, row.task_key),
       projectRecordId: projectRecordIdFor(row.project),
     }
   })
@@ -245,7 +245,7 @@ export function replaceTranscriptWindow(
     insert.run(
       newRecordId(),
       row.task_key,
-      intervalTaskRecordId(conn, row.task_key),
+      uniqueTaskRecordIdForKey(conn, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.start_at,

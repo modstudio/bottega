@@ -143,6 +143,7 @@ describe('run ingest', () => {
       runFixture({
         id: 9090,
         turns: [runFixture({ id: 9090, turn: 1 }), runFixture({ id: 9091, turn: 2 })],
+        questions: [questionFixture({ id: 9099, run_id: 9091 })],
       }),
     )
     const refs = db()
@@ -155,6 +156,13 @@ describe('run ingest', () => {
       { root: fixtureRecordId(9090), turn: fixtureRecordId(9091) },
     ])
     expect(refs.map(({ task_record_id }) => task_record_id)).toEqual([taskRecordId, taskRecordId])
+    expect(
+      db()
+        .query<{ task_key: string; task_record_id: string }, [number]>(
+          `SELECT task_key,task_record_id FROM question WHERE number=?`,
+        )
+        .get(9099),
+    ).toEqual({ task_key: 'ALP-118', task_record_id: taskRecordId })
     const pushed = loadOutboxChange(db(), {
       table_name: 'hub_interval',
       row_id: refs[0]!.record_id,
@@ -209,6 +217,15 @@ describe('run ingest', () => {
     expect(db().query(`SELECT 1 FROM interval WHERE ref=?`).get(ref(9094))).toBeNull()
   })
   test('workflow rulings ingest with nullable run provenance', async () => {
+    const taskRecordId = fixtureRecordId(964)
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT OR IGNORE INTO task(record_id,key,project,source,first_seen,last_seen)
+           VALUES (?,'DEV-964','alpha','local','2026-09-24','2026-09-24')`,
+        )
+        .run(taskRecordId),
+    )
     await ingestStdout(
       '',
       JSON.stringify([
@@ -249,7 +266,8 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT run_ref,root_ref,workflow_cursor_id,workflow_key,project,asked_via
+          `SELECT run_ref,root_ref,workflow_cursor_id,workflow_key,workflow_task_record_id,
+                  task_key,task_record_id,project,asked_via
            FROM question WHERE number=8001`,
         )
         .get(),
@@ -258,6 +276,9 @@ describe('run ingest', () => {
       root_ref: null,
       workflow_cursor_id: '00000000-0000-4000-8000-000000007001',
       workflow_key: 'DEV-964',
+      workflow_task_record_id: taskRecordId,
+      task_key: 'DEV-964',
+      task_record_id: taskRecordId,
       project: 'alpha',
       asked_via: 'workflow',
     })

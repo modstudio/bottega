@@ -33,7 +33,6 @@
     "workflow_cursor.workflow_key:reference"
   ],
   "hub": [
-    "commit_key.task_key:reference",
     "commit_key:primary-key",
     "hub_migrations:primary-key",
     "hub_schema_lock:primary-key",
@@ -41,8 +40,6 @@
     "operator_waiting_email:primary-key",
     "question.root_ref:reference",
     "question.run_ref:reference",
-    "question.task_key:reference",
-    "question.workflow_key:reference",
     "question_delivery.run_ref:reference",
     "question_delivery:primary-key",
     "seq:primary-key",

@@ -17,8 +17,8 @@ export function isTaskKeyPrefix(value: string): boolean {
   return TASK_KEY_PREFIX_PATTERN.test(value)
 }
 
-/** Resolve an interval's display key only when it names exactly one local task row. */
-export function intervalTaskRecordId(conn: Database, taskKey: string | null): string | null {
+/** Resolve a display key only when it names exactly one local task row. */
+export function uniqueTaskRecordIdForKey(conn: Database, taskKey: string | null): string | null {
   if (!taskKey) return null
   const matches = conn
     .query<{ record_id: string }, [string]>(`SELECT record_id FROM task WHERE key=? LIMIT 2`)
@@ -38,7 +38,7 @@ export function intervalTaskRecordIdForUpdate(
     )
     .get(recordId)
   if (current?.task_key === taskKey && current.task_record_id) return current.task_record_id
-  return intervalTaskRecordId(conn, taskKey)
+  return uniqueTaskRecordIdForKey(conn, taskKey)
 }
 
 /** Prefixes observed in canonical task identity storage. */

@@ -326,9 +326,27 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
 const DISPLAY_LABELS: readonly DisplayLabel[] = [
   {
     store: 'hub',
+    column: 'commit_key.task_key',
+    sibling: 'commit_key.task_record_id',
+    reason: 'display label beside the task UUID reference',
+  },
+  {
+    store: 'hub',
     column: 'interval.task_key',
     sibling: 'interval.task_record_id',
     reason: 'display label beside the task UUID reference',
+  },
+  {
+    store: 'hub',
+    column: 'question.task_key',
+    sibling: 'question.task_record_id',
+    reason: 'display label beside the task UUID reference',
+  },
+  {
+    store: 'hub',
+    column: 'question.workflow_key',
+    sibling: 'question.workflow_task_record_id',
+    reason: 'display label beside the workflow task UUID reference',
   },
   {
     store: 'hosted',
@@ -454,11 +472,8 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'workflow_cursor.instance_id',
   ]),
   ...manifest('hub', 'natural or encoded reference to an application row', [
-    'commit_key.task_key',
     'question.run_ref',
     'question.root_ref',
-    'question.workflow_key',
-    'question.task_key',
     'question_delivery.run_ref',
     'task.parent_key',
     'task_comment.task_key',
@@ -833,6 +848,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'workflow_version.space_id',
   ]),
   ...manifest('hub', 'owned or referenced UUID', [
+    'commit_key.task_record_id',
     'operator_waiting_email.item_id',
     'question.workflow_cursor_id',
     'day.record_id',
@@ -859,6 +875,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'note_counter.record_id',
     'question.project_record_id',
     'question.record_id',
+    'question.task_record_id',
+    'question.workflow_task_record_id',
     'question_delivery.question_record_id',
     'operator_waiting_email.question_record_id',
     'send.record_id',
