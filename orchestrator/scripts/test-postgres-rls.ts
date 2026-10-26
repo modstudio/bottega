@@ -390,7 +390,7 @@ try {
     throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
 
   const rls = await run(
-    ['bun', 'test', '--timeout', '60000', 'src/postgres/postgres-migrate-rls.test.ts'],
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
       BOTTEGA_TEST_POSTGRES_CONTAINER: container,
       BOTTEGA_RECORD_MIGRATE_URL: ownerUrl,
