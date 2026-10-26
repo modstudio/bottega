@@ -357,6 +357,22 @@ describe('run listing', () => {
     expect(lines).toContain(`${missingNumber}  unknown run id`)
   })
 
+  test('runs --id naming only an unknown UUID lists no conversation row', async () => {
+    insert('ok')
+    insert('ok')
+    const missingRecordId = '01a10000-0000-7000-8000-000000000001'
+
+    const rows = (await command({ id: [missingRecordId], json: true })).map(runJson) as unknown as {
+      record_id: string
+      status: string
+      unknown: boolean
+    }[]
+    expect(rows).toEqual([{ record_id: missingRecordId, status: 'unknown', unknown: true }])
+    expect((await command({ id: [missingRecordId] })).join('\n')).toBe(
+      `${missingRecordId}  unknown run id`,
+    )
+  })
+
   test('runs --id identifies a requested turn while returning its chain root', async () => {
     const root = insert('asking')
     const turn = insert('ok')

@@ -370,7 +370,13 @@ function applyRequestedRunFilter(
   if ((requested.ids.length || requested.unknown.length) && sinceFlag) {
     throw new Error(`${PLATFORM_SLUG} run list --id and --since cannot be combined`)
   }
-  if (!requested.ids.length) return
+  // Every requested id was unknown, so no run in the store is this listing's to
+  // return: matching nothing is the honest answer, and it keeps the read from
+  // becoming a scan of the whole run table.
+  if (!requested.ids.length) {
+    if (requested.unknown.length) where.push('0')
+    return
+  }
   const marks = requested.ids.map(() => '?').join(',')
   where.push(`(r.record_id IN (${marks}) OR EXISTS (
     SELECT 1 FROM run requested_turn
