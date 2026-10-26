@@ -4,9 +4,25 @@ import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-d
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
 import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
-import { backfillRunRecords, buildRunRecordPayload, enqueueRunRecord } from './run-outbox.ts'
+import {
+  backfillRunRecords,
+  buildRunRecordPayload,
+  enqueueRunRecord,
+  shouldRefreshRunRecordLinks,
+} from './run-outbox.ts'
 
 const RUN_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.run.columns
+
+test('link refresh requires a new local link absent from the latest payload', () => {
+  const projectId = '01990000-0000-7000-8000-000000001214'
+  const taskId = '01990000-0000-7000-8000-000000001771'
+  expect(shouldRefreshRunRecordLinks({}, projectId, null)).toBe(true)
+  expect(shouldRefreshRunRecordLinks({}, null, taskId)).toBe(true)
+  expect(shouldRefreshRunRecordLinks({ projectId }, projectId, null)).toBe(false)
+  expect(shouldRefreshRunRecordLinks({ taskId }, null, taskId)).toBe(false)
+  expect(shouldRefreshRunRecordLinks({}, null, null)).toBe(false)
+  expect(shouldRefreshRunRecordLinks({ projectName: 'project' }, projectId, null)).toBe(true)
+})
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
   const payload = sanitizeOutboxPayload(
@@ -125,6 +141,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 4,
+    refreshedLinks: 0,
     refreshedRoots: 0,
     skippedLive: 1,
   })
@@ -154,6 +171,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   expect(payloads[3]).toMatchObject({ status: 'asking' })
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
+    refreshedLinks: 0,
     refreshedRoots: 0,
     skippedLive: 1,
   })
@@ -177,6 +195,7 @@ test('backfill leaves hook-tree rows local', () => {
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
+    refreshedLinks: 0,
     refreshedRoots: 0,
     skippedLive: 0,
   })
@@ -217,6 +236,7 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
 
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
+    refreshedLinks: 0,
     refreshedRoots: 1,
     skippedLive: 0,
   })
@@ -231,6 +251,52 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
     { id: firstRecordId, count: 2 },
     { id: secondRecordId, count: 1 },
   ])
+  database.close()
+})
+
+test('backfill refreshes stale links for roots and turns only once', () => {
+  const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
+  const projectId = database
+    .query<{ record_id: string }, []>('SELECT record_id FROM project ORDER BY name LIMIT 1')
+    .get()!.record_id
+  const rootId = newRecordId()
+  const turnId = newRecordId()
+  const insert = database.query(
+    `INSERT INTO run
+       (record_id,number,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+        status,parent_run_record_id,turn,project_record_id)
+     VALUES (?,?,'2026-10-26T12:00:00.000Z','2026-10-26T12:01:00.000Z',
+             'codex','implement','sha',4,'head','ok',?,?,?)`,
+  )
+  insert.run(rootId, 1, null, 1, projectId)
+  insert.run(turnId, 2, rootId, 2, projectId)
+  const oldPayload = JSON.stringify({ projectName: 'project', status: 'ok', failureKind: null })
+  const addOutbox = database.query(
+    `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
+     VALUES (?,'run',?,?, '2026-10-26T12:01:00.000Z')`,
+  )
+  addOutbox.run(newRecordId(), rootId, oldPayload)
+  addOutbox.run(newRecordId(), turnId, oldPayload)
+  const machine = '01990000-0000-7000-8000-000000000099'
+
+  expect(backfillRunRecords(database, machine)).toEqual({
+    enqueued: 0,
+    refreshedLinks: 2,
+    refreshedRoots: 0,
+    skippedLive: 0,
+  })
+  expect(backfillRunRecords(database, machine)).toEqual({
+    enqueued: 0,
+    refreshedLinks: 0,
+    refreshedRoots: 0,
+    skippedLive: 0,
+  })
+  expect(
+    database
+      .query<{ count: number }, []>("SELECT count(*) AS count FROM outbox WHERE kind='run'")
+      .get()!.count,
+  ).toBe(4)
   database.close()
 })
 
@@ -275,6 +341,7 @@ test('backfill timestamps a refreshed root from its outcome-producing turn', () 
 
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
+    refreshedLinks: 0,
     refreshedRoots: 1,
     skippedLive: 0,
   })

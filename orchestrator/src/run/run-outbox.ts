@@ -20,8 +20,21 @@ type LocalRun = Record<string, unknown> & {
 
 export type RunRecordBackfillResult = {
   enqueued: number
+  refreshedLinks: number
   refreshedRoots: number
   skippedLive: number
+}
+
+export function shouldRefreshRunRecordLinks(
+  latestPayload: Record<string, unknown>,
+  localProjectId: string | null,
+  localTaskId: string | null,
+): boolean {
+  return (
+    (localProjectId !== null || localTaskId !== null) &&
+    latestPayload.projectId == null &&
+    latestPayload.taskId == null
+  )
 }
 
 function json(value: unknown): unknown {
@@ -194,11 +207,14 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
         status: string
         failure_kind: string | null
         latest_payload: string | null
+        project_record_id: string | null
+        task_record_id: string | null
       },
       [string, string]
     >(
       `SELECT r.record_id, COALESCE(r.last_event_at, r.started_at) AS finished_at,
-              r.parent_run_record_id, r.status, r.failure_kind, latest.payload AS latest_payload
+              r.parent_run_record_id, r.status, r.failure_kind, latest.payload AS latest_payload,
+              r.project_record_id, r.task_record_id
          FROM run r
          LEFT JOIN outbox latest ON latest.record_id = (
            SELECT prior.record_id FROM outbox prior
@@ -211,6 +227,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
     )
     .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
   let enqueued = 0
+  let refreshedLinks = 0
   let refreshedRoots = 0
   for (const row of eligible) {
     if (row.latest_payload === null) {
@@ -218,13 +235,18 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
       enqueued++
       continue
     }
-    if (row.parent_run_record_id !== null) continue
-    let latest: { status?: unknown; failureKind?: unknown }
+    let latest: Record<string, unknown>
     try {
-      latest = JSON.parse(row.latest_payload) as typeof latest
+      latest = JSON.parse(row.latest_payload) as Record<string, unknown>
     } catch {
       latest = {}
     }
+    if (shouldRefreshRunRecordLinks(latest, row.project_record_id, row.task_record_id)) {
+      enqueueRunRecord(database, row.record_id, machineId, row.finished_at)
+      refreshedLinks++
+      continue
+    }
+    if (row.parent_run_record_id !== null) continue
     if (latest.status === row.status && latest.failureKind === row.failure_kind) continue
     const chainTermination = chainTerminationAtForRoot(database, row.record_id) ?? row.finished_at
     enqueueRunRecord(database, row.record_id, machineId, chainTermination)
@@ -234,5 +256,5 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { enqueued, refreshedRoots, skippedLive }
+  return { enqueued, refreshedLinks, refreshedRoots, skippedLive }
 }

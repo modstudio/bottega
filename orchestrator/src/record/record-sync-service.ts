@@ -54,7 +54,10 @@ import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
-import { runTaskIdentityDecision } from './record-sync-run-task-identity.ts'
+import {
+  runProjectTaskIdentityDecision,
+  runTaskIdentityDecision,
+} from './record-sync-run-task-identity.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
 import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
@@ -235,7 +238,7 @@ async function pushRun(
 ): Promise<void> {
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const projectId = await projectRecordId(tx, row, principal, projectIds)
+    const resolvedProjectId = await projectRecordId(tx, row, principal, projectIds)
     const existingOwned = await existingEvidenceOwned(
       tx,
       'run',
@@ -256,7 +259,27 @@ async function pushRun(
       existingTaskId: existingTask?.task_id ?? null,
       write: existingOwned ? 'update' : 'insert',
     })
-    const values = runRecordValues(row, projectId, taskId)
+    const taskProjectId =
+      resolvedProjectId === null && taskId !== null
+        ? ((
+            await tx<{ project_id: string | null }[]>`
+              SELECT project_id::text AS project_id FROM hub_task
+              WHERE space_id=${principal.spaceId}::uuid AND id=${taskId}::uuid
+            `
+          )[0]?.project_id ?? null)
+        : null
+    const identity = runProjectTaskIdentityDecision({
+      runId: String(row.id),
+      payloadProjectId: resolvedProjectId,
+      taskId,
+      taskProjectId,
+      probe: Boolean(row.probe),
+      commandName: PLATFORM_SLUG,
+    })
+    if (identity.refusal !== null) {
+      throw new OutboxRowError(identity.refusal, 'row-validation')
+    }
+    const values = runRecordValues(row, identity.projectId, identity.taskId)
     const evidenceUnvoid = row.evidenceUnvoid
     if (evidenceUnvoid !== null) await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
     const exclusion = await tx`
