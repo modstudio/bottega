@@ -919,7 +919,6 @@ async function pushHostedRow(input: {
     const record: Payload = {
       ...parsed,
       spaceId: rowPrincipal.spaceId,
-      ...(kind === 'run' ? { startedByUserId: identity.user.id } : {}),
     }
     if (String(record.machineId) !== input.machineId) {
       throw new OutboxRowError(

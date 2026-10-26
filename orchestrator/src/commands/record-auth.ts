@@ -279,6 +279,12 @@ export function register(program: Command): void {
         log(`outbox row ${String(rowId)} will retry on the next sync`)
         return
       }
+      // An empty needle matches every reason, which would retry the whole quarantine.
+      if (matching!.trim() === '') {
+        throw new Error(
+          `--matching requires non-empty text; name part of a quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
+        )
+      }
       const count = retryOutboxRowsMatching(matching!)
       log(`${count} outbox rows will retry on the next sync`)
     })

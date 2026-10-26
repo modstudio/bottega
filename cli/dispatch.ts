@@ -47,6 +47,11 @@ async function dispatchOutbox(
     return 0
   }
   const [verb, qualifiedId, ...extraArguments] = rest
+  // The bulk retry selects orchestrator rows by quarantine reason, so it names no row id.
+  if (verb === 'retry' && qualifiedId?.startsWith('--matching')) {
+    const prefix = ['record', 'outbox']
+    return entries.orch([...prefix, ...rest], invocationFor(prefix, invocation.publicPath))
+  }
   const match = qualifiedId?.match(/^(orch|hub):(.+)$/)
   if (!match) {
     console.error(

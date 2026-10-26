@@ -23,3 +23,11 @@ test.each([
     `exactly one retry form is required: \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retry --matching <text>\``,
   )
 })
+
+test.each([[''], ['  ']])('record outbox retry refuses empty --matching text %p', async (text) => {
+  const program = new Command().exitOverride()
+  register(program)
+  await expect(
+    program.parseAsync(['node', PLATFORM_SLUG, 'record', 'outbox', 'retry', '--matching', text]),
+  ).rejects.toThrow('--matching requires non-empty text')
+})
