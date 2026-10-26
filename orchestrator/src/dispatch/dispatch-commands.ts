@@ -180,6 +180,7 @@ type DispatchPresentation = {
   ): Promise<string>
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
+  harnessHandoff(id: string, json: boolean): boolean
 }
 
 export function reviewRoleForDispatch(
@@ -390,6 +391,8 @@ export async function dispatchCommand(
   const jobName = requestedJobName(argv, usage, doUsage)
   if (!jobName) return
   const porcelain = has('porcelain')
+  const json = has('json')
+  if (porcelain && json) throw new Error('--porcelain cannot be combined with --json')
   if (porcelain && has('follow')) {
     throw new Error('--porcelain cannot be combined with --follow')
   }
@@ -565,6 +568,7 @@ export async function dispatchCommand(
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
+    if (presentation.harnessHandoff(id, json)) return
     printRunId(presentation.runNumber(id))
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))

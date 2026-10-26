@@ -1,5 +1,7 @@
 // concern: run git guard
-import { worktreeGitDir } from '../git/git-environment.ts'
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { gitContext, worktreeGitDir } from '../git/git-environment.ts'
 import {
   assertSharedRefGuardOutsideWritableRoots,
   ensureWorkerBranchNamespaceDirs,
@@ -51,4 +53,16 @@ export function assertConfiguredGitGuard(
   writableRoots: string[],
 ): void {
   if (environment) assertWorkerGitGuardOutsideWritableRoots(environment, writableRoots)
+}
+
+/** Install an unconditional push refusal in one harness run's worktree metadata. */
+export function installHarnessPushGuard(worktree: Worktree | null): void {
+  if (!worktree) return
+  const hooks = join(worktreeGitDir(worktree.path), 'harness-hooks')
+  mkdirSync(hooks, { recursive: true })
+  const hook = join(hooks, 'pre-push')
+  writeFileSync(hook, '#!/bin/sh\necho "push refused: this worktree belongs to a harness run" >&2\nexit 1\n')
+  chmodSync(hook, 0o755)
+  gitContext(worktree.path, 'config', 'extensions.worktreeConfig', 'true')
+  gitContext(worktree.path, 'config', '--worktree', 'core.hooksPath', hooks)
 }

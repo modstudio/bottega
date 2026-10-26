@@ -39,6 +39,7 @@ import {
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey } from '../review/review-target.ts'
+import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -80,6 +81,13 @@ import {
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail, sha } from './run-process.ts'
+import { installHarnessPushGuard } from './run-git-guard.ts'
+import {
+  EXTERNAL_EXECUTOR,
+  HARNESS_AGENT,
+  HARNESS_EVIDENCE_EXCLUSION,
+  HARNESS_EXECUTOR,
+} from './run-executor.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
@@ -345,6 +353,10 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
   const identity = claimIdentity(opts.resume)
+  const harnessExecution = name === HARNESS_AGENT
+  const executor = harnessExecution ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR
+  const evidenceExcluded = harnessExecution ? HARNESS_EVIDENCE_EXCLUSION : null
+  const coordinatorPid = harnessExecution ? null : process.pid
   const updateReservedRun = () =>
     db()
       .query(
@@ -352,7 +364,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of_record_id=?,
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?
+                        automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
+                        executor=?, evidence_excluded=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -386,9 +399,11 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
-        process.pid,
+        coordinatorPid,
         storedMcpRequest(mcpRequest),
         transportName,
+        executor,
+        evidenceExcluded,
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -396,8 +411,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
-                          automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
+                          executor, evidence_excluded)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -435,10 +451,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
-        process.pid,
+        coordinatorPid,
         storedMcpRequest(mcpRequest),
         transportName,
         startedByUserId,
+        executor,
+        evidenceExcluded,
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
@@ -529,6 +547,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const sandboxRoot = sandboxRootForRun(claim.id)
   const { scratchDir, runtimeDir } = runOwnedPaths(recordId, sandboxRoot.record_id, runsDir)
   mkdirSync(scratchDir, { recursive: true })
+  if (resume.isFirstTurn) {
+    const boundLine = `\n\n${jobBoundInstruction(job(opts.job), timeoutMs, scratchDir)}`
+    const split = prompt.lastIndexOf('\n---\n')
+    prompt =
+      split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
+  }
   prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
   writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
@@ -926,6 +950,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       db()
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
+      if (harnessExecution) installHarnessPushGuard(worktree)
     }
     ;({
       provisionedMcpConfig,

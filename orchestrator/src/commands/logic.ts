@@ -52,6 +52,7 @@ import { resolveQuestionIdentifier } from '../run/question-identifier.ts'
 import { resolveAnswerIdentifier } from '../run/run-answer-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { answerCommand, continueCommand, retryCommand } from '../run/run-message-commands.ts'
+import { finishHarnessRun } from '../run/run-harness-finish.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { formatShipCleanup, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
@@ -516,6 +517,12 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .option('--artifacts', 'print the run artifact manifest')
     .allowExcessArguments(false)
     .action((id, options) => resultByIdentifier(id, options))
+  describedCommand(program, 'finish <id>', 'record the reply from a harness-executed run')
+    .allowExcessArguments(false)
+    .action(async (id) => {
+      const result = await finishHarnessRun(localRunId(id))
+      presentation.printRunId(result.record_id)
+    })
   describedCommand(program, 'wait <ids...>', 'wait for runs to reach a terminal state')
     .option('--timeout <value>', 'stop waiting after this duration')
     .action(async (ids, options) => waitByIdentifiers(ids, options))

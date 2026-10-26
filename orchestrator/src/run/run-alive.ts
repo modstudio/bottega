@@ -8,9 +8,15 @@ export function runAlive(input: {
   status: string
   lease: RunLeaseState
   pidAlive: boolean
+  executor?: 'external' | 'harness'
+  ownerSessionAlive?: boolean
+  wallBoundExceeded?: boolean
 }): boolean {
   if (input.status === 'asking') return true
   if (input.status !== 'running') return false
+  if (input.executor === 'harness') {
+    return Boolean(input.ownerSessionAlive) && !input.wallBoundExceeded
+  }
   if (input.lease === 'held') return true
   if (input.lease === 'free') return false
   return input.pidAlive

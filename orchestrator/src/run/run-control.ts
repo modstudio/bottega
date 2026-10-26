@@ -5,6 +5,7 @@
  * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
@@ -301,6 +302,7 @@ export type ChainTurn = {
   branch: string | null
   base_commit: string | null
   worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+  executor?: 'external' | 'harness'
 }
 
 /**
@@ -670,7 +672,7 @@ export async function continueRun(
     id,
     db()
       .query(
-        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor
          FROM run WHERE record_id = ? OR parent_run_record_id = ?`,
       )
       .all(id, id) as ChainTurn[],
@@ -701,6 +703,7 @@ export async function continueRun(
     worktree: latest.worktree,
     treePlan,
   })
+  const harnessExecution = latest.executor === 'harness'
   const sessionFrom = checkpoint.hasCheckpoint
     ? null
     : latest.vendor_session
@@ -718,10 +721,10 @@ export async function continueRun(
           vendor_session: string
           turn: number
         } | null)
-  if (!checkpoint.hasCheckpoint && !sessionFrom?.vendor_session) {
+  if (!harnessExecution && !checkpoint.hasCheckpoint && !sessionFrom?.vendor_session) {
     throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
   }
-  if (!checkpoint.hasCheckpoint && !latest.vendor_session) {
+  if (!harnessExecution && !checkpoint.hasCheckpoint && !latest.vendor_session) {
     console.error(
       `run ${id}: newest turn ${latest.record_id} recorded no session id; ` +
         `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
@@ -769,8 +772,8 @@ export async function continueRun(
     resume: {
       kind: continuationResumeKind(checkpoint.hasCheckpoint),
       parent: id,
-      agent: checkpoint.hasCheckpoint ? latest.agent : sessionFrom!.agent,
-      session: checkpoint.hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
+      agent: harnessExecution ? 'harness' : checkpoint.hasCheckpoint ? latest.agent : sessionFrom!.agent,
+      session: harnessExecution || checkpoint.hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),
@@ -790,6 +793,7 @@ export async function reportContinuedRun(
   flags: { detach: boolean; follow: boolean; quiet: boolean },
   presentation: RunControlPresentation,
 ): Promise<void> {
+  if (reportHarnessHandoff(childId)) return
   if (flags.detach || !flags.follow) {
     presentation.printRunId(childId)
     if (!flags.quiet) {
@@ -803,4 +807,24 @@ export async function reportContinuedRun(
     return
   }
   await follow(childId, flags.quiet, true, presentation)
+}
+
+export function reportHarnessHandoff(id: string): boolean {
+  const row = db()
+    .query('SELECT number,record_id,prompt_path,cwd,executor FROM run WHERE record_id=?')
+    .get(id) as {
+    number: number
+    record_id: string
+    prompt_path: string | null
+    cwd: string | null
+    executor: string
+  } | null
+  if (!row || row.executor !== 'harness') return false
+  if (!row.prompt_path || !row.cwd) throw new Error(`harness run ${id} has no prompt path or cwd`)
+  console.log(`run: ${row.number}`)
+  console.log(`record_id: ${row.record_id}`)
+  console.log(`prompt: ${join(dirname(row.prompt_path), 'bound-prompt.txt')}`)
+  console.log(`working_directory: ${row.cwd}`)
+  console.log(`finish: ${PLATFORM_SLUG} run finish ${row.record_id}`)
+  return true
 }

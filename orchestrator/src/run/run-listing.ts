@@ -126,7 +126,7 @@ function listingTurns(recordId: string, json: boolean) {
   if (!json) return undefined
   return db()
     .query(
-      `SELECT record_id, number, started_at, agent, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
+      `SELECT record_id, number, started_at, agent, executor, latency_ms, vendor_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
          FROM run WHERE record_id = ? OR parent_run_record_id = ?
         ORDER BY turn, number`,
     )
@@ -530,7 +530,7 @@ export async function runListingCommand(
   let rows = db()
     .query(
       `${unscoredCte}
-     SELECT r.record_id, r.number, r.started_at, r.agent, r.job, r.repo, r.latency_ms, r.vendor_tokens,
+     SELECT r.record_id, r.number, r.started_at, r.agent, r.executor, r.job, r.repo, r.latency_ms, r.vendor_tokens,
             current_run.status, current_run.failure_kind, current_run.error,
             current_run.last_event_at, current_run.started_at AS current_started_at,
             current_run.latency_ms AS current_latency_ms,
@@ -713,6 +713,7 @@ export async function runListingCommand(
     }
     // Keep the reason where a fan-out says its exclusions ran out so the command stays honest.
     if (r.route_reason) log(`      route: ${String(r.route_reason)}`)
+    if (r.executor === 'harness') log('      executor: harness')
     const warning = agentWorkValue(String(r.job), () => thinOutputWarning(runListingWarningRow(r)))
     if (warning) log(`      ${warning}`)
   }

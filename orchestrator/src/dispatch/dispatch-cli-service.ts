@@ -2,8 +2,9 @@
 /** Owns dispatch composition across routing, transport, and run-dispatch ports. Must not know CLI grammar. */
 import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -24,6 +25,7 @@ import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { branchOf } from '../git/git-environment.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
+import { delegationMode } from '../jobs/delegation.ts'
 import {
   effectiveMcpRequest,
   type McpRequest,
@@ -51,6 +53,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
+import { run } from '../run/run.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { routedPromptBytes } from '../run/run-routing-input.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
@@ -76,6 +79,36 @@ type Presentation = {
   error(...values: unknown[]): void
   printRunId(id: number): void
   cwd(): string
+}
+
+function printHarnessHandoff(id: string, json: boolean): boolean {
+  const row = db()
+    .query('SELECT record_id,number,prompt_path,cwd,executor FROM run WHERE record_id=?')
+    .get(id) as {
+    record_id: string
+    number: number
+    prompt_path: string | null
+    cwd: string | null
+    executor: string
+  } | null
+  if (!row || row.executor !== 'harness') return false
+  if (!row.prompt_path || !row.cwd) throw new Error(`harness run ${id} has no prompt path or cwd`)
+  const handoff = {
+    run: row.number,
+    record_id: row.record_id,
+    prompt_path: join(dirname(row.prompt_path), 'bound-prompt.txt'),
+    working_directory: row.cwd,
+    finish_command: `${PLATFORM_SLUG} run finish ${row.record_id}`,
+  }
+  if (json) console.log(JSON.stringify(handoff))
+  else {
+    console.log(`run: ${handoff.run}`)
+    console.log(`record_id: ${handoff.record_id}`)
+    console.log(`prompt: ${handoff.prompt_path}`)
+    console.log(`working_directory: ${handoff.working_directory}`)
+    console.log(`finish: ${handoff.finish_command}`)
+  }
+  return true
 }
 
 function earlierReviewRejections(
@@ -499,6 +532,16 @@ export async function detachRoutedRun(
   waitForCapacityBeforeDetach = false,
   presentation: Pick<Presentation, 'cwd' | 'error'> = { cwd: () => cwd, error: () => {} },
 ): Promise<string> {
+  if (delegationMode(job(jobName).needs, readDelegationSettings()) === 'harness') {
+    const result = await run({
+      ...spec,
+      job: jobName,
+      prompt: text,
+      agent: 'harness',
+      schemaPath: spec.schema,
+    })
+    return result.record_id
+  }
   const selected = await selectBeforeDetach(
     jobName,
     text,
@@ -592,6 +635,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       earlierReviewRejections,
       detach: commandDetacher(presentation),
       runNumber,
+      harnessHandoff: printHarnessHandoff,
       follow: (id, quiet) =>
         followRun(id, quiet, true, {
           dur: duration,

@@ -57,6 +57,7 @@ import {
   type RunControlPresentation,
   refuseEscapedChain,
   reportContinuedRun,
+  reportHarnessHandoff,
   resumeLaunchForRoot,
 } from './run-control.ts'
 import { detach } from './run-dispatch.ts'
@@ -753,7 +754,7 @@ export async function answerRun(
 
   const latest = db()
     .query(
-      `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+      `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor
      FROM run WHERE record_id = ? OR parent_run_record_id = ?
     ORDER BY turn DESC LIMIT 1`,
     )
@@ -767,6 +768,7 @@ export async function answerRun(
     branch: string | null
     base_commit: string | null
     worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+    executor: 'external' | 'harness'
   }
   const sessionFrom = latest.vendor_session
     ? latest
@@ -863,6 +865,7 @@ export async function answerRun(
   if (
     !ownersLive &&
     !skipResume &&
+    latest.executor !== 'harness' &&
     (!sessionFrom?.vendor_session || AGENTS[resumeAgent]?.caps.resumable === false)
   ) {
     throw new Error(
@@ -999,8 +1002,8 @@ export async function answerRun(
       resume: {
         kind: 'continue',
         parent: id,
-        agent: resumeAgent,
-        session: sessionFrom!.vendor_session!,
+        agent: latest.executor === 'harness' ? 'harness' : resumeAgent,
+        session: latest.executor === 'harness' ? undefined : sessionFrom!.vendor_session!,
         turn: latest.turn + 1,
         sessionId: row.session_id,
         worktree: worktreePath
@@ -1059,6 +1062,7 @@ export async function answerRun(
   auditRunMutation(answerAuthority, 'answer', null, db(), childId)
   if (!input.json)
     console.log(`ruled on ${answers.length} question(s); resumed run ${id} as run ${childId}`)
+  if (reportHarnessHandoff(childId)) return answerResult('resumed', id, row.number, childId)
   if (input.flags.detach || !input.flags.follow) {
     if (!input.flags.quiet) {
       console.error(

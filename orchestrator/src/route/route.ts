@@ -10,7 +10,11 @@ import {
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
-import { harnessDelegationRefusal, noEligibleAgentRefusal } from '../jobs/delegation.ts'
+import {
+  delegationMode,
+  harnessDelegationRefusal,
+  noEligibleAgentRefusal,
+} from '../jobs/delegation.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
@@ -1027,8 +1031,12 @@ export function pick(
   /** Stable findings viewpoint used for reviewer-precision calibration. */
   lens?: string,
   rng: () => number = Math.random,
+  allowHarness = true,
 ): { agent: string; reason: string } {
   const j = job(jobName)
+  if (allowHarness && delegationMode(j.needs, readDelegationSettings()) === 'harness') {
+    return { agent: 'harness', reason: 'machine delegation mode' }
+  }
   assertExternalDelegation(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
   // Named in every reason below, so a route drawn from four PHP runs is never

@@ -5,7 +5,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { storeWritesRefused, writeTransaction } from '../database/db.ts'
+import { SESSION_LIVE_MS, storeWritesRefused, writeTransaction } from '../database/db.ts'
+import { job, resolveJobTimeoutMs } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   liveWorktreeSharers,
@@ -18,6 +19,7 @@ import {
 } from './question-close.ts'
 import { questionOpenSql } from './question-open.ts'
 import { runAlive } from './run-alive.ts'
+import { readDispatchState } from './run-artifacts.ts'
 import { auditRunMutation, runMutationAuthority } from './run-authority.ts'
 import { abandonedBootstrap, coordinatorSetupDeath, PENDING_BOOTSTRAP_MS } from './run-bootstrap.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
@@ -242,6 +244,8 @@ type RunningRow = {
   started_at: string
   job: string
   worktree: string | null
+  executor: 'external' | 'harness'
+  session_last_seen: string | null
 }
 
 function deadRunReason(row: RunningRow): string {
@@ -286,10 +290,16 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   ) {
     disposition = 'setup-death'
   } else {
+    const timeoutMinutes = readDispatchState(row.record_id)?.timeoutMinutes ?? undefined
+    const wallBound = resolveJobTimeoutMs(job(row.job), Number.POSITIVE_INFINITY, timeoutMinutes)
     disposition = runAlive({
       status: 'running',
       lease: leaseState,
       pidAlive: coordinatorPidAlive,
+      executor: row.executor,
+      ownerSessionAlive:
+        row.session_last_seen !== null && Date.parse(row.session_last_seen) >= now - SESSION_LIVE_MS,
+      wallBoundExceeded: now - Date.parse(row.started_at) > wallBound,
     })
       ? 'alive'
       : 'dead'
@@ -380,7 +390,10 @@ export function reapStale(
   const now = Date.now()
   const rows = d
     .query(
-      `SELECT number, record_id, pid, agent_pid, agent, started_at, job, worktree FROM run WHERE status='running'`,
+      `SELECT r.number, r.record_id, r.pid, r.agent_pid, r.agent, r.started_at, r.job, r.worktree,
+              r.executor, seen.last_seen AS session_last_seen
+         FROM run r LEFT JOIN session_seen seen ON seen.session_id=r.session_id
+        WHERE r.status='running'`,
     )
     .all() as RunningRow[]
 

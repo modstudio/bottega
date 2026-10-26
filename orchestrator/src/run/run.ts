@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
-import { minimumCliVersionRefusal } from '../agent/agents.ts'
+import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
@@ -29,7 +29,7 @@ import {
 import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
-import { job, jobBoundInstruction } from '../jobs/jobs.ts'
+import { job } from '../jobs/jobs.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -89,6 +89,7 @@ import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
+import { HARNESS_AGENT } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
@@ -139,6 +140,35 @@ import { taskRulingsForDispatch } from './task-rulings-store.ts'
 function completeStartup(): true {
   bindSignals()
   return true
+}
+
+function harnessAgent(): Agent {
+  return {
+    name: HARNESS_AGENT,
+    bin: '',
+    minimumCliVersion: '0.0.0',
+    billing: 'subscription',
+    operatedBy: 'vendor',
+    model: 'harness',
+    caps: {
+      readsRepo: true,
+      writesRepo: true,
+      mcp: false,
+      discoversMcpFromCwd: false,
+      schema: true,
+      replyFile: true,
+      resumable: true,
+    },
+    defaultTransport: 'cli',
+    argv: () => [],
+    stdin: false,
+    maxPromptBytes: Number.POSITIVE_INFINITY,
+    readsOut: false,
+    timeoutMs: Number.POSITIVE_INFINITY,
+    contextTokens: Number.POSITIVE_INFINITY,
+    outputCeilingStopReason: null,
+    notes: 'The caller harness executes this run in-session.',
+  }
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
@@ -357,6 +387,7 @@ export async function run(opts: {
     readsRepo: repoJob,
     writesRepo: writesJob,
     readOnlyBase,
+    mainCheckout: projectByName(runProjectName ?? '')?.path ?? callerCwd,
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
@@ -472,6 +503,8 @@ export async function run(opts: {
       },
       opts.probe,
       opts.lens,
+      Math.random,
+      resume.isFirstTurn,
     )
   const selectFirstTurnAgent = () =>
     selectAgentAndPreflightMcp({
@@ -497,18 +530,12 @@ export async function run(opts: {
     : // A resume keeps its already-selected worker and does not make a new delegation decision.
       { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
-  const a = requireAgent(launch.agent)
+  const a = launch.agent === HARNESS_AGENT ? harnessAgent() : requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
   const codexSandbox = decideCodexSandbox()
   const boundMs = resolveRunBound(requestedJob, a, timeoutMinutes, opts.reserveId)
-  if (resume.isFirstTurn) {
-    const boundLine = `\n\n${jobBoundInstruction(requestedJob, boundMs)}`
-    const split = prompt.lastIndexOf('\n---\n')
-    prompt =
-      split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
-  }
   if (transportName === 'acp') {
     try {
       assertAcpPolicyAllowed(opts.job, a.name, a, opts.agentExplicit, resume.isFirstTurn)
@@ -647,6 +674,25 @@ export async function run(opts: {
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
+  if (name === HARNESS_AGENT) {
+    return {
+      record_id: claim.id,
+      number: claim.number,
+      agent: name,
+      reason,
+      output: '',
+      latencyMs: 0,
+      exitCode: 0,
+      vendorTokens: null,
+      costUsd: null,
+      outPath,
+      worktree,
+      changes,
+      contract: null,
+      status: 'running',
+      handoff: { promptPath: join(dirname(promptPath), 'bound-prompt.txt'), cwd },
+    }
+  }
   const runProject = projectAt(callerCwd)
   const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
   const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)
