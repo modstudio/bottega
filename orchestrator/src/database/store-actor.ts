@@ -56,3 +56,56 @@ export function restrictedStoreActor(facts: StoreActorFacts): boolean {
 export function storeWriteRefusal(workerCaller: boolean): string {
   return workerCaller ? WORKER_STORE_WRITE_REFUSAL : LINKED_WORKTREE_WRITE_REFUSAL
 }
+
+/** How a connection reaches the store: writable, SQLite-enforced read-only, or the immutable snapshot. */
+export type StoreOpenMode = 'read-write' | 'read-only' | 'read-only-immutable'
+
+/**
+ * How long the handle that asks lives. A one-shot reader — a command's single check — tolerates
+ * reading the store as of its open. A persistent handle is the process connection a long-lived
+ * command such as the orchestrator MCP server holds for its whole life.
+ */
+export type ReaderLifetime = 'one-shot' | 'persistent'
+
+/**
+ * The immutable open is a snapshot: it reads the store as of the open and never sees a later
+ * writer. Only the one-shot reader may take it, so a persistent restricted handle takes plain
+ * read-only instead — still refused writes by SQLite itself, and still seeing every writer that
+ * arrives afterwards.
+ */
+export function readerOpenMode(lifetime: ReaderLifetime, openMode: StoreOpenMode): StoreOpenMode {
+  if (lifetime === 'persistent' && openMode === 'read-only-immutable') return 'read-only'
+  return openMode
+}
+
+/** What the adapter established when the plain read-only open of a persistent handle failed. */
+export type PersistentReadOnlyFacts = {
+  path: string
+  storeDirectory: string
+  walOrShmSidecarPresent: boolean
+  storeDirectoryWritable: boolean
+  failure: string
+}
+
+/**
+ * The refusal a persistent restricted reader gets when no plain read-only open can be
+ * established. The usual cause is a store with no WAL sidecar: SQLite refuses to read such a
+ * store through a read-only connection, because a read-only connection cannot establish the
+ * shared-memory sidecar it would need — and the immutable open, which would read it, is the
+ * silent snapshot a persistent reader must not take. The text names the condition that
+ * refused it rather than reporting the bare failure.
+ */
+export function persistentReadOnlyRefusal(facts: PersistentReadOnlyFacts): string {
+  const condition = facts.walOrShmSidecarPresent
+    ? 'the read-only open was refused'
+    : 'the store has no -wal/-shm sidecar and a read-only connection cannot establish one' +
+      (facts.storeDirectoryWritable
+        ? ''
+        : `, and this process cannot write the store directory (${facts.storeDirectory})`)
+  return (
+    `refusing to read the orchestrator store from a long-lived restricted process: ${facts.path}\n` +
+    'invariant: A persistent reader must see every later writer, so it never takes the immutable open, which reads the store as of its open.\n' +
+    `condition: ${condition}: ${facts.failure}\n` +
+    `cleared by: run the command as an operator from the main checkout, which opens the store for writing and leaves its sidecars behind, or set BOTTEGA_ORCHESTRATOR_DB to a scratch copy under the OS temporary directory (${resolve(tmpdir())})`
+  )
+}

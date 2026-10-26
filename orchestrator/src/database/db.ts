@@ -2,7 +2,16 @@
 /** Knows store location, connection authority, schema lifecycle, transactions, and fixture seeding. Must not know worktrees, runs, routing, reviews, contracts, transports, CLI adapters, or Docker resources. */
 import { constants, Database } from 'bun:sqlite'
 import { createHash, randomUUID } from 'node:crypto'
-import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import {
+  accessSync,
+  existsSync,
+  constants as fileConstants,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -45,6 +54,8 @@ import {
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 import {
   LINKED_WORKTREE_WRITE_REFUSAL,
+  persistentReadOnlyRefusal,
+  readerOpenMode,
   restrictedStoreActor,
   type StoreActorFacts,
   storeWriteRefusal,
@@ -166,7 +177,7 @@ export function databaseOpenMode(): 'read-write' | 'read-only restricted caller'
 
 /**
  * Open a caller-owned connection that SQLite itself will refuse to write through.
- * Without WAL sidecars it opens immutable, so it reads the store as of the open and never sees a later writer; a short-lived check tolerates that and a long-lived reader must not use it.
+ * Without WAL sidecars it opens immutable, so it reads the store as of the open and never sees a later writer; a short-lived check tolerates that and a long-lived reader must not use it — the process handle takes plain read-only for exactly that reason (see openPersistentReadOnlyDatabase).
  */
 export function openReadOnlyDatabase(path = DB_PATH): Database {
   if (path === DB_PATH) {
@@ -197,6 +208,44 @@ function openReadOnlyStore(path: string, immutable: boolean): Database {
 /** Run one read command against a SQLite-enforced read-only process handle. */
 export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
   return databaseAccess.run(action)
+}
+
+/**
+ * The process handle is this process's persistent reader, so it takes plain read-only: the
+ * immutable snapshot (openReadOnlyStore's URI open) stays on the one-shot reader path. A
+ * read-only WAL reader that cannot build its -shm sidecar opens and then fails on its first
+ * read, so the reach is proved here and named in the refusal, rather than surfacing later as an
+ * unexplained failure — and never by silently reading a snapshot.
+ */
+function openPersistentReadOnlyDatabase(path: string): Database {
+  const storeDirectory = dirname(path)
+  const walOrShmSidecarPresent = existsSync(`${path}-wal`) || existsSync(`${path}-shm`)
+  let database: Database | null = null
+  try {
+    database = openReadOnlyStore(path, false)
+    database.query('SELECT count(*) AS tables FROM sqlite_master').get()
+    return database
+  } catch (error) {
+    database?.close()
+    throw new Error(
+      persistentReadOnlyRefusal({
+        path,
+        storeDirectory,
+        walOrShmSidecarPresent,
+        storeDirectoryWritable: storeDirectoryIsWritable(storeDirectory),
+        failure: error instanceof Error ? error.message : String(error),
+      }),
+    )
+  }
+}
+
+function storeDirectoryIsWritable(directory: string): boolean {
+  try {
+    accessSync(directory, fileConstants.W_OK)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function commandReadOnlyDatabase(): Database {
@@ -400,10 +449,11 @@ function defaultDatabase(writable: boolean): Database {
   const access = orchestratorStoreAccess(
     existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`),
   )
+  const openMode = readerOpenMode('persistent', access.openMode)
   const d =
-    access.openMode === 'read-write'
+    openMode === 'read-write'
       ? new Database(DB_PATH, { readwrite: true, create: false })
-      : openReadOnlyStore(DB_PATH, access.openMode === 'read-only-immutable')
+      : openPersistentReadOnlyDatabase(DB_PATH)
   // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record

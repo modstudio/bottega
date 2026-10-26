@@ -17,6 +17,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './worktree-preflight.ts',
   ]),
   module('orchestrator/src/ask/ask-failure.ts', ['node:fs', 'node:path']),
+  module('orchestrator/src/ask/ask-invocation.ts', ['../../../shared/commander-public-path.ts']),
   module('orchestrator/src/ask/ask-proxy.ts', ['node:net', './ask-failure.ts']),
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/resources/resource-claims.ts', [
