@@ -340,16 +340,16 @@ try {
     await admin`INSERT INTO hub_task
       (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
        first_seen,last_seen,created_at,updated_at) VALUES
-      (${waitingTaskA}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,'DEV-943',${PLATFORM_SLUG},
+      (${waitingTaskA}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},${PROJECT_A}::uuid,'DEV-656',${PLATFORM_SLUG},
        'waiting task A','active','active','local',now(),now(),now(),now()),
-      (${waitingTaskB}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},${PROJECT_B}::uuid,'DEV-943',${PLATFORM_SLUG},
+      (${waitingTaskB}::uuid,${SPACE_B}::uuid,${PLATFORM_SLUG},${PROJECT_B}::uuid,'DEV-656',${PLATFORM_SLUG},
        'waiting task B','active','active','local',now(),now(),now(),now())`
     const waitingInput: OperatorWaitingEmailInput = {
       kind: 'question',
       item_id: 943_001,
       episode: 'fresh-send',
       project: PLATFORM_SLUG,
-      task_key: 'DEV-943',
+      task_key: 'DEV-656',
       task_id: null,
       question: 'Should this delivery proceed?',
       options: ['Proceed', 'Stop'],
@@ -411,6 +411,7 @@ try {
       ])
     )
       throw new Error(`operator waiting task links were ${JSON.stringify([...waitingTaskLinks])}`)
+    await admin`DELETE FROM hub_task WHERE id IN (${waitingTaskA}::uuid,${waitingTaskB}::uuid)`
     const sent: string[] = []
     const sentCount = () => sent.length
     const mail = { send: async () => void sent.push('sent') }
