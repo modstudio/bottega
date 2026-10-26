@@ -295,7 +295,6 @@ function reportUnownedAdoption(
 
 async function refuseUserRuling(
   project: string | null,
-  launchKey: string | null,
   taskRecordId: string | null,
   fromOperator: boolean,
 ): Promise<void> {
@@ -306,15 +305,15 @@ async function refuseUserRuling(
 }
 
 async function requireRulingAttributions(
-  row: Pick<AnswerRootRow, 'repo' | 'launch_key' | 'task_record_id'>,
+  row: Pick<AnswerRootRow, 'repo' | 'task_record_id'>,
   input: AnswerRunInput,
 ): Promise<boolean> {
   if (!Array.isArray(input.rulings)) {
-    await refuseUserRuling(row.repo, row.launch_key, row.task_record_id, input.fromOperator)
+    await refuseUserRuling(row.repo, row.task_record_id, input.fromOperator)
     return input.fromOperator
   }
   for (const ruling of input.rulings) {
-    await refuseUserRuling(row.repo, row.launch_key, row.task_record_id, ruling.fromOperator)
+    await refuseUserRuling(row.repo, row.task_record_id, ruling.fromOperator)
   }
   return input.rulings.some((ruling) => ruling.fromOperator)
 }
