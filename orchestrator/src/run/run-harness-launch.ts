@@ -45,7 +45,10 @@ export function harnessAgent(): Agent {
   }
 }
 
-export function harnessDispatch(needs: Parameters<typeof delegationMode>[0], request?: McpRequest) {
+export function harnessDispatch(
+  needs: Parameters<typeof delegationMode>[0] & { mcp?: boolean },
+  request?: McpRequest,
+) {
   const harness = delegationMode(needs, readDelegationSettings()) === 'harness'
   return { harness, mcpRequest: harness ? undefined : effectiveMcpRequest(request, { needs }) }
 }

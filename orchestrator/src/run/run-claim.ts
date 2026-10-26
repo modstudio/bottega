@@ -241,7 +241,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     transportName,
     a,
     mcpConnection,
-    mcpMode,
     declaredDeliverables,
     timeoutMinutes,
     timeoutMs,
@@ -527,7 +526,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
       mcpConnection?.error ??
-        (mcpMode ? 'no registered project identifies the canonical MCP server' : null),
+        (input.mcpMode ? 'no registered project identifies the canonical MCP server' : null),
       opts.schemaPath ?? null,
       opts.lens ?? null,
       keepTree ? 1 : 0,
@@ -960,7 +959,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       inherited: resume.workspaceSource === 'retained',
       writesJob,
       repoJob,
-      mcpMode,
+      mcpMode: input.mcpMode,
       mcpConnection,
       usingMcp,
     }))

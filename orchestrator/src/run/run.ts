@@ -85,18 +85,12 @@ import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-arti
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
-import type { ClaimResult } from './run-claim-types.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
-import {
-  completeRunStartup,
-  harnessAgent,
-  harnessDispatch,
-  harnessRunningResult,
-} from './run-harness-launch.ts'
+import * as harness from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -241,7 +235,10 @@ export async function run(opts: {
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job)
-  const { harness: harnessDelegation, mcpRequest } = harnessDispatch(requestedJob.needs, opts.mcp)
+  const { harness: harnessDelegation, mcpRequest } = harness.harnessDispatch(
+    requestedJob.needs,
+    opts.mcp,
+  )
   const prior = opts.resume
   const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
@@ -501,7 +498,7 @@ export async function run(opts: {
     : // A resume keeps its already-selected worker and does not make a new delegation decision.
       { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
-  const a = launch.agent === HARNESS_AGENT ? harnessAgent() : requireAgent(launch.agent)
+  const a = launch.agent === HARNESS_AGENT ? harness.harnessAgent() : requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
@@ -575,35 +572,7 @@ export async function run(opts: {
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
   let outPath = paths.output
-  let claimedRun: ClaimResult
-  let {
-    promptPath,
-    outputPath: claimedOutputPath,
-    originalSchemaPath,
-    textReplyContract,
-    schemaPath,
-    started,
-    launchKey,
-    runToken,
-    claim,
-    keepTree,
-    scratchDir,
-    worktree,
-    changes,
-    isolatedCwd,
-    removeIsolatedCwd,
-    provisionedMcpConfig,
-    retargetDiagnostic,
-    mcpSetupHeader,
-    mcpTrustGranted,
-    grokMcpEnvironment,
-    runtimeDir,
-    runtimeDirExisted,
-    cwd,
-    prompt: claimedBoundPrompt,
-    mcpConnection: claimedMcpConnection,
-    usingMcp: claimedUsingMcp,
-  } = (claimedRun = await claimRun({
+  const claimedRun = await claimRun({
     opts,
     runsDir: RUNS_DIR,
     stamp,
@@ -640,14 +609,42 @@ export async function run(opts: {
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
-  }))
+  })
+  let {
+    promptPath,
+    outputPath: claimedOutputPath,
+    originalSchemaPath,
+    textReplyContract,
+    schemaPath,
+    started,
+    launchKey,
+    runToken,
+    claim,
+    keepTree,
+    scratchDir,
+    worktree,
+    changes,
+    isolatedCwd,
+    removeIsolatedCwd,
+    provisionedMcpConfig,
+    retargetDiagnostic,
+    mcpSetupHeader,
+    mcpTrustGranted,
+    grokMcpEnvironment,
+    runtimeDir,
+    runtimeDirExisted,
+    cwd,
+    prompt: claimedBoundPrompt,
+    mcpConnection: claimedMcpConnection,
+    usingMcp: claimedUsingMcp,
+  } = claimedRun
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   if (name === HARNESS_AGENT) {
-    return harnessRunningResult(claimedRun, reason, writesJob)
+    return harness.harnessRunningResult(claimedRun, reason, writesJob)
   }
   const runProject = projectAt(callerCwd)
   const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
@@ -869,7 +866,7 @@ export async function run(opts: {
       prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
       persistBoundPrompt(promptPath, prompt, claim.id)
     }
-    startupComplete = completeRunStartup()
+    startupComplete = harness.completeRunStartup()
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }

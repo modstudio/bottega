@@ -66,8 +66,6 @@ import {
 import { detach } from './run-dispatch.ts'
 import { packedResumePrompt } from './run-resume-prompt.ts'
 
-const RUN_STATUS_SQL = 'SELECT status FROM run WHERE record_id = ?'
-
 import {
   previousAttemptTaskPointer,
   renderWritingRetryPrompt,
