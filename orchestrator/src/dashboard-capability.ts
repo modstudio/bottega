@@ -7,13 +7,14 @@ import {
   DASHBOARD_CAPABILITY_TOKEN_ENV,
   type DashboardCapability,
 } from '../../shared/dashboard-capability.ts'
+import { PRODUCT_CLI_ENTRYPOINT } from '../../shared/install-root.ts'
 import { observeBoundedSubprocess, pidAlive } from '../../shared/process-identity.ts'
 
 const DASHBOARD_CAPABILITY_PS_TIMEOUT_MS = 10_000
 
 export function dashboardServeCommand(command: string): boolean {
   const words = command.trim().split(/\s+/)
-  const frontDoorSource = `cli/${PLATFORM_SLUG}.ts`
+  const frontDoorSources = [`cli/${PLATFORM_SLUG}.ts`, PRODUCT_CLI_ENTRYPOINT]
   return words.some((word, index) => {
     const next = words[index + 1]
     const after = words[index + 2]
@@ -25,7 +26,7 @@ export function dashboardServeCommand(command: string): boolean {
       return true
     }
     if (
-      (word === frontDoorSource || word.endsWith(`/${frontDoorSource}`)) &&
+      frontDoorSources.some((source) => word === source || word.endsWith(`/${source}`)) &&
       next === 'dashboard' &&
       after === 'start'
     ) {
