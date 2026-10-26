@@ -222,6 +222,18 @@ export function heldTreeWorkIsUnique(facts: HeldTreeWorkFacts): boolean {
   return !(facts.treeClean && facts.treeHead !== null && facts.treeHead === facts.openPrHead)
 }
 
+/**
+ * Whether reading the tree's open pull request can change the hold's verdict.
+ *
+ * Follows from `heldTreeWorkIsUnique`: a hold that is not landing-progress on a dirty tree keeps
+ * its unique work whatever the pull request says, so its pull request need not be read; every
+ * other hold consults it. A fact gatherer uses this to spend an inspection only where the ruling
+ * can act on it.
+ */
+export function pullRequestLookupNeeded(hold: LandingTreeHoldKind, treeClean: boolean): boolean {
+  return hold === 'landing-progress' || treeClean
+}
+
 type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
 
 /** Whether a claiming ship-task cursor still has its own landing steps ahead of it. */

@@ -12,6 +12,7 @@ import {
   landingTreeOpeningRefusal,
   landingTreeReleaseDecision,
   landingTreeRunAdoptionDecision,
+  pullRequestLookupNeeded,
 } from './landing-tree.ts'
 
 describe('landing-tree run adoption', () => {
@@ -318,6 +319,21 @@ describe('held-tree unique work', () => {
         treeHead: null,
       }),
     ).toBe(false)
+  })
+})
+
+describe('held-tree pull-request lookup', () => {
+  test('a landing-progress hold reads the pull request whatever the tree looks like', () => {
+    expect(pullRequestLookupNeeded('landing-progress', true)).toBe(true)
+    expect(pullRequestLookupNeeded('landing-progress', false)).toBe(true)
+  })
+
+  test('a clean non-landing-progress hold reads the pull request', () => {
+    expect(pullRequestLookupNeeded('other', true)).toBe(true)
+  })
+
+  test('a dirty non-landing-progress hold skips the pull request', () => {
+    expect(pullRequestLookupNeeded('other', false)).toBe(false)
   })
 })
 
