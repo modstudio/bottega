@@ -351,17 +351,83 @@ function composedReviewEvidence(
 
 function architectReadSnapshot(
   evidence: TriageEvidence,
-  round: CompleteReviewRound,
+  round: CompleteReviewRound | null,
   readRecordId: string,
 ): TriageSnapshot {
+  const reviews = round?.reviews ?? []
   return {
-    reviewRecordIds: round.reviews.map((review) => review.reviewRecordId).sort(),
+    reviewRecordIds: reviews.map((review) => review.reviewRecordId).sort(),
     patchId: evidence.patchId,
     tier: evidence.tier,
-    lensRounds: recordedLensRounds(round.reviews),
-    findingCount: round.reviews.flatMap((review) => review.findings).length,
+    lensRounds: recordedLensRounds(reviews),
+    findingCount: reviews.flatMap((review) => review.findings).length,
     admissionPath: 'architect_read',
     readRecordId,
+  }
+}
+
+/**
+ * The read of this exact tip that admits the change.
+ *
+ * Tier `0` has no review round to fall back on, so its read must name a session: the branch
+ * owner's, or any identified caller's on a branch no run owns. A read crediting an earlier
+ * round at a higher tier matches the branch owner exactly, as it did before tier `0` reads.
+ */
+function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
+  const reader =
+    recordedAfter === undefined
+      ? (session: string | null) =>
+          session !== null &&
+          (evidence.branchOwnerSession === null || session === evidence.branchOwnerSession)
+      : (session: string | null) => session === evidence.branchOwnerSession
+  return evidence.reads.find(
+    (read) =>
+      reader(read.sessionId) &&
+      read.tip === evidence.tip &&
+      read.patchId === evidence.patchId &&
+      read.pathSet === evidence.pathSet &&
+      (recordedAfter === undefined || read.recordedAt > recordedAfter),
+  )
+}
+
+function incompleteArchitectRead(
+  evidence: TriageEvidence,
+): Exclude<TriageDecision, { complete: true }> {
+  return {
+    complete: false,
+    snapshot: exactReviewEvidence(evidence).snapshot,
+    missingReview: false,
+    unfinishedReviewNumbers: [],
+    undisposedFindings: [],
+    missingLenses: [],
+    lensesAlreadyComplete: [],
+    missingSecondOpinion: null,
+    architectReadRequired: true,
+    earlierReviewNumber: null,
+    earlierReviewTier: null,
+    finalTierRaised: false,
+    noCompleteReviewRound: false,
+  }
+}
+
+function decideTierZeroTriage(evidence: TriageEvidence): TriageDecision {
+  const exact = exactReviewEvidence(evidence)
+  const exactRead = matchingOwnerRead(evidence)
+  if (!exactRead) return incompleteArchitectRead(evidence)
+  if (
+    exact.currentPatch.unfinishedReviewNumbers.length ||
+    exact.currentPatch.undisposedFindings.length
+  ) {
+    return {
+      ...incompleteArchitectRead(evidence),
+      unfinishedReviewNumbers: exact.currentPatch.unfinishedReviewNumbers,
+      undisposedFindings: exact.currentPatch.undisposedFindings,
+      architectReadRequired: false,
+    }
+  }
+  return {
+    complete: true,
+    snapshot: architectReadSnapshot(evidence, null, exactRead.recordId),
   }
 }
 
@@ -479,6 +545,7 @@ function incompleteTriageDecision(input: {
 
 /** One pure decision over the already-selected rows for a patch/path change group. */
 export function decideTriage(evidence: TriageEvidence): TriageDecision {
+  if (evidence.tier === 0) return decideTierZeroTriage(evidence)
   const reviewPlan = evidence.reviewPlan ?? {
     round: { lenses: [] },
     admissionRequired: evidence.applicableReview,
@@ -506,16 +573,7 @@ export function decideTriage(evidence: TriageEvidence): TriageDecision {
   const hasCompletedBranchReview = evidence.branchReviewGroups.some(({ reviews }) =>
     reviews.some((review) => review.completedAt !== null && reviewCountsAsRound(review.role)),
   )
-  const exactRead = earlierRound
-    ? evidence.reads.find(
-        (read) =>
-          read.tip === evidence.tip &&
-          read.patchId === evidence.patchId &&
-          read.pathSet === evidence.pathSet &&
-          read.recordedAt > earlierRound.completedAt &&
-          read.sessionId === evidence.branchOwnerSession,
-      )
-    : undefined
+  const exactRead = earlierRound ? matchingOwnerRead(evidence, earlierRound.completedAt) : undefined
   const finalTierRaised = Boolean(earlierRound && evidence.tier > earlierRound.tier)
   if (
     evidence.reviewPlan !== undefined &&

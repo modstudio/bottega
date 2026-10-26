@@ -37,12 +37,6 @@ const evidence = (overrides: Partial<TriageEvidence> = {}): TriageEvidence => ({
 })
 
 describe('pull-request triage decision', () => {
-  test('tier zero needs no review', () => {
-    expect(
-      decideTriage(evidence({ tier: 0, applicableReview: { lenses: [] }, reviews: [] })),
-    ).toMatchObject({ complete: true })
-  })
-
   test('path a admits unchanged complete exact evidence', () => {
     expect(decideTriage(evidence())).toEqual({
       complete: true,
