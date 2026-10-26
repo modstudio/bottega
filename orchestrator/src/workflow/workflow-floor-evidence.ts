@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
@@ -112,10 +112,7 @@ export function hubTaskReadRefusal(
   stdout: string,
 ): string {
   const rawDetail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${status}`
-  const detail =
-    containsSecretShaped(rawDetail) || /\b(?:proxy-)?authorization\b/i.test(rawDetail)
-      ? 'detail withheld'
-      : rawDetail
+  const detail = withholdSecretShapedDetail(rawDetail)
   const attempted = `${PLATFORM_SLUG} task show ${key} --json --fresh`
   if (
     rawDetail.split('\n').some((line) => {

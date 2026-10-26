@@ -11,9 +11,7 @@ import {
   readHubTasks,
   taskReadRefusal,
 } from '../workflow/workflow-task-reference.ts'
-
-export type { HubTaskReader, HubTaskReference } from '../workflow/workflow-task-reference.ts'
-export { readHubTasks } from '../workflow/workflow-task-reference.ts'
+import { linkWorkflowQuestionsTaskReference } from './question-mutation.ts'
 
 type TaskLinkSource = 'launch_key' | 'review_ref' | 'branch' | 'turn'
 type ProjectLinkSource = 'task-project' | 'cwd' | 'scratchpad-cwd'
@@ -102,11 +100,14 @@ const LOCAL_TASK_LINKS = {
       JOIN project p ON p.record_id=c.project_record_id
       WHERE q.workflow_task_record_id IS NOT NULL`,
     write: (database, update) => {
-      linkWorkflowTaskLabel(database, {
-        project: update.project,
-        workflowKey: update.taskKey,
-        taskRecordId: update.taskId,
-      })
+      linkWorkflowQuestionsTaskReference(
+        {
+          project: update.project,
+          workflowKey: update.taskKey,
+          taskRecordId: update.taskId,
+        },
+        database,
+      )
     },
   },
   port_ref: {
@@ -305,7 +306,11 @@ async function hubTaskMap(
     try {
       rows = await reader(project.name)
     } catch (error) {
-      throw taskReadRefusal(project.name, error instanceof Error ? error.message : String(error))
+      throw taskReadRefusal(
+        project.name,
+        '',
+        error instanceof Error ? error.message : String(error),
+      )
     }
     for (const task of rows) {
       byKey.set(task.key, task)

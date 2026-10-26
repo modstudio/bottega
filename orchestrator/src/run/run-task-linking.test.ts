@@ -5,12 +5,8 @@ import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  deriveRunLinks,
-  type HubTaskReference,
-  linkRunTasks,
-  type RunLinkFacts,
-} from './run-task-linking.ts'
+import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
 
 const project = (name: string, path: string, recordId = `${name}-id`) =>
   ({ recordId, name, path, stack: null, canon: false, retiredAt: null, settings: {} }) as Project

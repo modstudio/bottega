@@ -55,6 +55,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-task-reference.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-task-reference.ts', ['bun:sqlite']),

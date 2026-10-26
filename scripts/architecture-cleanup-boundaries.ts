@@ -176,6 +176,7 @@ export const cleanupBoundarySpecs = [
       '../run/run-owner-session-liveness.ts',
       '../run/run-task-linking.ts',
       '../run/synthetic-lifecycle-job.ts',
+      '../workflow/workflow-task-reference.ts',
       '../sandbox/grok-trust.ts',
       '../worktree/worktree-attribution.ts',
       '../worktree/worktree-remove.ts',

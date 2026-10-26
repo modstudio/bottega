@@ -12,7 +12,6 @@ import {
 export function taskRulingsForDispatch(input: {
   resume: boolean
   project: string | null
-  launchKey: string | null
   taskRecordId: string | null
 }): TaskRulingsSelection {
   if (input.resume || input.project === null || input.taskRecordId === null) {

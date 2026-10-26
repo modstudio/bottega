@@ -96,7 +96,6 @@ describe('task ruling candidate query', () => {
     const selected = taskRulingsForDispatch({
       resume: false,
       project: 'renamed-fixture',
-      launchKey: 'DEV-960',
       taskRecordId: 'task-960',
     })
 
@@ -148,7 +147,6 @@ describe('task ruling candidate query', () => {
     const selected = taskRulingsForDispatch({
       resume: false,
       project: PLATFORM_SLUG,
-      launchKey: 'DEV-960',
       taskRecordId: 'task-960',
     })
 

@@ -25,10 +25,17 @@ export function inheritedRunFacts(parent: string): {
 export function inheritedRunLinks(parent: string): {
   taskRecordId: string | null
   projectRecordId: string | null
+  projectName: string | null
 } {
   const facts = inheritedRunFacts(parent)
+  const project = facts.project_record_id
+    ? (db()
+        .query<{ name: string }, [string]>('SELECT name FROM project WHERE record_id=?')
+        .get(facts.project_record_id) ?? null)
+    : null
   return {
     taskRecordId: facts.task_record_id,
     projectRecordId: facts.project_record_id,
+    projectName: project?.name ?? null,
   }
 }

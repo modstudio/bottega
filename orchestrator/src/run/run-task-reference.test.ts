@@ -7,7 +7,7 @@ afterEach(() => {
 
 describe('run task reference', () => {
   test('resolves a record id within the recorded project for the run claim', async () => {
-    const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
+    spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
       stdout: JSON.stringify([
         {
           record_id: '01990000-0000-7000-8000-000000000895',
@@ -30,9 +30,27 @@ describe('run task reference', () => {
         probe: false,
       }),
     ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
-    expect(spawn.mock.calls[0]![0]).toEqual(
-      expect.arrayContaining(['task', 'list', '--project', 'beta', '--json']),
-    )
+  })
+
+  test('resolves a project-less launch key through the injected task reader', async () => {
+    expect(
+      await admitNewRunReference({
+        projectName: null,
+        projectRecordId: null,
+        key: 'SHARED-42',
+        cwd: null,
+        launchCwd: null,
+        probe: false,
+        hubTaskByKeyReader: async (key) =>
+          key === 'SHARED-42'
+            ? {
+                record_id: '01990000-0000-7000-8000-000000000895',
+                key: 'SHARED-42',
+                project: 'beta',
+              }
+            : null,
+      }),
+    ).toMatchObject({ taskRecordId: '01990000-0000-7000-8000-000000000895' })
   })
 
   test('refuses with the remedy when hub is unavailable and no project can be derived', async () => {

@@ -204,7 +204,7 @@ async function claimLinks(
   launchCwd: string,
   inherited: { task_record_id: string | null; project_record_id: string | null } | null,
 ) {
-  if (!inherited && input.precomputedLinks) return input.precomputedLinks
+  if (input.precomputedLinks) return input.precomputedLinks
   return admitNewRunReference({
     inheritedTaskRecordId: inherited?.task_record_id,
     inheritedProjectRecordId: inherited?.project_record_id,

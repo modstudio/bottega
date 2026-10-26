@@ -406,6 +406,8 @@ export async function run(opts: {
   const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const dispatchRulings = await prepareRunDispatchRulings({
     firstTurn: resume.isFirstTurn,
+    workspaceSource: resume.workspaceSource,
+    parentRunRecordId: opts.resume?.parent ?? null,
     projectName: runProjectName,
     projectRecordId: runProjectId,
     key: dispatchKey,
