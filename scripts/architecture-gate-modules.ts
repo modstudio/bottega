@@ -44,6 +44,7 @@ export const gateModules: GateModule[] = [
     './gate-checkout.ts',
     './gate-decision.ts',
     './gate-index.ts',
+    './gate-run.ts',
     './host-slot-wait.ts',
   ]),
   module('orchestrator/src/gate/gate-index.ts', [

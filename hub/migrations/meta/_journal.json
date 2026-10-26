@@ -281,6 +281,13 @@
       "when": 1792966136000,
       "tag": "0039_note_counter_uuid_key",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793052536000,
+      "tag": "0040_interval_task_record_id",
+      "breakpoints": true
     }
   ]
 }

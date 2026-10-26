@@ -38,7 +38,7 @@ export type LoadedOutboxChange = {
 function currentInterval(conn: Database, id: string): LoadedOutboxChange | null {
   const row = conn
     .query<PushedInterval & { hosted_space_id: string | null }, [string]>(
-      `SELECT record_id id,task_key,project project_name,project_record_id projectId,source,agent,job,start_at,end_at,
+      `SELECT record_id id,task_key,task_record_id task_id,project project_name,project_record_id projectId,source,agent,job,start_at,end_at,
       claude_tokens,vendor_tokens,vendor_cost_usd,ref,via,open,session_id,user_id,hosted_space_id
      FROM interval WHERE record_id=?`,
     )

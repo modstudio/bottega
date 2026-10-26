@@ -65,6 +65,20 @@ export function reconcileParentRecordIds(conn: Database) {
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
   persistInstallBinding(conn)
   if (row.deleted_at) {
+    const stored = conn
+      .query<{ project: string; project_record_id: string | null }, [string]>(
+        `SELECT project,project_record_id FROM task WHERE record_id=?`,
+      )
+      .get(row.id)
+    const project = stored?.project ?? row.project
+    const projectRecordId =
+      stored?.project_record_id ?? row.projectId ?? projectRecordIdFor(project)
+    conn
+      .query(
+        `UPDATE interval SET project=?,project_record_id=?
+         WHERE task_record_id=? AND project_record_id IS NULL`,
+      )
+      .run(project, projectRecordId, row.id)
     conn.query(`DELETE FROM task WHERE record_id=?`).run(row.id)
     return
   }

@@ -84,6 +84,24 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=orchestrator/hooks
 
+  orchestrator-hooks-process:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: bun install --silent
+      - name: Test
+        env:
+          CI: "1"
+        run: python3 -m unittest discover -s orchestrator/hooks -p 'process_*.py'
+
   postgres:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -274,7 +292,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root]
+    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

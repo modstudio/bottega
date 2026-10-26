@@ -19,8 +19,8 @@ test('rolling intervals into an existing date keeps its UUID', () => {
     conn
       .query(
         `INSERT INTO interval
-          (record_id,source,start_at,end_at,claude_tokens,ref)
-         VALUES (?,?,?,?,?,?)`,
+          (record_id,project_record_id,source,start_at,end_at,claude_tokens,ref)
+         VALUES (?,'project-id',?,?,?,?,?)`,
       )
       .run(
         '22222222-2222-4222-8222-222222222222',

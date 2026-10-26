@@ -27,7 +27,6 @@ import {
   resolveTask,
   type TaskScope,
   taskByRecordId,
-  taskIdentityDecision,
   taskRecordId,
   taskRecordIdFor,
 } from './task-identity.ts'
@@ -596,7 +595,6 @@ export function taskRecord(
   const runs = db()
     .query<
       {
-        task_key: string
         ref: string
         agent: string | null
         job: string | null
@@ -606,24 +604,17 @@ export function taskRecord(
         vendor_tokens: number
         vendor_cost_usd: number | null
       },
-      [string, string]
+      [string]
     >(
-      `SELECT task_key, ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
+      `SELECT ref, agent, job, MIN(start_at) started_at, MAX(end_at) ended_at,
             MAX(open) running, SUM(vendor_tokens) vendor_tokens,
             SUM(vendor_cost_usd) vendor_cost_usd
        FROM interval
-      WHERE task_key = ? AND project = ? AND source = 'orch'
+      WHERE task_record_id = ? AND source = 'orch'
       GROUP BY ref, agent, job
       ORDER BY started_at DESC`,
     )
-    .all(record.task.key, record.task.project)
-    .filter((run) => {
-      const decision = taskIdentityDecision(db(), run.task_key, record.task.project)
-      if ('one' in decision) return decision.one === record.task.record_id
-      if ('several' in decision)
-        throw new Error(`task ${run.task_key} is ambiguous; pass --project`)
-      return false
-    })
+    .all(record.task.record_id)
     .flatMap((run): TaskRun[] => {
       const parsed = runRef(run.ref)
       if (!parsed) return []

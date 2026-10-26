@@ -293,8 +293,9 @@ export function taskIdentity(row: {
   key: string | null
   project?: string | null
 }) {
+  if (row.recordId) return row.recordId
   if (row.spaceId) return `${row.spaceId}\0${row.key ?? ''}`
-  return row.recordId ?? `unattributed:${row.project ?? 'unknown'}:${row.key ?? ''}`
+  return `unattributed:${row.project ?? 'unknown'}:${row.key ?? ''}`
 }
 
 export function projectTasksInWindow(

@@ -13,8 +13,8 @@ function add(recordId: string, ref: string, endAt: string) {
     conn
       .query(
         `INSERT INTO interval
-       (record_id, source, start_at, end_at, ref, open, claude_tokens, vendor_tokens)
-     VALUES (?, 'orch', '2026-09-03T00:00:00.000Z', ?, ?, 1, 0, 0)`,
+       (record_id, project_record_id, source, start_at, end_at, ref, open, claude_tokens, vendor_tokens)
+     VALUES (?, 'project-id', 'orch', '2026-09-03T00:00:00.000Z', ?, ?, 1, 0, 0)`,
       )
       .run(recordId, endAt, ref),
   )
