@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
@@ -21,6 +22,7 @@ import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
+import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   type DeferredCwdMcpStep,
   type McpConnection,
@@ -78,6 +80,8 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
+import { EXTERNAL_EXECUTOR, HARNESS_AGENT, HARNESS_EXECUTOR } from './run-executor.ts'
+import { installHarnessPushGuard } from './run-git-guard.ts'
 import { nextRunNumber } from './run-number.ts'
 import { errorTail, sha } from './run-process.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
@@ -233,7 +237,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     transportName,
     a,
     mcpConnection,
-    mcpMode,
     declaredDeliverables,
     timeoutMinutes,
     timeoutMs,
@@ -345,6 +348,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
   const identity = claimIdentity(opts.resume)
+  const ownerSession = requiredOwnerSession(name, opts, resume.workspaceSource)
+  const execution = executorClaimFacts(name, mcpRequest, transportName, timeoutMs)
   const updateReservedRun = () =>
     db()
       .query(
@@ -352,7 +357,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         prompt_bytes=?, prompt_head=?, label=?, status='running', probe=?, retry_of_record_id=?,
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
-                        automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?
+                        automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
+                        executor=?, evidence_excluded=?, harness_wall_bound_ms=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -386,9 +392,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
-        process.pid,
-        storedMcpRequest(mcpRequest),
-        transportName,
+        ...execution.launchColumns,
+        ...execution.identityColumns,
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -396,8 +401,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       .query(
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
-                          automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
+                          executor, evidence_excluded, harness_wall_bound_ms)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -414,9 +420,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         head,
         opts.label ?? null,
         // A resumed turn inherits the owning session rather than taking the one that answered.
-        resume.workspaceSource === 'retained'
-          ? opts.resume!.sessionId
-          : (opts.ownerSession ?? sessionId()),
+        ownerSession,
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
@@ -435,10 +439,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
-        process.pid,
-        storedMcpRequest(mcpRequest),
-        transportName,
+        ...execution.launchColumns,
         startedByUserId,
+        ...execution.identityColumns,
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
@@ -518,7 +521,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       mcpConnection?.server ?? null,
       mcpConnection?.connected == null ? null : mcpConnection.connected ? 1 : 0,
       mcpConnection?.error ??
-        (mcpMode ? 'no registered project identifies the canonical MCP server' : null),
+        (input.mcpMode ? 'no registered project identifies the canonical MCP server' : null),
       opts.schemaPath ?? null,
       opts.lens ?? null,
       keepTree ? 1 : 0,
@@ -529,6 +532,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const sandboxRoot = sandboxRootForRun(claim.id)
   const { scratchDir, runtimeDir } = runOwnedPaths(recordId, sandboxRoot.record_id, runsDir)
   mkdirSync(scratchDir, { recursive: true })
+  prompt = bindRunBound(prompt, resume.isFirstTurn, opts.job, timeoutMs, scratchDir)
   prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
   writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
@@ -926,6 +930,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       db()
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
+      installExecutorPushGuard(execution.harness, worktree, claim.id)
     }
     ;({
       provisionedMcpConfig,
@@ -949,7 +954,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       inherited: resume.workspaceSource === 'retained',
       writesJob,
       repoJob,
-      mcpMode,
+      mcpMode: input.mcpMode,
       mcpConnection,
       usingMcp,
     }))
@@ -993,4 +998,60 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     mcpConnection,
     usingMcp,
   }
+}
+function requiredOwnerSession(
+  name: string,
+  opts: ClaimOptions,
+  workspaceSource: ReturnType<typeof resumeFacts>['workspaceSource'],
+): string | null {
+  const ownerSession =
+    workspaceSource === 'retained' ? opts.resume!.sessionId : (opts.ownerSession ?? sessionId())
+  if (name === HARNESS_AGENT && !ownerSession)
+    throw new Error(
+      `a harness run requires an owning agent session; remedy: run ${PLATFORM_SLUG} run start from an agent session`,
+    )
+  return ownerSession
+}
+
+function executorClaimFacts(
+  name: string,
+  mcpRequest: McpRequest | undefined,
+  transportName: string,
+  timeoutMs: number,
+) {
+  const harness = name === HARNESS_AGENT
+  return {
+    harness,
+    launchColumns: [
+      harness ? null : process.pid,
+      storedMcpRequest(mcpRequest),
+      transportName,
+    ] as const,
+    identityColumns: [
+      harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR,
+      null,
+      harness ? timeoutMs : null,
+    ] as const,
+  }
+}
+
+function bindRunBound(
+  prompt: string,
+  firstTurn: boolean,
+  jobName: string,
+  timeoutMs: number,
+  scratchDir: string,
+): string {
+  if (!firstTurn) return prompt
+  const boundLine = `\n\n${jobBoundInstruction(job(jobName), timeoutMs, scratchDir)}`
+  const split = prompt.lastIndexOf('\n---\n')
+  return split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
+}
+
+function installExecutorPushGuard(
+  harness: boolean,
+  worktree: Worktree | null,
+  recordId: string,
+): void {
+  if (harness) installHarnessPushGuard(worktree, recordId)
 }

@@ -69,6 +69,15 @@ export const runModuleSpecs = [
     allowed: ['../refusal-error.ts'],
   },
   {
+    file: 'orchestrator/src/route/harness-delegation.ts',
+    allowed: [
+      '../../../shared/machine-config.ts',
+      '../jobs/delegation.ts',
+      '../jobs/jobs.ts',
+      './routing-refusal.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/route/running-runs.ts',
     allowed: ['bun:sqlite', '../agent/worker-launch-env.ts', '../database/db.ts'],
   },

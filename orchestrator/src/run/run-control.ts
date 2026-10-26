@@ -5,6 +5,7 @@
  * routing, reviews, or the CLI.
  */
 import { existsSync, readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CONTINUE_WORKING_FORMS } from '../cli/args.ts'
 import { branchNote, failoverSummary, okOutcomeNote, resolveFailover } from '../collect/collect.ts'
@@ -57,6 +58,51 @@ export type RunControlPresentation = {
   scoreHint(id: string, jobName: string, parent: string | null): string
   argvResumeLimit(agentName: string): number | undefined
   printRunId(id: string): void
+}
+
+export type HarnessHandoff = {
+  run: number
+  record_id: string
+  prompt_path: string
+  working_directory: string
+  finish_command: string
+}
+
+export function harnessHandoff(database: ReturnType<typeof db>, id: string): HarnessHandoff | null {
+  const row = database
+    .query('SELECT number,record_id,prompt_path,cwd,executor FROM run WHERE record_id=?')
+    .get(id) as {
+    number: number
+    record_id: string
+    prompt_path: string | null
+    cwd: string | null
+    executor: string
+  } | null
+  if (!row || row.executor !== 'harness') return null
+  if (!row.prompt_path || !row.cwd) throw new Error(`harness run ${id} has no prompt path or cwd`)
+  return {
+    run: row.number,
+    record_id: row.record_id,
+    prompt_path: join(dirname(row.prompt_path), 'bound-prompt.txt'),
+    working_directory: row.cwd,
+    finish_command: `${PLATFORM_SLUG} run finish ${row.record_id}`,
+  }
+}
+
+export function printHarnessHandoff(handoff: HarnessHandoff, json = false): void {
+  if (json) {
+    console.log(JSON.stringify(handoff))
+    return
+  }
+  console.log(`run: ${handoff.run}`)
+  console.log(`record_id: ${handoff.record_id}`)
+  console.log(`prompt: ${handoff.prompt_path}`)
+  console.log(`working_directory: ${handoff.working_directory}`)
+  console.log(`finish: ${handoff.finish_command}`)
+}
+
+export function harnessContinuationWorker(executor: 'external' | 'harness' | undefined) {
+  return executor === 'harness' ? { agent: 'harness', session: undefined } : null
 }
 
 export function continuationInstructionsForFreshRetry(
@@ -301,6 +347,32 @@ export type ChainTurn = {
   branch: string | null
   base_commit: string | null
   worktree_source: 'recipe' | 'git' | 'clone' | 'readonly_recipe' | null
+  executor?: 'external' | 'harness'
+}
+
+function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
+  const harness = harnessContinuationWorker(latest.executor)
+  if (harness) return harness
+  if (hasCheckpoint) return { agent: latest.agent, session: undefined }
+  const source = latest.vendor_session
+    ? latest
+    : (db()
+        .query(
+          `SELECT record_id, agent, vendor_session, turn
+             FROM run WHERE (record_id = ? OR parent_run_record_id = ?)
+               AND agent <> '(pending)' AND vendor_session IS NOT NULL
+            ORDER BY turn DESC LIMIT 1`,
+        )
+        .get(rootId, rootId) as ChainTurn | null)
+  if (!source?.vendor_session)
+    throw new Error(`run ${rootId} recorded no session id, so ${latest.agent} cannot be resumed`)
+  if (!latest.vendor_session) {
+    console.error(
+      `run ${rootId}: newest turn ${latest.record_id} recorded no session id; ` +
+        `resuming ${source.agent} with the session from run ${source.record_id} (turn ${source.turn})`,
+    )
+  }
+  return { agent: source.agent, session: source.vendor_session }
 }
 
 /**
@@ -670,7 +742,7 @@ export async function continueRun(
     id,
     db()
       .query(
-        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source
+        `SELECT record_id, agent, vendor_session, turn, cwd, worktree, branch, base_commit, worktree_source, executor
          FROM run WHERE record_id = ? OR parent_run_record_id = ?`,
       )
       .all(id, id) as ChainTurn[],
@@ -701,32 +773,7 @@ export async function continueRun(
     worktree: latest.worktree,
     treePlan,
   })
-  const sessionFrom = checkpoint.hasCheckpoint
-    ? null
-    : latest.vendor_session
-      ? latest
-      : (db()
-          .query(
-            `SELECT record_id, agent, vendor_session, turn
-           FROM run WHERE (record_id = ? OR parent_run_record_id = ?)
-             AND agent <> '(pending)' AND vendor_session IS NOT NULL
-          ORDER BY turn DESC LIMIT 1`,
-          )
-          .get(id, id) as {
-          record_id: string
-          agent: string
-          vendor_session: string
-          turn: number
-        } | null)
-  if (!checkpoint.hasCheckpoint && !sessionFrom?.vendor_session) {
-    throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
-  }
-  if (!checkpoint.hasCheckpoint && !latest.vendor_session) {
-    console.error(
-      `run ${id}: newest turn ${latest.record_id} recorded no session id; ` +
-        `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
-    )
-  }
+  const continuation = continuationWorker(id, latest, checkpoint.hasCheckpoint)
   const treeDecision = requireContinuationTree({
     rootId: id,
     projectName: row.repo,
@@ -748,7 +795,7 @@ export async function continueRun(
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   refuseOversizedResumePrompt({
     checkpointContext: checkpoint.context,
-    agent: sessionFrom?.agent ?? latest.agent,
+    agent: continuation.agent,
     job: row.job,
     prompt,
     rootId: id,
@@ -769,8 +816,8 @@ export async function continueRun(
     resume: {
       kind: continuationResumeKind(checkpoint.hasCheckpoint),
       parent: id,
-      agent: checkpoint.hasCheckpoint ? latest.agent : sessionFrom!.agent,
-      session: checkpoint.hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
+      agent: continuation.agent,
+      session: continuation.session,
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),
@@ -790,6 +837,7 @@ export async function reportContinuedRun(
   flags: { detach: boolean; follow: boolean; quiet: boolean },
   presentation: RunControlPresentation,
 ): Promise<void> {
+  if (reportHarnessHandoff(childId)) return
   if (flags.detach || !flags.follow) {
     presentation.printRunId(childId)
     if (!flags.quiet) {
@@ -803,4 +851,11 @@ export async function reportContinuedRun(
     return
   }
   await follow(childId, flags.quiet, true, presentation)
+}
+
+export function reportHarnessHandoff(id: string, json = false): boolean {
+  const handoff = harnessHandoff(db(), id)
+  if (!handoff) return false
+  printHarnessHandoff(handoff, json)
+  return true
 }

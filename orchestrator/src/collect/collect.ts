@@ -8,12 +8,14 @@ import {
   persistedRunArtifactPath,
   rewriteFilesWrittenPaths,
   rewriteScratchDirPaths,
+  runScratchReplyPath,
 } from '../artifact-paths.ts'
 import { retainedBranchPruneCommand, retainedBranchReason } from '../close/retained-branch.ts'
 import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
@@ -101,6 +103,7 @@ type CollectedRunRow = {
   tests_ran: number | null
   tests_passed: number | null
   tests_claim_disagrees: number | null
+  executor: string
 }
 
 type AskingResolution =
@@ -652,7 +655,7 @@ export function collectResult(
             failure_kind, exit_code, parent_run_record_id, evidence_excluded, base_commit,
             cwd, mcp, mcp_server, mcp_connected, mcp_error, mcp_probe,
             review_provenance, provenance_status, worktree, branch, minted_branch,
-            tests_ran, tests_passed, tests_claim_disagrees
+            tests_ran, tests_passed, tests_claim_disagrees, executor
        FROM run WHERE record_id = ?`,
     )
     .get(chain.finalId) as CollectedRunRow | null
@@ -660,13 +663,12 @@ export function collectResult(
   if (argv.includes('--artifacts')) listResultArtifacts(database, chain.finalId, presentation)
   const asking = row.status === 'asking' ? resolveAsking(database, row.record_id) : null
   const outcome = outcomeOf(row)
-  const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}\n  record_id: ${row.record_id}`
+  const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}${row.executor === HARNESS_EXECUTOR ? `\n  executor:  ${row.executor}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
     presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
     presentation.exit(2)
   }
-  const output =
-    row.output_path && existsSync(row.output_path) ? readFileSync(row.output_path, 'utf8') : null
+  const output = collectedOutput(row)
   if (row.review_provenance) {
     try {
       const provenance = JSON.parse(row.review_provenance) as {
@@ -730,6 +732,14 @@ export function collectResult(
         evidenceNote(row),
     )
   }
+}
+
+function collectedOutput(row: CollectedRunRow): string | null {
+  if (row.output_path && existsSync(row.output_path)) return readFileSync(row.output_path, 'utf8')
+  const replyPath = runScratchReplyPath(row.record_id, resolveRunsDirectory(process.env))
+  return row.executor === 'harness' && existsSync(replyPath)
+    ? readFileSync(replyPath, 'utf8')
+    : null
 }
 
 const VALUE_FLAGS = new Set(['--timeout'])

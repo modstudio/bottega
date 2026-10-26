@@ -140,7 +140,6 @@ type DispatchPresentation = {
   usage(): never
   doUsage(): never
   error(...values: unknown[]): void
-  printRunId(id: number): void
   readPrompt(): Promise<string>
   validateSchema(path: string): unknown
   warnCallerDrift(cwd: string, baseRef?: string): void
@@ -180,6 +179,13 @@ type DispatchPresentation = {
   ): Promise<string>
   follow(id: string, quiet: boolean): Promise<unknown>
   runNumber(id: string): number
+  detachedResult(id: string, json: boolean): void
+}
+
+function validateDetachedPresentation(porcelain: boolean, json: boolean, follow: boolean): void {
+  if (!porcelain) return
+  if (json || follow)
+    throw new Error(`--porcelain cannot be combined with ${json ? '--json' : '--follow'}`)
 }
 
 export function reviewRoleForDispatch(
@@ -369,7 +375,6 @@ export async function dispatchCommand(
     usage,
     doUsage,
     error,
-    printRunId,
     validateSchema,
     warnCallerDrift,
     warnTaskBranchBypass,
@@ -389,10 +394,8 @@ export async function dispatchCommand(
   } = presentation
   const jobName = requestedJobName(argv, usage, doUsage)
   if (!jobName) return
-  const porcelain = has('porcelain')
-  if (porcelain && has('follow')) {
-    throw new Error('--porcelain cannot be combined with --follow')
-  }
+  const [porcelain, json] = [has('porcelain'), has('json')]
+  validateDetachedPresentation(porcelain, json, has('follow'))
   const requested = job(jobName),
     resolved = await resolveDispatchOptions(jobName)
   const reviewRole = reviewRoleForDispatch(requested.findings, has('supplementary'))
@@ -565,7 +568,7 @@ export async function dispatchCommand(
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
     if (!porcelain) warnImplementContractConflicts(conflicts, id)
-    printRunId(presentation.runNumber(id))
+    presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
     }

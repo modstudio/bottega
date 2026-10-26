@@ -21,6 +21,7 @@ import {
   TEXT_REPLY_SCHEMA,
   WORKER_SCHEMA,
   type WorkerReply,
+  workerPreamble,
 } from './contract.ts'
 import { parseWorkerReplyWithCount, VERIFY_CLAIM_SCHEMA } from './contract-reply.ts'
 
@@ -30,6 +31,14 @@ test('reply contract names absolute scratch files without a shell variable', () 
   expect(instruction).toContain(`${scratch}/reply.json`)
   expect(instruction).toContain(`${scratch}/progress.json`)
   expect(instruction).not.toContain('$BOTTEGA_SCRATCH')
+})
+
+test('the harness worker preamble offers only the durable question path', () => {
+  const preamble = workerPreamble('implement', true)
+  expect(preamble).toContain('DURABLE QUESTION PATH')
+  expect(preamble).toContain('durable run answer path')
+  expect(preamble).not.toContain('NON-BLOCKING MESSAGES')
+  expect(preamble).not.toContain('live orchestrator tools are available')
 })
 
 const baseWorkerReply = {

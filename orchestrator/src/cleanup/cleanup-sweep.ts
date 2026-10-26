@@ -9,7 +9,7 @@ import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
 import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts'
 import { closeOutRun } from '../close/close-out.ts'
-import { db, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
 import { filedIssueLoopRun } from '../issue/issue-queue.ts'
@@ -31,7 +31,7 @@ import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
-import { runAlive } from '../run/run-alive.ts'
+import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
 import {
   removeFreeRunCloseOutLease,
@@ -40,6 +40,7 @@ import {
   runLeaseIds,
   runLeaseState,
 } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { type HubTaskReader, sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -160,6 +161,7 @@ type SweepCandidate = {
   agent_pid: number | null
   session_id: string | null
   session_last_seen: string | null
+  harness_wall_bound_ms: number | null
   launch_key: string | null
 }
 type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
@@ -208,11 +210,22 @@ function namedRun(name: string, project: Project): NamedRunLookup {
     }
   const latest = db()
     .query(
-      `SELECT record_id,status,pid FROM run
+      `SELECT record_id,status,pid,executor,session_id,started_at,job,harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen FROM run
       WHERE record_id=? OR parent_run_record_id=?
       ORDER BY turn DESC, number DESC LIMIT 1`,
     )
-    .get(rootId, rootId) as { record_id: string; status: string; pid: number | null }
+    .get(rootId, rootId) as {
+    record_id: string
+    status: string
+    pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    started_at: string
+    job: string
+    session_last_seen: string | null
+    harness_wall_bound_ms: number | null
+  }
   return {
     outcome: 'owned',
     run: {
@@ -222,6 +235,12 @@ function namedRun(name: string, project: Project): NamedRunLookup {
         status: latest.status,
         lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
+        ...recordedRunLivenessFacts(
+          latest,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(db(), latest.session_id),
+        ),
       }),
     },
   }

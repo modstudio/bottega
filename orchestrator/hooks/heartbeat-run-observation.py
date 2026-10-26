@@ -31,6 +31,9 @@ def run_row(line: str) -> dict:
         raise ValueError("run identity is invalid")
     if not all(isinstance(value.get(key), str) for key in ("job", "agent", "status")):
         raise ValueError("run presentation is invalid")
+    value["executor"] = value.get("executor", "external")
+    if value["executor"] not in ("external", "harness"):
+        raise ValueError("run executor is invalid")
     if value.get("session_id") is not None and not isinstance(value.get("session_id"), str):
         raise ValueError("run session is invalid")
     if value.get("started_at") is not None and not isinstance(value.get("started_at"), str):
@@ -167,7 +170,8 @@ def live(session_id: str) -> None:
             if waiting_for_capacity or isinstance(throttled, dict)
             else status + " " + age + idle_note
         )
-        out.append("%s/%s %s %s" % (row["live_member_number"], row["job"], row["agent"], display))
+        executor = " executor:harness" if row["executor"] == "harness" else ""
+        out.append("%s/%s %s%s %s" % (row["live_member_number"], row["job"], row["agent"], executor, display))
     print(
         "STATE", len(out), " | ".join(out), ",".join(sorted(ids)), len(stalled),
         ",".join(sorted(stalled_subjects)), " | ".join(stalled), ",".join(sorted(roots)),

@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { mkdirSync, realpathSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
@@ -22,6 +23,7 @@ import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
 import { branchOf } from '../git/git-environment.ts'
+import { delegationMode } from '../jobs/delegation.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import {
@@ -45,10 +47,11 @@ import type { DetachSpec } from '../route/failover.ts'
 import { pick } from '../route/route.ts'
 import { pickCommand } from '../route/routing-commands.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
+import { run } from '../run/run.ts'
 import { assertAcpPolicyAllowed } from '../run/run-acp-policy.ts'
 import { waitForAgentSelection } from '../run/run-agent-capacity.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
-import { follow as followRun } from '../run/run-control.ts'
+import { follow as followRun, harnessHandoff, printHarnessHandoff } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -500,6 +503,16 @@ export async function detachRoutedRun(
   waitForCapacityBeforeDetach = false,
   presentation: Pick<Presentation, 'cwd' | 'error'> = { cwd: () => cwd, error: () => {} },
 ): Promise<string> {
+  if (delegationMode(job(jobName).needs, readDelegationSettings()) === 'harness') {
+    const result = await run({
+      ...spec,
+      job: jobName,
+      prompt: text,
+      agent: 'harness',
+      schemaPath: spec.schema,
+    })
+    return result.record_id
+  }
   const selected = await selectBeforeDetach(
     jobName,
     text,
@@ -562,7 +575,6 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         throw new Error(`${PLATFORM_SLUG} run start <job> [prompt]`)
       },
       error: presentation.error,
-      printRunId: presentation.printRunId,
       readPrompt: prompt,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
@@ -593,13 +605,24 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       earlierReviewRejections,
       detach: commandDetacher(presentation),
       runNumber,
-      follow: (id, quiet) =>
-        followRun(id, quiet, true, {
+      detachedResult: (id, json) => {
+        const handoff = harnessHandoff(db(), id)
+        if (handoff) printHarnessHandoff(handoff, json)
+        else presentation.printRunId(runNumber(id))
+      },
+      follow: (id, quiet) => {
+        const handoff = harnessHandoff(db(), id)
+        if (handoff) {
+          printHarnessHandoff(handoff)
+          return Promise.resolve()
+        }
+        return followRun(id, quiet, true, {
           dur: duration,
           scoreHint,
           argvResumeLimit,
           printRunId: (runRecordId) => presentation.printRunId(runNumber(runRecordId)),
-        }),
+        })
+      },
     },
   )
 }

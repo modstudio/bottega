@@ -26,6 +26,7 @@ export const runRetryModuleSpecs = [
       './run-alive.ts',
       './run-control.ts',
       './run-lease.ts',
+      './run-owner-session-liveness.ts',
     ],
     typeOnlyAllowed: ['./run-resume-options.ts'],
     reason:

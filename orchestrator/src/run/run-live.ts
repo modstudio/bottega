@@ -17,10 +17,8 @@ import {
   REPLY_FILE_NAME,
   type ReplyDialect,
   realQuestions,
-  TEXT_REPLY_SCHEMA,
   type WorkerReply,
 } from '../contract/contract.ts'
-import { validatesSchema } from '../contract/contract-reply.ts'
 import { db, nowIso } from '../database/db.ts'
 import { recordRunWarning, type StreamEvent, teeTransportEvents } from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
@@ -49,7 +47,6 @@ import {
   type TransportStartOpts,
   transportFor,
   type VendorUsage,
-  valueMatchesStrictSchema,
 } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
@@ -63,7 +60,7 @@ import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
-import { decideReplySource, type ReplyContract } from './run-reply-source.ts'
+import { collectReplySource, replyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
@@ -83,11 +80,6 @@ import {
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
-}
-
-function replyContract(schemaPath: string | undefined, textContract: boolean): ReplyContract {
-  if (schemaPath) return 'custom'
-  return textContract ? 'text' : 'none'
 }
 
 function outputCeilingReached(
@@ -157,33 +149,6 @@ async function closeLiveBrokers(
 ): Promise<void> {
   await closeWorkerExecutionBrokers(execution)
   await closeWorkerNoteBroker(note)
-}
-
-function replyFileMatches(
-  contract: ReplyContract,
-  text: string | null,
-  dialect: ReplyDialect,
-  schema: Parameters<typeof validatesSchema>[1],
-): boolean {
-  if (text === null) return false
-  if (contract !== 'custom') return dialect.parse(text).reply !== null
-  try {
-    return validatesSchema(JSON.parse(text), schema)
-  } catch {
-    return false
-  }
-}
-
-function fallbackMatches(contract: ReplyContract, text: string, schema: unknown): boolean {
-  let value: unknown
-  try {
-    value = JSON.parse(text)
-  } catch {
-    return false
-  }
-  if (contract === 'text') return valueMatchesStrictSchema(TEXT_REPLY_SCHEMA, value)
-  if (contract === 'custom') return valueMatchesStrictSchema(schema, value)
-  return false
 }
 
 /** A missing named reply is observable even when its final-message fallback is valid. */
@@ -760,25 +725,12 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       replyFileText !== null || replyContractKind === 'custom'
         ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
         : null
-    const ruling = decideReplySource({
-      replyFile:
-        replyFileText !== null
-          ? {
-              present: true,
-              text: replyFileText,
-              matches: replyFileMatches(
-                replyContractKind,
-                replyFileText,
-                resolvedDialect,
-                validationSchema,
-              ),
-            }
-          : { present: false },
+    const ruling = collectReplySource({
+      replyFileText,
       contract: replyContractKind,
-      fallback: {
-        text: output,
-        matches: fallbackMatches(replyContractKind, output, validationSchema),
-      },
+      fallbackText: output,
+      dialect: resolvedDialect,
+      schema: validationSchema,
     })
     output = ruling.output
     replyFileError = ruling.replyFileError

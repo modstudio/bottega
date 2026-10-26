@@ -897,6 +897,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/process-identity.ts',
       '../project/project-lock.ts',
       '../run/run-alive.ts',
+      '../run/run-owner-session-liveness.ts',
       '../events.ts',
       '../run/run-lease.ts',
       '../run/run-status.ts',

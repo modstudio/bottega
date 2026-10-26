@@ -15,6 +15,7 @@ export function runInfrastructurePrompt(input: {
   readsRepo: boolean
   writesRepo: boolean
   readOnlyBase: string | null
+  mainCheckout: string
 }): string {
   const { tool } = input
   if (!tool) return ''
@@ -28,6 +29,7 @@ export function runInfrastructurePrompt(input: {
     readonlyCreate: Boolean(tool.readonly_create),
     readonlyNotes: tool.readonly_notes,
     readOnlyBase: input.readOnlyBase,
+    mainCheckout: input.mainCheckout,
     regularNotes: tool.notes ?? '',
     generatedNotes: generated,
   })
@@ -39,6 +41,7 @@ export function readonlyInfrastructurePrompt(input: {
   readonlyCreate: boolean
   readonlyNotes?: string
   readOnlyBase: string | null
+  mainCheckout: string
   regularNotes: string
   generatedNotes: string
 }): string {
@@ -53,8 +56,8 @@ export function readonlyInfrastructurePrompt(input: {
           `infrastructure (no databases, no generated env, no vendor tree).`
     infrastructure =
       `${tree} Do not treat a test suite that cannot start as a finding; ` +
-      `record what you could not run in could_not_verify. BOTTEGA_MAIN_CHECKOUT names the ` +
-      `registered project's main checkout when project tooling needs it.`
+      `record what you could not run in could_not_verify. The registered project's main ` +
+      `checkout is ${input.mainCheckout} when project tooling needs it.`
   } else {
     infrastructure = [input.regularNotes, input.generatedNotes].filter(Boolean).join('\n\n')
   }

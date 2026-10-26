@@ -84,6 +84,7 @@ test('a never-started failure is inserted and published atomically', () => {
     mcp: 0,
     startedByUserId: null,
     agentExplicit: 0,
+    executor: 'external',
   })
 
   expect(
@@ -125,6 +126,7 @@ test('a never-started failure insert rolls back when publication fails', () => {
       mcp: 0,
       startedByUserId: null,
       agentExplicit: 0,
+      executor: 'external',
     }),
   ).toThrow('publication refused')
   expect(db().query('SELECT 1 FROM run WHERE record_id=?').get(id)).toBeNull()
@@ -150,6 +152,7 @@ test('a never-started probe without a task or project keeps its probe flag', () 
     mcp: 0,
     startedByUserId: null,
     agentExplicit: 0,
+    executor: 'external',
   })
 
   expect(db().query('SELECT probe FROM run WHERE record_id=?').get(id)).toEqual({ probe: 1 })

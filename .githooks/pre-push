@@ -1,6 +1,13 @@
 #!/bin/sh
 set -eu
 root=$(git rev-parse --show-toplevel)
+git_dir=$(git rev-parse --git-dir)
+harness_marker="$git_dir/bottega-harness-run"
+if [ -f "$harness_marker" ]; then
+  run_id=$(cat "$harness_marker")
+  echo "pre-push: harness run $run_id refused: a harness run's tree never pushes" >&2
+  exit 1
+fi
 
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$local_sha" in
