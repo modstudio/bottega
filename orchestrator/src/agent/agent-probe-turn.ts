@@ -152,7 +152,13 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       projectMcpSelection: input.mcp
         ? // The MCP probe turn attaches its minted stdio server directly, so it
           // asks through the one launch-selection decision, in the writing shape.
-          workerMcpLaunchSelection({ usingMcp: true, writesJob: true, callerCwd: cwd, cwd })
+          workerMcpLaunchSelection({
+            usingMcp: true,
+            writesJob: true,
+            hasProjectTree: true,
+            callerCwd: cwd,
+            cwd,
+          })
         : null,
       env: environment,
     })

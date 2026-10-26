@@ -4,7 +4,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { McpConfigReadResult, McpServerConfig } from '../mcp/mcp-probe.ts'
-import { mcpConfigReadForRun, projectReaderServerNames } from './mcp-reader-scope.ts'
+import {
+  mcpConfigReadForRun,
+  projectReaderProxyServersForRun,
+  projectReaderServerNames,
+  withholdProjectRelativeStdioServer,
+} from './mcp-reader-scope.ts'
 
 const PLATFORM_BINARY = `/opt/${PLATFORM_SLUG}/bin/${PLATFORM_SLUG}`
 const server = (name: string): McpServerConfig => ({ name, command: `./bin/${name}` })
@@ -12,6 +17,42 @@ const readable = (config: Record<string, McpServerConfig>): McpConfigReadResult 
   ok: true,
   path: '/project/.mcp.json',
   config,
+})
+
+test('a project-relative stdio command is withheld only when the run has no project tree', () => {
+  const relative = { command: 'scripts/mcp/boost' }
+  const bare = { command: 'bun' }
+  const absolute = { command: '/opt/project/bin/server' }
+  const remote = { url: 'https://example.test/mcp' }
+
+  expect(withholdProjectRelativeStdioServer(relative, false)).toBe(true)
+  expect(withholdProjectRelativeStdioServer(relative, true)).toBe(false)
+  expect(withholdProjectRelativeStdioServer(bare, false)).toBe(false)
+  expect(withholdProjectRelativeStdioServer(bare, true)).toBe(false)
+  expect(withholdProjectRelativeStdioServer(absolute, false)).toBe(false)
+  expect(withholdProjectRelativeStdioServer(absolute, true)).toBe(false)
+  expect(withholdProjectRelativeStdioServer(remote, false)).toBe(false)
+  expect(withholdProjectRelativeStdioServer(remote, true)).toBe(false)
+})
+
+test('a run with no project tree withholds project-relative reader proxies', () => {
+  const treeConfig = {
+    boost: { name: 'boost', command: 'scripts/mcp/boost' },
+    bun: { name: 'bun', command: 'bun' },
+    abs: { name: 'abs', command: '/opt/bin/server' },
+    remote: { name: 'remote', url: 'https://example.test/mcp' },
+  }
+  const project = { name: 'starship', path: '/project', settings: {} }
+  expect(
+    Object.keys(
+      projectReaderProxyServersForRun(true, false, treeConfig, project, '/isolate', false) ?? {},
+    ),
+  ).toEqual(['bun', 'abs', 'remote'])
+  expect(
+    Object.keys(
+      projectReaderProxyServersForRun(true, false, treeConfig, project, '/tree', true) ?? {},
+    ),
+  ).toEqual(['boost', 'bun', 'abs', 'remote'])
 })
 
 test('a reader proxy is synthesized for the servers the resolution starts', () => {

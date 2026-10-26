@@ -27,7 +27,7 @@ function scopeForRun(
 ) {
   if (mcp === false) return null
   return codexProjectServersFromSelection(
-    selectProjectMcpServers(mcp, treeConfig, project, cwd),
+    selectProjectMcpServers(mcp, treeConfig, project, cwd, true),
     agent,
     transport,
   )

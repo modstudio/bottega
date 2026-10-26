@@ -1,10 +1,12 @@
 import { expect, test } from 'bun:test'
 import { MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { PROJECT_RELATIVE_NO_TREE_REASON } from './mcp-reader-scope.ts'
 import {
   type RequiredMcpProbeFacts,
   RequiredMcpProbeRefusalError,
   requiredMcpProbeDecision,
 } from './project-mcp-preflight.ts'
+import { PROJECT_MCP_WRITER_WITHHELD_REASON } from './project-mcp-scope.ts'
 
 const requiredMcpProbeRefusal = (facts: RequiredMcpProbeFacts) =>
   requiredMcpProbeDecision(facts).refusal
@@ -95,10 +97,28 @@ test('a withheld required server says why the run did not get it', () => {
     failures: [],
     requiredServer: 'starship',
     selectedServers: [],
-    withheld: ['starship'],
+    withheld: [{ name: 'starship', reason: PROJECT_MCP_WRITER_WITHHELD_REASON }],
   })!
 
-  expect(refusal).toContain('starship: withheld from this run')
+  expect(refusal).toContain(
+    "starship: withheld from this run's MCP scope (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them",
+  )
+})
+
+test('a withheld required server names a project-relative no-tree reason', () => {
+  const refusal = requiredMcpProbeRefusal({
+    mode: 'require',
+    project,
+    failures: [],
+    requiredServer: 'starship',
+    selectedServers: [],
+    withheld: [{ name: 'starship', reason: PROJECT_RELATIVE_NO_TREE_REASON }],
+  })!
+
+  expect(refusal).toContain(
+    `starship: withheld from this run's MCP scope (${PROJECT_RELATIVE_NO_TREE_REASON})`,
+  )
+  expect(refusal).not.toContain('headersHelper')
 })
 
 test('a handed-over required server, and the platform server, are never refused', () => {

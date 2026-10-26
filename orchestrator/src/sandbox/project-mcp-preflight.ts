@@ -8,7 +8,12 @@ import { join } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
-import type { ProjectMcpSelection } from './project-mcp-scope.ts'
+import {
+  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+  PROJECT_MCP_WRITER_WITHHELD_REASON,
+  type ProjectMcpSelection,
+  type ProjectMcpWithheld,
+} from './project-mcp-scope.ts'
 
 /** One project server the run gets, with the launch it actually gets it through. */
 export type ProjectMcpProbe = { server: string; launch: McpToolListLaunch }
@@ -51,7 +56,7 @@ export type RequiredMcpProbeFacts = {
   /** The server names the run's selection actually hands it. */
   selectedServers?: readonly string[]
   /** The server names the selection withheld, and why. */
-  withheld?: readonly string[]
+  withheld?: readonly ProjectMcpWithheld[]
 }
 
 export type RequiredMcpProbeDecision = {
@@ -69,9 +74,14 @@ function missingRequiredServerFailure(facts: RequiredMcpProbeFacts): ProjectMcpP
   const required = facts.requiredServer
   if (!required || isPlatformServer(required)) return null
   if ((facts.selectedServers ?? []).includes(required)) return null
-  const reason = (facts.withheld ?? []).includes(required)
-    ? "withheld from this run's MCP scope (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them"
-    : "not configured in the tree's .mcp.json"
+  const withheld = (facts.withheld ?? []).find((entry) => entry.name === required)
+  let reason = "not configured in the tree's .mcp.json"
+  if (withheld) {
+    reason = `withheld from this run's MCP scope (${withheld.reason})`
+    if (withheld.reason === PROJECT_MCP_WRITER_WITHHELD_REASON) {
+      reason += `; ${PROJECT_MCP_WRITER_WITHHELD_ADVICE}`
+    }
+  }
   return { server: required, error: reason }
 }
 

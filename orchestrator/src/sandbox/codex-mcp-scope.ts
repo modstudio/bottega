@@ -12,6 +12,7 @@ import {
   mergeMcpSetupHeader,
   type ProjectMcpSelection,
   type ProjectMcpServer,
+  type ProjectMcpWithheld,
   projectMcpWithheldLine,
 } from './project-mcp-scope.ts'
 export const CODEX_ASK_ENV_VARS = [
@@ -40,7 +41,10 @@ export type CodexMcpServer = {
   env_vars?: readonly string[]
 }
 
-export type CodexMcpScope = { servers: Record<string, CodexMcpServer>; withheld: string[] }
+export type CodexMcpScope = {
+  servers: Record<string, CodexMcpServer>
+  withheld: ProjectMcpWithheld[]
+}
 
 export type CodexMcpCatalogue =
   | { server: string; pages: McpToolPage[]; error?: never }

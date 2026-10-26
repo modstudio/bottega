@@ -19,8 +19,15 @@ function launchProjectSelection(
   config: Record<string, McpServerConfig>,
   project: Project | null,
   cwd: string,
+  hasProjectTree: boolean,
 ): ProjectMcpSelection | null {
-  return selectProjectMcpServers(codexMcpMode(usingMcp, writesJob), config, project, cwd)
+  return selectProjectMcpServers(
+    codexMcpMode(usingMcp, writesJob),
+    config,
+    project,
+    cwd,
+    hasProjectTree,
+  )
 }
 
 /**
@@ -30,6 +37,7 @@ function launchProjectSelection(
 function launchSelectionFacts(input: {
   usingMcp: boolean
   writesJob: boolean
+  hasProjectTree: boolean
   callerCwd: string
   cwd: string
 }): {
@@ -42,7 +50,14 @@ function launchSelectionFacts(input: {
   return {
     config,
     project,
-    selection: launchProjectSelection(input.usingMcp, input.writesJob, config, project, input.cwd),
+    selection: launchProjectSelection(
+      input.usingMcp,
+      input.writesJob,
+      config,
+      project,
+      input.cwd,
+      input.hasProjectTree,
+    ),
   }
 }
 
@@ -50,6 +65,7 @@ function launchSelectionFacts(input: {
 export function workerMcpLaunchSelection(input: {
   usingMcp: boolean
   writesJob: boolean
+  hasProjectTree: boolean
   callerCwd: string
   cwd: string
 }): ProjectMcpSelection | null {
@@ -90,6 +106,7 @@ export function workerMcpLaunchScope(input: {
   transport: string
   usingMcp: boolean
   writesJob: boolean
+  hasProjectTree: boolean
   callerCwd: string
   cwd: string
   connection: { server: string } | null
@@ -105,6 +122,7 @@ export function workerMcpLaunchScope(input: {
       config,
       project,
       input.cwd,
+      input.hasProjectTree,
     ),
     projectSelection,
     serverName: projectMcpServerName(input.connection, project),

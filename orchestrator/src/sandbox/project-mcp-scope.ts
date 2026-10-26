@@ -11,10 +11,19 @@ import {
 } from '../mcp/mcp-probe.ts'
 import {
   mcpConfigReadForRun,
+  type ProjectMcpWithheld,
   projectReaderProxyServers,
   READER_PLATFORM_MCP_SERVERS,
   type ReaderProxyServer,
 } from './mcp-reader-scope.ts'
+
+export type { ProjectMcpWithheld }
+
+export const PROJECT_MCP_WRITER_WITHHELD_REASON =
+  'inline env/headers, a headersHelper, or no launch definition'
+
+export const PROJECT_MCP_WRITER_WITHHELD_ADVICE =
+  'writing workers cannot receive these; run as a reader through the proxy, or declare the server without them'
 
 /**
  * The platform's own MCP identities. A project configuration never occupies
@@ -40,8 +49,8 @@ export type ProjectMcpProject = {
 
 /** Which project servers attach to one run, and how a harness must reach them. */
 export type ProjectMcpSelection =
-  | { kind: 'reader'; servers: Record<string, ReaderProxyServer>; withheld: string[] }
-  | { kind: 'direct'; servers: Record<string, ProjectMcpServer>; withheld: string[] }
+  | { kind: 'reader'; servers: Record<string, ReaderProxyServer>; withheld: ProjectMcpWithheld[] }
+  | { kind: 'direct'; servers: Record<string, ProjectMcpServer>; withheld: ProjectMcpWithheld[] }
 
 /** Select project MCP launch definitions that are safe to expose without inline credentials. */
 function selectDirectProjectMcpServers(
@@ -53,7 +62,7 @@ function selectDirectProjectMcpServers(
   const projectServers = projectRead.ok ? projectRead.config : {}
   const disabled = new Set(disabledProjectMcpServers(Object.keys(projectServers), allowed))
   const servers: Record<string, ProjectMcpServer> = {}
-  const withheld: string[] = []
+  const withheld: ProjectMcpWithheld[] = []
   for (const [name, entry] of Object.entries(projectServers)) {
     if (disabled.has(name)) continue
     if (
@@ -61,14 +70,14 @@ function selectDirectProjectMcpServers(
       Object.keys(entry.headers ?? {}).length ||
       entry.headersHelper
     ) {
-      withheld.push(name)
+      withheld.push({ name, reason: PROJECT_MCP_WRITER_WITHHELD_REASON })
     } else if (entry.url) {
       servers[name] = { url: entry.url }
     } else if (entry.command) {
       const command = resolveProjectMcpCommand(entry.command, cwd)
       servers[name] = { command, args: entry.args ?? [], cwd }
     } else {
-      withheld.push(name)
+      withheld.push({ name, reason: PROJECT_MCP_WRITER_WITHHELD_REASON })
     }
   }
   return { kind: 'direct', servers, withheld }
@@ -84,6 +93,7 @@ export function selectProjectMcpServers(
   treeConfig: Record<string, McpServerConfig>,
   project: ProjectMcpProject | null,
   cwd: string,
+  hasProjectTree: boolean,
 ): ProjectMcpSelection | null {
   if (mcp === false) return null
   const read = mcpConfigReadForRun(treeConfig, project, cwd)
@@ -91,15 +101,28 @@ export function selectProjectMcpServers(
     return selectDirectProjectMcpServers(read, project?.settings.workerMcpServers, cwd)
   return {
     kind: 'reader',
-    servers: projectReaderProxyServers(withoutPlatformServers(read), project, cwd),
-    withheld: [],
+    ...projectReaderProxyServers(withoutPlatformServers(read), project, cwd, hasProjectTree),
   }
 }
 
 /** The visible reason one harness does not have a withheld project server. */
-export function projectMcpWithheldLine(harness: string, withheld: string[]): string | null {
+export function projectMcpWithheldLine(
+  harness: string,
+  withheld: ProjectMcpWithheld[],
+): string | null {
   if (!withheld.length) return null
-  return `MCP scope: ${harness} withheld ${withheld.join(', ')} (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them`
+  const names = withheld.map((entry) => entry.name).join(', ')
+  const reasons = [...new Set(withheld.map((entry) => entry.reason))]
+  if (reasons.length === 1) {
+    const reason = reasons[0]!
+    const head = `MCP scope: ${harness} withheld ${names} (${reason})`
+    return reason === PROJECT_MCP_WRITER_WITHHELD_REASON
+      ? `${head}; ${PROJECT_MCP_WRITER_WITHHELD_ADVICE}`
+      : head
+  }
+  return `MCP scope: ${harness} withheld ${withheld
+    .map((entry) => `${entry.name} (${entry.reason})`)
+    .join(', ')}`
 }
 
 /**
