@@ -15,6 +15,7 @@ import { FAILS_OVER, failoverRefused } from '../failure/failure.ts'
 import { parseMcpProbe } from '../mcp/mcp-probe.ts'
 import { failureReason, outcomeOf } from '../outcome.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
@@ -662,7 +663,7 @@ export function collectResult(
   if (argv.includes('--artifacts')) listResultArtifacts(database, chain.finalId, presentation)
   const asking = row.status === 'asking' ? resolveAsking(database, row.record_id) : null
   const outcome = outcomeOf(row)
-  const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}\n  executor:  ${row.executor}\n  record_id: ${row.record_id}`
+  const baseNote = `${row.base_commit ? `\n  base:      ${row.base_commit}` : ''}${row.executor === HARNESS_EXECUTOR ? `\n  executor:  ${row.executor}` : ''}\n  record_id: ${row.record_id}`
   if (!outcome.terminal || chain.settling) {
     presentation.error(`run ${id} (${row.agent}/${row.job}) is still running`)
     presentation.exit(2)
