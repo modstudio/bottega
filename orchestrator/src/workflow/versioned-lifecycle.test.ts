@@ -96,11 +96,11 @@ describe('versioned lifecycle retirement', () => {
     retireWorkflowLocal('draft-listing', draft.n, 'withdraw', 'architect', d)
 
     expect(listResolvedWorkflows(null, d).map(({ slug }) => slug)).not.toContain('draft-listing')
-    expect(listResolvedWorkflows(null, d, true).find(({ slug }) => slug === 'draft-listing')).toMatchObject(
-      {
-        production_n: null,
-        draft_n: null,
-      },
-    )
+    expect(
+      listResolvedWorkflows(null, d, true).find(({ slug }) => slug === 'draft-listing'),
+    ).toMatchObject({
+      production_n: null,
+      draft_n: null,
+    })
   })
 })

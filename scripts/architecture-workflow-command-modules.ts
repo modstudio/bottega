@@ -17,6 +17,13 @@ export const workflowCommandModules: WorkflowCommandModule[] = [
     '../../../shared/orch-contract.ts',
     '../database/db.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-compose-branch.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../database/db.ts',
+    '../git/git-environment.ts',
+    '../project/projects.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-catalogue-commands.ts', [
     'node:path',
     '../cli/args.ts',

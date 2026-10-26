@@ -14,7 +14,6 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { parseAutonomy } from './autonomy.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
-import { workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
 import {
   promoteStepCatalogue,
   resolvedStepCatalogueVersions,
@@ -22,6 +21,7 @@ import {
   setStepCatalogue,
   showResolvedStepCatalogue,
 } from './step-catalogue.ts'
+import { workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
 import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,

@@ -367,6 +367,50 @@ export async function fileIssue(
   }
 }
 
+/** Composes a workflow for the MCP caller, refusing one whose branch carries nothing to land. */
+async function composeWorkflowToolResult(input: {
+  slug: string
+  project: string
+  mode?: string
+  args?: Record<string, string>
+  version?: number
+  catalogue_version?: number
+  autonomy?: string
+}) {
+  const refusal = workflowComposeBranchRefusal({
+    workflow: input.slug,
+    project: input.project,
+    args: input.args ?? {},
+  })
+  if (refusal) throw new Error(refusal)
+  const selection = { version: input.version, catalogueVersion: input.catalogue_version }
+  const args = input.args ?? {}
+  const preliminary = composeWorkflow(
+    input.slug,
+    input.project,
+    input.mode,
+    args,
+    undefined,
+    selection,
+  )
+  const resolved = await resolveProjectAutonomy(
+    input.project,
+    preliminary.workflow.slug,
+    preliminary.workflow.defaultPreset,
+    catalogueStepsForAutonomy(preliminary.steps),
+    parseAutonomy(input.autonomy, 'session'),
+  )
+  return composeWorkflow(
+    input.slug,
+    input.project,
+    input.mode,
+    args,
+    undefined,
+    selection,
+    resolved,
+  )
+}
+
 export function createDocsMcpServer(): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
@@ -419,20 +463,7 @@ export function createDocsMcpServer(): McpServer {
         autonomy: z.string().optional(),
       }),
     },
-    async ({ slug, project, mode, args, version, catalogue_version, autonomy }) => {
-      const refusal = workflowComposeBranchRefusal({ workflow: slug, project, args: args ?? {} })
-      if (refusal) throw new Error(refusal)
-      const selection = { version, catalogueVersion: catalogue_version }
-      const preliminary = composeWorkflow(slug, project, mode, args ?? {}, undefined, selection)
-      const resolved = await resolveProjectAutonomy(
-        project,
-        preliminary.workflow.slug,
-        preliminary.workflow.defaultPreset,
-        catalogueStepsForAutonomy(preliminary.steps),
-        parseAutonomy(autonomy, 'session'),
-      )
-      return text(composeWorkflow(slug, project, mode, args ?? {}, undefined, selection, resolved))
-    },
+    async (input) => text(await composeWorkflowToolResult(input)),
   )
 
   registerWorkflowStepTool(server)
