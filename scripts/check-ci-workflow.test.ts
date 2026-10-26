@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test'
-import { checkCiWorkflow, expectedWorkflowJobNames } from './check-ci-workflow.ts'
+import { checkCiWorkflow, expectedWorkflowJobNames, suiteRunLine } from './check-ci-workflow.ts'
+import { CI_ONLY_SUITES } from './check-plan.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
+const processSuite = CI_ONLY_SUITES[0]
 
 test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()
@@ -9,7 +11,7 @@ test('refuses a workflow with a missing or extra job', () => {
       if (job === 'hub-ui-stories')
         return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
-      if (job === 'orchestrator-hooks-process') return processHooksJobFixture()
+      if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
@@ -51,16 +53,13 @@ test('pins the Python hook leg', () => {
   ).toThrow('must run its check-plan leg')
 })
 
-test('pins the process-case hook job', () => {
+test('pins the declared CI-only process suite job', () => {
   const workflow = readWorkflowFixture()
   expect(() =>
     checkCiWorkflow(
-      workflow.replace(
-        "run: python3 -m unittest discover -s orchestrator/hooks -p 'process_*.py'",
-        'run: python3 -m unittest',
-      ),
+      workflow.replace(`run: ${suiteRunLine(processSuite.argv)}`, 'run: python3 -m unittest'),
     ),
-  ).toThrow('must run the process-case discovery')
+  ).toThrow(`the ${processSuite.job} job must run its declared suite`)
 })
 
 test('pins the real-Postgres leg', () => {
@@ -116,7 +115,7 @@ function readWorkflowFixture() {
       if (job === 'hub-ui-stories')
         return `  ${job}:\n    steps:\n      - run: bun run --cwd hub/ui storybook:test\n      - run: bun run --cwd hub/views storybook:test`
       if (job === 'orchestrator-hooks') return hooksJobFixture()
-      if (job === 'orchestrator-hooks-process') return processHooksJobFixture()
+      if (job === processSuite.job) return processHooksJobFixture()
       if (job === 'postgres') return postgresJobFixture()
       if (job === 'ci')
         return `  ${job}:\n    needs: [${expectedWorkflowJobNames()
@@ -152,10 +151,10 @@ function hooksJobFixture() {
 }
 
 function processHooksJobFixture() {
-  return `  orchestrator-hooks-process:
+  return `  ${processSuite.job}:
     steps:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - run: python3 -m unittest discover -s orchestrator/hooks -p 'process_*.py'`
+      - run: ${suiteRunLine(processSuite.argv)}`
 }

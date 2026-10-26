@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
+import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const EXEMPTIONS_FILE = 'scripts/quality/test-reach-exemptions.json'
@@ -10,7 +10,22 @@ const EXEMPTIONS_PATH = `${ROOT}/${EXEMPTIONS_FILE}`
 export type TestReachExemption = { file: string; reason: string }
 
 function testFile(path: string): boolean {
-  return /(?:\.test\.tsx?|(?:^|\/)test_[^/]+\.py)$/.test(path)
+  return /(?:\.test\.tsx?|(?:^|\/)(?:test|process)_[^/]+\.py)$/.test(path)
+}
+
+/** The reach every declared CI-only suite claims, shaped as a gate leg. */
+export function ciOnlySuiteLegs(): {
+  testDirectories: string[]
+  testPatterns: string[]
+  excludedTestDirectories: string[]
+  excludedTestPatterns: string[]
+}[] {
+  return CI_ONLY_SUITES.map((suite) => ({
+    testDirectories: [],
+    testPatterns: [...suite.testPatterns],
+    excludedTestDirectories: [],
+    excludedTestPatterns: [],
+  }))
 }
 
 function beneath(directory: string, path: string): boolean {
@@ -142,7 +157,7 @@ function run(): number {
   const reach = testReach({
     tracked,
     rootTests: ROOT_TEST_FILES,
-    legs: CHECK_LEGS,
+    legs: [...CHECK_LEGS, ...ciOnlySuiteLegs()],
     exemptions,
   })
   const testCount = tracked.filter(testFile).length

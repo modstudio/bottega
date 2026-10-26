@@ -185,14 +185,41 @@ export const ROOT_TEST_FILES = [
   'scripts/check-hosted-sql-schema.test.ts',
 ] as const
 
-/** CI-only process checks that are intentionally outside the in-process local gate. */
+/**
+ * A test suite that only CI runs, declared once with the command it runs and the
+ * pattern that command collects. The heartbeat decision suite keeps its pure
+ * cases in the gate leg; the cases that drive orch-heartbeat.sh and its children
+ * are process tests, so this job runs them instead. The gate's unittest
+ * discovery cannot exclude a file by pattern, so the `process_` name is the
+ * exclusion, and the pattern below is also this suite's reach: check-test-reach
+ * counts every file it names as reached.
+ */
+export const CI_ONLY_SUITES = [
+  {
+    job: 'orchestrator-hooks-process',
+    testPatterns: ['orchestrator/hooks/process_*.py'],
+    argv: [
+      'python3',
+      '-m',
+      'unittest',
+      'discover',
+      '-s',
+      'orchestrator/hooks',
+      '-p',
+      'process_*.py',
+    ],
+  },
+] as const
+
+/**
+ * CI-only process checks that are intentionally outside the in-process local
+ * gate, including the job of every declared CI-only suite.
+ */
 export const CI_ONLY_JOBS = [
   'postgres',
   'hub-ui-stories',
   'hub-web-smoke',
-  // The hooks leg's own suite is pure; the cases that drive the heartbeat shell
-  // and its children are process tests, which run here instead of in the gate.
-  'orchestrator-hooks-process',
+  ...CI_ONLY_SUITES.map((suite) => suite.job),
 ] as const
 
 export const STATIC_OMIT_GROUPS = {

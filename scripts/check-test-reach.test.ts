@@ -3,6 +3,7 @@ import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test
 import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
 import {
   assertExemptionBaselineShrinks,
+  ciOnlySuiteLegs,
   parseTestReachExemptions,
   testReach,
 } from './check-test-reach.ts'
@@ -128,6 +129,24 @@ test('reports tracked tests outside a leg or root batch unless exempted', () => 
   ).toEqual({
     unreached: ['orchestrator/hooks/test_guard.py', 'scripts/unreached.test.ts'],
     unexempted: ['scripts/unreached.test.ts'],
+    staleExemptions: [],
+  })
+})
+
+test('a CI-only suite pattern counts as reached while an unclaimed process file does not', () => {
+  expect(
+    testReach({
+      tracked: [
+        'orchestrator/hooks/process_heartbeat_shell.py',
+        'orchestrator/hooks/nested/process_extra.py',
+      ],
+      rootTests: [],
+      legs: [...CHECK_LEGS, ...ciOnlySuiteLegs()],
+      exemptions: [],
+    }),
+  ).toEqual({
+    unreached: ['orchestrator/hooks/nested/process_extra.py'],
+    unexempted: ['orchestrator/hooks/nested/process_extra.py'],
     staleExemptions: [],
   })
 })
