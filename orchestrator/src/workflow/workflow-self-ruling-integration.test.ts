@@ -23,7 +23,7 @@ const args = {
   branch: 'DEV-1264-work',
   worktree: '/tmp/work',
 }
-const context = { session: 'session-one' }
+const context = { session: 'session-one', taskRecordId: 'task-DEV-1264' }
 const ports = {
   resolveCheckout: () => ({
     project: 'fixture',

@@ -61,7 +61,20 @@ export async function runWorkflowCommand(
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
   const command = new Command().exitOverride().enablePositionalOptions()
-  registerWorkflowCommands(command, shown, options)
+  const suppliedKeys = argv.flatMap((value, index) => {
+    if (value.startsWith('key=')) return [value.slice('key='.length)]
+    if (argv[index - 1] === '--task') return [value]
+    return []
+  })
+  registerWorkflowCommands(command, shown, {
+    hubTaskReader: async (project) =>
+      [...new Set(suppliedKeys)].map((key) => ({
+        key,
+        record_id: `task-${key}`,
+        project,
+      })),
+    ...options,
+  })
   setRawArgv(argv)
   await command.parseAsync(['node', 'orch', ...argv])
 }

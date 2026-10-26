@@ -5,12 +5,8 @@ import { addProject } from '../../test/fixtures/offline-branch-landing.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
-import {
-  deriveRunLinks,
-  type HubTaskReference,
-  linkRunTasks,
-  type RunLinkFacts,
-} from './run-task-linking.ts'
+import type { HubTaskReference } from '../workflow/workflow-task-reference.ts'
+import { deriveRunLinks, linkRunTasks, type RunLinkFacts } from './run-task-linking.ts'
 
 const project = (name: string, path: string, recordId = `${name}-id`) =>
   ({ recordId, name, path, stack: null, canon: false, retiredAt: null, settings: {} }) as Project
@@ -200,6 +196,111 @@ describe('run task linking service', () => {
     expect(db().query('SELECT task_record_id FROM run WHERE record_id=?').get(runId)).toEqual({
       task_record_id: null,
     })
+  })
+
+  test('links related task references once and reports unmatched keys per table', async () => {
+    const projectId = addProject('related-links', '/work/related-links')
+    addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
+    db().exec('PRAGMA foreign_keys=OFF')
+    try {
+      db()
+        .query(
+          `INSERT INTO workflow_cursor
+          (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,
+           workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,total_steps,created_at,updated_at)
+         VALUES ('cursor-related',991,'related-links',?,'flow','default','REL-1','','workflow-version','catalogue-version','{}',0,'step','running','[]',1,'t','t')`,
+        )
+        .run(projectId)
+      db()
+        .query(
+          `INSERT INTO question
+          (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via)
+         VALUES ('question-related',991,'cursor-related','REL-1','t','question','live')`,
+        )
+        .run()
+      db()
+        .query(
+          `INSERT INTO port_ref
+          (record_id,task_key,target_project_record_id,note,created_at)
+         VALUES ('port-related','MISSING-1',?,'note','t')`,
+        )
+        .run(projectId)
+      db()
+        .query(
+          `INSERT INTO presence
+          (session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+         VALUES ('related-session','claude','architect','machine','related-links',?,'/work/related-links','REL-1','t')`,
+        )
+        .run(projectId)
+    } finally {
+      db().exec('PRAGMA foreign_keys=ON')
+    }
+    const hubReader = async () => [
+      { key: 'REL-1', record_id: 'related-task-id', project: 'related-links' },
+    ]
+
+    const first = await linkRunTasks({ dryRun: false }, { hubReader })
+    expect(first.local_task_links).toEqual({
+      workflow_cursor: { linked: 1, unmatched_keys: {} },
+      question: { linked: 1, unmatched_keys: {} },
+      port_ref: { linked: 0, unmatched_keys: { 'MISSING-1': 1 } },
+      presence: { linked: 1, unmatched_keys: {} },
+    })
+    expect(
+      db()
+        .query(
+          `SELECT
+          (SELECT task_record_id FROM workflow_cursor WHERE record_id='cursor-related') cursor_task,
+          (SELECT workflow_task_record_id FROM question WHERE record_id='question-related') question_task,
+          (SELECT revision FROM question WHERE record_id='question-related') question_revision,
+          (SELECT COUNT(*) FROM outbox WHERE kind='question' AND row_id='question-related') question_outbox,
+          (SELECT current_task_record_id FROM presence WHERE session_id='related-session') presence_task`,
+        )
+        .get(),
+    ).toEqual({
+      cursor_task: 'related-task-id',
+      question_task: 'related-task-id',
+      question_revision: 2,
+      question_outbox: 1,
+      presence_task: 'related-task-id',
+    })
+
+    const second = await linkRunTasks({ dryRun: false }, { hubReader })
+    expect(second.local_task_links.workflow_cursor.linked).toBe(0)
+    expect(second.local_task_links.question.linked).toBe(0)
+    expect(second.local_task_links.presence.linked).toBe(0)
+    expect(second.local_task_links.port_ref.unmatched_keys).toEqual({ 'MISSING-1': 1 })
+  })
+
+  test('leaves a task key shared by projects unlinked and reports it as unmatched', async () => {
+    const alpha = addProject('ambiguous-alpha', '/work/ambiguous-alpha')
+    const beta = addProject('ambiguous-beta', '/work/ambiguous-beta')
+    const insert = db().query(
+      `INSERT INTO port_ref (record_id,task_key,target_project_record_id,note,created_at)
+       VALUES (?,?,?,?, 't')`,
+    )
+    insert.run('ambiguous-ref-alpha', 'SHARED-1', alpha, 'alpha')
+    insert.run('ambiguous-ref-beta', 'SHARED-1', beta, 'beta')
+
+    const report = await linkRunTasks(
+      { dryRun: false },
+      {
+        hubReader: async (project) =>
+          project.startsWith('ambiguous-')
+            ? [{ key: 'SHARED-1', record_id: `task-${project}`, project }]
+            : [],
+      },
+    )
+
+    expect(report.local_task_links.port_ref).toEqual({
+      linked: 0,
+      unmatched_keys: { 'SHARED-1': 2 },
+    })
+    expect(
+      db()
+        .query('SELECT task_record_id FROM port_ref WHERE task_key=? ORDER BY record_id')
+        .all('SHARED-1'),
+    ).toEqual([{ task_record_id: null }, { task_record_id: null }])
   })
 
   test('refuses with a project-scoped remedy when the hub reader fails', async () => {

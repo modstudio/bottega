@@ -10,9 +10,9 @@ import { db } from '../database/db.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { confirmRunProcessTermination, planRecordedRunTermination } from '../run/run-process.ts'
 import { abandonRun, stopRun } from '../run/run-stop.ts'
-import { readHubTasks } from '../run/run-task-linking.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { grokTrustPathFromHeading, observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
+import { readHubTasks } from '../workflow/workflow-task-reference.ts'
 import { log, optionFlags } from './support.ts'
 
 function keptBranchLine(

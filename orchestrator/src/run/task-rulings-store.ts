@@ -12,9 +12,9 @@ import {
 export function taskRulingsForDispatch(input: {
   resume: boolean
   project: string | null
-  launchKey: string | null
+  taskRecordId: string | null
 }): TaskRulingsSelection {
-  if (input.resume || input.project === null || input.launchKey === null) {
+  if (input.resume || input.project === null || input.taskRecordId === null) {
     return { rulings: [], omitted: 0 }
   }
   const rows = db()
@@ -28,7 +28,7 @@ export function taskRulingsForDispatch(input: {
            JOIN run owner ON owner.record_id=q.run_record_id
            JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
           WHERE root.project_record_id=(SELECT record_id FROM project WHERE name=?)
-            AND root.launch_key=?
+            AND root.task_record_id=?
             AND q.answered_at IS NOT NULL
             AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
          UNION ALL
@@ -39,7 +39,7 @@ export function taskRulingsForDispatch(input: {
            FROM question q
            JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
           WHERE c.project_record_id=(SELECT record_id FROM project WHERE name=?)
-            AND q.workflow_key=?
+            AND q.workflow_task_record_id=?
             AND q.answered_at IS NOT NULL
             AND NOT (q.overturned_at IS NOT NULL AND q.replacement IS NULL)
        ), candidates AS (
@@ -53,9 +53,9 @@ export function taskRulingsForDispatch(input: {
     )
     .all(
       input.project,
-      input.launchKey,
+      input.taskRecordId,
       input.project,
-      input.launchKey,
+      input.taskRecordId,
       TASK_RULINGS_MAX_COUNT + 1,
     ) as TaskRulingRow[]
   const candidateCount = rows[0]?.candidate_count ?? 0

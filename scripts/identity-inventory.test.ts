@@ -507,7 +507,7 @@ test('real natural and undeclared references remain measured', () => {
       readSqliteKeyTables(database),
       KEY_MANIFESTS,
     )
-    expect(inventory.findings).toContain('port_ref.task_key:reference')
+    expect(inventory.findings).toContain('contention.resource_key:reference')
   } finally {
     database.close()
   }

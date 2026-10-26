@@ -12,7 +12,7 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 
 const args = { key: 'DEV-822', branch: 'DEV-822-work', worktree: '/tmp/work' }
-const context = { session: 'session-one' }
+const context = { session: 'session-one', taskRecordId: 'task-DEV-822' }
 
 function database(): Database {
   const d = new Database(':memory:')

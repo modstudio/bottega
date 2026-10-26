@@ -10,12 +10,11 @@ import {
 } from '../workflow/workflow-compose-branch.ts'
 import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import {
-  mcpWorkflowCursorContext,
-  resolveWorkflowCursorMode,
-} from '../workflow/workflow-cursor-selection.ts'
+import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
+import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { getWorkflowStep, workflowModeStepLists } from '../workflow/workflows.ts'
 
 const inputSchema = z.object({
@@ -28,11 +27,15 @@ const inputSchema = z.object({
   cursor: z.number().int().positive().optional(),
 })
 
-async function workflowStep(input: z.infer<typeof inputSchema>, commitCount: CommitCountPort) {
+async function workflowStep(
+  input: z.infer<typeof inputSchema>,
+  commitCount: CommitCountPort,
+  hubTaskReader?: HubTaskReader,
+) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
-  const context = mcpWorkflowCursorContext()
+  const context = await resolveMcpCursorContext(project, args ?? {}, hubTaskReader)
   const effectiveMode = cursor
-    ? resolveWorkflowCursorMode(
+    ? resolveLinkedWorkflowCursorMode(
         slug,
         project,
         mode,
@@ -78,6 +81,7 @@ async function workflowStep(input: z.infer<typeof inputSchema>, commitCount: Com
 export function registerWorkflowStepTool(
   server: McpServer,
   commitCount: CommitCountPort = readCommitsPastLanding,
+  hubTaskReader?: HubTaskReader,
 ): void {
   server.registerTool(
     'get_workflow_step',
@@ -86,6 +90,6 @@ export function registerWorkflowStepTool(
         'Fetch one workflow step body with argument substitutions applied. Step accepts a slug or a 1-based position from compose_workflow. Pass mode so the workflow cursor applies: fetching step 1 opens the workflow, fetching the current step resumes it, and a step ahead of the cursor is refused. Close a step and receive the next one with next_workflow_step.',
       inputSchema,
     },
-    (input) => workflowStep(input, commitCount),
+    (input) => workflowStep(input, commitCount, hubTaskReader),
   )
 }

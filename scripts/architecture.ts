@@ -251,13 +251,6 @@ export const modules: ArchitectureModule[] = [
     '../reclaim/reclaim-residue.ts',
     './cleanup.ts',
   ]),
-  module('orchestrator/src/run/run-task-linking.ts', [
-    'bun:sqlite',
-    '../../../shared/brand.ts',
-    '../../../shared/self-spawn.ts',
-    '../database/db.ts',
-    '../project/projects.ts',
-  ]),
   module('orchestrator/src/cleanup/claim-reconciliation.ts', [
     'node:fs',
     '../../../shared/process-identity.ts',

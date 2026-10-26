@@ -39,7 +39,7 @@ import {
 } from './workflow-cursor-live-autonomy.ts'
 import {
   cliWorkflowCursorContext,
-  resolveWorkflowCursorMode,
+  resolveWorkflowCursorContext,
   selectWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
@@ -65,6 +65,8 @@ import {
   resolvedWorkflowRenderCheckLines,
 } from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
+import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
@@ -95,6 +97,7 @@ export type WorkflowCommandOptions = {
   stdinIsTTY?: () => boolean | undefined
   /** Where a landing workflow reads the branch's commit count; the registered checkout's git by default. */
   commitCount?: CommitCountPort
+  hubTaskReader?: HubTaskReader
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -234,7 +237,7 @@ export async function attachCommand(
           throw new Error('no text: pass --file <path> or pipe text on stdin')
         })()
   if (!body.trim()) throw new Error('workflow text must not be empty; provide text to attach')
-  const context = cliWorkflowCursorContext()
+  let context = cliWorkflowCursorContext()
   const { project, workflow: slug } = cursorCommandTarget(
     argv,
     cursor,
@@ -242,7 +245,8 @@ export async function attachCommand(
     `${PLATFORM_SLUG} workflow attach`,
   )
   const args = workflowArgs(argv)
-  const mode = resolveWorkflowCursorMode(
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -393,9 +397,13 @@ function evidenceFromArgv(argv: string[]): WorkflowEvidenceInput {
   }
 }
 
-export function ruleCommand(argv: string[], print: WorkflowPrint): void {
+export async function ruleCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
   const args = workflowArgs(argv)
-  const context = cliWorkflowCursorContext()
+  let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const { project, workflow: slug } = cursorCommandTarget(
     argv,
@@ -403,7 +411,8 @@ export function ruleCommand(argv: string[], print: WorkflowPrint): void {
     context,
     `${PLATFORM_SLUG} workflow rule`,
   )
-  const mode = resolveWorkflowCursorMode(
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -429,17 +438,22 @@ export function ruleCommand(argv: string[], print: WorkflowPrint): void {
   print(result, `${result.summary} Question ${result.questionId}.`)
 }
 
-export function abandonCommand(argv: string[], print: WorkflowPrint): void {
+export async function abandonCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
-  const context = cliWorkflowCursorContext()
+  let context = cliWorkflowCursorContext()
   const { project, workflow: slug } = cursorCommandTarget(
     argv,
     cursor,
     context,
     `${PLATFORM_SLUG} workflow abandon`,
   )
-  const mode = resolveWorkflowCursorMode(
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -484,11 +498,12 @@ export async function stepCommand(
   const requestedMode = flagValue(argv, 'mode')
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const args = workflowArgs(argv)
-  const context = cliWorkflowCursorContext()
+  let context = cliWorkflowCursorContext()
   const target = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow step`, true)
   const { project, workflow: slug } = target
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = cursor
-    ? resolveWorkflowCursorMode(
+    ? resolveLinkedWorkflowCursorMode(
         slug,
         project,
         requestedMode,
@@ -539,13 +554,17 @@ export async function stepCommand(
   print(step, renderWorkflowStep(step))
 }
 
-export async function nextCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+export async function nextCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
   const selfRuling = flagValue(argv, 'self-ruling')
   const basis = flagValue(argv, 'basis')
   if (basis !== undefined && selfRuling === undefined)
     throw new Error('--basis requires --self-ruling; pass both inputs, or omit --basis')
   const args = workflowArgs(argv)
-  const context = cliWorkflowCursorContext()
+  let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const { project, workflow: slug } = cursorCommandTarget(
     argv,
@@ -553,7 +572,13 @@ export async function nextCommand(argv: string[], print: WorkflowPrint): Promise
     context,
     `${PLATFORM_SLUG} workflow next`,
   )
-  const mode = resolveWorkflowCursorMode(
+  const evidence = evidenceFromArgv(argv)
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  const adoptedTask = evidence.task
+    ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
+    : null
+  context = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -573,7 +598,7 @@ export async function nextCommand(argv: string[], print: WorkflowPrint): Promise
     flagValue(argv, 'note'),
     context,
     undefined,
-    evidenceFromArgv(argv),
+    evidence,
     productionFloorPorts() as FloorEvidencePorts,
     cursor,
     selfRuling === undefined
@@ -590,9 +615,13 @@ export async function nextCommand(argv: string[], print: WorkflowPrint): Promise
   print(result, result)
 }
 
-export async function awaitCommand(argv: string[], print: WorkflowPrint): Promise<void> {
+export async function awaitCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
   const args = workflowArgs(argv)
-  const context = cliWorkflowCursorContext()
+  let context = cliWorkflowCursorContext()
   const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
   const { project, workflow: slug } = cursorCommandTarget(
     argv,
@@ -600,7 +629,8 @@ export async function awaitCommand(argv: string[], print: WorkflowPrint): Promis
     context,
     `${PLATFORM_SLUG} workflow await`,
   )
-  const mode = resolveWorkflowCursorMode(
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
+  const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
     flagValue(argv, 'mode'),
@@ -820,7 +850,12 @@ export async function composeCommand(
   }
   const preliminary = composeWorkflow(argv[2]!, project, mode, args, undefined, selection)
   const session = parseAutonomy(flagValues(argv, 'autonomy').join(','), 'session')
-  const context = cliWorkflowCursorContext()
+  const context = await resolveWorkflowCursorContext(
+    project,
+    args,
+    cliWorkflowCursorContext(),
+    options.hubTaskReader,
+  )
   const live = await resolveWorkflowLiveAutonomy({
     slug: argv[2]!,
     project,

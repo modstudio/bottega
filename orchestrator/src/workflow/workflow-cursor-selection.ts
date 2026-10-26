@@ -6,11 +6,12 @@ import { db, sessionId } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
+import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
-  'number id,record_id,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
+  'number id,record_id,project,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,ordinal,step_slug,state,workflow_version_record_id,catalogue_version_record_id,(SELECT n FROM workflow_version WHERE record_id=workflow_version_record_id) workflow_version,(SELECT n FROM step_catalogue_version WHERE record_id=catalogue_version_record_id) catalogue_version,args,autonomy,closed,question,total_steps,created_at,updated_at,enforcement'
 
 export type WorkflowCursorSelector = {
   project?: string
@@ -19,7 +20,12 @@ export type WorkflowCursorSelector = {
   key?: string
 }
 
-export type WorkflowCursorContext = { session?: string | null; instance?: string }
+export type WorkflowCursorContext = {
+  session?: string | null
+  instance?: string
+  taskRecordId?: string | null
+  adoptionTaskRecordId?: string | null
+}
 
 const MCP_INSTANCE = randomUUID()
 
@@ -29,6 +35,24 @@ export const mcpWorkflowCursorContext = (): WorkflowCursorContext => ({
 })
 
 export const cliWorkflowCursorContext = (): WorkflowCursorContext => ({ session: sessionId() })
+
+export async function resolveWorkflowCursorContext(
+  project: string,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  reader?: HubTaskReader,
+): Promise<WorkflowCursorContext> {
+  const key = workflowKeyOf(args)
+  if (!key) return { ...context, taskRecordId: null }
+  const task = await resolveHubTaskReference(project, key, reader)
+  return { ...context, taskRecordId: task?.record_id ?? null }
+}
+
+export const resolveMcpCursorContext = (
+  project: string,
+  args: Record<string, string>,
+  reader?: HubTaskReader,
+) => resolveWorkflowCursorContext(project, args, mcpWorkflowCursorContext(), reader)
 
 export function workflowCursorProjectScope(
   options: { all?: boolean; project?: string; session?: string },
@@ -48,6 +72,7 @@ export type SelectableCursorRow = {
   workflow_slug: string
   mode_slug: string
   workflow_key: string
+  task_record_id: string | null
   instance_id: string
   session_id: string | null
   ordinal: number
@@ -114,6 +139,7 @@ export function selectWorkflowCursor(
   cursor: number | undefined,
   ownerSession: string | null | undefined,
   d: Database,
+  taskRecordId?: string | null,
 ): SelectableCursorRow | null {
   if (cursor !== undefined) return selectByHandle(cursor, identity, d)
   if (!identity.project || !identity.workflow || !identity.mode) return null
@@ -122,14 +148,14 @@ export function selectWorkflowCursor(
       .query(
         `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor
          WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-           AND workflow_slug=? AND mode_slug=? AND workflow_key=?
+           AND workflow_slug=? AND mode_slug=? AND task_record_id=?
            AND instance_id='' ORDER BY number DESC LIMIT 1`,
       )
       .get(
         identity.project,
         identity.workflow,
         identity.mode,
-        identity.key,
+        taskRecordId ?? null,
       ) as SelectableCursorRow | null
   }
   if (!ownerSession) return null
@@ -192,11 +218,15 @@ export function resolveWorkflowCursorMode(
     .query(
       `SELECT DISTINCT mode_slug FROM workflow_cursor
        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
-         AND workflow_slug=? AND workflow_key=?
+         AND workflow_slug=? AND ${key ? 'task_record_id=?' : "workflow_key=''"}
          AND ${key ? "instance_id=''" : 'session_id=?'}
          AND state NOT IN ('done','abandoned') ORDER BY mode_slug`,
     )
-    .all(...(key ? [project, slug, key] : [project, slug, key, context.session ?? ''])) as {
+    .all(
+      ...(key
+        ? [project, slug, context.taskRecordId ?? null]
+        : [project, slug, context.session ?? '']),
+    ) as {
     mode_slug: string
   }[]
   if (rows.length === 1) return rows[0]!.mode_slug

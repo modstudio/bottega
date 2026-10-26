@@ -32,6 +32,7 @@ import {
   selectWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -72,6 +73,7 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -100,13 +102,8 @@ function closeOpenWorkflowQuestion(
        WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
     )
     .all(cursorId)
-  closeQuestions(
-    d,
-    questions.map((question) => question.record_id),
-    reason,
-    sessionId(),
-    at,
-  )
+  const ids = questions.map((question) => question.record_id)
+  closeQuestions(d, ids, reason, sessionId(), at)
 }
 
 function findCursor(
@@ -124,6 +121,7 @@ function findCursor(
     cursor,
     context.session,
     d,
+    context.taskRecordId,
   ) as CursorRow | null
 }
 
@@ -156,6 +154,14 @@ function insertCursor(
   const key = keyOf(composition.arguments)
   const instance = key ? '' : randomUUID()
   const at = nowIso()
+  if (key)
+    refuseUnlinkedCursorLabelCollision(d, {
+      project: composition.project,
+      workflow: composition.workflow.slug,
+      mode: composition.mode!.slug,
+      key,
+      taskRecordId: context.taskRecordId,
+    })
   const existing = key
     ? findCursor(
         composition.project,
@@ -187,52 +193,47 @@ function insertCursor(
           : {}),
       }
     : undefined
-  d.query(
-    `INSERT INTO workflow_cursor
-      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+  const stored = d
+    .query<{ record_id: string }, (string | number | null)[]>(
+      `INSERT INTO workflow_cursor
+      (record_id,number,project,project_record_id,workflow_slug,mode_slug,workflow_key,task_record_id,instance_id,session_id,
        workflow_version_record_id,catalogue_version_record_id,args,autonomy,ordinal,step_slug,state,closed,question,
        total_steps,created_at,updated_at,enforcement)
-     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,(SELECT record_id FROM project WHERE name=?),?,?,?,?,?,?,?,?,?,?,0,?,'running','[]',NULL,?,?,?,'floors')
      ON CONFLICT(project_record_id,workflow_slug,mode_slug,workflow_key,instance_id) DO UPDATE SET
        session_id=COALESCE(excluded.session_id,workflow_cursor.session_id),
-       updated_at=excluded.updated_at`,
-  ).run(
-    cursorRecordId,
-    composition.project,
-    composition.project,
-    composition.workflow.slug,
-    composition.mode!.slug,
-    key,
-    instance,
-    context.session ?? null,
-    composition.workflow.record_id,
-    composition.catalogue.record_id,
-    JSON.stringify(composition.arguments),
-    JSON.stringify(
-      autonomySnapshot ?? {
-        steps: Object.fromEntries(
-          composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
-        ),
-        rulings: composition.rulings,
-      },
-    ),
-    composition.steps[0]!.slug,
-    composition.steps.length,
-    at,
-    at,
-  )
-  return key
-    ? findCursor(
-        composition.project,
-        composition.workflow.slug,
-        composition.mode!.slug,
-        composition.arguments,
-        context,
-        d,
-      )!
-    : (d
-        .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
-        .get(cursorRecordId) as CursorRow)
+       updated_at=excluded.updated_at
+     RETURNING record_id`,
+    )
+    .get(
+      cursorRecordId,
+      composition.project,
+      composition.project,
+      composition.workflow.slug,
+      composition.mode!.slug,
+      key,
+      context.taskRecordId ?? null,
+      instance,
+      context.session ?? null,
+      composition.workflow.record_id,
+      composition.catalogue.record_id,
+      JSON.stringify(composition.arguments),
+      JSON.stringify(
+        autonomySnapshot ?? {
+          steps: Object.fromEntries(
+            composition.steps.map((step) => [step.slug, step.resolvedAutonomy]),
+          ),
+          rulings: composition.rulings,
+        },
+      ),
+      composition.steps[0]!.slug,
+      composition.steps.length,
+      at,
+      at,
+    )
+  return d
+    .query('SELECT number id,* FROM workflow_cursor WHERE record_id=?')
+    .get(stored!.record_id) as CursorRow
 }
 
 export type CursorSummary = {
@@ -259,6 +260,7 @@ export function composeWorkflowWithCursor(
   const composition = composeWorkflow(slug, project, mode, args, d, selection, autonomy)
   if (!composition.mode || composition.needs.arguments) return { ...composition, cursor: null }
   return writeTransaction(() => {
+    linkResolvedWorkflowTask(project, args, context, d)
     const existing = keyOf(composition.arguments)
       ? findCursor(
           composition.project,
@@ -463,22 +465,20 @@ export function getWorkflowStepWithCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const autonomy = live.resolution
-  return writeTransaction(
-    () =>
-      getWorkflowStepWithCursorImpl(
-        slug,
-        project,
-        stepSlug,
-        args,
-        mode,
-        context,
-        d,
-        autonomy,
-        cursor,
-        live,
-        commitCount,
-      ),
-    d,
+  return withLinkedWorkflowTask(project, args, context, d, () =>
+    getWorkflowStepWithCursorImpl(
+      slug,
+      project,
+      stepSlug,
+      args,
+      mode,
+      context,
+      d,
+      autonomy,
+      cursor,
+      live,
+      commitCount,
+    ),
   )
 }
 
@@ -497,6 +497,7 @@ function applyFloorDecision(
     identity: {
       project: row.project,
       workflowKey: row.workflow_key,
+      workflowTaskRecordId: row.task_record_id,
       branch: args.branch?.trim() || null,
       worktree: args.worktree?.trim() || null,
       session: row.session_id,
@@ -642,6 +643,7 @@ function closeFloorsForStep(
         {
           cursorId: row.record_id,
           workflowKey: row.workflow_key,
+          workflowTaskRecordId: row.task_record_id,
           stepOrdinal: row.ordinal + 1,
           stepSlug: row.step_slug,
           stepTitle: currentStep.title,
@@ -739,7 +741,8 @@ function nextWorkflowStepImpl(
   mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
-  adoptWorkflowTask(row, evidence.task, d)
+  const adoptionTaskRecordId = context.adoptionTaskRecordId ?? context.taskRecordId
+  adoptWorkflowTask(row, evidence.task, adoptionTaskRecordId, d)
   const composition = cursorComposition(row, d, live)
   if (!note?.trim()) {
     const step = composition.steps[row.ordinal]!
@@ -790,24 +793,22 @@ export function nextWorkflowStep(
   live?: LiveCursorAutonomy,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
-    writeTransaction(
-      () =>
-        nextWorkflowStepImpl(
-          slug,
-          project,
-          mode,
-          args,
-          note,
-          context,
-          evidence,
-          replayPorts,
-          d,
-          cursor,
-          selfRuling,
-          outcome,
-          live,
-        ),
-      d,
+    withLinkedWorkflowTask(project, args, context, d, () =>
+      nextWorkflowStepImpl(
+        slug,
+        project,
+        mode,
+        args,
+        note,
+        context,
+        evidence,
+        replayPorts,
+        d,
+        cursor,
+        selfRuling,
+        outcome,
+        live,
+      ),
     ),
   )
 }
@@ -872,9 +873,8 @@ export function abandonWorkflowCursor(
   d: Database = writableDb(),
   cursor?: number,
 ): string {
-  return writeTransaction(
-    () => abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
-    d,
+  return withLinkedWorkflowTask(project, args, context, d, () =>
+    abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
   )
 }
 
@@ -918,6 +918,7 @@ function awaitWorkflowRulingImpl(
     {
       cursorId: row.record_id,
       workflowKey: row.workflow_key,
+      workflowTaskRecordId: row.task_record_id,
       stepOrdinal: row.ordinal + 1,
       stepSlug: row.step_slug,
       question: question.trim(),
@@ -953,6 +954,7 @@ export function ruleWorkflow(
   if (!ruling?.trim()) throw new Error('--ruling is required')
   const personName = resolvedRulingPersonName(fromOperator)
   return writeTransaction(() => {
+    linkResolvedWorkflowTask(project, args, context, d)
     const row = findCursor(project, slug, mode, args, context, d, cursor)
     if (!row)
       throw new Error(
@@ -1015,9 +1017,8 @@ export function awaitWorkflowRuling(
   notify: typeof notifyWaitingItem = notifyWaitingItem,
   cursor?: number,
 ): CursorSummary & { questionId: number } {
-  const result = writeTransaction(
-    () => awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
-    d,
+  const result = withLinkedWorkflowTask(project, args, context, d, () =>
+    awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
   )
   notify('workflow', result.cursorId, d)
   return result.summary

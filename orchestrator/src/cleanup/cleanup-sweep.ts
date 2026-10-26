@@ -42,9 +42,10 @@ import {
 } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
-import { type HubTaskReader, sweepRunTaskLinks } from '../run/run-task-linking.ts'
+import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   inspectTreeOwnership,
   isOrchWorktree,

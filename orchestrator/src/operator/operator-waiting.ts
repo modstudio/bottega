@@ -29,12 +29,18 @@ export async function initialQuestionWaitingAt(
   at: string,
   d: Database = db(),
 ): Promise<string | null> {
-  const row = d.query('SELECT repo, launch_key FROM run WHERE record_id=?').get(runId) as {
+  const row = d
+    .query('SELECT repo, launch_key, task_record_id FROM run WHERE record_id=?')
+    .get(runId) as {
     repo: string | null
     launch_key: string | null
+    task_record_id: string | null
   } | null
   if (!row?.repo) return null
-  const rulings = await resolveAnswerRulings(row.repo, row.launch_key, undefined, d)
+  const rulings = await resolveAnswerRulings(row.repo, {
+    taskRecordId: row.task_record_id,
+    database: d,
+  })
   return questionAwaitingOperator({ rulings: rulings.value, relayed: false, answered: false })
     ? at
     : null

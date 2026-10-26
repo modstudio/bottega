@@ -8,7 +8,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
@@ -74,6 +74,7 @@ export type WorkflowEvidenceInput = {
 export type CursorIdentity = {
   project: string
   workflowKey: string
+  workflowTaskRecordId?: string | null
   branch: string | null
   worktree: string | null
   session: string | null
@@ -111,10 +112,7 @@ export function hubTaskReadRefusal(
   stdout: string,
 ): string {
   const rawDetail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${status}`
-  const detail =
-    containsSecretShaped(rawDetail) || /\b(?:proxy-)?authorization\b/i.test(rawDetail)
-      ? 'detail withheld'
-      : rawDetail
+  const detail = withholdSecretShapedDetail(rawDetail)
   const attempted = `${PLATFORM_SLUG} task show ${key} --json --fresh`
   if (
     rawDetail.split('\n').some((line) => {
@@ -225,17 +223,17 @@ function gatherReview(
   const lineage = identity.branch ? reviewLineage(d, identity.project, identity.branch) : []
   const branchMatch = identity.branch ? `ru.branch IN (${lineage.map(() => '?').join(',')})` : '0'
   const bound = d
-    .query<{ branch: string | null }, string[]>(
+    .query<{ branch: string | null }, (string | null)[]>(
       `SELECT ru.branch
          FROM review_lens rl JOIN run ru ON ru.record_id=rl.run_record_id
         WHERE rl.review_record_id=?
-          AND (${branchMatch} OR ru.launch_key=?)
+          AND (${branchMatch} OR ru.task_record_id=?)
         ORDER BY CASE WHEN ${branchMatch} THEN 0 ELSE 1 END, ru.started_at,rl.record_id LIMIT 1`,
     )
-    .get(recordId, ...lineage, identity.workflowKey, ...lineage)
+    .get(recordId, ...lineage, identity.workflowTaskRecordId ?? null, ...lineage)
   if (!bound)
     throw new Error(
-      `--review ${review.number} has no lens run on branch ${identity.branch ?? 'unset'} or launch_key ${identity.workflowKey || 'unset'}`,
+      `--review ${review.number} has no lens run on branch ${identity.branch ?? 'unset'} or task ${identity.workflowKey || 'unset'}`,
     )
   const branch = identity.branch ?? bound.branch
   const grouped = reviewsForTriage(
@@ -273,7 +271,7 @@ function loadRunBinding(runId: string, d: Database): BoundRun | null {
     .query<
       {
         repo: string | null
-        launch_key: string | null
+        task_record_id: string | null
         branch: string | null
         session_id: string | null
         started_at: string
@@ -281,7 +279,7 @@ function loadRunBinding(runId: string, d: Database): BoundRun | null {
       },
       [string]
     >(
-      `SELECT r.repo, r.launch_key, r.branch, r.session_id, r.started_at, p.name AS project_name
+      `SELECT r.repo, r.task_record_id, r.branch, r.session_id, r.started_at, p.name AS project_name
          FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
         WHERE r.record_id=?`,
     )
@@ -289,7 +287,7 @@ function loadRunBinding(runId: string, d: Database): BoundRun | null {
   if (!row) return null
   return {
     project: row.project_name ?? row.repo,
-    launchKey: row.launch_key,
+    taskRecordId: row.task_record_id,
     branch: row.branch,
     sessionId: row.session_id,
     createdAt: row.started_at,
@@ -526,15 +524,17 @@ function resolveTaskArtifact(
   identity: CursorIdentity,
   ports: FloorEvidencePorts,
 ): { ref: string; exists: boolean } {
-  if (identity.workflowKey && ref.key !== identity.workflowKey)
-    throw new Error(
-      `--artifact ${raw} task key is ${ref.key}, not this cursor's ${identity.workflowKey}`,
-    )
   if (!ports.readTask)
     throw new Error(
       `--artifact ${raw} needs a ${PLATFORM_SLUG} task read and no reader was provided`,
     )
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, ref.key, { fresh: true })
+  if (
+    identity.workflowTaskRecordId
+      ? task.recordId !== identity.workflowTaskRecordId
+      : Boolean(identity.workflowKey) && ref.key !== identity.workflowKey
+  )
+    throw new Error(`--artifact ${raw} task is not this cursor's ${identity.workflowKey}`)
   if (ref.kind === 'task') return { ref: raw, exists: task.key === ref.key }
   if (task.commentsVerifiable === false)
     throw new Error(
@@ -678,13 +678,17 @@ function gatherTask(
   d: Database,
   ports: FloorEvidencePorts,
 ): ValidatedEvidence['task'] {
-  if (identity.workflowKey && key !== identity.workflowKey)
-    throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
   if (!ports.readTask)
     throw new Error(`--task ${key} needs a ${PLATFORM_SLUG} task read and no reader was provided`)
   const task = invokeFloorEvidencePort(ports, 'readTask', ports.readTask, key, {
     fresh: true,
   })
+  if (
+    identity.workflowTaskRecordId
+      ? task.recordId !== identity.workflowTaskRecordId
+      : Boolean(identity.workflowKey) && key !== identity.workflowKey
+  )
+    throw new Error(`--task ${key} is not this cursor's task ${identity.workflowKey}`)
   const trackerStates = projectByName(identity.project, d)?.settings.tracker?.states ?? {}
   const branch = branchForTaskKey(identity.project, task.key, identity.branch, d)
   const number = branch ? pullRequestNumberForBranch(identity.project, branch, d) : null

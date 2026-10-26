@@ -108,6 +108,7 @@ export function upsertWorkflowQuestion(
   input: {
     cursorId: string
     workflowKey: string
+    workflowTaskRecordId: string | null
     stepOrdinal: number
     stepSlug: string
     question: string
@@ -124,12 +125,13 @@ export function upsertWorkflowQuestion(
   if (open) {
     database
       .query(
-        `UPDATE question SET question=?,workflow_key=?,workflow_step_ordinal=?,workflow_step_slug=?,
+        `UPDATE question SET question=?,workflow_key=?,workflow_task_record_id=?,workflow_step_ordinal=?,workflow_step_slug=?,
          revision=revision+1 WHERE record_id=?`,
       )
       .run(
         input.question,
         input.workflowKey || null,
+        input.workflowTaskRecordId,
         input.stepOrdinal,
         input.stepSlug,
         open.record_id,
@@ -141,15 +143,16 @@ export function upsertWorkflowQuestion(
   const inserted = database
     .query<{ record_id: string; number: number }, (string | number | null)[]>(
       `INSERT INTO question
-        (record_id,number,workflow_cursor_record_id,workflow_key,asked_at,question,asked_via,awaiting_operator_at,
+        (record_id,number,workflow_cursor_record_id,workflow_key,workflow_task_record_id,asked_at,question,asked_via,awaiting_operator_at,
          workflow_step_ordinal,workflow_step_slug)
-       VALUES (?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
+       VALUES (?,?,?,?,?,?,?, 'workflow', ?,?,?) RETURNING record_id,number`,
     )
     .get(
       recordId,
       nextQuestionNumber(database),
       input.cursorId,
       input.workflowKey || null,
+      input.workflowTaskRecordId,
       input.at,
       input.question,
       input.at,
@@ -159,6 +162,33 @@ export function upsertWorkflowQuestion(
   if (!inserted) throw new Error('workflow question was not recorded')
   enqueueQuestionRecord(database, inserted.record_id)
   return { recordId: inserted.record_id, number: inserted.number }
+}
+
+/** Links workflow questions through the mutation path so revisions and outbox rows stay in sync. */
+export function linkWorkflowQuestionsTaskReference(
+  input: { project: string; workflowKey: string; taskRecordId: string },
+  database: Database = db(),
+): number {
+  const questions = database
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT q.record_id FROM question q
+       JOIN workflow_cursor c ON c.record_id=q.workflow_cursor_record_id
+       WHERE c.project_record_id=(SELECT record_id FROM project WHERE name=?)
+         AND q.workflow_key=? AND q.workflow_task_record_id IS NULL`,
+    )
+    .all(input.project, input.workflowKey)
+  const update = database.query(
+    `UPDATE question SET workflow_task_record_id=?,revision=revision+1
+     WHERE record_id=? AND workflow_task_record_id IS NULL`,
+  )
+  let linked = 0
+  for (const question of questions) {
+    const changed = update.run(input.taskRecordId, question.record_id)
+    if (changed.changes !== 1) continue
+    enqueueQuestionRecord(database, question.record_id)
+    linked++
+  }
+  return linked
 }
 
 export function answerWorkflowQuestion(

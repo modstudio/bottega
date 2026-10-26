@@ -110,7 +110,11 @@ async function command(args: string[], stdin = '') {
         collectCanonLintInput,
         consumeResumeHandoff: resumeBriefHandoff,
       })
-    else if (args[0] === 'port') await portCommand(args[1], args[2], args, flags, presentation)
+    else if (args[0] === 'port')
+      await portCommand(args[1], args[2], args, flags, {
+        ...presentation,
+        hubTaskReader: async (project) => [{ key: 'TGT-7', record_id: 'task-TGT-7', project }],
+      })
     else if (args[0] === 'review') {
       const program = new Command().exitOverride()
       registerReviewCommand(program, presentation)
@@ -418,7 +422,9 @@ describe('scoped operator docs', () => {
       path: '/w/target',
       settings: { keyPrefixes: ['TGT'] },
     })
-    const server = createDocsMcpServer()
+    const server = createDocsMcpServer({
+      hubTaskReader: async (project) => [{ key: 'TGT-8', record_id: 'task-TGT-8', project }],
+    })
     const client = new Client({ name: 'orch-port-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
     await server.connect(serverTransport)

@@ -43,6 +43,13 @@ export function containsSecretShaped(text: string): boolean {
   return secretShapedRule(text) !== null
 }
 
+/** Keeps child-process detail out of prompts and logs when it resembles credentials. */
+export function withholdSecretShapedDetail(text: string): string {
+  return containsSecretShaped(text) || /\b(?:proxy-)?authorization\b/i.test(text)
+    ? 'detail withheld'
+    : text
+}
+
 function containsJwt(text: string): boolean {
   for (const match of text.matchAll(SECRET_JWT)) {
     if (jwtHeaderIsObject(match[0])) return true

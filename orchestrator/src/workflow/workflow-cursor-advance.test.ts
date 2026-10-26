@@ -17,7 +17,7 @@ import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
-const context = { session: 'flow-session' }
+const context = { session: 'flow-session', taskRecordId: 'task-DEV-1422' }
 const args = { key: 'DEV-1422' }
 const testPorts = {
   readTask: (key: string) => ({
@@ -360,11 +360,11 @@ function insertGradedReview(d: Database): string {
   ).workflow_key
   const runId = d
     .query<{ id: string }, (string | number | null)[]>(
-      `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,branch,session_id)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','implement','fixture',?,'sha',1,'p','ok',0,?,null,?)
+      `INSERT INTO run (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,exit_code,launch_key,task_record_id,branch,session_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-20','codex','implement','fixture',?,'sha',1,'p','ok',0,?,? ,null,?)
        RETURNING record_id AS id`,
     )
-    .get(newRecordId(), project, key, context.session)!.id
+    .get(newRecordId(), project, key, context.taskRecordId, context.session)!.id
   const reviewId = newRecordId()
   d.query(
     `INSERT INTO review (record_id,number,recorded_at,project_record_id)

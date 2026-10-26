@@ -51,8 +51,10 @@ import {
 } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
-  resolveWorkflowCursorMode,
+  resolveMcpCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
+import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   attachWorkflowTextByHandle,
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
@@ -70,6 +72,20 @@ import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
+
+type DocsMcpPorts = LandingBranchPorts & {
+  hubTaskReader?: HubTaskReader
+}
+
+const portLedgerSources = (
+  sources: Array<{ project: string; commits: string[]; paths: string[]; note: string }>,
+) =>
+  sources.map((source) => ({
+    source_project_record_id: registeredProject(source.project).recordId,
+    commits: source.commits,
+    paths: source.paths,
+    note: source.note,
+  }))
 
 const text = (value: unknown, isError = false) => ({
   content: [
@@ -446,7 +462,7 @@ function registerWorkflowListTool(server: McpServer): void {
   )
 }
 
-export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
+export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
     console.error(
@@ -469,7 +485,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
       return handler(...args)
     })) as typeof server.registerTool
 
-  registerWorkflowPrompts(server)
+  registerWorkflowPrompts(server, ports.hubTaskReader)
   registerSearchTools(server)
   registerOperatorTools(server)
   registerBoardTools(server)
@@ -494,7 +510,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     async (input) => text(await composeWorkflowToolResult(input, ports.commitCount)),
   )
 
-  registerWorkflowStepTool(server, ports.commitCount)
+  registerWorkflowStepTool(server, ports.commitCount, ports.hubTaskReader)
 
   server.registerTool(
     'attach_workflow_text',
@@ -517,7 +533,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    advanceWorkflow,
+    (input) => advanceWorkflow(input, ports.hubTaskReader),
   )
 
   server.registerTool(
@@ -535,8 +551,8 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = mcpWorkflowCursorContext()
-      const effectiveMode = resolveWorkflowCursorMode(
+      const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
+      const effectiveMode = resolveLinkedWorkflowCursorMode(
         slug,
         project,
         mode,
@@ -579,12 +595,12 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = mcpWorkflowCursorContext()
+      const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       return text(
         ruleWorkflow(
           slug,
           project,
-          resolveWorkflowCursorMode(
+          resolveLinkedWorkflowCursorMode(
             slug,
             project,
             mode,
@@ -779,17 +795,15 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ project, task_key, note, sources }) =>
       text(
-        await setLedgerRef({
-          taskKey: task_key,
-          targetProjectId: registeredProject(project).recordId,
-          note,
-          sources: sources.map((source) => ({
-            source_project_record_id: registeredProject(source.project).recordId,
-            commits: source.commits,
-            paths: source.paths,
-            note: source.note,
-          })),
-        }),
+        await setLedgerRef(
+          {
+            taskKey: task_key,
+            targetProjectId: registeredProject(project).recordId,
+            note,
+            sources: portLedgerSources(sources),
+          },
+          ports.hubTaskReader,
+        ),
       ),
   )
 
