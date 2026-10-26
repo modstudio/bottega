@@ -194,7 +194,6 @@ export const monitorModules: MonitorModule[] = [
   module('orchestrator/src/monitor/monitor-run-token-jump.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
-    '../route/route.ts',
     '../state/statistics.ts',
     './monitor-types.ts',
   ]),

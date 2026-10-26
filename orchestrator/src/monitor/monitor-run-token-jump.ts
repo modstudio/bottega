@@ -2,11 +2,11 @@
 /** Reports agent/job cells whose median tokens per run jumped during the current day. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { MIN_SAMPLE } from '../route/route.ts'
 import { median } from '../state/statistics.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 const TOKENS_PER_RUN_JUMP_RATIO = 1.5
+export const MIN_RUNS_PER_TOKEN_WINDOW = 5
 const DAY_MS = 24 * 60 * 60 * 1000
 const BASELINE_DAYS = 7
 
@@ -28,7 +28,11 @@ export type RunTokenJump = {
 
 /** Decide the report from already-windowed cell values, without store or clock access. */
 export function runTokenJump(cell: RunTokenCell): RunTokenJump | null {
-  if (cell.recentTokens.length < MIN_SAMPLE || cell.baselineTokens.length < MIN_SAMPLE) return null
+  if (
+    cell.recentTokens.length < MIN_RUNS_PER_TOKEN_WINDOW ||
+    cell.baselineTokens.length < MIN_RUNS_PER_TOKEN_WINDOW
+  )
+    return null
   const recentMedian = median(cell.recentTokens)!
   const baselineMedian = median(cell.baselineTokens)!
   if (recentMedian <= TOKENS_PER_RUN_JUMP_RATIO * baselineMedian) return null

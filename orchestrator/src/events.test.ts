@@ -221,7 +221,7 @@ describe('vendor event log', () => {
       },
       't4',
     )
-    log.observe({ kind: 'usage', tokens: 9, costUsd: null }, 't5')
+    log.observe({ kind: 'usage', tokens: 9, costUsd: null, per: 'call' }, 't5')
     log.flush('t6')
     const lines = readFileSync(path, 'utf8')
       .trim()
@@ -267,7 +267,7 @@ describe('vendor event log', () => {
           usage: { input_tokens: 1, output_tokens: 2 },
         }),
       ),
-    ).toEqual([{ kind: 'usage', tokens: 3, costUsd: null }])
+    ).toEqual([{ kind: 'usage', tokens: 3, costUsd: null, per: 'turn' }])
     expect(
       eventsFromVendorLine(
         JSON.stringify({

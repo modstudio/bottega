@@ -11,5 +11,7 @@ test('run usage keeps per-call facts nullable and validates the count', () => {
     modelCalls: null,
     peakCallTokens: null,
   })
-  expect(() => runUsageRecordValues({ modelCalls: 1.5 })).toThrow(OutboxRowError)
+  expect(() => runUsageRecordValues({ modelCalls: 1.5 })).toThrow(
+    'run.model_calls must be an integer or null',
+  )
 })

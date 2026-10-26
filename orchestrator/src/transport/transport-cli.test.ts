@@ -39,6 +39,7 @@ test('subscription CLI result line keeps usage tokens but removes cost', async (
     kind: 'usage',
     tokens: 42,
     costUsd: null,
+    per: 'turn',
   })
 })
 
@@ -47,6 +48,7 @@ test('metered CLI result line keeps usage cost', async () => {
     kind: 'usage',
     tokens: 42,
     costUsd: 1.25,
+    per: 'turn',
   })
 })
 

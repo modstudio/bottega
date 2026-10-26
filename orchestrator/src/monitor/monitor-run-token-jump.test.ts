@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { MIN_SAMPLE } from '../route/route.ts'
-import { runTokenJump } from './monitor-run-token-jump.ts'
+import { MIN_RUNS_PER_TOKEN_WINDOW, runTokenJump } from './monitor-run-token-jump.ts'
 
-const values = (value: number, count = MIN_SAMPLE) => Array.from({ length: count }, () => value)
+const values = (value: number, count = MIN_RUNS_PER_TOKEN_WINDOW) =>
+  Array.from({ length: count }, () => value)
 
 describe('tokens per run jump decision', () => {
   test('reports a doubled cell', () => {
@@ -32,7 +32,7 @@ describe('tokens per run jump decision', () => {
       runTokenJump({
         agent: 'goose',
         job: 'implement',
-        recentTokens: values(200, MIN_SAMPLE - 1),
+        recentTokens: values(200, MIN_RUNS_PER_TOKEN_WINDOW - 1),
         baselineTokens: values(100),
       }),
     ).toBeNull()

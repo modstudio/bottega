@@ -8,7 +8,7 @@ import { targetGitEnvironment } from './git/git-environment.ts'
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =
   | { kind: 'text'; text: string }
-  | { kind: 'usage'; tokens: number; costUsd: number | null }
+  | { kind: 'usage'; tokens: number; costUsd: number | null; per: 'call' | 'turn' }
   | {
       kind: 'tool'
       title: string
@@ -512,7 +512,7 @@ function usageFrom(value: unknown): Extract<StreamEvent, { kind: 'usage' }> | nu
       : typeof value.total_cost_usd === 'number'
         ? value.total_cost_usd
         : null
-  return { kind: 'usage', tokens: total, costUsd: cost }
+  return { kind: 'usage', tokens: total, costUsd: cost, per: 'turn' }
 }
 
 function eventsFromCodexItem(item: Record<string, unknown>, phase: string): StreamEvent[] {
@@ -580,7 +580,7 @@ export function eventsFromVendorLine(line: string): StreamEvent[] {
     const cost =
       typeof raw.total_cost_usd === 'number' ? raw.total_cost_usd : (usage?.costUsd ?? null)
     if (!usage) return []
-    return [{ kind: 'usage', tokens: usage.tokens, costUsd: cost }]
+    return [{ kind: 'usage', tokens: usage.tokens, costUsd: cost, per: 'turn' }]
   }
   if (type === 'content_block_start' && isRecord(raw.content_block)) {
     return toolUseEvents([raw.content_block])

@@ -8,7 +8,7 @@ export function foldRunCallUsage(
   summary: RunCallUsage | null,
   event: StreamEvent,
 ): RunCallUsage | null {
-  if (event.kind !== 'usage') return summary
+  if (event.kind !== 'usage' || event.per !== 'call') return summary
   return {
     modelCalls: (summary?.modelCalls ?? 0) + 1,
     peakCallTokens: Math.max(summary?.peakCallTokens ?? 0, event.tokens),

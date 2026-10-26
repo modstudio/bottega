@@ -45,6 +45,15 @@ function nullableInteger(value: unknown): number | null {
   return integer
 }
 
+function nullableModelCalls(value: unknown): number | null {
+  if (value == null) return null
+  const integer = Number(value)
+  if (!Number.isInteger(integer)) {
+    throw new OutboxRowError('run.model_calls must be an integer or null', 'row-validation')
+  }
+  return integer
+}
+
 function nullableRoundedBigint(value: unknown): bigint | null {
   if (value == null) return null
   if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -59,7 +68,7 @@ function nullableRoundedBigint(value: unknown): bigint | null {
 export function runUsageRecordValues(row: Record<string, unknown>) {
   return {
     vendorTokens: nullableBigint(row.vendorTokens),
-    modelCalls: nullableInteger(row.modelCalls),
+    modelCalls: nullableModelCalls(row.modelCalls),
     peakCallTokens: nullableBigint(row.peakCallTokens),
     vendorCostUsd: nullableNumber(row.vendorCostUsd),
     vendorInputTokens: nullableBigint(row.vendorInputTokens),

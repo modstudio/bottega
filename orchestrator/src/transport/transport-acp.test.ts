@@ -441,6 +441,7 @@ describe('ACP event fixtures normalize to orchestrator outcomes', () => {
       kind: 'usage',
       tokens: 1_200,
       costUsd: null,
+      per: 'turn',
     })
   })
 
@@ -450,6 +451,7 @@ describe('ACP event fixtures normalize to orchestrator outcomes', () => {
     expect(result.costUsd).toBeNull()
     expect(result.vendorUsage?.estimatedCostUsd).toBe(0.04)
     expect(result.vendorUsage?.costSource).toBe('estimated')
+    expect(result.events.find((event) => event.kind === 'usage')).toMatchObject({ per: 'call' })
   })
 
   test('message token components fall back independently to prompt totals', () => {
