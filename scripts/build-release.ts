@@ -13,7 +13,7 @@ export const ORCH_CLI_ENTRYPOINT = `${ORCH_CLI_PAYLOAD}/entry.ts`
 export const PRODUCT_CLI_PAYLOAD = `cli/${PLATFORM_SLUG}`
 export const PRODUCT_CLI_ENTRYPOINT = `${PRODUCT_CLI_PAYLOAD}/entry.ts`
 
-export const RELEASE_CLI_BUNDLES = [
+const RELEASE_CLI_BUNDLES = [
   {
     source: 'orchestrator/src/cli/orch.ts',
     payload: ORCH_CLI_PAYLOAD,
@@ -31,33 +31,6 @@ export const RELEASE_CLI_BUNDLES = [
     payload: 'retrieval/src/search-cli.ts',
     output: 'file',
   },
-] as const
-
-export const DECLARED_PAYLOAD_PATHS = [
-  ORCH_CLI_PAYLOAD,
-  'hub/src/cli.ts',
-  PRODUCT_CLI_PAYLOAD,
-  'orchestrator/src/run/exec.ts',
-  'orchestrator/src/database/store-write-lock.c',
-  'retrieval/src/search-cli.ts',
-  'orchestrator/migrations',
-  'hub/migrations',
-  'orchestrator/hooks',
-  'hub/web/dist',
-  'ops/install.sh',
-  'ops/bin',
-  'ops/launchd',
-  'hub/bin',
-  'hub/launchd',
-  'shared/install-root.ts',
-  'shared/state-directory.ts',
-  'shared/config-directory.ts',
-  'shared/machine-config.ts',
-  'shared/env-source.ts',
-  'shared/attribution-markers.json',
-  DIST_MANIFEST,
-  `bin/${PLATFORM_SLUG}`,
-  'bin/retrieval-search',
 ] as const
 
 export function releaseVersion(tag: string): string {
