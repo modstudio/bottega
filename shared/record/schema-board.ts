@@ -18,7 +18,14 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import { REPLY_AUDIENCE_OPTIONS } from '../board-reply-audience-options.ts'
-import { machine, membership, project, RECORD_ACTOR_ROLE, user } from './schema.ts'
+import {
+  machine,
+  membership,
+  project,
+  RECORD_ACTOR_ROLE,
+  RECORD_OWNER_ROLE,
+  user,
+} from './schema.ts'
 import { run } from './schema-run.ts'
 
 const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
@@ -262,6 +269,22 @@ export const boardMessage = pgTable.withRLS(
         to: RECORD_ACTOR_ROLE,
         using: sql`${table.authorUserId} = ${currentUser}`,
       }),
+      // A first acknowledgement advances this message's revision for the change feed. No actor
+      // policy can allow it: a reader may only write their own receipt, and the message belongs
+      // to its author. The definer function performs that one write as the table owner, which
+      // FORCE ROW LEVEL SECURITY applies to as well, so the owner needs exactly these two grants:
+      // the row must be visible to it before the update can reach it.
+      pgPolicy('board_message_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+      }),
+      pgPolicy('board_message_owner_update', {
+        for: 'update',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
+        withCheck: sql`true`,
+      }),
     ]
   },
 )
@@ -368,6 +391,13 @@ export const boardReceipt = pgTable.withRLS(
         to: RECORD_ACTOR_ROLE,
         using: writesReceipt,
         withCheck: writesReceipt,
+      }),
+      // The definer function reads the caller's own receipt to confirm the acknowledgement it
+      // is about to publish, and reads it as the table owner under FORCE ROW LEVEL SECURITY.
+      pgPolicy('board_receipt_owner_select', {
+        for: 'select',
+        to: RECORD_OWNER_ROLE,
+        using: sql`true`,
       }),
     ]
   },

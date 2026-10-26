@@ -16,6 +16,7 @@ import { postgresBoardCacheClient, postgresBoardCacheStore } from './postgres-bo
 import { registerBoardClaimApiProof } from './postgres-board-claim-api-proof.ts'
 import { registerBoardOverviewProof } from './postgres-board-overview-proof.ts'
 import { registerBoardPostingProjectProof } from './postgres-board-posting-project-proof.ts'
+import { registerBoardReceiptRevisionProofs } from './postgres-board-receipt-revision-proof.ts'
 import { registerBoardReplyProof } from './postgres-board-reply-proof.ts'
 import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
@@ -268,6 +269,18 @@ export function registerBoardApiProofs(input: {
       storeA.close()
       storeB.close()
     }
+  })
+
+  registerBoardReceiptRevisionProofs({
+    origin: () => origin,
+    authorToken: () => tokenA,
+    readerToken: () => tokenB,
+    project: PROJECT,
+    projectId: IDS.project,
+    cacheStore,
+    cacheClient,
+    caseSession,
+    succeeds: input.succeeds,
   })
 
   registerBoardSharedSpaceApiProof(
