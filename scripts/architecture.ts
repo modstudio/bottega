@@ -287,6 +287,7 @@ export const modules: ArchitectureModule[] = [
     './agents.ts',
     ...['./capabilities.ts', './openrouter-key-budget.ts'],
     '../database/db.ts',
+    '../jobs/jobs.ts',
   ]),
   module('orchestrator/src/runtime/calibration-port.ts', []),
   module('orchestrator/src/agent/capabilities.ts', []),

@@ -1,7 +1,8 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
+import { AGENTS, type AgentRow, rowAgent } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { job, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
 afterEach(() => mock.restore())
@@ -484,4 +485,31 @@ test('a descendant that survives SIGKILL is still-alive', () => {
     pid: child,
     reason: 'process did not exit after SIGKILL',
   })
+})
+
+test('a goose launch carries the job budget and the prompt it sends', () => {
+  const row = db().query("SELECT * FROM agent WHERE name = 'codex'").get() as AgentRow
+  const { contextTokens: _contextTokens, ...caps } = JSON.parse(row.caps)
+  const goose = rowAgent({
+    ...row,
+    harness: 'goose',
+    model: 'fixture-model',
+    base_url: 'http://fixture.invalid/v1',
+    caps: JSON.stringify({ ...caps, contextTokens: 1_048_576 }),
+  })
+  const deep = job('implement').contextTokens
+  const promptTokens = 40_000
+  expect(
+    childEnv(
+      goose,
+      undefined,
+      undefined,
+      {},
+      true,
+      undefined,
+      {},
+      deep,
+      promptTokens * PROMPT_BYTES_PER_TOKEN,
+    ).GOOSE_CONTEXT_LIMIT,
+  ).toBe(String(deep + OUTPUT_RESERVE + promptTokens))
 })

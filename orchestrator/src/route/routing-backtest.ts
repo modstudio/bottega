@@ -1,7 +1,7 @@
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { COOLS_DOWN } from '../failure/failure.ts'
-import { JOBS } from '../jobs/jobs.ts'
+import { JOBS, jobContextBudget } from '../jobs/jobs.ts'
 import { chainTerminationAt } from '../run/run-liveness.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
@@ -12,7 +12,6 @@ import {
   currentPolicySelection,
   isRoutingEvidence,
   MIN_SAMPLE,
-  OUTPUT_RESERVE,
   routingEvidenceWindow,
   thompsonRank,
 } from './route.ts'
@@ -102,7 +101,7 @@ function staticEligible(agent: string, jobName: string, promptBytes: number): bo
     promptBytes > a.maxPromptBytes
   )
     return false
-  if (a.contextTokens < j.contextTokens + OUTPUT_RESERVE) return false
+  if (a.contextTokens < jobContextBudget(j.contextTokens)) return false
   return !Object.entries(j.needs).some(([cap, need]) => need && !a.caps[cap as keyof typeof a.caps])
 }
 

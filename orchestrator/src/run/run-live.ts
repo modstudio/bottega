@@ -107,9 +107,34 @@ function liveChildEnv(
   extra: Record<string, string>,
   includeStore: boolean,
   runNumber: number,
+  jobContextTokens: number | null,
+  promptBytes: number | null,
 ): Record<string, string> {
-  const environment = childEnv(agent, runRecordId, runToken, extra, includeStore, runNumber)
+  const environment = childEnv(
+    agent,
+    runRecordId,
+    runToken,
+    extra,
+    includeStore,
+    runNumber,
+    {},
+    jobContextTokens,
+    promptBytes,
+  )
   return includeStore ? (projectCodeGitEnv(environment) as Record<string, string>) : environment
+}
+
+/** The run-specific extras merged over the agent's own launch environment. */
+function liveLaunchExtra(
+  launchEnvironment: Record<string, string>,
+  scratchDir: string,
+  askLoopback: AskLoopback | null,
+): Record<string, string> {
+  return {
+    ...launchEnvironment,
+    BOTTEGA_SCRATCH: scratchDir,
+    ...(askLoopback ? { BOTTEGA_ASK_URL: askLoopback.url } : {}),
+  }
 }
 
 function recordConfiguredAsk(input: {
@@ -562,13 +587,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         a,
         claim.recordId,
         runToken,
-        {
-          ...launchEnvironment,
-          BOTTEGA_SCRATCH: scratchDir,
-          ...(askLoopback ? { BOTTEGA_ASK_URL: askLoopback.url } : {}),
-        },
+        liveLaunchExtra(launchEnvironment, scratchDir, askLoopback),
         repoJob,
         claim.number,
+        requestedJob.contextTokens,
+        // The composed prompt's own size, measured where the prompt is final:
+        // some jobs' material arrives inline here (a `summarize` prompt carries
+        // its document) rather than in the working set the job declares.
+        Buffer.byteLength(prompt, 'utf8'),
       ),
       onWarning: warnForRun(claim.id),
     }

@@ -192,8 +192,15 @@ export type Agent = {
    * yet, not that somebody forgot to decide how its truncations are named.
    */
   outputCeilingStopReason: string | null
-  /** Extra environment for the child process, e.g. to select a local endpoint. */
-  env?: () => Record<string, string>
+  /**
+   * Extra environment for the child process, e.g. to select a local endpoint.
+   *
+   * Takes the requested job's declared working set and the UTF-8 byte length of
+   * the prompt this run sends, because a harness with its own context budget
+   * (Goose) sets that budget from them rather than from the model's full served
+   * window.
+   */
+  env?: (jobContextTokens?: number | null, promptBytes?: number | null) => Record<string, string>
   /**
    * Pull the answer and the usage out of a structured reply. Agents that can
    * report their own token spend are run in a JSON mode, so stdout is an

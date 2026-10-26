@@ -5,6 +5,7 @@ import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
+import { jobContextBudget, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
@@ -35,9 +36,42 @@ export type AgentRow = {
   trains_on_inputs: number
 }
 
-function rowLaunchEnvironment(row: AgentRow): Record<string, string> {
+/**
+ * The context limit a Goose worker runs under, from the job, the prompt this
+ * run sends, and the served window.
+ *
+ * The working limit is a per-job budget chosen for cost, and the served window
+ * only CAPS it: `min(servedWindow, promptTokens + jobBudget)`, where the budget
+ * is the job's declared working set plus `OUTPUT_RESERVE` for the reply and the
+ * prompt is the text this run actually sends, estimated from its UTF-8 bytes.
+ * The prompt is in the sum because some jobs' material arrives inline rather
+ * than through the working set — `summarize` declares an `ERRAND` working set
+ * and hands its document over in the prompt — so a budget that ignored it would
+ * starve exactly the run it was sizing. Eligibility asks the same question of
+ * the agent's window, from the same budget, so the two cannot drift. A served
+ * window smaller than the sum still wins; no served window leaves the sum; no
+ * job means no per-job budget to set, so Goose's own default applies.
+ */
+export function gooseContextLimit(
+  servedWindow: number | null,
+  jobContextTokens: number | null,
+  promptBytes: number | null,
+): number | null {
+  if (jobContextTokens === null) return null
+  const promptTokens = promptBytes === null ? 0 : Math.ceil(promptBytes / PROMPT_BYTES_PER_TOKEN)
+  const budget = jobContextBudget(jobContextTokens) + promptTokens
+  return servedWindow === null ? budget : Math.min(servedWindow, budget)
+}
+
+function rowLaunchEnvironment(
+  row: AgentRow,
+  jobContextTokens: number | null,
+  promptBytes: number | null,
+): Record<string, string> {
   if (!row.base_url) return {}
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
+  const servedWindow = typeof stored.contextTokens === 'number' ? stored.contextTokens : null
+  const contextLimit = gooseContextLimit(servedWindow, jobContextTokens, promptBytes)
   return {
     BOTTEGA_MODEL_HOST_URL: row.base_url,
     OPENAI_BASE_URL: row.base_url,
@@ -46,9 +80,7 @@ function rowLaunchEnvironment(row: AgentRow): Record<string, string> {
           GOOSE_PROVIDER: 'openai',
           GOOSE_MODEL: row.model,
           GOOSE_TELEMETRY_ENABLED: 'false',
-          ...(typeof stored.contextTokens === 'number'
-            ? { GOOSE_CONTEXT_LIMIT: String(stored.contextTokens) }
-            : {}),
+          ...(contextLimit === null ? {} : { GOOSE_CONTEXT_LIMIT: String(contextLimit) }),
         }
       : {}),
   }
@@ -117,9 +149,9 @@ export function rowAgent(row: AgentRow): Agent {
     trainsOnInputs: Boolean(row.trains_on_inputs),
     ...(row.base_url
       ? {
-          env: () => ({
+          env: (jobContextTokens?: number | null, promptBytes?: number | null) => ({
             ...(base.env?.() ?? {}),
-            ...rowLaunchEnvironment(row),
+            ...rowLaunchEnvironment(row, jobContextTokens ?? null, promptBytes ?? null),
           }),
         }
       : {}),
