@@ -31,10 +31,10 @@ test('question and commit task links backfill only exact unique keys', () => {
         ('task-match','MATCH-1','alpha','local','2026-10-25','2026-10-25'),
         ('task-dup-a','DUP-1','alpha','local','2026-10-25','2026-10-25'),
         ('task-dup-b','DUP-1','beta','local','2026-10-25','2026-10-25');
-      INSERT INTO question(record_id,number,run_ref,task_key,workflow_key,asked_at) VALUES
-        ('question-match',1,'orch:match','MATCH-1','MATCH-1','2026-10-25'),
-        ('question-missing',2,'orch:missing','MISSING-1','MISSING-1','2026-10-25'),
-        ('question-duplicate',3,'orch:duplicate','DUP-1','DUP-1','2026-10-25');
+      INSERT INTO question(record_id,number,run_ref,root_ref,task_key,workflow_key,asked_at) VALUES
+        ('question-match',1,'orch:00000000-0000-4000-8000-000000000001:turn:00000000-0000-4000-8000-000000000001','orch:00000000-0000-4000-8000-000000000001','MATCH-1','MATCH-1','2026-10-25'),
+        ('question-missing',2,'orch:00000000-0000-4000-8000-000000000002:turn:00000000-0000-4000-8000-000000000002','orch:00000000-0000-4000-8000-000000000002','MISSING-1','MISSING-1','2026-10-25'),
+        ('question-duplicate',3,'orch:00000000-0000-4000-8000-000000000003:turn:00000000-0000-4000-8000-000000000003','orch:00000000-0000-4000-8000-000000000003','DUP-1','DUP-1','2026-10-25');
       INSERT INTO commit_key(sha,repo,task_key,at) VALUES
         ('commit-match','alpha','MATCH-1','2026-10-25'),
         ('commit-missing','alpha','MISSING-1','2026-10-25'),
@@ -79,8 +79,8 @@ test('late tasks link rows and task deletion clears links without deleting evide
   try {
     applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
     d.exec(`
-      INSERT INTO question(record_id,number,run_ref,task_key,workflow_key,asked_at)
-      VALUES ('question-late',1,'orch:late','LATE-1','LATE-1','2026-10-25');
+      INSERT INTO question(record_id,number,run_record_id,root_run_record_id,task_key,workflow_key,asked_at)
+      VALUES ('question-late',1,'00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','LATE-1','LATE-1','2026-10-25');
       INSERT INTO commit_key(sha,repo,task_key,at)
       VALUES ('commit-late','alpha','LATE-1','2026-10-25');
       INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
@@ -101,8 +101,8 @@ test('late tasks link rows and task deletion clears links without deleting evide
       INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
         ('task-ambiguous-a','AMBIGUOUS-1','alpha','local','2026-10-25','2026-10-25'),
         ('task-ambiguous-b','AMBIGUOUS-1','beta','local','2026-10-25','2026-10-25');
-      INSERT INTO question(record_id,number,run_ref,task_key,workflow_key,asked_at)
-      VALUES ('question-ambiguous',2,'orch:ambiguous','AMBIGUOUS-1','AMBIGUOUS-1','2026-10-25');
+      INSERT INTO question(record_id,number,run_record_id,root_run_record_id,task_key,workflow_key,asked_at)
+      VALUES ('question-ambiguous',2,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','AMBIGUOUS-1','AMBIGUOUS-1','2026-10-25');
       INSERT INTO commit_key(sha,repo,task_key,at)
       VALUES ('commit-ambiguous','alpha','AMBIGUOUS-1','2026-10-25');
       INSERT INTO task(record_id,key,project,source,first_seen,last_seen)

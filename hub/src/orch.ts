@@ -61,8 +61,6 @@ import {
   QuestionIdentityListSchema,
   type RulingListRow,
   RulingListSchema,
-  type RunIdentity,
-  RunIdentityListSchema,
   type WorkflowCursorIdentityRow,
   WorkflowCursorIdentityRowListSchema,
 } from '../../shared/orch-contract.ts'
@@ -317,12 +315,6 @@ export async function readRuns(since: string): Promise<OrchRun[]> {
     await orchProcess(['run', 'list', '--json', '--since', since], RUNS_DEADLINE_MS),
   )
   return rows.filter((row): row is OrchRun => !('unknown' in row))
-}
-
-export async function readRunIdentityMap(): Promise<RunIdentity[]> {
-  return RunIdentityListSchema.parse(
-    JSON.parse(await orchProcess(['run', 'identity-map'], RUN_IDENTITY_MAP_DEADLINE_MS)),
-  )
 }
 
 export async function readQuestionIdentityMap(): Promise<QuestionIdentity[]> {

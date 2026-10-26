@@ -143,11 +143,9 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
   return fixture as unknown as OrchRun
 }
 
-export async function ingestStdout(stdout: string, rulings = '[]', identities = '[]') {
+export async function ingestStdout(stdout: string, rulings = '[]') {
   const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
-    stdout: new Blob([
-      args.includes('ruling') ? rulings : args.includes('identity-map') ? identities : stdout,
-    ]),
+    stdout: new Blob([args.includes('ruling') ? rulings : stdout]),
     stderr: new Blob(['']),
     exited: Promise.resolve(0),
   })) as unknown as typeof Bun.spawn)

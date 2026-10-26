@@ -63,9 +63,9 @@ describe('Hub question UUID migration', () => {
     try {
       d.exec(`
         INSERT INTO question(question_id,run_ref,root_ref,task_key,session_id,asked_at)
-        VALUES (91,'orch:run','orch:run','DEV-1214','session','2026-10-19');
+        VALUES (91,'orch:00000000-0000-4000-8000-000000000091:turn:00000000-0000-4000-8000-000000000091','orch:00000000-0000-4000-8000-000000000091','DEV-1214','session','2026-10-19');
         INSERT INTO question_delivery(question_id,run_ref,mode,outcome,at)
-        VALUES (91,'orch:run','resume','delivered','2026-10-19');
+        VALUES (91,'orch:00000000-0000-4000-8000-000000000091:turn:00000000-0000-4000-8000-000000000091','resume','delivered','2026-10-19');
         INSERT INTO operator_waiting_email(kind,item_id,episode,pushed_at)
         VALUES ('question',91,'episode','2026-10-19');
       `)

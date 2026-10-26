@@ -31,11 +31,11 @@ function reclaimFixtureQuestionsCommand(
   if (result.exitCode !== 0)
     throw new Error(result.stderr.toString().trim() || 'hub fixture-question reclaim failed')
   const payload = JSON.parse(result.stdout.toString()) as {
-    rows: { question_id: number; session_id: string; run_ref: string }[]
+    rows: { question_id: number; session_id: string; run_record_id: string | null }[]
   }
   for (const row of payload.rows)
     presentation.log(
-      `${dryRun ? 'would remove' : 'removed'} fixture question ${row.question_id} ${row.session_id} ${row.run_ref}`,
+      `${dryRun ? 'would remove' : 'removed'} fixture question ${row.question_id} ${row.session_id} ${row.run_record_id}`,
     )
   if (!payload.rows.length) presentation.log('no orphan fixture questions found')
 }

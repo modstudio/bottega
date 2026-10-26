@@ -13,122 +13,13 @@ import {
 import { db, writeTransaction } from '../db.ts'
 import { loadOutboxChange } from '../outbox-row.ts'
 import { runRef } from '../run-ref.ts'
-import { chainVendorTokens, convertLegacyRunRefs, executionSpans } from './runs.ts'
+import { chainVendorTokens, executionSpans } from './runs.ts'
 
 beforeAll(resetFixtureStore)
 
 const ref = (id: number) => `orch:${fixtureRecordId(id)}`
 const turnRef = (root: number, turn: number) => `${ref(root)}:turn:${fixtureRecordId(turn)}`
-const identityMap = (run: ReturnType<typeof runFixture>) => [
-  { number: run.number, record_id: run.record_id },
-  ...(run.turns ?? []).map((turn) => ({ number: turn.number, record_id: turn.record_id })),
-]
-
 describe('run ingest', () => {
-  test('numeric refs convert across every hub table and one unmapped value rolls back', async () => {
-    const run = runFixture({
-      id: 9080,
-      turns: [runFixture({ id: 9081, turn: 2 })],
-      questions: [
-        questionFixture({
-          id: 9080,
-          run_id: 9081,
-          deliveries: [
-            {
-              id: 1,
-              question_id: 9080,
-              run_id: 9081,
-              mode: 'resume',
-              outcome: 'delivered',
-              at: '2026-09-04T19:04:00.000Z',
-              error: null,
-            },
-          ],
-        }),
-      ],
-    })
-    await ingestRunFixtures(run)
-    const intervalRef = turnRef(9080, 9081)
-    const original = db()
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM interval WHERE ref=?')
-      .get(intervalRef)!.record_id
-    const report = writeTransaction((conn) => {
-      conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
-      conn
-        .query('UPDATE question SET run_ref=?,root_ref=? WHERE number=?')
-        .run('orch:9080:turn:9081', 'orch:9080', 9080)
-      conn
-        .query(
-          'UPDATE question_delivery SET run_ref=? WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
-        )
-        .run('orch:9080:turn:9081', 9080)
-      return convertLegacyRunRefs(conn, identityMap(run))
-    })
-    expect(report).toEqual({ interval: 1, question: 2, question_delivery: 1 })
-    expect(
-      db()
-        .query<{ record_id: string }, [string]>('SELECT record_id FROM interval WHERE ref=?')
-        .get(intervalRef)?.record_id,
-    ).toBe(original)
-    expect(db().query('SELECT run_ref,root_ref FROM question WHERE number=?').get(9080)).toEqual({
-      run_ref: turnRef(9080, 9081),
-      root_ref: ref(9080),
-    })
-    expect(
-      db()
-        .query(
-          'SELECT run_ref FROM question_delivery WHERE question_record_id=(SELECT record_id FROM question WHERE number=?)',
-        )
-        .get(9080),
-    ).toEqual({ run_ref: turnRef(9080, 9081) })
-
-    expect(() =>
-      writeTransaction((conn) => {
-        conn.query('UPDATE interval SET ref=? WHERE ref=?').run('orch:9080:turn:9081', intervalRef)
-        conn.query('UPDATE question SET root_ref=? WHERE number=?').run('orch:99999', 9080)
-        return convertLegacyRunRefs(conn, identityMap(run))
-      }),
-    ).toThrow('numeric run refs have no orchestrator UUID mapping')
-    expect(
-      db()
-        .query<{ ref: string }, [string]>('SELECT ref FROM interval WHERE record_id=?')
-        .get(original),
-    ).toEqual({ ref: intervalRef })
-    expect(db().query('SELECT root_ref FROM question WHERE number=?').get(9080)).toEqual({
-      root_ref: ref(9080),
-    })
-    writeTransaction((conn) => {
-      conn.query('DELETE FROM question WHERE number=?').run(9080)
-      conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9080)}%`)
-    })
-  })
-  test('legacy conversion is fed by the narrow run identity mapping', async () => {
-    const run = runFixture({
-      id: 9082,
-      turns: [runFixture({ id: 9083, turn: 2 })],
-      questions: [questionFixture({ id: 9082, run_id: 9083 })],
-    })
-    await ingestRunFixtures(run)
-    writeTransaction((conn) => {
-      conn
-        .query('UPDATE interval SET ref=? WHERE ref=?')
-        .run('orch:9082:turn:9083', turnRef(9082, 9083))
-      conn
-        .query('UPDATE question SET run_ref=?,root_ref=? WHERE number=?')
-        .run('orch:9082:turn:9083', 'orch:9082', 9082)
-    })
-
-    await ingestStdout(JSON.stringify(run), '[]', JSON.stringify(identityMap(run)))
-
-    expect(db().query('SELECT run_ref,root_ref FROM question WHERE number=?').get(9082)).toEqual({
-      run_ref: turnRef(9082, 9083),
-      root_ref: ref(9082),
-    })
-    writeTransaction((conn) => {
-      conn.query('DELETE FROM question WHERE number=?').run(9082)
-      conn.query('DELETE FROM interval WHERE ref LIKE ?').run(`${ref(9082)}%`)
-    })
-  })
   test('the interval writer and UUID ref parser round-trip root and turn identities', async () => {
     const taskRecordId = fixtureRecordId(118)
     writeTransaction((conn) =>
@@ -266,14 +157,14 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT run_ref,root_ref,workflow_cursor_id,workflow_key,workflow_task_record_id,
+          `SELECT run_record_id,root_run_record_id,workflow_cursor_id,workflow_key,workflow_task_record_id,
                   task_key,task_record_id,project,asked_via
            FROM question WHERE number=8001`,
         )
         .get(),
     ).toEqual({
-      run_ref: null,
-      root_ref: null,
+      run_record_id: null,
+      root_run_record_id: null,
       workflow_cursor_id: '00000000-0000-4000-8000-000000007001',
       workflow_key: 'DEV-964',
       workflow_task_record_id: taskRecordId,
@@ -573,13 +464,13 @@ describe('run ingest', () => {
 
     const questions = db()
       .query(
-        `SELECT number, run_ref, root_ref, task_key, session_id, asked_at, answered_at
-         FROM question WHERE root_ref = '${ref(9201)}' ORDER BY number`,
+        `SELECT number, run_record_id, root_run_record_id, task_key, session_id, asked_at, answered_at
+         FROM question WHERE root_run_record_id = '${fixtureRecordId(9201)}' ORDER BY number`,
       )
       .all() as {
       number: number
-      run_ref: string
-      root_ref: string
+      run_record_id: string
+      root_run_record_id: string
       task_key: string | null
       session_id: string | null
       asked_at: string
@@ -588,8 +479,8 @@ describe('run ingest', () => {
     expect(questions).toEqual([
       {
         number: 11,
-        run_ref: ref(9201),
-        root_ref: ref(9201),
+        run_record_id: fixtureRecordId(9201),
+        root_run_record_id: fixtureRecordId(9201),
         task_key: 'ALP-118',
         session_id: 'sess-a',
         asked_at: '2026-09-04T19:00:00.000Z',
@@ -597,8 +488,8 @@ describe('run ingest', () => {
       },
       {
         number: 12,
-        run_ref: ref(9201),
-        root_ref: ref(9201),
+        run_record_id: fixtureRecordId(9201),
+        root_run_record_id: fixtureRecordId(9201),
         task_key: 'ALP-118',
         session_id: 'sess-a',
         asked_at: '2026-09-04T18:00:00.000Z',
@@ -671,20 +562,20 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT d.run_ref, d.mode, d.outcome, d.at, d.error FROM question_delivery d
+          `SELECT d.run_record_id, d.mode, d.outcome, d.at, d.error FROM question_delivery d
            JOIN question q ON q.record_id=d.question_record_id WHERE q.number = 50 ORDER BY d.at`,
         )
         .all(),
     ).toEqual([
       {
-        run_ref: turnRef(9250, 9251),
+        run_record_id: fixtureRecordId(9251),
         mode: 'resume',
         outcome: 'failed',
         at: '2026-09-04T19:02:00.000Z',
         error: 'resume failed',
       },
       {
-        run_ref: ref(9260),
+        run_record_id: fixtureRecordId(9260),
         mode: 'retry',
         outcome: 'delivered',
         at: '2026-09-04T19:03:00.000Z',
@@ -712,13 +603,13 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT d.run_ref, d.mode, d.outcome, d.at, d.error FROM question_delivery d
+          `SELECT d.run_record_id, d.mode, d.outcome, d.at, d.error FROM question_delivery d
            JOIN question q ON q.record_id=d.question_record_id WHERE q.number = 50`,
         )
         .all(),
     ).toEqual([
       {
-        run_ref: null,
+        run_record_id: null,
         mode: 'record-only',
         outcome: 'delivered',
         at: '2026-09-04T19:04:00.000Z',
@@ -769,7 +660,7 @@ describe('run ingest', () => {
     expect(
       db()
         .query(
-          `SELECT q.number,d.run_ref,d.mode,d.outcome,d.error FROM question_delivery d
+          `SELECT q.number,d.run_record_id,d.mode,d.outcome,d.error FROM question_delivery d
            JOIN question q ON q.record_id=d.question_record_id
            WHERE q.number IN (61,62) ORDER BY q.number`,
         )
@@ -777,14 +668,14 @@ describe('run ingest', () => {
     ).toEqual([
       {
         number: 61,
-        run_ref: null,
+        run_record_id: null,
         mode: 'record-only',
         outcome: 'retired',
         error: 'chain-terminal',
       },
       {
         number: 62,
-        run_ref: ref(9270),
+        run_record_id: fixtureRecordId(9270),
         mode: 'live',
         outcome: 'delivered',
         error: null,
@@ -820,7 +711,9 @@ describe('run ingest', () => {
     )
     expect(collectRunsAt()).toBe(prior)
     expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:9601'`).get()).toBeNull()
-    expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:9601'`).get()).toBeNull()
+    expect(
+      db().query(`SELECT 1 FROM question WHERE root_run_record_id = ?`).get(fixtureRecordId(9601)),
+    ).toBeNull()
   })
 
   test('a probe carrying the full contract is skipped without writing', async () => {
@@ -837,7 +730,9 @@ describe('run ingest', () => {
     )
     expect(collectRunsAt()).toBe(prior)
     expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:10101'`).get()).toBeNull()
-    expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:10101'`).get()).toBeNull()
+    expect(
+      db().query(`SELECT 1 FROM question WHERE root_run_record_id = ?`).get(fixtureRecordId(10101)),
+    ).toBeNull()
   })
 
   test('a complete run lacking only questions is a contract violation', async () => {
@@ -849,7 +744,9 @@ describe('run ingest', () => {
     )
     expect(collectRunsAt()).toBe(prior)
     expect(db().query(`SELECT 1 FROM interval WHERE ref = 'orch:10105'`).get()).toBeNull()
-    expect(db().query(`SELECT 1 FROM question WHERE root_ref = 'orch:10105'`).get()).toBeNull()
+    expect(
+      db().query(`SELECT 1 FROM question WHERE root_run_record_id = ?`).get(fixtureRecordId(10105)),
+    ).toBeNull()
   })
 
   test('a question missing answered_at refuses the batch', async () => {
