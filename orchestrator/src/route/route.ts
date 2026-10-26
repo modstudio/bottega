@@ -1,5 +1,4 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
@@ -10,11 +9,7 @@ import {
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
-import {
-  delegationMode,
-  harnessDelegationRefusal,
-  noEligibleAgentRefusal,
-} from '../jobs/delegation.ts'
+import { noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
@@ -27,6 +22,7 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
   type PolicyCandidate,
   type PolicySelection,
@@ -1008,13 +1004,6 @@ function admittedCandidates(
   )
 }
 
-function assertExternalDelegation(jobName: string): void {
-  // Automatic failover also enters here: it is a new dispatch to a new agent, not a resume.
-  const refusal = harnessDelegationRefusal(job(jobName), readDelegationSettings())
-  if (refusal) throw new RoutingRefusalError(refusal)
-}
-
-// biome-ignore lint/complexity/noExcessiveLinesPerFunction: routing presentation follows the pure admission and policy decisions
 export function pick(
   jobName: string,
   override?: string,
@@ -1033,10 +1022,25 @@ export function pick(
   rng: () => number = Math.random,
   allowHarness = true,
 ): { agent: string; reason: string } {
+  return (
+    harnessSelection(jobName, allowHarness) ??
+    pickExternal(jobName, override, promptBytes, explore, stack, avoid, probe, lens, rng)
+  )
+}
+
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: routing presentation follows the pure admission and policy decisions
+function pickExternal(
+  jobName: string,
+  override: string | undefined,
+  promptBytes: number,
+  explore: boolean,
+  stack: string | null | undefined,
+  avoid: RouteConstraints,
+  probe: boolean,
+  lens: string | undefined,
+  rng: () => number,
+): { agent: string; reason: string } {
   const j = job(jobName)
-  if (allowHarness && delegationMode(j.needs, readDelegationSettings()) === 'harness') {
-    return { agent: 'harness', reason: 'machine delegation mode' }
-  }
   assertExternalDelegation(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
   // Named in every reason below, so a route drawn from four PHP runs is never

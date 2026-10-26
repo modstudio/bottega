@@ -604,7 +604,6 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         throw new Error(`${PLATFORM_SLUG} run start <job> [prompt]`)
       },
       error: presentation.error,
-      printRunId: presentation.printRunId,
       readPrompt: prompt,
       validateSchema: readStrictCodexSchema,
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
@@ -635,7 +634,9 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       earlierReviewRejections,
       detach: commandDetacher(presentation),
       runNumber,
-      harnessHandoff: printHarnessHandoff,
+      detachedResult: (id, json) => {
+        if (!printHarnessHandoff(id, json)) presentation.printRunId(runNumber(id))
+      },
       follow: (id, quiet) =>
         followRun(id, quiet, true, {
           dur: duration,

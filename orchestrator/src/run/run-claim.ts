@@ -21,6 +21,7 @@ import { retargetRepositoryPromptForDispatch } from '../dispatch/prompt-retarget
 import { appendRunEvent } from '../events.ts'
 import { checkoutAliases, realpathOrSpelled } from '../git/checkout-identity.ts'
 import { branchOf, gitContext, repoRootOf } from '../git/git-environment.ts'
+import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import {
   type DeferredCwdMcpStep,
   type McpConnection,
@@ -39,7 +40,6 @@ import {
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey } from '../review/review-target.ts'
-import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
@@ -79,15 +79,15 @@ import {
   taskBranchKey,
 } from './run-claim-plan.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
-import { nextRunNumber } from './run-number.ts'
-import { errorTail, sha } from './run-process.ts'
-import { installHarnessPushGuard } from './run-git-guard.ts'
 import {
   EXTERNAL_EXECUTOR,
   HARNESS_AGENT,
   HARNESS_EVIDENCE_EXCLUSION,
   HARNESS_EXECUTOR,
 } from './run-executor.ts'
+import { installHarnessPushGuard } from './run-git-guard.ts'
+import { nextRunNumber } from './run-number.ts'
+import { errorTail, sha } from './run-process.ts'
 import { prepareResumeBranchIfNeeded, restoreResumeIfNeeded } from './run-resume-claim.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
@@ -353,10 +353,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
   const identity = claimIdentity(opts.resume)
-  const harnessExecution = name === HARNESS_AGENT
-  const executor = harnessExecution ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR
-  const evidenceExcluded = harnessExecution ? HARNESS_EVIDENCE_EXCLUSION : null
-  const coordinatorPid = harnessExecution ? null : process.pid
+  const execution = executorClaimFacts(name, mcpRequest, transportName)
   const updateReservedRun = () =>
     db()
       .query(
@@ -399,11 +396,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
-        coordinatorPid,
-        storedMcpRequest(mcpRequest),
-        transportName,
-        executor,
-        evidenceExcluded,
+        ...execution.launchColumns,
+        ...execution.identityColumns,
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -451,12 +445,9 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
-        coordinatorPid,
-        storedMcpRequest(mcpRequest),
-        transportName,
+        ...execution.launchColumns,
         startedByUserId,
-        executor,
-        evidenceExcluded,
+        ...execution.identityColumns,
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)
@@ -547,12 +538,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const sandboxRoot = sandboxRootForRun(claim.id)
   const { scratchDir, runtimeDir } = runOwnedPaths(recordId, sandboxRoot.record_id, runsDir)
   mkdirSync(scratchDir, { recursive: true })
-  if (resume.isFirstTurn) {
-    const boundLine = `\n\n${jobBoundInstruction(job(opts.job), timeoutMs, scratchDir)}`
-    const split = prompt.lastIndexOf('\n---\n')
-    prompt =
-      split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
-  }
+  prompt = bindRunBound(prompt, resume.isFirstTurn, opts.job, timeoutMs, scratchDir)
   prompt = `${replyFileInstruction(replySchemaName, scratchDir)}\n\n${prompt}`
   writeFileSync(join(dirname(promptPath), 'bound-prompt.txt'), prompt)
   db()
@@ -950,7 +936,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       db()
         .query('UPDATE run SET prompt_sha=?, prompt_bytes=? WHERE record_id=?')
         .run(sha(prompt), Buffer.byteLength(prompt), claim.id)
-      if (harnessExecution) installHarnessPushGuard(worktree)
+      installExecutorPushGuard(execution.harness, worktree)
     }
     ;({
       provisionedMcpConfig,
@@ -1018,4 +1004,40 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     mcpConnection,
     usingMcp,
   }
+}
+function executorClaimFacts(
+  name: string,
+  mcpRequest: McpRequest | undefined,
+  transportName: string,
+) {
+  const harness = name === HARNESS_AGENT
+  return {
+    harness,
+    launchColumns: [
+      harness ? null : process.pid,
+      storedMcpRequest(mcpRequest),
+      transportName,
+    ] as const,
+    identityColumns: [
+      harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR,
+      harness ? HARNESS_EVIDENCE_EXCLUSION : null,
+    ] as const,
+  }
+}
+
+function bindRunBound(
+  prompt: string,
+  firstTurn: boolean,
+  jobName: string,
+  timeoutMs: number,
+  scratchDir: string,
+): string {
+  if (!firstTurn) return prompt
+  const boundLine = `\n\n${jobBoundInstruction(job(jobName), timeoutMs, scratchDir)}`
+  const split = prompt.lastIndexOf('\n---\n')
+  return split >= 0 ? prompt.slice(0, split) + boundLine + prompt.slice(split) : prompt + boundLine
+}
+
+function installExecutorPushGuard(harness: boolean, worktree: Worktree | null): void {
+  if (harness) installHarnessPushGuard(worktree)
 }

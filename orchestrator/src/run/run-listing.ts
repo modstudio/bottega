@@ -133,6 +133,11 @@ function listingTurns(recordId: string, json: boolean) {
     .all(recordId, recordId)
 }
 
+function reportRouteAndExecutor(row: Record<string, unknown>, log: (...values: unknown[]) => void) {
+  if (row.route_reason) log(`      route: ${String(row.route_reason)}`)
+  if (row.executor === 'harness') log('      executor: harness')
+}
+
 function listingQuestions(recordId: string, json: boolean) {
   if (!json) return undefined
   return (
@@ -712,8 +717,7 @@ export async function runListingCommand(
       log(`      idle-killed` + (reclaimed != null ? `; reclaimed ${dur(reclaimed)} of wall` : ''))
     }
     // Keep the reason where a fan-out says its exclusions ran out so the command stays honest.
-    if (r.route_reason) log(`      route: ${String(r.route_reason)}`)
-    if (r.executor === 'harness') log('      executor: harness')
+    reportRouteAndExecutor(r, log)
     const warning = agentWorkValue(String(r.job), () => thinOutputWarning(runListingWarningRow(r)))
     if (warning) log(`      ${warning}`)
   }

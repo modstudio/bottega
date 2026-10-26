@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
-import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
+import { minimumCliVersionRefusal } from '../agent/agents.ts'
 import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
 import { ensureLocalHealth, tryWake } from '../agent/model-host.ts'
 import { applyOpenRouterBudgetToAuthFailure } from '../agent/openrouter-auth-failure.ts'
@@ -31,11 +30,9 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
-import { delegationMode } from '../jobs/delegation.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
-  effectiveMcpRequest,
   type McpRequest,
   requiredMcpServer,
   storedMcpRequest,
@@ -88,11 +85,18 @@ import { pruneRuns, RUNS_DIR, readDispatchState, runFilePaths } from './run-arti
 import { resolveRunBase, shouldResolveRunBase } from './run-base-resolution.ts'
 import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt.ts'
 import { claimRun } from './run-claim.ts'
+import type { ClaimResult } from './run-claim-types.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
+import {
+  completeRunStartup,
+  harnessAgent,
+  harnessDispatch,
+  harnessRunningResult,
+} from './run-harness-launch.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
 import { type acquireRunLease, requiredRunLease, withRunCloseOutLease } from './run-lease.ts'
 import { runLive } from './run-live.ts'
@@ -104,7 +108,6 @@ import {
   withheldScopeLine,
   workerMcpLaunchScope,
 } from './run-mcp-launch-scope.ts'
-
 import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
 import {
   bindReviewInstructions,
@@ -113,7 +116,7 @@ import {
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
-import { bindSignals, sha } from './run-process.ts'
+import { sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
@@ -138,40 +141,6 @@ import {
 } from './shared-git-config.ts'
 import { renderTaskRulings } from './task-rulings.ts'
 import { taskRulingsForDispatch } from './task-rulings-store.ts'
-
-function completeStartup(): true {
-  bindSignals()
-  return true
-}
-
-function harnessAgent(): Agent {
-  return {
-    name: HARNESS_AGENT,
-    bin: '',
-    minimumCliVersion: '0.0.0',
-    billing: 'subscription',
-    operatedBy: 'vendor',
-    model: 'harness',
-    caps: {
-      readsRepo: true,
-      writesRepo: true,
-      mcp: false,
-      discoversMcpFromCwd: false,
-      schema: true,
-      replyFile: true,
-      resumable: true,
-    },
-    defaultTransport: 'cli',
-    argv: () => [],
-    stdin: false,
-    maxPromptBytes: Number.POSITIVE_INFINITY,
-    readsOut: false,
-    timeoutMs: Number.POSITIVE_INFINITY,
-    contextTokens: Number.POSITIVE_INFINITY,
-    outputCeilingStopReason: null,
-    notes: 'The caller harness executes this run in-session.',
-  }
-}
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: the lifecycle coordinator keeps one terminal ownership boundary
 export async function run(opts: {
@@ -272,11 +241,7 @@ export async function run(opts: {
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
   const requestedJob = job(opts.job)
-  const harnessDelegation =
-    delegationMode(requestedJob.needs, readDelegationSettings()) === 'harness'
-  // The caller's harness owns its own tool surface. There is no child process whose MCP
-  // attachment Bottega can preflight or provision for this executor.
-  const mcpRequest = harnessDelegation ? undefined : effectiveMcpRequest(opts.mcp, requestedJob)
+  const { harness: harnessDelegation, mcpRequest } = harnessDispatch(requestedJob.needs, opts.mcp)
   const prior = opts.resume
   const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
@@ -610,6 +575,7 @@ export async function run(opts: {
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
   let outPath = paths.output
+  let claimedRun: ClaimResult
   let {
     promptPath,
     outputPath: claimedOutputPath,
@@ -637,7 +603,7 @@ export async function run(opts: {
     prompt: claimedBoundPrompt,
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
-  } = await claimRun({
+  } = (claimedRun = await claimRun({
     opts,
     runsDir: RUNS_DIR,
     stamp,
@@ -674,40 +640,14 @@ export async function run(opts: {
     carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
-  })
+  }))
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   if (name === HARNESS_AGENT) {
-    const harnessRoots = acpWriter.runRoots(worktree, writesJob, false, scratchDir, runtimeDir)
-    recordSharedGitConfigSnapshotFailure(
-      claim.id,
-      snapshotWritingRunSharedGitConfig({
-        runId: claim.id,
-        writesJob,
-        worktree: worktree?.path ?? null,
-        writableRoots: harnessRoots,
-      }),
-    )
-    return {
-      record_id: claim.id,
-      number: claim.number,
-      agent: name,
-      reason,
-      output: '',
-      latencyMs: 0,
-      exitCode: 0,
-      vendorTokens: null,
-      costUsd: null,
-      outPath,
-      worktree,
-      changes,
-      contract: null,
-      status: 'running',
-      handoff: { promptPath: join(dirname(promptPath), 'bound-prompt.txt'), cwd },
-    }
+    return harnessRunningResult(claimedRun, reason, writesJob)
   }
   const runProject = projectAt(callerCwd)
   const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
@@ -929,7 +869,7 @@ export async function run(opts: {
       prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
       persistBoundPrompt(promptPath, prompt, claim.id)
     }
-    startupComplete = completeStartup()
+    startupComplete = completeRunStartup()
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }

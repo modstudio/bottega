@@ -382,6 +382,20 @@ async function epicAction(
   })
 }
 
+function registerRunResults(program: Command): void {
+  describedCommand(program, 'result <id>', 'collect a finished run result')
+    .option('--quiet', 'suppress status guidance')
+    .option('--artifacts', 'print the run artifact manifest')
+    .allowExcessArguments(false)
+    .action((id, options) => resultByIdentifier(id, options))
+  describedCommand(program, 'finish <id>', 'record the reply from a harness-executed run')
+    .allowExcessArguments(false)
+    .action(async (id) => {
+      const result = await finishHarnessRun(localRunId(id))
+      presentation.printRunId(result.record_id)
+    })
+}
+
 export function register(program: Command, dependencies: LogicDependencies = {}): void {
   registerDatabaseCommands(program, presentation)
   program
@@ -512,17 +526,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
         presentation,
       ),
     )
-  describedCommand(program, 'result <id>', 'collect a finished run result')
-    .option('--quiet', 'suppress status guidance')
-    .option('--artifacts', 'print the run artifact manifest')
-    .allowExcessArguments(false)
-    .action((id, options) => resultByIdentifier(id, options))
-  describedCommand(program, 'finish <id>', 'record the reply from a harness-executed run')
-    .allowExcessArguments(false)
-    .action(async (id) => {
-      const result = await finishHarnessRun(localRunId(id))
-      presentation.printRunId(result.record_id)
-    })
+  registerRunResults(program)
   describedCommand(program, 'wait <ids...>', 'wait for runs to reach a terminal state')
     .option('--timeout <value>', 'stop waiting after this duration')
     .action(async (ids, options) => waitByIdentifiers(ids, options))

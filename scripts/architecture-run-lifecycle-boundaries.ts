@@ -49,6 +49,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
       './run-artifacts.ts',
       './run-authority.ts',
       './run-control.ts',
+      './run-answer-resume.ts',
       './run-dispatch.ts',
       './run-retry.ts',
       './run-retry-workspace.ts',
@@ -104,6 +105,7 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     [
       '../../../shared/brand.ts',
       'node:fs',
+      'node:path',
       '../cli/args.ts',
       '../clock.ts',
       '../collect/collect.ts',
@@ -215,10 +217,12 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-liveness.ts',
     [
       '../database/db.ts',
+      '../jobs/jobs.ts',
       '../../../shared/process-identity.ts',
       '../resources/resource-ownership.ts',
       '../record/machine-identity.ts',
       './run-alive.ts',
+      './run-artifacts.ts',
       './run-authority.ts',
       './run-bootstrap.ts',
       './run-chain.ts',
