@@ -9,8 +9,6 @@ import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
-// The hosted edge accepts workflowTaskId before the local question producer sends it.
-const UNSENT_QUESTION_COLUMNS = new Set(['workflowTaskId'])
 
 const RUN_RECORD_ID = '01990000-0000-7000-8000-000000000042'
 
@@ -60,11 +58,10 @@ test('question payload contains the hosted shape and replaces a pending mutation
     .all()
   expect(rows).toHaveLength(1)
   const payload = JSON.parse(rows[0]!.payload) as Record<string, unknown>
-  expect(Object.keys(payload).sort()).toEqual(
-    QUESTION_RECORD_PAYLOAD_COLUMNS.filter((column) => !UNSENT_QUESTION_COLUMNS.has(column)).sort(),
-  )
+  expect(Object.keys(payload).sort()).toEqual(QUESTION_RECORD_PAYLOAD_COLUMNS.toSorted())
   expect(payload).toMatchObject({
     runId: RUN_RECORD_ID,
+    workflowTaskId: null,
     localId: question.number,
     options: ['one', 'two'],
     answer: 'One',
@@ -84,6 +81,27 @@ test('question payload contains the hosted shape and replaces a pending mutation
       },
     ],
   })
+})
+
+test('question payload carries the linked workflow task UUID', () => {
+  const database = fixture()
+  const taskId = newRecordId()
+  const question = database
+    .query(
+      `INSERT INTO question
+       (number,record_id,run_record_id,workflow_task_record_id,asked_at,question)
+       VALUES (1,'${newRecordId()}','${RUN_RECORD_ID}',?,'2026-09-25T10:01:00.000Z','Which?')
+       RETURNING record_id`,
+    )
+    .get(taskId) as { record_id: string }
+
+  enqueueQuestionRecord(database, question.record_id)
+
+  const outbox = database
+    .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
+    .get()!
+  expect(JSON.parse(outbox.payload).workflowTaskId).toBe(taskId)
+  database.close()
 })
 
 test.each(['quarantined', 'retired'])(

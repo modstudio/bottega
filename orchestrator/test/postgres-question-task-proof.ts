@@ -4,6 +4,7 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { applyMigrations } from '../src/database/migrations.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../src/record/outbox-payload-contracts.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
+import { registerHostedTaskLinkConvergenceProof } from './postgres-task-link-convergence-proof.ts'
 
 type PsqlResult = { code: number; stdout: string; stderr: string }
 
@@ -14,6 +15,7 @@ export function registerQuestionTaskRecordSyncProof(
   input: () => {
     actorRole: string
     spaceId: string
+    otherSpaceId: string
     projectName: string
     projectId: string
     asSpace: (user: string, password: string, spaceId: string, statement: string) => PsqlResult
@@ -85,4 +87,5 @@ export function registerQuestionTaskRecordSyncProof(
     expect(readLink().stdout).toBe(taskId)
     local.close()
   })
+  registerHostedTaskLinkConvergenceProof(input)
 }

@@ -10,7 +10,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 const migrationUrl = process.env.BOTTEGA_TEST_RUN_OWNER_MIGRATION_URL
 const realPostgres = migrationUrl ? describe : describe.skip
 const migrationsFolder = join(import.meta.dir, '..', '..', '..', 'shared', 'record', 'migrations')
-const backfillMigration = '20261026121032_dev_1774_run_owner_backfill'
+const backfillMigration = '20261026134135_dev_1774_run_owner_backfill'
 const machineId = '01990000-0000-7000-8000-000000001810'
 const machineUserId = '01990000-0000-7000-8000-000000001811'
 const existingOwnerId = '01990000-0000-7000-8000-000000001812'

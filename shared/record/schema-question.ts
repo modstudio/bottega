@@ -59,6 +59,9 @@ export const question = pgTable.withRLS(
   },
   (table) => [
     index('question_workflow_task_id_idx').on(table.workflowTaskId),
+    index('question_unlinked_workflow_key_idx')
+      .on(table.spaceId, table.workflowKey)
+      .where(sql`${table.workflowTaskId} IS NULL AND ${table.workflowKey} IS NOT NULL`),
     ...tenantPolicies('question', table.spaceId),
   ],
 )
