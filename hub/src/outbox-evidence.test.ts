@@ -14,8 +14,8 @@ function insertInterval() {
   writeTransaction((conn) =>
     conn
       .query(`INSERT INTO interval
-      (record_id,task_key,project,source,start_at,end_at,claude_tokens,vendor_tokens,ref,open)
-      VALUES (?,'DEV-1','workshop','orch','2026-10-11T10:00:00.000Z',
+      (record_id,task_key,project,project_record_id,source,start_at,end_at,claude_tokens,vendor_tokens,ref,open)
+      VALUES (?,'DEV-1','workshop','project-id','orch','2026-10-11T10:00:00.000Z',
         '2026-10-11T10:01:00.000Z',10,20,'orch:8001',1)`)
       .run(intervalId),
   )
@@ -78,11 +78,11 @@ test('restated evidence queues nothing while material interval and day changes q
   expect(queued()).toEqual([])
   writeTransaction((conn) =>
     conn
-      .query(`UPDATE interval SET project='missing',task_key='FIX-1' WHERE record_id=?`)
+      .query(`UPDATE interval SET project='missing',task_key='ALP-1' WHERE record_id=?`)
       .run(intervalId),
   )
   writeTransaction((conn) => conn.exec(`DELETE FROM hosted_outbox`))
-  correctStoredIntervalProjects([{ name: 'corrected', settings: { keyPrefixes: ['FIX'] } }])
+  correctStoredIntervalProjects([{ name: 'alpha', settings: { keyPrefixes: ['ALP'] } }])
   expect(queued()).toEqual([
     { table_name: 'hub_interval', row_id: intervalId, operation: 'upsert' },
   ])

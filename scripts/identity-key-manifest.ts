@@ -323,7 +323,20 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
   ]),
 ]
 
-const DISPLAY_LABELS: readonly DisplayLabel[] = []
+const DISPLAY_LABELS: readonly DisplayLabel[] = [
+  {
+    store: 'hub',
+    column: 'interval.task_key',
+    sibling: 'interval.task_record_id',
+    reason: 'display label beside the task UUID reference',
+  },
+  {
+    store: 'hosted',
+    column: 'hub_interval.task_key',
+    sibling: 'hub_interval.task_id',
+    reason: 'display label beside the task UUID reference',
+  },
+]
 
 const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   { store: 'orchestrator', table: 'orch_migrations', reason: 'migration journal bookkeeping' },
@@ -442,7 +455,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ]),
   ...manifest('hub', 'natural or encoded reference to an application row', [
     'commit_key.task_key',
-    'interval.task_key',
     'question.run_ref',
     'question.root_ref',
     'question.workflow_key',
@@ -458,7 +470,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'board_receipt.reader_session',
     'contention.resource_key',
     'doc_revision.related_subject_ids',
-    'hub_interval.task_key',
     'hub_task.parent_key',
     'hub_task_comment.task_key',
     'hub_task_document.task_key',
@@ -838,6 +849,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'interval.user_id',
     'interval.hosted_space_id',
     'interval.project_record_id',
+    'interval.task_record_id',
     'note.record_id',
     'note.promoted_task_record_id',
     'note.project_record_id',

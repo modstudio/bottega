@@ -54,9 +54,9 @@ function insertInterval() {
     conn
       .query(
         `INSERT INTO interval
-          (record_id,task_key,project,source,agent,job,start_at,end_at,claude_tokens,vendor_tokens,
+          (record_id,task_key,project,project_record_id,source,agent,job,start_at,end_at,claude_tokens,vendor_tokens,
            vendor_cost_usd,ref,via,open,session_id,user_id)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,'project-id',?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
         row.id,

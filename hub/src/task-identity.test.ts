@@ -4,12 +4,28 @@ import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
 import { applyMigrations } from './migrations.ts'
 import {
   formatTaskIdentityDoctor,
+  intervalTaskRecordId,
   observedTaskKeyPrefixes,
   resolveTask,
   taskIdentityDecision,
   taskIdentityDoctor,
   taskKeyPrefix,
 } from './task-identity.ts'
+
+test('interval task identity resolves only one matching task', () => {
+  const conn = new Database(':memory:')
+  applyMigrations(conn, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+  conn.exec(`
+    INSERT INTO task(record_id,key,project,source,first_seen,last_seen) VALUES
+      ('one-a','ONE-1','alpha','local','2026-01-01','2026-01-01'),
+      ('many-a','MANY-1','alpha','local','2026-01-01','2026-01-01'),
+      ('many-b','MANY-1','beta','local','2026-01-01','2026-01-01');
+  `)
+  expect(intervalTaskRecordId(conn, 'MISSING-1')).toBeNull()
+  expect(intervalTaskRecordId(conn, 'MANY-1')).toBeNull()
+  expect(intervalTaskRecordId(conn, 'ONE-1')).toBe('one-a')
+  conn.close()
+})
 
 test('task key prefixes come only from canonical task keys', () => {
   expect(taskKeyPrefix('DEV-1208')).toBe('DEV')

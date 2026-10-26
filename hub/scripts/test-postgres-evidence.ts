@@ -552,7 +552,13 @@ try {
       },
     )
     await pushIntervals(actorUrl, identity, [
-      { ...interval, task_key: created.key, ref: 'orch:hosted-view-fixture', user_id: USER },
+      {
+        ...interval,
+        task_key: created.key,
+        task_id: created.id,
+        ref: 'orch:hosted-view-fixture',
+        user_id: USER,
+      },
     ])
     const hostedDone = await hostedFlightDone(
       actorUrl,
@@ -1328,10 +1334,12 @@ try {
       throw new Error('removed subscription remained due for delivery')
 
     const measureWindow = { from: '2026-09-17T12:00:00.000Z', to: '2026-09-17T14:00:00.000Z' }
+    const measureTaskId = '01990000-0000-7000-8000-000000000758'
     const measureIntervals: IntervalEvidence[] = [
       {
         id: '01990000-0000-7000-8000-000000000692',
         task_key: 'DEV-758',
+        task_id: measureTaskId,
         project_name: PLATFORM_SLUG,
         projectId: PROJECT_A,
         source: 'orch',
@@ -1351,6 +1359,7 @@ try {
       {
         id: '01990000-0000-7000-8000-000000000693',
         task_key: 'DEV-758',
+        task_id: measureTaskId,
         project_name: PLATFORM_SLUG,
         projectId: PROJECT_A,
         source: 'orch',
@@ -1370,6 +1379,7 @@ try {
       {
         id: '01990000-0000-7000-8000-000000000694',
         task_key: 'DEV-758',
+        task_id: measureTaskId,
         project_name: PLATFORM_SLUG,
         projectId: PROJECT_A,
         source: 'claude',
@@ -1406,14 +1416,13 @@ try {
         user_id: null,
       },
     ]
-    await pushIntervals(actorUrl, identity, measureIntervals)
     await pushEvidence(actorUrl, identity, [
       {
         table: 'hub_task',
-        id: '01990000-0000-7000-8000-000000000758',
+        id: measureTaskId,
         op: 'upsert',
         row: {
-          id: '01990000-0000-7000-8000-000000000758',
+          id: measureTaskId,
           key: 'DEV-758',
           project: PLATFORM_SLUG,
           project_name: PLATFORM_SLUG,
@@ -1436,6 +1445,7 @@ try {
         },
       },
     ])
+    await pushIntervals(actorUrl, identity, measureIntervals)
     const doneAt = '2026-09-17T12:10:00.000Z'
     await admin`INSERT INTO hub_task_status_event
       (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at)
