@@ -39,6 +39,7 @@ import { getReview, listReviews } from '../review/review.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { catalogueStepsForAutonomy, parseAutonomy } from '../workflow/autonomy.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
+import { workflowComposeBranchRefusal } from '../workflow/workflow-compose-branch.ts'
 import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
@@ -419,6 +420,8 @@ export function createDocsMcpServer(): McpServer {
       }),
     },
     async ({ slug, project, mode, args, version, catalogue_version, autonomy }) => {
+      const refusal = workflowComposeBranchRefusal({ workflow: slug, project, args: args ?? {} })
+      if (refusal) throw new Error(refusal)
       const selection = { version, catalogueVersion: catalogue_version }
       const preliminary = composeWorkflow(slug, project, mode, args ?? {}, undefined, selection)
       const resolved = await resolveProjectAutonomy(

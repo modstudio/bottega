@@ -1,5 +1,5 @@
 ---
-title: Ship a task
+title: Land a built branch
 arguments:
   - name: key
     required: true
@@ -17,8 +17,8 @@ arguments:
     description: "The name of the last release rung to reach; omit it to reach every rung the operator's level allows."
 modes:
   - slug: full
-    title: Ship and promote
-    default: true
+    title: Land and promote
+    entry: "Does the branch go on past the merge through the project's release rungs?"
     steps:
       - rebase-trunk
       - scope
@@ -32,7 +32,8 @@ modes:
       - finish-ship-cleanup
       - sequence: release
   - slug: merge
-    title: Ship through merge
+    title: Land through merge
+    entry: Does the branch stop at the merge into the landing branch?
     steps:
       - rebase-trunk
       - scope
@@ -45,4 +46,4 @@ modes:
       - sequence: land
       - finish-ship-cleanup
 ---
-Review, gate, merge, promote through the project's release rungs as far as the operator's level allows, and close the task once no release rung remains unreached. The `merge` mode stops after merge and leaves promotion and closing to the caller.
+Land a branch that already carries its change: rebase it, review it, run the gate, merge it by pull request, promote through the project's release rungs as far as the operator's level allows, and close the task once no release rung remains unreached. The implementation run builds the change; this workflow lands it. The `merge` mode stops after merge and leaves promotion and closing to the caller.

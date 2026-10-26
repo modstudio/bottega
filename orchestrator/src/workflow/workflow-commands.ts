@@ -14,6 +14,7 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { parseAutonomy } from './autonomy.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
+import { workflowComposeBranchRefusal } from './workflow-compose-branch.ts'
 import {
   promoteStepCatalogue,
   resolvedStepCatalogueVersions,
@@ -127,11 +128,13 @@ const inspectionProjectName = (options: WorkflowCommandOptions): string | null =
 export function listWorkflowCommand(
   print: WorkflowPrint,
   options: WorkflowCommandOptions = {},
+  retired = false,
 ): void {
   const database = db()
   const rows = listResolvedWorkflows(
     workflowReadSpaceFor(database, inspectionProjectName(options)),
     database,
+    retired,
   )
   print(
     rows,
@@ -806,6 +809,8 @@ export async function composeCommand(
   if (!project) throw new Error('--project is required')
   const mode = flagValue(argv, 'mode')
   const args = workflowArgs(argv)
+  const branchRefusal = workflowComposeBranchRefusal({ workflow: argv[2]!, project, args })
+  if (branchRefusal) throw new Error(branchRefusal)
   const selection = {
     version: positive(flagValue(argv, 'version'), '--version'),
     catalogueVersion: positive(flagValue(argv, 'catalogue-version'), '--catalogue-version'),

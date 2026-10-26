@@ -88,9 +88,16 @@ function registerWorkflowDefinitions({
   output,
   handlerOptions,
 }: WorkflowRegistration): void {
-  jsonOption(workflow.command('list').description('list workflow definitions'))
+  jsonOption(
+    workflow
+      .command('list')
+      .description('list workflow definitions')
+      .option('--retired', 'include workflows whose only versions are retired'),
+  )
     .allowExcessArguments(false)
-    .action((options) => listWorkflowCommand(output(options), handlerOptions))
+    .action((options) =>
+      listWorkflowCommand(output(options), handlerOptions, Boolean(options.retired)),
+    )
 
   jsonOption(
     workflow
