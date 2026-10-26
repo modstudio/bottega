@@ -923,6 +923,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../state/guide.ts',
       '../lens/lenses.ts',
       '../project/projects.ts',
+      './prompt-size-bucket.ts',
       './route.ts',
       './routing-backtest.ts',
     ],

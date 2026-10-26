@@ -6,6 +6,7 @@ import { chainTerminationAt } from '../run/run-liveness.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { samePromptSizeBucket } from './prompt-size-bucket.ts'
 import {
   COOLDOWN_MIN,
   currentPolicySelection,
@@ -13,7 +14,6 @@ import {
   MIN_SAMPLE,
   OUTPUT_RESERVE,
   routingEvidenceWindow,
-  samePromptSizeBucket,
   thompsonRank,
 } from './route.ts'
 

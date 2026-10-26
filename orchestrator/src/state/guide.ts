@@ -8,14 +8,16 @@ import { db } from '../database/db.ts'
 import { delegationClass, delegationMode } from '../jobs/delegation.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
+  PROMPT_SIZE_BOUNDARY,
+  type PromptSizeBucket,
+  promptSizeBucket,
+} from '../route/prompt-size-bucket.ts'
+import {
   type candidates,
   evidenceFor,
   MIN_SAMPLE,
-  PROMPT_SIZE_BOUNDARY,
-  type PromptSizeBucket,
   pick,
   promptBucketsForJob,
-  promptSizeBucket,
 } from '../route/route.ts'
 import { median } from './statistics.ts'
 

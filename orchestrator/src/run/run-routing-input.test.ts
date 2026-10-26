@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { job } from '../jobs/jobs.ts'
-import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from '../route/route.ts'
+import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from '../route/prompt-size-bucket.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { routedPromptBytes, routedPromptText } from './run-routing-input.ts'
 

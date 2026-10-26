@@ -14,15 +14,14 @@ import { upsertProject } from '../project/projects.ts'
 import { RefusalError } from '../refusal-error.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
+import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import {
   candidates,
   EVIDENCE_WINDOW,
   evidenceFor,
   MIN_SAMPLE,
   meteredRouteEligibility,
-  PROMPT_SIZE_BOUNDARY,
   pick,
-  promptSizeBucket,
   scoreboard,
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
