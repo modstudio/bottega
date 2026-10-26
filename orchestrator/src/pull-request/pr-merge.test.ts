@@ -48,7 +48,7 @@ const pullRequest: PullRequestMergeFacts = {
 function adapter(
   input: {
     view?: (target: string) => PullRequestMergeFacts
-    checks?: PullRequestCheck[]
+    checks?: PullRequestCheck[] | (() => PullRequestCheck[])
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
     hasCommit?: (cwd: string, headCommit: string) => boolean
     merge?: (method: string, subject: string, headCommit: string) => string
@@ -74,7 +74,7 @@ function adapter(
   return {
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
-    checks: () => input.checks ?? [],
+    checks: () => (typeof input.checks === 'function' ? input.checks() : (input.checks ?? [])),
     landingState: input.landingState ?? (() => ({ remoteLandingTip: 'base', mergeBase: 'base' })),
     hasCommit: input.hasCommit ?? (() => true),
     admission:
@@ -662,6 +662,81 @@ test('a failing forge call refuses because proof was not checked', () => {
       }),
     ),
   ).toThrow('proof was not checked: forge unavailable')
+})
+
+test('a GitHub branch-policy merge refusal names pending and failing checks', () => {
+  registerProject([])
+  recordPassingGate()
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        checks: [
+          {
+            name: 'Check',
+            bucket: 'pending',
+            state: 'IN_PROGRESS',
+            link: 'https://checks.example/check',
+          },
+          {
+            name: 'Build demo',
+            bucket: 'fail',
+            state: 'FAILURE',
+            link: 'https://checks.example/demo',
+          },
+        ],
+        merge: () => {
+          throw new Error(
+            'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+          )
+        },
+      }),
+    ),
+  ).toThrow(
+    `refusing merge: GitHub's branch policy blocks the merge: Check pending, Build demo failing; cleared by: wait for pending checks and rerun ${PLATFORM_SLUG} pr merge 42, or fix failing checks with gh pr checks 42`,
+  )
+})
+
+test('a GitHub branch-policy merge refusal still waits when the rollup cannot be read', () => {
+  registerProject([])
+  recordPassingGate()
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        checks: () => {
+          throw new Error('pull-request check lookup failed: exit 1')
+        },
+        merge: () => {
+          throw new Error(
+            'pull-request merge failed: GraphQL: Required status check "ci" is expected. (mergePullRequest)',
+          )
+        },
+      }),
+    ),
+  ).toThrow(
+    `refusing merge: GitHub's branch policy blocks the merge: the checks could not be listed; cleared by: wait for pending checks and rerun ${PLATFORM_SLUG} pr merge 42, or fix failing checks with gh pr checks 42`,
+  )
+})
+
+test('a non-policy merge failure still restores forge access', () => {
+  registerProject([])
+  recordPassingGate()
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        merge: () => {
+          throw new Error('pull-request merge failed: HTTP 401')
+        },
+      }),
+    ),
+  ).toThrow(
+    `proof was not checked: pull-request merge failed: HTTP 401; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge 42`,
+  )
 })
 
 test('a head commit that changes after checks is refused without merging', () => {

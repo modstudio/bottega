@@ -27,6 +27,7 @@ import {
   type PullRequestCheck,
 } from './merge-decision.ts'
 import type { FailedMergeGroupRun } from './merge-group-run.ts'
+import { decideMergePolicyRefusal } from './merge-policy-decision.ts'
 import {
   interpretMergeQueue,
   MERGE_QUEUE_WAIT_MS,
@@ -389,11 +390,46 @@ function collectMergeProof(
   }
 }
 
+function readCheckRollup(
+  adapter: PullRequestMergeAdapter,
+  cwd: string,
+  number: number | undefined,
+): PullRequestCheck[] | null {
+  if (number === undefined) return null
+  try {
+    return adapter.checks(cwd, number)
+  } catch {
+    return null
+  }
+}
+
+function throwMergeOperationError(
+  cause: unknown,
+  input: {
+    cwd: string
+    target: string
+    number: number | undefined
+    adapter: PullRequestMergeAdapter
+    fallback: (message: string) => Error
+  },
+): never {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  const decision = decideMergePolicyRefusal({
+    message,
+    checks: readCheckRollup(input.adapter, input.cwd, input.number),
+    target: input.target,
+    number: input.number ?? null,
+  })
+  if (decision.policy) throw new Error(`refusing merge: ${decision.refusal}`)
+  throw input.fallback(message)
+}
+
 function waitForQueuedMerge(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   repository: string | null,
   adapter: PullRequestMergeAdapter,
+  target: string,
 ): { mergeCommit: string; requeueOutput?: string } {
   const deadline = adapter.now() + MERGE_QUEUE_WAIT_MS
   let waitState: MergeQueueWaitState = {
@@ -424,7 +460,7 @@ function waitForQueuedMerge(
       throw new Error(`refusing merge: ${action.refusal}${evidence}; cleared by: ${action.remedy}`)
     }
     if (action.action === 'enqueue') {
-      enqueueForMergeQueue(pullRequest, cwd, adapter)
+      enqueueForMergeQueue(pullRequest, cwd, adapter, target)
       continue
     }
     if (action.action === 'requeue') {
@@ -435,7 +471,7 @@ function waitForQueuedMerge(
         observation.enqueuedAt,
         adapter,
       )
-      requeueForMergeQueue(pullRequest, cwd, adapter, evidence)
+      requeueForMergeQueue(pullRequest, cwd, adapter, evidence, target)
       requeueOutput = `requeued #${pullRequest.number} at ${pullRequest.headCommit} after ${evidence}`
       continue
     }
@@ -475,14 +511,21 @@ function requeueForMergeQueue(
   cwd: string,
   adapter: PullRequestMergeAdapter,
   evidence: string,
+  target: string,
 ): void {
   try {
     adapter.requeue(cwd, pullRequest.nodeId, pullRequest.headCommit)
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    throw new Error(
-      `refusing merge: pull request #${pullRequest.number} could not be requeued after ${evidence}: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
-    )
+    throwMergeOperationError(cause, {
+      cwd,
+      target,
+      number: pullRequest.number,
+      adapter,
+      fallback: (message) =>
+        new Error(
+          `refusing merge: pull request #${pullRequest.number} could not be requeued after ${evidence}: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
+        ),
+    })
   }
 }
 
@@ -490,14 +533,21 @@ function enqueueForMergeQueue(
   pullRequest: PullRequestMergeFacts,
   cwd: string,
   adapter: PullRequestMergeAdapter,
+  target: string,
 ): void {
   try {
     adapter.enqueue(cwd, pullRequest.number, pullRequest.headCommit)
   } catch (cause) {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    throw new Error(
-      `refusing merge: pull request #${pullRequest.number} could not be added to the merge queue: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
-    )
+    throwMergeOperationError(cause, {
+      cwd,
+      target,
+      number: pullRequest.number,
+      adapter,
+      fallback: (message) =>
+        new Error(
+          `refusing merge: pull request #${pullRequest.number} could not be added to the merge queue: ${message}; cleared by: ${mergeQueueEnqueueFailureRemedy(pullRequest.number, message)}`,
+        ),
+    })
   }
 }
 
@@ -646,7 +696,7 @@ export function mergePullRequest(
     )
   }
 
-  let pullRequest: PullRequestMergeFacts
+  let pullRequest: PullRequestMergeFacts | undefined
   let mergeCommit: string
   let requeueOutput: string | undefined
   let admittedChange: PullRequestChange
@@ -685,7 +735,7 @@ export function mergePullRequest(
     )
     if (release.mergeQueue) {
       const repository = adapter.repository(project)
-      const queued = waitForQueuedMerge(pullRequest, cwd, repository, adapter)
+      const queued = waitForQueuedMerge(pullRequest, cwd, repository, adapter, target)
       mergeCommit = queued.mergeCommit
       requeueOutput = queued.requeueOutput
     } else {
@@ -701,14 +751,21 @@ export function mergePullRequest(
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause)
     if (message.startsWith('refusing merge:')) throw cause
-    throw new Error(
-      `refusing merge because the pull request proof was not checked: ${message}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
-    )
+    throwMergeOperationError(cause, {
+      cwd,
+      target,
+      number: pullRequest?.number,
+      adapter,
+      fallback: (error) =>
+        new Error(
+          `refusing merge because the pull request proof was not checked: ${error}; cleared by: restore forge and repository access, then ${PLATFORM_SLUG} pr merge ${target}`,
+        ),
+    })
   }
   const recordingError = recordPostMergeEvidence({
     adapter,
     change: admittedChange!,
-    pullRequest,
+    pullRequest: pullRequest!,
     database,
     projectName: project.name,
   })
@@ -716,8 +773,8 @@ export function mergePullRequest(
     adapter,
     database,
     project: project.name,
-    branch: pullRequest.headBranch,
-    prNumber: pullRequest.number,
+    branch: pullRequest!.headBranch,
+    prNumber: pullRequest!.number,
     mergeCommit,
     recordingError,
     requeueOutput,

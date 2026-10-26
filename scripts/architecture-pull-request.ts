@@ -11,6 +11,10 @@ export const pullRequestModuleSpecs = [
   },
   { file: 'orchestrator/src/pull-request/pre-push-decision.ts', allowed: [] },
   {
+    file: 'orchestrator/src/pull-request/merge-policy-decision.ts',
+    allowed: ['../../../shared/brand.ts'],
+  },
+  {
     file: 'orchestrator/src/pull-request/override-decision.ts',
     allowed: ['./triage-decision.ts'],
   },
