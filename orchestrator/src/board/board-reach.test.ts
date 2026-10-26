@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
+import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { parseAudience } from './board-policy.ts'
 import { markBoardDeliveryDelivered } from './board-push-service.ts'
 import {
@@ -309,6 +310,111 @@ test('reach report includes delivered and never-delivered reply rows', () => {
     replies: 2,
     deliveredToRootAuthor: 1,
     deliveredToNobody: [{ messageSource: 'local', replyId: neverId, title: 'Measured replies' }],
+  })
+  expect(replies.rows.map((reply) => reply.replyId)).toEqual([deliveredId, neverId])
+})
+
+test('reach report includes hosted reply rows and excludes the hosted root author', () => {
+  const clock = Date.parse('2026-10-13T14:00:00.000Z')
+  const rootId = newRecordId()
+  const deliveredId = newRecordId()
+  const neverId = newRecordId()
+  const rootAuthorReplyId = newRecordId()
+  const rootUserId = newRecordId()
+  const hosted = (id: string, overrides: Partial<HostedBoardMessage> = {}): HostedBoardMessage => ({
+    id,
+    kind: 'question',
+    threadRootId: null,
+    title: 'Hosted measured replies',
+    body: 'Hosted body',
+    audience: 'operator',
+    origin: {
+      kind: 'architect',
+      session: 'hosted-root-author',
+      harness: 'claude',
+      project: 'alpha',
+      runId: null,
+    },
+    senderTags: [],
+    createdAt: new Date(clock).toISOString(),
+    expiresAt: new Date(clock + 60_000).toISOString(),
+    withdrawnAt: null,
+    state: 'open',
+    acceptedReplyId: null,
+    acceptedBy: null,
+    acceptedAt: null,
+    noteId: null,
+    notePendingError: null,
+    revision: '1',
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    claimId: null,
+    authorUserId: rootUserId,
+    authorSession: 'hosted-root-author',
+    ackRequired: false,
+    ackDeadline: null,
+    ...overrides,
+  })
+  const messages = [
+    hosted(rootId),
+    hosted(deliveredId, {
+      kind: 'reply',
+      threadRootId: rootId,
+      title: null,
+      audience: null,
+      authorUserId: newRecordId(),
+      authorSession: 'hosted-replier',
+      createdAt: new Date(clock + 1_000).toISOString(),
+      expiresAt: null,
+      state: null,
+    }),
+    hosted(neverId, {
+      kind: 'reply',
+      threadRootId: rootId,
+      title: null,
+      audience: null,
+      authorUserId: newRecordId(),
+      authorSession: 'hosted-other-replier',
+      createdAt: new Date(clock + 2_000).toISOString(),
+      expiresAt: null,
+      state: null,
+    }),
+    hosted(rootAuthorReplyId, {
+      kind: 'reply',
+      threadRootId: rootId,
+      title: null,
+      audience: null,
+      createdAt: new Date(clock + 2_500).toISOString(),
+      expiresAt: null,
+      state: null,
+    }),
+  ]
+  const insertMessage = db().query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  for (const message of messages)
+    insertMessage.run(
+      message.id,
+      message.kind,
+      message.threadRootId,
+      message.revision,
+      JSON.stringify(message),
+    )
+  db()
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,successor)
+       VALUES (?,?,?,?,?,0)`,
+    )
+    .run(newRecordId(), deliveredId, 'hosted-root-author', 1, new Date(clock + 3_000).toISOString())
+
+  const replies = boardReachReport(1, clock + 4_000, db()).replies
+  expect(replies).toMatchObject({
+    replies: 2,
+    deliveredToRootAuthor: 1,
+    deliveredToNobody: [
+      { messageSource: 'hosted', replyId: neverId, title: 'Hosted measured replies' },
+    ],
   })
   expect(replies.rows.map((reply) => reply.replyId)).toEqual([deliveredId, neverId])
 })

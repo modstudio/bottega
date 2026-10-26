@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "c3f069d8-e6a3-432d-923c-740ca95c9d43",
+  "id": "4ea6f9ac-762b-49ab-a499-930917c76ac7",
   "prevIds": ["9f79302c-47d1-4b47-8660-b99277b92e3f"],
   "ddl": [
     {
@@ -19431,7 +19431,7 @@
       "table": "board_message"
     },
     {
-      "value": "(\"kind\" = 'reply' AND \"thread_root_id\" IS NOT NULL\n          AND (\"audience\" IS NULL OR \"audience\" IN ('participants','acknowledged','audience','operator')\n            OR \"audience\" LIKE 'session:%' OR \"audience\" LIKE 'run:%')\n          AND \"title\" IS NULL\n          AND \"ack_required\" = false AND \"ack_deadline\" IS NULL\n          AND \"expires_at\" IS NULL) OR\n          (\"kind\" <> 'reply' AND \"thread_root_id\" IS NULL\n          AND \"audience\" IS NOT NULL AND \"title\" IS NOT NULL\n          AND \"expires_at\" IS NOT NULL)",
+      "value": "(\"kind\" = 'reply' AND \"thread_root_id\" IS NOT NULL\n          AND (\"audience\" IS NULL OR \"audience\" IN ('participants', 'acknowledged', 'audience', 'operator')\n            OR (\"audience\" LIKE 'session:%' AND \"audience\" <> 'session:'))\n          AND \"title\" IS NULL\n          AND \"ack_required\" = false AND \"ack_deadline\" IS NULL\n          AND \"expires_at\" IS NULL) OR\n          (\"kind\" <> 'reply' AND \"thread_root_id\" IS NULL\n          AND \"audience\" IS NOT NULL AND \"title\" IS NOT NULL\n          AND \"expires_at\" IS NOT NULL)",
       "name": "board_message_reply_shape_check",
       "entityType": "checks",
       "schema": "public",

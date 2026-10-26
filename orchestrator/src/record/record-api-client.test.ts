@@ -359,6 +359,13 @@ describe('record API client test safety', () => {
           expiresAt: '2026-10-06T00:00:00.000Z',
         }),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
+      await expect(
+        client.replyBoardMessage(id, {
+          id: newRecordId(),
+          body: 'Directed reply',
+          audience: { kind: 'session', sessionId: 'in-reach' },
+        }),
+      ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
       expect(calls[0]).toMatchObject({
         url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false',
         method: 'GET',
@@ -379,6 +386,11 @@ describe('record API client test safety', () => {
       const posted = calls[3]?.body as Record<string, unknown>
       expect(posted).not.toHaveProperty('recipientUserIds')
       expect(posted).not.toHaveProperty('claimId')
+      expect(calls[4]).toMatchObject({
+        url: `https://api.example.test/v1/board/messages/${id}/replies`,
+        method: 'POST',
+        body: { body: 'Directed reply', audience: 'session:in-reach' },
+      })
     } finally {
       globalThis.fetch = originalFetch
       process.env.NODE_ENV = previousEnv

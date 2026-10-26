@@ -5,7 +5,10 @@ import {
   type BoardPurpose,
   defaultBoardPurpose,
 } from '../../../shared/board-purpose.ts'
-import type { ReplyAudienceOption } from '../board/board-reply-audience.ts'
+import {
+  type ReplyAudienceOption,
+  replyAudienceValue,
+} from '../../../shared/board-reply-audience-options.ts'
 
 export { BOARD_PURPOSES, defaultBoardPurpose }
 
@@ -220,6 +223,13 @@ export type HostedBoardReplyInput = {
   authorRunId?: string | null
   project?: string
   projectId?: string | null
+}
+
+export function hostedBoardReplyBody(input: HostedBoardReplyInput): string {
+  return JSON.stringify({
+    ...input,
+    audience: input.audience && replyAudienceValue(input.audience),
+  })
 }
 
 export type HostedBoardSessionInput = { authorSession?: string | null }

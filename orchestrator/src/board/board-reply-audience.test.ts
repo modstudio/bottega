@@ -11,6 +11,9 @@ test('invalid and empty reply audiences use the reply vocabulary', () => {
   expect(() => parseReplyAudienceOption('run:123')).toThrow(
     "address session:<id> of the run's owner, or post a notice to run:<id>",
   )
+  expect(() => parseReplyAudienceOption('session:')).toThrow(
+    'use participants, acknowledged, audience, operator, or session:<id>',
+  )
 })
 
 test('reply audience choices resolve participants, acknowledgements, root audience, and recipients', () => {
@@ -25,22 +28,27 @@ test('reply audience choices resolve participants, acknowledgements, root audien
     replier: 'second',
   }
   expect(resolveReplyReaders({ ...facts, audience: null })).toEqual(['asker', 'first'])
-  expect(resolveReplyReaders({ ...facts, audience: 'participants' })).toEqual(['asker', 'first'])
-  expect(resolveReplyReaders({ ...facts, audience: 'acknowledged' })).toEqual([
+  expect(resolveReplyReaders({ ...facts, audience: { kind: 'participants' } })).toEqual([
+    'asker',
+    'first',
+  ])
+  expect(resolveReplyReaders({ ...facts, audience: { kind: 'acknowledged' } })).toEqual([
     'asker',
     'acknowledged-reader',
     'outside-reader',
   ])
-  expect(resolveReplyReaders({ ...facts, audience: 'audience' })).toEqual([
+  expect(resolveReplyReaders({ ...facts, audience: { kind: 'audience' } })).toEqual([
     'asker',
     'acknowledged-reader',
     'audience-reader',
   ])
-  expect(resolveReplyReaders({ ...facts, audience: 'session:recipient' })).toEqual([
+  expect(
+    resolveReplyReaders({ ...facts, audience: { kind: 'session', sessionId: 'recipient' } }),
+  ).toEqual(['asker', 'recipient'])
+  expect(resolveReplyReaders({ ...facts, audience: { kind: 'operator' } })).toEqual([
     'asker',
-    'recipient',
+    'operator',
   ])
-  expect(resolveReplyReaders({ ...facts, audience: 'operator' })).toEqual(['asker', 'operator'])
 })
 
 test('reply audiences always reach a different root author and never reach the replier', () => {
@@ -49,7 +57,7 @@ test('reply audiences always reach a different root author and never reach the r
       rootAuthor: 'asker',
       threadAuthors: [],
       rootReceipts: [],
-      audience: 'session:recipient',
+      audience: { kind: 'session', sessionId: 'recipient' },
       replier: 'answerer',
     }),
   ).toContain('asker')
@@ -58,7 +66,7 @@ test('reply audiences always reach a different root author and never reach the r
       rootAuthor: 'asker',
       threadAuthors: ['answerer'],
       rootReceipts: [{ reader: 'answerer', audienceAtPosting: true, acknowledged: true }],
-      audience: 'acknowledged',
+      audience: { kind: 'acknowledged' },
       replier: 'answerer',
     }),
   ).not.toContain('answerer')
@@ -67,7 +75,7 @@ test('reply audiences always reach a different root author and never reach the r
       rootAuthor: 'asker',
       threadAuthors: [],
       rootReceipts: [],
-      audience: 'participants',
+      audience: { kind: 'participants' },
       replier: 'asker',
     }),
   ).toEqual([])

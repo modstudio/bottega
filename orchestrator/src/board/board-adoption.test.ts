@@ -178,14 +178,9 @@ test('adoption uploads a reply local project name and hosted record id', async (
     {},
     NOW,
   )
-  const reply = replyToThread(
-    root.recordId,
-    'reply identity body',
-    {},
-    NOW + 1,
-    undefined,
-    'acknowledged',
-  )
+  const reply = replyToThread(root.recordId, 'reply identity body', {}, NOW + 1, undefined, {
+    kind: 'acknowledged',
+  })
   const project = { name: 'adoption-reply-project' }
   const projectId = newRecordId()
   db()
@@ -206,7 +201,11 @@ test('adoption uploads a reply local project name and hosted record id', async (
 
   await adoptHostedBoard({ confirm: 2, clock: () => NOW + 2, client })
 
-  expect(uploaded).toMatchObject({ project: project.name, projectId, audience: 'acknowledged' })
+  expect(uploaded).toMatchObject({
+    project: project.name,
+    projectId,
+    audience: { kind: 'acknowledged' },
+  })
 })
 
 test('adoption preserves request and acknowledgement-required standing purposes', async () => {

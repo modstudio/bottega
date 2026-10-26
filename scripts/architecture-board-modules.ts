@@ -170,7 +170,10 @@ export const boardModules: BoardModule[] = [
     './board-tags.ts',
   ]),
   module('orchestrator/src/board/board-thread-policy.ts', ['./board-policy.ts']),
-  module('orchestrator/src/board/board-reply-audience.ts', ['./board-policy.ts']),
+  module('orchestrator/src/board/board-reply-audience.ts', [
+    '../../../shared/board-reply-audience-options.ts',
+    './board-policy.ts',
+  ]),
   module('orchestrator/src/board/board-thread-render.ts', [
     '../../../shared/brand.ts',
     './board-policy.ts',
@@ -227,6 +230,7 @@ export const boardModules: BoardModule[] = [
   ]),
   module('orchestrator/src/board/board-thread-service.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/board-reply-audience-options.ts',
     '../../../shared/record-id.ts',
     '../../../shared/secret-shaped.ts',
     '../database/db.ts',

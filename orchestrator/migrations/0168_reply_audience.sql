@@ -26,7 +26,7 @@ CREATE TABLE board_message (
          (author_kind='worker' AND author_session IS NULL AND author_run_record_id IS NOT NULL)),
   CHECK ((kind='reply' AND thread_root_record_id IS NOT NULL
            AND (audience IS NULL OR audience IN ('participants','acknowledged','audience','operator')
-             OR audience LIKE 'session:%' OR audience LIKE 'run:%')
+             OR (audience LIKE 'session:%' AND audience <> 'session:'))
            AND title IS NULL AND ack_required=0 AND ack_deadline IS NULL AND expires_at IS NULL) OR
          (kind<>'reply' AND thread_root_record_id IS NULL AND audience IS NOT NULL AND title IS NOT NULL AND expires_at IS NOT NULL)),
   CHECK ((accepted_reply_record_id IS NULL AND accepted_by IS NULL AND accepted_at IS NULL) OR

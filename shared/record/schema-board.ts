@@ -17,6 +17,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
+import { REPLY_AUDIENCE_OPTIONS } from '../board-reply-audience-options.ts'
 import { machine, membership, project, RECORD_ACTOR_ROLE, user } from './schema.ts'
 import { run } from './schema-run.ts'
 
@@ -212,8 +213,8 @@ export const boardMessage = pgTable.withRLS(
       check(
         'board_message_reply_shape_check',
         sql`(${table.kind} = 'reply' AND ${table.threadRootId} IS NOT NULL
-          AND (${table.audience} IS NULL OR ${table.audience} IN ('participants','acknowledged','audience','operator')
-            OR ${table.audience} LIKE 'session:%' OR ${table.audience} LIKE 'run:%')
+          AND (${table.audience} IS NULL OR ${table.audience} IN ${REPLY_AUDIENCE_OPTIONS}
+            OR (${table.audience} LIKE 'session:%' AND ${table.audience} <> 'session:'))
           AND ${table.title} IS NULL
           AND ${table.ackRequired} = false AND ${table.ackDeadline} IS NULL
           AND ${table.expiresAt} IS NULL) OR

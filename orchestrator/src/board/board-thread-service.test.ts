@@ -115,7 +115,7 @@ test('reply receipts select acknowledged readers or the root audience', () => {
     architect('selected-replier'),
     clock + 2,
     cwd,
-    'acknowledged',
+    { kind: 'acknowledged' },
   )
   const rootAudience = replyToThread(
     question.recordId,
@@ -123,7 +123,7 @@ test('reply receipts select acknowledged readers or the root audience', () => {
     architect('selected-replier'),
     clock + 3,
     cwd,
-    'audience',
+    { kind: 'audience' },
   )
   const readers = (messageId: string) =>
     (
@@ -136,6 +136,96 @@ test('reply receipts select acknowledged readers or the root audience', () => {
 
   expect(readers(acknowledged.recordId)).toEqual(['acknowledged-reader', 'selected-asker'])
   expect(readers(rootAudience.recordId)).toEqual(['root-audience-reader', 'selected-asker'])
+})
+
+test('an explicit reply recipient must already be in the thread reach', () => {
+  ensurePostingProject()
+  const clock = Date.now() + 175_000
+  const project = 'thread-explicit-reach'
+  for (const session of ['reach-asker', 'reach-replier', 'reach-inside'])
+    addArchitect(session, project, clock)
+  const question = askQuestion(
+    {
+      audience: `project:${project}`,
+      title: 'Can this reply narrow?',
+      body: 'Only address a session already in reach.',
+    },
+    architect('reach-asker'),
+    clock,
+    cwd,
+  )
+
+  const accepted = replyToThread(
+    question.recordId,
+    'Address the in-reach reader',
+    architect('reach-replier'),
+    clock + 1,
+    cwd,
+    { kind: 'session', sessionId: 'reach-inside' },
+  )
+  expect(
+    db()
+      .query(
+        'SELECT reader_session FROM board_receipt WHERE message_record_id=? ORDER BY reader_session',
+      )
+      .all(accepted.recordId),
+  ).toEqual([{ reader_session: 'reach-asker' }, { reader_session: 'reach-inside' }])
+  expect(() =>
+    replyToThread(
+      question.recordId,
+      'Do not widen the thread',
+      architect('reach-replier'),
+      clock + 2,
+      cwd,
+      { kind: 'session', sessionId: 'reach-outside' },
+    ),
+  ).toThrow("session reach-outside is not in this thread's reach; post a new notice to address it")
+})
+
+test('identical reply bodies with different audiences are stored separately', () => {
+  ensurePostingProject()
+  const clock = Date.now() + 185_000
+  const project = 'thread-audience-duplicates'
+  for (const session of ['duplicate-asker', 'duplicate-replier'])
+    addArchitect(session, project, clock)
+  const question = askQuestion(
+    { audience: `project:${project}`, title: 'Same body?', body: 'Preserve both choices.' },
+    architect('duplicate-asker'),
+    clock,
+    cwd,
+  )
+  const first = replyToThread(
+    question.recordId,
+    'Identical body',
+    architect('duplicate-replier'),
+    clock + 1,
+    cwd,
+    { kind: 'participants' },
+  )
+  const second = replyToThread(
+    question.recordId,
+    'Identical body',
+    architect('duplicate-replier'),
+    clock + 2,
+    cwd,
+    { kind: 'acknowledged' },
+  )
+  expect(first.recordId).not.toBe(second.recordId)
+  expect(
+    db()
+      .query('SELECT audience FROM board_message WHERE record_id IN (?,?) ORDER BY created_at')
+      .all(first.recordId, second.recordId),
+  ).toEqual([{ audience: 'participants' }, { audience: 'acknowledged' }])
+  expect(
+    db()
+      .query(
+        'SELECT message_record_id,reader_session FROM board_receipt WHERE message_record_id IN (?,?) ORDER BY message_record_id,reader_session',
+      )
+      .all(first.recordId, second.recordId),
+  ).toEqual([
+    { message_record_id: first.recordId, reader_session: 'duplicate-asker' },
+    { message_record_id: second.recordId, reader_session: 'duplicate-asker' },
+  ])
 })
 
 test('questions are withheld from run readers and architect broadcasts reject non-author replies', () => {

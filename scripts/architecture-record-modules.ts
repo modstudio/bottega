@@ -593,7 +593,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-board-contract.ts', [
     '../../../shared/board-purpose.ts',
-    '../board/board-reply-audience.ts',
+    '../../../shared/board-reply-audience-options.ts',
   ]),
   module('orchestrator/src/record/record-board-scope.ts', [
     '../board/board-policy.ts',
@@ -608,6 +608,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-board-messages.ts', [
     'bun',
     '../../../shared/board-purpose.ts',
+    '../../../shared/board-reply-audience-options.ts',
     '../../../shared/record-id.ts',
     '../../../shared/record-project-identity.ts',
     '../../../shared/secret-shaped.ts',

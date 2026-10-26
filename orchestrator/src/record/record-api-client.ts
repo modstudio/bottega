@@ -40,23 +40,24 @@ import { type RecordPortClient, recordPortClient } from './record-api-client-por
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
-import type {
-  HostedBoardAcceptInput,
-  HostedBoardChanges,
-  HostedBoardClaim,
-  HostedBoardFilingCompleteInput,
-  HostedBoardFilingFailInput,
-  HostedBoardMessage,
-  HostedBoardOverview,
-  HostedBoardOverviewFilters,
-  HostedBoardPostInput,
-  HostedBoardReceipt,
-  HostedBoardReceiptInput,
-  HostedBoardReplyInput,
-  HostedBoardSessionInput,
-  HostedBoardStatus,
-  HostedBoardTakeClaimInput,
-  HostedBoardThread,
+import {
+  type HostedBoardAcceptInput,
+  type HostedBoardChanges,
+  type HostedBoardClaim,
+  type HostedBoardFilingCompleteInput,
+  type HostedBoardFilingFailInput,
+  type HostedBoardMessage,
+  type HostedBoardOverview,
+  type HostedBoardOverviewFilters,
+  type HostedBoardPostInput,
+  type HostedBoardReceipt,
+  type HostedBoardReceiptInput,
+  type HostedBoardReplyInput,
+  type HostedBoardSessionInput,
+  type HostedBoardStatus,
+  type HostedBoardTakeClaimInput,
+  type HostedBoardThread,
+  hostedBoardReplyBody,
 } from './record-board-contract.ts'
 import {
   type RecordDocWriteResponse,
@@ -897,7 +898,7 @@ const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, Reco
   replyBoardMessage: (rootId, input) =>
     request(`/v1/board/messages/${rootId}/replies`, {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: hostedBoardReplyBody(input),
     }),
   withdrawBoardMessage: (id, input) =>
     request(`/v1/board/messages/${id}/withdraw`, {
