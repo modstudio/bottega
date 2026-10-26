@@ -9,6 +9,8 @@ import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
+// The hosted edge accepts workflowTaskId; the local producer starts sending it in DEV-1772 slice b.
+const UNSENT_QUESTION_COLUMNS = new Set(['workflowTaskId'])
 
 const RUN_RECORD_ID = '01990000-0000-7000-8000-000000000042'
 
@@ -58,7 +60,9 @@ test('question payload contains the hosted shape and replaces a pending mutation
     .all()
   expect(rows).toHaveLength(1)
   const payload = JSON.parse(rows[0]!.payload) as Record<string, unknown>
-  expect(Object.keys(payload).sort()).toEqual([...QUESTION_RECORD_PAYLOAD_COLUMNS].sort())
+  expect(Object.keys(payload).sort()).toEqual(
+    QUESTION_RECORD_PAYLOAD_COLUMNS.filter((column) => !UNSENT_QUESTION_COLUMNS.has(column)).sort(),
+  )
   expect(payload).toMatchObject({
     runId: RUN_RECORD_ID,
     localId: question.number,
