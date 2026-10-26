@@ -379,6 +379,7 @@ test('ship cleanup removes a Compose volume after its run tree and containers ar
 
 test('removed run identity is permitted but a replacement run at the same path blocks teardown', () => {
   const projectPath = mkdtempSync(join(tmpdir(), 'orch-docker-replacement-'))
+  mkdirSync(join(projectPath, '.git'))
   const shipped = join(projectPath, '.claude/worktrees/DEV-1462-shipped')
   upsertProject({
     recordId: newRecordId(),
@@ -395,6 +396,7 @@ test('removed run identity is permitted but a replacement run at the same path b
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
     const command = args.join(' ')
     commands.push(command)
+    if (command.endsWith('rev-parse --git-common-dir')) return result('.git')
     if (command.startsWith('docker ps -a --format'))
       return result(`replacement-db\t\treplacement-stack\t${shipped}`)
     return result('')
@@ -403,7 +405,7 @@ test('removed run identity is permitted but a replacement run at the same path b
     const cleanup = reclaimRemovedTreeDockerResources([
       { path: shipped, removedRunIds: new Set([removed]) },
     ])
-    expect(cleanup.removed).toEqual([])
+    expect(cleanup).toEqual({ removed: [], kept: [], errors: [] })
     expect(commands).not.toContain('docker rm -f replacement-db')
   } finally {
     rmSync(projectPath, { recursive: true, force: true })

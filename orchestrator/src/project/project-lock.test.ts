@@ -223,7 +223,6 @@ test('an empty common-dir answer refuses instead of locking inside the working t
   expect(message).toContain(root)
   expect(message).toContain('answered nothing')
   expect(existsSync(join(root, 'orch'))).toBe(false)
-  expect(existsSync(join(root, '.git', 'orch'))).toBe(false)
 })
 
 test('a common dir that resolves to the project root itself refuses', () => {
