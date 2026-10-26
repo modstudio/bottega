@@ -78,7 +78,21 @@ function pgliteQuery(database: Pick<PGlite, 'query'>): SQL {
     }
     return (await database.query(statement, parameters)).rows
   }
-  query.unsafe = (sql: string) => ({ sql })
+  query.unsafe = ((sql: string) => {
+    const fragment = {
+      sql,
+      then<TResult1 = unknown, TResult2 = never>(
+        onfulfilled?: ((value: unknown) => TResult1 | PromiseLike<TResult1>) | null,
+        onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+      ) {
+        return database
+          .query(sql)
+          .then((result) => result.rows)
+          .then(onfulfilled, onrejected)
+      },
+    }
+    return fragment
+  }) as SQL['unsafe']
   return query as unknown as SQL
 }
 

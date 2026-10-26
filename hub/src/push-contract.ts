@@ -270,6 +270,17 @@ function rejected(id: string, reason: string): ParsedHostedPushItem {
   return { outcome: { id, status: 'rejected', reason } }
 }
 
+function optionalUuidError(
+  row: Record<string, unknown>,
+  field: string,
+  table: PushableHubChangeTable,
+): string | null {
+  const value = row[field]
+  return value !== undefined && value !== null && (typeof value !== 'string' || !UUID.test(value))
+    ? `${table} row.${field} must be a UUID, null, or absent`
+    : null
+}
+
 function invalidAttributionField(
   row: Record<string, unknown>,
   table: PushableHubChangeTable,
@@ -297,10 +308,8 @@ function parseStatusEventRow(
   const stringFields = ['task_key', 'project_name', 'to_status'] as const
   for (const field of stringFields)
     if (typeof row[field] !== 'string') return `${table} row.${field} must be a string`
-  if (row.task_id !== undefined && !nullableString(row.task_id))
-    return `${table} row.task_id must be a string, null, or absent`
-  if (typeof row.task_id === 'string' && !UUID.test(row.task_id))
-    return `${table} row.task_id must be a UUID, null, or absent`
+  const taskIdError = optionalUuidError(row, 'task_id', table)
+  if (taskIdError) return taskIdError
   if (!nullableString(row.from_status)) return `${table} row.from_status must be a string or null`
   const attributionError = invalidAttributionField(row, table)
   if (attributionError) return attributionError
@@ -375,9 +384,8 @@ function parseIntervalRow(value: unknown, id: string): PushedInterval | string {
       return `${HOSTED_INTERVAL_TABLE} row.${field} must be an ISO timestamp`
   if (typeof row.user_id === 'string' && !UUID.test(row.user_id))
     return `${HOSTED_INTERVAL_TABLE} row.user_id must be a UUID, null, or absent`
-  const taskId = row.task_id
-  if (taskId !== undefined && taskId !== null && (typeof taskId !== 'string' || !UUID.test(taskId)))
-    return `${HOSTED_INTERVAL_TABLE} row.task_id must be a UUID, null, or absent`
+  const taskIdError = optionalUuidError(row, 'task_id', HOSTED_INTERVAL_TABLE)
+  if (taskIdError) return taskIdError
   return row as PushedInterval
 }
 
@@ -473,10 +481,8 @@ function childRowError(
   if (row.id !== id) return `${table} upsert requires a row whose id matches the pointer`
   for (const field of ['task_key', 'project_name', 'created_at', 'updated_at'] as const)
     if (typeof row[field] !== 'string') return `${table} row.${field} must be a string`
-  if (row.task_id !== undefined && row.task_id !== null && typeof row.task_id !== 'string')
-    return `${table} row.task_id must be a UUID, null, or absent`
-  if (typeof row.task_id === 'string' && !UUID.test(row.task_id))
-    return `${table} row.task_id must be a UUID, null, or absent`
+  const taskIdError = optionalUuidError(row, 'task_id', table)
+  if (taskIdError) return taskIdError
   for (const field of ['created_at', 'updated_at'] as const)
     if (!isTimestamp(row[field])) return `${table} row.${field} must be an ISO timestamp`
   if (row.deleted_at !== null && !isTimestamp(row.deleted_at))

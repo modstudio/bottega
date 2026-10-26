@@ -162,6 +162,52 @@ describe('run ingest', () => {
     })
     expect(pushed?.change).toMatchObject({ row: { task_id: taskRecordId } })
   })
+
+  test('an unchanged task key keeps its established link after the key becomes ambiguous', async () => {
+    const firstTask = fixtureRecordId(119)
+    writeTransaction((conn) =>
+      conn.exec(`
+        INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+        VALUES ('${firstTask}','ALP-119','alpha','local','2026-09-03','2026-09-03')
+      `),
+    )
+    const run = runFixture({ id: 9092, launch_key: 'ALP-119' })
+    await ingestRunFixtures(run)
+    writeTransaction((conn) =>
+      conn.exec(`
+        INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+        VALUES ('${fixtureRecordId(120)}','ALP-119','beta','local','2026-09-03','2026-09-03')
+      `),
+    )
+
+    await ingestRunFixtures(run)
+
+    expect(
+      db()
+        .query<{ task_record_id: string }, [string]>(
+          `SELECT task_record_id FROM interval WHERE ref=?`,
+        )
+        .get(ref(9092)),
+    ).toEqual({ task_record_id: firstTask })
+  })
+
+  test('collector skips one unlinked projectless run and writes the rest of the batch', async () => {
+    const result = await ingestRunFixtures(
+      runFixture({ id: 9093 }),
+      runFixture({
+        id: 9094,
+        repo: 'not-registered',
+        cwd: '/outside/projects',
+        launch_key: 'NONE-9094',
+        prompt_head: 'unattributed work',
+        branch: 'main',
+      }),
+    )
+
+    expect(result).toEqual({ rows: 1, skipped: 1, skippedUnlinked: 1 })
+    expect(db().query(`SELECT 1 FROM interval WHERE ref=?`).get(ref(9093))).not.toBeNull()
+    expect(db().query(`SELECT 1 FROM interval WHERE ref=?`).get(ref(9094))).toBeNull()
+  })
   test('workflow rulings ingest with nullable run provenance', async () => {
     await ingestStdout(
       '',

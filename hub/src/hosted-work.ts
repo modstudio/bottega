@@ -186,6 +186,7 @@ async function windowFacts(databaseUrl: SQL, identity: TaskIdentity, from: strin
     )
     const completed = rows<{
       space_id: string
+      task_record_id: string
       key: string
       project: string
       title: string | null
@@ -193,7 +194,7 @@ async function windowFacts(databaseUrl: SQL, identity: TaskIdentity, from: strin
       to_status: string
     }>(
       await tx`
-      SELECT e.space_id,t.key,t.project,t.title,e.at,e.to_status FROM hub_task_status_event e
+      SELECT e.space_id,t.id::text AS task_record_id,t.key,t.project,t.title,e.at,e.to_status FROM hub_task_status_event e
       JOIN hub_task t ON ${hostedTaskJoin(tx, 'hub_task_status_event', 'e')}
       WHERE e.deleted_at IS NULL AND t.deleted_at IS NULL
         AND e.at >= ${from}::timestamptz AND e.at < ${to}::timestamptz AND e.to_status='done'

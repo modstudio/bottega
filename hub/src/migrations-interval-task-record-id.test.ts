@@ -83,6 +83,35 @@ test('interval link triggers enforce new writes and attach intervals when their 
     expect(d.query(`SELECT task_record_id FROM interval WHERE record_id='late'`).get()).toEqual({
       task_record_id: 'task-late',
     })
+    d.exec(`
+      INSERT INTO task(record_id,key,project,source,first_seen,last_seen)
+      VALUES ('task-late-duplicate','LATE-1','beta','local','2026-10-25','2026-10-25');
+    `)
+    expect(d.query(`SELECT task_record_id FROM interval WHERE record_id='late'`).get()).toEqual({
+      task_record_id: 'task-late',
+    })
+  } finally {
+    d.close()
+  }
+})
+
+test('a legacy interval with neither link remains updatable but cannot lose an existing link', () => {
+  const d = migratedBeforeIntervalLink()
+  try {
+    d.exec(`
+      INSERT INTO interval(record_id,source,start_at,end_at,ref)
+      VALUES ('interval-legacy','orch','2026-10-25','2026-10-25','legacy');
+      INSERT INTO interval(record_id,project_record_id,source,start_at,end_at,ref)
+      VALUES ('interval-project','project-id','orch','2026-10-25','2026-10-25','project');
+    `)
+    applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)
+    d.exec(`UPDATE interval SET task_record_id=NULL,end_at='2026-10-26' WHERE record_id='interval-legacy'`)
+    expect(d.query(`SELECT end_at FROM interval WHERE record_id='interval-legacy'`).get()).toEqual({
+      end_at: '2026-10-26',
+    })
+    expect(() =>
+      d.exec(`UPDATE interval SET project_record_id=NULL WHERE record_id='interval-project'`),
+    ).toThrow(REMEDY)
   } finally {
     d.close()
   }

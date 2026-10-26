@@ -10,7 +10,7 @@ import { attribute, isInjected, projectOf, refreshKeyPrefixes } from '../attribu
 import { nowIso, writeTransaction } from '../db.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { hostedSignedInUserId } from '../task-client.ts'
-import { intervalTaskRecordId } from '../task-identity.ts'
+import { intervalTaskRecordId, intervalTaskRecordIdForUpdate } from '../task-identity.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 type TranscriptRoot = { source: 'read'; path: string } | { source: 'disabled' }
@@ -179,19 +179,40 @@ type TranscriptIntervalRow = {
   user_id: string | null
 }
 
-function replaceTranscriptWindow(
+export function replaceTranscriptWindow(
   conn: Database,
   fileRefs: readonly string[],
   since: string,
   recomputed: readonly TranscriptIntervalRow[],
-) {
+): { rows: number; skippedUnlinked: number } {
   const existing: ExistingIntervalRow[] = []
   const select = conn.query<ExistingIntervalRow, [string, string]>(
     `SELECT record_id, source, ref, start_at FROM interval
      WHERE source = 'claude' AND ref LIKE ? AND end_at >= ?`,
   )
   for (const ref of fileRefs) existing.push(...select.all(`claude:${ref}:%`, since))
-  const decision = decideCollectorReplace(existing, recomputed)
+  const linked = recomputed.map((row) => {
+    const current = existing.find(
+      (candidate) =>
+        candidate.source === row.source &&
+        candidate.ref === row.ref &&
+        candidate.start_at === row.start_at,
+    )
+    return {
+      row,
+      taskRecordId: current
+        ? intervalTaskRecordIdForUpdate(conn, current.record_id, row.task_key)
+        : intervalTaskRecordId(conn, row.task_key),
+      projectRecordId: projectRecordIdFor(row.project),
+    }
+  })
+  const skipped = linked.filter(({ taskRecordId, projectRecordId }) => !taskRecordId && !projectRecordId)
+  const valid = linked.filter(({ taskRecordId, projectRecordId }) => taskRecordId || projectRecordId)
+  const decision = decideCollectorReplace(
+    existing,
+    valid.map(({ row }) => row),
+    new Set(skipped.map(({ row }) => row.ref)),
+  )
   const update = conn.query(
     `UPDATE interval SET task_key=?, task_record_id=?, project=?, project_record_id=?, agent=NULL, end_at=?, claude_tokens=?,
        vendor_tokens=0, vendor_cost_usd=NULL, via=?, session_id=?, user_id=?
@@ -206,7 +227,7 @@ function replaceTranscriptWindow(
   for (const row of decision.updates)
     update.run(
       row.task_key,
-      intervalTaskRecordId(conn, row.task_key),
+      intervalTaskRecordIdForUpdate(conn, row.record_id, row.task_key),
       row.project,
       projectRecordIdFor(row.project),
       row.end_at,
@@ -232,6 +253,7 @@ function replaceTranscriptWindow(
       row.user_id,
     )
   for (const recordId of decision.deletes) remove.run(recordId)
+  return { rows: valid.length, skippedUnlinked: skipped.length }
 }
 
 /**
@@ -241,7 +263,13 @@ export async function ingestTranscripts(
   since: string,
   idleCapMs = DEFAULT_IDLE_CAP_MS,
   attributedUserId?: string | null,
-): Promise<{ files: number; rows: number; source: 'read' | 'disabled' }> {
+): Promise<{
+  files: number
+  rows: number
+  source: 'read' | 'disabled'
+  skipped?: number
+  skippedUnlinked?: number
+}> {
   refreshKeyPrefixes()
   const root = resolveTranscriptRoot(readMachineValue('hub.transcript_root'))
   if (root.source === 'disabled') return { files: 0, rows: 0, source: 'disabled' }
@@ -261,6 +289,7 @@ export async function ingestTranscripts(
   // several .jsonl files can carry the same sessionId.
   let files = 0
   let rows = 0
+  let skippedUnlinked = 0
 
   for (const file of transcripts(root.path)) {
     // The cheap 90%: a file untouched since the window opened cannot contain a
@@ -340,8 +369,14 @@ export async function ingestTranscripts(
           })
         }
       })
-      replaceTranscriptWindow(conn, [...new Set(legs.map((l) => l.ref))], since, recomputed)
-      rows += recomputed.length
+      const result = replaceTranscriptWindow(
+        conn,
+        [...new Set(legs.map((l) => l.ref))],
+        since,
+        recomputed,
+      )
+      rows += result.rows
+      skippedUnlinked += result.skippedUnlinked
     })
   }
 
@@ -351,5 +386,10 @@ export async function ingestTranscripts(
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
       .run(JSON.stringify(nowIso())),
   )
-  return { files, rows, source: 'read' }
+  return {
+    files,
+    rows,
+    source: 'read',
+    ...(skippedUnlinked ? { skipped: skippedUnlinked, skippedUnlinked } : {}),
+  }
 }

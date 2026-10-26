@@ -502,6 +502,29 @@ test('a delete from the row own space removes the row and its children', async (
   expect(report?.deletesSkipped).toBe(0)
 })
 
+test('a hosted task tombstone gives task-only intervals the task project before deletion', () => {
+  const projectId = '01990000-0000-7000-8000-000000001101'
+  const row = hostedTask({ project: 'alpha', project_name: 'alpha', projectId })
+  writeTransaction((conn) => {
+    applyHostedTask(conn, row)
+    conn
+      .query(
+        `INSERT INTO interval
+         (record_id,task_key,task_record_id,source,start_at,end_at,ref)
+         VALUES ('task-only-interval',?,?, 'orch',?,?, 'task-only-interval')`,
+      )
+      .run(row.key, row.id, at, at)
+    applyHostedTask(conn, { ...row, deleted_at: at })
+  })
+
+  expect(db().query(`SELECT 1 FROM task WHERE record_id=?`).get(taskId)).toBeNull()
+  expect(
+    db()
+      .query(`SELECT task_record_id,project,project_record_id FROM interval WHERE record_id=?`)
+      .get('task-only-interval'),
+  ).toEqual({ task_record_id: null, project: 'alpha', project_record_id: projectId })
+})
+
 test('a delete from another space leaves the row and counts as skipped', async () => {
   storeChangeCursor('space-one', '12')
   storeChangeCursor('space-two', '12')

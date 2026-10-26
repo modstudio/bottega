@@ -87,24 +87,14 @@ async function updateHostedInterval(
   taskId: string | null,
 ) {
   const value = intervalValues(row, projectId, taskId)
-  if ('task_id' in row) {
-    await tx`
-      UPDATE hub_interval SET
-        task_key=${value.task_key}, task_id=${value.task_id}::uuid,
-        project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
-        agent=${value.agent}, job=${value.job},
-        start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
-        claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},
-        vendor_cost_usd=${value.vendor_cost_usd}, ref=${value.ref}, via=${value.via},
-        open=${value.open}, session_id=${value.session_id}, user_id=${value.user_id}::uuid,
-        updated_at=now()
-      WHERE id=${id}::uuid AND space_id=${identity.spaceId}::uuid
-    `
-    return
-  }
+  const taskIdAssignment =
+    'task_id' in row
+      ? tx.unsafe(`task_id=${value.task_id ? `'${value.task_id}'::uuid` : 'NULL'},`)
+      : tx.unsafe('')
   await tx`
     UPDATE hub_interval SET
-      task_key=${value.task_key}, project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
+      task_key=${value.task_key}, ${taskIdAssignment}
+      project_name=${value.project_name}, project_id=${value.project_id}::uuid, source=${value.source},
       agent=${value.agent}, job=${value.job},
       start_at=${value.start_at}::timestamptz, end_at=${value.end_at}::timestamptz,
       claude_tokens=${value.claude_tokens}, vendor_tokens=${value.vendor_tokens},

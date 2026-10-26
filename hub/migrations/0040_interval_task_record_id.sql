@@ -21,6 +21,7 @@ END;
 CREATE TRIGGER interval_require_task_or_project_update
 BEFORE UPDATE OF task_record_id, project_record_id ON interval
 WHEN NEW.task_record_id IS NULL AND NEW.project_record_id IS NULL
+  AND (OLD.task_record_id IS NOT NULL OR OLD.project_record_id IS NOT NULL)
 BEGIN
   SELECT RAISE(ABORT, 'an interval must reference a task or a project; register the project or use a task key that resolves to exactly one task');
 END;

@@ -1,11 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
-import { hubDoctorLines } from './doctor.ts'
+import { hubDoctorLines, INTERVAL_UNLINKED_KEY_LIMIT } from './doctor.ts'
 
-beforeAll(resetFixtureStore)
+beforeEach(resetFixtureStore)
 
 describe(`${PLATFORM_SLUG} machine doctor`, () => {
   const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
@@ -37,6 +37,28 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
         )
         .run(newRecordId()),
     )
-    expect(await hubDoctorLines()).toContain('interval links 1 task-key interval unlinked')
+    expect(await hubDoctorLines()).toContain('interval links unlinked task keys MISSING-1 (1)')
+  })
+
+  test('caps named unlinked keys and separately reports intervals with neither link', async () => {
+    writeTransaction((conn) => {
+      const insert = conn.query(
+        `INSERT INTO interval
+         (record_id,task_key,project_record_id,source,start_at,end_at,ref)
+         VALUES (?, ?, 'project-id', 'orch', '2026-10-25', '2026-10-25', ?)`,
+      )
+      for (let index = 0; index < INTERVAL_UNLINKED_KEY_LIMIT + 2; index++)
+        insert.run(newRecordId(), `MISSING-${index}`, `run-${index}`)
+      conn.exec(`
+        DROP TRIGGER interval_require_task_or_project_insert;
+        INSERT INTO interval(record_id,source,start_at,end_at,ref)
+        VALUES ('legacy-neither','orch','2026-10-25','2026-10-25','legacy-neither')
+      `)
+    })
+    const lines = await hubDoctorLines()
+    expect(lines.find((line) => line.startsWith('interval links unlinked task keys'))).toEndWith(
+      'and 2 more',
+    )
+    expect(lines).toContain('interval links 1 interval with neither task nor project')
   })
 })
