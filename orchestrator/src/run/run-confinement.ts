@@ -25,7 +25,7 @@ export type HarnessConfinementSnapshot = {
   confinementFailures: FreezeFailure[]
 }
 
-export function writeHarnessConfinementSnapshot(
+function writeHarnessConfinementSnapshot(
   runDirectory: string,
   snapshot: HarnessConfinementSnapshot,
 ): void {

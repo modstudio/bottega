@@ -58,7 +58,7 @@ export function completeRunStartup(): true {
   return true
 }
 
-export function harnessRunningResult(
+function harnessRunningResult(
   input: ClaimResult,
   reason: string,
   writesJob: boolean,
