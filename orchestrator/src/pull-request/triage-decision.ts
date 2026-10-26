@@ -366,14 +366,26 @@ function architectReadSnapshot(
   }
 }
 
+/**
+ * The read of this exact tip that admits the change.
+ *
+ * Tier `0` has no review round to fall back on, so its read must name a session: the branch
+ * owner's, or any identified caller's on a branch no run owns. A read crediting an earlier
+ * round at a higher tier matches the branch owner exactly, as it did before tier `0` reads.
+ */
 function matchingOwnerRead(evidence: TriageEvidence, recordedAfter?: string) {
+  const reader =
+    recordedAfter === undefined
+      ? (session: string | null) =>
+          session !== null &&
+          (evidence.branchOwnerSession === null || session === evidence.branchOwnerSession)
+      : (session: string | null) => session === evidence.branchOwnerSession
   return evidence.reads.find(
     (read) =>
-      read.sessionId !== null &&
+      reader(read.sessionId) &&
       read.tip === evidence.tip &&
       read.patchId === evidence.patchId &&
       read.pathSet === evidence.pathSet &&
-      (evidence.branchOwnerSession === null || read.sessionId === evidence.branchOwnerSession) &&
       (recordedAfter === undefined || read.recordedAt > recordedAfter),
   )
 }
