@@ -1,0 +1,108 @@
+import { Database } from 'bun:sqlite'
+import { expect, test } from 'bun:test'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { HUB_MIGRATION_BACKFILL_VALUES } from '../test/migration-values.ts'
+import { applyMigrations, MIGRATIONS_FOLDER, migrationJournal } from './migrations.ts'
+
+const ROOT = '00000000-0000-4000-8000-000000000042'
+const TURN = '00000000-0000-4000-8000-000000000043'
+const CURSOR = '00000000-0000-4000-8000-000000000044'
+
+function migratedBeforeQuestionRunRecordId() {
+  const folder = mkdtempSync(join(tmpdir(), 'hub-question-run-record-id-'))
+  mkdirSync(join(folder, 'meta'))
+  const entries = migrationJournal().slice(0, 42)
+  for (const entry of entries)
+    copyFileSync(join(MIGRATIONS_FOLDER, `${entry.tag}.sql`), join(folder, `${entry.tag}.sql`))
+  writeFileSync(
+    join(folder, 'meta', '_journal.json'),
+    JSON.stringify({ version: '7', dialect: 'sqlite', entries }),
+  )
+  const database = new Database(':memory:')
+  database.exec('PRAGMA foreign_keys=ON')
+  applyMigrations(database, folder, HUB_MIGRATION_BACKFILL_VALUES)
+  rmSync(folder, { recursive: true, force: true })
+  return database
+}
+
+test('question run refs migrate to UUID columns while workflow questions and constraints survive', () => {
+  const d = migratedBeforeQuestionRunRecordId()
+  try {
+    d.exec(`
+      INSERT INTO question(record_id,number,run_ref,root_ref,asked_at)
+      VALUES ('run-question',1,'orch:${ROOT}:turn:${TURN}','orch:${ROOT}','2026-10-26');
+      INSERT INTO question(record_id,number,workflow_cursor_id,workflow_key,asked_at)
+      VALUES ('workflow-question',2,'${CURSOR}','DEV-1775','2026-10-26');
+      INSERT INTO question_delivery(question_record_id,run_ref,mode,outcome,at)
+      VALUES ('run-question','orch:${ROOT}:turn:${TURN}','resume','delivered','2026-10-26');
+      INSERT INTO operator_waiting_email(kind,question_record_id,episode,pushed_at)
+      VALUES ('question','run-question','episode','2026-10-26');
+    `)
+
+    expect(applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toContain(
+      '0042_question_run_record_id',
+    )
+    expect(
+      d
+        .query(
+          `SELECT record_id,run_record_id,root_run_record_id,workflow_cursor_id
+           FROM question ORDER BY number`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        record_id: 'run-question',
+        run_record_id: TURN,
+        root_run_record_id: ROOT,
+        workflow_cursor_id: null,
+      },
+      {
+        record_id: 'workflow-question',
+        run_record_id: null,
+        root_run_record_id: null,
+        workflow_cursor_id: CURSOR,
+      },
+    ])
+    expect(d.query('SELECT run_record_id FROM question_delivery').get()).toEqual({
+      run_record_id: TURN,
+    })
+    expect(d.query('SELECT question_record_id FROM operator_waiting_email').get()).toEqual({
+      question_record_id: 'run-question',
+    })
+    expect(() =>
+      d
+        .query(`INSERT INTO question(record_id,number,asked_at) VALUES ('neither',3,'2026-10-26')`)
+        .run(),
+    ).toThrow()
+  } finally {
+    d.close()
+  }
+})
+
+test('question run-ref migration aborts before dropping an unparseable ref', () => {
+  const d = migratedBeforeQuestionRunRecordId()
+  try {
+    d.query(
+      `INSERT INTO question(record_id,number,run_ref,root_ref,asked_at)
+       VALUES ('bad-question',1,'not-an-orchestrator-ref','orch:${ROOT}','2026-10-26')`,
+    ).run()
+
+    expect(() => applyMigrations(d, undefined, HUB_MIGRATION_BACKFILL_VALUES)).toThrow(
+      'unparseable question.run_ref values',
+    )
+    expect(
+      d.query(`SELECT run_ref,root_ref FROM question WHERE record_id='bad-question'`).get(),
+    ).toEqual({ run_ref: 'not-an-orchestrator-ref', root_ref: `orch:${ROOT}` })
+    expect(
+      d
+        .query<{ count: number }, []>(
+          `SELECT COUNT(*) count FROM pragma_table_info('question') WHERE name='run_record_id'`,
+        )
+        .get(),
+    ).toEqual({ count: 0 })
+  } finally {
+    d.close()
+  }
+})

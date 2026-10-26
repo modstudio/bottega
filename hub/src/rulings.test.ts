@@ -36,20 +36,20 @@ describe('run ingest', () => {
 
     const stored = db()
       .query(
-        `SELECT number, run_ref, root_ref FROM question
+        `SELECT number, run_record_id, root_run_record_id FROM question
         WHERE number IN (20, 21) ORDER BY number`,
       )
-      .all() as { number: number; run_ref: string; root_ref: string }[]
+      .all() as { number: number; run_record_id: string; root_run_record_id: string }[]
     expect(stored).toEqual([
       {
         number: 20,
-        run_ref: `orch:${fixtureRecordId(9301)}:turn:${fixtureRecordId(9301)}`,
-        root_ref: `orch:${fixtureRecordId(9301)}`,
+        run_record_id: fixtureRecordId(9301),
+        root_run_record_id: fixtureRecordId(9301),
       },
       {
         number: 21,
-        run_ref: `orch:${fixtureRecordId(9301)}:turn:${fixtureRecordId(9302)}`,
-        root_ref: `orch:${fixtureRecordId(9301)}`,
+        run_record_id: fixtureRecordId(9302),
+        root_run_record_id: fixtureRecordId(9301),
       },
     ])
 

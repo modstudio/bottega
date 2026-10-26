@@ -269,7 +269,7 @@ function registerMaintenanceCommands(program: Command): void {
       else {
         const verb = options.dryRun ? 'would remove' : 'removed'
         for (const row of rows)
-          console.log(`${verb} question ${row.question_id} ${row.session_id} ${row.run_ref}`)
+          console.log(`${verb} question ${row.question_id} ${row.session_id} ${row.run_record_id}`)
         for (const interval of intervals)
           console.log(`${verb} interval ${interval.record_id} ${interval.ref}`)
         for (const task of tasks)

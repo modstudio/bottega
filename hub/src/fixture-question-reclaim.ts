@@ -22,8 +22,8 @@ const FIXTURE_TASKS = [
 export type FixtureQuestion = {
   record_id: string
   question_id: number
-  run_ref: string
-  root_ref: string
+  run_record_id: string
+  root_run_record_id: string
   task_key: string | null
   session_id: string | null
 }
@@ -44,14 +44,14 @@ export type FixtureTask = {
 
 export function fixtureQuestionsWithoutRuns(
   questions: FixtureQuestion[],
-  runRefs: ReadonlySet<string>,
+  runRecordIds: ReadonlySet<string>,
 ): FixtureQuestion[] {
   return questions.filter(
     (row) =>
       row.session_id !== null &&
       FIXTURE_SESSIONS.has(row.session_id) &&
-      !runRefs.has(row.run_ref) &&
-      !runRefs.has(row.root_ref),
+      !runRecordIds.has(row.run_record_id) &&
+      !runRecordIds.has(row.root_run_record_id),
   )
 }
 
@@ -91,14 +91,9 @@ export async function reclaimFixtureQuestions(
   const database = db()
   const questions = database
     .query(
-      'SELECT record_id,number question_id,run_ref,root_ref,task_key,session_id FROM question ORDER BY number',
+      'SELECT record_id,number question_id,run_record_id,root_run_record_id,task_key,session_id FROM question ORDER BY number',
     )
     .all() as FixtureQuestion[]
-  const refs = new Set(
-    (database.query("SELECT ref FROM interval WHERE source='orch'").all() as { ref: string }[]).map(
-      (row) => row.ref,
-    ),
-  )
   const intervals = database
     .query('SELECT record_id, source, ref FROM interval ORDER BY record_id')
     .all() as FixtureInterval[]
@@ -122,8 +117,16 @@ export async function reclaimFixtureQuestions(
     )
   }
   const selectedIntervals = fixtureIntervalsWithoutRuns(listed, answersById)
-  for (const interval of selectedIntervals) refs.delete(interval.ref)
-  const selected = fixtureQuestionsWithoutRuns(questions, refs)
+  const selectedIntervalIds = new Set(selectedIntervals.map((interval) => interval.record_id))
+  const runRecordIds = new Set(
+    intervals
+      .filter(
+        (interval) => interval.source === 'orch' && !selectedIntervalIds.has(interval.record_id),
+      )
+      .map((interval) => runRef(interval.ref))
+      .flatMap((ref) => (ref ? [ref.root, ...(ref.turn ? [ref.turn] : [])] : [])),
+  )
+  const selected = fixtureQuestionsWithoutRuns(questions, runRecordIds)
   if (dryRun) {
     const tasks = database
       .query('SELECT record_id, key, project, title, opened_at FROM task ORDER BY key')
