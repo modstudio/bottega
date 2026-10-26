@@ -217,7 +217,8 @@ export function mainStackProblems(
   }
   const unknown = unknownKeyProblems(
     Object.keys(value),
-    (key) => key === 'consumers' || key === 'requiredServices',
+    (key) =>
+      key === 'consumers' || key === 'requiredServices' || key === 'worktreeComposeProjectPrefix',
     mode,
   )
   if (unknown.length) return ['mainStack contains unknown settings']
@@ -240,6 +241,15 @@ export function mainStackProblems(
     new Set(value.requiredServices).size !== value.requiredServices.length
   ) {
     return ['mainStack.requiredServices entries must be unique']
+  }
+  if (
+    value.worktreeComposeProjectPrefix !== undefined &&
+    (typeof value.worktreeComposeProjectPrefix !== 'string' ||
+      !/^[a-z0-9][a-z0-9_-]*[_-]$/.test(value.worktreeComposeProjectPrefix))
+  ) {
+    return [
+      'mainStack.worktreeComposeProjectPrefix must be a lowercase Compose project prefix ending in "_" or "-", so it cannot also match this project\'s own main-stack Compose project, which the settings do not name',
+    ]
   }
   return []
 }
