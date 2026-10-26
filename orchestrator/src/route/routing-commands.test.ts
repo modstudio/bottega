@@ -41,6 +41,22 @@ test('stats reports Bradley-Terry strengths once a job reaches MIN_SAMPLE duels'
   expect(lines.join('\n')).toContain('codex')
 })
 
+test('stats reports median call usage for an agent and job cell', () => {
+  const runId = addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'other' })
+  db()
+    .query(
+      'UPDATE run SET model=?,vendor_tokens=900,model_calls=3,peak_call_tokens=400 WHERE record_id=?',
+    )
+    .run(AGENTS.codex!.model, runId)
+  const lines: string[] = []
+  statsCommand(
+    { flag: (name) => (name === 'job' ? 'craft' : undefined), has: () => false },
+    { log: (...parts) => lines.push(parts.join(' ')), dur: String },
+  )
+  expect(lines.join('\n')).toContain('calls  peak call  tokens/run')
+  expect(lines.find((line) => line.includes('codex'))).toMatch(/\s3\s+400\s+900\s/)
+})
+
 test('pick previews the same fan-out exclusions do uses', () => {
   const prior = addRun({ agent: 'grok', job: 'review-lens' })
   db().query('UPDATE run SET model=? WHERE record_id=?').run(AGENTS.grok!.model, prior)

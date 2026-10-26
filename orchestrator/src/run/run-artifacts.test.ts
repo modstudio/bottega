@@ -43,6 +43,8 @@ const terminalSnapshot = () => ({
   exitCode: 0,
   latencyMs: 123,
   vendorTokens: 34,
+  modelCalls: 2,
+  peakCallTokens: 20,
   vendorCostUsd: null,
   vendorInputTokens: 12,
   vendorOutputTokens: 22,
@@ -72,6 +74,8 @@ test('terminal snapshot preserves every vendor usage field', () => {
   const stored = JSON.parse(readFileSync(join(RUNS_DIR, id, 'result.json'), 'utf8'))
   expect(stored).toMatchObject({
     vendorTokens: 34,
+    modelCalls: 2,
+    peakCallTokens: 20,
     vendorCostUsd: null,
     vendorInputTokens: 12,
     vendorOutputTokens: 22,
@@ -89,13 +93,15 @@ test('reconcile restores every vendor usage column from the terminal snapshot', 
   expect(
     db()
       .query(
-        `SELECT vendor_tokens, vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
+        `SELECT vendor_tokens, model_calls, peak_call_tokens, vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
                 vendor_estimated_cost_usd, vendor_cost_source
            FROM run WHERE record_id=?`,
       )
       .get(id),
   ).toEqual({
     vendor_tokens: 34,
+    model_calls: 2,
+    peak_call_tokens: 20,
     vendor_cost_usd: null,
     vendor_input_tokens: 12,
     vendor_output_tokens: 22,

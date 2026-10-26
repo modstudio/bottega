@@ -62,6 +62,7 @@ import {
   type TerminalSnapshot,
   terminalRunArtifactPaths,
 } from './run-artifacts.ts'
+import type { RunCallUsage } from './run-call-usage.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
@@ -271,6 +272,7 @@ export type TerminalInput = {
   promptPath: string
   exitCode: number
   vendorTokens: number | null
+  callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
   effectiveModel: string | null
@@ -609,6 +611,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     promptPath,
     exitCode,
     vendorTokens,
+    callUsage,
     costUsd,
     vendorUsage,
     effectiveModel,
@@ -842,6 +845,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     exitCode,
     latencyMs: Date.now() - started,
     vendorTokens,
+    modelCalls: callUsage?.modelCalls ?? null,
+    peakCallTokens: callUsage?.peakCallTokens ?? null,
     vendorCostUsd: costUsd,
     ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
     model: effectiveModel,
@@ -868,7 +873,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                        vendor_tokens=?, model_calls=?, peak_call_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                         vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
@@ -885,6 +890,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           input.processless ? null : outPath,
           promptPath,
           vendorTokens,
+          callUsage?.modelCalls ?? null,
+          callUsage?.peakCallTokens ?? null,
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,

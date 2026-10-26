@@ -77,6 +77,7 @@ import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
 import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
+import { runTokenJumpConditions } from './monitor-run-token-jump.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
 import type {
   AddressedMonitorCondition,
@@ -753,6 +754,7 @@ export async function monitor(
   }
 
   conditions.push(...staleRunConditions(database, clock))
+  conditions.push(...runTokenJumpConditions(database, clock))
 
   conditions.push(...terminalProcessAliveConditions(clock))
   appendOrphanProcessObservations(conditions, errors, clock)

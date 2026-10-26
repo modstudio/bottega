@@ -59,6 +59,8 @@ function nullableRoundedBigint(value: unknown): bigint | null {
 export function runUsageRecordValues(row: Record<string, unknown>) {
   return {
     vendorTokens: nullableBigint(row.vendorTokens),
+    modelCalls: nullableInteger(row.modelCalls),
+    peakCallTokens: nullableBigint(row.peakCallTokens),
     vendorCostUsd: nullableNumber(row.vendorCostUsd),
     vendorInputTokens: nullableBigint(row.vendorInputTokens),
     vendorOutputTokens: nullableBigint(row.vendorOutputTokens),

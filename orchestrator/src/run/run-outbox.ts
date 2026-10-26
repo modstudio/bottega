@@ -100,6 +100,8 @@ export function buildRunRecordPayload(
     exitCode: row.exit_code,
     outputBytes: row.output_bytes,
     vendorTokens: row.vendor_tokens,
+    modelCalls: row.model_calls,
+    peakCallTokens: row.peak_call_tokens,
     vendorCostUsd: row.vendor_cost_usd,
     vendorInputTokens: row.vendor_input_tokens,
     vendorOutputTokens: row.vendor_output_tokens,

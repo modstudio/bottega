@@ -314,6 +314,8 @@ export type TerminalSnapshot = RunUsageColumns & {
   exitCode: number | null
   latencyMs: number
   vendorTokens: number | null
+  modelCalls: number | null
+  peakCallTokens: number | null
   vendorCostUsd: number | null
   model: string | null
   vendorSession: string | null
@@ -376,7 +378,7 @@ export function reconcileRun(id: string): string {
     db()
       .query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                      vendor_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                      vendor_tokens=?, model_calls=?, peak_call_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                       vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                       status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
                       pre_confinement=?, confinement=?, unreconciled=0,
@@ -391,6 +393,8 @@ export function reconcileRun(id: string): string {
         snapshot.outputPath,
         snapshot.promptPath,
         snapshot.vendorTokens,
+        snapshot.modelCalls,
+        snapshot.peakCallTokens,
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,

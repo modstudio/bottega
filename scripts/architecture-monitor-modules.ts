@@ -100,6 +100,7 @@ export const monitorModules: MonitorModule[] = [
     './ratcheted-rule-conditions.ts',
     './monitor-stray-worktrees.ts',
     './monitor-harness-load.ts',
+    './monitor-run-token-jump.ts',
     './monitor-issue-filing.ts',
     './monitor-canon-drift.ts',
     './monitor-canon-summary.ts',
@@ -188,6 +189,13 @@ export const monitorModules: MonitorModule[] = [
     '../canon/canon-load.ts',
     '../canon/canon-load-files.ts',
     '../project/projects.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-run-token-jump.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../route/route.ts',
+    '../state/statistics.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-canon-drift.ts', [

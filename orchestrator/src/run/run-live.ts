@@ -57,6 +57,7 @@ import {
 } from './checkpoint.ts'
 import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
+import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
@@ -323,6 +324,7 @@ export type LiveResult = {
   exitCode: number
   output: string
   vendorTokens: number | null
+  callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
   resolvedSession: string | null
@@ -474,6 +476,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null
+  let callUsage: RunCallUsage | null = null
   let costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
   let resolvedSession: string | null = vendorSession
@@ -715,7 +718,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       ),
     )
     const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const teeing = teeLiveTransport(input, handle, throttle.observe)
+    const teeing = teeLiveTransport(input, handle, (event) => {
+      throttle.observe(event)
+      callUsage = foldRunCallUsage(callUsage, event)
+    })
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,
@@ -922,6 +928,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     exitCode,
     output,
     vendorTokens,
+    callUsage,
     costUsd,
     vendorUsage,
     resolvedSession,

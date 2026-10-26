@@ -46,6 +46,8 @@ export const run = pgTable.withRLS(
     exitCode: integer('exit_code'),
     outputBytes: bigint('output_bytes', { mode: 'bigint' }),
     vendorTokens: bigint('vendor_tokens', { mode: 'bigint' }),
+    modelCalls: integer('model_calls'),
+    peakCallTokens: bigint('peak_call_tokens', { mode: 'bigint' }),
     vendorCostUsd: doublePrecision('vendor_cost_usd'),
     vendorInputTokens: bigint('vendor_input_tokens', { mode: 'bigint' }),
     vendorOutputTokens: bigint('vendor_output_tokens', { mode: 'bigint' }),

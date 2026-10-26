@@ -1,0 +1,2 @@
+ALTER TABLE run ADD COLUMN model_calls INTEGER;
+ALTER TABLE run ADD COLUMN peak_call_tokens INTEGER;
