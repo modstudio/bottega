@@ -114,6 +114,44 @@ test('questions are withheld from run readers and architect broadcasts reject no
   expect(workerQuestion.reached).toBe(0)
 })
 
+test("a reply cannot address another session's run", () => {
+  ensurePostingProject()
+  const clock = Date.now() + 250_000
+  const projectRecordId = fixtureProjectRecordId(db())
+  addArchitect('reply-run-owner', 'thread-run-audience', clock)
+  addArchitect('reply-run-foreign', 'thread-run-audience', clock)
+  const runId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,repo,prompt_sha,prompt_bytes,prompt_head,status,
+        session_id,turn,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','thread-fixture',
+               'sha',1,'prompt','running','reply-run-owner',1,?)`,
+    )
+    .run(runId, new Date(clock).toISOString(), projectRecordId)
+  const question = askQuestion(
+    {
+      audience: 'project:thread-run-audience',
+      title: 'Run audience',
+      body: 'Do not cross session ownership.',
+    },
+    {},
+    clock,
+  )
+
+  expect(() =>
+    replyToThread(
+      question.recordId,
+      'Foreign run reply',
+      architect('reply-run-foreign'),
+      clock + 1,
+      cwd,
+      `run:${runId}`,
+    ),
+  ).toThrow(`run ${runId} is owned by session reply-run-owner`)
+})
+
 test('acceptance closes a question, persists through filing failure, and retry files once', async () => {
   ensurePostingProject()
   const clock = Date.now() + 300_000

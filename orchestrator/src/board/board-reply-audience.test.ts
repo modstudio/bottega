@@ -1,5 +1,14 @@
 import { expect, test } from 'bun:test'
-import { resolveReplyReaders } from './board-reply-audience.ts'
+import { parseReplyAudienceOption, resolveReplyReaders } from './board-reply-audience.ts'
+
+test('invalid and empty reply audiences use the reply vocabulary', () => {
+  expect(() => parseReplyAudienceOption('')).toThrow(
+    'use participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+  )
+  expect(() => parseReplyAudienceOption('project:other')).toThrow(
+    'use participants, acknowledged, audience, operator, session:<id>, or run:<id>',
+  )
+})
 
 test('reply audience choices resolve participants, acknowledgements, root audience, and recipients', () => {
   const facts = {

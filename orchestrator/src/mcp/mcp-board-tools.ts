@@ -15,6 +15,7 @@ import {
   boardWithdraw,
 } from '../board/board-operations.ts'
 import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from '../board/board-policy.ts'
+import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from '../board/board-suggestions.ts'
 import { db } from '../database/db.ts'
 import { registerBoardClaimTools } from './mcp-board-claim-tools.ts'
@@ -71,12 +72,19 @@ function registerBoardReplyTool(server: McpServer): void {
       description: 'Reply to a board notice or question thread.',
       inputSchema: z.object({
         root_id: z.string().min(1),
-        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
         audience: z.string().min(1).optional(),
+        body: z.string().min(1).max(BOARD_BODY_MAX_CHARS),
       }),
     },
     async ({ root_id, body, audience }) =>
-      result(await boardReply(root_id, body, undefined, audience)),
+      result(
+        await boardReply(
+          root_id,
+          body,
+          undefined,
+          audience === undefined ? null : parseReplyAudienceOption(audience),
+        ),
+      ),
   )
 }
 

@@ -60,7 +60,7 @@ import {
   parseAudience,
   standingPostingRefusal,
 } from './board-policy.ts'
-import { parseReplyAudienceOption } from './board-reply-audience.ts'
+import type { ReplyAudienceOption } from './board-reply-audience.ts'
 import {
   acknowledgeNotice,
   markSessionMessagesDelivered,
@@ -496,10 +496,9 @@ export async function boardReply(
   id: string,
   body: string,
   inputContext?: Context,
-  audienceValue?: string,
+  audience: ReplyAudienceOption | null = null,
 ) {
   const c = context(inputContext)
-  const audience = audienceValue === undefined ? undefined : parseReplyAudienceOption(audienceValue)
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') {
     const parsed = resolved.recordId
@@ -517,7 +516,7 @@ export async function boardReply(
   const row = await hostedClient(c).replyBoardMessage(resolved.recordId, {
     id: newRecordId(),
     body,
-    ...(audience === undefined ? {} : { audience }),
+    ...(audience === null ? {} : { audience }),
     authorSession: actor.session,
     authorHarness: actor.harness,
     authorMachineId: actor.machine,

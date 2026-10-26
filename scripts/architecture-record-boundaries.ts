@@ -456,6 +456,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     [
       'hono',
       'zod',
+      '../board/board-reply-audience.ts',
       './record-auth.ts',
       './record-board-contract.ts',
       './record-board-stream.ts',

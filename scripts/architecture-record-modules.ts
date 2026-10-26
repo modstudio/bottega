@@ -653,6 +653,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-board.ts', [
     'hono',
     'zod',
+    '../board/board-reply-audience.ts',
     './record-auth.ts',
     './record-board-stream.ts',
     './record-board-contract.ts',

@@ -16,11 +16,7 @@ import {
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
-import {
-  parseReplyAudienceOption,
-  type ReplyAudienceOption,
-  resolveReplyReaders,
-} from './board-reply-audience.ts'
+import { type ReplyAudienceOption, resolveReplyReaders } from './board-reply-audience.ts'
 import {
   addressed,
   authorWindowDecision,
@@ -35,6 +31,7 @@ import {
   originText,
   type PostNoticeInput,
   rowIsLive,
+  validateRunAudience,
 } from './board-store.ts'
 import {
   acceptRefusal,
@@ -141,19 +138,19 @@ export function replyToThread(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
-  audienceValue?: string,
+  audience: ReplyAudienceOption | null = null,
 ): ReplyResult {
   if (!body.trim()) throw new Error('board reply body is required; provide --body')
   if (body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
   if (containsSecretShaped(body))
     throw new Error('board reply contains secret-shaped text; remove the credential and retry')
-  const audience = audienceValue === undefined ? null : parseReplyAudienceOption(audienceValue)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
   return writeTransaction(() => {
     const root = threadRoot(recordId)
+    if (audience?.startsWith('run:')) validateRunAudience(parseAudience(audience), actor, database)
     const refusal = replyRefusal({
       actor: { kind: actor.kind, reader },
       root: {

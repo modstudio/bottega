@@ -22,6 +22,7 @@ import { listBoardOverview } from './board-overview.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import type { BoardDeliveryPoint } from './board-reach.ts'
 import { registerBoardReachCommand } from './board-reach-command.ts'
+import { parseReplyAudienceOption } from './board-reply-audience.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 import { watchHostedBoard } from './board-watch.ts'
@@ -236,14 +237,21 @@ function registerBoardReplyCommand(board: Command): void {
   board
     .command('reply <root-id>')
     .description(BOARD_DESCRIPTIONS.reply)
-    .requiredOption('--body <text>', 'set the reply body')
     .option(
       '--audience <choice>',
       'participants, acknowledged, audience, operator, session:<id>, or run:<id>',
     )
+    .requiredOption('--body <text>', 'set the reply body')
     .action(async (id, options) =>
       console.log(
-        JSON.stringify(await boardReply(String(id), options.body, undefined, options.audience)),
+        JSON.stringify(
+          await boardReply(
+            String(id),
+            options.body,
+            undefined,
+            options.audience === undefined ? null : parseReplyAudienceOption(options.audience),
+          ),
+        ),
       ),
     )
 }

@@ -12,9 +12,13 @@ export type ReplyAudienceOption =
 
 export function parseReplyAudienceOption(value: string): ReplyAudienceOption {
   if (value === 'participants' || value === 'acknowledged' || value === 'audience') return value
-  const audience = parseAudience(value)
-  if (audience.kind === 'operator' || audience.kind === 'session' || audience.kind === 'run')
-    return value as ReplyAudienceOption
+  try {
+    const audience = parseAudience(value)
+    if (audience.kind === 'operator' || audience.kind === 'session' || audience.kind === 'run')
+      return value as ReplyAudienceOption
+  } catch {
+    // Reply choices have a narrower vocabulary than root-message audiences.
+  }
   throw new Error(
     `unsupported reply audience ${value}; use participants, acknowledged, audience, operator, session:<id>, or run:<id>`,
   )

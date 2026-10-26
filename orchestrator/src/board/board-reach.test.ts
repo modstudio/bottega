@@ -241,6 +241,64 @@ test('an empty reach window has no pushes or worst messages', () => {
   )
 })
 
+test('reach report includes delivered and never-delivered reply rows', () => {
+  const clock = Date.parse('2026-10-13T12:00:00.000Z')
+  const rootId = newRecordId()
+  const deliveredId = newRecordId()
+  const neverId = newRecordId()
+  const insert = db().query(
+    `INSERT INTO board_message
+     (record_id,number,kind,author_kind,author_session,audience,title,body,ack_required,expires_at,
+      created_at,thread_root_record_id)
+     VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM board_message),?,?,?,?,?,?,?, ?,?,?)`,
+  )
+  insert.run(
+    rootId,
+    'question',
+    'architect',
+    'reach-root-author',
+    'operator',
+    'Measured replies',
+    'Root body',
+    0,
+    new Date(clock + 60_000).toISOString(),
+    new Date(clock).toISOString(),
+    null,
+  )
+  for (const [id, body, createdAt] of [
+    [deliveredId, 'Delivered body', clock + 1_000],
+    [neverId, 'Never body', clock + 2_000],
+  ] as const)
+    insert.run(
+      id,
+      'reply',
+      'architect',
+      'reach-replier',
+      null,
+      null,
+      body,
+      0,
+      null,
+      new Date(createdAt).toISOString(),
+      rootId,
+    )
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), deliveredId, 'reach-root-author', 1, new Date(clock + 3_000).toISOString())
+
+  const replies = boardReachReport(1, clock + 4_000, db()).replies
+  expect(replies).toMatchObject({
+    replies: 2,
+    deliveredToRootAuthor: 1,
+    deliveredToNobody: [{ messageSource: 'local', replyId: neverId, title: 'Measured replies' }],
+  })
+  expect(replies.rows.map((reply) => reply.replyId)).toEqual([deliveredId, neverId])
+})
+
 test('an unqualified message reports every way its pushes failed to show concern', () => {
   const result = countBoardReach([
     row({

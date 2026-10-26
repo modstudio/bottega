@@ -314,6 +314,17 @@ test('a board trigger exception is a named refusal not a server error', async ()
   })
 })
 
+test('board reply rejects an unsupported audience at the route edge', async () => {
+  const app = appWith(identity)
+  const response = await app.request(`/v1/board/messages/${newRecordId()}/replies`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: newRecordId(), body: 'Answer', audience: 'project:other' }),
+  })
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({ error: 'invalid board reply' })
+})
+
 test('a row-level security denial is a named refusal not a server error', async () => {
   const app = appWith(identity, {
     postBoardMessage: async () => {

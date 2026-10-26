@@ -3,6 +3,7 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
   BOARD_CHANGES_PAGE_LIMIT,
@@ -39,6 +40,20 @@ const idSchema = z.string().uuid()
 const isoSchema = z.string().datetime({ offset: true })
 const sessionSchema = z.string().min(1).nullable().optional()
 const headerValueSchema = z.string().refine((value) => !/[\r\n\u2028\u2029]/.test(value))
+const replyAudienceSchema = z
+  .string()
+  .min(1)
+  .transform((value, context) => {
+    try {
+      return parseReplyAudienceOption(value)
+    } catch (error) {
+      context.addIssue({
+        code: 'custom',
+        message: error instanceof Error ? error.message : String(error),
+      })
+      return z.NEVER
+    }
+  })
 const postSchema = z
   .object({
     id: idSchema,
@@ -70,7 +85,7 @@ const replySchema = z
   .object({
     id: idSchema,
     body: z.string(),
-    audience: z.string().min(1).optional(),
+    audience: replyAudienceSchema.optional(),
     authorSession: sessionSchema,
     authorHarness: z.string().min(1).nullable().optional(),
     authorMachineId: idSchema.nullable().optional(),

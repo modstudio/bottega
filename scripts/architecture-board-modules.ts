@@ -261,6 +261,7 @@ export const boardModules: BoardModule[] = [
     './board-push-service.ts',
     './board-reach.ts',
     './board-reach-command.ts',
+    './board-reply-audience.ts',
     './board-render.ts',
     './board-delivery.ts',
     './board-service.ts',
