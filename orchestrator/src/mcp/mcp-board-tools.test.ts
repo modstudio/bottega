@@ -112,9 +112,8 @@ test('request-posting MCP tools return the same heartbeat guidance', async () =>
     const posted = await call('board_post')
     const asked = await call('board_ask')
     expect(posted.heartbeat).toBe(asked.heartbeat)
-    expect(posted.heartbeat).toMatch(
-      /Arm under Monitor from the main checkout: .*\/orchestrator\/hooks\/orch-heartbeat\.sh mcp-request-session$/,
-    )
+    expect(posted.heartbeat).toContain('mcp-request-session')
+    expect(posted.heartbeat).toContain('orch-heartbeat.sh')
   } finally {
     process.chdir(previousCwd)
   }

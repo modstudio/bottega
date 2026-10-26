@@ -84,7 +84,6 @@ def run_heartbeat(rows, ack_result=""):
             "orch-heartbeat.sh",
             "heartbeat-decision.py",
             "heartbeat-board-observation.py",
-"heartbeat-decision.py",
             "heartbeat-run-observation.py",
             "inbox_question_decision.py",
             "notice_transport.py",

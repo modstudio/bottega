@@ -22,7 +22,10 @@ NOTICE_REASON_MAX_CHARS = 240
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS = 0
 HEARTBEAT_CLEAR_EXIT_STATUS = 10
 
-SECRET_ASSIGNMENT = re.compile(r"\b(?:token|key|secret|password)\s*=\s*\S+", re.IGNORECASE)
+SECRET_ASSIGNMENT = re.compile(
+    r"(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_-])*(?:token|key|secret|password)\s*[:=]\s*\S+",
+    re.IGNORECASE,
+)
 SECRET_BEARER = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
 SECRET_AUTHORIZATION = re.compile(r"\bAuthorization\s*[:=]\s*\S+", re.IGNORECASE)
 SECRET_TOKEN_PREFIX = re.compile(
@@ -102,6 +105,8 @@ def open_board_requests(
     }
     open_roots = []
     for root in roots:
+        if root.get("author_session") != author_session:
+            continue
         if root.get("kind") != "question" and root.get("purpose") != "request":
             continue
         expires_at = root.get("expires_at")
@@ -214,13 +219,8 @@ if __name__ == "__main__":
         print(decision.state_key)
     elif sys.argv[1:] and sys.argv[1] == "requests" and len(sys.argv) == 3:
         rows = json.load(sys.stdin)
-        roots = [
-            root
-            for root in rows["roots"]
-            if root.get("author_session") == sys.argv[2]
-        ]
         requests = open_board_requests(
-            roots,
+            rows["roots"],
             rows["replies"],
             sys.argv[2],
             datetime.datetime.now(datetime.timezone.utc).timestamp(),

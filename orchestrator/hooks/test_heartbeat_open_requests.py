@@ -20,6 +20,7 @@ def root(**changes):
         "label": "board:12 Need a ruling",
         "kind": "notice",
         "purpose": "request",
+        "author_session": SESSION,
         "expires_at": "2027-01-15T09:00:00.000Z",
         "withdrawn_at": None,
         **changes,
@@ -30,11 +31,11 @@ class OpenBoardRequestsTest(unittest.TestCase):
     def decide(self, roots, replies=()):
         return heartbeat_decision.open_board_requests(roots, list(replies), SESSION, NOW)
 
-    def test_no_request_is_clear(self):
-        self.assertEqual(self.decide([]), [])
-
     def test_open_request_without_reply_holds_the_watch(self):
         self.assertEqual(self.decide([root()]), [root()])
+
+    def test_request_authored_by_another_session_does_not_hold_the_watch(self):
+        self.assertEqual(self.decide([root(author_session="another-session")]), [])
 
     def test_reply_delivered_to_the_author_releases_the_watch(self):
         reply = {

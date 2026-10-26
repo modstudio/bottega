@@ -155,9 +155,8 @@ def open_request_threads(session_id: str, board_observation, heartbeat_decision)
         rows = board_observation.observe_board_requests(
             DB, session_id, heartbeat_decision.contains_secret_shaped
         )
-        roots = [root for root in rows["roots"] if root.get("author_session") == session_id]
         return heartbeat_decision.open_board_requests(
-            roots, rows["replies"], session_id, __import__("time").time()
+            rows["roots"], rows["replies"], session_id, __import__("time").time()
         )
     except Exception:
         return None

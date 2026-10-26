@@ -64,9 +64,8 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
 
     def open(self):
         rows = self.observe()
-        roots = [root for root in rows["roots"] if root["author_session"] == "asking-session"]
         return heartbeat_decision.open_board_requests(
-            roots, rows["replies"], "asking-session", 1_800_000_000
+            rows["roots"], rows["replies"], "asking-session", 1_800_000_000
         )
 
     def reply(self, record_id, author, delivered):
@@ -105,6 +104,79 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
             self.observe()["roots"][0]["label"],
             "board:12 title withheld (secret-shaped)",
         )
+
+    def test_hosted_projection_and_delivered_reply_release(self):
+        connection = sqlite3.connect(self.store.name)
+        root_payload = json.dumps(
+            {
+                "title": "Hosted ruling",
+                "purpose": "request",
+                "authorSession": "asking-session",
+                "expiresAt": "2099-01-15T09:00:00.000Z",
+            }
+        )
+        fallback_payload = json.dumps(
+            {
+                "title": "Origin fallback",
+                "purpose": "information",
+                "origin": {"session": "origin-session"},
+                "expiresAt": "2099-01-15T09:00:00.000Z",
+            }
+        )
+        reply_payload = json.dumps({"authorSession": "answering-session"})
+        connection.execute(
+            "INSERT INTO hosted_board_message_cache VALUES (?,?,?,?)",
+            ("hosted-root", "notice", None, root_payload),
+        )
+        connection.execute(
+            "INSERT INTO hosted_board_message_cache VALUES (?,?,?,?)",
+            ("fallback-root", "notice", None, fallback_payload),
+        )
+        connection.execute(
+            "INSERT INTO hosted_board_message_cache VALUES (?,?,?,?)",
+            ("hosted-reply", "reply", "hosted-root", reply_payload),
+        )
+        connection.commit()
+        connection.close()
+
+        projected = self.observe()
+        hosted_root = next(row for row in projected["roots"] if row["id"] == "hosted-root")
+        fallback_root = next(row for row in projected["roots"] if row["id"] == "fallback-root")
+        self.assertEqual(hosted_root["label"], "board:hosted-root Hosted ruling")
+        self.assertEqual(hosted_root["author_session"], "asking-session")
+        self.assertEqual(fallback_root["author_session"], "origin-session")
+        self.assertIn("hosted-root", [row["id"] for row in self.open()])
+
+        connection = sqlite3.connect(self.store.name)
+        connection.execute(
+            "INSERT INTO hosted_board_receipt_cache VALUES (?,?,?)",
+            ("hosted-reply", "asking-session", "2027-01-15T08:00:00.000Z"),
+        )
+        connection.commit()
+        connection.close()
+        self.assertNotIn("hosted-root", [row["id"] for row in self.open()])
+
+    def test_assignment_shaped_secret_titles_are_withheld(self):
+        for title in ("GITHUB_TOKEN=xyz", "rotate api_key=abc123", "DB_PASSWORD=value"):
+            with self.subTest(title=title):
+                connection = sqlite3.connect(self.store.name)
+                connection.execute(
+                    "UPDATE board_message SET title=? WHERE record_id='root-1'", (title,)
+                )
+                connection.commit()
+                connection.close()
+                self.assertEqual(
+                    self.observe()["roots"][0]["label"],
+                    "board:12 title withheld (secret-shaped)",
+                )
+
+        connection = sqlite3.connect(self.store.name)
+        connection.execute(
+            "UPDATE board_message SET title='keyboard layout' WHERE record_id='root-1'"
+        )
+        connection.commit()
+        connection.close()
+        self.assertEqual(self.observe()["roots"][0]["label"], "board:12 keyboard layout")
 
 
 if __name__ == "__main__":
