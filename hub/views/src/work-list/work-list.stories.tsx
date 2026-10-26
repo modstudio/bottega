@@ -65,3 +65,24 @@ export const Board: Story = {
     await expect(canvas.getByText(/A card is here because/)).toBeVisible()
   },
 }
+
+const clearFilters = fn()
+
+export const FilteredToNothing: Story = {
+  args: {
+    filters: (
+      <button type="button" onClick={clearFilters}>
+        Clear filters
+      </button>
+    ),
+    filtersActive: 1,
+    filtered: true,
+    filterAgent: 'agy',
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.getByText('No tasks match these filters.')).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Clear filters' }))
+    await expect(clearFilters).toHaveBeenCalledOnce()
+  },
+}

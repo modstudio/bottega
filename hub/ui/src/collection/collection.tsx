@@ -155,7 +155,11 @@ function CollectionTable<Row>({
               {column.label}
             </TableHead>
           ))}
-          {rowActions ? <TableHead /> : null}
+          {rowActions ? (
+            <TableHead>
+              <span className={collectionStyles().actionsLabel()}>Actions</span>
+            </TableHead>
+          ) : null}
         </TableRow>
       </TableHeader>
       <TableBody>
