@@ -412,7 +412,6 @@ const RunIdentitySchema = z
     record_id: z.string().uuid(),
   })
   .strict()
-export const RunIdentityListSchema = z.array(RunIdentitySchema)
 export type RunIdentity = z.infer<typeof RunIdentitySchema>
 
 const QuestionIdentitySchema = z

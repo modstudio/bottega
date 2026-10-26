@@ -43,10 +43,10 @@ describe(`${PLATFORM_SLUG} machine doctor`, () => {
   test('reports each unlinked question and commit task-key column', async () => {
     writeTransaction((conn) =>
       conn.exec(`
-        INSERT INTO question(record_id,number,run_ref,task_key,workflow_key,asked_at)
+        INSERT INTO question(record_id,number,run_record_id,root_run_record_id,task_key,workflow_key,asked_at)
         VALUES
-          ('question-missing-a',1,'orch:missing-a','TASK-MISSING','WORKFLOW-MISSING','2026-10-25'),
-          ('question-missing-b',2,'orch:missing-b','TASK-MISSING',NULL,'2026-10-25');
+          ('question-missing-a',1,'00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001','TASK-MISSING','WORKFLOW-MISSING','2026-10-25'),
+          ('question-missing-b',2,'00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000002','TASK-MISSING',NULL,'2026-10-25');
         INSERT INTO commit_key(sha,repo,task_key,at)
         VALUES ('commit-missing','alpha','COMMIT-MISSING','2026-10-25');
       `),
