@@ -16,6 +16,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import { hubTask } from './schema-hub.ts'
 
 export const run = pgTable.withRLS(
   'run',
@@ -36,6 +37,7 @@ export const run = pgTable.withRLS(
     promptBytes: bigint('prompt_bytes', { mode: 'bigint' }).notNull(),
     promptHead: text('prompt_head').notNull(),
     taskKey: text('task_key'),
+    taskId: uuid('task_id').references(() => hubTask.id, { onDelete: 'set null' }),
     label: text(),
     lens: text(),
     latencyMs: bigint('latency_ms', { mode: 'bigint' }),
@@ -105,6 +107,7 @@ export const run = pgTable.withRLS(
   },
   (table) => [
     index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
+    index('run_task_id_idx').on(table.taskId),
     check(
       'run_review_role_check',
       sql`${table.reviewRole} IS NULL OR ${table.reviewRole} IN ('round', 'supplementary')`,

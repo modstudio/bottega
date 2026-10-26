@@ -19,6 +19,11 @@ import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
+import {
+  proofRunTaskReferenceBackfill,
+  runTaskReferenceBackfill,
+  seedRunTaskReferenceBackfill,
+} from './record-run-task-backfill-proof.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
@@ -859,18 +864,10 @@ async function proofHubProjectIdentityBackfill(transaction: Transaction): Promis
   }
 }
 
-async function applyAndProveMigration(
+async function proofDocumentMigration(
   transaction: Transaction,
   migration: MigrationMeta,
 ): Promise<void> {
-  if (
-    migration.name === boardNotifyMigration &&
-    !migration.sql.join('\n').includes(`pg_notify('${BOARD_MESSAGE_NOTIFY_CHANNEL}', '')`)
-  ) {
-    throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
-  }
-  await seedMigrationProof(transaction, migration.name)
-  await applyRecordMigration(transaction, migration)
   if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
     throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
   }
@@ -883,17 +880,36 @@ async function applyAndProveMigration(
   if (migration.name === audienceSetBackfill) await proofAudienceBackfill(transaction)
   if (migration.name === audienceVocabularyBackfill)
     await proofAudienceVocabularyBackfill(transaction)
-  if (migration.name === boardSharedSpacesMigration)
-    await proofBoardThreadAuthorBackfill(transaction)
-  if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
   if (migration.name === docJsonbArrayRepair) {
     await proofDocJsonbArrayRepair(transaction)
     for (const chunk of migration.sql) await transaction.exec(chunk)
     await proofDocJsonbArrayRepair(transaction)
   }
-  if (migration.name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
-  if (migration.name === hubProjectIdentityBackfill)
-    await proofHubProjectIdentityBackfill(transaction)
+}
+
+async function proofIdentityMigration(transaction: Transaction, name: string): Promise<void> {
+  if (name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
+  if (name === hubProjectIdentityBackfill) await proofHubProjectIdentityBackfill(transaction)
+  if (name === runTaskReferenceBackfill) await proofRunTaskReferenceBackfill(transaction)
+}
+
+async function applyAndProveMigration(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
+  if (
+    migration.name === boardNotifyMigration &&
+    !migration.sql.join('\n').includes(`pg_notify('${BOARD_MESSAGE_NOTIFY_CHANNEL}', '')`)
+  ) {
+    throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
+  }
+  await seedMigrationProof(transaction, migration.name)
+  await applyRecordMigration(transaction, migration)
+  await proofDocumentMigration(transaction, migration)
+  if (migration.name === boardSharedSpacesMigration)
+    await proofBoardThreadAuthorBackfill(transaction)
+  if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
+  await proofIdentityMigration(transaction, migration.name)
   await applyHostedProjectCleanupProof(transaction, migration)
 }
 
@@ -903,6 +919,11 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
   if (name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
   if (name === hubProjectIdentityExpand) await seedHubProjectIdentityBackfill(transaction)
+  if (name === runTaskReferenceBackfill)
+    await seedRunTaskReferenceBackfill(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
   await seedHostedProjectCleanupProof(transaction, name)
 }
 

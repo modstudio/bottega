@@ -55,6 +55,7 @@ import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 import { pullRequestCiRecordKind } from './record-sync-pull-request-ci.ts'
+import { runTaskIdentityDecision } from './record-sync-run-task-identity.ts'
 import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
@@ -80,7 +81,7 @@ const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
 const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
-function runValues(row: Payload, projectId: string | null) {
+function runValues(row: Payload, projectId: string | null, taskId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
@@ -96,6 +97,7 @@ function runValues(row: Payload, projectId: string | null) {
     promptBytes: bigint(row.promptBytes),
     promptHead: String(row.promptHead),
     taskKey: nullableString(row.taskKey),
+    taskId,
     label: nullableString(row.label),
     lens: nullableString(row.lens),
     latencyMs: nullableBigint(row.latencyMs),
@@ -312,18 +314,33 @@ async function pushRun(
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const projectId = await projectRecordId(tx, row, principal, projectIds)
-    const values = runValues(row, projectId)
     const existingOwned = await existingEvidenceOwned(
       tx,
       'run',
-      values.id,
-      values.machineId,
+      String(row.id),
+      String(row.machineId),
       principal,
     )
+    const taskFacts = (
+      await tx`SELECT
+        (SELECT id::text FROM hub_task WHERE space_id=${principal.spaceId}::uuid
+          AND id=${nullableString(row.taskId)}::uuid) AS task_found_by_id,
+        (SELECT id::text FROM hub_task WHERE space_id=${principal.spaceId}::uuid
+          AND key=${nullableString(row.taskKey)}) AS task_found_by_key,
+        (SELECT task_id::text FROM run WHERE space_id=${principal.spaceId}::uuid
+          AND id=${String(row.id)}::uuid) AS existing_task_id`
+    )[0]!
+    const taskId = runTaskIdentityDecision({
+      payloadTaskId: row.taskId == null ? null : String(row.taskId),
+      payloadTaskKey: row.taskKey == null ? null : String(row.taskKey),
+      taskFoundById: taskFacts.task_found_by_id,
+      taskFoundByKey: taskFacts.task_found_by_key,
+      existingTaskId: taskFacts.existing_task_id,
+      write: existingOwned ? 'update' : 'insert',
+    })
+    const values = runValues(row, projectId, taskId)
     const evidenceUnvoid = row.evidenceUnvoid
-    if (evidenceUnvoid !== null) {
-      await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
-    }
+    if (evidenceUnvoid !== null) await applyHostedUnvoid(tx, values.id, principal, evidenceUnvoid)
     const exclusion = await tx`
       SELECT reason FROM run_exclusion WHERE run_id=${values.id}::uuid
         AND space_id=${principal.spaceId}::uuid AND superseded_at IS NULL
