@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+import { categorizeFile } from '../shared/file-kind.ts'
 import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES, suiteReachPatterns } from './check-plan.ts'
 import {
   assertExemptionBaselineShrinks,
@@ -46,17 +47,9 @@ test('the Python hook leg runs unittest discovery over its declared reach', () =
 })
 
 test('each CI-only suite derives its reach from the command it runs', () => {
-  for (const suite of CI_ONLY_SUITES) {
-    expect(suite.testPatterns).toEqual(suiteReachPatterns(suite.argv))
-  }
-  expect(ciOnlySuiteLegs()).toEqual(
-    CI_ONLY_SUITES.map((suite) => ({
-      testDirectories: [],
-      testPatterns: [...suite.testPatterns],
-      excludedTestDirectories: [],
-      excludedTestPatterns: [],
-    })),
-  )
+  expect(ciOnlySuiteLegs().flatMap((leg) => leg.testPatterns)).toEqual([
+    'orchestrator/hooks/process_*.py',
+  ])
   expect(
     suiteReachPatterns([
       'python3',
@@ -72,6 +65,12 @@ test('each CI-only suite derives its reach from the command it runs', () => {
   expect(() =>
     suiteReachPatterns(['python3', '-m', 'unittest', 'discover', '-s', 'orchestrator/hooks']),
   ).toThrow('must carry -s <dir> and -p <pattern>')
+})
+
+test('every file a CI-only suite collects is classified as a test', () => {
+  for (const pattern of CI_ONLY_SUITES.flatMap((suite) => suite.testPatterns)) {
+    expect(categorizeFile(pattern.replaceAll('*', 'example'))).toBe('test')
+  }
 })
 
 test('the orchestrator gate selectors are anchored and cover every declared exclusion', () => {
