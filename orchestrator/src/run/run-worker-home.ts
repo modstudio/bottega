@@ -101,6 +101,7 @@ export type WorkerMcpLaunch = {
  * refusal is recorded.
  */
 async function refuseRequiredProjectMcpLaunch(input: {
+  runNumber: number
   mcpMode: McpMode | null
   projectSelection: ProjectMcpSelection | null
   project: Project | null
@@ -123,13 +124,13 @@ async function refuseRequiredProjectMcpLaunch(input: {
     withheld: input.projectSelection?.withheld ?? [],
   }
   const decision = requiredMcpProbeDecision(facts)
+  if (decision.refusal) throw new RequiredMcpProbeRefusalError(decision.refusal)
   for (const failure of decision.unrelatedFailures) {
     console.error(
-      `orch: project MCP server ${failure.server} failed before launch: ${failure.error}; ` +
-        `the run continues past this failure because --mcp require applies only to ${requiredServer}`,
+      `orch: run ${input.runNumber} project MCP server ${failure.server} failed before launch: ${failure.error}; ` +
+        `the run continues because --mcp require applies only to ${requiredServer}`,
     )
   }
-  if (decision.refusal) throw new RequiredMcpProbeRefusalError(decision.refusal)
 }
 
 /** Give cwd-discovered project MCP configuration only to a repository writer. */
@@ -201,6 +202,7 @@ export async function prepareWorkerHomeLaunch(input: {
   )
   const codexMcpCatalogues = await preflightCodexMcpCatalogues(input.mcpLaunch.codex, environment)
   await refuseRequiredProjectMcpLaunch({
+    runNumber: input.runNumber,
     mcpMode: input.mcpMode,
     projectSelection: input.mcpLaunch.projectSelection,
     project: input.project,

@@ -6,7 +6,8 @@ import {
   requiredMcpProbeDecision,
 } from './project-mcp-preflight.ts'
 
-const requiredMcpProbeRefusal = (facts: RequiredMcpProbeFacts) => requiredMcpProbeDecision(facts).refusal
+const requiredMcpProbeRefusal = (facts: RequiredMcpProbeFacts) =>
+  requiredMcpProbeDecision(facts).refusal
 
 const project = { name: 'starship', path: '/opt/starship' }
 const failure = { server: 'starship', error: 'Connection closed\nstderr: not configured' }
