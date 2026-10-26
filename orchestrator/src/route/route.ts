@@ -24,6 +24,12 @@ import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
+  PROMPT_SIZE_BOUNDARY,
+  type PromptSizeBucket,
+  promptBucketSql,
+  samePromptSizeBucket,
+} from './prompt-size-bucket.ts'
+import {
   type PolicyCandidate,
   type PolicySelection,
   rankThompson,
@@ -90,7 +96,7 @@ type RouteConstraints = {
   pinnedTransport?: 'cli' | 'acp'
   transportPinSource?: McpTransportPinFacts['transportPinSource']
   project?: string | null
-  routed?: { agent: string; reason: string }
+  routed?: RoutedSelection
 }
 
 /**
@@ -106,16 +112,6 @@ export const MIN_SAMPLE = 5
 
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
-
-/**
- * The provisional boundary between small and large prompt evidence.
- *
- * Chosen from the observed file-question populations: small prompts topped out
- * at about 2.3 KiB and the problematic large inputs began around 25 KiB, with
- * no runs in between. 16 KiB sits in that wide empty gap, so the partition does
- * not depend on a finely tuned number. Revisit it when a run lands in the gap.
- */
-export const PROMPT_SIZE_BOUNDARY = 16 * 1024
 
 function memoizedRepositoryReader(
   reader: (project: Pick<Project, 'path'>) => string | null,
@@ -156,20 +152,19 @@ function applyMcpEligibility(
   return { eligible: false, why: mcpWhy }
 }
 
-export type PromptSizeBucket = 'small' | 'large'
-
-export function promptSizeBucket(promptBytes: number): PromptSizeBucket {
-  return promptBytes < PROMPT_SIZE_BOUNDARY ? 'small' : 'large'
-}
-
-export function promptSizeBucketLabel(bucket: PromptSizeBucket): string {
-  return bucket === 'small' ? '<16 KiB' : '>=16 KiB'
-}
-
-function promptBucketSql(alias: string, promptBytes: number): string {
-  return promptSizeBucket(promptBytes) === 'small'
-    ? `${alias}.prompt_bytes < ${PROMPT_SIZE_BOUNDARY}`
-    : `${alias}.prompt_bytes >= ${PROMPT_SIZE_BOUNDARY}`
+/**
+ * A surface-routed pick's handoff value: which agent the pre-pick chose, why,
+ * and the prompt size it ranked on.
+ */
+export type RoutedSelection = {
+  agent: string
+  reason: string
+  /**
+   * The prompt size this pick ranked on: the raw caller text for a detached
+   * pre-pick, the composed pack for a run. The run honors the pick only when
+   * this lands in the same prompt-size bucket as its own measurement.
+   */
+  promptBytes: number
 }
 
 /** Populated buckets in stable size order; an untried job has none. */
@@ -915,9 +910,10 @@ function capacityCounts(
 
 function routeSurfaceSelection(
   candidates: readonly Candidate[],
-  routed: { agent: string; reason: string } | undefined,
+  routed: RoutedSelection | undefined,
+  promptBytes: number,
 ): Candidate[] {
-  if (!routed) return [...candidates]
+  if (!routed || !samePromptSizeBucket(routed.promptBytes, promptBytes)) return [...candidates]
   const candidate = candidates.find((item) => item.agent === routed.agent)
   return candidate ? [{ ...candidate, routedReason: routed.reason }] : [...candidates]
 }
@@ -965,6 +961,7 @@ function admittedCandidates(
   jobName: string,
   candidates: Candidate[],
   constraints: RouteConstraints,
+  promptBytes: number,
 ): Candidate[] {
   const requested = new Set(constraints.agents ?? [])
   const models = new Set(constraints.models ?? [])
@@ -1006,7 +1003,7 @@ function admittedCandidates(
       !requested.has(candidate.agent) && !models.has(effectiveModel(candidate, constraints)),
   )
   if (constrained.length || (!requested.size && !models.size))
-    return routeSurfaceSelection(constrained, constraints.routed)
+    return routeSurfaceSelection(constrained, constraints.routed, promptBytes)
   const avoided = eligible.map((candidate) => {
     const model = effectiveModel(candidate, constraints)
     const reasons = []
@@ -1079,7 +1076,7 @@ function pickExternal(
       throw new RoutingRefusalError(`agent "${override}" not eligible for ${jobName}: ${c.why}`)
     return { agent: override, reason: 'explicit --agent' }
   }
-  let eligible = admittedCandidates(jobName, ev.cands, avoid)
+  let eligible = admittedCandidates(jobName, ev.cands, avoid, promptBytes)
   if (j.findings && lens?.trim()) {
     eligible = eligible.map((candidate) => ({
       ...candidate,

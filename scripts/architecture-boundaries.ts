@@ -452,7 +452,12 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/question-open.ts',
     ],
     'Keep failover independent of execution transports, contracts, and worktrees.',
-    ['../run/continuation-message.ts', '../run/run-types.ts', '../review/review-role.ts'],
+    [
+      '../run/continuation-message.ts',
+      '../run/run-types.ts',
+      '../review/review-role.ts',
+      './route.ts',
+    ],
   ),
   boundary(
     'failure-commands-boundary',
@@ -918,6 +923,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../state/guide.ts',
       '../lens/lenses.ts',
       '../project/projects.ts',
+      './prompt-size-bucket.ts',
       './route.ts',
       './routing-backtest.ts',
     ],

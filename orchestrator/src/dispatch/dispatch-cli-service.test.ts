@@ -26,11 +26,16 @@ test('detached selection waits only after a capacity-only foreground result', ()
 })
 
 test('a routed selection is handed off separately from the caller pin', () => {
-  expect(detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route' })).toEqual({
-    routedAgent: { agent: 'codex', reason: 'surface route' },
+  expect(
+    detachSpecWithRoutedSelection({}, { agent: 'codex', reason: 'surface route', promptBytes: 64 }),
+  ).toEqual({
+    routedAgent: { agent: 'codex', reason: 'surface route', promptBytes: 64 },
   })
   expect(
-    detachSpecWithRoutedSelection({ agent: 'grok' }, { agent: 'codex', reason: 'route' }),
+    detachSpecWithRoutedSelection(
+      { agent: 'grok' },
+      { agent: 'codex', reason: 'route', promptBytes: 64 },
+    ),
   ).toEqual({ agent: 'grok' })
 })
 
@@ -58,6 +63,31 @@ test('detached selection waits in the coordinator only for a capacity refusal', 
     db().query("UPDATE agent SET max_concurrent=? WHERE name='codex'").run(original.max_concurrent)
     refreshAgents()
   }
+})
+
+test('selectBeforeDetach carries the composed pre-pick prompt size on the routed selection', async () => {
+  const text = 'rank me on the raw spec, not the composed pack'
+  const jobName = 'craft'
+  const presentation = { cwd: () => process.cwd(), error: () => {} }
+
+  const direct = await selectBeforeDetach(
+    jobName,
+    text,
+    { schema: 'anything-craft-reply.json' },
+    presentation,
+  )
+  expect(direct).toBeDefined()
+  expect(direct!.promptBytes).toBeGreaterThan(Buffer.byteLength(text))
+
+  const waiting = await selectBeforeDetach(
+    jobName,
+    text,
+    { schema: 'anything-craft-reply.json' },
+    presentation,
+    true,
+  )
+  expect(waiting).toBeDefined()
+  expect(waiting!.promptBytes).toBe(direct!.promptBytes)
 })
 
 test('dispatch transport selection gives an explicit flag precedence over the environment', () => {
