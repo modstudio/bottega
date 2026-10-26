@@ -141,8 +141,24 @@ export function acquireKernelLease(path: string): KernelLease {
   return lease
 }
 
+/**
+ * The common git directory a lock belongs under.
+ *
+ * An answer that is empty resolves against the project root itself, and an
+ * answer naming the project root is the working tree, not a common directory.
+ * Either would put a lock inside a checkout, so both refuse instead.
+ */
 export function projectGitCommonDir(repoRoot: string): string {
-  return realpathSync(resolve(repoRoot, git(['rev-parse', '--git-common-dir'], repoRoot)))
+  const answer = git(['rev-parse', '--git-common-dir'], repoRoot)
+  const common = realpathSync(resolve(repoRoot, answer))
+  if (answer === '' || common === realpathSync(repoRoot)) {
+    throw new Error(
+      `cannot establish the git common directory of ${repoRoot}: git rev-parse --git-common-dir answered ${answer === '' ? 'nothing' : JSON.stringify(answer)}\n` +
+        'invariant: A project lock lives under the git common directory, never inside a working tree.\n' +
+        `cleared by: naming a project root that is a git checkout whose common directory git can report (git -C ${repoRoot} rev-parse --git-common-dir)`,
+    )
+  }
+  return common
 }
 
 function projectLockDir(repoRoot: string): string {

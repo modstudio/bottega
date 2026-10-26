@@ -1,4 +1,6 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
@@ -9,8 +11,23 @@ import {
   terminalDockerRetentionReasonForRun,
 } from './resource-ownership.ts'
 
+const scratchCommons: string[] = []
+
+/**
+ * The run fixture's project is the running checkout, whose real common
+ * directory belongs to the live store; answering it would make these tests
+ * contend for live locks. Each mock names a scratch common directory instead,
+ * where the locks it takes are released with the scratch directory.
+ */
+function scratchCommonDir(): string {
+  const common = mkdtempSync(join(tmpdir(), 'orch-terminal-common-'))
+  scratchCommons.push(common)
+  return common
+}
+
 afterEach(() => {
   mock.restore()
+  for (const common of scratchCommons.splice(0)) rmSync(common, { recursive: true, force: true })
 })
 
 test('a terminal child leaves its live conversation resource untouched', () => {
@@ -21,7 +38,9 @@ test('a terminal child leaves its live conversation resource untouched', () => {
   const failed = addRun({ agent: 'codex', job: 'implement', status: 'failed', parent, turn: 2 })
   db().query('UPDATE run SET worktree=? WHERE record_id=?').run(dir, parent)
   const commands: string[] = []
+  const commonDir = scratchCommonDir()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'git') return result(commonDir)
     const command = args.join(' ')
     commands.push(command)
     if (command.startsWith('docker ps -a')) {
@@ -48,7 +67,9 @@ test('a terminal child leaves its live conversation resource untouched', () => {
 test('a terminal transition without a recorded worktree skips Docker inventory', () => {
   const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const commands: string[] = []
+  const commonDir = scratchCommonDir()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'git') return result(commonDir)
     const command = args.join(' ')
     commands.push(command)
     if (command.startsWith('docker ps -a')) return result(`app-orch-${terminal}-web`)
@@ -66,7 +87,9 @@ test('a terminal transition without a recorded worktree skips Docker inventory',
 test('a supplied sweep inventory reclaims resources whose run no longer records a worktree', () => {
   const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const commands: string[] = []
+  const commonDir = scratchCommonDir()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'git') return result(commonDir)
     commands.push(args.join(' '))
     return result('')
   }) as typeof Bun.spawnSync)
@@ -87,7 +110,9 @@ test('a supplied sweep inventory reclaims resources whose run no longer records 
 test('a dry-run applies terminal teardown eligibility without mutating Docker', () => {
   const terminal = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
   const commands: string[] = []
+  const commonDir = scratchCommonDir()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'git') return result(commonDir)
     commands.push(args.join(' '))
     return result('')
   }) as typeof Bun.spawnSync)
@@ -141,7 +166,9 @@ test('an absent unregistered tree with no resources is already clean', () => {
     .query('UPDATE run SET worktree=? WHERE record_id=?')
     .run(join(dir, 'absent-worktree'), terminal)
   const commands: string[] = []
+  const commonDir = scratchCommonDir()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'git') return result(commonDir)
     commands.push(args.join(' '))
     return result('')
   }) as typeof Bun.spawnSync)
@@ -175,7 +202,9 @@ test('stopped runs with gone trees treat disposable infrastructure as ordinary c
   const stopped = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   db().query('UPDATE run SET worktree=? WHERE record_id=?').run(join(dir, 'gone-worktree'), stopped)
   const commands: string[] = []
+  const commonDir = scratchCommonDir()
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
+    if (args[0] === 'git') return result(commonDir)
     commands.push(args.join(' '))
     return result('')
   }) as typeof Bun.spawnSync)
