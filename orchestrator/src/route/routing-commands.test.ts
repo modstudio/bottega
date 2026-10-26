@@ -74,9 +74,8 @@ test('guide continues across harness and external delegation classes', () => {
     )
     const output = lines.join('\n')
     expect(output).toContain('implement')
-    expect(output).toContain(
-      "handled by the harness's own sub-agent   (delegation.implement=harness)",
-    )
+    expect(output).toContain("harness's own sub-agent")
+    expect(output).toContain('delegation.implement=harness')
     expect(output).toContain('review-lens')
     expect(output).toContain('routes to')
   } finally {

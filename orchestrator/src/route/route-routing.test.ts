@@ -38,6 +38,17 @@ test('the shared routing path refuses a writesRepo job assigned to the harness',
   }
 })
 
+test('the shared routing path refuses a review job assigned to the harness', () => {
+  setMachineDelegation('delegation.review', 'harness')
+  try {
+    expect(() => pick('review-lens', 'not-an-agent')).toThrow(
+      "this machine runs review work through the harness's own sub-agent (delegation.review=harness)",
+    )
+  } finally {
+    setMachineDelegation('delegation.review', 'external')
+  }
+})
+
 test('guide reports harness work without dropping externally delegated jobs', () => {
   setMachineDelegation('delegation.implement', 'harness')
   try {
@@ -610,9 +621,12 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
     const exclusions = candidates('implement')
       .filter((candidate) => !candidate.eligible)
       .map((candidate) => `${candidate.agent}: ${candidate.why}`)
-    expect(message).toBe(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
+    expect(message).toContain(`no eligible agent for job "implement"\n${exclusions.join('\n')}`)
     expect(message).toContain(`run ${PLATFORM_SLUG} agent probe codex`)
     expect(message).toContain('disabled for routing refusal test')
+    expect(message).toContain(
+      `remedy: register and probe an agent with ${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe, or switch implement work to the harness with ${PLATFORM_SLUG} machine config set --machine delegation.implement harness`,
+    )
   } finally {
     const restore = db().query(
       'UPDATE agent SET enabled=?,disabled_reason=?,probed_at=?,probe_result=? WHERE name=?',

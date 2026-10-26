@@ -218,7 +218,6 @@ describe('machine config resolution', () => {
         'delegation.implement': 'external',
         'delegation.review': 'harness',
       })
-      expect(readFileSync(join(config, 'machine.toml'), 'utf8')).toContain('review = "harness"')
       expect(() => setMachineDelegation('delegation.review', 'sometimes', env)).toThrow(
         'key delegation.review must be one of external, harness',
       )

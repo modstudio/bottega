@@ -120,7 +120,7 @@ class SpawnIdentityTest(unittest.TestCase):
             harness_rows = json.dumps([
                 {"key": "delegation.implement", "value": "external", "scope": "machine"},
                 {"key": "delegation.review", "value": "harness", "scope": "machine"},
-                {"key": "autonomy.stage.review", "value": "auto", "scope": "local user"},
+                {"key": "autonomy.stage.review", "value": "auto", "scope": "machine"},
             ])
             external_rows = json.dumps([
                 {"key": "delegation.implement", "value": "external", "scope": "machine"},

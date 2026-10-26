@@ -42,10 +42,10 @@ export function noEligibleAgentRefusal(
   excluded: readonly string[],
 ): string {
   const headline = `no eligible agent for job "${jobName}"`
-  if (excluded.length) return `${headline}\n${excluded.join('\n')}`
   const jobClass = delegationClass(capabilities)
+  const detail = excluded.length ? `\n${excluded.join('\n')}` : ''
   return (
-    `${headline}\nremedy: register and probe an agent with ` +
+    `${headline}${detail}\nremedy: register and probe an agent with ` +
     `${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe, or switch ${jobClass} work ` +
     `to the harness with ${delegationRemedy(jobClass, 'harness')}`
   )
