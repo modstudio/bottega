@@ -16,13 +16,13 @@ test('fixture question selection removes only documented sessions whose run is a
   const row = (
     questionId: number,
     sessionId: string,
-    runRef = `orch:${questionId}`,
+    runRecordId = fixtureRecordId(questionId),
   ): FixtureQuestion => ({
     record_id: fixtureRecordId(questionId),
     question_id: questionId,
     session_id: sessionId,
-    run_ref: runRef,
-    root_ref: runRef,
+    run_record_id: runRecordId,
+    root_run_record_id: runRecordId,
     task_key: 'DEV-3000',
   })
   expect(
@@ -33,9 +33,9 @@ test('fixture question selection removes only documented sessions whose run is a
         row(3, 'sess-old'),
         row(4, 'sess-probe'),
         row(5, 'sess-real'),
-        row(6, 'sess-a', 'orch:live'),
+        row(6, 'sess-a', fixtureRecordId(99)),
       ],
-      new Set(['orch:live']),
+      new Set([fixtureRecordId(99)]),
     ),
   ).toEqual([row(1, 'sess-a'), row(2, 'sess-b'), row(3, 'sess-old'), row(4, 'sess-probe')])
 })

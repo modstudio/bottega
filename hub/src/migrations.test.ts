@@ -515,7 +515,7 @@ describe('hub migration journal', () => {
     d.query(
       `INSERT INTO question
         (question_id,run_ref,root_ref,task_key,session_id,asked_at,answered_at)
-       VALUES (7001,'orch:7001','orch:7001',NULL,'upgrade-session',?,NULL)`,
+       VALUES (7001,'orch:00000000-0000-4000-8000-000000007001:turn:00000000-0000-4000-8000-000000007001','orch:00000000-0000-4000-8000-000000007001',NULL,'upgrade-session',?,NULL)`,
     ).run(askedAt)
     d.query(`INSERT INTO setting(key,value) VALUES ('collect.runs.at',?)`).run(
       JSON.stringify(currentWatermark),
@@ -635,18 +635,18 @@ describe('hub migration journal', () => {
     d.query(
       `INSERT INTO question
         (question_id,run_ref,root_ref,asked_at,asked_via)
-       VALUES (40,'orch:40','orch:40','2026-09-20','reply')`,
+       VALUES (40,'orch:00000000-0000-4000-8000-000000000040:turn:00000000-0000-4000-8000-000000000040','orch:00000000-0000-4000-8000-000000000040','2026-09-20','reply')`,
     ).run()
     d.query(
       `INSERT INTO question
         (question_id,run_ref,root_ref,asked_at,asked_via)
-       VALUES (90,'orch:90','orch:90','2026-09-20','reply')`,
+       VALUES (90,'orch:00000000-0000-4000-8000-000000000090:turn:00000000-0000-4000-8000-000000000090','orch:00000000-0000-4000-8000-000000000090','2026-09-20','reply')`,
     ).run()
     d.query('DELETE FROM question WHERE question_id=90').run()
     d.query("INSERT INTO sqlite_sequence(name,seq) VALUES ('question',90)").run()
     d.query(
       `INSERT INTO question_delivery (question_id,run_ref,mode,outcome,at,error)
-       VALUES (40,'orch:40','resume','delivered','2026-09-21',NULL)`,
+       VALUES (40,'orch:00000000-0000-4000-8000-000000000040:turn:00000000-0000-4000-8000-000000000040','resume','delivered','2026-09-21',NULL)`,
     ).run()
 
     const questionRecordId = '00000000-0000-4000-8000-000000000040'
@@ -658,7 +658,7 @@ describe('hub migration journal', () => {
     expect(d.query('SELECT * FROM question_delivery').all()).toEqual([
       {
         question_record_id: questionRecordId,
-        run_ref: 'orch:40',
+        run_record_id: questionRecordId,
         mode: 'resume',
         outcome: 'delivered',
         at: '2026-09-21',
