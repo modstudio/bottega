@@ -57,6 +57,11 @@ export type HubTaskReader = (project: string) => Promise<HubTaskReference[]>
 
 type LocalTaskLinkTable = 'workflow_cursor' | 'question' | 'port_ref' | 'presence'
 type LocalTaskLinkResult = { linked: number; unmatched_keys: Record<string, number> }
+type PendingLocalTaskLink = {
+  table: LocalTaskLinkTable
+  id: string
+  taskId: string
+}
 
 export async function resolveHubTaskReference(
   project: string,
@@ -327,62 +332,21 @@ export async function linkRunTasks(
       increment(report.without_task_or_project_by_job, run.job)
     }
   }
-  const localLinks = [
-    {
-      table: 'workflow_cursor',
-      id: 'record_id',
-      key: 'workflow_key',
-      uuid: 'task_record_id',
-      where: "workflow_key<>''",
-    },
-    {
-      table: 'question',
-      id: 'record_id',
-      key: 'workflow_key',
-      uuid: 'workflow_task_record_id',
-      where: 'workflow_key IS NOT NULL',
-    },
-    {
-      table: 'port_ref',
-      id: 'record_id',
-      key: 'task_key',
-      uuid: 'task_record_id',
-      where: '1=1',
-    },
-    {
-      table: 'presence',
-      id: 'session_id',
-      key: 'current_task_key',
-      uuid: 'current_task_record_id',
-      where: 'current_task_key IS NOT NULL',
-    },
-  ] as const
-  const pendingUpdates: Array<{
-    table: LocalTaskLinkTable
-    idColumn: string
-    uuidColumn: string
-    id: string
-    taskId: string
-  }> = []
-  for (const shape of localLinks) {
-    const rows = database
-      .query<{ id: string; task_key: string }, []>(
-        `SELECT ${shape.id} id,${shape.key} task_key FROM ${shape.table} WHERE ${shape.uuid} IS NULL AND ${shape.where}`,
-      )
-      .all()
+  const localLinks: LocalTaskLinkTable[] = ['workflow_cursor', 'question', 'port_ref', 'presence']
+  const pendingUpdates: PendingLocalTaskLink[] = []
+  for (const table of localLinks) {
+    const rows = localTaskLinkRows(database, table)
     for (const row of rows) {
       const task = tasks.get(row.task_key)
       if (task) {
-        report.local_task_links[shape.table].linked++
+        report.local_task_links[table].linked++
         pendingUpdates.push({
-          table: shape.table,
-          idColumn: shape.id,
-          uuidColumn: shape.uuid,
+          table,
           id: row.id,
           taskId: task.record_id,
         })
       } else {
-        increment(report.local_task_links[shape.table].unmatched_keys, row.task_key)
+        increment(report.local_task_links[table].unmatched_keys, row.task_key)
       }
     }
   }
@@ -398,15 +362,65 @@ export async function linkRunTasks(
         update.run(link.task_record_id ?? null, link.project_record_id ?? null, link.record_id)
       }
       for (const update of pendingUpdates) {
-        database
-          .query(
-            `UPDATE ${update.table} SET ${update.uuidColumn}=? WHERE ${update.idColumn}=? AND ${update.uuidColumn} IS NULL`,
-          )
-          .run(update.taskId, update.id)
+        writeLocalTaskLink(database, update)
       }
     }, database)
   }
   return report
+}
+
+function localTaskLinkRows(
+  database: Database,
+  table: LocalTaskLinkTable,
+): Array<{ id: string; task_key: string }> {
+  if (table === 'workflow_cursor')
+    return database
+      .query<{ id: string; task_key: string }, []>(
+        "SELECT record_id id,workflow_key task_key FROM workflow_cursor WHERE task_record_id IS NULL AND workflow_key<>''",
+      )
+      .all()
+  if (table === 'question')
+    return database
+      .query<{ id: string; task_key: string }, []>(
+        'SELECT record_id id,workflow_key task_key FROM question WHERE workflow_task_record_id IS NULL AND workflow_key IS NOT NULL',
+      )
+      .all()
+  if (table === 'port_ref')
+    return database
+      .query<{ id: string; task_key: string }, []>(
+        'SELECT record_id id,task_key FROM port_ref WHERE task_record_id IS NULL',
+      )
+      .all()
+  return database
+    .query<{ id: string; task_key: string }, []>(
+      'SELECT session_id id,current_task_key task_key FROM presence WHERE current_task_record_id IS NULL AND current_task_key IS NOT NULL',
+    )
+    .all()
+}
+
+function writeLocalTaskLink(database: Database, update: PendingLocalTaskLink): void {
+  if (update.table === 'workflow_cursor')
+    database
+      .query(
+        'UPDATE workflow_cursor SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL',
+      )
+      .run(update.taskId, update.id)
+  else if (update.table === 'question')
+    database
+      .query(
+        'UPDATE question SET workflow_task_record_id=? WHERE record_id=? AND workflow_task_record_id IS NULL',
+      )
+      .run(update.taskId, update.id)
+  else if (update.table === 'port_ref')
+    database
+      .query('UPDATE port_ref SET task_record_id=? WHERE record_id=? AND task_record_id IS NULL')
+      .run(update.taskId, update.id)
+  else
+    database
+      .query(
+        'UPDATE presence SET current_task_record_id=? WHERE session_id=? AND current_task_record_id IS NULL',
+      )
+      .run(update.taskId, update.id)
 }
 
 function invalidRunTaskReferenceCount(
@@ -460,9 +474,15 @@ export async function sweepRunTaskLinks(
       (sum, result) => sum + result.linked,
       0,
     )
+    const localReports = Object.entries(linked.local_task_links).map(([table, result]) => {
+      const unmatched = Object.entries(result.unmatched_keys)
+        .map(([key, count]) => `${key} ${count}`)
+        .join(', ')
+      return `${table} linked ${result.linked}, unmatched ${unmatched || 'none'}`
+    })
     return {
       kind: 'log',
-      line: `run links: task ${taskLinks}, project ${projectLinks}, related rows ${localLinks}`,
+      line: `run links: task ${taskLinks}, project ${projectLinks}, related rows ${localLinks}; ${localReports.join('; ')}`,
     }
   } catch (error) {
     return {
@@ -476,20 +496,44 @@ export async function runTaskReferenceDoctorLine(): Promise<string> {
   try {
     const tasks = await hubTaskMap(projects())
     const ids = new Set([...tasks.values()].map((task) => task.record_id))
-    const shapes = [
-      ['workflow_cursor', 'task_record_id'],
-      ['question', 'workflow_task_record_id'],
-      ['port_ref', 'task_record_id'],
-      ['presence', 'current_task_record_id'],
-    ] as const
-    const related = shapes.map(([table, column]) => {
-      const rows = db()
-        .query<{ task_record_id: string }, []>(
-          `SELECT ${column} task_record_id FROM ${table} WHERE ${column} IS NOT NULL`,
-        )
-        .all()
-      return `${table} ${rows.filter((row) => !ids.has(row.task_record_id)).length}`
-    })
+    const database = db()
+    const related = [
+      [
+        'workflow_cursor',
+        database
+          .query<{ task_record_id: string }, []>(
+            'SELECT task_record_id FROM workflow_cursor WHERE task_record_id IS NOT NULL',
+          )
+          .all(),
+      ],
+      [
+        'question',
+        database
+          .query<{ task_record_id: string }, []>(
+            'SELECT workflow_task_record_id task_record_id FROM question WHERE workflow_task_record_id IS NOT NULL',
+          )
+          .all(),
+      ],
+      [
+        'port_ref',
+        database
+          .query<{ task_record_id: string }, []>(
+            'SELECT task_record_id FROM port_ref WHERE task_record_id IS NOT NULL',
+          )
+          .all(),
+      ],
+      [
+        'presence',
+        database
+          .query<{ task_record_id: string }, []>(
+            'SELECT current_task_record_id task_record_id FROM presence WHERE current_task_record_id IS NOT NULL',
+          )
+          .all(),
+      ],
+    ].map(
+      ([table, rows]) =>
+        `${table} ${(rows as { task_record_id: string }[]).filter((row) => !ids.has(row.task_record_id)).length}`,
+    )
     return `run task refs  ${invalidRunTaskReferenceCount(db(), tasks)} run; ${related.join(', ')} name no task in hub`
   } catch (error) {
     return `run task refs  unavailable — ${error instanceof Error ? error.message : String(error)}`

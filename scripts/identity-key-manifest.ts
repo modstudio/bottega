@@ -358,7 +358,7 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
     store: 'orchestrator',
     column: 'workflow_cursor.workflow_key',
     sibling: 'workflow_cursor.task_record_id',
-    reason: 'display label for the referenced hub task',
+    reason: 'display label for the referenced task in hub',
   },
   {
     store: 'orchestrator',
@@ -370,7 +370,7 @@ const DISPLAY_LABELS: readonly DisplayLabel[] = [
     store: 'orchestrator',
     column: 'port_ref.task_key',
     sibling: 'port_ref.task_record_id',
-    reason: 'display label for the referenced hub task',
+    reason: 'display label for the referenced task in hub',
   },
   {
     store: 'orchestrator',

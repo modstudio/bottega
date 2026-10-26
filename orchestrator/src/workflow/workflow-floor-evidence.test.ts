@@ -29,27 +29,23 @@ test.each([
   expect(refusal).not.toContain(detail)
 })
 
-const identity: CursorIdentity = {
+const identityOf = (
+  key: string,
+  taskId: string | null,
+  branch: string | null,
+): CursorIdentity => ({
   project: 'fixture',
-  workflowKey: 'DEV-977',
-  workflowTaskRecordId: 'task-DEV-977',
-  branch: 'DEV-977-work',
+  workflowKey: key,
+  workflowTaskRecordId: taskId,
+  branch,
   worktree: '/fixture/work',
   session: 's',
   createdAt: '2026-09-01',
   stepActivatedAt: '2026-09-01',
-}
+})
 
-const planningIdentity: CursorIdentity = {
-  project: 'fixture',
-  workflowKey: '',
-  workflowTaskRecordId: null,
-  branch: null,
-  worktree: '/fixture/work',
-  session: 's',
-  createdAt: '2026-09-01',
-  stepActivatedAt: '2026-09-01',
-}
+const identity = identityOf('DEV-977', 'task-DEV-977', 'DEV-977-work')
+const planningIdentity = identityOf('', null, null)
 
 const matchingCheckout = {
   project: 'fixture',

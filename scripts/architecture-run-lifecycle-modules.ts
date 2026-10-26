@@ -63,6 +63,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-chain.ts', ['bun:sqlite', './run-status.ts']),
   module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
+  module('orchestrator/src/run/run-dispatch-rulings.ts', [
+    './run-task-linking.ts',
+    './task-rulings-store.ts',
+    './task-rulings.ts',
+  ]),
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
     '../record/machine-identity.ts',

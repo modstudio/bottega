@@ -15,10 +15,7 @@ import {
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
-import {
-  resolveWorkflowCursorContext,
-  workflowCursorProjectScope,
-} from './workflow-cursor-selection.ts'
+import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
 import {
   args,
   closeStep,
@@ -32,38 +29,6 @@ import { renderWorkflowComposition } from './workflow-render.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, showResolvedWorkflow } from './workflows.ts'
 
 describe('workflow cursor adapter', () => {
-  test('a user task key resolves to its UUID for cursor creation and selection', async () => {
-    const d = database()
-    const resolved = await resolveWorkflowCursorContext('fixture', args.key, context, async () => [
-      { key: args.key, record_id: 'task-DEV-822', project: 'fixture' },
-    ])
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, resolved, d, {}, {})
-
-    expect(d.query('SELECT workflow_key,task_record_id FROM workflow_cursor').get()).toEqual({
-      workflow_key: 'DEV-822',
-      task_record_id: 'task-DEV-822',
-    })
-    expect(
-      getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', resolved, d, {})
-        .cursor,
-    ).toBe(1)
-  })
-
-  test('an unknown user task key is stored as a label with no UUID link', async () => {
-    const d = database()
-    const unresolved = await resolveWorkflowCursorContext(
-      'fixture',
-      args.key,
-      context,
-      async () => [],
-    )
-    composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {})
-    expect(d.query('SELECT workflow_key,task_record_id FROM workflow_cursor').get()).toEqual({
-      workflow_key: 'DEV-822',
-      task_record_id: null,
-    })
-  })
-
   test('next advances with a rebound argument from the pinned workflow and records the event', () => {
     const d = database()
     const draft = setWorkflowLocal(

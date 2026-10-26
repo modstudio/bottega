@@ -71,6 +71,10 @@ import { registerSubjectTools } from './mcp-subject-tools.ts'
 import { advanceWorkflow } from './mcp-workflow-advance.ts'
 import { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 import { resolveMcpWorkflowSpace } from './mcp-workflow-space.ts'
+
+const resolvedMcpCursorContext = (project: string, args: Record<string, string>) =>
+  resolveWorkflowCursorContext(project, workflowKeyOf(args), mcpWorkflowCursorContext())
+
 import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 const text = (value: unknown, isError = false) => ({
@@ -537,11 +541,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolveWorkflowCursorContext(
-        project,
-        workflowKeyOf(workflowArgs),
-        mcpWorkflowCursorContext(),
-      )
+      const context = await resolvedMcpCursorContext(project, workflowArgs)
       const effectiveMode = resolveWorkflowCursorMode(
         slug,
         project,
@@ -585,11 +585,7 @@ export function createDocsMcpServer(ports: LandingBranchPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolveWorkflowCursorContext(
-        project,
-        workflowKeyOf(workflowArgs),
-        mcpWorkflowCursorContext(),
-      )
+      const context = await resolvedMcpCursorContext(project, workflowArgs)
       return text(
         ruleWorkflow(
           slug,

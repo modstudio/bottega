@@ -32,6 +32,7 @@ import {
   selectWorkflowCursor,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
+import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -157,6 +158,14 @@ function insertCursor(
   const key = keyOf(composition.arguments)
   const instance = key ? '' : randomUUID()
   const at = nowIso()
+  if (key)
+    refuseUnlinkedCursorLabelCollision(d, {
+      project: composition.project,
+      workflow: composition.workflow.slug,
+      mode: composition.mode!.slug,
+      key,
+      taskRecordId: context.taskRecordId,
+    })
   const existing = key
     ? findCursor(
         composition.project,

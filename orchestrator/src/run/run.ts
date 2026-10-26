@@ -88,6 +88,7 @@ import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
+import { runDispatchRulingsSection } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
@@ -101,7 +102,6 @@ import {
   withheldScopeLine,
   workerMcpLaunchScope,
 } from './run-mcp-launch-scope.ts'
-
 import { prepareRunMcpPreflight, selectAgentAndPreflightMcp } from './run-mcp-main-stack.ts'
 import {
   bindReviewInstructions,
@@ -133,9 +133,6 @@ import {
   recordSharedGitConfigSnapshotFailure,
   snapshotWritingRunSharedGitConfig,
 } from './shared-git-config.ts'
-import { renderTaskRulings } from './task-rulings.ts'
-import { taskRulingsForDispatch } from './task-rulings-store.ts'
-import { resolveHubTaskReference } from './run-task-linking.ts'
 
 function completeStartup(): true {
   bindSignals()
@@ -411,17 +408,11 @@ export async function run(opts: {
     key: opts.key,
     cwd: callerCwd,
   })
-  const dispatchTask =
-    dispatchKey && runProjectName
-      ? await resolveHubTaskReference(runProjectName, dispatchKey)
-      : null
-  const carriedRulings = taskRulingsForDispatch({
+  const rulingsSection = await runDispatchRulingsSection({
     resume: !resume.isFirstTurn,
     project: runProjectName,
-    launchKey: dispatchKey,
-    taskRecordId: dispatchTask?.record_id ?? null,
+    key: dispatchKey,
   })
-  const rulingsSection = renderTaskRulings(carriedRulings)
   let prompt =
     opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
