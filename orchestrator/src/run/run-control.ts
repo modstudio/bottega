@@ -305,6 +305,30 @@ export type ChainTurn = {
   executor?: 'external' | 'harness'
 }
 
+function continuationWorker(rootId: string, latest: ChainTurn, hasCheckpoint: boolean) {
+  if (latest.executor === 'harness') return { agent: 'harness', session: undefined }
+  if (hasCheckpoint) return { agent: latest.agent, session: undefined }
+  const source = latest.vendor_session
+    ? latest
+    : (db()
+        .query(
+          `SELECT record_id, agent, vendor_session, turn
+             FROM run WHERE (record_id = ? OR parent_run_record_id = ?)
+               AND agent <> '(pending)' AND vendor_session IS NOT NULL
+            ORDER BY turn DESC LIMIT 1`,
+        )
+        .get(rootId, rootId) as ChainTurn | null)
+  if (!source?.vendor_session)
+    throw new Error(`run ${rootId} recorded no session id, so ${latest.agent} cannot be resumed`)
+  if (!latest.vendor_session) {
+    console.error(
+      `run ${rootId}: newest turn ${latest.record_id} recorded no session id; ` +
+        `resuming ${source.agent} with the session from run ${source.record_id} (turn ${source.turn})`,
+    )
+  }
+  return { agent: source.agent, session: source.vendor_session }
+}
+
 /**
  * The turn a continuation resumes from, and the number the new turn takes.
  * A turn whose agent is still `(pending)` never started: it names no agent,
@@ -703,33 +727,7 @@ export async function continueRun(
     worktree: latest.worktree,
     treePlan,
   })
-  const harnessExecution = latest.executor === 'harness'
-  const sessionFrom = checkpoint.hasCheckpoint
-    ? null
-    : latest.vendor_session
-      ? latest
-      : (db()
-          .query(
-            `SELECT record_id, agent, vendor_session, turn
-           FROM run WHERE (record_id = ? OR parent_run_record_id = ?)
-             AND agent <> '(pending)' AND vendor_session IS NOT NULL
-          ORDER BY turn DESC LIMIT 1`,
-          )
-          .get(id, id) as {
-          record_id: string
-          agent: string
-          vendor_session: string
-          turn: number
-        } | null)
-  if (!harnessExecution && !checkpoint.hasCheckpoint && !sessionFrom?.vendor_session) {
-    throw new Error(`run ${id} recorded no session id, so ${latest.agent} cannot be resumed`)
-  }
-  if (!harnessExecution && !checkpoint.hasCheckpoint && !latest.vendor_session) {
-    console.error(
-      `run ${id}: newest turn ${latest.record_id} recorded no session id; ` +
-        `resuming ${sessionFrom!.agent} with the session from run ${sessionFrom!.record_id} (turn ${sessionFrom!.turn})`,
-    )
-  }
+  const continuation = continuationWorker(id, latest, checkpoint.hasCheckpoint)
   const treeDecision = requireContinuationTree({
     rootId: id,
     projectName: row.repo,
@@ -751,7 +749,7 @@ export async function continueRun(
   const prompt = continuationPrompt(id, row.job, checkpoint, continuationMessage)
   refuseOversizedResumePrompt({
     checkpointContext: checkpoint.context,
-    agent: sessionFrom?.agent ?? latest.agent,
+    agent: continuation.agent,
     job: row.job,
     prompt,
     rootId: id,
@@ -772,8 +770,8 @@ export async function continueRun(
     resume: {
       kind: continuationResumeKind(checkpoint.hasCheckpoint),
       parent: id,
-      agent: harnessExecution ? 'harness' : checkpoint.hasCheckpoint ? latest.agent : sessionFrom!.agent,
-      session: harnessExecution || checkpoint.hasCheckpoint ? undefined : (sessionFrom!.vendor_session ?? undefined),
+      agent: continuation.agent,
+      session: continuation.session,
       turn: nextTurn,
       sessionId: authority.owner,
       worktree: inheritedResumeWorktree(treeDecision, treePlan, latest, project?.path ?? null),

@@ -390,11 +390,9 @@ export async function dispatchCommand(
   } = presentation
   const jobName = requestedJobName(argv, usage, doUsage)
   if (!jobName) return
-  const porcelain = has('porcelain')
-  const json = has('json')
-  if (porcelain && json) throw new Error('--porcelain cannot be combined with --json')
-  if (porcelain && has('follow')) {
-    throw new Error('--porcelain cannot be combined with --follow')
+  const [porcelain, json] = [has('porcelain'), has('json')]
+  if (porcelain && (json || has('follow'))) {
+    throw new Error(`--porcelain cannot be combined with ${json ? '--json' : '--follow'}`)
   }
   const requested = job(jobName),
     resolved = await resolveDispatchOptions(jobName)

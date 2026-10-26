@@ -66,6 +66,11 @@ export const UNSCORED_WHERE = `r.status = 'ok' AND r.evidence_excluded IS NULL A
         OR s.scored_at < (SELECT MAX(COALESCE(c.started_at, ''))
                             FROM run c WHERE c.parent_run_record_id = r.record_id))`
 
+const PENDING_SCORE_WHERE = UNSCORED_WHERE.replace(
+  'r.evidence_excluded IS NULL',
+  "(r.evidence_excluded IS NULL OR r.executor='harness')",
+)
+
 /**
  * The evidence boundary: a run leaves the owed-judgment ledger in two ways,
  * a stored verdict or `evidence_excluded` set by a void. Every consumer of
@@ -238,7 +243,7 @@ export function pendingForSession(sid: string | null) {
             ${newestTurnOutputPathSql('r')} AS output_path,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
        FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
-      WHERE r.session_id = ? AND ${UNSCORED_WHERE}
+      WHERE r.session_id = ? AND ${PENDING_SCORE_WHERE}
       ORDER BY r.number`,
     )
     .all(sid) as {

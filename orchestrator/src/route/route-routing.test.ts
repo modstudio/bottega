@@ -30,11 +30,15 @@ import { trainingDataEligibility } from './training-data-eligibility.ts'
 test('the shared routing path launches a first harness turn and still refuses failover', () => {
   setMachineDelegation('delegation.implement', 'harness')
   try {
-    expect(pick('implement', undefined, 0, true, null, {}, false, undefined, Math.random, true)).toEqual({
+    expect(
+      pick('implement', undefined, 0, true, null, {}, false, undefined, Math.random, true),
+    ).toEqual({
       agent: 'harness',
       reason: 'machine delegation mode',
     })
-    expect(() => pick('implement', 'not-an-agent', 0, true, null, {}, false, undefined, Math.random, false)).toThrow(
+    expect(() =>
+      pick('implement', 'not-an-agent', 0, true, null, {}, false, undefined, Math.random, false),
+    ).toThrow(
       "this machine runs implement work through the harness's own sub-agent (delegation.implement=harness)",
     )
   } finally {

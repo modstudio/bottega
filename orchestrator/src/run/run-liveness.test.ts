@@ -253,6 +253,32 @@ describe('reapStale', () => {
     expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
   })
 
+  test('a harness run stays alive while its owner session is live without a process', () => {
+    const id = addRun({ agent: 'harness', job: 'implement', status: 'running', session: 'owner' })
+    db()
+      .query("UPDATE run SET executor='harness',pid=NULL,agent_pid=NULL WHERE record_id=?")
+      .run(id)
+    db().query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)').run('owner', nowIso())
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(0)
+    expect(db().query('SELECT status FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'running',
+    })
+  })
+
+  test('a harness run is interrupted once its owner session is gone', () => {
+    const id = addRun({ agent: 'harness', job: 'implement', status: 'running', session: 'owner' })
+    db()
+      .query("UPDATE run SET executor='harness',pid=NULL,agent_pid=NULL WHERE record_id=?")
+      .run(id)
+
+    expect(reapStale(db(), noSharedGitConfigCheck)).toBe(1)
+    expect(db().query('SELECT status,failure_kind FROM run WHERE record_id=?').get(id)).toEqual({
+      status: 'stale',
+      failure_kind: 'interrupted',
+    })
+  })
+
   test('reaping a running child inherits stale onto an asking root as evidence', () => {
     const root = addRun({ agent: 'grok', job: 'implement', status: 'asking' })
     db()

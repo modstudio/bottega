@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { requireAgent } from '../agent/agent-registry.ts'
 import { type Agent, minimumCliVersionRefusal } from '../agent/agents.ts'
 import { effectiveEndpointApiKeyForRun } from '../agent/endpoint-api-key.ts'
@@ -30,6 +31,7 @@ import { preflight } from '../dispatch/dispatch-preflight.ts'
 import type { StreamEvent } from '../events.ts'
 import { type classify, notify } from '../failure/failure.ts'
 import { job } from '../jobs/jobs.ts'
+import { delegationMode } from '../jobs/delegation.ts'
 import {
   canonSourceFor,
   canonSourceInstruction,
@@ -269,8 +271,12 @@ export async function run(opts: {
   assertMigrationDispatchAllowedAndRecord(db(), opts.resume !== undefined)
   runMigration.enableRunSchemaReload(opts.reserveId)
   const startedByUserId = await startedByUserIdForRun(opts.reserveId !== undefined)
-  const requestedJob = job(opts.job),
-    mcpRequest = effectiveMcpRequest(opts.mcp, requestedJob)
+  const requestedJob = job(opts.job)
+  const harnessDelegation =
+    delegationMode(requestedJob.needs, readDelegationSettings()) === 'harness'
+  // The caller's harness owns its own tool surface. There is no child process whose MCP
+  // attachment Bottega can preflight or provision for this executor.
+  const mcpRequest = harnessDelegation ? undefined : effectiveMcpRequest(opts.mcp, requestedJob)
   const prior = opts.resume
   const resume = resumeFacts(prior?.kind ?? null, opts.reserveId ?? '', prior?.parent ?? null)
   const inheritedDispatch =
@@ -453,7 +459,7 @@ export async function run(opts: {
       : initialDispatchPrompt({
           writesJob,
           preamble: writesJob
-            ? workerPreamble(opts.job)
+            ? workerPreamble(opts.job, harnessDelegation)
             : repoJob
               ? READONLY_PREAMBLE
               : NO_REPO_PREAMBLE,
@@ -675,6 +681,16 @@ export async function run(opts: {
   prompt = initialBoard.prompt
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   if (name === HARNESS_AGENT) {
+    const harnessRoots = acpWriter.runRoots(worktree, writesJob, false, scratchDir, runtimeDir)
+    recordSharedGitConfigSnapshotFailure(
+      claim.id,
+      snapshotWritingRunSharedGitConfig({
+        runId: claim.id,
+        writesJob,
+        worktree: worktree?.path ?? null,
+        writableRoots: harnessRoots,
+      }),
+    )
     return {
       record_id: claim.id,
       number: claim.number,

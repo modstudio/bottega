@@ -11,6 +11,7 @@ import {
   pendingForSession,
   runTotals,
   SHARED_OUTPUT_REASON,
+  UNSCORED_WHERE,
 } from './evidence-query.ts'
 
 test('runs --unscored uses the shared definition of an owed judgment', () => {
@@ -157,6 +158,22 @@ describe('evidence totals', () => {
 })
 
 describe('session scoping', () => {
+  test('harness execution remains pending for judgment without becoming routing evidence', () => {
+    const id = addRun({ agent: 'harness', job: 'implement', session: 'session-A' })
+    db()
+      .query(
+        "UPDATE run SET executor='harness',evidence_excluded='harness execution' WHERE record_id=?",
+      )
+      .run(id)
+    expect(pendingForSession('session-A').map((row) => row.record_id)).toEqual([id])
+    expect(
+      db()
+        .query(
+          `SELECT COUNT(*) n FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id WHERE ${UNSCORED_WHERE}`,
+        )
+        .get(),
+    ).toEqual({ n: 0 })
+  })
   test("only this session's own unscored runs are raised", () => {
     const mine = addRun({ agent: 'grok', job: 'craft' })
     const theirs = addRun({ agent: 'grok', job: 'craft' })

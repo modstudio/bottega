@@ -249,6 +249,8 @@ type RunningRow = {
 }
 
 function deadRunReason(row: RunningRow): string {
+  if (row.executor === 'harness')
+    return 'harness owner session is not live or its wall bound elapsed'
   if (runLeaseState(row.record_id) === 'free') return `run lease ${row.number} is free`
   if (row.pid) return `pid ${row.pid} is not alive`
   return 'legacy run has no live pid'
@@ -269,7 +271,22 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   let disposition: RunningDisposition
-  if (row.agent === '(pending)') {
+  if (row.executor === 'harness') {
+    const timeoutMinutes = readDispatchState(row.record_id)?.timeoutMinutes ?? undefined
+    const wallBound = resolveJobTimeoutMs(job(row.job), Number.POSITIVE_INFINITY, timeoutMinutes)
+    disposition = runAlive({
+      status: 'running',
+      lease: leaseState,
+      pidAlive: coordinatorPidAlive,
+      executor: row.executor,
+      ownerSessionAlive:
+        row.session_last_seen !== null &&
+        Date.parse(row.session_last_seen) >= now - SESSION_LIVE_MS,
+      wallBoundExceeded: now - Date.parse(row.started_at) > wallBound,
+    })
+      ? 'alive'
+      : 'dead'
+  } else if (row.agent === '(pending)') {
     disposition = abandonedBootstrap({
       agent: row.agent,
       pid: row.pid,
@@ -290,16 +307,10 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
   ) {
     disposition = 'setup-death'
   } else {
-    const timeoutMinutes = readDispatchState(row.record_id)?.timeoutMinutes ?? undefined
-    const wallBound = resolveJobTimeoutMs(job(row.job), Number.POSITIVE_INFINITY, timeoutMinutes)
     disposition = runAlive({
       status: 'running',
       lease: leaseState,
       pidAlive: coordinatorPidAlive,
-      executor: row.executor,
-      ownerSessionAlive:
-        row.session_last_seen !== null && Date.parse(row.session_last_seen) >= now - SESSION_LIVE_MS,
-      wallBoundExceeded: now - Date.parse(row.started_at) > wallBound,
     })
       ? 'alive'
       : 'dead'

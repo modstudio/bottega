@@ -31,7 +31,8 @@ def run_row(line: str) -> dict:
         raise ValueError("run identity is invalid")
     if not all(isinstance(value.get(key), str) for key in ("job", "agent", "status")):
         raise ValueError("run presentation is invalid")
-    if value.get("executor") not in ("external", "harness"):
+    value["executor"] = value.get("executor", "external")
+    if value["executor"] not in ("external", "harness"):
         raise ValueError("run executor is invalid")
     if value.get("session_id") is not None and not isinstance(value.get("session_id"), str):
         raise ValueError("run session is invalid")

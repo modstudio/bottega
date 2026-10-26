@@ -7,11 +7,13 @@ test('run executor migration defaults existing rows to external and constrains n
   const database = migrationBoundaryTestDatabase('0169_run_executor')
   try {
     const id = newRecordId()
-    database.query(
-      `INSERT INTO run
+    database
+      .query(
+        `INSERT INTO run
        (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,project_record_id)
        VALUES (?,999,'2026-10-25T00:00:00.000Z','codex','understand','sha',1,'head','ok',?)`,
-    ).run(id, fixtureProjectRecordId(database))
+      )
+      .run(id, fixtureProjectRecordId(database))
     expect(applyMigrations(database)).toContain('0169_run_executor')
     expect(database.query('SELECT executor FROM run WHERE record_id=?').get(id)).toEqual({
       executor: 'external',

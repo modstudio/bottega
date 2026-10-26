@@ -841,8 +841,13 @@ questions, blockers, and what you could not establish. Keep the generic summary,
 files, change guide, deviations, and tests fields that the issue schema also requires.`
 
 /** The writing contract is selected by job, never by a caller-controlled flag. */
-export function workerPreamble(jobName: string): string {
-  return jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE : WORKER_PREAMBLE
+export function workerPreamble(jobName: string, durableQuestionsOnly = false): string {
+  const preamble = jobName === 'issue-worker' ? ISSUE_WORKER_PREAMBLE : WORKER_PREAMBLE
+  if (!durableQuestionsOnly) return preamble
+  return preamble.replace(
+    /NON-BLOCKING MESSAGES\n\n[\s\S]*?\n\nFILING FINDINGS/,
+    `DURABLE QUESTION PATH\n\nThe live orchestrator question channel is not offered for this run. When you need a ruling, stop and return status "asking" with every question in reply.json. The architect answers it with the durable run answer path, and the next turn returns as another harness handoff.\n\nFILING FINDINGS`,
+  )
 }
 
 function workerResumeGuard(_jobName: string): string {

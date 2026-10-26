@@ -113,6 +113,30 @@ describe('score ruling', () => {
     ).toEqual({ evidence_excluded: null, delivery: 'full', quality: 'right' })
   })
 
+  test('a harness execution verdict preserves its permanent routing exclusion', async () => {
+    const id = addRun({
+      agent: 'harness',
+      job: 'file-question',
+      status: 'ok',
+      session: process.env.CLAUDE_CODE_SESSION_ID ?? null,
+    })
+    db()
+      .query(
+        "UPDATE run SET executor='harness',evidence_excluded='harness execution' WHERE record_id=?",
+      )
+      .run(id)
+
+    await score(id, ['full', 'right'])
+
+    expect(db().query('SELECT evidence_excluded FROM run WHERE record_id=?').get(id)).toEqual({
+      evidence_excluded: 'harness execution',
+    })
+    expect(db().query('SELECT delivery,quality FROM score WHERE run_record_id=?').get(id)).toEqual({
+      delivery: 'full',
+      quality: 'right',
+    })
+  })
+
   test('a child void writes nothing, while a child verdict still scores the root', async () => {
     const root = insert()
     const child = insert()

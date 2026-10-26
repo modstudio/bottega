@@ -198,7 +198,10 @@ export function jobBoundInstruction(j: Job, boundMs: number, scratchDir: string)
   )
 }
 
-export function jobBoundInstructionForContract(j: Job, scratchDir = '<run scratch directory>'): string {
+export function jobBoundInstructionForContract(
+  j: Job,
+  scratchDir = '<run scratch directory>',
+): string {
   const defaults = JOB_TIMEOUTS[j.name as keyof typeof JOB_TIMEOUTS]
   const bound =
     defaults?.defaultMinutes != null
