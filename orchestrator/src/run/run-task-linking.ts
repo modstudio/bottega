@@ -4,16 +4,16 @@
 import type { Database } from 'bun:sqlite'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { type Project, projects } from '../project/projects.ts'
+import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 import {
   type HubTaskReader,
   type HubTaskReference,
   readHubTasks,
   taskReadRefusal,
 } from '../workflow/workflow-task-reference.ts'
-import { linkWorkflowTaskLabel } from '../workflow/workflow-task-linking.ts'
 
-export { readHubTasks } from '../workflow/workflow-task-reference.ts'
 export type { HubTaskReader, HubTaskReference } from '../workflow/workflow-task-reference.ts'
+export { readHubTasks } from '../workflow/workflow-task-reference.ts'
 
 type TaskLinkSource = 'launch_key' | 'review_ref' | 'branch' | 'turn'
 type ProjectLinkSource = 'task-project' | 'cwd' | 'scratchpad-cwd'

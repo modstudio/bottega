@@ -88,7 +88,7 @@ import { prepareRunBoard as board, persistBoundPrompt } from './run-board-prompt
 import { claimRun } from './run-claim.ts'
 import { closeRun } from './run-close.ts'
 import * as runConfinement from './run-confinement.ts'
-import { runDispatchRulingsSection } from './run-dispatch-rulings.ts'
+import { prepareRunDispatchRulings } from './run-dispatch-rulings.ts'
 import { runEvidence } from './run-evidence-context.ts'
 import { assertConfiguredGitGuard, workerGitConfigEnvironment } from './run-git-guard.ts'
 import { decideRunLaunch, resolveRunTransport, runTransportPin } from './run-launch.ts'
@@ -402,29 +402,17 @@ export async function run(opts: {
       })
     }
   }
-  const docsSection = operatorKnowledgeSection(pack ?? null)
-  const dispatchKey = attributedLaunchKey({
-    writesJob,
-    key: opts.key,
-    cwd: callerCwd,
-  })
-  const dispatchLinks = resume.isFirstTurn
-    ? await admitNewRunReference({
-        projectName: runProjectName,
-        projectRecordId: runProjectId,
-        key: dispatchKey,
-        cwd: repoJob ? null : callerCwd,
-        launchCwd: opts.launchCwd ?? callerCwd,
-        probe: Boolean(opts.probe),
-      })
-    : null
-  const dispatchRulings = runDispatchRulingsSection({
-    resume: !resume.isFirstTurn,
-    project: runProjectName,
+  const dispatchKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
+  const dispatchRulings = await prepareRunDispatchRulings({
+    firstTurn: resume.isFirstTurn,
+    projectName: runProjectName,
+    projectRecordId: runProjectId,
     key: dispatchKey,
-    taskRecordId: dispatchLinks?.taskRecordId ?? null,
+    repoJob,
+    callerCwd,
+    launchCwd: opts.launchCwd,
+    probe: Boolean(opts.probe),
   })
-  const rulingsSection = dispatchRulings.section
   let prompt =
     opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
@@ -436,8 +424,8 @@ export async function run(opts: {
               ? READONLY_PREAMBLE
               : NO_REPO_PREAMBLE,
           infrastructure: infra,
-          operatorKnowledge: docsSection,
-          taskRulings: rulingsSection,
+          operatorKnowledge: operatorKnowledgeSection(pack ?? null),
+          taskRulings: dispatchRulings.section,
           spec: originalPrompt,
         })
   prompt = bindReviewInstructions({
@@ -655,7 +643,7 @@ export async function run(opts: {
     startedByUserId,
     replySchemaName,
     carriedQuestionIds: dispatchRulings.questionIds,
-    ...(dispatchLinks ? { precomputedLinks: dispatchLinks } : {}),
+    precomputedLinks: dispatchRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })

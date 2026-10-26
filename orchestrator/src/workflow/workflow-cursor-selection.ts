@@ -6,8 +6,8 @@ import { db, sessionId } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
-import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
+import { resolveWorkflowMode, showResolvedWorkflow } from './workflows.ts'
 
 /** The persisted cursor columns a listed cursor carries; storage identity is not one of them. */
 export const LISTED_CURSOR_COLUMNS =
@@ -47,6 +47,12 @@ export async function resolveWorkflowCursorContext(
   const task = await resolveHubTaskReference(project, key, reader)
   return { ...context, taskRecordId: task?.record_id ?? null }
 }
+
+export const resolveMcpCursorContext = (
+  project: string,
+  args: Record<string, string>,
+  reader?: HubTaskReader,
+) => resolveWorkflowCursorContext(project, args, mcpWorkflowCursorContext(), reader)
 
 export function workflowCursorProjectScope(
   options: { all?: boolean; project?: string; session?: string },

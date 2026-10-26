@@ -167,6 +167,7 @@ export const mcpModules: McpModule[] = [
     '../workflow/workflow-cursor.ts',
     '../workflow/workflow-cursor-arguments.ts',
     '../workflow/workflow-cursor-selection.ts',
+    '../workflow/workflow-task-reference.ts',
     '../workflow/workflows.ts',
     './mcp-workflow-space.ts',
   ]),

@@ -3,23 +3,18 @@
 
 import type { McpServer } from '@modelcontextprotocol/server'
 import { z } from 'zod'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { parseAutonomy } from '../workflow/autonomy.ts'
 import {
   type CommitCountPort,
   readCommitsPastLanding,
 } from '../workflow/workflow-compose-branch.ts'
-import {
-  getWorkflowStepWithCursor,
-  resolveLinkedWorkflowCursorMode,
-} from '../workflow/workflow-cursor.ts'
+import { getWorkflowStepWithCursor } from '../workflow/workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import {
-  mcpWorkflowCursorContext,
-  resolveWorkflowCursorContext,
-} from '../workflow/workflow-cursor-selection.ts'
+import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { renderWorkflowStep } from '../workflow/workflow-render.ts'
 import { resolveWorkflowStepReference } from '../workflow/workflow-step-reference.ts'
+import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { getWorkflowStep, workflowModeStepLists } from '../workflow/workflows.ts'
 
 const inputSchema = z.object({
@@ -38,12 +33,7 @@ async function workflowStep(
   hubTaskReader?: HubTaskReader,
 ) {
   const { slug, project, step, mode, args, autonomy, cursor } = input
-  const context = await resolveWorkflowCursorContext(
-    project,
-    args ?? {},
-    mcpWorkflowCursorContext(),
-    hubTaskReader,
-  )
+  const context = await resolveMcpCursorContext(project, args ?? {}, hubTaskReader)
   const effectiveMode = cursor
     ? resolveLinkedWorkflowCursorMode(
         slug,

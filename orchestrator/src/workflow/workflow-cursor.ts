@@ -30,11 +30,9 @@ import {
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
-  resolveWorkflowCursorMode,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
-import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import {
   type ClosedStep,
   type CursorTrailEntry,
@@ -75,6 +73,7 @@ import {
   type WorkflowSelfRulingInput,
 } from './workflow-self-ruling-mutation.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
+import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-task-linking.ts'
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
@@ -128,45 +127,6 @@ function findCursor(
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
   row?.session_id && context.session && row.session_id !== context.session ? row.session_id : null
-
-function linkResolvedWorkflowTask(
-  project: string,
-  args: Record<string, string>,
-  context: WorkflowCursorContext,
-  d: Database,
-): void {
-  const workflowKey = keyOf(args)
-  if (!workflowKey || !context.taskRecordId) return
-  linkWorkflowTaskLabel(d, { project, workflowKey, taskRecordId: context.taskRecordId })
-}
-
-/** Resolves a mode after applying the one-key rollout link in the same cursor-service transaction. */
-export function resolveLinkedWorkflowCursorMode(
-  slug: string,
-  project: string,
-  requested: string | undefined,
-  args: Record<string, string>,
-  context: WorkflowCursorContext,
-  caller: string,
-  remedy: string,
-  d: Database = writableDb(),
-  cursor?: number,
-): string {
-  return writeTransaction(() => {
-    linkResolvedWorkflowTask(project, args, context, d)
-    return resolveWorkflowCursorMode(
-      slug,
-      project,
-      requested,
-      args,
-      context,
-      caller,
-      remedy,
-      d,
-      cursor,
-    )
-  }, d)
-}
 
 /**
  * Create, or resume, the cursor a composition opens.
@@ -505,24 +465,20 @@ export function getWorkflowStepWithCursor(
   commitCount: CommitCountPort = readCommitsPastLanding,
 ) {
   const autonomy = live.resolution
-  return writeTransaction(
-    () => {
-      linkResolvedWorkflowTask(project, args, context, d)
-      return getWorkflowStepWithCursorImpl(
-        slug,
-        project,
-        stepSlug,
-        args,
-        mode,
-        context,
-        d,
-        autonomy,
-        cursor,
-        live,
-        commitCount,
-      )
-    },
-    d,
+  return withLinkedWorkflowTask(project, args, context, d, () =>
+    getWorkflowStepWithCursorImpl(
+      slug,
+      project,
+      stepSlug,
+      args,
+      mode,
+      context,
+      d,
+      autonomy,
+      cursor,
+      live,
+      commitCount,
+    ),
   )
 }
 
@@ -837,26 +793,22 @@ export function nextWorkflowStep(
   live?: LiveCursorAutonomy,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
-    writeTransaction(
-      () => {
-        linkResolvedWorkflowTask(project, args, context, d)
-        return nextWorkflowStepImpl(
-          slug,
-          project,
-          mode,
-          args,
-          note,
-          context,
-          evidence,
-          replayPorts,
-          d,
-          cursor,
-          selfRuling,
-          outcome,
-          live,
-        )
-      },
-      d,
+    withLinkedWorkflowTask(project, args, context, d, () =>
+      nextWorkflowStepImpl(
+        slug,
+        project,
+        mode,
+        args,
+        note,
+        context,
+        evidence,
+        replayPorts,
+        d,
+        cursor,
+        selfRuling,
+        outcome,
+        live,
+      ),
     ),
   )
 }
@@ -921,12 +873,8 @@ export function abandonWorkflowCursor(
   d: Database = writableDb(),
   cursor?: number,
 ): string {
-  return writeTransaction(
-    () => {
-      linkResolvedWorkflowTask(project, args, context, d)
-      return abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor)
-    },
-    d,
+  return withLinkedWorkflowTask(project, args, context, d, () =>
+    abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
   )
 }
 
@@ -1069,12 +1017,8 @@ export function awaitWorkflowRuling(
   notify: typeof notifyWaitingItem = notifyWaitingItem,
   cursor?: number,
 ): CursorSummary & { questionId: number } {
-  const result = writeTransaction(
-    () => {
-      linkResolvedWorkflowTask(project, args, context, d)
-      return awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor)
-    },
-    d,
+  const result = withLinkedWorkflowTask(project, args, context, d, () =>
+    awaitWorkflowRulingImpl(slug, project, mode, args, question, context, d, cursor),
   )
   notify('workflow', result.cursorId, d)
   return result.summary

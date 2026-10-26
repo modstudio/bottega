@@ -6,14 +6,12 @@ import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
-import { nextWorkflowStep, resolveLinkedWorkflowCursorMode } from '../workflow/workflow-cursor.ts'
+import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
-import {
-  mcpWorkflowCursorContext,
-  resolveWorkflowCursorContext,
-} from '../workflow/workflow-cursor-selection.ts'
+import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
+import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
+import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
@@ -47,12 +45,7 @@ export async function advanceWorkflow(
       'self_ruling_basis requires self_ruling; pass both inputs, or omit self_ruling_basis',
     )
   const workflowArgs = args ?? {}
-  const context = await resolveWorkflowCursorContext(
-    project,
-    workflowArgs,
-    mcpWorkflowCursorContext(),
-    hubTaskReader,
-  )
+  const context = await resolveMcpCursorContext(project, workflowArgs, hubTaskReader)
   const adoptedTask = task ? await resolveHubTaskReference(project, task, hubTaskReader) : null
   const advanceContext = { ...context, adoptionTaskRecordId: adoptedTask?.record_id ?? null }
   const effectiveMode = resolveLinkedWorkflowCursorMode(

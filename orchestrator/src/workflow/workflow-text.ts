@@ -5,8 +5,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
-import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
+import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 
 export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
 export const WORKFLOW_TEXT_CURSOR_MAX_BYTES = 64 * 1024

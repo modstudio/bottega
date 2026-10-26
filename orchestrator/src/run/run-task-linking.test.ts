@@ -204,7 +204,7 @@ describe('run task linking service', () => {
 
   test('links related task references once and reports unmatched keys per table', async () => {
     const projectId = addProject('related-links', '/work/related-links')
-    const runId = addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
+    addRun({ agent: 'codex', job: 'implement', projectRecordId: projectId })
     db().exec('PRAGMA foreign_keys=OFF')
     try {
       db()

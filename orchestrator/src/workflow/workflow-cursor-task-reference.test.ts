@@ -1,21 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import {
-  composeWorkflowWithCursor,
-  nextWorkflowStep,
-} from './workflow-cursor.ts'
+import { composeWorkflowWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
 import { resolveWorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { args, context, database } from './workflow-cursor-test.fixture.ts'
 
 describe('workflow cursor task reference', () => {
   test('an unknown user task key is stored as a label with no UUID link', async () => {
     const d = database()
-    const unresolved = await resolveWorkflowCursorContext(
-      'fixture',
-      args,
-      context,
-      async () => [],
-    )
+    const unresolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [])
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, unresolved, d, {}, {})
     expect(d.query('SELECT workflow_key,task_record_id FROM workflow_cursor').get()).toEqual({
       workflow_key: 'DEV-822',
@@ -50,15 +42,14 @@ describe('workflow cursor task reference', () => {
     ).run(newRecordId(), cursor.record_id, args.key)
     d.query("UPDATE workflow_cursor SET enforcement='note-only'").run()
 
-    const resolved = await resolveWorkflowCursorContext(
-      'fixture',
-      args,
-      context,
-      async () => [{ key: args.key, record_id: 'task-DEV-822', project: 'fixture' }],
-    )
+    const resolved = await resolveWorkflowCursorContext('fixture', args, context, async () => [
+      { key: args.key, record_id: 'task-DEV-822', project: 'fixture' },
+    ])
     nextWorkflowStep('flow', 'fixture', 'default', args, 'linked on selection', resolved, d)
 
-    expect(d.query('SELECT workflow_key,ordinal,task_record_id FROM workflow_cursor').get()).toEqual({
+    expect(
+      d.query('SELECT workflow_key,ordinal,task_record_id FROM workflow_cursor').get(),
+    ).toEqual({
       workflow_key: 'DEV-822',
       ordinal: 1,
       task_record_id: 'task-DEV-822',

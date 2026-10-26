@@ -275,16 +275,13 @@ test('an invalid project ship-to falls through without discarding its stage sett
 })
 
 test('answer proceeds when hosted is not configured', async () => {
-  const rulings = await resolveAnswerRulings(
-    'fixture',
-    {
-      clientFactory: () => {
-        throw new ConfigClientError('not-configured', '/v1/config')
-      },
-      database: database(),
-      env: missingConfig,
+  const rulings = await resolveAnswerRulings('fixture', {
+    clientFactory: () => {
+      throw new ConfigClientError('not-configured', '/v1/config')
     },
-  )
+    database: database(),
+    env: missingConfig,
+  })
   expect(answerRulingRefusal(rulings, false)).toBeNull()
 })
 
@@ -410,9 +407,10 @@ test('answer strictly combines every active workflow rulings snapshot', async ()
     complete: false,
     unavailableReason: 'offline',
   })
-  expect(
-    await resolveAnswerRulings('fixture', { database: d, env: missingConfig }),
-  ).toMatchObject({ value: 'agent', scope: 'project' })
+  expect(await resolveAnswerRulings('fixture', { database: d, env: missingConfig })).toMatchObject({
+    value: 'agent',
+    scope: 'project',
+  })
 })
 
 test('answer combines a cursor rulings snapshot with a stricter current setting', async () => {

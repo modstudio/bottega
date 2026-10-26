@@ -22,16 +22,7 @@ const definition = (mode: string) => ({
 test('a keyless cursor composed in a non-default mode resolves that mode', () => {
   const d = database()
   const context = { session: 'keyless-mode-session' }
-  composeWorkflowWithCursor(
-    SLUG,
-    'local-mode-project',
-    'non-default',
-    {},
-    context,
-    d,
-    {},
-    {},
-  )
+  composeWorkflowWithCursor(SLUG, 'local-mode-project', 'non-default', {}, context, d, {}, {})
   expect(
     resolveWorkflowCursorMode(
       SLUG,

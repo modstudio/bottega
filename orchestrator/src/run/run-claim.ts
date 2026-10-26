@@ -156,7 +156,7 @@ export type ClaimInput = {
   startedByUserId: string | null
   replySchemaName: string
   carriedQuestionIds: string[]
-  precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null }
+  precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null } | null
   assertDispatchAllowed(): void
   recordDispatchRefusal?(cause: unknown): void
 }

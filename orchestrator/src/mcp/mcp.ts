@@ -47,19 +47,19 @@ import {
 import {
   abandonWorkflowCursorByHandle,
   awaitWorkflowRuling,
-  resolveLinkedWorkflowCursorMode,
   ruleWorkflow,
 } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
-  resolveWorkflowCursorContext,
+  resolveMcpCursorContext,
 } from '../workflow/workflow-cursor-selection.ts'
+import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
+import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   attachWorkflowTextByHandle,
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
 } from '../workflow/workflow-text.ts'
 import { composeWorkflow, listResolvedWorkflows } from '../workflow/workflows.ts'
-import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
 import { registerBoardTools } from './mcp-board-tools.ts'
 import { registerDocTools } from './mcp-doc-tools.ts'
@@ -551,12 +551,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, question, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolveWorkflowCursorContext(
-        project,
-        workflowArgs,
-        mcpWorkflowCursorContext(),
-        ports.hubTaskReader,
-      )
+      const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       const effectiveMode = resolveLinkedWorkflowCursorMode(
         slug,
         project,
@@ -600,12 +595,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
     },
     async ({ slug, project, mode, args, ruling, from_operator, cursor }) => {
       const workflowArgs = args ?? {}
-      const context = await resolveWorkflowCursorContext(
-        project,
-        workflowArgs,
-        mcpWorkflowCursorContext(),
-        ports.hubTaskReader,
-      )
+      const context = await resolveMcpCursorContext(project, workflowArgs, ports.hubTaskReader)
       return text(
         ruleWorkflow(
           slug,

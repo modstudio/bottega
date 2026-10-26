@@ -28,7 +28,6 @@ import {
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
   nextWorkflowStep,
-  resolveLinkedWorkflowCursorMode,
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -66,8 +65,9 @@ import {
   resolvedWorkflowRenderCheckLines,
 } from './workflow-render-check-store.ts'
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
-import { attachWorkflowText } from './workflow-text.ts'
+import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
+import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
@@ -245,12 +245,7 @@ export async function attachCommand(
     `${PLATFORM_SLUG} workflow attach`,
   )
   const args = workflowArgs(argv)
-  context = await resolveWorkflowCursorContext(
-    project,
-    args,
-    context,
-    options.hubTaskReader,
-  )
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -416,12 +411,7 @@ export async function ruleCommand(
     context,
     `${PLATFORM_SLUG} workflow rule`,
   )
-  context = await resolveWorkflowCursorContext(
-    project,
-    args,
-    context,
-    options.hubTaskReader,
-  )
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -462,12 +452,7 @@ export async function abandonCommand(
     context,
     `${PLATFORM_SLUG} workflow abandon`,
   )
-  context = await resolveWorkflowCursorContext(
-    project,
-    args,
-    context,
-    options.hubTaskReader,
-  )
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,
@@ -516,12 +501,7 @@ export async function stepCommand(
   let context = cliWorkflowCursorContext()
   const target = cursorCommandTarget(argv, cursor, context, `${PLATFORM_SLUG} workflow step`, true)
   const { project, workflow: slug } = target
-  context = await resolveWorkflowCursorContext(
-    project,
-    args,
-    context,
-    options.hubTaskReader,
-  )
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = cursor
     ? resolveLinkedWorkflowCursorMode(
         slug,
@@ -593,12 +573,7 @@ export async function nextCommand(
     `${PLATFORM_SLUG} workflow next`,
   )
   const evidence = evidenceFromArgv(argv)
-  context = await resolveWorkflowCursorContext(
-    project,
-    args,
-    context,
-    options.hubTaskReader,
-  )
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const adoptedTask = evidence.task
     ? await resolveHubTaskReference(project, evidence.task, options.hubTaskReader)
     : null
@@ -654,12 +629,7 @@ export async function awaitCommand(
     context,
     `${PLATFORM_SLUG} workflow await`,
   )
-  context = await resolveWorkflowCursorContext(
-    project,
-    args,
-    context,
-    options.hubTaskReader,
-  )
+  context = await resolveWorkflowCursorContext(project, args, context, options.hubTaskReader)
   const mode = resolveLinkedWorkflowCursorMode(
     slug,
     project,

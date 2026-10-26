@@ -64,7 +64,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-liveness-policy.ts', []),
   module('orchestrator/src/run/run-wall-deadline.ts', []),
   module('orchestrator/src/run/run-dispatch-rulings.ts', [
-    './run-task-linking.ts',
+    './run-task-reference.ts',
     './task-rulings-store.ts',
     './task-rulings.ts',
   ]),
@@ -151,7 +151,17 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',
     '../project/projects.ts',
+    '../workflow/workflow-task-reference.ts',
     './run-task-linking.ts',
+  ]),
+  module('orchestrator/src/run/run-task-linking.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../workflow/workflow-task-linking.ts',
+    '../workflow/workflow-task-reference.ts',
   ]),
   module('orchestrator/src/run/run-task-branch-resolution.ts', [
     '../branch/task-branch.ts',

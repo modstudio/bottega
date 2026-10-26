@@ -40,11 +40,22 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     'bun:sqlite',
     'node:crypto',
     '../database/db.ts',
-    '../run/run-task-linking.ts',
     './workflow-cursor-arguments.ts',
     './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
+    './workflow-task-reference.ts',
     './workflows.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-task-linking.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../run/question-mutation.ts',
+    './workflow-cursor-arguments.ts',
+    './workflow-cursor-selection.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-task-reference.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-task-reference.ts', ['bun:sqlite']),
   module('orchestrator/src/workflow/workflow-floor.ts', [
@@ -133,6 +144,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-transition.ts',
+    './workflow-task-linking.ts',
   ]),
   module('orchestrator/src/workflow/workflow-probe.ts', [
     '../../../shared/brand.ts',
@@ -193,6 +205,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
     './workflow-step-reference.ts',
+    './workflow-task-linking.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-result.ts', [
