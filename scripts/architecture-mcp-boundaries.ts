@@ -27,6 +27,7 @@ export const mcpBoundarySpecs: ImportBoundary[] = [
       '../../../shared/brand.ts',
       '../../../shared/self-spawn.ts',
       '../../../shared/trackers.ts',
+      '../mcp/mcp-command.ts',
       '../mcp/mcp-headers-helper.ts',
       '../mcp/mcp-probe.ts',
       '../mcp/mcp-tool-list.ts',

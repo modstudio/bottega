@@ -3,7 +3,7 @@
  * Names the project MCP servers one run attaches and how. Harness-neutral: it
  * must not know argv, transports, or credentials.
  */
-import { isAbsolute, resolve } from 'node:path'
+import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import {
   disabledProjectMcpServers,
   type McpConfigReadResult,
@@ -65,10 +65,7 @@ function selectDirectProjectMcpServers(
     } else if (entry.url) {
       servers[name] = { url: entry.url }
     } else if (entry.command) {
-      const command =
-        entry.command.includes('/') && !isAbsolute(entry.command)
-          ? resolve(cwd, entry.command)
-          : entry.command
+      const command = resolveProjectMcpCommand(entry.command, cwd)
       servers[name] = { command, args: entry.args ?? [], cwd }
     } else {
       withheld.push(name)

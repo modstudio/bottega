@@ -8,6 +8,7 @@ import type { Stream } from 'node:stream'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
+import { resolveProjectMcpCommand } from './mcp-command.ts'
 
 const MCP_TOOL_LIST_TIMEOUT_MS = 8_000
 
@@ -131,7 +132,9 @@ export async function connectMcpToolClient(
   const stdio =
     !launch.url && launch.command
       ? new StdioClientTransport({
-          command: launch.command,
+          command: launch.cwd
+            ? resolveProjectMcpCommand(launch.command, launch.cwd)
+            : launch.command,
           args: launch.args ?? [],
           cwd: launch.cwd,
           env: { ...env, ...launch.env },

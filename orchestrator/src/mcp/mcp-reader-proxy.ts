@@ -14,6 +14,7 @@ import {
   retiredProjectByName,
   retiredProjectRefusal,
 } from '../project/projects.ts'
+import { resolveProjectMcpCommand } from './mcp-command.ts'
 import { resolveMcpHeaders } from './mcp-headers-helper.ts'
 import {
   bottegaMcpBinary,
@@ -250,7 +251,12 @@ async function serveReaderMcpProxy(
       sanitizeProbeError(String((error as Error)?.message ?? error), probeSecrets(config)),
     )
   }
-  const launch: McpToolListLaunch = { ...config, cwd, headers }
+  const launch: McpToolListLaunch = {
+    ...config,
+    command: config.command ? resolveProjectMcpCommand(config.command, cwd) : undefined,
+    cwd,
+    headers,
+  }
   const secrets = probeSecrets({ ...config, headers })
   let connected: Awaited<ReturnType<typeof connectMcpToolClient>>
   try {

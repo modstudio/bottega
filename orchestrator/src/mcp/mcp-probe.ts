@@ -4,6 +4,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 /** True when a transcript contains a completed MCP/tool call the probe can observe. */
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaMcpServeArgv, sourceBunExecutable } from '../../../shared/self-spawn.ts'
+import { resolveProjectMcpCommand } from './mcp-command.ts'
 import { type McpHeadersConfig, resolveMcpHeaders } from './mcp-headers-helper.ts'
 export function mcpToolCallsObservable(
   events: { kind: string; status?: string }[],
@@ -523,7 +524,10 @@ async function initialProbeRpc(
 ): Promise<ProbeRpcResult | null> {
   if (input.config.url) return dynamicHeaderHttpRpc(input, messages, secrets)
   if (!input.config.command) return null
-  const raw = [input.config.command, ...(input.config.args ?? [])]
+  const raw = [
+    resolveProjectMcpCommand(input.config.command, input.cwd),
+    ...(input.config.args ?? []),
+  ]
   const command = input.wrap ? await input.wrap(raw[0]!, raw.slice(1)) : raw
   const bin = command[0]!
   const args = command.slice(1)
@@ -599,8 +603,11 @@ export async function probeMcpServer(input: ProbeInput): Promise<McpProbeResult>
   const call = toolCallMessage(input.probeTool)
   const stdioArgv = input.config.command
     ? input.wrap
-      ? await input.wrap(input.config.command, input.config.args ?? [])
-      : [input.config.command, ...(input.config.args ?? [])]
+      ? await input.wrap(
+          resolveProjectMcpCommand(input.config.command, input.cwd),
+          input.config.args ?? [],
+        )
+      : [resolveProjectMcpCommand(input.config.command, input.cwd), ...(input.config.args ?? [])]
     : null
   let called: ProbeRpcResult
   if (input.config.url) {
