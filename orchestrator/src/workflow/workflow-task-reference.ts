@@ -53,7 +53,7 @@ export async function readHubTasks(project: string): Promise<HubTaskReference[]>
   return response.map(taskReference)
 }
 
-export async function readHubTask(key: string): Promise<HubTaskReference | null> {
+async function readHubTask(key: string): Promise<HubTaskReference | null> {
   return taskReference(await taskCommand(['task', 'show', key, '--json']))
 }
 
