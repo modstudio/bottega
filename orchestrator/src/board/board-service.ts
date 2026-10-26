@@ -27,6 +27,7 @@ import {
   boardOrigin,
   boardReaderBeganAt,
   type Environment,
+  hasNonSuccessorReceipt,
   hasReceipt,
   insertRootMessage,
   type MessageRow,
@@ -164,7 +165,7 @@ function replySuccessorPush(
     rootAuthorSession: root.author_session,
     rootAuthorReceivedReply: wasDelivered(reply.record_id, root.author_session, database),
     rootProject: root.author_project,
-    readerIsParticipant: hasReceipt(reply.record_id, reader, database),
+    readerIsParticipant: hasNonSuccessorReceipt(reply.record_id, reader, database),
     successorClaimed: Boolean(
       database
         .query(

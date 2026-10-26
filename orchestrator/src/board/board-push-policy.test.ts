@@ -309,9 +309,9 @@ test('an unacknowledged report reply successor claim is re-offered to the same r
     replyId,
   ])
   expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
-  expect(claimPushNotices(false, env, clock + 1).notices.map((notice) => notice.recordId)).toEqual(
-    [replyId],
-  )
+  expect(claimPushNotices(false, env, clock + 1).notices.map((notice) => notice.recordId)).toEqual([
+    replyId,
+  ])
   expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
 })
 
@@ -325,4 +325,22 @@ test('a successor claim receipt stays undelivered until markNoticesDelivered sta
   markNoticesDelivered([replyId], env, clock + 1)
   expect(successorReceipt(replyId, reader).delivered_at).not.toBeNull()
   expect(claimPushNotices(false, env, clock + 2).notices).toEqual([])
+})
+
+test('a claimant who began after the reply is re-offered until acknowledged', () => {
+  const { replyId, reader } = successorThreadFixture('reoffer-ack')
+  const env = { CLAUDE_CODE_SESSION_ID: reader }
+  expect(claimPushNotices(false, env, clock).notices.map((notice) => notice.recordId)).toEqual([
+    replyId,
+  ])
+  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
+  expect(claimPushNotices(false, env, clock + 1).notices.map((notice) => notice.recordId)).toEqual([
+    replyId,
+  ])
+  expect(successorReceipt(replyId, reader)).toEqual({ successor: 1, delivered_at: null })
+  markNoticesDelivered([replyId], env, clock + 2)
+  const stamped = successorReceipt(replyId, reader)
+  expect(stamped.successor).toBe(1)
+  expect(stamped.delivered_at).not.toBeNull()
+  expect(claimPushNotices(false, env, clock + 3).notices).toEqual([])
 })
