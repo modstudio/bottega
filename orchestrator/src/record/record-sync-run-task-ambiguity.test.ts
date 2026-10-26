@@ -79,7 +79,9 @@ test('a non-probe run with neither a task nor a project is refused', async () =>
   expect(await syncRecord(options(local, remote))).toMatchObject({ pushed: 0, failed: 1 })
   const row = local.query<{ last_error: string }, []>('SELECT last_error FROM outbox').get()!
   expect(row.last_error).toContain('has no hosted project or task')
-  const runWrites = remote.statements.filter((sql) => sql.toLowerCase().includes('insert into "run"'))
+  const runWrites = remote.statements.filter((sql) =>
+    sql.toLowerCase().includes('insert into "run"'),
+  )
   expect(runWrites).toHaveLength(0)
   local.close()
 })
