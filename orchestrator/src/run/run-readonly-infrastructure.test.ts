@@ -3,7 +3,7 @@ import { job, jobBoundInstruction } from '../jobs/jobs.ts'
 import { readonlyInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 
 test('read-only infrastructure describes the provisioned tree without a Docker allowance', () => {
-  const prompt = readonlyInfrastructurePrompt({
+  const input = {
     readsRepo: true,
     writesRepo: false,
     readonlyCreate: true,
@@ -12,11 +12,16 @@ test('read-only infrastructure describes the provisioned tree without a Docker a
     regularNotes: 'Regular notes.',
     generatedNotes: 'Generated readonly_create notes.',
     mainCheckout: '/projects/main',
-  })
+    findings: false,
+  }
+  const prompt = readonlyInfrastructurePrompt(input)
+  const findingsPrompt = readonlyInfrastructurePrompt({ ...input, findings: true })
 
   expect(prompt).toContain('Use the prepared fixture.')
   expect(prompt).not.toContain('Docker is reachable')
   expect(prompt).toContain('/projects/main')
+  expect(prompt).toContain('record what you could not run in could_not_verify')
+  expect(findingsPrompt).toContain('do not record an unrun suite in could_not_verify')
   expect(prompt).not.toContain('BOTTEGA_MAIN_CHECKOUT')
 })
 

@@ -4,6 +4,7 @@ import { JOBS, jobBoundInstructionForContract } from '../jobs/jobs.ts'
 import {
   COULD_NOT_VERIFY_INSTRUCTION,
   contractConflicts,
+  FINDINGS_INFRASTRUCTURE_RECOVERY,
   INFRASTRUCTURE_RECOVERY,
   NO_REPO_PREAMBLE,
   READER_DELIVERABLE_FIRST,
@@ -11,6 +12,7 @@ import {
   REVIEW_PROVENANCE_INSTRUCTION,
   REVIEW_SCHEMA,
   REVIEW_SEVERITY_INSTRUCTION,
+  repositoryReaderPreamble,
   WORKER_PREAMBLE,
 } from './contract.ts'
 import { contractText } from './contract-text.ts'
@@ -33,19 +35,9 @@ describe('job contracts are visible before submission', () => {
     expect(READONLY_PREAMBLE).toContain('do not report it as your change')
     expect(READONLY_PREAMBLE).not.toContain("It contains the caller's")
     expect(READONLY_PREAMBLE).toContain(
-      'Do not run test suites, test directories,\n' +
-        "related or affected test sets, the gate, or the project's check.",
-    )
-    expect(READONLY_PREAMBLE).toContain(
-      'One focused\n' +
-        'probe tied to one specific finding is allowed: a single test file or a single\n' +
-        'command that demonstrates that finding.',
-    )
-    expect(READONLY_PREAMBLE).toContain(
-      'Your\n' +
-        'findings are the deliverable, not your diff: every change you make here is\n' +
-        'scratch work and must never be treated as a proposed change to land. Do not\n' +
-        'commit, push, or merge.',
+      'Edit and test freely when that helps you verify a finding. Your findings are the\n' +
+        'deliverable, not your diff: every change you make here is scratch work and must\n' +
+        'never be treated as a proposed change to land. Do not commit, push, or merge.',
     )
   })
   test('reader contracts require the deliverable before ceiling-vulnerable reasoning', () => {
@@ -71,11 +63,11 @@ describe('job contracts are visible before submission', () => {
     expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.recipe.serve')
     expect(INFRASTRUCTURE_RECOVERY).toContain('worktree.notes')
     expect(INFRASTRUCTURE_RECOVERY).toContain(
-      'A reader MAY run that serve step only for a focused probe tied to one specific finding and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.',
+      'A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.',
     )
   })
   test('review provenance shares the could-not-verify instruction', () => {
-    const paragraphInstruction = INFRASTRUCTURE_RECOVERY.split('\n\n').at(-1)!
+    const paragraphInstruction = FINDINGS_INFRASTRUCTURE_RECOVERY.split('\n\n').at(-1)!
     const schemaInstruction: string =
       REVIEW_SCHEMA.properties.provenance.properties.could_not_verify.description
     expect(paragraphInstruction).toBe(COULD_NOT_VERIFY_INSTRUCTION)
@@ -126,14 +118,24 @@ describe('job contracts are visible before submission', () => {
     expect(WORKER_PREAMBLE).toContain('report done only with a finished result or a refusal')
     expect(WORKER_PREAMBLE).toContain("reply's tests section")
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
-    expect(READONLY_PREAMBLE).toContain('When the `run_tests` tool is offered')
+    expect(READONLY_PREAMBLE).not.toContain('run_tests')
     expect(READONLY_PREAMBLE).toContain(
       `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server`,
     )
     expect(READONLY_PREAMBLE).toContain('Never\nrun Docker or `scripts/gate` yourself')
-    expect(READONLY_PREAMBLE).not.toContain('Record an unrun gate')
+    expect(READONLY_PREAMBLE).toContain('Record an unrun gate')
     expect(NO_REPO_PREAMBLE).not.toContain('run_gate')
     expect(NO_REPO_PREAMBLE).not.toContain('run_tests')
+  })
+  test('findings readers prohibit suites while diagnose retains reader execution', () => {
+    const findings = contract('review-lens').out
+    const diagnose = contract('diagnose').out
+    expect(findings).toContain(
+      "Do not run test suites, test directories,\nrelated or affected test sets, the gate, or the project's check.",
+    )
+    expect(findings).not.toContain('Edit and test freely when that helps you verify a finding.')
+    expect(diagnose).not.toContain('Do not run test suites')
+    expect(diagnose).toContain('Edit and test freely when that helps you verify a finding.')
   })
   test('contract prints the same preamble selected when a job is bound', () => {
     for (const [name, definition] of Object.entries(JOBS)) {
@@ -144,7 +146,7 @@ describe('job contracts are visible before submission', () => {
           definition.needs.writesRepo
             ? WORKER_PREAMBLE
             : definition.needs.readsRepo
-              ? READONLY_PREAMBLE
+              ? repositoryReaderPreamble(Boolean(definition.findings))
               : NO_REPO_PREAMBLE
         }\n\n` + `${jobBoundInstructionForContract(definition)}\n`,
       )

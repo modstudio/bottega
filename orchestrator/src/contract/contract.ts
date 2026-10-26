@@ -695,11 +695,26 @@ export function missingDeclaredDeliverables(
 }
 
 /**
- * The one infrastructure recovery instruction shared by repository writers and
- * readers. Keep this as one string: differing recovery language is how a
- * reader ends up treating an unavailable suite as a completed check.
+ * The infrastructure recovery instruction shared by repository writers and
+ * non-findings readers. Findings readers receive the restricted variant below.
  */
+const RUN_COULD_NOT_VERIFY_INSTRUCTION =
+  'PROVENANCE is mandatory and must name sources actually read, not intended sources. ' +
+  'State every unavailable or unverified source in the open-ended could_not_verify list, and name every substitute used. ' +
+  'A run which could not execute the suite must say so there and must not present static reasoning as an executed check.'
+
 export const INFRASTRUCTURE_RECOVERY = `
+PROJECT INFRASTRUCTURE RECOVERY
+
+The project register says how this worktree's infrastructure is brought up:
+use the register's \`worktree.recipe.serve\` step when the project declares one,
+otherwise the serve instructions in its \`worktree.notes\`.
+A reader MAY run that serve step and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.
+
+${RUN_COULD_NOT_VERIFY_INSTRUCTION}
+`.trim()
+
+export const FINDINGS_INFRASTRUCTURE_RECOVERY = `
 PROJECT INFRASTRUCTURE RECOVERY
 
 The project register says how this worktree's infrastructure is brought up:
@@ -1006,7 +1021,28 @@ export function readerDeliverablesInstruction(names: string[]): string {
   ].join('\n')
 }
 
-export const READONLY_PREAMBLE = `
+const READER_EDIT_AND_TEST = `Edit and test freely when that helps you verify a finding. Your findings are the
+deliverable, not your diff: every change you make here is scratch work and must
+never be treated as a proposed change to land. Do not commit, push, or merge.`
+
+const FINDINGS_REVIEW_EXECUTION = `Read the change and the code around it. Do not run test suites, test directories,
+related or affected test sets, the gate, or the project's check. One focused
+probe tied to one specific finding is allowed: a single test file or a single
+command that demonstrates that finding. When the \`run_tests\` tool is offered,
+run the probe through it, since it runs on the host under a capacity slot. Your
+findings are the deliverable, not your diff: every change you make here is
+scratch work and must never be treated as a proposed change to land. Do not
+commit, push, or merge.`
+
+const READER_GATE_RESULT = `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
+run Docker or \`scripts/gate\` yourself. Record an unrun gate in
+\`could_not_verify\`.`
+
+const FINDINGS_GATE_RESULT = `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
+run Docker or \`scripts/gate\` yourself.`
+
+function readonlyPreamble(findings: boolean): string {
+  return `
 You are working in your own disposable worktree. It is a fresh checkout of this
 run's commit to read. If the caller chose to carry their uncommitted work into it,
 that work is present and is not yours: do not report it as your change.
@@ -1020,19 +1056,11 @@ behind a blocked one; a run that returns only "I could not do X" when Y and Z
 were answerable is a failed run. For findings-producing jobs, record the same
 detail in could_not_verify for that sub-question and continue with the others.
 
-Read the change and the code around it. Do not run test suites, test directories,
-related or affected test sets, the gate, or the project's check. One focused
-probe tied to one specific finding is allowed: a single test file or a single
-command that demonstrates that finding. When the \`run_tests\` tool is offered,
-run the probe through it, since it runs on the host under a capacity slot. Your
-findings are the deliverable, not your diff: every change you make here is
-scratch work and must never be treated as a proposed change to land. Do not
-commit, push, or merge.
+${findings ? FINDINGS_REVIEW_EXECUTION : READER_EDIT_AND_TEST}
 
-Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server to read the recorded gate result for this exact commit. Never
-run Docker or \`scripts/gate\` yourself.
+${findings ? FINDINGS_GATE_RESULT : READER_GATE_RESULT}
 
-${INFRASTRUCTURE_RECOVERY}
+${findings ? FINDINGS_INFRASTRUCTURE_RECOVERY : INFRASTRUCTURE_RECOVERY}
 
 ${REVIEW_PROVENANCE_INSTRUCTION}
 
@@ -1043,6 +1071,14 @@ it in the next round, and a task for it outlives the fix. When you do file,
 do not leave it only as a mailbox note, where it depends on somebody reading
 this run to be discovered. When file_issue is not available, report an outside-artifact defect in the reply and stop there; never file it through another server's tool.
 `.trim()
+}
+
+export const READONLY_PREAMBLE = readonlyPreamble(false)
+const FINDINGS_READONLY_PREAMBLE = readonlyPreamble(true)
+
+export function repositoryReaderPreamble(findings: boolean): string {
+  return findings ? FINDINGS_READONLY_PREAMBLE : READONLY_PREAMBLE
+}
 
 /** Jobs whose whole input is inline do not pay for or claim a repository tree. */
 export const NO_REPO_PREAMBLE = `

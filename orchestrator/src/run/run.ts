@@ -14,8 +14,8 @@ import { compilePack, recordPack } from '../canon/canon.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
 import {
   NO_REPO_PREAMBLE,
-  READONLY_PREAMBLE,
   type realQuestions,
+  repositoryReaderPreamble,
   resolveReplyDialect,
   type WorkerReply,
   workerPreamble,
@@ -258,6 +258,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     writesRepo: writesJob,
     readOnlyBase,
     mainCheckout: projectByName(runProjectName ?? '')?.path ?? callerCwd,
+    findings: Boolean(requestedJob.findings),
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
@@ -327,7 +328,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           preamble: writesJob
             ? workerPreamble(opts.job, harnessDelegation)
             : repoJob
-              ? READONLY_PREAMBLE
+              ? repositoryReaderPreamble(Boolean(requestedJob.findings))
               : NO_REPO_PREAMBLE,
           infrastructure: infra,
           operatorKnowledge: operatorKnowledgeSection(pack ?? null),
