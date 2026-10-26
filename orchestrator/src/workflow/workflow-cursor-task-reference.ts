@@ -5,7 +5,13 @@ import type { Database } from 'bun:sqlite'
 
 export function refuseUnlinkedCursorLabelCollision(
   d: Database,
-  input: { project: string; workflow: string; mode: string; key: string; taskRecordId?: string | null },
+  input: {
+    project: string
+    workflow: string
+    mode: string
+    key: string
+    taskRecordId?: string | null
+  },
 ): void {
   if (input.taskRecordId !== null && input.taskRecordId !== undefined) return
   const occupied = d

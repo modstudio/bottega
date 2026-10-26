@@ -225,7 +225,7 @@ function workflowRulingsSnapshot(
 
 export async function resolveAnswerRulings(
   project: string,
-  launchKey: string | null,
+  _launchKey: string | null,
   clientFactory?: (signal: AbortSignal) => ConfigClient,
   d: Database = db(),
   env: ConfigEnvironment = process.env,

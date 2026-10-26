@@ -332,24 +332,7 @@ export async function linkRunTasks(
       increment(report.without_task_or_project_by_job, run.job)
     }
   }
-  const localLinks: LocalTaskLinkTable[] = ['workflow_cursor', 'question', 'port_ref', 'presence']
-  const pendingUpdates: PendingLocalTaskLink[] = []
-  for (const table of localLinks) {
-    const rows = localTaskLinkRows(database, table)
-    for (const row of rows) {
-      const task = tasks.get(row.task_key)
-      if (task) {
-        report.local_task_links[table].linked++
-        pendingUpdates.push({
-          table,
-          id: row.id,
-          taskId: task.record_id,
-        })
-      } else {
-        increment(report.local_task_links[table].unmatched_keys, row.task_key)
-      }
-    }
-  }
+  const pendingUpdates = deriveLocalTaskLinks(database, tasks, report)
   if (!options.dryRun) {
     writeTransaction(() => {
       const update = database.query(
@@ -367,6 +350,27 @@ export async function linkRunTasks(
     }, database)
   }
   return report
+}
+
+function deriveLocalTaskLinks(
+  database: Database,
+  tasks: ReadonlyMap<string, HubTaskReference>,
+  report: RunTaskLinkReport,
+): PendingLocalTaskLink[] {
+  const pending: PendingLocalTaskLink[] = []
+  const tables: LocalTaskLinkTable[] = ['workflow_cursor', 'question', 'port_ref', 'presence']
+  for (const table of tables) {
+    for (const row of localTaskLinkRows(database, table)) {
+      const task = tasks.get(row.task_key)
+      if (!task) {
+        increment(report.local_task_links[table].unmatched_keys, row.task_key)
+        continue
+      }
+      report.local_task_links[table].linked++
+      pending.push({ table, id: row.id, taskId: task.record_id })
+    }
+  }
+  return pending
 }
 
 function localTaskLinkRows(

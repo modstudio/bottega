@@ -408,11 +408,12 @@ export async function run(opts: {
     key: opts.key,
     cwd: callerCwd,
   })
-  const rulingsSection = await runDispatchRulingsSection({
+  const dispatchRulings = await runDispatchRulingsSection({
     resume: !resume.isFirstTurn,
     project: runProjectName,
     key: dispatchKey,
   })
+  const rulingsSection = dispatchRulings.section
   let prompt =
     opts.resume?.kind === 'continue'
       ? packedResumePrompt(opts.job, originalPrompt, opts.resume.parent)
@@ -642,7 +643,7 @@ export async function run(opts: {
     usingMcp,
     startedByUserId,
     replySchemaName,
-    carriedQuestionIds: carriedRulings.rulings.map((ruling) => ruling.questionRecordId),
+    carriedQuestionIds: dispatchRulings.questionIds,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
   })

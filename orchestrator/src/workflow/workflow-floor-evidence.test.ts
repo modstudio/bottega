@@ -29,11 +29,7 @@ test.each([
   expect(refusal).not.toContain(detail)
 })
 
-const identityOf = (
-  key: string,
-  taskId: string | null,
-  branch: string | null,
-): CursorIdentity => ({
+const identityOf = (key: string, taskId: string | null, branch: string | null): CursorIdentity => ({
   project: 'fixture',
   workflowKey: key,
   workflowTaskRecordId: taskId,
