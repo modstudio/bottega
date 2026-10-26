@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
@@ -52,6 +53,44 @@ function heldResult(
   hold: LandingTreeHoldKind = 'landing-progress',
 ) {
   return { runId, worktree, outcome: 'held' as const, detail, hold }
+}
+
+function ordinaryRunHolding(): { id: string; tree: string; project: string; branch: string } {
+  const id = addRun({ agent: 'codex', job: 'implement', session: 'owner' })
+  const project = `in-flight-run-${id}`
+  const branch = `DEV-1752-${id}`
+  const tree = mkdtempSync(join(tmpdir(), 'close-out-run-'))
+  upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
+  db()
+    .query("UPDATE run SET repo=?, branch=?, worktree=?, session_id='owner' WHERE record_id=?")
+    .run(project, branch, tree, id)
+  return { id, tree, project, branch }
+}
+
+function mockGitAndGh(input: {
+  statusOutput: string
+  headCommit: string
+  calls?: string[][]
+}): void {
+  const answer = (argv: string[]): ReturnType<typeof Bun.spawnSync> => {
+    input.calls?.push(argv)
+    const [bin, ...args] = argv
+    const isStatus = bin !== 'gh' && args[0] === 'status'
+    const stdout =
+      bin === 'gh'
+        ? '[{"number":88,"headRefOid":"sha-head"}]'
+        : isStatus
+          ? input.statusOutput
+          : input.headCommit
+    return {
+      exitCode: 0,
+      stdout: Buffer.from(stdout),
+      stderr: Buffer.from("git: error: couldn't create cache file (errno=Operation not permitted)"),
+      success: true,
+      exitedDueToTimeout: false,
+    } as ReturnType<typeof Bun.spawnSync>
+  }
+  spyOn(Bun, 'spawnSync').mockImplementation(answer as unknown as typeof Bun.spawnSync)
 }
 
 describe('close-out in-flight hold annotation', () => {
@@ -204,6 +243,44 @@ describe('close-out in-flight hold annotation', () => {
       expect(lookupOpenPr(cwd, 'DEV-1594-ship')).toEqual({ ref: '#88', headOid: null })
     } finally {
       rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  test('an other hold blocks at a matching cursor even with a pull request at the tree head', () => {
+    const { id, tree, project, branch } = ordinaryRunHolding()
+    mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
+    try {
+      const cursorId = insertCursor({ project, session: 'owner', branch, worktree: tree })
+
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+      )
+
+      expect(annotated.suppressBlock).toBe(false)
+      expect(annotated.inFlightRef).toBe(`cursor ${cursorId} merge-pr`)
+      expect(annotated.detail).toBe(
+        `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>; ` +
+          `in flight (cursor ${cursorId} merge-pr)`,
+      )
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('a dirty non-landing-progress hold makes no pull-request lookup', () => {
+    const { id, tree } = ordinaryRunHolding()
+    const calls: string[][] = []
+    mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head', calls })
+    try {
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+      )
+
+      expect(calls.map(([bin]) => bin)).not.toContain('gh')
+      expect(calls.some(([bin, ...args]) => bin === 'git' && args[0] === 'status')).toBe(true)
+      expect(annotated.suppressBlock).toBe(false)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
     }
   })
 })
