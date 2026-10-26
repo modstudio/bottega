@@ -18,8 +18,9 @@ import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts
 import {
   DELEGATION_MODES,
   DELEGATION_SETTING_KEYS,
-  type DelegationMode,
+  type DelegationSettingKey,
   type DelegationSettings,
+  isDelegationKey,
 } from './delegation-mode.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
@@ -42,6 +43,16 @@ type MachineConfigEntry = {
  * Machine configuration keys and their sources. Precedence is canonical
  * environment, legacy environment, machine.toml, then default.
  */
+const DELEGATION_MACHINE_CONFIG = Object.values(DELEGATION_SETTING_KEYS).reduce<
+  Record<DelegationSettingKey, MachineConfigEntry>
+>(
+  (entries, key) => {
+    entries[key] = { type: 'string', default: 'external', values: DELEGATION_MODES }
+    return entries
+  },
+  {} as Record<DelegationSettingKey, MachineConfigEntry>,
+)
+
 export const MACHINE_CONFIG = {
   'projects.clone_root': {
     environment: 'BOTTEGA_CLONE_ROOT',
@@ -55,12 +66,7 @@ export const MACHINE_CONFIG = {
   },
   'hub.port': { environment: 'BOTTEGA_HUB_PORT', type: 'integer', default: 7778 },
   'machine.id': { type: 'string', default: '' },
-  'delegation.implement': {
-    type: 'string',
-    default: 'external',
-    values: DELEGATION_MODES,
-  },
-  'delegation.review': { type: 'string', default: 'external', values: DELEGATION_MODES },
+  ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',
     legacyEnvironment: 'BOTTEGA_LOCAL_BASE_URL',
@@ -546,21 +552,23 @@ export function deleteMachineAutonomy(key: string, env: ConfigEnvironment = proc
   }, env)
 }
 
-export type MachineAutonomyEntry = {
+export type MachineConfigFileEntry = {
   key: string
   value: string
-  scope: 'local user' | 'machine'
+  scope: 'machine'
 }
 
-export function listMachineAutonomy(env: ConfigEnvironment = process.env): MachineAutonomyEntry[] {
+export function listMachineAutonomy(
+  env: ConfigEnvironment = process.env,
+): MachineConfigFileEntry[] {
   const root = readMachineFile(machineConfigPath(env))
-  const rows: MachineAutonomyEntry[] = []
+  const rows: MachineConfigFileEntry[] = []
   const visit = (value: unknown, path: string[]): void => {
     if (typeof value === 'string') {
       const normalized = path.map(
         (part) => ({ stages: 'stage', steps: 'step', workflows: 'workflow' })[part] ?? part,
       )
-      rows.push({ key: `autonomy.${normalized.join('.')}`, value, scope: 'local user' })
+      rows.push({ key: `autonomy.${normalized.join('.')}`, value, scope: 'machine' })
       return
     }
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return
@@ -624,23 +632,20 @@ export function readMachineValue<Key extends MachineConfigKey>(
 }
 
 export function readDelegationSettings(env: ConfigEnvironment = process.env): DelegationSettings {
-  return {
-    'delegation.implement': readMachineValue('delegation.implement', env) as DelegationMode,
-    'delegation.review': readMachineValue('delegation.review', env) as DelegationMode,
-  }
+  return Object.fromEntries(
+    Object.values(DELEGATION_SETTING_KEYS).map((key) => [key, readMachineValue(key, env)]),
+  ) as DelegationSettings
 }
 
-function delegationKey(key: string): key is keyof DelegationSettings {
-  return Object.values(DELEGATION_SETTING_KEYS).includes(key as keyof DelegationSettings)
-}
+const ACCEPTED_DELEGATION_KEYS = Object.values(DELEGATION_SETTING_KEYS).join(', ')
 
 export function setMachineDelegation(
   key: string,
   value: string,
   env: ConfigEnvironment = process.env,
 ): void {
-  if (!delegationKey(key))
-    throw new Error('accepted machine delegation keys: delegation.implement, delegation.review')
+  if (!isDelegationKey(key))
+    throw new Error(`accepted machine delegation keys: ${ACCEPTED_DELEGATION_KEYS}`)
   assertAllowedMachineValue(key, MACHINE_CONFIG[key], value)
   atomicPatch((root) => {
     const delegation = (root.delegation as Record<string, unknown> | undefined) ?? {}
@@ -650,14 +655,26 @@ export function setMachineDelegation(
 }
 
 export function deleteMachineDelegation(key: string, env: ConfigEnvironment = process.env): void {
-  if (!delegationKey(key))
-    throw new Error('accepted machine delegation keys: delegation.implement, delegation.review')
+  if (!isDelegationKey(key))
+    throw new Error(`accepted machine delegation keys: ${ACCEPTED_DELEGATION_KEYS}`)
   atomicPatch((root) => {
     const delegation = root.delegation as Record<string, unknown> | undefined
     if (!delegation) return
     delete delegation[key.split('.')[1]!]
     if (!Object.keys(delegation).length) delete root.delegation
   }, env)
+}
+
+export function listMachineEntries(env: ConfigEnvironment = process.env): MachineConfigFileEntry[] {
+  const delegation = readDelegationSettings(env)
+  return [
+    ...Object.entries(delegation).map(([key, value]) => ({
+      key,
+      value,
+      scope: 'machine' as const,
+    })),
+    ...listMachineAutonomy(env),
+  ].sort((left, right) => left.key.localeCompare(right.key))
 }
 
 const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i

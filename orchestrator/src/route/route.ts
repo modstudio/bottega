@@ -10,7 +10,7 @@ import {
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
-import { harnessDelegationRefusal } from '../jobs/delegation.ts'
+import { harnessDelegationRefusal, noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
 import { latestMcpListing } from '../mcp/mcp-compatibility-record.ts'
@@ -23,7 +23,6 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { noEligibleAgentRefusal } from './no-eligible-agent-refusal.ts'
 import {
   type PolicyCandidate,
   type PolicySelection,
@@ -1006,6 +1005,7 @@ function admittedCandidates(
 }
 
 function assertExternalDelegation(jobName: string): void {
+  // Automatic failover also enters here: it is a new dispatch to a new agent, not a resume.
   const refusal = harnessDelegationRefusal(job(jobName), readDelegationSettings())
   if (refusal) throw new RoutingRefusalError(refusal)
 }

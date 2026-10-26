@@ -76,7 +76,7 @@ function guideRoute(
     return {
       delegation,
       routesTo: null,
-      reason: `${delegationSetting}=harness`,
+      reason: `handled by the harness's own sub-agent   (${delegationSetting}=harness)`,
     }
   const chosen = pick(name, undefined, promptBytes, false, null, {}, false, lens)
   return { delegation, routesTo: chosen.agent, reason: chosen.reason }

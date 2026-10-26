@@ -2,14 +2,19 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { ConfigClient } from '../../../shared/config-client.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
+import {
+  listMachineEntries,
+  setMachineAutonomy,
+  setMachineDelegation,
+} from '../../../shared/machine-config.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readTrustList } from '../../../shared/trust-list.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   deleteEntry,
-  listMachineEntries,
   machineInit,
   migrateLegacyEnvironmentSecrets,
   planRotation,
@@ -23,13 +28,17 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-test('machine config list produces the shared delegation row shape', () => {
-  expect(listMachineEntries()).toEqual(
-    expect.arrayContaining([
-      { key: 'delegation.implement', value: 'external', scope: 'machine' },
-      { key: 'delegation.review', value: 'external', scope: 'machine' },
-    ]),
-  )
+test('machine config list merges machine-file rows in key order', () => {
+  const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-machine-list-`))
+  roots.push(root)
+  const env = { BOTTEGA_CONFIG_HOME: root }
+  setMachineAutonomy('autonomy.stage.review', 'auto', env)
+  setMachineDelegation('delegation.review', 'harness', env)
+  expect(listMachineEntries(env)).toEqual([
+    { key: 'autonomy.stage.review', value: 'auto', scope: 'machine' },
+    { key: 'delegation.implement', value: 'external', scope: 'machine' },
+    { key: 'delegation.review', value: 'harness', scope: 'machine' },
+  ])
 })
 
 test('rotation plan re-seals only rows on older DEKs and retires each old DEK once', () => {

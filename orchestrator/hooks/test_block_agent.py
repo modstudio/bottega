@@ -99,7 +99,7 @@ class SpawnIdentityTest(unittest.TestCase):
             }
             with (
                 patch("sys.stdin", io.StringIO(json.dumps(payload))),
-                patch.object(block_agent, "harness_delegation", return_value=["delegation.implement"]),
+                patch.object(block_agent, "harness_delegated_keys", return_value=["delegation.implement"]),
                 patch.object(block_agent, "log") as logged,
                 patch("sys.stdout", new_callable=io.StringIO) as stdout,
             ):
@@ -112,7 +112,7 @@ class SpawnIdentityTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             block_agent = self.load_hook(os.path.join(folder, "orchestrator.db"))
             with patch.object(block_agent.subprocess, "run", side_effect=OSError("unavailable")):
-                self.assertEqual(block_agent.harness_delegation(), [])
+                self.assertEqual(block_agent.harness_delegated_keys(), [])
 
     def test_cli_rows_enable_exactly_the_harness_delegation_settings(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -131,13 +131,13 @@ class SpawnIdentityTest(unittest.TestCase):
                 "run",
                 return_value=block_agent.subprocess.CompletedProcess([], 0, harness_rows, ""),
             ):
-                self.assertEqual(block_agent.harness_delegation(), ["delegation.review"])
+                self.assertEqual(block_agent.harness_delegated_keys(), ["delegation.review"])
             with patch.object(
                 block_agent.subprocess,
                 "run",
                 return_value=block_agent.subprocess.CompletedProcess([], 0, external_rows, ""),
             ):
-                self.assertEqual(block_agent.harness_delegation(), [])
+                self.assertEqual(block_agent.harness_delegated_keys(), [])
 
 
 if __name__ == "__main__":

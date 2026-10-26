@@ -14,6 +14,11 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
+import {
+  listMachineEntries,
+  setMachineAutonomy,
+  setMachineDelegation,
+} from '../../shared/machine-config.ts'
 import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
   answerWaitingArgv,
@@ -25,7 +30,7 @@ import {
   contextGet,
   decodeRunsJson,
   fileRulingArgv,
-  MachineAutonomyEntrySchema,
+  MachineConfigFileEntrySchema,
   MachineConfigListSchema,
   MachinePermissionOverlaySchema,
   MachinePermissionResultSchema,
@@ -75,28 +80,32 @@ test('machine bridge schemas parse the CLI output shapes', () => {
     drop: { allow: [], ask: ['Bash(rm *)'], deny: [] },
   })
   expect(
-    MachineAutonomyEntrySchema.parse({
+    MachineConfigFileEntrySchema.parse({
       key: 'autonomy.stage.review',
       value: 'auto',
-      scope: 'local user',
+      scope: 'machine',
     }),
   ).toEqual({
     key: 'autonomy.stage.review',
     value: 'auto',
-    scope: 'local user',
+    scope: 'machine',
   })
 })
 
 test('the machine config list schema accepts autonomy and delegation rows together', () => {
-  expect(
-    MachineConfigListSchema.parse([
-      { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
+  const root = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-hub-machine-config-`))
+  try {
+    const env = { BOTTEGA_CONFIG_HOME: root }
+    setMachineAutonomy('autonomy.stage.review', 'auto', env)
+    setMachineDelegation('delegation.review', 'harness', env)
+    expect(MachineConfigListSchema.parse(listMachineEntries(env))).toEqual([
+      { key: 'autonomy.stage.review', value: 'auto', scope: 'machine' },
+      { key: 'delegation.implement', value: 'external', scope: 'machine' },
       { key: 'delegation.review', value: 'harness', scope: 'machine' },
-    ]),
-  ).toEqual([
-    { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
-    { key: 'delegation.review', value: 'harness', scope: 'machine' },
-  ])
+    ])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('managed context wrappers build exact argv', () => {

@@ -494,7 +494,8 @@ export async function run(opts: {
         source: 'pick' as const,
         ...(await selectFirstTurnAgent()),
       }
-    : { source: 'resume' as const, ...opts.resume! }
+    : // A resume keeps its already-selected worker and does not make a new delegation decision.
+      { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
   const a = requireAgent(launch.agent)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport

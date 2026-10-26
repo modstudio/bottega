@@ -9,7 +9,11 @@ export const DELEGATION_SETTING_KEYS = {
   review: 'delegation.review',
 } as const satisfies Record<DelegationClass, string>
 
-export type DelegationSettings = Record<
-  (typeof DELEGATION_SETTING_KEYS)[DelegationClass],
-  DelegationMode
->
+export type DelegationSettingKey =
+  (typeof DELEGATION_SETTING_KEYS)[keyof typeof DELEGATION_SETTING_KEYS]
+
+export function isDelegationKey(key: string): key is DelegationSettingKey {
+  return Object.values(DELEGATION_SETTING_KEYS).includes(key as DelegationSettingKey)
+}
+
+export type DelegationSettings = Record<DelegationSettingKey, DelegationMode>

@@ -75,7 +75,10 @@ DECLARED = re.compile(r"\bNEEDS[-_ ]?WEB\b", re.I)
 URL = re.compile(r"https?://")
 
 
-def harness_delegation():
+DELEGATION_KEYS = ("delegation.implement", "delegation.review")
+
+
+def harness_delegated_keys():
     """Admit any native spawn when either class is harness; any read failure preserves the gate."""
     try:
         result = subprocess.run(
@@ -89,7 +92,7 @@ def harness_delegation():
         enabled = [
             row["key"]
             for row in rows
-            if row.get("key") in ("delegation.implement", "delegation.review")
+            if row.get("key") in DELEGATION_KEYS
             and row.get("value") == "harness"
         ]
         return enabled
@@ -220,7 +223,7 @@ def main() -> int:
         return 0
     inp = payload.get("tool_input") or {}
 
-    harness_settings = harness_delegation()
+    harness_settings = harness_delegated_keys()
     if harness_settings:
         log("harness-delegation", ",".join(harness_settings), inp, event, payload)
         return 0

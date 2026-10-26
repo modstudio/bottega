@@ -30,7 +30,7 @@ import {
 } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import type {
-  MachineAutonomyEntry,
+  MachineConfigFileEntry,
   MachinePermissionOperation,
   MachinePermissionOverlay,
 } from '../../shared/machine-config.ts'
@@ -636,13 +636,13 @@ const ConfigEntrySchema = z.object({
   updatedAt: z.string(),
 })
 
-export const MachineAutonomyEntrySchema = z.object({
+export const MachineConfigFileEntrySchema = z.object({
   key: z.string(),
   value: z.string(),
-  scope: z.enum(['local user', 'machine']),
-}) satisfies z.ZodType<MachineAutonomyEntry>
+  scope: z.literal('machine'),
+}) satisfies z.ZodType<MachineConfigFileEntry>
 
-export const MachineConfigListSchema = z.array(MachineAutonomyEntrySchema)
+export const MachineConfigListSchema = z.array(MachineConfigFileEntrySchema)
 
 const PermissionListsSchema = z.object(
   Object.fromEntries(
@@ -839,7 +839,7 @@ export const configDelete = (key: string, expectedRowVersion?: number) =>
   })
 export const machineConfigList = () => json(machineConfigArgv('list'), MachineConfigListSchema)
 export const machineConfigSet = (key: string, value: string) =>
-  json(machineConfigArgv('set', key, value), MachineAutonomyEntrySchema, {
+  json(machineConfigArgv('set', key, value), MachineConfigFileEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),
   })
 export const machineConfigDelete = (key: string) =>

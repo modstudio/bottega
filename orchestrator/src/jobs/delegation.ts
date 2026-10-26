@@ -22,15 +22,31 @@ export function delegationMode(
 export function harnessDelegationRefusal(
   requestedJob: Pick<Job, 'needs'>,
   settings: DelegationSettings,
-  firstTurn = true,
 ): string | null {
-  // An existing chain keeps its external worker; only a first turn chooses a delegation lane.
-  if (!firstTurn) return null
   if (delegationMode(requestedJob.needs, settings) === 'external') return null
   const jobClass = delegationClass(requestedJob.needs)
   const setting = DELEGATION_SETTING_KEYS[jobClass]
   return (
     `this machine runs ${jobClass} work through the harness's own sub-agent (${setting}=harness)\n` +
-    `cleared by: ${PLATFORM_SLUG} machine config set --machine ${setting} external`
+    `cleared by: ${delegationRemedy(jobClass, 'external')}`
+  )
+}
+
+function delegationRemedy(jobClass: DelegationClass, mode: DelegationMode): string {
+  return `${PLATFORM_SLUG} machine config set --machine ${DELEGATION_SETTING_KEYS[jobClass]} ${mode}`
+}
+
+export function noEligibleAgentRefusal(
+  jobName: string,
+  capabilities: { writesRepo?: boolean },
+  excluded: readonly string[],
+): string {
+  const headline = `no eligible agent for job "${jobName}"`
+  if (excluded.length) return `${headline}\n${excluded.join('\n')}`
+  const jobClass = delegationClass(capabilities)
+  return (
+    `${headline}\nremedy: register and probe an agent with ` +
+    `${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe, or switch ${jobClass} work ` +
+    `to the harness with ${delegationRemedy(jobClass, 'harness')}`
   )
 }

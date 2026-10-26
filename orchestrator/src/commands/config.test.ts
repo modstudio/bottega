@@ -80,7 +80,12 @@ test('an orchestrator worker run cannot change machine delegation', () => {
   expect(() =>
     assertConfigWriteAllowed('delegation.implement', 'harness', { BOTTEGA_RUN_ID: '6731' }),
   ).toThrow(
-    `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config set delegation.implement harness`,
+    `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config set --machine delegation.implement harness`,
+  )
+  expect(() =>
+    assertConfigWriteAllowed('delegation.review', undefined, { BOTTEGA_RUN_ID: '6731' }),
+  ).toThrow(
+    `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config delete --machine delegation.review`,
   )
 })
 

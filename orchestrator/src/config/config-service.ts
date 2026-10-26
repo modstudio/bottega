@@ -11,6 +11,7 @@ import {
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
+import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
@@ -24,7 +25,7 @@ import {
   deleteMachineAutonomy,
   deleteMachineDelegation,
   listMachineAutonomy,
-  readDelegationSettings,
+  listMachineEntries,
   setMachineAutonomy,
   setMachineDelegation,
 } from '../../../shared/machine-config.ts'
@@ -643,7 +644,7 @@ export async function deleteEntry(
 }
 
 export function setMachineEntry(key: string, value: string) {
-  if (key.startsWith('delegation.')) {
+  if (isDelegationKey(key)) {
     setMachineDelegation(key, value)
     return listMachineEntries().find((row) => row.key === key)!
   }
@@ -653,23 +654,11 @@ export function setMachineEntry(key: string, value: string) {
 }
 
 export function deleteMachineEntry(key: string): void {
-  if (key.startsWith('delegation.')) {
+  if (isDelegationKey(key)) {
     deleteMachineDelegation(key)
     return
   }
   deleteMachineAutonomy(key)
-}
-
-export function listMachineEntries() {
-  const delegation = readDelegationSettings()
-  return [
-    ...Object.entries(delegation).map(([key, value]) => ({
-      key,
-      value,
-      scope: 'machine' as const,
-    })),
-    ...listMachineAutonomy(),
-  ].sort((left, right) => left.key.localeCompare(right.key))
 }
 
 export async function listSecrets(client = configClient()) {

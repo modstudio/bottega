@@ -40,9 +40,7 @@ type PickPresentation = {
 }
 
 function guideRouteLine(g: JobGuide): string {
-  return g.delegation === 'harness'
-    ? `  handled by the harness's own sub-agent   (${g.reason})`
-    : `  routes to ${g.routesTo}   (${g.reason})`
+  return g.delegation === 'harness' ? `  ${g.reason}` : `  routes to ${g.routesTo}   (${g.reason})`
 }
 
 export function routingBacktestCommand(
