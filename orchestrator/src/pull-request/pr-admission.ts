@@ -287,8 +287,11 @@ export function triageRefusal(
     )
   }
   if (decision.architectReadRequired) {
+    const credit = decision.earlierReviewNumber
+      ? `review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip`
+      : `tier ${change.tier} requires an architect read of this exact tip`
     lines.push(
-      `architect-read path failed: review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
+      `architect-read path failed: ${credit}; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
   } else if (decision.finalTierRaised) {
     lines.push(
