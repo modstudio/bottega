@@ -14,7 +14,7 @@ export function reportReplySuccessorDecision(input: {
   readerProject: string
   rootProject: string | null
   readerIsParticipant: boolean
-  successorAlreadyReceived: boolean
+  successorClaimed: boolean
   readerBeganAt: string | null
   authorLastActivityAt: number | null
   replyPostedAt: string
@@ -23,7 +23,7 @@ export function reportReplySuccessorDecision(input: {
     !input.rootAuthorLive &&
     !input.rootAuthorReceivedReply &&
     !input.readerIsParticipant &&
-    !input.successorAlreadyReceived &&
+    !input.successorClaimed &&
     input.readerIsArchitect &&
     input.rootProject !== null &&
     input.readerProject === input.rootProject &&
@@ -41,7 +41,7 @@ export function replySuccessorAddressing(input: {
   rootAuthorReceivedReply: boolean
   rootProject: string | null
   readerIsParticipant: boolean
-  successorAlreadyReceived: boolean
+  successorClaimed: boolean
   readerBeganAt: string | null
   replyPostedAt: string
   now: number
@@ -65,7 +65,7 @@ export function replySuccessorAddressing(input: {
     readerProject: readerFact?.project ?? '',
     rootProject: input.rootProject,
     readerIsParticipant: input.readerIsParticipant,
-    successorAlreadyReceived: input.successorAlreadyReceived,
+    successorClaimed: input.successorClaimed,
     readerBeganAt: input.readerBeganAt,
     authorLastActivityAt: authorFact?.lastSeen ?? null,
     replyPostedAt: input.replyPostedAt,

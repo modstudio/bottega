@@ -402,7 +402,7 @@ type CachedRow = { message: HostedBoardMessage; tags: BoardTag[] }
 
 type HostedClaimFacts = {
   rootAuthorReceivedReply: boolean
-  successorDelivered: boolean
+  successorClaimed: boolean
 }
 
 function attachCachedTags<T extends { id: string; payload: string }>(
@@ -521,8 +521,8 @@ function loadClaimContext(
                   SELECT 1 FROM hosted_board_receipt_cache successor_receipt
                   WHERE successor_receipt.message_id=message.id
                     AND successor_receipt.successor=1
-                    AND successor_receipt.delivered_at IS NOT NULL
-                ) AS successor_delivered,
+                    AND successor_receipt.reader_session<>?
+                ) AS successor_claimed,
                 EXISTS (
                   SELECT 1
                   FROM hosted_board_receipt_cache author_receipt
@@ -537,12 +537,12 @@ function loadClaimContext(
          ON receipt.message_id=message.id AND receipt.reader_session=?
        ORDER BY message.rowid`,
       )
-      .all(reader) as Array<{
+      .all(reader, reader) as Array<{
       id: string
       payload: string
       delivered_at: string | null
       acknowledged_at: string | null
-      successor_delivered: number
+      successor_claimed: number
       root_author_received_reply: number
     }>,
   )
@@ -551,7 +551,7 @@ function loadClaimContext(
       row.message.id,
       {
         rootAuthorReceivedReply: Boolean(row.root_author_received_reply),
-        successorDelivered: Boolean(row.successor_delivered),
+        successorClaimed: Boolean(row.successor_claimed),
       },
     ]),
   )
@@ -559,7 +559,7 @@ function loadClaimContext(
     ({
       delivered_at: _delivered,
       acknowledged_at: _acknowledged,
-      successor_delivered: _successor,
+      successor_claimed: _successor,
       root_author_received_reply: _author,
       ...row
     }) => row,
@@ -574,7 +574,7 @@ function loadClaimContext(
       ({
         delivered_at: _delivered,
         acknowledged_at: _acknowledged,
-        successor_delivered: _successor,
+        successor_claimed: _successor,
         root_author_received_reply: _author,
         ...row
       }) => row,
@@ -685,7 +685,7 @@ function hostedReplySuccessorPush(
     rootAuthorReceivedReply: facts?.rootAuthorReceivedReply ?? false,
     rootProject: root.origin.project,
     readerIsParticipant: replyAddressesReader(message, context),
-    successorAlreadyReceived: facts?.successorDelivered ?? false,
+    successorClaimed: facts?.successorClaimed ?? false,
     readerBeganAt: context.readerBeganAt,
     replyPostedAt: message.createdAt,
     now: context.clock,
@@ -698,30 +698,26 @@ function takeHostedReportReplySuccessor(
   context: HostedClaimContext,
 ): boolean {
   return writeTransaction(() => {
-    const successorAlreadyReceived = Boolean(
+    const successorClaimed = Boolean(
       context.database
         .query(
           `SELECT 1 AS ok FROM hosted_board_receipt_cache
-           WHERE message_id=? AND successor=1 AND delivered_at IS NOT NULL`,
+           WHERE message_id=? AND successor=1 AND reader_session<>?`,
         )
-        .get(message.id),
+        .get(message.id, context.reader),
     )
-    if (successorAlreadyReceived) return false
+    if (successorClaimed) return false
     if (!hostedReplySuccessorPush(message, context)) return false
     context.database
       .query(
         `INSERT INTO hosted_board_receipt_cache
          (record_id,message_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
-         VALUES (?,?,?,0,1,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         VALUES (?,?,?,0,1,NULL,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
          successor=1,
          pending_sync=1`,
       )
-      .run(newRecordId(), message.id, context.reader, new Date(context.clock).toISOString())
-    context.claimFacts.set(message.id, {
-      rootAuthorReceivedReply: context.claimFacts.get(message.id)?.rootAuthorReceivedReply ?? false,
-      successorDelivered: true,
-    })
+      .run(newRecordId(), message.id, context.reader)
     return true
   }, context.database)
 }

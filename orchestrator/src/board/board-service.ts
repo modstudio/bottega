@@ -165,13 +165,13 @@ function replySuccessorPush(
     rootAuthorReceivedReply: wasDelivered(reply.record_id, root.author_session, database),
     rootProject: root.author_project,
     readerIsParticipant: hasReceipt(reply.record_id, reader, database),
-    successorAlreadyReceived: Boolean(
+    successorClaimed: Boolean(
       database
         .query(
           `SELECT 1 AS ok FROM board_receipt
-           WHERE message_record_id=? AND successor=1 AND delivered_at IS NOT NULL`,
+           WHERE message_record_id=? AND successor=1 AND reader_session<>?`,
         )
-        .get(reply.record_id),
+        .get(reply.record_id, reader),
     ),
     readerBeganAt: boardReaderBeganAt(reader, database),
     replyPostedAt: reply.created_at,
@@ -192,11 +192,11 @@ function takeReportReplySuccessor(
       .query(
         `INSERT INTO board_receipt
          (message_record_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,record_id)
-         VALUES (?,?,0,1,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
+         VALUES (?,?,0,1,NULL,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
          delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at),
          successor=1`,
       )
-      .run(reply.record_id, reader, new Date(clock).toISOString(), newRecordId())
+      .run(reply.record_id, reader, newRecordId())
     return true
   }, database)
 }
