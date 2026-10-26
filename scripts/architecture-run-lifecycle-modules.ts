@@ -47,7 +47,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './branch-owner-guard.ts',
     './run-retry.ts',
   ]),
-  module('orchestrator/src/run/run-alive.ts', ['../jobs/jobs.ts']),
+  module('orchestrator/src/run/run-alive.ts', []),
   module('orchestrator/src/run/run-status.ts', []),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',

@@ -144,7 +144,9 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
     })
     expect(
       db()
-        .query('SELECT agent,executor,evidence_excluded,pid,agent_pid FROM run WHERE record_id=?')
+        .query(
+          'SELECT agent,executor,evidence_excluded,pid,agent_pid,harness_wall_bound_ms FROM run WHERE record_id=?',
+        )
         .get(harness.claim.id),
     ).toEqual({
       agent: 'harness',
@@ -152,6 +154,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       evidence_excluded: HARNESS_EVIDENCE_EXCLUSION,
       pid: null,
       agent_pid: null,
+      harness_wall_bound_ms: 60_000,
     })
 
     const refusedPrompt = 'migrating fresh claim'

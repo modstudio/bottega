@@ -15,8 +15,11 @@ test('run executor migration defaults existing rows to external and constrains n
       )
       .run(id, fixtureProjectRecordId(database))
     expect(applyMigrations(database)).toContain('0169_run_executor')
-    expect(database.query('SELECT executor FROM run WHERE record_id=?').get(id)).toEqual({
+    expect(
+      database.query('SELECT executor,harness_wall_bound_ms FROM run WHERE record_id=?').get(id),
+    ).toEqual({
       executor: 'external',
+      harness_wall_bound_ms: null,
     })
     expect(() => database.query("UPDATE run SET executor='other'").run()).toThrow()
   } finally {

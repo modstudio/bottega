@@ -24,6 +24,7 @@ import { settleClaims } from '../resources/resource-claims.ts'
 import { otherConversationWorktreeSharers } from '../resources/resource-ownership.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
@@ -74,7 +75,7 @@ function runRows(path: string): ReclaimRun[] {
             r.branch, r.branch_kept, r.branch_kept_tip, r.minted_branch,
             r.base_commit, r.worktree_source, r.status,
             r.pid, r.agent_pid, r.session_id, seen.last_seen session_last_seen,
-            r.executor, r.job,
+            r.executor, r.job, r.harness_wall_bound_ms,
             ${EVIDENCE_CLOSED_SQL} AS scored, r.keep_tree, r.keep_tree_until, r.started_at
        FROM run r ${chainScoreJoin('r', 's')}
        LEFT JOIN session_seen seen ON seen.session_id=r.session_id
@@ -97,7 +98,12 @@ function liveOwner(row: ReclaimRun): string | null {
     status: row.status,
     lease: runLeaseState(row.record_id),
     pidAlive: Boolean(row.pid && pidAlive(row.pid)),
-    ...recordedRunLivenessFacts(row, Date.now(), SESSION_LIVE_MS),
+    ...recordedRunLivenessFacts(
+      row,
+      Date.now(),
+      SESSION_LIVE_MS,
+      recordedOwnerProcess(db(), row.session_id),
+    ),
   })
     ? `run ${row.record_id} is alive`
     : null

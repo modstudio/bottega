@@ -60,7 +60,7 @@ import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
-import { collectReplySource, type ReplyContract } from './run-reply-source.ts'
+import { collectReplySource, replyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
@@ -80,14 +80,6 @@ import {
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
-}
-
-export function replyContract(
-  schemaPath: string | undefined,
-  textContract: boolean,
-): ReplyContract {
-  if (schemaPath) return 'custom'
-  return textContract ? 'text' : 'none'
 }
 
 function outputCeilingReached(

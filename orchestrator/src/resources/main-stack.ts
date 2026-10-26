@@ -7,6 +7,7 @@ import type { MainStackConsumer } from '../project/project-settings.ts'
 import type { Project } from '../project/projects.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import {
   decideMainStackEnsure,
   decideMainStackIdleStop,
@@ -312,7 +313,7 @@ function latestActivity(
 } {
   const liveRows = database
     .query(
-      `SELECT record_id,status,pid,executor,session_id,started_at,job,
+      `SELECT record_id,status,pid,executor,session_id,started_at,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
          FROM run WHERE project_record_id=? AND status IN ('running','asking')`,
     )
@@ -325,13 +326,19 @@ function latestActivity(
     started_at: string
     job: string
     session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
   const liveRun = liveRows.some((row) =>
     runAlive({
       status: row.status,
       lease: runLeaseState(row.record_id),
       pidAlive: Boolean(row.pid && pidAlive(row.pid)),
-      ...recordedRunLivenessFacts(row, nowMs, SESSION_LIVE_MS),
+      ...recordedRunLivenessFacts(
+        row,
+        nowMs,
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(database, row.session_id, nowMs),
+      ),
     }),
   )
   const created = database

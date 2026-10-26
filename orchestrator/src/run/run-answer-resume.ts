@@ -62,7 +62,7 @@ export async function reportAnswerResume(input: {
     console.log(
       `ruled on ${input.answerCount} question(s); resumed run ${input.rootId} as run ${input.childId}`,
     )
-  if (reportHarnessHandoff(input.childId))
+  if (reportHarnessHandoff(input.childId, input.json))
     return result(input.rootId, input.rootNumber, input.childId)
   if (input.flags.detach || !input.flags.follow) {
     if (!input.flags.quiet)

@@ -19,6 +19,7 @@ import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
 import { refuseHeldContinuationBranch } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
 import { decideWritingRetryWorkspace, type RetryBranchTipRelation } from './run-retry.ts'
 
@@ -98,6 +99,7 @@ type RetryWorkspaceRow = {
   started_at: string
   job: string
   session_last_seen: string | null
+  harness_wall_bound_ms: number | null
 }
 
 export function resolveWritingRetryWorkspace(input: {
@@ -115,6 +117,7 @@ export function resolveWritingRetryWorkspace(input: {
     .query(
       `SELECT record_id,cwd,worktree,branch,base_commit,worktree_source,branch_kept_tip,status,pid,
               executor,session_id,started_at,job,
+              harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
        FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY turn DESC,number DESC LIMIT 1`,
     )
@@ -148,7 +151,12 @@ export function resolveWritingRetryWorkspace(input: {
         status: latest.status,
         lease: runLeaseState(latest.record_id),
         pidAlive: Boolean(latest.pid && pidAlive(latest.pid)),
-        ...recordedRunLivenessFacts(latest, Date.now(), SESSION_LIVE_MS),
+        ...recordedRunLivenessFacts(
+          latest,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(db(), latest.session_id),
+        ),
       }),
     branchTipRelation: relation,
   })

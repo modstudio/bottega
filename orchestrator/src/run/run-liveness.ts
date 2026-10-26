@@ -25,6 +25,7 @@ import { coordinatorSetupError, recordedCoordinatorCause } from './run-coordinat
 import { runLeaseState } from './run-lease.ts'
 import { STALE_AFTER_MS } from './run-liveness-policy.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import {
   type RecordedRunSharedGitConfigInput,
   sharedGitConfigCheckSkipReason,
@@ -244,6 +245,8 @@ type RunningRow = {
   worktree: string | null
   executor: 'external' | 'harness'
   session_last_seen: string | null
+  session_id: string | null
+  harness_wall_bound_ms: number | null
 }
 
 function deadRunReason(row: RunningRow): string {
@@ -265,7 +268,7 @@ function preservedFailureKindTurnId(setupDeathIds: Set<string>, lastTurnId: stri
   return setupDeathIds.has(lastTurnId) ? lastTurnId : null
 }
 
-function runningDisposition(row: RunningRow, now: number): RunningDisposition {
+function runningDisposition(database: Database, row: RunningRow, now: number): RunningDisposition {
   const leaseState = runLeaseState(row.record_id)
   const coordinatorPidAlive = Boolean(row.pid && pidAlive(row.pid))
   let disposition: RunningDisposition
@@ -274,7 +277,12 @@ function runningDisposition(row: RunningRow, now: number): RunningDisposition {
       status: 'running',
       lease: leaseState,
       pidAlive: coordinatorPidAlive,
-      ...recordedRunLivenessFacts(row, now, SESSION_LIVE_MS),
+      ...recordedRunLivenessFacts(
+        row,
+        now,
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(database, row.session_id, now),
+      ),
     })
       ? 'alive'
       : 'dead'
@@ -330,7 +338,7 @@ type ReapedRunGroups = {
   recordedCauseDeaths: string[]
 }
 
-function groupReapedRuns(rows: RunningRow[], now: number): ReapedRunGroups {
+function groupReapedRuns(database: Database, rows: RunningRow[], now: number): ReapedRunGroups {
   const groups: ReapedRunGroups = {
     dead: [],
     abandonedBootstraps: [],
@@ -344,7 +352,7 @@ function groupReapedRuns(rows: RunningRow[], now: number): ReapedRunGroups {
     'recorded-cause': 'recordedCauseDeaths',
   }
   for (const row of rows) {
-    const disposition = runningDisposition(row, now)
+    const disposition = runningDisposition(database, row, now)
     if (disposition !== 'alive') groups[target[disposition]].push(row.record_id)
   }
   return groups
@@ -394,13 +402,17 @@ export function reapStale(
   const rows = d
     .query(
       `SELECT r.number, r.record_id, r.pid, r.agent_pid, r.agent, r.started_at, r.job, r.worktree,
-              r.executor, seen.last_seen AS session_last_seen
+              r.executor, r.session_id, r.harness_wall_bound_ms, seen.last_seen AS session_last_seen
          FROM run r LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.status='running'`,
     )
     .all() as RunningRow[]
 
-  const { dead, abandonedBootstraps, setupDeaths, recordedCauseDeaths } = groupReapedRuns(rows, now)
+  const { dead, abandonedBootstraps, setupDeaths, recordedCauseDeaths } = groupReapedRuns(
+    d,
+    rows,
+    now,
+  )
   if (storeWritesRefused()) {
     return [
       ...dead.map((id) => {

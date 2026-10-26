@@ -17,6 +17,7 @@ import { gitLockOwnerPids, shellQuote } from '../resources/git-locks.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { processTable } from '../run/run-process.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import {
@@ -211,7 +212,7 @@ function conversationRows(runId: string) {
   const root = owner.parent_run_record_id ?? owner.record_id
   return db()
     .query(
-      `SELECT record_id,status,worktree,pid,agent_pid,agent_pgid,executor,session_id,started_at,job,
+      `SELECT record_id,status,worktree,pid,agent_pid,agent_pgid,executor,session_id,started_at,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
          FROM run WHERE record_id=? OR parent_run_record_id=?`,
     )
@@ -227,6 +228,7 @@ function conversationRows(runId: string) {
     started_at: string
     job: string
     session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
 }
 
@@ -271,7 +273,12 @@ function reclaimRefGuard(subject: string, options: Options) {
         status: row.status,
         lease: runLeaseState(row.record_id),
         pidAlive: pidAlive(row.pid),
-        ...recordedRunLivenessFacts(row, Date.now(), SESSION_LIVE_MS),
+        ...recordedRunLivenessFacts(
+          row,
+          Date.now(),
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(db(), row.session_id),
+        ),
       }),
     ),
   })

@@ -217,12 +217,10 @@ export const runLifecycleBoundarySpecs: ImportBoundary[] = [
     'orchestrator/src/run/run-liveness.ts',
     [
       '../database/db.ts',
-      '../jobs/jobs.ts',
       '../../../shared/process-identity.ts',
       '../resources/resource-ownership.ts',
       '../record/machine-identity.ts',
       './run-alive.ts',
-      './run-artifacts.ts',
       './run-authority.ts',
       './run-bootstrap.ts',
       './run-chain.ts',

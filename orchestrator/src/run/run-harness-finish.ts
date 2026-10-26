@@ -5,6 +5,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  parseReaderReply,
+  parseReviewReply,
+  parseWorkerReply,
   REPLY_FILE_NAME,
   realQuestions,
   resolveReplyDialect,
@@ -13,7 +16,7 @@ import {
 } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
-import { job } from '../jobs/jobs.ts'
+import { isReaderJob, job } from '../jobs/jobs.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -28,8 +31,8 @@ import {
 import { HARNESS_EXECUTOR } from './run-executor.ts'
 import { decideHarnessReply } from './run-harness-reply.ts'
 import { withRunCloseOutLease } from './run-lease.ts'
-import { replyContract } from './run-live.ts'
 import { checksReviewedCommit } from './run-pack-prompt.ts'
+import { replyContract } from './run-reply-source.ts'
 import { finishRun } from './run-terminal.ts'
 
 type HarnessRow = {
@@ -87,6 +90,7 @@ type FinishFacts = {
   worktree: Worktree | null
   decision: ReturnType<typeof decideHarnessReply>
   workerReply: WorkerReply | null
+  parsedReply: Parameters<typeof finishRun>[0]['parsedReply']
   acceptedQuestions: ReturnType<typeof realQuestions>
   error: string | null
   confinement: HarnessConfinementSnapshot
@@ -127,7 +131,7 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
     started: facts.started,
     retargetDiagnostic: null,
     error,
-    contract: facts.workerReply as never,
+    contract: facts.workerReply,
     status: decision.status,
     contractObjects: decision.contractObjects,
     vendorTerminatedStream: null,
@@ -139,7 +143,7 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
     ),
     output: decision.output,
     confinementEvent: null,
-    parsedReply: facts.workerReply as never,
+    parsedReply: facts.parsedReply,
     runProjectName: owned.repo,
     mcpConnection: null,
     mcpMode: null,
@@ -191,7 +195,7 @@ function closeHarnessRun(facts: FinishFacts, terminal: Awaited<ReturnType<typeof
     vendorTokens: null,
     costUsd: null,
     outPath,
-    contract: facts.workerReply as never,
+    contract: facts.workerReply,
     error: terminal.error,
     run: async () => {
       throw new Error('automatic failover is refused for harness execution')
@@ -222,10 +226,24 @@ export async function finishHarnessRun(id: string) {
       `run ${complete.number} has no ${REPLY_FILE_NAME}; remedy: have the harness sub-agent write ${replyPath}, then run ${PLATFORM_SLUG} run finish ${complete.record_id}`,
     )
   }
-  const replyText = readFileSync(replyPath, 'utf8')
-  const schema = complete.schema_path
-    ? JSON.parse(readFileSync(complete.schema_path, 'utf8'))
-    : null
+  let replyText: string
+  try {
+    replyText = readFileSync(replyPath, 'utf8')
+  } catch (cause) {
+    throw new Error(
+      `run ${complete.number} cannot read ${REPLY_FILE_NAME}: ${String((cause as Error).message ?? cause)}; remedy: make ${replyPath} readable, then run ${PLATFORM_SLUG} run finish ${complete.record_id}`,
+    )
+  }
+  let schema: unknown = null
+  if (complete.schema_path) {
+    try {
+      schema = JSON.parse(readFileSync(complete.schema_path, 'utf8'))
+    } catch (cause) {
+      throw new Error(
+        `run ${complete.number} cannot read its reply schema: ${String((cause as Error).message ?? cause)}; remedy: restore a readable valid schema at ${complete.schema_path}, then run ${PLATFORM_SLUG} run finish ${complete.record_id}`,
+      )
+    }
+  }
   const decision = decideHarnessReply(
     replyText,
     dialect,
@@ -236,7 +254,13 @@ export async function finishHarnessRun(id: string) {
     ),
     schema,
   )
-  const workerReply = decision.reply as FinishFacts['workerReply']
+  const workerReply = requestedJob.needs.writesRepo ? parseWorkerReply(decision.output) : null
+  const parsed = dialect.parse(decision.output).reply
+  const parsedReply = requestedJob.findings
+    ? parseReviewReply(parsed)
+    : isReaderJob(requestedJob.name)
+      ? parseReaderReply(parsed)
+      : null
   const error = decision.error
   const facts: FinishFacts = {
     owned: complete,
@@ -247,14 +271,28 @@ export async function finishHarnessRun(id: string) {
     worktree: storedWorktree(complete),
     decision,
     workerReply,
-    acceptedQuestions: workerReply ? realQuestions(workerReply as never) : [],
+    parsedReply,
+    acceptedQuestions: workerReply ? realQuestions(workerReply) : [],
     error,
-    confinement: readHarnessConfinementSnapshot(dirname(scratchDir)),
+    confinement: (() => {
+      try {
+        return readHarnessConfinementSnapshot(dirname(scratchDir))
+      } catch (cause) {
+        throw new Error(
+          `run ${complete.number} cannot read its confinement snapshot: ${String((cause as Error).message ?? cause)}; remedy: restore the run's confinement snapshot, then run ${PLATFORM_SLUG} run finish ${complete.record_id}`,
+        )
+      }
+    })(),
   }
-  writeFileSync(facts.outPath, decision.output)
   return withRunCloseOutLease(
     complete.record_id,
     () => {},
-    async () => closeHarnessRun(facts, await finishRun(harnessTerminalInput(facts))),
+    async () => {
+      const current = db().query('SELECT * FROM run WHERE record_id=?').get(id) as HarnessRow | null
+      const currentRefusal = finishRefusal(current, sessionId(), id)
+      if (currentRefusal) throw new Error(currentRefusal)
+      writeFileSync(facts.outPath, decision.output)
+      return closeHarnessRun(facts, await finishRun(harnessTerminalInput(facts)))
+    },
   )
 }

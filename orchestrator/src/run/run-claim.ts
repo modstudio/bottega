@@ -8,6 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
 import { settleCreateTimeBranchCleanup } from '../branch/create-time-settlement.ts'
@@ -352,7 +353,15 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const claimedCwd = repoJob ? null : callerCwd
   const claimedBranch = repoJob ? null : branchOf(callerCwd)
   const identity = claimIdentity(opts.resume)
-  const execution = executorClaimFacts(name, mcpRequest, transportName)
+  const ownerSession =
+    resume.workspaceSource === 'retained'
+      ? opts.resume!.sessionId
+      : (opts.ownerSession ?? sessionId())
+  if (name === HARNESS_AGENT && !ownerSession)
+    throw new Error(
+      `a harness run requires an owning agent session; remedy: run ${PLATFORM_SLUG} run start from an agent session`,
+    )
+  const execution = executorClaimFacts(name, mcpRequest, transportName, timeoutMs)
   const updateReservedRun = () =>
     db()
       .query(
@@ -361,7 +370,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
-                        executor=?, evidence_excluded=?
+                        executor=?, evidence_excluded=?, harness_wall_bound_ms=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -405,8 +414,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
-                          executor, evidence_excluded)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          executor, evidence_excluded, harness_wall_bound_ms)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -423,9 +432,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         head,
         opts.label ?? null,
         // A resumed turn inherits the owning session rather than taking the one that answered.
-        resume.workspaceSource === 'retained'
-          ? opts.resume!.sessionId
-          : (opts.ownerSession ?? sessionId()),
+        ownerSession,
         opts.probe ? 1 : 0,
         opts.retryOf ?? null,
         reason,
@@ -1008,6 +1015,7 @@ function executorClaimFacts(
   name: string,
   mcpRequest: McpRequest | undefined,
   transportName: string,
+  timeoutMs: number,
 ) {
   const harness = name === HARNESS_AGENT
   return {
@@ -1020,6 +1028,7 @@ function executorClaimFacts(
     identityColumns: [
       harness ? HARNESS_EXECUTOR : EXTERNAL_EXECUTOR,
       harness ? HARNESS_EVIDENCE_EXCLUSION : null,
+      harness ? timeoutMs : null,
     ] as const,
   }
 }

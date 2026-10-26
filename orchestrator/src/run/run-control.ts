@@ -853,9 +853,9 @@ export async function reportContinuedRun(
   await follow(childId, flags.quiet, true, presentation)
 }
 
-export function reportHarnessHandoff(id: string): boolean {
+export function reportHarnessHandoff(id: string, json = false): boolean {
   const handoff = harnessHandoff(db(), id)
   if (!handoff) return false
-  printHarnessHandoff(handoff)
+  printHarnessHandoff(handoff, json)
   return true
 }

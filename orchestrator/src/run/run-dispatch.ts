@@ -42,9 +42,16 @@ import { RUNS_DIR } from './run-artifacts.ts'
 import { inheritedRunLinks } from './run-claim-inheritance.ts'
 import { claimWithMigrationAdmission } from './run-claim-transaction.ts'
 import { runCoordinatorLogPath } from './run-coordinator-log.ts'
+import {
+  EXTERNAL_EXECUTOR,
+  HARNESS_EVIDENCE_EXCLUSION,
+  HARNESS_EXECUTOR,
+  type RunExecutor,
+} from './run-executor.ts'
 import { runLeaseState } from './run-lease.ts'
 import { preflightDispatchMcp } from './run-mcp-main-stack.ts'
 import { nextRunNumber } from './run-number.ts'
+import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import { repoOf } from './run-project-context.ts'
 import { claimIdentity, resumeFacts } from './run-resume-kind.ts'
 import { recordRunStartupFailure } from './run-startup-failure.ts'
@@ -67,7 +74,7 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
   const tree = spec.resume.worktree?.path ?? null
   const possibleOwners = db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree,executor,session_id,started_at,job,
+      `SELECT record_id,number,parent_run_record_id,status,pid,branch,worktree,executor,session_id,started_at,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen FROM run
        WHERE record_id=? OR parent_run_record_id=?
           OR (? IS NOT NULL AND branch=?) OR (? IS NOT NULL AND worktree=?)`,
@@ -85,6 +92,7 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
     started_at: string
     job: string
     session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
   const liveOwner = possibleOwners.find((owner) => {
     const inOriginal =
@@ -94,7 +102,12 @@ function refuseLiveRetryOwner(spec: DetachSpec): void {
       status: owner.status,
       lease: runLeaseState(owner.record_id),
       pidAlive: Boolean(owner.pid && pidAlive(owner.pid)),
-      ...recordedRunLivenessFacts(owner, Date.now(), SESSION_LIVE_MS),
+      ...recordedRunLivenessFacts(
+        owner,
+        Date.now(),
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(db(), owner.session_id),
+      ),
     })
   })
   if (!liveOwner) return
@@ -174,8 +187,10 @@ function detachedReviewBindings(spec: ResolvedDetachSpec) {
   ] as const
 }
 
-function placeholderExecution(spec: DetachSpec): ['harness' | 'external', string | null] {
-  return spec.resume?.agent === 'harness' ? ['harness', 'harness execution'] : ['external', null]
+function placeholderExecution(spec: DetachSpec): [RunExecutor, string | null] {
+  return spec.resume?.agent === 'harness'
+    ? [HARNESS_EXECUTOR, HARNESS_EVIDENCE_EXCLUSION]
+    : [EXTERNAL_EXECUTOR, null]
 }
 
 async function detachedRunLinks(cwd: string, spec: DetachSpec) {

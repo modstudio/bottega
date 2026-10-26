@@ -37,6 +37,7 @@ import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { abandonedBootstrap, PENDING_BOOTSTRAP_MS } from '../run/run-bootstrap.ts'
 import { isFreshRunHostWait } from '../run/run-host-capacity.ts'
 import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import {
   HOOK_TREE_JOB,
   isSyntheticLifecycleJob,
@@ -501,7 +502,7 @@ export function deadRunningProcessConditions(
 ): MonitorCondition[] {
   const running = database
     .query(
-      `SELECT record_id, started_at, pid, agent_pid, output_bytes, session_id,executor,job,
+      `SELECT record_id, started_at, pid, agent_pid, output_bytes, session_id,executor,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
          FROM run WHERE status='running'`,
     )
@@ -515,6 +516,7 @@ export function deadRunningProcessConditions(
     executor: 'external' | 'harness'
     job: string
     session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
   return running.flatMap((run): MonitorCondition[] => {
     // PID reuse makes this deliberately conservative: a reused pid looks live
@@ -528,7 +530,12 @@ export function deadRunningProcessConditions(
       status: 'running',
       lease,
       pidAlive: Boolean(run.pid && pidAlive(run.pid)),
-      ...recordedRunLivenessFacts(run, clock, SESSION_LIVE_MS),
+      ...recordedRunLivenessFacts(
+        run,
+        clock,
+        SESSION_LIVE_MS,
+        recordedOwnerProcess(db(), run.session_id, clock),
+      ),
     })
     const worker = coordinatorAlive
       ? lease === 'held'
@@ -797,7 +804,7 @@ export function dockerConditions(clock: number): {
 function liveRunIds(database: ReturnType<typeof db>): Set<string> {
   const rows = database
     .query(
-      `SELECT record_id,status,pid,executor,session_id,started_at,job,
+      `SELECT record_id,status,pid,executor,session_id,started_at,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
          FROM run WHERE status IN ('running','asking')`,
     )
@@ -810,6 +817,7 @@ function liveRunIds(database: ReturnType<typeof db>): Set<string> {
     started_at: string
     job: string
     session_last_seen: string | null
+    harness_wall_bound_ms: number | null
   }[]
   return new Set(
     rows
@@ -818,7 +826,12 @@ function liveRunIds(database: ReturnType<typeof db>): Set<string> {
           status: row.status,
           lease: runLeaseState(row.record_id),
           pidAlive: Boolean(row.pid && pidAlive(row.pid)),
-          ...recordedRunLivenessFacts(row, Date.now(), SESSION_LIVE_MS),
+          ...recordedRunLivenessFacts(
+            row,
+            Date.now(),
+            SESSION_LIVE_MS,
+            recordedOwnerProcess(db(), row.session_id),
+          ),
         }),
       )
       .map((row) => row.record_id),

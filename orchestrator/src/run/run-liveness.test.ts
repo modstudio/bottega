@@ -256,7 +256,9 @@ describe('reapStale', () => {
   test('a harness run stays alive while its owner session is live without a process', () => {
     const id = addRun({ agent: 'harness', job: 'implement', status: 'running', session: 'owner' })
     db()
-      .query("UPDATE run SET executor='harness',pid=NULL,agent_pid=NULL WHERE record_id=?")
+      .query(
+        "UPDATE run SET executor='harness',pid=NULL,agent_pid=NULL,harness_wall_bound_ms=2700000 WHERE record_id=?",
+      )
       .run(id)
     db().query('INSERT INTO session_seen(session_id,last_seen) VALUES (?,?)').run('owner', nowIso())
 

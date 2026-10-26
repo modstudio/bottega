@@ -9,7 +9,6 @@ import * as acpWriter from './run-acp-writer.ts'
 import type { ClaimResult } from './run-claim-types.ts'
 import { prepareHarnessConfinement } from './run-confinement.ts'
 import { HARNESS_AGENT } from './run-executor.ts'
-import { bindSignals } from './run-process.ts'
 import type { RunResult } from './run-types.ts'
 import {
   recordSharedGitConfigSnapshotFailure,
@@ -51,11 +50,6 @@ export function harnessDispatch(
 ) {
   const harness = isHarnessDelegated(needs, readDelegationSettings())
   return { harness, mcpRequest: harness ? undefined : effectiveMcpRequest(request, { needs }) }
-}
-
-export function completeRunStartup(): true {
-  bindSignals()
-  return true
 }
 
 function harnessRunningResult(input: ClaimResult, reason: string, writesJob: boolean): RunResult {

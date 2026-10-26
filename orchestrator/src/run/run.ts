@@ -110,7 +110,7 @@ import {
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
-import { sha } from './run-process.ts'
+import { bindSignals, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
 import { resumeFacts } from './run-resume-kind.ts'
@@ -866,7 +866,8 @@ export async function run(opts: {
       prompt += `\n\n${canonSourceInstruction(canonSourceFor(true, mcpConnection, repoJob))}`
       persistBoundPrompt(promptPath, prompt, claim.id)
     }
-    startupComplete = harness.completeRunStartup()
+    bindSignals()
+    startupComplete = true
   } finally {
     await acpWriter.disposeAskAfterStartup(askLoopback, startupComplete)
   }

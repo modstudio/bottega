@@ -270,7 +270,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'orchestrator/src/reclaim/reclaim.ts',
-    ['1fcbcb5b9dd863da'],
+    ['703d4e07bc079941'],
     'reclaim query composes the shared run-voiding expression',
   ),
   ...exempt(

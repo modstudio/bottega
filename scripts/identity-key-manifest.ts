@@ -155,6 +155,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.prompt_bytes',
     'run.number',
     'run.latency_ms',
+    'run.harness_wall_bound_ms',
     'run.exit_code',
     'run.output_bytes',
     'run.vendor_tokens',

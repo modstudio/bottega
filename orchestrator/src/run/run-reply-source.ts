@@ -9,6 +9,14 @@ import { schemaMismatchError, valueMatchesStrictSchema } from '../transport/tran
 
 export type ReplyContract = 'none' | 'text' | 'custom'
 
+export function replyContract(
+  schemaPath: string | undefined,
+  textReplyContract: boolean,
+): ReplyContract {
+  if (schemaPath) return 'custom'
+  return textReplyContract ? 'text' : 'none'
+}
+
 export type ReplySourceFacts = {
   replyFile: { present: false } | { present: true; text: string; matches: boolean }
   contract: ReplyContract
