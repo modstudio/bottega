@@ -31,6 +31,7 @@ export const mcpModules: McpModule[] = [
     '../board/board-message-identifier.ts',
     '../board/board-operations.ts',
     '../board/board-policy.ts',
+    '../board/board-reply-audience.ts',
     '../board/board-suggestions.ts',
     '../database/db.ts',
     './mcp-board-claim-tools.ts',

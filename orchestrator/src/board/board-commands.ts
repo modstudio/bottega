@@ -22,6 +22,7 @@ import { listBoardOverview } from './board-overview.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import type { BoardDeliveryPoint } from './board-reach.ts'
 import { registerBoardReachCommand } from './board-reach-command.ts'
+import { parseReplyAudienceOption } from './board-reply-audience.ts'
 import { recordPresence } from './board-service.ts'
 import { declineBoardSuggestion, postBoardSuggestion } from './board-suggestions.ts'
 import { watchHostedBoard } from './board-watch.ts'
@@ -232,6 +233,29 @@ function registerBoardSuggestionCommands(board: Command): void {
     .action((id) => declineBoardSuggestion(resolveLocalBoardMessageIdentifier(db(), String(id))))
 }
 
+function registerBoardReplyCommand(board: Command): void {
+  board
+    .command('reply <root-id>')
+    .description(BOARD_DESCRIPTIONS.reply)
+    .option(
+      '--audience <choice>',
+      'participants, acknowledged, audience, operator, or session:<id>',
+    )
+    .requiredOption('--body <text>', 'set the reply body')
+    .action(async (id, options) =>
+      console.log(
+        JSON.stringify(
+          await boardReply(
+            String(id),
+            options.body,
+            undefined,
+            options.audience === undefined ? null : parseReplyAudienceOption(options.audience),
+          ),
+        ),
+      ),
+    )
+}
+
 export function registerBoardCommands(program: Command): void {
   const board = program.command('board').description(BOARD_DESCRIPTIONS.board)
   registerBoardClaimCommands(board, parseBoardDuration)
@@ -314,13 +338,7 @@ export function registerBoardCommands(program: Command): void {
         ),
       )
     })
-  board
-    .command('reply <root-id>')
-    .description(BOARD_DESCRIPTIONS.reply)
-    .requiredOption('--body <text>', 'set the reply body')
-    .action(async (id, options) =>
-      console.log(JSON.stringify(await boardReply(String(id), options.body))),
-    )
+  registerBoardReplyCommand(board)
   board
     .command('thread <id>')
     .description(BOARD_DESCRIPTIONS.thread)

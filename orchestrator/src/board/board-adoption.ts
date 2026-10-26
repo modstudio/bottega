@@ -23,6 +23,7 @@ import {
 import { claimIsLive } from './board-claim-policy.ts'
 import { BOARD_HOSTED_ADOPTED_KEY, boardHasAdoptedHosted } from './board-mode.ts'
 import { OPERATOR_READER, parseAudience } from './board-policy.ts'
+import { parseReplyAudienceOption } from './board-reply-audience.ts'
 import {
   latestRunStatus,
   type MessageRow,
@@ -281,6 +282,7 @@ async function uploadMessage(
     const uploaded = await client.replyBoardMessage(hostedRoot, {
       id: hostedId,
       body: row.body,
+      ...(row.audience === null ? {} : { audience: parseReplyAudienceOption(row.audience) }),
       authorSession: row.author_session,
       authorHarness: row.author_harness,
       authorMachineId: machineId(),

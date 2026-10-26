@@ -85,11 +85,3 @@ export function acceptRefusal(input: {
     return `only the question author or operator may accept an answer to board question ${input.questionId}`
   return null
 }
-
-export function threadParticipants(
-  rootAuthor: string,
-  replyAuthors: string[],
-  replier: string,
-): string[] {
-  return [...new Set([rootAuthor, ...replyAuthors])].filter((reader) => reader !== replier)
-}

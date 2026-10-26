@@ -353,12 +353,13 @@ read board notices addressed to this session
 
 ## bottega board reply
 
-**Synopsis:** `bottega board reply <root-id> [--body <text>]`
+**Synopsis:** `bottega board reply <root-id> [--audience <choice>] [--body <text>]`
 
 reply to a board notice or question
 
 ### Options
 
+- `--audience <choice>`: participants, acknowledged, audience, operator, or session:<id>
 - `--body <text>`: set the reply body
 
 ### Related

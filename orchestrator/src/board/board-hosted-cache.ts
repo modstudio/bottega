@@ -27,6 +27,7 @@ import {
   selectPushNotices,
 } from './board-push-policy.ts'
 import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
+import { parseReplyAudienceOption, resolveReplyReaders } from './board-reply-audience.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
 import {
@@ -617,10 +618,55 @@ const replyAddressesReader = (
   const thread = context.threadMessages.get(rootId) ?? []
   const root = thread.find((candidate) => candidate.id === rootId)
   if (!root || !hostedMessageIsLive(root, context.clock)) return false
-  return thread.some(
-    (candidate) =>
-      candidate.createdAt < message.createdAt && readerMatchesAuthor(candidate, context),
+  const authorReader = (candidate: HostedBoardMessage): string =>
+    candidate.authorUserId === context.signedIn
+      ? (candidate.authorSession ?? OPERATOR_READER)
+      : `user:${candidate.authorUserId}`
+  const rootTags = context.rows.find((row) => row.message.id === rootId)?.tags ?? []
+  const rootAudienceReaders = root.audience
+    ? recipients(
+        root.audience,
+        context.clock,
+        rootTags,
+        context.database,
+        context.presence,
+        root.origin.project,
+      )
+    : []
+  const cachedReceipts = context.database
+    .query(`SELECT reader_session,audience_at_posting,acknowledged_at
+            FROM hosted_board_receipt_cache WHERE message_id=? ORDER BY rowid`)
+    .all(rootId) as Array<{
+    reader_session: string
+    audience_at_posting: number
+    acknowledged_at: string | null
+  }>
+  const receipts = new Map(
+    cachedReceipts.map((receipt) => [
+      receipt.reader_session,
+      {
+        reader: receipt.reader_session,
+        audienceAtPosting: receipt.audience_at_posting === 1,
+        acknowledged: receipt.acknowledged_at !== null,
+      },
+    ]),
   )
+  for (const reader of rootAudienceReaders) {
+    receipts.set(reader, {
+      reader,
+      audienceAtPosting: true,
+      acknowledged: receipts.get(reader)?.acknowledged ?? false,
+    })
+  }
+  return resolveReplyReaders({
+    rootAuthor: authorReader(root),
+    threadAuthors: thread
+      .filter((candidate) => candidate.kind === 'reply' && candidate.createdAt < message.createdAt)
+      .map(authorReader),
+    rootReceipts: [...receipts.values()],
+    audience: message.audience ? parseReplyAudienceOption(message.audience) : null,
+    replier: authorReader(message),
+  }).includes(context.reader)
 }
 
 function hostedReplySuccessorPush(

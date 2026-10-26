@@ -4,7 +4,6 @@ import {
   BOARD_NOTE_FILING_LEASE_MS,
   noteFilingLeaseDecision,
   replyRefusal,
-  threadParticipants,
 } from './board-thread-policy.ts'
 
 const root = {
@@ -105,13 +104,6 @@ test('acceptance belongs to the asker or operator and only an open question', ()
       accepted: true,
     }),
   ).toContain('final')
-})
-
-test('participants are unique, ordered, and exclude the replier', () => {
-  expect(threadParticipants('asker', ['first', 'asker', 'second', 'first'], 'second')).toEqual([
-    'asker',
-    'first',
-  ])
 })
 
 test('note filing lease decisions distinguish filed, active, and stale leases', () => {
