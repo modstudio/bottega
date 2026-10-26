@@ -18,6 +18,7 @@ import {
 } from './orch.ts'
 import {
   exitCodeFor,
+  invocationSkipsSessionStamp,
   lockedStoreMessage,
   program,
   run,
@@ -186,4 +187,13 @@ test('store-free setup invocations reach the executable entry without creating o
     rmSync(absent, { force: true })
     rmSync(existing, { force: true })
   }
+})
+
+test('the session stamp skips the ask-server invocation so its broker declaration is the first store open', () => {
+  // A stamp opens the store read-only first, and a handle opened read-only can never be written
+  // through afterwards — so the ask-server invocation must not be stamped.
+  expect(invocationSkipsSessionStamp(['ask-server'])).toBeTrue()
+  // Every other invocation still stamps as before.
+  expect(invocationSkipsSessionStamp(['board', 'list'])).toBeFalse()
+  expect(invocationSkipsSessionStamp(['ask', '--json'])).toBeFalse()
 })

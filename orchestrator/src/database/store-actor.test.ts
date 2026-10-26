@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import {
+  cachedHandleWriteRefusal,
   persistentReadOnlyRefusal,
   readerOpenMode,
   restrictedStoreActor,
@@ -80,6 +81,20 @@ test('a refused write reports the condition that refused it and what clears it',
   expect(storeWriteRefusal(false)).toContain(
     'refusing to write run or project rows to the registered main store from a linked worktree',
   )
+})
+
+test('a cached handle opened read-only refuses a later write and is never silently reopened', () => {
+  const refusal = cachedHandleWriteRefusal('read-only', true, '/state/orchestrator/orchestrator.db')
+  expect(refusal).toContain(
+    'refusing to write the orchestrator store through a process handle opened read-only: /state/orchestrator/orchestrator.db',
+  )
+  expect(refusal).toContain(
+    'condition: this process opened the store read-only earlier, before its write authority was declared.',
+  )
+  // A writable handle serves the write, and a read request is untouched.
+  expect(cachedHandleWriteRefusal('read-write', true, '/state/orchestrator.db')).toBeNull()
+  expect(cachedHandleWriteRefusal('read-only', false, '/state/orchestrator.db')).toBeNull()
+  expect(cachedHandleWriteRefusal(null, true, '/state/orchestrator.db')).toBeNull()
 })
 
 test('a persistent handle never takes the immutable open and a one-shot reader still may', () => {

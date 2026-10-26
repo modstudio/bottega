@@ -61,6 +61,27 @@ export function storeWriteRefusal(workerCaller: boolean): string {
 export type StoreOpenMode = 'read-write' | 'read-only' | 'read-only-immutable'
 
 /**
+ * The process opens one store handle for its whole life, so a write requested after that handle
+ * was opened read-only cannot be served: SQLite would fail later with a bare "attempt to write a
+ * readonly database". The condition is named here instead, and the handle is never silently
+ * reopened — a caller whose write authority arrives after the store opened (for example a broker
+ * declaration) must declare it before the store first opens.
+ */
+export function cachedHandleWriteRefusal(
+  cachedOpenMode: StoreOpenMode | null,
+  writableRequested: boolean,
+  path: string,
+): string | null {
+  if (!writableRequested || cachedOpenMode === null || cachedOpenMode === 'read-write') return null
+  return (
+    `refusing to write the orchestrator store through a process handle opened read-only: ${path}\n` +
+    'invariant: A process holds one store handle for its whole life, and a store opened read-only cannot be written through afterwards.\n' +
+    'condition: this process opened the store read-only earlier, before its write authority was declared.\n' +
+    'cleared by: declare the write authority before the store first opens, or run the command as an operator from the main checkout'
+  )
+}
+
+/**
  * How long the handle that asks lives. A one-shot reader — a command's single check — tolerates
  * reading the store as of its open. A persistent handle is the process connection a long-lived
  * command such as the orchestrator MCP server holds for its whole life.

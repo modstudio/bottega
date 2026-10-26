@@ -103,6 +103,7 @@ export { AGENT_COMMAND_VERBS }
 const READ_ONLY_STORE_COMMANDS = ['run', 'runs', 'result', 'gate-facts'] as const
 
 const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
+  'ask-server',
   'mcp-reader-proxy',
   'migrate',
   'update',
@@ -111,8 +112,12 @@ const INVOCATIONS_WITHOUT_SESSION_STAMP = new Set([
   ...READ_ONLY_STORE_COMMANDS,
 ])
 
-/** Verbs that only read the store must not stamp the session as seen. */
-function invocationSkipsSessionStamp(argv: string[]): boolean {
+/**
+ * Verbs that only read the store must not stamp the session as seen. The ask server is here
+ * because its broker declaration must be the process's FIRST store open: a stamp opens the
+ * store read-only first, and a handle opened read-only can never be written through afterwards.
+ */
+export function invocationSkipsSessionStamp(argv: string[]): boolean {
   const readOnlySubcommands: Record<string, readonly string[]> = {
     review: ['coverage-audit', 'scope-proposal', 'yield'],
     pr: ['check'],

@@ -1,15 +1,31 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   checkpointAndCloseDatabase,
   closeDatabaseForFixture,
   DB_PATH,
   db,
+  openProcessStoreHandle,
+  type ProcessHandleFacts,
   registerOpenHooks,
   withReadOnlyDatabaseAccess,
   writableDb,
 } from './db.ts'
+import { keepJournalSidecars } from './wal-persistence.ts'
+
+/** A worker caller on a store the facts declare outside OS temporary state: restricted read-only. */
+const restrictedHandleFacts: ProcessHandleFacts = {
+  linkedWorktreeBinary: false,
+  namedStoreOverride: false,
+  namedStoreIsMainStore: true,
+  operatorWriteInsistence: false,
+  workerCaller: true,
+  brokerChannel: false,
+  storePathUnderTemporaryRoot: false,
+}
 
 test('a writable open refuses when no hooks are registered', () => {
   closeDatabaseForFixture()
@@ -124,5 +140,55 @@ test('a writable open leaves the WAL sidecars behind so a plain read-only open s
     expect(reader.query('SELECT count(*) AS tables FROM sqlite_master').get()).toBeTruthy()
   } finally {
     reader.close()
+  }
+})
+
+test('a restricted persistent handle sees a write made after it opened', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-persistent-reader-'))
+  const path = join(root, 'orchestrator.db')
+  try {
+    const writable = new Database(path, { create: true })
+    writable.exec(
+      'PRAGMA journal_mode = WAL; CREATE TABLE t (n INTEGER); INSERT INTO t VALUES (1);',
+    )
+    // The last writable connection to close decides whether the sidecars survive.
+    keepJournalSidecars(writable)
+    writable.close()
+    const handle = openProcessStoreHandle(restrictedHandleFacts, path, 'persistent')
+    // The persistent handle takes plain read-only, so it sees a writer that arrives afterwards.
+    expect(handle.openMode).toBe('read-only')
+    try {
+      const writer = new Database(path, { readwrite: true, create: false })
+      keepJournalSidecars(writer)
+      writer.exec('INSERT INTO t VALUES (2)')
+      writer.close()
+      expect(handle.database.query('SELECT count(*) AS c FROM t').get()).toEqual({ c: 2 })
+    } finally {
+      handle.database.close()
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('a sidecar-less WAL store sends a restricted persistent handle to the named refusal', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-persistent-reader-'))
+  const path = join(root, 'orchestrator.db')
+  try {
+    const writable = new Database(path, { create: true })
+    writable.exec('PRAGMA journal_mode = WAL; CREATE TABLE t (n INTEGER);')
+    writable.close()
+    // A WAL store with its sidecars removed is the state a persistent reader must never read as
+    // a snapshot.
+    rmSync(`${path}-wal`, { force: true })
+    rmSync(`${path}-shm`, { force: true })
+    expect(existsSync(`${path}-wal`)).toBeFalse()
+    // The immutable snapshot would read it, but a persistent reader must never take it, so the
+    // open is refused by name.
+    expect(() => openProcessStoreHandle(restrictedHandleFacts, path, 'persistent')).toThrow(
+      /refusing to read the orchestrator store from a long-lived restricted process/,
+    )
+  } finally {
+    rmSync(root, { recursive: true, force: true })
   }
 })

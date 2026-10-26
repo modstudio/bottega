@@ -53,13 +53,17 @@ import {
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 import {
+  cachedHandleWriteRefusal,
   LINKED_WORKTREE_WRITE_REFUSAL,
   persistentReadOnlyRefusal,
+  type ReaderLifetime,
   readerOpenMode,
   restrictedStoreActor,
   type StoreActorFacts,
+  type StoreOpenMode,
   storeWriteRefusal,
 } from './store-actor.ts'
+import { keepJournalSidecars } from './wal-persistence.ts'
 import {
   isWriteProbeTable,
   staleWriteProbe,
@@ -70,6 +74,8 @@ import {
 export { DATABASE_RESOLUTION, DB_PATH, ROOT } from './database-location.ts'
 
 let handle: Database | null = null
+/** The open mode the cached process handle was opened with; a read-only handle cannot be written. */
+let handleOpenMode: StoreOpenMode | null = null
 let readOnlyHandle: Database | null = null
 const databaseAccess = createReadOnlyDatabaseAccess()
 let connectionWritable: boolean | null = null
@@ -356,6 +362,7 @@ export function closeDatabaseForFixture(): void {
   readOnlyHandle = null
   connectionWritable = null
   openedUserVersion = null
+  handleOpenMode = null
   schemaReload = null
   schemaReloadRefusal = null
 }
@@ -427,16 +434,40 @@ export function storeSchemaVersions(): { opened: number; store: number } | null 
   return { opened: openedUserVersion, store: readUserVersion(handle) }
 }
 
+/** The facts the process-handle open reads: the gathered actor facts plus where the store sits. */
+export type ProcessHandleFacts = StoreActorFacts & {
+  /** Whether the store sits under OS temporary state, where any caller may write it. */
+  storePathUnderTemporaryRoot: boolean
+}
+
+/** The process's one store handle, and the mode it was opened with. */
+export type ProcessStoreHandle = { database: Database; openMode: StoreOpenMode }
+
 /**
- * SQLite deletes -wal and -shm when the last connection to a WAL store closes, unless that
- * connection asked for a persistent WAL. The store's ordinary idle state has no writer holding
- * it, and a sidecar-less WAL store cannot be opened read-only at all, so a reader that arrives
- * afterwards — a worker's persistent handle — would find the store unopenable. The last writer
- * to close decides, so every writable open sets the flag, not only the one that first
- * established WAL journaling.
+ * Open the process's store handle from gathered facts and a path. The adapter gathers; this
+ * decides nothing the facts do not carry, so the open is exercisable on a scratch store. A
+ * persistent handle never takes the immutable snapshot — a long-lived reader must see every
+ * later writer — and a store whose plain read-only open cannot be established is refused by
+ * name rather than silently degraded.
  */
-function keepJournalSidecars(database: Database): void {
-  database.fileControl(constants.SQLITE_FCNTL_PERSIST_WAL, 1)
+export function openProcessStoreHandle(
+  facts: ProcessHandleFacts,
+  path: string,
+  lifetime: ReaderLifetime,
+): ProcessStoreHandle {
+  const access = decideStoreAccess({
+    restrictedActor: restrictedStoreActor(facts),
+    storePathUnderTemporaryRoot: facts.storePathUnderTemporaryRoot,
+    walOrShmSidecarPresent: existsSync(`${path}-wal`) || existsSync(`${path}-shm`),
+  })
+  const openMode = readerOpenMode(lifetime, access.openMode)
+  if (openMode === 'read-write') {
+    return { database: new Database(path, { readwrite: true, create: false }), openMode }
+  }
+  if (openMode === 'read-only-immutable') {
+    return { database: openReadOnlyStore(path, true), openMode }
+  }
+  return { database: openPersistentReadOnlyDatabase(path), openMode }
 }
 
 export function db(writable = false): Database {
@@ -452,20 +483,24 @@ function defaultDatabase(writable: boolean): Database {
     throw new Error(storeWriteRefusal(storeActorFacts.workerCaller))
   if (handle) {
     if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
+    const cachedRefusal = cachedHandleWriteRefusal(handleOpenMode, writable, DB_PATH)
+    if (cachedRefusal) throw new Error(cachedRefusal)
     return refuseOrReloadStaleSchema(handle, writable)
   }
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
   ensureDatabase()
   requireOpenHooksForWritableMode()
-  const access = orchestratorStoreAccess(
-    existsSync(`${DB_PATH}-wal`) || existsSync(`${DB_PATH}-shm`),
+  const processStore = openProcessStoreHandle(
+    {
+      ...storeActorFacts,
+      brokerChannel: storeBrokerChannel,
+      storePathUnderTemporaryRoot: linkedWorktreeMigrationAllowed(DB_PATH),
+    },
+    DB_PATH,
+    'persistent',
   )
-  const openMode = readerOpenMode('persistent', access.openMode)
-  const d =
-    openMode === 'read-write'
-      ? new Database(DB_PATH, { readwrite: true, create: false })
-      : openPersistentReadOnlyDatabase(DB_PATH)
+  const { database: d, openMode } = processStore
   // Several `bottega run start` processes write concurrently during a fan-out. Without a
   // busy timeout SQLite fails the moment it finds the file locked rather than
   // waiting its turn, so a parallel launch loses most of its rows — the record
@@ -481,7 +516,7 @@ function defaultDatabase(writable: boolean): Database {
   if (openMode === 'read-write') keepJournalSidecars(d)
   const refused = migrationRefusal(d)
   if (refused) refuseOpenMigration(d, refused)
-  finishDefaultDatabaseOpen(d, writable)
+  finishDefaultDatabaseOpen(d, openMode, writable)
   return d
 }
 
@@ -506,7 +541,7 @@ function refuseOpenMigration(d: Database, refused: string): never {
   throw new Error(refused)
 }
 
-function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
+function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writable: boolean): void {
   const registered = d.query('SELECT path FROM project WHERE name = ?').get(PLATFORM_SLUG) as {
     path: string
   } | null
@@ -527,6 +562,7 @@ function finishDefaultDatabaseOpen(d: Database, writable: boolean): void {
     seedProjects(d)
   }
   handle = d
+  handleOpenMode = openMode
   openedUserVersion = readUserVersion(d)
   if (connectionWritable) runOpenHooks('afterWritableOpen', d)
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)

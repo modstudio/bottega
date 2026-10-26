@@ -28,6 +28,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}migrations.ts`,
       `${source}project-register-store.ts`,
       `${source}store-actor.ts`,
+      `${source}wal-persistence.ts`,
       `${source}write-probe.ts`,
     ],
     typeOnlyAllowed: [],
