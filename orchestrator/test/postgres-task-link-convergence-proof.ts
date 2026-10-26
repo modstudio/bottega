@@ -20,6 +20,8 @@ const ids = {
   backfillQuestion: '01990000-0000-7000-8000-00000000177e',
   backfillRun: '01990000-0000-7000-8000-00000000177f',
   backfillEmail: '01990000-0000-7000-8000-000000001780',
+  noOpTask: '01990000-0000-7000-8000-000000001781',
+  noOpQuestion: '01990000-0000-7000-8000-000000001782',
 } as const
 
 const backfillSql = readFileSync(
@@ -30,7 +32,7 @@ const backfillSql = readFileSync(
     'shared',
     'record',
     'migrations',
-    '20261026111127_dev_1773_task_link_backfill',
+    '20261026112733_dev_1773_task_link_backfill',
     'migration.sql',
   ),
   'utf8',
@@ -121,15 +123,54 @@ export function registerHostedTaskLinkConvergenceProof(
     expect(otherSpace.stdout).toBe('null')
   })
 
+  test('a mirror conflict update with unchanged key and deleted_at does not relink late rows', () => {
+    const fixture = input()
+    const result = fixture.asSpace(
+      fixture.actorRole,
+      'actor-password',
+      fixture.spaceId,
+      `INSERT INTO hub_task
+        (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+         first_seen,last_seen,created_at,updated_at,deleted_at)
+       VALUES
+        ('${ids.noOpTask}','${fixture.spaceId}','${fixture.projectName}','${fixture.projectId}',
+         'DEV-1773-NOOP','${fixture.projectName}','before','active','active','local',now(),now(),now(),now(),NULL);
+       INSERT INTO question
+        (id,space_id,workflow_key,machine_id,revision,asked_at,question,withheld_fields,created_at,updated_at)
+       VALUES
+        ('${ids.noOpQuestion}','${fixture.spaceId}','DEV-1773-NOOP','${proofIds.MACHINE_A}',1,now(),
+         'late edge?','[]'::jsonb,now(),now());
+       INSERT INTO hub_task
+        (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
+         first_seen,last_seen,created_at,updated_at,deleted_at)
+       VALUES
+        ('${ids.noOpTask}','${fixture.spaceId}','${fixture.projectName}','${fixture.projectId}',
+         'DEV-1773-NOOP','${fixture.projectName}','after','active','active','local',now(),now(),now(),now(),NULL)
+       ON CONFLICT (space_id,key) DO UPDATE SET
+         project_name=excluded.project_name,project_id=excluded.project_id,project=excluded.project,
+         title=excluded.title,status=excluded.status,status_category=excluded.status_category,
+         source=excluded.source,last_seen=excluded.last_seen,updated_at=excluded.updated_at,
+         deleted_at=excluded.deleted_at;
+       SELECT concat_ws(',',
+         (SELECT title FROM hub_task WHERE id='${ids.noOpTask}'),
+         coalesce((SELECT workflow_task_id::text FROM question WHERE id='${ids.noOpQuestion}'),'null'));
+      `,
+    )
+    expect(result.code, result.stderr).toBe(0)
+    expect(result.stdout).toBe('after,null')
+  })
+
   test('the hosted task-link backfill links all three row kinds', () => {
     const fixture = input()
-    fixture.admin(`ALTER TABLE hub_task DISABLE TRIGGER hub_task_link_references;
+    fixture.admin(`ALTER TABLE hub_task DISABLE TRIGGER hub_task_link_references_insert;
+      ALTER TABLE hub_task DISABLE TRIGGER hub_task_link_references_update;
       INSERT INTO hub_task
        (id,space_id,project_name,project_id,key,project,title,status,status_category,source,
         first_seen,last_seen,created_at,updated_at)
       VALUES ('${ids.backfillTask}','${fixture.spaceId}','${fixture.projectName}','${fixture.projectId}',
        'DEV-1773-BACKFILL','${fixture.projectName}','backfill','active','active','local',now(),now(),now(),now());
-      ALTER TABLE hub_task ENABLE TRIGGER hub_task_link_references;
+      ALTER TABLE hub_task ENABLE TRIGGER hub_task_link_references_insert;
+      ALTER TABLE hub_task ENABLE TRIGGER hub_task_link_references_update;
       INSERT INTO question
        (id,space_id,workflow_key,machine_id,revision,asked_at,question,withheld_fields,created_at,updated_at)
       VALUES ('${ids.backfillQuestion}','${fixture.spaceId}','DEV-1773-BACKFILL','${proofIds.MACHINE_A}',1,

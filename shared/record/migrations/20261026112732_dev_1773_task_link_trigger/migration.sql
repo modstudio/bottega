@@ -27,7 +27,13 @@ BEGIN
 END;
 $$;
 --> statement-breakpoint
-CREATE TRIGGER hub_task_link_references
-AFTER INSERT OR UPDATE OF key, deleted_at ON hub_task
+CREATE TRIGGER hub_task_link_references_insert
+AFTER INSERT ON hub_task
 FOR EACH ROW
+EXECUTE FUNCTION link_hosted_task_references();
+--> statement-breakpoint
+CREATE TRIGGER hub_task_link_references_update
+AFTER UPDATE OF key, deleted_at ON hub_task
+FOR EACH ROW
+WHEN (OLD.key IS DISTINCT FROM NEW.key OR OLD.deleted_at IS DISTINCT FROM NEW.deleted_at)
 EXECUTE FUNCTION link_hosted_task_references();

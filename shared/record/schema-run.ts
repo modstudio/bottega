@@ -108,6 +108,9 @@ export const run = pgTable.withRLS(
   (table) => [
     index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
     index('run_task_id_idx').on(table.taskId),
+    index('run_unlinked_task_key_idx')
+      .on(table.spaceId, table.taskKey)
+      .where(sql`${table.taskId} IS NULL AND ${table.taskKey} IS NOT NULL`),
     check(
       'run_review_role_check',
       sql`${table.reviewRole} IS NULL OR ${table.reviewRole} IN ('round', 'supplementary')`,

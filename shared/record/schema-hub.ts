@@ -551,6 +551,9 @@ export const operatorWaitingEmail = pgTable.withRLS(
     ),
     check('operator_waiting_email_attempts_check', sql`${table.attempts} > 0`),
     index('operator_waiting_email_task_id_idx').on(table.taskId),
+    index('operator_waiting_email_unlinked_task_key_idx')
+      .on(table.spaceId, table.taskKey)
+      .where(sql`${table.taskId} IS NULL AND ${table.taskKey} IS NOT NULL`),
     ...tenantPolicies('operator_waiting_email', table.spaceId),
   ],
 )
