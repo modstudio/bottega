@@ -1,6 +1,8 @@
 CREATE OR REPLACE FUNCTION link_hosted_task_references()
 RETURNS trigger
 LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = pg_catalog, public, pg_temp
 AS $$
 BEGIN
   IF NEW.deleted_at IS NULL THEN
