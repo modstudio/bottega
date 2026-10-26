@@ -2,6 +2,7 @@ import importlib.util
 import io
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,52 @@ class Result:
 
 
 class HeartbeatGuardRunIdentityTest(unittest.TestCase):
+    def test_real_board_projection_names_open_request_without_blocking(self):
+        with tempfile.NamedTemporaryFile(suffix=".db") as store:
+            connection = sqlite3.connect(store.name)
+            connection.executescript(
+                """
+                CREATE TABLE board_message (
+                  record_id TEXT PRIMARY KEY, number INTEGER, kind TEXT, purpose TEXT,
+                  author_session TEXT, title TEXT, expires_at TEXT, withdrawn_at TEXT,
+                  thread_root_record_id TEXT
+                );
+                CREATE TABLE board_receipt (
+                  message_record_id TEXT, reader_session TEXT, delivered_at TEXT
+                );
+                CREATE TABLE hosted_board_message_cache (
+                  id TEXT PRIMARY KEY, kind TEXT, thread_root_id TEXT, payload TEXT
+                );
+                CREATE TABLE hosted_board_receipt_cache (
+                  message_id TEXT, reader_session TEXT, delivered_at TEXT
+                );
+                """
+            )
+            connection.execute(
+                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    "request-1", 12, "notice", "request", "session",
+                    "Need a ruling", "2099-01-15T09:00:00.000Z", None, None,
+                ),
+            )
+            connection.commit()
+            connection.close()
+
+            output = io.StringIO()
+            with (
+                patch.object(heartbeat_guard, "DB", store.name),
+                patch.object(heartbeat_guard, "live_run_ids", return_value=[]),
+                patch.object(heartbeat_guard, "live_landing_ids", return_value=[]),
+                patch.object(heartbeat_guard, "heartbeat_armed", return_value=False),
+                patch.object(sys, "stdin", io.StringIO('{"session_id":"session"}')),
+                redirect_stdout(output),
+            ):
+                self.assertEqual(heartbeat_guard.main(), 0)
+
+        message = json.loads(output.getvalue())
+        self.assertNotIn("decision", message)
+        self.assertIn("board:12 Need a ruling", message["systemMessage"])
+
     def test_current_run_listing_uuid_is_enforced(self):
         run_id = "00000000-0000-4000-8000-000000000042"
         with patch.object(

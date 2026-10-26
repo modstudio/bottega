@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -69,6 +70,105 @@ def tearDownModule():
 
 
 class HeartbeatDecisionTest(unittest.TestCase):
+    def test_shell_keeps_open_request_waiting_until_external_reply_is_delivered(self):
+        with tempfile.TemporaryDirectory() as root:
+            checkout = Path(root)
+            hooks = checkout / "orchestrator" / "hooks"
+            binary = checkout / "bin"
+            hooks.mkdir(parents=True)
+            binary.mkdir()
+            for name in (
+                "heartbeat-decision.py",
+                "heartbeat-board-observation.py",
+                "heartbeat-run-observation.py",
+                "inbox_question_decision.py",
+                "notice_transport.py",
+                "orch-heartbeat.sh",
+            ):
+                shutil.copy2(PATH.with_name(name), hooks / name)
+
+            store = checkout / "orchestrator.db"
+            connection = sqlite3.connect(store)
+            connection.executescript(
+                """
+                CREATE TABLE landing (
+                  record_id TEXT PRIMARY KEY, branch TEXT, status TEXT,
+                  started_at TEXT, finished_at TEXT, session_id TEXT
+                );
+                CREATE TABLE board_message (
+                  record_id TEXT PRIMARY KEY, number INTEGER, kind TEXT, purpose TEXT,
+                  author_session TEXT, title TEXT, expires_at TEXT, withdrawn_at TEXT,
+                  thread_root_record_id TEXT
+                );
+                CREATE TABLE board_receipt (
+                  message_record_id TEXT, reader_session TEXT, delivered_at TEXT
+                );
+                CREATE TABLE hosted_board_message_cache (
+                  id TEXT PRIMARY KEY, kind TEXT, thread_root_id TEXT, payload TEXT
+                );
+                CREATE TABLE hosted_board_receipt_cache (
+                  message_id TEXT, reader_session TEXT, delivered_at TEXT
+                );
+                """
+            )
+            connection.execute(
+                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    "root-1", 12, "notice", "request", "fixture-session",
+                    "Need a ruling", "2099-01-15T09:00:00.000Z", None, None,
+                ),
+            )
+            connection.commit()
+            connection.close()
+
+            fake = binary / "bottega"
+            fake.write_text(
+                """#!/bin/sh
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --active --json") printf '[]\\n' ;;
+  "run list --live --json") exit 0 ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+""",
+                encoding="utf-8",
+            )
+            fake.chmod(0o755)
+
+            def heartbeat():
+                return subprocess.run(
+                    ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                    cwd=checkout,
+                    env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(store)},
+                    capture_output=True,
+                    text=True,
+                    timeout=CHILD_PROCESS_TIMEOUT_SECONDS,
+                    check=True,
+                )
+
+            waiting = heartbeat()
+            self.assertIn("WAITING", waiting.stdout)
+            self.assertIn("board:12 Need a ruling", waiting.stdout)
+
+            connection = sqlite3.connect(store)
+            connection.execute(
+                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+                (
+                    "reply-1", 13, "reply", None, "answering-session",
+                    None, None, None, "root-1",
+                ),
+            )
+            connection.execute(
+                "INSERT INTO board_receipt VALUES (?,?,?)",
+                ("reply-1", "fixture-session", "2027-01-15T08:00:00.000Z"),
+            )
+            connection.commit()
+            connection.close()
+
+            released = heartbeat()
+            self.assertNotIn("board:12 Need a ruling", released.stdout)
+
     def test_live_operational_status_uses_the_row_wording(self):
         base = {
             "record_id": "01990000-0000-7000-8000-000000000001",
