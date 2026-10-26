@@ -2,6 +2,8 @@
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { classifyRunIdentifier } from '../run/run-identifier-grammar.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 import {
   commandExitBindingRefusal,
@@ -12,8 +14,6 @@ import {
 
 type TrackerStateCategory = 'backlog' | 'open' | 'active' | 'review' | 'done' | 'dropped'
 type TrackerStates = Record<string, TrackerStateCategory>
-const hasRecordIdShape = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 
 export const floorKinds = [
   'ruling',
@@ -209,8 +209,9 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   if (attachedText && hasRecordIdShape(attachedText[1]!))
     return { kind: 'attached-text', id: attachedText[1]!.toLowerCase() }
   if (githubPullRequestUrlIn(trimmed) === trimmed) return { kind: 'pull-request', url: trimmed }
-  if (/^\d+$/.test(trimmed)) return { kind: 'id', id: Number(trimmed) }
-  if (hasRecordIdShape(trimmed)) return { kind: 'run', id: trimmed.toLowerCase() }
+  const runIdentifier = classifyRunIdentifier(trimmed)
+  if (runIdentifier?.kind === 'number') return { kind: 'id', id: runIdentifier.number }
+  if (runIdentifier?.kind === 'record-id') return { kind: 'run', id: runIdentifier.recordId }
   return {
     error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number or run id, probe:<id>, exec:<id>, attached-text:<UUID>, or a GitHub pull-request link`,
   }
