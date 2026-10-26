@@ -182,7 +182,8 @@ function closeHarnessRun(facts: FinishFacts, terminal: Awaited<ReturnType<typeof
     artifactsPersisted: terminal.artifactsPersisted,
     idleTreePids: [],
     idleTreePgid: null,
-    requestedJob,
+    // noFailover refuses a successor, so no pick ever ranks on these bytes.
+    pickBytes: 0,
     callerCwd: owned.cwd,
     repoJob: Boolean(requestedJob.needs.readsRepo),
     declaredDeliverables: [],
