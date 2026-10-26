@@ -68,6 +68,7 @@ test('hosted reply audiences survive caching and select explicit or default part
     createdAt: '2026-10-05T12:00:01.000Z',
   })
   const directed = message({
+    id: '01990000-0000-7000-8000-000000000010',
     kind: 'reply',
     threadRootId: root.id,
     audience: 'session:chosen-reader',
@@ -75,11 +76,12 @@ test('hosted reply audiences survive caching and select explicit or default part
     createdAt: '2026-10-05T12:00:02.000Z',
   })
   const defaulted = message({
+    id: '01990000-0000-7000-8000-000000000011',
     kind: 'reply',
     threadRootId: root.id,
     audience: null,
     authorSession: 'default-replier',
-    createdAt: '2026-10-05T12:00:03.000Z',
+    createdAt: '2026-10-05T12:00:02.000Z',
   })
   const client = {
     ...createMemoryRecordApiClient(),

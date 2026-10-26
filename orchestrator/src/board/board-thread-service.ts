@@ -17,7 +17,11 @@ import {
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
-import { type ReplyAudienceOption, resolveReplyReaders } from './board-reply-audience.ts'
+import {
+  loopedInSessionFromReplyAudience,
+  type ReplyAudienceOption,
+  resolveReplyReaders,
+} from './board-reply-audience.ts'
 import {
   addressed,
   authorWindowDecision,
@@ -134,9 +138,10 @@ function replyAudienceFacts(root: MessageRow, database: ReturnType<typeof writab
   }>
   return {
     threadAuthors: earlierAuthors.map((row) => row.author_session ?? OPERATOR_READER),
-    loopedInSessions: earlierAuthors.flatMap((row) =>
-      row.audience?.startsWith('session:') ? [row.audience.slice('session:'.length)] : [],
-    ),
+    loopedInSessions: earlierAuthors.flatMap((row) => {
+      const session = loopedInSessionFromReplyAudience(row.audience)
+      return session === null ? [] : [session]
+    }),
     rootReceipts: rootReceipts.map((receipt) => ({
       reader: receipt.reader_session,
       audienceAtPosting: receipt.audience_at_posting === 1,

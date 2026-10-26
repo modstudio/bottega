@@ -9,10 +9,16 @@ test('invalid and empty reply audiences use the reply vocabulary', () => {
     'use participants, acknowledged, audience, operator, or session:<id>',
   )
   expect(() => parseReplyAudienceOption('run:123')).toThrow(
-    'session:<id> loops that session into the thread',
+    'use participants, acknowledged, audience, operator, or session:<id>',
   )
   expect(() => parseReplyAudienceOption('session:')).toThrow(
     'use participants, acknowledged, audience, operator, or session:<id>',
+  )
+  expect(() => parseReplyAudienceOption('session:operator')).toThrow(
+    'session:operator is reserved; use audience operator',
+  )
+  expect(() => parseReplyAudienceOption('session:run:123')).toThrow(
+    'session:run:123 is reserved; use audience run:123',
   )
 })
 

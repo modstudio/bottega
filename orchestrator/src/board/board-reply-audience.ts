@@ -4,7 +4,7 @@ import {
   REPLY_AUDIENCE_OPTIONS,
   type ReplyAudienceOption,
 } from '../../../shared/board-reply-audience-options.ts'
-import { OPERATOR_READER } from './board-policy.ts'
+import { OPERATOR_READER, parseAudience } from './board-policy.ts'
 
 export type { ReplyAudienceOption } from '../../../shared/board-reply-audience-options.ts'
 
@@ -12,11 +12,20 @@ export function parseReplyAudienceOption(value: string): ReplyAudienceOption {
   if (REPLY_AUDIENCE_OPTIONS.includes(value as (typeof REPLY_AUDIENCE_OPTIONS)[number]))
     return { kind: value as (typeof REPLY_AUDIENCE_OPTIONS)[number] }
   const prefix = 'session:'
-  if (value.startsWith(prefix) && value.length > prefix.length)
-    return { kind: 'session', sessionId: value.slice(prefix.length) }
+  if (value.startsWith(prefix) && value.length > prefix.length) {
+    const audience = parseAudience(value)
+    if (audience.kind === 'session') return { kind: 'session', sessionId: audience.value }
+  }
   throw new Error(
     `unsupported reply audience ${value}; use participants, acknowledged, audience, operator, or session:<id>; session:<id> loops that session into the thread`,
   )
+}
+
+export function loopedInSessionFromReplyAudience(audience: string | null): string | null {
+  const prefix = 'session:'
+  return audience?.startsWith(prefix) && audience.length > prefix.length
+    ? audience.slice(prefix.length)
+    : null
 }
 
 export function resolveReplyReaders(input: {

@@ -192,16 +192,25 @@ test('an explicit reply recipient is looped into the thread and can read and rep
   expect(readThread(question.recordId, architect('reach-outside'), clock + 3).replies).toHaveLength(
     2,
   )
+  const participantReply = replyToThread(
+    question.recordId,
+    'Reply as a participant',
+    architect('reach-outside'),
+    clock + 4,
+    cwd,
+    { kind: 'participants' },
+  )
   expect(
-    replyToThread(
-      question.recordId,
-      'Reply as a participant',
-      architect('reach-outside'),
-      clock + 4,
-      cwd,
-      { kind: 'participants' },
-    ).reached,
-  ).toBeGreaterThan(0)
+    db()
+      .query(
+        'SELECT reader_session FROM board_receipt WHERE message_record_id=? ORDER BY reader_session',
+      )
+      .all(participantReply.recordId),
+  ).toEqual([
+    { reader_session: 'reach-asker' },
+    { reader_session: 'reach-inside' },
+    { reader_session: 'reach-replier' },
+  ])
 })
 
 test('identical reply bodies with different audiences are stored separately', () => {

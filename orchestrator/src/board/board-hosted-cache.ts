@@ -643,23 +643,20 @@ const replyAddressesReader = (
     acknowledged: string | null
   }>
   const receipts = replyAudience.mergeReplyAudienceReceipts(cachedReceipts, rootAudienceReaders)
+  const earlierReplies = thread.filter(
+    (candidate) =>
+      candidate.kind === 'reply' &&
+      (candidate.createdAt < message.createdAt ||
+        (candidate.createdAt === message.createdAt && candidate.id < message.id)),
+  )
   return replyAudience
     .resolveReplyReaders({
       rootAuthor: authorReader(root),
-      threadAuthors: thread
-        .filter(
-          (candidate) => candidate.kind === 'reply' && candidate.createdAt < message.createdAt,
-        )
-        .map(authorReader),
-      loopedInSessions: thread
-        .filter(
-          (candidate) => candidate.kind === 'reply' && candidate.createdAt < message.createdAt,
-        )
-        .flatMap((candidate) =>
-          candidate.audience?.startsWith('session:')
-            ? [candidate.audience.slice('session:'.length)]
-            : [],
-        ),
+      threadAuthors: earlierReplies.map(authorReader),
+      loopedInSessions: earlierReplies.flatMap((candidate) => {
+        const session = replyAudience.loopedInSessionFromReplyAudience(candidate.audience)
+        return session === null ? [] : [session]
+      }),
       rootReceipts: receipts,
       audience: message.audience ? replyAudience.parseReplyAudienceOption(message.audience) : null,
       replier: authorReader(message),
