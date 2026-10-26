@@ -202,6 +202,7 @@ export const recordModules: RecordModule[] = [
     './record-project-identity.ts',
     './record-sync-contract.ts',
   ]),
+  module('orchestrator/src/record/record-sync-run-task-identity.ts', []),
   module('orchestrator/src/record/record-api-sync.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-remedies.ts',
@@ -249,6 +250,7 @@ export const recordModules: RecordModule[] = [
     './record-sync-evidence-lookup.ts',
     './record-sync-principal.ts',
     './record-sync-project-identity.ts',
+    './record-sync-run-task-identity.ts',
     './record-run-usage.ts',
     './record-value-conversions.ts',
     './score-sync.ts',

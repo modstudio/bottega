@@ -63,7 +63,6 @@
     "question.filed_ref:reference",
     "question.workflow_key:reference",
     "secret_dek_wrap.recipient_key_id:reference",
-    "secret_dek_wrap.sender_key_id:reference",
-    "run.task_key:reference"
+    "secret_dek_wrap.sender_key_id:reference"
   ]
 }

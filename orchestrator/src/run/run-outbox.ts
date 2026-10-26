@@ -52,6 +52,10 @@ function reviewValues(row: LocalRun) {
   return { reviewRef: row.review_ref, reviewRole: row.review_role }
 }
 
+function taskValues(row: LocalRun) {
+  return { taskKey: row.launch_key, taskId: row.task_record_id }
+}
+
 const nullableBoolean = (value: unknown): boolean | null => (value == null ? null : Boolean(value))
 
 /** Terminal payloads use last_event_at as finished_at when present, otherwise started_at. */
@@ -77,7 +81,7 @@ export function buildRunRecordPayload(
     specSha: row.spec_sha,
     promptBytes: row.prompt_bytes,
     promptHead: row.prompt_head,
-    taskKey: row.launch_key,
+    ...taskValues(row),
     label: row.label,
     lens: row.lens,
     latencyMs: row.latency_ms,
