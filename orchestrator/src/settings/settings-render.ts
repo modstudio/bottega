@@ -33,7 +33,6 @@ function ownedKey(value: string): (typeof OWNED_KEYS)[number] | null {
 export type ParsedSettingsFile = {
   text: string
   owned: OwnedSettings
-  environment: Record<string, unknown>
   envKeys: string[]
   open: number
   close: number
@@ -66,12 +65,31 @@ export function parseSettingsFile(text: string): ParsedSettingsFile {
   return {
     text,
     owned: extractOwnedSettings(parsed),
-    environment: isPlainObject(parsed.env) ? parsed.env : {},
     envKeys: isPlainObject(parsed.env) ? Object.keys(parsed.env).sort() : [],
     open: span.open,
     close: span.close,
     members: span.members,
   }
+}
+
+export function plainSettingsEnvironment(
+  text: string,
+  plainNames: readonly string[],
+): Record<string, string> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text) as unknown
+  } catch {
+    throw new Error(SETTINGS_PARSE_REFUSAL)
+  }
+  if (!isPlainObject(parsed)) throw new Error(SETTINGS_PARSE_REFUSAL)
+  const environment = isPlainObject(parsed.env) ? parsed.env : {}
+  return Object.fromEntries(
+    plainNames.flatMap((name) => {
+      const value = environment[name]
+      return typeof value === 'string' ? [[name, value]] : []
+    }),
+  )
 }
 
 export function renderedSettingsEnvironment(
@@ -86,12 +104,7 @@ export function settingsFileOwnedSettings(
   stored: OwnedSettings,
 ): OwnedSettings {
   const plainNames = new Set(Object.keys(stored.env ?? {}))
-  const env = Object.fromEntries(
-    [...plainNames].flatMap((name) => {
-      const value = parsed.environment[name]
-      return typeof value === 'string' ? [[name, value]] : []
-    }),
-  )
+  const env = plainSettingsEnvironment(parsed.text, [...plainNames])
   return {
     ...parsed.owned,
     env,

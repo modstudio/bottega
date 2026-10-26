@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { ownedSettingsEqual, SETTINGS_PARSE_REFUSAL } from './settings.ts'
-import { diffOwnedSettings, parseSettingsFile, renderOwnedSettingsFile } from './settings-render.ts'
+import {
+  diffOwnedSettings,
+  parseSettingsFile,
+  plainSettingsEnvironment,
+  renderOwnedSettingsFile,
+} from './settings-render.ts'
 
 const source = `{
   "env": {
@@ -75,6 +80,14 @@ describe('parseSettingsFile', () => {
       hooks: {},
       envKeys: [],
     })
+  })
+
+  test('reads values only for named plain environment settings', () => {
+    const text = JSON.stringify({ env: { PLAIN: 'visible', PRIVATE: 'secret' } })
+    const plain = plainSettingsEnvironment(text, ['PLAIN'])
+    expect(plain).toEqual({ PLAIN: 'visible' })
+    expect(plain).not.toHaveProperty('PRIVATE')
+    expect(Object.values(plain)).not.toContain('secret')
   })
 })
 
