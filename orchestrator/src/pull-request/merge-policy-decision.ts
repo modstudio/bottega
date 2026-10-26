@@ -2,60 +2,77 @@
 /** Classifies GitHub branch-policy merge refusals from the error text and check rollup. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-
-export type MergePolicyCheck = {
-  name: string
-  bucket: string
-}
+import type { PullRequestCheck } from './merge-decision.ts'
 
 export type MergePolicyDecision = { policy: false } | { policy: true; refusal: string }
 
-const POLICY_MESSAGE_SHAPES = [
-  'base branch policy prohibits the merge',
-  'is expected',
-  'is in progress',
-  'is failing',
-] as const
+const POLICY_MESSAGE = 'base branch policy prohibits the merge'
 
 function isGitHubBranchPolicyMessage(message: string): boolean {
-  const normalized = message.toLowerCase()
-  return POLICY_MESSAGE_SHAPES.some((shape) => normalized.includes(shape))
+  return message.toLowerCase().includes(POLICY_MESSAGE)
 }
 
-function blockedCheckLabels(checks: readonly MergePolicyCheck[]): string[] {
-  const labels: string[] = []
-  for (const check of checks) {
-    if (check.bucket === 'pending') labels.push(`${check.name} pending`)
-    if (check.bucket === 'fail') labels.push(`${check.name} failing`)
+function blockedCheckLabel(check: PullRequestCheck): string | null {
+  switch (check.bucket) {
+    case 'pending':
+      return `${check.name} pending`
+    case 'fail':
+      return `${check.name} failing`
+    case 'cancel':
+      return `${check.name} cancelled`
+    case 'pass':
+    case 'skipping':
+      return null
   }
-  return labels
 }
 
-function policyListing(checks: readonly MergePolicyCheck[] | null): string | null {
-  if (checks === null) return 'the checks could not be listed'
-  const labels = blockedCheckLabels(checks)
-  return labels.length > 0 ? labels.join(', ') : null
+function blockedCheckLabels(checks: readonly PullRequestCheck[]): string[] {
+  return checks.flatMap((check) => {
+    const label = blockedCheckLabel(check)
+    return label === null ? [] : [label]
+  })
 }
 
-function policyRemedy(target: string, number: number | null): string {
-  const retry = `${PLATFORM_SLUG} pr merge ${target}`
-  const inspect = `gh pr checks ${number ?? target}`
-  return `wait for pending checks and rerun ${retry}, or fix failing checks with ${inspect}`
+function inspectRef(number: number | null, target: string): string {
+  return String(number ?? target)
+}
+
+function retryCommand(target: string): string {
+  return `${PLATFORM_SLUG} pr merge ${target}`
+}
+
+function policyRefusal(input: {
+  checks: readonly PullRequestCheck[] | null
+  target: string
+  number: number | null
+}): string {
+  const inspect = inspectRef(input.number, input.target)
+  const retry = retryCommand(input.target)
+  if (input.checks === null) {
+    return (
+      "GitHub's branch policy blocks the merge: the checks could not be listed and the block may be a check or another requirement; " +
+      `cleared by: gh pr checks ${inspect}, gh pr view ${inspect}, then rerun ${retry}`
+    )
+  }
+  const labels = blockedCheckLabels(input.checks)
+  if (labels.length > 0) {
+    return (
+      `GitHub's branch policy blocks the merge: ${labels.join(', ')}; ` +
+      `cleared by: wait for pending checks and rerun ${retry}, or fix failing checks with gh pr checks ${inspect}`
+    )
+  }
+  return (
+    "GitHub's branch policy blocks the merge: the block is not a check, but another branch requirement such as a review approval, conversation resolution or a required deployment; " +
+    `cleared by: gh pr view ${inspect} to see the unmet requirement, then rerun ${retry}`
+  )
 }
 
 export function decideMergePolicyRefusal(input: {
   message: string
-  checks: readonly MergePolicyCheck[] | null
+  checks: readonly PullRequestCheck[] | null
   target: string
   number: number | null
 }): MergePolicyDecision {
   if (!isGitHubBranchPolicyMessage(input.message)) return { policy: false }
-  const listing = policyListing(input.checks)
-  const block = listing
-    ? `GitHub's branch policy blocks the merge: ${listing}`
-    : "GitHub's branch policy blocks the merge"
-  return {
-    policy: true,
-    refusal: `${block}; cleared by: ${policyRemedy(input.target, input.number)}`,
-  }
+  return { policy: true, refusal: policyRefusal(input) }
 }

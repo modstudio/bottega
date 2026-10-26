@@ -698,7 +698,35 @@ test('a GitHub branch-policy merge refusal names pending and failing checks', ()
   )
 })
 
-test('a GitHub branch-policy merge refusal still waits when the rollup cannot be read', () => {
+test('a GitHub branch-policy merge refusal names another requirement when checks are not blocking', () => {
+  registerProject([])
+  recordPassingGate()
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        checks: [
+          {
+            name: 'ci',
+            bucket: 'pass',
+            state: 'SUCCESS',
+            link: 'https://checks.example/ci',
+          },
+        ],
+        merge: () => {
+          throw new Error(
+            'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
+          )
+        },
+      }),
+    ),
+  ).toThrow(
+    `refusing merge: GitHub's branch policy blocks the merge: the block is not a check, but another branch requirement such as a review approval, conversation resolution or a required deployment; cleared by: gh pr view 42 to see the unmet requirement, then rerun ${PLATFORM_SLUG} pr merge 42`,
+  )
+})
+
+test('a GitHub branch-policy merge refusal names both inspect commands when the rollup cannot be read', () => {
   registerProject([])
   recordPassingGate()
   expect(() =>
@@ -711,13 +739,13 @@ test('a GitHub branch-policy merge refusal still waits when the rollup cannot be
         },
         merge: () => {
           throw new Error(
-            'pull-request merge failed: GraphQL: Required status check "ci" is expected. (mergePullRequest)',
+            'pull-request merge failed: GraphQL: Base branch policy prohibits the merge (mergePullRequest)',
           )
         },
       }),
     ),
   ).toThrow(
-    `refusing merge: GitHub's branch policy blocks the merge: the checks could not be listed; cleared by: wait for pending checks and rerun ${PLATFORM_SLUG} pr merge 42, or fix failing checks with gh pr checks 42`,
+    `refusing merge: GitHub's branch policy blocks the merge: the checks could not be listed and the block may be a check or another requirement; cleared by: gh pr checks 42, gh pr view 42, then rerun ${PLATFORM_SLUG} pr merge 42`,
   )
 })
 

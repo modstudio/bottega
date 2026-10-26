@@ -403,15 +403,16 @@ function readCheckRollup(
   }
 }
 
+type MergeErrorContext = {
+  cwd: string
+  target: string
+  number: number | undefined
+  adapter: PullRequestMergeAdapter
+}
+
 function throwMergeOperationError(
   cause: unknown,
-  input: {
-    cwd: string
-    target: string
-    number: number | undefined
-    adapter: PullRequestMergeAdapter
-    fallback: (message: string) => Error
-  },
+  input: MergeErrorContext & { fallback: (message: string) => Error },
 ): never {
   const message = cause instanceof Error ? cause.message : String(cause)
   const decision = decideMergePolicyRefusal({
@@ -424,15 +425,7 @@ function throwMergeOperationError(
   throw input.fallback(message)
 }
 
-function refuseUncaughtMergeError(
-  cause: unknown,
-  input: {
-    cwd: string
-    target: string
-    number: number | undefined
-    adapter: PullRequestMergeAdapter
-  },
-): never {
+function refuseUncaughtMergeError(cause: unknown, input: MergeErrorContext): never {
   const message = cause instanceof Error ? cause.message : String(cause)
   if (message.startsWith('refusing merge:')) throw cause
   throwMergeOperationError(cause, {
