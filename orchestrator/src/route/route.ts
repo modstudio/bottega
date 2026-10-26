@@ -90,7 +90,7 @@ type RouteConstraints = {
   pinnedTransport?: 'cli' | 'acp'
   transportPinSource?: McpTransportPinFacts['transportPinSource']
   project?: string | null
-  routed?: { agent: string; reason: string; promptBytes: number }
+  routed?: RoutedSelection
 }
 
 /**
@@ -173,6 +173,21 @@ export function promptSizeBucket(promptBytes: number): PromptSizeBucket {
  * ranked in, so the run honors it solely when both estimates fall on the
  * same side of the boundary.
  */
+/**
+ * A surface-routed pick's handoff value: which agent the pre-pick chose, why,
+ * and the prompt size it ranked on.
+ */
+export type RoutedSelection = {
+  agent: string
+  reason: string
+  /**
+   * The prompt size this pick ranked on: the raw caller text for a detached
+   * pre-pick, the composed pack for a run. The run honors the pick only when
+   * this lands in the same prompt-size bucket as its own measurement.
+   */
+  promptBytes: number
+}
+
 export function samePromptSizeBucket(routedBytes: number, runPromptBytes: number): boolean {
   return promptSizeBucket(routedBytes) === promptSizeBucket(runPromptBytes)
 }
@@ -930,7 +945,7 @@ function capacityCounts(
 
 function routeSurfaceSelection(
   candidates: readonly Candidate[],
-  routed: { agent: string; reason: string; promptBytes: number } | undefined,
+  routed: RoutedSelection | undefined,
   promptBytes: number,
 ): Candidate[] {
   if (!routed || !samePromptSizeBucket(routed.promptBytes, promptBytes)) return [...candidates]

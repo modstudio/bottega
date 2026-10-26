@@ -56,7 +56,7 @@ import {
   resolveReviewTarget,
 } from '../review/review-target.ts'
 import type { ResolvedTaskBranch } from '../route/failover.ts'
-import { pick } from '../route/route.ts'
+import { pick, type RoutedSelection } from '../route/route.ts'
 import { runningRunCountForHarness } from '../route/running-runs.ts'
 import { type CodexMcpCatalogue, codexMcpSetupHeader } from '../sandbox/codex-mcp-scope.ts'
 import { decideCodexSandbox } from '../sandbox/codex-sandbox.ts'

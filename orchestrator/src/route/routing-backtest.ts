@@ -12,8 +12,8 @@ import {
   isRoutingEvidence,
   MIN_SAMPLE,
   OUTPUT_RESERVE,
-  PROMPT_SIZE_BOUNDARY,
   routingEvidenceWindow,
+  samePromptSizeBucket,
   thompsonRank,
 } from './route.ts'
 
@@ -143,7 +143,6 @@ function priorLatency(
   history: History,
   stack?: string | null,
 ): number | null {
-  const small = event.promptBytes < PROMPT_SIZE_BOUNDARY
   return median(
     history
       .filter(
@@ -152,7 +151,7 @@ function priorLatency(
           row.job === event.job &&
           row.status === 'ok' &&
           row.latencyMs !== null &&
-          row.promptBytes < PROMPT_SIZE_BOUNDARY === small &&
+          samePromptSizeBucket(row.promptBytes, event.promptBytes) &&
           (!stack || row.stack === stack),
       )
       .map((row) => row.latencyMs!),
@@ -179,7 +178,6 @@ function cellsFor(
   operations: OperationalEvent[],
   cooldowns: boolean,
 ): Cell[] {
-  const bucket = (e: Event) => promptSizeBucket(e.promptBytes)
   const sameBucket = history.filter(
     (e) => e.job === event.job && samePromptSizeBucket(e.promptBytes, event.promptBytes),
   )

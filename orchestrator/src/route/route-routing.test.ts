@@ -23,7 +23,6 @@ import {
   PROMPT_SIZE_BOUNDARY,
   pick,
   promptSizeBucket,
-  samePromptSizeBucket,
   scoreboard,
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'

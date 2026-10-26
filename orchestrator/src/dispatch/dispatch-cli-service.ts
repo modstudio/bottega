@@ -417,7 +417,7 @@ export async function selectBeforeDetach(
   spec: DetachSpec,
   presentation: Pick<Presentation, 'cwd' | 'error'>,
   waitForCapacityBeforeDetach = false,
-): Promise<{ agent: string; reason: string; promptBytes: number } | undefined> {
+): Promise<RoutedSelection | undefined> {
   if (spec.resume) return undefined
   const requestedJob = job(jobName)
   const mcpRequest = effectiveMcpRequest(spec.mcp, requestedJob)
@@ -430,7 +430,7 @@ export async function selectBeforeDetach(
    * run can tell whether its own composed pack landed in the same
    * prompt-size bucket before honoring the pick.
    */
-  const pickBytes = routedPromptBytes(
+  const prePickBytes = routedPromptBytes(
     routedPromptText(text, evidence.readerInstruction, true),
     replySchemaName,
     requestedJob,
@@ -440,7 +440,7 @@ export async function selectBeforeDetach(
     pick(
       jobName,
       spec.agent,
-      pickBytes,
+      prePickBytes,
       true,
       stackAt(spec.cwd ?? presentation.cwd()),
       {
@@ -460,10 +460,10 @@ export async function selectBeforeDetach(
       noWait: spec.noWaitCapacity,
       onWait: () => presentation.error('waiting for capacity'),
     })
-    return selection && { ...selection, promptBytes: pickBytes }
+    return selection && { ...selection, promptBytes: prePickBytes }
   }
   try {
-    return { ...select(), promptBytes: pickBytes }
+    return { ...select(), promptBytes: prePickBytes }
   } catch (error) {
     const selection = error instanceof AgentCapacityError ? 'capacity-wait' : 'hard-refusal'
     const decision = decidePreDetachSelection({

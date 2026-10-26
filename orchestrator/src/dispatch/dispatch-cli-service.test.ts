@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
+import { basename } from 'node:path'
 import { addRun } from '../../test/fixtures/store.ts'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { job } from '../jobs/jobs.ts'
+import { runEvidence } from '../run/run-evidence-context.ts'
+import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
 import {
   callerCheckoutDecision,
   decidePreDetachSelection,
@@ -63,6 +67,39 @@ test('detached selection waits in the coordinator only for a capacity refusal', 
     db().query("UPDATE agent SET max_concurrent=? WHERE name='codex'").run(original.max_concurrent)
     refreshAgents()
   }
+})
+
+test('selectBeforeDetach carries the composed pre-pick prompt size on the routed selection', async () => {
+  const text = 'rank me on the raw spec, not the composed pack'
+  const jobName = 'craft'
+  const evidence = runEvidence(jobName, false, [])
+  const replySchemaName = 'craft-reply'
+  const expectedPromptBytes = routedPromptBytes(
+    routedPromptText(text, evidence.readerInstruction, true),
+    replySchemaName,
+    job(jobName),
+    evidence.requiresCanonSource,
+  )
+  const presentation = { cwd: () => process.cwd(), error: () => {} }
+
+  const direct = await selectBeforeDetach(
+    jobName,
+    text,
+    { schema: 'anything-craft-reply.json' },
+    presentation,
+  )
+  expect(direct).toBeDefined()
+  expect(direct!.promptBytes).toBe(expectedPromptBytes)
+
+  const waiting = await selectBeforeDetach(
+    jobName,
+    text,
+    { schema: 'anything-craft-reply.json' },
+    presentation,
+    true,
+  )
+  expect(waiting).toBeDefined()
+  expect(waiting!.promptBytes).toBe(expectedPromptBytes)
 })
 
 test('dispatch transport selection gives an explicit flag precedence over the environment', () => {
