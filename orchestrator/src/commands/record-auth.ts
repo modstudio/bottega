@@ -229,6 +229,27 @@ function registerSpaceCommands(record: Command): void {
     )
 }
 
+function retryOutboxCommand(rowId: string | undefined, matching: string | undefined): void {
+  if ((rowId === undefined) === (matching === undefined)) {
+    throw new Error(
+      `exactly one retry form is required: \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retry --matching <text>\``,
+    )
+  }
+  if (rowId !== undefined) {
+    retryOutboxRow(Number(rowId))
+    log(`outbox row ${String(rowId)} will retry on the next sync`)
+    return
+  }
+  // An empty needle matches every reason, which would retry the whole quarantine.
+  if (matching!.trim() === '') {
+    throw new Error(
+      `--matching requires non-empty text; name part of a quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
+    )
+  }
+  const count = retryOutboxRowsMatching(matching!)
+  log(`${count} outbox rows will retry on the next sync`)
+}
+
 export function register(program: Command): void {
   const record = program.command('record').description('manage the hosted record and its outbox')
   registerUseCommand(record)
@@ -267,27 +288,12 @@ export function register(program: Command): void {
     .description('queue an outbox row for another delivery attempt')
     .argument('[row-id]')
     .option('--matching <text>', 'retry quarantined rows whose reason contains the text')
-    .action((rowId, options) => {
-      const matching = options.matching === undefined ? undefined : String(options.matching)
-      if ((rowId === undefined) === (matching === undefined)) {
-        throw new Error(
-          `exactly one retry form is required: \`${PLATFORM_SLUG} record outbox retry <row-id>\` or \`${PLATFORM_SLUG} record outbox retry --matching <text>\``,
-        )
-      }
-      if (rowId !== undefined) {
-        retryOutboxRow(Number(rowId))
-        log(`outbox row ${String(rowId)} will retry on the next sync`)
-        return
-      }
-      // An empty needle matches every reason, which would retry the whole quarantine.
-      if (matching!.trim() === '') {
-        throw new Error(
-          `--matching requires non-empty text; name part of a quarantine reason shown by \`${PLATFORM_SLUG} record outbox\``,
-        )
-      }
-      const count = retryOutboxRowsMatching(matching!)
-      log(`${count} outbox rows will retry on the next sync`)
-    })
+    .action((rowId, options) =>
+      retryOutboxCommand(
+        rowId,
+        options.matching === undefined ? undefined : String(options.matching),
+      ),
+    )
   outbox
     .command('retire')
     .description('retire an outbox row after proving its dependencies')
