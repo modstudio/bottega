@@ -573,7 +573,7 @@ export const recordSchemaBoundaries: ImportBoundary[] = [
   boundary(
     'postgres-schema-run-boundary',
     'shared/record/schema-run.ts',
-    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts'],
+    ['drizzle-orm', 'drizzle-orm/pg-core', './schema.ts', './schema-hub.ts'],
     'Enforce the hosted run schema concern boundary.',
   ),
   boundary(

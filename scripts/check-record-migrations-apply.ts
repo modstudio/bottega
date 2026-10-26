@@ -19,6 +19,11 @@ import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
+import {
+  proofRunTaskReferenceBackfill,
+  runTaskReferenceBackfill,
+  seedRunTaskReferenceBackfill,
+} from './record-run-task-backfill-proof.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const migrationsFolder = join(root, 'shared', 'record', 'migrations')
@@ -33,7 +38,6 @@ const boardPurposeBackfillMigration = '20261013225840_dev_1217_board_purpose_bac
 const docJsonbArrayRepair = '20261013190000_dev_1303_doc_jsonb_array_repair'
 const hubProjectIdentityExpand = '20261015133608_dev_1214_hub_project_identity'
 const hubProjectIdentityBackfill = '20261015133609_dev_1214_hub_project_identity_backfill'
-const runTaskReferenceBackfill = '20261026064434_dev_1771_run_task_backfill'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -53,9 +57,6 @@ const jsonbInvalidDocId = '01990000-0000-7000-8000-000000000027'
 const hubProjectMatchId = '01990000-0000-7000-8000-000000000050'
 const hubProjectMatchTaskId = '01990000-0000-7000-8000-000000000051'
 const hubProjectUnmatchedTaskId = '01990000-0000-7000-8000-000000000052'
-const runTaskProofMachineId = '01990000-0000-7000-8000-000000000053'
-const runTaskMatchedRunId = '01990000-0000-7000-8000-000000000054'
-const runTaskUnmatchedRunId = '01990000-0000-7000-8000-000000000055'
 const crossSpaceProofSpaceId = '01990000-0000-7000-8000-000000000060'
 const crossSpaceProofUserId = '01990000-0000-7000-8000-000000000061'
 const sameSpaceSourceProjectId = '01990000-0000-7000-8000-000000000062'
@@ -863,38 +864,34 @@ async function proofHubProjectIdentityBackfill(transaction: Transaction): Promis
   }
 }
 
-async function seedRunTaskReferenceBackfill(transaction: Transaction): Promise<void> {
-  await transaction.exec(`
-    INSERT INTO machine (id, user_id, name, registered_at, last_seen)
-    VALUES ('${runTaskProofMachineId}', '${platformOperatorId}', 'run-task-proof', now(), now());
-    ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY;
-    INSERT INTO "run"
-      (id, space_id, machine_id, started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
-       task_key, probe, status, turn, no_failover, automatic_failover, work_preserved, created_at, updated_at)
-    VALUES
-      ('${runTaskMatchedRunId}', '${PLATFORM_SPACE_ID}', '${runTaskProofMachineId}', now(),
-       'migration-check', 'proof', 'prompt', 6, 'prompt', 'HUB-1', false, 'ok', 1, false, false, false, now(), now()),
-      ('${runTaskUnmatchedRunId}', '${PLATFORM_SPACE_ID}', '${runTaskProofMachineId}', now(),
-       'migration-check', 'proof', 'prompt', 6, 'prompt', 'HUB-MISSING', false, 'ok', 1, false, false, false, now(), now());
-    ALTER TABLE "run" FORCE ROW LEVEL SECURITY;
-  `)
+async function proofDocumentMigration(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
+  if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
+    throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
+  }
+  if (
+    migration.name === repairedDocBackfill &&
+    (await proofLatestRevision(transaction)) !== proofRevisionId
+  ) {
+    throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
+  }
+  if (migration.name === audienceSetBackfill) await proofAudienceBackfill(transaction)
+  if (migration.name === audienceVocabularyBackfill)
+    await proofAudienceVocabularyBackfill(transaction)
+  if (migration.name === docJsonbArrayRepair) {
+    await proofDocJsonbArrayRepair(transaction)
+    for (const chunk of migration.sql) await transaction.exec(chunk)
+    await proofDocJsonbArrayRepair(transaction)
+  }
 }
 
-async function proofRunTaskReferenceBackfill(transaction: Transaction): Promise<void> {
-  await transaction.exec('ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{ id: string; task_id: string | null }>(`
-    SELECT id::text AS id, task_id::text AS task_id FROM "run"
-    WHERE id IN ('${runTaskMatchedRunId}', '${runTaskUnmatchedRunId}')
-    ORDER BY id
-  `)
-  await transaction.exec('ALTER TABLE "run" FORCE ROW LEVEL SECURITY;')
-  const expected = [
-    { id: runTaskMatchedRunId, task_id: hubProjectMatchTaskId },
-    { id: runTaskUnmatchedRunId, task_id: null },
-  ]
-  if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
-    throw new CheckFailure(`DEV-1771 run task_id backfill produced ${JSON.stringify(result.rows)}`)
-  }
+async function proofIdentityMigration(transaction: Transaction, name: string): Promise<void> {
+  if (name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
+  if (name === hubProjectIdentityBackfill) await proofHubProjectIdentityBackfill(transaction)
+  if (name === runTaskReferenceBackfill)
+    await proofRunTaskReferenceBackfill(transaction, hubProjectMatchTaskId)
 }
 
 async function applyAndProveMigration(
@@ -909,30 +906,11 @@ async function applyAndProveMigration(
   }
   await seedMigrationProof(transaction, migration.name)
   await applyRecordMigration(transaction, migration)
-  if (migration.name === brokenDocBackfill && (await proofLatestRevision(transaction)) !== null) {
-    throw new CheckFailure('DEV-906 doc backfill unexpectedly populated the proof row')
-  }
-  if (
-    migration.name === repairedDocBackfill &&
-    (await proofLatestRevision(transaction)) !== proofRevisionId
-  ) {
-    throw new CheckFailure('DEV-917 doc backfill did not select the newest proof revision')
-  }
-  if (migration.name === audienceSetBackfill) await proofAudienceBackfill(transaction)
-  if (migration.name === audienceVocabularyBackfill)
-    await proofAudienceVocabularyBackfill(transaction)
+  await proofDocumentMigration(transaction, migration)
   if (migration.name === boardSharedSpacesMigration)
     await proofBoardThreadAuthorBackfill(transaction)
   if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
-  if (migration.name === docJsonbArrayRepair) {
-    await proofDocJsonbArrayRepair(transaction)
-    for (const chunk of migration.sql) await transaction.exec(chunk)
-    await proofDocJsonbArrayRepair(transaction)
-  }
-  if (migration.name === hubProjectIdentityExpand) await proofHubProjectIdentityExpand(transaction)
-  if (migration.name === hubProjectIdentityBackfill)
-    await proofHubProjectIdentityBackfill(transaction)
-  if (migration.name === runTaskReferenceBackfill) await proofRunTaskReferenceBackfill(transaction)
+  await proofIdentityMigration(transaction, migration.name)
   await applyHostedProjectCleanupProof(transaction, migration)
 }
 
@@ -942,7 +920,11 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
   if (name === docJsonbArrayRepair) await seedDocJsonbArrayRepair(transaction)
   if (name === hubProjectIdentityExpand) await seedHubProjectIdentityBackfill(transaction)
-  if (name === runTaskReferenceBackfill) await seedRunTaskReferenceBackfill(transaction)
+  if (name === runTaskReferenceBackfill)
+    await seedRunTaskReferenceBackfill(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
   await seedHostedProjectCleanupProof(transaction, name)
 }
 
