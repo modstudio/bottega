@@ -52,9 +52,14 @@ describe('run task identity', () => {
     ).toBe(TASK_BY_KEY)
   })
 
-  test('uses a resolvable key when the payload task id is omitted', () => {
+  test('a resolving task id relinks an update away from its existing task', () => {
     expect(
-      decide({ payloadTaskId: undefined, payloadTaskKey: 'DEV-1771', taskFoundByKey: TASK_BY_KEY }),
-    ).toBe(TASK_BY_KEY)
+      decide({
+        payloadTaskId: TASK_BY_ID,
+        taskFoundById: TASK_BY_ID,
+        existingTaskId: EXISTING_TASK,
+        write: 'update',
+      }),
+    ).toBe(TASK_BY_ID)
   })
 })
