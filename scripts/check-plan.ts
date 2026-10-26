@@ -185,8 +185,59 @@ export const ROOT_TEST_FILES = [
   'scripts/check-hosted-sql-schema.test.ts',
 ] as const
 
-/** CI-only process checks that are intentionally outside the in-process local gate. */
-export const CI_ONLY_JOBS = ['postgres', 'hub-ui-stories', 'hub-web-smoke'] as const
+/**
+ * The repo-relative test glob a suite's own command collects: unittest
+ * discovery's `-s <dir>` joined with its `-p <pattern>`. check-test-reach counts
+ * every file this names as reached, and it is derived from the command rather
+ * than declared beside it, so the reach and the command cannot disagree.
+ */
+export function suiteReachPatterns(argv: readonly string[]): string[] {
+  const flag = (name: string) => {
+    const index = argv.indexOf(name)
+    return index < 0 ? undefined : argv[index + 1]
+  }
+  const directory = flag('-s')
+  const pattern = flag('-p')
+  if (!directory || !pattern) {
+    throw new Error(`a CI-only suite argv must carry -s <dir> and -p <pattern>: ${argv.join(' ')}`)
+  }
+  return [`${directory}/${pattern}`]
+}
+
+/**
+ * A test suite that only CI runs, declared once with the command it runs; its
+ * reach is derived from that command, not declared beside it. The heartbeat
+ * decision suite keeps its pure cases in the gate leg, and the cases that drive
+ * orch-heartbeat.sh and its children are process tests, so this job runs them
+ * instead. The gate's unittest discovery cannot exclude a file by pattern, so
+ * the `process_` name is the exclusion.
+ */
+export const CI_ONLY_SUITES = [
+  {
+    job: 'orchestrator-hooks-process',
+    argv: [
+      'python3',
+      '-m',
+      'unittest',
+      'discover',
+      '-s',
+      'orchestrator/hooks',
+      '-p',
+      'process_*.py',
+    ],
+  },
+].map((suite) => ({ ...suite, testPatterns: suiteReachPatterns(suite.argv) }))
+
+/**
+ * CI-only process checks that are intentionally outside the in-process local
+ * gate, including the job of every declared CI-only suite.
+ */
+export const CI_ONLY_JOBS = [
+  'postgres',
+  'hub-ui-stories',
+  'hub-web-smoke',
+  ...CI_ONLY_SUITES.map((suite) => suite.job),
+] as const
 
 export const STATIC_OMIT_GROUPS = {
   'machine-only': {

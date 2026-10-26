@@ -20,6 +20,11 @@ const RULES: [FileKind, RegExp][] = [
   ['test', /(^|\/)__tests__\//],
   ['test', /(^|\/)tests?\//i],
   ['test', /Test\.php$/],
+  // The hooks suite's process-driving cases keep the `process_` name so the
+  // gate's unittest discovery never collects them, and their fixture is support
+  // the two hook suites share; both are test code wherever they are reviewed.
+  ['test', /(^|\/)orchestrator\/hooks\/process_[^/]+\.py$/],
+  ['test', /(^|\/)orchestrator\/hooks\/[a-z_]+_fixture\.py$/],
   ['test', /(^|\/)test_[^/]+\.py$/],
   ['test', /_test\.(go|py|rb)$/],
   ['test', /(^|\/)(cypress|e2e|playwright)\//],
