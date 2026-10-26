@@ -55,12 +55,11 @@ function heldResult(
   return { runId, worktree, outcome: 'held' as const, detail, hold }
 }
 
-/** A held hook tree — what `bottega tree create` records — with a real directory to inspect. */
-function hookTreeHolding(): { id: string; tree: string; project: string; branch: string } {
-  const id = addRun({ agent: '(hook)', job: 'hook-tree', session: 'owner' })
-  const project = `in-flight-hook-${id}`
+function ordinaryRunHolding(): { id: string; tree: string; project: string; branch: string } {
+  const id = addRun({ agent: 'codex', job: 'implement', session: 'owner' })
+  const project = `in-flight-run-${id}`
   const branch = `DEV-1752-${id}`
-  const tree = mkdtempSync(join(tmpdir(), 'close-out-hook-'))
+  const tree = mkdtempSync(join(tmpdir(), 'close-out-run-'))
   upsertProject({ recordId: newRecordId(), name: project, path: `/repo/${project}` })
   db()
     .query("UPDATE run SET repo=?, branch=?, worktree=?, session_id='owner' WHERE record_id=?")
@@ -68,22 +67,12 @@ function hookTreeHolding(): { id: string; tree: string; project: string; branch:
   return { id, tree, project, branch }
 }
 
-/**
- * Answer the adapter's gh and git inspections without running either.
- *
- * stderr carries a warning on every call because a warning with a clean exit is not uncommitted
- * work: the clean-tree cases below fail if it is ever read as one. `statusExitCode` makes the
- * status call fail, which leaves cleanliness unestablished rather than reading as a clean tree.
- * A caller that passes `calls` gets every invocation's argv, so a test can prove which
- * inspections the adapter did and did not make.
- */
 function mockGitAndGh(input: {
   statusOutput: string
   headCommit: string
   statusExitCode?: number
   calls?: string[][]
 }): void {
-  const statusExitCode = input.statusExitCode ?? 0
   const answer = (argv: string[]): ReturnType<typeof Bun.spawnSync> => {
     input.calls?.push(argv)
     const [bin, ...args] = argv
@@ -94,7 +83,7 @@ function mockGitAndGh(input: {
         : isStatus
           ? input.statusOutput
           : input.headCommit
-    const exitCode = isStatus ? statusExitCode : 0
+    const exitCode = isStatus ? (input.statusExitCode ?? 0) : 0
     return {
       exitCode,
       stdout: Buffer.from(stdout),
@@ -221,6 +210,28 @@ describe('close-out in-flight hold annotation', () => {
     expect(annotated.suppressBlock).toBe(false)
   })
 
+  test('a complete held in-flight annotation is preserved unchanged', () => {
+    const { id, tree, project, branch } = ordinaryRunHolding()
+    mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
+    try {
+      insertCursor({ project, session: 'owner', branch, worktree: tree })
+      const held = {
+        ...heldResult(
+          id,
+          tree,
+          `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+          'other',
+        ),
+        inFlightRef: 'hook tree, kept by its owner',
+        suppressBlock: true,
+      }
+
+      expect(annotateHeldLandingInFlight(held)).toBe(held)
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
   test('lookupOpenPr reads an open PR number and head commit', () => {
     const cwd = mkdtempSync(join(tmpdir(), 'close-out-pr-'))
     mkdirSync(cwd, { recursive: true })
@@ -259,42 +270,8 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('a hook tree at its open pull request head does not block', () => {
-    const { id, tree } = hookTreeHolding()
-    mockGitAndGh({ statusOutput: '', headCommit: 'sha-head' })
-    try {
-      const annotated = annotateHeldLandingInFlight(
-        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
-      )
-
-      expect(annotated.detail).toBe(
-        `in flight (#88); hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
-      )
-      expect(annotated.inFlightRef).toBe('#88')
-      expect(annotated.suppressBlock).toBe(true)
-    } finally {
-      rmSync(tree, { recursive: true, force: true })
-    }
-  })
-
-  test('a hook tree with uncommitted work keeps blocking', () => {
-    const { id, tree } = hookTreeHolding()
-    mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
-    try {
-      const annotated = annotateHeldLandingInFlight(
-        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
-      )
-
-      expect(annotated.detail).toBe(`hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`)
-      expect(annotated.inFlightRef).toBeNull()
-      expect(annotated.suppressBlock).toBe(false)
-    } finally {
-      rmSync(tree, { recursive: true, force: true })
-    }
-  })
-
   test('an other hold blocks at a matching cursor even with a pull request at the tree head', () => {
-    const { id, tree, project, branch } = hookTreeHolding()
+    const { id, tree, project, branch } = ordinaryRunHolding()
     mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head' })
     try {
       const cursorId = insertCursor({ project, session: 'owner', branch, worktree: tree })
@@ -314,23 +291,8 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('a hook tree whose status cannot be read keeps blocking', () => {
-    const { id, tree } = hookTreeHolding()
-    mockGitAndGh({ statusOutput: '', headCommit: 'sha-head', statusExitCode: 128 })
-    try {
-      const annotated = annotateHeldLandingInFlight(
-        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
-      )
-
-      expect(annotated.inFlightRef).toBeNull()
-      expect(annotated.suppressBlock).toBe(false)
-    } finally {
-      rmSync(tree, { recursive: true, force: true })
-    }
-  })
-
   test('a dirty non-landing-progress hold makes no pull-request lookup', () => {
-    const { id, tree } = hookTreeHolding()
+    const { id, tree } = ordinaryRunHolding()
     const calls: string[][] = []
     mockGitAndGh({ statusOutput: ' M hub/src/board.ts\n', headCommit: 'sha-head', calls })
     try {
@@ -346,16 +308,16 @@ describe('close-out in-flight hold annotation', () => {
     }
   })
 
-  test('a hook tree whose HEAD is another commit than the pull request head keeps blocking', () => {
-    const { id, tree } = hookTreeHolding()
-    mockGitAndGh({ statusOutput: '', headCommit: 'sha-tree' })
+  test('an other hold keeps blocking when git status cannot be read', () => {
+    const { id, tree } = ordinaryRunHolding()
+    mockGitAndGh({ statusOutput: '', headCommit: 'sha-head', statusExitCode: 128 })
     try {
       const annotated = annotateHeldLandingInFlight(
-        heldResult(id, tree, `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`, 'other'),
+        heldResult(id, tree, 'ordinary run tree is held', 'other'),
       )
 
-      expect(annotated.inFlightRef).toBe('#88')
       expect(annotated.suppressBlock).toBe(false)
+      expect(annotated.inFlightRef).toBeNull()
     } finally {
       rmSync(tree, { recursive: true, force: true })
     }

@@ -13,20 +13,27 @@ export type HookTreeIdentity = { job: string }
 
 type HookTreeHoldFacts = HookTreeIdentity & { treeExists: boolean }
 
+export type HookTreeHold = {
+  held: true
+  until: null
+  reason: string
+  inFlightRef: string
+  suppressBlock: true
+}
+
 function isHookTree(run: HookTreeIdentity): boolean {
   return run.job === HOOK_TREE_JOB
 }
 
 /** Hook trees are held indefinitely; bounded ordinary run holds remain unchanged. */
-export function hookTreeHoldDecision<T>(
-  run: HookTreeHoldFacts,
-  ordinary: T,
-): T | { held: true; until: null; reason: string } {
+export function hookTreeHoldDecision<T>(run: HookTreeHoldFacts, ordinary: T): T | HookTreeHold {
   return isHookTree(run) && run.treeExists
     ? {
         held: true,
         until: null,
         reason: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+        inFlightRef: 'hook tree, kept by its owner',
+        suppressBlock: true,
       }
     : ordinary
 }

@@ -1,11 +1,19 @@
 // concern: close-out report
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { HookTreeHold } from '../hook-tree/hook-tree.ts'
 import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import type { KeepTreeHoldDecision } from '../worktree/keep-tree-hold.ts'
 
+type ConversationHoldReport = {
+  reason?: string
+  hold?: LandingTreeHoldKind
+  inFlightRef?: string | null
+  suppressBlock?: boolean
+}
+
 export type ConversationKeepTreeHold =
-  | (KeepTreeHoldDecision & { reason?: string; hold?: LandingTreeHoldKind })
-  | { held: true; until: null; reason: string; hold?: LandingTreeHoldKind }
+  | ((KeepTreeHoldDecision | HookTreeHold) & ConversationHoldReport)
+  | ({ held: true; until: null; reason: string } & ConversationHoldReport)
   | { held: false; kept: true; reason: string }
 
 /** Separates the clean landing tree's report word from its persisted outcome. */
@@ -24,6 +32,14 @@ export type CloseOutReportResult = {
   suppressBlock?: boolean
 }
 
+export type HeldConversationCloseOutResult = Omit<
+  CloseOutReportResult,
+  'worktree' | 'outcome' | 'reportOutcome'
+> & {
+  worktree: string
+  outcome: 'held'
+}
+
 export type HeldTreeJson = {
   runId: string
   worktree: string
@@ -32,17 +48,16 @@ export type HeldTreeJson = {
   suppressBlock: boolean
 }
 
+/** Whether close-out must preserve an already complete non-blocking in-flight annotation. */
+export function hasHeldInFlightAnnotation(result: CloseOutReportResult): boolean {
+  return Boolean(result.suppressBlock && result.inFlightRef)
+}
+
 export function heldConversationCloseOutResult(
   runId: string,
   worktree: string,
   hold: Extract<ConversationKeepTreeHold, { held: true }>,
-): {
-  runId: string
-  worktree: string
-  outcome: 'held'
-  detail: string
-  hold?: LandingTreeHoldKind
-} {
+): HeldConversationCloseOutResult {
   return {
     runId,
     worktree,
@@ -52,6 +67,8 @@ export function heldConversationCloseOutResult(
         ? hold.reason
         : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`,
     hold: hold.hold,
+    inFlightRef: hold.inFlightRef,
+    suppressBlock: hold.suppressBlock,
   }
 }
 

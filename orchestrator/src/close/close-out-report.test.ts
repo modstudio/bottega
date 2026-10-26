@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { HeldTreeJson } from './close-out-report.ts'
 import { closeOutJson, heldTreeJson } from './close-out-report.ts'
 
@@ -13,6 +14,7 @@ describe('close-out held-tree JSON shape', () => {
     const inFlight = rows[0]!
     const uniqueWork = rows[1]!
     const other = rows[2]!
+    const hookTree = rows[3]!
     expect(
       heldTreeJson({
         runId: inFlight.runId,
@@ -46,6 +48,17 @@ describe('close-out held-tree JSON shape', () => {
         suppressBlock: false,
       }),
     ).toEqual(other)
+    expect(
+      heldTreeJson({
+        runId: hookTree.runId,
+        worktree: hookTree.worktree,
+        outcome: 'held',
+        detail: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+        hold: 'other',
+        inFlightRef: hookTree.inFlightRef,
+        suppressBlock: true,
+      }),
+    ).toEqual(hookTree)
   })
 
   test('closeOutJson emits a held in-flight landing with hold fields', () => {
