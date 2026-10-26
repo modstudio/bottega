@@ -60,21 +60,6 @@ test('detached selection waits in the coordinator only for a capacity refusal', 
   }
 })
 
-test('a harness-class run start refuses before external routing', async () => {
-  await expect(
-    selectBeforeDetach(
-      'craft',
-      'prompt',
-      { agent: 'not-an-agent' },
-      { cwd: () => process.cwd(), error: () => {} },
-      false,
-      { 'delegation.implement': 'external', 'delegation.review': 'harness' },
-    ),
-  ).rejects.toThrow(
-    "this machine runs review work through the harness's own sub-agent (delegation.review=harness)",
-  )
-})
-
 test('dispatch transport selection gives an explicit flag precedence over the environment', () => {
   expect(transportSelection('cli', undefined, 'acp')).toEqual({
     transport: 'cli',

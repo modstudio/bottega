@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { DELEGATION_SETTING_KEYS, delegationClass } from '../../../shared/delegation-mode.ts'
+import { DELEGATION_SETTING_KEYS } from '../../../shared/delegation-mode.ts'
+import { delegationClass } from '../jobs/delegation.ts'
 
 export function noEligibleAgentRefusal(
   jobName: string,

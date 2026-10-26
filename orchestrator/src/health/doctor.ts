@@ -44,7 +44,7 @@ import { DELIVERY, FIDELITY, QUALITY } from '../score/score.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
-import { delegationDoctorLines } from './delegation-doctor.ts'
+import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {
@@ -235,8 +235,8 @@ async function reportAgentsAndDelegation(
 ): Promise<void> {
   await reportAgents(presentation, agentStatus)
   presentation.log('delegation')
-  for (const line of delegationDoctorLines(
-    readDelegationSettings(),
+  for (const line of configuredDelegationDoctorLines(
+    readDelegationSettings,
     Object.values(JOBS),
     presentation.candidates,
   )) {

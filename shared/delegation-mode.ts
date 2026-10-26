@@ -13,15 +13,3 @@ export type DelegationSettings = Record<
   (typeof DELEGATION_SETTING_KEYS)[DelegationClass],
   DelegationMode
 >
-
-export function delegationClass(capabilities: { writesRepo?: boolean }): DelegationClass {
-  return capabilities.writesRepo ? 'implement' : 'review'
-}
-
-/** Decide where a declared job runs from capabilities and already-read machine settings. */
-export function delegationMode(
-  capabilities: { writesRepo?: boolean },
-  settings: DelegationSettings,
-): DelegationMode {
-  return settings[DELEGATION_SETTING_KEYS[delegationClass(capabilities)]]
-}

@@ -639,8 +639,10 @@ const ConfigEntrySchema = z.object({
 export const MachineAutonomyEntrySchema = z.object({
   key: z.string(),
   value: z.string(),
-  scope: z.literal('local user'),
+  scope: z.enum(['local user', 'machine']),
 }) satisfies z.ZodType<MachineAutonomyEntry>
+
+export const MachineConfigListSchema = z.array(MachineAutonomyEntrySchema)
 
 const PermissionListsSchema = z.object(
   Object.fromEntries(
@@ -835,8 +837,7 @@ export const configDelete = (key: string, expectedRowVersion?: number) =>
   orchProcess(configDeleteArgv(key, expectedRowVersion), 20_000, {
     env: requiredDashboardCapabilityEnvironment(),
   })
-export const machineConfigList = () =>
-  json(machineConfigArgv('list'), z.array(MachineAutonomyEntrySchema))
+export const machineConfigList = () => json(machineConfigArgv('list'), MachineConfigListSchema)
 export const machineConfigSet = (key: string, value: string) =>
   json(machineConfigArgv('set', key, value), MachineAutonomyEntrySchema, {
     env: requiredDashboardCapabilityEnvironment(),

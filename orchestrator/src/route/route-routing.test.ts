@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { setMachineDelegation } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
@@ -25,6 +26,17 @@ import {
   scoreboard,
 } from './route.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
+
+test('the shared routing path refuses a writesRepo job assigned to the harness', () => {
+  setMachineDelegation('delegation.implement', 'harness')
+  try {
+    expect(() => pick('implement', 'not-an-agent')).toThrow(
+      "this machine runs implement work through the harness's own sub-agent (delegation.implement=harness)",
+    )
+  } finally {
+    setMachineDelegation('delegation.implement', 'external')
+  }
+})
 
 test('candidate running-run map matches per-agent fixture counts from one grouped snapshot', () => {
   addRun({ agent: 'codex', job: 'craft', status: 'running' })

@@ -76,7 +76,7 @@ URL = re.compile(r"https?://")
 
 
 def harness_delegation():
-    """Read only through Bottega's machine-config surface; any failure preserves the gate."""
+    """Admit any native spawn when either class is harness; any read failure preserves the gate."""
     try:
         result = subprocess.run(
             [BOTTEGA_BIN, "machine", "config", "list", "--machine", "--json"],

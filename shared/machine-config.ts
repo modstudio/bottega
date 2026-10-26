@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { patch as patchToml } from '@decimalturn/toml-patch'
 import { z } from 'zod'
 import { AUTONOMY_PRESETS, AUTONOMY_STAGES, AUTONOMY_VALUES } from './autonomy.ts'
+import { PLATFORM_SLUG } from './brand.ts'
 import { type ConfigEnvironment, resolveConfigRoot } from './config-directory.ts'
 import {
   DELEGATION_MODES,
@@ -119,8 +120,7 @@ const permissionsSchema = permissionListsSchema
   .strict()
 
 function valueSchema(entry: MachineConfigEntry, environmentValue: boolean) {
-  if (entry.type === 'string')
-    return entry.values ? z.string().refine((value) => entry.values!.includes(value)) : z.string()
+  if (entry.type === 'string') return z.string()
   return environmentValue
     ? z
         .string()
@@ -128,6 +128,13 @@ function valueSchema(entry: MachineConfigEntry, environmentValue: boolean) {
         .transform(Number)
         .pipe(z.number().int())
     : z.number().int()
+}
+
+function assertAllowedMachineValue(key: string, entry: MachineConfigEntry, value: unknown): void {
+  if (!entry.values || typeof value !== 'string' || entry.values.includes(value)) return
+  throw new Error(
+    `key ${key} must be one of ${entry.values.join(', ')}; cleared by: ${PLATFORM_SLUG} machine config set --machine ${key} ${entry.default}`,
+  )
 }
 
 function fileValue(parsed: unknown, key: string): unknown {
@@ -301,6 +308,7 @@ export function resolveMachineValue<
     }
     throw new Error(`refusing machine config ${path}: key ${key} must be ${expected}`)
   }
+  assertAllowedMachineValue(key, entry, result.data)
   return result.data as Table[Key]['type'] extends 'integer' ? number : string
 }
 
@@ -538,7 +546,11 @@ export function deleteMachineAutonomy(key: string, env: ConfigEnvironment = proc
   }, env)
 }
 
-export type MachineAutonomyEntry = { key: string; value: string; scope: 'local user' }
+export type MachineAutonomyEntry = {
+  key: string
+  value: string
+  scope: 'local user' | 'machine'
+}
 
 export function listMachineAutonomy(env: ConfigEnvironment = process.env): MachineAutonomyEntry[] {
   const root = readMachineFile(machineConfigPath(env))
@@ -627,11 +639,9 @@ export function setMachineDelegation(
   value: string,
   env: ConfigEnvironment = process.env,
 ): void {
-  if (!delegationKey(key) || !DELEGATION_MODES.includes(value as never)) {
-    throw new Error(
-      `accepted machine delegation keys: delegation.implement, delegation.review; values: ${DELEGATION_MODES.join(', ')}`,
-    )
-  }
+  if (!delegationKey(key))
+    throw new Error('accepted machine delegation keys: delegation.implement, delegation.review')
+  assertAllowedMachineValue(key, MACHINE_CONFIG[key], value)
   atomicPatch((root) => {
     const delegation = (root.delegation as Record<string, unknown> | undefined) ?? {}
     delegation[key.split('.')[1]!] = value

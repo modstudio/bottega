@@ -9,6 +9,7 @@ import { readTrustList } from '../../../shared/trust-list.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
   deleteEntry,
+  listMachineEntries,
   machineInit,
   migrateLegacyEnvironmentSecrets,
   planRotation,
@@ -20,6 +21,15 @@ import {
 const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+test('machine config list produces the shared delegation row shape', () => {
+  expect(listMachineEntries()).toEqual(
+    expect.arrayContaining([
+      { key: 'delegation.implement', value: 'external', scope: 'machine' },
+      { key: 'delegation.review', value: 'external', scope: 'machine' },
+    ]),
+  )
 })
 
 test('rotation plan re-seals only rows on older DEKs and retires each old DEK once', () => {

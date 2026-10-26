@@ -2,8 +2,8 @@ import {
   DELEGATION_CLASSES,
   DELEGATION_SETTING_KEYS,
   type DelegationSettings,
-  delegationClass,
 } from '../../../shared/delegation-mode.ts'
+import { delegationClass } from '../jobs/delegation.ts'
 import type { Job } from '../jobs/jobs.ts'
 
 export function delegationDoctorLines(
@@ -19,4 +19,16 @@ export function delegationDoctorLines(
     const eligible = classJobs.some((job) => candidates(job.name).some((agent) => agent.eligible))
     return `${key} external — eligible agent ${eligible ? 'yes' : 'NO'}`
   })
+}
+
+export function configuredDelegationDoctorLines(
+  readSettings: () => DelegationSettings,
+  jobs: readonly Job[],
+  candidates: (job: string) => readonly { eligible: boolean }[],
+): string[] {
+  try {
+    return delegationDoctorLines(readSettings(), jobs, candidates)
+  } catch (error) {
+    return [`delegation settings unreadable — ${(error as Error).message}`]
+  }
 }

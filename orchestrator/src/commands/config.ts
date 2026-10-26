@@ -91,13 +91,17 @@ export function assertConfigWriteAllowed(
   inventory?: ProcessInventory,
 ): void {
   const normalized = value === undefined ? { key, value } : shipToWrite(key, value)
-  if (key.startsWith('autonomy.') && isOrchWorkerProcess(env, pid, inventory)) {
+  if (operatorOnlyMachineKey(key) && isOrchWorkerProcess(env, pid, inventory)) {
     throw new Error(
-      `refusing autonomy config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
+      `refusing operator-only machine config write from an orchestrator worker run; an operator must run ${PLATFORM_SLUG} machine config ${normalized.value === undefined ? `delete ${normalized.key}` : `set ${normalized.key} ${normalized.value}`}`,
     )
   }
   if (value !== undefined && isShipToConfigKey(key) && storedShipToLevel(value) === undefined)
     throw new Error(`invalid autonomy.ship-to; expected one of ${SHIP_TO_VALUES.join(', ')}`)
+}
+
+function operatorOnlyMachineKey(key: string): boolean {
+  return key.startsWith('autonomy.') || key.startsWith('delegation.')
 }
 
 function shipToWrite(key: string, value: string): { key: string; value: string } {

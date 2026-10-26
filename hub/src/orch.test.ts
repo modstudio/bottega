@@ -26,6 +26,7 @@ import {
   decodeRunsJson,
   fileRulingArgv,
   MachineAutonomyEntrySchema,
+  MachineConfigListSchema,
   MachinePermissionOverlaySchema,
   MachinePermissionResultSchema,
   machineConfigArgv,
@@ -84,6 +85,18 @@ test('machine bridge schemas parse the CLI output shapes', () => {
     value: 'auto',
     scope: 'local user',
   })
+})
+
+test('the machine config list schema accepts autonomy and delegation rows together', () => {
+  expect(
+    MachineConfigListSchema.parse([
+      { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
+      { key: 'delegation.review', value: 'harness', scope: 'machine' },
+    ]),
+  ).toEqual([
+    { key: 'autonomy.stage.review', value: 'auto', scope: 'local user' },
+    { key: 'delegation.review', value: 'harness', scope: 'machine' },
+  ])
 })
 
 test('managed context wrappers build exact argv', () => {

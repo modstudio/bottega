@@ -437,6 +437,7 @@ export const modules: ArchitectureModule[] = [
     'node:path',
     'zod',
     './autonomy.ts',
+    './brand.ts',
     './config-directory.ts',
     './delegation-mode.ts',
     './ship-to.ts',

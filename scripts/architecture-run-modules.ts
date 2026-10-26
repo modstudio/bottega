@@ -5,11 +5,15 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/health/delegation-doctor.ts',
-    allowed: ['../../../shared/delegation-mode.ts', '../jobs/jobs.ts'],
+    allowed: ['../../../shared/delegation-mode.ts', '../jobs/delegation.ts', '../jobs/jobs.ts'],
   },
   {
     file: 'orchestrator/src/route/no-eligible-agent-refusal.ts',
-    allowed: ['../../../shared/brand.ts', '../../../shared/delegation-mode.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../../../shared/delegation-mode.ts',
+      '../jobs/delegation.ts',
+    ],
   },
   {
     file: 'orchestrator/src/run/run-subscription-cost.ts',
