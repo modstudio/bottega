@@ -52,7 +52,7 @@ import { follow as followRun } from '../run/run-control.ts'
 import { detach as dispatchDetached } from '../run/run-dispatch.ts'
 import { runEvidence } from '../run/run-evidence-context.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
-import { routedPromptBytes } from '../run/run-routing-input.ts'
+import { routedPromptBytes, routedPromptText } from '../run/run-routing-input.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import {
   assertAcpReady,
@@ -421,16 +421,17 @@ export async function selectBeforeDetach(
   const replySchemaName = spec.schema
     ? basename(spec.schema)
     : resolveReplyDialect(requestedJob).schemaName
-  const requiresCanonSource = runEvidence(
-    jobName,
-    Boolean(requestedJob.findings),
-    spec.deliverables ?? [],
-  ).requiresCanonSource
+  const evidence = runEvidence(jobName, Boolean(requestedJob.findings), spec.deliverables ?? [])
   const select = () =>
     pick(
       jobName,
       spec.agent,
-      routedPromptBytes(text, replySchemaName, requestedJob, requiresCanonSource),
+      routedPromptBytes(
+        routedPromptText(text, evidence.readerInstruction, true),
+        replySchemaName,
+        requestedJob,
+        evidence.requiresCanonSource,
+      ),
       true,
       stackAt(spec.cwd ?? presentation.cwd()),
       {

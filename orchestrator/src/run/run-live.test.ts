@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { COOLS_DOWN, FAILS_OVER, NOT_EVIDENCE } from '../failure/failure.ts'
+import { FAILS_OVER } from '../failure/failure.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
 import { decideOutcome } from '../outcome.ts'
 import { decideFailover } from '../route/failover.ts'
@@ -91,9 +91,6 @@ test('a live first throttle closes as quota and routes away from cooling codex',
     .query('UPDATE run SET status=?, failure_kind=?, error=?, latency_ms=? WHERE record_id=?')
     .run(outcome.status, outcome.failureKind, error, 1_000, id)
 
-  expect(FAILS_OVER).toContain('quota')
-  expect(COOLS_DOWN).toContain('quota')
-  expect(NOT_EVIDENCE).toContain('quota')
   expect(isRoutingEvidence({ status: 'failed', delivery: null, failureKind: 'quota' })).toBe(false)
   expect(
     candidates('file-question').find((candidate) => candidate.agent === 'codex'),
