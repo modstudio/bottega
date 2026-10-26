@@ -113,5 +113,5 @@ test('hosted reply audiences survive caching and select explicit or default part
   expect(cachedMessageAddressed(change(defaulted), 'thread-participant', clock, database)).toBe(
     true,
   )
-  expect(cachedMessageAddressed(change(defaulted), 'chosen-reader', clock, database)).toBe(false)
+  expect(cachedMessageAddressed(change(defaulted), 'chosen-reader', clock, database)).toBe(true)
 })

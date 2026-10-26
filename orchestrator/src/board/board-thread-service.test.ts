@@ -138,7 +138,7 @@ test('reply receipts select acknowledged readers or the root audience', () => {
   expect(readers(rootAudience.recordId)).toEqual(['root-audience-reader', 'selected-asker'])
 })
 
-test('an explicit reply recipient must already be in the thread reach', () => {
+test('an explicit reply recipient is looped into the thread and can read and reply', () => {
   ensurePostingProject()
   const clock = Date.now() + 175_000
   const project = 'thread-explicit-reach'
@@ -148,7 +148,7 @@ test('an explicit reply recipient must already be in the thread reach', () => {
     {
       audience: `project:${project}`,
       title: 'Can this reply narrow?',
-      body: 'Only address a session already in reach.',
+      body: 'Loop another session into this thread.',
     },
     architect('reach-asker'),
     clock,
@@ -170,16 +170,38 @@ test('an explicit reply recipient must already be in the thread reach', () => {
       )
       .all(accepted.recordId),
   ).toEqual([{ reader_session: 'reach-asker' }, { reader_session: 'reach-inside' }])
-  expect(() =>
+  const looped = replyToThread(
+    question.recordId,
+    'Loop in the new participant',
+    architect('reach-replier'),
+    clock + 2,
+    cwd,
+    { kind: 'session', sessionId: 'reach-outside' },
+  )
+  expect(
+    db()
+      .query(
+        'SELECT reader_session FROM board_receipt WHERE message_record_id=? ORDER BY reader_session',
+      )
+      .all(looped.recordId),
+  ).toEqual([{ reader_session: 'reach-asker' }, { reader_session: 'reach-outside' }])
+  const received = claimNotices(false, architect('reach-outside'), clock + 3).find(
+    (notice) => notice.recordId === looped.recordId,
+  )
+  expect(received?.text).toContain(`Thread: ${question.recordId}`)
+  expect(readThread(question.recordId, architect('reach-outside'), clock + 3).replies).toHaveLength(
+    2,
+  )
+  expect(
     replyToThread(
       question.recordId,
-      'Do not widen the thread',
-      architect('reach-replier'),
-      clock + 2,
+      'Reply as a participant',
+      architect('reach-outside'),
+      clock + 4,
       cwd,
-      { kind: 'session', sessionId: 'reach-outside' },
-    ),
-  ).toThrow("session reach-outside is not in this thread's reach; post a new notice to address it")
+      { kind: 'participants' },
+    ).reached,
+  ).toBeGreaterThan(0)
 })
 
 test('identical reply bodies with different audiences are stored separately', () => {
