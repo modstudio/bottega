@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   DOC_SUMMARY_MAX_LENGTH,
+  docScopeIsProjectless,
   docSummary,
   normalizeDocAudiences,
   normalizeDocSummary,
@@ -49,5 +50,16 @@ describe('normalizeDocSummary', () => {
     expect(() => normalizeDocSummary('x'.repeat(DOC_SUMMARY_MAX_LENGTH + 1))).toThrow(
       `summary must be at most ${DOC_SUMMARY_MAX_LENGTH} characters`,
     )
+  })
+})
+
+describe('docScopeIsProjectless', () => {
+  test('is true only for scopes that declare no subject kind', () => {
+    expect(docScopeIsProjectless('global')).toBe(true)
+    expect(docScopeIsProjectless('machine')).toBe(true)
+    expect(docScopeIsProjectless('project')).toBe(false)
+    expect(docScopeIsProjectless('stack')).toBe(false)
+    expect(docScopeIsProjectless('agent')).toBe(false)
+    expect(docScopeIsProjectless('job')).toBe(false)
   })
 })

@@ -172,6 +172,11 @@ export function docScopeHasProjectSubject(scope: string): boolean {
   return DOC_SCOPE_SUBJECT_KIND[scope as DocScope] === 'project'
 }
 
+/** A scope whose subject kind is null belongs to no project rather than to any one project. */
+export function docScopeIsProjectless(scope: string): boolean {
+  return DOC_SCOPE_SUBJECT_KIND[scope as DocScope] === null
+}
+
 export function resolveDocSubject(
   scope: DocScope,
   explicit: string | undefined,
