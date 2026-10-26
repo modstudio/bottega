@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test'
 import {
   accessSync,
   constants,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -14,8 +15,41 @@ import { git, gitOk, worktreeGitDir } from '../git/git-environment.ts'
 import {
   HARNESS_RUN_MARKER,
   installHarnessPushGuard,
+  provisionWriterSharedGitRoots,
   workerGitConfigEnvironment,
 } from './run-git-guard.ts'
+
+test('writer roots include only an existing worktree .agents directory', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-writer-roots-'))
+  const repoRoot = join(root, 'main')
+  const path = join(root, 'worktree')
+  const commonGitDir = join(repoRoot, '.git')
+  const gitDir = join(commonGitDir, 'worktrees', 'orch-writer-roots')
+  try {
+    mkdirSync(path, { recursive: true })
+    mkdirSync(gitDir, { recursive: true })
+    mkdirSync(join(commonGitDir, 'objects'))
+    mkdirSync(join(commonGitDir, 'refs', 'heads'), { recursive: true })
+    mkdirSync(join(commonGitDir, 'logs', 'refs', 'heads'), { recursive: true })
+    writeFileSync(join(path, '.git'), `gitdir: ${gitDir}\n`)
+    writeFileSync(join(gitDir, 'commondir'), '../..\n')
+    const worktree = {
+      path,
+      branch: 'DEV-1506-writer-roots',
+      base: 'HEAD',
+      repoRoot,
+      source: 'git' as const,
+    }
+    const agentsPath = join(path, '.agents')
+
+    expect(provisionWriterSharedGitRoots(worktree, true)).not.toContain(agentsPath)
+    mkdirSync(agentsPath)
+    expect(provisionWriterSharedGitRoots(worktree, true)).toContain(agentsPath)
+    expect(provisionWriterSharedGitRoots(worktree, false)).toEqual([])
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
 
 test('harness marker makes the tracked pre-push hook refuse only its worktree', () => {
   const repoRoot = mkdtempSync(join(tmpdir(), 'orch-harness-guard-main-'))
