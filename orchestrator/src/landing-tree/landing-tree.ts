@@ -172,11 +172,17 @@ export function landingTreeHoldDecision<T>(
 const SHIP_TASK_WORKFLOW = 'ship-task'
 const AFTER_FINISH_SHIP_CLEANUP = new Set(['finish-ship-cleanup', 'promote-release', 'close-task'])
 
+/**
+ * A ship-task cursor's own facts for one tree.
+ *
+ * `claimed` answers "does a running or awaiting-ruling ship-task cursor claim this tree?" — a
+ * recorded pointer, not a measurement of whether the session that wrote it is still alive.
+ */
 type HeldTreeCursorFacts = {
   id: number
   workflow: string | null
   step: string | null
-  live: boolean
+  claimed: boolean
   project: string | null
   branch: string | null
   worktree: string | null
@@ -216,13 +222,26 @@ export function heldTreeWorkIsUnique(facts: HeldTreeWorkFacts): boolean {
   return !(facts.treeClean && facts.treeHead !== null && facts.treeHead === facts.openPrHead)
 }
 
+/**
+ * Whether reading the tree's open pull request can change the hold's verdict.
+ *
+ * Follows from `heldTreeWorkIsUnique`: a hold that is not landing-progress on a dirty tree keeps
+ * its unique work whatever the pull request says, so its pull request need not be read; every
+ * other hold consults it. A fact gatherer uses this to spend an inspection only where the ruling
+ * can act on it.
+ */
+export function pullRequestLookupNeeded(hold: LandingTreeHoldKind, treeClean: boolean): boolean {
+  return hold === 'landing-progress' || treeClean
+}
+
 type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
 
+/** Whether a claiming ship-task cursor still has its own landing steps ahead of it. */
 function shipTaskCursorIsInFlight(
-  cursor: Pick<HeldTreeCursorFacts, 'workflow' | 'step' | 'live'>,
+  cursor: Pick<HeldTreeCursorFacts, 'workflow' | 'step' | 'claimed'>,
 ): boolean {
   return (
-    cursor.live &&
+    cursor.claimed &&
     cursor.workflow === SHIP_TASK_WORKFLOW &&
     !AFTER_FINISH_SHIP_CLEANUP.has(cursor.step ?? '')
   )

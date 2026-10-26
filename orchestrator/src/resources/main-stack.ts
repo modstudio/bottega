@@ -1,17 +1,25 @@
 // concern: main-checkout Docker stack adapter
 
 import type { Database } from 'bun:sqlite'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { nowIso, SESSION_LIVE_MS, writableDb, writeTransaction } from '../database/db.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import type { MainStackConsumer } from '../project/project-settings.ts'
 import type { Project } from '../project/projects.ts'
 import { runAlive } from '../run/run-alive.ts'
 import { runLeaseState } from '../run/run-lease.ts'
 import {
+  classifyServedWorktree,
   decideMainStackEnsure,
   decideMainStackIdleStop,
   decideMainStackStopGuard,
+  mainStackStopGuardReason,
   newlyStartedMainStackServices,
+  type ServedWorktreeEntry,
+  type ServedWorktreeObservation,
 } from './main-stack-decision.ts'
 
 export const MAIN_STACK_IDLE_STOP_AFTER_MS_DEFAULT = 4 * 60 * 60 * 1_000
@@ -168,6 +176,8 @@ export function stopMainStackServices(input: {
   projectPath: string
   consumer: MainStackConsumer
   startedServices: readonly string[]
+  /** The project's declared served-worktree Compose prefix, when its register declares one. */
+  worktreeComposeProjectPrefix?: string
   database?: Database
   nowMs?: number
 }): { outcome: 'none' | 'stopped' | 'deferred'; detail?: string } {
@@ -184,20 +194,31 @@ export function stopMainStackServices(input: {
     }
   }
   const execObservation = mainStackExecInProgress(input.projectPath)
-  const decision = decideMainStackStopGuard({
+  const servedWorktreeObservation = mainStackServedWorktree({
+    checkoutPath: input.projectPath,
+    ...(input.worktreeComposeProjectPrefix !== undefined
+      ? { worktreeComposeProjectPrefix: input.worktreeComposeProjectPrefix }
+      : {}),
+  })
+  for (const orphan of servedWorktreeObservation.orphans) {
+    console.error(`orch: ${mainStackOrphanDetail(input.projectName, orphan)}`)
+  }
+  const guardFacts = {
+    servedWorktree: servedWorktreeObservation.value,
     execInProgress: execObservation.value,
     liveRun: activity.liveRun,
     liveSession: activity.liveSession,
-  })
-  if (decision !== 'stop') {
-    const reason =
-      execObservation.value === 'unknown'
-        ? `Docker command activity could not be ascertained: ${execObservation.reason}`
-        : execObservation.value
-          ? 'a Docker exec is in progress'
-          : activity.liveRun
-            ? 'a run is running or asking'
-            : 'an architect session is live'
+  }
+  if (decideMainStackStopGuard(guardFacts) !== 'stop') {
+    const reason = mainStackStopGuardReason({
+      facts: guardFacts,
+      servedWorktreeReason:
+        servedWorktreeObservation.value === 'unknown'
+          ? servedWorktreeObservation.reason
+          : undefined,
+      execInProgressReason:
+        execObservation.value === 'unknown' ? execObservation.reason : undefined,
+    })
     return {
       outcome: 'deferred',
       detail: `main stack services started for ${input.projectName} ${input.consumer} were left running for the idle sweep because ${reason}`,
@@ -250,6 +271,80 @@ function runningMainStackPaths(): CommandResult {
     }
   }
   return { ok: true, output: result.stdout?.toString() ?? '' }
+}
+
+/**
+ * Ask Docker whether a served worktree stack of this checkout's project is running.
+ *
+ * The adapter spawns, parses and canonicalizes; classifyServedWorktree decides. A Docker
+ * failure, a timeout or an unparseable line is `unknown`, never `false`.
+ */
+export function mainStackServedWorktree(input: {
+  checkoutPath: string
+  worktreeComposeProjectPrefix?: string
+}): ServedWorktreeObservation {
+  const command = [
+    'docker',
+    'ps',
+    '--format',
+    '{{.Label "com.docker.compose.project"}}\t{{.Label "com.docker.compose.project.working_dir"}}',
+  ]
+  let result: ReturnType<typeof Bun.spawnSync>
+  try {
+    result = Bun.spawnSync(command, {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: MAIN_STACK_COMMAND_TIMEOUT_MS,
+    })
+  } catch (error) {
+    return {
+      value: 'unknown',
+      reason: `${command.join(' ')} failed: ${(error as Error).message}`,
+      orphans: [],
+    }
+  }
+  if (result.exitCode !== 0 || result.exitedDueToTimeout) {
+    return {
+      value: 'unknown',
+      reason: `${command.join(' ')} failed: ${result.stderr?.toString().trim() || 'timed out'}`,
+      orphans: [],
+    }
+  }
+  const entries: ServedWorktreeEntry[] = []
+  for (const line of (result.stdout?.toString() ?? '').split('\n')) {
+    if (!line) continue
+    const [composeProject, workingDirectory, ...extra] = line.split('\t')
+    if (extra.length > 0 || composeProject === undefined || workingDirectory === undefined) {
+      return {
+        value: 'unknown',
+        reason: `${command.join(' ')} failed: unparseable output`,
+        orphans: [],
+      }
+    }
+    // Both sides are compared in one spelling: the register and Compose each record
+    // whatever path they were given, and an alias must not read as a different project.
+    entries.push({ composeProject, workingDirectory: realpathOrSpelled(workingDirectory) })
+  }
+  return classifyServedWorktree({
+    entries,
+    worktreesDirectory: join(realpathOrSpelled(input.checkoutPath), '.claude', 'worktrees'),
+    ...(input.worktreeComposeProjectPrefix !== undefined
+      ? { composePrefix: input.worktreeComposeProjectPrefix }
+      : {}),
+    treeExists: (worktreeDirectory) => existsSync(worktreeDirectory),
+  })
+}
+
+/**
+ * Name a leftover container so a stack it holds is never kept invisibly: its worktree
+ * directory is gone, so it is a claim that outlived its run rather than a live use.
+ */
+function mainStackOrphanDetail(projectName: string, composeProject: string): string {
+  return (
+    `main stack ${projectName}: leftover container ${composeProject} still runs but its ` +
+    `worktree directory is gone, so it is not a served worktree; run ${PLATFORM_SLUG} machine ` +
+    `sweep, or stop that container, to clear it`
+  )
 }
 
 export function mainStackExecInProgress(
@@ -384,19 +479,37 @@ function sweepIdleMainStack(
     return true
   }
   const execObservation = mainStackExecInProgress(project.path)
-  const decision = decideMainStackIdleStop({
+  const servedWorktreeObservation = mainStackServedWorktree({
+    checkoutPath: project.path,
+    ...(project.settings.mainStack?.worktreeComposeProjectPrefix !== undefined
+      ? { worktreeComposeProjectPrefix: project.settings.mainStack.worktreeComposeProjectPrefix }
+      : {}),
+  })
+  for (const orphan of servedWorktreeObservation.orphans) {
+    input.error(mainStackOrphanDetail(project.name, orphan))
+  }
+  const facts = {
     recordsAvailable: true,
     running: true,
+    servedWorktree: servedWorktreeObservation.value,
     execInProgress: execObservation.value,
     ...activity,
     nowMs: input.nowMs ?? Date.now(),
     idleStopAfterMs,
-  })
+  }
+  const decision = decideMainStackIdleStop(facts)
   if (decision === 'report') {
+    // Records are available here, so the guard is the only fact that can ask for a report.
     input.error(
-      `main stack ${project.name}: command activity unavailable: ${
-        execObservation.value === 'unknown' ? execObservation.reason : 'unknown state'
-      }`,
+      `main stack ${project.name}: ${mainStackStopGuardReason({
+        facts,
+        servedWorktreeReason:
+          servedWorktreeObservation.value === 'unknown'
+            ? servedWorktreeObservation.reason
+            : undefined,
+        execInProgressReason:
+          execObservation.value === 'unknown' ? execObservation.reason : undefined,
+      })}`,
     )
     return true
   }
