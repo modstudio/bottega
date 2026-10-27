@@ -36,15 +36,16 @@ type RunHostCapacityWaiter = {
   host_wait_since: string
 }
 
+export const RUN_HOST_CAPACITY_WAITERS_SQL = `SELECT record_id, host_wait_since FROM run
+        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
+        ORDER BY host_wait_since ASC, record_id ASC`
+
+export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT agent_start_time FROM run
+        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`
+
 /** Admission's FIFO waiter set: running repository rows still waiting on host capacity. */
 function runHostCapacityWaiters(database: Database): RunHostCapacityWaiter[] {
-  return database
-    .query(
-      `SELECT record_id, host_wait_since FROM run
-        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
-        ORDER BY host_wait_since ASC, record_id ASC`,
-    )
-    .all() as RunHostCapacityWaiter[]
+  return database.query(RUN_HOST_CAPACITY_WAITERS_SQL).all() as RunHostCapacityWaiter[]
 }
 
 function runningRepositoryFacts(
@@ -52,12 +53,9 @@ function runningRepositoryFacts(
   runId: string,
   now: number,
 ): RunningRepositoryFacts {
-  const rows = database
-    .query(
-      `SELECT agent_start_time FROM run
-        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`,
-    )
-    .all(runId) as { agent_start_time: string | null }[]
+  const rows = database.query(RUNNING_REPOSITORY_FACTS_SQL).all(runId) as {
+    agent_start_time: string | null
+  }[]
   return {
     running: rows.length,
     recentAdmissions: rows.filter((row) => {
