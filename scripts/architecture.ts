@@ -666,6 +666,7 @@ export const modules: ArchitectureModule[] = [
     '../run/run-number.ts',
     '../run/synthetic-lifecycle-job.ts',
     '../recipe/tracked-recipe.ts',
+    '../worktree/snapshotless-tracked-recipe.ts',
     '../worktree/worktree-create.ts',
     '../worktree/worktree-lifecycle.ts',
     '../worktree/worktree-seed.ts',
