@@ -77,7 +77,6 @@ export function reviewRoundTriageComplete(review: TriageReviewRow): boolean {
   return (
     review.lenses.length > 0 &&
     review.lenses.every(({ settled }) => settled) &&
-    review.lenses.some(({ graded }) => graded) &&
     review.findings.every(({ disposition }) => disposition !== null)
   )
 }

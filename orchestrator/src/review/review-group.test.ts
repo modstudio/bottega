@@ -46,7 +46,7 @@ test('a review lens is settled by delivery none or all four review grades', () =
   ).toBe(true)
 })
 
-test('round triage needs one graded lens and permits another delivery-none lens', () => {
+test('round triage accepts settled delivery-none lenses but not unscored lenses', () => {
   const grades = { reproduced: null, coverage: null, limits: null, overlap: null }
   const review: TriageReviewRow = {
     reviewRecordId: 'review-record',
@@ -90,6 +90,12 @@ test('round triage needs one graded lens and permits another delivery-none lens'
     reviewRoundTriageComplete({
       ...review,
       lenses: [{ recordId: 'none', graded: false, settled: true }],
+    }),
+  ).toBe(true)
+  expect(
+    reviewRoundTriageComplete({
+      ...review,
+      lenses: [{ recordId: 'unscored', graded: false, settled: false }],
     }),
   ).toBe(false)
 })
