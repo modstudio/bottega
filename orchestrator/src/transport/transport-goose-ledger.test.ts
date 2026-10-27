@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { gooseLedgerCopyPaths, preserveGooseLedger } from './transport-goose-ledger.ts'
 
 test('only an srt Goose launch retains sessions and logs under the run directory', () => {
@@ -62,6 +62,19 @@ test('retains regular ledger files without copying symbolic links', () => {
 
     expect(readFileSync(join(sessions.destination, 'session.db'), 'utf8')).toBe('ledger')
     expect(existsSync(join(sessions.destination, 'linked.db'))).toBe(false)
+
+    // A goose/ ancestor linked outside the runtime directory copies nothing.
+    const outside = join(root, 'outside')
+    mkdirSync(join(outside, 'logs'), { recursive: true })
+    writeFileSync(join(outside, 'logs', 'host.log'), 'host')
+    const linked = { ...input, runtimeDir: join(root, 'linked-runtime') }
+    const [, logs] = gooseLedgerCopyPaths(linked)
+    mkdirSync(dirname(dirname(logs!.source)), { recursive: true })
+    symlinkSync(outside, dirname(logs!.source))
+    const warnings: string[] = []
+    preserveGooseLedger(linked, (message) => warnings.push(message))
+    expect(existsSync(join(logs!.destination, 'host.log'))).toBe(false)
+    expect(warnings.some((message) => message.includes('skipped linked path'))).toBe(true)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

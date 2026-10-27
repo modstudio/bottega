@@ -1,8 +1,8 @@
 // concern: transport-goose-ledger
 /** Best-effort retention of Goose's sandbox-owned session and request ledger. */
 
-import { cpSync, lstatSync, mkdirSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { cpSync, lstatSync, mkdirSync, realpathSync } from 'node:fs'
+import { dirname, join, sep } from 'node:path'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 
 export type GooseLedgerCopy = { source: string; destination: string }
@@ -29,8 +29,11 @@ export function preserveGooseLedger(
     try {
       const source = lstatSync(copy.source, { throwIfNoEntry: false })
       if (!source) continue
-      if (source.isSymbolicLink()) {
-        onWarning(`Goose ledger copy skipped symbolic link ${copy.source}`)
+      // A linked ancestor (harness/ or goose/) passes the lstat above, so the
+      // resolved source must still sit inside the run's own runtime directory.
+      const runtime = realpathSync(input.runtimeDir as string)
+      if (source.isSymbolicLink() || !realpathSync(copy.source).startsWith(runtime + sep)) {
+        onWarning(`Goose ledger copy skipped linked path ${copy.source}`)
         continue
       }
       mkdirSync(dirname(copy.destination), { recursive: true })
