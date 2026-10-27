@@ -18,7 +18,7 @@ export function replyContract(
 }
 
 export type ReplySourceFacts = {
-  replyFile: { present: false } | { present: true; text: string; matches: boolean }
+  replyFile: { present: false } | { present: true; text: string; matches: boolean; parsed: unknown }
   contract: ReplyContract
   fallback: { text: string; matches: boolean }
 }
@@ -27,6 +27,7 @@ export type ReplySourceRuling = {
   output: string
   replyFileError: string | null
   replyFilePresent: boolean
+  replyFileValue: unknown
   rewriteOutputFile: boolean
 }
 
@@ -47,6 +48,7 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
         ? null
         : `${REPLY_FILE_NAME} did not match the worker contract:\n${facts.replyFile.text}`,
       replyFilePresent: true,
+      replyFileValue: facts.replyFile.parsed,
       rewriteOutputFile: true,
     }
   }
@@ -62,21 +64,26 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
         ? schemaMismatchError(facts.fallback.text)
         : null,
     replyFilePresent: false,
+    replyFileValue: null,
     rewriteOutputFile: facts.contract === 'text',
   }
 }
 
-function matchesReplyFile(
+function parseReplyFile(
   contract: ReplyContract,
   text: string,
   dialect: ReplyDialect,
   schema: unknown,
-): boolean {
-  if (contract !== 'custom') return dialect.parse(text).reply !== null
+): { matches: boolean; parsed: unknown } {
+  if (contract !== 'custom') {
+    const parsed = dialect.parse(text).reply
+    return { matches: parsed !== null, parsed }
+  }
   try {
-    return validatesSchema(JSON.parse(text), schema as JsonSchema)
+    const parsed: unknown = JSON.parse(text)
+    return { matches: validatesSchema(parsed, schema as JsonSchema), parsed }
   } catch {
-    return false
+    return { matches: false, parsed: null }
   }
 }
 
@@ -100,6 +107,10 @@ export function collectReplySource(input: {
   dialect: ReplyDialect
   schema: unknown
 }): ReplySourceRuling {
+  const parsedReplyFile =
+    input.replyFileText === null
+      ? null
+      : parseReplyFile(input.contract, input.replyFileText, input.dialect, input.schema)
   return decideReplySource({
     replyFile:
       input.replyFileText === null
@@ -107,12 +118,8 @@ export function collectReplySource(input: {
         : {
             present: true,
             text: input.replyFileText,
-            matches: matchesReplyFile(
-              input.contract,
-              input.replyFileText,
-              input.dialect,
-              input.schema,
-            ),
+            matches: parsedReplyFile!.matches,
+            parsed: parsedReplyFile!.parsed,
           },
     contract: input.contract,
     fallback: {

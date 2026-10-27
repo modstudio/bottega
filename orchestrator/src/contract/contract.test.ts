@@ -33,6 +33,15 @@ test('reply contract names absolute scratch files without a shell variable', () 
   expect(instruction).not.toContain('$BOTTEGA_SCRATCH')
 })
 
+test.each(['REVIEW_SCHEMA', 'WORKER_SCHEMA'])(
+  '%s tells the worker to write an instance',
+  (name) => {
+    expect(replyFileInstruction(name, '/var/tmp/orch/scratch')).toContain(
+      "reply.json holds one JSON object whose fields are the schema's properties, not the schema itself, so the file never has top-level `type`, `required` or `properties` keys unless the schema defines those fields.",
+    )
+  },
+)
+
 test('the harness worker preamble offers only the durable question path', () => {
   const preamble = workerPreamble('implement', true)
   expect(preamble).toContain('DURABLE QUESTION PATH')

@@ -4,7 +4,7 @@
 import type { ReplyDialect } from '../contract/contract.ts'
 import { REPLY_FILE_NAME, realQuestions } from '../contract/contract.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
-import { decideOutcome } from '../outcome.ts'
+import { decideOutcome, schemaEnvelopeContractError } from '../outcome.ts'
 import { collectReplySource, type ReplyContract } from './run-reply-source.ts'
 
 export function decideHarnessReply(
@@ -27,13 +27,18 @@ export function decideHarnessReply(
     reply && typeof reply === 'object' && 'status' in reply ? (reply as { status: string }) : null
   const missingError = replyText === null ? `${REPLY_FILE_NAME} is missing` : null
   const acceptedQuestions = statusReply ? realQuestions(reply as never) : []
+  const replyFileError = schemaEnvelopeContractError(
+    source.replyFileError,
+    source.replyFileValue,
+    schema,
+  )
   const derived = deriveLiveOutcome({
     writesJob,
     contractStatus: (statusReply?.status as 'done' | 'asking' | 'refused' | undefined) ?? null,
     replyError: missingError,
     output: source.output,
     replyFilePresent: source.replyFilePresent,
-    replyFileError: source.replyFileError,
+    replyFileError,
     transportName: 'harness',
     transportStatus: 'completed',
     transportStopReason: null,
