@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { TOOL_EVENT_TEXT_CHARS } from '../tool-event-text.ts'
 import { normalizeAcpTurn } from './transport-acp.ts'
 
 test('per-update text output concatenates to the full mixed turn output', () => {
@@ -53,4 +54,40 @@ test('per-update text output concatenates to the full mixed turn output', () => 
     .join('')
 
   expect(perUpdateOutput).toBe(normalizeAcpTurn({ sessionId: 'sess_mixed', updates }).output)
+})
+
+test('a shell tool call records its command instead of compact JSON', () => {
+  const result = normalizeAcpTurn({
+    updates: [
+      {
+        update: {
+          sessionUpdate: 'tool_call',
+          title: 'shell',
+          rawInput: { command: 'git status --short' },
+        },
+      },
+    ],
+  })
+
+  expect(result.events).toContainEqual(
+    expect.objectContaining({ kind: 'tool', title: 'shell', input: 'git status --short' }),
+  )
+})
+
+test('a long tool input is capped with a marker', () => {
+  const result = normalizeAcpTurn({
+    updates: [
+      {
+        update: {
+          sessionUpdate: 'tool_call',
+          title: 'shell',
+          rawInput: { command: 'x'.repeat(TOOL_EVENT_TEXT_CHARS + 100) },
+        },
+      },
+    ],
+  })
+  const event = result.events.find((item) => item.kind === 'tool')
+
+  expect(event?.kind === 'tool' ? event.input : undefined).toHaveLength(TOOL_EVENT_TEXT_CHARS)
+  expect(event?.kind === 'tool' ? event.input : undefined).toEndWith('… [truncated]')
 })

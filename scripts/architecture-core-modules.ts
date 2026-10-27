@@ -20,5 +20,10 @@ export const coreModuleSpecs = [
     file: 'orchestrator/src/secret-shaped-output.ts',
     allowed: ['../../shared/secret-shaped.ts'],
   },
+  { file: 'orchestrator/src/tool-event-text.ts', allowed: [] },
+  {
+    file: 'orchestrator/src/transport/transport-goose-ledger.ts',
+    allowed: ['node:fs', 'node:path', '../run-owned-paths.ts'],
+  },
   { file: 'orchestrator/src/worker-store-write.ts', allowed: [] },
 ] as const

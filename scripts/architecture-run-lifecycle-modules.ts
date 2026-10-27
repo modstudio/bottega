@@ -279,6 +279,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',
     '../transport/transport.ts',
+    '../transport/transport-goose-ledger.ts',
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/run/run-call-usage.ts', ['../events.ts']),

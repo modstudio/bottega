@@ -11,6 +11,7 @@ import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { renderToolInput } from '../tool-event-text.ts'
 import { acpWriteAdmission, writeAcpFile } from './acp-fs-write.ts'
 import { establishAcpSession } from './acp-session.ts'
 import {
@@ -264,6 +265,50 @@ function toolCallResult(update: AcpUpdate): string | undefined {
   return parts.length ? parts.join('') : undefined
 }
 
+function toolUpdateFields(update: AcpUpdate) {
+  const locations = Array.isArray(update.locations)
+    ? update.locations.flatMap((location) =>
+        typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
+      )
+    : undefined
+  return {
+    target: toolCallTarget(update),
+    input: renderToolInput(update.rawInput),
+    result: toolCallResult(update),
+    locations,
+  }
+}
+
+function toolEvent(update: AcpUpdate): Extract<NormalizedEvent, { kind: 'tool' }> {
+  const fields = toolUpdateFields(update)
+  return {
+    kind: 'tool',
+    title: update.title ?? update.sessionUpdate,
+    status: update.status,
+    toolKind: update.kind,
+    target: fields.target,
+    input: fields.input,
+    result: fields.result,
+    ...(fields.locations?.length ? { locations: fields.locations } : {}),
+  }
+}
+
+function mergeToolUpdate(
+  known: Extract<NormalizedEvent, { kind: 'tool' }>,
+  update: AcpUpdate,
+): void {
+  if (update.status) known.status = update.status
+  if (update.title) known.title = update.title
+  if (update.kind) known.toolKind = update.kind
+  const fields = toolUpdateFields(update)
+  if (fields.target) known.target = fields.target
+  if (fields.input !== undefined) known.input = fields.input
+  if (fields.result) known.result = fields.result
+  if (fields.locations?.length) {
+    known.locations = [...(known.locations ?? []), ...fields.locations]
+  }
+}
+
 /**
  * Fold ACP session updates into orchestrator's existing run facts: text, tokens,
  * session id, stop reason, and a terminal outcome. The store never sees ACP.
@@ -307,37 +352,10 @@ export function normalizeAcpTurn(
       case 'tool_call_update': {
         const known = update.toolCallId ? toolCalls.get(update.toolCallId) : undefined
         if (update.sessionUpdate === 'tool_call_update' && known) {
-          if (update.status) known.status = update.status
-          if (update.title) known.title = update.title
-          if (update.kind) known.toolKind = update.kind
-          const target = toolCallTarget(update)
-          if (target) known.target = target
-          const result = toolCallResult(update)
-          if (result) known.result = result
-          const paths = Array.isArray(update.locations)
-            ? update.locations.flatMap((location) =>
-                typeof location?.path === 'string' && location.path
-                  ? [{ path: location.path }]
-                  : [],
-              )
-            : []
-          if (paths.length) known.locations = [...(known.locations ?? []), ...paths]
+          mergeToolUpdate(known, update)
           break
         }
-        const locations = Array.isArray(update.locations)
-          ? update.locations.flatMap((location) =>
-              typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
-            )
-          : undefined
-        const event: Extract<NormalizedEvent, { kind: 'tool' }> = {
-          kind: 'tool',
-          title: update.title ?? update.sessionUpdate,
-          status: update.status,
-          toolKind: update.kind,
-          target: toolCallTarget(update),
-          result: toolCallResult(update),
-          ...(locations?.length ? { locations } : {}),
-        }
+        const event = toolEvent(update)
         events.push(event)
         if (update.toolCallId) toolCalls.set(update.toolCallId, event)
         break
