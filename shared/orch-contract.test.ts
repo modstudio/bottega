@@ -50,6 +50,39 @@ test('run parsing preserves root and turn usage fields', () => {
   expect(parsed.turns?.[0]?.peak_call_tokens).toBe(125)
 })
 
+test('a run row from a producer without usage fields still parses', () => {
+  const parsed = OrchRunSchema.safeParse({
+    number: 1,
+    record_id: '11111111-1111-4111-8111-111111111111',
+    started_at: '2026-10-27T12:00:00.000Z',
+    agent: 'codex',
+    job: 'implement',
+    repo: null,
+    cwd: null,
+    session_id: null,
+    latency_ms: 100,
+    vendor_tokens: 300,
+    vendor_cost_usd: null,
+    prompt_head: 'test',
+    probe: 0,
+    status: 'ok',
+    questions: [],
+    turns: [
+      {
+        number: 2,
+        record_id: '22222222-2222-4222-8222-222222222222',
+        started_at: '2026-10-27T12:01:00.000Z',
+        latency_ms: 50,
+        vendor_tokens: 150,
+        vendor_cost_usd: null,
+        status: 'ok',
+      },
+    ],
+  })
+
+  expect(parsed.success).toBe(true)
+})
+
 test('agent snapshot parsing preserves who operates the endpoint', () => {
   const parsed = OrchAgentDefinitionSchema.parse({
     name: 'local-acp',
