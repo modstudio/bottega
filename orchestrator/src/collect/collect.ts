@@ -174,7 +174,12 @@ export function mayStillFailOver(row: {
   )
 }
 
-export type FailoverSuccessor = { record_id: string; number: number; agent: string }
+export type FailoverSuccessor = {
+  record_id: string
+  number: number
+  agent: string
+  retry_of_record_id: string
+}
 
 /**
  * The automatic failover successor each of these conversations has claimed, in
@@ -199,7 +204,8 @@ export function failoverSuccessors(
       // Driven from the member columns so each side of the OR reads an index:
       // a derived table over COALESCE would force a scan of every run.
       `SELECT COALESCE(member.parent_run_record_id, member.record_id) root_id,
-              successor.record_id, successor.number, successor.agent
+              successor.record_id, successor.number, successor.agent,
+              successor.retry_of_record_id
          FROM run member
          JOIN run successor
            ON successor.retry_of_record_id = member.record_id
@@ -215,6 +221,7 @@ export function failoverSuccessors(
       record_id: row.record_id,
       number: row.number,
       agent: row.agent,
+      retry_of_record_id: row.retry_of_record_id,
     })
   }
   return successors
@@ -261,7 +268,7 @@ export function resolveFailover(
       .get(rootId, rootId) as Omit<FailoverAttempt, 'rootId'>
     attempts.push({ rootId, ...latest })
     const successor = failoverSuccessors(database, [rootId]).get(rootId)
-    if (!successor) break
+    if (!successor || successor.retry_of_record_id !== latest.record_id) break
     rootId = successor.record_id
   }
   const last = attempts.at(-1)!

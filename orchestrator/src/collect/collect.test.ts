@@ -16,6 +16,7 @@ import {
   mintedBranchForRun,
   noCommitNote,
   releasedWritingTreeNote,
+  resolveFailover,
   thinOutputWarning,
 } from './collect.ts'
 
@@ -702,6 +703,37 @@ describe('failover successors', () => {
       record_id: first,
       number: runNumber(first),
       agent: 'grok',
+      retry_of_record_id: root,
     })
+  })
+
+  test('resolution follows a failover successor only from the latest turn', () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens' })
+    const failedTurn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      parent: root,
+      turn: 2,
+    })
+    automaticSuccessor(failedTurn, 'grok')
+    const newerTurn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      parent: root,
+      turn: 3,
+    })
+
+    expect(resolveFailover(db(), newerTurn).finalId).toBe(newerTurn)
+
+    const failedRoot = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+    })
+    const successor = automaticSuccessor(failedRoot, 'grok')
+    expect(resolveFailover(db(), failedRoot).finalId).toBe(successor)
   })
 })
