@@ -87,7 +87,7 @@ export type CloseInput = {
   opts: CloseOptions
   /** The prompt size this run's pick ranked on, for a failover successor to reuse. */
   pickBytes: number
-  claim: { id: string; number: number }
+  claim: { id: string; number: number; parentRunRecordId: string | null }
   idleUnkillable: boolean
   status: string
   worktree: Worktree | null
@@ -344,6 +344,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       failureKind,
       failoverKinds: FAILS_OVER,
       noFailover: Boolean(first.no_failover || opts.noFailover),
+      chainRoot: claim.parentRunRecordId,
       writesJob,
       changes,
       worktree: worktree?.path ?? '(none — read-only job)',

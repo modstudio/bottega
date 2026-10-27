@@ -14,7 +14,7 @@ export type ClaimResult = {
   started: number
   launchKey: string | null
   runToken: string
-  claim: { id: string; recordId: string; number: number }
+  claim: { id: string; recordId: string; number: number; parentRunRecordId: string | null }
   keepTree: KeepTreeExemption | undefined
   scratchDir: string
   worktree: Worktree | null

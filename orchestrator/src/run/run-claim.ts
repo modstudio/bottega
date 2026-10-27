@@ -976,7 +976,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     started,
     launchKey,
     runToken,
-    claim: { ...claim, recordId },
+    claim: { ...claim, recordId, parentRunRecordId: identity.parent_run_record_id },
     keepTree,
     scratchDir,
     worktree,

@@ -59,7 +59,7 @@ async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
         started,
         launchKey: null,
         runToken: 'fixture-token',
-        claim: { id, recordId: id, number: 1 },
+        claim: { id, recordId: id, number: 1, parentRunRecordId: null },
         keepTree: undefined,
         scratchDir: input.callerCwd,
         worktree: null,
