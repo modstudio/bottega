@@ -5,8 +5,83 @@ import {
   OrchAgentDefinitionSchema,
   OrchProjectSchema,
   OrchRunDetailSchema,
+  OrchRunSchema,
   OrchStateSchema,
 } from './orch-contract.ts'
+
+test('run parsing preserves root and turn usage fields', () => {
+  const rootId = '11111111-1111-4111-8111-111111111111'
+  const parsed = OrchRunSchema.parse({
+    number: 1,
+    record_id: rootId,
+    started_at: '2026-10-27T12:00:00.000Z',
+    agent: 'codex',
+    job: 'implement',
+    repo: null,
+    cwd: null,
+    session_id: null,
+    latency_ms: 100,
+    vendor_tokens: 300,
+    model_calls: 2,
+    peak_call_tokens: 200,
+    vendor_cost_usd: null,
+    prompt_head: 'test',
+    probe: 0,
+    status: 'ok',
+    questions: [],
+    turns: [
+      {
+        number: 2,
+        record_id: '22222222-2222-4222-8222-222222222222',
+        started_at: '2026-10-27T12:01:00.000Z',
+        latency_ms: 50,
+        vendor_tokens: 150,
+        model_calls: 1,
+        peak_call_tokens: 125,
+        vendor_cost_usd: null,
+        status: 'ok',
+      },
+    ],
+  })
+
+  expect(parsed.model_calls).toBe(2)
+  expect(parsed.peak_call_tokens).toBe(200)
+  expect(parsed.turns?.[0]?.model_calls).toBe(1)
+  expect(parsed.turns?.[0]?.peak_call_tokens).toBe(125)
+})
+
+test('a run row from a producer without usage fields still parses', () => {
+  const parsed = OrchRunSchema.safeParse({
+    number: 1,
+    record_id: '11111111-1111-4111-8111-111111111111',
+    started_at: '2026-10-27T12:00:00.000Z',
+    agent: 'codex',
+    job: 'implement',
+    repo: null,
+    cwd: null,
+    session_id: null,
+    latency_ms: 100,
+    vendor_tokens: 300,
+    vendor_cost_usd: null,
+    prompt_head: 'test',
+    probe: 0,
+    status: 'ok',
+    questions: [],
+    turns: [
+      {
+        number: 2,
+        record_id: '22222222-2222-4222-8222-222222222222',
+        started_at: '2026-10-27T12:01:00.000Z',
+        latency_ms: 50,
+        vendor_tokens: 150,
+        vendor_cost_usd: null,
+        status: 'ok',
+      },
+    ],
+  })
+
+  expect(parsed.success).toBe(true)
+})
 
 test('agent snapshot parsing preserves who operates the endpoint', () => {
   const parsed = OrchAgentDefinitionSchema.parse({

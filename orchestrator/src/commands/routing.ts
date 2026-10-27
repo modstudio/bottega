@@ -3,6 +3,7 @@
 import type { Command } from 'commander'
 import { ensureLocalHealth } from '../agent/model-host.ts'
 import { guideCommand, routingBacktestCommand, statsCommand } from '../route/routing-commands.ts'
+import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { duration, log, optionFlags } from './support.ts'
 
 export function register(program: Command): void {
@@ -23,7 +24,13 @@ export function register(program: Command): void {
     .description('show routing scores, latency, cost, and agent duels')
     .option('--job <value>', 'show statistics for this job')
     .allowExcessArguments(false)
-    .action((options) => statsCommand(optionFlags(options), { log, dur: duration }))
+    .action(async (options) =>
+      statsCommand(optionFlags(options), {
+        log,
+        dur: duration,
+        subscriptionCost: await loadSubscriptionCostContext(),
+      }),
+    )
 
   program
     .command('routing-backtest')

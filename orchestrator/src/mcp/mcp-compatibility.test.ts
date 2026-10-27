@@ -95,7 +95,7 @@ describe('required MCP routing', () => {
     const rows = db().query('SELECT name,caps,transport FROM agent').all() as AgentRow[]
     try {
       setMcpMatrix(rows, 'cli')
-      const routed = candidates('understand', 0, null, undefined, undefined, null, required)
+      const routed = candidates('understand', 0, { stack: null, lens: null, requiredMcp: required })
 
       expect(routed.find((candidate) => candidate.agent === 'grok')).toMatchObject({
         eligible: false,
@@ -162,18 +162,11 @@ describe('required MCP routing', () => {
       }
       refreshAgents()
       const codex = () =>
-        candidates(
-          'mcp-query',
-          0,
-          null,
-          undefined,
-          undefined,
-          null,
-          undefined,
-          undefined,
-          undefined,
-          'codex',
-        ).find((row) => row.agent === 'codex')!
+        candidates('mcp-query', 0, {
+          stack: null,
+          lens: null,
+          explicitlyNamedAgent: 'codex',
+        }).find((row) => row.agent === 'codex')!
       expect(codex()).toMatchObject({ eligible: true })
 
       db()

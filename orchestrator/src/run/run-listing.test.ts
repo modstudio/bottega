@@ -872,6 +872,24 @@ describe('run listing', () => {
     })
   })
 
+  test('runs --json carries model call usage on roots and turns', async () => {
+    const root = insert('ok')
+    const turn = insert('ok')
+    db().query('UPDATE run SET model_calls=2,peak_call_tokens=300 WHERE record_id=?').run(root)
+    db()
+      .query(
+        'UPDATE run SET parent_run_record_id=?,turn=2,model_calls=4,peak_call_tokens=500 WHERE record_id=?',
+      )
+      .run(root, turn)
+
+    const listed = runJson((await command({ json: true, id: [root] }))[0]!)
+    expect(listed).toMatchObject({ model_calls: 2, peak_call_tokens: 300 })
+    expect(listed.turns).toEqual([
+      expect.objectContaining({ record_id: root, model_calls: 2, peak_call_tokens: 300 }),
+      expect.objectContaining({ record_id: turn, model_calls: 4, peak_call_tokens: 500 }),
+    ])
+  })
+
   test('runs --json publishes every question on the root, including child turns', async () => {
     const root = insert('asking')
     const child = insert('asking')

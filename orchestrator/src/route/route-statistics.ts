@@ -1,5 +1,6 @@
 // concern: route-statistics
 /** Computes descriptive statistics for one routing evidence window. */
+
 import { median } from '../state/statistics.ts'
 
 type EvidenceRow = { delivery: string | null; pts: number | null }
@@ -33,4 +34,32 @@ export function runUsageMedians(
     peakCallTokens: median(values('peakCallTokens')),
     tokensPerRun: median(values('vendorTokens')),
   }
+}
+
+type RoutingWindowRow = {
+  record_id: string
+  agent: string
+  model: string | null
+  startedAt: string
+}
+
+/**
+ * Keep only current-model evidence. A model change is a capability change, not
+ * another observation of the old model, so old-model runs cannot enter the
+ * cell; the decaying exploration floor is what keeps a thin new model from
+ * routing on noise.
+ */
+export function routingEvidenceWindow<T extends RoutingWindowRow>(
+  rows: T[],
+  agent: string,
+  currentModel: string,
+  limit: number,
+): { rows: T[]; evidenceModel: string | null } {
+  const modelRows = rows
+    .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
+    .sort(
+      (a, b) => b.startedAt.localeCompare(a.startedAt) || b.record_id.localeCompare(a.record_id),
+    )
+    .slice(0, limit)
+  return { rows: modelRows, evidenceModel: currentModel }
 }

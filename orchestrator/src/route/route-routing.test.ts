@@ -194,66 +194,27 @@ test('candidates wires verified project visibility and the current local origin'
       why: 'eligible only on public projects',
     })
     expect(
-      candidates(
-        'summarize',
-        0,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'training-public',
-      ).find((candidate) => candidate.agent === 'codex'),
+      candidates('summarize', 0, { projectName: 'training-public' }).find(
+        (candidate) => candidate.agent === 'codex',
+      ),
     ).toMatchObject({ eligible: false })
     expect(
-      candidates(
-        'summarize',
-        0,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'codex',
-        'training-public',
-      ).find((candidate) => candidate.agent === 'codex'),
+      candidates('summarize', 0, {
+        explicitlyNamedAgent: 'codex',
+        projectName: 'training-public',
+      }).find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({ eligible: true })
     db().query("UPDATE agent SET route_metered=1 WHERE name='codex'").run()
     refreshAgents()
     expect(
-      candidates(
-        'summarize',
-        0,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'training-public',
-      ).find((candidate) => candidate.agent === 'codex'),
+      candidates('summarize', 0, { projectName: 'training-public' }).find(
+        (candidate) => candidate.agent === 'codex',
+      ),
     ).toMatchObject({ eligible: true })
     expect(
-      candidates(
-        'summarize',
-        0,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'training-private',
-      ).find((candidate) => candidate.agent === 'codex'),
+      candidates('summarize', 0, { projectName: 'training-private' }).find(
+        (candidate) => candidate.agent === 'codex',
+      ),
     ).toMatchObject({ eligible: false })
     Bun.spawnSync([
       'git',
@@ -265,19 +226,10 @@ test('candidates wires verified project visibility and the current local origin'
       'git@github.com:owner/repointed.git',
     ])
     expect(
-      candidates(
-        'summarize',
-        0,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'codex',
-        'training-public',
-      ).find((candidate) => candidate.agent === 'codex'),
+      candidates('summarize', 0, {
+        explicitlyNamedAgent: 'codex',
+        projectName: 'training-public',
+      }).find((candidate) => candidate.agent === 'codex'),
     ).toMatchObject({ eligible: false })
   } finally {
     db()
@@ -296,23 +248,13 @@ test('non-training candidates do not read the project origin', () => {
     settings: { visibility: 'public', visibilityRepository: 'owner/public' },
   })
   let reads = 0
-  candidates(
-    'summarize',
-    0,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    'non-training-public',
-    () => {
+  candidates('summarize', 0, {
+    projectName: 'non-training-public',
+    repositoryReader: () => {
       reads += 1
       return 'owner/public'
     },
-  )
+  })
 
   expect(reads).toBe(0)
 })
@@ -331,23 +273,13 @@ test('a routing call reads a public project origin at most once for training can
   try {
     db().query("UPDATE agent SET trains_on_inputs=1 WHERE name IN ('codex','grok')").run()
     refreshAgents()
-    candidates(
-      'summarize',
-      0,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'shared-training-public',
-      () => {
+    candidates('summarize', 0, {
+      projectName: 'shared-training-public',
+      repositoryReader: () => {
         reads += 1
         return 'owner/public'
       },
-    )
+    })
     expect(reads).toBe(1)
   } finally {
     for (const original of originals) {
