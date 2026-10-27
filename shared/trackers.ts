@@ -286,6 +286,7 @@ export type ToolInputSchema = {
  */
 const MAX_PAGES = 40
 export const WORKSPACE_LOOKUP_PAGE_SIZE = 5
+const WORKSPACE_LOOKUP_MAX_PAGES = MAX_PAGES
 
 /** The raw status word wins where it is finer than the tracker's category. */
 function categoryOf(
@@ -388,6 +389,85 @@ function workspaceAssignees(
     })
 }
 
+type WorkspaceTask = {
+  id?: string
+  short_id?: string
+  summary?: string
+  status?: string
+  status_category?: string
+  assignee_id?: string | number | null
+}
+
+type WorkspaceAssignees = (m: ToolCaller, refs: AssigneeRef[]) => Promise<(string | null)[]>
+
+async function mappedWorkspaceTask(
+  m: ToolCaller,
+  key: string,
+  project: string,
+  states: TrackerSettings['states'],
+  assignees: WorkspaceAssignees,
+  hit: WorkspaceTask,
+): Promise<TrackerTask> {
+  const [assignee] = await assignees(m, [{ id: hit.assignee_id, taskKey: key }])
+  return {
+    externalId: hit.id ?? null,
+    key,
+    project,
+    title: decode(hit.summary ?? ''),
+    status: hit.status ?? '',
+    category: categoryOf(hit.status ?? '', hit.status_category ?? 'completed', states),
+    updatedAt: null,
+    assignee: assignee ?? null,
+  }
+}
+
+async function lookupWorkspaceTask(
+  m: ToolCaller,
+  key: string,
+  project: string,
+  states: TrackerSettings['states'],
+  assignees: WorkspaceAssignees,
+): Promise<TrackerTask | null> {
+  const normalizedKey = key.toUpperCase()
+  try {
+    const detail = await m.callTool(trackerWireAction('workspace-mcp', 'get'), { id: key })
+    if (detail && typeof detail === 'object') {
+      const task = detail as WorkspaceTask
+      if (task.short_id?.toUpperCase() === normalizedKey) {
+        return mappedWorkspaceTask(m, key, project, states, assignees, task)
+      }
+    }
+  } catch {
+    // The protocol has no structured not-found response, so search establishes absence.
+  }
+
+  for (let page = 1; page <= WORKSPACE_LOOKUP_MAX_PAGES; page++) {
+    const r = await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
+      search: key,
+      page,
+      per_page: WORKSPACE_LOOKUP_PAGE_SIZE,
+    })
+    if (!r || typeof r !== 'object' || !Array.isArray((r as { tasks?: unknown }).tasks)) {
+      throw new TrackerLookupUnverifiable(
+        `workspace-mcp lookup for ${key} returned an unexpected response`,
+      )
+    }
+    const pageResult = r as { tasks: WorkspaceTask[]; last_page?: number }
+    const hit = pageResult.tasks.find((task) => task.short_id?.toUpperCase() === normalizedKey)
+    if (hit) return mappedWorkspaceTask(m, key, project, states, assignees, hit)
+    if (!pageResult.last_page || page >= pageResult.last_page) return null
+    if (page === WORKSPACE_LOOKUP_MAX_PAGES) {
+      throw new TrackerLookupUnverifiable(
+        `workspace-mcp lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
+      )
+    }
+  }
+
+  throw new TrackerLookupUnverifiable(
+    `workspace-mcp lookup for ${key} reached the paging bound of ${WORKSPACE_LOOKUP_MAX_PAGES} before the last page`,
+  )
+}
+
 function workspaceSource(
   project: string,
   env: string,
@@ -444,48 +524,7 @@ function workspaceSource(
       return out
     },
     async lookup(m, key) {
-      const r = await m.callTool(trackerWireAction('workspace-mcp', 'search'), {
-        search: key,
-        per_page: WORKSPACE_LOOKUP_PAGE_SIZE,
-      })
-      const tasks =
-        r && typeof r === 'object' && Array.isArray((r as { tasks?: unknown }).tasks)
-          ? (
-              r as {
-                tasks: {
-                  id?: string
-                  short_id?: string
-                  summary?: string
-                  status?: string
-                  status_category?: string
-                  assignee_id?: string | number | null
-                }[]
-              }
-            ).tasks
-          : null
-      if (!tasks) {
-        throw new TrackerLookupUnverifiable(
-          `workspace-mcp lookup for ${key} returned an unexpected response`,
-        )
-      }
-      const hit = tasks.find((t) => t.short_id?.toUpperCase() === key)
-      if (!hit && tasks.length >= WORKSPACE_LOOKUP_PAGE_SIZE) {
-        throw new TrackerLookupUnverifiable(
-          `workspace-mcp lookup for ${key} returned a full page without an exact match`,
-        )
-      }
-      if (!hit) return null
-      const [assignee] = await assignees(m, [{ id: hit.assignee_id, taskKey: key }])
-      return {
-        externalId: hit.id ?? null,
-        key,
-        project,
-        title: decode(hit.summary ?? ''),
-        status: hit.status ?? '',
-        category: categoryOf(hit.status ?? '', hit.status_category ?? 'completed', states),
-        updatedAt: null,
-        assignee: assignee ?? null,
-      }
+      return lookupWorkspaceTask(m, key, project, states, assignees)
     },
     // The search page a lookup reads carries no comments; the descriptor's get
     // tool answers one task with its `comments[].id`.

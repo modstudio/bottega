@@ -302,28 +302,102 @@ describe('tracker comment ids', () => {
 })
 
 describe('tracker source construction', () => {
-  test('workspace lookup refuses to establish absence from a full result page', async () => {
+  test('workspace lookup returns a matching task from get without searching', async () => {
     const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
-    const tasks = Array.from({ length: WORKSPACE_LOOKUP_PAGE_SIZE }, (_, index) => ({
-      short_id: `STAR-12${index}`,
-      summary: `Crowding task ${index}`,
-      status: 'todo',
-    }))
+    const calls: { name: string; args: Record<string, unknown> }[] = []
+    const caller: ToolCaller = {
+      async callTool(name, args) {
+        calls.push({ name, args })
+        return {
+          id: 'workspace-uuid',
+          short_id: 'star-12',
+          summary: 'Exact task',
+          status: 'todo',
+          status_category: 'open',
+        }
+      },
+    }
 
-    await expect(
-      source.lookup!({ callTool: async () => ({ tasks }) }, 'STAR-12'),
-    ).rejects.toBeInstanceOf(TrackerLookupUnverifiable)
+    expect(await source.lookup!(caller, 'STAR-12')).toMatchObject({
+      externalId: 'workspace-uuid',
+      key: 'STAR-12',
+      title: 'Exact task',
+      status: 'todo',
+    })
+    expect(calls).toEqual([{ name: 'get-task-tool', args: { id: 'STAR-12' } }])
   })
 
-  test('workspace lookup establishes absence from a short result page', async () => {
+  test('workspace lookup finds an exact task on the second search page after get throws', async () => {
     const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    const calls: { name: string; args: Record<string, unknown> }[] = []
+    const caller: ToolCaller = {
+      async callTool(name, args) {
+        calls.push({ name, args })
+        if (name === 'get-task-tool') throw new Error('unstructured missing-task response')
+        return args.page === 1
+          ? { tasks: [{ short_id: 'STAR-120' }], last_page: 3 }
+          : {
+              tasks: [
+                {
+                  id: 'workspace-uuid',
+                  short_id: 'STAR-12',
+                  summary: 'Exact task',
+                  status: 'todo',
+                },
+              ],
+              last_page: 3,
+            }
+      },
+    }
 
+    expect(await source.lookup!(caller, 'STAR-12')).toMatchObject({
+      externalId: 'workspace-uuid',
+      key: 'STAR-12',
+      title: 'Exact task',
+    })
     expect(
-      await source.lookup!(
-        { callTool: async () => ({ tasks: [{ short_id: 'STAR-120' }] }) },
-        'STAR-12',
-      ),
-    ).toBeNull()
+      calls.map(({ name, args }) => ({ name, page: args.page, perPage: args.per_page })),
+    ).toEqual([
+      { name: 'get-task-tool', page: undefined, perPage: undefined },
+      { name: 'list-tasks-tool', page: 1, perPage: WORKSPACE_LOOKUP_PAGE_SIZE },
+      { name: 'list-tasks-tool', page: 2, perPage: WORKSPACE_LOOKUP_PAGE_SIZE },
+    ])
+  })
+
+  test('workspace lookup returns null after reading the last search page', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    const pages: unknown[] = []
+    const caller: ToolCaller = {
+      async callTool(name, args) {
+        if (name === 'get-task-tool') throw new Error('unstructured missing-task response')
+        pages.push(args.page)
+        return { tasks: [{ short_id: `STAR-12${args.page}` }], last_page: 3 }
+      },
+    }
+
+    expect(await source.lookup!(caller, 'STAR-12')).toBeNull()
+    expect(pages).toEqual([1, 2, 3])
+  })
+
+  test('workspace lookup refuses when the search paging bound is reached', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    const caller: ToolCaller = {
+      async callTool(name) {
+        if (name === 'get-task-tool') throw new Error('unstructured missing-task response')
+        return { tasks: [], last_page: Number.MAX_SAFE_INTEGER }
+      },
+    }
+
+    let failure: unknown
+    try {
+      await source.lookup!(caller, 'STAR-12')
+    } catch (cause) {
+      failure = cause
+    }
+    expect(failure).toBeInstanceOf(TrackerLookupUnverifiable)
+    expect((failure as Error).message).toBe(
+      'workspace-mcp lookup for STAR-12 reached the paging bound of 40 before the last page',
+    )
   })
 
   test('array lookup refuses to establish absence from an unexpected response', async () => {
