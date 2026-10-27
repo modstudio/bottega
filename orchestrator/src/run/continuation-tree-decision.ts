@@ -11,6 +11,27 @@ export type ContinuationTreeDecision =
       reason: 'writer-tree-unrecoverable' | 'reader-base-missing' | 'reader-base-unavailable'
     }
 
+export type RetryLaunchDecision = {
+  cwd: string
+  base: string | undefined
+  launchBase: string | undefined
+}
+
+/** Selects the caller checkout and explicit base carried into a fresh retry. */
+export function retryLaunchDecision(input: {
+  writesRepo: boolean
+  inheritedCwd: string
+  originalLaunchCwd: string | null
+  base: string | undefined
+  launchBase: string | undefined
+}): RetryLaunchDecision {
+  return {
+    cwd: input.writesRepo ? input.inheritedCwd : (input.originalLaunchCwd ?? input.inheritedCwd),
+    base: input.writesRepo ? input.base : undefined,
+    launchBase: input.writesRepo ? input.launchBase : undefined,
+  }
+}
+
 export function continuationTreeDecision(input: {
   readsRepo: boolean
   writesRepo: boolean

@@ -7,6 +7,8 @@ import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import {
+  liveWorktreeSharers,
+  otherConversationWorktreeSharers,
   teardownTerminalRunResources,
   terminalDockerRetentionReasonForRun,
 } from './resource-ownership.ts'
@@ -28,6 +30,20 @@ function scratchCommonDir(): string {
 afterEach(() => {
   mock.restore()
   for (const common of scratchCommons.splice(0)) rmSync(common, { recursive: true, force: true })
+})
+
+test('only a live run launched from a tree protects it without claiming it', () => {
+  const owner = addRun({ agent: 'codex', job: 'implement', status: 'failed' })
+  const live = addRun({ agent: 'codex', job: 'file-question', status: 'asking' })
+  const terminal = addRun({ agent: 'codex', job: 'file-question', status: 'failed' })
+  const tree = join(dir, `launch-tree-${owner}`)
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(tree, owner)
+  db().query('UPDATE run SET cwd=? WHERE record_id IN (?,?)').run(tree, live, terminal)
+
+  expect(liveWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([
+    expect.objectContaining({ record_id: live }),
+  ])
+  expect(otherConversationWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([])
 })
 
 test('a terminal child leaves its live conversation resource untouched', () => {

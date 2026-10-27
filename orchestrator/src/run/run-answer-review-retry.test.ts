@@ -11,6 +11,7 @@ import {
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { retryRun } from './run-answer.ts'
@@ -21,7 +22,7 @@ const reviewRef = 'DEV-1702-orch-review-target'
 let priorSession: string | undefined
 
 beforeEach(() => {
-  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: process.cwd() })
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
@@ -43,7 +44,10 @@ function failed(parent?: string): string {
   })
   const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
   writeFileSync(prompt, 'Review the continuation.')
-  db().query('UPDATE run SET prompt_path=?,cwd=? WHERE record_id=?').run(prompt, dir, id)
+  const baseCommit = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD')!
+  db()
+    .query('UPDATE run SET prompt_path=?,cwd=?,base_commit=? WHERE record_id=?')
+    .run(prompt, dir, baseCommit, id)
   return id
 }
 

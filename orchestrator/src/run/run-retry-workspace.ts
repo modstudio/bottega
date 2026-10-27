@@ -10,6 +10,7 @@ import { projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { latestCheckpoint } from './checkpoint.ts'
+import { retryLaunchDecision } from './continuation-tree-decision.ts'
 import {
   continuationReadOnlyBase,
   continuationTreeCwd,
@@ -17,7 +18,7 @@ import {
 } from './continuation-tree-service.ts'
 import { type ResumeTreePlan, resumeTreePlan } from './resume-tree.ts'
 import { recordedRunLivenessFacts, runAlive } from './run-alive.ts'
-import { refuseHeldContinuationBranch } from './run-control.ts'
+import { refuseHeldContinuationBranch, resumeLaunchForRoot } from './run-control.ts'
 import { runLeaseState } from './run-lease.ts'
 import { recordedOwnerProcess } from './run-owner-session-liveness.ts'
 import type { RunResumeOptions } from './run-resume-options.ts'
@@ -30,6 +31,23 @@ export type WritingRetryWorkspace = {
   treePlan?: Extract<ResumeTreePlan, { action: 'recreate-on-branch' | 'recreate-then-restore' }>
 }
 
+export function resolveRetryLaunch(input: {
+  rootId: string
+  writesRepo: boolean
+  inheritedCwd: string
+  originalLaunchCwd: string | null
+  launchBase: string | null
+}) {
+  const resumeLaunch = resumeLaunchForRoot(input.rootId)
+  return retryLaunchDecision({
+    writesRepo: input.writesRepo,
+    inheritedCwd: input.inheritedCwd,
+    originalLaunchCwd: input.originalLaunchCwd,
+    base: resumeLaunch.base,
+    launchBase: input.launchBase ?? undefined,
+  })
+}
+
 export function resolveRetryTree(input: {
   rootId: string
   projectName: string | null
@@ -37,7 +55,6 @@ export function resolveRetryTree(input: {
   readsRepo: boolean
   writesRepo: boolean
   checkoutCwd: string
-  recordedWorktree: string | null
   baseCommit: string | null
   agent: string
   sessionId: string | null
@@ -50,7 +67,7 @@ export function resolveRetryTree(input: {
     readsRepo: input.readsRepo,
     writesRepo: false,
     recordedTreeMatches: false,
-    recordedWorktree: input.recordedWorktree,
+    recordedWorktree: null,
     writerTreeRecoverable: false,
     baseCommit: input.baseCommit,
   })

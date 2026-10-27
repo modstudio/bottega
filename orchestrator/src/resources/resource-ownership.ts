@@ -60,13 +60,27 @@ function worktreeSharers(
             (SELECT last_seen FROM session_seen WHERE session_id=r.session_id) session_last_seen,
             ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r LEFT JOIN score s ON s.run_record_id=COALESCE(r.parent_run_record_id,r.record_id)
-      WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
+      WHERE (
+          r.worktree IN (${spellings.map(() => '?').join(',')})
+          OR (?=1 AND (
+            r.cwd IN (${spellings.map(() => '?').join(',')})
+            OR r.launch_cwd IN (${spellings.map(() => '?').join(',')})
+          ))
+        )
         AND COALESCE(r.parent_run_record_id, r.record_id) <>
             COALESCE((SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?), ?)
         AND (?=0 OR r.status IN ('running','asking'))
       ORDER BY r.number`,
     )
-    .all(...spellings, row.record_id, row.record_id, liveOnly ? 1 : 0) as (WorktreeSharerRow & {
+    .all(
+      ...spellings,
+      liveOnly ? 1 : 0,
+      ...spellings,
+      ...spellings,
+      row.record_id,
+      row.record_id,
+      liveOnly ? 1 : 0,
+    ) as (WorktreeSharerRow & {
     root_record_id: string
     pid: number | null
     executor: 'external' | 'harness'
@@ -98,7 +112,7 @@ function worktreeSharers(
   })
 }
 
-/** Other conversations alive on this tree now, collapsed to one row per root. */
+/** Other conversations alive on or launched from this tree now, collapsed to one row per root. */
 export function liveWorktreeSharers(
   database: Database,
   row: { record_id: string; worktree: string },

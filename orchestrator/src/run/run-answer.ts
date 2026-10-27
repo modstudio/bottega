@@ -57,7 +57,6 @@ import {
 import {
   continuationInstructionsForFreshRetry,
   continueRun,
-  follow,
   type RunControlPresentation,
   refuseEscapedChain,
   reportContinuedRun,
@@ -73,7 +72,11 @@ import {
   retryTarget,
   retryTransport,
 } from './run-retry.ts'
-import { resolveRetryTree, resolveWritingRetryWorkspace } from './run-retry-workspace.ts'
+import {
+  resolveRetryLaunch,
+  resolveRetryTree,
+  resolveWritingRetryWorkspace,
+} from './run-retry-workspace.ts'
 import { assertAgentWorkRun } from './synthetic-lifecycle-job.ts'
 
 type RunAnswerHelpers = {
@@ -435,6 +438,24 @@ function writingRetryWorkspace(
   })
 }
 
+function retryKeepTree(row: RetryRunRow) {
+  if (!row.keep_tree) return undefined
+  const decision = keepTreeHold({
+    keepTree: row.keep_tree,
+    keepTreeUntil: row.keep_tree_until,
+    startedAt: row.started_at,
+    now: new Date().toISOString(),
+  })
+  return {
+    until: decision.held
+      ? decision.until
+      : 'expiredAt' in decision
+        ? decision.expiredAt
+        : row.started_at,
+    reason: row.keep_tree_reason ?? 'explicit --keep-tree',
+  }
+}
+
 export async function retryRun(
   id: string,
   options: { agent?: string; model?: string; flags: RunFlags },
@@ -541,15 +562,13 @@ export async function retryRun(
       readsRepo,
       writesRepo,
       checkoutCwd: checkout!.cwd,
-      recordedWorktree: latestCheckout.worktree ?? latestCheckout.cwd,
       baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
       agent: agent!,
       sessionId: retryAuthority.owner,
     }),
   )
-  // Detached and followed, exactly like `do`. A retry is usually started
-  // BECAUSE the first attempt died; running it as a child of this process
-  // would leave it dying the same way.
+  // Dispatch the retry through the detached coordinator. Reporting below
+  // decides whether the command follows that coordinator.
   const originalPrompt = readFileSync(row.prompt_path, 'utf8')
   const renderedRulings = recordedRulings.length ? rulingPrompt(recordedRulings) : null
   const retryPrompt = workspace
@@ -568,7 +587,13 @@ export async function retryRun(
       ? `${originalPrompt}\n\n---\n\n${renderedRulings}`
       : originalPrompt
   const dispatchState = readDispatchState(row.root_record_id)
-  const resumeLaunch = resumeLaunchForRoot(row.root_record_id)
+  const launch = resolveRetryLaunch({
+    rootId: row.root_record_id,
+    writesRepo,
+    inheritedCwd: workspace?.cwd ?? retryTree.cwd,
+    originalLaunchCwd: row.launch_cwd,
+    launchBase: row.launch_base,
+  })
   let newId: string
   try {
     newId = await (helpers.dispatch ?? detach)(
@@ -584,32 +609,15 @@ export async function retryRun(
         review: row.review_ref ?? undefined,
         probe: !!row.probe,
         retryOf: id,
-        cwd: workspace?.cwd ?? retryTree.cwd,
+        cwd: launch.cwd,
         repo: row.repo ?? undefined,
         seed: row.launch_seed ?? undefined,
         key: row.launch_key ?? undefined,
-        base: resumeLaunch.base,
-        launchBase: row.launch_base ?? undefined,
+        base: launch.base,
+        launchBase: launch.launchBase,
         noFailover: !!row.no_failover,
         transport: bindings.transport,
-        keepTree: row.keep_tree
-          ? (() => {
-              const decision = keepTreeHold({
-                keepTree: row.keep_tree,
-                keepTreeUntil: row.keep_tree_until,
-                startedAt: row.started_at,
-                now: new Date().toISOString(),
-              })
-              return {
-                until: decision.held
-                  ? decision.until
-                  : 'expiredAt' in decision
-                    ? decision.expiredAt
-                    : row.started_at,
-                reason: row.keep_tree_reason ?? 'explicit --keep-tree',
-              }
-            })()
-          : undefined,
+        keepTree: retryKeepTree(row),
         deliverables: dispatchState.deliverables,
         timeoutMinutes: dispatchState.timeoutMinutes ?? undefined,
         resume: workspace
@@ -653,7 +661,7 @@ export async function retryRun(
   }
   auditRunMutation(retryAuthority, 'retry', `retried as run ${newId}`, db(), newId)
   console.error(`— run ${newId} is retry of ${id}`)
-  await follow(newId, options.flags.quiet, true, helpers.presentation)
+  await reportContinuedRun(newId, row.job, options.flags, helpers.presentation)
 }
 /**
  * Rule on what a worker asked, and set it going again.
