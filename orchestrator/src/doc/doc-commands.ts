@@ -26,6 +26,7 @@ import { cachedSignedInRecordUser } from '../record/record-session.ts'
 import { type ConsumeDocHandoff, handleDocConsumeCommand } from './doc-consume-command.ts'
 import { resolveDocRevisionIdentifier } from './doc-revision-identifier.ts'
 import { searchDocs } from './doc-search-service.ts'
+import { setDocFromCommand } from './doc-set-source-files.ts'
 import type { SelectedDocWriteTree } from './doc-write-tree.ts'
 import {
   diffDocRevisions,
@@ -43,7 +44,6 @@ import {
   removeDoc,
   reorderDocs,
   restoreDoc,
-  setDoc,
   setDocStatus,
   signedInDocOwner,
   storedDocWarnings,
@@ -406,6 +406,14 @@ function clearedListOption(flags: DocFlags, value: string, clear: string): strin
   return has(value) ? (flags.values?.(value) ?? []) : undefined
 }
 
+function sourceFileOption(flags: DocFlags) {
+  if (!flags.has('source-file') && !flags.has('no-source-files')) return undefined
+  return {
+    given: flags.values?.('source-file') ?? [],
+    replace: flags.has('no-source-files'),
+  }
+}
+
 function summaryOption(flags: DocFlags): string | null | undefined {
   if (flags.has('no-summary')) return null
   if (!flags.has('summary')) return undefined
@@ -428,7 +436,7 @@ function articleTreeOptions(flags: DocFlags) {
     form: has('no-form') ? null : (rawForm as DocForm | undefined),
     articleSubject: has('no-article-subject') ? null : flag('article-subject'),
     relatedSubjects: clearedListOption(flags, 'related-subject', 'no-related-subjects'),
-    sourceFiles: clearedListOption(flags, 'source-file', 'no-source-files'),
+    sourceFileUpdate: sourceFileOption(flags),
     checkedAgainstCommit: has('no-checked-at') ? null : flag('checked-at'),
     summary: summaryOption(flags),
   }
@@ -445,7 +453,7 @@ function setTreeOptions(flags: DocFlags): {
   form: DocForm | null | undefined
   articleSubject: string | null | undefined
   relatedSubjects: string[] | undefined
-  sourceFiles: string[] | undefined
+  sourceFileUpdate: ReturnType<typeof sourceFileOption>
   checkedAgainstCommit: string | null | undefined
   summary: string | null | undefined
 } {
@@ -500,25 +508,28 @@ async function handleSetDocCommand(
           throw new Error('no body: pass --file F or pipe markdown on stdin')
         })()
   const delivery = docDelivery(flag('delivery'))
-  const tree = setTreeOptions(flags)
+  const { sourceFileUpdate, ...tree } = setTreeOptions(flags)
   const forceInject = flag('force-inject')
   if (has('force-inject') && !forceInject?.trim())
     throw new Error('--force-inject requires a non-empty reason')
-  const doc = await setDoc({
-    ...address,
-    scope: address.scope,
-    slug,
-    title,
-    body,
-    reason,
-    author: flag('author'),
-    forceInject,
-    delivery,
-    ...tree,
-    expectedRevision: flag('expect'),
-    canonTree,
-    collectCanonLintInput: ports.collectCanonLintInput,
-  })
+  const doc = await setDocFromCommand(
+    {
+      ...address,
+      scope: address.scope,
+      slug,
+      title,
+      body,
+      reason,
+      author: flag('author'),
+      forceInject,
+      delivery,
+      ...tree,
+      expectedRevision: flag('expect'),
+      canonTree,
+      collectCanonLintInput: ports.collectCanonLintInput,
+    },
+    sourceFileUpdate,
+  )
   const root = repoRootForDoc(doc, canonTree?.root)
   const warnings = root ? checkDoc(body, { repoRoot: root }) : []
   const lintWarnings = storedDocWarnings(doc)

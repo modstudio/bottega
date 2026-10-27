@@ -867,8 +867,8 @@ create or revise a document
 - `--no-article-subject`: clear the article subject
 - `--related-subject <value>`: add a related subject name or id
 - `--no-related-subjects`: clear all related subjects
-- `--source-file <value>`: add a repository-relative source path
-- `--no-source-files`: clear all source files
+- `--source-file <value>`: add a repository-relative source path; with --no-source-files, replace all
+- `--no-source-files`: clear all source files; with --source-file, replace with those paths
 - `--checked-at <commit>`: set the commit checked by this article
 - `--no-checked-at`: clear the checked commit
 - `--summary <text>`: set the written summary

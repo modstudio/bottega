@@ -150,12 +150,19 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
     checkedAgainstCommit: '1111111111111111111111111111111111111111',
   })
 
+  expect(
+    await command(setArgs('pricing-own', '--source-file', 'test/pricing.test.ts'), 'Pricing body.'),
+  ).toMatchObject({ code: 0 })
+  expect(await show('pricing-own')).toMatchObject({
+    sourceFiles: ['docs/pricing.md', 'src/pricing.ts', 'test/pricing.test.ts'],
+  })
+
   expect(await command(setArgs('pricing-own'), 'Updated pricing body.')).toMatchObject({ code: 0 })
   expect(await show('pricing-own')).toMatchObject({
     form: 'feature',
     articleSubject: { id: pricing.id },
     relatedSubjects: [{ id: product.id }, { id: strategy.id }],
-    sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+    sourceFiles: ['docs/pricing.md', 'src/pricing.ts', 'test/pricing.test.ts'],
     summary: 'Written pricing summary',
     summarySource: 'written',
     checkedAgainstCommit: '1111111111111111111111111111111111111111',
@@ -226,7 +233,7 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
         form: null,
         articleSubject: { id: pricing.id },
         relatedSubjects: [{ id: product.id }, { id: strategy.id }],
-        sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+        sourceFiles: ['docs/pricing.md', 'src/pricing.ts', 'test/pricing.test.ts'],
         checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],
@@ -236,7 +243,7 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
         form: null,
         articleSubject: null,
         relatedSubjects: [{ id: product.id }, { id: strategy.id }],
-        sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+        sourceFiles: ['docs/pricing.md', 'src/pricing.ts', 'test/pricing.test.ts'],
         checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],
@@ -246,7 +253,7 @@ test(`${PLATFORM_SLUG} doc commands preserve, clear, and list article fields by 
         form: null,
         articleSubject: null,
         relatedSubjects: [],
-        sourceFiles: ['docs/pricing.md', 'src/pricing.ts'],
+        sourceFiles: ['docs/pricing.md', 'src/pricing.ts', 'test/pricing.test.ts'],
         checkedAgainstCommit: '1111111111111111111111111111111111111111',
       },
     ],
