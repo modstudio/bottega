@@ -63,7 +63,7 @@ export function pruneReaderCloneArchives(input: {
     } catch (error) {
       counts.failed++
       input.presentation.error(
-        `could not delete reader clone archive ${archive.path}: ${String((error as Error).message ?? error)}`,
+        `could not read the archived time of reader clone archive ${archive.path}: ${String((error as Error).message ?? error)}`,
       )
     }
   }
