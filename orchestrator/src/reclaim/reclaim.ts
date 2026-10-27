@@ -27,7 +27,6 @@ import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
-import { declaredProjectTreeRemoveCommand } from '../worktree/project-tree-removal.ts'
 import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
 import {
   markedWorktreeSource,
@@ -206,16 +205,6 @@ function existingTreeGitRefusal(
       })
 }
 
-function unrecordedProjectRemoveCommand(
-  row: ReclaimRun | undefined,
-  project: NonNullable<ReturnType<typeof projectAt>>,
-  path: string,
-): string | null {
-  return row
-    ? null
-    : declaredProjectTreeRemoveCommand(resolvedWorktreeTool(project), path, project.path)
-}
-
 function proveWorktree(path: string, clock: number, allowDirty = false): WorktreeProof {
   const rows = runRows(path)
   const row = rows[0]
@@ -265,7 +254,6 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
     trackedRecipe: Boolean(resolvedWorktreeTool(project)?.recipePath),
     treePath: path,
     mainCheckoutPath: project.path,
-    declaredRemoveCommand: unrecordedProjectRemoveCommand(row, project, path),
   })
   if (recipeRefusal) return { result: refuse(recipeRefusal) }
   return {

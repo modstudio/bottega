@@ -15,10 +15,7 @@ import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
-import {
-  declaredProjectTreeRemoveCommand,
-  unownedProjectTreeRemovalRemedy,
-} from '../worktree/project-tree-removal.ts'
+import { unownedProjectTreeRemovalRemedy } from '../worktree/snapshotless-tracked-recipe.ts'
 import { createWithTool } from '../worktree/worktree-create.ts'
 import { resolveWorktreeLifecycle } from '../worktree/worktree-lifecycle.ts'
 import { projectSeedPreflight, validateProjectSeed } from '../worktree/worktree-seed.ts'
@@ -252,13 +249,8 @@ function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
         `no orchestrator run records the worktree at ${requestedPath}; no registered project contains it, so its main checkout cannot be established and the orchestrator will not remove it`,
       )
     }
-    const declaredRemoveCommand = declaredProjectTreeRemoveCommand(
-      resolvedWorktreeTool(project),
-      requestedPath,
-      project.path,
-    )
     throw new Error(
-      `no orchestrator run records the worktree at ${requestedPath}; ${unownedProjectTreeRemovalRemedy({ declaredRemoveCommand, treePath: requestedPath, mainCheckoutPath: project.path })}`,
+      `no orchestrator run records the worktree at ${requestedPath}; ${unownedProjectTreeRemovalRemedy({ treePath: requestedPath, mainCheckoutPath: project.path })}`,
     )
   }
   if (owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
