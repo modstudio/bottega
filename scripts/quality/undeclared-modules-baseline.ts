@@ -249,7 +249,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/database/migration-journal-sources.ts',
   'orchestrator/src/database/migrations.ts',
   'orchestrator/src/database/monitor-release-claim-uuid-migration-preflight.ts',
-  'orchestrator/src/database/store-write-lock.ts',
   'orchestrator/src/database/test-database.fixture.ts',
   'orchestrator/src/database/write-probe.ts',
   'orchestrator/src/dispatch/dispatch-cli-service.ts',

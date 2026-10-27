@@ -5,12 +5,16 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
-import type { DatabaseLockRefusalFacts } from '../../shared/database-lock-refusal.ts'
+import {
+  type DatabaseLockRefusalFacts,
+  databaseLockHolder,
+} from '../../shared/database-lock-refusal.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { installRoot, isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
 import { machineId, storedMachineId } from '../../shared/machine-config.ts'
 import type { QuestionIdentity, WorkflowCursorIdentityRow } from '../../shared/orch-contract.ts'
+import { processCommandLine } from '../../shared/process-identity.ts'
 import { createReadOnlyDatabaseAccess } from '../../shared/read-only-database-access.ts'
 import {
   legacyStoreRefusal,
@@ -20,6 +24,7 @@ import {
   temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
 import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-access.ts'
+import { sampleWalWriteLock, type WalWriteLockSampleResult } from '../../shared/store-write-lock.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
   applyMigrations,
@@ -286,9 +291,25 @@ export function withReadOnlyDatabaseAccess<T>(action: () => T): T {
   return databaseAccess.run(action)
 }
 
-/** Hub does not inspect another process's SQLite WAL lock holder. */
-export function hubDatabaseLockHolder(): DatabaseLockRefusalFacts['holder'] {
-  return { unavailable: 'lock-holder inspection is unavailable for the hub store' }
+/**
+ * Name the process holding hub's WAL write lock, or the reason it cannot be named.
+ * Sampling hub's own store path through the shared probe lets a refused write report the
+ * writer that held the lock, and reports the same unavailable reasons the orchestrator does.
+ */
+export async function hubDatabaseLockHolder(
+  inspect: (storePath: string) => Promise<WalWriteLockSampleResult> = sampleWalWriteLock,
+  commandOf: (pid: number) => string | null = processCommandLine,
+): Promise<DatabaseLockRefusalFacts['holder']> {
+  try {
+    const sampled = await inspect(DB_PATH)
+    return databaseLockHolder({
+      sampled,
+      command:
+        sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
+    })
+  } catch (error) {
+    return databaseLockHolder({ failed: error })
+  }
 }
 
 /** Open the only sanctioned multi-statement write transaction. */

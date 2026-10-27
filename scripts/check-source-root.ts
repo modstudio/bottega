@@ -22,11 +22,6 @@ export const SOURCE_ROOT_ALLOWANCES: SourceRootAllowance[] = [
     reason: 'defines the empty installed source root used by explicit embedded-manifest branches',
   },
   {
-    path: 'orchestrator/src/database/store-write-lock.ts',
-    line: 35,
-    reason: 'the optional Darwin diagnostic reports unsupported when checkout source is absent',
-  },
-  {
     path: 'orchestrator/src/resources/ref-guard-runtime.ts',
     line: 29,
     reason: 'the tracked hook path is selected only when no embedded manifest exists',

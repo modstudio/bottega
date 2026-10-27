@@ -1,17 +1,17 @@
-// concern: database
-/** Knows how to inspect and sample SQLite's WAL write lock without opening SQLite. */
+// concern: store-write-lock
+/** Knows how to inspect and sample SQLite's WAL write lock without opening SQLite. Must not know
+ * which concern keeps the store it samples, so one implementation serves every store. Its C helper
+ * `shared/store-write-lock.c` sits beside this module and is resolved through the install root. */
 
 import { cc, FFIType, ptr } from 'bun:ffi'
 import { closeSync, constants, openSync } from 'node:fs'
 import { platform } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { assetPath } from './install-root.ts'
 
 const F_WRLCK = 3
 const F_UNLCK = 2
 const SEEK_SET = 0
 const WAL_WRITE_LOCK = 120
-const ORCHESTRATOR_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 export type WalWriteLockProbe = number | null | { unsupported: true; reason: string }
 
@@ -30,9 +30,9 @@ export type WalWriteLockSampleResult =
   | WalWriteLockSamples
   | { supported: false; reason: string; sampleCount: number }
 
-function compileDarwinFcntl() {
+function compileDarwinFcntl(helperPath: string) {
   return cc({
-    source: join(ORCHESTRATOR_ROOT, 'src/database/store-write-lock.c'),
+    source: helperPath,
     symbols: {
       orch_fcntl_getlk: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
     },
@@ -43,14 +43,31 @@ type DarwinFcntl = ReturnType<typeof compileDarwinFcntl>
 let darwinFcntl: DarwinFcntl | null | undefined
 let darwinFcntlFailure: string | null = null
 
+/**
+ * Compile the C helper at most once, and turn every way that can fail — resolving the install
+ * root, then compiling the resolved path — into the probe's stored reason here, so that nothing
+ * downstream of `probeWalWriteLock` can throw on a machine whose install root or compiler is
+ * unavailable.
+ */
 function loadDarwinFcntl(): DarwinFcntl | null {
   if (platform() !== 'darwin') return null
   if (darwinFcntl !== undefined) return darwinFcntl
+  darwinFcntl = null
+  // The install root is the one anchor a source checkout and a bundled release payload share;
+  // a path relative to this module would follow each concern's bundle depth instead.
+  let helperPath: string
   try {
-    darwinFcntl = compileDarwinFcntl()
+    helperPath = assetPath('shared', 'store-write-lock.c')
   } catch (error) {
-    darwinFcntl = null
     darwinFcntlFailure = error instanceof Error ? error.message : String(error)
+    return null
+  }
+  try {
+    darwinFcntl = compileDarwinFcntl(helperPath)
+  } catch (error) {
+    darwinFcntlFailure = `cannot compile ${helperPath} to probe the WAL write-lock holder: ${
+      error instanceof Error ? error.message : String(error)
+    }`
   }
   return darwinFcntl
 }
@@ -61,9 +78,7 @@ export function probeWalWriteLock(storePath: string): WalWriteLockProbe {
   if (!fcntl) {
     return {
       unsupported: true,
-      reason: darwinFcntlFailure
-        ? `WAL write-lock holder probing needs a source checkout: ${darwinFcntlFailure}`
-        : `WAL write-lock holder probing is unsupported on ${platform()}`,
+      reason: darwinFcntlFailure ?? `WAL write-lock holder probing is unsupported on ${platform()}`,
     }
   }
   let fd: number

@@ -161,6 +161,23 @@ test('a failed holder inspection cannot hide the original database lock refusal'
   expect(message).toContain('then retry the command')
 })
 
+test("a locked orchestrator store refusal names the sampled holder's pid and summarized command", async () => {
+  const message = await lockedStoreMessage(
+    { code: 'SQLITE_BUSY' },
+    async () => ({
+      supported: true,
+      classification: 'held',
+      holderPid: 4242,
+      sampleCount: 5,
+      samples: [4242, 4242, 4242, 4242, 4242],
+    }),
+    (pid) => `/opt/bun /opt/orchestrator/src/cli/orch.ts run start --pid ${pid} --token fixture`,
+  )
+  expect(message).toContain('store: ')
+  expect(message).toContain('holder: pid 4242; command bun orch.ts')
+  expect(message).toContain('then retry the command')
+})
+
 test('store-free setup invocations reach the executable entry without creating or mutating a store', async () => {
   const absent = join(dir, 'setup-facts-absent.db')
   const existing = join(dir, 'setup-facts-existing.db')

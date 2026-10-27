@@ -1,13 +1,26 @@
-import { expect, test } from 'bun:test'
-import { mkdirSync, rmSync } from 'node:fs'
+import { Database } from 'bun:sqlite'
+import { afterAll, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { platform, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { dir } from '../../test/preload.ts'
-import { db } from './db.ts'
+import { assetPath } from './install-root.ts'
 import {
   classifyWalWriteLockSamples,
   probeWalWriteLock,
   sampleWalWriteLock,
 } from './store-write-lock.ts'
+
+const dir = mkdtempSync(join(tmpdir(), 'store-write-lock-test-'))
+
+/** Off macOS the probe is unsupported by design; on macOS an unusable helper must fail the test. */
+const PROBE_UNSUPPORTED_REASON =
+  platform() === 'darwin' ? null : `WAL write-lock holder probing is unsupported on ${platform()}`
+
+afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+test('the shared probe resolves its C helper beside the install root', () => {
+  expect(existsSync(assetPath('shared', 'store-write-lock.c'))).toBe(true)
+})
 
 test('WAL write-lock samples distinguish free, contended, and held', () => {
   expect(classifyWalWriteLockSamples([null, null, null])).toEqual({
@@ -31,8 +44,8 @@ test('WAL write-lock samples distinguish free, contended, and held', () => {
 test('a missing shared-memory file has no WAL write-lock holder', async () => {
   const path = join(dir, 'missing-lock-store.db')
   const probe = probeWalWriteLock(path)
-  if (probe !== null && typeof probe === 'object') {
-    expect(probe.reason).toContain('unsupported')
+  if (PROBE_UNSUPPORTED_REASON) {
+    expect(probe).toEqual({ unsupported: true, reason: PROBE_UNSUPPORTED_REASON })
     return
   }
   expect(probe).toBeNull()
@@ -46,13 +59,21 @@ test('a missing shared-memory file has no WAL write-lock holder', async () => {
 })
 
 test('a free WAL store has no write-lock holder', () => {
-  db()
-  const probe = probeWalWriteLock(process.env.BOTTEGA_ORCHESTRATOR_DB!)
-  if (probe !== null && typeof probe === 'object') {
-    expect(probe.reason).toContain('unsupported')
-    return
+  const path = join(dir, 'free-lock-store.db')
+  const store = new Database(path)
+  try {
+    store.exec('PRAGMA journal_mode = WAL;')
+    store.exec('CREATE TABLE probe (id INTEGER)')
+    store.exec('INSERT INTO probe VALUES (1)')
+    const probe = probeWalWriteLock(path)
+    if (PROBE_UNSUPPORTED_REASON) {
+      expect(probe).toEqual({ unsupported: true, reason: PROBE_UNSUPPORTED_REASON })
+      return
+    }
+    expect(probe).toBeNull()
+  } finally {
+    store.close()
   }
-  expect(probe).toBeNull()
 })
 
 test('an unopenable shared-memory file is an unsupported probe instead of an exception', () => {
@@ -60,8 +81,8 @@ test('an unopenable shared-memory file is an unsupported probe instead of an exc
   mkdirSync(`${path}-shm`)
   try {
     const probe = probeWalWriteLock(path)
-    if (probe !== null && typeof probe === 'object' && probe.reason.includes('unsupported on')) {
-      expect(probe.reason).toContain('unsupported')
+    if (PROBE_UNSUPPORTED_REASON) {
+      expect(probe).toEqual({ unsupported: true, reason: PROBE_UNSUPPORTED_REASON })
       return
     }
     expect(probe).toEqual({

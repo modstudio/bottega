@@ -91,7 +91,7 @@ export async function run(
         isDatabaseLocked(error)
           ? formatDatabaseLockRefusal({
               store: DB_PATH,
-              holder: hubDatabaseLockHolder(),
+              holder: await hubDatabaseLockHolder(),
             })
           : error instanceof Error
             ? error.message

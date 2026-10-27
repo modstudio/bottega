@@ -4,10 +4,12 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { formatDatabaseLockRefusal } from '../../shared/database-lock-refusal.ts'
 import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
   closeDatabaseForFixture,
+  DB_PATH,
   db,
   hubDatabaseLockHolder,
   hubStoreAccess,
@@ -61,10 +63,69 @@ test('a reader checkout resolves the shared hub path as read-only', () => {
   })
 })
 
-test('the hub database owns its unavailable lock-holder fact', () => {
-  expect(hubDatabaseLockHolder()).toEqual({
-    unavailable: 'lock-holder inspection is unavailable for the hub store',
+test('a hub refusal names the process holding the store lock', async () => {
+  const holder = await hubDatabaseLockHolder(
+    async () => ({
+      supported: true,
+      classification: 'held',
+      holderPid: 4242,
+      sampleCount: 5,
+      samples: [4242, 4242, 4242, 4242, 4242],
+    }),
+    (pid) => `/opt/bun /opt/hub/src/cli.ts task set --pid ${pid} --state /state/hub`,
+  )
+  expect(formatDatabaseLockRefusal({ store: '/state/hub/hub.db', holder })).toBe(
+    'database write refused: database is locked\n' +
+      'store: /state/hub/hub.db\n' +
+      'holder: pid 4242; command bun cli.ts\n' +
+      'cleared by: wait for the holder to finish, then retry the command',
+  )
+})
+
+test('hub samples its own store path when naming a lock holder', async () => {
+  const inspected: string[] = []
+  const holder = await hubDatabaseLockHolder(async (storePath) => {
+    inspected.push(storePath)
+    return {
+      supported: true,
+      classification: 'free',
+      holderPid: null,
+      sampleCount: 1,
+      samples: [null],
+    }
   })
+
+  expect(inspected).toEqual([DB_PATH])
+  expect(holder).toEqual({
+    unavailable: 'the lock was released before its holder could be inspected',
+  })
+})
+
+test('a hub refusal reports the unavailable lock-holder reasons the orchestrator uses', async () => {
+  expect(
+    await hubDatabaseLockHolder(async () => ({
+      supported: false,
+      reason: 'WAL write-lock holder probing is unsupported on linux',
+      sampleCount: 0,
+    })),
+  ).toEqual({ unavailable: 'WAL write-lock holder probing is unsupported on linux' })
+
+  expect(
+    await hubDatabaseLockHolder(async () => ({
+      supported: true,
+      classification: 'free',
+      holderPid: null,
+      sampleCount: 5,
+      samples: [null, null, null, null, null],
+    })),
+  ).toEqual({ unavailable: 'the lock was released before its holder could be inspected' })
+
+  const failed = await hubDatabaseLockHolder(async () => {
+    throw new Error('shared-memory file is unreadable')
+  })
+  expect(formatDatabaseLockRefusal({ store: '/state/hub/hub.db', holder: failed })).toContain(
+    'holder: unknown (lock-holder inspection failed: shared-memory file is unreadable)',
+  )
 })
 
 test('a read-only command uses a SQLite-enforced read-only handle', () => {

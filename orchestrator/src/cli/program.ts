@@ -8,9 +8,15 @@ import {
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
 import {
+  databaseLockHolder,
   formatDatabaseLockRefusal,
   isDatabaseLocked,
 } from '../../../shared/database-lock-refusal.ts'
+import { processCommandLine } from '../../../shared/process-identity.ts'
+import {
+  sampleWalWriteLock,
+  type WalWriteLockSampleResult,
+} from '../../../shared/store-write-lock.ts'
 import { AGENT_COMMAND_VERBS } from '../agent/agent-commands.ts'
 import { registerBoardCommands } from '../board/board-commands.ts'
 import { register as registerBranches } from '../commands/branches.ts'
@@ -44,7 +50,6 @@ import { register as registerSync } from '../commands/sync.ts'
 import { register as registerTestSubstance } from '../commands/test-substance.ts'
 import { DB_PATH, withReadOnlyDatabaseAccess } from '../database/db.ts'
 import { recordSessionHostPressure } from '../host-pressure/host-pressure-service.ts'
-import { storeWriteLockReport } from '../monitor/monitor-store-write-lock.ts'
 import { classifyRunIdentifier } from '../run/run-identifier.ts'
 
 export const program = new Command()
@@ -150,31 +155,26 @@ export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
 
 export async function lockedStoreMessage(
   error: unknown,
-  inspect: typeof storeWriteLockReport = storeWriteLockReport,
+  inspect: (storePath: string) => Promise<WalWriteLockSampleResult> = sampleWalWriteLock,
+  commandOf: (pid: number) => string | null = processCommandLine,
 ): Promise<string> {
   if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
-  let report: Awaited<ReturnType<typeof storeWriteLockReport>>
   try {
-    report = await inspect(DB_PATH)
+    const sampled = await inspect(DB_PATH)
+    return formatDatabaseLockRefusal({
+      store: DB_PATH,
+      holder: databaseLockHolder({
+        sampled,
+        command:
+          sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
+      }),
+    })
   } catch (inspectionError) {
     return formatDatabaseLockRefusal({
       store: DB_PATH,
-      holder: {
-        unavailable: `lock-holder inspection failed: ${inspectionError instanceof Error ? inspectionError.message : String(inspectionError)}`,
-      },
+      holder: databaseLockHolder({ failed: inspectionError }),
     })
   }
-  return formatDatabaseLockRefusal({
-    store: DB_PATH,
-    holder:
-      report.supported && report.pid !== null
-        ? { pid: report.pid, command: report.command }
-        : {
-            unavailable: report.supported
-              ? 'the lock was released before its holder could be inspected'
-              : report.reason,
-          },
-  })
 }
 
 /** The exit code for a failure that escaped a command: Commander's own signals map to 0 or 2, everything else is 1. */

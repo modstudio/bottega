@@ -8,6 +8,7 @@ import { platform } from 'node:os'
 const PROCESS_START_TIME =
   /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ 0-3]\d [0-2]\d:[0-5]\d:[0-5]\d \d{4}$/
 const PROCESS_START_TIME_PS_TIMEOUT_MS = 10_000
+const PROCESS_COMMAND_PS_TIMEOUT_MS = 10_000
 const DEFAULT_PROCESS_OBSERVATION_RETRY_COUNT = 1
 
 type ProcessObservationResult = {
@@ -102,8 +103,27 @@ export function processStartTime(pid: number): string | null {
   }
 }
 
-export type PidRecordIdentity = 'live' | 'dead' | 'reused' | 'unknown'
+/** The command line a process is running, or null when it cannot be read. */
+export function processCommandLine(pid: number): string | null {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return null
+  try {
+    const { process: inspected } = observeBoundedSubprocess(
+      'ps',
+      ['/bin/ps', '-p', String(pid), '-o', 'command='],
+      {
+        stdout: 'pipe',
+        stderr: 'pipe',
+      },
+      PROCESS_COMMAND_PS_TIMEOUT_MS,
+    )
+    if (inspected.exitCode !== 0) return null
+    return inspected.stdout?.toString().trim() || null
+  } catch {
+    return null
+  }
+}
 
+export type PidRecordIdentity = 'live' | 'dead' | 'reused' | 'unknown'
 /**
  * Compare a recorded pid against its recorded birth time.
  * Unknown is not live: destruction and sampling require an established identity.
