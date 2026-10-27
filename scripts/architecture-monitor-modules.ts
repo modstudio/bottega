@@ -212,8 +212,8 @@ export const monitorModules: MonitorModule[] = [
   ]),
   module('orchestrator/src/monitor/monitor-store-write-lock.ts', [
     '../../../shared/process-identity.ts',
+    '../../../shared/store-write-lock.ts',
     '../database/db.ts',
-    '../database/store-write-lock.ts',
   ]),
   module('orchestrator/src/monitor/monitor-outbox.ts', [
     '../../../shared/brand.ts',

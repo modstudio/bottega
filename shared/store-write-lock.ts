@@ -1,18 +1,17 @@
 // concern: store-write-lock
 /** Knows how to inspect and sample SQLite's WAL write lock without opening SQLite. Must not know
- * which concern keeps the store it samples, so one implementation serves every store. */
+ * which concern keeps the store it samples, so one implementation serves every store. Its C helper
+ * `shared/store-write-lock.c` sits beside this module and is resolved through the install root. */
 
 import { cc, FFIType, ptr } from 'bun:ffi'
 import { closeSync, constants, openSync } from 'node:fs'
 import { platform } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { assetPath } from './install-root.ts'
 
 const F_WRLCK = 3
 const F_UNLCK = 2
 const SEEK_SET = 0
 const WAL_WRITE_LOCK = 120
-const SOURCE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 export type WalWriteLockProbe = number | null | { unsupported: true; reason: string }
 
@@ -33,7 +32,9 @@ export type WalWriteLockSampleResult =
 
 function compileDarwinFcntl() {
   return cc({
-    source: join(SOURCE_ROOT, 'shared/store-write-lock.c'),
+    // The install root is the one anchor a source checkout and a bundled release payload share;
+    // a path relative to this module would follow each concern's bundle depth instead.
+    source: assetPath('shared', 'store-write-lock.c'),
     symbols: {
       orch_fcntl_getlk: { args: [FFIType.i32, FFIType.ptr], returns: FFIType.i32 },
     },

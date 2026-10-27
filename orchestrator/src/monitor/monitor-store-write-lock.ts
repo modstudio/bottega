@@ -1,9 +1,9 @@
 // concern: monitor
 /** Resolves a sampled database writer to process and run identity using read-only work. */
 
-import { observeBoundedSubprocess } from '../../../shared/process-identity.ts'
+import { processCommandLine } from '../../../shared/process-identity.ts'
+import { sampleWalWriteLock } from '../../../shared/store-write-lock.ts'
 import { DB_PATH, openReadOnlyDatabase } from '../database/db.ts'
-import { sampleWalWriteLock } from '../database/store-write-lock.ts'
 
 export type StoreWriteLockReport =
   | {
@@ -24,22 +24,6 @@ export type StoreWriteLockReport =
       reason: string
       sampleCount: number
     }
-
-const STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS = 10_000
-
-function holderCommand(pid: number): string | null {
-  const { process: result } = observeBoundedSubprocess(
-    'ps',
-    ['/bin/ps', '-p', String(pid), '-o', 'command='],
-    {
-      stdout: 'pipe',
-      stderr: 'pipe',
-    },
-    STORE_WRITE_LOCK_HOLDER_PS_TIMEOUT_MS,
-  )
-  if (result.exitCode !== 0) return null
-  return new TextDecoder().decode(result.stdout ?? new Uint8Array()).trim() || null
-}
 
 function supervisedRun(storePath: string, pid: number): string | null {
   const database = openReadOnlyDatabase(storePath)
@@ -75,7 +59,7 @@ export async function storeWriteLockReport(storePath = DB_PATH): Promise<StoreWr
     classification: sampled.classification,
     sampleCount: sampled.sampleCount,
     pid,
-    command: pid === null ? null : holderCommand(pid),
+    command: pid === null ? null : processCommandLine(pid),
     runId,
     isRunSupervisor: runId !== null,
   }

@@ -135,10 +135,7 @@ export async function buildRelease(tag: string): Promise<string> {
   }
 
   copyDirectory('orchestrator/migrations', join(payloadRoot, 'orchestrator/migrations'))
-  copyFile(
-    'orchestrator/src/database/store-write-lock.c',
-    join(payloadRoot, 'orchestrator/src/database/store-write-lock.c'),
-  )
+  copyFile('shared/store-write-lock.c', join(payloadRoot, 'shared/store-write-lock.c'))
   copyDirectory('hub/migrations', join(payloadRoot, 'hub/migrations'))
   copyDirectory('orchestrator/hooks', join(payloadRoot, 'orchestrator/hooks'))
   copyDirectory('hub/web/dist', join(payloadRoot, 'hub/web/dist'))
