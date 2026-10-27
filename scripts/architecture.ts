@@ -119,7 +119,6 @@ export const modules: ArchitectureModule[] = [
     '../run/run-subscription-cost.ts',
     '../run/run-subscription-cost-store.ts',
     './prompt-size-bucket.ts',
-    './route-statistics.ts',
   ]),
   module('orchestrator/src/project/project-visibility.ts', [
     '../../../shared/brand.ts',
