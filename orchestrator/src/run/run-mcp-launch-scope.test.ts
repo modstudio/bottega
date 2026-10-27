@@ -178,7 +178,7 @@ test('a Grok CLI reader reports a project-relative server withheld without a tre
   })
   const scope = launch('grok', 'cli', true, cwd, { writesJob: false, hasProjectTree: false })
   expect(scope.projectSelection?.kind).toBe('reader')
-  expect(scope.projectSelection?.withheld.map((entry) => entry.name)).toEqual(['boost'])
+  expect((scope.projectSelection?.withheld ?? []).map((entry) => entry.name)).toEqual(['boost'])
   const line = withheldScopeLine('cli', 'grok', scope.projectSelection)
   expect(line).toContain('boost')
   expect(line).toContain(PROJECT_RELATIVE_NO_TREE_REASON)

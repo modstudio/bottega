@@ -101,8 +101,8 @@ export const mcpModules: McpModule[] = [
     '../mcp/mcp-probe.ts',
   ]),
   module('orchestrator/src/sandbox/project-mcp-scope.ts', [
-    '../../../shared/brand.ts',
     'node:path',
+    '../../../shared/brand.ts',
     '../mcp/mcp-command.ts',
     '../mcp/mcp-probe.ts',
     './mcp-reader-scope.ts',

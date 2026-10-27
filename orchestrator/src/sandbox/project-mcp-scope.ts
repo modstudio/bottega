@@ -137,8 +137,8 @@ export function projectMcpWithheldLine(
   const reasons = [...new Set(withheld.map((entry) => entry.reason))]
   if (reasons.length === 1) {
     const head = `MCP scope: ${harness} withheld ${names} (${reasons[0]})`
-    const advices = [...new Set(withheld.map((entry) => entry.advice ?? ''))]
-    const advice = advices.length === 1 ? advices[0] : ''
+    const uniqueAdvice = [...new Set(withheld.map((entry) => entry.advice ?? ''))]
+    const advice = uniqueAdvice.length === 1 ? uniqueAdvice[0] : ''
     return advice ? `${head}; ${advice}` : head
   }
   return `MCP scope: ${harness} withheld ${withheld
