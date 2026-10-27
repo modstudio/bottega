@@ -251,10 +251,9 @@ export const PROMPT_BYTES_PER_TOKEN = 3
  * Everything a job's window must hold: its declared working set PLUS the room
  * the reply needs.
  *
- * One function because three callers ask the same question — routing
- * eligibility, its backtest, and the Goose run's own context cap — and a job's
- * ceiling must not be one number when the agent is chosen and another when the
- * run starts.
+ * Routing eligibility and its backtest use this budget. The Goose run cap
+ * limits the budget by `GOOSE_CONTEXT_CEILING` unless the inline prompt needs
+ * more room.
  */
 export function jobContextBudget(contextTokens: number): number {
   return contextTokens + OUTPUT_RESERVE

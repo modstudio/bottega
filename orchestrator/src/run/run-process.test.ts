@@ -1,8 +1,8 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { AGENTS, type AgentRow, rowAgent } from '../agent/agent-registry.ts'
+import { AGENTS, type AgentRow, GOOSE_CONTEXT_CEILING, rowAgent } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
-import { job, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
+import { job, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
 afterEach(() => mock.restore())
@@ -487,7 +487,7 @@ test('a descendant that survives SIGKILL is still-alive', () => {
   })
 })
 
-test('a goose launch carries the job budget and the prompt it sends', () => {
+test('a goose launch carries the Goose context ceiling', () => {
   const row = db().query("SELECT * FROM agent WHERE name = 'codex'").get() as AgentRow
   const { contextTokens: _contextTokens, ...caps } = JSON.parse(row.caps)
   const goose = rowAgent({
@@ -511,5 +511,5 @@ test('a goose launch carries the job budget and the prompt it sends', () => {
       deep,
       promptTokens * PROMPT_BYTES_PER_TOKEN,
     ).GOOSE_CONTEXT_LIMIT,
-  ).toBe(String(deep + OUTPUT_RESERVE + promptTokens))
+  ).toBe(String(GOOSE_CONTEXT_CEILING))
 })

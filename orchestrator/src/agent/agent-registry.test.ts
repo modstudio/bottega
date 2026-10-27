@@ -1,7 +1,13 @@
 import { expect, test } from 'bun:test'
 import { db } from '../database/db.ts'
-import { job, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
-import { type AgentRow, addAgent, gooseContextLimit, rowAgent } from './agent-registry.ts'
+import { job, jobContextBudget, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
+import {
+  type AgentRow,
+  addAgent,
+  GOOSE_CONTEXT_CEILING,
+  gooseContextLimit,
+  rowAgent,
+} from './agent-registry.ts'
 import { type Agent, assertResumableAgent } from './agents.ts'
 
 function codexRow(probeResult: unknown): AgentRow {
@@ -24,30 +30,43 @@ function gooseRow(contextTokens?: number): AgentRow {
   }
 }
 
-const DEEP_JOB_TOKENS = job('implement').contextTokens
+const DEEP_JOB_TOKENS = job('review-lens').contextTokens
 const DEEP_JOB_BUDGET = DEEP_JOB_TOKENS + OUTPUT_RESERVE
 /** A prompt whose estimate is 5K tokens bigger than the job's whole budget. */
 const BIG_PROMPT_TOKENS = DEEP_JOB_BUDGET + 5_000
 const BIG_PROMPT_BYTES = BIG_PROMPT_TOKENS * PROMPT_BYTES_PER_TOKEN
 
-test('a deep job on a wide served window runs to the job budget, not the window', () => {
-  expect(gooseContextLimit(1_048_576, DEEP_JOB_TOKENS, null)).toBe(DEEP_JOB_BUDGET)
+test('the Goose context ceiling preserves its measured pre-regression value', () => {
+  expect(GOOSE_CONTEXT_CEILING).toBe(128_000)
 })
 
-test('a served window smaller than the job budget caps the limit', () => {
+test('a review lens on a wide served window runs at the Goose context ceiling', () => {
+  expect(gooseContextLimit(200_000, DEEP_JOB_TOKENS, null)).toBe(GOOSE_CONTEXT_CEILING)
+})
+
+test('a job budget below the Goose context ceiling remains the working limit', () => {
+  const errandTokens = job('file-question').contextTokens
+  expect(gooseContextLimit(200_000, errandTokens, null)).toBe(jobContextBudget(errandTokens))
+})
+
+test('a served window smaller than the Goose context ceiling caps the limit', () => {
   expect(gooseContextLimit(65_536, DEEP_JOB_TOKENS, null)).toBe(65_536)
 })
 
-test('no served window leaves the job budget', () => {
-  expect(gooseContextLimit(null, DEEP_JOB_TOKENS, null)).toBe(DEEP_JOB_BUDGET)
+test('no served window leaves the Goose working limit', () => {
+  expect(gooseContextLimit(null, DEEP_JOB_TOKENS, null)).toBe(GOOSE_CONTEXT_CEILING)
 })
 
-test('a prompt larger than the job budget raises the limit by its estimate, capped by the window', () => {
+test('a prompt larger than the ceiling raises the limit by its estimate, capped by the window', () => {
   expect(gooseContextLimit(1_048_576, DEEP_JOB_TOKENS, BIG_PROMPT_BYTES)).toBe(
-    DEEP_JOB_BUDGET + BIG_PROMPT_TOKENS,
+    BIG_PROMPT_TOKENS + OUTPUT_RESERVE,
   )
-  const narrow = DEEP_JOB_BUDGET + 1_000
+  const narrow = BIG_PROMPT_TOKENS + 1_000
   expect(gooseContextLimit(narrow, DEEP_JOB_TOKENS, BIG_PROMPT_BYTES)).toBe(narrow)
+})
+
+test('no job leaves the Goose context limit unset', () => {
+  expect(gooseContextLimit(200_000, null, BIG_PROMPT_BYTES)).toBeNull()
 })
 
 test('a goose row without a declared context window keeps the goose default', () => {

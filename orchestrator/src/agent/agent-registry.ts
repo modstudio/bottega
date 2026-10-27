@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { DB_PATH, db as dbForAgents, writableDb } from '../database/db.ts'
-import { jobContextBudget, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
+import { jobContextBudget, OUTPUT_RESERVE, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { type Agent, assertResumableAgent, BUILTIN_AGENTS } from './agents.ts'
 import type { Caps } from './capabilities.ts'
 import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
@@ -36,21 +36,14 @@ export type AgentRow = {
   trains_on_inputs: number
 }
 
+/** Goose's own default context limit and the measured working budget for Goose runs. */
+export const GOOSE_CONTEXT_CEILING = 128_000
+
 /**
- * The context limit a Goose worker runs under, from the job, the prompt this
- * run sends, and the served window.
- *
- * The working limit is a per-job budget chosen for cost, and the served window
- * only CAPS it: `min(servedWindow, promptTokens + jobBudget)`, where the budget
- * is the job's declared working set plus `OUTPUT_RESERVE` for the reply and the
- * prompt is the text this run actually sends, estimated from its UTF-8 bytes.
- * The prompt is in the sum because some jobs' material arrives inline rather
- * than through the working set — `summarize` declares an `ERRAND` working set
- * and hands its document over in the prompt — so a budget that ignored it would
- * starve exactly the run it was sizing. Eligibility asks the same question of
- * the agent's window, from the same budget, so the two cannot drift. A served
- * window smaller than the sum still wins; no served window leaves the sum; no
- * job means no per-job budget to set, so Goose's own default applies.
+ * The context limit a Goose worker runs under, bounded by the served window,
+ * the job budget, and the Goose ceiling. Inline prompt material may raise the
+ * ceiling enough to hold that prompt plus `OUTPUT_RESERVE`. No job means no
+ * per-job limit to set, so Goose's own default applies.
  */
 export function gooseContextLimit(
   servedWindow: number | null,
@@ -60,7 +53,11 @@ export function gooseContextLimit(
   if (jobContextTokens === null) return null
   const promptTokens = promptBytes === null ? 0 : Math.ceil(promptBytes / PROMPT_BYTES_PER_TOKEN)
   const budget = jobContextBudget(jobContextTokens) + promptTokens
-  return servedWindow === null ? budget : Math.min(servedWindow, budget)
+  const workingLimit = Math.min(
+    budget,
+    Math.max(GOOSE_CONTEXT_CEILING, promptTokens + OUTPUT_RESERVE),
+  )
+  return servedWindow === null ? workingLimit : Math.min(servedWindow, workingLimit)
 }
 
 function rowLaunchEnvironment(
