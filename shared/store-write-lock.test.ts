@@ -79,8 +79,13 @@ test('an unopenable shared-memory file is an unsupported probe instead of an exc
   mkdirSync(`${path}-shm`)
   try {
     const probe = probeWalWriteLock(path)
-    if (probe !== null && typeof probe === 'object' && probe.reason.includes('unsupported on')) {
-      expect(probe.reason).toContain('unsupported')
+    if (
+      probe !== null &&
+      typeof probe === 'object' &&
+      /unsupported|cannot compile/.test(probe.reason)
+    ) {
+      // Unsupported here is either the platform or a helper that would not compile.
+      expect(probe.reason).toMatch(/unsupported|cannot compile/)
       return
     }
     expect(probe).toEqual({

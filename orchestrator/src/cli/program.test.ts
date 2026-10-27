@@ -161,7 +161,7 @@ test('a failed holder inspection cannot hide the original database lock refusal'
   expect(message).toContain('then retry the command')
 })
 
-test('a locked orchestrator store names the sampled holder without a run-supervisor lookup', async () => {
+test("a locked orchestrator store refusal names the sampled holder's pid and summarized command", async () => {
   const message = await lockedStoreMessage(
     { code: 'SQLITE_BUSY' },
     async () => ({
