@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS, CI_ONLY_JOBS, CI_ONLY_SUITES } from './check-plan.ts'
+import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
@@ -110,7 +111,24 @@ export function checkCiWorkflow(source: string): void {
     throw new Error('postgres job must run the real-Postgres suite without the live import proof')
 }
 
+/** Pins every Bun the release workflow sets up to the version the artifact build requires. */
+export function checkReleaseWorkflow(source: string): void {
+  const versions = source
+    .split('\n')
+    .flatMap((line) => line.match(/^\s*bun-version:\s*(\S+)\s*$/)?.[1] ?? [])
+  if (versions.length === 0) {
+    throw new Error(`release workflow must pin Bun ${RELEASE_BUN_VERSION}`)
+  }
+  for (const version of versions) {
+    if (version !== RELEASE_BUN_VERSION) {
+      throw new Error(`release workflow must use Bun ${RELEASE_BUN_VERSION}; got ${version}`)
+    }
+  }
+}
+
 if (import.meta.main) {
   checkCiWorkflow(readFileSync(`${root}.github/workflows/ci.yml`, 'utf8'))
   console.log('CI workflow covers every check-plan leg and the root test batch')
+  checkReleaseWorkflow(readFileSync(`${root}.github/workflows/release.yml`, 'utf8'))
+  console.log(`release workflow sets up Bun ${RELEASE_BUN_VERSION}`)
 }

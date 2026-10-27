@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
-import { checkCiWorkflow, expectedWorkflowJobNames, suiteRunLine } from './check-ci-workflow.ts'
+import { readFileSync } from 'node:fs'
+import {
+  checkCiWorkflow,
+  checkReleaseWorkflow,
+  expectedWorkflowJobNames,
+  suiteRunLine,
+} from './check-ci-workflow.ts'
 import { CI_ONLY_SUITES } from './check-plan.ts'
+import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
 const processSuite = CI_ONLY_SUITES[0]
@@ -107,6 +114,22 @@ test('requires the story job to run the hub-views story-test script', () => {
       ),
     ),
   ).toThrow('must run the hub-views story-test script')
+})
+
+test('pins every release workflow Bun to the release build version', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/release.yml', import.meta.url),
+    'utf8',
+  )
+  expect(() => checkReleaseWorkflow(workflow)).not.toThrow()
+  expect(() =>
+    checkReleaseWorkflow(
+      workflow.replace(`bun-version: ${RELEASE_BUN_VERSION}`, 'bun-version: 1.3.14'),
+    ),
+  ).toThrow(`must use Bun ${RELEASE_BUN_VERSION}`)
+  expect(() =>
+    checkReleaseWorkflow(workflow.replace('bun-version:', 'bun-version-pinned:')),
+  ).toThrow(`must pin Bun ${RELEASE_BUN_VERSION}`)
 })
 
 function readWorkflowFixture() {
