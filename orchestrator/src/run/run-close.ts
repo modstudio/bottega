@@ -45,6 +45,7 @@ type CloseOptions = {
   job: string
   noFailover?: boolean
   avoid?: string[]
+  distinctModels?: string[]
   carry?: boolean
 }
 
@@ -69,6 +70,7 @@ type SuccessorOptions = {
   key: string | undefined
   base: string | undefined
   avoid: string[] | undefined
+  distinctModels: string[] | undefined
   carry: boolean | undefined
   review: string | undefined
   deliverables: string[]
@@ -130,17 +132,20 @@ export function failoverSelectionConstraints(input: {
   transport: TransportName | null
   transportExplicit: number
   avoided: string[] | undefined
+  distinctModels: string[] | undefined
   tried: string[]
   transportExcluded: string[]
 }): {
   pinnedTransport: TransportName | null
   successorTransport: TransportName | undefined
   avoidedAgents: string[]
+  distinctModels: string[] | undefined
 } {
   const pinnedTransport = input.transportExplicit ? input.transport : null
   return {
     pinnedTransport,
     successorTransport: pinnedTransport ?? undefined,
+    distinctModels: input.distinctModels,
     avoidedAgents: [
       ...new Set([
         ...(input.avoided ?? []),
@@ -153,13 +158,14 @@ export function failoverSelectionConstraints(input: {
 
 function storedFailoverSelectionConstraints(
   first: { transport: TransportName | null; transport_explicit: number },
-  opts: Pick<CloseOptions, 'job' | 'avoid'>,
+  opts: Pick<CloseOptions, 'job' | 'avoid' | 'distinctModels'>,
   tried: string[],
 ) {
   return failoverSelectionConstraints({
     transport: first.transport,
     transportExplicit: first.transport_explicit,
     avoided: opts.avoid,
+    distinctModels: opts.distinctModels,
     tried,
     transportExcluded: first.transport
       ? agentsIneligibleForTransport(opts.job, first.transport)
@@ -167,7 +173,7 @@ function storedFailoverSelectionConstraints(
   })
 }
 
-async function selectFailoverSuccessor(input: {
+export async function selectFailoverSuccessor(input: {
   runId: string
   job: string
   /**
@@ -184,6 +190,7 @@ async function selectFailoverSuccessor(input: {
   mcpError: string | null
   pinnedTransport: TransportName | null
   avoidedAgents: string[]
+  distinctModels: string[] | undefined
 }) {
   const select = () => {
     try {
@@ -195,6 +202,7 @@ async function selectFailoverSuccessor(input: {
         stackAt(input.launchCwd ?? input.callerCwd),
         {
           agents: input.avoidedAgents,
+          models: input.distinctModels,
           requiredMcp: requiredMcpServer(
             mcpRequestFromStored(input.mcp, input.mcpError),
             input.launchCwd ?? input.callerCwd,
@@ -363,6 +371,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           mcpError: first.mcp_error,
           pinnedTransport: transportConstraints.pinnedTransport,
           avoidedAgents: transportConstraints.avoidedAgents,
+          distinctModels: transportConstraints.distinctModels,
         })
         const successorAgent = failoverSuccessorAgent(
           decideFailover({ ...failoverFacts, successor: selected }),
@@ -400,6 +409,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           // to current trunk makes a review failover depend on a later move.
           base: repoJob ? (first.base_commit ?? first.launch_base ?? undefined) : undefined,
           avoid: opts.avoid,
+          distinctModels: transportConstraints.distinctModels,
           carry: opts.carry,
           review: first.review_ref ?? undefined,
           deliverables: declaredDeliverables,
