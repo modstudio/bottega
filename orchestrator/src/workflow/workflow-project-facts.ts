@@ -26,25 +26,30 @@ function referenceFact(project: WorkflowFactProject, needs: readonly WorkflowFac
   return { reference: project.settings.reference }
 }
 
+type CloseTrackerFact = {
+  states: Partial<Record<'review' | 'done', string>>
+  inReview: ResolvedReviewStage
+  completesOnMerge: boolean
+}
+
+function closeShipToAction(
+  remaining: number,
+  mayMerge: boolean,
+  tracker: CloseTrackerFact,
+): 'ask' | 'done' | 'review' {
+  if (!mayMerge) return 'ask'
+  if (!remaining || tracker.completesOnMerge) return 'done'
+  return tracker.inReview.state !== 'none' ? 'review' : 'ask'
+}
+
 function closeShipToFact(
   projectName: string,
   remaining: number,
   mayMerge: boolean,
-  tracker:
-    | {
-        states: Partial<Record<'review' | 'done', string>>
-        inReview: ResolvedReviewStage
-      }
-    | undefined,
+  tracker: CloseTrackerFact | undefined,
 ) {
   if (!tracker) return {}
-  const closeAction = !mayMerge
-    ? 'ask'
-    : !remaining
-      ? 'done'
-      : tracker.inReview.state !== 'none'
-        ? 'review'
-        : 'ask'
+  const closeAction = closeShipToAction(remaining, mayMerge, tracker)
   if (closeAction === 'done' && !tracker.states.done)
     throw new Error(
       `project ${projectName} tracker is missing workflow state "done"; set it with: ${PLATFORM_SLUG} project set ${projectName} --settings '{"tracker":{"states":{"<state-name>":"done"}}}'`,
@@ -89,12 +94,7 @@ function shipToFact(
     )
   const decision = decideShipToReach(autonomy.shipTo.value, shipToRungNames(rungs), args.depth)
   if (!decision.allowed) throw new Error(decision.refusal)
-  const tracker = needsCloseState
-    ? (projectFacts.tracker as {
-        states: Partial<Record<'review' | 'done', string>>
-        inReview: ResolvedReviewStage
-      })
-    : undefined
+  const tracker = needsCloseState ? (projectFacts.tracker as CloseTrackerFact) : undefined
   return {
     shipTo: {
       level: autonomy.shipTo.value,
