@@ -279,13 +279,17 @@ function automaticFailoverWatchUntil(
  * wait is anchored on is internal to the listing and does not reach the row.
  */
 function withFailoverWatch(rows: Record<string, unknown>[]): Record<string, unknown>[] {
-  const successorByRoot = failoverSuccessors(
+  const successorByRecord = failoverSuccessors(
     db(),
-    rows.map((row) => String(row.record_id)),
+    rows.map((row) => String(row.latest_member_record_id)),
   )
   return rows.map((row) => {
-    const { current_latency_ms: _currentLatencyMs, ...published } = row
-    const successor = successorByRoot.get(String(row.record_id)) ?? null
+    const {
+      current_latency_ms: _currentLatencyMs,
+      latest_member_record_id: _latestMemberRecordId,
+      ...published
+    } = row
+    const successor = successorByRecord.get(String(row.latest_member_record_id)) ?? null
     return {
       ...published,
       automatic_failover_successor:
@@ -442,9 +446,10 @@ function unscoredListingClauses(enabled: boolean, where: string[]): { cte: strin
         JOIN run successor ON successor.record_id = (
           SELECT next.record_id FROM run next
            WHERE next.automatic_failover = 1
-             AND next.retry_of_record_id IN (
+             AND next.retry_of_record_id = (
                SELECT member.record_id FROM run member
                 WHERE member.record_id = chain.root_id OR member.parent_run_record_id = chain.root_id
+                ORDER BY member.turn DESC, member.number DESC LIMIT 1
              )
            ORDER BY next.number LIMIT 1
         )
@@ -454,9 +459,10 @@ function unscoredListingClauses(enabled: boolean, where: string[]): { cte: strin
        WHERE NOT EXISTS (
          SELECT 1 FROM run next
           WHERE next.automatic_failover = 1
-            AND next.retry_of_record_id IN (
+            AND next.retry_of_record_id = (
               SELECT member.record_id FROM run member
                WHERE member.record_id = chain.root_id OR member.parent_run_record_id = chain.root_id
+               ORDER BY member.turn DESC, member.number DESC LIMIT 1
             )
        )
     )`,
@@ -547,6 +553,9 @@ export async function runListingCommand(
             current_run.latency_ms AS current_latency_ms,
             current_run.number AS live_member_number, current_run.status AS live_member_status,
             current_run.record_id AS live_member_id, current_run.record_id AS live_member_record_id,
+            (SELECT latest.record_id FROM run latest
+              WHERE latest.record_id = r.record_id OR latest.parent_run_record_id = r.record_id
+              ORDER BY latest.turn DESC, latest.number DESC LIMIT 1) AS latest_member_record_id,
             current_run.agent AS current_agent,
             current_run.job AS current_job, current_run.agent_pid AS current_agent_pid,
             current_run.agent_start_time AS current_agent_start_time,

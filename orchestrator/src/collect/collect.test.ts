@@ -16,6 +16,7 @@ import {
   mintedBranchForRun,
   noCommitNote,
   releasedWritingTreeNote,
+  resolveFailover,
   thinOutputWarning,
 } from './collect.ts'
 
@@ -703,5 +704,52 @@ describe('failover successors', () => {
       number: runNumber(first),
       agent: 'grok',
     })
+  })
+
+  test('a continued origin and its superseded successor resolve independently', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+    })
+    const successor = automaticSuccessor(root, 'grok')
+    const laterTurn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      parent: root,
+      turn: 2,
+    })
+
+    expect(resolveFailover(db(), root).finalId).toBe(laterTurn)
+    expect(resolveFailover(db(), successor).finalId).toBe(successor)
+  })
+
+  test('a historical chain follows the latest turn successor', () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
+    automaticSuccessor(root, 'claude')
+    const latestTurn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+      parent: root,
+      turn: 2,
+    })
+    // Historical row shape: current routing does not automatically fail over a later turn.
+    const latestSuccessor = automaticSuccessor(latestTurn, 'grok')
+
+    expect(resolveFailover(db(), root).finalId).toBe(latestSuccessor)
+  })
+
+  test('a plain failed root follows its automatic successor', () => {
+    const failedRoot = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+    })
+    const successor = automaticSuccessor(failedRoot, 'grok')
+    expect(resolveFailover(db(), failedRoot).finalId).toBe(successor)
   })
 })

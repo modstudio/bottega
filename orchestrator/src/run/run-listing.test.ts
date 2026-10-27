@@ -755,19 +755,20 @@ describe('run listing', () => {
       ).toISOString(),
     })
 
-    // A successor that retries the failed member, not the root, is still the
-    // row's successor — and its appearance closes the watch.
+    // Once the conversation continues, a successor of the older failed member
+    // is no longer this row's successor.
     const memberSuccessor = addRun({ agent: 'codex', job: 'review-lens' })
     db()
       .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
       .run(chainedMember, memberSuccessor)
+    addRun({ agent: 'grok', job: 'review-lens', parent: chainedRoot, turn: 3 })
     const withMemberSuccessor = (await command({ json: true })).map(runJson) as unknown as {
       record_id: string
       automatic_failover_successor: { number: number; agent: string } | null
       automatic_failover_watch_until: string | null
     }[]
     expect(withMemberSuccessor.find((row) => row.record_id === chainedRoot)).toMatchObject({
-      automatic_failover_successor: { number: runNumber(memberSuccessor), agent: 'codex' },
+      automatic_failover_successor: null,
       automatic_failover_watch_until: null,
     })
   })
