@@ -46,6 +46,21 @@ function sameCheckout(left: string, right: string): boolean {
   return realpathOrSpelled(left) === realpathOrSpelled(right)
 }
 
+export function unregisteredMainCheckoutRefusal(
+  target: string,
+  project: { path: string } | null,
+  same: (left: string, right: string) => boolean,
+): string | null {
+  if (project && same(target, project.path)) return null
+  const binary = project
+    ? `${project.path}/bin/${PLATFORM_SLUG}`
+    : `the registered main checkout's bin/${PLATFORM_SLUG}`
+  return (
+    `refusing machine update: this installation's root ${target} is not a registered main checkout; ` +
+    `run ${binary} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`
+  )
+}
+
 function incomingJournal(
   cwd: string,
   branch: string,
@@ -133,17 +148,12 @@ export async function machineUpdateCommand(
   const callerCwd = deps.callerCwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
   const migrate = deps.migrate ?? runMigration
-  const project = withSynchronousDatabaseForMigrationStep((database) =>
+  const lookedUp = withSynchronousDatabaseForMigrationStep((database) =>
     (deps.project ?? projectAt)(target, database),
   )
-  if (!project || !sameCheckout(target, project.path)) {
-    const binary = project
-      ? `${project.path}/bin/${PLATFORM_SLUG}`
-      : `the registered main checkout's bin/${PLATFORM_SLUG}`
-    throw new Error(
-      `refusing machine update: this installation's root ${target} is not a registered main checkout; run ${binary} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
-    )
-  }
+  const unregistered = unregisteredMainCheckoutRefusal(target, lookedUp, sameCheckout)
+  if (unregistered) throw new Error(unregistered)
+  const project = lookedUp!
   const branch = project.settings.trunk?.trim()
   if (!branch) throw new Error(`${project.name}: no registered landing branch`)
   const currentBranch = runGit(target, ['branch', '--show-current']) || '(detached HEAD)'

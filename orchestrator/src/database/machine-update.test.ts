@@ -6,7 +6,7 @@ import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
-import { machineUpdateCommand } from './machine-update.ts'
+import { machineUpdateCommand, unregisteredMainCheckoutRefusal } from './machine-update.ts'
 import { migrationDrain, setMigrationDrain } from './migration-drain.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { migrationJournal } from './migrations.ts'
@@ -264,6 +264,17 @@ test('machine update refuses an installation that is not a registered main check
   ).rejects.toThrow(
     `refusing machine update: this installation's root ${dir} is not a registered main checkout; run the registered main checkout's bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
   )
+})
+
+test('unregistered main checkout refusal names the registered binary when the register has one', () => {
+  const same = (left: string, right: string) => left === right
+  expect(unregisteredMainCheckoutRefusal('/install', null, same)).toBe(
+    `refusing machine update: this installation's root /install is not a registered main checkout; run the registered main checkout's bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
+  )
+  expect(unregisteredMainCheckoutRefusal('/install', { path: '/registered-main' }, same)).toBe(
+    `refusing machine update: this installation's root /install is not a registered main checkout; run /registered-main/bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
+  )
+  expect(unregisteredMainCheckoutRefusal('/install', { path: '/install' }, same)).toBeNull()
 })
 
 test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is another project`, async () => {
