@@ -64,7 +64,7 @@ export function probeWalWriteLock(storePath: string): WalWriteLockProbe {
     return {
       unsupported: true,
       reason: darwinFcntlFailure
-        ? `WAL write-lock holder probing needs a source checkout: ${darwinFcntlFailure}`
+        ? `cannot compile ${assetPath('shared', 'store-write-lock.c')} to probe the WAL write-lock holder: ${darwinFcntlFailure}`
         : `WAL write-lock holder probing is unsupported on ${platform()}`,
     }
   }

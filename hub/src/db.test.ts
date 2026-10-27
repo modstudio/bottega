@@ -9,6 +9,7 @@ import { registerEmbeddedAssets } from '../../shared/embedded-assets.ts'
 import { runHubFixtureProcess } from '../test/run-fixtures.ts'
 import {
   closeDatabaseForFixture,
+  DB_PATH,
   db,
   hubDatabaseLockHolder,
   hubStoreAccess,
@@ -79,6 +80,25 @@ test('a hub refusal names the process holding the store lock', async () => {
       'holder: pid 4242; command bun cli.ts\n' +
       'cleared by: wait for the holder to finish, then retry the command',
   )
+})
+
+test('hub samples its own store path when naming a lock holder', async () => {
+  const inspected: string[] = []
+  const holder = await hubDatabaseLockHolder(async (storePath) => {
+    inspected.push(storePath)
+    return {
+      supported: true,
+      classification: 'free',
+      holderPid: null,
+      sampleCount: 1,
+      samples: [null],
+    }
+  })
+
+  expect(inspected).toEqual([DB_PATH])
+  expect(holder).toEqual({
+    unavailable: 'the lock was released before its holder could be inspected',
+  })
 })
 
 test('a hub refusal reports the unavailable lock-holder reasons the orchestrator uses', async () => {

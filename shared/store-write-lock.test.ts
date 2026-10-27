@@ -41,7 +41,8 @@ test('a missing shared-memory file has no WAL write-lock holder', async () => {
   const path = join(dir, 'missing-lock-store.db')
   const probe = probeWalWriteLock(path)
   if (probe !== null && typeof probe === 'object') {
-    expect(probe.reason).toContain('unsupported')
+    // Unsupported here is either the platform or a helper that would not compile.
+    expect(probe.reason).toMatch(/unsupported|cannot compile/)
     return
   }
   expect(probe).toBeNull()
@@ -63,7 +64,8 @@ test('a free WAL store has no write-lock holder', () => {
     store.exec('INSERT INTO probe VALUES (1)')
     const probe = probeWalWriteLock(path)
     if (probe !== null && typeof probe === 'object') {
-      expect(probe.reason).toContain('unsupported')
+      // Unsupported here is either the platform or a helper that would not compile.
+      expect(probe.reason).toMatch(/unsupported|cannot compile/)
       return
     }
     expect(probe).toBeNull()

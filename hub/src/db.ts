@@ -5,7 +5,10 @@ import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
-import type { DatabaseLockRefusalFacts } from '../../shared/database-lock-refusal.ts'
+import {
+  type DatabaseLockRefusalFacts,
+  databaseLockHolder,
+} from '../../shared/database-lock-refusal.ts'
 import { embeddedDistributionManifest } from '../../shared/embedded-assets.ts'
 import { mainCheckoutOf } from '../../shared/git.ts'
 import { installRoot, isAuthorizedPlatformInstallation } from '../../shared/install-root.ts'
@@ -297,19 +300,16 @@ export async function hubDatabaseLockHolder(
   inspect: (storePath: string) => Promise<WalWriteLockSampleResult> = sampleWalWriteLock,
   commandOf: (pid: number) => string | null = processCommandLine,
 ): Promise<DatabaseLockRefusalFacts['holder']> {
-  let sampled: WalWriteLockSampleResult
   try {
-    sampled = await inspect(DB_PATH)
+    const sampled = await inspect(DB_PATH)
+    return databaseLockHolder({
+      sampled,
+      command:
+        sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
+    })
   } catch (error) {
-    return {
-      unavailable: `lock-holder inspection failed: ${error instanceof Error ? error.message : String(error)}`,
-    }
+    return databaseLockHolder({ failed: error })
   }
-  if (!sampled.supported) return { unavailable: sampled.reason }
-  if (sampled.holderPid === null) {
-    return { unavailable: 'the lock was released before its holder could be inspected' }
-  }
-  return { pid: sampled.holderPid, command: commandOf(sampled.holderPid) }
 }
 
 /** Open the only sanctioned multi-statement write transaction. */
