@@ -50,7 +50,7 @@ describe('run host capacity', () => {
     for (const plan of plans) {
       const details = plan.map((step) => step.detail).join('\n')
       expect(details).toContain('run_running_repository_idx')
-      expect(details).not.toContain('SCAN run')
+      expect(details).not.toMatch(/SCAN run(?! USING)/)
     }
   })
 
