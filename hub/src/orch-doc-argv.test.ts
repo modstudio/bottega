@@ -197,6 +197,39 @@ describe('docArgv', () => {
     ])
   })
 
+  test('set replaces a non-empty source-file list while related subjects remain additive flags', () => {
+    const argv = docArgv('set', {
+      scope: 'project',
+      subject: 'alpha',
+      slug: 'guide',
+      title: 'Guide',
+      reason: 'replace article fields',
+      relatedSubjects: ['Product'],
+      sourceFiles: ['docs/guide.md', 'src/guide.ts'],
+    })
+    expect(argv).toEqual([
+      'doc',
+      'set',
+      'guide',
+      '--scope',
+      'project',
+      '--subject',
+      'alpha',
+      '--title',
+      'Guide',
+      '--reason',
+      'replace article fields',
+      '--related-subject',
+      'Product',
+      '--no-source-files',
+      '--source-file',
+      'docs/guide.md',
+      '--source-file',
+      'src/guide.ts',
+      '--json',
+    ])
+  })
+
   test('remove without subject', () => {
     expect(
       docArgv('remove', { scope: 'machine', subject: null, slug: 'host', reason: 'why' }),

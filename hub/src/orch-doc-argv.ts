@@ -121,6 +121,11 @@ function docListFlags(values: string[] | undefined, flag: string, clearFlag: str
   return values?.flatMap((value) => [flag, value]) ?? []
 }
 
+function docSourceFileFlags(values: string[] | undefined) {
+  if (values === undefined) return []
+  return ['--no-source-files', ...values.flatMap((value) => ['--source-file', value])]
+}
+
 function docSetFlags(input: DocArgvInput): string[] {
   return [
     ...(input.delivery ? ['--delivery', input.delivery] : []),
@@ -132,7 +137,7 @@ function docSetFlags(input: DocArgvInput): string[] {
     ...nullableDocFlag(input.form, '--form', '--no-form'),
     ...nullableDocFlag(input.articleSubject, '--article-subject', '--no-article-subject'),
     ...docListFlags(input.relatedSubjects, '--related-subject', '--no-related-subjects'),
-    ...docListFlags(input.sourceFiles, '--source-file', '--no-source-files'),
+    ...docSourceFileFlags(input.sourceFiles),
     ...(input.position !== undefined ? ['--position', String(input.position)] : []),
     ...(input.expectedRevision ? ['--expect', input.expectedRevision] : []),
   ]
