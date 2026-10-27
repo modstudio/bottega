@@ -9,6 +9,8 @@ import {
   STRAY_WORKTREE_ARCHIVE_PROJECT_MARKER,
 } from './reader-clone-archive-retention.ts'
 
+const day = 86_400_000
+
 test('reader clone archive retention deletes expired archives and keeps newer ones', () => {
   const runsDirectory = join(dir, 'retention-fixture', 'orchestrator', 'runs')
   const archiveRoot = readerCloneArchiveDirectory(runsDirectory)
@@ -17,7 +19,6 @@ test('reader clone archive retention deletes expired archives and keeps newer on
   const projectArchiveRoot = join(archiveRoot, 'example')
   const oldStrayArchive = join(projectArchiveRoot, 'old-stray')
   const newStrayArchive = join(projectArchiveRoot, 'new-stray')
-  const day = 86_400_000
   const nowMs = 30 * day
   const lines: string[] = []
   mkdirSync(oldArchive, { recursive: true })
@@ -55,7 +56,7 @@ test('reader clone archive retention deletes expired archives and keeps newer on
         error: (...values) => lines.push(values.map(String).join(' ')),
       },
     })
-    expect(result).toEqual({ deleted: 2, kept: 2, failed: 0 })
+    expect(result).toEqual({ deleted: 2, deferred: 0, kept: 2, failed: 0 })
     expect(existsSync(oldArchive)).toBe(false)
     expect(existsSync(newArchive)).toBe(true)
     expect(existsSync(oldStrayArchive)).toBe(false)
@@ -74,7 +75,6 @@ test('reader clone archive retention deletes expired archives and keeps newer on
 test('reader clone archive retention dry-run only reports expired archives', () => {
   const runsDirectory = join(dir, 'retention-dry-fixture', 'orchestrator', 'runs')
   const archive = join(readerCloneArchiveDirectory(runsDirectory), '1-old')
-  const day = 86_400_000
   const nowMs = 30 * day
   const lines: string[] = []
   mkdirSync(archive, { recursive: true })
@@ -119,7 +119,7 @@ test('stray archive retention uses a stamped age even when its mtime is stale', 
         error: () => {},
       },
     })
-    expect(result).toEqual({ deleted: 0, kept: 1, failed: 0 })
+    expect(result).toEqual({ deleted: 0, deferred: 0, kept: 1, failed: 0 })
     expect(existsSync(archive)).toBe(true)
   } finally {
     rmSync(join(dir, 'retention-stamped-fixture'), { recursive: true, force: true })
