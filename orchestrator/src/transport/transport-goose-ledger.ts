@@ -1,7 +1,7 @@
 // concern: transport-goose-ledger
 /** Best-effort retention of Goose's sandbox-owned session and request ledger. */
 
-import { cpSync, existsSync, mkdirSync } from 'node:fs'
+import { cpSync, lstatSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { runHarnessStateDir } from '../run-owned-paths.ts'
 
@@ -26,10 +26,19 @@ export function preserveGooseLedger(
   onWarning: (message: string) => void,
 ): void {
   for (const copy of gooseLedgerCopyPaths(input)) {
-    if (!existsSync(copy.source)) continue
     try {
+      const source = lstatSync(copy.source, { throwIfNoEntry: false })
+      if (!source) continue
+      if (source.isSymbolicLink()) {
+        onWarning(`Goose ledger copy skipped symbolic link ${copy.source}`)
+        continue
+      }
       mkdirSync(dirname(copy.destination), { recursive: true })
-      cpSync(copy.source, copy.destination, { recursive: true, force: true })
+      cpSync(copy.source, copy.destination, {
+        recursive: true,
+        force: true,
+        filter: (source) => !lstatSync(source).isSymbolicLink(),
+      })
     } catch (error) {
       try {
         onWarning(

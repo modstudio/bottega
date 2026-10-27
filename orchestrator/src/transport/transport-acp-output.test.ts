@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { TOOL_INPUT_EVENT_CHARS } from '../tool-event-text.ts'
+import { TOOL_EVENT_TEXT_CHARS } from '../tool-event-text.ts'
 import { normalizeAcpTurn } from './transport-acp.ts'
 
 test('per-update text output concatenates to the full mixed turn output', () => {
@@ -81,13 +81,13 @@ test('a long tool input is capped with a marker', () => {
         update: {
           sessionUpdate: 'tool_call',
           title: 'shell',
-          rawInput: { command: 'x'.repeat(TOOL_INPUT_EVENT_CHARS + 100) },
+          rawInput: { command: 'x'.repeat(TOOL_EVENT_TEXT_CHARS + 100) },
         },
       },
     ],
   })
   const event = result.events.find((item) => item.kind === 'tool')
 
-  expect(event?.kind === 'tool' ? event.input : undefined).toHaveLength(TOOL_INPUT_EVENT_CHARS)
+  expect(event?.kind === 'tool' ? event.input : undefined).toHaveLength(TOOL_EVENT_TEXT_CHARS)
   expect(event?.kind === 'tool' ? event.input : undefined).toEndWith('… [truncated]')
 })

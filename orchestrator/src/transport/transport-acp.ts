@@ -265,21 +265,31 @@ function toolCallResult(update: AcpUpdate): string | undefined {
   return parts.length ? parts.join('') : undefined
 }
 
-function toolEvent(update: AcpUpdate): Extract<NormalizedEvent, { kind: 'tool' }> {
+function toolUpdateFields(update: AcpUpdate) {
   const locations = Array.isArray(update.locations)
     ? update.locations.flatMap((location) =>
         typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
       )
     : undefined
   return {
+    target: toolCallTarget(update),
+    input: renderToolInput(update.rawInput),
+    result: toolCallResult(update),
+    locations,
+  }
+}
+
+function toolEvent(update: AcpUpdate): Extract<NormalizedEvent, { kind: 'tool' }> {
+  const fields = toolUpdateFields(update)
+  return {
     kind: 'tool',
     title: update.title ?? update.sessionUpdate,
     status: update.status,
     toolKind: update.kind,
-    target: toolCallTarget(update),
-    input: renderToolInput(update.rawInput),
-    result: toolCallResult(update),
-    ...(locations?.length ? { locations } : {}),
+    target: fields.target,
+    input: fields.input,
+    result: fields.result,
+    ...(fields.locations?.length ? { locations: fields.locations } : {}),
   }
 }
 
@@ -290,18 +300,13 @@ function mergeToolUpdate(
   if (update.status) known.status = update.status
   if (update.title) known.title = update.title
   if (update.kind) known.toolKind = update.kind
-  const target = toolCallTarget(update)
-  if (target) known.target = target
-  const input = renderToolInput(update.rawInput)
-  if (input !== undefined) known.input = input
-  const result = toolCallResult(update)
-  if (result) known.result = result
-  const paths = Array.isArray(update.locations)
-    ? update.locations.flatMap((location) =>
-        typeof location?.path === 'string' && location.path ? [{ path: location.path }] : [],
-      )
-    : []
-  if (paths.length) known.locations = [...(known.locations ?? []), ...paths]
+  const fields = toolUpdateFields(update)
+  if (fields.target) known.target = fields.target
+  if (fields.input !== undefined) known.input = fields.input
+  if (fields.result) known.result = fields.result
+  if (fields.locations?.length) {
+    known.locations = [...(known.locations ?? []), ...fields.locations]
+  }
 }
 
 /**

@@ -258,7 +258,7 @@ describe('vendor event log', () => {
         toolKind: 'execute',
         status: 'failed',
         input: `echo safe\necho ${secret}`,
-        result: 'permission denied',
+        result: `permission denied\n${secret}`,
       },
       't1',
     )
@@ -279,7 +279,13 @@ describe('vendor event log', () => {
         title: 'shell',
         input: 'echo safe\n[withheld line: provider-prefix]',
       },
-      { ts: 't1', type: 'tool_result', status: 'failed', bytes: 17, text: 'permission denied' },
+      {
+        ts: 't1',
+        type: 'tool_result',
+        status: 'failed',
+        bytes: Buffer.byteLength(`permission denied\n${secret}`),
+        text: 'permission denied\n[withheld line: provider-prefix]',
+      },
       { ts: 't2', type: 'tool_call', title: 'shell' },
       { ts: 't2', type: 'tool_result', status: 'completed', bytes: 14 },
     ])

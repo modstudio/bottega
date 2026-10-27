@@ -300,7 +300,9 @@ function observedToolEvents(
       type: 'tool_call',
       kind: event.toolKind,
       title: event.title,
-      ...(event.input === undefined ? {} : { input: withholdSecretShapedLines(event.input) }),
+      ...(event.input === undefined
+        ? {}
+        : { input: withholdSecretShapedLines(capToolEventText(event.input)) }),
       ...(locations?.length ? { locations } : {}),
     })
   }
