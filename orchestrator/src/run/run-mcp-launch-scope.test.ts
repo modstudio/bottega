@@ -158,7 +158,10 @@ test('only a transport or harness that renders the selection reports the servers
 test('a Grok CLI reader reports a project-relative server withheld without a tree', () => {
   const selection = selectProjectMcpServers(
     'reader',
-    { boost: { command: 'scripts/mcp/boost' }, bun: { command: 'bun' } },
+    {
+      boost: { name: 'boost', command: 'scripts/mcp/boost' },
+      bun: { name: 'bun', command: 'bun' },
+    },
     { name: 'starship', path: '/project', settings: {} },
     '/isolate',
     false,
