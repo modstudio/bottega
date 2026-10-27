@@ -705,6 +705,19 @@ const RUN_COULD_NOT_VERIFY_INSTRUCTION =
   PROVENANCE_INSTRUCTION_PREFIX +
   'A run which could not execute the suite must say so there and must not present static reasoning as an executed check.'
 
+/**
+ * A worker's sandbox can deny the Docker socket or local network while the
+ * service is up, and a project script may report that as the service not
+ * answering. Without this, a worker that never sees "permission denied" never
+ * retries escalated and reports work it could not test.
+ */
+const SANDBOX_DENIAL_INSTRUCTION = `Your sandbox may deny the Docker socket or local network even while the service
+is running, and a project script may report that denial as the daemon or service
+not answering. When a command that needs Docker or a local service fails that
+way, re-run it with escalated permissions if your harness offers them before
+concluding the service is down. If it still cannot run, record it as a blocker
+and never report a check you could not run as passing.`
+
 /** Build the infrastructure recovery instruction for the selected reader variant. */
 function infrastructureRecovery(findings: boolean): string {
   const serveStep = findings
@@ -843,6 +856,8 @@ these get fixed. An environment problem capping every run on this machine is
 invisible if each worker quietly works around it and says nothing — and workers
 have been doing exactly that, mentioning a denied Docker socket in passing while
 reporting a test verdict they could not actually test.
+
+${SANDBOX_DENIAL_INSTRUCTION}
 
 A BLOCKER IS NOT A QUESTION. A question is something only the architect can
 answer, and you stop and wait. A blocker is something only the environment can
