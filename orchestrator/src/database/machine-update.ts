@@ -1,10 +1,10 @@
 // concern: main-checkout database update
 /** Adapts Git, the live store, and migration execution around the drain decision. */
 
-import { existsSync, realpathSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { existsSync } from 'node:fs'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { installRoot } from '../../../shared/install-root.ts'
+import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { RUN_WALL_TIME_CEILING_MS } from '../jobs/jobs.ts'
 import { projectAt } from '../project/projects.ts'
@@ -41,6 +41,10 @@ const MIGRATION_DRAIN_WAIT_MAX_MS =
   RUN_WALL_TIME_CEILING_MS + MIGRATION_TERMINALISATION_HEADROOM_MS + MIGRATION_CLOSE_OUT_HEADROOM_MS
 
 type Presentation = { log(value: string): void }
+
+function sameCheckout(left: string, right: string): boolean {
+  return realpathOrSpelled(left) === realpathOrSpelled(right)
+}
 
 function incomingJournal(
   cwd: string,
@@ -132,9 +136,12 @@ export async function machineUpdateCommand(
   const project = withSynchronousDatabaseForMigrationStep((database) =>
     (deps.project ?? projectAt)(target, database),
   )
-  if (!project || realpathSync(target) !== realpathSync(project.path)) {
+  if (!project || !sameCheckout(target, project.path)) {
+    const binary = project
+      ? `${project.path}/bin/${PLATFORM_SLUG}`
+      : `the registered main checkout's bin/${PLATFORM_SLUG}`
     throw new Error(
-      'refusing machine update outside a registered main checkout; run it from the registered main checkout root',
+      `refusing machine update: this installation's root ${target} is not a registered main checkout; run ${binary} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
     )
   }
   const branch = project.settings.trunk?.trim()
@@ -146,7 +153,7 @@ export async function machineUpdateCommand(
         `check out ${branch} in ${project.path}`,
     )
   }
-  if (resolve(callerCwd) !== resolve(target)) {
+  if (!sameCheckout(callerCwd, target)) {
     presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
   }
   runGit(target, ['fetch', 'origin', branch])

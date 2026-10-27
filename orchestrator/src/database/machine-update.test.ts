@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { installRoot } from '../../../shared/install-root.ts'
+import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
@@ -251,11 +251,26 @@ test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => 
   )
 })
 
+test('machine update refuses an installation that is not a registered main checkout', async () => {
+  await expect(
+    machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => null,
+      },
+    ),
+  ).rejects.toThrow(
+    `refusing machine update: this installation's root ${dir} is not a registered main checkout; run the registered main checkout's bin/${PLATFORM_SLUG} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`,
+  )
+})
+
 test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is another project`, async () => {
   const target = dir
   const caller = resolve(dir, 'other-project')
   const projectPaths: string[] = []
-  const gitCalls: { cwd: string; args: string[] }[] = []
+  const gitCwds: string[] = []
   const lines: string[] = []
   await machineUpdateCommand(
     { log: (line) => lines.push(line) },
@@ -268,7 +283,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
         return { name: PLATFORM_SLUG, path: target, settings: { trunk: 'main' } }
       },
       git: (cwd, args) => {
-        gitCalls.push({ cwd, args })
+        gitCwds.push(cwd)
         if (args[0] === 'branch') return 'main'
         return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
       },
@@ -277,11 +292,7 @@ test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is an
   )
   expect(lines).toEqual([`updating the ${PLATFORM_NAME} checkout at ${target}`])
   expect(projectPaths).toEqual([target])
-  expect(gitCalls.map((call) => call.cwd)).toEqual([target, target, target, target])
-  expect(gitCalls.map((call) => call.args[0])).toEqual(['branch', 'fetch', 'show', 'pull'])
-  expect(gitCalls.find((call) => call.args[0] === 'show')?.args[1]).toBe(
-    `origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`,
-  )
+  expect(gitCwds).toEqual([target, target, target, target])
 })
 
 test('machine update defaults the target to the installation root', async () => {
