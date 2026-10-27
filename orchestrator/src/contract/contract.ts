@@ -706,6 +706,19 @@ const RUN_COULD_NOT_VERIFY_INSTRUCTION =
   'A run which could not execute the suite must say so there and must not present static reasoning as an executed check.'
 
 /** Build the infrastructure recovery instruction for the selected reader variant. */
+/**
+ * A worker's sandbox can deny the Docker socket or local network while the
+ * service is up, and a project script may report that as the service not
+ * answering. Without this, a worker that never sees "permission denied" never
+ * retries escalated and reports work it could not test.
+ */
+const SANDBOX_DENIAL_INSTRUCTION = `Your sandbox may deny the Docker socket or local network even while the service
+is running, and a project script may report that denial as the daemon or service
+not answering. When a command that needs Docker or a local service fails that
+way, re-run it with escalated permissions if your harness offers them before
+concluding the service is down. If it still cannot run, record it as a blocker
+and never report a check you could not run as passing.`
+
 function infrastructureRecovery(findings: boolean): string {
   const serveStep = findings
     ? 'A reader MAY run that serve step only for a focused probe tied to one specific finding and MAY make scratch edits to verify a finding; a reader MUST NOT commit, and its diff is never the deliverable.'
@@ -718,6 +731,8 @@ The project register says how this worktree's infrastructure is brought up:
 use the register's \`worktree.recipe.serve\` step when the project declares one,
 otherwise the serve instructions in its \`worktree.notes\`.
 ${serveStep}
+
+${SANDBOX_DENIAL_INSTRUCTION}
 
 ${couldNotVerify}
 `.trim()
