@@ -32,7 +32,13 @@ export function recordWorkflowSelfRuling(
   const ruling = input.selfRuling.ruling.trim()
   if (!ruling) throw new Error('--self-ruling is required')
   const basis = input.selfRuling.basis.trim()
-  const refusal = selfRulingRefusal(input.resolvedAutonomy, input.floors, basis)
+  const refusal = selfRulingRefusal(
+    input.resolvedAutonomy,
+    input.floors,
+    basis,
+    input.stepOrdinal,
+    input.stepSlug,
+  )
   if (refusal) throw new Error(refusal)
   const at = nowIso()
   const question = upsertWorkflowQuestion(

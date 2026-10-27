@@ -19,6 +19,8 @@ export function selfRulingRefusal(
   resolvedAutonomy: AutonomyValue,
   floors: Pick<Floor, 'kind' | 'operatorRuling'>[],
   basis: string,
+  stepOrdinal: number,
+  stepSlug: string,
 ): string | null {
   if (
     !mayCloseOnAgentSelfRuling(
@@ -30,7 +32,7 @@ export function selfRulingRefusal(
     ) &&
     !floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling)
   )
-    return 'self-ruling is refused because this step has no ruling floor; this step is closed with the evidence its floor names'
+    return `self-ruling is refused because step ${stepOrdinal} ${stepSlug} has no ruling floor; close it with ${floors.map((floor) => flagForFloor(floor.kind)).join('; ')}`
   if (resolvedAutonomy !== 'auto' && resolvedAutonomy !== 'review')
     return `self-ruling is refused because resolved autonomy is ${resolvedAutonomy}; ${remedy}`
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))

@@ -286,7 +286,7 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
     { resolution: resolution(d) },
   )
   const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
-  expect(() => selfRule(d)).toThrow(/has no ruling floor.*evidence its floor names/)
+  expect(() => selfRule(d)).toThrow(/has no ruling floor; close it with/)
   expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual(cursorBefore)
   expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
     count: 0,
