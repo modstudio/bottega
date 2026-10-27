@@ -25,6 +25,11 @@
     <key>StartInterval</key>
     <integer>7200</integer>
 
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+
     <!-- PATH is not inherited under launchd, and the sweep shells `git`, `bun`
          and each project's own worktree script. Without this it fails on every
          run, silently. -->

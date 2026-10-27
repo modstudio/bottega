@@ -1,11 +1,15 @@
 // concern: archived reader clone retention
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { readerCloneArchiveRetentionDecision } from '../close/reader-scratch-release.ts'
+import {
+  type ReaderCloneArchive,
+  readerCloneArchivePruneDecision,
+} from '../close/reader-scratch-release.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 
 export const READER_CLONE_ARCHIVE_RETENTION_DAYS = 14
+const READER_CLONE_ARCHIVE_DELETIONS_PER_SWEEP = 20
 export const STRAY_WORKTREE_ARCHIVE_PROJECT_MARKER = '.stray-worktree-archives'
 
 export function readerCloneArchiveDirectory(runsDirectory = RUNS_DIR): string {
@@ -44,23 +48,39 @@ export function pruneReaderCloneArchives(input: {
   presentation: Pick<CleanupPresentation, 'log' | 'error'>
   runsDirectory?: string
   nowMs?: number
-}): { deleted: number; kept: number; failed: number } {
+}): { deleted: number; deferred: number; kept: number; failed: number } {
   const root = readerCloneArchiveDirectory(input.runsDirectory)
-  const counts = { deleted: 0, kept: 0, failed: 0 }
+  const counts = { deleted: 0, deferred: 0, kept: 0, failed: 0 }
   if (!existsSync(root)) return counts
   const nowMs = input.nowMs ?? Date.now()
+  const archives: ReaderCloneArchive[] = []
   for (const archive of archivedDirectories(root)) {
-    const { path } = archive
     try {
-      const decision = readerCloneArchiveRetentionDecision({
-        nowMs,
-        modifiedMs: archive.archivedMs ?? statSync(path).mtimeMs,
-        retentionDays: READER_CLONE_ARCHIVE_RETENTION_DAYS,
+      archives.push({
+        path: archive.path,
+        archivedMs: archive.archivedMs ?? statSync(archive.path).mtimeMs,
       })
-      if (decision === 'keep') {
-        counts.kept++
-        continue
-      }
+    } catch (error) {
+      counts.failed++
+      input.presentation.error(
+        `could not read the archived time of reader clone archive ${archive.path}: ${String((error as Error).message ?? error)}`,
+      )
+    }
+  }
+  const decision = readerCloneArchivePruneDecision({
+    archives,
+    nowMs,
+    retentionDays: READER_CLONE_ARCHIVE_RETENTION_DAYS,
+    deletionCap: READER_CLONE_ARCHIVE_DELETIONS_PER_SWEEP,
+  })
+  counts.deferred = decision.deferred
+  counts.kept = archives.length - decision.delete.length - decision.deferred
+  if (counts.deferred > 0)
+    input.presentation.log(
+      `deferred ${counts.deferred} expired reader clone archives because the per-sweep deletion limit is ${READER_CLONE_ARCHIVE_DELETIONS_PER_SWEEP}`,
+    )
+  for (const path of decision.delete) {
+    try {
       if (input.dryRun) input.presentation.log(`would delete expired reader clone archive ${path}`)
       else {
         rmSync(path, { recursive: true })
