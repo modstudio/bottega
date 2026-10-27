@@ -5,6 +5,7 @@ import {
   type AgentRow,
   addAgent,
   GOOSE_CONTEXT_CEILING,
+  GOOSE_READING_MAX_TURNS,
   gooseContextLimit,
   rowAgent,
 } from './agent-registry.ts'
@@ -70,7 +71,28 @@ test('no job leaves the Goose context limit unset', () => {
 })
 
 test('a goose row without a declared context window keeps the goose default', () => {
-  expect(rowAgent(gooseRow()).env?.()).not.toHaveProperty('GOOSE_CONTEXT_LIMIT')
+  const env = rowAgent(gooseRow()).env?.()
+  expect(env).not.toHaveProperty('GOOSE_CONTEXT_LIMIT')
+  expect(env).not.toHaveProperty('GOOSE_MAX_TURNS')
+})
+
+test('a Goose reading job sets the turn ceiling; a writing job and a non-Goose row do not', () => {
+  const goose = rowAgent(gooseRow(200_000))
+  const reading = Boolean(job('review-lens').needs.writesRepo)
+  const writing = Boolean(job('implement').needs.writesRepo)
+  expect(goose.env?.(job('review-lens').contextTokens, null, reading)).toMatchObject({
+    GOOSE_MAX_TURNS: String(GOOSE_READING_MAX_TURNS),
+  })
+  expect(goose.env?.(job('implement').contextTokens, null, writing)).not.toHaveProperty(
+    'GOOSE_MAX_TURNS',
+  )
+  expect(
+    rowAgent({ ...gooseRow(200_000), harness: 'codex' }).env?.(
+      job('review-lens').contextTokens,
+      null,
+      reading,
+    ),
+  ).not.toHaveProperty('GOOSE_MAX_TURNS')
 })
 
 test('a probe result with no ok verdict is unknown', () => {

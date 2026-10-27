@@ -7,6 +7,7 @@ import { decideOutcome } from '../outcome.ts'
 import { decideFailover } from '../route/failover.ts'
 import { candidates, isRoutingEvidence, pick } from '../route/route.ts'
 import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
+import { GOOSE_READING_MAX_TURNS } from '../agent/agent-registry.ts'
 import { replyFileFallbackError } from './run-live.ts'
 import { firstThrottleObserver } from './run-throttle.ts'
 
@@ -16,6 +17,16 @@ test('a missing reply file leaves a visible final-message fallback notice', () =
     `reply.json missing at ${path}; used final-message fallback`,
   )
   expect(replyFileFallbackError(path, true, null)).toBeNull()
+})
+
+test('a missing reply at the Goose turn ceiling names the ceiling; below it does not', () => {
+  const path = '/var/tmp/orch/runs/42/scratch/reply.json'
+  expect(replyFileFallbackError(path, false, null, GOOSE_READING_MAX_TURNS)).toBe(
+    `reply.json missing at ${path}; used final-message fallback; the run stopped at the Goose turn ceiling (${GOOSE_READING_MAX_TURNS})`,
+  )
+  expect(replyFileFallbackError(path, false, null, GOOSE_READING_MAX_TURNS - 1)).toBe(
+    `reply.json missing at ${path}; used final-message fallback`,
+  )
 })
 
 test('the first live throttle cancels exactly once', () => {

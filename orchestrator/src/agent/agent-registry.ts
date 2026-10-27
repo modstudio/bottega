@@ -40,6 +40,13 @@ export type AgentRow = {
 export const GOOSE_CONTEXT_CEILING = 128_000
 
 /**
+ * Turn bound for a Goose run of a job that does not write the repository.
+ * The ceiling sits above the p99 of OK Goose review-lens runs' model calls,
+ * so it stops a runaway without cutting a normal run.
+ */
+export const GOOSE_READING_MAX_TURNS = 150
+
+/**
  * The context limit a Goose worker runs under, bounded by the served window,
  * the job budget, and the Goose ceiling. Inline prompt material may raise the
  * ceiling enough to hold that prompt plus `OUTPUT_RESERVE`. No job means no
@@ -64,6 +71,7 @@ function rowLaunchEnvironment(
   row: AgentRow,
   jobContextTokens: number | null,
   promptBytes: number | null,
+  writesRepo: boolean | null,
 ): Record<string, string> {
   if (!row.base_url) return {}
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
@@ -78,6 +86,7 @@ function rowLaunchEnvironment(
           GOOSE_MODEL: row.model,
           GOOSE_TELEMETRY_ENABLED: 'false',
           ...(contextLimit === null ? {} : { GOOSE_CONTEXT_LIMIT: String(contextLimit) }),
+          ...(writesRepo === false ? { GOOSE_MAX_TURNS: String(GOOSE_READING_MAX_TURNS) } : {}),
         }
       : {}),
   }
@@ -146,9 +155,18 @@ export function rowAgent(row: AgentRow): Agent {
     trainsOnInputs: Boolean(row.trains_on_inputs),
     ...(row.base_url
       ? {
-          env: (jobContextTokens?: number | null, promptBytes?: number | null) => ({
+          env: (
+            jobContextTokens?: number | null,
+            promptBytes?: number | null,
+            writesRepo?: boolean | null,
+          ) => ({
             ...(base.env?.() ?? {}),
-            ...rowLaunchEnvironment(row, jobContextTokens ?? null, promptBytes ?? null),
+            ...rowLaunchEnvironment(
+              row,
+              jobContextTokens ?? null,
+              promptBytes ?? null,
+              writesRepo ?? null,
+            ),
           }),
         }
       : {}),

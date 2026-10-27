@@ -7,6 +7,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectCodeGitEnv } from '../../../shared/git.ts'
+import { GOOSE_READING_MAX_TURNS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
@@ -108,7 +109,7 @@ function liveChildEnv(
   extra: Record<string, string>,
   includeStore: boolean,
   runNumber: number,
-  jobContextTokens: number | null,
+  requestedJob: Job,
   promptBytes: number | null,
 ): Record<string, string> {
   const environment = childEnv(
@@ -119,8 +120,9 @@ function liveChildEnv(
     includeStore,
     runNumber,
     {},
-    jobContextTokens,
+    requestedJob.contextTokens,
     promptBytes,
+    Boolean(requestedJob.needs.writesRepo),
   )
   return includeStore ? (projectCodeGitEnv(environment) as Record<string, string>) : environment
 }
@@ -189,10 +191,25 @@ export function replyFileFallbackError(
   replyFile: string,
   present: boolean,
   error: string | null,
+  modelCalls: number | null = null,
 ): string | null {
   if (present) return error
   const notice = `${REPLY_FILE_NAME} missing at ${replyFile}; used final-message fallback`
-  return error ? `${error}\n${notice}` : notice
+  const ceiling =
+    modelCalls !== null && modelCalls >= GOOSE_READING_MAX_TURNS
+      ? `; the run stopped at the Goose turn ceiling (${GOOSE_READING_MAX_TURNS})`
+      : ''
+  const text = `${notice}${ceiling}`
+  return error ? `${error}\n${text}` : text
+}
+
+function missingReplyError(
+  replyFile: string,
+  present: boolean,
+  error: string | null,
+  usage: RunCallUsage | null,
+): string | null {
+  return replyFileFallbackError(replyFile, present, error, usage?.modelCalls ?? null)
 }
 
 type LiveOptions = {
@@ -613,7 +630,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         liveLaunchExtra(launchEnvironment, scratchDir, askLoopback),
         repoJob,
         claim.number,
-        requestedJob.contextTokens,
+        requestedJob,
         // The composed prompt's own size, measured where the prompt is final:
         // some jobs' material arrives inline here (a `summarize` prompt carries
         // its document) rather than in the working set the job declares.
@@ -874,7 +891,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       agentName: name,
     })
     error = appendGateExclusionToTimeoutError(
-      replyFileFallbackError(replyFile, replyFilePresent, derived.error),
+      missingReplyError(replyFile, replyFilePresent, derived.error, callUsage.value),
       timedOut,
       excludedGateMsAtTimeout,
     )
