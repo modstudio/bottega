@@ -1,27 +1,16 @@
 #!/usr/bin/env bun
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { resolve } from 'node:path'
+/**
+ * The static half of the test-spawn rule: test files under the static roots
+ * spawn nothing, build no repository and touch no live store. It runs with
+ * `bun run check` and reads no gate timing artifact. The measured half lives in
+ * scripts/check-test-spawns-measured.ts and runs against the artifact of the
+ * one gate run that produced it, from orchestrator/test/run-gate.ts.
+ */
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { resolveGateTimingDirectory } from '../shared/gate-timing-directory.ts'
-import { mainCheckoutOf } from '../shared/git.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const checkout = resolve(ROOT)
-const GATE_TIMING_DIR = resolveGateTimingDirectory(
-  checkout,
-  mainCheckoutOf(checkout) !== checkout,
-  process.env,
-  tmpdir(),
-)
-const SPAWN_LIMIT = 20
 const STATIC_TEST_ROOTS = ['.githooks', 'hub', 'scripts', 'shared']
-
-type SpawnMeasurement = {
-  file: string
-  spawn: number
-  spawnSync: number
-}
 
 type StaticViolation = { file: string; line: number; reason: string }
 
@@ -65,41 +54,4 @@ for (const violation of staticFailures) {
   console.error(`${violation.file}:${violation.line}: ${violation.reason}`)
 }
 if (staticFailures.length) process.exit(1)
-
-function newestSpawnMeasurements(): SpawnMeasurement[] | null {
-  if (!existsSync(GATE_TIMING_DIR)) return null
-  const artifacts = readdirSync(GATE_TIMING_DIR)
-    .filter((name) => /^\d{4}-.+\.json$/.test(name))
-    .map((name) => `${GATE_TIMING_DIR}/${name}`)
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
-  if (!artifacts.length) return null
-  const artifact = JSON.parse(readFileSync(artifacts[0]!, 'utf8')) as {
-    files?: SpawnMeasurement[]
-  }
-  if (!Array.isArray(artifact.files)) {
-    throw new Error(`${artifacts[0]}: gate timing artifact has no files table`)
-  }
-  return artifact.files.filter(
-    (row) => row.file.startsWith('src/') && row.file.endsWith('.test.ts'),
-  )
-}
-
-const measurements = newestSpawnMeasurements()
-if (!measurements) {
-  console.log(
-    'check-test-spawns: static rule ok; no gate timing artifact, fixed spawn rule not measured',
-  )
-  process.exit(0)
-}
-const violations = measurements
-  .map((row) => ({ file: row.file, spawns: row.spawn + row.spawnSync }))
-  .filter((row) => row.spawns > SPAWN_LIMIT)
-for (const row of violations) {
-  console.error(
-    `orchestrator/${row.file}: measured ${row.spawns} spawns, fixed limit ${SPAWN_LIMIT}`,
-  )
-}
-if (violations.length) process.exit(1)
-console.log(
-  `check-test-spawns: static rule ok; measured ${measurements.length} orchestrator unit test files, fixed limit ${SPAWN_LIMIT}`,
-)
+console.log('check-test-spawns: static rule ok')

@@ -114,7 +114,7 @@ It reports emptiness only after looking at the right data. Otherwise it exits no
 
 # The test gate
 
-`gate-load.ts` runs `bun test` preloaded in-process on `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; others wait for load and RAM (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`), a wait CI skips. Timing only ratchets down. `scripts/check-test-spawns.ts` caps Bun spawns at `SPAWN_LIMIT`. CI runs one job per `bun test --shard`. `scripts/check-plan.ts` names its legs; `scripts/check-ci-workflow.ts` pins the workflow to them. No size classes, subprocess leg or retry path.
+`gate-load.ts` runs `bun test` preloaded in-process on `orchestrator/src`. `GATE_CONCURRENCY_LIMIT` bounds gates; others wait for load and RAM (macOS kernel pressure, else `FREE_MEM_FLOOR_BYTES`), a wait CI skips. Timing only ratchets down. `test:gate` enforces measured spawn counts, report-only in CI. CI runs one job per `bun test --shard`. `scripts/check-plan.ts` names its legs; `scripts/check-ci-workflow.ts` pins the workflow to them. No size classes, subprocess leg or retry path.
 
 # Prompts and replies age out
 

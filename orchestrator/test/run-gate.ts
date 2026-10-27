@@ -77,6 +77,12 @@ async function runTests(): Promise<GateTimings> {
 const timing = await withGateSlot(runTests)
 writeFileSync(timingPath, `${JSON.stringify(timing, null, 2)}\n`)
 console.log(`wrote ${timingPath}`)
+// The measured spawn rule runs against this run's own artifact, named
+// explicitly. It blocks a local or worker gate; in CI it reports and exits 0.
+const spawnCheck = Bun.spawnSync(
+  ['bun', join(checkout, 'scripts', 'check-test-spawns-measured.ts'), `--artifact=${timingPath}`],
+  { cwd: checkout, stdout: 'inherit', stderr: 'inherit' },
+)
 console.log('orchestrator test wall time top ten:')
 for (const file of [...timing.files].sort((a, b) => b.wallMs - a.wallMs).slice(0, 10)) {
   console.log(`${file.file} ${Math.round(file.wallMs)}ms`)
@@ -89,4 +95,4 @@ const timingPassed = publishTimingSummary(
   console,
   timing.phaseTimingNotices,
 )
-process.exit(timing.exitCode !== 0 || !timingPassed ? 1 : 0)
+process.exit(timing.exitCode !== 0 || !timingPassed || spawnCheck.exitCode !== 0 ? 1 : 0)
