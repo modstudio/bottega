@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { formatCollectLeg, hostedCollectLegs } from './collect.ts'
 import { db, writeTransaction } from './db.ts'
@@ -10,6 +10,7 @@ import { applyHostedTask } from './task-cache.ts'
 import type { HostedSpaceChangePage } from './task-client.ts'
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 const at = '2026-10-09T12:00:00.000Z'
 const taskId = '01990000-0000-7000-8000-000000001240'

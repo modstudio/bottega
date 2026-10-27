@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { hostedRouteTestConfig } from '../test/hosted-route-fixture.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
@@ -16,6 +16,7 @@ const applyHostedNoteChanges = (changes: Awaited<ReturnType<typeof hostedNoteCha
   writeTransaction((conn) => applyHostedNoteRows(conn, changes))
 
 beforeAll(resetFixtureStore)
+afterAll(resetFixtureStore)
 const unreachable = {
   baseUrl: 'https://hub.example.test',
   token: 'test',

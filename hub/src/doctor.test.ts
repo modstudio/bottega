@@ -6,6 +6,7 @@ import { writeTransaction } from './db.ts'
 import { hubDoctorLines, INTERVAL_UNLINKED_KEY_LIMIT } from './doctor.ts'
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 describe(`${PLATFORM_SLUG} machine doctor`, () => {
   const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL

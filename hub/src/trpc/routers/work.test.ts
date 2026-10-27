@@ -1,10 +1,11 @@
-import { beforeAll, beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../../../test/run-fixtures.ts'
 import { db, writeTransaction } from '../../db.ts'
 import { taskBodyVersion } from '../../task-detail.ts'
 import { createWorkRouter } from './work.ts'
 
 beforeAll(resetFixtureStore)
+afterAll(resetFixtureStore)
 beforeEach(resetFixtureStore)
 
 test('task reads disable edits when machine identity resolution throws', async () => {

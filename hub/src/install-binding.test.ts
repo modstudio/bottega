@@ -1,10 +1,11 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
 import { NEVER_BOUND } from './hosted-write-mode.ts'
 import { persistInstallBinding, readInstallBinding } from './install-binding.ts'
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 test('a fresh store is never-bound until a hosted row or identity is remembered', () => {
   expect(readInstallBinding()).toEqual(NEVER_BOUND)
