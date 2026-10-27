@@ -489,17 +489,7 @@ function workspaceSource(
             status,
             page,
             per_page: 100,
-          })) as {
-            tasks?: {
-              id?: string
-              short_id?: string
-              summary?: string
-              status?: string
-              status_category?: string
-              assignee_id?: string | number | null
-            }[]
-            last_page?: number
-          }
+          })) as { tasks?: WorkspaceTask[]; last_page?: number }
           for (const t of r.tasks ?? []) {
             if (!t.short_id) continue
             out.push({

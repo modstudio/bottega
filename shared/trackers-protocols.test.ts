@@ -327,6 +327,21 @@ describe('tracker source construction', () => {
     expect(calls).toEqual([{ name: 'get-task-tool', args: { id: 'STAR-12' } }])
   })
 
+  test('workspace lookup searches when get answers with another task', async () => {
+    const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
+    const caller: ToolCaller = {
+      async callTool(name) {
+        if (name === 'get-task-tool') return { id: 'other-uuid', short_id: 'STAR-120' }
+        return { tasks: [{ id: 'workspace-uuid', short_id: 'STAR-12' }], last_page: 1 }
+      },
+    }
+
+    expect(await source.lookup!(caller, 'STAR-12')).toMatchObject({
+      externalId: 'workspace-uuid',
+      key: 'STAR-12',
+    })
+  })
+
   test('workspace lookup finds an exact task on the second search page after get throws', async () => {
     const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
     const calls: { name: string; args: Record<string, unknown> }[] = []
