@@ -21,10 +21,7 @@ import {
   temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
 import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-access.ts'
-import {
-  sampleWalWriteLock,
-  type WalWriteLockSampleResult,
-} from '../../shared/store-write-lock.ts'
+import { sampleWalWriteLock, type WalWriteLockSampleResult } from '../../shared/store-write-lock.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
   applyMigrations,

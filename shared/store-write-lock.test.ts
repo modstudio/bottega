@@ -1,8 +1,9 @@
 import { Database } from 'bun:sqlite'
 import { afterAll, expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { assetPath } from './install-root.ts'
 import {
   classifyWalWriteLockSamples,
   probeWalWriteLock,
@@ -12,6 +13,10 @@ import {
 const dir = mkdtempSync(join(tmpdir(), 'store-write-lock-test-'))
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+test('the shared probe resolves its C helper beside the install root', () => {
+  expect(existsSync(assetPath('shared', 'store-write-lock.c'))).toBe(true)
+})
 
 test('WAL write-lock samples distinguish free, contended, and held', () => {
   expect(classifyWalWriteLockSamples([null, null, null])).toEqual({
