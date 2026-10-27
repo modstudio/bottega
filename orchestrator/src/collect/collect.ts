@@ -178,50 +178,35 @@ export type FailoverSuccessor = {
   record_id: string
   number: number
   agent: string
-  retry_of_record_id: string
 }
 
 /**
- * The automatic failover successor each of these conversations has claimed, in
- * one read.
+ * The automatic failover successor each of these runs has claimed, in one read.
  *
- * A successor is anchored on the run it retries rather than on the origin of a
- * chain, because a successor is itself a root that can fail and be succeeded in
- * turn. The lowest-numbered successor wins, which is the one the closing run
- * started first.
+ * The lowest-numbered successor wins, which is the one the closing run started
+ * first. `run_automatic_failover_retry` serves the retry target and ordering.
  */
 export function failoverSuccessors(
   database: Database,
-  rootIds: string[],
+  recordIds: string[],
 ): Map<string, FailoverSuccessor> {
   const successors = new Map<string, FailoverSuccessor>()
-  if (!rootIds.length) return successors
-  // Numbered so both predicates share one binding per root and the list keeps
-  // SQLite's whole variable ceiling.
-  const marks = rootIds.map((_, index) => `?${index + 1}`).join(',')
+  if (!recordIds.length) return successors
+  const marks = recordIds.map(() => '?').join(',')
   const rows = database
-    .query<FailoverSuccessor & { root_id: string }, string[]>(
-      // Driven from the member columns so each side of the OR reads an index:
-      // a derived table over COALESCE would force a scan of every run.
-      `SELECT COALESCE(member.parent_run_record_id, member.record_id) root_id,
-              successor.record_id, successor.number, successor.agent,
-              successor.retry_of_record_id
-         FROM run member
-         JOIN run successor
-           ON successor.retry_of_record_id = member.record_id
-          AND successor.automatic_failover = 1
-        WHERE (member.record_id IN (${marks}) AND member.parent_run_record_id IS NULL)
-           OR member.parent_run_record_id IN (${marks})
-        ORDER BY successor.number`,
+    .query<FailoverSuccessor & { retry_of_record_id: string }, string[]>(
+      `SELECT retry_of_record_id, record_id, number, agent
+         FROM run INDEXED BY run_automatic_failover_retry
+        WHERE automatic_failover = 1 AND retry_of_record_id IN (${marks})
+        ORDER BY number`,
     )
-    .all(...rootIds)
+    .all(...recordIds)
   for (const row of rows) {
-    if (successors.has(row.root_id)) continue
-    successors.set(row.root_id, {
+    if (successors.has(row.retry_of_record_id)) continue
+    successors.set(row.retry_of_record_id, {
       record_id: row.record_id,
       number: row.number,
       agent: row.agent,
-      retry_of_record_id: row.retry_of_record_id,
     })
   }
   return successors
@@ -254,7 +239,15 @@ export function resolveFailover(
       parent_run_record_id: string | null
     } | null
     if (!prior) break
-    rootId = prior.parent_run_record_id ?? prior.record_id
+    const priorRootId = prior.parent_run_record_id ?? prior.record_id
+    const priorLatest = database
+      .query(
+        `SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=?
+         ORDER BY turn DESC, number DESC LIMIT 1`,
+      )
+      .get(priorRootId, priorRootId) as { record_id: string }
+    if (priorLatest.record_id !== root.retry_of_record_id) break
+    rootId = priorRootId
   }
 
   const attempts: FailoverAttempt[] = []
@@ -267,8 +260,8 @@ export function resolveFailover(
       )
       .get(rootId, rootId) as Omit<FailoverAttempt, 'rootId'>
     attempts.push({ rootId, ...latest })
-    const successor = failoverSuccessors(database, [rootId]).get(rootId)
-    if (!successor || successor.retry_of_record_id !== latest.record_id) break
+    const successor = failoverSuccessors(database, [latest.record_id]).get(latest.record_id)
+    if (!successor) break
     rootId = successor.record_id
   }
   const last = attempts.at(-1)!

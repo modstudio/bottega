@@ -703,13 +703,32 @@ describe('failover successors', () => {
       record_id: first,
       number: runNumber(first),
       agent: 'grok',
-      retry_of_record_id: root,
     })
   })
 
-  test('resolution follows a failover successor only from the latest turn', () => {
-    const root = addRun({ agent: 'codex', job: 'review-lens' })
-    const failedTurn = addRun({
+  test('a continued origin and its superseded successor resolve independently', () => {
+    const root = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'contract',
+    })
+    const successor = automaticSuccessor(root, 'grok')
+    const laterTurn = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      parent: root,
+      turn: 2,
+    })
+
+    expect(resolveFailover(db(), root).finalId).toBe(laterTurn)
+    expect(resolveFailover(db(), successor).finalId).toBe(successor)
+  })
+
+  test('a historical chain follows the latest turn successor', () => {
+    const root = addRun({ agent: 'codex', job: 'review-lens', status: 'failed' })
+    automaticSuccessor(root, 'claude')
+    const latestTurn = addRun({
       agent: 'codex',
       job: 'review-lens',
       status: 'failed',
@@ -717,16 +736,13 @@ describe('failover successors', () => {
       parent: root,
       turn: 2,
     })
-    automaticSuccessor(failedTurn, 'grok')
-    const newerTurn = addRun({
-      agent: 'codex',
-      job: 'review-lens',
-      parent: root,
-      turn: 3,
-    })
+    // Historical row shape: current routing does not automatically fail over a later turn.
+    const latestSuccessor = automaticSuccessor(latestTurn, 'grok')
 
-    expect(resolveFailover(db(), newerTurn).finalId).toBe(newerTurn)
+    expect(resolveFailover(db(), root).finalId).toBe(latestSuccessor)
+  })
 
+  test('a plain failed root follows its automatic successor', () => {
     const failedRoot = addRun({
       agent: 'codex',
       job: 'review-lens',
