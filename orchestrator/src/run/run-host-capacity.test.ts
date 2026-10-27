@@ -4,7 +4,9 @@ import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import type { HostLoad } from '../gate-load.ts'
 import {
+  RUN_HOST_CAPACITY_WAITERS_SQL,
   RUN_HOST_WAIT_MAX_MS,
+  RUNNING_REPOSITORY_FACTS_SQL,
   runHostCapacityQueue,
   startRunAfterHostCapacity,
   waitForRunHostCapacity,
@@ -35,6 +37,23 @@ const repositoryRun = (repo: string | null = '/repo') => {
 }
 
 describe('run host capacity', () => {
+  test('running repository queries use the partial host-capacity index', () => {
+    const plans = [
+      db()
+        .query<{ detail: string }, [string]>(`EXPLAIN QUERY PLAN ${RUNNING_REPOSITORY_FACTS_SQL}`)
+        .all('other-run'),
+      db()
+        .query<{ detail: string }, []>(`EXPLAIN QUERY PLAN ${RUN_HOST_CAPACITY_WAITERS_SQL}`)
+        .all(),
+    ]
+
+    for (const plan of plans) {
+      const details = plan.map((step) => step.detail).join('\n')
+      expect(details).toContain('run_running_repository_idx')
+      expect(details).not.toContain('SCAN run')
+    }
+  })
+
   test('a pre-spawn host-capacity waiter stops when a migration drain appears', async () => {
     const runId = repositoryRun()
     repositoryRun()
