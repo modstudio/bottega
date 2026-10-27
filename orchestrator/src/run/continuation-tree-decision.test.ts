@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { continuationTreeDecision } from './continuation-tree-decision.ts'
+import { continuationTreeDecision, retryLaunchDecision } from './continuation-tree-decision.ts'
 
 describe('continuation tree decision', () => {
   test.each([
@@ -65,5 +65,47 @@ describe('continuation tree decision', () => {
     ],
   ] as const)('%s', (_name, input, expected) => {
     expect(continuationTreeDecision(input)).toEqual(expected)
+  })
+})
+
+describe('retry launch decision', () => {
+  test('a reading retry launches from the original caller without an explicit base', () => {
+    expect(
+      retryLaunchDecision({
+        writesRepo: false,
+        inheritedCwd: '/runs/failed-reader-clone',
+        originalLaunchCwd: '/projects/caller',
+        base: 'reader-base',
+        launchBase: 'explicit-reader-base',
+      }),
+    ).toEqual({ cwd: '/projects/caller', base: undefined, launchBase: undefined })
+  })
+
+  test('a reading retry falls back to the recorded continuation checkout', () => {
+    expect(
+      retryLaunchDecision({
+        writesRepo: false,
+        inheritedCwd: '/projects/fallback',
+        originalLaunchCwd: null,
+        base: 'reader-base',
+        launchBase: 'explicit-reader-base',
+      }),
+    ).toEqual({ cwd: '/projects/fallback', base: undefined, launchBase: undefined })
+  })
+
+  test('a writing retry inherits its tree and explicit base', () => {
+    expect(
+      retryLaunchDecision({
+        writesRepo: true,
+        inheritedCwd: '/runs/writer-tree',
+        originalLaunchCwd: '/projects/caller',
+        base: 'writer-base',
+        launchBase: 'explicit-writer-base',
+      }),
+    ).toEqual({
+      cwd: '/runs/writer-tree',
+      base: 'writer-base',
+      launchBase: 'explicit-writer-base',
+    })
   })
 })

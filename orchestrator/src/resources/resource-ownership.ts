@@ -60,13 +60,27 @@ function worktreeSharers(
             (SELECT last_seen FROM session_seen WHERE session_id=r.session_id) session_last_seen,
             ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r LEFT JOIN score s ON s.run_record_id=COALESCE(r.parent_run_record_id,r.record_id)
-      WHERE r.worktree IN (${spellings.map(() => '?').join(',')})
+      WHERE (
+          r.worktree IN (${spellings.map(() => '?').join(',')})
+          OR (?=1 AND (
+            r.cwd IN (${spellings.map(() => '?').join(',')})
+            OR r.launch_cwd IN (${spellings.map(() => '?').join(',')})
+          ))
+        )
         AND COALESCE(r.parent_run_record_id, r.record_id) <>
             COALESCE((SELECT COALESCE(parent_run_record_id,record_id) FROM run WHERE record_id=?), ?)
         AND (?=0 OR r.status IN ('running','asking'))
       ORDER BY r.number`,
     )
-    .all(...spellings, row.record_id, row.record_id, liveOnly ? 1 : 0) as (WorktreeSharerRow & {
+    .all(
+      ...spellings,
+      liveOnly ? 1 : 0,
+      ...spellings,
+      ...spellings,
+      row.record_id,
+      row.record_id,
+      liveOnly ? 1 : 0,
+    ) as (WorktreeSharerRow & {
     root_record_id: string
     pid: number | null
     executor: 'external' | 'harness'
@@ -98,7 +112,7 @@ function worktreeSharers(
   })
 }
 
-/** Other conversations alive on this tree now, collapsed to one row per root. */
+/** Other conversations alive on or launched from this tree now, collapsed to one row per root. */
 export function liveWorktreeSharers(
   database: Database,
   row: { record_id: string; worktree: string },
@@ -256,11 +270,16 @@ function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
   const identity = worktreeIdentity(worktree)
   const live = database
     .query(
-      `SELECT record_id,status,pid,worktree,executor,session_id,started_at,job,harness_wall_bound_ms,
+      `SELECT record_id,status,pid,worktree,cwd,launch_cwd,executor,session_id,started_at,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
-         FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')`,
+         FROM run WHERE (worktree IS NOT NULL OR cwd IS NOT NULL OR launch_cwd IS NOT NULL)
+           AND status IN ('running','asking')`,
     )
-    .all() as (RecordedLiveRow & { worktree: string })[]
+    .all() as (RecordedLiveRow & {
+    worktree: string | null
+    cwd: string | null
+    launch_cwd: string | null
+  })[]
   return live.some(
     (row) =>
       runAlive({
@@ -273,7 +292,10 @@ function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
           SESSION_LIVE_MS,
           recordedOwnerProcess(database, row.session_id),
         ),
-      }) && worktreeIdentity(row.worktree) === identity,
+      }) &&
+      [row.worktree, row.cwd, row.launch_cwd].some(
+        (candidate) => candidate !== null && worktreeIdentity(candidate) === identity,
+      ),
   )
 }
 

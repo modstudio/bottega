@@ -43,7 +43,7 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { attributedLaunchKey } from '../review/review-target.ts'
 import { resolveSupersededTurn } from '../route/failover.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
-import { type KeepTreeExemption, keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { type KeepTreeExemption, recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { writerTreeBaseRef } from '../worktree/trunk-base-choice.ts'
 import { createWorkerWorktree, worktreeExists } from '../worktree/worktree.ts'
 import {
@@ -491,21 +491,16 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             keep_tree_reason: string | null
             started_at: string
           } | null
-          if (!parent?.keep_tree) return undefined
-          const decision = keepTreeHold({
-            keepTree: parent.keep_tree,
-            keepTreeUntil: parent.keep_tree_until,
-            startedAt: parent.started_at,
-            now: nowIso(),
-          })
-          return {
-            until: decision.held
-              ? decision.until
-              : 'expiredAt' in decision
-                ? decision.expiredAt
-                : parent.started_at,
-            reason: parent.keep_tree_reason ?? 'explicit --keep-tree',
-          }
+          if (!parent) return undefined
+          return recordedKeepTreeExemption(
+            {
+              keepTree: parent.keep_tree,
+              keepTreeUntil: parent.keep_tree_until,
+              keepTreeReason: parent.keep_tree_reason,
+              startedAt: parent.started_at,
+            },
+            nowIso(),
+          )
         })()
       : undefined
   const keepTree = opts.keepTree ?? inheritedKeepTree

@@ -31,7 +31,7 @@ const trackResidue = trackedTestResidue()
 
 let restoreEnvironment: () => void
 beforeEach(() => {
-  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: process.cwd() })
   restoreEnvironment = installRunAnswerEnvironment()
 })
 afterEach(() => {
@@ -907,10 +907,11 @@ describe('retry command', () => {
       repo: 'continuation-fixture',
     })
     const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
+    const baseCommit = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD')!
     writeFileSync(prompt, 'What does bar.ts do?')
     db()
-      .query('UPDATE run SET prompt_path=?,cwd=?,session_id=? WHERE record_id=?')
-      .run(prompt, dir, 'orch-test-session', id)
+      .query('UPDATE run SET prompt_path=?,cwd=?,base_commit=?,session_id=? WHERE record_id=?')
+      .run(prompt, dir, baseCommit, 'orch-test-session', id)
     return id
   }
 
@@ -978,6 +979,32 @@ describe('retry command', () => {
     )
   })
 
+  test('reader retry without a launch cwd dispatches from the registered checkout', async () => {
+    const id = failed()
+    const registeredPath = process.cwd()
+    const baseCommit = gitContext(registeredPath, 'rev-parse', '--verify', 'HEAD')!
+    const released = join(dir, `released-reader-${id}`)
+    db()
+      .query('UPDATE run SET cwd=?,worktree=?,base_commit=?,launch_cwd=NULL WHERE record_id=?')
+      .run(released, released, baseCommit, id)
+    let dispatched: Parameters<typeof detach>[2] | undefined
+    const dispatch: typeof detach = async (_job, _prompt, spec) => {
+      dispatched = spec
+      return addRun({ agent: 'grok', job: 'file-question', status: 'ok' })
+    }
+
+    await retryRun(id, { flags }, { ...helpers, dispatch })
+
+    expect(dispatched?.cwd).toBe(registeredPath)
+    expect(dispatched?.cwd).not.toBe(released)
+    expect(dispatched?.resume).toMatchObject({
+      kind: 'retry-root',
+      parent: id,
+      worktree: null,
+      readOnlyBase: baseCommit,
+    })
+  })
+
   test('a rejected retry dispatch records failed ruling delivery', async () => {
     const id = failed()
     const questionId = (
@@ -1014,39 +1041,6 @@ describe('retry command', () => {
       mode: 'retry',
       outcome: 'failed',
       error: 'fixture retry dispatch failed',
-    })
-  })
-
-  test('retry provisions a released reader from its recorded base', async () => {
-    const id = failed()
-    const registeredPath = process.cwd()
-    upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: registeredPath })
-    const baseCommit = gitContext(registeredPath, 'rev-parse', '--verify', 'HEAD')!
-    const released = join(dir, `released-reader-${id}`)
-    db()
-      .query('UPDATE run SET cwd=?,worktree=?,base_commit=? WHERE record_id=?')
-      .run(released, released, baseCommit, id)
-    const dispatchedId = addRun({
-      agent: 'grok',
-      job: 'file-question',
-      status: 'ok',
-      session: 'orch-test-session',
-      repo: 'continuation-fixture',
-    })
-    const dispatched: Parameters<typeof detach>[2][] = []
-    const dispatch: typeof detach = async (_job, _prompt, spec) => {
-      dispatched.push(spec)
-      return dispatchedId
-    }
-
-    await retryRun(id, { flags }, { ...helpers, dispatch })
-
-    expect(dispatched[0]?.cwd).toBe(registeredPath)
-    expect(dispatched[0]?.resume).toMatchObject({
-      kind: 'retry-root',
-      parent: id,
-      worktree: null,
-      readOnlyBase: baseCommit,
     })
   })
 })

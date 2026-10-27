@@ -11,6 +11,7 @@ import {
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { db } from '../database/db.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { retryRun } from './run-answer.ts'
@@ -21,7 +22,7 @@ const reviewRef = 'DEV-1702-orch-review-target'
 let priorSession: string | undefined
 
 beforeEach(() => {
-  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: process.cwd() })
   priorSession = process.env.CLAUDE_CODE_SESSION_ID
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
@@ -43,7 +44,10 @@ function failed(parent?: string): string {
   })
   const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
   writeFileSync(prompt, 'Review the continuation.')
-  db().query('UPDATE run SET prompt_path=?,cwd=? WHERE record_id=?').run(prompt, dir, id)
+  const baseCommit = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD')!
+  db()
+    .query('UPDATE run SET prompt_path=?,cwd=?,base_commit=? WHERE record_id=?')
+    .run(prompt, dir, baseCommit, id)
   return id
 }
 
@@ -62,6 +66,25 @@ test('retrying a review lens dispatches with its recorded review target', async 
   db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, root)
 
   expect(await dispatchedReview(root)).toBe(reviewRef)
+})
+
+test('retrying a review provisions its reader from the review target instead of the coverage base', async () => {
+  const root = failed()
+  const coverageBase = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD~1')!
+  db()
+    .query('UPDATE run SET review_ref=?,base_commit=? WHERE record_id=?')
+    .run(reviewRef, coverageBase, root)
+  let dispatched: Parameters<typeof detach>[2] | undefined
+  const dispatch: typeof detach = async (_job, _prompt, spec) => {
+    dispatched = spec
+    return insert('ok', 'review-lens')
+  }
+
+  await retryRun(root, { flags }, { ...helpers, dispatch })
+
+  expect(dispatched?.review).toBe(reviewRef)
+  expect(dispatched?.resume).toMatchObject({ kind: 'retry-root', parent: root, worktree: null })
+  expect(dispatched?.resume && 'readOnlyBase' in dispatched.resume).toBe(false)
 })
 
 test('retrying a failed continuation dispatches with the root review target', async () => {

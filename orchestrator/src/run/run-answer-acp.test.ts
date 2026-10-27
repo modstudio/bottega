@@ -7,6 +7,7 @@ import { trackedTestResidue } from '../../test/residue.ts'
 import { ARGV_PROMPT_BYTES } from '../agent/agents.ts'
 import { assertWorkerText, readMessageText, readWorkerFile } from '../cli/args.ts'
 import { db } from '../database/db.ts'
+import { gitContext } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
 import { assertAcpAllowed } from '../transport/transport.ts'
 import { retryRun } from './run-answer.ts'
@@ -29,7 +30,7 @@ const helpers = {
 }
 
 beforeEach(() => {
-  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: dir })
+  upsertProject({ recordId: newRecordId(), name: 'continuation-fixture', path: process.cwd() })
   process.env.CLAUDE_CODE_SESSION_ID = 'orch-test-session'
 })
 afterEach(() => {
@@ -45,12 +46,13 @@ test('retry of a named ACP review lens is not refused', async () => {
     repo: 'continuation-fixture',
   })
   const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
+  const baseCommit = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD')!
   writeFileSync(prompt, 'Review this change.')
   db()
     .query(
-      "UPDATE run SET prompt_path=?,cwd=?,session_id=?,transport='acp',agent_explicit=1 WHERE record_id=?",
+      "UPDATE run SET prompt_path=?,cwd=?,base_commit=?,session_id=?,transport='acp',agent_explicit=1 WHERE record_id=?",
     )
-    .run(prompt, dir, 'orch-test-session', id)
+    .run(prompt, dir, baseCommit, 'orch-test-session', id)
   const dispatch: typeof detach = async (job, _prompt, spec) => {
     assertAcpAllowed(job, spec.agent, undefined, Boolean(spec.agentExplicit))
     return addRun({ agent: spec.agent!, job, status: 'ok', session: 'orch-test-session' })
@@ -67,10 +69,13 @@ test('retry with the same agent carries the chain transport', async () => {
     repo: 'continuation-fixture',
   })
   const prompt = trackResidue(join(dir, `retry-${id}.prompt.txt`))
+  const baseCommit = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD')!
   writeFileSync(prompt, 'What does bar.ts do?')
   db()
-    .query("UPDATE run SET prompt_path=?,cwd=?,session_id=?,transport='acp' WHERE record_id=?")
-    .run(prompt, dir, 'orch-test-session', id)
+    .query(
+      "UPDATE run SET prompt_path=?,cwd=?,base_commit=?,session_id=?,transport='acp' WHERE record_id=?",
+    )
+    .run(prompt, dir, baseCommit, 'orch-test-session', id)
   const dispatched: Parameters<typeof detach>[2][] = []
   const dispatch: typeof detach = async (job, _prompt, spec) => {
     dispatched.push(spec)
