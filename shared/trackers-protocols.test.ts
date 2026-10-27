@@ -327,11 +327,67 @@ describe('tracker source construction', () => {
     expect(calls).toEqual([{ name: 'get-task-tool', args: { id: 'STAR-12' } }])
   })
 
+  test('workspace lookup normalizes an object status from get without searching', async () => {
+    const source = trackerSourceFor(project('alephbeis', 'workspace-mcp'))!
+    const calls: { name: string; args: Record<string, unknown> }[] = []
+    const caller: ToolCaller = {
+      async callTool(name, args) {
+        calls.push({ name, args })
+        return {
+          id: 'workspace-uuid',
+          short_id: 'AB-3076',
+          summary: 'Completed task',
+          status: { id: 'x', name: 'Complete' },
+          status_category: 'completed',
+        }
+      },
+    }
+
+    expect(await source.lookup!(caller, 'AB-3076')).toMatchObject({
+      externalId: 'workspace-uuid',
+      key: 'AB-3076',
+      status: 'Complete',
+    })
+    expect(calls).toEqual([{ name: 'get-task-tool', args: { id: 'AB-3076' } }])
+  })
+
+  test('workspace lookup searches when get returns an invalid status', async () => {
+    const source = trackerSourceFor(project('alephbeis', 'workspace-mcp'))!
+    const calls: string[] = []
+    const caller: ToolCaller = {
+      async callTool(name) {
+        calls.push(name)
+        if (name === 'get-task-tool') {
+          return { id: 'detail-uuid', short_id: 'AB-3076', status: 42 }
+        }
+        return {
+          tasks: [
+            {
+              id: 'search-uuid',
+              short_id: 'AB-3076',
+              status: 'Complete',
+              status_category: 'completed',
+            },
+          ],
+          last_page: 1,
+        }
+      },
+    }
+
+    expect(await source.lookup!(caller, 'AB-3076')).toMatchObject({
+      externalId: 'search-uuid',
+      key: 'AB-3076',
+      status: 'Complete',
+    })
+    expect(calls).toEqual(['get-task-tool', 'list-tasks-tool'])
+  })
+
   test('workspace lookup searches when get answers with another task', async () => {
     const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
     const caller: ToolCaller = {
       async callTool(name) {
-        if (name === 'get-task-tool') return { id: 'other-uuid', short_id: 'STAR-120' }
+        if (name === 'get-task-tool')
+          return { id: 'other-uuid', short_id: 'STAR-120', status: 'todo' }
         return { tasks: [{ id: 'workspace-uuid', short_id: 'STAR-12' }], last_page: 1 }
       },
     }

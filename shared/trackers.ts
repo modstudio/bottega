@@ -398,6 +398,10 @@ type WorkspaceTask = {
   assignee_id?: string | number | null
 }
 
+type WorkspaceTaskDetail = Omit<WorkspaceTask, 'status'> & {
+  status?: string | { name?: unknown }
+}
+
 type WorkspaceAssignees = (m: ToolCaller, refs: AssigneeRef[]) => Promise<(string | null)[]>
 
 async function mappedWorkspaceTask(
@@ -421,6 +425,18 @@ async function mappedWorkspaceTask(
   }
 }
 
+function normalizeWorkspaceTaskDetail(detail: WorkspaceTaskDetail): WorkspaceTask | null {
+  if (typeof detail.status === 'string') return { ...detail, status: detail.status }
+  if (
+    detail.status &&
+    typeof detail.status === 'object' &&
+    typeof detail.status.name === 'string'
+  ) {
+    return { ...detail, status: detail.status.name }
+  }
+  return null
+}
+
 async function lookupWorkspaceTask(
   m: ToolCaller,
   key: string,
@@ -432,8 +448,8 @@ async function lookupWorkspaceTask(
   try {
     const detail = await m.callTool(trackerWireAction('workspace-mcp', 'get'), { id: key })
     if (detail && typeof detail === 'object') {
-      const task = detail as WorkspaceTask
-      if (task.short_id?.toUpperCase() === normalizedKey) {
+      const task = normalizeWorkspaceTaskDetail(detail as WorkspaceTaskDetail)
+      if (task?.short_id?.toUpperCase() === normalizedKey) {
         return mappedWorkspaceTask(m, key, project, states, assignees, task)
       }
     }
