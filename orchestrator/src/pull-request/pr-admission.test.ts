@@ -107,7 +107,7 @@ test('an undisposed finding at the ceiling refuses without recording a ruling', 
         patchId: 'patch',
         pathSet: '["a.ts"]',
         lensIdentities: ['correctness'],
-        lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true }],
+        lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true, settled: true }],
         findings: [{ recordId: 'finding-3', ordinal: 1, disposition: null }],
       },
     ],
@@ -172,7 +172,7 @@ test('a ceiling ruling records and admits an emptied-round architect-read postur
     patchId: 'earlier-patch',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness'],
-    lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true }],
+    lenses: [{ recordId: 'lens-3', lens: 'correctness', graded: true, settled: true }],
     findings: [],
   }
   const triage = decideTriage({
@@ -472,8 +472,8 @@ test('a lens recorded on the branch is refused as missing for this change, not a
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
-      { recordId: 'lens-1', lens: 'correctness', graded: true },
-      { recordId: 'lens-2', lens: 'craft', graded: true },
+      { recordId: 'lens-1', lens: 'correctness', graded: true, settled: true },
+      { recordId: 'lens-2', lens: 'craft', graded: true, settled: true },
     ],
     findings: [],
   }
@@ -529,7 +529,7 @@ test('a lens a fix brought into scope names that path and the lenses already com
     patchId: 'patch-before-fix',
     pathSet: '["src/a.ts"]',
     lensIdentities: ['correctness'],
-    lenses: [{ recordId: 'lens-1', lens: 'correctness', graded: true }],
+    lenses: [{ recordId: 'lens-1', lens: 'correctness', graded: true, settled: true }],
     findings: [],
   }
   const reviewPlan = applicableRoundLensPlan({
@@ -612,8 +612,8 @@ test('a lens the round asks to run again is not also reported as already complet
     pathSet: '["src/a.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
-      { recordId: 'lens-1', lens: 'correctness', graded: true },
-      { recordId: 'lens-2', lens: 'craft', graded: true },
+      { recordId: 'lens-1', lens: 'correctness', graded: true, settled: true },
+      { recordId: 'lens-2', lens: 'craft', graded: true, settled: true },
     ],
     findings: [{ recordId: 'finding-1', ordinal: 1, lens: 'correctness', disposition: 'accepted' }],
   }
@@ -694,8 +694,22 @@ test('a lens owed as a second opinion is not also reported as already complete',
     pathSet: '["src/a.ts"]',
     lensIdentities: ['correctness', 'safety'],
     lenses: [
-      { recordId: 'lens-1', lens: 'correctness', runId: 'run-1', model: 'model-a', graded: true },
-      { recordId: 'lens-2', lens: 'safety', runId: 'run-2', model: 'model-a', graded: true },
+      {
+        recordId: 'lens-1',
+        lens: 'correctness',
+        runId: 'run-1',
+        model: 'model-a',
+        graded: true,
+        settled: true,
+      },
+      {
+        recordId: 'lens-2',
+        lens: 'safety',
+        runId: 'run-2',
+        model: 'model-a',
+        graded: true,
+        settled: true,
+      },
     ],
     findings: [{ recordId: 'finding-1', ordinal: 1, lens: 'correctness', disposition: 'accepted' }],
   }
@@ -774,7 +788,7 @@ test('a generic no-round refusal prints beside the unfinished-review remedy, wit
     patchId: 'patch',
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness'],
-    lenses: [{ recordId: 'lens-2', lens: 'correctness', graded: false }],
+    lenses: [{ recordId: 'lens-2', lens: 'correctness', graded: false, settled: false }],
     findings: [],
   }
   const decision = decideTriage({
@@ -850,8 +864,8 @@ test('a creditable composed round refusal names only the architect read', () => 
     pathSet: '["a.ts"]',
     lensIdentities: ['correctness', 'craft'],
     lenses: [
-      { recordId: 'lens-1', lens: 'correctness', graded: true },
-      { recordId: 'lens-2', lens: 'craft', graded: true },
+      { recordId: 'lens-1', lens: 'correctness', graded: true, settled: true },
+      { recordId: 'lens-2', lens: 'craft', graded: true, settled: true },
     ],
     findings: [],
   }

@@ -123,7 +123,9 @@ export function roundLensFacts(
     ...new Set(
       branchReviews
         .filter((review) => review.completedAt !== null && review.tier !== null)
-        .flatMap((review) => review.lensIdentities),
+        .flatMap((review) =>
+          review.lenses.flatMap((lens) => (lens.graded && lens.lens ? [lens.lens] : [])),
+        ),
     ),
   ]
   const completedOpinions = branchReviews.flatMap((review) =>
@@ -156,7 +158,9 @@ export function roundLensFacts(
   const reviewedPathsByLens: Record<string, string[]> = {}
   for (const review of prior) {
     const paths = review.pathSet ? (JSON.parse(review.pathSet) as string[]) : []
-    for (const lens of review.lensIdentities) {
+    for (const lens of review.lenses.flatMap((candidate) =>
+      candidate.graded && candidate.lens ? [candidate.lens] : [],
+    )) {
       reviewedPathsByLens[lens] = [...new Set([...(reviewedPathsByLens[lens] ?? []), ...paths])]
     }
   }

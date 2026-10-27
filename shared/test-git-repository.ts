@@ -32,6 +32,10 @@ function templateRepository(env: NodeJS.ProcessEnv, root = tmpdir()): string {
   git(template, env, 'init', '-b', 'main')
   git(template, env, 'config', 'user.email', 'orch-test@example.invalid')
   git(template, env, 'config', 'user.name', 'Orch Test')
+  // A commit would start detached background maintenance, whose lock file can vanish
+  // mid-copy and fail cloneRepository with ENOENT.
+  git(template, env, 'config', 'maintenance.auto', 'false')
+  git(template, env, 'config', 'gc.auto', '0')
   writeFileSync(join(template, 'base.txt'), 'base\n')
   git(template, env, 'add', 'base.txt')
   git(template, env, 'commit', '-m', 'base')

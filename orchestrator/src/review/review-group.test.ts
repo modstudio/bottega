@@ -4,9 +4,101 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import type { ReviewPlan } from './review-applicability.ts'
-import { measureChangeGroup, reviewsForTriage } from './review-group.ts'
+import {
+  measureChangeGroup,
+  reviewLensGraded,
+  reviewLensSettled,
+  reviewRoundTriageComplete,
+  reviewsForTriage,
+  type TriageReviewRow,
+} from './review-group.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
+
+test('a review lens is graded only by all four review grades', () => {
+  const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
+
+  expect(reviewLensGraded(noGrades)).toBe(false)
+  expect(
+    reviewLensGraded({
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'named',
+      overlap: 'unique',
+    }),
+  ).toBe(true)
+})
+
+test('a review lens is settled by delivery none or all four review grades', () => {
+  const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
+
+  expect(reviewLensSettled({ delivery: 'none', ...noGrades })).toBe(true)
+  expect(reviewLensSettled({ delivery: null, ...noGrades })).toBe(false)
+  expect(reviewLensSettled({ delivery: 'full', ...noGrades })).toBe(false)
+  expect(
+    reviewLensSettled({
+      delivery: 'full',
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'named',
+      overlap: 'unique',
+    }),
+  ).toBe(true)
+})
+
+test('round triage accepts settled delivery-none lenses but not unscored lenses', () => {
+  const grades = { reproduced: null, coverage: null, limits: null, overlap: null }
+  const review: TriageReviewRow = {
+    reviewRecordId: 'review-record',
+    reviewNumber: 1,
+    recordedAt: '2026-10-27T00:00:00Z',
+    completedAt: null,
+    tier: 1,
+    role: 'round',
+    patchId: 'patch',
+    pathSet: '["change.ts"]',
+    lensIdentities: ['correctness', 'craft'],
+    lenses: [
+      {
+        recordId: 'graded',
+        graded: reviewLensGraded({
+          ...grades,
+          reproduced: 'all',
+          coverage: 'adequate',
+          limits: 'named',
+          overlap: 'unique',
+        }),
+        settled: reviewLensSettled({
+          delivery: 'full',
+          reproduced: 'all',
+          coverage: 'adequate',
+          limits: 'named',
+          overlap: 'unique',
+        }),
+      },
+      {
+        recordId: 'none',
+        graded: reviewLensGraded(grades),
+        settled: reviewLensSettled({ delivery: 'none', ...grades }),
+      },
+    ],
+    findings: [],
+  }
+
+  expect(reviewRoundTriageComplete(review)).toBe(true)
+  expect(
+    reviewRoundTriageComplete({
+      ...review,
+      lenses: [{ recordId: 'none', graded: false, settled: true }],
+    }),
+  ).toBe(true)
+  expect(
+    reviewRoundTriageComplete({
+      ...review,
+      lenses: [{ recordId: 'unscored', graded: false, settled: false }],
+    }),
+  ).toBe(false)
+})
 
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
   const database = new Database(':memory:')
@@ -38,16 +130,22 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
        VALUES ('${newRecordId()}',?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
     )
     .run(review.record_id, run.record_id)
+  database
+    .query(
+      `INSERT INTO score (record_id,run_record_id,delivery,quality,scored_at)
+       VALUES (?,?, 'none',NULL,'2026-09-25')`,
+    )
+    .run(newRecordId(), run.record_id)
   database.query("UPDATE project SET name='renamed-fixture' WHERE record_id=?").run(projectId)
 
-  expect(
-    reviewsForTriage(database, {
-      project: 'renamed-fixture',
-      branch: 'DEV-977',
-      patchId: 'stable-patch',
-      pathSet: ['a.ts'],
-    }).reviews,
-  ).toHaveLength(1)
+  const matched = reviewsForTriage(database, {
+    project: 'renamed-fixture',
+    branch: 'DEV-977',
+    patchId: 'stable-patch',
+    pathSet: ['a.ts'],
+  }).reviews
+  expect(matched).toHaveLength(1)
+  expect(matched[0]?.lenses[0]).toMatchObject({ graded: false, settled: true })
   expect(
     reviewsForTriage(database, {
       project: 'renamed-fixture',
@@ -86,8 +184,9 @@ test('a rebase credits the complete round from the same branch and never another
     database
       .query(
         `INSERT INTO review_lens
-           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
-         VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]')`,
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,
+            reproduced,coverage,limits,overlap)
+         VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]','all','adequate','named','unique')`,
       )
       .run(reviewRecordId, run.record_id, lens)
   }

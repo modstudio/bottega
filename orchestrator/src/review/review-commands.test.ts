@@ -512,6 +512,12 @@ function postFixFixture(options: {
   }
   const reviewId = recordReview(runId, reviewReply(options.acceptedSafetyFinding ? 1 : 0), db())
   if (options.acceptedSafetyFinding) triageFinding(reviewId, 1, 'accepted', undefined, 'high')
+  db()
+    .query(
+      `UPDATE review_lens SET reproduced='all',coverage='adequate',limits='absent',overlap='none'
+        WHERE review_record_id=?`,
+    )
+    .run(reviewId)
   completeReview(reviewId, db())
   if (options.fixPath && !options.fixAfterMerge) {
     const absoluteFix = join(repo, options.fixPath)

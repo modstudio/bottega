@@ -18,7 +18,11 @@ import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
-import { reviewRoundTriageComplete, reviewsForTriage } from '../review/review-group.ts'
+import {
+  reviewRoundTriageComplete,
+  reviewsForTriage,
+  type TriageReviewRow,
+} from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
@@ -259,11 +263,18 @@ function gatherReview(
     allFindingsDisposed: reviews.every(({ findings }) =>
       findings.every(({ disposition }) => disposition !== null),
     ),
-    allLensesGraded: reviews.every(
-      ({ lenses }) => lenses.length > 0 && lenses.every(({ graded }) => graded),
-    ),
+    allLensesGraded: reviewRoundsHaveTriageEvidence(reviews),
     ...(unfinishedReviewIds.length ? { unfinishedReviewIds } : {}),
   }
+}
+
+/** Whether settled review rounds include at least one evidence-bearing lens result. */
+export function reviewRoundsHaveTriageEvidence(reviews: readonly TriageReviewRow[]): boolean {
+  return (
+    reviews.length > 0 &&
+    reviews.every(reviewRoundTriageComplete) &&
+    reviews.some((review) => review.lenses.some((lens) => lens.graded))
+  )
 }
 
 function loadRunBinding(runId: string, d: Database): BoundRun | null {

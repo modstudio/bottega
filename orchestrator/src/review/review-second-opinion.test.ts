@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test'
+import { decideSecondOpinion } from '../pull-request/triage-decision.ts'
+import type { TriageReviewRow } from './review-group.ts'
 import { identifySecondOpinionRun, type SecondOpinionRun } from './review-second-opinion.ts'
 
 const opinion = (
@@ -37,4 +39,52 @@ test('requires completed graded runs of the requested lens on distinct models', 
       'correctness',
     ),
   ).toBeNull()
+})
+
+test('does not credit an earlier delivery-none run as a distinct-model opinion', () => {
+  expect(
+    identifySecondOpinionRun(
+      [
+        opinion('lens-1', 'run-none', 'grok-4.6', { graded: false }),
+        opinion('lens-2', 'run-graded', 'gpt-5.6-sol'),
+      ],
+      'correctness',
+    ),
+  ).toBeNull()
+})
+
+test('a second opinion requires two completed runs on different models', () => {
+  const reviews = (...opinions: SecondOpinionRun[]): TriageReviewRow[] => [
+    {
+      reviewRecordId: 'review-1',
+      reviewNumber: 1,
+      recordedAt: '2026-09-25T00:00:00Z',
+      completedAt: '2026-09-25T01:00:00Z',
+      tier: 1,
+      role: 'round',
+      patchId: 'patch',
+      pathSet: '["a.ts"]',
+      lensIdentities: ['correctness'],
+      lenses: opinions.map((row) => ({ ...row, settled: row.graded })),
+      findings: [],
+    },
+  ]
+
+  expect(decideSecondOpinion(reviews(opinion('lens-1', '101', 'model-a')), 'correctness')).toEqual({
+    complete: false,
+    lens: 'correctness',
+    firstRunId: '101',
+  })
+  expect(
+    decideSecondOpinion(
+      reviews(opinion('lens-1', '101', 'model-a'), opinion('lens-2', '102', 'model-a')),
+      'correctness',
+    ),
+  ).toEqual({ complete: false, lens: 'correctness', firstRunId: '101' })
+  expect(
+    decideSecondOpinion(
+      reviews(opinion('lens-1', '101', 'model-a'), opinion('lens-2', '102', 'model-b')),
+      'correctness',
+    ),
+  ).toEqual({ complete: true })
 })

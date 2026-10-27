@@ -37,6 +37,7 @@ export type TriageReviewRow = {
     lens?: string
     model?: string | null
     graded: boolean
+    settled: boolean
   }[]
   findings: readonly {
     recordId: string
@@ -60,11 +61,22 @@ export function reviewLensGraded(lens: {
   )
 }
 
+/** Whether this lens needs anything more from the architect before round triage. */
+export function reviewLensSettled(lens: {
+  delivery: string | null
+  reproduced: string | null
+  coverage: string | null
+  limits: string | null
+  overlap: string | null
+}): boolean {
+  return lens.delivery === 'none' || reviewLensGraded(lens)
+}
+
 /** The triage floor shared by workflow evidence and project review recording. */
 export function reviewRoundTriageComplete(review: TriageReviewRow): boolean {
   return (
     review.lenses.length > 0 &&
-    review.lenses.every(({ graded }) => graded) &&
+    review.lenses.every(({ settled }) => settled) &&
     review.findings.every(({ disposition }) => disposition !== null)
   )
 }
@@ -222,6 +234,7 @@ function reviewsForBranch(
         run_record_id: string
         lens: string
         model: string | null
+        delivery: string | null
         reproduced: string | null
         coverage: string | null
         limits: string | null
@@ -233,10 +246,11 @@ function reviewsForBranch(
       [string, ...string[], string | null]
     >(
       `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
-              rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
+              rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
               rf.record_id finding_id,rf.ordinal,rf.disposition
          FROM review r JOIN review_lens rl ON rl.review_record_id=r.record_id
          JOIN run ON run.record_id=rl.run_record_id
+         LEFT JOIN score s ON s.run_record_id=run.record_id
          LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND (run.branch IN (${lineage.map(() => '?').join(',')}) OR r.record_id=?)
@@ -269,6 +283,7 @@ function reviewsForBranch(
           lens: string
           model: string | null
           graded: boolean
+          settled: boolean
         }[]
       ).push({
         recordId: row.lens_id,
@@ -276,6 +291,7 @@ function reviewsForBranch(
         lens: row.lens,
         model: row.model,
         graded: reviewLensGraded(row),
+        settled: reviewLensSettled(row),
       })
     }
     if (
