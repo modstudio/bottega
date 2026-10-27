@@ -1,7 +1,7 @@
 // concern: reader MCP server scope
 /** Selects the project MCP servers a reading harness reaches through the shared proxy. */
 
-import { resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import {
@@ -16,6 +16,28 @@ import {
 export type ReaderProxyServer = {
   command: string
   args: string[]
+}
+
+export type ProjectMcpWithheld = {
+  name: string
+  reason: string
+  advice?: string
+  remedy?: string
+}
+
+export const PROJECT_RELATIVE_NO_TREE_REASON =
+  'its command is project-relative and this run has no project tree'
+
+export const PROJECT_RELATIVE_NO_TREE_REMEDY =
+  "the server's command in .mcp.json must be a bare name or an absolute path, because the reader proxy resolves a project-relative command against the run tree; or dispatch a job that gets a project tree"
+
+/** Withhold a project-relative stdio command when the run has no project checkout. */
+export function withholdProjectRelativeStdioServer(
+  server: { command?: string; url?: string },
+  hasProjectTree: boolean,
+): boolean {
+  if (hasProjectTree || server.url || !server.command) return false
+  return server.command.includes('/') && !isAbsolute(server.command)
 }
 
 export const READER_PLATFORM_MCP_SERVERS = [MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME] as const
@@ -89,20 +111,38 @@ export function projectReaderProxyServers(
     settings: { workerMcpServers?: string[]; mcpServer?: string }
   } | null,
   cwd: string,
-): Record<string, ReaderProxyServer> {
-  if (!project) return {}
+  hasProjectTree: boolean,
+): { servers: Record<string, ReaderProxyServer>; withheld: ProjectMcpWithheld[] } {
+  if (!project) return { servers: {}, withheld: [] }
   const names = projectReaderServerNames(
     read,
     project.settings.workerMcpServers,
     project.settings.mcpServer ?? project.name,
     bottegaMcpBinary(),
   )
+  const config = read.ok ? read.config : {}
+  const withheld: ProjectMcpWithheld[] = []
+  const kept: string[] = []
+  for (const name of names) {
+    if (withholdProjectRelativeStdioServer(config[name] ?? {}, hasProjectTree)) {
+      withheld.push({
+        name,
+        reason: PROJECT_RELATIVE_NO_TREE_REASON,
+        remedy: PROJECT_RELATIVE_NO_TREE_REMEDY,
+      })
+    } else {
+      kept.push(name)
+    }
+  }
   const argv = bottegaEntryArgv('mcp-reader-proxy')
   const command = argv[0]!
   const baseArgs = argv.slice(1)
-  return Object.fromEntries(
-    names.map((server) => [server, { command, args: [...baseArgs, project.name, server, cwd] }]),
-  )
+  return {
+    servers: Object.fromEntries(
+      kept.map((server) => [server, { command, args: [...baseArgs, project.name, server, cwd] }]),
+    ),
+    withheld,
+  }
 }
 
 /** Resolve ignored checkout configuration before selecting a reading run's proxy servers. */
@@ -116,8 +156,9 @@ export function projectReaderProxyServersForRun(
     settings: { workerMcpServers?: string[]; mcpServer?: string }
   } | null,
   cwd: string,
+  hasProjectTree: boolean,
 ): Record<string, ReaderProxyServer> | null {
   if (!enabled || writesRepository) return null
   const read = mcpConfigReadForRun(treeConfig, project, cwd)
-  return projectReaderProxyServers(read, project, cwd)
+  return projectReaderProxyServers(read, project, cwd, hasProjectTree).servers
 }

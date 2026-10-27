@@ -3,7 +3,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
-import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
+import { PROJECT_RELATIVE_NO_TREE_REASON } from '../sandbox/mcp-reader-scope.ts'
+import {
+  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+  PROJECT_MCP_WRITER_WITHHELD_REASON,
+  type ProjectMcpSelection,
+  projectMcpWriterRemedy,
+  selectProjectMcpServers,
+} from '../sandbox/project-mcp-scope.ts'
 import { acpProjectMcpServers } from '../transport/transport-acp-mcp.ts'
 import {
   projectSelectionForLaunch,
@@ -24,12 +31,19 @@ function tree(servers: Record<string, unknown>): string {
   return root
 }
 
-const launch = (agent: string, transport: string, usingMcp: boolean, cwd: string) =>
+const launch = (
+  agent: string,
+  transport: string,
+  usingMcp: boolean,
+  cwd: string,
+  opts?: { writesJob?: boolean; hasProjectTree?: boolean },
+) =>
   workerMcpLaunchScope({
     agent: { name: agent, harness: agent } as Agent,
     transport,
     usingMcp,
-    writesJob: true,
+    writesJob: opts?.writesJob ?? true,
+    hasProjectTree: opts?.hasProjectTree ?? true,
     callerCwd: cwd,
     cwd,
     connection: null,
@@ -56,18 +70,47 @@ test('a writing launch reads the tree and names the same direct server for every
 test('inline credentials are withheld from the selection rather than rendered', () => {
   const cwd = tree({ secret: { command: 'secret-env', env: { TOKEN: 'literal-secret' } } })
   const scope = launch('goose', 'acp', true, cwd)
-  expect(scope.projectSelection).toEqual({ kind: 'direct', servers: {}, withheld: ['secret'] })
+  expect(scope.projectSelection).toEqual({
+    kind: 'direct',
+    servers: {},
+    withheld: [
+      {
+        name: 'secret',
+        reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
+        advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+        remedy: projectMcpWriterRemedy(null),
+      },
+    ],
+  })
   expect(JSON.stringify(scope.projectSelection)).not.toContain('literal-secret')
 })
 
 test('the selection-only entry derives the same selection as a full launch scope', () => {
   const cwd = tree({ local: { command: './bin/local', args: ['--serve'] } })
-  const writes = workerMcpLaunchSelection({ usingMcp: true, writesJob: true, callerCwd: cwd, cwd })
+  const writes = workerMcpLaunchSelection({
+    usingMcp: true,
+    writesJob: true,
+    hasProjectTree: true,
+    callerCwd: cwd,
+    cwd,
+  })
   expect(writes).toEqual(launch('goose', 'acp', true, cwd).projectSelection)
-  const reads = workerMcpLaunchSelection({ usingMcp: true, writesJob: false, callerCwd: cwd, cwd })
+  const reads = workerMcpLaunchSelection({
+    usingMcp: true,
+    writesJob: false,
+    hasProjectTree: true,
+    callerCwd: cwd,
+    cwd,
+  })
   expect(reads?.kind).toBe('reader')
   expect(
-    workerMcpLaunchSelection({ usingMcp: false, writesJob: true, callerCwd: cwd, cwd }),
+    workerMcpLaunchSelection({
+      usingMcp: false,
+      writesJob: true,
+      hasProjectTree: true,
+      callerCwd: cwd,
+      cwd,
+    }),
   ).toBeNull()
 })
 
@@ -87,13 +130,45 @@ test('MCP off leaves every rendering empty', () => {
   expect(scope.allowlist).toEqual([])
 })
 
-test('only a transport that renders the selection reports the servers it withheld', () => {
-  const selection: ProjectMcpSelection = { kind: 'direct', servers: {}, withheld: ['secret'] }
+test('only a transport or harness that renders the selection reports the servers it withheld', () => {
+  const selection: ProjectMcpSelection = {
+    kind: 'direct',
+    servers: {},
+    withheld: [
+      {
+        name: 'secret',
+        reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
+        advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+      },
+    ],
+  }
   expect(withheldScopeLine('acp', 'goose', selection)).toBe(
     'MCP scope: goose withheld secret (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them',
   )
-  // Codex CLI renders its own header, and any other CLI renders no selection.
+  // Codex CLI renders its own header. Grok CLI rewrites its run home from the
+  // selection, so it gets this line. Any other CLI renders no selection.
   expect(withheldScopeLine('cli', 'codex', selection)).toBeNull()
+  expect(withheldScopeLine('cli', 'grok', selection)).toBe(
+    'MCP scope: grok withheld secret (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them',
+  )
   expect(withheldScopeLine('cli', 'opencode', selection)).toBeNull()
   expect(withheldScopeLine('acp', 'goose', null)).toBeNull()
+})
+
+test('a Grok CLI reader reports a project-relative server withheld without a tree', () => {
+  const selection = selectProjectMcpServers(
+    'reader',
+    {
+      boost: { name: 'boost', command: 'scripts/mcp/boost' },
+      bun: { name: 'bun', command: 'bun' },
+    },
+    { name: 'starship', path: '/project', settings: {} },
+    '/isolate',
+    false,
+  )
+  expect(selection?.kind).toBe('reader')
+  expect((selection?.withheld ?? []).map((entry) => entry.name)).toEqual(['boost'])
+  const line = withheldScopeLine('cli', 'grok', selection)
+  expect(line).toContain('boost')
+  expect(line).toContain(PROJECT_RELATIVE_NO_TREE_REASON)
 })

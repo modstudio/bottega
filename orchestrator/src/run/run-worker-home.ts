@@ -56,6 +56,7 @@ export function grokReaderServersForRun(
   treeConfig: Record<string, McpServerConfig>,
   project: Project | null,
   cwd: string,
+  hasProjectTree: boolean,
 ): Record<string, ReaderProxyServer> | null {
   return projectReaderProxyServersForRun(
     grokReaderMcpEnabled(workerHarnessName(agent), usingMcp),
@@ -63,6 +64,7 @@ export function grokReaderServersForRun(
     treeConfig,
     project,
     cwd,
+    hasProjectTree,
   )
 }
 
@@ -71,11 +73,20 @@ export function claimedGrokReaderConfig(
   writesRepository: boolean,
   cwd: string,
   project: Project,
+  hasProjectTree: boolean,
 ) {
   const treeConfig = readMcpConfig(cwd)
   return {
     treeConfig,
-    readerServers: grokReaderServersForRun(agent, true, writesRepository, treeConfig, project, cwd),
+    readerServers: grokReaderServersForRun(
+      agent,
+      true,
+      writesRepository,
+      treeConfig,
+      project,
+      cwd,
+      hasProjectTree,
+    ),
   }
 }
 

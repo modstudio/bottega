@@ -79,7 +79,7 @@ function prepareScope(input: PlanInput, project: Project) {
         inherited: input.inherited,
         writesRepository: input.writesJob,
       }),
-      ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project),
+      ...claimedGrokReaderConfig(input.agent, input.writesJob, input.cwd, project, input.repoJob),
     },
     () =>
       writeTransaction(() => {

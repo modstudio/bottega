@@ -575,6 +575,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     transport: transportName,
     usingMcp,
     writesJob,
+    hasProjectTree: repoJob,
     callerCwd,
     cwd,
     connection: mcpConnection,
