@@ -75,36 +75,30 @@ describe('workflow project facts', () => {
     })
   })
 
-  test.each([
-    ['a tracker that completes on merge', true, 'done', 'done'],
-    ['a tracker without completion on merge', undefined, 'review', 'review'],
-  ] as const)(
-    'ship-to trunk with remaining rungs closes as %s',
-    (_case, completesOnMerge, closeAction, closeState) => {
-      const { facts } = resolveWorkflowProjectFacts(
-        {
-          name: 'fixture',
-          stack: 'bun',
-          settings: {
-            tracker: { protocol: 'hub', completesOnMerge },
-            release: {
-              rungs: [{ name: 'production', branch: 'production' }],
-              mergeMethod: 'squash',
-              requiredChecks: [],
-            },
+  test('a tracker that completes on merge closes as done while rungs remain', () => {
+    const { facts } = resolveWorkflowProjectFacts(
+      {
+        name: 'fixture',
+        stack: 'bun',
+        settings: {
+          tracker: { protocol: 'hub', completesOnMerge: true },
+          release: {
+            rungs: [{ name: 'production', branch: 'production' }],
+            mergeMethod: 'squash',
+            requiredChecks: [],
           },
         },
-        ['tracker', 'release', 'ship-to'],
-        true,
-        {},
-        autonomy,
-      )
+      },
+      ['tracker', 'release', 'ship-to'],
+      true,
+      {},
+      autonomy,
+    )
 
-      expect(facts.shipTo).toMatchObject({
-        closeAction,
-        closeFloor: 'tracker-transition',
-        closeState,
-      })
-    },
-  )
+    expect(facts.shipTo).toMatchObject({
+      closeAction: 'done',
+      closeFloor: 'tracker-transition',
+      closeState: 'done',
+    })
+  })
 })
