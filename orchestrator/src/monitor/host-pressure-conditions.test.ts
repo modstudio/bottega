@@ -9,11 +9,13 @@ import { formatHostPressureLine } from './monitor-commands.ts'
 const load: HostLoad = {
   gates: 0,
   loadavg: 20,
+  cpuBusy: null,
   ncpu: 16,
   freeMem: 1,
   pressure: 'normal',
   swapUsed: 0,
   swapTotal: 0,
+  swapGrowthBytesPerSec: null,
   recentAdmissions: 0,
   waitingRequests: 0,
   oldestWaitMs: 0,

@@ -88,10 +88,12 @@ function capacityDecision(input: {
   return decideHostCapacityAdmission({
     heldWork: repositories.running,
     loadavg: load.loadavg,
+    cpuBusy: load.cpuBusy,
     ncpu: load.ncpu,
     recentAdmissions: load.recentAdmissions + repositories.recentAdmissions,
     freeMem: load.freeMem,
     pressure: load.pressure,
+    swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
     limit: null,
     platform: input.platform,
     waitedMs: input.at - input.started,

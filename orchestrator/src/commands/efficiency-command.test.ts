@@ -42,11 +42,13 @@ test('provisioning formatting retains outcomes, entries, host load, and comparis
       hostLoad: {
         gates: 0,
         loadavg: 3,
+        cpuBusy: null,
         ncpu: 8,
         freeMem: 1,
         pressure: 'normal',
         swapUsed: 0,
         swapTotal: 0,
+        swapGrowthBytesPerSec: null,
         recentAdmissions: 0,
         waitingRequests: 0,
         oldestWaitMs: 0,
