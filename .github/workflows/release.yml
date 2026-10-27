@@ -29,15 +29,15 @@ jobs:
       - name: Build installer artifacts
         run: bun run release:artifacts -- "${GITHUB_REF_NAME}" "${{ runner.temp }}/release-artifacts"
 
-      - name: Publish GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bun run release:publish -- "${GITHUB_REF_NAME}" "${{ runner.temp }}/release-artifacts" --confirm
-
       - name: Build source payload
         env:
           BOTTEGA_STATE_HOME: ${{ runner.temp }}/bottega-state
         run: bun run release:build -- "${GITHUB_REF_NAME}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun run release:publish -- "${GITHUB_REF_NAME}" "${{ runner.temp }}/release-artifacts" --confirm
 
       - name: Upload source payload
         env:
