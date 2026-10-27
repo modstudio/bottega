@@ -69,9 +69,12 @@ export function decideSpawnRule({
 }
 
 /**
- * The regenerate step: record every measured file still above the limit at the
- * count just measured, and refuse any file that grew. Files at or below the
- * limit leave the baseline, so the recorded set can only shrink.
+ * The regenerate step: a measured file still above the limit is recorded at the
+ * count just measured, and a measured file at or below the limit leaves the
+ * baseline, so a measured entry can only shrink. A baselined file the
+ * measurement does not mention keeps its recorded count: a partial measurement
+ * (a shard, a filtered run) must never erase what it did not measure. Any file
+ * that grew is refused.
  */
 export function loweredSpawnBaseline({
   measurements,
@@ -86,11 +89,29 @@ export function loweredSpawnBaseline({
   if (growth.length > 0) {
     throw new Error(growth.map((violation) => describeSpawnViolation(violation, limit)).join('\n'))
   }
-  const files: Record<string, number> = {}
-  for (const row of [...measurements].sort((left, right) => left.file.localeCompare(right.file))) {
+  const files: Record<string, number> = { ...baseline.files }
+  for (const row of measurements) {
     if (row.spawns > limit) files[row.file] = row.spawns
+    else delete files[row.file]
   }
-  return { files }
+  const sorted: Record<string, number> = {}
+  for (const file of Object.keys(files).sort((left, right) => left.localeCompare(right))) {
+    sorted[file] = files[file]!
+  }
+  return { files: sorted }
+}
+
+/**
+ * The shard a gate timing artifact's recorded command ran, as `N/M`, or null
+ * when that run was not sharded. A shard measures only part of the suite, so
+ * its measurement may not regenerate a whole-suite baseline.
+ */
+export function shardOfCommand(command: readonly string[] | null | undefined): string | null {
+  for (const argument of command ?? []) {
+    const match = /^--shard=(\d+\/\d+)$/.exec(argument)
+    if (match?.[1]) return match[1]
+  }
+  return null
 }
 
 export function describeSpawnViolation(violation: SpawnViolation, limit = SPAWN_LIMIT): string {

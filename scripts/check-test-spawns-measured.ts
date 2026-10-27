@@ -6,7 +6,8 @@
  * the gate that wrote it (orchestrator/test/run-gate.ts). It never reads the
  * newest file in the timing directory, and a run that produced no artifact is
  * a missing measurement rather than a pass. CI reports; local and worker gates
- * block.
+ * block. `--update` regenerates the shrink-only baseline from a full, unsharded
+ * measurement and refuses a sharded one, which measured only part of the suite.
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -19,6 +20,7 @@ import {
   SPAWN_LIMIT,
   type SpawnBaseline,
   type SpawnMeasurement,
+  shardOfCommand,
 } from './quality/test-spawns-decision.ts'
 import { baselineDisposition } from './quality/test-timing-decision.ts'
 
@@ -26,6 +28,9 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const BASELINE = 'scripts/quality/test-spawns-baseline.json'
 const BASELINE_PATH = join(ROOT, BASELINE)
 const REPORT_ONLY_MESSAGE = 'test spawn ceiling is report-only in CI and blocks locally'
+
+/** One gate timing artifact as the measured rule reads it. */
+type SpawnArtifact = { measurements: SpawnMeasurement[]; command: string[] | null }
 
 /** Orchestrator unit test rows from one gate timing artifact, repo-relative. */
 function artifactSpawnMeasurements(artifact: unknown): SpawnMeasurement[] {
@@ -42,9 +47,17 @@ function artifactSpawnMeasurements(artifact: unknown): SpawnMeasurement[] {
   })
 }
 
-function measurementsFromArtifact(artifactPath: string): SpawnMeasurement[] | null {
+function artifactCommand(artifact: unknown): string[] | null {
+  const command = (artifact as { command?: unknown } | null)?.command
+  return Array.isArray(command) && command.every((argument) => typeof argument === 'string')
+    ? (command as string[])
+    : null
+}
+
+function readArtifact(artifactPath: string): SpawnArtifact | null {
   if (!existsSync(artifactPath)) return null
-  return artifactSpawnMeasurements(JSON.parse(readFileSync(artifactPath, 'utf8')))
+  const artifact: unknown = JSON.parse(readFileSync(artifactPath, 'utf8'))
+  return { measurements: artifactSpawnMeasurements(artifact), command: artifactCommand(artifact) }
 }
 
 function reportMissingMeasurement(artifactPath: string, ci: boolean): number {
@@ -75,14 +88,7 @@ function run(): number {
   }
   const artifactPath = artifactArgument.slice('--artifact='.length)
   const ci = Boolean(process.env.CI)
-  const measurements = measurementsFromArtifact(artifactPath)
-  if (measurements === null) {
-    if (update) {
-      console.error(`check-test-spawns: cannot regenerate ${BASELINE} without a measurement`)
-      return 1
-    }
-    return reportMissingMeasurement(artifactPath, ci)
-  }
+  const artifact = readArtifact(artifactPath)
   let baseline: SpawnBaseline
   try {
     baseline = parseSpawnBaseline(readFileSync(BASELINE_PATH, 'utf8'))
@@ -92,15 +98,36 @@ function run(): number {
     )
     return 1
   }
+  // The decision owns the missing-measurement policy: production passes null
+  // when the artifact is absent and maps its `missing` status to the
+  // report-or-block disposition below, rather than intercepting it here.
+  const result = decideSpawnRule({ measurements: artifact?.measurements ?? null, baseline })
+  if (result.status === 'missing') {
+    if (update) {
+      console.error(`check-test-spawns: cannot regenerate ${BASELINE} without a measurement`)
+      return 1
+    }
+    return reportMissingMeasurement(artifactPath, ci)
+  }
+  if (artifact === null) {
+    // decideSpawnRule reported a measurement, which only a read artifact gives.
+    throw new Error('check-test-spawns: a decision without a measurement')
+  }
   if (update) {
-    const lowered = loweredSpawnBaseline({ measurements, baseline })
+    const shard = shardOfCommand(artifact.command)
+    if (shard !== null) {
+      console.error(
+        `check-test-spawns: refusing to regenerate ${BASELINE} from a sharded measurement (--shard=${shard}): a shard measures only part of the suite. Remedy: regenerate from a full, unsharded test:gate run.`,
+      )
+      return 1
+    }
+    const lowered = loweredSpawnBaseline({ measurements: artifact.measurements, baseline })
     writeFileSync(BASELINE_PATH, `${JSON.stringify(lowered, null, 2)}\n`)
     console.log(
       `check-test-spawns: wrote ${BASELINE} (${Object.keys(lowered.files).length} files above the fixed limit ${SPAWN_LIMIT})`,
     )
     return 0
   }
-  const result = decideSpawnRule({ measurements, baseline })
   if (result.status === 'pass') {
     console.log(
       `check-test-spawns: measured ${result.measuredFiles} orchestrator unit test files, fixed limit ${SPAWN_LIMIT}`,

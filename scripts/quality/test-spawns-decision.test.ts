@@ -3,6 +3,7 @@ import {
   decideSpawnRule,
   loweredSpawnBaseline,
   type SpawnBaseline,
+  shardOfCommand,
   spawnViolations,
 } from './test-spawns-decision.ts'
 
@@ -78,4 +79,47 @@ test('the regenerate step refuses a file that grew', () => {
       baseline,
     }),
   ).toThrow('recorded baseline 30')
+})
+
+test('the regenerate step drops a measured baselined file at or below the limit', () => {
+  expect(
+    loweredSpawnBaseline({
+      measurements: [
+        { file: 'orchestrator/src/at-limit.test.ts', spawns: 20 },
+        { file: 'orchestrator/src/below.test.ts', spawns: 4 },
+      ],
+      baseline: {
+        files: { 'orchestrator/src/at-limit.test.ts': 22, 'orchestrator/src/below.test.ts': 24 },
+      },
+    }),
+  ).toEqual({ files: {} })
+})
+
+test('the regenerate step keeps a baselined file the measurement never mentioned', () => {
+  expect(
+    loweredSpawnBaseline({
+      measurements: [{ file: 'orchestrator/src/measured.test.ts', spawns: 25 }],
+      baseline: {
+        files: {
+          'orchestrator/src/measured.test.ts': 30,
+          'orchestrator/src/absent.test.ts': 41,
+        },
+      },
+    }),
+  ).toEqual({
+    files: {
+      'orchestrator/src/absent.test.ts': 41,
+      'orchestrator/src/measured.test.ts': 25,
+    },
+  })
+})
+
+test('a shard in the recorded command is reported', () => {
+  expect(shardOfCommand(['bun', 'test', 'src', '--shard=2/4'])).toBe('2/4')
+})
+
+test('an unsharded or commandless artifact reports no shard', () => {
+  expect(shardOfCommand(['bun', 'test', 'src'])).toBeNull()
+  expect(shardOfCommand(undefined)).toBeNull()
+  expect(shardOfCommand(null)).toBeNull()
 })
