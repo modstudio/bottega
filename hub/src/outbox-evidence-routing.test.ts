@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { drainHostedOutbox } from './outbox.ts'
@@ -30,6 +30,7 @@ const registered = () => [
 ]
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 function insert(id: string, project = 'old-project') {
   writeTransaction((conn) =>

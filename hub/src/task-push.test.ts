@@ -570,3 +570,6 @@ test('--repair with an unroutable project reports the refusal and queues nothing
   expect(hosted.ids).not.toContain(ghost)
   expect(formatTaskPushReport(report)).toContain(ghost)
 })
+
+// restore the store this file bound or queued into, so the next file starts clean
+afterAll(resetFixtureStore)

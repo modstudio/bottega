@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import type { IntervalEvidence } from './hosted-evidence.ts'
@@ -8,6 +8,7 @@ import {
 } from './interval-project-correction.ts'
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 const projects = [
   { name: 'alpha', settings: { keyPrefixes: ['ALP'] } },

@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { afterAll, expect, test } from 'bun:test'
 import type { PGlite } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { bindTenant } from '../../../shared/record/tenant.ts'
@@ -186,3 +186,6 @@ test('tracker backfill never queues or overwrites a local row with a missing upd
     else process.env.FIXTURE_NO_CREDENTIALS_MCP_TOKEN = originalToken
   }
 })
+
+// restore the store this file bound or queued into, so the next file starts clean
+afterAll(resetFixtureStore)

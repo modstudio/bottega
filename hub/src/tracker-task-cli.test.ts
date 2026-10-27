@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
@@ -314,3 +314,6 @@ describe('fresh tracker task read', () => {
     ).toBe(0)
   })
 })
+
+// restore the store this file bound or queued into, so the next file starts clean
+afterAll(resetFixtureStore)

@@ -1,4 +1,4 @@
-import { beforeEach, expect, test } from 'bun:test'
+import { afterAll, beforeEach, expect, test } from 'bun:test'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { db, writeTransaction } from './db.ts'
 import { correctStoredIntervalProjects } from './interval-project-correction.ts'
@@ -9,6 +9,7 @@ const dayOneId = '01990000-0000-7000-8000-000000008002'
 const dayTwoId = '01990000-0000-7000-8000-000000008003'
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 function insertInterval() {
   writeTransaction((conn) =>

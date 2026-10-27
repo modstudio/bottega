@@ -1,4 +1,4 @@
-import { beforeEach, expect, spyOn, test } from 'bun:test'
+import { afterAll, beforeEach, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { writeTransaction } from './db.ts'
@@ -6,6 +6,7 @@ import { observeTrackerTask } from './ingest/trackers.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 
 beforeEach(resetFixtureStore)
+afterAll(resetFixtureStore)
 
 test('a queued write reports its routing wait instead of another drainer', async () => {
   const queuedAt = '2026-10-11T12:00:00.000Z'
