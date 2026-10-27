@@ -173,7 +173,7 @@ function storedFailoverSelectionConstraints(
   })
 }
 
-async function selectFailoverSuccessor(input: {
+export async function selectFailoverSuccessor(input: {
   runId: string
   job: string
   /**
