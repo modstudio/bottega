@@ -5,6 +5,7 @@
  * database write helpers.
  */
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
@@ -337,6 +338,7 @@ export function decideFailover(facts: {
   failureKind: string | null
   failoverKinds: readonly string[]
   noFailover: boolean
+  chainRoot: string | null
   writesJob: boolean
   changes: ({ files: string[] } & Record<string, unknown>) | null
   worktree: string
@@ -355,6 +357,12 @@ export function decideFailover(facts: {
     return { kind: 'none' }
   if (facts.noFailover) {
     return { kind: 'refusal', reason: `disabled by --no-failover; worktree ${facts.worktree}` }
+  }
+  if (facts.chainRoot) {
+    return {
+      kind: 'refusal',
+      reason: `a later turn does not fail over because a fresh root would drop its message and branch tip; worktree ${facts.worktree}; remedy: ${PLATFORM_SLUG} run continue ${facts.chainRoot}`,
+    }
   }
   const writingRefusal = writingFailoverRefusal(facts.writesJob, facts.changes, facts.worktree)
   if (writingRefusal) return { kind: 'refusal', reason: writingRefusal }

@@ -429,6 +429,7 @@ export const importBoundaries: ImportBoundary[] = [
     'failover-boundary',
     'orchestrator/src/route/failover.ts',
     [
+      '../../../shared/brand.ts',
       '../agent/agent-registry.ts',
       '../database/db.ts',
       'bun:sqlite',

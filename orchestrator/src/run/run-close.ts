@@ -87,7 +87,7 @@ export type CloseInput = {
   opts: CloseOptions
   /** The prompt size this run's pick ranked on, for a failover successor to reuse. */
   pickBytes: number
-  claim: { id: string; number: number }
+  claim: { id: string; number: number; parentRunRecordId: string | null }
   idleUnkillable: boolean
   status: string
   worktree: Worktree | null
@@ -116,6 +116,11 @@ export type CloseInput = {
 function failoverRefusalMessage(id: string, reason: string, retryCommand: boolean): string {
   const remedy = retryCommand ? `; retry with ${PLATFORM_SLUG} run retry ${id} --agent <name>` : ''
   return `${FAILOVER_REFUSAL_MARKER} ${reason}${remedy}`
+}
+
+/** Retrying a later turn replays its root as a fresh run, the loss its refusal names. */
+function refusalOffersRetry(failureKind: string, parentRunRecordId: string | null): boolean {
+  return failureKind === 'premature-final' && !parentRunRecordId
 }
 
 function appendFailoverRefusal(id: string, reason: string, retryCommand = false): void {
@@ -344,6 +349,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       failureKind,
       failoverKinds: FAILS_OVER,
       noFailover: Boolean(first.no_failover || opts.noFailover),
+      chainRoot: claim.parentRunRecordId,
       writesJob,
       changes,
       worktree: worktree?.path ?? '(none — read-only job)',
@@ -354,7 +360,11 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     }
     const refusalReason = failoverRefusalReason(decideFailover(failoverFacts))
     if (refusalReason) {
-      appendFailoverRefusal(claim.id, refusalReason, failureKind === 'premature-final')
+      appendFailoverRefusal(
+        claim.id,
+        refusalReason,
+        refusalOffersRetry(failureKind, claim.parentRunRecordId),
+      )
     } else {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')

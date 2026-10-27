@@ -174,7 +174,11 @@ function closeHarnessRun(facts: FinishFacts, terminal: Awaited<ReturnType<typeof
     endpointKey: { secretName: null, source: 'agent', projectName: null },
     name: 'harness',
     opts: { job: owned.job, noFailover: true },
-    claim: { id: owned.record_id, number: owned.number },
+    claim: {
+      id: owned.record_id,
+      number: owned.number,
+      parentRunRecordId: owned.parent_run_record_id,
+    },
     idleUnkillable: false,
     status: terminal.status,
     worktree: facts.worktree,

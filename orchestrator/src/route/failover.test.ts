@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import {
   decideFailover,
@@ -13,6 +14,7 @@ const base = {
   failureKind: 'quota',
   failoverKinds: ['quota'],
   noFailover: false,
+  chainRoot: null,
   writesJob: false,
   changes: { files: [] },
   worktree: '(none — read-only job)',
@@ -45,6 +47,15 @@ describe('decideFailover', () => {
       kind: 'refusal',
       reason: 'disabled by --no-failover; worktree (none — read-only job)',
     })
+  })
+
+  test('a later turn stays on its chain while a root remains eligible', () => {
+    const chainRoot = 'run-record-id-11'
+    expect(decideFailover({ ...base, chainRoot })).toEqual({
+      kind: 'refusal',
+      reason: `a later turn does not fail over because a fresh root would drop its message and branch tip; worktree (none — read-only job); remedy: ${PLATFORM_SLUG} run continue run-record-id-11`,
+    })
+    expect(decideFailover({ ...base, chainRoot: null })).toEqual({ kind: 'select' })
   })
 
   test('writing changes refuse', () => {
