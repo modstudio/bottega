@@ -30,7 +30,7 @@ export function decideHarnessReply(
   const replyFileError = schemaEnvelopeContractError(
     source.replyFileError,
     source.replyFileValue,
-    schema,
+    schema ?? dialect.schema,
   )
   const derived = deriveLiveOutcome({
     writesJob,

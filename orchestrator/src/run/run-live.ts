@@ -782,7 +782,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       schema: validationSchema,
     })
     output = ruling.output
-    replyFileError = classifiedReplyFileError(ruling, validationSchema)
+    replyFileError = classifiedReplyFileError(ruling, validationSchema ?? resolvedDialect.schema)
     replyFilePresent = ruling.replyFilePresent
     if (ruling.rewriteOutputFile) writeFileSync(outPath, output)
     const transportQuestions = collected.asking

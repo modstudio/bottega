@@ -76,8 +76,13 @@ function parseReplyFile(
   schema: unknown,
 ): { matches: boolean; parsed: unknown } {
   if (contract !== 'custom') {
-    const parsed = dialect.parse(text).reply
-    return { matches: parsed !== null, parsed }
+    const reply = dialect.parse(text).reply
+    if (reply !== null) return { matches: true, parsed: reply }
+    try {
+      return { matches: false, parsed: JSON.parse(text) as unknown }
+    } catch {
+      return { matches: false, parsed: null }
+    }
   }
   try {
     const parsed: unknown = JSON.parse(text)

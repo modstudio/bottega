@@ -84,7 +84,12 @@ describe('schema envelope reply detection', () => {
   })
 
   test('does not detect an ordinary invalid reply', () => {
-    expect(isSchemaEnvelopeReply({ findings: 'not-an-array' }, schema)).toBe(false)
+    expect(
+      isSchemaEnvelopeReply(
+        { type: 'object', properties: { findings: { type: 'array' } } },
+        schema,
+      ),
+    ).toBe(false)
   })
 
   test('does not detect a valid reply', () => {

@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
-import { resolveReplyDialect } from '../contract/contract.ts'
+import { REVIEW_SCHEMA, resolveReplyDialect } from '../contract/contract.ts'
 import { job } from '../jobs/jobs.ts'
+import { SCHEMA_ENVELOPE_ERROR_PREFIX } from '../outcome.ts'
 import { decideHarnessReply } from './run-harness-reply.ts'
 
 const dialect = resolveReplyDialect(job('implement'))
@@ -46,4 +47,17 @@ test('harness finish accepts a schema-valid non-writing reader reply', () => {
     files_written: null,
   })
   expect(decideHarnessReply(readerReply, readerDialect, false).status).toBe('ok')
+})
+
+test('harness finish names a schema envelope on default and custom paths', () => {
+  const readerDialect = resolveReplyDialect(job('review-lens'))
+  const replyText = JSON.stringify(REVIEW_SCHEMA)
+  for (const result of [
+    decideHarnessReply(replyText, readerDialect, false),
+    decideHarnessReply(replyText, readerDialect, false, 'custom', REVIEW_SCHEMA),
+  ]) {
+    expect(result.status).toBe('failed')
+    expect(result.failureKind).toBe('contract')
+    expect(result.error).toStartWith(SCHEMA_ENVELOPE_ERROR_PREFIX)
+  }
 })
