@@ -28,7 +28,7 @@ import { type Job, jobIdleKillMs } from '../jobs/jobs.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
 import { receiptWorkerMessages, unreadWorkerMessages } from '../mailbox/mailbox.ts'
 import { deferredWorkerMessageNotice } from '../mailbox/mailbox-notice.ts'
-import { decideOutcome, type OutcomeStatus } from '../outcome.ts'
+import { decideOutcome, type OutcomeStatus, schemaEnvelopeContractError } from '../outcome.ts'
 import {
   observeRunProcessTree,
   type ProcessSample,
@@ -136,6 +136,13 @@ function liveLaunchExtra(
     BOTTEGA_SCRATCH: scratchDir,
     ...(askLoopback ? { BOTTEGA_ASK_URL: askLoopback.url } : {}),
   }
+}
+
+function classifiedReplyFileError(
+  ruling: ReturnType<typeof collectReplySource>,
+  schema: unknown,
+): string | null {
+  return schemaEnvelopeContractError(ruling.replyFileError, ruling.replyFileValue, schema)
 }
 
 function recordConfiguredAsk(input: {
@@ -775,7 +782,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       schema: validationSchema,
     })
     output = ruling.output
-    replyFileError = ruling.replyFileError
+    replyFileError = classifiedReplyFileError(ruling, validationSchema ?? resolvedDialect.schema)
     replyFilePresent = ruling.replyFilePresent
     if (ruling.rewriteOutputFile) writeFileSync(outPath, output)
     const transportQuestions = collected.asking

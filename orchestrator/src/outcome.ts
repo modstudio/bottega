@@ -1,6 +1,40 @@
 // concern: outcome
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 export const GENERIC_QUESTION_TOKENS = ['placeholder', 'tbd', 'question', 'todo'] as const
+export const SCHEMA_ENVELOPE_ERROR_PREFIX = 'schema-envelope: '
+
+/** Whether an invalid reply is the expected JSON Schema instead of an instance of it. */
+export function isSchemaEnvelopeReply(value: unknown, schema: unknown): boolean {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return false
+  const candidate = value as Record<string, unknown>
+  const required = (schema as { required?: unknown }).required
+  const properties = candidate.properties
+  if (
+    candidate.type !== 'object' ||
+    properties === null ||
+    typeof properties !== 'object' ||
+    Array.isArray(properties) ||
+    !Array.isArray(required) ||
+    required.length === 0 ||
+    !required.every((key): key is string => typeof key === 'string')
+  )
+    return false
+  return required.every((key) => Object.hasOwn(properties, key))
+}
+
+/** Name a schema-envelope contract error without accepting or rewriting its reply. */
+export function schemaEnvelopeContractError(
+  existingError: string | null,
+  value: unknown,
+  schema: unknown,
+): string | null {
+  if (!existingError || !isSchemaEnvelopeReply(value, schema)) return existingError
+  return (
+    `${SCHEMA_ENVELOPE_ERROR_PREFIX}reply.json held the schema itself rather than an instance of it. ` +
+    existingError
+  )
+}
 
 type WorkerQuestion = {
   question: string

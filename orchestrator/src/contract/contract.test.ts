@@ -13,6 +13,7 @@ import {
   parseReaderReply,
   parseWorkerReply,
   READER_SCHEMA,
+  REPLY_INSTANCE_INSTRUCTION,
   REVIEW_SCHEMA,
   readerDeliverablesInstruction,
   realQuestions,
@@ -31,6 +32,12 @@ test('reply contract names absolute scratch files without a shell variable', () 
   expect(instruction).toContain(`${scratch}/reply.json`)
   expect(instruction).toContain(`${scratch}/progress.json`)
   expect(instruction).not.toContain('$BOTTEGA_SCRATCH')
+})
+
+test('the reply contract tells the worker to write an instance', () => {
+  expect(replyFileInstruction('WORKER_SCHEMA', '/var/tmp/orch/scratch')).toContain(
+    REPLY_INSTANCE_INSTRUCTION,
+  )
 })
 
 test('the harness worker preamble offers only the durable question path', () => {

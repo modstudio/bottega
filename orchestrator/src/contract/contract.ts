@@ -72,12 +72,16 @@ export const TEXT_REPLY_SCHEMA = {
 const TEXT_REPLY_SCHEMA_NAME = 'text-reply'
 
 export const REPLY_FILE_NAME = 'reply.json'
+export const REPLY_INSTANCE_INSTRUCTION =
+  `${REPLY_FILE_NAME} holds one JSON object whose fields are the schema's properties, not the schema itself, ` +
+  'so the file never has top-level `type`, `required` or `properties` keys unless the schema defines those fields.'
 
 /** The file contract is identical across harnesses; schema flags are an extra guarantee. */
 export function replyFileInstruction(schemaName: string, scratchDir: string): string {
   return (
     `REPLY CONTRACT\n\n` +
-    `Your reply schema is ${schemaName}. Before your final message, write the structured reply ` +
+    `Your reply schema is ${schemaName}. ${REPLY_INSTANCE_INSTRUCTION} ` +
+    `Before your final message, write the structured reply ` +
     `as valid JSON to ${scratchDir}/${REPLY_FILE_NAME}. Orch reads that file first and falls back ` +
     `to the final message only when the file is missing. The final message must follow the same schema.` +
     (schemaName === 'WORKER_SCHEMA' || schemaName === 'ISSUE_WORKER_SCHEMA'
