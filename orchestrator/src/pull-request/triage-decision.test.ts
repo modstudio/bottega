@@ -59,6 +59,37 @@ describe('pull-request triage decision', () => {
     })
   })
 
+  test('a settled delivery-none lens does not cover its lens on either admission path', () => {
+    const producedNothing = (reviewId: number, patchId: string) =>
+      review({
+        reviewId,
+        patchId,
+        findings: [],
+        lenses: [{ recordId: `lens-${reviewId}-0`, lens: 'correctness', graded: false, settled: true }],
+      })
+    expect(decideTriage(evidence({ reviews: [producedNothing(4, 'patch-a')] })).complete).toBe(
+      false,
+    )
+    expect(
+      decideTriage(
+        evidence({
+          reviews: [],
+          branchReviewGroups: [branchGroup([producedNothing(3, 'patch-old')])],
+          reads: [
+            {
+              recordId: 'record-9',
+              tip: 'tip-a',
+              patchId: 'patch-a',
+              pathSet: '["a.ts"]',
+              recordedAt: '2026-09-25T02:00:00Z',
+              sessionId: 'owner-session',
+            },
+          ],
+        }),
+      ).complete,
+    ).toBe(false)
+  })
+
   test('a complete exact-tip review covers an empty later-round requirement', () => {
     expect(
       decideTriage(
