@@ -1,8 +1,10 @@
 // concern: main-checkout database update
 /** Adapts Git, the live store, and migration execution around the drain decision. */
 
-import { existsSync, realpathSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { existsSync } from 'node:fs'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { RUN_WALL_TIME_CEILING_MS } from '../jobs/jobs.ts'
 import { projectAt } from '../project/projects.ts'
@@ -39,6 +41,25 @@ const MIGRATION_DRAIN_WAIT_MAX_MS =
   RUN_WALL_TIME_CEILING_MS + MIGRATION_TERMINALISATION_HEADROOM_MS + MIGRATION_CLOSE_OUT_HEADROOM_MS
 
 type Presentation = { log(value: string): void }
+
+function sameCheckout(left: string, right: string): boolean {
+  return realpathOrSpelled(left) === realpathOrSpelled(right)
+}
+
+export function unregisteredMainCheckoutRefusal(
+  target: string,
+  project: { path: string } | null,
+  same: (left: string, right: string) => boolean,
+): string | null {
+  if (project && same(target, project.path)) return null
+  const binary = project
+    ? `${project.path}/bin/${PLATFORM_SLUG}`
+    : `the registered main checkout's bin/${PLATFORM_SLUG}`
+  return (
+    `refusing machine update: this installation's root ${target} is not a registered main checkout; ` +
+    `run ${binary} machine update, or unset ${INSTALL_HOME_ENV} if it points elsewhere`
+  )
+}
 
 function incomingJournal(
   cwd: string,
@@ -100,6 +121,7 @@ export async function machineUpdateCommand(
     now?: () => number
     sleep?: (ms: number) => Promise<void>
     cwd?: string
+    callerCwd?: string
     authorityRefusal?: () => string | null
     git?: (cwd: string, args: string[]) => string
     migrate?: (cwd: string) => void
@@ -122,28 +144,30 @@ export async function machineUpdateCommand(
   }
   const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
-  const cwd = deps.cwd ?? process.cwd()
+  const target = deps.cwd ?? installRoot()
+  const callerCwd = deps.callerCwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
   const migrate = deps.migrate ?? runMigration
-  const project = withSynchronousDatabaseForMigrationStep((database) =>
-    (deps.project ?? projectAt)(cwd, database),
+  const lookedUp = withSynchronousDatabaseForMigrationStep((database) =>
+    (deps.project ?? projectAt)(target, database),
   )
-  if (!project || realpathSync(cwd) !== realpathSync(project.path)) {
-    throw new Error(
-      'refusing machine update outside a registered main checkout; run it from the registered main checkout root',
-    )
-  }
+  const unregistered = unregisteredMainCheckoutRefusal(target, lookedUp, sameCheckout)
+  if (unregistered) throw new Error(unregistered)
+  const project = lookedUp!
   const branch = project.settings.trunk?.trim()
   if (!branch) throw new Error(`${project.name}: no registered landing branch`)
-  const currentBranch = runGit(cwd, ['branch', '--show-current']) || '(detached HEAD)'
+  const currentBranch = runGit(target, ['branch', '--show-current']) || '(detached HEAD)'
   if (currentBranch !== branch) {
     throw new Error(
       `refusing machine update: registered landing branch is ${branch}, but ${project.path} is on ${currentBranch}; ` +
         `check out ${branch} in ${project.path}`,
     )
   }
-  runGit(cwd, ['fetch', 'origin', branch])
-  const journal = incomingJournal(cwd, branch, runGit)
+  if (!sameCheckout(callerCwd, target)) {
+    presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
+  }
+  runGit(target, ['fetch', 'origin', branch])
+  const journal = incomingJournal(target, branch, runGit)
   const initial = withSynchronousDatabaseForMigrationStep((database) => {
     const local = migrationState(database)
     if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
@@ -184,13 +208,13 @@ export async function machineUpdateCommand(
           setMigrationDrainPhase(database, 'draining'),
         )
       }
-      runGit(cwd, ['pull', '--ff-only', 'origin', branch])
-      migrate(cwd)
+      runGit(target, ['pull', '--ff-only', 'origin', branch])
+      migrate(target)
     } finally {
       withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
     }
     return
   }
-  runGit(cwd, ['pull', '--ff-only', 'origin', branch])
-  migrate(cwd)
+  runGit(target, ['pull', '--ff-only', 'origin', branch])
+  migrate(target)
 }
