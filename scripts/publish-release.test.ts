@@ -79,6 +79,7 @@ test('publish accepts matching HEAD, lightweight tag, manifest, and checksums', 
       },
     })
     expect(calls.at(-1)).toContain(join(output, 'release-manifest.json'))
+    expect(calls.at(-1)).toContain('--generate-notes')
   } finally {
     rmSync(output, { recursive: true, force: true })
   }

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,21 +18,29 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.3
 
       - name: Install
-        run: bun install --silent
+        run: bun install --frozen-lockfile
 
       - name: Validate release version
         run: bun run orch -- release check "${GITHUB_REF_NAME}"
 
-      - name: Build release payload
+      - name: Build installer artifacts
+        run: bun run release:artifacts -- "${GITHUB_REF_NAME}" "${{ runner.temp }}/release-artifacts"
+
+      - name: Build source payload
         env:
           BOTTEGA_STATE_HOME: ${{ runner.temp }}/bottega-state
         run: bun run release:build -- "${GITHUB_REF_NAME}"
 
-      - name: Publish private GitHub release
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun run release:publish -- "${GITHUB_REF_NAME}" "${{ runner.temp }}/release-artifacts" --confirm
+
+      - name: Upload source payload
         env:
           GH_TOKEN: ${{ github.token }}
           BOTTEGA_STATE_HOME: ${{ runner.temp }}/bottega-state
-        run: gh release create "${GITHUB_REF_NAME}" "$BOTTEGA_STATE_HOME/build/bottega-${GITHUB_REF_NAME#v}.tar.gz" --verify-tag --title "${GITHUB_REF_NAME}" --generate-notes
+        run: gh release upload "${GITHUB_REF_NAME}" "$BOTTEGA_STATE_HOME/build/bottega-${GITHUB_REF_NAME#v}.tar.gz"

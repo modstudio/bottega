@@ -152,6 +152,7 @@ export async function publishRelease(
     repository,
     '--title',
     tag,
+    '--generate-notes',
     ...upload.map((name) => join(output, name)),
   ])
   if (created.exitCode !== 0) throw new Error(`gh release create failed for ${tag}`)
