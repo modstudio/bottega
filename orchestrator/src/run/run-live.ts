@@ -108,7 +108,7 @@ function liveChildEnv(
   extra: Record<string, string>,
   includeStore: boolean,
   runNumber: number,
-  jobContextTokens: number | null,
+  requestedJob: Job,
   promptBytes: number | null,
 ): Record<string, string> {
   const environment = childEnv(
@@ -119,8 +119,9 @@ function liveChildEnv(
     includeStore,
     runNumber,
     {},
-    jobContextTokens,
+    requestedJob.contextTokens,
     promptBytes,
+    Boolean(requestedJob.needs.writesRepo),
   )
   return includeStore ? (projectCodeGitEnv(environment) as Record<string, string>) : environment
 }
@@ -189,10 +190,40 @@ export function replyFileFallbackError(
   replyFile: string,
   present: boolean,
   error: string | null,
+  modelCalls: number | null = null,
+  turnCeiling: number | null = null,
 ): string | null {
   if (present) return error
   const notice = `${REPLY_FILE_NAME} missing at ${replyFile}; used final-message fallback`
-  return error ? `${error}\n${notice}` : notice
+  const ceiling =
+    turnCeiling !== null && modelCalls !== null && modelCalls >= turnCeiling
+      ? `; the run stopped at the Goose turn ceiling (${turnCeiling})`
+      : ''
+  const text = `${notice}${ceiling}`
+  return error ? `${error}\n${text}` : text
+}
+
+function launchedTurnCeiling(environment: Record<string, string>): number | null {
+  const raw = environment.GOOSE_MAX_TURNS
+  if (raw === undefined) return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function missingReplyError(
+  replyFile: string,
+  present: boolean,
+  error: string | null,
+  usage: RunCallUsage | null,
+  launchedEnv: Record<string, string>,
+): string | null {
+  return replyFileFallbackError(
+    replyFile,
+    present,
+    error,
+    usage?.modelCalls ?? null,
+    launchedTurnCeiling(launchedEnv),
+  )
 }
 
 type LiveOptions = {
@@ -613,7 +644,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
         liveLaunchExtra(launchEnvironment, scratchDir, askLoopback),
         repoJob,
         claim.number,
-        requestedJob.contextTokens,
+        requestedJob,
         // The composed prompt's own size, measured where the prompt is final:
         // some jobs' material arrives inline here (a `summarize` prompt carries
         // its document) rather than in the working set the job declares.
@@ -874,7 +905,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       agentName: name,
     })
     error = appendGateExclusionToTimeoutError(
-      replyFileFallbackError(replyFile, replyFilePresent, derived.error),
+      missingReplyError(replyFile, replyFilePresent, derived.error, callUsage.value, startOpts.env),
       timedOut,
       excludedGateMsAtTimeout,
     )
