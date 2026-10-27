@@ -5,12 +5,14 @@ import { db } from '../database/db.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
-import {
-  PROMPT_SIZE_BOUNDARY,
-  type PromptSizeBucket,
-  promptBucketSql,
-} from './prompt-size-bucket.ts'
-import { type CostPerAcceptedResult, costPerAcceptedResult } from './route-statistics.ts'
+import { promptBucketSql } from './prompt-size-bucket.ts'
+
+export type AcceptedResultChain = {
+  accepted: boolean
+  rows: Array<{ usd: number | null; source: string | null }>
+}
+
+export type CostPerAcceptedResult = { usd: number } | { unknown: string }
 
 export type CostEvidenceRoot = {
   record_id: string
@@ -32,19 +34,17 @@ type ChainCostRow = {
 type ReportedCost = { usd: number | null; source: string | null }
 export type RouteCostFacts = Map<string, ReportedCost[]>
 
-/** Populated buckets in stable size order; an untried job has none. */
-export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
-  const rows = db()
-    .query(
-      `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
-         FROM run
-        WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
-          AND evidence_excluded IS NULL AND executor <> 'harness'
-          AND parent_run_record_id IS NULL AND agent != '(pending)'`,
-    )
-    .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
-  const have = new Set(rows.map((row) => row.bucket))
-  return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
+/** Prices all work spent on the cell against only the chains that earned an accepted result. */
+export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
+  let totalUsd = 0
+  for (const chain of chains) {
+    for (const row of chain.rows) {
+      if (row.usd === null) return { unknown: row.source ?? 'cost unavailable' }
+      totalUsd += row.usd
+    }
+  }
+  const accepted = chains.filter((chain) => chain.accepted).length
+  return accepted === 0 ? { unknown: 'no accepted results' } : { usd: totalUsd / accepted }
 }
 
 export function routeCostFacts(input: {

@@ -101,6 +101,33 @@ test('stats reports chain cost per accepted result beside the existing cost', ()
   expect(lines.find((line) => line.includes('codex'))).toEndWith('$1.0000')
 })
 
+test('stats distinguishes an unpriced cell from one with no accepted result', () => {
+  const accepted = addRun({ agent: 'codex', job: 'craft' })
+  score(accepted, 'full', 'right')
+  db()
+    .query('UPDATE run SET vendor_tokens=?,vendor_cost_usd=NULL WHERE record_id=?')
+    .run(100, accepted)
+  const lines: string[] = []
+  statsCommand(
+    { flag: (name) => (name === 'job' ? 'craft' : undefined), has: () => false },
+    {
+      log: (...parts) => lines.push(parts.join(' ')),
+      dur: String,
+      subscriptionCost: {
+        facts: {
+          agents: { codex: { billing: 'subscription', harness: 'codex' } },
+          monthTokens: { codex: 100 },
+        },
+        prices: {},
+      },
+    },
+  )
+
+  expect(lines.find((line) => line.includes('codex'))).toEndWith(
+    'unpriced (subscription, unpriced)',
+  )
+})
+
 test('pick previews the same fan-out exclusions do uses', () => {
   const prior = addRun({ agent: 'grok', job: 'review-lens' })
   db().query('UPDATE run SET model=? WHERE record_id=?').run(AGENTS.grok!.model, prior)

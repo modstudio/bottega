@@ -13,9 +13,9 @@ import {
   EVIDENCE_WINDOW,
   isRoutingEvidence,
   MIN_SAMPLE,
-  routingEvidenceWindow,
   thompsonRank,
 } from './route.ts'
+import { routingEvidenceWindow } from './route-statistics.ts'
 
 const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))

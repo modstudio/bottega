@@ -36,13 +36,6 @@ export function runUsageMedians(
   }
 }
 
-export type AcceptedResultChain = {
-  accepted: boolean
-  rows: Array<{ usd: number | null; source: string | null }>
-}
-
-export type CostPerAcceptedResult = { usd: number } | { unknown: string }
-
 type RoutingWindowRow = {
   record_id: string
   agent: string
@@ -50,7 +43,12 @@ type RoutingWindowRow = {
   startedAt: string
 }
 
-/** Keeps only the current model's newest roots in one routing evidence cell. */
+/**
+ * Keep only current-model evidence. A model change is a capability change, not
+ * another observation of the old model, so old-model runs cannot enter the
+ * cell; the decaying exploration floor is what keeps a thin new model from
+ * routing on noise.
+ */
 export function routingEvidenceWindow<T extends RoutingWindowRow>(
   rows: T[],
   agent: string,
@@ -64,17 +62,4 @@ export function routingEvidenceWindow<T extends RoutingWindowRow>(
     )
     .slice(0, limit)
   return { rows: modelRows, evidenceModel: currentModel }
-}
-
-/** Prices all work spent on the cell against only the chains that earned an accepted result. */
-export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
-  let totalUsd = 0
-  for (const chain of chains) {
-    for (const row of chain.rows) {
-      if (row.usd === null) return { unknown: row.source ?? 'cost unavailable' }
-      totalUsd += row.usd
-    }
-  }
-  const accepted = chains.filter((chain) => chain.accepted).length
-  return accepted === 0 ? { unknown: 'no accepted results' } : { usd: totalUsd / accepted }
 }

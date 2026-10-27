@@ -30,7 +30,7 @@ import {
   promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
-import { promptBucketsForJob, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
+import { type CostPerAcceptedResult, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
 import {
   type PolicyCandidate,
   type PolicySelection,
@@ -39,13 +39,10 @@ import {
 } from './route-policy.ts'
 import {
   aggregateEvidence,
-  type CostPerAcceptedResult,
   type RunUsageMedians,
   routingEvidenceWindow,
   runUsageMedians,
 } from './route-statistics.ts'
-
-export { promptBucketsForJob, routingEvidenceWindow }
 
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
@@ -83,7 +80,6 @@ export type Candidate = {
   tokens: number
   usage: RunUsageMedians
   costUsd: number
-  costPerAccepted: CostPerAcceptedResult
   free: boolean
   eligible: boolean
   why: string
@@ -113,6 +109,19 @@ type RouteConstraints = {
   routed?: RoutedSelection
 }
 
+type CandidateOptions = {
+  stack?: string | null
+  modelOverride?: string
+  coolingProbeAgent?: string
+  lens?: string | null
+  requiredMcp?: RequiredMcpServer
+  pinnedTransport?: 'cli' | 'acp'
+  transportPinSource?: McpTransportPinFacts['transportPinSource']
+  explicitlyNamedAgent?: string
+  projectName?: string | null
+  repositoryReader?: (project: Pick<Project, 'path'>) => string | null
+}
+
 /**
  * How long to leave an agent alone after it runs out of quota or loses its
  * login. Nothing here can fix either, so continuing to route at it just
@@ -126,6 +135,20 @@ export const MIN_SAMPLE = 5
 
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
+
+export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
+  const rows = db()
+    .query(
+      `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
+         FROM run
+        WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
+          AND evidence_excluded IS NULL AND executor <> 'harness'
+          AND parent_run_record_id IS NULL AND agent != '(pending)'`,
+    )
+    .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
+  const have = new Set(rows.map((row) => row.bucket))
+  return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
+}
 
 function memoizedRepositoryReader(
   reader: (project: Pick<Project, 'path'>) => string | null,
@@ -316,21 +339,19 @@ export function weightCase(): string {
  * invented or tuned.
  */
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one pass keeps candidate evidence and eligibility coherent
-export function candidates(
-  jobName: string,
-  promptBytes = 0,
-  stack?: string | null,
-  modelOverride?: string,
-  coolingProbeAgent?: string,
-  lens?: string | null,
-  requiredMcp?: RequiredMcpServer,
-  pinnedTransport?: 'cli' | 'acp',
-  transportPinSource?: McpTransportPinFacts['transportPinSource'],
-  explicitlyNamedAgent?: string,
-  projectName?: string | null,
-  repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
-  subscriptionCost?: SubscriptionCostContext,
-): Candidate[] {
+function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptions = {}) {
+  const {
+    stack,
+    modelOverride,
+    coolingProbeAgent,
+    lens,
+    requiredMcp,
+    pinnedTransport,
+    transportPinSource,
+    explicitlyNamedAgent,
+    projectName,
+    repositoryReader = currentProjectRepository,
+  } = options
   const j = job(jobName)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   const { mcpListing, routeProject } = routingPassFacts(requiredMcp, projectName)
@@ -438,7 +459,6 @@ export function candidates(
       peakCallTokens: number | null
     }[]
   ).filter(isRoutingEvidence)
-  const costFacts = routeCostFacts({ jobName, promptBytes, stack, lens, context: subscriptionCost })
   const lat = db()
     .query(
       `SELECT agent, latency_ms FROM run
@@ -497,11 +517,9 @@ export function candidates(
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel, EVIDENCE_WINDOW)
     const recent = aggregateEvidence(window.rows)
-    const scored = recent.scored
-    const failures = recent.failures
+    const { scored, failures } = recent
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
-    const costPerAccepted = routeCostPerAccepted(jobName, window.rows, costFacts)
     const mcpWhy = mcpIneligibility(a)
     const policy = policyEligibility(a)
     let eligible = true,
@@ -572,7 +590,6 @@ export function candidates(
       tokens: h?.tokens ?? 0,
       usage: runUsageMedians(window.rows),
       costUsd: h?.cost ?? 0,
-      costPerAccepted,
       // A free or no-cost agent spends no metered quota, so on a genuine tie it
       // keeps the paid subscriptions in reserve for work that needs them.
       free: a.billing === 'none' || a.billing === 'free',
@@ -597,13 +614,22 @@ export function candidates(
       c.shrunk = (c.score * c.evidence + MIN_SAMPLE * prior) / (c.evidence + MIN_SAMPLE)
     }
   }
-  return result
+  return { result, evidenceRows }
+}
+
+export function candidates(
+  jobName: string,
+  promptBytes = 0,
+  options: CandidateOptions = {},
+): Candidate[] {
+  return candidatePass(jobName, promptBytes, options).result
 }
 
 /** One row per job × agent that has any history, on the router's own maths. */
 export type Scored = Candidate & {
   job: string
   promptBucket: PromptSizeBucket
+  costPerAccepted: CostPerAcceptedResult
 }
 
 /**
@@ -625,23 +651,24 @@ export function scoreboard(onlyJob?: string, subscriptionCost?: SubscriptionCost
     .filter((j) => !onlyJob || j === onlyJob)
     .flatMap((j) =>
       promptBucketsForJob(j).flatMap((bucket) =>
-        candidates(
-          j,
-          bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          subscriptionCost,
-        )
-          .filter((c) => c.runs > 0 || c.failures > 0)
-          .map((c) => ({ ...c, job: j, promptBucket: bucket })),
+        (() => {
+          const promptBytes = bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
+          const pass = candidatePass(j, promptBytes)
+          const costFacts = routeCostFacts({ jobName: j, promptBytes, context: subscriptionCost })
+          return pass.result
+            .filter((c) => c.runs > 0 || c.failures > 0)
+            .map((c) => ({
+              ...c,
+              job: j,
+              promptBucket: bucket,
+              costPerAccepted: routeCostPerAccepted(
+                j,
+                routingEvidenceWindow(pass.evidenceRows, c.agent, c.evidenceModel!, EVIDENCE_WINDOW)
+                  .rows,
+                costFacts,
+              ),
+            }))
+        })(),
       ),
     )
 }
@@ -712,48 +739,32 @@ export function evidenceFor(
       : stack
         ? { level: 'stack' as const, value: stack }
         : null
-  const jobWide = candidates(
-    jobName,
-    promptBytes,
-    undefined,
+  const jobWide = candidates(jobName, promptBytes, {
     modelOverride,
-    undefined,
-    undefined,
     requiredMcp,
     pinnedTransport,
     transportPinSource,
-    undefined,
     projectName,
-  )
+  })
   if (requested) {
     const scoped =
       requested.level === 'lens'
-        ? candidates(
-            jobName,
-            promptBytes,
-            undefined,
+        ? candidates(jobName, promptBytes, {
             modelOverride,
-            undefined,
-            requested.value,
+            lens: requested.value,
             requiredMcp,
             pinnedTransport,
             transportPinSource,
-            undefined,
             projectName,
-          )
-        : candidates(
-            jobName,
-            promptBytes,
-            requested.value,
+          })
+        : candidates(jobName, promptBytes, {
+            stack: requested.value,
             modelOverride,
-            undefined,
-            undefined,
             requiredMcp,
             pinnedTransport,
             transportPinSource,
-            undefined,
             projectName,
-          )
+          })
     // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
     // counting one here could narrow the scope on the strength of an agent that
     // is then thrown away — leaving a scoped view with a single usable
@@ -890,19 +901,17 @@ function namedCandidate(
   constraints: RouteConstraints,
   probe: boolean,
 ): Candidate {
-  const rows = candidates(
-    jobName,
-    promptBytes,
-    ev.level === 'stack' ? ev.stack : undefined,
-    constraints.model,
-    probe ? name : undefined,
-    ev.level === 'lens' ? ev.lens : undefined,
-    constraints.requiredMcp,
-    constraints.pinnedTransport,
-    constraints.transportPinSource,
-    name,
-    constraints.project,
-  )
+  const rows = candidates(jobName, promptBytes, {
+    stack: ev.level === 'stack' ? ev.stack : undefined,
+    modelOverride: constraints.model,
+    coolingProbeAgent: probe ? name : undefined,
+    lens: ev.level === 'lens' ? ev.lens : undefined,
+    requiredMcp: constraints.requiredMcp,
+    pinnedTransport: constraints.pinnedTransport,
+    transportPinSource: constraints.transportPinSource,
+    explicitlyNamedAgent: name,
+    projectName: constraints.project,
+  })
   const candidate = rows.find((row) => row.agent === name)
   if (!candidate) throw new RoutingRefusalError(`unknown agent "${name}"`)
   return candidate
