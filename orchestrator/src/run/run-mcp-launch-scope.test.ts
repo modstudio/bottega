@@ -2,15 +2,14 @@ import { afterEach, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
-import { upsertProject } from '../project/projects.ts'
 import { PROJECT_RELATIVE_NO_TREE_REASON } from '../sandbox/mcp-reader-scope.ts'
 import {
   PROJECT_MCP_WRITER_WITHHELD_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   type ProjectMcpSelection,
   projectMcpWriterRemedy,
+  selectProjectMcpServers,
 } from '../sandbox/project-mcp-scope.ts'
 import { acpProjectMcpServers } from '../transport/transport-acp-mcp.ts'
 import {
@@ -49,21 +48,6 @@ const launch = (
     cwd,
     connection: null,
   })
-
-function registeredTree(servers: Record<string, unknown>): string {
-  const cwd = tree(servers)
-  const initialized = Bun.spawnSync(['git', 'init', '--quiet'], { cwd })
-  if (initialized.exitCode !== 0) {
-    throw new Error(initialized.stderr.toString().trim() || 'git init failed')
-  }
-  upsertProject({
-    recordId: newRecordId(),
-    name: 'starship',
-    path: cwd,
-    settings: {},
-  })
-  return cwd
-}
 
 test('a writing launch reads the tree and names the same direct server for every harness', () => {
   const cwd = tree({ local: { command: './bin/local', args: ['--serve'] } })
@@ -172,14 +156,16 @@ test('only a transport or harness that renders the selection reports the servers
 })
 
 test('a Grok CLI reader reports a project-relative server withheld without a tree', () => {
-  const cwd = registeredTree({
-    boost: { command: 'scripts/mcp/boost' },
-    bun: { command: 'bun' },
-  })
-  const scope = launch('grok', 'cli', true, cwd, { writesJob: false, hasProjectTree: false })
-  expect(scope.projectSelection?.kind).toBe('reader')
-  expect((scope.projectSelection?.withheld ?? []).map((entry) => entry.name)).toEqual(['boost'])
-  const line = withheldScopeLine('cli', 'grok', scope.projectSelection)
+  const selection = selectProjectMcpServers(
+    'reader',
+    { boost: { command: 'scripts/mcp/boost' }, bun: { command: 'bun' } },
+    { name: 'starship', path: '/project', settings: {} },
+    '/isolate',
+    false,
+  )
+  expect(selection?.kind).toBe('reader')
+  expect((selection?.withheld ?? []).map((entry) => entry.name)).toEqual(['boost'])
+  const line = withheldScopeLine('cli', 'grok', selection)
   expect(line).toContain('boost')
   expect(line).toContain(PROJECT_RELATIVE_NO_TREE_REASON)
 })
