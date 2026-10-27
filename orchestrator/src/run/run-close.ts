@@ -355,7 +355,12 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     }
     const refusalReason = failoverRefusalReason(decideFailover(failoverFacts))
     if (refusalReason) {
-      appendFailoverRefusal(claim.id, refusalReason, failureKind === 'premature-final')
+      appendFailoverRefusal(
+        claim.id,
+        refusalReason,
+        // Retrying a later turn replays its root as a fresh run, the loss the refusal names.
+        failureKind === 'premature-final' && !claim.parentRunRecordId,
+      )
     } else {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
