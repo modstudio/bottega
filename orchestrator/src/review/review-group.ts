@@ -37,6 +37,7 @@ export type TriageReviewRow = {
     lens?: string
     model?: string | null
     graded: boolean
+    settled: boolean
   }[]
   findings: readonly {
     recordId: string
@@ -47,27 +48,36 @@ export type TriageReviewRow = {
 }
 
 export function reviewLensGraded(lens: {
-  delivery: string | null
   reproduced: string | null
   coverage: string | null
   limits: string | null
   overlap: string | null
 }): boolean {
   return (
-    lens.delivery === 'none' ||
-    (lens.delivery !== null &&
-      lens.reproduced !== null &&
-      lens.coverage !== null &&
-      lens.limits !== null &&
-      lens.overlap !== null)
+    lens.reproduced !== null &&
+    lens.coverage !== null &&
+    lens.limits !== null &&
+    lens.overlap !== null
   )
+}
+
+/** Whether this lens needs anything more from the architect before round triage. */
+export function reviewLensSettled(lens: {
+  delivery: string | null
+  reproduced: string | null
+  coverage: string | null
+  limits: string | null
+  overlap: string | null
+}): boolean {
+  return lens.delivery === 'none' || reviewLensGraded(lens)
 }
 
 /** The triage floor shared by workflow evidence and project review recording. */
 export function reviewRoundTriageComplete(review: TriageReviewRow): boolean {
   return (
     review.lenses.length > 0 &&
-    review.lenses.every(({ graded }) => graded) &&
+    review.lenses.every(({ settled }) => settled) &&
+    review.lenses.some(({ graded }) => graded) &&
     review.findings.every(({ disposition }) => disposition !== null)
   )
 }
@@ -274,6 +284,7 @@ function reviewsForBranch(
           lens: string
           model: string | null
           graded: boolean
+          settled: boolean
         }[]
       ).push({
         recordId: row.lens_id,
@@ -281,6 +292,7 @@ function reviewsForBranch(
         lens: row.lens,
         model: row.model,
         graded: reviewLensGraded(row),
+        settled: reviewLensSettled(row),
       })
     }
     if (

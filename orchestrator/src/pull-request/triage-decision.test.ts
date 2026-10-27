@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import { decideSecondOpinion, decideTriage, type TriageEvidence } from './triage-decision.ts'
+import { decideTriage, type TriageEvidence } from './triage-decision.ts'
+
+const gradedLens = { graded: true, settled: true } as const
 
 const review = (
   overrides: Partial<TriageEvidence['reviews'][number]> & { reviewId?: number } = {},
 ) => {
   const { reviewId = 4, ...rest } = overrides
+  const lensIdentities = rest.lensIdentities ?? ['correctness']
   return {
     reviewRecordId: `review-${reviewId}`,
     reviewNumber: reviewId,
@@ -14,8 +17,12 @@ const review = (
     role: 'round' as const,
     patchId: 'patch-old',
     pathSet: '["a.ts"]',
-    lensIdentities: ['correctness'],
-    lenses: [{ recordId: 'lens-1', graded: true }],
+    lensIdentities,
+    lenses: lensIdentities.map((lens, index) => ({
+      recordId: `lens-${reviewId}-${index}`,
+      lens,
+      ...gradedLens,
+    })),
     findings: [{ recordId: 'finding-12', ordinal: 1, disposition: 'accepted' }],
     ...rest,
   }
@@ -141,7 +148,7 @@ describe('pull-request triage decision', () => {
       reviewId: 3,
       tier: 3,
       lensIdentities: ['correctness'],
-      lenses: [{ recordId: 'lens-correctness', lens: 'correctness', graded: true }],
+      lenses: [{ recordId: 'lens-correctness', lens: 'correctness', ...gradedLens }],
       findings: [],
     })
     expect(
@@ -214,9 +221,9 @@ describe('pull-request triage decision', () => {
       patchId: 'patch-first',
       lensIdentities: ['correctness', 'craft', 'safety'],
       lenses: [
-        { recordId: 'lens-correctness', lens: 'correctness', graded: true },
-        { recordId: 'lens-craft', lens: 'craft', graded: true },
-        { recordId: 'lens-safety', lens: 'safety', graded: true },
+        { recordId: 'lens-correctness', lens: 'correctness', ...gradedLens },
+        { recordId: 'lens-craft', lens: 'craft', ...gradedLens },
+        { recordId: 'lens-safety', lens: 'safety', ...gradedLens },
       ],
     })
     const secondPatch = review({
@@ -226,8 +233,8 @@ describe('pull-request triage decision', () => {
       patchId: 'patch-second',
       lensIdentities: ['boundaries', 'tests'],
       lenses: [
-        { recordId: 'lens-boundaries', lens: 'boundaries', graded: true },
-        { recordId: 'lens-tests', lens: 'tests', graded: true },
+        { recordId: 'lens-boundaries', lens: 'boundaries', ...gradedLens },
+        { recordId: 'lens-tests', lens: 'tests', ...gradedLens },
       ],
     })
     expect(
@@ -328,7 +335,7 @@ describe('pull-request triage decision', () => {
             runId: `run-${reviewId}`,
             lens: 'correctness',
             model,
-            graded: true,
+            ...gradedLens,
           },
         ],
         findings: [],
@@ -733,10 +740,10 @@ describe('pull-request triage decision', () => {
       patchId: 'patch-before-fix',
       lensIdentities: ['correctness', 'craft', 'test-quality', 'architecture'],
       lenses: [
-        { recordId: 'lens-correctness-old', lens: 'correctness', graded: true },
-        { recordId: 'lens-craft-old', lens: 'craft', graded: true },
-        { recordId: 'lens-test-old', lens: 'test-quality', graded: true },
-        { recordId: 'lens-architecture-old', lens: 'architecture', graded: true },
+        { recordId: 'lens-correctness-old', lens: 'correctness', ...gradedLens },
+        { recordId: 'lens-craft-old', lens: 'craft', ...gradedLens },
+        { recordId: 'lens-test-old', lens: 'test-quality', ...gradedLens },
+        { recordId: 'lens-architecture-old', lens: 'architecture', ...gradedLens },
       ],
     })
     const current = review({
@@ -745,9 +752,9 @@ describe('pull-request triage decision', () => {
       patchId: 'patch-a',
       lensIdentities: ['correctness', 'craft', 'test-quality'],
       lenses: [
-        { recordId: 'lens-correctness-new', lens: 'correctness', graded: true },
-        { recordId: 'lens-craft-new', lens: 'craft', graded: true },
-        { recordId: 'lens-test-new', lens: 'test-quality', graded: true },
+        { recordId: 'lens-correctness-new', lens: 'correctness', ...gradedLens },
+        { recordId: 'lens-craft-new', lens: 'craft', ...gradedLens },
+        { recordId: 'lens-test-new', lens: 'test-quality', ...gradedLens },
       ],
     })
 
@@ -777,43 +784,24 @@ describe('pull-request triage decision', () => {
     })
   })
 
-  test('a second opinion requires two completed runs on different models', () => {
-    const opinion = (id: number, model: string) => ({
-      recordId: `lens-${id}`,
-      runId: String(id + 100),
-      lens: 'correctness',
-      model,
-      graded: true,
-    })
-    const withOpinions = (...opinions: ReturnType<typeof opinion>[]) => [
-      review({ lenses: opinions }),
-    ]
-
-    expect(decideSecondOpinion(withOpinions(opinion(1, 'model-a')), 'correctness')).toEqual({
-      complete: false,
-      lens: 'correctness',
-      firstRunId: '101',
-    })
-    expect(
-      decideSecondOpinion(
-        withOpinions(opinion(1, 'model-a'), opinion(2, 'model-a')),
-        'correctness',
-      ),
-    ).toEqual({ complete: false, lens: 'correctness', firstRunId: '101' })
-    expect(
-      decideSecondOpinion(
-        withOpinions(opinion(1, 'model-a'), opinion(2, 'model-b')),
-        'correctness',
-      ),
-    ).toEqual({ complete: true })
-  })
-
   test('a second opinion is enforced on exact and earlier credited review rounds', () => {
     const twoModels = review({
       patchId: 'patch-a',
       lenses: [
-        { recordId: 'record-1', runId: '101', lens: 'correctness', model: 'model-a', graded: true },
-        { recordId: 'record-2', runId: '102', lens: 'correctness', model: 'model-b', graded: true },
+        {
+          recordId: 'record-1',
+          runId: '101',
+          lens: 'correctness',
+          model: 'model-a',
+          ...gradedLens,
+        },
+        {
+          recordId: 'record-2',
+          runId: '102',
+          lens: 'correctness',
+          model: 'model-b',
+          ...gradedLens,
+        },
       ],
     })
     expect(
@@ -851,8 +839,20 @@ describe('pull-request triage decision', () => {
     const sameModel = review({
       patchId: 'patch-a',
       lenses: [
-        { recordId: 'record-1', runId: '101', lens: 'correctness', model: 'model-a', graded: true },
-        { recordId: 'record-2', runId: '102', lens: 'correctness', model: 'model-a', graded: true },
+        {
+          recordId: 'record-1',
+          runId: '101',
+          lens: 'correctness',
+          model: 'model-a',
+          ...gradedLens,
+        },
+        {
+          recordId: 'record-2',
+          runId: '102',
+          lens: 'correctness',
+          model: 'model-a',
+          ...gradedLens,
+        },
       ],
     })
     expect(
@@ -899,7 +899,7 @@ describe('pull-request triage decision', () => {
           runId: '101',
           lens: 'correctness',
           model: 'model-a',
-          graded: true,
+          ...gradedLens,
         },
       ],
     })
@@ -914,7 +914,7 @@ describe('pull-request triage decision', () => {
           runId: '102',
           lens: 'correctness',
           model: 'model-b',
-          graded: true,
+          ...gradedLens,
         },
       ],
     })
@@ -962,7 +962,7 @@ describe('pull-request triage decision', () => {
           runId: '101',
           lens: 'correctness',
           model: 'model-a',
-          graded: true,
+          ...gradedLens,
         },
       ],
       findings: [{ recordId: 'finding-1', ordinal: 1, disposition: null }],
@@ -977,7 +977,7 @@ describe('pull-request triage decision', () => {
           runId: '102',
           lens: 'correctness',
           model: 'model-b',
-          graded: true,
+          ...gradedLens,
         },
       ],
       findings: [],

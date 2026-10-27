@@ -29,19 +29,27 @@ const finding = (lens: string, disposition: string): TriageReviewRow['findings']
 
 const reviewRow = (
   overrides: Partial<TriageReviewRow> & Pick<TriageReviewRow, 'reviewNumber'>,
-): TriageReviewRow => ({
-  reviewRecordId: `review-${overrides.reviewNumber}`,
-  recordedAt: '2026-10-20T00:00:00Z',
-  completedAt: '2026-10-20T01:00:00Z',
-  tier: 2,
-  role: 'round',
-  patchId: 'patch',
-  pathSet: '["a.ts"]',
-  lensIdentities: ['correctness'],
-  lenses: [],
-  findings: [],
-  ...overrides,
-})
+): TriageReviewRow => {
+  const lensIdentities = overrides.lensIdentities ?? ['correctness']
+  return {
+    reviewRecordId: `review-${overrides.reviewNumber}`,
+    recordedAt: '2026-10-20T00:00:00Z',
+    completedAt: '2026-10-20T01:00:00Z',
+    tier: 2,
+    role: 'round',
+    patchId: 'patch',
+    pathSet: '["a.ts"]',
+    lensIdentities,
+    lenses: lensIdentities.map((lens, index) => ({
+      recordId: `lens-${overrides.reviewNumber}-${index}`,
+      lens,
+      graded: true,
+      settled: true,
+    })),
+    findings: [],
+    ...overrides,
+  }
+}
 
 describe('round lens plan', () => {
   const round = {
@@ -392,5 +400,31 @@ describe('round lens plan', () => {
       admissionRequired: { lenses: ['correctness', 'craft', 'issue-blast-radius'] },
       completedLensesOnBranch: ['issue-blast-radius'],
     })
+  })
+
+  test('a delivery-none lens remains owed by the review funnel', () => {
+    const none = reviewRow({
+      reviewNumber: 1,
+      lensIdentities: ['correctness'],
+      lenses: [
+        {
+          recordId: 'lens-none',
+          lens: 'correctness',
+          graded: false,
+          settled: true,
+        },
+      ],
+    })
+    const result = roundLensFacts([none], { patchId: 'current', pathSet: '["a.ts"]' })
+
+    expect(result.completedLenses).toEqual([])
+    expect(
+      applicableRoundLensPlan({
+        relevant: { lenses: ['correctness'] },
+        facts: result,
+        postFix: { kind: 'no-completed-round' },
+        fixPathsByLens: {},
+      }).round,
+    ).toEqual({ lenses: ['correctness'], lensReasons: { correctness: 'initial' } })
   })
 })

@@ -5,6 +5,7 @@ const review = (
   overrides: Partial<TriageEvidence['reviews'][number]> & { reviewId?: number } = {},
 ) => {
   const { reviewId = 4, ...rest } = overrides
+  const lensIdentities = rest.lensIdentities ?? ['correctness']
   return {
     reviewRecordId: `review-${reviewId}`,
     reviewNumber: reviewId,
@@ -14,8 +15,13 @@ const review = (
     role: 'round' as const,
     patchId: 'patch-old',
     pathSet: '["a.ts"]',
-    lensIdentities: ['correctness'],
-    lenses: [{ recordId: 'lens-1', graded: true }],
+    lensIdentities,
+    lenses: lensIdentities.map((lens, index) => ({
+      recordId: `lens-${reviewId}-${index}`,
+      lens,
+      graded: true,
+      settled: true,
+    })),
     findings: [{ recordId: 'finding-12', ordinal: 1, disposition: 'accepted' }],
     ...rest,
   }

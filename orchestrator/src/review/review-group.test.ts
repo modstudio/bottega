@@ -7,6 +7,7 @@ import type { ReviewPlan } from './review-applicability.ts'
 import {
   measureChangeGroup,
   reviewLensGraded,
+  reviewLensSettled,
   reviewRoundTriageComplete,
   reviewsForTriage,
   type TriageReviewRow,
@@ -14,14 +15,28 @@ import {
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
 
-test('a review lens is graded by delivery or all four review grades', () => {
+test('a review lens is graded only by all four review grades', () => {
   const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
 
-  expect(reviewLensGraded({ delivery: 'none', ...noGrades })).toBe(true)
-  expect(reviewLensGraded({ delivery: null, ...noGrades })).toBe(false)
-  expect(reviewLensGraded({ delivery: 'full', ...noGrades })).toBe(false)
+  expect(reviewLensGraded(noGrades)).toBe(false)
   expect(
     reviewLensGraded({
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'named',
+      overlap: 'unique',
+    }),
+  ).toBe(true)
+})
+
+test('a review lens is settled by delivery none or all four review grades', () => {
+  const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
+
+  expect(reviewLensSettled({ delivery: 'none', ...noGrades })).toBe(true)
+  expect(reviewLensSettled({ delivery: null, ...noGrades })).toBe(false)
+  expect(reviewLensSettled({ delivery: 'full', ...noGrades })).toBe(false)
+  expect(
+    reviewLensSettled({
       delivery: 'full',
       reproduced: 'all',
       coverage: 'adequate',
@@ -31,7 +46,7 @@ test('a review lens is graded by delivery or all four review grades', () => {
   ).toBe(true)
 })
 
-test('a round with one graded review and one delivery-none review is triage complete', () => {
+test('round triage needs one graded lens and permits another delivery-none lens', () => {
   const grades = { reproduced: null, coverage: null, limits: null, overlap: null }
   const review: TriageReviewRow = {
     reviewRecordId: 'review-record',
@@ -47,20 +62,36 @@ test('a round with one graded review and one delivery-none review is triage comp
       {
         recordId: 'graded',
         graded: reviewLensGraded({
-          delivery: 'full',
           ...grades,
           reproduced: 'all',
           coverage: 'adequate',
           limits: 'named',
           overlap: 'unique',
         }),
+        settled: reviewLensSettled({
+          delivery: 'full',
+          reproduced: 'all',
+          coverage: 'adequate',
+          limits: 'named',
+          overlap: 'unique',
+        }),
       },
-      { recordId: 'none', graded: reviewLensGraded({ delivery: 'none', ...grades }) },
+      {
+        recordId: 'none',
+        graded: reviewLensGraded(grades),
+        settled: reviewLensSettled({ delivery: 'none', ...grades }),
+      },
     ],
     findings: [],
   }
 
   expect(reviewRoundTriageComplete(review)).toBe(true)
+  expect(
+    reviewRoundTriageComplete({
+      ...review,
+      lenses: [{ recordId: 'none', graded: false, settled: true }],
+    }),
+  ).toBe(false)
 })
 
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
@@ -108,7 +139,7 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
     pathSet: ['a.ts'],
   }).reviews
   expect(matched).toHaveLength(1)
-  expect(matched[0]?.lenses[0]?.graded).toBe(true)
+  expect(matched[0]?.lenses[0]).toMatchObject({ graded: false, settled: true })
   expect(
     reviewsForTriage(database, {
       project: 'renamed-fixture',
@@ -147,8 +178,9 @@ test('a rebase credits the complete round from the same branch and never another
     database
       .query(
         `INSERT INTO review_lens
-           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
-         VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]')`,
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify,
+            reproduced,coverage,limits,overlap)
+         VALUES ('${newRecordId()}', ?, ?, ?, 'codex','model','[]','["a.ts"]','[]','[]','all','adequate','named','unique')`,
       )
       .run(reviewRecordId, run.record_id, lens)
   }

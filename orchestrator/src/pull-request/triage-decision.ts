@@ -248,15 +248,15 @@ function coverApplicableLens(
   exactCompleted: readonly TriageReviewRow[],
   completed: readonly TriageReviewRow[],
 ): { kind: 'covered'; review: TriageReviewRow } | { kind: 'missing'; recordedOnBranch: boolean } {
+  const hasGradedLens = (review: TriageReviewRow) =>
+    review.lenses.some((candidate) => candidate.lens === lens && candidate.graded)
   const latest = (exactRequired.has(lens) ? exactCompleted : completed).find((review) =>
-    review.lensIdentities.includes(lens),
+    hasGradedLens(review),
   )
   if (latest && latest.tier !== null) return { kind: 'covered', review: latest }
   return {
     kind: 'missing',
-    recordedOnBranch: completed.some(
-      (review) => review.lensIdentities.includes(lens) && review.tier !== null,
-    ),
+    recordedOnBranch: completed.some((review) => hasGradedLens(review) && review.tier !== null),
   }
 }
 
@@ -294,7 +294,7 @@ function composedReviewEvidence(
     roundReview.secondOpinion === applicableReview.secondOpinion ? exactCompleted : completed
   const secondOpinionReviews = applicableReview.secondOpinion
     ? secondOpinionPool.filter((review) =>
-        review.lensIdentities.includes(applicableReview.secondOpinion!),
+        review.lenses.some((lens) => lens.lens === applicableReview.secondOpinion && lens.graded),
       )
     : []
   const opinionSelection = applicableReview.secondOpinion
@@ -439,7 +439,9 @@ function exactReviewEvidence(evidence: TriageEvidence) {
   const judgedLenses = new Set(
     evidence.reviews
       .filter((review) => review.completedAt !== null)
-      .flatMap((review) => review.lensIdentities),
+      .flatMap((review) =>
+        review.lenses.flatMap((lens) => (lens.graded && lens.lens ? [lens.lens] : [])),
+      ),
   )
   const secondOpinion = decideSecondOpinion(
     evidence.reviews,

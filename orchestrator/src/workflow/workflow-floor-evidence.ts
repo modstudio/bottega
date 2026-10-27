@@ -259,9 +259,7 @@ function gatherReview(
     allFindingsDisposed: reviews.every(({ findings }) =>
       findings.every(({ disposition }) => disposition !== null),
     ),
-    allLensesGraded: reviews.every(
-      ({ lenses }) => lenses.length > 0 && lenses.every(({ graded }) => graded),
-    ),
+    allLensesGraded: reviews.length > 0 && reviews.every(reviewRoundTriageComplete),
     ...(unfinishedReviewIds.length ? { unfinishedReviewIds } : {}),
   }
 }
