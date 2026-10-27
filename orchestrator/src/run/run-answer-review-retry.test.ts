@@ -68,6 +68,25 @@ test('retrying a review lens dispatches with its recorded review target', async 
   expect(await dispatchedReview(root)).toBe(reviewRef)
 })
 
+test('retrying a review provisions its reader from the review target instead of the coverage base', async () => {
+  const root = failed()
+  const coverageBase = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD~1')!
+  db()
+    .query('UPDATE run SET review_ref=?,base_commit=? WHERE record_id=?')
+    .run(reviewRef, coverageBase, root)
+  let dispatched: Parameters<typeof detach>[2] | undefined
+  const dispatch: typeof detach = async (_job, _prompt, spec) => {
+    dispatched = spec
+    return insert('ok', 'review-lens')
+  }
+
+  await retryRun(root, { flags }, { ...helpers, dispatch })
+
+  expect(dispatched?.review).toBe(reviewRef)
+  expect(dispatched?.resume).toMatchObject({ kind: 'retry-root', parent: root, worktree: null })
+  expect(dispatched?.resume && 'readOnlyBase' in dispatched.resume).toBe(false)
+})
+
 test('retrying a failed continuation dispatches with the root review target', async () => {
   const root = failed()
   db().query('UPDATE run SET review_ref=? WHERE record_id=?').run(reviewRef, root)

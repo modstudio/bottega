@@ -54,12 +54,26 @@ export function resolveRetryTree(input: {
   projectPath: string | null
   readsRepo: boolean
   writesRepo: boolean
+  reviewRef: string | null
   checkoutCwd: string
   baseCommit: string | null
   agent: string
   sessionId: string | null
 }): { cwd: string; resume: RunResumeOptions | undefined } {
   if (input.writesRepo) return { cwd: input.checkoutCwd, resume: undefined }
+  if (input.reviewRef) {
+    return {
+      cwd: input.projectPath ?? input.checkoutCwd,
+      resume: {
+        kind: 'retry-root',
+        parent: input.rootId,
+        agent: input.agent,
+        turn: 1,
+        sessionId: input.sessionId,
+        worktree: null,
+      },
+    }
+  }
   const decision = requireContinuationTree({
     rootId: input.rootId,
     projectName: input.projectName,

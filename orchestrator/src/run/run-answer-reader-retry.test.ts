@@ -60,3 +60,44 @@ test('retry provisions a fresh reader from its original launch cwd and recorded 
     resume: { kind: 'retry-root', parent: id, worktree: null, readOnlyBase: baseCommit },
   })
 })
+
+test('reader retry falls back from a turn with no launch metadata to the root launch cwd', async () => {
+  const root = addRun({
+    agent: 'grok',
+    job: 'file-question',
+    status: 'failed',
+    session: 'orch-test-session',
+    repo: 'continuation-fixture',
+  })
+  const retried = addRun({
+    agent: 'grok',
+    job: 'file-question',
+    status: 'failed',
+    parent: root,
+    turn: 2,
+    session: 'orch-test-session',
+  })
+  const prompt = trackResidue(join(dir, `retry-${retried}.prompt.txt`))
+  const baseCommit = gitContext(process.cwd(), 'rev-parse', '--verify', 'HEAD')!
+  const rootLaunchCwd = join(dir, `root-launch-${root}`)
+  writeFileSync(prompt, 'What does bar.ts do?')
+  db()
+    .query('UPDATE run SET launch_cwd=?,launch_base=?,base_commit=? WHERE record_id=?')
+    .run(rootLaunchCwd, baseCommit, baseCommit, root)
+  db()
+    .query(
+      'UPDATE run SET prompt_path=?,cwd=?,worktree=?,base_commit=?,launch_cwd=NULL,launch_base=NULL WHERE record_id=?',
+    )
+    .run(prompt, dir, dir, baseCommit, retried)
+  let dispatched: Parameters<typeof detach>[2] | undefined
+  const dispatch: typeof detach = async (_job, _prompt, spec) => {
+    dispatched = spec
+    return addRun({ agent: 'grok', job: 'file-question', status: 'ok' })
+  }
+
+  await retryRun(retried, { flags }, { ...helpers, dispatch })
+
+  expect(dispatched?.cwd).toBe(rootLaunchCwd)
+  expect(dispatched?.base).toBeUndefined()
+  expect(dispatched?.launchBase).toBeUndefined()
+})

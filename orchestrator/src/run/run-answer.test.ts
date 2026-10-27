@@ -979,6 +979,32 @@ describe('retry command', () => {
     )
   })
 
+  test('reader retry without a launch cwd dispatches from the registered checkout', async () => {
+    const id = failed()
+    const registeredPath = process.cwd()
+    const baseCommit = gitContext(registeredPath, 'rev-parse', '--verify', 'HEAD')!
+    const released = join(dir, `released-reader-${id}`)
+    db()
+      .query('UPDATE run SET cwd=?,worktree=?,base_commit=?,launch_cwd=NULL WHERE record_id=?')
+      .run(released, released, baseCommit, id)
+    let dispatched: Parameters<typeof detach>[2] | undefined
+    const dispatch: typeof detach = async (_job, _prompt, spec) => {
+      dispatched = spec
+      return addRun({ agent: 'grok', job: 'file-question', status: 'ok' })
+    }
+
+    await retryRun(id, { flags }, { ...helpers, dispatch })
+
+    expect(dispatched?.cwd).toBe(registeredPath)
+    expect(dispatched?.cwd).not.toBe(released)
+    expect(dispatched?.resume).toMatchObject({
+      kind: 'retry-root',
+      parent: id,
+      worktree: null,
+      readOnlyBase: baseCommit,
+    })
+  })
+
   test('a rejected retry dispatch records failed ruling delivery', async () => {
     const id = failed()
     const questionId = (

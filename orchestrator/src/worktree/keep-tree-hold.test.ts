@@ -5,6 +5,7 @@ import {
   keepTreeHold,
   MAX_KEEP_TREE_HOURS,
   parseKeepTreeDuration,
+  recordedKeepTreeExemption,
 } from './keep-tree-hold.ts'
 
 describe('keepTreeHold', () => {
@@ -42,6 +43,36 @@ describe('keepTreeHold', () => {
     expect(keepTreeHold({ ...base, keepTree: false, now: '2026-09-15T12:00:00.000Z' })).toEqual({
       held: false,
     })
+  })
+})
+
+describe('recordedKeepTreeExemption', () => {
+  test('maps a recorded hold to the successor exemption', () => {
+    expect(
+      recordedKeepTreeExemption(
+        {
+          keepTree: 1,
+          keepTreeUntil: '2026-09-16T12:00:00.000Z',
+          keepTreeReason: 'inspection',
+          startedAt: '2026-09-15T12:00:00.000Z',
+        },
+        '2026-09-15T18:00:00.000Z',
+      ),
+    ).toEqual({ until: '2026-09-16T12:00:00.000Z', reason: 'inspection' })
+  })
+
+  test('does not map a row without a durable hold', () => {
+    expect(
+      recordedKeepTreeExemption(
+        {
+          keepTree: 0,
+          keepTreeUntil: null,
+          keepTreeReason: null,
+          startedAt: '2026-09-15T12:00:00.000Z',
+        },
+        '2026-09-15T18:00:00.000Z',
+      ),
+    ).toBeUndefined()
   })
 })
 

@@ -270,11 +270,16 @@ function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
   const identity = worktreeIdentity(worktree)
   const live = database
     .query(
-      `SELECT record_id,status,pid,worktree,executor,session_id,started_at,job,harness_wall_bound_ms,
+      `SELECT record_id,status,pid,worktree,cwd,launch_cwd,executor,session_id,started_at,job,harness_wall_bound_ms,
               (SELECT last_seen FROM session_seen WHERE session_id=run.session_id) session_last_seen
-         FROM run WHERE worktree IS NOT NULL AND status IN ('running','asking')`,
+         FROM run WHERE (worktree IS NOT NULL OR cwd IS NOT NULL OR launch_cwd IS NOT NULL)
+           AND status IN ('running','asking')`,
     )
-    .all() as (RecordedLiveRow & { worktree: string })[]
+    .all() as (RecordedLiveRow & {
+    worktree: string | null
+    cwd: string | null
+    launch_cwd: string | null
+  })[]
   return live.some(
     (row) =>
       runAlive({
@@ -287,7 +292,10 @@ function hasLiveWorktreeSharer(database: Database, worktree: string): boolean {
           SESSION_LIVE_MS,
           recordedOwnerProcess(database, row.session_id),
         ),
-      }) && worktreeIdentity(row.worktree) === identity,
+      }) &&
+      [row.worktree, row.cwd, row.launch_cwd].some(
+        (candidate) => candidate !== null && worktreeIdentity(candidate) === identity,
+      ),
   )
 }
 

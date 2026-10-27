@@ -22,6 +22,10 @@ export type KeepTreeHoldInput = {
   now: string
 }
 
+export type RecordedKeepTreeHold = Omit<KeepTreeHoldInput, 'now'> & {
+  keepTreeReason: string | null
+}
+
 /** Parse the optional `--keep-tree` hours value at the command edge. */
 export function parseKeepTreeDuration(raw: string | undefined): number {
   if (raw === undefined) return DEFAULT_KEEP_TREE_HOURS
@@ -65,4 +69,21 @@ export function keepTreeHold(input: KeepTreeHoldInput): KeepTreeHoldDecision {
     new Date(Date.parse(input.startedAt) + DEFAULT_KEEP_TREE_HOURS * HOUR_MS).toISOString()
   if (Date.parse(input.now) < Date.parse(until)) return { held: true, until }
   return { held: false, expiredAt: until }
+}
+
+/** Carry a recorded hold into a successor dispatch, preserving its original boundary. */
+export function recordedKeepTreeExemption(
+  input: RecordedKeepTreeHold,
+  now: string,
+): KeepTreeExemption | undefined {
+  if (!input.keepTree) return undefined
+  const decision = keepTreeHold({ ...input, now })
+  return {
+    until: decision.held
+      ? decision.until
+      : 'expiredAt' in decision
+        ? decision.expiredAt
+        : input.startedAt,
+    reason: input.keepTreeReason ?? 'explicit --keep-tree',
+  }
 }

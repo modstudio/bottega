@@ -19,7 +19,7 @@ import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
 import { resolveAnswerRulings } from '../workflow/autonomy-scopes.ts'
-import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { recordedKeepTreeExemption } from '../worktree/keep-tree-hold.ts'
 import { latestCheckpoint, readTaskPointer } from './checkpoint.ts'
 import {
   continuationCheckoutForAnswer,
@@ -439,21 +439,15 @@ function writingRetryWorkspace(
 }
 
 function retryKeepTree(row: RetryRunRow) {
-  if (!row.keep_tree) return undefined
-  const decision = keepTreeHold({
-    keepTree: row.keep_tree,
-    keepTreeUntil: row.keep_tree_until,
-    startedAt: row.started_at,
-    now: new Date().toISOString(),
-  })
-  return {
-    until: decision.held
-      ? decision.until
-      : 'expiredAt' in decision
-        ? decision.expiredAt
-        : row.started_at,
-    reason: row.keep_tree_reason ?? 'explicit --keep-tree',
-  }
+  return recordedKeepTreeExemption(
+    {
+      keepTree: row.keep_tree,
+      keepTreeUntil: row.keep_tree_until,
+      keepTreeReason: row.keep_tree_reason,
+      startedAt: row.started_at,
+    },
+    new Date().toISOString(),
+  )
 }
 
 export async function retryRun(
@@ -467,8 +461,8 @@ export async function retryRun(
       `SELECT requested.record_id, COALESCE(requested.parent_run_record_id,requested.record_id) root_record_id,
           requested.agent, requested.job, requested.cwd, requested.prompt_path,
           requested.probe, requested.status, requested.failure_kind, requested.mcp, requested.mcp_error,
-          requested.schema_path, requested.model, requested.lens, requested.review_role, COALESCE(requested.review_ref, root.review_ref) review_ref, requested.launch_cwd,
-          requested.launch_seed, requested.launch_key, requested.launch_base, requested.no_failover, requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
+          requested.schema_path, requested.model, requested.lens, requested.review_role, COALESCE(requested.review_ref, root.review_ref) review_ref, COALESCE(requested.launch_cwd, root.launch_cwd) launch_cwd,
+          requested.launch_seed, requested.launch_key, COALESCE(requested.launch_base, root.launch_base) launch_base, requested.no_failover, requested.keep_tree, requested.keep_tree_until, requested.keep_tree_reason,
           requested.started_at, root.repo, root.project_record_id, root.cwd root_cwd,
           root.base_commit root_base_commit, root.branch_kept, root.branch_kept_tip, root.agent_explicit
      FROM run requested JOIN run root ON root.record_id=COALESCE(requested.parent_run_record_id,requested.record_id)
@@ -561,8 +555,9 @@ export async function retryRun(
       projectPath: checkout!.project?.path ?? null,
       readsRepo,
       writesRepo,
+      reviewRef: row.review_ref,
       checkoutCwd: checkout!.cwd,
-      baseCommit: latestCheckout.base_commit ?? row.root_base_commit,
+      baseCommit: row.review_ref ? null : (latestCheckout.base_commit ?? row.root_base_commit),
       agent: agent!,
       sessionId: retryAuthority.owner,
     }),
