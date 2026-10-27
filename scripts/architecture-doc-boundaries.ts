@@ -15,6 +15,7 @@ export const docBoundarySpecs = [
       './doc-search-service.ts',
       './doc-consume-command.ts',
       './doc-revision-identifier.ts',
+      './doc-set-source-files.ts',
       './local-doc-order.ts',
       './docs.ts',
     ],
