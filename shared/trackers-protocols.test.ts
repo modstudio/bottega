@@ -386,7 +386,8 @@ describe('tracker source construction', () => {
     const source = trackerSourceFor(project('starship', 'workspace-mcp'))!
     const caller: ToolCaller = {
       async callTool(name) {
-        if (name === 'get-task-tool') return { id: 'other-uuid', short_id: 'STAR-120', status: 'todo' }
+        if (name === 'get-task-tool')
+          return { id: 'other-uuid', short_id: 'STAR-120', status: 'todo' }
         return { tasks: [{ id: 'workspace-uuid', short_id: 'STAR-12' }], last_page: 1 }
       },
     }
