@@ -14,6 +14,7 @@ import {
   nextWorkflowStep,
 } from './workflow-cursor.ts'
 import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
+import { flagForFloor } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -286,7 +287,9 @@ test('self-ruling refuses a non-ruling step without changing the cursor or quest
     { resolution: resolution(d) },
   )
   const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
-  expect(() => selfRule(d)).toThrow(/has no ruling floor; close it with/)
+  expect(() => selfRule(d)).toThrow(
+    `self-ruling is refused because step 1 rebase has no ruling floor; close it with ${flagForFloor('command-exit')}`,
+  )
   expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual(cursorBefore)
   expect(d.query('SELECT count(*) count FROM question').get()).toEqual({
     count: 0,
