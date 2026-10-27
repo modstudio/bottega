@@ -1,6 +1,12 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { AGENTS, type AgentRow, GOOSE_CONTEXT_CEILING, rowAgent } from '../agent/agent-registry.ts'
+import {
+  AGENTS,
+  type AgentRow,
+  GOOSE_CONTEXT_CEILING,
+  GOOSE_READING_MAX_TURNS,
+  rowAgent,
+} from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { job, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
@@ -512,4 +518,18 @@ test('a goose launch carries the Goose context ceiling', () => {
       promptTokens * PROMPT_BYTES_PER_TOKEN,
     ).GOOSE_CONTEXT_LIMIT,
   ).toBe(String(GOOSE_CONTEXT_CEILING))
+})
+
+test('a goose launch carries the turn ceiling for a reading job and not for a writing job', () => {
+  const row = db().query("SELECT * FROM agent WHERE name = 'codex'").get() as AgentRow
+  const goose = rowAgent({
+    ...row,
+    harness: 'goose',
+    model: 'fixture-model',
+    base_url: 'http://fixture.invalid/v1',
+  })
+  const launch = (writesRepo: boolean) =>
+    childEnv(goose, undefined, undefined, {}, true, undefined, {}, null, null, writesRepo)
+  expect(launch(false).GOOSE_MAX_TURNS).toBe(String(GOOSE_READING_MAX_TURNS))
+  expect(launch(true).GOOSE_MAX_TURNS).toBeUndefined()
 })
