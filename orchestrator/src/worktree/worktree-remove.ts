@@ -32,6 +32,7 @@ import {
 import { teardownTrackedRecipe } from '../recipe/tracked-recipe.ts'
 import { markedWorktreeRunId, removeSharedRefGuard } from '../resources/ref-guard.ts'
 import { recipePortClaimForRun, settleDatabaseClaim } from '../resources/resource-claims.ts'
+import { declaredProjectTreeRemoveCommand } from './project-tree-removal.ts'
 import { removalWorkingDirectoryRefusal } from './removal-working-directory.ts'
 import { snapshotlessTrackedRecipeRefusal } from './snapshotless-tracked-recipe.ts'
 import { extractWorktree, ORCH_RUN_MARKER } from './worktree-attribution.ts'
@@ -377,6 +378,8 @@ function removeWithoutCommand(
     trackedRecipe: Boolean(tool.recipePath),
     treePath: w.path,
     mainCheckoutPath: w.repoRoot,
+    declaredRemoveCommand:
+      runId === undefined ? declaredProjectTreeRemoveCommand(tool, w.path, w.repoRoot) : null,
   })
   if (snapshotRefusal) return { removed: false, detail: snapshotRefusal }
   if (tool.recipePath) {

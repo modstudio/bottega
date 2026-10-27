@@ -4,6 +4,7 @@ import { snapshotlessTrackedRecipeRefusal } from './snapshotless-tracked-recipe.
 const input = {
   treePath: '/projects/alpha/.claude/worktrees/unrecorded',
   mainCheckoutPath: '/projects/alpha',
+  declaredRemoveCommand: null,
 }
 
 test('rowless tracked tree refusal names the manual git removal command', () => {
