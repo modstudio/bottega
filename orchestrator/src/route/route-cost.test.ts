@@ -67,8 +67,8 @@ test('acceptance requires the job-specific score dimensions', () => {
   expect(routeCostPerAccepted('review-lens', [{ ...root, fidelity: null }], costs)).toEqual({
     usd: 0.25,
   })
-  for (const delivery of ['partial', 'mixed']) {
-    expect(routeCostPerAccepted('review-lens', [{ ...root, delivery }], costs)).toEqual({
+  for (const verdict of [{ delivery: 'partial' }, { quality: 'mixed' }]) {
+    expect(routeCostPerAccepted('review-lens', [{ ...root, ...verdict }], costs)).toEqual({
       unknown: 'no accepted results',
     })
   }
