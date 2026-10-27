@@ -243,7 +243,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-live.ts', [
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
-    '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../ask/ask.ts',
     '../ask/ask-lifecycle.ts',

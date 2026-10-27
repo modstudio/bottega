@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
-import { GOOSE_READING_MAX_TURNS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { FAILS_OVER } from '../failure/failure.ts'
 import { deriveLiveOutcome } from '../live-outcome.ts'
@@ -19,12 +18,15 @@ test('a missing reply file leaves a visible final-message fallback notice', () =
   expect(replyFileFallbackError(path, true, null)).toBeNull()
 })
 
-test('a missing reply at the Goose turn ceiling names the ceiling; below it does not', () => {
+test('a missing reply at the launched turn ceiling names the ceiling; below it or without a ceiling does not', () => {
   const path = '/var/tmp/orch/runs/42/scratch/reply.json'
-  expect(replyFileFallbackError(path, false, null, GOOSE_READING_MAX_TURNS)).toBe(
-    `reply.json missing at ${path}; used final-message fallback; the run stopped at the Goose turn ceiling (${GOOSE_READING_MAX_TURNS})`,
+  expect(replyFileFallbackError(path, false, null, 150, 150)).toBe(
+    `reply.json missing at ${path}; used final-message fallback; the run stopped at the Goose turn ceiling (150)`,
   )
-  expect(replyFileFallbackError(path, false, null, GOOSE_READING_MAX_TURNS - 1)).toBe(
+  expect(replyFileFallbackError(path, false, null, 149, 150)).toBe(
+    `reply.json missing at ${path}; used final-message fallback`,
+  )
+  expect(replyFileFallbackError(path, false, null, 500, null)).toBe(
     `reply.json missing at ${path}; used final-message fallback`,
   )
 })

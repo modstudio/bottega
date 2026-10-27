@@ -7,7 +7,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectCodeGitEnv } from '../../../shared/git.ts'
-import { GOOSE_READING_MAX_TURNS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
@@ -192,15 +191,23 @@ export function replyFileFallbackError(
   present: boolean,
   error: string | null,
   modelCalls: number | null = null,
+  turnCeiling: number | null = null,
 ): string | null {
   if (present) return error
   const notice = `${REPLY_FILE_NAME} missing at ${replyFile}; used final-message fallback`
   const ceiling =
-    modelCalls !== null && modelCalls >= GOOSE_READING_MAX_TURNS
-      ? `; the run stopped at the Goose turn ceiling (${GOOSE_READING_MAX_TURNS})`
+    turnCeiling !== null && modelCalls !== null && modelCalls >= turnCeiling
+      ? `; the run stopped at the Goose turn ceiling (${turnCeiling})`
       : ''
   const text = `${notice}${ceiling}`
   return error ? `${error}\n${text}` : text
+}
+
+function launchedTurnCeiling(environment: Record<string, string>): number | null {
+  const raw = environment.GOOSE_MAX_TURNS
+  if (raw === undefined) return null
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 function missingReplyError(
@@ -208,8 +215,15 @@ function missingReplyError(
   present: boolean,
   error: string | null,
   usage: RunCallUsage | null,
+  launchedEnv: Record<string, string>,
 ): string | null {
-  return replyFileFallbackError(replyFile, present, error, usage?.modelCalls ?? null)
+  return replyFileFallbackError(
+    replyFile,
+    present,
+    error,
+    usage?.modelCalls ?? null,
+    launchedTurnCeiling(launchedEnv),
+  )
 }
 
 type LiveOptions = {
@@ -891,7 +905,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       agentName: name,
     })
     error = appendGateExclusionToTimeoutError(
-      missingReplyError(replyFile, replyFilePresent, derived.error, callUsage.value),
+      missingReplyError(replyFile, replyFilePresent, derived.error, callUsage.value, startOpts.env),
       timedOut,
       excludedGateMsAtTimeout,
     )
