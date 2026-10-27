@@ -48,6 +48,7 @@ import {
   transportFor,
   type VendorUsage,
 } from '../transport/transport.ts'
+import { preserveGooseLedger } from '../transport/transport-goose-ledger.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import {
   type CheckpointContainment,
@@ -468,6 +469,22 @@ function runUsageResult(
   vendorUsage: VendorUsage,
 ) {
   return { vendorTokens, callUsage, costUsd, vendorUsage }
+}
+
+function preserveLiveGooseLedger(input: LiveInput): void {
+  preserveGooseLedger(
+    {
+      harness: input.a.harness ?? input.a.name,
+      runtimeDir: input.sandboxSelection.profile ? input.runtimeDir : null,
+      outPath: input.outPath,
+    },
+    warnForRun(input.claim.id),
+  )
+}
+
+function clearRunTimer(timer: ReturnType<typeof setTimeout> | null): null {
+  clearTimeout(timer ?? undefined)
+  return null
 }
 
 export async function runLive(input: LiveInput): Promise<LiveResult> {
@@ -959,8 +976,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     failureKind = proc ? 'other' : 'harness'
   }
   rearmWallDeadline = () => {}
-  clearTimeout(timer ?? undefined)
-  timer = null
+  timer = clearRunTimer(timer)
+  preserveLiveGooseLedger(input)
   await closeLiveBrokers(executionBrokers, noteBroker)
   return {
     proc,

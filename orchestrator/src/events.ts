@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
+import { withholdSecretShapedLines } from './secret-shaped-output.ts'
+import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
 export type StreamEvent =
@@ -16,6 +18,7 @@ export type StreamEvent =
       toolKind?: string
       server?: string
       target?: string
+      input?: string
       result?: string
       error?: string
       locations?: Array<{ path: string }>
@@ -73,9 +76,10 @@ export type RunLogEvent =
       type: 'tool_call'
       kind?: string
       title: string
+      input?: string
       locations?: Array<{ path: string }>
     }
-  | { ts: string; type: 'tool_result'; status?: string; bytes?: number }
+  | { ts: string; type: 'tool_result'; status?: string; bytes?: number; text?: string }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
   | {
       ts: string
@@ -282,6 +286,39 @@ function simpleObservedEvent(
       }
 }
 
+function observedToolEvents(
+  event: Extract<StreamEvent, { kind: 'tool' }>,
+  ts: string,
+): RunLogEvent[] {
+  const locations =
+    event.locations?.filter((item) => item.path) ??
+    (event.target ? [{ path: event.target }] : undefined)
+  const events: RunLogEvent[] = []
+  if (event.title || event.toolKind || locations?.length) {
+    events.push({
+      ts,
+      type: 'tool_call',
+      kind: event.toolKind,
+      title: event.title,
+      ...(event.input === undefined ? {} : { input: withholdSecretShapedLines(event.input) }),
+      ...(locations?.length ? { locations } : {}),
+    })
+  }
+  if (event.result || RESULT_STATUSES.has(event.status ?? '')) {
+    const bytes = event.result === undefined ? undefined : Buffer.byteLength(event.result, 'utf8')
+    events.push({
+      ts,
+      type: 'tool_result',
+      status: event.status,
+      ...(bytes === undefined ? {} : { bytes }),
+      ...(event.status === 'failed' && event.result !== undefined
+        ? { text: withholdSecretShapedLines(capToolEventText(event.result)) }
+        : {}),
+    })
+  }
+  return events
+}
+
 export function createEventLog(
   runId: string,
   throttleConcurrency: () => number,
@@ -307,30 +344,7 @@ export function createEventLog(
       }
       flush(ts)
       if (event.kind === 'tool') {
-        const locations =
-          event.locations?.filter((item) => item.path) ??
-          (event.target ? [{ path: event.target }] : undefined)
-        const title = event.title
-        const isResult = Boolean(event.result) || RESULT_STATUSES.has(event.status ?? '')
-        if (title || event.toolKind || locations?.length) {
-          write({
-            ts,
-            type: 'tool_call',
-            kind: event.toolKind,
-            title,
-            ...(locations?.length ? { locations } : {}),
-          })
-        }
-        if (isResult) {
-          const bytes =
-            event.result === undefined ? undefined : Buffer.byteLength(event.result, 'utf8')
-          write({
-            ts,
-            type: 'tool_result',
-            status: event.status,
-            ...(bytes !== undefined ? { bytes } : {}),
-          })
-        }
+        for (const observed of observedToolEvents(event, ts)) write(observed)
         return
       }
       if (event.kind === 'usage' || event.kind === 'throttled') {

@@ -246,6 +246,47 @@ describe('vendor event log', () => {
     expect(row.last_event_at).toBe('t5')
   })
 
+  test('records redacted tool input and failed result text but no completed result text', () => {
+    const id = addRun({ agent: 'goose', job: 'review-lens', status: 'running' })
+    const path = runEventsPath(id)
+    const log = createEventLog(id, () => 0, path)
+    const secret = 'ghp_123456789012345678901234567890123456'
+    log.observe(
+      {
+        kind: 'tool',
+        title: 'shell',
+        toolKind: 'execute',
+        status: 'failed',
+        input: `echo safe\necho ${secret}`,
+        result: 'permission denied',
+      },
+      't1',
+    )
+    log.observe(
+      { kind: 'tool', title: 'shell', status: 'completed', result: 'completed body' },
+      't2',
+    )
+    const lines = readFileSync(path, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+
+    expect(lines).toEqual([
+      {
+        ts: 't1',
+        type: 'tool_call',
+        kind: 'execute',
+        title: 'shell',
+        input: 'echo safe\n[withheld line: provider-prefix]',
+      },
+      { ts: 't1', type: 'tool_result', status: 'failed', bytes: 17, text: 'permission denied' },
+      { ts: 't2', type: 'tool_call', title: 'shell' },
+      { ts: 't2', type: 'tool_result', status: 'completed', bytes: 14 },
+    ])
+    expect(JSON.stringify(lines)).not.toContain(secret)
+    expect(JSON.stringify(lines)).not.toContain('completed body')
+  })
+
   test('parses grok and codex JSON lines into stream events', () => {
     expect(
       eventsFromVendorLine(

@@ -151,6 +151,7 @@ export type NormalizedEvent =
       toolKind?: string
       server?: string
       target?: string
+      input?: string
       result?: string
       error?: string
       locations?: Array<{ path: string }>
