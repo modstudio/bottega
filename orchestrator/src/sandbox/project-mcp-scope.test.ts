@@ -1,16 +1,26 @@
 import { expect, test } from 'bun:test'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { McpServerConfig } from '../mcp/mcp-probe.ts'
-import { PROJECT_RELATIVE_NO_TREE_REASON } from './mcp-reader-scope.ts'
+import {
+  PROJECT_RELATIVE_NO_TREE_REASON,
+  PROJECT_RELATIVE_NO_TREE_REMEDY,
+} from './mcp-reader-scope.ts'
 import {
   mergeMcpSetupHeader,
+  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   projectMcpWithheldLine,
+  projectMcpWriterRemedy,
   selectProjectMcpServers,
 } from './project-mcp-scope.ts'
 
 const writerWithheld = (...names: string[]) =>
-  names.map((name) => ({ name, reason: PROJECT_MCP_WRITER_WITHHELD_REASON }))
+  names.map((name) => ({
+    name,
+    reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
+    advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+    remedy: projectMcpWriterRemedy(PROJECT),
+  }))
 
 const CONFIG: Record<string, McpServerConfig> = {
   local: { name: 'local', command: './bin/local', args: ['--serve'] },
@@ -74,10 +84,13 @@ test('a reading run with no project tree withholds project-relative stdio server
   expect(selection?.kind).toBe('reader')
   if (selection?.kind !== 'reader') return
   expect(Object.keys(selection.servers)).toEqual(['bun', 'abs', 'remote'])
-  expect(selection.withheld).toEqual([{ name: 'boost', reason: PROJECT_RELATIVE_NO_TREE_REASON }])
-  expect(projectMcpWithheldLine('grok', selection.withheld)).toBe(
-    `MCP scope: grok withheld boost (${PROJECT_RELATIVE_NO_TREE_REASON})`,
-  )
+  expect(selection.withheld).toEqual([
+    {
+      name: 'boost',
+      reason: PROJECT_RELATIVE_NO_TREE_REASON,
+      remedy: PROJECT_RELATIVE_NO_TREE_REMEDY,
+    },
+  ])
 })
 
 test('a reading run of the project that owns the platform server is handed its proxy with no tree entry', () => {

@@ -18,10 +18,18 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
-export type ProjectMcpWithheld = { name: string; reason: string }
+export type ProjectMcpWithheld = {
+  name: string
+  reason: string
+  advice?: string
+  remedy?: string
+}
 
 export const PROJECT_RELATIVE_NO_TREE_REASON =
   'its command is project-relative and this run has no project tree'
+
+export const PROJECT_RELATIVE_NO_TREE_REMEDY =
+  "the server's command in .mcp.json must be a bare name or an absolute path, because the reader proxy resolves a project-relative command against the run tree; or dispatch a job that gets a project tree"
 
 /** Withhold a project-relative stdio command when the run has no project checkout. */
 export function withholdProjectRelativeStdioServer(
@@ -117,7 +125,11 @@ export function projectReaderProxyServers(
   const kept: string[] = []
   for (const name of names) {
     if (withholdProjectRelativeStdioServer(config[name] ?? {}, hasProjectTree)) {
-      withheld.push({ name, reason: PROJECT_RELATIVE_NO_TREE_REASON })
+      withheld.push({
+        name,
+        reason: PROJECT_RELATIVE_NO_TREE_REASON,
+        remedy: PROJECT_RELATIVE_NO_TREE_REMEDY,
+      })
     } else {
       kept.push(name)
     }

@@ -4,15 +4,13 @@
  * server a strict run requires is refused before launch instead of failing
  * silently. Must not know run state, argv, routes, or credentials.
  */
-import { join } from 'node:path'
-import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { MCP_SERVER_NAME, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import type { McpMode } from '../mcp/mcp-preflight.ts'
 import { listMcpToolPages, type McpToolListLaunch } from '../mcp/mcp-tool-list.ts'
 import {
-  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
-  PROJECT_MCP_WRITER_WITHHELD_REASON,
   type ProjectMcpSelection,
   type ProjectMcpWithheld,
+  projectMcpWriterRemedy,
 } from './project-mcp-scope.ts'
 
 /** One project server the run gets, with the launch it actually gets it through. */
@@ -78,9 +76,7 @@ function missingRequiredServerFailure(facts: RequiredMcpProbeFacts): ProjectMcpP
   let reason = "not configured in the tree's .mcp.json"
   if (withheld) {
     reason = `withheld from this run's MCP scope (${withheld.reason})`
-    if (withheld.reason === PROJECT_MCP_WRITER_WITHHELD_REASON) {
-      reason += `; ${PROJECT_MCP_WRITER_WITHHELD_ADVICE}`
-    }
+    if (withheld.advice) reason += `; ${withheld.advice}`
   }
   return { server: required, error: reason }
 }
@@ -108,16 +104,17 @@ export function requiredMcpProbeDecision(facts: RequiredMcpProbeFacts): Required
     ? facts.failures.filter((failure) => failure.server !== required)
     : []
   if (!failures.length) return { refusal: null, unrelatedFailures }
-  const configPath = facts.project ? join(facts.project.path, '.mcp.json') : '.mcp.json'
-  const projectName = facts.project?.name ?? '<project>'
+  const withheld = required
+    ? (facts.withheld ?? []).find((entry) => entry.name === required)
+    : undefined
+  const remedy = withheld?.remedy ?? projectMcpWriterRemedy(facts.project)
   const failureLines = failures.map((failure) => `${failure.server}: ${failure.error}`).join('\n')
   return {
     refusal:
       `--mcp require was asked for, but the project MCP launch did not start:\n${failureLines}` +
       `\ninvariant: --mcp require refuses a launch that affirmatively failed or a required server` +
       ` the run did not get, never a merely unverified connection` +
-      `\ncleared by: the server's entry in ${configPath}, or by naming the server this project` +
-      ` provides with ${PLATFORM_SLUG} project set ${projectName} --settings '{"mcpServer":"<server>"}'`,
+      `\ncleared by: ${remedy}`,
     unrelatedFailures,
   }
 }

@@ -3,6 +3,8 @@
  * Names the project MCP servers one run attaches and how. Harness-neutral: it
  * must not know argv, transports, or credentials.
  */
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveProjectMcpCommand } from '../mcp/mcp-command.ts'
 import {
   disabledProjectMcpServers,
@@ -24,6 +26,13 @@ export const PROJECT_MCP_WRITER_WITHHELD_REASON =
 
 export const PROJECT_MCP_WRITER_WITHHELD_ADVICE =
   'writing workers cannot receive these; run as a reader through the proxy, or declare the server without them'
+
+/** The edit that clears a writer withhold: the tree entry, or the project's named server. */
+export function projectMcpWriterRemedy(project: { name: string; path: string } | null): string {
+  const configPath = project ? join(project.path, '.mcp.json') : '.mcp.json'
+  const projectName = project?.name ?? '<project>'
+  return `the server's entry in ${configPath}, or by naming the server this project provides with ${PLATFORM_SLUG} project set ${projectName} --settings '{"mcpServer":"<server>"}'`
+}
 
 /**
  * The platform's own MCP identities. A project configuration never occupies
@@ -53,10 +62,23 @@ export type ProjectMcpSelection =
   | { kind: 'direct'; servers: Record<string, ProjectMcpServer>; withheld: ProjectMcpWithheld[] }
 
 /** Select project MCP launch definitions that are safe to expose without inline credentials. */
+function writerWithheld(
+  name: string,
+  project: { name: string; path: string } | null,
+): ProjectMcpWithheld {
+  return {
+    name,
+    reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
+    advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+    remedy: projectMcpWriterRemedy(project),
+  }
+}
+
 function selectDirectProjectMcpServers(
   read: McpConfigReadResult,
   allowed: string[] | undefined,
   cwd: string,
+  project: { name: string; path: string } | null,
 ): Extract<ProjectMcpSelection, { kind: 'direct' }> {
   const projectRead = withoutPlatformServers(read)
   const projectServers = projectRead.ok ? projectRead.config : {}
@@ -70,14 +92,14 @@ function selectDirectProjectMcpServers(
       Object.keys(entry.headers ?? {}).length ||
       entry.headersHelper
     ) {
-      withheld.push({ name, reason: PROJECT_MCP_WRITER_WITHHELD_REASON })
+      withheld.push(writerWithheld(name, project))
     } else if (entry.url) {
       servers[name] = { url: entry.url }
     } else if (entry.command) {
       const command = resolveProjectMcpCommand(entry.command, cwd)
       servers[name] = { command, args: entry.args ?? [], cwd }
     } else {
-      withheld.push({ name, reason: PROJECT_MCP_WRITER_WITHHELD_REASON })
+      withheld.push(writerWithheld(name, project))
     }
   }
   return { kind: 'direct', servers, withheld }
@@ -98,7 +120,7 @@ export function selectProjectMcpServers(
   if (mcp === false) return null
   const read = mcpConfigReadForRun(treeConfig, project, cwd)
   if (mcp === 'writer')
-    return selectDirectProjectMcpServers(read, project?.settings.workerMcpServers, cwd)
+    return selectDirectProjectMcpServers(read, project?.settings.workerMcpServers, cwd, project)
   return {
     kind: 'reader',
     ...projectReaderProxyServers(withoutPlatformServers(read), project, cwd, hasProjectTree),
@@ -114,11 +136,10 @@ export function projectMcpWithheldLine(
   const names = withheld.map((entry) => entry.name).join(', ')
   const reasons = [...new Set(withheld.map((entry) => entry.reason))]
   if (reasons.length === 1) {
-    const reason = reasons[0]!
-    const head = `MCP scope: ${harness} withheld ${names} (${reason})`
-    return reason === PROJECT_MCP_WRITER_WITHHELD_REASON
-      ? `${head}; ${PROJECT_MCP_WRITER_WITHHELD_ADVICE}`
-      : head
+    const head = `MCP scope: ${harness} withheld ${names} (${reasons[0]})`
+    const advices = [...new Set(withheld.map((entry) => entry.advice ?? ''))]
+    const advice = advices.length === 1 ? advices[0] : ''
+    return advice ? `${head}; ${advice}` : head
   }
   return `MCP scope: ${harness} withheld ${withheld
     .map((entry) => `${entry.name} (${entry.reason})`)
