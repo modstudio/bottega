@@ -475,6 +475,13 @@ describe('review yield', () => {
             WHERE record_id=(SELECT run_record_id FROM review_lens WHERE record_id=?)`,
         )
         .run(projectId, lensId)
+      db()
+        .query(
+          `INSERT INTO score (record_id,run_record_id,delivery,quality,scored_at)
+           SELECT ?,run_record_id,'full','right','2026-09-08T17:02:00Z'
+             FROM review_lens WHERE record_id=?`,
+        )
+        .run(newRecordId(), lensId)
     }
     db()
       .query('UPDATE review_finding SET duplicate_of_finding_record_id=? WHERE record_id=?')

@@ -136,6 +136,7 @@ export type ReviewRoundEvidenceRow = {
   input_tree: string | null
   head_commit: string | null
   overlap: string | null
+  delivery: string | null
   reproduced: string | null
   coverage: string | null
   limits: string | null
@@ -238,12 +239,13 @@ export function reviewYield(
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
             rl.model, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
             run.vendor_cost_usd, run.vendor_estimated_cost_usd, run.vendor_cost_source,
-            run.input_tree, run.head_commit, rl.overlap,rl.reproduced,
+            run.input_tree, run.head_commit, rl.overlap,s.delivery,rl.reproduced,
             rl.coverage,rl.limits,p.settings AS project_settings,r.round AS stored_round,
             rl.selection_reason
        FROM review_lens rl
        JOIN review r ON r.record_id=rl.review_record_id
        JOIN run ON run.record_id=rl.run_record_id
+       LEFT JOIN score s ON s.run_record_id=run.record_id
        LEFT JOIN project p ON p.record_id=r.project_record_id
       WHERE ${reviewRunEvidenceSql('run', 'rl')}
       ORDER BY r.recorded_at,r.record_id,rl.record_id`,

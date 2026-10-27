@@ -4,9 +4,64 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { decideTriage } from '../pull-request/triage-decision.ts'
 import type { ReviewPlan } from './review-applicability.ts'
-import { measureChangeGroup, reviewsForTriage } from './review-group.ts'
+import {
+  measureChangeGroup,
+  reviewLensGraded,
+  reviewRoundTriageComplete,
+  reviewsForTriage,
+  type TriageReviewRow,
+} from './review-group.ts'
 import { reviewBudgetForBranch, reviewRoundBudgetDecision } from './review-round-budget.ts'
 import type { ReviewTier } from './review-tier-classifier.ts'
+
+test('a review lens is graded by delivery or all four review grades', () => {
+  const noGrades = { reproduced: null, coverage: null, limits: null, overlap: null }
+
+  expect(reviewLensGraded({ delivery: 'none', ...noGrades })).toBe(true)
+  expect(reviewLensGraded({ delivery: null, ...noGrades })).toBe(false)
+  expect(reviewLensGraded({ delivery: 'full', ...noGrades })).toBe(false)
+  expect(
+    reviewLensGraded({
+      delivery: 'full',
+      reproduced: 'all',
+      coverage: 'adequate',
+      limits: 'named',
+      overlap: 'unique',
+    }),
+  ).toBe(true)
+})
+
+test('a round with one graded review and one delivery-none review is triage complete', () => {
+  const grades = { reproduced: null, coverage: null, limits: null, overlap: null }
+  const review: TriageReviewRow = {
+    reviewRecordId: 'review-record',
+    reviewNumber: 1,
+    recordedAt: '2026-10-27T00:00:00Z',
+    completedAt: null,
+    tier: 1,
+    role: 'round',
+    patchId: 'patch',
+    pathSet: '["change.ts"]',
+    lensIdentities: ['correctness', 'craft'],
+    lenses: [
+      {
+        recordId: 'graded',
+        graded: reviewLensGraded({
+          delivery: 'full',
+          ...grades,
+          reproduced: 'all',
+          coverage: 'adequate',
+          limits: 'named',
+          overlap: 'unique',
+        }),
+      },
+      { recordId: 'none', graded: reviewLensGraded({ delivery: 'none', ...grades }) },
+    ],
+    findings: [],
+  }
+
+  expect(reviewRoundTriageComplete(review)).toBe(true)
+})
 
 test('change-group lookup carries the same patch after rebase and rejects a different patch', () => {
   const database = new Database(':memory:')
@@ -38,16 +93,22 @@ test('change-group lookup carries the same patch after rebase and rejects a diff
        VALUES ('${newRecordId()}',?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
     )
     .run(review.record_id, run.record_id)
+  database
+    .query(
+      `INSERT INTO score (record_id,run_record_id,delivery,quality,scored_at)
+       VALUES (?,?, 'none',NULL,'2026-09-25')`,
+    )
+    .run(newRecordId(), run.record_id)
   database.query("UPDATE project SET name='renamed-fixture' WHERE record_id=?").run(projectId)
 
-  expect(
-    reviewsForTriage(database, {
-      project: 'renamed-fixture',
-      branch: 'DEV-977',
-      patchId: 'stable-patch',
-      pathSet: ['a.ts'],
-    }).reviews,
-  ).toHaveLength(1)
+  const matched = reviewsForTriage(database, {
+    project: 'renamed-fixture',
+    branch: 'DEV-977',
+    patchId: 'stable-patch',
+    pathSet: ['a.ts'],
+  }).reviews
+  expect(matched).toHaveLength(1)
+  expect(matched[0]?.lenses[0]?.graded).toBe(true)
   expect(
     reviewsForTriage(database, {
       project: 'renamed-fixture',
