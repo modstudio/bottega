@@ -30,8 +30,6 @@ export type ReaderCloneArchiveRetentionFacts = {
   retentionDays: number
 }
 
-export const READER_CLONE_ARCHIVE_DELETIONS_PER_SWEEP = 20
-
 export type ReaderCloneArchive = { path: string; archivedMs: number }
 
 export function readerCloneArchiveRetentionDecision(

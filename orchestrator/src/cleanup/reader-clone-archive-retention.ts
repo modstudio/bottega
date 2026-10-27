@@ -2,7 +2,6 @@
 import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
-  READER_CLONE_ARCHIVE_DELETIONS_PER_SWEEP,
   type ReaderCloneArchive,
   readerCloneArchivePruneDecision,
 } from '../close/reader-scratch-release.ts'
@@ -10,6 +9,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 
 export const READER_CLONE_ARCHIVE_RETENTION_DAYS = 14
+const READER_CLONE_ARCHIVE_DELETIONS_PER_SWEEP = 20
 export const STRAY_WORKTREE_ARCHIVE_PROJECT_MARKER = '.stray-worktree-archives'
 
 export function readerCloneArchiveDirectory(runsDirectory = RUNS_DIR): string {
