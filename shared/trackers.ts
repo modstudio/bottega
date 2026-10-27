@@ -127,6 +127,7 @@ export const trackerSettingsShape = {
   assigneeLookup: z.enum(['person-lookup', 'task-detail']).optional(),
   envPrefix: z.string().trim().min(1).optional(),
   openStatuses: z.array(z.string()).optional(),
+  completesOnMerge: z.boolean().optional(),
   states: z.record(trackerNameSchema, z.enum(['backlog', ...TASK_STATUSES])).optional(),
   reviewStages: z.strictObject(trackerReviewStagesShape).optional(),
   actions: z.strictObject(trackerActionsShape).optional(),

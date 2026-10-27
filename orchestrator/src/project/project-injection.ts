@@ -291,6 +291,7 @@ export type ResolvedReviewStage = {
 type ResolvedTracker = {
   kind: string
   protocol: TrackerProtocol
+  completesOnMerge: boolean
   server?: string
   actions: Partial<Record<TrackerAction, string>>
   states: Partial<Record<'active' | 'review' | 'done', string>>
@@ -408,6 +409,7 @@ function resolvedTracker(
   return {
     kind: tracker.kind ?? protocol,
     protocol,
+    completesOnMerge: tracker.completesOnMerge ?? false,
     ...(protocol === 'hub' ? {} : { server: project.name }),
     actions,
     states,

@@ -538,6 +538,7 @@ describe('project workflow injection', () => {
       tracker: {
         kind: 'fixture',
         protocol: 'array-mcp',
+        completesOnMerge: false,
         server: 'fixture',
         actions: {
           search: 'task_list',
