@@ -10,6 +10,7 @@ import { samePromptSizeBucket } from './prompt-size-bucket.ts'
 import {
   COOLDOWN_MIN,
   currentPolicySelection,
+  EVIDENCE_WINDOW,
   isRoutingEvidence,
   MIN_SAMPLE,
   routingEvidenceWindow,
@@ -193,6 +194,7 @@ function cellsFor(
           sameBucket.filter((e) => !stack || e.stack === stack),
           agent,
           currentModel,
+          EVIDENCE_WINDOW,
         )
         const evidence = window.rows
         const scored = evidence.filter((event) => event.scored).length

@@ -30,6 +30,7 @@ import {
   promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
+import { promptBucketsForJob, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
 import {
   type PolicyCandidate,
   type PolicySelection,
@@ -39,14 +40,13 @@ import {
 import {
   aggregateEvidence,
   type CostPerAcceptedResult,
-  EVIDENCE_WINDOW,
-  routingEvidenceWindow,
   type RunUsageMedians,
+  routingEvidenceWindow,
   runUsageMedians,
 } from './route-statistics.ts'
-import { promptBucketsForJob, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
 
-export { EVIDENCE_WINDOW, promptBucketsForJob, routingEvidenceWindow }
+export { promptBucketsForJob, routingEvidenceWindow }
+
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
@@ -123,6 +123,9 @@ export const COOLDOWN_MIN = 60
 
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 export const MIN_SAMPLE = 5
+
+/** Only this many of an agent's most recent judgments describe its current ability. */
+export const EVIDENCE_WINDOW = 40
 
 function memoizedRepositoryReader(
   reader: (project: Pick<Project, 'path'>) => string | null,
@@ -492,7 +495,7 @@ export function candidates(
     const failure = coolingByAgent.get(name)
     const cooling = failure ? coolingPhrase(failure) : null
     const h = hist.get(name)
-    const window = routingEvidenceWindow(evidenceRows, name, currentModel)
+    const window = routingEvidenceWindow(evidenceRows, name, currentModel, EVIDENCE_WINDOW)
     const recent = aggregateEvidence(window.rows)
     const scored = recent.scored
     const failures = recent.failures

@@ -50,15 +50,12 @@ type RoutingWindowRow = {
   startedAt: string
 }
 
-/** Only this many recent judgments describe the current model's ability. */
-export const EVIDENCE_WINDOW = 40
-
 /** Keeps only the current model's newest roots in one routing evidence cell. */
 export function routingEvidenceWindow<T extends RoutingWindowRow>(
   rows: T[],
   agent: string,
   currentModel: string,
-  limit = EVIDENCE_WINDOW,
+  limit: number,
 ): { rows: T[]; evidenceModel: string | null } {
   const modelRows = rows
     .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
