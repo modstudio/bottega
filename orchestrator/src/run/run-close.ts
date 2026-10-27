@@ -118,6 +118,11 @@ function failoverRefusalMessage(id: string, reason: string, retryCommand: boolea
   return `${FAILOVER_REFUSAL_MARKER} ${reason}${remedy}`
 }
 
+/** Retrying a later turn replays its root as a fresh run, the loss its refusal names. */
+function refusalOffersRetry(failureKind: string, parentRunRecordId: string | null): boolean {
+  return failureKind === 'premature-final' && !parentRunRecordId
+}
+
 function appendFailoverRefusal(id: string, reason: string, retryCommand = false): void {
   db()
     .query(`UPDATE run SET error=COALESCE(error || '\n', '') || ? WHERE record_id=?`)
@@ -358,8 +363,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       appendFailoverRefusal(
         claim.id,
         refusalReason,
-        // Retrying a later turn replays its root as a fresh run, the loss the refusal names.
-        failureKind === 'premature-final' && !claim.parentRunRecordId,
+        refusalOffersRetry(failureKind, claim.parentRunRecordId),
       )
     } else {
       try {
