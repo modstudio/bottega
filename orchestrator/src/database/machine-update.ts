@@ -2,7 +2,9 @@
 /** Adapts Git, the live store, and migration execution around the drain decision. */
 
 import { existsSync, realpathSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolve } from 'node:path'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { installRoot } from '../../../shared/install-root.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import { RUN_WALL_TIME_CEILING_MS } from '../jobs/jobs.ts'
 import { projectAt } from '../project/projects.ts'
@@ -100,6 +102,7 @@ export async function machineUpdateCommand(
     now?: () => number
     sleep?: (ms: number) => Promise<void>
     cwd?: string
+    callerCwd?: string
     authorityRefusal?: () => string | null
     git?: (cwd: string, args: string[]) => string
     migrate?: (cwd: string) => void
@@ -122,28 +125,32 @@ export async function machineUpdateCommand(
   }
   const authorityRefusal = (deps.authorityRefusal ?? migrationAuthorityRefusal)()
   if (authorityRefusal) throw new Error(authorityRefusal)
-  const cwd = deps.cwd ?? process.cwd()
+  const target = deps.cwd ?? installRoot()
+  const callerCwd = deps.callerCwd ?? process.cwd()
   const runGit = deps.git ?? ((workingDirectory, args) => git(args, workingDirectory))
   const migrate = deps.migrate ?? runMigration
   const project = withSynchronousDatabaseForMigrationStep((database) =>
-    (deps.project ?? projectAt)(cwd, database),
+    (deps.project ?? projectAt)(target, database),
   )
-  if (!project || realpathSync(cwd) !== realpathSync(project.path)) {
+  if (!project || realpathSync(target) !== realpathSync(project.path)) {
     throw new Error(
       'refusing machine update outside a registered main checkout; run it from the registered main checkout root',
     )
   }
   const branch = project.settings.trunk?.trim()
   if (!branch) throw new Error(`${project.name}: no registered landing branch`)
-  const currentBranch = runGit(cwd, ['branch', '--show-current']) || '(detached HEAD)'
+  const currentBranch = runGit(target, ['branch', '--show-current']) || '(detached HEAD)'
   if (currentBranch !== branch) {
     throw new Error(
       `refusing machine update: registered landing branch is ${branch}, but ${project.path} is on ${currentBranch}; ` +
         `check out ${branch} in ${project.path}`,
     )
   }
-  runGit(cwd, ['fetch', 'origin', branch])
-  const journal = incomingJournal(cwd, branch, runGit)
+  if (resolve(callerCwd) !== resolve(target)) {
+    presentation.log(`updating the ${PLATFORM_NAME} checkout at ${target}`)
+  }
+  runGit(target, ['fetch', 'origin', branch])
+  const journal = incomingJournal(target, branch, runGit)
   const initial = withSynchronousDatabaseForMigrationStep((database) => {
     const local = migrationState(database)
     if (local.ahead) throw new Error(`store is ahead at migration ${local.ahead}`)
@@ -184,13 +191,13 @@ export async function machineUpdateCommand(
           setMigrationDrainPhase(database, 'draining'),
         )
       }
-      runGit(cwd, ['pull', '--ff-only', 'origin', branch])
-      migrate(cwd)
+      runGit(target, ['pull', '--ff-only', 'origin', branch])
+      migrate(target)
     } finally {
       withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
     }
     return
   }
-  runGit(cwd, ['pull', '--ff-only', 'origin', branch])
-  migrate(cwd)
+  runGit(target, ['pull', '--ff-only', 'origin', branch])
+  migrate(target)
 }

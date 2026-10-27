@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolve } from 'node:path'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { installRoot } from '../../../shared/install-root.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { db } from './db.ts'
 import { machineUpdateCommand } from './machine-update.ts'
 import { migrationDrain, setMigrationDrain } from './migration-drain.ts'
+import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
@@ -246,4 +249,93 @@ test('machine update refuses the BOTTEGA_ORCHESTRATOR_DB override', async () => 
   await expect(machineUpdateCommand({ log: () => {} })).rejects.toThrow(
     'refusing machine update through BOTTEGA_ORCHESTRATOR_DB',
   )
+})
+
+test(`machine update targets the ${PLATFORM_NAME} checkout when the caller is another project`, async () => {
+  const target = dir
+  const caller = resolve(dir, 'other-project')
+  const projectPaths: string[] = []
+  const gitCalls: { cwd: string; args: string[] }[] = []
+  const lines: string[] = []
+  await machineUpdateCommand(
+    { log: (line) => lines.push(line) },
+    {
+      cwd: target,
+      callerCwd: caller,
+      authorityRefusal: () => null,
+      project: (cwd) => {
+        projectPaths.push(cwd)
+        return { name: PLATFORM_SLUG, path: target, settings: { trunk: 'main' } }
+      },
+      git: (cwd, args) => {
+        gitCalls.push({ cwd, args })
+        if (args[0] === 'branch') return 'main'
+        return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
+      },
+      migrate: () => {},
+    },
+  )
+  expect(lines).toEqual([`updating the ${PLATFORM_NAME} checkout at ${target}`])
+  expect(projectPaths).toEqual([target])
+  expect(gitCalls.map((call) => call.cwd)).toEqual([target, target, target, target])
+  expect(gitCalls.map((call) => call.args[0])).toEqual(['branch', 'fetch', 'show', 'pull'])
+  expect(gitCalls.find((call) => call.args[0] === 'show')?.args[1]).toBe(
+    `origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`,
+  )
+})
+
+test('machine update defaults the target to the installation root', async () => {
+  const target = installRoot()
+  const projectPaths: string[] = []
+  const gitCwds: string[] = []
+  let journalRef = ''
+  await machineUpdateCommand(
+    { log: () => {} },
+    {
+      callerCwd: resolve(dir, 'other-project'),
+      authorityRefusal: () => null,
+      project: (cwd) => {
+        projectPaths.push(cwd)
+        return { name: PLATFORM_SLUG, path: target, settings: { trunk: 'main' } }
+      },
+      git: (cwd, args) => {
+        gitCwds.push(cwd)
+        if (args[0] === 'branch') return 'main'
+        if (args[0] === 'show') {
+          journalRef = args[1] ?? ''
+          return JSON.stringify({ entries: migrationJournal() })
+        }
+        return ''
+      },
+      migrate: () => {},
+    },
+  )
+  expect(projectPaths).toEqual([target])
+  expect(gitCwds).toEqual([target, target, target, target])
+  expect(journalRef).toBe(`origin/main:${ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE.path}`)
+})
+
+test('machine update does not name the checkout when the caller is already there', async () => {
+  const lines: string[] = []
+  await machineUpdateCommand(
+    { log: (line) => lines.push(line) },
+    {
+      cwd: dir,
+      callerCwd: dir,
+      authorityRefusal: () => null,
+      project: () => ({
+        name: 'migration-update-fixture',
+        path: dir,
+        settings: { trunk: 'main' },
+      }),
+      git: (_cwd, args) =>
+        args[0] === 'branch'
+          ? 'main'
+          : args[0] === 'show'
+            ? JSON.stringify({ entries: migrationJournal() })
+            : '',
+      migrate: () => {},
+    },
+  )
+  expect(lines).toEqual([])
 })
