@@ -1,5 +1,6 @@
 // concern: route-statistics
 /** Computes descriptive statistics for one routing evidence window. */
+
 import { median } from '../state/statistics.ts'
 
 type EvidenceRow = { delivery: string | null; pts: number | null }
@@ -33,4 +34,50 @@ export function runUsageMedians(
     peakCallTokens: median(values('peakCallTokens')),
     tokensPerRun: median(values('vendorTokens')),
   }
+}
+
+export type AcceptedResultChain = {
+  accepted: boolean
+  rows: Array<{ usd: number | null; source: string | null }>
+}
+
+export type CostPerAcceptedResult = { usd: number } | { unknown: string }
+
+type RoutingWindowRow = {
+  record_id: string
+  agent: string
+  model: string | null
+  startedAt: string
+}
+
+/** Only this many recent judgments describe the current model's ability. */
+export const EVIDENCE_WINDOW = 40
+
+/** Keeps only the current model's newest roots in one routing evidence cell. */
+export function routingEvidenceWindow<T extends RoutingWindowRow>(
+  rows: T[],
+  agent: string,
+  currentModel: string,
+  limit = EVIDENCE_WINDOW,
+): { rows: T[]; evidenceModel: string | null } {
+  const modelRows = rows
+    .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
+    .sort(
+      (a, b) => b.startedAt.localeCompare(a.startedAt) || b.record_id.localeCompare(a.record_id),
+    )
+    .slice(0, limit)
+  return { rows: modelRows, evidenceModel: currentModel }
+}
+
+/** Prices all work spent on the cell against only the chains that earned an accepted result. */
+export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
+  let totalUsd = 0
+  for (const chain of chains) {
+    for (const row of chain.rows) {
+      if (row.usd === null) return { unknown: row.source ?? 'cost unavailable' }
+      totalUsd += row.usd
+    }
+  }
+  const accepted = chains.filter((chain) => chain.accepted).length
+  return accepted === 0 ? { unknown: 'no accepted results' } : { usd: totalUsd / accepted }
 }

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { setMachineDelegation } from '../../../shared/machine-config.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, score } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { recordDuels } from '../score/duel.ts'
@@ -55,6 +55,50 @@ test('stats reports median call usage for an agent and job cell', () => {
   )
   expect(lines.join('\n')).toContain('calls  peak call  tokens/run')
   expect(lines.find((line) => line.includes('codex'))).toMatch(/\s3\s+400\s+900\s/)
+})
+
+test('stats reports chain cost per accepted result beside the existing cost', () => {
+  const accepted = addRun({ agent: 'codex', job: 'craft', startedAt: '2026-10-01T00:00:00Z' })
+  const turn = addRun({
+    agent: 'codex',
+    job: 'craft',
+    parent: accepted,
+    turn: 2,
+    startedAt: '2026-10-01T00:01:00Z',
+  })
+  const rejected = addRun({
+    agent: 'codex',
+    job: 'craft',
+    startedAt: '2026-10-01T00:02:00Z',
+  })
+  score(accepted, 'full', 'right')
+  score(rejected, 'full', 'wrong')
+  for (const [id, cost] of [
+    [accepted, 0.2],
+    [turn, 0.3],
+    [rejected, 0.5],
+  ] as const) {
+    db()
+      .query('UPDATE run SET vendor_cost_usd=?,vendor_cost_source=? WHERE record_id=?')
+      .run(cost, 'vendor', id)
+  }
+  const lines: string[] = []
+  statsCommand(
+    { flag: (name) => (name === 'job' ? 'craft' : undefined), has: () => false },
+    {
+      log: (...parts) => lines.push(parts.join(' ')),
+      dur: String,
+      subscriptionCost: {
+        facts: {
+          agents: { codex: { billing: 'metered', harness: 'codex' } },
+          monthTokens: {},
+        },
+        prices: {},
+      },
+    },
+  )
+  expect(lines[0]).toContain('cost  $/accepted')
+  expect(lines.find((line) => line.includes('codex'))).toEndWith('$1.0000')
 })
 
 test('pick previews the same fan-out exclusions do uses', () => {

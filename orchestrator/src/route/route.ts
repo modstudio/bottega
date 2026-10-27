@@ -18,6 +18,7 @@ import {
   requiredMcpIneligibility,
 } from '../mcp/mcp-native-attachment.ts'
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
+import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
@@ -35,7 +36,17 @@ import {
   rankThompson,
   selectCurrentPolicy,
 } from './route-policy.ts'
-import { aggregateEvidence, type RunUsageMedians, runUsageMedians } from './route-statistics.ts'
+import {
+  aggregateEvidence,
+  type CostPerAcceptedResult,
+  EVIDENCE_WINDOW,
+  routingEvidenceWindow,
+  type RunUsageMedians,
+  runUsageMedians,
+} from './route-statistics.ts'
+import { promptBucketsForJob, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
+
+export { EVIDENCE_WINDOW, promptBucketsForJob, routingEvidenceWindow }
 import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
@@ -72,6 +83,7 @@ export type Candidate = {
   tokens: number
   usage: RunUsageMedians
   costUsd: number
+  costPerAccepted: CostPerAcceptedResult
   free: boolean
   eligible: boolean
   why: string
@@ -111,9 +123,6 @@ export const COOLDOWN_MIN = 60
 
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 export const MIN_SAMPLE = 5
-
-/** Only this many of an agent's most recent judgments describe its current ability. */
-export const EVIDENCE_WINDOW = 40
 
 function memoizedRepositoryReader(
   reader: (project: Pick<Project, 'path'>) => string | null,
@@ -169,21 +178,6 @@ export type RoutedSelection = {
   promptBytes: number
 }
 
-/** Populated buckets in stable size order; an untried job has none. */
-export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
-  const rows = db()
-    .query(
-      `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
-       FROM run
-      WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
-        AND evidence_excluded IS NULL AND executor <> 'harness' AND parent_run_record_id IS NULL
-        AND agent != '(pending)'`,
-    )
-    .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
-  const have = new Set(rows.map((row) => row.bucket))
-  return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
-}
-
 function routingPassFacts(
   requiredMcp: RequiredMcpServer | undefined,
   projectName: string | null | undefined,
@@ -215,33 +209,6 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
   if (!['ok', 'failed', 'stale'].includes(row.status)) return false
   if (NOT_EVIDENCE.includes(row.failureKind as (typeof NOT_EVIDENCE)[number])) return false
   return row.delivery !== null || ['failed', 'stale'].includes(row.status)
-}
-
-type RoutingWindowRow = {
-  record_id: string
-  agent: string
-  model: string | null
-  startedAt: string
-}
-
-/**
- * Production's evidence window: current model only, then dispatch chronology.
- * A swapped model starts a fresh posterior. Older-model rows never fill the
- * cell; the decaying exploration floor is what keeps a thin new model from
- * routing on noise.
- */
-export function routingEvidenceWindow<T extends RoutingWindowRow>(
-  rows: T[],
-  agent: string,
-  currentModel: string,
-): { rows: T[]; evidenceModel: string | null } {
-  const modelRows = rows
-    .filter((row) => row.agent === agent && (row.model === currentModel || row.model === null))
-    .sort(
-      (a, b) => b.startedAt.localeCompare(a.startedAt) || b.record_id.localeCompare(a.record_id),
-    )
-    .slice(0, EVIDENCE_WINDOW)
-  return { rows: modelRows, evidenceModel: currentModel }
 }
 
 /** How often to spend a run on an agent that has not earned a score yet. */
@@ -359,6 +326,7 @@ export function candidates(
   explicitlyNamedAgent?: string,
   projectName?: string | null,
   repositoryReader: (project: Pick<Project, 'path'>) => string | null = currentProjectRepository,
+  subscriptionCost?: SubscriptionCostContext,
 ): Candidate[] {
   const j = job(jobName)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
@@ -440,7 +408,7 @@ export function candidates(
               r.executor,
               r.failure_kind AS failureKind, r.vendor_tokens AS vendorTokens,
               r.model_calls AS modelCalls, r.peak_call_tokens AS peakCallTokens,
-              s.delivery, ${weightCase()} AS pts
+              s.delivery, s.quality, s.fidelity, ${weightCase()} AS pts
          FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
@@ -459,12 +427,15 @@ export function candidates(
       executor: 'external' | 'harness'
       failureKind: string | null
       delivery: string | null
+      quality: string | null
+      fidelity: string | null
       pts: number | null
       vendorTokens: number | null
       modelCalls: number | null
       peakCallTokens: number | null
     }[]
   ).filter(isRoutingEvidence)
+  const costFacts = routeCostFacts({ jobName, promptBytes, stack, lens, context: subscriptionCost })
   const lat = db()
     .query(
       `SELECT agent, latency_ms FROM run
@@ -527,6 +498,7 @@ export function candidates(
     const failures = recent.failures
     const evidence = scored + failures
     const score = evidence > 0 ? (recent.pts + weigh('none', null) * failures) / evidence : null
+    const costPerAccepted = routeCostPerAccepted(jobName, window.rows, costFacts)
     const mcpWhy = mcpIneligibility(a)
     const policy = policyEligibility(a)
     let eligible = true,
@@ -597,6 +569,7 @@ export function candidates(
       tokens: h?.tokens ?? 0,
       usage: runUsageMedians(window.rows),
       costUsd: h?.cost ?? 0,
+      costPerAccepted,
       // A free or no-cost agent spends no metered quota, so on a genuine tie it
       // keeps the paid subscriptions in reserve for work that needs them.
       free: a.billing === 'none' || a.billing === 'free',
@@ -644,12 +617,26 @@ export type Scored = Candidate & {
  * rather than one grouped one, which is the price of not having a second
  * definition of the word "score".
  */
-export function scoreboard(onlyJob?: string): Scored[] {
+export function scoreboard(onlyJob?: string, subscriptionCost?: SubscriptionCostContext): Scored[] {
   return Object.keys(JOBS)
     .filter((j) => !onlyJob || j === onlyJob)
     .flatMap((j) =>
       promptBucketsForJob(j).flatMap((bucket) =>
-        candidates(j, bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY)
+        candidates(
+          j,
+          bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          subscriptionCost,
+        )
           .filter((c) => c.runs > 0 || c.failures > 0)
           .map((c) => ({ ...c, job: j, promptBucket: bucket })),
       ),
