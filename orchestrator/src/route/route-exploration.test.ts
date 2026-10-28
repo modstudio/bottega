@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
+import { refreshAgents } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
 import {
   completeReview,
@@ -20,7 +21,64 @@ import {
   standingExploreRate,
 } from './route-selection.ts'
 
+const costPolicyAgents = ['codex', 'grok'] as const
+type CostPolicyAgent = (typeof costPolicyAgents)[number]
+type AgentBilling = { billing: string; route_metered: number }
+
+function seedCostPolicyLens(lens: 'correctness' | 'architecture'): void {
+  for (let i = 0; i < MIN_SAMPLE; i++) {
+    for (const [agent, quality, cost] of [
+      ['codex', 'right', 10],
+      ['grok', i < 3 ? 'right' : 'mixed', 0.2],
+    ] as const) {
+      const runId = addRun({ agent, job: 'review-lens', lens })
+      recordReview(runId, reviewReply(0), db())
+      score(runId, 'full', quality)
+      db()
+        .query(
+          "UPDATE run SET vendor_cost_usd=?,vendor_cost_source='vendor',vendor_tokens=100 WHERE record_id=?",
+        )
+        .run(cost, runId)
+    }
+  }
+}
+
 describe('routing exploration', () => {
+  test('only the enabled high-stakes cost rule changes a proven lens pick', () => {
+    const original = Object.fromEntries(
+      costPolicyAgents.map((agent) => [
+        agent,
+        db().query('SELECT billing,route_metered FROM agent WHERE name=?').get(agent) as {
+          billing: string
+          route_metered: number
+        },
+      ]),
+    ) as Record<CostPolicyAgent, AgentBilling>
+
+    try {
+      for (const agent of costPolicyAgents)
+        db().query("UPDATE agent SET billing='metered',route_metered=1 WHERE name=?").run(agent)
+      refreshAgents()
+      seedCostPolicyLens('correctness')
+      seedCostPolicyLens('architecture')
+
+      expect(pick('review-lens', undefined, 0, false, null, {}, false, 'correctness').agent).toBe(
+        'grok',
+      )
+      expect(pick('review-lens', undefined, 0, false, null, {}, false, 'architecture').agent).toBe(
+        'codex',
+      )
+    } finally {
+      for (const agent of costPolicyAgents) {
+        const prior = original[agent]
+        db()
+          .query('UPDATE agent SET billing=?,route_metered=? WHERE name=?')
+          .run(prior.billing, prior.route_metered, agent)
+      }
+      refreshAgents()
+    }
+  })
+
   test('a disabled cost policy leaves the current decision unchanged for a fixed rng', () => {
     const row = (agent: string, scoreValue: number, cost: number) => ({
       agent,

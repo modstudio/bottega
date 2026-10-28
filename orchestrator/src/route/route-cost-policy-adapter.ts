@@ -10,7 +10,6 @@ import {
 } from './route-cost-policy.ts'
 
 export type PreparedCostPolicy<T> = {
-  configured: RouteCostPolicy
   resolved: ResolvedCostPolicy
   candidates: T[]
   priced: boolean
@@ -31,10 +30,9 @@ export function prepareCostPolicy<T extends { agent: string }, P>(input: {
   const configured = readRouteCostPolicy()
   const resolved = resolveRouteCostPolicy(configured, input.job, input.lens, input.writesRepo)
   if (!resolved.enabled && !input.explain)
-    return { configured, resolved, candidates: input.admitted, priced: false }
+    return { resolved, candidates: input.admitted, priced: false }
   const prices = new Map(input.pricedRows().map((row) => [row.agent, row.costPerAccepted]))
   return {
-    configured,
     resolved,
     priced: true,
     candidates: input.admitted.map((candidate) => ({
