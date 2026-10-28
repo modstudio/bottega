@@ -4,11 +4,10 @@ import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
   clearMigrationDrain,
-  migrationDrain,
   migrationDrainForUpdate,
-  migrationDrainLiveness,
   setMigrationDrain,
 } from './migration-drain.ts'
+import { migrationDrain, migrationDrainLiveness } from './migration-drain-state.ts'
 
 const marker = {
   migration: '0155_rebuild',

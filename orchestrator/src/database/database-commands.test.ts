@@ -10,8 +10,8 @@ import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
-import { migrationDrain } from './migration-drain.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
+import { migrationDrain } from './migration-drain-state.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,

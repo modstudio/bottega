@@ -42,6 +42,12 @@ import {
   decideInFlightMigration,
   inFlightMigrationCompatibility,
 } from './migration-compatibility.ts'
+import { activeMigrationDrain } from './migration-drain-state.ts'
+import {
+  decideMigrationWindow,
+  MIGRATION_WINDOW_POLL_MS,
+  MIGRATION_WINDOW_WAIT_MS,
+} from './migration-window-decision.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -50,6 +56,7 @@ import {
   migrationRefusal,
   readUserVersion,
   staleWriteRefusal,
+  storeMigrationState,
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
 import {
@@ -261,7 +268,7 @@ function commandReadOnlyDatabase(): Database {
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   readOnlyHandle = openReadOnlyDatabase()
   readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-  const refused = migrationRefusal(readOnlyHandle)
+  const refused = migrationWindowRefusal(readOnlyHandle)
   if (refused) {
     readOnlyHandle.close()
     readOnlyHandle = null
@@ -514,7 +521,7 @@ function defaultDatabase(writable: boolean): Database {
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   if (openMode === 'read-write') keepJournalSidecars(d)
-  const refused = migrationRefusal(d)
+  const refused = migrationWindowRefusal(d)
   if (refused) refuseOpenMigration(d, refused)
   finishDefaultDatabaseOpen(d, openMode, writable)
   return d
@@ -539,6 +546,32 @@ function refuseOpenMigration(d: Database, refused: string): never {
   }
   d.close()
   throw new Error(refused)
+}
+
+/** Wait out the one bounded window in which machine update owns a behind store. */
+function migrationWindowRefusal(d: Database): string | null {
+  const started = Date.now()
+  for (;;) {
+    const refusal = migrationRefusal(d)
+    const behind = refusal !== null && storeMigrationState(d) === 'behind'
+    const active = behind ? activeMigrationDrain(d) : null
+    const elapsedMs = Date.now() - started
+    const decision = decideMigrationWindow({
+      behind,
+      refusal,
+      marker: active
+        ? {
+            phase: active.marker.phase,
+            pid: active.marker.pid,
+            liveness: active.liveness.state,
+          }
+        : null,
+      elapsedMs,
+    })
+    if (decision.action === 'open') return null
+    if (decision.action === 'refuse') return decision.message
+    Bun.sleepSync(Math.min(MIGRATION_WINDOW_POLL_MS, MIGRATION_WINDOW_WAIT_MS - elapsedMs))
+  }
 }
 
 function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writable: boolean): void {
@@ -739,7 +772,7 @@ export function migrateDatabase(
       try {
         winner.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
         keepJournalSidecars(winner)
-        const refused = migrationRefusal(winner)
+        const refused = migrationWindowRefusal(winner)
         if (refused) throw new Error(refused)
       } finally {
         winner.close()

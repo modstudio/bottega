@@ -115,6 +115,30 @@ async function waitForDrain(input: {
   }
 }
 
+function applyImmediateUpdate(input: {
+  target: string
+  branch: string
+  migration: string | null
+  runGit: (cwd: string, args: string[]) => string
+  migrate: (cwd: string) => void
+}): void {
+  const migration = input.migration
+  if (!migration) {
+    input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
+    input.migrate(input.target)
+    return
+  }
+  withSynchronousDatabaseForMigrationStep((database) =>
+    setMigrationDrain(database, migration, 'migrating'),
+  )
+  try {
+    input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
+    input.migrate(input.target)
+  } finally {
+    withSynchronousDatabaseForMigrationStep((database) => clearMigrationDrain(database))
+  }
+}
+
 export async function machineUpdateCommand(
   presentation: Presentation,
   deps: {
@@ -178,6 +202,7 @@ export async function machineUpdateCommand(
     return {
       activeDrain,
       decision: decideMigrationDrain({ journal, storeVersion: position.index }),
+      pendingMigration: journal[position.index]?.tag ?? null,
     }
   })
   if (initial.activeDrain) {
@@ -215,6 +240,11 @@ export async function machineUpdateCommand(
     }
     return
   }
-  runGit(target, ['pull', '--ff-only', 'origin', branch])
-  migrate(target)
+  applyImmediateUpdate({
+    target,
+    branch,
+    migration: initial.pendingMigration,
+    runGit,
+    migrate,
+  })
 }
