@@ -6,6 +6,7 @@ import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import type { HostLoad } from './gate-load.ts'
 import {
+  capacityRatesSince,
   decideHostCapacityAdmission,
   decideHostSlotAdmission,
   HOST_SLOT_HELD_ENV,
@@ -43,6 +44,74 @@ test('swap parsing supports macOS and Linux samples', () => {
   expect(parseSwapUsage('SwapTotal:       2048 kB\nSwapFree:         512 kB')).toEqual({
     total: 2_097_152,
     used: 1_572_864,
+  })
+  expect(parseSwapUsage('unrecognized swap output')).toBeNull()
+})
+
+const cpuTimes = (
+  over: Partial<{ user: number; nice: number; sys: number; idle: number; irq: number }> = {},
+) => ({
+  user: 0,
+  nice: 0,
+  sys: 0,
+  idle: 0,
+  irq: 0,
+  ...over,
+})
+
+describe('capacity rates', () => {
+  test('idle and saturated CPU deltas produce busy cores on the ncpu scale', () => {
+    const previous = { at: 0, cpuTimes: [cpuTimes(), cpuTimes()], swapUsed: null }
+    expect(
+      capacityRatesSince(previous, {
+        at: 250,
+        cpuTimes: [cpuTimes({ idle: 100 }), cpuTimes({ idle: 100 })],
+        swapUsed: null,
+      }).cpuBusy,
+    ).toBe(0)
+    expect(
+      capacityRatesSince(previous, {
+        at: 250,
+        cpuTimes: [cpuTimes({ user: 100 }), cpuTimes({ sys: 100 })],
+        swapUsed: null,
+      }).cpuBusy,
+    ).toBe(2)
+  })
+
+  test('CPU and swap rates fall back independently', () => {
+    const rates = capacityRatesSince(
+      { at: 1_000, cpuTimes: [cpuTimes()], swapUsed: null },
+      { at: 2_000, cpuTimes: [cpuTimes({ user: 50, idle: 50 })], swapUsed: null },
+    )
+    expect(rates.cpuBusy).toBe(0.5)
+    expect(rates.swapGrowthBytesPerSec).toBeNull()
+  })
+
+  test('swap growth uses the sample interval in seconds', () => {
+    expect(
+      capacityRatesSince(
+        { at: 1_000, cpuTimes: [], swapUsed: 1_024 },
+        { at: 1_500, cpuTimes: [], swapUsed: 2_048 },
+      ).swapGrowthBytesPerSec,
+    ).toBe(2_048)
+  })
+
+  test('a window below the minimum produces no new rates', () => {
+    expect(
+      capacityRatesSince(
+        { at: 1_000, cpuTimes: [cpuTimes()], swapUsed: 0 },
+        { at: 1_249, cpuTimes: [cpuTimes({ user: 100 })], swapUsed: 1_024 },
+      ),
+    ).toEqual({ cpuBusy: null, swapGrowthBytesPerSec: null })
+  })
+
+  test('one zero-delta core does not discard other cores busy delta', () => {
+    expect(
+      capacityRatesSince(
+        { at: 0, cpuTimes: [cpuTimes(), cpuTimes()], swapUsed: null },
+        { at: 250, cpuTimes: [cpuTimes(), cpuTimes({ user: 100 })], swapUsed: null },
+      ).cpuBusy,
+    ).toBe(2)
   })
 })
 

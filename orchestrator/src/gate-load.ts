@@ -48,6 +48,8 @@ export const HOST_LOAD_RESERVATION_MS = 60_000
 export const HOST_SLOT_HELD_ENV = 'BOTTEGA_HOST_SLOT_HELD'
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
+const CAPACITY_SAMPLE_MIN_WINDOW_MS = 250
+const CAPACITY_RATE_MAX_AGE_MS = 5_000
 const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
 const SWAP_GROWTH_HOLD_BYTES_PER_SEC = 2 * MEBIBYTE_BYTES
@@ -219,7 +221,7 @@ function readMemoryPressure(platform: NodeJS.Platform): MemoryPressure {
   }
 }
 
-export function parseSwapUsage(output: string): { used: number; total: number } {
+export function parseSwapUsage(output: string): { used: number; total: number } | null {
   const mac = /total = ([\d.]+)([KMG])\s+used = ([\d.]+)([KMG])/i.exec(output)
   const scale = (value: string, unit: string) =>
     Number(value) *
@@ -231,7 +233,7 @@ export function parseSwapUsage(output: string): { used: number; total: number } 
     const totalBytes = Number(total[1]) * 1024
     return { total: totalBytes, used: Math.max(0, totalBytes - Number(free[1]) * 1024) }
   }
-  return { used: 0, total: 0 }
+  return null
 }
 
 function readSwap(platform: NodeJS.Platform): { used: number; total: number } | null {
@@ -250,13 +252,11 @@ function readSwap(platform: NodeJS.Platform): { used: number; total: number } | 
 }
 
 type CpuTimes = ReturnType<typeof cpus>[number]['times']
-type CapacitySample = {
+export type CapacitySample = {
   at: number
   cpuTimes: CpuTimes[]
   swapUsed: number | null
 }
-
-let previousCapacitySample: CapacitySample | null = null
 
 function cpuBusySince(previous: CapacitySample, current: CapacitySample): number | null {
   if (current.at <= previous.at || current.cpuTimes.length !== previous.cpuTimes.length) return null
@@ -273,11 +273,37 @@ function cpuBusySince(previous: CapacitySample, current: CapacitySample): number
       (times.sys - before.sys) +
       idle +
       (times.irq - before.irq)
-    if (idle < 0 || total <= 0) return null
     idleDelta += idle
     totalDelta += total
   }
+  if (totalDelta <= 0) return null
   return (1 - idleDelta / totalDelta) * current.cpuTimes.length
+}
+
+export function capacityRatesSince(
+  previous: CapacitySample,
+  current: CapacitySample,
+): { cpuBusy: number | null; swapGrowthBytesPerSec: number | null } {
+  const elapsedMs = current.at - previous.at
+  if (elapsedMs < CAPACITY_SAMPLE_MIN_WINDOW_MS)
+    return { cpuBusy: null, swapGrowthBytesPerSec: null }
+  return {
+    cpuBusy: cpuBusySince(previous, current),
+    swapGrowthBytesPerSec:
+      previous.swapUsed === null || current.swapUsed === null
+        ? null
+        : (current.swapUsed - previous.swapUsed) / (elapsedMs / 1_000),
+  }
+}
+
+type CachedRate = { at: number; value: number | null }
+let previousCpuSample: CapacitySample | null = null
+let previousSwapSample: CapacitySample | null = null
+let latestCpuBusy: CachedRate | null = null
+let latestSwapGrowth: CachedRate | null = null
+
+function freshRate(rate: CachedRate | null, now: number): number | null {
+  return rate && now - rate.at <= CAPACITY_RATE_MAX_AGE_MS ? rate.value : null
 }
 
 function measureCapacityRates(
@@ -285,27 +311,36 @@ function measureCapacityRates(
   now: number,
   swap: { used: number; total: number } | null,
 ): { cpuBusy: number | null; swapGrowthBytesPerSec: number | null } {
-  const current: CapacitySample = {
+  const cpuTimes = cpus().map(({ times }) => times)
+  const currentCpu: CapacitySample = {
     at: now,
-    cpuTimes: cpus().map(({ times }) => times),
-    swapUsed: platform === 'darwin' ? (swap?.used ?? null) : null,
+    cpuTimes,
+    swapUsed: null,
   }
-  const previous = previousCapacitySample
-  previousCapacitySample = current
-  if (
-    !previous ||
-    current.at <= previous.at ||
-    (platform === 'darwin' && (previous.swapUsed === null || current.swapUsed === null))
-  ) {
-    return { cpuBusy: null, swapGrowthBytesPerSec: null }
+  if (!previousCpuSample) previousCpuSample = currentCpu
+  else if (now - previousCpuSample.at >= CAPACITY_SAMPLE_MIN_WINDOW_MS) {
+    latestCpuBusy = {
+      at: now,
+      value: capacityRatesSince(previousCpuSample, currentCpu).cpuBusy,
+    }
+    previousCpuSample = currentCpu
   }
+
+  if (platform === 'darwin' && swap) {
+    const currentSwap: CapacitySample = { at: now, cpuTimes: [], swapUsed: swap.used }
+    if (!previousSwapSample) previousSwapSample = currentSwap
+    else if (now - previousSwapSample.at >= CAPACITY_SAMPLE_MIN_WINDOW_MS) {
+      latestSwapGrowth = {
+        at: now,
+        value: capacityRatesSince(previousSwapSample, currentSwap).swapGrowthBytesPerSec,
+      }
+      previousSwapSample = currentSwap
+    }
+  }
+
   return {
-    cpuBusy: cpuBusySince(previous, current),
-    swapGrowthBytesPerSec:
-      platform === 'darwin'
-        ? ((current.swapUsed ?? 0) - (previous.swapUsed ?? 0)) /
-          ((current.at - previous.at) / 1_000)
-        : null,
+    cpuBusy: freshRate(latestCpuBusy, now),
+    swapGrowthBytesPerSec: platform === 'darwin' ? freshRate(latestSwapGrowth, now) : null,
   }
 }
 
