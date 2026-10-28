@@ -14,7 +14,7 @@ const entries = {
     (await import('../hub/src/cli.ts')).outboxSummaryLines(rows),
   runExec: async (argv: string[]) => (await import('../orchestrator/src/run/exec.ts')).main(argv),
   askProxy: async (argv: string[]) =>
-    (await import('../orchestrator/src/ask/ask-proxy.ts')).main(argv),
+    (await import('../orchestrator/src/ask/ask-proxy.ts')).runAskProxy(argv),
   retrievalSearch: async (argv: string[]) =>
     (await import('../retrieval/src/search-cli.ts')).main(argv),
   checkAttribution: async (argv: string[]) =>

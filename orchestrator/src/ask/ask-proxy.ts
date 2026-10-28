@@ -1,11 +1,6 @@
 import { createConnection } from 'node:net'
 import { writeAskServerFailure } from './ask-failure.ts'
 
-export function recordAskProxyFailure(error: unknown, scratchDir?: string): unknown {
-  writeAskServerFailure(error, scratchDir)
-  return error
-}
-
 export async function main(_argv: string[] = []): Promise<number> {
   const value = process.env.BOTTEGA_ASK_URL
   if (!value) throw new Error('BOTTEGA_ASK_URL is required')
@@ -28,10 +23,16 @@ export async function main(_argv: string[] = []): Promise<number> {
   return 0
 }
 
-if (import.meta.main) {
+export async function runAskProxy(argv: string[] = []): Promise<number> {
   try {
-    process.exitCode = await main()
+    return await main(argv)
   } catch (error) {
-    throw recordAskProxyFailure(error)
+    writeAskServerFailure(error)
+    console.error(error instanceof Error ? error.message : String(error))
+    return 1
   }
+}
+
+if (import.meta.main) {
+  process.exitCode = await runAskProxy()
 }
