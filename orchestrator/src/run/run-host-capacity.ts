@@ -13,8 +13,8 @@ import {
 
 export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
 export const RUN_HOST_WAIT_POLL_MS = 1_000
-export const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
-export const RUN_HOST_WAIT_POLL_JITTER_FRACTION = 0.2
+const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
+const RUN_HOST_WAIT_POLL_JITTER_FRACTION = 0.2
 
 type RunCapacityPoll = { baseMs: number; delayMs: number }
 
@@ -277,7 +277,8 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
     }
     const poll = nextRunCapacityPoll(previousPollMs, input.random())
     previousPollMs = poll.baseMs
-    await input.sleep(poll.delayMs)
+    const waitedMs = at - started
+    await input.sleep(Math.min(poll.delayMs, Math.max(0, RUN_HOST_WAIT_MAX_MS - waitedMs)))
   }
 }
 
