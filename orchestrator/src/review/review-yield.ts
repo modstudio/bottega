@@ -24,6 +24,8 @@ import {
   mediumPlusAcceptedYield,
   UNRECORDED_SLICE,
   yieldAreaKey,
+  yieldDeletionShareKey,
+  yieldFileCountBumpKey,
   yieldPathAreas,
   yieldRiskKey,
   yieldSizeKey,
@@ -96,6 +98,8 @@ export type ReviewYieldReport = {
   }
   lenses: ReviewYieldRow[]
   bySize: ReviewYieldRow[]
+  byDeletionShare: ReviewYieldRow[]
+  byFileCountBump: ReviewYieldRow[]
   byRisk: ReviewYieldRow[]
   byArea: ReviewYieldRow[]
   lensPairs: ReviewYieldLensPair[]
@@ -117,6 +121,9 @@ export type ReviewRoundEvidenceRow = {
   role: ReviewRole
   tier_risk: number | null
   tier_size: number | null
+  tier_insertions: number | null
+  tier_deletions: number | null
+  tier_reasons: string | null
   patch_id: string | null
   path_set: string | null
   project: string | null
@@ -235,7 +242,7 @@ export function reviewYield(
 ): ReviewYieldReport {
   const lensRows = database
     .query(
-      `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.role, r.tier_risk, r.tier_size, r.patch_id, r.path_set, p.name AS project,
+      `SELECT rl.record_id AS lens_id, run.record_id AS run_id, r.record_id AS review_record_id, r.recorded_at, r.completed_at, r.tier, r.role, r.tier_risk, r.tier_size, r.tier_insertions, r.tier_deletions, r.tier_reasons, r.patch_id, r.path_set, p.name AS project,
             run.repo AS run_repo, run.launch_key, run.branch, rl.lens, rl.agent,
             rl.model, run.latency_ms, run.started_at, run.agent AS run_agent, run.vendor_tokens,
             run.vendor_cost_usd, run.vendor_estimated_cost_usd, run.vendor_cost_source,
@@ -443,10 +450,20 @@ function yieldRowAreas(row: ComputedLens): string[] {
 
 function changeSlices(
   rows: ComputedLens[],
-): Pick<ReviewYieldReport, 'bySize' | 'byRisk' | 'byArea'> {
+): Pick<ReviewYieldReport, 'bySize' | 'byDeletionShare' | 'byFileCountBump' | 'byRisk' | 'byArea'> {
   const sliceSort = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true })
   return {
     bySize: grouped(rows, (row) => yieldSizeKey(displayLens(row), row.tier_size), sliceSort),
+    byDeletionShare: grouped(
+      rows,
+      (row) => yieldDeletionShareKey(displayLens(row), row.tier_insertions, row.tier_deletions),
+      sliceSort,
+    ),
+    byFileCountBump: grouped(
+      rows,
+      (row) => yieldFileCountBumpKey(displayLens(row), row.tier_reasons),
+      sliceSort,
+    ),
     byRisk: grouped(rows, (row) => yieldRiskKey(displayLens(row), row.tier_risk), sliceSort),
     byArea: grouped(
       rows.flatMap((row) => yieldRowAreas(row).map((area) => ({ ...row, area }))),
@@ -639,6 +656,10 @@ export function renderReviewYieldHuman(report: ReviewYieldReport): string {
   section('BY LENS', report.lenses)
   lines.push('')
   section('BY SIZE', report.bySize)
+  lines.push('')
+  section('BY DELETION SHARE', report.byDeletionShare)
+  lines.push('')
+  section('BY FILE-COUNT BUMP', report.byFileCountBump)
   lines.push('')
   section('BY RISK', report.byRisk)
   lines.push('')

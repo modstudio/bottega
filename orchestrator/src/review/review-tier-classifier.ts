@@ -3,11 +3,14 @@
 
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import type { ReviewRiskMap } from '../project/project-injection.ts'
+import { REVIEW_FILE_COUNT_BUMP_REASON } from './review-vocabulary.ts'
 
 export type ReviewTier = {
   tier: 0 | 1 | 2 | 3
   risk: 0 | 1 | 2 | 3
   size: 0 | 1 | 2 | 3
+  insertions: number
+  deletions: number
   reasons: string[]
   riskBasis: string | null
 }
@@ -145,19 +148,21 @@ export function classifyReviewTier(input: {
 
   const productFiles = input.files.filter((file) => isReviewProductPath(file.path))
   const countedFiles = input.files.filter((file) => !isReviewExcluded(file.path))
-  const productLines = countedFiles.reduce((sum, file) => sum + file.insertions + file.deletions, 0)
+  const insertions = countedFiles.reduce((sum, file) => sum + file.insertions, 0)
+  const deletions = countedFiles.reduce((sum, file) => sum + file.deletions, 0)
+  const productLines = insertions + deletions
   let size: 0 | 1 | 2 | 3 =
     productLines <= 10 ? 0 : productLines <= 50 ? 1 : productLines <= 400 ? 2 : 3
   const reasons = [riskReason, `size ${size}: ${productLines} product lines`]
   if (productFiles.length > 8 && size < 3) {
     size = (size + 1) as 1 | 2 | 3
-    reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (more than 8 raises size one tier)`
+    reasons[1] = `size ${size}: ${productLines} product lines across ${productFiles.length} product files (${REVIEW_FILE_COUNT_BUMP_REASON})`
   }
   const combined = combineReviewTier({ risk, size, firm })
   if (combined.lowered) {
     reasons.push(`tier ${combined.tier}: size 0 lowered risk ${risk} by one`)
   }
-  return { tier: combined.tier, risk, size, reasons, riskBasis }
+  return { tier: combined.tier, risk, size, insertions, deletions, reasons, riskBasis }
 }
 
 /**

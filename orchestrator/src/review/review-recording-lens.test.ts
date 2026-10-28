@@ -316,13 +316,19 @@ describe('review discipline', () => {
       const implicitReview = recordReview(withoutBranch, reviewReply(0), db())
       const explicitReview = recordReview(withBranch, reviewReply(0), db())
       const measurement = (reviewId: string) =>
-        db().query('SELECT patch_id, path_set, tier FROM review WHERE record_id=?').get(reviewId)
+        db()
+          .query(
+            'SELECT patch_id, path_set, tier, tier_insertions, tier_deletions FROM review WHERE record_id=?',
+          )
+          .get(reviewId)
 
       expect(measurement(implicitReview)).toEqual(measurement(explicitReview))
       expect(measurement(implicitReview)).toEqual({
         patch_id: 'same-patch',
         path_set: '["src/change.ts"]',
         tier: 1,
+        tier_insertions: 1,
+        tier_deletions: 0,
       })
     } finally {
       spawn.mockRestore()
@@ -336,8 +342,18 @@ describe('review discipline', () => {
     )
 
     expect(
-      db().query('SELECT patch_id, path_set, tier FROM review WHERE record_id=?').get(reviewId),
-    ).toEqual({ patch_id: null, path_set: null, tier: null })
+      db()
+        .query(
+          'SELECT patch_id, path_set, tier, tier_insertions, tier_deletions FROM review WHERE record_id=?',
+        )
+        .get(reviewId),
+    ).toEqual({
+      patch_id: null,
+      path_set: null,
+      tier: null,
+      tier_insertions: null,
+      tier_deletions: null,
+    })
   })
   test('triage records explicit severity agreement and leaves omission unassessed', () => {
     const runId = addRun({ agent: 'codex', job: 'review-lens', model: 'm', lens: 'severity' })

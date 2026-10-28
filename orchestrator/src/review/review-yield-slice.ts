@@ -7,7 +7,11 @@
 
 import type { ReviewSettings } from '../project/project-injection.ts'
 import { declaredGlobsMatch } from './review-declared-globs.ts'
-import { REVIEW_SEVERITY, type ReviewSeverity } from './review-vocabulary.ts'
+import {
+  REVIEW_FILE_COUNT_BUMP_REASON,
+  REVIEW_SEVERITY,
+  type ReviewSeverity,
+} from './review-vocabulary.ts'
 
 export const NO_DECLARED_GLOB = '(no declared glob)'
 export const UNRECORDED_SLICE = 'unrecorded'
@@ -44,6 +48,27 @@ export function yieldSizeKey(lens: string, size: number | null): string {
 
 export function yieldRiskKey(lens: string, risk: number | null): string {
   return `${lens} / risk ${risk ?? UNRECORDED_SLICE}`
+}
+
+export function yieldDeletionShareKey(
+  lens: string,
+  insertions: number | null,
+  deletions: number | null,
+): string {
+  const total = insertions === null || deletions === null ? 0 : insertions + deletions
+  const share =
+    insertions === null || deletions === null || total === 0
+      ? 'unknown'
+      : deletions * 3 >= total * 2
+        ? 'deletion-heavy'
+        : insertions * 3 >= total * 2
+          ? 'addition-heavy'
+          : 'mixed'
+  return `${lens} / ${share}`
+}
+
+export function yieldFileCountBumpKey(lens: string, reasons: string | null): string {
+  return `${lens} / ${reasons?.includes(REVIEW_FILE_COUNT_BUMP_REASON) ? 'bumped' : 'not bumped'}`
 }
 
 export function yieldAreaKey(lens: string, area: string): string {

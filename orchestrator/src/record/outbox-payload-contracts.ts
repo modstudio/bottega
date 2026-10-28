@@ -68,8 +68,15 @@ const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMN
 })
 
 const REVIEW_RECORD_PAYLOAD_CONTRACT = contract(
-  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason round withheldFields createdAt updatedAt',
-  { projectId: null, role: 'round', round: null, withheldFields: null },
+  'id spaceId projectId projectName machineId localId recordedAt completedAt tier tierRisk tierSize tierInsertions tierDeletions tierReasons tierReason role patchId pathSet commitMessage outdatedAt outdatedReason round withheldFields createdAt updatedAt',
+  {
+    projectId: null,
+    role: 'round',
+    round: null,
+    withheldFields: null,
+    tierInsertions: null,
+    tierDeletions: null,
+  },
 )
 const REVIEW_LENS_RECORD_PAYLOAD_CONTRACT = contract(
   'id spaceId projectId projectName reviewId runId machineId localId lens agent model treeInspected reviewedTree standardsRead filesCovered commandsRun couldNotVerify mcpTools docsRead substitutes reproduced coverage limits overlap selectionReason withheldFields createdAt updatedAt',

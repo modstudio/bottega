@@ -293,7 +293,15 @@ test('a fix branch inherits its parent review and starts at round two', () => {
 
 test('a moved remote trunk is the shared base for review and admission despite stale local trunk', () => {
   const calls: string[] = []
-  const tier: ReviewTier = { tier: 1, risk: 1, size: 0, reasons: ['fixture'], riskBasis: null }
+  const tier: ReviewTier = {
+    tier: 1,
+    risk: 1,
+    size: 0,
+    insertions: 0,
+    deletions: 0,
+    reasons: ['fixture'],
+    riskBasis: null,
+  }
   const plan: ReviewPlan = { tier, applicability: { lenses: ['correctness'] } }
   const operations = {
     mergeBase: (_cwd: string, tip: string, trunk: string) => {
