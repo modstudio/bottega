@@ -3,12 +3,9 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export type ReviewOutputState = 'valid' | 'invalid' | 'missing'
+export type ReviewOutputState = 'invalid' | 'missing'
 
 export function reviewCaptureRefusal(runId: string, outputState: ReviewOutputState): string {
-  if (outputState === 'valid') {
-    return `run ${runId} has no recorded review; recover it with ${PLATFORM_SLUG} review record ${runId}`
-  }
   if (outputState === 'invalid') {
     return (
       `run ${runId} output does not satisfy the review contract; ` +

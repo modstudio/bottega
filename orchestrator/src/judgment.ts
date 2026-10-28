@@ -538,6 +538,7 @@ export async function judgeRun(
   const findingsJob = Boolean(job(row.job).findings)
   const suppliedGrades = suppliedReviewGrades(flags)
   refuseInvalidReviewGrades(suppliedGrades)
+  let parsedOutput: ReturnType<typeof parseReviewOutput> = null
   let reviewRecordId: string | null = null
   let storedGrades: Partial<Record<(typeof REVIEW_GRADE_NAMES)[number], string>> = {}
   let reviewFindings: { ordinal: number; disposition: string | null }[] = []
@@ -554,9 +555,12 @@ export async function judgeRun(
     if (delivery !== 'none' && !reviewRecordId) {
       let outputState: ReviewOutputState = 'missing'
       if (row.output_path && existsSync(row.output_path)) {
-        outputState = parseReviewOutput(readFileSync(row.output_path, 'utf8')) ? 'valid' : 'invalid'
+        outputState = 'invalid'
+        parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
       }
-      throw new Error(reviewCaptureRefusal(id, outputState))
+      if (!parsedOutput) {
+        throw new Error(reviewCaptureRefusal(id, outputState))
+      }
     } else if (delivery !== 'none') {
       storedGrades = Object.fromEntries(
         REVIEW_GRADE_NAMES.flatMap((name) => (lens?.[name] ? [[name, lens[name]]] : [])),
@@ -582,10 +586,14 @@ export async function judgeRun(
   const comparisonIds = comparison ? parseRunIds(flags.flag(comparison)!, `--${comparison}`) : []
   const requiredFindings: number[] = []
   if (findingsJob && delivery !== 'none') {
-    const allowed = reviewFindings.map((finding) => finding.ordinal)
-    const expected = reviewFindings
-      .filter((finding) => finding.disposition === null)
-      .map((finding) => finding.ordinal)
+    const allowed = reviewRecordId
+      ? reviewFindings.map((finding) => finding.ordinal)
+      : parsedOutput!.findings.map((_, index) => index + 1)
+    const expected = reviewRecordId
+      ? reviewFindings
+          .filter((finding) => finding.disposition === null)
+          .map((finding) => finding.ordinal)
+      : allowed
     for (const ordinal of expected) {
       if (!parsedFindings.some((finding) => finding.ordinal === ordinal)) {
         requiredFindings.push(ordinal)
@@ -628,7 +636,7 @@ export async function judgeRun(
   writeTransaction(() => {
     if (!(flags.has('force') && !authority.actor)) authority = adoptRunMutation(authority, 'score')
     if (findingsJob && delivery !== 'none') {
-      reviewRecordId = gradeReviewLens(id, null, gradeValues as ReviewGrades)
+      reviewRecordId = gradeReviewLens(id, parsedOutput, gradeValues as ReviewGrades)
     }
     recordScoreVerdict(id, delivery!, quality ?? null, scoredFidelity, note, scoredAt, scorer)
     reviveUnjudgedOwnerEvidence(id)

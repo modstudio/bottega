@@ -5,11 +5,6 @@ import { type ReviewOutputState, reviewCaptureRefusal } from './review-capture-r
 describe('review capture refusal', () => {
   const cases: { state: ReviewOutputState; condition: string; remedy: string }[] = [
     {
-      state: 'valid',
-      condition: 'has no recorded review',
-      remedy: `${PLATFORM_SLUG} review record run-42`,
-    },
-    {
       state: 'invalid',
       condition: 'output does not satisfy the review contract',
       remedy: `${PLATFORM_SLUG} score run-42 none --note "<why the output failed the contract>"`,
