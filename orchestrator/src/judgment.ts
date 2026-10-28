@@ -865,10 +865,10 @@ function loadScoreReviewOutput(
     .get(id) as { record_id: string; findings: number } | null
   if (existing) return { output: null, findings: existing.findings }
   if (!outputPath || !existsSync(outputPath)) {
-    throw new Error(`run ${id} has no recorded output to capture as a review`)
+    throw new Error(reviewCaptureRefusal(id, 'missing'))
   }
   const output = parseReviewOutput(readFileSync(outputPath, 'utf8'))
-  if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
+  if (!output) throw new Error(reviewCaptureRefusal(id, 'invalid'))
   const evidence = cleanReviewEvidence(id, output)
   if (evidence.failure) throw new Error(`run ${id} cannot be scored: ${evidence.failure}`)
   return { output, findings: output.findings.length }
