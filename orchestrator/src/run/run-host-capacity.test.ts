@@ -4,8 +4,12 @@ import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import type { HostLoad } from '../gate-load.ts'
 import {
+  nextRunCapacityPoll,
   RUN_HOST_CAPACITY_WAITERS_SQL,
   RUN_HOST_WAIT_MAX_MS,
+  RUN_HOST_WAIT_POLL_CAP_MS,
+  RUN_HOST_WAIT_POLL_JITTER_FRACTION,
+  RUN_HOST_WAIT_POLL_MS,
   RUNNING_REPOSITORY_FACTS_SQL,
   runHostCapacityQueue,
   startRunAfterHostCapacity,
@@ -39,6 +43,27 @@ const repositoryRun = (repo: string | null = '/repo') => {
 }
 
 describe('run host capacity', () => {
+  test('capacity poll delay doubles its base with bounded non-compounding jitter', () => {
+    const first = nextRunCapacityPoll(undefined, 0)
+    expect(first).toEqual({ baseMs: RUN_HOST_WAIT_POLL_MS, delayMs: RUN_HOST_WAIT_POLL_MS })
+
+    const low = nextRunCapacityPoll(first.baseMs, 0)
+    const high = nextRunCapacityPoll(first.baseMs, 1 - Number.EPSILON)
+    expect(low.baseMs).toBe(2 * RUN_HOST_WAIT_POLL_MS)
+    expect(low.delayMs).toBeGreaterThanOrEqual(
+      low.baseMs * (1 - RUN_HOST_WAIT_POLL_JITTER_FRACTION),
+    )
+    expect(high.delayMs).toBeLessThanOrEqual(high.baseMs * (1 + RUN_HOST_WAIT_POLL_JITTER_FRACTION))
+
+    let poll = high
+    for (let index = 0; index < 6; index++) poll = nextRunCapacityPoll(poll.baseMs, 0)
+    expect(poll.baseMs).toBe(RUN_HOST_WAIT_POLL_CAP_MS)
+    expect(poll.delayMs).toBe(RUN_HOST_WAIT_POLL_CAP_MS * (1 - RUN_HOST_WAIT_POLL_JITTER_FRACTION))
+    expect(poll.delayMs).toBeLessThanOrEqual(
+      RUN_HOST_WAIT_POLL_CAP_MS * (1 + RUN_HOST_WAIT_POLL_JITTER_FRACTION),
+    )
+  })
+
   test('running repository queries use the partial host-capacity index', () => {
     const plans = [
       db()

@@ -6,11 +6,7 @@ import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { AgentCapacityError } from '../route/routing-refusal.ts'
 import { type RunningRunCounts, runningRunCountsForAgents } from '../route/running-runs.ts'
-import {
-  RUN_HOST_WAIT_MAX_MS,
-  RUN_HOST_WAIT_POLL_CAP_MS,
-  RUN_HOST_WAIT_POLL_MS,
-} from './run-host-capacity.ts'
+import { nextRunCapacityPoll, RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
 import { DETACHED_AGENT_CAPACITY_WAIT_MAX_MS } from './run-liveness-policy.ts'
 
 export type CapacityWaitDecision = 'wait' | 'refuse'
@@ -40,10 +36,6 @@ export function agentCapacityWaitMaxMs(detached: boolean): number {
   return detached ? DETACHED_AGENT_CAPACITY_WAIT_MAX_MS : RUN_HOST_WAIT_MAX_MS
 }
 
-export function nextCapacityPollMs(currentMs: number): number {
-  return Math.min(currentMs * 2, RUN_HOST_WAIT_POLL_CAP_MS)
-}
-
 function runningCountsMayHaveFreed(
   before: Readonly<RunningRunCounts>,
   after: Readonly<RunningRunCounts>,
@@ -55,11 +47,11 @@ function nextCapacityWaitState(
   priorPollMs: number,
   before: Readonly<RunningRunCounts>,
   after: Readonly<RunningRunCounts>,
-): { retrySelection: boolean; pollMs: number } {
+): { retrySelection: boolean; pollMs: number | undefined } {
   const retrySelection = runningCountsMayHaveFreed(before, after)
   return {
     retrySelection,
-    pollMs: retrySelection ? RUN_HOST_WAIT_POLL_MS : nextCapacityPollMs(priorPollMs),
+    pollMs: retrySelection ? undefined : priorPollMs,
   }
 }
 
@@ -93,6 +85,7 @@ export async function waitForAgentSelection<T>(input: {
   noWait?: boolean
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  random?: () => number
   runningCounts?: (agents: readonly string[]) => RunningRunCounts
   onWait?: (at: string) => void
   detached?: boolean
@@ -102,7 +95,7 @@ export async function waitForAgentSelection<T>(input: {
     input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
   const started = now()
   let announced = false
-  let pollMs = RUN_HOST_WAIT_POLL_MS
+  let previousPollMs: number | undefined
   let lastCapacityError: AgentCapacityError | null = null
   const detached = Boolean(input.detached)
   const maxWaitMs = agentCapacityWaitMaxMs(detached)
@@ -126,11 +119,12 @@ export async function waitForAgentSelection<T>(input: {
         maxWaitMs,
       )
     announced = announceCapacityWait(announced, input.onWait, now())
-    await sleep(Math.min(pollMs, maxWaitMs - waitedMs))
+    const poll = nextRunCapacityPoll(previousPollMs, (input.random ?? Math.random)())
+    await sleep(Math.min(poll.delayMs, maxWaitMs - waitedMs))
     const agents = Object.keys(lastCapacityError.runningCounts)
     const currentCounts = (input.runningCounts ?? runningRunCountsForAgents)(agents)
-    const next = nextCapacityWaitState(pollMs, lastCapacityError.runningCounts, currentCounts)
-    pollMs = next.pollMs
+    const next = nextCapacityWaitState(poll.baseMs, lastCapacityError.runningCounts, currentCounts)
+    previousPollMs = next.pollMs
     if (next.retrySelection) lastCapacityError = null
   }
 }
