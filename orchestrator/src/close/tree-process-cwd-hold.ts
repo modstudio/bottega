@@ -1,11 +1,10 @@
-// concern: close-out tree process cwd observation
-/** Observes process working directories and explains a close-out hold. */
+// concern: tree removal process cwd observation
+/** Observes process working directories and explains a tree-removal hold. */
 
 import { existsSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { processWorkingDirectories } from '../resources/process-inventory.ts'
-import { landingTreeReleaseHold } from './close-out-release-holds.ts'
+import { processTableSnapshot, processWorkingDirectories } from '../resources/process-inventory.ts'
 import { treeProcessCwdDecision } from './tree-process-cwd-decision.ts'
 
 function realWorkingDirectories(values: ReadonlyMap<number, string>): {
@@ -22,12 +21,12 @@ function realWorkingDirectories(values: ReadonlyMap<number, string>): {
   return { values: resolved }
 }
 
-function treeCwdHold(
-  runId: string,
-  treePath: string,
-  treeAbsent: boolean,
-  processes: readonly { pid: number; command: string }[],
-): { runId: string; worktree: string; outcome: 'live'; detail: string } | null {
+export function treeProcessCwdHold(input: {
+  runId: string
+  worktree: string
+  treeAbsent: boolean
+}): { runId: string; worktree: string; outcome: 'held'; detail: string } | null {
+  const { runId, worktree: treePath, treeAbsent } = input
   if (treeAbsent || !existsSync(treePath)) return null
   const recordedTreePath = treePath
   const recordedTreeSpelling = resolve(recordedTreePath)
@@ -52,7 +51,7 @@ function treeCwdHold(
   if (decision.reason.kind === 'scan-error') {
     detail = `process cwd scan could not establish whether ${recordedTreePath} is in use: ${decision.reason.cause}; tree and branch retained; cleared by: correct the scan failure, ${retry}`
   } else {
-    const commands = new Map(processes.map(({ pid, command }) => [pid, command]))
+    const commands = new Map(processTableSnapshot().facts.map(({ pid, command }) => [pid, command]))
     const holders = decision.reason.processes
       .map(
         ({ pid, cwd }) =>
@@ -61,15 +60,5 @@ function treeCwdHold(
       .join('\n')
     detail = `tree and branch retained because live processes have working directories inside ${recordedTreePath}:\n${holders}\ncleared by: stop the listed processes, or wait for them to finish, ${retry}`
   }
-  return { runId, worktree: recordedTreePath, outcome: 'live', detail }
-}
-
-export function preArchiveHold(
-  input: Parameters<typeof landingTreeReleaseHold>[0],
-  treeAbsent: boolean,
-  processes: readonly { pid: number; command: string }[],
-) {
-  return (
-    landingTreeReleaseHold(input) ?? treeCwdHold(input.runId, input.worktree, treeAbsent, processes)
-  )
+  return { runId, worktree: recordedTreePath, outcome: 'held', detail }
 }

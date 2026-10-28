@@ -81,17 +81,17 @@ export function landingTreeSourceRun(runId: string): {
 
 export type OpenedLandingTree = { path: string; branch: string; tip: string }
 
-function terminalRunNumberAt(path: string): number | null {
+function terminalRunAt(path: string): { recordId: string; job: string } | null {
   const spellings = worktreePathSpellings(db(), path)
   if (spellings.length === 0) return null
   const rows = db()
     .query(
-      `SELECT root.number,owner.status status FROM run owner
+      `SELECT owner.record_id recordId,owner.job,owner.status status FROM run owner
        JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
        WHERE owner.worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY owner.number DESC`,
     )
-    .all(...spellings) as { number: number; status: string }[]
-  return rows.find(({ status }) => TERMINAL_RUN_STATUS_SET.has(status))?.number ?? null
+    .all(...spellings) as { recordId: string; job: string; status: string }[]
+  return rows.find(({ status }) => TERMINAL_RUN_STATUS_SET.has(status)) ?? null
 }
 
 function refuseExistingLandingTree(
@@ -105,7 +105,7 @@ function refuseExistingLandingTree(
     landingTreeExistingCheckoutRefusal({
       branch,
       path,
-      terminalRunNumber: terminalRunNumberAt(path),
+      terminalRun: terminalRunAt(path),
       retryCommand,
     }),
   )
@@ -188,6 +188,7 @@ function finishLandingTreeOpen(
 }
 
 export function openLandingTree(runId: string, seed?: string): OpenedLandingTree {
+  const retryCommand = `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`
   const { root, latest } = landingTreeSourceRun(runId),
     { project, branch, plan } = resolveLandingTarget(runId, root, latest)
   const tool = resolvedWorktreeTool(project)
@@ -214,13 +215,9 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
     branch,
     conversationRootId: null,
     projectId: project.recordId,
-    retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
+    retryCommand,
   })
-  refuseExistingLandingTree(
-    project.path,
-    branch,
-    `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
-  )
+  refuseExistingLandingTree(project.path, branch, retryCommand)
   const database = writableDb(),
     startedAt = nowIso(),
     prompt = `landing tree for run ${runId}`
@@ -307,7 +304,7 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
         branch,
         conversationRootId: null,
         projectId: project.recordId,
-        retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
+        retryCommand,
       })
       prepareResumeBranchIfNeeded(project.path, plan)
       return createWorkerWorktree({

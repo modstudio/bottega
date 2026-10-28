@@ -60,7 +60,7 @@ import {
   heldConversationCloseOutResult,
 } from './close-out-report.ts'
 import {
-  aliveConversationTurns,
+  coordinatorLeaseHold,
   liveCloseOutResult,
   missingTreeConversationResult,
   liveOwnerRefusalText as ownerText,
@@ -69,17 +69,17 @@ import {
   archiveReaderScratchForRelease,
   extractionRunId,
   prepareReaderScratchCloseOut,
+  readerScratchDryRunResult,
   readerScratchReleaseDetail,
 } from './reader-scratch-close-out.ts'
 import {
   retainedBranchForCloseOut,
   retainedBranchPruneCommand,
   retainedBranchReason,
+  retainedRefForRun,
 } from './retained-branch.ts'
-import { preArchiveHold } from './tree-process-cwd-hold.ts'
+import { treeProcessCwdHold } from './tree-process-cwd-hold.ts'
 
-const retainedRefForRun = (tip: string | null, runId: string) =>
-  tip ? `refs/orch/retained/${runId}` : null
 const CONVERSATION_IDS_SQL =
   'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number'
 
@@ -757,23 +757,24 @@ function attemptCloseOutRun(
               treePath,
               repoRoot,
               baseCommit: readerBaseCommit,
-              dryRun: Boolean(options.dryRun),
+              dryRun: false,
             })
             if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.
-            const owner = aliveConversationTurns(row.root_record_id).find(
-              (turn) => turn.pid !== process.pid,
-            )
-            if (owner)
-              return {
-                runId: row.root_record_id,
-                worktree: treePath,
-                outcome: 'live' as const,
-                detail: `coordinator lease for run ${ownerText([owner]).replace('\n', ' is still held\n')}`,
-              }
-            terminateRunProcesses(row.record_id, [process.pid])
-            const hold = preArchiveHold(landingReleaseInput, treeAbsent, processInventory.rows)
+            const ownerHold = coordinatorLeaseHold(row.root_record_id, treePath, process.pid)
+            if (ownerHold) return ownerHold
+            if (!options.dryRun) terminateRunProcesses(row.record_id, [process.pid])
+            const hold =
+              landingTreeReleaseHold(landingReleaseInput) ??
+              treeProcessCwdHold({ ...landingReleaseInput, treeAbsent })
             if (hold) return hold
+            if (options.dryRun)
+              return readerScratchDryRunResult(
+                row.root_record_id,
+                treePath,
+                treeAbsent,
+                scratch.archive !== null,
+              )
             const archive = archiveReaderScratchForRelease({
               runId: extractionRunId(row),
               treePath,

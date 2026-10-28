@@ -15,12 +15,11 @@ export const cleanupBoundarySpecs = [
       'node:path',
       '../../../shared/brand.ts',
       '../resources/process-inventory.ts',
-      './close-out-release-holds.ts',
       './tree-process-cwd-decision.ts',
     ],
     typeOnlyAllowed: [],
     reason:
-      'Keep process cwd observation independent of stores, routing, transports, and worktree removal.',
+      'Keep process cwd observation independent of stores, routing, transports, and removal mechanics.',
   },
   {
     name: 'session-adopt-boundary',
@@ -177,6 +176,7 @@ export const cleanupBoundarySpecs = [
       './claim-reconciliation.ts',
       './project-sweep.ts',
       '../close/close-out.ts',
+      '../close/tree-process-cwd-hold.ts',
       '../board/board-service.ts',
       '../board/board-claim-service.ts',
       '../board/board-reach.ts',

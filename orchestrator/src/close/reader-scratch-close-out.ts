@@ -177,6 +177,17 @@ export function prepareReaderScratchCloseOut(input: {
   return { proceed: true, archive: plan.action === 'archive' ? plan.plan : null }
 }
 
+export function readerScratchDryRunResult(
+  runId: string,
+  treePath: string,
+  treeAbsent: boolean,
+  archive: boolean,
+): ScratchCloseOutResult {
+  const result = dryRunReleaseResult(runId, treePath, treeAbsent)
+  if (archive) result.detail = 'would archive whole reader clone and release its claims'
+  return result
+}
+
 function archiveDestination(runId: string, now = new Date()): string {
   const timestamp = now.toISOString().replaceAll(':', '').replaceAll('.', '')
   return join(dirname(RUNS_DIR), 'archive', 'reader-clones', `${runId}-${timestamp}`)

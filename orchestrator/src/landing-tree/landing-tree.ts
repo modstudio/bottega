@@ -4,7 +4,7 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { isOperatorSession } from '../../../shared/caller-classification.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
+import { isSyntheticLifecycleJob, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { WorktreeCreate } from '../worktree/worktree-template.ts'
 import { createHasPlaceholder } from '../worktree/worktree-template.ts'
 
@@ -69,15 +69,18 @@ export function landingTreeOpeningRefusal(input: {
 export function landingTreeExistingCheckoutRefusal(input: {
   branch: string
   path: string
-  terminalRunNumber: number | null
+  terminalRun: { recordId: string; job: string } | null
   retryCommand: string
 }): string {
-  if (input.terminalRunNumber === null) {
+  if (input.terminalRun === null) {
     return `branch ${input.branch} already has a live tree at ${input.path}; use that path or release it with ${PLATFORM_SLUG} tree remove ${input.path}`
   }
+  const releaseCommand = isSyntheticLifecycleJob(input.terminalRun.job)
+    ? `${PLATFORM_SLUG} tree remove ${input.path}`
+    : `${PLATFORM_SLUG} run close-out ${input.terminalRun.recordId}`
   return (
-    `branch ${input.branch} already has a live tree at ${input.path}, recorded for terminal run ${input.terminalRunNumber}; ` +
-    `close-out releases that tree when nothing runs in it; run ${PLATFORM_SLUG} tree remove ${input.path}, then ${input.retryCommand}`
+    `branch ${input.branch} already has a live tree at ${input.path}, recorded for terminal run ${input.terminalRun.recordId}; ` +
+    `close-out releases that tree when nothing runs in it; run ${releaseCommand}, then ${input.retryCommand}`
   )
 }
 

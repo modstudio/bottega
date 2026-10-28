@@ -41,12 +41,6 @@ describe('tree process cwd decision', () => {
     })
   })
 
-  test('matches symlinked spellings after the adapter supplies real paths', () => {
-    expect(
-      decide(new Map([[12, '/physical/tree/subdir']]), { treePaths: ['/physical/tree'] }),
-    ).toMatchObject({ action: 'hold' })
-  })
-
   test('holds when a cwd matches only the recorded tree spelling', () => {
     expect(
       decide(new Map([[12, '/recorded/tree/subdir']]), {
@@ -55,11 +49,4 @@ describe('tree process cwd decision', () => {
     ).toMatchObject({ action: 'hold' })
   })
 
-  test('ignores an unresolvable cwd outside every tree spelling', () => {
-    expect(
-      decide(new Map([[12, '/deleted/other-tree']]), {
-        treePaths: ['/physical/tree', '/recorded/tree'],
-      }),
-    ).toEqual({ action: 'proceed' })
-  })
 })

@@ -91,6 +91,21 @@ export function liveCloseOutResult(
   }
 }
 
+export function coordinatorLeaseHold(
+  runId: string,
+  treePath: string,
+  ownPid: number,
+): ConversationCloseOutResult | null {
+  const owner = aliveConversationTurns(runId).find((turn) => turn.pid !== ownPid)
+  if (!owner) return null
+  return {
+    runId,
+    worktree: treePath,
+    outcome: 'live',
+    detail: `coordinator lease for run ${liveOwnerRefusalText([owner]).replace('\n', ' is still held\n')}`,
+  }
+}
+
 export function missingTreeConversationResult(
   rootId: string,
   treePath: string | null,
