@@ -63,6 +63,7 @@ import {
   aliveConversationTurns,
   liveCloseOutResult,
   missingTreeConversationResult,
+  liveOwnerRefusalText as ownerText,
 } from './conversation-liveness.ts'
 import {
   archiveReaderScratchForRelease,
@@ -102,6 +103,7 @@ type CloseOutOptions = {
 }
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
+type RunIdRow = { record_id: string }
 
 function conversationKeepTreeHold(rootId: string, now: string): ConversationKeepTreeHold {
   const rows = db()
@@ -593,7 +595,7 @@ function attemptCloseOutRun(
         detail: `branch retained at ${tip}`,
         allocationKey: `refs/heads/${retainedBranch}`,
       })
-      if (retainedRef) {
+      if (retainedRef)
         recordRetainedRefClaim(db(), {
           rootRunId: row.root_record_id,
           runId: row.record_id,
@@ -602,7 +604,6 @@ function attemptCloseOutRun(
           tip,
           claimedAt: nowIso(),
         })
-      }
     })
   }
   const absentTree = absentTreeCloseOut({
@@ -624,9 +625,7 @@ function attemptCloseOutRun(
       detail: 'repository root not found',
     }
   const conversationIds = (
-    db().query(CONVERSATION_IDS_SQL).all(row.root_record_id, row.root_record_id) as {
-      record_id: string
-    }[]
+    db().query(CONVERSATION_IDS_SQL).all(row.root_record_id, row.root_record_id) as RunIdRow[]
   ).map((turn) => turn.record_id)
   const ownershipResult = presentTreeOwnershipResult({
     treeAbsent,
@@ -646,8 +645,7 @@ function attemptCloseOutRun(
     const conversation = aliveConversationTurns(row.root_record_id)
     return [...conversation, ...sharers]
   }
-  const live = liveRows()
-  const liveResult = liveCloseOutResult(row.root_record_id, treePath, live)
+  const liveResult = liveCloseOutResult(row.root_record_id, treePath, liveRows())
   if (liveResult) return liveResult
   // Every recorded spelling of this tree, not one string: a trailing separator
   // or an unresolved symlink makes two rows for one worktree, and matching only
@@ -757,15 +755,15 @@ function attemptCloseOutRun(
             })
             if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.
-            const liveCoordinator = aliveConversationTurns(row.root_record_id).find(
+            const owner = aliveConversationTurns(row.root_record_id).find(
               (turn) => turn.pid !== process.pid,
             )
-            if (liveCoordinator)
+            if (owner)
               return {
                 runId: row.root_record_id,
                 worktree: treePath,
                 outcome: 'live' as const,
-                detail: `coordinator lease for run ${liveCoordinator.record_id} is still held`,
+                detail: `coordinator lease for run ${ownerText([owner]).replace('\n', ' is still held\n')}`,
               }
             terminateRunProcesses(row.record_id, [process.pid])
             const landingHold = landingTreeReleaseHold(landingReleaseInput)
@@ -881,16 +879,13 @@ function attemptCloseOutRun(
                 detail: result.detail,
               })
             const acquired = liveRows()
-            if (acquired.length) {
+            if (acquired.length)
               return {
                 runId: row.root_record_id,
                 worktree: treePath,
                 outcome: 'failed' as const,
-                detail:
-                  `worktree was acquired during cleanup by run(s): ` +
-                  acquired.map((owner) => `${owner.record_id} (${owner.status})`).join(', '),
+                detail: `worktree was acquired during cleanup by run(s): ${ownerText(acquired)}`,
               }
-            }
             const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
             released.detail = readerScratchReleaseDetail(released.detail, archivedScratchPath)
             return released
