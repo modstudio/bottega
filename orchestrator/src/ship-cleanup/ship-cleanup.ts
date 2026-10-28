@@ -66,7 +66,7 @@ type RunRow = {
 export type ShipCleanupReport = {
   project: string
   branch: string
-  landingBranch: string
+  landingBranch: string | null
   mainCheckoutPath: string
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
@@ -187,7 +187,7 @@ function recordedLanding(
 function emptyReport(
   project: string,
   branch: string,
-  landingBranch: string,
+  landingBranch: string | null,
   mainCheckoutPath: string,
 ): ShipCleanupReport {
   return {
@@ -710,7 +710,12 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
     adapter,
   })
   const decisions = decideShipCleanup(taskKey ?? '', landedBranches, landingMergedAt, facts)
-  const report = emptyReport(project.name, branch, project.settings.trunk!, project.path)
+  const report = emptyReport(
+    project.name,
+    branch,
+    project.settings.trunk?.trim() || null,
+    project.path,
+  )
   const callerLandingTreePath = callerLandingTree(decisions, adapter)
   reportKeptRuns(decisions, report, callerLandingTreePath)
   const worktreePaths = closableWorktreePaths(decisions)
@@ -759,6 +764,12 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
   return report
 }
 
+function deployFromLine(report: ShipCleanupReport): string {
+  return report.landingBranch
+    ? `deploy from: the landing branch ${report.landingBranch} — pull it in the main checkout ${report.mainCheckoutPath}, or run ${PLATFORM_SLUG} tree create --base origin/${report.landingBranch}`
+    : `deploy from: the merged landing branch — the register declares none (settings.trunk); pull it in the main checkout ${report.mainCheckoutPath} once it is declared`
+}
+
 export function formatShipCleanup(report: ShipCleanupReport): string {
   const lines = [
     `ship cleanup ${report.project}/${report.branch}`,
@@ -769,9 +780,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
   for (const path of report.removed.worktrees) lines.push(`released tree: ${path}`)
   if (report.removed.worktrees.length) {
-    lines.push(
-      `deploy from: the landing branch ${report.landingBranch} — pull it in the main checkout ${report.mainCheckoutPath}, or run ${PLATFORM_SLUG} tree create --base origin/${report.landingBranch}`,
-    )
+    lines.push(deployFromLine(report))
   }
   for (const branch of report.gone) lines.push(`already gone: ${branch}`)
   for (const item of report.kept.filter((item) => item.owner === 'caller-landing-tree')) {

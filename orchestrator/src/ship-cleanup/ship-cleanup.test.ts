@@ -40,6 +40,11 @@ test('ship cleanup output names each released tree and where to deploy from', ()
   expect(output).toContain(
     `deploy from: the landing branch main — pull it in the main checkout /projects/ship-fixture, or run ${PLATFORM_SLUG} tree create --base origin/main`,
   )
+  const outputWithoutDeclaredTrunk = formatShipCleanup({ ...report, landingBranch: null })
+  expect(outputWithoutDeclaredTrunk).toContain(
+    'deploy from: the merged landing branch — the register declares none (settings.trunk); pull it in the main checkout /projects/ship-fixture once it is declared',
+  )
+  expect(outputWithoutDeclaredTrunk).not.toContain('undefined')
   expect(
     formatShipCleanup({
       ...report,
