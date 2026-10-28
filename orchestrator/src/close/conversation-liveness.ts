@@ -28,6 +28,12 @@ type ConversationCloseOutResult = {
   detail: string
 }
 
+type LiveOwner = {
+  record_id: string
+  status: string
+  relation?: 'worktree' | 'cwd' | 'launch_cwd'
+}
+
 export function aliveConversationTurns(rootId: string): AliveTurn[] {
   const turns = db()
     .query(
@@ -53,34 +59,35 @@ export function aliveConversationTurns(rootId: string): AliveTurn[] {
   )
 }
 
-export function liveCloseOutResult(
-  runId: string,
-  treePath: string | null,
-  live: {
-    record_id: string
-    status: string
-    relation?: 'worktree' | 'cwd' | 'launch_cwd'
-  }[],
-): ConversationCloseOutResult | null {
-  if (!live.length) return null
-  const relationPhrase = (relation: (typeof live)[number]['relation']): string => {
+export function liveOwnerRefusalText(live: LiveOwner[]): string {
+  const relationPhrase = (relation: LiveOwner['relation']): string => {
     if (relation === 'worktree') return 'runs in this tree'
     if (relation === 'cwd') return 'works in this tree'
     if (relation === 'launch_cwd')
       return 'launched from this tree; its confinement watches this checkout'
     return 'this conversation'
   }
+  return (
+    `${live
+      .map((owner) => `${owner.record_id} (${owner.status}, ${relationPhrase(owner.relation)})`)
+      .join(', ')}\n` +
+    `cleared by: ${live
+      .map((owner) => `${PLATFORM_SLUG} run wait ${owner.record_id}`)
+      .join(', ')}, then rerun this command`
+  )
+}
+
+export function liveCloseOutResult(
+  runId: string,
+  treePath: string | null,
+  live: LiveOwner[],
+): ConversationCloseOutResult | null {
+  if (!live.length) return null
   return {
     runId,
     worktree: treePath,
     outcome: 'live',
-    detail:
-      `live run(s): ${live
-        .map((owner) => `${owner.record_id} (${owner.status}, ${relationPhrase(owner.relation)})`)
-        .join(', ')}\n` +
-      `cleared by: ${live
-        .map((owner) => `${PLATFORM_SLUG} run wait ${owner.record_id}`)
-        .join(', ')}, then rerun this command`,
+    detail: `live run(s): ${liveOwnerRefusalText(live)}`,
   }
 }
 
