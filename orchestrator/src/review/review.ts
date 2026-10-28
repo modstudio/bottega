@@ -537,16 +537,6 @@ function reviewProjectName(database: Database, projectRecordId: string | null): 
   )
 }
 
-function reviewTierSizeValues(
-  tier: NonNullable<ReturnType<typeof measureReviewChange>>['tier'] | null,
-): { size: number | null; insertions: number | null; deletions: number | null } {
-  return {
-    size: tier?.size ?? null,
-    insertions: tier?.insertions ?? null,
-    deletions: tier?.deletions ?? null,
-  }
-}
-
 export function recordReviews(
   entries: { runId: string; output: ReviewReply }[],
   database: Database = writableDb(),
@@ -607,9 +597,9 @@ export function recordReviews(
         nowIso(),
         tier?.tier ?? null,
         tier?.risk ?? null,
-        reviewTierSizeValues(tier).size,
-        reviewTierSizeValues(tier).insertions,
-        reviewTierSizeValues(tier).deletions,
+        tier?.size ?? null,
+        tier?.insertions ?? null,
+        tier?.deletions ?? null,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
         projectRecordId,
