@@ -25,7 +25,7 @@ function realWorkingDirectories(values: ReadonlyMap<number, string>): {
   return { values: resolved, error: null }
 }
 
-export function treeCwdHold(
+function treeCwdHold(
   runId: string,
   treePath: string,
   treeAbsent: boolean,
