@@ -9,7 +9,7 @@ import { serveAsk } from '../ask/ask.ts'
 import { setupAskCommand } from '../ask/ask-commands.ts'
 import { writeAskServerFailure } from '../ask/ask-failure.ts'
 import { checkCommand } from '../check/check-commands.ts'
-import { parseContinueArgs } from '../cli/args.ts'
+import { parseContinueArgs, refusedOwnerOptions } from '../cli/args.ts'
 import { closeOutCommand } from '../close/close-out-command.ts'
 import { peekCommand, resultCommand, waitCommand } from '../collect/collection-commands.ts'
 import { contractCommand } from '../contract/contract-command.ts'
@@ -93,7 +93,23 @@ const runFlags = (options: OptionValues) => ({
   quiet: Boolean(options.quiet),
 })
 const tellByIdentifier = (id: string, command: Command, ping: boolean) =>
-  tellCommand(localRunId(id), rawArgv(command).slice(2), ping, presentation)
+  tellCommand(
+    localRunId(id),
+    rawArgv(command).slice(2),
+    ping,
+    presentation,
+    refusedOwnerOptions(command, 'run tell', 'run'),
+  )
+const answerByIdentifier = (id: string, command: Command, options: OptionValues) =>
+  answerCommand(
+    resolveAnswerIdentifier(db(), id, sessionId()),
+    rawArgv(command).slice(2),
+    Boolean(options.recordOnly),
+    Boolean(options.json),
+    runFlags(options),
+    presentation,
+    refusedOwnerOptions(command, 'question answer', 'question'),
+  )
 const relayByIdentifier = (id: string, command: Command, note: string) =>
   relayCommand(localRunId(id), rawArgv(command).slice(2), note, presentation, (question) =>
     resolveQuestionIdentifier(db(), question),
@@ -545,14 +561,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
       ),
     )
   answerCommandDefinition(program).action((id, _message, options, command) =>
-    answerCommand(
-      resolveAnswerIdentifier(db(), id, sessionId()),
-      rawArgv(command).slice(2),
-      Boolean(options.recordOnly),
-      Boolean(options.json),
-      runFlags(options),
-      presentation,
-    ),
+    answerByIdentifier(id, command, options),
   )
   describedCommand(program, 'continue <id> [message...]', 'continue a finished run as another turn')
     .allowUnknownOption(true)

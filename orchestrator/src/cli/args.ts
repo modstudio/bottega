@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ANSWER_CHANNEL_CLI,
@@ -250,6 +251,38 @@ const ANSWER_BOOLEANS = new Set([
   '--json',
 ])
 
+function refuseOwnedMessageOption(
+  arg: string,
+  refusedOptions: Readonly<Record<string, string>> | undefined,
+): void {
+  const optionName = arg.split('=', 1)[0]!
+  const refusal = refusedOptions?.[optionName]
+  if (refusal) throw new Error(refusal)
+}
+
+/** Derive flag-shaped text that belongs to another registered owner command. */
+export function refusedOwnerOptions(
+  command: Command,
+  publicCommand: string,
+  publicGroup: string,
+): Readonly<Record<string, string>> {
+  let root = command
+  while (root.parent) root = root.parent
+  const own = new Set(command.options.map((option) => option.long).filter(Boolean))
+  const refused: Record<string, string> = {}
+  const visit = (candidate: Command): void => {
+    for (const option of candidate.options) {
+      if (!option.long || own.has(option.long) || refused[option.long]) continue
+      refused[option.long] =
+        `${option.long} is not an option of ${publicCommand}; ` +
+        `see ${PLATFORM_SLUG} ${publicGroup} --help`
+    }
+    for (const child of candidate.commands) visit(child)
+  }
+  for (const child of root.commands) visit(child)
+  return refused
+}
+
 export function parseAnswerChannelArgs(args: string[]): {
   argv: string[]
   channel: AnswerChannel
@@ -279,6 +312,7 @@ export function parseWorkerMessageArgs(
     booleans?: Iterable<string>
     questions?: boolean
     questionOperatorFlags?: boolean
+    refusedOptions?: Readonly<Record<string, string>>
     usage?: string
   } = {},
 ): AnswerTextSources {
@@ -298,6 +332,7 @@ export function parseWorkerMessageArgs(
       positionals.push(arg)
       continue
     }
+    refuseOwnedMessageOption(arg, options.refusedOptions)
     const operatorIdentifier = operatorQuestionIdentifier(
       arg,
       options.questionOperatorFlags ?? false,
@@ -365,11 +400,15 @@ export function parseContinueArgs(args: string[], usage: string): ContinueArgs {
   return { identifier, sources: { commandFile, positionals } }
 }
 
-export function parseAnswerTextSources(args: string[]): AnswerTextSources {
+export function parseAnswerTextSources(
+  args: string[],
+  refusedOptions?: Readonly<Record<string, string>>,
+): AnswerTextSources {
   return parseWorkerMessageArgs(args, {
     booleans: ANSWER_BOOLEANS,
     questions: true,
     questionOperatorFlags: true,
+    refusedOptions,
   })
 }
 

@@ -371,5 +371,6 @@ export function register(program: Command, presentation = reviewPresentation): v
   registerReviewEvidence(review, run)
   registerReviewOperations(review, run)
   registerReviewRestore(review, run, presentation)
+  for (const command of review.commands) command.allowUnknownOption(false)
   registerConfinement(program)
 }

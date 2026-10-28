@@ -12,6 +12,7 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { mergePullRequest } from '../pull-request/pr-merge.ts'
+import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { log } from './support.ts'
 
 const forbiddenGithubFlag = (value: string): string | null => {
@@ -49,7 +50,12 @@ export function pullRequestCiCommandOutcome(result: {
 
 function createPullRequestCommand(
   githubArgs: string[],
-  options: { overrideTriage?: string; ceilingRuling?: string; fromOperator?: boolean },
+  options: {
+    cwd?: string
+    overrideTriage?: string
+    ceilingRuling?: string
+    fromOperator?: boolean
+  },
 ): void {
   validateGithubArguments(githubArgs)
   const result = createPullRequest(
@@ -59,7 +65,7 @@ function createPullRequestCommand(
       ceilingRuling: options.ceilingRuling,
       fromOperator: options.fromOperator,
     },
-    process.cwd(),
+    resolveReviewCommandCwd(options.cwd),
   )
   if (result.output) log(result.output)
   if (result.overrideId !== null) {
@@ -73,6 +79,7 @@ export function register(program: Command): void {
   pr.command('create [githubArgs...]')
     .description('create a pull request after review-triage admission')
     .allowUnknownOption(true)
+    .option('--cwd <tree>', 'verify and create from this worktree')
     .option('--override-triage <reason>', 'admit incomplete review triage for this reason')
     .option('--ceiling-ruling <reason>', 'admit remaining review gaps at the round ceiling')
     .option('--from-operator', 'confirm the override came directly from the operator')
@@ -83,7 +90,7 @@ export function register(program: Command): void {
     .option('--cwd <tree>', 'verify and merge from this worktree')
     .allowExcessArguments(false)
     .action((target: string, options) => {
-      const outcome = mergePullRequest(target, options.cwd ?? process.cwd())
+      const outcome = mergePullRequest(target, resolveReviewCommandCwd(options.cwd))
       log(outcome.output)
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     })

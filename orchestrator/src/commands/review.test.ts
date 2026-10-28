@@ -34,6 +34,15 @@ test('confinement clear rejects --agent, --job, --mcp, and --json', async () => 
   }
 })
 
+test('review subcommands refuse unknown options inherited from the review group', async () => {
+  const program = new Command().exitOverride()
+  register(program)
+
+  await expect(
+    program.parseAsync(['node', 'orch', 'review', 'list', '--cwd', '/tmp/other-tree']),
+  ).rejects.toThrow("unknown option '--cwd'")
+})
+
 test('confinement clear without --writer or --note still prints the clear usage', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const number = (

@@ -17,10 +17,12 @@ export async function tellCommand(
   argv: string[],
   ping: boolean,
   presentation: { log(value: string): void },
+  refusedOptions?: Readonly<Record<string, string>>,
 ): Promise<void> {
   const sources = parseWorkerMessageArgs(argv, {
     usage: `${PLATFORM_SLUG} run tell <run-id> ["<message>"] [--file PATH] [--ping]`,
     booleans: ['--ping'],
+    refusedOptions,
   })
   const body = (await readMessageText({
     missing: 'no message: pass it as an argument, via --file, or on stdin',

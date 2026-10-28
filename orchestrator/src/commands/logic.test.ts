@@ -2,13 +2,73 @@ import { expect, test } from 'bun:test'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { Command } from 'commander'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
-import { db } from '../database/db.ts'
+import { db, sessionId } from '../database/db.ts'
 import { register } from './logic.ts'
+import { register as registerRunTaskLinking } from './run-task-linking.ts'
 import { setRawArgv } from './support.ts'
 
 const trackResidue = trackedTestResidue()
+
+test('answer refuses a question-sibling option instead of recording it as ruling text', async () => {
+  const recordId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: sessionId(),
+  })
+  db()
+    .query(
+      `INSERT INTO question (record_id,number,run_record_id,asked_at,question)
+       VALUES (?,1849,?,'2026-10-28','Which option?')`,
+    )
+    .run(newRecordId(), recordId)
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number }
+  ).number
+  const program = new Command().exitOverride()
+  register(program)
+  const argv = ['node', 'orch', 'answer', String(number), '--cwd=/tmp/other-tree']
+  setRawArgv(argv.slice(2))
+
+  await expect(program.parseAsync(argv)).rejects.toThrow(
+    `--cwd is not an option of question answer; see ${PLATFORM_SLUG} question --help`,
+  )
+})
+
+test('tell refuses a run-sibling option instead of queuing it as message text', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number }
+  ).number
+  const program = new Command().exitOverride()
+  register(program)
+  const argv = ['node', 'orch', 'tell', String(number), '--json=1']
+  setRawArgv(argv.slice(2))
+
+  await expect(program.parseAsync(argv)).rejects.toThrow(
+    `--json is not an option of run tell; see ${PLATFORM_SLUG} run --help`,
+  )
+})
+
+test('tell derives refusals from newly registered owner options', async () => {
+  const recordId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const number = (
+    db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number }
+  ).number
+  const program = new Command().exitOverride()
+  register(program)
+  registerRunTaskLinking(program)
+  const argv = ['node', 'orch', 'tell', String(number), '--dry-run']
+  setRawArgv(argv.slice(2))
+
+  await expect(program.parseAsync(argv)).rejects.toThrow(
+    `--dry-run is not an option of run tell; see ${PLATFORM_SLUG} run --help`,
+  )
+})
 
 test('continue parses --findings before the message and hands the rendered text to continuation', async () => {
   const recordId = addRun({ agent: 'codex', job: 'implement', status: 'asking' })

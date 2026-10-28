@@ -139,7 +139,8 @@ export function recordArchitectReadCommand(
   flags: Flags,
   presentation: Presentation,
 ): void {
-  if (argv.length !== 2) throw new Error(`${PLATFORM_SLUG} review read [--sha <tip>] --note <text>`)
+  if (argv.length !== 2)
+    throw new Error(`${PLATFORM_SLUG} review read [--cwd <tree>] [--sha <tip>] --note <text>`)
   const recordId = recordArchitectRead({
     cwd: resolveReviewCommandCwd(flags.flag('cwd')),
     sha: flags.flag('sha'),

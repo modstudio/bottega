@@ -85,9 +85,10 @@ export async function answerInputFromArgv(
   json: boolean,
   flags: Flags,
   helpers: Pick<ReturnType<typeof answerRunHelpers>, 'readWorkerFile' | 'readMessageText'>,
+  refusedOptions?: Readonly<Record<string, string>>,
 ): Promise<AnswerRunInput> {
   const channelArgs = parseAnswerChannelArgs(argv)
-  const parsed = parseAnswerTextSources(channelArgs.argv)
+  const parsed = parseAnswerTextSources(channelArgs.argv, refusedOptions)
   const fromOperator = channelArgs.argv.includes('--from-operator')
   const operatorQuestionIds = (parsed.fromOperatorIds ?? []).map((identifier) => ({
     identifier,
@@ -204,9 +205,10 @@ export async function answerCommand(
   json: boolean,
   flags: Flags,
   presentation: Presentation,
+  refusedOptions?: Readonly<Record<string, string>>,
 ): Promise<void> {
   const helpers = answerRunHelpers(presentation)
-  const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers)
+  const input = await answerInputFromArgv(argv, recordOnly, json, flags, helpers, refusedOptions)
   const questions = answeredQuestions(id, input)
   const result = await answerRun(id, input, helpers)
   if (json) console.log(JSON.stringify(result))
