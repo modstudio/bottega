@@ -375,13 +375,15 @@ export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
       value: (qualityPoints / 5) * Math.log(rule.rate) - Math.log(Math.max(cost, Number.EPSILON)),
     }
   })
+  /** NOISE_BAND is in shrunk-score units; a quality value is that score over the beta scale. */
+  const qualityNoise = noiseBand / betaScale
   const bestValue = Math.max(...utility.map((row) => row.value))
   const utilityBest = utility
     .filter((row) => row.value === bestValue)
     .sort((a, b) => routeCandidateTieOrder(a.candidate, b.candidate))[0]!
   const cheaper = utility.filter(
     (row) =>
-      row.candidate.qualityValue >= utilityBest.candidate.qualityValue - noiseBand &&
+      row.candidate.qualityValue >= utilityBest.candidate.qualityValue - qualityNoise &&
       row.cost * COST_NOISE_MULTIPLE < utilityBest.cost,
   )
   let provisional = utilityBest
@@ -392,7 +394,7 @@ export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
       .sort((a, b) => routeCandidateTieOrder(a.candidate, b.candidate))[0]!
   }
   const withinNoise = (left: (typeof utility)[number], right: (typeof utility)[number]) =>
-    Math.abs(left.candidate.qualityValue - right.candidate.qualityValue) <= noiseBand &&
+    Math.abs(left.candidate.qualityValue - right.candidate.qualityValue) <= qualityNoise &&
     Math.max(left.cost, right.cost) <= Math.min(left.cost, right.cost) * COST_NOISE_MULTIPLE
   const chosen = utility
     .filter((row) => withinNoise(row, provisional))

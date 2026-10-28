@@ -47,6 +47,9 @@ describe('cost policy selection', () => {
     expect(worthwhile.chosen.agent).toBe('worthwhile')
     expect(worthwhile.tied).toBe(1)
 
+    const justBeyondNoise = select([baseline, candidate('just-beyond-noise', 92, 1.2)], 1.25)
+    expect(justBeyondNoise.chosen.agent).toBe('just-beyond-noise')
+
     const excessive = select([baseline, candidate('excessive', 96, 2.1)], 1.25)
     expect(excessive.chosen.agent).toBe('baseline')
     expect(excessive.tied).toBe(1)
