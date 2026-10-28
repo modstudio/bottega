@@ -10,6 +10,30 @@ export type CoolingFailure = {
   mins_ago: number
 }
 
+const PROVIDER_ERROR_STREAK = 3
+
+export type RecentTerminalRun = {
+  agent: string
+  status: string
+  failure_kind: string | null
+  mins_ago: number
+}
+
+/** Repeated provider errors cool only when they are the agent's uninterrupted latest streak. */
+export function providerErrorStreakCooling(
+  rows: readonly RecentTerminalRun[],
+): CoolingFailure | null {
+  if (rows.length < PROVIDER_ERROR_STREAK) return null
+  const recent = rows.slice(0, PROVIDER_ERROR_STREAK)
+  if (!recent.every((row) => row.status === 'failed' && row.failure_kind === 'provider_error'))
+    return null
+  return {
+    agent: recent[0]!.agent,
+    failure_kind: 'provider_error',
+    mins_ago: recent[0]!.mins_ago,
+  }
+}
+
 const coolsDownSql = () => COOLS_DOWN.map((kind) => `'${kind}'`).join(',')
 
 export function coolingFailures(d: Database, cooldownMinutes: number): Map<string, CoolingFailure> {
@@ -44,7 +68,33 @@ export function coolingFailures(d: Database, cooldownMinutes: number): Map<strin
               )`,
     )
     .all(cooldownMinutes) as CoolingFailure[]
-  return new Map(rows.map((row) => [row.agent, row]))
+  const result = new Map(rows.map((row) => [row.agent, row]))
+  const recentRows = d
+    .query(
+      `WITH terminal AS (
+         SELECT record_id,agent,status,failure_kind,
+                (julianday('now') - (julianday(started_at) + latency_ms / 86400000.0)) * 1440 AS mins_ago,
+                ROW_NUMBER() OVER (
+                  PARTITION BY agent
+                  ORDER BY julianday(started_at) + latency_ms / 86400000.0 DESC, record_id DESC
+                ) AS recency
+           FROM run
+          WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
+            AND job NOT LIKE 'agent-probe-%'
+       )
+       SELECT agent,status,failure_kind,mins_ago
+         FROM terminal
+        WHERE recency <= ?
+        ORDER BY agent,recency`,
+    )
+    .all(PROVIDER_ERROR_STREAK) as RecentTerminalRun[]
+  const byAgent = new Map<string, RecentTerminalRun[]>()
+  for (const row of recentRows) byAgent.set(row.agent, [...(byAgent.get(row.agent) ?? []), row])
+  for (const agentRows of byAgent.values()) {
+    const failure = providerErrorStreakCooling(agentRows)
+    if (failure && failure.mins_ago < cooldownMinutes) result.set(failure.agent, failure)
+  }
+  return result
 }
 
 export function coolingRefusal(

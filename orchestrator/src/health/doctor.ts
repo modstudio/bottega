@@ -50,7 +50,17 @@ type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {
   log(...values: unknown[]): void
   exitCode(code: number): void
-  candidates(job: string): { agent: string; eligible: boolean; cooling?: string | null }[]
+  candidates(job: string): {
+    agent: string
+    eligible: boolean
+    cooling?: string | null
+    billingHold?: {
+      secretName: string
+      baseUrl: string | null
+      agents: string[]
+      failingRunNumber: number
+    } | null
+  }[]
   pick(job: string): { agent: string }
   jobs(): string[]
   acpRuntimeGaps(): string | null
@@ -205,10 +215,21 @@ async function reportAgents(
   agentStatus: typeof doctorAgentStatus,
 ): Promise<void> {
   presentation.log('agents')
+  const routed = presentation.candidates('summarize')
+  const heldKeys = new Map(
+    routed.flatMap((candidate) => {
+      const hold = candidate.billingHold
+      return hold ? [[JSON.stringify([hold.secretName, hold.baseUrl]), hold] as const] : []
+    }),
+  )
+  for (const hold of heldKeys.values()) {
+    presentation.log(
+      `  HELD ${hold.secretName}: agents ${hold.agents.join(', ')}; billing failure on run ${hold.failingRunNumber}; ` +
+        `restore the balance, then run '${PLATFORM_SLUG} agent probe ${hold.agents[0]}' on any agent of that key`,
+    )
+  }
   for (const agent of Object.values(AGENTS)) {
-    const cooling = presentation
-      .candidates('summarize')
-      .find((candidate) => candidate.agent === agent.name)?.cooling
+    const cooling = routed.find((candidate) => candidate.agent === agent.name)?.cooling
     const why = unavailableReason(agent.name)
     const version = why === 'not installed' ? null : cliVersion(agent.bin)
     const old = version?.parsed && versionBelow(version.parsed, agent.minimumCliVersion)

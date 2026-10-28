@@ -23,6 +23,7 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import { billingKeyHoldRefusal, billingKeyHolds } from './billing-key-hold.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
   PROMPT_SIZE_BOUNDARY,
@@ -63,7 +64,12 @@ import {
   runUsageMedians,
 } from './route-statistics.ts'
 
-import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
+import {
+  type CoolingFailure,
+  coolingFailures,
+  coolingPhrase,
+  coolingRefusal,
+} from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
@@ -92,6 +98,8 @@ export type Candidate = {
   why: string
   /** Most recent uncleared quota or stale-auth failure. */
   cooling: string | null
+  /** Shared provider account currently held by a billing failure. */
+  billingHold: ReturnType<typeof billingKeyHolds>[number] | null
   declared: string[] | null
   preferred: boolean
   maxConcurrent: number | null
@@ -137,6 +145,18 @@ export const COOLDOWN_MIN = 60
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
+
+function operationalRoutingRefusal(
+  name: string,
+  billingHold: ReturnType<typeof billingKeyHolds>[number] | undefined,
+  cooling: string | null,
+  failure: CoolingFailure,
+  probeAgent: string | undefined,
+): string | null {
+  if (probeAgent === name) return null
+  if (billingHold) return billingKeyHoldRefusal(billingHold)
+  return cooling ? coolingRefusal(name, failure, COOLDOWN_MIN) : null
+}
 
 export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
   const rows = db()
@@ -381,6 +401,11 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
   const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
+  const billingHoldByAgent = new Map(
+    billingKeyHolds(db(), Object.values(AGENTS)).flatMap((hold) =>
+      hold.agents.map((agent) => [agent, hold] as const),
+    ),
+  )
   const runningByAgent = runningRunsByAgent()
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
@@ -405,6 +430,14 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
     const cooling = failure ? coolingPhrase(failure) : null
+    const billingHold = billingHoldByAgent.get(name)
+    const operationalRefusal = operationalRoutingRefusal(
+      name,
+      billingHold,
+      cooling,
+      failure!,
+      coolingProbeAgent,
+    )
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel, EVIDENCE_WINDOW)
     const recent = aggregateEvidence(window.rows)
@@ -421,9 +454,9 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
-    } else if (cooling && coolingProbeAgent !== name) {
+    } else if (operationalRefusal) {
       eligible = false
-      why = coolingRefusal(name, failure!, COOLDOWN_MIN)
+      why = operationalRefusal
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -487,6 +520,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       eligible,
       why,
       cooling,
+      billingHold: billingHold ?? null,
       declared,
       preferred: Boolean(a.preferredJobs?.includes(jobName)),
       maxConcurrent: a.maxConcurrent ?? null,

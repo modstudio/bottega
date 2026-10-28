@@ -485,6 +485,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const paths = runFilePaths(RUNS_DIR, Date.now(), unique, name, opts.job)
   const stamp = paths.output.slice(RUNS_DIR.length + 1, -4)
   let outPath = paths.output
+  const runProject = projectAt(callerCwd)
+  const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
   const claimedRun = await claimRun({
     opts,
     runsDir: RUNS_DIR,
@@ -520,6 +522,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     startedByUserId,
     replySchemaName,
     carriedQuestionIds: dispatchRulings.questionIds,
+    endpointKeySource: endpoint.key.source,
     precomputedLinks: dispatchRulings.links,
     assertDispatchAllowed: () => assertMigrationDispatchAllowed(db(), opts.resume !== undefined),
     recordDispatchRefusal: recordMigrationDispatchRefusal,
@@ -559,8 +562,6 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   ;[mcpConnection, usingMcp] = [claimedMcpConnection, claimedUsingMcp]
   if (name === HARNESS_AGENT)
     return harness.runningResult(claimedRun, reason, writesJob, callerCwd, runProjectName)
-  const runProject = projectAt(callerCwd)
-  const endpoint = effectiveEndpointApiKeyForRun(a, runProject)
   const writableRoots = acpWriter.runRoots(worktree, writesJob, writingAcp, scratchDir, runtimeDir)
   const checkpointContainment = acpWriter.prepareCheckpoint(worktree, writingAcp, runtimeDir)
   const brokerNeedsNetwork = Boolean(runProject?.settings.mainStack?.consumers?.includes('gate'))

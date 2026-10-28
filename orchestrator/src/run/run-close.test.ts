@@ -11,6 +11,7 @@ test('failover pins only an explicit transport and excludes agents that cannot h
       distinctModels: undefined,
       tried: ['tried'],
       transportExcluded: ['wrong-transport'],
+      billingExcluded: [],
     }),
   ).toEqual({
     pinnedTransport: 'acp',
@@ -26,6 +27,7 @@ test('failover pins only an explicit transport and excludes agents that cannot h
       distinctModels: undefined,
       tried: ['tried'],
       transportExcluded: ['wrong-transport'],
+      billingExcluded: [],
     }),
   ).toEqual({
     pinnedTransport: null,
@@ -33,6 +35,20 @@ test('failover pins only an explicit transport and excludes agents that cannot h
     avoidedAgents: ['avoided', 'tried'],
     distinctModels: undefined,
   })
+})
+
+test('failover excludes every agent sharing a failed billing key', () => {
+  expect(
+    failoverSelectionConstraints({
+      transport: null,
+      transportExplicit: 0,
+      avoided: undefined,
+      distinctModels: undefined,
+      tried: ['a'],
+      transportExcluded: [],
+      billingExcluded: ['a', 'b'],
+    }).avoidedAgents,
+  ).toEqual(['a', 'b'])
 })
 
 test('failover successor selection honors distinct model exclusions', async () => {

@@ -120,6 +120,11 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../failure/failure.ts',
   ]),
+  module('orchestrator/src/route/billing-key-hold.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../failure/failure.ts',
+  ]),
   module('orchestrator/src/route/training-data-eligibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',

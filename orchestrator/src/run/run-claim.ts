@@ -125,6 +125,11 @@ const explicitRunFlags = (opts: ClaimOptions) =>
 const reviewClaimBindings = (opts: ClaimOptions) =>
   [opts.review ?? null, opts.reviewRole ?? null] as const
 
+const endpointKeyIdentityBindings = (
+  identityColumns: ReturnType<typeof executorClaimFacts>['identityColumns'],
+  source: 'agent' | 'project',
+) => [...identityColumns, source]
+
 export type ClaimInput = {
   opts: ClaimOptions
   runsDir: string
@@ -160,6 +165,7 @@ export type ClaimInput = {
   startedByUserId: string | null
   replySchemaName: string
   carriedQuestionIds: string[]
+  endpointKeySource: 'agent' | 'project'
   precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null } | null
   assertDispatchAllowed(): void
   recordDispatchRefusal?(cause: unknown): void
@@ -360,7 +366,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
                         route_reason=?, branch=?, parent_run_record_id=?, turn=?, vendor_session=?, docs_injected=?, doc_revisions=?, canon_sha=?,
                         launch_cwd=?, launch_seed=?, launch_key=?, task_record_id=?, launch_base=?, no_failover=?,
                         automatic_failover=?, agent_explicit=?, transport_explicit=?, review_ref=?, review_role=?, pid=?, mcp=?, transport=?,
-                        executor=?, evidence_excluded=?, harness_wall_bound_ms=?
+                        executor=?, evidence_excluded=?, harness_wall_bound_ms=?, endpoint_key_source=?
           WHERE record_id=? AND status='running' AND agent='(pending)' RETURNING record_id, number`,
       )
       .get(
@@ -395,7 +401,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ...explicitRunFlags(opts),
         ...reviewClaimBindings(opts),
         ...execution.launchColumns,
-        ...execution.identityColumns,
+        ...endpointKeyIdentityBindings(execution.identityColumns, input.endpointKeySource),
         opts.reserveId!,
       ) as { record_id: string; number: number }
   const insertClaimedRun = () =>
@@ -404,8 +410,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         `INSERT INTO run (record_id, number, started_at, agent, job, repo, project_record_id, cwd, prompt_sha, spec_sha, prompt_bytes, prompt_head, label, status, session_id, probe, retry_of_record_id, route_reason, branch, parent_run_record_id, turn, vendor_session, docs_injected, doc_revisions, canon_sha,
                           launch_cwd, launch_seed, launch_key, task_record_id, launch_base, no_failover,
                           automatic_failover, agent_explicit, transport_explicit, review_ref, review_role, pid, mcp, transport, started_by_user_id,
-                          executor, evidence_excluded, harness_wall_bound_ms)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
+                          executor, evidence_excluded, harness_wall_bound_ms, endpoint_key_source)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'running',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id, number`,
       )
       .get(
         recordId,
@@ -443,7 +449,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         ...reviewClaimBindings(opts),
         ...execution.launchColumns,
         startedByUserId,
-        ...execution.identityColumns,
+        ...endpointKeyIdentityBindings(execution.identityColumns, input.endpointKeySource),
       ) as { record_id: string; number: number }
   const claim = claimWithMigrationAdmission(input, () => {
     const claimedRow = claimableRow(opts.reserveId, updateReservedRun, insertClaimedRun)

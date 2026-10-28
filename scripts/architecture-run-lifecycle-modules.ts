@@ -203,10 +203,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/task-rulings-store.ts', ['../database/db.ts', './task-rulings.ts']),
   module('orchestrator/src/run/run-close.ts', [
     '../../../shared/brand.ts',
+    '../agent/agent-registry.ts',
     '../close/close-out.ts',
     '../contract/contract.ts',
     '../database/db.ts',
     '../route/failover.ts',
+    '../route/billing-key-hold.ts',
     '../failure/failure.ts',
     '../jobs/jobs.ts',
     '../worktree/keep-tree-hold.ts',

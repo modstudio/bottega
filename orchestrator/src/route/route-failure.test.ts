@@ -225,6 +225,7 @@ describe('failure classification', () => {
       'daily_quota',
       'quota',
       'billing',
+      'provider_error',
       'auth',
       'entitlement',
       'unreachable',
