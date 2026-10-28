@@ -11,6 +11,7 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/close/conversation-liveness.ts', [
     'node:fs',
+    '../../../shared/brand.ts',
     '../../../shared/process-identity.ts',
     '../database/db.ts',
     '../run/run-alive.ts',

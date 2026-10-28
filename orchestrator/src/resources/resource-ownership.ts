@@ -30,7 +30,12 @@ import {
   decideWorktreeResourceTeardown,
 } from './main-stack-decision.ts'
 
-export type WorktreeSharerRow = { record_id: string; status: string; scored: number }
+export type WorktreeSharerRow = {
+  record_id: string
+  status: string
+  scored: number
+  relation: 'worktree' | 'cwd' | 'launch_cwd'
+}
 type RecordedLiveRow = {
   record_id: string
   status: string
@@ -58,6 +63,11 @@ function worktreeSharers(
       `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id,
             r.status, r.pid, r.executor, r.session_id, r.started_at, r.job, r.harness_wall_bound_ms,
             (SELECT last_seen FROM session_seen WHERE session_id=r.session_id) session_last_seen,
+            CASE
+              WHEN r.worktree IN (${spellings.map(() => '?').join(',')}) THEN 'worktree'
+              WHEN r.cwd IN (${spellings.map(() => '?').join(',')}) THEN 'cwd'
+              WHEN r.launch_cwd IN (${spellings.map(() => '?').join(',')}) THEN 'launch_cwd'
+            END AS relation,
             ${EVIDENCE_CLOSED_SQL} AS scored
        FROM run r LEFT JOIN score s ON s.run_record_id=COALESCE(r.parent_run_record_id,r.record_id)
       WHERE (
@@ -73,6 +83,9 @@ function worktreeSharers(
       ORDER BY r.number`,
     )
     .all(
+      ...spellings,
+      ...spellings,
+      ...spellings,
       ...spellings,
       liveOnly ? 1 : 0,
       ...spellings,

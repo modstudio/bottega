@@ -2,6 +2,7 @@
 /** Keeps close-out from releasing a conversation while one of its turns is alive. */
 
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
@@ -55,14 +56,31 @@ export function aliveConversationTurns(rootId: string): AliveTurn[] {
 export function liveCloseOutResult(
   runId: string,
   treePath: string | null,
-  live: { record_id: string; status: string }[],
+  live: {
+    record_id: string
+    status: string
+    relation?: 'worktree' | 'cwd' | 'launch_cwd'
+  }[],
 ): ConversationCloseOutResult | null {
   if (!live.length) return null
+  const relationPhrase = (relation: (typeof live)[number]['relation']): string => {
+    if (relation === 'worktree') return 'runs in this tree'
+    if (relation === 'cwd') return 'works in this tree'
+    if (relation === 'launch_cwd')
+      return 'launched from this tree; its confinement watches this checkout'
+    return 'this conversation'
+  }
   return {
     runId,
     worktree: treePath,
     outcome: 'live',
-    detail: `live run(s): ${live.map((owner) => `${owner.record_id} (${owner.status})`).join(', ')}`,
+    detail:
+      `live run(s): ${live
+        .map((owner) => `${owner.record_id} (${owner.status}, ${relationPhrase(owner.relation)})`)
+        .join(', ')}\n` +
+      `cleared by: ${live
+        .map((owner) => `${PLATFORM_SLUG} run wait ${owner.record_id}`)
+        .join(', ')}, then rerun this command`,
   }
 }
 

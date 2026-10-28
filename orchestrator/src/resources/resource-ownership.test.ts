@@ -41,7 +41,7 @@ test('only a live run launched from a tree protects it without claiming it', () 
   db().query('UPDATE run SET cwd=? WHERE record_id IN (?,?)').run(tree, live, terminal)
 
   expect(liveWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([
-    expect.objectContaining({ record_id: live }),
+    expect.objectContaining({ record_id: live, relation: 'cwd' }),
   ])
   expect(otherConversationWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([])
 })
@@ -54,9 +54,17 @@ test('a live run whose launch cwd is the tree protects it without claiming it', 
   db().query('UPDATE run SET launch_cwd=? WHERE record_id=?').run(tree, live)
 
   expect(liveWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([
-    expect.objectContaining({ record_id: live }),
+    expect.objectContaining({ record_id: live, relation: 'launch_cwd' }),
   ])
   expect(otherConversationWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([])
+  db().query('UPDATE run SET cwd=? WHERE record_id=?').run(tree, live)
+  expect(liveWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([
+    expect.objectContaining({ record_id: live, relation: 'cwd' }),
+  ])
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(tree, live)
+  expect(liveWorktreeSharers(db(), { record_id: owner, worktree: tree })).toEqual([
+    expect.objectContaining({ record_id: live, relation: 'worktree' }),
+  ])
 })
 
 test('terminal Docker safety sees only live runs whose cwd is the tree', () => {

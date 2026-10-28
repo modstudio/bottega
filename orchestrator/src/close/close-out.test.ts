@@ -547,7 +547,9 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     db().query('UPDATE run SET pid=NULL,agent_pid=? WHERE record_id=?').run(process.pid, child)
     expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
-      detail: `live run(s): ${child} (running)`,
+      detail:
+        `live run(s): ${child} (running, this conversation)\n` +
+        `cleared by: ${PLATFORM_SLUG} run wait ${child}, then rerun this command`,
     })
     expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
       worktree: tree,
@@ -555,7 +557,9 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     db().query('UPDATE run SET pid=?,agent_pid=NULL WHERE record_id=?').run(process.pid, child)
     expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
-      detail: `live run(s): ${child} (running)`,
+      detail:
+        `live run(s): ${child} (running, this conversation)\n` +
+        `cleared by: ${PLATFORM_SLUG} run wait ${child}, then rerun this command`,
     })
     db().query("UPDATE run SET status='ok',pid=NULL WHERE record_id=?").run(child)
 
@@ -604,7 +608,9 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
   try {
     expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'live',
-      detail: `live run(s): ${child} (running)`,
+      detail:
+        `live run(s): ${child} (running, this conversation)\n` +
+        `cleared by: ${PLATFORM_SLUG} run wait ${child}, then rerun this command`,
     })
     expect(becameAlive).toBe(true)
     expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
@@ -840,7 +846,7 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
   const fixture = absentRecipeFixture()
   const sharer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
   db()
-    .query('UPDATE run SET worktree=?,pid=? WHERE record_id=?')
+    .query('UPDATE run SET launch_cwd=?,pid=? WHERE record_id=?')
     .run(fixture.tree, process.pid, sharer)
   const commands: string[] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((args: string[]) => {
@@ -849,7 +855,12 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
     return spawnResult()
   }) as typeof Bun.spawnSync)
   try {
-    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('live')
+    expect(closeOutRun(fixture.id, { intent: 'terminal' })).toMatchObject({
+      outcome: 'live',
+      detail:
+        `live run(s): ${sharer} (running, launched from this tree; its confinement watches this checkout)\n` +
+        `cleared by: ${PLATFORM_SLUG} run wait ${sharer}, then rerun this command`,
+    })
     expect(commands).not.toContain('teardown-marker')
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })
