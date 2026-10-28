@@ -1,7 +1,7 @@
 // concern: retrieval-index-store
 /** Owns the SQLite document-vector schema and transactions. */
 
-import { Database } from 'bun:sqlite'
+import { constants, Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -237,7 +237,9 @@ export function openIndexDatabase(path: string): Database {
 }
 
 function openReadonlyIndexDatabase(path: string): Database {
-  return new Database(path, { readonly: true })
+  // Bun's bundled SQLite on Linux reads a file: URI filename only with SQLITE_OPEN_URI;
+  // a plain path opens the same with or without it.
+  return new Database(path, constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI)
 }
 
 type SearchIndexDatabaseOpeners = {
