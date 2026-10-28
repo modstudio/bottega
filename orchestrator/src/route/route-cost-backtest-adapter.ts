@@ -1,19 +1,12 @@
 // concern: route cost backtest adapter
 /** Rebuilds causal routing snapshots from the local evidence store. */
 
-import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { reviewTierSizeClass } from '../review/review-tier-classifier.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
-import { median } from '../state/statistics.ts'
-import {
-  promptSizeBucket,
-  promptSizeBucketLabel,
-  samePromptSizeBucket,
-} from './prompt-size-bucket.ts'
-import { EVIDENCE_WINDOW } from './route.ts'
+import { type PromptSizeBucket, promptSizeBucket } from './prompt-size-bucket.ts'
 import {
   allRouteCostFacts,
   type CostEvidenceRoot,
@@ -29,13 +22,17 @@ import {
   type FairnessRun,
   routeCostBacktest,
 } from './route-cost-backtest.ts'
-import { DEFAULT_ROUTE_COST_POLICY, resolveRouteCostPolicy } from './route-cost-policy.ts'
+import {
+  DEFAULT_ROUTE_COST_POLICY,
+  findingsPolicyLens,
+  resolveRouteCostPolicy,
+} from './route-cost-policy.ts'
 import { currentPolicySelection, MIN_SAMPLE, thompsonRank } from './route-selection.ts'
-import { routingEvidenceWindow } from './route-statistics.ts'
 import {
   type RoutingBacktestEvent,
+  routingBacktestCellsFor,
   routingBacktestEvents,
-  staticEligible,
+  routingOperationalEvents,
 } from './routing-backtest.ts'
 
 type LensRow = { runId: string; lens: string }
@@ -80,55 +77,25 @@ function factsAvailableBefore(
 function cellCandidates(
   decision: RoutingBacktestEvent,
   history: RoutingBacktestEvent[],
+  latencyHistory: RoutingBacktestEvent[],
   scope: { lens: string | null; stack: string | null },
   facts: RouteCostFacts,
   lensRuns: Map<string, Set<string>>,
+  operations: ReturnType<typeof routingOperationalEvents>,
 ): { candidates: CostBacktestCandidate[]; baselineAgent: string | null; eligible: number } {
-  const evidence = history.filter(
-    (row) =>
-      row.job === decision.job &&
-      samePromptSizeBucket(row.promptBytes, decision.promptBytes) &&
-      (!scope.stack || row.stack === scope.stack),
-  )
   const scopedIds = scope.lens ? lensRuns.get(scope.lens) : null
-  const scopedEvidence = scopedIds
-    ? evidence.filter((row) => scopedIds.has(row.record_id))
-    : evidence
-  const raw = Object.keys(AGENTS)
-    .filter((agent) => staticEligible(agent, decision.job, decision.promptBytes))
-    .map((agent) => {
-      const window = routingEvidenceWindow(
-        scopedEvidence,
-        agent,
-        AGENTS[agent]!.model,
-        EVIDENCE_WINDOW,
-      )
-      const rows = window.rows
-      const score = rows.length
-        ? rows.reduce((sum, row) => sum + row.weight, 0) / rows.length
-        : null
-      return {
-        agent,
-        rows,
-        scored: rows.filter((row) => row.scored).length,
-        failures: rows.filter((row) => !row.scored).length,
-        none: rows.filter((row) => row.none).length,
-        evidence: rows.length,
-        score,
-        shrunk: null as number | null,
-        free: ['free', 'none'].includes(AGENTS[agent]!.billing),
-        latencyMs: median(rows.flatMap((row) => (row.latencyMs === null ? [] : [row.latencyMs]))),
-      }
-    })
-  const provenScores = raw
-    .filter((row) => row.evidence >= MIN_SAMPLE && row.score !== null)
-    .map((row) => row.score!)
-  const prior = provenScores.length
-    ? provenScores.reduce((sum, score) => sum + score, 0) / provenScores.length
-    : 0.5
-  for (const row of raw)
-    if (row.score !== null)
-      row.shrunk = (row.score * row.evidence + MIN_SAMPLE * prior) / (row.evidence + MIN_SAMPLE)
+  const scopedEvidence = scopedIds ? history.filter((row) => scopedIds.has(row.record_id)) : history
+  const scopedLatency = scopedIds
+    ? latencyHistory.filter((row) => scopedIds.has(row.record_id))
+    : latencyHistory
+  const raw = routingBacktestCellsFor(
+    decision,
+    scopedEvidence,
+    scopedLatency,
+    operations,
+    true,
+    scope.stack,
+  )
   if (raw.length === 0) return { candidates: [], baselineAgent: null, eligible: 0 }
   const proven = raw.filter((row) => row.evidence >= MIN_SAMPLE && row.score !== null)
   const baseline = currentPolicySelection(raw, JOBS[decision.job]?.prefer ?? [], false)
@@ -139,7 +106,7 @@ function cellCandidates(
     ]),
   )
   const candidates = raw.map((candidate) => {
-    const roots = candidate.rows
+    const roots = candidate.events
     const causalFacts = factsAvailableBefore(roots, facts, decision.startedAt)
     const accepted = roots.filter(
       (root) =>
@@ -168,12 +135,13 @@ function enoughForScoped(cell: ReturnType<typeof cellCandidates>): boolean {
   return proven >= 2 || (cell.eligible === 1 && proven === 1)
 }
 
-export function gatherRouteCostBacktest(
+export function gatherRouteCostBacktestSnapshots(
   days: number,
   context?: SubscriptionCostContext,
   now = new Date(),
 ) {
   const all = routingBacktestEvents()
+  const operations = routingOperationalEvents()
   const since = now.getTime() - days * 86_400_000
   const lensByRun = new Map(
     (db().query('SELECT run_record_id AS runId, lens FROM review_lens').all() as LensRow[]).map(
@@ -186,7 +154,7 @@ export function gatherRouteCostBacktest(
   const facts = allRouteCostFacts(context)
   const evidenceByCell = new Map<string, RoutingBacktestEvent[]>()
   for (const row of all) {
-    const key = `${row.job}\0${promptSizeBucketLabel(promptSizeBucket(row.promptBytes))}`
+    const key = `${row.job}\0${promptSizeBucket(row.promptBytes)}`
     evidenceByCell.set(key, [...(evidenceByCell.get(key) ?? []), row])
   }
   const decisions: CostBacktestDecision[] = []
@@ -194,36 +162,40 @@ export function gatherRouteCostBacktest(
   const provenAgents = new Map<string, Set<string>>()
   for (const decision of all.filter((row) => Date.parse(row.startedAt) >= since)) {
     const causal = causalEvidenceBefore(
-      evidenceByCell.get(
-        `${decision.job}\0${promptSizeBucketLabel(promptSizeBucket(decision.promptBytes))}`,
-      ) ?? [],
+      evidenceByCell.get(`${decision.job}\0${promptSizeBucket(decision.promptBytes)}`) ?? [],
       decision.startedAt,
     )
-    const lens = lensByRun.get(decision.record_id) ?? null
-    let scope = { lens, stack: null as string | null }
-    let cell = lens
-      ? cellCandidates(decision, causal, scope, facts, lensRuns)
-      : { candidates: [], baselineAgent: null, eligible: 0 }
-    if (!enoughForScoped(cell) && decision.stack) {
-      scope = { lens: null, stack: decision.stack }
-      cell = cellCandidates(decision, causal, scope, facts, lensRuns)
+    const causalLatency = all.filter(
+      (row) => row.latencyAt !== null && row.latencyAt < decision.startedAt,
+    )
+    const requestedLens = findingsPolicyLens(
+      Boolean(JOBS[decision.job]?.findings),
+      lensByRun.get(decision.record_id),
+    )
+    let scope = {
+      lens: requestedLens,
+      stack: requestedLens ? null : decision.stack,
     }
+    let cell =
+      scope.lens || scope.stack
+        ? cellCandidates(decision, causal, causalLatency, scope, facts, lensRuns, operations)
+        : { candidates: [], baselineAgent: null, eligible: 0 }
     if (!enoughForScoped(cell)) {
       scope = { lens: null, stack: null }
-      cell = cellCandidates(decision, causal, scope, facts, lensRuns)
+      cell = cellCandidates(decision, causal, causalLatency, scope, facts, lensRuns, operations)
     }
     if (cell.candidates.length === 0 || cell.baselineAgent === null) continue
     const resolved = resolveRouteCostPolicy(
       DEFAULT_ROUTE_COST_POLICY,
       decision.job,
-      scope.lens,
+      requestedLens,
       Boolean(JOBS[decision.job]?.needs.writesRepo),
     )
-    const promptBucket = promptSizeBucketLabel(promptSizeBucket(decision.promptBytes))
+    const promptBucket: PromptSizeBucket = promptSizeBucket(decision.promptBytes)
     decisions.push({
       job: decision.job,
       promptBucket,
-      lens: scope.lens,
+      lens: requestedLens,
       group: resolved.group,
       baselineAgent: cell.baselineAgent,
       candidates: cell.candidates,
@@ -247,5 +219,14 @@ export function gatherRouteCostBacktest(
           : reviewTierSizeClass(decision.linesAdded + decision.linesRemoved),
     })
   }
-  return routeCostBacktest(decisions, fairnessRuns, provenAgents, days)
+  return { decisions, fairnessRuns, provenAgents }
+}
+
+export function gatherRouteCostBacktest(
+  days: number,
+  context?: SubscriptionCostContext,
+  now = new Date(),
+) {
+  const snapshot = gatherRouteCostBacktestSnapshots(days, context, now)
+  return routeCostBacktest(snapshot.decisions, snapshot.fairnessRuns, snapshot.provenAgents, days)
 }

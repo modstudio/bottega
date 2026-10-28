@@ -94,7 +94,12 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/route-cost-backtest.ts',
-    allowed: ['./route-cost-policy.ts', './route-selection.ts'],
+    allowed: [
+      '../state/statistics.ts',
+      './prompt-size-bucket.ts',
+      './route-cost-policy.ts',
+      './route-selection.ts',
+    ],
   },
   {
     file: 'orchestrator/src/route/route-cost-backtest-adapter.ts',

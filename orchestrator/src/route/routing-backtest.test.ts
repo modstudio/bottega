@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { AGENTS } from '../agent/agent-registry.ts'
+import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { candidates, EVIDENCE_WINDOW, pick } from './route.ts'
@@ -10,7 +10,30 @@ import {
   ROUTING_BACKTEST_SEEDS,
   routingBacktest,
   routingBacktestEnsemble,
+  staticEligible,
 } from './routing-backtest.ts'
+
+test('static replay eligibility mirrors live metered opt-in', () => {
+  const original = db()
+    .query("SELECT billing,route_metered FROM agent WHERE name='codex'")
+    .get() as { billing: string; route_metered: number }
+  try {
+    db().query("UPDATE agent SET billing='metered',route_metered=1 WHERE name='codex'").run()
+    refreshAgents()
+    expect(staticEligible('codex', 'file-question', 0)).toBeTrue()
+    expect(staticEligible('codex', 'implement', 0)).toBeFalse()
+
+    db().query("UPDATE agent SET route_metered=0 WHERE name='codex'").run()
+    refreshAgents()
+    expect(staticEligible('codex', 'file-question', 0)).toBeFalse()
+    expect(staticEligible('codex', 'implement', 0)).toBeFalse()
+  } finally {
+    db()
+      .query("UPDATE agent SET billing=?,route_metered=? WHERE name='codex'")
+      .run(original.billing, original.route_metered)
+    refreshAgents()
+  }
+})
 
 describe('routing backtest statistics', () => {
   test('maps both judgment extremes to whole Beta observations', () => {

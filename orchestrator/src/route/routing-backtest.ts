@@ -8,6 +8,7 @@ import { median } from '../state/statistics.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { samePromptSizeBucket } from './prompt-size-bucket.ts'
 import { COOLDOWN_MIN, EVIDENCE_WINDOW, isRoutingEvidence } from './route.ts'
+import { meteredRouteEligibility } from './route-metered-policy.ts'
 import { currentPolicySelection, MIN_SAMPLE, thompsonRank } from './route-selection.ts'
 import { routingEvidenceWindow } from './route-statistics.ts'
 
@@ -39,7 +40,7 @@ export type RoutingBacktestEvent = {
   latencyAt: string | null
 }
 
-type OperationalEvent = {
+export type RoutingOperationalEvent = {
   record_id: string
   agent: string
   status: string
@@ -93,13 +94,15 @@ function seeded(seed: number): () => number {
 export function staticEligible(agent: string, jobName: string, promptBytes: number): boolean {
   const a = AGENTS[agent]
   const j = JOBS[jobName]
+  if (!a || !j || a.enabled === false || a.legacy || promptBytes > a.maxPromptBytes) return false
   if (
-    !a ||
-    !j ||
-    a.enabled === false ||
-    a.legacy ||
-    a.billing === 'metered' ||
-    promptBytes > a.maxPromptBytes
+    !meteredRouteEligibility({
+      billing: a.billing,
+      routeMetered: Boolean(a.routeMetered),
+      trainsOnInputs: a.trainsOnInputs,
+      writesRepo: Boolean(j.needs.writesRepo),
+      name: a.name,
+    }).eligible
   )
     return false
   if (a.contextTokens < jobContextBudget(j.contextTokens)) return false
@@ -109,7 +112,7 @@ export function staticEligible(agent: string, jobName: string, promptBytes: numb
 function cooling(
   agent: string,
   at: Event,
-  operations: OperationalEvent[],
+  operations: RoutingOperationalEvent[],
   enabled: boolean,
 ): boolean {
   if (!enabled) return false
@@ -129,7 +132,7 @@ function cooling(
   return Date.parse(at.startedAt) - Date.parse(latest.finishedAt) < COOLDOWN_MIN * 60_000
 }
 
-function newestOperationalEvent(a: OperationalEvent, b: OperationalEvent): number {
+function newestOperationalEvent(a: RoutingOperationalEvent, b: RoutingOperationalEvent): number {
   return b.finishedAt.localeCompare(a.finishedAt) || b.record_id.localeCompare(a.record_id)
 }
 
@@ -158,7 +161,7 @@ function priorLatency(
   )
 }
 
-type Cell = {
+export type RoutingBacktestCell = {
   agent: string
   events: Event[]
   scored: number
@@ -171,13 +174,15 @@ type Cell = {
   latencyMs: number | null
 }
 
-function cellsFor(
+/** Assemble one causal candidate field with the same evidence, tie and cooldown inputs as replay. */
+export function routingBacktestCellsFor(
   event: Event,
   history: History,
   latencyHistory: History,
-  operations: OperationalEvent[],
+  operations: RoutingOperationalEvent[],
   cooldowns: boolean,
-): Cell[] {
+  stack?: string | null,
+): RoutingBacktestCell[] {
   const sameBucket = history.filter(
     (e) => e.job === event.job && samePromptSizeBucket(e.promptBytes, event.promptBytes),
   )
@@ -211,12 +216,9 @@ function cellsFor(
           shrunk: null as number | null,
           free: ['free', 'none'].includes(AGENTS[agent]!.billing),
           latencyMs: priorLatency(agent, event, latencyHistory, stack),
-        } satisfies Cell
+        } satisfies RoutingBacktestCell
       })
-  let cells = build(event.stack)
-  const proven = cells.filter((c) => c.evidence >= MIN_SAMPLE)
-  if (!event.stack || (proven.length < 2 && !(cells.length === 1 && proven.length === 1)))
-    cells = build()
+  const cells = build(stack)
   const scores = cells
     .filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
     .map((c) => c.score!)
@@ -228,11 +230,32 @@ function cellsFor(
   return cells
 }
 
+function cellsFor(
+  event: Event,
+  history: History,
+  latencyHistory: History,
+  operations: RoutingOperationalEvent[],
+  cooldowns: boolean,
+): RoutingBacktestCell[] {
+  let cells = routingBacktestCellsFor(
+    event,
+    history,
+    latencyHistory,
+    operations,
+    cooldowns,
+    event.stack,
+  )
+  const proven = cells.filter((c) => c.evidence >= MIN_SAMPLE)
+  if (!event.stack || (proven.length < 2 && !(cells.length === 1 && proven.length === 1)))
+    cells = routingBacktestCellsFor(event, history, latencyHistory, operations, cooldowns)
+  return cells
+}
+
 function currentChoice(
   event: Event,
   history: History,
   latencyHistory: History,
-  operations: OperationalEvent[],
+  operations: RoutingOperationalEvent[],
   rng: () => number,
   draw: boolean,
   cooldowns: boolean,
@@ -245,7 +268,7 @@ function thompsonChoice(
   event: Event,
   history: History,
   latencyHistory: History,
-  operations: OperationalEvent[],
+  operations: RoutingOperationalEvent[],
   rng: () => number,
   draw: boolean,
   cooldowns: boolean,
@@ -363,7 +386,7 @@ export function routingBacktestEvents(includeVoided = false): Event[] {
   })
 }
 
-function operationalEvents(): OperationalEvent[] {
+export function routingOperationalEvents(): RoutingOperationalEvent[] {
   const database = db()
   const rows = database
     .query(
@@ -374,7 +397,7 @@ function operationalEvents(): OperationalEvent[] {
       ORDER BY started_at, record_id`,
     )
     .all() as Array<
-    Omit<OperationalEvent, 'finishedAt'> & {
+    Omit<RoutingOperationalEvent, 'finishedAt'> & {
       parentRunId: string | null
       startedAt: string
       latencyMs: number | null
@@ -403,7 +426,7 @@ function operationalEvents(): OperationalEvent[] {
 
 function replay(
   all: Event[],
-  operations: OperationalEvent[],
+  operations: RoutingOperationalEvent[],
   jobName: string | undefined,
   seed: number,
   cooldowns: boolean,
@@ -502,7 +525,7 @@ export function routingBacktest(
 ): RoutingBacktest {
   return replay(
     routingBacktestEvents(options.includeVoided),
-    operationalEvents(),
+    routingOperationalEvents(),
     jobName,
     seed,
     options.cooldowns !== false,
@@ -514,7 +537,7 @@ export function routingBacktestEnsemble(
   options: ReplayOptions = {},
 ): RoutingBacktestEnsemble {
   const all = routingBacktestEvents(options.includeVoided)
-  const operations = operationalEvents()
+  const operations = routingOperationalEvents()
   const trajectories = ROUTING_BACKTEST_SEEDS.map((seed) =>
     replay(all, operations, jobName, seed, options.cooldowns !== false),
   )

@@ -50,7 +50,7 @@ function fairnessLine(
   cell: ReturnType<typeof gatherRouteCostBacktest>['fairness'][number],
 ): string {
   return (
-    `${cell.job} [${cell.promptBucket}]${cell.lens ? ` / ${cell.lens}` : ''}: ` +
+    `${cell.job} [${promptSizeBucketLabel(cell.promptBucket)}]${cell.lens ? ` / ${cell.lens}` : ''}: ` +
     `${cell.reasons.join('; ')}; ` +
     cell.agents
       .map(

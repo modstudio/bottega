@@ -1,6 +1,8 @@
 // concern: route cost backtest
 /** Pure aggregation of causal routing snapshots under cost-policy variants. */
 
+import { median } from '../state/statistics.ts'
+import type { PromptSizeBucket } from './prompt-size-bucket.ts'
 import type { CostPolicyRule } from './route-cost-policy.ts'
 import { selectByCostPolicy } from './route-cost-policy.ts'
 import { BETA_SCALE, NOISE_BAND } from './route-selection.ts'
@@ -22,7 +24,7 @@ export type CostBacktestVariant = CostPolicyRule & { name: string; shippedDefaul
 
 export type CostBacktestDecision = {
   job: string
-  promptBucket: string
+  promptBucket: PromptSizeBucket
   lens: string | null
   group: string
   baselineAgent: string
@@ -60,7 +62,7 @@ type CostBacktestGroup = { group: string; n: number; figures: CostBacktestFigure
 
 export type FairnessRun = {
   job: string
-  promptBucket: string
+  promptBucket: PromptSizeBucket
   lens: string | null
   agent: string
   promptBytes: number
@@ -69,7 +71,7 @@ export type FairnessRun = {
 
 export type FairnessCell = {
   job: string
-  promptBucket: string
+  promptBucket: PromptSizeBucket
   lens: string | null
   agents: Array<{
     agent: string
@@ -90,12 +92,6 @@ export function causalEvidenceBefore<T extends { evidenceAt: string | null }>(
   decisionStartedAt: string,
 ): T[] {
   return rows.filter((row) => row.evidenceAt !== null && row.evidenceAt < decisionStartedAt)
-}
-
-const median = (values: number[]): number => {
-  const sorted = [...values].sort((a, b) => a - b)
-  const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
 }
 
 function pickedCost(candidate: CostBacktestCandidate): number | null {
@@ -140,17 +136,14 @@ function figure(
     const key = `${row.baseline.agent}\0${row.picked.agent}`
     moves.set(key, (moves.get(key) ?? 0) + 1)
   }
-  const pricedBaseline = evaluated.flatMap((row) =>
-    row.baselineCost === null ? [] : [row.baselineCost],
-  )
-  const pricedVariant = evaluated.flatMap((row) =>
-    row.pickedCost === null ? [] : [row.pickedCost],
+  const matchedCosts = evaluated.filter(
+    (row) => row.baselineCost !== null && row.pickedCost !== null,
   )
   const accepted = evaluated.filter(
     (row) => row.baseline.acceptedShare !== null && row.picked.acceptedShare !== null,
   )
-  const baselineUsd = pricedBaseline.reduce((sum, cost) => sum + cost, 0)
-  const variantUsd = pricedVariant.reduce((sum, cost) => sum + cost, 0)
+  const baselineUsd = matchedCosts.reduce((sum, row) => sum + row.baselineCost!, 0)
+  const variantUsd = matchedCosts.reduce((sum, row) => sum + row.pickedCost!, 0)
   const baselineAccepted = accepted.reduce((sum, row) => sum + row.baseline.acceptedShare!, 0)
   const variantAccepted = accepted.reduce((sum, row) => sum + row.picked.acceptedShare!, 0)
   const n = decisions.length
@@ -173,12 +166,12 @@ function figure(
         ),
     },
     usdPerWeek: {
-      n,
+      n: matchedCosts.length,
       baseline: baselineUsd * scale,
       variant: variantUsd * scale,
       delta: (variantUsd - baselineUsd) * scale,
-      baselineUnpriced: n - pricedBaseline.length,
-      variantUnpriced: n - pricedVariant.length,
+      baselineUnpriced: evaluated.filter((row) => row.baselineCost === null).length,
+      variantUnpriced: evaluated.filter((row) => row.pickedCost === null).length,
     },
     acceptedRate: {
       n: acceptedN,
@@ -220,9 +213,7 @@ export function fairnessReport(
       return {
         agent,
         runs: agentRows.length,
-        medianPromptBytes: agentRows.length
-          ? median(agentRows.map((row) => row.promptBytes))
-          : null,
+        medianPromptBytes: median(agentRows.map((row) => row.promptBytes)),
         sizeClasses,
         modalSizeClass: modal ? Number(modal[0]) : null,
       }
@@ -242,7 +233,7 @@ export function fairnessReport(
     ]
     return {
       job: job!,
-      promptBucket: promptBucket!,
+      promptBucket: promptBucket as PromptSizeBucket,
       lens: rawLens || null,
       agents,
       flagged: reasons.length > 0,

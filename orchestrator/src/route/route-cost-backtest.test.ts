@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import {
   type CostBacktestCandidate,
   type CostBacktestDecision,
-  causalEvidenceBefore,
   fairnessReport,
   routeCostBacktest,
 } from './route-cost-backtest.ts'
@@ -33,7 +32,7 @@ const decision = (
   baselineAgent = 'strong',
 ): CostBacktestDecision => ({
   job: 'review-lens',
-  promptBucket: '<16 KiB',
+  promptBucket: 'small',
   lens: 'craft',
   group: 'review',
   baselineAgent,
@@ -60,7 +59,7 @@ describe('route cost backtest', () => {
     expect(figure.routingShift).toMatchObject({ n: 3, count: 1, share: 1 / 3 })
     expect(figure.routingShift.moves).toEqual([{ from: 'strong', to: 'cheap', count: 1 }])
     expect(figure.usdPerWeek).toMatchObject({
-      n: 3,
+      n: 2,
       baseline: 2,
       variant: 1.5,
       delta: -0.5,
@@ -76,15 +75,27 @@ describe('route cost backtest', () => {
     })
   })
 
-  test('excludes a judgment recorded after the decision started', () => {
-    const rows = [
-      { id: 'before', evidenceAt: '2026-10-28T09:59:00.000Z' },
-      { id: 'after', evidenceAt: '2026-10-28T10:01:00.000Z' },
-      { id: 'never', evidenceAt: null },
-    ]
-    expect(causalEvidenceBefore(rows, '2026-10-28T10:00:00.000Z').map((row) => row.id)).toEqual([
-      'before',
-    ])
+  test('matches baseline and variant pricing over the same decisions', () => {
+    const report = routeCostBacktest(
+      [
+        decision([
+          candidate('strong', 0.6, { usd: 2 }, { unknown: 'unpriced' }, 0.9, 0.8),
+          candidate('cheap', 0.6, { usd: 1 }, { usd: 0.5 }, 0.8, 0.8),
+        ]),
+      ],
+      [],
+      new Map(),
+      7,
+    )
+    expect(report.groups[0]!.figures[0]!.routingShift.count).toBe(1)
+    expect(report.groups[0]!.figures[0]!.usdPerWeek).toEqual({
+      n: 0,
+      baseline: 0,
+      variant: 0,
+      delta: 0,
+      baselineUnpriced: 1,
+      variantUnpriced: 0,
+    })
   })
 })
 
@@ -92,7 +103,7 @@ describe('cost backtest fairness', () => {
   const runs = (secondPrompt: number) => [
     {
       job: 'implement',
-      promptBucket: '<16 KiB',
+      promptBucket: 'small' as const,
       lens: null,
       agent: 'a',
       promptBytes: 1000,
@@ -100,14 +111,14 @@ describe('cost backtest fairness', () => {
     },
     {
       job: 'implement',
-      promptBucket: '<16 KiB',
+      promptBucket: 'small' as const,
       lens: null,
       agent: 'b',
       promptBytes: secondPrompt,
       sizeClass: 1,
     },
   ]
-  const proven = new Map([['implement\0<16 KiB\0', new Set(['a', 'b'])]])
+  const proven = new Map([['implement\0small\0', new Set(['a', 'b'])]])
 
   test('flags a 1.6x prompt mix difference', () => {
     expect(fairnessReport(runs(1600), proven)[0]).toMatchObject({ flagged: true })
