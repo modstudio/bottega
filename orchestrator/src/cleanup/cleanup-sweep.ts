@@ -9,6 +9,7 @@ import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
 import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts'
 import { closeOutRun } from '../close/close-out.ts'
+import { treeProcessCwdHold } from '../close/tree-process-cwd-hold.ts'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
 import { shouldSweepHookTree } from '../hook-tree/hook-tree.ts'
@@ -154,6 +155,17 @@ function heldKeeper(
     keep(line, reason)
     add(projectName, path)
   }
+}
+
+function keepTreeProcessCwdHold(
+  runId: string,
+  path: string,
+  keepHeld: (line: string, reason: string) => void,
+): boolean {
+  const hold = treeProcessCwdHold({ runId, worktree: path, treeAbsent: false })
+  if (!hold) return false
+  keepHeld(`orphan  ${path}  ${hold.detail}`, hold.detail)
+  return true
 }
 
 function holdRecordedCloseOutcome(
@@ -894,13 +906,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       }
       const { runId, safe } = decision
 
-      const source = markedWorktreeSource(path)
       const w = {
         path,
         branch: safe.branch,
         base: '',
         repoRoot: p.path,
-        source,
+        source: markedWorktreeSource(path),
         mintedBranch: safe.branch,
       }
       try {
@@ -925,6 +936,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
             keepHeld(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason!)
             return
           }
+          if (keepTreeProcessCwdHold(runId, path, keepHeld)) return
           const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
           const snapshot = safe.branch ? branchTip(p.path, safe.branch) : null
           const res = removeFor(w, p.path, false, ownersBefore.length > 0, runId)

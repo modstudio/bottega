@@ -72,10 +72,24 @@ function landingObservationResult(
   return { args, result: null }
 }
 
+function cwdObservationResult(
+  command: string[],
+  observation: { stdout?: string | ((tree: string) => string); exitCode?: number } | undefined,
+  tree: string,
+): ReturnType<typeof Bun.spawnSync> | null {
+  if (command[0] !== 'lsof') return null
+  const stdout =
+    typeof observation?.stdout === 'function'
+      ? observation.stdout(tree)
+      : (observation?.stdout ?? '')
+  return spawnResult(stdout, observation?.exitCode ?? 0)
+}
+
 function closeOutFixture(
   ownership: 'owned' | 'attached',
   retainedRefDeleteFails = false,
   landingObservation?: 'clean' | 'becomes-dirty' | 'missing-branch',
+  cwdObservation?: { stdout?: string | ((tree: string) => string); exitCode?: number },
 ) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
@@ -107,7 +121,11 @@ function closeOutFixture(
       .run(id)
   }
   const landingState = { statusCalls: 0 }
+  const spawnCommands: string[][] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
+    spawnCommands.push(command)
+    const cwdResult = cwdObservationResult(command, cwdObservation, tree)
+    if (cwdResult) return cwdResult
     const observed = landingObservationResult(
       command,
       landingObservation,
@@ -136,7 +154,7 @@ function closeOutFixture(
     }
     return spawnResult()
   }) as typeof Bun.spawnSync)
-  return { id, repo, tree }
+  return { id, repo, tree, spawnCommands }
 }
 
 describe('close-out extraction decision', () => {
@@ -151,6 +169,57 @@ test('close-out forgets an attached tree without removing its directory', () => 
     const result = closeOutRun(fixture.id, { intent: 'terminal' })
 
     expect(result.outcome).toBe('forgotten')
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a process working inside the tree holds close-out', () => {
+  const holderPid = process.pid + 10_000
+  const fixture = closeOutFixture('owned', false, undefined, {
+    stdout: (tree) => `p${holderPid}\nn${tree}/packages/app\n`,
+  })
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+
+    expect(result).toMatchObject({ outcome: 'held' })
+    expect(result.detail).toContain(`pid ${holderPid}`)
+    expect(result.detail).toContain('stop the listed processes')
+    expect(existsSync(fixture.tree)).toBe(true)
+    expect(
+      fixture.spawnCommands.some((command) => normalizedGitArgs(command).includes('remove')),
+    ).toBe(false)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a dry run forecasts a process cwd hold', () => {
+  const holderPid = process.pid + 10_001
+  const fixture = closeOutFixture('owned', false, undefined, {
+    stdout: (tree) => `p${holderPid}\nn${tree}\n`,
+  })
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'sweep', dryRun: true })
+
+    expect(result).toMatchObject({ outcome: 'held' })
+    expect(result.detail).toContain(`pid ${holderPid}`)
+    expect(result.detail).toContain('stop the listed processes')
+    expect(existsSync(fixture.tree)).toBe(true)
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
+})
+
+test('a process cwd scan error holds close-out', () => {
+  const fixture = closeOutFixture('owned', false, undefined, { exitCode: 1 })
+  try {
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+
+    expect(result).toMatchObject({ outcome: 'held' })
+    expect(result.detail).toContain('process cwd scan could not establish')
+    expect(result.detail).toContain('lsof exited 1')
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {
     rmSync(fixture.repo, { recursive: true, force: true })

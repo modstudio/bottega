@@ -8,6 +8,7 @@ import {
   LANDING_TREE_JOB,
   landingTreeCommandBase,
   landingTreeCommandCapability,
+  landingTreeExistingCheckoutRefusal,
   landingTreeHoldDecision,
   landingTreeOpeningRefusal,
   landingTreeReleaseDecision,
@@ -68,6 +69,43 @@ describe('landing-tree run adoption', () => {
 })
 
 describe('landing-tree decisions', () => {
+  test('a terminal agent tree directs close-out before retrying the open command', () => {
+    expect(
+      landingTreeExistingCheckoutRefusal({
+        branch: 'DEV-1834-fix',
+        path: '/tmp/retained-tree',
+        terminalRun: { recordId: 'run-record-id', job: 'implement' },
+        retryCommand: `${PLATFORM_SLUG} tree open run-id`,
+      }),
+    ).toBe(
+      `branch DEV-1834-fix already has a live tree at /tmp/retained-tree, recorded for terminal run run-record-id; close-out releases that tree when nothing runs in it; run ${PLATFORM_SLUG} run close-out run-record-id, then ${PLATFORM_SLUG} tree open run-id`,
+    )
+  })
+
+  test('a terminal lifecycle tree directs tree removal before retrying', () => {
+    expect(
+      landingTreeExistingCheckoutRefusal({
+        branch: 'DEV-1834-fix',
+        path: '/tmp/retained-tree',
+        terminalRun: { recordId: 'lifecycle-record-id', job: LANDING_TREE_JOB },
+        retryCommand: `${PLATFORM_SLUG} tree open run-id`,
+      }),
+    ).toContain(`${PLATFORM_SLUG} tree remove /tmp/retained-tree`)
+  })
+
+  test('another checked-out tree keeps the existing use-or-release message', () => {
+    expect(
+      landingTreeExistingCheckoutRefusal({
+        branch: 'DEV-1834-fix',
+        path: '/tmp/other-tree',
+        terminalRun: null,
+        retryCommand: `${PLATFORM_SLUG} tree open run-id`,
+      }),
+    ).toBe(
+      `branch DEV-1834-fix already has a live tree at /tmp/other-tree; use that path or release it with ${PLATFORM_SLUG} tree remove /tmp/other-tree`,
+    )
+  })
+
   test('keeps a clean existing landing tree without holding close-out', () => {
     expect(
       landingTreeHoldDecision(

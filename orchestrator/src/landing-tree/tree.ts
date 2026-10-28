@@ -16,10 +16,12 @@ import {
   recordCreatedWorktreeClaims,
   recordDatabaseClaim,
 } from '../resources/resource-claims.ts'
+import { worktreePathSpellings } from '../resources/resource-ownership.ts'
 import { assertBranchHasNoAliveOwner } from '../run/branch-owner-guard.ts'
 import { continuationBranchPlan, resumeTreePlan } from '../run/resume-tree.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { prepareResumeBranchIfNeeded } from '../run/run-resume-claim.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { createWorkerWorktree } from '../worktree/worktree.ts'
 import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import type { RecordRecipeResource } from '../worktree/worktree-create.ts'
@@ -33,6 +35,7 @@ import {
   LANDING_TREE_JOB,
   landingTreeCommandBase,
   landingTreeCommandCapability,
+  landingTreeExistingCheckoutRefusal,
   landingTreeOpeningRefusal,
 } from './landing-tree.ts'
 import { adoptCoordinatorRunsForLanding } from './run-adoption.ts'
@@ -77,6 +80,36 @@ export function landingTreeSourceRun(runId: string): {
 }
 
 export type OpenedLandingTree = { path: string; branch: string; tip: string }
+
+function terminalRunAt(path: string): { recordId: string; job: string } | null {
+  const spellings = worktreePathSpellings(db(), path)
+  if (spellings.length === 0) return null
+  const rows = db()
+    .query(
+      `SELECT owner.record_id recordId,owner.job,owner.status status FROM run owner
+       JOIN run root ON root.record_id=COALESCE(owner.parent_run_record_id,owner.record_id)
+       WHERE owner.worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY owner.number DESC`,
+    )
+    .all(...spellings) as { recordId: string; job: string; status: string }[]
+  return rows.find(({ status }) => TERMINAL_RUN_STATUS_SET.has(status)) ?? null
+}
+
+function refuseExistingLandingTree(
+  projectPath: string,
+  branch: string,
+  retryCommand: string,
+): void {
+  const path = checkedOutWorktree(projectPath, branch)
+  if (!path) return
+  throw new Error(
+    landingTreeExistingCheckoutRefusal({
+      branch,
+      path,
+      terminalRun: terminalRunAt(path),
+      retryCommand,
+    }),
+  )
+}
 
 /** Settle a failed landing-tree row even when its project remover already removed the directory. */
 export function releaseFailedLandingTree(runId: string): void {
@@ -155,6 +188,7 @@ function finishLandingTreeOpen(
 }
 
 export function openLandingTree(runId: string, seed?: string): OpenedLandingTree {
+  const retryCommand = `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`
   const { root, latest } = landingTreeSourceRun(runId),
     { project, branch, plan } = resolveLandingTarget(runId, root, latest)
   const tool = resolvedWorktreeTool(project)
@@ -181,14 +215,9 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
     branch,
     conversationRootId: null,
     projectId: project.recordId,
-    retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
+    retryCommand,
   })
-  const existingPath = checkedOutWorktree(project.path, branch)
-  if (existingPath) {
-    throw new Error(
-      `branch ${branch} already has a live tree at ${existingPath}; use that path or release it with ${PLATFORM_SLUG} tree remove ${existingPath}`,
-    )
-  }
+  refuseExistingLandingTree(project.path, branch, retryCommand)
   const database = writableDb(),
     startedAt = nowIso(),
     prompt = `landing tree for run ${runId}`
@@ -275,7 +304,7 @@ export function openLandingTree(runId: string, seed?: string): OpenedLandingTree
         branch,
         conversationRootId: null,
         projectId: project.recordId,
-        retryCommand: `${PLATFORM_SLUG} tree open ${runId}${seed ? ` --seed ${seed}` : ''}`,
+        retryCommand,
       })
       prepareResumeBranchIfNeeded(project.path, plan)
       return createWorkerWorktree({

@@ -177,6 +177,17 @@ export function prepareReaderScratchCloseOut(input: {
   return { proceed: true, archive: plan.action === 'archive' ? plan.plan : null }
 }
 
+function readerScratchDryRunResult(
+  runId: string,
+  treePath: string,
+  treeAbsent: boolean,
+  archive: boolean,
+): ScratchCloseOutResult {
+  const result = dryRunReleaseResult(runId, treePath, treeAbsent)
+  if (archive) result.detail = 'would archive whole reader clone and release its claims'
+  return result
+}
+
 function archiveDestination(runId: string, now = new Date()): string {
   const timestamp = now.toISOString().replaceAll(':', '').replaceAll('.', '')
   return join(dirname(RUNS_DIR), 'archive', 'reader-clones', `${runId}-${timestamp}`)
@@ -196,7 +207,7 @@ function writeConveniencePatch(runId: string, treePath: string): void {
   }
 }
 
-export function archiveReaderScratchForRelease(input: {
+function archiveReaderScratchForRelease(input: {
   runId: string
   treePath: string
   terminal: boolean
@@ -265,6 +276,37 @@ export function archiveReaderScratchForRelease(input: {
   return decision === 'release'
     ? { ok: true, path: destination }
     : { ok: false, detail: `reader clone archive did not permit release (${decision})` }
+}
+
+export function prepareReaderScratchRelease(input: {
+  runId: string
+  treePath: string
+  terminal: boolean
+  planned: ReaderCloneArchivePlan | null
+  dryRun: boolean
+  treeAbsent: boolean
+}): { proceed: true; path: string | null } | { proceed: false; result: ScratchCloseOutResult } {
+  if (input.dryRun)
+    return {
+      proceed: false,
+      result: readerScratchDryRunResult(
+        input.runId,
+        input.treePath,
+        input.treeAbsent,
+        input.planned !== null,
+      ),
+    }
+  const archive = archiveReaderScratchForRelease(input)
+  if (archive.ok) return { proceed: true, path: archive.path }
+  return {
+    proceed: false,
+    result: {
+      runId: input.runId,
+      worktree: input.treePath,
+      outcome: 'held',
+      detail: `${archive.detail}; clone and claim retained`,
+    },
+  }
 }
 
 export function readerScratchReleaseDetail(detail: string, path: string | null): string {

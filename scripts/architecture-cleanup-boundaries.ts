@@ -1,5 +1,27 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'tree-process-cwd-decision-boundary',
+    file: 'orchestrator/src/close/tree-process-cwd-decision.ts',
+    allowed: ['../worktree/removal-working-directory.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep the tree process cwd decision pure and independent of filesystems, stores, and processes.',
+  },
+  {
+    name: 'tree-process-cwd-hold-boundary',
+    file: 'orchestrator/src/close/tree-process-cwd-hold.ts',
+    allowed: [
+      'node:fs',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../resources/process-inventory.ts',
+      './tree-process-cwd-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep process cwd observation independent of stores, routing, transports, and removal mechanics.',
+  },
+  {
     name: 'session-adopt-boundary',
     file: 'orchestrator/src/session/session-adopt.ts',
     allowed: [
@@ -154,6 +176,7 @@ export const cleanupBoundarySpecs = [
       './claim-reconciliation.ts',
       './project-sweep.ts',
       '../close/close-out.ts',
+      '../close/tree-process-cwd-hold.ts',
       '../board/board-service.ts',
       '../board/board-claim-service.ts',
       '../board/board-reach.ts',
