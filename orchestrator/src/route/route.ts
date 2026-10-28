@@ -932,7 +932,7 @@ function pickExternal(
   const chosen = selected.chosen
   const costReason = costPolicyExplanation({
     priced: preparedCostPolicy.priced,
-    enabled: preparedCostPolicy.configured.enabled,
+    enabled: preparedCostPolicy.resolved.enabled,
     selected: selected as CurrentPolicySelection<
       Candidate & { costPerAccepted: CostPerAcceptedResult }
     >,

@@ -133,7 +133,7 @@ function formattedCostPolicy(row: ReturnType<typeof scoreboard>[number]): string
   const floor =
     row.costPolicy.floor === null ? 'none' : `${(row.costPolicy.floor * 100).toFixed(0)}%`
   const below = row.belowCostFloor ? ' BELOW' : ''
-  return `${row.costPolicy.group} floor=${floor} rate=${row.costPolicy.rate}x${below}`
+  return `${row.costPolicy.group} ${row.costPolicy.enabled ? 'on' : 'off'} floor=${floor} rate=${row.costPolicy.rate}x${below}`
 }
 
 export function routingBacktestCommand(

@@ -6,11 +6,11 @@ import { routeCandidateTieOrder } from './route-policy.ts'
 /** A cost difference under five percent is noise. */
 const COST_NOISE_MULTIPLE = 1.05
 
-export type CostPolicyRule = { rate: number; floor: number | null }
+export type CostPolicyParameters = { rate: number; floor: number | null }
+type CostPolicyRule = CostPolicyParameters & { enabled: boolean }
 type CostPolicyGroup = CostPolicyRule & { jobs: string[] }
 type CostPolicyLensTier = CostPolicyRule & { lenses: string[] }
 export type RouteCostPolicy = {
-  enabled: boolean
   groups: {
     writing: CostPolicyGroup
     review: CostPolicyGroup
@@ -23,11 +23,11 @@ export type RouteCostPolicy = {
 }
 
 export const DEFAULT_ROUTE_COST_POLICY: RouteCostPolicy = {
-  enabled: false,
   groups: {
-    writing: { jobs: ['implement', 'fix', 'issue-worker'], rate: 3, floor: null },
-    review: { jobs: ['review-lens'], rate: 1.25, floor: 0.8 },
+    writing: { enabled: false, jobs: ['implement', 'fix', 'issue-worker'], rate: 3, floor: null },
+    review: { enabled: false, jobs: ['review-lens'], rate: 1.25, floor: 0.8 },
     light: {
+      enabled: false,
       jobs: ['verify-claim', 'summarize', 'file-question', 'canon-lookup'],
       rate: 1,
       floor: 0.8,
@@ -35,6 +35,7 @@ export const DEFAULT_ROUTE_COST_POLICY: RouteCostPolicy = {
   },
   lensTiers: {
     'high-stakes': {
+      enabled: true,
       lenses: [
         'correctness',
         'safety',
@@ -47,6 +48,7 @@ export const DEFAULT_ROUTE_COST_POLICY: RouteCostPolicy = {
       floor: 0.9,
     },
     standard: {
+      enabled: false,
       lenses: ['architecture', 'decision-conformance', 'test-quality'],
       rate: 1.5,
       floor: 0.8,
@@ -106,10 +108,11 @@ function mergeRule<T extends CostPolicyGroup | CostPolicyLensTier>(
 ): T {
   if (value === undefined) return structuredClone(fallback)
   const object = objectAt(value, field)
-  knownFields(object, [list, 'rate', 'floor'], field)
+  knownFields(object, ['enabled', list, 'rate', 'floor'], field)
   const fallbackList =
     list === 'jobs' ? (fallback as CostPolicyGroup).jobs : (fallback as CostPolicyLensTier).lenses
   return {
+    enabled: optionalBoolean(object.enabled, fallback.enabled, `${field}.enabled`),
     [list]: optionalStrings(object[list], fallbackList, `${field}.${list}`),
     rate: optionalRate(object.rate, fallback.rate, `${field}.rate`),
     floor: optionalFloor(object.floor, fallback.floor, `${field}.floor`),
@@ -125,13 +128,16 @@ export function parseRouteCostPolicy(raw: string): RouteCostPolicy {
     throw new Error('routing.cost_policy must be valid JSON')
   }
   const root = objectAt(parsed, 'root')
-  knownFields(root, ['enabled', 'groups', 'lensTiers'], 'root')
+  if ('enabled' in root)
+    throw new Error(
+      'routing.cost_policy field enabled is not supported; use groups.<rule>.enabled or lensTiers.<rule>.enabled',
+    )
+  knownFields(root, ['groups', 'lensTiers'], 'root')
   const groups = root.groups === undefined ? {} : objectAt(root.groups, 'groups')
   knownFields(groups, ['writing', 'review', 'light'], 'groups')
   const lensTiers = root.lensTiers === undefined ? {} : objectAt(root.lensTiers, 'lensTiers')
   knownFields(lensTiers, ['high-stakes', 'standard'], 'lensTiers')
   return {
-    enabled: optionalBoolean(root.enabled, DEFAULT_ROUTE_COST_POLICY.enabled, 'enabled'),
     groups: {
       writing: mergeRule(
         groups.writing,
@@ -182,16 +188,18 @@ export function resolveRouteCostPolicy(
   if (lens) {
     for (const group of ['high-stakes', 'standard'] as const) {
       const rule = policy.lensTiers[group]
-      if (rule.lenses.includes(lens)) return { group, floor: rule.floor, rate: rule.rate }
+      if (rule.lenses.includes(lens))
+        return { enabled: rule.enabled, group, floor: rule.floor, rate: rule.rate }
     }
   }
   for (const group of ['writing', 'review', 'light'] as const) {
     const rule = policy.groups[group]
-    if (rule.jobs.includes(job)) return { group, floor: rule.floor, rate: rule.rate }
+    if (rule.jobs.includes(job))
+      return { enabled: rule.enabled, group, floor: rule.floor, rate: rule.rate }
   }
   const group = writesRepo ? 'writing' : 'review'
   const rule = policy.groups[group]
-  return { group, floor: rule.floor, rate: rule.rate }
+  return { enabled: rule.enabled, group, floor: rule.floor, rate: rule.rate }
 }
 
 export function findingsPolicyLens(findings: boolean, lens: string | undefined): string | null {
@@ -229,7 +237,7 @@ export function costAwareRank<T extends CostPolicyCandidate>(
   candidates: readonly T[],
   draw: boolean,
   rng: () => number,
-  rule: CostPolicyRule,
+  rule: CostPolicyParameters,
   noiseBand: number,
   betaScale: number,
   rank: (
@@ -326,7 +334,7 @@ export function appendCostPolicyReason(
 /** Select among proven candidates by the configured quality-for-cost utility. */
 export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
   candidates: readonly T[],
-  rule: CostPolicyRule,
+  rule: CostPolicyParameters,
   noiseBand: number,
   betaScale: number,
   currentChoice: T,
