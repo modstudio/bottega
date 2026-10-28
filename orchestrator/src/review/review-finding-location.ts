@@ -9,12 +9,16 @@ export type FindingLocationFact = {
 }
 
 /** Extract the repository path at the start of a review finding's location. */
-export function reviewFindingRepositoryPath(location: string | null): string | null {
-  if (location === null) return null
-  const token = location.trim().split(/\s/, 1)[0]?.replace(/^\.\//, '') ?? ''
+export function reviewFindingRepositoryPath(location: string): string | null {
+  const token =
+    location
+      .trim()
+      .split(/\s/, 1)[0]
+      ?.replace(/^`([^`]+)`$/, '$1') ?? ''
   const path = token
+    .replace(/^\.\//, '')
     .replace(/[,;.]+$/, '')
-    .replace(/:\d+(?:-\d+)?$/, '')
+    .replace(/(?:#L\d+(?:-L\d+)?|:\d+-\d+|(?::\d+)+)$/, '')
     .replace(/[,;.]+$/, '')
   if (!path || path === 'n/a' || path.startsWith('/')) return null
   const lastSegment = path.slice(path.lastIndexOf('/') + 1)

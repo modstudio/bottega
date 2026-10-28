@@ -44,6 +44,19 @@ export type CleanReviewEvidence =
   | { failure: string; note: null; kind: 'unevidenced' | 'harness' }
   | { failure: null; note: string | null }
 
+type ReviewRunRow = Pick<
+  RunRow,
+  'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
+> & { repo: string | null }
+
+function reviewRunRow(runId: string, database: Database): ReviewRunRow | null {
+  return database
+    .query(
+      'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE record_id=?',
+    )
+    .get(runId) as ReviewRunRow | null
+}
+
 function findingLocationFacts(
   runId: string,
   output: ReviewReply,
@@ -59,16 +72,7 @@ function findingLocationFacts(
   if (!checked.length) return []
   const unknown = checked.map((fact): FindingLocationFact => ({ ...fact, resolution: 'unknown' }))
   try {
-    const run = database
-      .query(
-        'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE record_id=?',
-      )
-      .get(runId) as
-      | (Pick<
-          RunRow,
-          'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
-        > & { repo: string | null })
-      | null
+    const run = reviewRunRow(runId, database)
     const endpoint = run ? reviewChangeRange(run)?.to : null
     const repo = run?.repo ? projectPath(database, run.repo) : null
     if (!endpoint || !repo || !git(repo, ['cat-file', '-e', `${endpoint}^{tree}`]).ok)
@@ -124,16 +128,7 @@ export function cleanReviewEvidence(
     const stored = storedChangePathSet(runId, database)
     if (stored) changed = stored
     else {
-      const run = database
-        .query(
-          'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE record_id=?',
-        )
-        .get(runId) as
-        | (Pick<
-            RunRow,
-            'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
-          > & { repo: string | null })
-        | null
+      const run = reviewRunRow(runId, database)
       const range = run ? reviewChangeRange(run) : null
       if (!run?.repo || !range) {
         return unavailable('run lacks repo, base_commit, or input_tree')

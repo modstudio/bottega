@@ -264,6 +264,28 @@ describe('review files_covered matching', () => {
     expect(cleanReviewEvidence('run-0', reply, db())).toEqual({ failure: null, note: null })
   })
 
+  test('an existing file with a line and column location does not produce a note', () => {
+    const commit = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+      cwd: process.cwd(),
+      stdout: 'pipe',
+    })
+      .stdout.toString()
+      .trim()
+    const runId = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      model: 'm',
+      lens: 'finding-location',
+      repo: 'run-fixture',
+      inputTree: commit,
+    })
+    db().query('UPDATE run SET base_commit=? WHERE record_id=?').run(commit, runId)
+    const reply = reviewReply(1)
+    reply.findings[0]!.location = 'orchestrator/src/review/review.ts:114:7'
+
+    expect(cleanReviewEvidence(runId, reply, db())).toEqual({ failure: null, note: null })
+  })
+
   test('an absolute worktree path ending in a changed path counts as coverage', () => {
     expect(
       filesCoveredIntersectChanged(
