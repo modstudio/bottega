@@ -8,6 +8,10 @@ import { observeLandingTreeRelease } from '../landing-tree/release-observation.t
 import { projectAt } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
+export function orderedCloseOutHold<T>(first: T | null, next: () => T | null): T | null {
+  return first ?? next()
+}
+
 type ReleaseHoldResult = {
   runId: string
   worktree: string

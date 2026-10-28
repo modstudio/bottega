@@ -32,6 +32,11 @@ export type CloseOutReportResult = {
   suppressBlock?: boolean
 }
 
+export type CloseOutResult = Omit<CloseOutReportResult, 'outcome' | 'reportOutcome'> & {
+  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
+  reportOutcome?: 'kept'
+}
+
 export type HeldConversationCloseOutResult = Omit<
   CloseOutReportResult,
   'worktree' | 'outcome' | 'reportOutcome'

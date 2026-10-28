@@ -177,7 +177,7 @@ export function prepareReaderScratchCloseOut(input: {
   return { proceed: true, archive: plan.action === 'archive' ? plan.plan : null }
 }
 
-export function readerScratchDryRunResult(
+function readerScratchDryRunResult(
   runId: string,
   treePath: string,
   treeAbsent: boolean,
@@ -207,7 +207,7 @@ function writeConveniencePatch(runId: string, treePath: string): void {
   }
 }
 
-export function archiveReaderScratchForRelease(input: {
+function archiveReaderScratchForRelease(input: {
   runId: string
   treePath: string
   terminal: boolean
@@ -276,6 +276,37 @@ export function archiveReaderScratchForRelease(input: {
   return decision === 'release'
     ? { ok: true, path: destination }
     : { ok: false, detail: `reader clone archive did not permit release (${decision})` }
+}
+
+export function prepareReaderScratchRelease(input: {
+  runId: string
+  treePath: string
+  terminal: boolean
+  planned: ReaderCloneArchivePlan | null
+  dryRun: boolean
+  treeAbsent: boolean
+}): { proceed: true; path: string | null } | { proceed: false; result: ScratchCloseOutResult } {
+  if (input.dryRun)
+    return {
+      proceed: false,
+      result: readerScratchDryRunResult(
+        input.runId,
+        input.treePath,
+        input.treeAbsent,
+        input.planned !== null,
+      ),
+    }
+  const archive = archiveReaderScratchForRelease(input)
+  if (archive.ok) return { proceed: true, path: archive.path }
+  return {
+    proceed: false,
+    result: {
+      runId: input.runId,
+      worktree: input.treePath,
+      outcome: 'held',
+      detail: `${archive.detail}; clone and claim retained`,
+    },
+  }
 }
 
 export function readerScratchReleaseDetail(detail: string, path: string | null): string {

@@ -12,7 +12,7 @@ import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
 import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
-import { type LandingTreeHoldKind, landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
+import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -53,23 +53,28 @@ import {
 import { adoptedTreeCloseOutDecision } from './close-out-adoption.ts'
 import { withCloseOutLease } from './close-out-lease.ts'
 import { closeTerminalChainQuestions } from './close-out-questions.ts'
-import { landingTreeReleaseHold, protectRetainedBranch } from './close-out-release-holds.ts'
 import {
+  landingTreeReleaseHold,
+  orderedCloseOutHold,
+  protectRetainedBranch,
+} from './close-out-release-holds.ts'
+import {
+  type CloseOutResult,
   type ConversationKeepTreeHold,
   cleanLandingTreeCloseOutResult,
   heldConversationCloseOutResult,
 } from './close-out-report.ts'
 import {
+  aliveConversationTurns,
   coordinatorLeaseHold,
   liveCloseOutResult,
   missingTreeConversationResult,
   liveOwnerRefusalText as ownerText,
 } from './conversation-liveness.ts'
 import {
-  archiveReaderScratchForRelease,
   extractionRunId,
   prepareReaderScratchCloseOut,
-  readerScratchDryRunResult,
+  prepareReaderScratchRelease,
   readerScratchReleaseDetail,
 } from './reader-scratch-close-out.ts'
 import {
@@ -80,19 +85,10 @@ import {
 } from './retained-branch.ts'
 import { treeProcessCwdHold } from './tree-process-cwd-hold.ts'
 
+export type { CloseOutResult } from './close-out-report.ts'
+
 const CONVERSATION_IDS_SQL =
   'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number'
-
-export type CloseOutResult = {
-  runId: string
-  worktree: string | null
-  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed'
-  reportOutcome?: 'kept'
-  detail: string
-  hold?: LandingTreeHoldKind
-  inFlightRef?: string | null
-  suppressBlock?: boolean
-}
 
 type CloseOutOptions = {
   intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
@@ -105,6 +101,10 @@ type CloseOutOptions = {
 
 type CloseOutAttemptResult = CloseOutResult & ResourceTeardownResult
 type RunIdRow = { record_id: string }
+
+function terminateCloseOutProcesses(dryRun: boolean, runId: string): void {
+  if (!dryRun) terminateRunProcesses(runId, [process.pid])
+}
 
 function conversationKeepTreeHold(rootId: string, now: string): ConversationKeepTreeHold {
   const rows = db()
@@ -763,31 +763,20 @@ function attemptCloseOutRun(
             // The coordinator proves its own identity before descendants are signaled.
             const ownerHold = coordinatorLeaseHold(row.root_record_id, treePath, process.pid)
             if (ownerHold) return ownerHold
-            if (!options.dryRun) terminateRunProcesses(row.record_id, [process.pid])
-            const hold =
-              landingTreeReleaseHold(landingReleaseInput) ??
-              treeProcessCwdHold({ ...landingReleaseInput, treeAbsent })
+            terminateCloseOutProcesses(Boolean(options.dryRun), row.record_id)
+            const hold = orderedCloseOutHold(landingTreeReleaseHold(landingReleaseInput), () =>
+              treeProcessCwdHold({ ...landingReleaseInput, treeAbsent }),
+            )
             if (hold) return hold
-            if (options.dryRun)
-              return readerScratchDryRunResult(
-                row.root_record_id,
-                treePath,
-                treeAbsent,
-                scratch.archive !== null,
-              )
-            const archive = archiveReaderScratchForRelease({
+            const release = prepareReaderScratchRelease({
               runId: extractionRunId(row),
               treePath,
               terminal: TERMINAL_RUN_STATUS_SET.has(effective.status),
               planned: scratch.archive,
+              dryRun: Boolean(options.dryRun),
+              treeAbsent,
             })
-            if (!archive.ok)
-              return {
-                runId: row.root_record_id,
-                worktree: treePath,
-                outcome: 'held' as const,
-                detail: `${archive.detail}; clone and claim retained`,
-              }
+            if (!release.proceed) return release.result
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = retainedRefForRun(branchSnapshot, row.root_record_id)
             const pinFailure = protectRetainedBranch({
@@ -816,8 +805,8 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent || archive.path !== null,
-              archive.path !== null,
+              treeAbsent || release.path !== null,
+              release.path !== null,
             )
             if (retainedBranch && branchSnapshot) {
               const branchAfter = branchTip(repoRoot, retainedBranch)
@@ -893,7 +882,7 @@ function attemptCloseOutRun(
                 detail: `worktree was acquired during cleanup by run(s): ${ownerText(acquired)}`,
               }
             const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
-            released.detail = readerScratchReleaseDetail(released.detail, archive.path)
+            released.detail = readerScratchReleaseDetail(released.detail, release.path)
             return released
           },
           options.lockTimeoutMs,

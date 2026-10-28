@@ -48,5 +48,4 @@ describe('tree process cwd decision', () => {
       }),
     ).toMatchObject({ action: 'hold' })
   })
-
 })
