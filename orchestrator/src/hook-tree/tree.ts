@@ -209,6 +209,7 @@ export function createHookTree(input: {
 
 export type HookTreeRemovalResult =
   | { outcome: 'released' }
+  | { outcome: 'absent' }
   | { outcome: 'kept'; reason: string }
   | { outcome: 'failed'; detail: string }
 
@@ -265,7 +266,8 @@ function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
   }
   writableDb()
   const result = closeOutRun(owners[0]!.record_id, { intent: 'tree-remove' })
-  if (result.outcome === 'released' || result.outcome === 'absent') return { outcome: 'released' }
+  if (result.outcome === 'released') return { outcome: 'released' }
+  if (result.outcome === 'absent') return { outcome: 'absent' }
   if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
   return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
 }

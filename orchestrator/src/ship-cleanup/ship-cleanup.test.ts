@@ -8,7 +8,72 @@ import type { BranchPruneKeptReason } from '../branch/branch-state.ts'
 import { db } from '../database/db.ts'
 import type { HookTreeRemovalResult } from '../hook-tree/tree.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { formatShipCleanup, type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
+import {
+  formatShipCleanup,
+  type ShipCleanupDependencies,
+  type ShipCleanupReport,
+  shipCleanup,
+} from './ship-cleanup.ts'
+
+test('ship cleanup output names each released tree and where to deploy from', () => {
+  const report: ShipCleanupReport = {
+    project: 'ship-fixture',
+    branch: 'DEV-1836-c1',
+    landingBranch: 'main',
+    mainCheckoutPath: '/projects/ship-fixture',
+    freed: { artifacts: 0, scratch: 0, worktrees: 10 },
+    removed: {
+      artifacts: [],
+      scratch: [],
+      worktrees: ['/trees/released'],
+      branches: [],
+    },
+    absentWorktrees: [],
+    reclaimed: { processes: [], compose: [] },
+    gone: [],
+    kept: [],
+    errors: [],
+    verdict: { clean: true, residue: [] },
+  }
+
+  const output = formatShipCleanup(report)
+  expect(output).toContain('released tree: /trees/released')
+  expect(output).toContain(
+    `deploy from: the landing branch main — pull it in the main checkout /projects/ship-fixture, or run ${PLATFORM_SLUG} tree create --name deploy-main --base origin/main`,
+  )
+  const outputWithoutDeclaredTrunk = formatShipCleanup({ ...report, landingBranch: null })
+  expect(outputWithoutDeclaredTrunk).toContain(
+    'deploy from: the merged landing branch — the register declares none (settings.trunk); pull it in the main checkout /projects/ship-fixture once it is declared',
+  )
+  expect(outputWithoutDeclaredTrunk).not.toContain('undefined')
+  expect(
+    formatShipCleanup({
+      ...report,
+      removed: { ...report.removed, worktrees: [] },
+    }),
+  ).not.toContain('deploy from:')
+})
+
+test('ship cleanup output names an absent tree without a deploy-from instruction', () => {
+  const report: ShipCleanupReport = {
+    project: 'ship-fixture',
+    branch: 'DEV-1836-c1',
+    landingBranch: 'main',
+    mainCheckoutPath: '/projects/ship-fixture',
+    freed: { artifacts: 0, scratch: 0, worktrees: 0 },
+    removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+    absentWorktrees: ['/trees/absent'],
+    reclaimed: { processes: [], compose: [] },
+    gone: [],
+    kept: [],
+    errors: [],
+    verdict: { clean: true, residue: [] },
+  }
+
+  const output = formatShipCleanup(report)
+  expect(output).toContain('already absent tree: /trees/absent')
+  expect(output).not.toContain('deploy from:')
+})
 
 function addProject(): string {
   const recordId = newRecordId()
@@ -196,6 +261,8 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
       .number
 
+  expect(report.landingBranch).toBe('main')
+  expect(report.mainCheckoutPath).toBe('/fixture')
   expect(report.removed.artifacts).toEqual([root, turn, lens, unservedTurn, landing])
   expect(report.removed.scratch).toEqual([root, turn, lens, unservedTurn, landing])
   expect(closed).toEqual([root, lens, unscored, unservedRoot])
@@ -473,4 +540,12 @@ test('ship cleanup keeps a dirty landing tree and names its dirty paths', () => 
       `${PLATFORM_SLUG} tree ship-cleanup DEV-1392-c3`,
   })
   expect(result.report.errors).toEqual([])
+})
+
+test('ship cleanup records an already absent landing tree separately from released trees', () => {
+  const result = landingTreeCleanup({ removal: { outcome: 'absent' } })
+
+  expect(result.removedTrees).toEqual([])
+  expect(result.report.absentWorktrees).toEqual([result.landingTree])
+  expect(result.report.removed.worktrees).toEqual([])
 })

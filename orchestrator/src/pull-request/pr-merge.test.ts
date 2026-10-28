@@ -115,8 +115,11 @@ const cleanupReport = (
 ): ShipCleanupReport => ({
   project: 'merge-fixture',
   branch: pullRequest.headBranch,
+  landingBranch: 'main',
+  mainCheckoutPath: cwd,
   freed: { artifacts: 0, scratch: 0, worktrees: 0 },
   removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+  absentWorktrees: [],
   reclaimed: { processes: [], compose: [] },
   gone: [],
   kept: overrides.kept ?? [],

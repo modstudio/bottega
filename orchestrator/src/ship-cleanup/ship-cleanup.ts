@@ -66,8 +66,11 @@ type RunRow = {
 export type ShipCleanupReport = {
   project: string
   branch: string
+  landingBranch: string | null
+  mainCheckoutPath: string
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
+  absentWorktrees: string[]
   reclaimed: { processes: string[]; compose: string[] }
   gone: string[]
   kept: ShipCleanupKeptItem[]
@@ -182,12 +185,20 @@ function recordedLanding(
   return findRecordedBranchLanding(records, project, branch)?.mergedAt ?? null
 }
 
-function emptyReport(project: string, branch: string): ShipCleanupReport {
+function emptyReport(
+  project: string,
+  branch: string,
+  landingBranch: string | null,
+  mainCheckoutPath: string,
+): ShipCleanupReport {
   return {
     project,
     branch,
+    landingBranch,
+    mainCheckoutPath,
     freed: { artifacts: 0, scratch: 0, worktrees: 0 },
     removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+    absentWorktrees: [],
     reclaimed: { processes: [], compose: [] },
     gone: [],
     kept: [],
@@ -300,7 +311,10 @@ function closeBranchWorktree(
     }
     const result = adapter.closeOut(row.record_id)
     if (result.outcome === 'released' || result.outcome === 'absent') {
-      if (row.worktree) report.removed.worktrees.push(row.worktree)
+      if (row.worktree) {
+        if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
+        else report.absentWorktrees.push(row.worktree)
+      }
       if (result.outcome === 'released' && row.worktree)
         removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
       return null
@@ -357,8 +371,9 @@ function releaseLandingTree(
     return remedy
   }
   const result = adapter.removeLandingTree(row.worktree)
-  if (result.outcome === 'released') {
-    report.removed.worktrees.push(row.worktree)
+  if (result.outcome === 'released' || result.outcome === 'absent') {
+    if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
+    else report.absentWorktrees.push(row.worktree)
     removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
     return null
   }
@@ -701,7 +716,12 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
     adapter,
   })
   const decisions = decideShipCleanup(taskKey ?? '', landedBranches, landingMergedAt, facts)
-  const report = emptyReport(project.name, branch)
+  const report = emptyReport(
+    project.name,
+    branch,
+    project.settings.trunk?.trim() || null,
+    project.path,
+  )
   const callerLandingTreePath = callerLandingTree(decisions, adapter)
   reportKeptRuns(decisions, report, callerLandingTreePath)
   const worktreePaths = closableWorktreePaths(decisions)
@@ -750,6 +770,12 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
   return report
 }
 
+function deployFromLine(report: ShipCleanupReport): string {
+  return report.landingBranch
+    ? `deploy from: the landing branch ${report.landingBranch} — pull it in the main checkout ${report.mainCheckoutPath}, or run ${PLATFORM_SLUG} tree create --name deploy-${report.landingBranch} --base origin/${report.landingBranch}`
+    : `deploy from: the merged landing branch — the register declares none (settings.trunk); pull it in the main checkout ${report.mainCheckoutPath} once it is declared`
+}
+
 export function formatShipCleanup(report: ShipCleanupReport): string {
   const lines = [
     `ship cleanup ${report.project}/${report.branch}`,
@@ -758,6 +784,11 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   ]
   for (const item of report.reclaimed.processes) lines.push(`reclaimed process: ${item}`)
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
+  for (const path of report.removed.worktrees) lines.push(`released tree: ${path}`)
+  for (const path of report.absentWorktrees) lines.push(`already absent tree: ${path}`)
+  if (report.removed.worktrees.length) {
+    lines.push(deployFromLine(report))
+  }
   for (const branch of report.gone) lines.push(`already gone: ${branch}`)
   for (const item of report.kept.filter((item) => item.owner === 'caller-landing-tree')) {
     lines.push(
