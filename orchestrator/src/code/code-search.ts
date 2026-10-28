@@ -1,7 +1,7 @@
 // concern: code-search-adapter
 /** Applies project policy, spawns retrieval code search, and validates its JSON contract. */
 
-import { CodeSearchOutputSchema } from '../../../shared/orch-contract.ts'
+import { type CodeSearchOutput, CodeSearchOutputSchema } from '../../../shared/orch-contract.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import type { Project } from '../project/projects.ts'
 
@@ -29,7 +29,7 @@ export async function searchProjectCode(
   query: string,
   k: number,
   runner: Runner = runRetrieval,
-) {
+): Promise<CodeSearchOutput & { notice?: string }> {
   if (project.settings.search?.code !== true) {
     throw new Error(
       `project ${project.name} has not opted into code search; set settings.search.code to true`,
@@ -59,5 +59,6 @@ export async function searchProjectCode(
   }
   const parsed = CodeSearchOutputSchema.safeParse(value)
   if (!parsed.success) throw new Error('retrieval search returned an invalid code JSON contract')
-  return parsed.data
+  const notice = result.stderr.trim()
+  return notice ? { ...parsed.data, notice } : parsed.data
 }

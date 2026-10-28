@@ -46,6 +46,7 @@ export async function search(
             document: documents.get(candidate.chunk.id)!,
           })),
           unchanged: plan.unchanged.length,
+          delete: plan.delete.length,
         }
       },
       apply: (database, _candidates, embedded) => {
@@ -65,6 +66,7 @@ export async function search(
           stale: applied.stale,
         }
       },
+      readonlyRefresh: () => ({ embedded: 0, deleted: 0, unchanged: 0, stale: 0 }),
       rows: (database) =>
         indexedRows(database, 'docs')
           .filter(

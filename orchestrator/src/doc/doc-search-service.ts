@@ -16,13 +16,14 @@ export async function searchDocs(
   filter: SearchFilter = {},
   searchIndex: SearchIndex = searchDocIndex,
   readDoc: DocReader = getDocStore,
-): Promise<DocSearchOutput> {
+): Promise<DocSearchOutput & { notice?: string }> {
   const output = await searchIndex(query, k, filter)
-  return DocSearchOutputSchema.parse({
+  const parsed = DocSearchOutputSchema.parse({
     ...output,
     results: output.results.map((result) => {
       const doc = readDoc(result.scope, result.subject, result.slug)
       return { ...result, ...effectiveDocSummary(doc?.summary, doc?.body ?? '') }
     }),
   })
+  return output.notice ? { ...parsed, notice: output.notice } : parsed
 }

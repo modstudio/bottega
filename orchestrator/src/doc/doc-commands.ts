@@ -234,8 +234,10 @@ async function semanticSearch(
   }
   validateDocAddressFilter(filter)
   const output = await searchDocs(query, Number(rawK), filter)
+  if (output.notice) presentation.error(output.notice)
   if (flags.has('json')) {
-    presentation.log(JSON.stringify(output))
+    const { notice: _notice, ...searchOutput } = output
+    presentation.log(JSON.stringify(searchOutput))
     return
   }
   presentation.log(formatDocSearchRefresh(output.refresh))

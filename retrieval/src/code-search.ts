@@ -3,7 +3,12 @@
 
 import type { CodeSearchOutput } from '../../shared/orch-contract.ts'
 import { type Chunk, isTestCodePath, loadCodeCorpus } from './corpus/chunks.ts'
-import { applyCodeCacheRefresh, type CodeCacheRow, planCodeCache } from './index-store.ts'
+import {
+  applyCodeCacheRefresh,
+  type CodeCacheRow,
+  planCodeCache,
+  touchCodeCache,
+} from './index-store.ts'
 import {
   boundedSnippet,
   type IndexedCandidate,
@@ -47,7 +52,6 @@ export async function searchCode(
         const planned = planCodeCache(
           database,
           candidates.map(({ contentHash }) => contentHash),
-          options.now,
         )
         plannedHits = new Map(planned.hits.map((row) => [row.contentHash, row]))
         const missing = new Set(planned.missingContentHashes)
@@ -60,8 +64,10 @@ export async function searchCode(
         return {
           embed: [...missingByHash.values()],
           unchanged: candidates.filter(({ contentHash }) => plannedHits.has(contentHash)).length,
+          delete: 0,
         }
       },
+      beforeEmbed: (database) => touchCodeCache(database, [...plannedHits.keys()], options.now),
       apply: (database, candidates, embedded) => {
         embeddedRows = new Map(
           embedded.map((row) => [
@@ -87,17 +93,27 @@ export async function searchCode(
           pruned: applied.pruned,
         }
       },
+      readonlyRefresh: () => ({
+        embedded: 0,
+        deleted: 0,
+        unchanged: 0,
+        stale: 0,
+        pruned: 0,
+      }),
       rows: (_database, candidates) => {
-        return candidates.map((candidate) => {
+        return candidates.flatMap((candidate) => {
           const row =
             plannedHits.get(candidate.contentHash) ?? embeddedRows.get(candidate.contentHash)
-          if (!row) throw new Error(`code vector plan missed ${candidate.contentHash}`)
-          return {
-            ...row,
-            id: candidate.chunk.id,
-            text: candidate.chunk.text,
-            chunk: candidate.chunk,
-          }
+          return row
+            ? [
+                {
+                  ...row,
+                  id: candidate.chunk.id,
+                  text: candidate.chunk.text,
+                  chunk: candidate.chunk,
+                },
+              ]
+            : []
         })
       },
     },

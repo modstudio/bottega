@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,12 +10,60 @@ import {
   applyRefresh,
   configureIndexDatabase,
   indexedRows,
+  isReadOnlyIndexError,
+  openSearchIndexDatabase,
   planCodeCache,
   storedRows,
 } from './index-store.ts'
 import { planRefresh } from './refresh-plan.ts'
 
 const vector = [1, ...Array.from<number>({ length: 1_023 }).fill(0)]
+
+test('classifies SQLite read-only errors and permission errors on index files', () => {
+  const databasePath = '/state/retrieval.db'
+
+  expect(isReadOnlyIndexError({ code: 'SQLITE_READONLY' }, databasePath)).toBe(true)
+  expect(isReadOnlyIndexError({ code: 'SQLITE_READONLY_DBMOVED' }, databasePath)).toBe(true)
+  expect(isReadOnlyIndexError({ code: 'EACCES', path: `${databasePath}-wal` }, databasePath)).toBe(
+    true,
+  )
+  expect(
+    isReadOnlyIndexError({ code: 'EPERM', path: `${databasePath}-journal` }, databasePath),
+  ).toBe(true)
+  expect(isReadOnlyIndexError({ code: 'EACCES', path: '/other/file' }, databasePath)).toBe(false)
+  expect(isReadOnlyIndexError({ code: 'SQLITE_BUSY' }, databasePath)).toBe(false)
+})
+
+test('reopens a read-only search index as immutable when its schema probe is read-only', () => {
+  const path = '/state/index with spaces/retrieval.db'
+  const close = mock(() => {})
+  const readonlyPaths: string[] = []
+  const immutable = {} as Database
+  const opened = openSearchIndexDatabase(path, {
+    writable: () => {
+      throw { code: 'SQLITE_READONLY' }
+    },
+    readonly: (filename) => {
+      readonlyPaths.push(filename)
+      if (filename.startsWith('file:')) return immutable
+      return {
+        close,
+        query: () => ({
+          get: () => {
+            throw { code: 'SQLITE_READONLY' }
+          },
+        }),
+      } as unknown as Database
+    },
+  })
+
+  expect(opened).toEqual({ database: immutable, readonly: true })
+  expect(close).toHaveBeenCalledTimes(1)
+  expect(readonlyPaths).toEqual([
+    path,
+    'file:///state/index%20with%20spaces/retrieval.db?immutable=1',
+  ])
+})
 
 test('two handles interleave cold schema creation and reject a stale repeated refresh', () => {
   const directory = mkdtempSync(join(tmpdir(), 'retrieval-concurrency-test-'))
@@ -209,7 +257,7 @@ test('document refreshes leave code cache rows intact and code refresh prunes ex
       now: 1,
     })
     applyRefresh(database, { corpusKey: 'docs', delete: [], upsert: [] })
-    expect(planCodeCache(database, ['old'], 1).hits).toHaveLength(1)
+    expect(planCodeCache(database, ['old']).hits).toHaveLength(1)
 
     const refreshed = applyCodeCacheRefresh(database, {
       seenContentHashes: ['current'],
@@ -218,8 +266,8 @@ test('document refreshes leave code cache rows intact and code refresh prunes ex
       retentionMs: 50,
     })
     expect(refreshed).toEqual({ embedded: 1, pruned: 1 })
-    expect(planCodeCache(database, ['old'], 101).hits).toHaveLength(0)
-    expect(planCodeCache(database, ['current'], 101).hits).toHaveLength(1)
+    expect(planCodeCache(database, ['old']).hits).toHaveLength(0)
+    expect(planCodeCache(database, ['current']).hits).toHaveLength(1)
   } finally {
     database.close()
     rmSync(directory, { recursive: true })

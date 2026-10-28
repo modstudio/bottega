@@ -13,6 +13,12 @@ const text = (value: unknown) => ({
   ],
 })
 
+const searchText = <Value extends { notice?: string }>(value: Value) => {
+  const { notice, ...output } = value
+  const serialized = JSON.stringify(output)
+  return text(notice ? `${serialized}\n\n${notice}` : serialized)
+}
+
 export function registerSearchTools(server: McpServer): void {
   server.registerTool(
     'search_docs',
@@ -30,7 +36,7 @@ export function registerSearchTools(server: McpServer): void {
       const filter = { scope, subject, includeDrafts }
       validateDocAddressFilter(filter)
       const output = await searchDocs(query, k ?? 5, filter)
-      return text(output)
+      return searchText(output)
     },
   )
 
@@ -60,7 +66,7 @@ export function registerSearchTools(server: McpServer): void {
           `the caller's checkout does not belong to project ${selected.name}; run from that project's checkout`,
         )
       }
-      return text(await searchProjectCode(selected, cwd, query, k ?? 5))
+      return searchText(await searchProjectCode(selected, cwd, query, k ?? 5))
     },
   )
 }
