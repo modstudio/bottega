@@ -24,6 +24,8 @@ No CLI here reports remaining quota, so exhaustion is caught on the failure (`FA
 
 **Routing then avoids a `COOLS_DOWN` agent for `COOLDOWN_MIN` minutes**, unless it is the only one left. Only the most recent run is consulted; a single success clears it. **A probe is how you say "I fixed it"** — the cooling query is the one place probes are not filtered out. `bottega machine doctor` prints this when anything is cooling.
 
+A job may declare an idle limit; a run silent and idle past it is killed, fails over, and is not evidence.
+
 **An uninterrupted streak of `PROVIDER_ERROR_STREAK` provider errors cools the agent the same way**, and a successful probe ends the streak. **A billing failure on an agent-paid key holds every agent on that key** (`orchestrator/src/route/billing-key-hold.ts:decideBillingKeyHolds`) in routing and in failover, until a successful answer on any of them clears it. Recency is completion order, never launch order: a long run that finishes last is the latest.
 
 A vendor **content refusal** fails over immediately, but neither cools the agent nor counts as routing evidence. Keep it distinct from a headless `denied`.

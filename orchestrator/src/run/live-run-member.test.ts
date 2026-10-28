@@ -43,7 +43,7 @@ describe('live run member', () => {
     ).toMatchObject({
       state: 'stalled',
       detail:
-        'run 88 codex/review-lens has been silent for 30m and has used no CPU in that time; stop it and re-dispatch, or wait for the 29m idle bound',
+        'run 88 codex/review-lens has been silent for 30m and has used no CPU in that time; stop it and re-dispatch, or wait for the 20m idle bound',
     })
   })
 

@@ -49,6 +49,10 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/run/stop-close-out-decision.ts',
+    allowed: [],
+  },
+  {
     file: 'orchestrator/src/run/run-number.ts',
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },

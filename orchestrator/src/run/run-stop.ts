@@ -1,6 +1,7 @@
 /** Run stop knows run terminal writes, worktree ownership, resource reclamation, and branch retention. It must not know transports, routing, reviews, contracts, the CLI, or durable execution. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
 import {
   branchDeletionProvenanceRefusal,
   type CleanupOptions,
@@ -13,6 +14,7 @@ import {
 } from '../cleanup/cleanup.ts'
 import { releaseStoppedReaderClone } from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -35,6 +37,7 @@ import {
   type RootAuthority,
   reauthorizeRunMutation,
 } from './run-authority.ts'
+import { runCloseOutLeaseState } from './run-lease.ts'
 import { recordRunSharedGitConfigHeader, rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type {
@@ -43,6 +46,11 @@ import type {
   VerifiedRunProcessTermination,
 } from './run-process.ts'
 import type { RecordedRunSharedGitConfigInput } from './shared-git-config-check.ts'
+import {
+  decideStopCloseOut,
+  STOP_CLOSE_OUT_LEASE_WAIT_MS,
+  waitForStopCloseOutLease,
+} from './stop-close-out-decision.ts'
 import { stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
 export function stoppedRunLine(id: string): string {
@@ -88,6 +96,46 @@ function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
 
 function stopCoordinatorExtraPids(pid: number | null): number[] {
   return pid && pid !== process.pid ? [pid] : []
+}
+
+function stopCoordinatorPid(pid: number | null): number | null {
+  return pid && pid !== process.pid ? pid : null
+}
+
+function keptReaderCloneForHeldLease(
+  cleanupRow: { record_id: string; job: string; worktree: string | null },
+  coordinatorPid: number | null,
+): ReturnType<typeof releaseStoppedReaderClone> {
+  if (!cleanupRow.worktree || !isReadOnlyRepositoryJob(cleanupRow.job)) {
+    return { outcome: 'not-applicable', detail: null }
+  }
+  const pidClause =
+    coordinatorPid != null
+      ? `coordinator pid ${coordinatorPid} is still alive`
+      : 'coordinator is not alive'
+  return {
+    outcome: 'kept',
+    detail: `close-out lease still held; ${pidClause}`,
+  }
+}
+
+function stoppedReaderCloneRelease(
+  row: StopRow,
+  cleanupRow: ReturnType<typeof stopCleanupRow>,
+): ReturnType<typeof releaseStoppedReaderClone> {
+  const lease = waitForStopCloseOutLease(row.record_id, STOP_CLOSE_OUT_LEASE_WAIT_MS, {
+    leaseHeld: (id) => runCloseOutLeaseState(id) === 'held',
+  })
+  const coordinatorPid = stopCoordinatorPid(row.pid)
+  const decision = decideStopCloseOut({
+    lease,
+    coordinatorAlive: coordinatorPid != null && pidAlive(coordinatorPid),
+    coordinatorPid,
+  })
+  if (decision.action === 'leave-for-sweep') {
+    return keptReaderCloneForHeldLease(cleanupRow, decision.coordinatorPid)
+  }
+  return releaseStoppedReaderClone(cleanupRow.record_id, stopCoordinatorExtraPids(row.pid))
 }
 
 function logStoppedRun(
@@ -312,10 +360,7 @@ export async function stopRun(
     )
   }
   const dockerTeardown = teardownTerminalRunResources(db(), row.record_id)
-  const readerCloneRelease = releaseStoppedReaderClone(
-    cleanupRow.record_id,
-    stopCoordinatorExtraPids(row.pid),
-  )
+  const readerCloneRelease = stoppedReaderCloneRelease(row, cleanupRow)
   logStoppedRun(options, row, cleanupRow, dockerTeardown, readerCloneRelease, sharedGitConfigHeader)
 }
 
