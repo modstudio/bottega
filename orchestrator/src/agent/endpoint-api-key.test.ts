@@ -189,6 +189,8 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
   let refusal = ''
   let attempts = 0
   const delays: number[] = []
+  const randomValues = [0, 1, 0, 1, 0]
+  let randomIndex = 0
   try {
     await resolveEndpointApiKeyEnv(
       { baseUrl: 'https://example.test/v1', apiKeySecret: 'SEALED_KEY' },
@@ -200,7 +202,7 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
         sleep: async (delayMs) => {
           delays.push(delayMs)
         },
-        random: () => 0.5,
+        random: () => randomValues[randomIndex++]!,
       },
     )
   } catch (caught) {
@@ -213,7 +215,7 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
   expect(refusal).toContain(`cleared by: ${PLATFORM_SLUG} run retry <run>`)
   expect(refusal).not.toContain(sensitiveMarker)
   expect(attempts).toBe(ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS)
-  expect(delays).toEqual([2_000, 4_000, 8_000, 15_000, 15_000])
+  expect(delays).toEqual([1_600, 4_800, 6_400, 18_000, 12_000])
 })
 
 test('a wrapped 403 refuses immediately with the access remedy', async () => {
