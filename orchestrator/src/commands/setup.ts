@@ -9,7 +9,7 @@ import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/se
 import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
-import { setupService, type SetupService } from '../setup/setup-service.ts'
+import { type SetupService, setupService } from '../setup/setup-service.ts'
 import { collect, log } from './support.ts'
 
 type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: string }
@@ -142,7 +142,7 @@ export function register(program: Command, service: SetupService = setupService)
     .option('--json', 'write the setup plan as compact JSON')
     .allowExcessArguments(false)
     .action(async (options: SetupOptions) => {
-      const plan = await setupService.dryRun(inputs(options))
+      const plan = await service.dryRun(inputs(options))
       log(JSON.stringify(plan, null, options.json ? undefined : 2))
     })
   setup
