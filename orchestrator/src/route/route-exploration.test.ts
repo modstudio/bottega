@@ -23,6 +23,31 @@ import {
 } from './route.ts'
 
 describe('routing exploration', () => {
+  test('a disabled cost policy leaves the current decision unchanged for a fixed rng', () => {
+    const row = (agent: string, scoreValue: number, cost: number) => ({
+      agent,
+      scored: MIN_SAMPLE,
+      failures: 0,
+      none: 0,
+      evidence: MIN_SAMPLE,
+      score: scoreValue,
+      shrunk: scoreValue,
+      free: false,
+      latencyMs: 1_000,
+      precision: null,
+      costPerAccepted: { usd: cost },
+    })
+    const field = [row('quality', 0.9, 10), row('cheap', 0.8, 1)]
+    const rng = () => 0.5
+    const current = currentPolicySelection(field, [], false, rng)
+    const disabled = currentPolicySelection(field, [], false, rng, new Set(), new Set(), {
+      enabled: false,
+      rate: 1,
+      floor: 0.8,
+    })
+    expect(disabled).toEqual(current)
+  })
+
   test('an unproven agent can still win the exploration coin with Thompson proven ranking', () => {
     for (let i = 0; i < MIN_SAMPLE; i++) {
       score(addRun({ agent: 'codex', job: 'review-lens' }), 'full', 'right')

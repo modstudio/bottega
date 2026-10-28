@@ -58,7 +58,13 @@ export function rankThompson<T extends PosteriorCandidate>(
   minSample: number,
   contribution: (weight: number) => { successes: number; failures: number },
   posteriorNoiseBand: number,
-): { chosen: T; expected: T; posteriorMean: number; tied: number } {
+): {
+  chosen: T
+  expected: T
+  posteriorMean: number
+  tied: number
+  posterior: Array<{ candidate: T; mean: number; sample: number }>
+} {
   const field = candidates
     .filter((candidate) => candidate.evidence >= minSample && candidate.score !== null)
     .map((candidate) => candidate.score!)
@@ -95,6 +101,7 @@ export function rankThompson<T extends PosteriorCandidate>(
     expected: expected.row.candidate,
     posteriorMean: chosen.row.mean,
     tied: chosen.tied,
+    posterior,
   }
 }
 

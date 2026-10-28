@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test'
 import { setMachineDelegation } from '../../../shared/machine-config.ts'
+import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { recordReview } from '../review/review-triage.ts'
 import { recordDuels } from '../score/duel.ts'
 import { MIN_SAMPLE } from './route.ts'
 import { guideCommand, pickCommand, statsCommand } from './routing-commands.ts'
@@ -98,7 +100,9 @@ test('stats reports chain cost per accepted result beside the existing cost', ()
     },
   )
   expect(lines[0]).toContain('cost  $/accepted')
-  expect(lines.find((line) => line.includes('codex'))).toEndWith('$1.0500 (1 imputed)')
+  const row = lines.find((line) => line.includes('codex'))!
+  expect(row).toContain('review floor=80% rate=1.25x BELOW')
+  expect(row).toEndWith('$1.0500 (1 imputed)')
 })
 
 test('stats distinguishes an unpriced cell from one with no accepted result', () => {
@@ -128,6 +132,24 @@ test('stats distinguishes an unpriced cell from one with no accepted result', ()
   )
 })
 
+test('stats resolves and marks a named lens tier', () => {
+  const runId = addRun({ agent: 'codex', job: 'review-lens', lens: 'correctness' })
+  recordReview(runId, reviewReply(0), db())
+  score(runId, 'full', 'wrong')
+  const lines: string[] = []
+  statsCommand(
+    {
+      flag: (name) =>
+        name === 'job' ? 'review-lens' : name === 'lens' ? 'correctness' : undefined,
+      has: () => false,
+    },
+    { log: (...parts) => lines.push(parts.join(' ')), dur: String },
+  )
+  expect(lines.find((line) => line.includes('codex'))).toContain(
+    'high-stakes floor=90% rate=3x BELOW',
+  )
+})
+
 test('pick previews the same fan-out exclusions do uses', () => {
   const prior = addRun({ agent: 'grok', job: 'review-lens' })
   db().query('UPDATE run SET model=? WHERE record_id=?').run(AGENTS.grok!.model, prior)
@@ -146,9 +168,10 @@ test('pick refuses an unmet constraint instead of silently routing', () => {
 })
 
 test('pick reports the source of each resolved lens profile', () => {
-  expect(preview([], [], 'correctness')).toContain(
-    'selected profiles: framework=default@1 source=generic',
-  )
+  const output = preview([], [], 'correctness')
+  expect(output).toContain('selected profiles: framework=default@1 source=generic')
+  expect(output).toContain('cost policy (off): would pick')
+  expect(output).toContain('rate 3x/+5 (correctness, high-stakes)')
 })
 
 test('guide continues across harness and external delegation classes', () => {

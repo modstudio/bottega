@@ -298,7 +298,7 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
   // status='ok' after the router stopped, so grok on review-lens read 96%
   // here and 69% to the thing actually choosing an agent. A report that
   // disagrees with the decision it describes is worse than no report.
-  const rows = scoreboard(flag('job'), subscriptionCost).sort(
+  const rows = scoreboard(flag('job'), subscriptionCost, flag('lens')).sort(
     (a, b) => a.job.localeCompare(b.job) || (b.shrunk ?? -9) - (a.shrunk ?? -9),
   )
   const matrices = duelMatrices(flag('job'))
@@ -308,7 +308,7 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
   }
   if (rows.length) {
     log(
-      'job / prompt bucket            agent        runs  judged    raw  shrunk  median    vendor tokens  calls  peak call  tokens/run      cost  $/accepted',
+      'job / prompt bucket            agent        runs  judged    raw  shrunk  policy                   median    vendor tokens  calls  peak call  tokens/run      cost  $/accepted',
     )
     for (const r of rows) {
       const score = r.score === null ? '—' : `${(r.score * 100).toFixed(0)}%`
@@ -318,12 +318,15 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
       // Failures are part of the score, so they are shown beside it rather than
       // left for someone to wonder why the percentage looks low.
       const judged = r.failures ? `${r.evidence}(${r.failures}f)` : String(r.evidence)
+      const policy =
+        `${r.costPolicy.group} floor=${r.costPolicy.floor === null ? 'none' : `${(r.costPolicy.floor * 100).toFixed(0)}%`}` +
+        ` rate=${r.costPolicy.rate}x${r.belowCostFloor ? ' BELOW' : ''}`
       const metric = (value: number | null) =>
         value === null ? '—' : Math.round(value).toLocaleString()
       log(
         `${`${r.job} [${promptSizeBucketLabel(r.promptBucket)}]`.padEnd(30)} ` +
           `${r.agent.padEnd(11)} ${String(r.runs).padStart(5)} ${judged.padStart(7)}` +
-          ` ${score.padStart(6)} ${shrunk.padStart(7)} ${dur(r.latencyMs).padStart(8)} ${r.tokens.toLocaleString().padStart(17)}` +
+          ` ${score.padStart(6)} ${shrunk.padStart(7)} ${policy.padEnd(24)} ${dur(r.latencyMs).padStart(8)} ${r.tokens.toLocaleString().padStart(17)}` +
           ` ${metric(r.usage.modelCalls).padStart(6)} ${metric(r.usage.peakCallTokens).padStart(10)}` +
           ` ${metric(r.usage.tokensPerRun).padStart(11)}` +
           ` ${cost.padStart(9)} ${costPerAccepted.padStart(11)}`,
