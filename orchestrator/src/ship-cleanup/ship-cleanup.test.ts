@@ -8,7 +8,45 @@ import type { BranchPruneKeptReason } from '../branch/branch-state.ts'
 import { db } from '../database/db.ts'
 import type { HookTreeRemovalResult } from '../hook-tree/tree.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { formatShipCleanup, type ShipCleanupDependencies, shipCleanup } from './ship-cleanup.ts'
+import {
+  formatShipCleanup,
+  type ShipCleanupDependencies,
+  type ShipCleanupReport,
+  shipCleanup,
+} from './ship-cleanup.ts'
+
+test('ship cleanup output names each released tree and where to deploy from', () => {
+  const report: ShipCleanupReport = {
+    project: 'ship-fixture',
+    branch: 'DEV-1836-c1',
+    landingBranch: 'main',
+    mainCheckoutPath: '/projects/ship-fixture',
+    freed: { artifacts: 0, scratch: 0, worktrees: 10 },
+    removed: {
+      artifacts: [],
+      scratch: [],
+      worktrees: ['/trees/released'],
+      branches: [],
+    },
+    reclaimed: { processes: [], compose: [] },
+    gone: [],
+    kept: [],
+    errors: [],
+    verdict: { clean: true, residue: [] },
+  }
+
+  const output = formatShipCleanup(report)
+  expect(output).toContain('released tree: /trees/released')
+  expect(output).toContain(
+    `deploy from: the landing branch main — pull it in the main checkout /projects/ship-fixture, or run ${PLATFORM_SLUG} tree create --base origin/main`,
+  )
+  expect(
+    formatShipCleanup({
+      ...report,
+      removed: { ...report.removed, worktrees: [] },
+    }),
+  ).not.toContain('deploy from:')
+})
 
 function addProject(): string {
   const recordId = newRecordId()
@@ -196,6 +234,8 @@ test('ship cleanup gathers branch facts and applies only the pure decision', () 
     (db().query('SELECT number FROM run WHERE record_id=?').get(recordId) as { number: number })
       .number
 
+  expect(report.landingBranch).toBe('main')
+  expect(report.mainCheckoutPath).toBe('/fixture')
   expect(report.removed.artifacts).toEqual([root, turn, lens, unservedTurn, landing])
   expect(report.removed.scratch).toEqual([root, turn, lens, unservedTurn, landing])
   expect(closed).toEqual([root, lens, unscored, unservedRoot])
