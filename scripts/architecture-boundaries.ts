@@ -914,6 +914,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../project/projects.ts',
       './prompt-size-bucket.ts',
       './route.ts',
+      './route-selection.ts',
       './routing-backtest.ts',
     ],
     'Keep routing command adapters independent of runs, transports, the CLI, worktrees, and reviews by value.',
