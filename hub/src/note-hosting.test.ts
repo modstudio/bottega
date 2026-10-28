@@ -132,17 +132,61 @@ describe('hosted-only note safety', () => {
     expect(() => confirmCount(2, 1, 'bulk-only')).toThrow('confirmation count 2')
   })
 
-  test('reap refuses an older hosted API that omits maintenance counts', async () => {
+  test('reap API refuses an old payload before writing', async () => {
+    let writes = 0
+    const response = await noteApi(
+      new Request('https://hub.example.test/v1/notes/reap', {
+        method: 'POST',
+        headers: { authorization: 'Bearer test', 'content-type': 'application/json' },
+        body: JSON.stringify({
+          stale: [],
+          deleted: [],
+          confirmation: 0,
+          cutoff: new Date().toISOString(),
+        }),
+      }),
+      hostedRouteTestConfig,
+      {
+        fetch: (async () =>
+          Response.json({
+            user: { id: 'user-1' },
+            activeSpaceId: 'space-a',
+            memberships: [{ space_id: 'space-a', slug: 'active', permission: 'write' }],
+          })) as unknown as typeof fetch,
+        reap: async () => {
+          writes += 1
+          return {}
+        },
+      },
+    )
+    expect(response?.status).toBe(400)
+    expect(await response?.json()).toEqual({
+      error: expect.stringContaining(`${PLATFORM_SLUG} machine update`),
+    })
+    expect(writes).toBe(0)
+  })
+
+  test('reap refuses an older hosted API before posting maintenance', async () => {
+    const paths: string[] = []
     await expect(
       hostedReapNotes(
         { stale: [], annotated: [], restored: [], deleted: [], confirmation: 0, cutoff: '' },
         {
           baseUrl: 'https://hub.example.test',
           token: 'test',
-          fetch: async () => Response.json({ marked: 0, deleted: 0 }),
+          fetch: async (input) => {
+            paths.push(new URL(input).pathname)
+            return Response.json({
+              userId: 'user-1',
+              activeSpaceId: 'space-a',
+              memberships: [],
+              capabilities: {},
+            })
+          },
         },
       ),
     ).rejects.toThrow('scripts/deploy/hosted api')
+    expect(paths).toEqual(['/v1/tasks/identity'])
   })
   test('an unreachable hosted write refuses and leaves the cache unchanged', async () => {
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM note').get()!.count

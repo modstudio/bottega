@@ -303,19 +303,34 @@ export async function reapHostedNotes(
   },
 ) {
   return withHostedTenant(url, identity, async (tx) => {
-    for (const row of input.stale)
-      await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
+    const staleIds: string[] = []
+    const annotatedIds: string[] = []
+    const restoredIds: string[] = []
+    for (const row of input.stale) {
+      const updated = rows<{ id: string }>(
+        await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
       stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
-      AND stale_at IS NULL AND deleted_at IS NULL`
-    for (const row of input.annotated)
-      await tx`UPDATE hub_note SET stale_reason=${row.reason},updated_at=now()
+      AND stale_at IS NULL AND deleted_at IS NULL RETURNING id`,
+      )
+      staleIds.push(...updated.map((item) => item.id))
+    }
+    for (const row of input.annotated) {
+      const updated = rows<{ id: string }>(
+        await tx`UPDATE hub_note SET stale_reason=${row.reason},updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
-      AND stale_at IS NULL AND deleted_at IS NULL`
-    for (const row of input.restored)
-      await tx`UPDATE hub_note SET stale_at=NULL,stale_reason=${row.reason},updated_at=now()
+      AND stale_at IS NULL AND deleted_at IS NULL RETURNING id`,
+      )
+      annotatedIds.push(...updated.map((item) => item.id))
+    }
+    for (const row of input.restored) {
+      const updated = rows<{ id: string }>(
+        await tx`UPDATE hub_note SET stale_at=NULL,stale_reason=${row.reason},updated_at=now()
       WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
-      AND COALESCE(stale_reason, '') NOT LIKE 'dropped:%' AND deleted_at IS NULL`
-    const found = input.deleted.length
+      AND COALESCE(stale_reason, '') NOT LIKE 'dropped:%' AND deleted_at IS NULL RETURNING id`,
+      )
+      restoredIds.push(...updated.map((item) => item.id))
+    }
+    const reapable = input.deleted.length
       ? rows<{ id: string }>(
           await tx`SELECT id FROM hub_note WHERE space_id=${identity.spaceId}::uuid
           AND id IN ${tx(input.deleted)} AND deleted_at IS NULL
@@ -323,9 +338,25 @@ export async function reapHostedNotes(
           AND last_seen_at <= ${input.cutoff}::timestamptz FOR UPDATE`,
         )
       : []
-    if (found.length < input.deleted.length)
+    if (reapable.length < input.deleted.length)
       throw new Error('local cache is behind the record; the next maintenance pass will recompute')
-    confirmCount(found.length, input.confirmation, 'bulk-only')
+    const found = input.deleted.length
+      ? rows<{ id: string }>(
+          await tx`SELECT note.id FROM hub_note note WHERE note.space_id=${identity.spaceId}::uuid
+          AND note.id IN ${tx(input.deleted)} AND note.deleted_at IS NULL
+          AND note.stale_at IS NOT NULL AND note.sightings=1 AND note.promoted_task IS NULL
+          AND note.last_seen_at <= ${input.cutoff}::timestamptz
+          AND (note.stale_reason LIKE 'dropped:%' OR EXISTS (
+            SELECT 1 FROM hub_note_acknowledgement acknowledgement
+            WHERE acknowledgement.space_id=note.space_id AND acknowledgement.note_id=note.id
+              AND acknowledgement.deleted_at IS NULL AND NOT EXISTS (
+                SELECT 1 FROM jsonb_array_elements(note.anchors::jsonb) anchor
+                WHERE anchor->>'session_id'=acknowledgement.session_id
+              )
+          )) FOR UPDATE`,
+        )
+      : []
+    confirmCount(input.deleted.length, input.confirmation, 'bulk-only')
     if (found.length)
       await tx`UPDATE hub_note SET deleted_at=now(),updated_at=now() WHERE space_id=${identity.spaceId}::uuid
       AND id IN ${tx(found.map((row) => row.id))}`
@@ -334,10 +365,14 @@ export async function reapHostedNotes(
         FROM hub_note n WHERE a.space_id=${identity.spaceId}::uuid AND n.space_id=a.space_id
         AND n.id=a.note_id AND n.id IN ${tx(found.map((row) => row.id))} AND a.deleted_at IS NULL`
     return {
-      marked: input.stale.length,
-      annotated: input.annotated.length,
-      restored: input.restored.length,
+      marked: staleIds.length,
+      annotated: annotatedIds.length,
+      restored: restoredIds.length,
       deleted: found.length,
+      staleIds,
+      annotatedIds,
+      restoredIds,
+      deletedIds: found.map((row) => row.id),
     }
   })
 }

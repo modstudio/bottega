@@ -269,7 +269,7 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/note-staleness.ts',
-    allowed: ['node:path'],
+    allowed: [],
   },
   {
     file: 'hub/src/note-staleness-store.ts',

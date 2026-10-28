@@ -130,6 +130,15 @@ async function batchRoute(context: RouteContext): Promise<Response | null> {
     const cutoff = body?.cutoff
     if (typeof cutoff !== 'string' || !Number.isFinite(Date.parse(cutoff)))
       throw new Error('reap requires a staleness cutoff')
+    for (const field of ['stale', 'annotated', 'restored', 'deleted'] as const) {
+      if (!Array.isArray(body?.[field]))
+        return json(
+          {
+            error: `note reap requires ${field} to be an array; run \`${PLATFORM_SLUG} machine update\` and retry`,
+          },
+          400,
+        )
+    }
     return json(
       await call(dependencies.reap, reapHostedNotes)(config.recordDatabaseUrl, who, body as never),
     )

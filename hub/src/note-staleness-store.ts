@@ -34,8 +34,20 @@ function applyChange(conn: Database, change: StalenessChange, at: string): void 
       .run(at, change.reason, change.recordId)
     return
   }
+  if (change.action === 'annotate') {
+    conn
+      .query(
+        `UPDATE note SET stale_at=NULL,stale_reason=? WHERE record_id=? AND stale_at IS NULL
+         AND COALESCE(stale_reason,'') NOT LIKE 'dropped:%'`,
+      )
+      .run(change.reason, change.recordId)
+    return
+  }
   conn
-    .query('UPDATE note SET stale_at=NULL,stale_reason=? WHERE record_id=?')
+    .query(
+      `UPDATE note SET stale_at=NULL,stale_reason=? WHERE record_id=?
+       AND COALESCE(stale_reason,'') NOT LIKE 'dropped:%'`,
+    )
     .run(change.reason, change.recordId)
 }
 
@@ -120,9 +132,15 @@ export async function applyHostedStaleness(
         { ...hosted, recordSpace: spaceId },
       )
       writeTransaction((conn) => {
-        for (const change of [...stale, ...annotated, ...restored]) applyChange(conn, change, at)
-        for (const item of removed)
-          conn.query('DELETE FROM note WHERE record_id=?').run(item.recordId)
+        const appliedIds = new Set([
+          ...response.staleIds,
+          ...response.annotatedIds,
+          ...response.restoredIds,
+        ])
+        for (const change of [...stale, ...annotated, ...restored])
+          if (appliedIds.has(change.recordId)) applyChange(conn, change, at)
+        for (const id of response.deletedIds)
+          conn.query('DELETE FROM note WHERE record_id=?').run(id)
       })
       totals.marked += response.marked
       totals.annotated += response.annotated

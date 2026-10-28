@@ -46,6 +46,7 @@ const hosted = {
         memberships: [],
         capabilities: {
           projectNoteCounters: true,
+          noteTriageStaleness: true,
           spacePush: true,
           spacePushTables: ['hub_note', 'hub_note_acknowledgement'],
         },
@@ -110,6 +111,10 @@ const hosted = {
         annotated: body.annotated.length,
         restored: body.restored.length,
         deleted: body.deleted.length,
+        staleIds: body.stale.map((row: { recordId: string }) => row.recordId),
+        annotatedIds: body.annotated.map((row: { recordId: string }) => row.recordId),
+        restoredIds: body.restored.map((row: { recordId: string }) => row.recordId),
+        deletedIds: body.deleted,
       })
     return Response.json({ error: 'unexpected route' }, { status: 500 })
   },
@@ -854,6 +859,19 @@ describe('suggestion notes', () => {
       'branch deleted-branch was deleted',
       undefined,
     ])
+    expect(ids.slice(0, 3).map((id) => getNote(id))).toEqual([
+      expect.objectContaining({
+        stale_at: null,
+        stale_reason: `${file}:1 no longer has its anchored content`,
+      }),
+      expect.objectContaining({ stale_at: null, stale_reason: 'run 999 aged out' }),
+      expect.objectContaining({
+        stale_at: null,
+        stale_reason: 'branch deleted-branch was deleted',
+      }),
+    ])
+    const openIds = listNotes({ stale: false }).map((note) => note.record_id)
+    expect(ids.every((id) => openIds.includes(id))).toBe(true)
   })
 
   test('stale maintenance deletes only old singleton unpromoted notes', async () => {
@@ -885,6 +903,7 @@ describe('suggestion notes', () => {
       return { number, recordId }
     }
     const doomed = add(1, null)
+    const untriaged = add(1, null)
     const repeated = add(2, null)
     const recent = add(1, null, '2026-09-01T00:00:00.000Z')
     writeTransaction((conn) =>
@@ -902,6 +921,7 @@ describe('suggestion notes', () => {
     })
     expect(result.deleted).toBeGreaterThanOrEqual(1)
     expect(() => getNote(doomed.recordId)).toThrow(`no note ${doomed.recordId}`)
+    expect(getNote(untriaged.recordId).number).toBe(untriaged.number)
     expect(getNote(repeated.recordId).number).toBe(repeated.number)
     expect(getNote(recent.recordId).number).toBe(recent.number)
   })

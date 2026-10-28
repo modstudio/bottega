@@ -6,6 +6,7 @@ import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
+  assertNoteTriageStaleness,
   assertProjectNoteCounters,
   assertTargetSpaceNotes,
   hostedTaskIdentity,
@@ -87,17 +88,18 @@ export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, opt
     options,
   )
 export const hostedReapNotes = async (body: unknown, options?: Options) => {
-  const result = await request<{
+  const identity = await hostedTaskIdentity(options)
+  assertNoteTriageStaleness(identity)
+  return request<{
     marked: number
-    annotated?: number
-    restored?: number
+    annotated: number
+    restored: number
     deleted: number
+    staleIds: string[]
+    annotatedIds: string[]
+    restoredIds: string[]
+    deletedIds: string[]
   }>('/v1/notes/reap', 'POST', body, options)
-  if (typeof result.annotated !== 'number' || typeof result.restored !== 'number')
-    throw new Error(
-      'hosted note maintenance is out of date; run `scripts/deploy/hosted api` and retry',
-    )
-  return { ...result, annotated: result.annotated, restored: result.restored }
 }
 export async function hostedNoteChanges(cursor: string | null, options?: Options) {
   await assertNoteCapabilities(options)

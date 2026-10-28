@@ -20,7 +20,7 @@ import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './n
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
-import { evaluateNoteStaleness, type StalenessProject } from './note-staleness.ts'
+import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
   applyHostedStaleness,
   applyLocalStaleness,
@@ -793,6 +793,56 @@ const stalenessFileReader = (path: string): string | null => {
   }
 }
 
+function observeStalenessAnchor(
+  anchor: NoteAnchor,
+  noteProject: string,
+  registered: Array<{ name: string; path: string; trunk: string }>,
+  existingRuns: Set<string>,
+  runGit: StaleDeps['git'],
+  readFile: StaleDeps['readFile'],
+): StalenessAnchorObservation {
+  const projectName = anchor.project || noteProject
+  const project = registered.find((candidate) => candidate.name === projectName)
+  const files = anchor.files.map((file) => {
+    const path = isAbsolute(file.path) ? file.path : resolve(anchor.cwd, file.path)
+    const contents = readFile(path)
+    const anchored = file.content.trim()
+    return {
+      path: file.path,
+      line: file.line,
+      exists: contents !== null,
+      containsAnchoredContent:
+        contents !== null &&
+        (!anchored || contents.split(/\r?\n/).some((line) => line.trim() === anchored)),
+    }
+  })
+  let branch: StalenessAnchorObservation['branch'] = null
+  if (project && anchor.branch && anchor.branch !== project.trunk) {
+    const exists =
+      runGit(project.path, 'show-ref', '--verify', `refs/heads/${anchor.branch}`) !== null
+    branch = {
+      name: anchor.branch,
+      trunk: project.trunk,
+      exists,
+      landed:
+        exists &&
+        runGit(project.path, 'merge-base', '--is-ancestor', anchor.branch, project.trunk) !== null,
+    }
+  }
+  return {
+    sessionId: anchor.session_id,
+    projectFound: project !== undefined,
+    files,
+    run: anchor.run_record_id
+      ? {
+          label: anchor.run_id ?? anchor.run_record_id,
+          exists: existingRuns.has(anchor.run_record_id),
+        }
+      : null,
+    branch,
+  }
+}
+
 export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleResult> {
   const runGit = deps.git ?? git
   const readFile = deps.readFile ?? stalenessFileReader
@@ -817,27 +867,28 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     sessions.push(acknowledgement.session_id)
     acknowledgementSessions.set(acknowledgement.note_record_id, sessions)
   }
-  const registered: StalenessProject[] = projects().map((project) => ({
+  const registered = projects().map((project) => ({
     name: project.name,
     path: project.path,
     trunk: typeof project.settings.trunk === 'string' ? project.settings.trunk : 'main',
   }))
-  const changes = notes.flatMap((note): StalenessChange[] => {
+  const evaluations = notes.map((note) => {
+    const anchors = note.anchors.map((anchor) =>
+      observeStalenessAnchor(anchor, note.project, registered, existingRuns, runGit, readFile),
+    )
     const outcome = evaluateNoteStaleness({
       note: {
-        project: note.project,
-        anchors: note.anchors,
+        anchors,
         promotedTask: note.promoted_task,
         staleAt: note.stale_at,
         staleReason: note.stale_reason,
       },
       acknowledgementSessions: acknowledgementSessions.get(note.record_id) ?? [],
-      existingRuns,
-      projects: registered,
-      git: runGit,
-      readFile,
     })
-    return outcome.action === 'unchanged'
+    return { note, outcome }
+  })
+  const changes = evaluations.flatMap(({ note, outcome }): StalenessChange[] =>
+    outcome.action === 'unchanged'
       ? []
       : [
           {
@@ -847,29 +898,19 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
             action: outcome.action,
             reason: outcome.reason,
           },
-        ]
-  })
+        ],
+  )
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
-  const changeById = new Map(changes.map((change) => [change.recordId, change]))
-  const deletedRows = db()
-    .query<{ record_id: string; project: string; stale_at: string | null }, [string]>(
-      `SELECT record_id,project,stale_at FROM note
-       WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL
-         AND (stale_reason LIKE 'dropped:%' OR EXISTS (
-           SELECT 1 FROM note_acknowledgement acknowledgement
-           WHERE acknowledgement.note_record_id=note.record_id
-             AND NOT EXISTS (
-               SELECT 1 FROM json_each(note.anchors)
-               WHERE json_extract(value, '$.session_id')=acknowledgement.session_id
-             )
-         ))`,
-    )
-    .all(cutoff)
-    .filter((row) => {
-      const change = changeById.get(row.record_id)
-      return change?.action === 'mark' || (row.stale_at !== null && change?.action !== 'restore')
-    })
+  const deletedRows = evaluations.flatMap(({ note, outcome }) =>
+    note.sightings === 1 &&
+    note.last_seen_at <= cutoff &&
+    note.promoted_task === null &&
+    outcome.triaged &&
+    (outcome.action === 'mark' || (note.stale_at !== null && outcome.action !== 'restore'))
+      ? [{ record_id: note.record_id, project: note.project }]
+      : [],
+  )
   const deletedIds = deletedRows.map((row) => row.record_id)
   const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {

@@ -854,7 +854,7 @@ try {
           created_at: noteStamp,
           last_seen_at: noteStamp,
           stale_at: noteStamp,
-          stale_reason: 'gone',
+          stale_reason: 'dropped: resolved',
           promoted_task: null,
           updated_at: noteStamp,
           deleted_at: null,

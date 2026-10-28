@@ -335,6 +335,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'no local table; configuration and secret inputs come from their owners',
   ),
   ...readEntries('hub', 'taskClient', [
+    'assertNoteTriageStaleness',
     'assertProjectNoteCounters',
     'assertSpaceIdentitySet',
     'assertTargetSpaceNotes',

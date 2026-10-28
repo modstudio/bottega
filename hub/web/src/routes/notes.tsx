@@ -32,13 +32,22 @@ function NotesPage() {
 function NoteStatus({
   promotedTask,
   staleAt,
+  staleReason,
 }: {
   promotedTask: string | null
   staleAt: string | null
+  staleReason?: string | null
 }) {
   if (promotedTask) return <Badge identifier>{promotedTask}</Badge>
   if (staleAt) return <Badge tone="error">stale</Badge>
-  return <Badge>open</Badge>
+  return (
+    <span className="flex flex-col items-start gap-1">
+      <Badge>open</Badge>
+      {staleReason ? (
+        <span className="text-xs text-text-muted">anchor gone: {staleReason}</span>
+      ) : null}
+    </span>
+  )
 }
 
 const canPromote = (note: { promoted_task: string | null; stale_at: string | null }) =>
@@ -112,6 +121,7 @@ function PromoteNoteDialog({ note, onClose }: { note: PromoteTarget | null; onCl
   )
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: phone and desktop presentations stay together.
 function LocalNotesPage() {
   const phone = useMediaQuery(PHONE_QUERY)
   const [stale, setStale] = useState(false)
@@ -154,7 +164,13 @@ function LocalNotesPage() {
       id: 'status',
       label: 'Status',
       phone: 'aside',
-      render: (note) => <NoteStatus promotedTask={note.promoted_task} staleAt={note.stale_at} />,
+      render: (note) => (
+        <NoteStatus
+          promotedTask={note.promoted_task}
+          staleAt={note.stale_at}
+          staleReason={note.stale_reason}
+        />
+      ),
     },
   ]
   return (
@@ -213,7 +229,11 @@ function LocalNotesPage() {
                   <TableCell>{note.area ?? '-'}</TableCell>
                   <TableCell>{note.sightings}</TableCell>
                   <TableCell>
-                    <NoteStatus promotedTask={note.promoted_task} staleAt={note.stale_at} />
+                    <NoteStatus
+                      promotedTask={note.promoted_task}
+                      staleAt={note.stale_at}
+                      staleReason={note.stale_reason}
+                    />
                   </TableCell>
                   <TableCell>
                     {canPromote(note) ? (
