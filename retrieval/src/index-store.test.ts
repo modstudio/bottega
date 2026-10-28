@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { expect, mock, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +11,7 @@ import {
   configureIndexDatabase,
   indexedRows,
   isReadOnlyIndexError,
+  openSearchIndexDatabase,
   planCodeCache,
   storedRows,
 } from './index-store.ts'
@@ -31,6 +32,37 @@ test('classifies SQLite read-only errors and permission errors on index files', 
   ).toBe(true)
   expect(isReadOnlyIndexError({ code: 'EACCES', path: '/other/file' }, databasePath)).toBe(false)
   expect(isReadOnlyIndexError({ code: 'SQLITE_BUSY' }, databasePath)).toBe(false)
+})
+
+test('reopens a read-only search index as immutable when its schema probe is read-only', () => {
+  const path = '/state/index with spaces/retrieval.db'
+  const close = mock(() => {})
+  const readonlyPaths: string[] = []
+  const immutable = {} as Database
+  const opened = openSearchIndexDatabase(path, {
+    writable: () => {
+      throw { code: 'SQLITE_READONLY' }
+    },
+    readonly: (filename) => {
+      readonlyPaths.push(filename)
+      if (filename.startsWith('file:')) return immutable
+      return {
+        close,
+        query: () => ({
+          get: () => {
+            throw { code: 'SQLITE_READONLY' }
+          },
+        }),
+      } as unknown as Database
+    },
+  })
+
+  expect(opened).toEqual({ database: immutable, readonly: true })
+  expect(close).toHaveBeenCalledTimes(1)
+  expect(readonlyPaths).toEqual([
+    path,
+    'file:///state/index%20with%20spaces/retrieval.db?immutable=1',
+  ])
 })
 
 test('two handles interleave cold schema creation and reject a stale repeated refresh', () => {

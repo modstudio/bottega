@@ -4,6 +4,7 @@
 import { Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { EMBEDDING_DIMENSION, EMBEDDING_MODEL, INSTRUCTION_VERSION } from './contract.ts'
 import type {
   PlannedDelete,
@@ -239,6 +240,16 @@ function openReadonlyIndexDatabase(path: string): Database {
   return new Database(path, { readonly: true })
 }
 
+type SearchIndexDatabaseOpeners = {
+  writable: (path: string) => Database
+  readonly: (path: string) => Database
+}
+
+const searchIndexDatabaseOpeners: SearchIndexDatabaseOpeners = {
+  writable: openIndexDatabase,
+  readonly: openReadonlyIndexDatabase,
+}
+
 function isIndexPermissionError(code: string | undefined): boolean {
   return code === 'EACCES' || code === 'EPERM'
 }
@@ -270,9 +281,34 @@ function isMissingIndexError(error: unknown, databasePath: string): boolean {
   return !existsSync(databasePath) && (code === 'SQLITE_CANTOPEN' || isIndexPermissionError(code))
 }
 
-export function openSearchIndexDatabase(path: string): { database: Database; readonly: boolean } {
+function immutableIndexFilename(path: string): string {
+  const url = pathToFileURL(resolve(path))
+  url.searchParams.set('immutable', '1')
+  return url.href
+}
+
+function openReadableIndexDatabase(
+  path: string,
+  openReadonly: (path: string) => Database,
+): Database {
+  let database: Database | undefined
   try {
-    return { database: openIndexDatabase(path), readonly: false }
+    database = openReadonly(path)
+    database.query('SELECT count(*) FROM sqlite_master').get()
+    return database
+  } catch (error) {
+    database?.close()
+    if (!isReadOnlyIndexError(error, path) && errorCode(error) !== 'SQLITE_CANTOPEN') throw error
+    return openReadonly(immutableIndexFilename(path))
+  }
+}
+
+export function openSearchIndexDatabase(
+  path: string,
+  openers: SearchIndexDatabaseOpeners = searchIndexDatabaseOpeners,
+): { database: Database; readonly: boolean } {
+  try {
+    return { database: openers.writable(path), readonly: false }
   } catch (error) {
     if (isMissingIndexError(error, path)) {
       throw new Error(
@@ -280,7 +316,7 @@ export function openSearchIndexDatabase(path: string): { database: Database; rea
       )
     }
     if (!isReadOnlyIndexError(error, path)) throw error
-    return { database: openReadonlyIndexDatabase(path), readonly: true }
+    return { database: openReadableIndexDatabase(path, openers.readonly), readonly: true }
   }
 }
 
