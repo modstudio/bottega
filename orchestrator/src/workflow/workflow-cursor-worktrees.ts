@@ -15,9 +15,13 @@ export function openCursorWorktrees(database: Database = db()): OpenCursorWorktr
     )
     .all()
   return rows.flatMap((row) => {
-    const worktree = (JSON.parse(row.args) as Record<string, unknown>).worktree
-    return typeof worktree === 'string' && worktree.trim()
-      ? [{ project: row.project, worktree }]
-      : []
+    try {
+      const worktree = (JSON.parse(row.args) as Record<string, unknown>).worktree
+      return typeof worktree === 'string' && worktree.trim()
+        ? [{ project: row.project, worktree }]
+        : []
+    } catch {
+      return []
+    }
   })
 }

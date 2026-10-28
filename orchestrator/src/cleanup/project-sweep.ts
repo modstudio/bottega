@@ -2,8 +2,10 @@
 /** Applies the held-tree decision to one project's declared sweep command. */
 
 import { existsSync, realpathSync } from 'node:fs'
+import { db } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
-import { projectAt } from '../project/projects.ts'
+import { liveRunWorktrees } from '../reclaim/orphan-process-reclaim.ts'
+import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { sweepWithTool } from '../worktree/worktree-remove.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { withCleanupLock } from './cleanup.ts'
@@ -13,48 +15,83 @@ export type ProjectSweepOutcome = { failed: boolean; keep: { line: string; reaso
 
 export function heldProjectTrees(): {
   byProject: Map<string, Set<string>>
-  hold: (path: string | null) => void
+  add: (projectName: string, path: string | null) => void
 } {
   const byProject = new Map<string, Set<string>>()
-  const hold = (path: string | null) => {
+  const add = (projectName: string, path: string | null) => {
     if (!path || !existsSync(path)) return
-    const canonical = realpathSync(path)
-    const project = projectAt(canonical)
-    if (!project) return
-    const paths = byProject.get(project.name) ?? new Set<string>()
+    let canonical: string
+    try {
+      canonical = realpathSync(path)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    const paths = byProject.get(projectName) ?? new Set<string>()
     paths.add(canonical)
-    byProject.set(project.name, paths)
+    byProject.set(projectName, paths)
   }
-  return { byProject, hold }
+  return { byProject, add }
 }
 
+/**
+ * Then the PROJECT'S OWN sweep, which knows what orchestrator cannot.
+ *
+ * A database whose worktree directory was deleted by hand is invisible to
+ * everything above — no row points at it, and there is nothing left to
+ * remove. Each project's tool is the only thing that can find those, and
+ * running it is the difference between reclaiming directories and
+ * reclaiming disk. It runs only when the held-tree decision allows it.
+ */
 export function sweepProject(input: {
   project: Project
-  heldPaths: string[]
+  heldPaths: ReadonlySet<string>
   dryRun: boolean
   presentation: CleanupPresentation
 }): ProjectSweepOutcome {
   const { project, heldPaths, dryRun, presentation } = input
   const tool = project.settings.worktree!
-  const decision = decideProjectSweep({
-    heldPaths,
-    honorsHeld: tool.sweep_honors_held === true,
-    dryRun,
-  })
-  if (decision.action === 'skip') {
-    return {
-      failed: false,
-      keep: {
-        line: `kept project sweep ${project.name}: ${decision.reason}`,
-        reason: 'project sweep held',
-      },
-    }
-  }
-  if (!decision.execute) return { failed: false, keep: null }
   try {
-    const result = withCleanupLock(project.path, `project sweep for ${project.name}`, null, () =>
-      sweepWithTool(tool, project.path, decision.environment),
-    )
+    const outcome = withCleanupLock(project.path, `project sweep for ${project.name}`, null, () => {
+      const current = heldProjectTrees()
+      for (const path of heldPaths) current.add(project.name, path)
+      for (const row of openCursorWorktrees())
+        if (row.project === project.name) current.add(row.project, row.worktree)
+      const live = liveRunWorktrees()
+      const runRows = db()
+        .query<{ project: string | null; worktree: string }, []>(
+          `SELECT COALESCE(run.repo,project.name) project,run.worktree
+             FROM run LEFT JOIN project ON project.record_id=run.project_record_id
+            WHERE run.worktree IS NOT NULL`,
+        )
+        .all()
+      for (const row of runRows)
+        if (row.project === project.name && live.has(row.worktree))
+          current.add(row.project, row.worktree)
+      const decision = decideProjectSweep({
+        heldPaths: [...(current.byProject.get(project.name) ?? [])].sort(),
+        honorsHeld: tool.sweep_honors_held === true,
+        dryRun,
+      })
+      return decision.action === 'skip'
+        ? decision
+        : {
+            ...decision,
+            result: decision.execute
+              ? sweepWithTool(tool, project.path, decision.environment)
+              : null,
+          }
+    })
+    if (outcome.action === 'skip') {
+      return {
+        failed: false,
+        keep: {
+          line: `kept project sweep ${project.name}: ${outcome.reason}`,
+          reason: 'project sweep held',
+        },
+      }
+    }
+    const { result } = outcome
     if (!result) return { failed: false, keep: null }
     if (result.out.trim()) {
       const lines = result.out.trim().split('\n')
