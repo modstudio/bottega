@@ -250,6 +250,17 @@ const ANSWER_BOOLEANS = new Set([
   '--json',
 ])
 
+function refuseOwnedMessageOption(
+  arg: string,
+  refusedOptions: Readonly<Record<string, string>> | undefined,
+): void {
+  const optionName = arg.split('=', 1)[0]!
+  const owningCommand = refusedOptions?.[optionName]
+  if (owningCommand) {
+    throw new Error(`${optionName} is not an option here; ${owningCommand} takes ${optionName}`)
+  }
+}
+
 export function parseAnswerChannelArgs(args: string[]): {
   argv: string[]
   channel: AnswerChannel
@@ -279,6 +290,7 @@ export function parseWorkerMessageArgs(
     booleans?: Iterable<string>
     questions?: boolean
     questionOperatorFlags?: boolean
+    refusedOptions?: Readonly<Record<string, string>>
     usage?: string
   } = {},
 ): AnswerTextSources {
@@ -298,6 +310,7 @@ export function parseWorkerMessageArgs(
       positionals.push(arg)
       continue
     }
+    refuseOwnedMessageOption(arg, options.refusedOptions)
     const operatorIdentifier = operatorQuestionIdentifier(
       arg,
       options.questionOperatorFlags ?? false,
@@ -370,6 +383,21 @@ export function parseAnswerTextSources(args: string[]): AnswerTextSources {
     booleans: ANSWER_BOOLEANS,
     questions: true,
     questionOperatorFlags: true,
+    refusedOptions: {
+      '--all': `${PLATFORM_SLUG} question inbox`,
+      '--active': `${PLATFORM_SLUG} question inbox`,
+      '--cwd': `${PLATFORM_SLUG} question inbox`,
+      '--reason': `${PLATFORM_SLUG} question close`,
+      '--since': `${PLATFORM_SLUG} question ruling list`,
+      '--kind': `${PLATFORM_SLUG} question ruling list`,
+      '--because': `${PLATFORM_SLUG} question ruling overturn`,
+      '--replacement': `${PLATFORM_SLUG} question ruling overturn`,
+      '--replacement-file': `${PLATFORM_SLUG} question ruling overturn`,
+      '--as': `${PLATFORM_SLUG} question ruling file`,
+      '--scope': `${PLATFORM_SLUG} question ruling file`,
+      '--subject': `${PLATFORM_SLUG} question ruling file`,
+      '--title': `${PLATFORM_SLUG} question ruling file`,
+    },
   })
 }
 

@@ -49,7 +49,12 @@ export function pullRequestCiCommandOutcome(result: {
 
 function createPullRequestCommand(
   githubArgs: string[],
-  options: { overrideTriage?: string; ceilingRuling?: string; fromOperator?: boolean },
+  options: {
+    cwd?: string
+    overrideTriage?: string
+    ceilingRuling?: string
+    fromOperator?: boolean
+  },
 ): void {
   validateGithubArguments(githubArgs)
   const result = createPullRequest(
@@ -59,7 +64,7 @@ function createPullRequestCommand(
       ceilingRuling: options.ceilingRuling,
       fromOperator: options.fromOperator,
     },
-    process.cwd(),
+    options.cwd ?? process.cwd(),
   )
   if (result.output) log(result.output)
   if (result.overrideId !== null) {
@@ -73,6 +78,7 @@ export function register(program: Command): void {
   pr.command('create [githubArgs...]')
     .description('create a pull request after review-triage admission')
     .allowUnknownOption(true)
+    .option('--cwd <tree>', 'verify and create from this worktree')
     .option('--override-triage <reason>', 'admit incomplete review triage for this reason')
     .option('--ceiling-ruling <reason>', 'admit remaining review gaps at the round ceiling')
     .option('--from-operator', 'confirm the override came directly from the operator')
