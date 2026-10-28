@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
 import { trackedTestResidue } from '../../test/residue.ts'
 import { readAskServerFailure } from './ask-failure.ts'
-import { recordAskProxyFailure, runAskProxy } from './ask-proxy.ts'
+import { runAskProxy } from './ask-proxy.ts'
 
 const trackResidue = trackedTestResidue()
 const previousAskUrl = process.env.BOTTEGA_ASK_URL
@@ -20,13 +20,6 @@ afterEach(() => {
   else process.env.BOTTEGA_ASK_URL = previousAskUrl
   if (previousScratch === undefined) delete process.env.BOTTEGA_SCRATCH
   else process.env.BOTTEGA_SCRATCH = previousScratch
-})
-
-test('proxy failure leaves the ask-server failure line without launching the proxy', () => {
-  const scratch = trackResidue(join(dir, 'ask-proxy-failure-scratch'))
-  const error = new Error('BOTTEGA_ASK_URL is required')
-  expect(recordAskProxyFailure(error, scratch)).toBe(error)
-  expect(readAskServerFailure(scratch)).toBe('BOTTEGA_ASK_URL is required')
 })
 
 test('an unset ask url through the entry records the failure and prints only the message', async () => {
