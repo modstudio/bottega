@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import type { TrackerSource, TrackerTask } from '../../shared/trackers.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
 import { acquireLease, leaseHolder, releaseLease, withLease } from './collect.ts'
@@ -76,6 +76,24 @@ describe('fresh tracker task read', () => {
     })
     expect(observed).toEqual([task])
     expect(result).toEqual({ trackerRead: true, commentsVerifiable: false, commentIds: [], shown })
+  })
+
+  test('writes only parseable JSON to stdout when a fresh task read holds the lease', async () => {
+    const stdout: string[] = []
+    const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(String(message)))
+    const error = spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const result = await refreshTrackerTask('FIX-1', undefined, {
+        ...dependencies(async () => task),
+        lease: withLease,
+      })
+      console.log(JSON.stringify(result.shown))
+
+      expect(JSON.parse(stdout.join('\n'))).toEqual(shown)
+    } finally {
+      log.mockRestore()
+      error.mockRestore()
+    }
   })
 
   test('reports the tracker comment ids its task read carries', async () => {
