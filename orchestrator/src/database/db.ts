@@ -48,6 +48,7 @@ import {
   MIGRATION_WINDOW_POLL_MS,
   MIGRATION_WINDOW_WAIT_MS,
 } from './migration-window-decision.ts'
+import { activeMigrationWindow } from './migration-window-state.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -268,11 +269,11 @@ function commandReadOnlyDatabase(): Database {
   if (!existsSync(DB_PATH)) throw new Error(missingDatabaseMessage())
   readOnlyHandle = openReadOnlyDatabase()
   readOnlyHandle.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
-  const refused = migrationWindowRefusal(readOnlyHandle)
-  if (refused) {
+  const migrationWindow = migrationWindowRefusal(readOnlyHandle)
+  if (migrationWindow.refusal) {
     readOnlyHandle.close()
     readOnlyHandle = null
-    throw new Error(refused)
+    throw new Error(migrationWindow.refusal)
   }
   return readOnlyHandle
 }
@@ -521,9 +522,10 @@ function defaultDatabase(writable: boolean): Database {
   // truncation but not the limit taking effect afterwards.
   d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
   if (openMode === 'read-write') keepJournalSidecars(d)
-  const refused = migrationWindowRefusal(d)
-  if (refused) refuseOpenMigration(d, refused)
+  const migrationWindow = migrationWindowRefusal(d)
+  if (migrationWindow.refusal) refuseOpenMigration(d, migrationWindow.refusal)
   finishDefaultDatabaseOpen(d, openMode, writable)
+  if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited)
   return d
 }
 
@@ -548,30 +550,91 @@ function refuseOpenMigration(d: Database, refused: string): never {
   throw new Error(refused)
 }
 
-/** Wait out the one bounded window in which machine update owns a behind store. */
-function migrationWindowRefusal(d: Database): string | null {
+type MigrationWindowWait = { migration: string; pid: number; durationMs: number }
+type ActiveStoreMigrationWindow = {
+  migration: string
+  phase: 'draining' | 'migrating'
+  pid: number
+  liveness: 'live' | 'unknown'
+}
+
+function activeStoreMigrationWindow(
+  d: Database,
+  behind: boolean,
+): ActiveStoreMigrationWindow | null {
+  if (!behind) return null
+  const window = activeMigrationWindow(d)
+  if (window) {
+    return {
+      migration: window.marker.migration,
+      phase: 'migrating',
+      pid: window.marker.pid,
+      liveness: window.liveness.state,
+    }
+  }
+  const drain = activeMigrationDrain(d)
+  if (!drain) return null
+  return {
+    migration: drain.marker.migration,
+    phase: drain.marker.phase,
+    pid: drain.marker.pid,
+    liveness: drain.liveness.state,
+  }
+}
+
+/** Wait out the bounded window in which a live migrator owns a behind store. */
+function migrationWindowRefusal(d: Database): {
+  refusal: string | null
+  waited: MigrationWindowWait | null
+} {
   const started = Date.now()
+  let waitedOn: Omit<MigrationWindowWait, 'durationMs'> | null = null
   for (;;) {
     const refusal = migrationRefusal(d)
     const behind = refusal !== null && storeMigrationState(d) === 'behind'
-    const active = behind ? activeMigrationDrain(d) : null
+    const active = activeStoreMigrationWindow(d, behind)
     const elapsedMs = Date.now() - started
     const decision = decideMigrationWindow({
       behind,
       refusal,
       marker: active
         ? {
-            phase: active.marker.phase,
-            pid: active.marker.pid,
-            liveness: active.liveness.state,
+            phase: active.phase,
+            pid: active.pid,
+            liveness: active.liveness,
           }
         : null,
       elapsedMs,
     })
-    if (decision.action === 'open') return null
-    if (decision.action === 'refuse') return decision.message
+    if (decision.action === 'open') {
+      return {
+        refusal: null,
+        waited: waitedOn ? { ...waitedOn, durationMs: elapsedMs } : null,
+      }
+    }
+    if (decision.action === 'refuse') return { refusal: decision.message, waited: null }
+    waitedOn = { migration: active!.migration, pid: active!.pid }
     Bun.sleepSync(Math.min(MIGRATION_WINDOW_POLL_MS, MIGRATION_WINDOW_WAIT_MS - elapsedMs))
   }
+}
+
+function recordMigrationWindowWait(waited: MigrationWindowWait, oneShot = false): void {
+  tryWriteContention(
+    {
+      resourceKind: 'store',
+      resourceKey: 'migration-window',
+      eventKind: 'wait',
+      durationMs: waited.durationMs,
+      cause: `waited for migration ${waited.migration} held by pid ${waited.pid}`,
+    },
+    oneShot ? { busyTimeoutMs: 0 } : undefined,
+  )
+}
+
+function awaitMigrationWindowForMigrationWinner(database: Database): void {
+  const migrationWindow = migrationWindowRefusal(database)
+  if (migrationWindow.refusal) throw new Error(migrationWindow.refusal)
+  if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
 }
 
 function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writable: boolean): void {
@@ -772,8 +835,7 @@ export function migrateDatabase(
       try {
         winner.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
         keepJournalSidecars(winner)
-        const refused = migrationWindowRefusal(winner)
-        if (refused) throw new Error(refused)
+        awaitMigrationWindowForMigrationWinner(winner)
       } finally {
         winner.close()
       }

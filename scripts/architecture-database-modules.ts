@@ -14,6 +14,16 @@ export const databaseModules: ArchitectureModule[] = [
     '../../../shared/process-identity.ts',
   ]),
   module('orchestrator/src/database/migration-window-decision.ts', []),
+  module('orchestrator/src/database/migration-window-state.ts', [
+    'bun:sqlite',
+    '../../../shared/process-identity.ts',
+  ]),
+  module('orchestrator/src/database/migration-window.ts', [
+    'bun:sqlite',
+    '../../../shared/process-identity.ts',
+    './db.ts',
+    './migration-window-state.ts',
+  ]),
   module('orchestrator/src/database/workflow-uuid-migration-preflight.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',

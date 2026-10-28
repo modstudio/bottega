@@ -15,8 +15,6 @@ import {
   parseMigrationDrain,
 } from './migration-drain-state.ts'
 
-export { activeMigrationDrain } from './migration-drain-state.ts'
-
 class MigrationDispatchRefusal extends Error {
   readonly migrationDispatchRefusal = true
   readonly contention: Parameters<typeof tryWriteContention>[0]

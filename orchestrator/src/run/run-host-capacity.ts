@@ -3,7 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso, tryWriteContention } from '../database/db.ts'
-import { activeMigrationDrain } from '../database/migration-drain.ts'
+import { activeMigrationDrain } from '../database/migration-drain-state.ts'
 import {
   decideHostCapacityAdmission,
   HOST_LOAD_RESERVATION_MS,

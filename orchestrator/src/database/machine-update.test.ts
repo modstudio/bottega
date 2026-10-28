@@ -10,6 +10,7 @@ import { machineUpdateCommand, unregisteredMainCheckoutRefusal } from './machine
 import { setMigrationDrain } from './migration-drain.ts'
 import { migrationDrain } from './migration-drain-state.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
+import { migrationWindow } from './migration-window-state.ts'
 import { migrationJournal } from './migrations.ts'
 import { fixtureProjectRecordId } from './test-database.fixture.ts'
 
@@ -40,6 +41,27 @@ function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
   }
 }
 
+function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
+  const journal = migrationJournal()
+  const pendingIndex = journal.length - 1
+  const pending = journal[pendingIndex]!
+  expect(pending.compatibility).toBe('additive')
+  const applied = database
+    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+    )
+    .get(pending.when)!
+  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  return {
+    pending,
+    restore() {
+      database
+        .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+        .run(applied.hash, applied.created_at, applied.version)
+    },
+  }
+}
+
 test("machine update clears a dead holder's marker before deciding", async () => {
   setMigrationDrain(db(), '0155_rebuild', 'draining', {
     pid: 4_200_000,
@@ -66,6 +88,80 @@ test("machine update clears a dead holder's marker before deciding", async () =>
   expect(migrationDrain(db())).toBeNull()
   expect(migrated).toBe(true)
   expect(gitCalls.map((args) => args[0])).toEqual(['branch', 'fetch', 'show', 'pull'])
+})
+
+test('an additive machine update marks only the store-open window around pull and migrate', async () => {
+  const held = holdBackLastAdditiveMigration(db())
+  const phases: string[] = []
+  try {
+    await machineUpdateCommand(
+      { log: () => {} },
+      {
+        cwd: dir,
+        authorityRefusal: () => null,
+        project: () => ({
+          name: 'migration-update-fixture',
+          path: dir,
+          settings: { trunk: 'main' },
+        }),
+        git: (_cwd, args) => {
+          if (args[0] === 'branch') return 'main'
+          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'pull') {
+            expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
+            expect(migrationDrain(db())).toBeNull()
+            phases.push('pull')
+          }
+          return ''
+        },
+        migrate: () => {
+          expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
+          expect(migrationDrain(db())).toBeNull()
+          phases.push('migrate')
+        },
+      },
+    )
+    expect(phases).toEqual(['pull', 'migrate'])
+    expect(migrationWindow(db())).toBeNull()
+    expect(migrationDrain(db())).toBeNull()
+  } finally {
+    held.restore()
+  }
+})
+
+test('an additive machine update clears the store-open window when migrate throws', async () => {
+  const held = holdBackLastAdditiveMigration(db())
+  try {
+    await expect(
+      machineUpdateCommand(
+        { log: () => {} },
+        {
+          cwd: dir,
+          authorityRefusal: () => null,
+          project: () => ({
+            name: 'migration-update-fixture',
+            path: dir,
+            settings: { trunk: 'main' },
+          }),
+          git: (_cwd, args) =>
+            args[0] === 'branch'
+              ? 'main'
+              : args[0] === 'show'
+                ? JSON.stringify({ entries: migrationJournal() })
+                : '',
+          migrate: () => {
+            expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
+            expect(migrationDrain(db())).toBeNull()
+            throw new Error('injected migration failure')
+          },
+        },
+      ),
+    ).rejects.toThrow('injected migration failure')
+    expect(migrationWindow(db())).toBeNull()
+    expect(migrationDrain(db())).toBeNull()
+  } finally {
+    held.restore()
+  }
 })
 
 test('a non-additive update waits for an admitted resume, then migrates behind the fence', async () => {
