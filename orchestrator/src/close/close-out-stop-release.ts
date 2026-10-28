@@ -55,18 +55,14 @@ function stoppedConversationTree(rootId: string): { job: string; worktree: strin
   }
 }
 
-function stoppedConversationReaderClone(
+/** This stopped conversation's reader-clone tree, or null when it is not a reader clone. */
+export function stoppedConversationIsReaderClone(
   runId: string,
 ): { rootId: string; worktree: string } | null {
   const rootId = conversationRoot(runId)
   const { job, worktree } = stoppedConversationTree(rootId)
   if (!worktree || !isReadOnlyRepositoryJob(job)) return null
   return { rootId, worktree }
-}
-
-/** Whether this stopped conversation's tree is a reader clone. */
-export function stoppedConversationIsReaderClone(runId: string): boolean {
-  return stoppedConversationReaderClone(runId) !== null
 }
 
 /** Kept outcome when the close-out lease is still held. Does not acquire the lease. */
@@ -86,7 +82,7 @@ export function releaseStoppedReaderClone(
   runId: string,
   extraPids: number[] = [],
 ): StoppedReaderCloneRelease {
-  const clone = stoppedConversationReaderClone(runId)
+  const clone = stoppedConversationIsReaderClone(runId)
   if (!clone) {
     return { outcome: 'not-applicable', detail: null }
   }

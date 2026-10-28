@@ -83,3 +83,27 @@ test('a second close-out lease acquisition in this process refuses without block
     db().query('DELETE FROM run WHERE record_id=?').run(runId)
   })
 })
+
+test('runCloseOutLeaseState reports held while the lease file exists and free after release', () => {
+  const runId = addRun({ agent: 'codex', job: 'lease-state', status: 'ok' })
+  let releaseHeld!: () => void
+  const held = new Promise<void>((resolve) => {
+    releaseHeld = resolve
+  })
+  const enclosed = withRunCloseOutLease(
+    runId,
+    () => {},
+    () => held,
+  )
+  try {
+    expect(runCloseOutLeaseState(runId)).toBe('held')
+    expect(runCloseOutLeaseIds()).toContain(runId)
+  } finally {
+    releaseHeld()
+  }
+  return enclosed.finally(() => {
+    expect(runCloseOutLeaseState(runId)).toBe('missing')
+    removeFreeRunCloseOutLease(runId)
+    db().query('DELETE FROM run WHERE record_id=?').run(runId)
+  })
+})
