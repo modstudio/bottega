@@ -95,18 +95,25 @@ function logStoppedRun(
   row: StopRow,
   cleanupRow: ReturnType<typeof stopCleanupRow>,
   dockerTeardown: TerminalDockerTeardown,
-  released: boolean,
+  readerCloneRelease: ReturnType<typeof releaseStoppedReaderClone>,
   sharedGitConfigHeader: string | null,
 ): void {
   options.presentation.log(stoppedRunLine(row.record_id))
   if (sharedGitConfigHeader) options.presentation.log(sharedGitConfigHeader)
   if (cleanupRow.worktree) {
+    const releaseOutcome =
+      readerCloneRelease.outcome === 'tree-released-with-unrecorded-row'
+        ? 'released'
+        : readerCloneRelease.outcome
     options.presentation.log(
       stoppedWorktreeLine(
-        released,
+        releaseOutcome,
         cleanupRow.worktree,
         cleanupRow.branch,
         branchDeletionProvenanceRefusal(cleanupRow.record_id, cleanupRow.branch) === null,
+        readerCloneRelease.detail,
+        cleanupRow.record_id,
+        PLATFORM_SLUG,
         dockerStopMessage(dockerTeardown),
       ),
     )
@@ -309,14 +316,7 @@ export async function stopRun(
     cleanupRow.record_id,
     stopCoordinatorExtraPids(row.pid),
   )
-  logStoppedRun(
-    options,
-    row,
-    cleanupRow,
-    dockerTeardown,
-    readerCloneRelease === 'released' || readerCloneRelease === 'tree-released-with-unrecorded-row',
-    sharedGitConfigHeader,
-  )
+  logStoppedRun(options, row, cleanupRow, dockerTeardown, readerCloneRelease, sharedGitConfigHeader)
 }
 
 export async function abandonRun(

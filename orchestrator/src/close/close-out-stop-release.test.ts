@@ -14,7 +14,7 @@ test('a writing job is not applicable and its tree is left in place', () => {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/tmp/writer-tree', id)
 
-  expect(releaseStoppedReaderClone(id)).toBe('not-applicable')
+  expect(releaseStoppedReaderClone(id)).toEqual({ outcome: 'not-applicable', detail: null })
   expect(
     db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(id),
   ).toEqual({ worktree: '/tmp/writer-tree', close_out_outcome: null })
@@ -24,7 +24,10 @@ test('a reader clone is released and the pointer is cleared', () => {
   const fixture = closeOutFixture()
   db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(fixture.id)
   try {
-    expect(releaseStoppedReaderClone(fixture.id)).toBe('released')
+    expect(releaseStoppedReaderClone(fixture.id)).toEqual({
+      outcome: 'released',
+      detail: expect.any(String),
+    })
     expect(
       db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
     ).toEqual({ worktree: null, close_out_outcome: 'released' })
@@ -47,7 +50,10 @@ test('a thrown close-out that still recorded a release is released', () => {
     throw new Error('close-out threw after recording')
   })
   try {
-    expect(releaseStoppedReaderClone(fixture.id)).toBe('released')
+    expect(releaseStoppedReaderClone(fixture.id)).toEqual({
+      outcome: 'released',
+      detail: 'close-out threw after recording',
+    })
     expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(fixture.id)).toEqual({
       worktree: null,
     })
@@ -63,7 +69,10 @@ test('a thrown close-out that did not record a release is kept', () => {
     throw new Error('close-out threw before recording')
   })
   try {
-    expect(releaseStoppedReaderClone(fixture.id)).toBe('kept')
+    expect(releaseStoppedReaderClone(fixture.id)).toEqual({
+      outcome: 'kept',
+      detail: 'close-out threw before recording',
+    })
     expect(
       db().query('SELECT worktree, close_out_outcome FROM run WHERE record_id=?').get(fixture.id),
     ).toEqual({ worktree: fixture.worktree, close_out_outcome: null })
