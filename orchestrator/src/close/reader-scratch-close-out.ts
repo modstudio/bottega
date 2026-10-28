@@ -18,8 +18,16 @@ import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
 import { dryRunReleaseResult, reconstructibilityHold } from './absent-tree-close-out.ts'
 import { readerCloneReleaseDecision } from './reader-scratch-release.ts'
 
+type ReaderCloneDisposableFacts = {
+  clean: boolean
+  atBase: boolean
+  noUniqueCommits: boolean
+  noNestedStorage: boolean
+}
+type ReaderCloneArchivePlan = { facts: ReaderCloneDisposableFacts }
 type ReaderCloneCloseOutPlan =
-  | { action: 'ordinary' | 'remove' | 'archive' }
+  | { action: 'ordinary' | 'remove' }
+  | { action: 'archive'; plan: ReaderCloneArchivePlan }
   | { action: 'hold'; detail: string }
 type ScratchCloseOutResult = {
   runId: string
@@ -85,7 +93,7 @@ function readerCloneDisposableFacts(input: {
   treePath: string
   repoRoot: string
   baseCommit: string
-}): { clean: boolean; atBase: boolean; noUniqueCommits: boolean; noNestedStorage: boolean } {
+}): ReaderCloneDisposableFacts {
   const status = gitResult(
     ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'],
     input.treePath,
@@ -128,7 +136,7 @@ function readerScratchCloseOutPlan(input: {
     archiveSucceeded: null,
   })
   if (decision === 'keep') return { action: 'hold', detail: 'conversation is not terminal' }
-  if (decision === 'archive-then-release') return { action: 'archive' }
+  if (decision === 'archive-then-release') return { action: 'archive', plan: { facts } }
   if (decision === 'remove') return { action: 'remove' }
   return { action: 'ordinary' }
 }
@@ -142,7 +150,9 @@ export function prepareReaderScratchCloseOut(input: {
   repoRoot: string
   baseCommit: string
   dryRun: boolean
-}): { proceed: true; archive: boolean } | { proceed: false; result: ScratchCloseOutResult } {
+}):
+  | { proceed: true; archive: ReaderCloneArchivePlan | null }
+  | { proceed: false; result: ScratchCloseOutResult } {
   const plan = readerScratchCloseOutPlan(input)
   if (plan.action === 'hold')
     return {
@@ -164,7 +174,7 @@ export function prepareReaderScratchCloseOut(input: {
       result.detail = 'would archive whole reader clone and release its claims'
     return { proceed: false, result }
   }
-  return { proceed: true, archive: plan.action === 'archive' }
+  return { proceed: true, archive: plan.action === 'archive' ? plan.plan : null }
 }
 
 function archiveDestination(runId: string, now = new Date()): string {
@@ -190,7 +200,7 @@ export function archiveReaderScratchForRelease(input: {
   runId: string
   treePath: string
   terminal: boolean
-  planned: boolean
+  planned: ReaderCloneArchivePlan | null
 }): { ok: true; path: string | null } | { ok: false; detail: string } {
   if (!input.planned) return { ok: true, path: null }
   writeConveniencePatch(input.runId, input.treePath)
@@ -202,7 +212,15 @@ export function archiveReaderScratchForRelease(input: {
     mkdirSync(artifacts, { recursive: true })
     writeFileSync(
       pointer,
-      `${JSON.stringify({ path: destination, archivedAt: new Date().toISOString() }, null, 2)}\n`,
+      `${JSON.stringify(
+        {
+          path: destination,
+          archivedAt: new Date().toISOString(),
+          ...input.planned.facts,
+        },
+        null,
+        2,
+      )}\n`,
     )
     try {
       renameSync(input.treePath, destination)

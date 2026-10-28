@@ -25,7 +25,7 @@ export function commit(cwd: string, message: string): void {
   )
 }
 
-export function closeOutFixture(options: { submodule?: boolean } = {}) {
+export function closeOutFixture(options: { submodule?: boolean; carryBase?: boolean } = {}) {
   const id = addRun({ agent: 'codex', job: 'review-lens', status: 'ok' })
   const project = `reader-nested-close-out-${id}`
   const fixtureRoot = realpathSync(dir)
@@ -43,6 +43,11 @@ export function closeOutFixture(options: { submodule?: boolean } = {}) {
     git(['-c', 'protocol.file.allow=always', 'submodule', 'add', nestedSource, 'nested'], repo)
   }
   commit(repo, 'main initial')
+  const base = git(['rev-parse', 'HEAD'], repo)
+  if (options.carryBase) {
+    writeFileSync(join(repo, 'review-tip.txt'), 'review tip\n')
+    commit(repo, 'review tip')
+  }
   const head = git(['rev-parse', 'HEAD'], repo)
   const worktree = join(repo, '.claude', 'worktrees', `orch-${id}`)
   mkdirSync(dirname(worktree), { recursive: true })
@@ -63,9 +68,9 @@ export function closeOutFixture(options: { submodule?: boolean } = {}) {
   db()
     .query(
       `UPDATE run SET repo=?,cwd=?,worktree=?,branch=NULL,minted_branch=NULL,base_commit=?,
-       worktree_source='clone',head_commit=? WHERE record_id=?`,
+       carry_base_commit=?,worktree_source='clone',head_commit=? WHERE record_id=?`,
     )
-    .run(project, worktree, worktree, head, head, id)
+    .run(project, worktree, worktree, base, options.carryBase ? head : null, head, id)
   writeFileSync(join(worktree, '.orch-run'), `${id}\n${repo}\nsource: clone\n`)
   appendFileSync(join(worktree, '.git', 'info', 'exclude'), '.orch-run\n')
   const realSpawnSync = Bun.spawnSync
