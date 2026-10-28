@@ -97,6 +97,8 @@ function topKeys<T>(
     .slice(0, 3)
 }
 
+const storeLabel = (store: string): string => basename(store)
+
 export function summarizeStoreLockRefusals(
   entries: readonly StoreLockRefusalEntry[],
 ): ContentionResourceSummary {
@@ -107,7 +109,7 @@ export function summarizeStoreLockRefusals(
     meanDurationMs: 0,
     topKeys: topKeys(
       entries,
-      (entry) => `${basename(entry.store)} held by ${entry.holderCommand ?? 'unknown'}`,
+      (entry) => `${storeLabel(entry.store)} held by ${entry.holderCommand ?? 'unknown'}`,
     ),
   }
 }
@@ -121,7 +123,7 @@ export function summarizeStoreWriteHolds(
     count: entries.length,
     totalDurationMs,
     meanDurationMs: entries.length ? Math.round(totalDurationMs / entries.length) : 0,
-    topKeys: topKeys(entries, (entry) => `${basename(entry.store)} ${entry.caller}`),
+    topKeys: topKeys(entries, (entry) => `${storeLabel(entry.store)} ${entry.caller}`),
   }
 }
 

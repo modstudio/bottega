@@ -1,5 +1,3 @@
-import type { StoreWriteHoldEntry } from '../../shared/store-write-hold-log.ts'
-
 const WRITE_HOLD_BURST_GAP_MS = 5
 const WRITE_HOLD_LOG_MS = 1_000
 const WRITE_HOLD_CALLER_MS = 50
@@ -28,26 +26,21 @@ function openedWindow(transaction: FinishedWriteTransaction): WriteHoldWindow {
   }
 }
 
-function entryFor(window: WriteHoldWindow): StoreWriteHoldEntry | null {
-  const spanMs = window.endedMs - window.beganMs
-  if (spanMs < WRITE_HOLD_LOG_MS) return null
-  return {
-    at: new Date(window.endedMs).toISOString(),
-    store: 'hub.db',
-    spanMs,
-    longestMs: window.longestMs,
-    transactions: window.transactions,
-    caller: window.caller ?? 'unknown',
-  }
+function sameBurst(current: WriteHoldWindow | null, beganMs: number): current is WriteHoldWindow {
+  return current !== null && beganMs - current.endedMs <= WRITE_HOLD_BURST_GAP_MS
+}
+
+function loggedWindow(window: WriteHoldWindow): WriteHoldWindow | null {
+  return window.endedMs - window.beganMs >= WRITE_HOLD_LOG_MS ? window : null
 }
 
 /** Extend or close the current burst window after one depth-zero transaction finishes. */
 export function finishWriteTransaction(
   current: WriteHoldWindow | null,
   transaction: FinishedWriteTransaction,
-): { state: WriteHoldWindow; entry: StoreWriteHoldEntry | null } {
-  if (!current || transaction.beganMs - current.endedMs > WRITE_HOLD_BURST_GAP_MS) {
-    return { state: openedWindow(transaction), entry: current ? entryFor(current) : null }
+): { state: WriteHoldWindow; closed: WriteHoldWindow | null } {
+  if (!sameBurst(current, transaction.beganMs)) {
+    return { state: openedWindow(transaction), closed: current ? loggedWindow(current) : null }
   }
   const durationMs = transaction.endedMs - transaction.beganMs
   const longest = durationMs > current.longestMs
@@ -57,9 +50,11 @@ export function finishWriteTransaction(
       endedMs: transaction.endedMs,
       longestMs: longest ? durationMs : current.longestMs,
       transactions: current.transactions + 1,
-      caller: longest ? (transaction.caller ?? current.caller) : current.caller,
+      caller: longest
+        ? (transaction.caller ?? current.caller)
+        : (current.caller ?? transaction.caller),
     },
-    entry: null,
+    closed: null,
   }
 }
 
@@ -68,7 +63,7 @@ export function writeTransactionNeedsCaller(
   beganMs: number,
   durationMs: number,
 ): boolean {
-  const sameWindow =
-    current && beganMs - current.endedMs <= WRITE_HOLD_BURST_GAP_MS ? current : null
+  const sameWindow = sameBurst(current, beganMs) ? current : null
+  if (sameWindow?.transactions === 1 && sameWindow.caller === null) return true
   return durationMs >= WRITE_HOLD_CALLER_MS && durationMs > (sameWindow?.longestMs ?? -1)
 }

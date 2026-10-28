@@ -205,17 +205,36 @@ export function closeDatabaseForFixture(): void {
   schemaReload = null
 }
 
-function writeCaller(): string | null {
-  for (const line of new Error().stack?.split('\n').slice(1) ?? []) {
-    const matched = line.match(/(?:\(|\s)(file:\/\/[^():]+|\/[^():]+):(\d+):\d+\)?$/)
-    if (!matched?.[1] || !matched[2]) continue
-    const path = matched[1].startsWith('file://') ? fileURLToPath(matched[1]) : matched[1]
-    if (resolve(path) === resolve(dbSourcePath)) continue
-    const fromCheckout = relative(checkout, path)
-    if (fromCheckout.startsWith('..')) continue
-    return `${fromCheckout}:${matched[2]}`
+export function writeCallerFromStack(stack: string, sourcePath = dbSourcePath): string | null {
+  const repositoryRoot = resolve(dirname(sourcePath), '../..')
+  for (const line of stack.split('\n').slice(1)) {
+    const suffix = line.match(/:(\d+):\d+\)?\s*$/)
+    if (!suffix?.[1] || suffix.index === undefined) continue
+    let framedPath = line.slice(0, suffix.index).trim()
+    const wrapped = framedPath.match(/^at\s+.+?\s+\((.*)$/)
+    framedPath = wrapped?.[1] ?? framedPath.replace(/^at\s+/, '')
+    let path: string
+    try {
+      path = framedPath.startsWith('file://') ? fileURLToPath(framedPath) : framedPath
+    } catch {
+      continue
+    }
+    if (!path.startsWith('/')) continue
+    if (resolve(path) === resolve(sourcePath)) continue
+    const fromRepository = relative(repositoryRoot, path)
+    if (fromRepository.startsWith('..')) continue
+    return `${fromRepository}:${suffix[1]}`
   }
   return null
+}
+
+function writeCaller(): string | null {
+  return writeCallerFromStack(new Error().stack ?? '')
+}
+
+function databasePath(conn: Database): string {
+  const databases = conn.query<{ name: string; file: string }, []>('PRAGMA database_list').all()
+  return databases.find((database) => database.name === 'main')?.file || DB_PATH
 }
 
 function measureFinishedWrite(conn: Database, beganMs: number, endedMs: number): void {
@@ -225,7 +244,16 @@ function measureFinishedWrite(conn: Database, beganMs: number, endedMs: number):
     const caller = writeTransactionNeedsCaller(current, beganMs, durationMs) ? writeCaller() : null
     const measured = finishWriteTransaction(current, { beganMs, endedMs, caller })
     writeHoldWindows.set(conn, measured.state)
-    if (measured.entry) appendStoreWriteHold(measured.entry)
+    if (measured.closed) {
+      appendStoreWriteHold({
+        at: new Date(measured.closed.endedMs).toISOString(),
+        store: databasePath(conn),
+        spanMs: measured.closed.endedMs - measured.closed.beganMs,
+        longestMs: measured.closed.longestMs,
+        transactions: measured.closed.transactions,
+        caller: measured.closed.caller ?? 'unknown',
+      })
+    }
   } catch {
     // Measurement must never change the transaction's result or error.
   }
@@ -356,13 +384,18 @@ export function writeTransaction<T>(fn: (conn: Database) => T, database?: Databa
   const depth = writeDepth.get(conn) ?? 0
   if (depth === 0) conn.exec('PRAGMA query_only = OFF')
   writeDepth.set(conn, depth + 1)
-  const beganMs = depth === 0 ? performance.timeOrigin + performance.now() : 0
+  let beganMs: number | null = null
   try {
-    return conn.transaction(() => fn(conn)).immediate()
+    return conn
+      .transaction(() => {
+        if (depth === 0) beganMs = performance.timeOrigin + performance.now()
+        return fn(conn)
+      })
+      .immediate()
   } finally {
     if (depth === 0) {
       const endedMs = performance.timeOrigin + performance.now()
-      measureFinishedWrite(conn, beganMs, endedMs)
+      if (beganMs !== null) measureFinishedWrite(conn, beganMs, endedMs)
       writeDepth.delete(conn)
       conn.exec('PRAGMA query_only = ON')
     } else {
