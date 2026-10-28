@@ -28,10 +28,16 @@ export async function main(_argv: string[] = []): Promise<number> {
   return 0
 }
 
-if (import.meta.main) {
+export async function runAskProxy(argv: string[] = []): Promise<number> {
   try {
-    process.exitCode = await main()
+    return await main(argv)
   } catch (error) {
-    throw recordAskProxyFailure(error)
+    recordAskProxyFailure(error)
+    console.error(error instanceof Error ? error.message : String(error))
+    return 1
   }
+}
+
+if (import.meta.main) {
+  process.exitCode = await runAskProxy()
 }
