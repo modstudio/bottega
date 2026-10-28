@@ -34,6 +34,7 @@ import { CONNECTION_SCHEMA_INVARIANT } from '../database/migration-compatibility
 import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
+import type { QuotaReadings } from '../transport/quota-readings.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
   type ArtifactPathSource,
@@ -42,7 +43,11 @@ import {
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
-import { type RunUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
+import {
+  quotaReadingsColumnValues,
+  type RunUsageColumns,
+  runUsageColumnValues,
+} from './run-usage-columns.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.
@@ -304,37 +309,34 @@ export function runTerminalReplyPath(id: string, runsDir = RUNS_DIR): string {
   return join(runsDir, id, 'reply.txt')
 }
 
-export type TerminalSnapshot = RunUsageColumns & {
-  status: string
-  error: string | null
-  failureKind: string | null
-  output: string
-  outputPath: string
-  promptPath: string
-  exitCode: number | null
-  latencyMs: number
-  vendorTokens: number | null
-  modelCalls: number | null
-  peakCallTokens: number | null
-  quotaUsedPercentStart: number | null
-  quotaUsedPercentEnd: number | null
-  quotaWindowMinutes: number | null
-  quotaResetsAt: number | null
-  vendorCostUsd: number | null
-  model: string | null
-  vendorSession: string | null
-  preConfinement: string | null
-  confinement: string | null
-  filesChanged: number | null
-  changedPaths: string | null
-  linesAdded: number | null
-  linesRemoved: number | null
-  testsRan: number | null
-  testsPassed: number | null
-  testsClaimDisagrees: number | null
-  deviations: number | null
-  escalations: number | null
-}
+export type TerminalSnapshot = RunUsageColumns &
+  QuotaReadings & {
+    status: string
+    error: string | null
+    failureKind: string | null
+    output: string
+    outputPath: string
+    promptPath: string
+    exitCode: number | null
+    latencyMs: number
+    vendorTokens: number | null
+    modelCalls: number | null
+    peakCallTokens: number | null
+    vendorCostUsd: number | null
+    model: string | null
+    vendorSession: string | null
+    preConfinement: string | null
+    confinement: string | null
+    filesChanged: number | null
+    changedPaths: string | null
+    linesAdded: number | null
+    linesRemoved: number | null
+    testsRan: number | null
+    testsPassed: number | null
+    testsClaimDisagrees: number | null
+    deviations: number | null
+    escalations: number | null
+  }
 
 export function persistTerminalSnapshot(id: string, snapshot: TerminalSnapshot): void {
   mkdirSync(join(RUNS_DIR, id), { recursive: true })
@@ -399,10 +401,7 @@ export function reconcileRun(id: string): string {
         snapshot.vendorTokens,
         snapshot.modelCalls,
         snapshot.peakCallTokens,
-        snapshot.quotaUsedPercentStart,
-        snapshot.quotaUsedPercentEnd,
-        snapshot.quotaWindowMinutes,
-        snapshot.quotaResetsAt,
+        ...quotaReadingsColumnValues(snapshot),
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,

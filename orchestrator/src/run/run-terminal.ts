@@ -69,7 +69,11 @@ import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { observedTestOutcome } from './run-test-outcome.ts'
-import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
+import {
+  quotaReadingsColumnValues,
+  runUsageColumns,
+  runUsageColumnValues,
+} from './run-usage-columns.ts'
 import {
   shouldSnapshotSharedGitConfig,
   terminalSharedGitConfigHeader,
@@ -306,15 +310,6 @@ function terminalUsageSnapshot(input: TerminalInput, name: string) {
     ...runUsageColumns(input.vendorUsage, AGENTS[name]?.billing),
     ...input.quotaReadings,
   }
-}
-
-function quotaColumnValues(readings: QuotaReadings) {
-  return [
-    readings.quotaUsedPercentStart,
-    readings.quotaUsedPercentEnd,
-    readings.quotaWindowMinutes,
-    readings.quotaResetsAt,
-  ] as const
 }
 
 type TerminalCheckpointInput = Pick<
@@ -903,7 +898,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           vendorTokens,
           input.callUsage?.modelCalls ?? null,
           input.callUsage?.peakCallTokens ?? null,
-          ...quotaColumnValues(input.quotaReadings),
+          ...quotaReadingsColumnValues(input.quotaReadings),
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
