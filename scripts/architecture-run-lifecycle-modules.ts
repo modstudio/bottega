@@ -323,7 +323,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-host-capacity.ts', [
     'bun:sqlite',
     '../database/db.ts',
-    '../database/migration-drain.ts',
+    '../database/migration-drain-state.ts',
     '../gate-load.ts',
   ]),
   module('orchestrator/src/run/run-reply-source.ts', [

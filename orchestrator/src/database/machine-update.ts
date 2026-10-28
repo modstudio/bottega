@@ -30,6 +30,7 @@ import {
 } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
+import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationState, storeJournalPosition } from './migrations.ts'
 
 const MIGRATION_DRAIN_POLL_MS = 1_000
@@ -115,6 +116,28 @@ async function waitForDrain(input: {
   }
 }
 
+function applyImmediateUpdate(input: {
+  target: string
+  branch: string
+  migration: string | null
+  runGit: (cwd: string, args: string[]) => string
+  migrate: (cwd: string) => void
+}): void {
+  const migration = input.migration
+  if (!migration) {
+    input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
+    input.migrate(input.target)
+    return
+  }
+  withSynchronousDatabaseForMigrationStep((database) => claimMigrationWindow(database, migration))
+  try {
+    input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
+    input.migrate(input.target)
+  } finally {
+    withSynchronousDatabaseForMigrationStep((database) => clearMigrationWindow(database))
+  }
+}
+
 export async function machineUpdateCommand(
   presentation: Presentation,
   deps: {
@@ -178,6 +201,7 @@ export async function machineUpdateCommand(
     return {
       activeDrain,
       decision: decideMigrationDrain({ journal, storeVersion: position.index }),
+      pendingMigration: journal[position.index]?.tag ?? null,
     }
   })
   if (initial.activeDrain) {
@@ -215,6 +239,11 @@ export async function machineUpdateCommand(
     }
     return
   }
-  runGit(target, ['pull', '--ff-only', 'origin', branch])
-  migrate(target)
+  applyImmediateUpdate({
+    target,
+    branch,
+    migration: initial.pendingMigration,
+    runGit,
+    migrate,
+  })
 }

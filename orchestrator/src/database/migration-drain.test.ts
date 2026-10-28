@@ -4,11 +4,12 @@ import {
   assertMigrationDispatchAllowed,
   assertMigrationDispatchAllowedAndRecord,
   clearMigrationDrain,
-  migrationDrain,
   migrationDrainForUpdate,
-  migrationDrainLiveness,
   setMigrationDrain,
 } from './migration-drain.ts'
+import { migrationDrain, migrationDrainLiveness } from './migration-drain-state.ts'
+import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
+import { migrationWindow } from './migration-window-state.ts'
 
 const marker = {
   migration: '0155_rebuild',
@@ -130,6 +131,17 @@ describe('migration drain holder', () => {
       expect(() => assertMigrationDispatchAllowed(db(), true)).toThrow(/while migrating/)
     } finally {
       db().query("DELETE FROM schema_meta WHERE key='migration_drain'").run()
+    }
+  })
+
+  test('a live store-open window does not refuse dispatch', () => {
+    claimMigrationWindow(db(), '0172_run_running_repository_index')
+    try {
+      expect(migrationWindow(db())?.migration).toBe('0172_run_running_repository_index')
+      expect(() => assertMigrationDispatchAllowed(db())).not.toThrow()
+      expect(() => assertMigrationDispatchAllowed(db(), true)).not.toThrow()
+    } finally {
+      clearMigrationWindow(db())
     }
   })
 })

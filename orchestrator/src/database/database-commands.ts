@@ -27,6 +27,8 @@ import {
   setMigrationDrain,
 } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
+import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
+import { migrationWindow } from './migration-window-state.ts'
 import { migrationApplied, migrationJournal, storeJournalPosition } from './migrations.ts'
 import {
   applyRunFilesystemIdentityMigration,
@@ -53,6 +55,7 @@ type MigrateCommandActions = {
   backfill(): { updated: number; missing: number }
   migrationDecision?(): ReturnType<typeof decideMigrationDrain>
   withMigrationFence?(migration: string, action: () => Promise<void>): Promise<void>
+  withMigrationWindow?(action: () => Promise<void>): Promise<void>
   recordOverride?(reason: string): void
 }
 
@@ -79,6 +82,32 @@ export function applyRunFilesystemIdentityCutover(
   const refusal = liveRunFilesystemMigrationRefusal(database)
   if (refusal) throw new Error(refusal)
   return applyRunFilesystemIdentityMigration(plans)
+}
+
+async function withAdditiveMigrationWindow(action: () => Promise<void>): Promise<void> {
+  if (!existsSync(DB_PATH)) return action()
+  const state = withSynchronousDatabaseForMigrationStep((database) => {
+    const journal = migrationJournal()
+    const position = storeJournalPosition(database, journal)
+    if (position.state === 'pending-not-found') {
+      throw new Error(`migration journal does not contain pending migration ${position.migration}`)
+    }
+    const migration = journal[position.index]?.tag ?? null
+    if (!migration) return { inherited: false, marked: false }
+    const active = migrationWindow(database)
+    if (active?.migration === migration && active.pid === process.ppid) {
+      return { inherited: true, marked: true }
+    }
+    claimMigrationWindow(database, migration)
+    return { inherited: false, marked: true }
+  })
+  try {
+    await action()
+  } finally {
+    if (state.marked && !state.inherited) {
+      withSynchronousDatabaseForMigrationStep((database) => clearMigrationWindow(database))
+    }
+  }
 }
 
 function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): MigrateCommandActions {
@@ -145,6 +174,7 @@ function defaultMigrateCommandActions(options: MigrateCommandOptions = {}): Migr
         }
       }
     },
+    withMigrationWindow: withAdditiveMigrationWindow,
     recordOverride: (reason) =>
       tryWriteContention({
         resourceKind: 'store',
@@ -238,6 +268,12 @@ export async function migrateCommand(
   const decision = actions.migrationDecision?.()
   if (decision?.action === 'fence' && actions.withMigrationFence) {
     await actions.withMigrationFence(decision.migration, () =>
+      performMigration(presentation, actions!, decision, overrideReason),
+    )
+    return
+  }
+  if (decision?.action === 'apply-now' && actions.withMigrationWindow) {
+    await actions.withMigrationWindow(() =>
       performMigration(presentation, actions!, decision, overrideReason),
     )
     return

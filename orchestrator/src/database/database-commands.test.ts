@@ -10,8 +10,8 @@ import type { MigrationInFlightRun } from '../run/migration-in-flight-runs.ts'
 import { acquireRunLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { applyRunFilesystemIdentityCutover, migrateCommand } from './database-commands.ts'
 import { closeDatabaseForFixture, db } from './db.ts'
-import { migrationDrain } from './migration-drain.ts'
 import type { MigrationDrainDecision } from './migration-drain-decision.ts'
+import { migrationDrain } from './migration-drain-state.ts'
 import {
   applyMigrations,
   applyMigrationsBefore,
@@ -46,6 +46,9 @@ function actions(fill: () => Promise<unknown>, contracted = false) {
         return { updated: 0, missing: 0 }
       },
       migrationDecision: (): MigrationDrainDecision => ({ action: 'apply-now' }),
+      withMigrationWindow: undefined as
+        | ((action: () => Promise<void>) => Promise<void>)
+        | undefined,
       recordOverride(reason: string) {
         calls.push(`override:${reason}`)
       },
@@ -64,6 +67,30 @@ test('migrate contracts only after identity fill succeeds', async () => {
     'before:0121_run_filesystem_identity_cutover',
     'after',
     'backfill',
+  ])
+})
+
+test('an apply-now migrate runs inside the store-open migration window', async () => {
+  const scenario = actions(async () => undefined)
+  scenario.value.withMigrationWindow = async (action) => {
+    scenario.calls.push('window:set')
+    try {
+      await action()
+    } finally {
+      scenario.calls.push('window:clear')
+    }
+  }
+  await migrateCommand({ log: () => {} }, scenario.value)
+  expect(scenario.calls).toEqual([
+    'window:set',
+    'in-flight',
+    'contracted',
+    'before:0115_project_identity_contract',
+    'fill',
+    'before:0121_run_filesystem_identity_cutover',
+    'after',
+    'backfill',
+    'window:clear',
   ])
 })
 
