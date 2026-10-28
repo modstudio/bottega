@@ -7,11 +7,16 @@ import { db } from '../database/db.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { closeOutRun } from './close-out.ts'
 
-export type StoppedReaderCloneRelease =
+type StoppedReaderCloneReleaseOutcome =
   | 'released'
   | 'tree-released-with-unrecorded-row'
   | 'kept'
   | 'not-applicable'
+
+export type StoppedReaderCloneRelease = {
+  outcome: StoppedReaderCloneReleaseOutcome
+  detail: string | null
+}
 
 function conversationRoot(runId: string): string {
   const row = db()
@@ -57,13 +62,20 @@ export function releaseStoppedReaderClone(
 ): StoppedReaderCloneRelease {
   const rootId = conversationRoot(runId)
   const { job, worktree } = stoppedConversationTree(rootId)
-  if (!worktree || !isReadOnlyRepositoryJob(job)) return 'not-applicable'
-  if (recordedReaderCloneRelease(rootId)) return 'released'
+  if (!worktree || !isReadOnlyRepositoryJob(job)) {
+    return { outcome: 'not-applicable', detail: null }
+  }
+  if (recordedReaderCloneRelease(rootId)) return { outcome: 'released', detail: null }
+  let detail: string | null = null
   try {
-    closeOutRun(rootId, { intent: 'terminal', extraPids })
-  } catch {
+    detail = closeOutRun(rootId, { intent: 'terminal', extraPids }).detail
+  } catch (error) {
+    detail = String((error as Error).message ?? error)
     // Close-out may have recorded the release before throwing.
   }
-  if (recordedReaderCloneRelease(rootId)) return 'released'
-  return existsSync(worktree) ? 'kept' : 'tree-released-with-unrecorded-row'
+  if (recordedReaderCloneRelease(rootId)) return { outcome: 'released', detail }
+  return {
+    outcome: existsSync(worktree) ? 'kept' : 'tree-released-with-unrecorded-row',
+    detail,
+  }
 }
