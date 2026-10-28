@@ -121,7 +121,6 @@ export const modules: ArchitectureModule[] = [
     '../failure/failure.ts',
   ]),
   module('orchestrator/src/route/billing-key-hold.ts', [
-    'bun:sqlite',
     '../../../shared/brand.ts',
     '../failure/failure.ts',
   ]),

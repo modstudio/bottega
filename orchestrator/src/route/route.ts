@@ -23,7 +23,11 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { billingKeyHoldRefusal, decideBillingKeyHolds } from './billing-key-hold.ts'
+import {
+  type BillingKeyHold,
+  billingKeyHoldRefusal,
+  decideBillingKeyHolds,
+} from './billing-key-hold.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
   PROMPT_SIZE_BOUNDARY,
@@ -113,14 +117,14 @@ export const EVIDENCE_WINDOW = 40
 
 function operationalRoutingRefusal(
   name: string,
-  billingHold: ReturnType<typeof decideBillingKeyHolds>[number] | undefined,
+  billingHold: BillingKeyHold | undefined,
   cooling: string | null,
-  failure: CoolingFailure,
+  failure: CoolingFailure | undefined,
   probeAgent: string | undefined,
 ): string | null {
   if (probeAgent === name) return null
   if (billingHold) return billingKeyHoldRefusal(billingHold)
-  return cooling ? coolingRefusal(name, failure, COOLDOWN_MIN) : null
+  return cooling && failure ? coolingRefusal(name, failure, COOLDOWN_MIN) : null
 }
 
 export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
@@ -405,7 +409,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       name,
       billingHold,
       cooling,
-      failure!,
+      failure,
       coolingProbeAgent,
     )
     const h = hist.get(name)

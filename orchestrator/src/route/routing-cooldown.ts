@@ -55,7 +55,8 @@ export function recentTerminalRuns(
               AND categorized.status IN ('ok','failed')
               AND categorized.failure_kind IS categories.failure_kind
               AND categorized.latency_ms IS NOT NULL
-            ORDER BY categorized.started_at DESC,categorized.record_id DESC
+            ORDER BY julianday(categorized.started_at) + categorized.latency_ms / 86400000.0 DESC,
+                     categorized.record_id DESC
             LIMIT 1
          )
            FROM json_each(?) names CROSS JOIN categories
@@ -68,7 +69,8 @@ export function recentTerminalRuns(
               WHERE streak.agent=names.value
                 AND streak.status IN ('ok','failed')
                 AND streak.latency_ms IS NOT NULL
-              ORDER BY streak.started_at DESC,streak.record_id DESC
+              ORDER BY julianday(streak.started_at) + streak.latency_ms / 86400000.0 DESC,
+                       streak.record_id DESC
               LIMIT ?
            )
        )

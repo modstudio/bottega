@@ -580,33 +580,34 @@ describe('routing counts failures as evidence', () => {
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
   })
 
-  test('a later-id success finishing before quota failures does not mask them', () => {
-    // IDs are launch order, not completion
-    // order. The success launches last but completes while its older siblings
-    // are still running; their later quota deaths must open the circuit.
-    const base = Date.now() - 10 * 60_000
+  test('an earliest-starting quota failure that finishes last opens the circuit', () => {
+    // The long quota run starts first but finishes five minutes ago. Later
+    // quota and successful runs all finish over an hour ago, so neither launch
+    // order nor the latest rows by start time may hide the recent failure.
+    const base = Date.now() - 70 * 60_000
     addRun({
       agent: 'grok',
       job: 'review-lens',
       status: 'failed',
       kind: 'quota',
       startedAt: new Date(base).toISOString(),
-      latency: 8 * 60_000,
+      latency: 65 * 60_000,
     })
     addRun({
       agent: 'grok',
       job: 'review-lens',
       status: 'failed',
       kind: 'quota',
-      startedAt: new Date(base + 1000).toISOString(),
-      latency: 8 * 60_000,
+      startedAt: new Date(base + 60_000).toISOString(),
+      latency: 60_000,
     })
-    addRun({
-      agent: 'grok',
-      job: 'review-lens',
-      startedAt: new Date(base + 2000).toISOString(),
-      latency: 2 * 60_000,
-    })
+    for (let index = 2; index <= 4; index++)
+      addRun({
+        agent: 'grok',
+        job: 'review-lens',
+        startedAt: new Date(base + index * 60_000).toISOString(),
+        latency: 60_000,
+      })
 
     const c = candidates('review-lens').find((x) => x.agent === 'grok')!
     expect(c.cooling).toContain('quota')

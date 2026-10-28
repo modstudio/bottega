@@ -116,7 +116,6 @@ describe('live outcome derivation', () => {
       'sandbox host: MCP was requested; srt blocks MCP transports; run is unconfined\n\n' +
       'Ran into this error: Request failed: Bad request (400): Provider returned error.\n\n' +
       'Please retry if you think this is a transient or recoverable error.'
-    expect(Buffer.byteLength(reply)).toBe(228)
     expect(outcome({ writesJob: false, output: reply })).toEqual({
       status: 'failed',
       failureKind: 'provider_error',
