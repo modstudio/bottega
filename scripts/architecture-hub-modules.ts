@@ -268,6 +268,22 @@ export const hubModuleSpecs = [
     ],
   },
   {
+    file: 'hub/src/note-staleness.ts',
+    allowed: [],
+  },
+  {
+    file: 'hub/src/note-staleness-store.ts',
+    allowed: [
+      'bun:sqlite',
+      './db.ts',
+      './hosted-tasks.ts',
+      './note-client.ts',
+      './projects.ts',
+      './task-client.ts',
+      './task-project-space.ts',
+    ],
+  },
+  {
     file: 'hub/src/task-write-destination.ts',
     allowed: [
       './hosted-write-mode.ts',

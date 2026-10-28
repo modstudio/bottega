@@ -67,6 +67,7 @@ export type HostedTaskIdentity = {
   capabilities?: {
     projectNoteCounters?: boolean
     targetSpaceNotes?: boolean
+    noteTriageStaleness?: boolean
     spaceChanges?: boolean
     spacePush?: boolean
     spacePushTables?: PushableHubChangeTable[]
@@ -99,6 +100,13 @@ export function assertTargetSpaceNotes(identity: HostedTaskIdentity) {
   if (identity.capabilities?.targetSpaceNotes !== true)
     throw new Error(
       `hosted hub does not advertise target-space note support; ${TARGET_SPACE_NOTES_REMEDY}`,
+    )
+}
+
+export function assertNoteTriageStaleness(identity: HostedTaskIdentity) {
+  if (identity.capabilities?.noteTriageStaleness !== true)
+    throw new Error(
+      'hosted hub does not advertise note triage staleness support; run `scripts/deploy/hosted api` and retry',
     )
 }
 
@@ -621,6 +629,7 @@ export async function hostedTaskIdentity(
     capabilities: {
       projectNoteCounters: capabilityFlag(value.capabilities, 'projectNoteCounters'),
       targetSpaceNotes: capabilityFlag(value.capabilities, 'targetSpaceNotes'),
+      noteTriageStaleness: capabilityFlag(value.capabilities, 'noteTriageStaleness'),
       spaceChanges: capabilityFlag(value.capabilities, 'spaceChanges'),
       spacePush: capabilityFlag(value.capabilities, 'spacePush'),
       spaceIdentitySet: capabilityFlag(value.capabilities, 'spaceIdentitySet'),

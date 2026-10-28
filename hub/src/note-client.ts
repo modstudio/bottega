@@ -6,6 +6,7 @@ import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
+  assertNoteTriageStaleness,
   assertProjectNoteCounters,
   assertTargetSpaceNotes,
   hostedTaskIdentity,
@@ -86,8 +87,20 @@ export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, opt
     input,
     options,
   )
-export const hostedReapNotes = (body: unknown, options?: Options) =>
-  request<{ marked: number; deleted: number }>('/v1/notes/reap', 'POST', body, options)
+export const hostedReapNotes = async (body: unknown, options?: Options) => {
+  const identity = await hostedTaskIdentity(options)
+  assertNoteTriageStaleness(identity)
+  return request<{
+    marked: number
+    annotated: number
+    restored: number
+    deleted: number
+    staleIds: string[]
+    annotatedIds: string[]
+    restoredIds: string[]
+    deletedIds: string[]
+  }>('/v1/notes/reap', 'POST', body, options)
+}
 export async function hostedNoteChanges(cursor: string | null, options?: Options) {
   await assertNoteCapabilities(options)
   const query = new URLSearchParams({ includeDeleted: 'true' })

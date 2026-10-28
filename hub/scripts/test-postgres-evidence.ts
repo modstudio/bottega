@@ -854,7 +854,7 @@ try {
           created_at: noteStamp,
           last_seen_at: noteStamp,
           stale_at: noteStamp,
-          stale_reason: 'gone',
+          stale_reason: 'dropped: resolved',
           promoted_task: null,
           updated_at: noteStamp,
           deleted_at: null,
@@ -946,6 +946,8 @@ try {
     try {
       await reapHostedNotes(actorUrl, identity, {
         stale: [],
+        annotated: [],
+        restored: [],
         deleted: ['01990000-0000-7000-8000-00000000066e'],
         confirmation: 1,
         cutoff,
@@ -960,6 +962,8 @@ try {
       throw new Error('re-sighted note was deleted')
     await reapHostedNotes(actorUrl, identity, {
       stale: [],
+      annotated: [],
+      restored: [],
       deleted: ['01990000-0000-7000-8000-00000000066d'],
       confirmation: 1,
       cutoff,

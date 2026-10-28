@@ -25,6 +25,9 @@ test('new note output preserves its first line and reports the record id', () =>
 test('every note text surface uses the project label', () => {
   const note = { label: 'workshop#7', sightings: 2, text: 'Boundary drift' }
   expect(noteListLine(note)).toContain('workshop#7')
+  expect(noteListLine({ ...note, stale_at: null, stale_reason: 'branch topic was deleted' })).toBe(
+    'workshop#7           x2  Boundary drift  anchor gone: branch topic was deleted',
+  )
   expect(noteKeepLine(note, false)).toBe('note workshop#7 kept for this session')
   expect(noteSameLine(note)).toBe('note workshop#7 now has 2 sightings')
   expect(noteDropLine({ ...note, stale_reason: 'dropped: fixed' })).toBe(

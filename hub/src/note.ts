@@ -1,13 +1,5 @@
 import type { Database } from 'bun:sqlite'
-import {
-  closeSync,
-  existsSync,
-  fstatSync,
-  openSync,
-  readFileSync,
-  readSync,
-  realpathSync,
-} from 'node:fs'
+import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
@@ -15,7 +7,6 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
-import { confirmCount } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
   hostedUnavailableRemedy,
@@ -25,15 +16,17 @@ import {
 import { readInstallBinding } from './install-binding.ts'
 import { mergeNoteAnchors } from './note-anchor-merge.ts'
 import { applyHostedNote } from './note-cache.ts'
-import {
-  hostedCreateNote,
-  hostedPromoteNote,
-  hostedReapNotes,
-  type NoteClientOptions,
-} from './note-client.ts'
+import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
 import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
+import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
+import {
+  applyHostedStaleness,
+  applyLocalStaleness,
+  type StalenessChange,
+  type StalenessResult,
+} from './note-staleness-store.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
@@ -47,8 +40,6 @@ import {
   type TaskRow,
 } from './task.ts'
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
-import { hostedTaskIdentity } from './task-client.ts'
-import { partitionProjectRows } from './task-project-space.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
 export type NoteAnchor = NotePromotionAnchor & {
@@ -779,15 +770,12 @@ export async function dropNote(
   return getNote(recordId)
 }
 
-export type StaleResult = {
-  marked: number
-  deleted: number
-  reasons: { recordId: string; label: string; reason: string }[]
-}
+export type StaleResult = StalenessResult
 
 type StaleDeps = {
   runExists(ids: string[]): Promise<Set<string>>
   git(cwd: string, ...args: string[]): string | null
+  readFile(path: string): string | null
   now(): Date
   hosted: NoteClientOptions
 }
@@ -797,61 +785,69 @@ async function defaultRunExists(ids: string[]): Promise<Set<string>> {
   return new Set(rows.flatMap((row) => ('unknown' in row ? [] : [row.record_id])))
 }
 
-function vanishedReason(
-  note: NoteRow,
-  existingRuns: Set<string>,
-  runGit: StaleDeps['git'],
-): string | null {
-  const registered = projects().find((project) => project.name === note.project)
-  if (!registered) return `project ${note.project} is no longer registered`
-  const trunk = typeof registered.settings.trunk === 'string' ? registered.settings.trunk : 'main'
-  const reasons = note.anchors.map((anchor) =>
-    vanishedAnchorReason(anchor, registered.path, trunk, existingRuns, runGit),
-  )
-  // A repeated sighting refreshes the note. Old anchors may disappear without
-  // making a newer, still-grounded observation stale.
-  return reasons.length && reasons.every(Boolean) ? (reasons[reasons.length - 1] ?? null) : null
+const stalenessFileReader = (path: string): string | null => {
+  try {
+    return readFileSync(path, 'utf8')
+  } catch {
+    return null
+  }
 }
 
-function vanishedAnchorReason(
+function observeStalenessAnchor(
   anchor: NoteAnchor,
-  projectPath: string,
-  trunk: string,
+  noteProject: string,
+  registered: Array<{ name: string; path: string; trunk: string }>,
   existingRuns: Set<string>,
   runGit: StaleDeps['git'],
-): string | null {
-  const fileReason = vanishedFileReason(anchor)
-  if (fileReason) return fileReason
-  if (anchor.run_record_id && !existingRuns.has(anchor.run_record_id)) {
-    return `run ${anchor.run_id ?? anchor.run_record_id} aged out`
+  readFile: StaleDeps['readFile'],
+): StalenessAnchorObservation {
+  const projectName = anchor.project || noteProject
+  const project = registered.find((candidate) => candidate.name === projectName)
+  const files = anchor.files.map((file) => {
+    const path = isAbsolute(file.path) ? file.path : resolve(anchor.cwd, file.path)
+    const contents = readFile(path)
+    const anchored = file.content.trim()
+    return {
+      path: file.path,
+      line: file.line,
+      exists: contents !== null,
+      containsAnchoredContent:
+        contents !== null &&
+        (!anchored || contents.split(/\r?\n/).some((line) => line.trim() === anchored)),
+    }
+  })
+  let branch: StalenessAnchorObservation['branch'] = null
+  if (project && anchor.branch && anchor.branch !== project.trunk) {
+    const exists =
+      runGit(project.path, 'show-ref', '--verify', `refs/heads/${anchor.branch}`) !== null
+    branch = {
+      name: anchor.branch,
+      trunk: project.trunk,
+      exists,
+      landed:
+        exists &&
+        runGit(project.path, 'merge-base', '--is-ancestor', anchor.branch, project.trunk) !== null,
+    }
   }
-  if (anchor.branch && anchor.branch !== trunk) {
-    if (!runGit(projectPath, 'show-ref', '--verify', `refs/heads/${anchor.branch}`))
-      return `branch ${anchor.branch} was deleted`
-    if (runGit(projectPath, 'merge-base', '--is-ancestor', anchor.branch, trunk) !== null)
-      return `branch ${anchor.branch} landed on ${trunk}`
+  return {
+    sessionId: anchor.session_id,
+    projectFound: project !== undefined,
+    files,
+    run: anchor.run_record_id
+      ? {
+          label: anchor.run_id ?? anchor.run_record_id,
+          exists: existingRuns.has(anchor.run_record_id),
+        }
+      : null,
+    branch,
   }
-  if (!anchor.commit) return null
-  const count = runGit(projectPath, 'rev-list', '--count', `${anchor.commit}..${trunk}`)
-  return count !== null && Number(count) > 50
-    ? `trunk moved ${count} commits past the anchor`
-    : null
-}
-
-function vanishedFileReason(anchor: NoteAnchor): string | null {
-  for (const file of anchor.files) {
-    if (!existsSync(file.path)) return `${file.path}:${file.line} no longer exists`
-    const content = readFileSync(file.path, 'utf8').split(/\r?\n/)[file.line - 1]
-    if (content !== file.content)
-      return `${file.path}:${file.line} no longer has its anchored content`
-  }
-  return null
 }
 
 export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleResult> {
   const runGit = deps.git ?? git
+  const readFile = deps.readFile ?? stalenessFileReader
   const clock = deps.now?.() ?? new Date()
-  const notes = listNotes({ stale: false })
+  const notes = listNotes()
   const runIds = [
     ...new Set(
       notes.flatMap((note) =>
@@ -860,20 +856,61 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     ),
   ]
   const existingRuns = await (deps.runExists ?? defaultRunExists)(runIds)
-  const reasons = notes.flatMap((note) => {
-    const reason = vanishedReason(note, existingRuns, runGit)
-    return reason ? [{ recordId: note.record_id, label: note.label, reason }] : []
+  const acknowledgements = db()
+    .query<{ note_record_id: string; session_id: string }, []>(
+      'SELECT note_record_id,session_id FROM note_acknowledgement',
+    )
+    .all()
+  const acknowledgementSessions = new Map<string, string[]>()
+  for (const acknowledgement of acknowledgements) {
+    const sessions = acknowledgementSessions.get(acknowledgement.note_record_id) ?? []
+    sessions.push(acknowledgement.session_id)
+    acknowledgementSessions.set(acknowledgement.note_record_id, sessions)
+  }
+  const registered = projects().map((project) => ({
+    name: project.name,
+    path: project.path,
+    trunk: typeof project.settings.trunk === 'string' ? project.settings.trunk : 'main',
+  }))
+  const evaluations = notes.map((note) => {
+    const anchors = note.anchors.map((anchor) =>
+      observeStalenessAnchor(anchor, note.project, registered, existingRuns, runGit, readFile),
+    )
+    const outcome = evaluateNoteStaleness({
+      note: {
+        anchors,
+        promotedTask: note.promoted_task,
+        staleAt: note.stale_at,
+        staleReason: note.stale_reason,
+      },
+      acknowledgementSessions: acknowledgementSessions.get(note.record_id) ?? [],
+    })
+    return { note, outcome }
   })
+  const changes = evaluations.flatMap(({ note, outcome }): StalenessChange[] =>
+    outcome.action === 'unchanged'
+      ? []
+      : [
+          {
+            recordId: note.record_id,
+            label: note.label,
+            project: note.project,
+            action: outcome.action,
+            reason: outcome.reason,
+          },
+        ],
+  )
   const at = clock.toISOString()
   const cutoff = new Date(clock.getTime() - 30 * 86_400_000).toISOString()
-  const markedIds = new Set(reasons.map((row) => row.recordId))
-  const deletedRows = db()
-    .query<{ record_id: string; project: string; stale_at: string | null }, [string]>(
-      `SELECT record_id,project,stale_at FROM note
-       WHERE sightings=1 AND last_seen_at <= ? AND promoted_task IS NULL`,
-    )
-    .all(cutoff)
-    .filter((row) => row.stale_at !== null || markedIds.has(row.record_id))
+  const deletedRows = evaluations.flatMap(({ note, outcome }) =>
+    note.sightings === 1 &&
+    note.last_seen_at <= cutoff &&
+    note.promoted_task === null &&
+    outcome.triaged &&
+    (outcome.action === 'mark' || (note.stale_at !== null && outcome.action !== 'restore'))
+      ? [{ record_id: note.record_id, project: note.project }]
+      : [],
+  )
   const deletedIds = deletedRows.map((row) => row.record_id)
   const url = deps.hosted?.baseUrl ?? resolveHostedUrl()
   if (hostedWriteMode(url) !== 'hosted-configured' && readInstallBinding().bound) {
@@ -882,89 +919,9 @@ export async function staleNotes(deps: Partial<StaleDeps> = {}): Promise<StaleRe
     )
   }
   if (hostedWriteMode(url) !== 'hosted-configured') {
-    return writeTransaction((conn) => {
-      for (const item of reasons) {
-        conn
-          .query(
-            'UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL',
-          )
-          .run(at, item.reason, item.recordId)
-      }
-      const found = deletedIds.flatMap((id) => {
-        const row = conn
-          .query<{ record_id: string }, [string, string]>(
-            `SELECT record_id FROM note WHERE record_id=? AND stale_at IS NOT NULL AND sightings=1
-             AND promoted_task IS NULL AND last_seen_at <= ?`,
-          )
-          .get(id, cutoff)
-        return row ? [row.record_id] : []
-      })
-      if (found.length < deletedIds.length)
-        throw new Error(
-          'local cache is behind the record; the next maintenance pass will recompute',
-        )
-      confirmCount(found.length, deletedIds.length, 'bulk-only')
-      for (const id of found) conn.query('DELETE FROM note WHERE record_id=?').run(id)
-      return { marked: reasons.length, deleted: found.length, reasons }
-    })
+    return applyLocalStaleness(changes, deletedIds, at, cutoff)
   }
-  const identity = await hostedTaskIdentity(deps.hosted)
-  const projectById = new Map(notes.map((note) => [note.record_id, note.project]))
-  const maintenance = [
-    ...reasons.map((row) => ({
-      kind: 'stale' as const,
-      ...row,
-      project_name: projectById.get(row.recordId)!,
-    })),
-    ...deletedRows.map((row) => ({
-      kind: 'deleted' as const,
-      recordId: row.record_id,
-      project_name: row.project,
-    })),
-  ]
-  const partitioned = partitionProjectRows(maintenance, projects(), identity)
-  const failures = [...partitioned.refusals].map(
-    ([project, refusal]) => `${project}: ${refusal.reason}`,
-  )
-  let marked = 0
-  let deleted = 0
-  for (const [spaceId, rows] of partitioned.destinations) {
-    const stale = rows.filter((row) => row.kind === 'stale')
-    const removed = rows.filter((row) => row.kind === 'deleted')
-    try {
-      const result = await hostedReapNotes(
-        {
-          stale: stale.map((row) => ({
-            recordId: row.recordId,
-            reason: 'reason' in row ? row.reason : '',
-            at,
-          })),
-          deleted: removed.map((row) => row.recordId),
-          confirmation: removed.length,
-          cutoff,
-        },
-        { ...deps.hosted, recordSpace: spaceId },
-      )
-      writeTransaction((conn) => {
-        for (const item of stale) {
-          if (!('reason' in item)) continue
-          conn
-            .query(
-              'UPDATE note SET stale_at=?, stale_reason=? WHERE record_id=? AND stale_at IS NULL',
-            )
-            .run(at, item.reason, item.recordId)
-        }
-        for (const item of removed)
-          conn.query('DELETE FROM note WHERE record_id=?').run(item.recordId)
-      })
-      marked += result.marked
-      deleted += result.deleted
-    } catch (cause) {
-      failures.push(`${spaceId}: ${cause instanceof Error ? cause.message : String(cause)}`)
-    }
-  }
-  if (failures.length) throw new Error(`hosted note reaps failed: ${failures.join('; ')}`)
-  return { marked, deleted, reasons }
+  return applyHostedStaleness(changes, deletedRows, at, cutoff, projects(), deps.hosted)
 }
 
 export function curatorEnabled(): boolean {

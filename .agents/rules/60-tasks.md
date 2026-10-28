@@ -23,11 +23,11 @@ note same`, which increments its count and adds a sighting. Never run scheduled
 text-similarity merging, because similar findings may be distinct. Repetition
 with cost is the promotion signal.
 
-Staleness is mechanical: anchors disappear when their file location, run,
-branch or commit range disappears. `bottega note stale` marks vanished anchors and
-reaps only stale singleton notes untouched through the staleness window and
-never promoted. `bottega note curate` runs curation, and `bottega note curator`
-controls scheduled curation. All other disposition is human.
+Staleness is mechanical: an anchor vanishes when its branch is deleted or
+landed, or its run, file or line text is gone, in its own repository. Triage is
+a promotion, drop, merge, or keep by a non-reporter. `bottega note stale`
+annotates untriaged notes and reaps only stale, triaged, unpromoted singletons
+past the staleness window. All other disposition is human.
 
 Promotion is always a human act through `bottega note promote`; the task carries
 the note body and sightings as evidence. Scheduled work never promotes and the
