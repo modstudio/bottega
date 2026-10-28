@@ -151,6 +151,7 @@ export const cleanupBoundarySpecs = [
       './stray-worktree-sweep.ts',
       './cleanup-sweep-docker.ts',
       './claim-reconciliation.ts',
+      './project-sweep.ts',
       '../close/close-out.ts',
       '../board/board-service.ts',
       '../board/board-claim-service.ts',
@@ -177,6 +178,7 @@ export const cleanupBoundarySpecs = [
       '../run/run-task-linking.ts',
       '../run/synthetic-lifecycle-job.ts',
       '../workflow/workflow-task-reference.ts',
+      '../workflow/workflow-cursor-worktrees.ts',
       '../sandbox/grok-trust.ts',
       '../worktree/worktree-attribution.ts',
       '../worktree/worktree-remove.ts',
@@ -185,6 +187,20 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  },
+  {
+    name: 'project-sweep-boundary',
+    file: 'orchestrator/src/cleanup/project-sweep.ts',
+    allowed: [
+      'node:fs',
+      '../project/projects.ts',
+      '../worktree/worktree-remove.ts',
+      './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep project sweep execution as the adapter over the held-tree ruling, cleanup lock, and declared worktree command.',
   },
   {
     name: 'unjudged-run-remedy-boundary',

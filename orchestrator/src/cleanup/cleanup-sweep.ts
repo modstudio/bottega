@@ -45,6 +45,7 @@ import { TERMINAL_RUN_STATUS_SET, TERMINAL_RUN_STATUS_SQL } from '../run/run-sta
 import { sweepRunTaskLinks } from '../run/run-task-linking.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
+import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   inspectTreeOwnership,
@@ -81,6 +82,7 @@ import {
 import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
+import { heldProjectTrees, sweepProject } from './project-sweep.ts'
 import { pruneReaderCloneArchives } from './reader-clone-archive-retention.ts'
 import { sweepRunLeftovers } from './run-leftover-sweep.ts'
 import { sweepStrayWorktreeDirectories } from './stray-worktree-sweep.ts'
@@ -121,7 +123,6 @@ async function sweepOrphanProcesses(
   }
   return failed
 }
-
 export type SweepOptions = {
   dryRun: boolean
   verbose?: boolean
@@ -136,11 +137,26 @@ export type SweepHelpers = {
 }
 
 const KEPT_ROW_LIMIT = 10
-
 type NamedRun = { record_id: string; status: string; alive: boolean }
-
 function worktreeSharerList(rows: { record_id: string; status: string }[]): string {
   return rows.map((owner) => `${owner.record_id} (${owner.status})`).join(', ')
+}
+function heldKeeper(
+  keep: (line: string, reason: string) => void,
+  hold: (path: string | null) => void,
+  path: string,
+): (line: string, reason: string) => void {
+  return (line, reason) => {
+    keep(line, reason)
+    hold(path)
+  }
+}
+function holdRecordedCloseOutcome(
+  outcome: 'released' | 'forgotten' | 'held' | 'live' | 'absent' | 'failed',
+  path: string | null,
+  hold: (path: string | null) => void,
+): void {
+  if (outcome === 'held' || outcome === 'live') hold(path)
 }
 type NamedRunLookup =
   | { outcome: 'absent' }
@@ -265,7 +281,7 @@ function observeNamedRunForSweep(
 }
 
 type OrphanCandidateDecision =
-  | { action: 'keep'; line: string; reason: string; failed: boolean }
+  | { action: 'keep'; line: string; reason: string; failed: boolean; held: boolean }
   | { action: 'dry'; detail: string; failed: boolean }
   | {
       action: 'reclaim'
@@ -288,6 +304,7 @@ function orphanCandidateDecision(
       line: 'kept: no UUID ownership marker',
       reason: 'ownership cannot be attributed',
       failed: false,
+      held: false,
     }
   }
   const owner = db()
@@ -299,6 +316,7 @@ function orphanCandidateDecision(
       line: 'kept: marker UUID has no run record',
       reason: 'ownership cannot be attributed',
       failed: false,
+      held: false,
     }
   }
   const named = observeNamedRunForSweep(path, project, label, presentation)
@@ -319,6 +337,7 @@ function orphanCandidateDecision(
       line: ruling.keepLine,
       reason: ruling.keepReason,
       failed: named.failed,
+      held: named.alive,
     }
   }
   if (ruling.action === 'dry-would-reclaim') {
@@ -399,7 +418,6 @@ function printSweepKept(
   }
 }
 
-/** Links run tasks after the sweep's own steps, and fails the sweep when either part failed. */
 async function finishSweep(
   dry: boolean,
   cleanupFailed: boolean,
@@ -542,6 +560,7 @@ type RecordedSweepState = {
   leaked: Map<string, { resource: DockerResource; project: string; runId: string }>
   kept: { line: string; reason: string }[]
   counts: ClosedSweepCounts
+  hold: (path: string | null) => void
 }
 
 function applyRecordedPostInventory(
@@ -651,6 +670,7 @@ function sweepRecordedRow(
     const landing = landingTreeSweepRuling(r)
     if (!landing.approved) {
       keep(`${r.record_id}  held: ${r.worktree}`, landing.reason)
+      state.hold(r.worktree)
       return
     }
   }
@@ -682,6 +702,7 @@ function sweepRecordedRow(
     outcome: closed.outcome,
     detail: closed.detail,
   })
+  holdRecordedCloseOutcome(closed.outcome, r.worktree, state.hold)
   if (closeRuling.action === 'report') {
     const outcome = reportClosedSweepRow(closed.outcome as ClosedSweepOutcome, r, dry, presentation)
     state.counts[outcome]++
@@ -712,20 +733,6 @@ function pruneArchives(options: SweepOptions): { failed: boolean } {
   })
   return { failed: reader.failed > 0 || branch.failed }
 }
-
-/**
- * Reclaim worktrees, and the infrastructure behind them, without being asked.
- *
- * A worktree is not a directory here. In these projects it is a database of
- * up to a few gigabytes, a container, a port and a queue worker, and the
- * directory is the cheap part — so worktrees left behind do not merely
- * clutter, they fill the machine with databases nobody can name.
- *
- * Terminal close-out is the normal release event. Sweep is the backstop for
- * a coordinator or session that died before the pairing ran. It applies the
- * same liveness guards; scoring is not a retention signal. Uncommitted work
- * is extracted before removal rather than used as a reason to keep the tree.
- */
 
 export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): Promise<void> {
   const dry = options.dryRun
@@ -772,7 +779,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     )
     .filter((row) => sweepCandidateInProject(row, selectedProject))
 
-  const { removeFor, sweepWithTool } = await import('../worktree/worktree-remove.ts')
+  const { removeFor } = await import('../worktree/worktree-remove.ts')
 
   const closedCounts: ClosedSweepCounts = {
     released: 0,
@@ -799,12 +806,14 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   const keep = (line: string, reason: string) => {
     kept.push({ line, reason })
   }
+  const { byProject: heldByProject, hold } = heldProjectTrees()
   const recordedState: RecordedSweepState = {
     cleanupFailed,
     inventoryErrors,
     leaked,
     kept,
     counts: closedCounts,
+    hold,
   }
   sweepTerminalRunLeases(dry)
   for (const r of rows)
@@ -819,15 +828,6 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
   })
   cleanupFailed ||= strayCleanupFailed
 
-  /**
-   * DATABASE ROWS ARE NOT AN INVENTORY OF WHAT IS ON DISK.
-   *
-   * A worktree whose row never acquired its path is invisible to the loop
-   * above and would otherwise leak forever. Orphans are discovered from each
-   * registered project's conventional worktree root. A path git does not
-   * list as a worktree is kept; uncommitted work is extracted before removal.
-   * A project's own removal refusal remains final through removeWithTool().
-   */
   const remembered = new Set(
     (
       db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
@@ -844,10 +844,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
       if (remembered.has(realpathSync(path))) continue
 
       const label = `orphan  ${path}`
+      const keepHeld = heldKeeper(keep, hold, path)
       const decision = orphanCandidateDecision(path, p, label, dry, options.presentation)
       cleanupFailed ||= decision.failed
       if (decision.action === 'keep') {
         keep(`${label}  ${decision.line}`, decision.reason)
+        if (decision.held) hold(path)
         continue
       }
       if (decision.action === 'dry') {
@@ -880,12 +882,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           if (lockedRuling.action === 'shared-before') {
             const owners = worktreeSharerList(sharersBefore)
             cleanupFailed ||= lockedRuling.cleanupFailed
-            keep(`${label}  ${lockedRuling.keepLine}: ${owners}`, lockedRuling.keepReason!)
+            keepHeld(`${label}  ${lockedRuling.keepLine}: ${owners}`, lockedRuling.keepReason!)
             options.presentation.error(`could not reclaim ${label}: acquired by run(s) ${owners}`)
             return
           }
           if (lockedRuling.action === 'live') {
-            keep(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason!)
+            keepHeld(`${label}  ${lockedRuling.keepLine}`, lockedRuling.keepReason!)
             return
           }
           const ownersBefore = evidenceOwningBranchOwners(ownerRow, p.path)
@@ -925,7 +927,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           if (afterRemoval.action === 'shared-after') {
             const owners = worktreeSharerList(sharersAfter)
             cleanupFailed ||= afterRemoval.cleanupFailed
-            keep(`${label}  ${afterRemoval.keepLine}: ${owners}`, afterRemoval.keepReason!)
+            keepHeld(`${label}  ${afterRemoval.keepLine}: ${owners}`, afterRemoval.keepReason!)
             options.presentation.error(
               `could not reclaim ${label}: acquired during cleanup by run(s) ${owners}`,
             )
@@ -983,47 +985,22 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
     }
   }
 
-  /**
-   * Then the PROJECT'S OWN sweep, which knows what orchestrator cannot.
-   *
-   * A database whose worktree directory was deleted by hand is invisible to
-   * everything above — no row points at it, and there is nothing left to
-   * remove. Each project's tool is the only thing that can find those, and
-   * running it is the difference between reclaiming directories and
-   * reclaiming disk.
-   */
-  if (!dry) {
-    for (const p of sweepProjects) {
-      const tool = p.settings.worktree
-      if (!tool?.sweep) continue
-      let result: ReturnType<typeof sweepWithTool>
-      try {
-        result = withCleanupLock(p.path, `project sweep for ${p.name}`, null, () =>
-          sweepWithTool(tool, p.path),
-        )
-      } catch (error) {
-        cleanupFailed = true
-        options.presentation.error(
-          `project ${p.name} sweep failed: ${error instanceof Error ? error.message : String(error)}`,
-        )
-        continue
-      }
-      if (!result) continue
-      if (result.out.trim()) {
-        const lines = result.out.trim().split('\n')
-        const omitted = Math.max(0, lines.length - 8)
-        options.presentation.log(`\n${p.name} sweep:\n${lines.slice(-8).join('\n')}`)
-        if (omitted) {
-          options.presentation.log(`  (${omitted} earlier line${omitted === 1 ? '' : 's'} omitted)`)
-        }
-      }
-      if (!result.ok) {
-        cleanupFailed = true
-        options.presentation.error(
-          `project ${p.name} sweep failed with exit status ${result.exitCode ?? 'unknown'}`,
-        )
-      }
-    }
+  const cursorWorktrees = openCursorWorktrees()
+  for (const p of sweepProjects) {
+    const tool = p.settings.worktree
+    if (!tool?.sweep) continue
+    const cursorPaths = cursorWorktrees
+      .filter((row) => row.project === p.name && existsSync(row.worktree))
+      .map((row) => realpathSync(row.worktree))
+    const heldPaths = [...new Set([...(heldByProject.get(p.name) ?? []), ...cursorPaths])].sort()
+    const outcome = sweepProject({
+      project: p,
+      heldPaths,
+      dryRun: dry,
+      presentation: options.presentation,
+    })
+    cleanupFailed ||= outcome.failed
+    if (outcome.keep) keep(outcome.keep.line, outcome.keep.reason)
   }
 
   const trustCleanupFailed = reclaimAbsentTrustEntries({

@@ -87,6 +87,7 @@ import {
   projectSpaceProblems,
   retiredReadonlyDockerProblems,
   reviewLensProblems,
+  sweepHonorsHeldProblems,
   visibilityProblems,
 } from './project-settings-refusals.ts'
 import {
@@ -536,6 +537,7 @@ export function validateProjectSettings(
     ),
     ...validateReadonlyProvision(settings.worktree?.readonly_provision),
     ...retiredReadonlyDockerProblems(settings.worktree),
+    ...sweepHonorsHeldProblems(settings.worktree),
     ...trackedRecipeProblems(settings.worktree, projectPath),
     ...projectSpaceProblems(settings.space),
     ...autonomyProblems(settings.autonomy),
