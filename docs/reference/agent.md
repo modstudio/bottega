@@ -233,13 +233,14 @@ Options are documented by `--help`.
 
 ## bottega agent stats
 
-**Synopsis:** `bottega agent stats [--job <value>]`
+**Synopsis:** `bottega agent stats [--job <value>] [--lens <value>]`
 
 show routing scores, latency, cost, and agent duels
 
 ### Options
 
 - `--job <value>`: show statistics for this job
+- `--lens <value>`: show a findings job in this lens cell
 
 ### Related
 

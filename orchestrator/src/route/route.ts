@@ -20,7 +20,7 @@ import {
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
-import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
+import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
@@ -30,13 +30,32 @@ import {
   promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
-import { type CostPerAcceptedResult, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
 import {
-  type PolicyCandidate,
-  type PolicySelection,
-  rankThompson,
-  selectCurrentPolicy,
-} from './route-policy.ts'
+  attachRouteCosts,
+  type CostPerAcceptedResult,
+  routeCostFacts,
+  routeCostPerAccepted,
+} from './route-cost.ts'
+import {
+  appendCostPolicyReason,
+  belowCostFloor,
+  costPolicyExplanation,
+  findingsPolicyLens,
+  resolveRouteCostPolicy,
+} from './route-cost-policy.ts'
+import {
+  enabledCostRule,
+  prepareCostPolicy,
+  readRouteCostPolicy,
+} from './route-cost-policy-adapter.ts'
+import { agentMeteredRouteEligibility } from './route-metered-policy-adapter.ts'
+import {
+  type CurrentPolicySelection,
+  currentPolicySelection,
+  MIN_SAMPLE,
+  NOISE_BAND,
+  weightCase,
+} from './route-selection.ts'
 import {
   aggregateEvidence,
   type RunUsageMedians,
@@ -52,30 +71,18 @@ import { trainingDataEligibility } from './training-data-eligibility.ts'
 export type Candidate = {
   agent: string
   runs: number
-  /** Verdicts recorded against runs that produced an answer. */
   scored: number
-  /**
-   * Failed or abandoned runs that nobody judged explicitly.
-   *
-   * Excludes a failure someone scored, because that already counts under
-   * `scored` — a run is one judgment, not two.
-   */
+  /** Failed or abandoned runs without an explicit judgment. */
   failures: number
   /** Explicit judgments whose delivery was none, used by the exploration filter. */
   none: number
-  /**
-   * Everything the router is entitled to count as a judgment about this agent:
-   * explicit verdicts plus unjudged failures. This, not `scored`, is what
-   * MIN_SAMPLE measures, and it never exceeds the number of runs behind it.
-   */
+  /** Explicit verdicts plus unjudged failures; the MIN_SAMPLE denominator. */
   evidence: number
-  /** Configured model whose evidence is used. Never another model's posterior. */
   evidenceModel: string | null
   /** Mean verdict weight, or null until anything has been judged. */
   score: number | null
   /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgments. */
   shrunk: number | null
-  /** Median run time for this job, robust to the one call that hung. */
   latencyMs: number | null
   tokens: number
   usage: RunUsageMedians
@@ -83,18 +90,14 @@ export type Candidate = {
   free: boolean
   eligible: boolean
   why: string
-  /**
-   * Set when the agent's most recent uncleared failure was something only a run
-   * can detect — quota or stale auth — with how long ago it finished. Never set
-   * for `unreachable`, which is measured directly on every routing decision and
-   * needs no waiting out.
-   */
+  /** Most recent uncleared quota or stale-auth failure. */
   cooling: string | null
   declared: string[] | null
   preferred: boolean
   maxConcurrent: number | null
   runningRunIds: string[]
   routedReason?: string
+  costPerAccepted?: CostPerAcceptedResult
 }
 
 type RouteConstraints = {
@@ -118,6 +121,7 @@ type CandidateOptions = {
   pinnedTransport?: 'cli' | 'acp'
   transportPinSource?: McpTransportPinFacts['transportPinSource']
   explicitlyNamedAgent?: string
+  priceCost?: boolean
   projectName?: string | null
   repositoryReader?: (project: Pick<Project, 'path'>) => string | null
 }
@@ -131,8 +135,6 @@ type CandidateOptions = {
 export const COOLDOWN_MIN = 60
 
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
-export const MIN_SAMPLE = 5
-
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
 
@@ -237,107 +239,6 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
   return row.delivery !== null || ['failed', 'stale'].includes(row.status)
 }
 
-/** How often to spend a run on an agent that has not earned a score yet. */
-const EXPLORE_RATE = 0.25
-
-/** Keep testing proven challengers so a leader cannot hold the route forever. */
-export const STANDING_EXPLORE_RATE = 0.1
-const STANDING_EXPLORE_FLOOR = 0.03
-
-/** The leader's cell evidence decays the standing draw, without retiring it. */
-export function standingExploreRate(leaderEvidence: number): number {
-  return Math.max(
-    STANDING_EXPLORE_FLOOR,
-    STANDING_EXPLORE_RATE / Math.sqrt(leaderEvidence / MIN_SAMPLE),
-  )
-}
-
-/** One adjacent quality step in the current judgment matrix. */
-export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
-export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
-/** Linear width of the judgment-weight range mapped onto a Beta probability. */
-export const BETA_SCALE = 1.5
-export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
-
-export function betaContribution(weight: number): { successes: number; failures: number } {
-  const successes = (weight + 0.5) / BETA_SCALE
-  return { successes, failures: 1 - successes }
-}
-
-type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free' | 'latencyMs'> & {
-  precision?: number | null
-}
-
-/** The one Thompson ranking used by every historical replay trajectory. */
-export function thompsonRank<T extends ThompsonCandidate>(
-  candidates: readonly T[],
-  draw = true,
-  rng: () => number = Math.random,
-): { chosen: T; expected: T; posteriorMean: number; tied: number } {
-  return rankThompson(candidates, draw, rng, MIN_SAMPLE, betaContribution, POSTERIOR_NOISE_BAND)
-}
-
-/**
- * Build the SQL scoring expression from WEIGHT, so editing the matrix actually
- * moves routing rather than only changing what the CLI prints.
- *
- * A searched CASE rather than a simple one, because the weight now depends on
- * two columns. Unscored rows fall to the ELSE and contribute nothing, which is
- * what the separate scored/evidence counts are for.
- */
-export function weightCase(): string {
-  const arms: string[] = []
-  for (const [delivery, row] of Object.entries(WEIGHT)) {
-    if (typeof row === 'number') {
-      arms.push(`WHEN s.delivery = '${delivery}' THEN ${row}`)
-    } else {
-      for (const [quality, w] of Object.entries(row)) {
-        arms.push(`WHEN s.delivery = '${delivery}' AND s.quality = '${quality}' THEN ${w}`)
-      }
-    }
-  }
-  /**
-   * The fidelity penalty is added HERE, in SQL, and not only in `weigh()`.
-   *
-   * Otherwise the axis would exist everywhere a person looks and nowhere the
-   * router looks — which is the exact failure this file already carries a
-   * section about: `bottega agent stats`, the dashboard and the router each held their
-   * own copy of the aggregate, and when one learned to count failures the
-   * others did not follow. Built from FIDELITY_PENALTY for the same reason the
-   * matrix above is built from WEIGHT: editing the constant has to move
-   * routing, not just the printout.
-   *
-   * COALESCE to zero, so every score recorded before the axis existed — and
-   * every read-only job, which is never judged on it — weighs exactly what it
-   * always did.
-   */
-  const pen = Object.entries(FIDELITY_PENALTY)
-    .map(([f, w]) => `WHEN s.fidelity = '${f}' THEN ${w}`)
-    .join(' ')
-  // CLAMPED TO THE SAME FLOOR as weigh(). Unclamped, partial/wrong/drifted
-  // weighs less than "nothing arrived", so an agent that delivered something
-  // unusable ranks below one that delivered nothing — and routing prefers the
-  // agent that cannot do the job. `MAX` here must mirror the Math.max there;
-  // two clamps that disagree is the drift this file already has a section about.
-  const floor = WEIGHT.none as number
-  return `MAX((CASE ${arms.join(' ')} ELSE 0 END) + (CASE ${pen} ELSE 0 END), ${floor})`
-}
-
-/**
- * A run that produced nothing counts as `unusable`, because that is what it is.
- *
- * Filtering to `status='ok'` made failure invisible to routing: an agent that
- * fails most of the time but scores well on the few that land looked perfect.
- * `agy` on review-lens was one good verdict and two headless permission denials,
- * and the router saw a flawless record — while `unusable`, the verdict this
- * system already defines as "nothing came back to judge — a denied permission,
- * an empty reply, the wrong shape entirely", sat right there describing it.
- *
- * So a failed or abandoned run is folded into the mean at the `unusable` weight
- * rather than dropped. It costs the agent exactly what a human scoring the same
- * outcome would have cost it, and no separate reliability term has to be
- * invented or tuned.
- */
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one pass keeps candidate evidence and eligibility coherent
 function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptions = {}) {
   const {
@@ -349,24 +250,14 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     pinnedTransport,
     transportPinSource,
     explicitlyNamedAgent,
+    priceCost = false,
     projectName,
     repositoryReader = currentProjectRepository,
   } = options
   const j = job(jobName)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
   const { mcpListing, routeProject } = routingPassFacts(requiredMcp, projectName)
-  // probe = 0: calibration traffic is deliberately trivial, so counting it would
-  // let "reply with ok" vouch for an agent on real work.
-  //
-  // evidence_excluded IS NULL: a run whose output was destroyed by a bug of
-  // ours is not evidence about the agent. Clock-named files collided; several
-  // runs shared one output; the last to finish overwrote the rest; people then
-  // scored the survivor as if it were each of them. NULL counts; any text is
-  // the reason it does not. This is not `probe` — those were not calibration
-  // runs, and overloading that flag would make the register lie about what
-  // happened. The predicate lives HERE, next to the other evidence filters,
-  // because this is the one query the router, the stats command and the
-  // dashboard all share. A second copy is how they drifted last time.
+  // Probes and evidence-excluded runs do not establish agent quality.
   const rows = db()
     .query(
       `SELECT r.agent AS agent,
@@ -614,6 +505,13 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       c.shrunk = (c.score * c.evidence + MIN_SAMPLE * prior) / (c.evidence + MIN_SAMPLE)
     }
   }
+  attachRouteCosts(
+    result,
+    evidenceRows,
+    { jobName, promptBytes, stack, lens },
+    EVIDENCE_WINDOW,
+    priceCost,
+  )
   return { result, evidenceRows }
 }
 
@@ -630,37 +528,45 @@ export type Scored = Candidate & {
   job: string
   promptBucket: PromptSizeBucket
   costPerAccepted: CostPerAcceptedResult
+  costPolicy: ReturnType<typeof resolveRouteCostPolicy>
+  belowCostFloor: boolean
 }
 
-/**
- * Every job × agent cell, scored exactly the way routing scores it.
- *
- * `bottega agent stats` and the dashboard matrix each had their own copy of this query,
- * and both still filtered `status='ok'` after the router stopped: grok on
- * review-lens read 96% in both views and 69% to the thing actually choosing,
- * because 6 failures were invisible to the report and not to the decision. The
- * stats command even carried a comment saying it deliberately shared the
- * router's maths, which had stopped being true.
- *
- * So there is one implementation and the views call it. Ten small queries
- * rather than one grouped one, which is the price of not having a second
- * definition of the word "score".
- */
-export function scoreboard(onlyJob?: string, subscriptionCost?: SubscriptionCostContext): Scored[] {
+/** Every job × agent cell, scored exactly the way routing scores it. */
+export function scoreboard(
+  onlyJob?: string,
+  subscriptionCost?: SubscriptionCostContext,
+  lens?: string,
+): Scored[] {
+  const policy = readRouteCostPolicy()
   return Object.keys(JOBS)
     .filter((j) => !onlyJob || j === onlyJob)
     .flatMap((j) =>
       promptBucketsForJob(j).flatMap((bucket) =>
         (() => {
           const promptBytes = bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
-          const pass = candidatePass(j, promptBytes)
-          const costFacts = routeCostFacts({ jobName: j, promptBytes, context: subscriptionCost })
+          const cellLens = findingsPolicyLens(Boolean(job(j).findings), lens)
+          const pass = candidatePass(j, promptBytes, { lens: cellLens })
+          const costFacts = routeCostFacts({
+            jobName: j,
+            promptBytes,
+            lens: cellLens,
+            context: subscriptionCost,
+          })
+          const costPolicy = resolveRouteCostPolicy(
+            policy,
+            j,
+            cellLens,
+            Boolean(job(j).needs.writesRepo),
+          )
           return pass.result
             .filter((c) => c.runs > 0 || c.failures > 0)
             .map((c) => ({
               ...c,
               job: j,
               promptBucket: bucket,
+              costPolicy,
+              belowCostFloor: belowCostFloor(c.shrunk, costPolicy.floor, NOISE_BAND),
               costPerAccepted: routeCostPerAccepted(
                 j,
                 routingEvidenceWindow(pass.evidenceRows, c.agent, c.evidenceModel!, EVIDENCE_WINDOW)
@@ -674,36 +580,8 @@ export function scoreboard(onlyJob?: string, subscriptionCost?: SubscriptionCost
 }
 
 /**
- * Pick by measured quality once there is enough signal, otherwise by the job's
- * declared preference. A score from two runs is noise, and routing on it would
- * lock in whichever agent happened to go first.
- *
- * Quality decides alone whenever the gap is real. Inside NOISE_BAND the
- * evidence does not separate the agents, so the tie goes to the one that costs
- * no quota, and then to the faster one — the two things measured on every run
- * that are facts rather than judgments.
- */
-/**
  * Evidence for this job in one optional dimension, if there is enough of it,
  * else for the job anywhere.
- *
- * Agents are not uniformly good: one may be strong on PHP and weak on a Vue
- * component, and a router keyed only on job type averages those together into a
- * number that is true of neither. Keying on stack lets the difference show.
- *
- * THE BACKOFF IS THE WHOLE DESIGN, and without it this would be a mistake.
- * Routing already needs MIN_SAMPLE judgments before a score means anything,
- * and splitting the key multiplies the cells: a corpus that supports a handful
- * of job-level verdicts supports almost no stack-level ones, so every cell
- * would starve permanently and routing would fall back to declared preference
- * for ever — strictly worse than what it replaced. So the stack-specific cell
- * is used only once it has earned MIN_SAMPLE on its own, and until then the
- * job-wide evidence answers, exactly as it did before.
- *
- * Which level was used is returned, not inferred, because `bottega agent pick` has to be
- * able to say WHY — a recommendation drawn from four PHP runs and one drawn
- * from thirty mixed ones deserve different amounts of trust, and only the
- * router knows which it gave you.
  */
 export function evidenceFor(
   jobName: string,
@@ -765,27 +643,9 @@ export function evidenceFor(
             transportPinSource,
             projectName,
           })
-    // `!c.cooling` too: pick() discards a cooling agent AFTER this decision, so
-    // counting one here could narrow the scope on the strength of an agent that
-    // is then thrown away — leaving a scoped view with a single usable
-    // candidate, which is the very thing the two-agent rule exists to refuse.
+    // A cooling candidate cannot establish that a scoped comparison is available.
     const eligible = scoped.filter((c) => c.eligible && !c.cooling)
     const proven = eligible.filter((c) => c.evidence >= MIN_SAMPLE && c.score !== null)
-    /**
-     * TWO proven agents, not one, and this is the subtle half of the rule.
-     *
-     * The point of the stack key is to COMPARE agents on that stack. One agent
-     * over the threshold is not a comparison — it is a narrower evidence base
-     * for a decision that would have been made anyway, and it is actively
-     * worse than the job-wide view: an agent with thirty job-wide judgments
-     * and three on this stack is demoted to "unproven" and loses to whichever
-     * one happened to accumulate five here first. That is the incumbency
-     * problem this file already solves for exploration, arriving by a
-     * different door.
-     *
-     * The exception is a job only one agent can do at all, where there is no
-     * comparison to lose and the narrower evidence is simply better evidence.
-     */
     if (proven.length >= 2 || (eligible.length === 1 && proven.length === 1)) {
       return {
         cands: scoped,
@@ -836,34 +696,6 @@ function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
   if (ev.level === 'lens') return `lens ${ev.lens} cell`
   if (ev.level === 'stack') return `stack ${ev.stack} cell`
   return 'job-wide cell'
-}
-
-type CurrentPolicyCandidate = PolicyCandidate
-export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = PolicySelection<T>
-
-/** The incumbent ranking policy, independent of where its evidence came from. */
-export function currentPolicySelection<T extends CurrentPolicyCandidate>(
-  candidates: readonly T[],
-  prefer: readonly string[],
-  explore = true,
-  rng: () => number = Math.random,
-  explorationExcluded: ReadonlySet<string> = new Set(),
-  declaredPreferences: ReadonlySet<string> = new Set(),
-): CurrentPolicySelection<T> {
-  return selectCurrentPolicy(
-    candidates,
-    prefer,
-    explore,
-    rng,
-    explorationExcluded,
-    declaredPreferences,
-    {
-      minSample: MIN_SAMPLE,
-      exploreRate: EXPLORE_RATE,
-      standingExploreRate,
-      rank: thompsonRank,
-    },
-  )
 }
 
 function capacityRefusal(
@@ -917,12 +749,6 @@ function namedCandidate(
   return candidate
 }
 
-/**
- * The model this request would run the candidate on: the caller's `--model` pin
- * wins over the agent's registered default. The capacity and avoidance filters
- * and the reviewer calibration lookup in `pick` ask the same question about the
- * same agent, so they resolve it here once.
- */
 function effectiveModel(
   candidate: Pick<Candidate, 'agent'>,
   constraints: RouteConstraints,
@@ -996,9 +822,6 @@ export function pick(
   jobName: string,
   override?: string,
   promptBytes = 0,
-  // Reporting views pass false: a guide that consumed the exploration coin
-  // would name a different agent each time it was read, which is the opposite
-  // of what someone consults it for.
   explore = true,
   stack?: string | null,
   /** Agents and effective models a fan-out has already used. */
@@ -1031,8 +854,6 @@ function pickExternal(
   const j = job(jobName)
   assertExternalDelegation(jobName)
   const ev = evidenceForPick(jobName, promptBytes, stack, avoid, lens)
-  // Named in every reason below, so a route drawn from four PHP runs is never
-  // mistaken for one drawn from thirty mixed ones.
   const evidenceCell = evidenceCellName(ev)
   const scope = (c: Candidate) =>
     ` in ${evidenceCell}${c.evidenceModel ? ` on model ${c.evidenceModel}` : ''}`
@@ -1057,6 +878,25 @@ function pickExternal(
         .precision,
     }))
   }
+  const preparedCostPolicy = prepareCostPolicy({
+    job: jobName,
+    lens: findingsPolicyLens(Boolean(j.findings), lens),
+    writesRepo: Boolean(j.needs.writesRepo),
+    explain: !explore,
+    admitted: eligible,
+    pricedRows: () =>
+      candidates(jobName, promptBytes, {
+        stack: ev.level === 'stack' ? ev.stack : undefined,
+        lens: ev.level === 'lens' ? ev.lens : undefined,
+        modelOverride: avoid.model,
+        requiredMcp: avoid.requiredMcp,
+        pinnedTransport: avoid.pinnedTransport,
+        transportPinSource: avoid.transportPinSource,
+        projectName: avoid.project,
+        priceCost: true,
+      }),
+  })
+  eligible = preparedCostPolicy.candidates
   const failingEvals = failingDefaultCanonEvals()
   const explorationExcluded = new Set(failingEvals.length ? [failingEvals[0]!.agent] : [])
   const notExplored = failingEvals.map(
@@ -1078,16 +918,39 @@ function pickExternal(
     rng,
     explorationExcluded,
     new Set(declaredPreferences),
+    enabledCostRule(preparedCostPolicy),
   )
   const chosen = selected.chosen
+  const costReason = costPolicyExplanation({
+    priced: preparedCostPolicy.priced,
+    enabled: preparedCostPolicy.configured.enabled,
+    selected: selected as CurrentPolicySelection<
+      Candidate & { costPerAccepted: CostPerAcceptedResult }
+    >,
+    hypothetical: () =>
+      currentPolicySelection(
+        preparedCostPolicy.candidates as Array<
+          Candidate & { costPerAccepted: CostPerAcceptedResult }
+        >,
+        [...declaredPreferences, ...j.prefer],
+        false,
+        rng,
+        explorationExcluded,
+        new Set(declaredPreferences),
+        {
+          enabled: true,
+          rate: preparedCostPolicy.resolved.rate,
+          floor: preparedCostPolicy.resolved.floor,
+        },
+      ),
+    resolved: preparedCostPolicy.resolved,
+    lens: findingsPolicyLens(Boolean(j.findings), lens),
+  })
   const policy = explore ? 'thompson' : 'mean'
-  /**
-   * A routed pick already decided this route and stated why, so every mode
-   * returns that reason instead of one recomputed for a comparison the routing
-   * surface never made. `withConstraint` is the fallback for a pick that
-   * computed its own reason.
-   */
-  const carriedReason = (computed: string) => chosen.routedReason ?? withConstraint(computed)
+  const carriedReason = (computed: string) => {
+    const base = chosen.routedReason ?? withConstraint(computed)
+    return appendCostPolicyReason(base, costReason, Boolean(chosen.routedReason))
+  }
   if (selected.mode === 'challenger')
     return {
       agent: chosen.agent,
@@ -1138,55 +1001,6 @@ function pickExternal(
     agent: chosen.agent,
     reason: carriedReason(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
   }
-}
-
-export function meteredRouteEligibility(input: {
-  billing: string
-  routeMetered: boolean
-  trainsOnInputs?: boolean
-  writesRepo: boolean
-  name: string
-  explicitlyNamedAgent?: string
-}): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
-  if (
-    (input.billing !== 'metered' && !input.trainsOnInputs) ||
-    input.explicitlyNamedAgent === input.name
-  )
-    return {
-      eligible: true,
-      why: '',
-      mayAutoRouteNamedJob: input.explicitlyNamedAgent === input.name,
-    }
-  if (!input.routeMetered)
-    return {
-      eligible: false,
-      why: input.trainsOnInputs
-        ? 'a provider that may train on inputs is not opted in for automatic routing'
-        : 'metered billing is not opted in for automatic routing',
-      mayAutoRouteNamedJob: false,
-    }
-  if (input.writesRepo)
-    return {
-      eligible: false,
-      why: 'metered routing opt-in is limited to jobs that do not write the repository',
-      mayAutoRouteNamedJob: false,
-    }
-  return { eligible: true, why: '', mayAutoRouteNamedJob: true }
-}
-
-export function agentMeteredRouteEligibility(
-  jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'trainsOnInputs'>,
-  explicitlyNamedAgent?: string,
-): ReturnType<typeof meteredRouteEligibility> {
-  return meteredRouteEligibility({
-    billing: agent.billing,
-    routeMetered: Boolean(agent.routeMetered),
-    trainsOnInputs: Boolean(agent.trainsOnInputs),
-    writesRepo: Boolean(job(jobName).needs.writesRepo),
-    name: agent.name,
-    explicitlyNamedAgent,
-  })
 }
 
 function routePolicyEligibility(

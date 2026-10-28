@@ -4,7 +4,7 @@
  * validated immediately before launch.
  */
 import type { Agent } from '../agent/agents.ts'
-import { agentMeteredRouteEligibility } from '../route/route.ts'
+import { agentMeteredRouteEligibility } from '../route/route-metered-policy-adapter.ts'
 import { assertAcpAllowed } from '../transport/transport.ts'
 import { namedAgentTurn } from './run-resume-kind.ts'
 

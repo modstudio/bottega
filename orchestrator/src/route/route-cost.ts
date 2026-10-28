@@ -6,6 +6,7 @@ import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
 import { promptBucketSql } from './prompt-size-bucket.ts'
+import { routingEvidenceWindow } from './route-statistics.ts'
 
 export type AcceptedResultChain = {
   accepted: boolean
@@ -111,4 +112,31 @@ export function routeCostPerAccepted(
       rows: costsByRoot.get(root.record_id) ?? [],
     })),
   )
+}
+
+export function attachRouteCosts<
+  T extends {
+    agent: string
+    evidenceModel: string | null
+    costPerAccepted?: CostPerAcceptedResult
+  },
+  E extends CostEvidenceRoot & { agent: string; model: string | null; startedAt: string },
+>(
+  candidates: T[],
+  evidenceRows: E[],
+  input: { jobName: string; promptBytes: number; stack?: string | null; lens?: string | null },
+  evidenceWindow: number,
+  enabled: boolean,
+): void {
+  if (!enabled) return
+  const facts = routeCostFacts(input)
+  for (const candidate of candidates) {
+    const window = routingEvidenceWindow(
+      evidenceRows,
+      candidate.agent,
+      candidate.evidenceModel!,
+      evidenceWindow,
+    )
+    candidate.costPerAccepted = routeCostPerAccepted(input.jobName, window.rows, facts)
+  }
 }

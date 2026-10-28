@@ -4,7 +4,8 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { guide } from '../state/guide.ts'
-import { evidenceFor, MIN_SAMPLE, pick } from './route.ts'
+import { evidenceFor, pick } from './route.ts'
+import { MIN_SAMPLE } from './route-selection.ts'
 
 describe('findings routing narrows to a lens only when that buys a comparison', () => {
   const judgedLensRun = (

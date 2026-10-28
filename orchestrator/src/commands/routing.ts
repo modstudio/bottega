@@ -23,6 +23,7 @@ export function register(program: Command): void {
     .command('stats')
     .description('show routing scores, latency, cost, and agent duels')
     .option('--job <value>', 'show statistics for this job')
+    .option('--lens <value>', 'show a findings job in this lens cell')
     .allowExcessArguments(false)
     .action(async (options) =>
       statsCommand(optionFlags(options), {

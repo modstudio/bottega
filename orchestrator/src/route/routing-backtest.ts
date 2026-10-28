@@ -7,14 +7,8 @@ import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { samePromptSizeBucket } from './prompt-size-bucket.ts'
-import {
-  COOLDOWN_MIN,
-  currentPolicySelection,
-  EVIDENCE_WINDOW,
-  isRoutingEvidence,
-  MIN_SAMPLE,
-  thompsonRank,
-} from './route.ts'
+import { COOLDOWN_MIN, EVIDENCE_WINDOW, isRoutingEvidence } from './route.ts'
+import { currentPolicySelection, MIN_SAMPLE, thompsonRank } from './route-selection.ts'
 import { routingEvidenceWindow } from './route-statistics.ts'
 
 const ROUTING_BACKTEST_SEED = 287

@@ -4,7 +4,8 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
-import { betaContribution, candidates, EVIDENCE_WINDOW, MIN_SAMPLE, pick } from './route.ts'
+import { candidates, EVIDENCE_WINDOW, pick } from './route.ts'
+import { betaContribution, MIN_SAMPLE } from './route-selection.ts'
 import {
   ROUTING_BACKTEST_SEEDS,
   routingBacktest,
