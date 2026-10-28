@@ -534,6 +534,7 @@ export const importBoundaries: ImportBoundary[] = [
       './score/duel.ts',
       './jobs/jobs.ts',
       './record/machine-identity.ts',
+      './review/review-capture-refusal.ts',
       './review/review-duplicate-link.ts',
       './review/review.ts',
       './review/review-outbox.ts',

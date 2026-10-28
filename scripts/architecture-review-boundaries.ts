@@ -8,6 +8,10 @@ export type ReviewBoundarySpec = {
 
 export const reviewModuleSpecs = [
   {
+    file: 'orchestrator/src/review/review-capture-refusal.ts',
+    allowed: ['../../../shared/brand.ts'],
+  },
+  {
     file: 'orchestrator/src/review/review-lineage.ts',
     allowed: [],
   },
@@ -311,6 +315,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../project/projects.ts',
       '../run/run-identifier.ts',
       './review.ts',
+      './review-capture-refusal.ts',
       './review-identifier.ts',
       './review-calibration.ts',
       './review-command-cwd.ts',
