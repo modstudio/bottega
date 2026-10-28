@@ -30,7 +30,7 @@ import {
 } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
-import { clearMigrationWindow, setMigrationWindow } from './migration-window.ts'
+import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationState, storeJournalPosition } from './migrations.ts'
 
 const MIGRATION_DRAIN_POLL_MS = 1_000
@@ -129,7 +129,7 @@ function applyImmediateUpdate(input: {
     input.migrate(input.target)
     return
   }
-  withSynchronousDatabaseForMigrationStep((database) => setMigrationWindow(database, migration))
+  withSynchronousDatabaseForMigrationStep((database) => claimMigrationWindow(database, migration))
   try {
     input.runGit(input.target, ['pull', '--ff-only', 'origin', input.branch])
     input.migrate(input.target)

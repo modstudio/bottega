@@ -275,6 +275,7 @@ function commandReadOnlyDatabase(): Database {
     readOnlyHandle = null
     throw new Error(migrationWindow.refusal)
   }
+  if (migrationWindow.waited) recordMigrationWindowWait(migrationWindow.waited, true)
   return readOnlyHandle
 }
 
@@ -551,32 +552,23 @@ function refuseOpenMigration(d: Database, refused: string): never {
 }
 
 type MigrationWindowWait = { migration: string; pid: number; durationMs: number }
-type ActiveStoreMigrationWindow = {
-  migration: string
-  phase: 'draining' | 'migrating'
-  pid: number
-  liveness: 'live' | 'unknown'
-}
-
 function activeStoreMigrationWindow(
   d: Database,
   behind: boolean,
-): ActiveStoreMigrationWindow | null {
+): { migration: string; pid: number; liveness: 'live' | 'unknown' } | null {
   if (!behind) return null
   const window = activeMigrationWindow(d)
   if (window) {
     return {
       migration: window.marker.migration,
-      phase: 'migrating',
       pid: window.marker.pid,
       liveness: window.liveness.state,
     }
   }
   const drain = activeMigrationDrain(d)
-  if (!drain) return null
+  if (drain?.marker.phase !== 'migrating') return null
   return {
     migration: drain.marker.migration,
-    phase: drain.marker.phase,
     pid: drain.marker.pid,
     liveness: drain.liveness.state,
   }
@@ -597,9 +589,8 @@ function migrationWindowRefusal(d: Database): {
     const decision = decideMigrationWindow({
       behind,
       refusal,
-      marker: active
+      holder: active
         ? {
-            phase: active.phase,
             pid: active.pid,
             liveness: active.liveness,
           }

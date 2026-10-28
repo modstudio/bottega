@@ -43,21 +43,28 @@ function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
 
 function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
-  const pendingIndex = journal.length - 1
-  const pending = journal[pendingIndex]!
-  expect(pending.compatibility).toBe('additive')
-  const applied = database
-    .query<{ hash: string; created_at: number; version: string | null }, [number]>(
-      'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
-    )
-    .get(pending.when)!
-  database.query('DELETE FROM orch_migrations WHERE created_at=?').run(pending.when)
+  const boundary = journal.findLastIndex((entry) => entry.compatibility !== 'additive')
+  const held = journal.slice(boundary + 1).map((entry) => ({
+    entry,
+    applied: database
+      .query<{ hash: string; created_at: number; version: string | null }, [number]>(
+        'SELECT hash,created_at,version FROM orch_migrations WHERE created_at=?',
+      )
+      .get(entry.when)!,
+  }))
+  expect(held.length).toBeGreaterThan(0)
+  expect(held.every(({ entry }) => entry.compatibility === 'additive')).toBe(true)
+  for (const { entry } of held) {
+    database.query('DELETE FROM orch_migrations WHERE created_at=?').run(entry.when)
+  }
   return {
-    pending,
+    pending: held[0]!.entry,
     restore() {
-      database
-        .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
-        .run(applied.hash, applied.created_at, applied.version)
+      for (const { applied } of held) {
+        database
+          .query('INSERT OR REPLACE INTO orch_migrations(hash,created_at,version) VALUES (?,?,?)')
+          .run(applied.hash, applied.created_at, applied.version)
+      }
     },
   }
 }

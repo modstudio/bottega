@@ -8,7 +8,7 @@ import {
   setMigrationDrain,
 } from './migration-drain.ts'
 import { migrationDrain, migrationDrainLiveness } from './migration-drain-state.ts'
-import { clearMigrationWindow, setMigrationWindow } from './migration-window.ts'
+import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationWindow } from './migration-window-state.ts'
 
 const marker = {
@@ -135,10 +135,7 @@ describe('migration drain holder', () => {
   })
 
   test('a live store-open window does not refuse dispatch', () => {
-    setMigrationWindow(db(), '0172_run_running_repository_index', {
-      pid: process.pid,
-      startTime: null,
-    })
+    claimMigrationWindow(db(), '0172_run_running_repository_index')
     try {
       expect(migrationWindow(db())?.migration).toBe('0172_run_running_repository_index')
       expect(() => assertMigrationDispatchAllowed(db())).not.toThrow()

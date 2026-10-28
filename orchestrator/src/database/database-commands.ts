@@ -27,7 +27,7 @@ import {
   setMigrationDrain,
 } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
-import { clearMigrationWindow, setMigrationWindow } from './migration-window.ts'
+import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationWindow } from './migration-window-state.ts'
 import { migrationApplied, migrationJournal, storeJournalPosition } from './migrations.ts'
 import {
@@ -98,7 +98,7 @@ async function withAdditiveMigrationWindow(action: () => Promise<void>): Promise
     if (active?.migration === migration && active.pid === process.ppid) {
       return { inherited: true, marked: true }
     }
-    setMigrationWindow(database, migration)
+    claimMigrationWindow(database, migration)
     return { inherited: false, marked: true }
   })
   try {

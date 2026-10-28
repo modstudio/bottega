@@ -22,6 +22,7 @@ export const databaseModules: ArchitectureModule[] = [
     'bun:sqlite',
     '../../../shared/process-identity.ts',
     './db.ts',
+    './migration-window-decision.ts',
     './migration-window-state.ts',
   ]),
   module('orchestrator/src/database/workflow-uuid-migration-preflight.ts', [
