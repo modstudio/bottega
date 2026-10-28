@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { orchDoValueOptionNames } from '../commands/do-options.ts'
 import { db, sessionId, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { isMcpMode } from '../mcp/mcp-mode.ts'
 import { workflowFactSources } from '../project/project-injection.ts'
 import { projects } from '../project/projects.ts'
 import { effectiveProjectSpace } from '../project-space.ts'
@@ -205,7 +206,8 @@ function consumeDispatchOption(
     consumesFollowing =
       inline === undefined &&
       following !== undefined &&
-      (valueKind === 'required' || !following.value.startsWith('--')),
+      (valueKind === 'required' ||
+        (!following.value.startsWith('--') && (flag !== 'mcp' || isMcpMode(following.value)))),
     optionValue = inline ?? (consumesFollowing ? following?.value : undefined)
   return {
     next: consumesFollowing ? index + 1 : index,

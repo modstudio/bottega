@@ -1,5 +1,7 @@
 // concern: cli
 /** The `bottega run start` CLI options, shared with catalogue command validation. */
+import { isMcpMode } from '../mcp/mcp-mode.ts'
+
 export const ORCH_DO_OPTIONS = [
   {
     flags: '--agent <value>',
@@ -150,9 +152,16 @@ export function doPositionals(argv: readonly string[]): string[] {
       continue
     }
     if (arg.includes('=')) continue
-    const kind = orchDoValueOptionNames.get(arg.slice(2))
+    const name = arg.slice(2)
+    const kind = orchDoValueOptionNames.get(name)
     const next = argv[index + 1]
-    if (kind === 'required' || (kind === 'optional' && next !== undefined && !next.startsWith('-')))
+    if (
+      kind === 'required' ||
+      (kind === 'optional' &&
+        next !== undefined &&
+        !next.startsWith('-') &&
+        (name !== 'mcp' || isMcpMode(next)))
+    )
       index++
   }
   return positionals

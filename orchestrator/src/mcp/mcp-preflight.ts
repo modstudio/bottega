@@ -10,6 +10,7 @@ import { job } from '../jobs/jobs.ts'
 import { projectAt, projectByName, validateStoredProjectSettings } from '../project/projects.ts'
 import { childEnv } from '../run/run-process.ts'
 import type { RequiredMcpServer } from './mcp-compatibility.ts'
+import { isMcpMode, MCP_MODE_VALUES, type McpMode } from './mcp-mode.ts'
 
 export type McpConnection = {
   server: string
@@ -18,11 +19,10 @@ export type McpConnection = {
   namesSeen?: string[]
 }
 
-export type McpMode = 'require' | 'prefer'
+export type { McpMode } from './mcp-mode.ts'
 export type McpRequest = boolean | McpMode
 
 const MCP_FLAG = '--mcp'
-const MCP_MODE_VALUES: readonly McpMode[] = ['require', 'prefer']
 
 function mcpFlagValues(argv: string[]): Array<string | undefined> {
   const values: Array<string | undefined> = []
@@ -31,7 +31,7 @@ function mcpFlagValues(argv: string[]): Array<string | undefined> {
     if (arg === '--') break
     if (arg === MCP_FLAG) {
       const next = argv[index + 1]
-      values.push(next !== undefined && !next.startsWith('-') ? next : undefined)
+      values.push(isMcpMode(next) ? next : undefined)
       continue
     }
     if (arg.startsWith(`${MCP_FLAG}=`)) values.push(arg.slice(MCP_FLAG.length + 1))
@@ -39,14 +39,17 @@ function mcpFlagValues(argv: string[]): Array<string | undefined> {
   return values
 }
 
-/** Derive `--mcp` mode from argv: bare flag requires, `prefer`/`require` select, anything else refuses. */
+/**
+ * Derive `--mcp` mode from argv: bare requires; following `require`/`prefer` selects;
+ * any other following token stays positional; an unknown inline value refuses.
+ */
 export function parseRequestedMcp(argv: string[]): McpMode | undefined {
   const values = mcpFlagValues(argv)
   if (values.length > 1) throw new Error('--mcp may be supplied only once')
   if (!values.length) return undefined
   const raw = values[0]
-  if (raw === undefined || raw === 'require') return 'require'
-  if (raw === 'prefer') return 'prefer'
+  if (raw === undefined) return 'require'
+  if (isMcpMode(raw)) return raw
   throw new Error(
     `--mcp received ${JSON.stringify(raw)}; accepted values are ${MCP_MODE_VALUES.join(' and ')}`,
   )

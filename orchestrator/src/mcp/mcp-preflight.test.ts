@@ -38,6 +38,13 @@ describe('parseRequestedMcp', () => {
     expect(parseRequestedMcp(['--mcp', '--', '--mcp', 'prefer'])).toBe('require')
   })
 
+  test('bare and valued --mcp keep a following prompt word', () => {
+    expect(parseRequestedMcp(['bun', 'orch', 'review-lens', '--mcp', 'Review X'])).toBe('require')
+    expect(parseRequestedMcp(['bun', 'orch', 'review-lens', '--mcp', 'prefer', 'Review X'])).toBe(
+      'prefer',
+    )
+  })
+
   test.each([
     [['--mcp'], 'require'],
     [['prompt', '--mcp'], 'require'],
@@ -51,7 +58,6 @@ describe('parseRequestedMcp', () => {
   })
 
   test('refuses an unknown mode, naming the value and accepted modes', () => {
-    expect(() => parseRequestedMcp(['do', 'implement', '--mcp', 'always'])).toThrow(refusal)
     expect(() => parseRequestedMcp(['do', 'implement', '--mcp=always'])).toThrow(refusal)
   })
 
