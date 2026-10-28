@@ -86,7 +86,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/route-cost-policy.ts',
-    allowed: [],
+    allowed: ['./route-policy.ts'],
   },
   {
     file: 'orchestrator/src/route/route-cost-policy-adapter.ts',

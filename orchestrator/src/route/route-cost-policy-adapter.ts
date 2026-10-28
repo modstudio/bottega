@@ -20,10 +20,6 @@ export function readRouteCostPolicy(): RouteCostPolicy {
   return parseRouteCostPolicy(readMachineValue('routing.cost_policy'))
 }
 
-export function findingsPolicyLens(findings: boolean, lens: string | undefined): string | null {
-  return findings ? lens?.trim() || null : null
-}
-
 export function prepareCostPolicy<T extends { agent: string }, P>(input: {
   job: string
   lens: string | null

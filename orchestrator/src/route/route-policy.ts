@@ -20,10 +20,28 @@ export type PolicySelection<T extends PolicyCandidate> = {
   tied: number
 }
 
-type PosteriorCandidate = Pick<
+type RouteTieCandidate = Pick<
   PolicyCandidate,
-  'agent' | 'evidence' | 'score' | 'free' | 'latencyMs' | 'precision'
+  'agent' | 'evidence' | 'free' | 'latencyMs' | 'precision'
 >
+type PosteriorCandidate = RouteTieCandidate & Pick<PolicyCandidate, 'score'>
+
+/** Stable quality-rank tie order shared by the incumbent and cost policies. */
+export function routeCandidateTieOrder<T extends RouteTieCandidate>(left: T, right: T): number {
+  return (
+    (left.precision === null || left.precision === undefined
+      ? right.precision === null || right.precision === undefined
+        ? 0
+        : 1
+      : right.precision === null || right.precision === undefined
+        ? -1
+        : right.precision - left.precision) ||
+    Number(right.free) - Number(left.free) ||
+    (left.latencyMs ?? Infinity) - (right.latencyMs ?? Infinity) ||
+    right.evidence - left.evidence ||
+    left.agent.localeCompare(right.agent)
+  )
+}
 
 function normal(rng: () => number): number {
   const u = Math.max(rng(), Number.EPSILON)
@@ -77,22 +95,13 @@ export function rankThompson<T extends PosteriorCandidate>(
     const mean = successes / (successes + failures)
     return { candidate, mean, sample: draw ? beta(successes, failures, rng) : mean }
   })
-  const tie = (a: (typeof posterior)[number], b: (typeof posterior)[number]) =>
-    (a.candidate.precision === null || a.candidate.precision === undefined
-      ? b.candidate.precision === null || b.candidate.precision === undefined
-        ? 0
-        : 1
-      : b.candidate.precision === null || b.candidate.precision === undefined
-        ? -1
-        : b.candidate.precision - a.candidate.precision) ||
-    Number(b.candidate.free) - Number(a.candidate.free) ||
-    (a.candidate.latencyMs ?? Infinity) - (b.candidate.latencyMs ?? Infinity) ||
-    b.candidate.evidence - a.candidate.evidence ||
-    a.candidate.agent.localeCompare(b.candidate.agent)
   const rank = (metric: 'mean' | 'sample') => {
     const leader = [...posterior].sort((a, b) => b[metric] - a[metric])[0]!
     const tied = posterior.filter((row) => leader[metric] - row[metric] <= posteriorNoiseBand)
-    return { row: tied.sort(tie)[0]!, tied: tied.length }
+    return {
+      row: tied.sort((a, b) => routeCandidateTieOrder(a.candidate, b.candidate))[0]!,
+      tied: tied.length,
+    }
   }
   const expected = rank('mean')
   const chosen = rank('sample')

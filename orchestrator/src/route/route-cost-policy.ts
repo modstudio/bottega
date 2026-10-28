@@ -1,9 +1,10 @@
 // concern: route cost policy
 /** Pure configuration, resolution, and proven-candidate selection for cost-aware routing. */
 
-const COST_NOISE_MULTIPLE = 1.05
+import { routeCandidateTieOrder } from './route-policy.ts'
+
 /** A cost difference under five percent is noise. */
-const COST_NOISE_LOG = Math.log(COST_NOISE_MULTIPLE)
+const COST_NOISE_MULTIPLE = 1.05
 
 export type CostPolicyRule = { rate: number; floor: number | null }
 type CostPolicyGroup = CostPolicyRule & { jobs: string[] }
@@ -193,6 +194,18 @@ export function resolveRouteCostPolicy(
   return { group, floor: rule.floor, rate: rule.rate }
 }
 
+export function findingsPolicyLens(findings: boolean, lens: string | undefined): string | null {
+  return findings ? lens?.trim() || null : null
+}
+
+export function belowCostFloor(
+  shrunk: number | null,
+  floor: number | null,
+  noiseBand: number,
+): boolean {
+  return floor !== null && shrunk !== null && shrunk < floor - noiseBand
+}
+
 export type CostPolicyCandidate = {
   agent: string
   shrunk: number | null
@@ -241,7 +254,7 @@ export function costAwareRank<T extends CostPolicyCandidate>(
     betaScale,
     posterior.find((row) => row.agent === current.chosen.agent)!,
   )
-  if (costPolicy.allCostsUnknown)
+  if (costPolicy.floorIgnored)
     return { ...current, costPolicy: costPolicy as CostPolicySelection<T> }
   return {
     ...current,
@@ -310,22 +323,6 @@ export function appendCostPolicyReason(
   return `${base}; ${costReason}`
 }
 
-function currentTieOrder<T extends CostPolicyCandidate>(left: T, right: T): number {
-  return (
-    (left.precision === null || left.precision === undefined
-      ? right.precision === null || right.precision === undefined
-        ? 0
-        : 1
-      : right.precision === null || right.precision === undefined
-        ? -1
-        : right.precision - left.precision) ||
-    Number(right.free) - Number(left.free) ||
-    (left.latencyMs ?? Infinity) - (right.latencyMs ?? Infinity) ||
-    right.evidence - left.evidence ||
-    left.agent.localeCompare(right.agent)
-  )
-}
-
 /** Select among proven candidates by the configured quality-for-cost utility. */
 export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
   candidates: readonly T[],
@@ -334,25 +331,42 @@ export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
   betaScale: number,
   currentChoice: T,
 ): CostPolicySelection<T> {
-  const floorEligible =
-    rule.floor === null
-      ? [...candidates]
-      : candidates.filter((candidate) => candidate.shrunk! >= rule.floor! - noiseBand)
-  const floorIgnored = floorEligible.length === 0
-  const field = floorIgnored ? [...candidates] : floorEligible
-  const known = field.flatMap((candidate) =>
-    'usd' in candidate.costPerAccepted ? [candidate.costPerAccepted.usd] : [],
+  const floorEligible = candidates.filter(
+    (candidate) => !belowCostFloor(candidate.shrunk, rule.floor, noiseBand),
   )
-  if (known.length === 0)
+  const floorIgnored = floorEligible.length === 0
+  if (floorIgnored)
     return {
       chosen: currentChoice,
-      tied: candidates.length,
-      floorIgnored,
+      tied: 1,
+      floorIgnored: true,
+      allCostsUnknown: candidates.every((candidate) => !('usd' in candidate.costPerAccepted)),
+      chargedCost:
+        'usd' in currentChoice.costPerAccepted ? currentChoice.costPerAccepted.usd : null,
+    }
+
+  const known = floorEligible.flatMap((candidate) =>
+    'usd' in candidate.costPerAccepted ? [candidate.costPerAccepted.usd] : [],
+  )
+  if (known.length === 0) {
+    const currentEligible = floorEligible.find(
+      (candidate) => candidate.agent === currentChoice.agent,
+    )
+    const bestQuality = Math.max(...floorEligible.map((candidate) => candidate.qualityValue))
+    const qualityTied = floorEligible
+      .filter((candidate) => candidate.qualityValue === bestQuality)
+      .sort(routeCandidateTieOrder)
+    const chosen = currentEligible ?? qualityTied[0]!
+    return {
+      chosen,
+      tied: currentEligible ? 1 : qualityTied.length,
+      floorIgnored: false,
       allCostsUnknown: true,
       chargedCost: null,
     }
+  }
   const maximumCost = Math.max(...known)
-  const utility = field.map((candidate) => {
+  const utility = floorEligible.map((candidate) => {
     const cost = 'usd' in candidate.costPerAccepted ? candidate.costPerAccepted.usd : maximumCost
     const qualityPoints = candidate.qualityValue * betaScale * 100
     return {
@@ -361,16 +375,34 @@ export function selectByCostPolicy<T extends CostPolicyQualityCandidate>(
       value: (qualityPoints / 5) * Math.log(rule.rate) - Math.log(Math.max(cost, Number.EPSILON)),
     }
   })
-  const best = Math.max(...utility.map((row) => row.value))
-  const tolerance = Math.max(Math.log(rule.rate) * ((noiseBand * 100) / 5), COST_NOISE_LOG)
-  const tied = utility
-    .filter((row) => best - row.value <= tolerance)
-    .sort((a, b) => currentTieOrder(a.candidate, b.candidate))
+  const bestValue = Math.max(...utility.map((row) => row.value))
+  const utilityBest = utility
+    .filter((row) => row.value === bestValue)
+    .sort((a, b) => routeCandidateTieOrder(a.candidate, b.candidate))[0]!
+  const cheaper = utility.filter(
+    (row) =>
+      row.candidate.qualityValue >= utilityBest.candidate.qualityValue - noiseBand &&
+      row.cost * COST_NOISE_MULTIPLE < utilityBest.cost,
+  )
+  let provisional = utilityBest
+  if (cheaper.length > 0) {
+    const cheapestCost = Math.min(...cheaper.map((row) => row.cost))
+    provisional = cheaper
+      .filter((row) => row.cost === cheapestCost)
+      .sort((a, b) => routeCandidateTieOrder(a.candidate, b.candidate))[0]!
+  }
+  const withinNoise = (left: (typeof utility)[number], right: (typeof utility)[number]) =>
+    Math.abs(left.candidate.qualityValue - right.candidate.qualityValue) <= noiseBand &&
+    Math.max(left.cost, right.cost) <= Math.min(left.cost, right.cost) * COST_NOISE_MULTIPLE
+  const chosen = utility
+    .filter((row) => withinNoise(row, provisional))
+    .sort((a, b) => routeCandidateTieOrder(a.candidate, b.candidate))[0]!
+  const tied = utility.filter((row) => withinNoise(row, chosen)).length
   return {
-    chosen: tied[0]!.candidate,
-    tied: tied.length,
-    floorIgnored,
+    chosen: chosen.candidate,
+    tied,
+    floorIgnored: false,
     allCostsUnknown: false,
-    chargedCost: tied[0]!.cost,
+    chargedCost: chosen.cost,
   }
 }

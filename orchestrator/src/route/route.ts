@@ -38,12 +38,13 @@ import {
 } from './route-cost.ts'
 import {
   appendCostPolicyReason,
+  belowCostFloor,
   costPolicyExplanation,
+  findingsPolicyLens,
   resolveRouteCostPolicy,
 } from './route-cost-policy.ts'
 import {
   enabledCostRule,
-  findingsPolicyLens,
   prepareCostPolicy,
   readRouteCostPolicy,
 } from './route-cost-policy-adapter.ts'
@@ -544,7 +545,7 @@ export function scoreboard(
       promptBucketsForJob(j).flatMap((bucket) =>
         (() => {
           const promptBytes = bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
-          const cellLens = job(j).findings ? lens?.trim() || null : null
+          const cellLens = findingsPolicyLens(Boolean(job(j).findings), lens)
           const pass = candidatePass(j, promptBytes, { lens: cellLens })
           const costFacts = routeCostFacts({
             jobName: j,
@@ -565,10 +566,7 @@ export function scoreboard(
               job: j,
               promptBucket: bucket,
               costPolicy,
-              belowCostFloor:
-                costPolicy.floor !== null &&
-                c.shrunk !== null &&
-                c.shrunk < costPolicy.floor - NOISE_BAND,
+              belowCostFloor: belowCostFloor(c.shrunk, costPolicy.floor, NOISE_BAND),
               costPerAccepted: routeCostPerAccepted(
                 j,
                 routingEvidenceWindow(pass.evidenceRows, c.agent, c.evidenceModel!, EVIDENCE_WINDOW)
