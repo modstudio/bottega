@@ -4,6 +4,11 @@ import { EMPTY_QUOTA_READINGS, type QuotaReadings } from './quota-readings.ts'
 
 type PrimaryRateLimit = { usedPercent: number; windowMinutes: number; resetsAt: number }
 
+/** Harnesses whose transport persists quota readings on completed runs. */
+export function harnessCollectsQuotaReadings(harness: string | undefined): boolean {
+  return harness === 'codex'
+}
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
 }

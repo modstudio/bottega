@@ -9,6 +9,21 @@ import {
   subscriptionMonthTokenKey,
 } from './run-subscription-cost.ts'
 
+/** Shared quota-window aggregation used by pricing and subscription pacing. */
+export const SUBSCRIPTION_QUOTA_WINDOWS_SQL = `
+  SELECT a.harness AS harness, r.quota_resets_at AS resetsAt,
+         MAX(r.quota_window_minutes) AS windowMinutes,
+         MIN(r.quota_used_percent_start) AS usedPercentStart,
+         MAX(r.quota_used_percent_end) AS usedPercentEnd,
+         SUM(COALESCE(r.vendor_tokens, 0)) AS tokens
+    FROM run r JOIN agent a ON a.name = r.agent
+   WHERE a.billing = 'subscription'
+     AND r.quota_used_percent_start IS NOT NULL
+     AND r.quota_used_percent_end IS NOT NULL
+     AND r.quota_window_minutes IS NOT NULL
+     AND r.quota_resets_at IS NOT NULL
+   GROUP BY a.harness, r.quota_resets_at`
+
 export function subscriptionCostFacts(database: Database = db()): SubscriptionCostFacts {
   const agents = Object.fromEntries(
     (
@@ -20,7 +35,6 @@ export function subscriptionCostFacts(database: Database = db()): SubscriptionCo
     ).map((row) => [row.name, { billing: row.billing, harness: row.harness }]),
   )
   const monthTokens: Record<string, number> = {}
-  const windows = new Map<string, SubscriptionQuotaWindow>()
   for (const row of database
     .query(
       `SELECT a.harness AS harness, r.started_at AS started_at, r.vendor_tokens AS tokens,
@@ -41,23 +55,9 @@ export function subscriptionCostFacts(database: Database = db()): SubscriptionCo
   }>) {
     const key = subscriptionMonthTokenKey(row.harness, row.started_at)
     monthTokens[key] = (monthTokens[key] ?? 0) + Number(row.tokens ?? 0)
-    if (
-      row.quotaStart !== null &&
-      row.quotaEnd !== null &&
-      row.windowMinutes !== null &&
-      row.resetsAt !== null
-    ) {
-      const windowKey = `${row.harness}:${row.resetsAt}`
-      const prior = windows.get(windowKey)
-      windows.set(windowKey, {
-        harness: row.harness,
-        resetsAt: row.resetsAt,
-        windowMinutes: row.windowMinutes,
-        usedPercentStart: Math.min(prior?.usedPercentStart ?? row.quotaStart, row.quotaStart),
-        usedPercentEnd: Math.max(prior?.usedPercentEnd ?? row.quotaEnd, row.quotaEnd),
-        tokens: (prior?.tokens ?? 0) + Number(row.tokens ?? 0),
-      })
-    }
   }
-  return { agents, monthTokens, quotaWindows: [...windows.values()] }
+  const quotaWindows = database
+    .query(SUBSCRIPTION_QUOTA_WINDOWS_SQL)
+    .all() as SubscriptionQuotaWindow[]
+  return { agents, monthTokens, quotaWindows }
 }

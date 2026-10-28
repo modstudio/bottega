@@ -62,6 +62,7 @@ type DoctorPresentation = {
       failingRunNumber: number
     } | null
     billingHoldRefusal?: string | null
+    subscriptionPacingHold?: { refusal: string } | null
   }[]
   pick(job: string): { agent: string }
   jobs(): string[]
@@ -228,7 +229,7 @@ async function reportAgents(
     presentation.log(`  HELD ${hold.secretName}: agents ${hold.agents.join(', ')}; ${refusal}`)
   }
   for (const agent of Object.values(AGENTS)) {
-    const cooling = routed.find((candidate) => candidate.agent === agent.name)?.cooling
+    const candidate = routed.find((item) => item.agent === agent.name)
     const why = unavailableReason(agent.name)
     const version = why === 'not installed' ? null : cliVersion(agent.bin)
     const old = version?.parsed && versionBelow(version.parsed, agent.minimumCliVersion)
@@ -237,7 +238,7 @@ async function reportAgents(
       `  ${agent.name.padEnd(12)} ${auth.status.padEnd(7)} ${agent.billing.padEnd(13)}` +
         (auth.detail ? `  ${auth.detail}` : '') +
         (version ? `  version ${version.display}` : '  version unavailable') +
-        (cooling ? `  COOLING: ${cooling}` : ''),
+        agentOperationalSuffix(candidate),
     )
     if (old) {
       presentation.log(
@@ -247,6 +248,17 @@ async function reportAgents(
     if (predatesFileContract(agent)) presentation.log(`  ${fileContractProbeReason(agent.name)}`)
   }
   await reportProjectAgentKeys(presentation.log)
+}
+
+function agentOperationalSuffix(
+  candidate:
+    | { cooling?: string | null; subscriptionPacingHold?: { refusal: string } | null }
+    | undefined,
+): string {
+  if (candidate?.cooling) return `  COOLING: ${candidate.cooling}`
+  if (candidate?.subscriptionPacingHold)
+    return `  HELD: ${candidate.subscriptionPacingHold.refusal}`
+  return ''
 }
 
 async function reportAgentsAndDelegation(

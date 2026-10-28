@@ -137,7 +137,7 @@ assertTestHubDatabase()
 
 const { registerStandardRuntime } = await import('../src/runtime/runtime-registration.ts')
 registerStandardRuntime()
-const { DB_PATH, closeDatabaseForFixture } = await import('../src/database/db.ts')
+const { DB_PATH, closeDatabaseForFixture, db } = await import('../src/database/db.ts')
 const { applyMigrations } = await import('../src/database/migrations.ts')
 const { excludeSharedOutputRuns } = await import('../src/evidence/evidence-query.ts')
 const { seedWorkflows } = await import('../src/workflow/workflow-seeds.ts')
@@ -201,6 +201,31 @@ copyFileSync(template, store)
   })
   recordAgentProbe('codex', fileProbe('codex'))
   recordAgentProbe('grok', fileProbe('grok'))
+  const now = Date.now()
+  const windowMinutes = 10_080
+  const resetsAt = Math.floor((now + windowMinutes * 60_000 * 0.9) / 1000)
+  db()
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+          latency_ms,probe,vendor_tokens,quota_used_percent_start,quota_used_percent_end,
+          quota_window_minutes,quota_resets_at,executor,turn)
+       VALUES (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' ||
+               substr(lower(hex(randomblob(2))),2) || '-' ||
+               substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' ||
+               lower(hex(randomblob(6))),
+               0,?,?,?,?,?,?,'stale',1000,1,0,0,0,?,?,'external',1)`,
+    )
+    .run(
+      new Date(now - 60_000).toISOString(),
+      'codex',
+      'agent-probe-quota',
+      'quota-fixture',
+      0,
+      'quota fixture',
+      windowMinutes,
+      resetsAt,
+    )
   closeDatabaseForFixture()
   copyFileSync(store, template)
   refreshAgents()
@@ -210,8 +235,6 @@ const { createMemoryRecordApiClient, installRecordApiClient } = await import(
   './fixtures/record-api.ts'
 )
 installRecordApiClient(createMemoryRecordApiClient())
-
-const { db } = await import('../src/database/db.ts')
 
 /**
  * Run ids keep climbing across tests, as they did when tables were cleared

@@ -128,6 +128,7 @@ export const modules: ArchitectureModule[] = [
     './billing-key-hold.ts',
     './route-cost.ts',
     './route-statistics.ts',
+    './subscription-pacing.ts',
   ]),
   module('orchestrator/src/route/training-data-eligibility.ts', [
     '../../../shared/brand.ts',

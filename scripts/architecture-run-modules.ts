@@ -73,6 +73,33 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/route/prompt-size-bucket-store.ts',
+    allowed: ['../database/db.ts', './prompt-size-bucket.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/subscription-pacing.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/route/subscription-pacing-store.ts',
+    allowed: [
+      'bun:sqlite',
+      '../run/run-subscription-cost.ts',
+      '../run/run-subscription-cost-store.ts',
+      './subscription-pacing.ts',
+    ],
+  },
+  {
+    file: 'orchestrator/src/route/subscription-pacing-adapter.ts',
+    allowed: [
+      'bun:sqlite',
+      '../agent/agents.ts',
+      '../transport/codex-quota.ts',
+      './subscription-pacing.ts',
+      './subscription-pacing-store.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/route/route-policy.ts',
     allowed: [],
   },

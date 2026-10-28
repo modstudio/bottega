@@ -1338,6 +1338,14 @@
       "tag": "0176_run_agent_terminal_recency",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 177,
+      "version": "6",
+      "when": 1793577600042,
+      "tag": "0177_codex_review_lens",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }
