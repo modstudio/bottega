@@ -9,7 +9,6 @@ import {
   agentCapacityWaitMaxMs,
   capacityStartupFailure,
   decideCapacityWait,
-  nextCapacityPollMs,
   waitForAgentSelection,
 } from './run-agent-capacity.ts'
 import { RUN_HOST_WAIT_MAX_MS } from './run-host-capacity.ts'
@@ -42,12 +41,6 @@ test('an AgentCapacityError carries capacity and a retry remedy to startup failu
   expect((failure[0] as Error).message).toContain('run retry run-id')
 })
 
-test('capacity poll backoff grows to its cap', () => {
-  const schedule = [1_000]
-  for (let i = 0; i < 6; i++) schedule.push(nextCapacityPollMs(schedule.at(-1)!))
-  expect(schedule).toEqual([1_000, 2_000, 4_000, 8_000, 15_000, 15_000, 15_000])
-})
-
 test('selection re-picks only after the cheap running-count fact may have freed a slot', async () => {
   let attempts = 0
   let now = 0
@@ -65,6 +58,7 @@ test('selection re-picks only after the cheap running-count fact may have freed 
       sleeps.push(ms)
       now += ms
     },
+    random: () => 0.5,
     runningCounts: () => facts.shift()!,
     onWait: (at) => waits.push(at),
   })

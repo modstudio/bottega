@@ -13,7 +13,21 @@ import {
 
 export const RUN_HOST_WAIT_MAX_MS = 15 * 60_000
 export const RUN_HOST_WAIT_POLL_MS = 1_000
-export const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
+const RUN_HOST_WAIT_POLL_CAP_MS = 15_000
+const RUN_HOST_WAIT_POLL_JITTER_FRACTION = 0.2
+
+type RunCapacityPoll = { baseMs: number; delayMs: number }
+
+export function nextRunCapacityPoll(
+  previousPollMs: number | undefined,
+  random: number,
+): RunCapacityPoll {
+  if (previousPollMs === undefined)
+    return { baseMs: RUN_HOST_WAIT_POLL_MS, delayMs: RUN_HOST_WAIT_POLL_MS }
+  const baseMs = Math.min(previousPollMs * 2, RUN_HOST_WAIT_POLL_CAP_MS)
+  const jitter = (random * 2 - 1) * RUN_HOST_WAIT_POLL_JITTER_FRACTION
+  return { baseMs, delayMs: Math.round(baseMs * (1 + jitter)) }
+}
 
 export function isFreshRunHostWait(
   status: string,
@@ -189,6 +203,7 @@ type RunHostWaitLoop = {
   platform: NodeJS.Platform
   now: () => number
   sleep: (ms: number) => Promise<void>
+  random: () => number
   measure: typeof measureHostLoad
   existingChain: boolean
 }
@@ -221,6 +236,7 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
   const heldOn = new Set<HostHoldCondition | 'migration'>()
   let drainingFor: string | null = null
   let waiting = false
+  let previousPollMs: number | undefined
   const finish = (at: number, outcome: RunHostCapacityWait['outcome'], boundReached = false) =>
     finishWait({
       database: input.database,
@@ -259,7 +275,10 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
         .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
         .run(nowIso(), input.runId)
     }
-    await input.sleep(RUN_HOST_WAIT_POLL_MS)
+    const poll = nextRunCapacityPoll(previousPollMs, input.random())
+    previousPollMs = poll.baseMs
+    const waitedMs = at - started
+    await input.sleep(Math.min(poll.delayMs, Math.max(0, RUN_HOST_WAIT_MAX_MS - waitedMs)))
   }
 }
 
@@ -270,6 +289,7 @@ export async function waitForRunHostCapacity(input: {
   platform?: NodeJS.Platform
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  random?: () => number
   measure?: typeof measureHostLoad
   existingChain?: boolean
 }): Promise<RunHostCapacityWait | null> {
@@ -285,6 +305,7 @@ export async function waitForRunHostCapacity(input: {
     platform: input.platform ?? process.platform,
     now,
     sleep,
+    random: input.random ?? Math.random,
     measure: input.measure ?? measureHostLoad,
     existingChain: input.existingChain ?? false,
   })

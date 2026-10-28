@@ -356,6 +356,7 @@ describe('run host capacity', () => {
     const runId = repositoryRun()
     let now = 0
     let spawned = false
+    const sleeps: number[] = []
     const result = await startRunAfterHostCapacity({
       wait: () =>
         waitForRunHostCapacity({
@@ -365,8 +366,10 @@ describe('run host capacity', () => {
           platform: 'linux',
           measure: loaded,
           now: () => now,
-          sleep: async () => {
-            now = RUN_HOST_WAIT_MAX_MS
+          random: () => 0,
+          sleep: async (ms) => {
+            sleeps.push(ms)
+            now += ms
           },
         }),
       isRunning: () => true,
@@ -377,6 +380,9 @@ describe('run host capacity', () => {
       stop: async () => {},
     })
     expect(result.wait).toMatchObject({ outcome: 'admitted', boundReached: true })
+    expect(sleeps.slice(0, 3)).toEqual([1_000, 1_600, 3_200])
+    expect(now).toBe(RUN_HOST_WAIT_MAX_MS)
+    expect(sleeps.at(-1)).toBeLessThan(12_000)
     expect(spawned).toBe(true)
     expect(
       db()
