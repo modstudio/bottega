@@ -13,7 +13,14 @@ import * as resourceOwnership from '../resources/resource-ownership.ts'
 import { candidates } from '../route/route.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
-import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal } from './run-stop.ts'
+import {
+  abandonRun,
+  stoppedRunLine,
+  stopRun,
+  stopTerminationRefusal,
+  waitForStopCloseOutLease,
+} from './run-stop.ts'
+import { STOP_CLOSE_OUT_LEASE_WAIT_MS } from './stop-close-out-decision.ts'
 
 const presentation = () => {
   const lines: string[] = []
@@ -125,6 +132,44 @@ test('stop reports a vendor that survived SIGKILL after the row is recorded stop
   ).toBe(
     'run 42 is recorded stopped; process 42922 is still alive; after checking ps -p 42922 -o lstart=,command=, run kill -KILL 42922',
   )
+})
+
+test('waiting on the close-out lease reports free, held then free, or still held', () => {
+  expect(
+    waitForStopCloseOutLease('run-a', STOP_CLOSE_OUT_LEASE_WAIT_MS, {
+      leaseHeld: () => false,
+      now: () => 0,
+      wait: () => {
+        throw new Error('must not wait when the lease is already free')
+      },
+    }),
+  ).toBe('free')
+
+  let held = true
+  let clock = 0
+  expect(
+    waitForStopCloseOutLease('run-b', STOP_CLOSE_OUT_LEASE_WAIT_MS, {
+      leaseHeld: () => held,
+      now: () => clock,
+      wait: (ms) => {
+        clock += ms
+        held = false
+      },
+      pollMs: 50,
+    }),
+  ).toBe('held-then-free')
+
+  clock = 0
+  expect(
+    waitForStopCloseOutLease('run-c', STOP_CLOSE_OUT_LEASE_WAIT_MS, {
+      leaseHeld: () => true,
+      now: () => clock,
+      wait: (ms) => {
+        clock += ms
+      },
+      pollMs: 10_000,
+    }),
+  ).toBe('still-held')
 })
 
 test('stop uses the plain success line after a proven termination', () => {

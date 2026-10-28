@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
+import { DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS } from '../idle-kill.ts'
 import {
   isReadOnlyRepositoryJob,
   JOBS,
+  jobIdleKillMs,
   jobTimeoutCeilingMinutes,
+  REVIEW_LENS_IDLE_KILL_MS,
   resolveJobTimeoutMs,
   resolveRecordedRunJob,
 } from './jobs.ts'
@@ -19,6 +22,18 @@ test('a read-only repository job reads the repo and does not write it', () => {
   expect(isReadOnlyRepositoryJob('implement')).toBe(false)
   expect(isReadOnlyRepositoryJob('summarize')).toBe(false)
   expect(isReadOnlyRepositoryJob('review-lens-inline')).toBe(false)
+})
+
+test('jobIdleKillMs picks env over job over default and still clamps', () => {
+  expect(JOBS['review-lens']!.idleKillMs).toBe(REVIEW_LENS_IDLE_KILL_MS)
+  expect(JOBS.implement!.idleKillMs).toBeUndefined()
+  expect(jobIdleKillMs('review-lens', {})).toBe(REVIEW_LENS_IDLE_KILL_MS)
+  expect(jobIdleKillMs('implement', {})).toBe(DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS)
+  expect(jobIdleKillMs('review-lens', { BOTTEGA_IDLE_KILL_MS: '120000' })).toBe(120_000)
+  expect(jobIdleKillMs('review-lens', { BOTTEGA_IDLE_KILL_MS: '3600000' }, 30 * 60_000)).toBe(
+    29 * 60_000,
+  )
+  expect(jobIdleKillMs('unknown-job', {})).toBe(DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS)
 })
 
 test('the timeout override respects the ceiling', () => {

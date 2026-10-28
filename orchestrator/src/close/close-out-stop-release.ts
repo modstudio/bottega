@@ -55,16 +55,38 @@ function stoppedConversationTree(rootId: string): { job: string; worktree: strin
   }
 }
 
+/** This stopped conversation's reader-clone tree, or null when it is not a reader clone. */
+export function stoppedConversationIsReaderClone(
+  runId: string,
+): { rootId: string; worktree: string } | null {
+  const rootId = conversationRoot(runId)
+  const { job, worktree } = stoppedConversationTree(rootId)
+  if (!worktree || !isReadOnlyRepositoryJob(job)) return null
+  return { rootId, worktree }
+}
+
+/** Kept outcome when the close-out lease is still held. Does not acquire the lease. */
+export function keptStoppedReaderClone(coordinatorPid: number | null): StoppedReaderCloneRelease {
+  const pidClause =
+    coordinatorPid != null
+      ? `coordinator pid ${coordinatorPid} is still alive`
+      : 'coordinator is not alive'
+  return {
+    outcome: 'kept',
+    detail: `close-out lease still held; ${pidClause}`,
+  }
+}
+
 /** Release this conversation's tree only if it is a reader clone; otherwise do not touch it. */
 export function releaseStoppedReaderClone(
   runId: string,
   extraPids: number[] = [],
 ): StoppedReaderCloneRelease {
-  const rootId = conversationRoot(runId)
-  const { job, worktree } = stoppedConversationTree(rootId)
-  if (!worktree || !isReadOnlyRepositoryJob(job)) {
+  const clone = stoppedConversationIsReaderClone(runId)
+  if (!clone) {
     return { outcome: 'not-applicable', detail: null }
   }
+  const { rootId, worktree } = clone
   if (recordedReaderCloneRelease(rootId)) return { outcome: 'released', detail: null }
   let detail: string | null = null
   try {

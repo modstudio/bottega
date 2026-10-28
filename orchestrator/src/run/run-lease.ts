@@ -218,14 +218,23 @@ export function withRunCloseOutLease<T>(
   }
 }
 
-/** Observe a run lease without deleting or otherwise changing its file. */
-export function runLeaseState(runId: string): RunLeaseState {
-  const path = runLeasePath(runId, 'run', runLeaseFileName)
+function observeLeaseState(runId: string, purpose: string, fileName: LeaseFileName): RunLeaseState {
+  const path = runLeasePath(runId, purpose, fileName)
   if (!existsSync(path)) return 'missing'
   const lease = tryKernelLease(path)
   if (!lease) return existsSync(path) ? 'held' : 'missing'
   lease.release()
   return 'free'
+}
+
+/** Observe a run lease without deleting or otherwise changing its file. */
+export function runLeaseState(runId: string): RunLeaseState {
+  return observeLeaseState(runId, 'run', runLeaseFileName)
+}
+
+/** Observe a close-out lease without deleting or otherwise changing its file. */
+export function runCloseOutLeaseState(runId: string): RunLeaseState {
+  return observeLeaseState(runId, 'close-out', runCloseOutLeaseFileName)
 }
 
 /** Remove a free lease file while holding its lock; a held lease is untouched. */

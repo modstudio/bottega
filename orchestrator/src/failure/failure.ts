@@ -389,6 +389,7 @@ export const FAILS_OVER: FailureKind[] = [
   'contract',
   'unevidenced',
   'premature-final',
+  'idle',
 ]
 
 /**

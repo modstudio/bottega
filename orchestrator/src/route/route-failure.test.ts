@@ -285,11 +285,11 @@ describe('failure classification', () => {
     expect(NEEDS_HUMAN).not.toContain('interrupted')
   })
 
-  test('an idle kill is not agent evidence, a cooldown, a page, or a failover', () => {
+  test('an idle kill is not agent evidence, a cooldown, or a page, and it fails over', () => {
     expect(NOT_EVIDENCE).toContain('idle')
     expect(COOLS_DOWN).not.toContain('idle')
     expect(NEEDS_HUMAN).not.toContain('idle')
-    expect(FAILS_OVER).not.toContain('idle')
+    expect(FAILS_OVER).toContain('idle')
     addRun({ agent: 'grok', job: 'implement', status: 'failed', kind: 'idle' })
     expect(candidates('implement').find((item) => item.agent === 'grok')).toMatchObject({
       failures: 0,

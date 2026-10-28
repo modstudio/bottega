@@ -43,6 +43,8 @@ export type Job = {
   timeoutMs?: number
   /** Declared ceiling for `bottega run start --timeout`, in ms, before the stale cap. */
   timeoutCeilingMs?: number
+  /** Silence-plus-no-CPU bound for this job, overriding the shared idle default. */
+  idleKillMs?: number
   /** This job returns independently triageable review findings. */
   findings?: boolean
   /** Harness-owned checkpoint cadence for writing work; defaults to ten minutes. */
@@ -66,6 +68,9 @@ export type Job = {
  */
 /** Idle must sit below the wall so the two timers cannot race. */
 export const IDLE_BELOW_WALL_MS = 60_000
+
+/** Idle kill bound declared by the review-lens job. */
+export const REVIEW_LENS_IDLE_KILL_MS = 20 * 60_000
 
 /** Absolute wall-time ceiling for every coordinator, held just below the stale cutoff. */
 export const RUN_WALL_TIME_CEILING_MS = STALE_AFTER_MS - 1
@@ -91,7 +96,7 @@ export function jobIdleKillMs(
   const raw =
     env.BOTTEGA_IDLE_KILL_MS !== undefined && env.BOTTEGA_IDLE_KILL_MS !== ''
       ? idleKillMs(env)
-      : DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS
+      : (JOBS[name]?.idleKillMs ?? DEFAULT_EXTERNAL_WAIT_IDLE_KILL_MS)
   const wall = wallMs ?? jobDeclaredWallMs(name)
   return wall != null ? clampIdleKillMs(raw, wall) : raw
 }
@@ -320,6 +325,7 @@ export const JOBS: Record<string, Job> = {
     prefer: ['grok', 'codex'],
     contextTokens: DEEP,
     findings: true,
+    idleKillMs: REVIEW_LENS_IDLE_KILL_MS,
   },
   'review-lens-inline': {
     name: 'review-lens-inline',
