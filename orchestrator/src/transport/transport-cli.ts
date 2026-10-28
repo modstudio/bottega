@@ -1,14 +1,15 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
 import { constants as osConstants } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { execa } from 'execa'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { EMPTY_CODEX_QUOTA_READINGS, parseCodexQuotaReadings } from './codex-quota.ts'
+import { parseCodexQuotaReadings } from './codex-quota.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
+import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import {
   type AgentTransport,
   type ArgvOpts,
@@ -170,7 +171,8 @@ async function cliLaunch(opts: TransportStartOpts) {
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const codex = workerHarnessName(opts.agent) === 'codex'
-  const rolloutOffsets = codex ? codexRolloutOffsets(opts.home) : new Map<string, number>()
+  const codexHome = codex ? opts.env.CODEX_HOME : undefined
+  const rolloutOffsets = codexRolloutOffsets(codexHome)
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)
 
@@ -210,8 +212,8 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
         const quotaReadings = codex
-          ? codexQuotaReadingsSince(opts.home, rolloutOffsets)
-          : EMPTY_CODEX_QUOTA_READINGS
+          ? codexQuotaReadingsSince(codexHome, rolloutOffsets)
+          : EMPTY_QUOTA_READINGS
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -316,12 +318,8 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
 }
 
 function codexRolloutOffsets(home: string | undefined): Map<string, number> {
-  if (!home) return new Map()
-  const sessions = join(home, 'sessions')
-  if (!existsSync(sessions)) return new Map()
   const offsets = new Map<string, number>()
-  for (const relative of new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions })) {
-    const path = join(sessions, relative)
+  for (const path of confinedCodexRollouts(home)) {
     try {
       offsets.set(path, statSync(path).size)
     } catch {
@@ -331,15 +329,29 @@ function codexRolloutOffsets(home: string | undefined): Map<string, number> {
   return offsets
 }
 
-function codexQuotaReadingsSince(home: string | undefined, offsets: Map<string, number>) {
-  if (!home) return EMPTY_CODEX_QUOTA_READINGS
+function confinedCodexRollouts(home: string | undefined): string[] {
+  if (!home) return []
   const sessions = join(home, 'sessions')
-  if (!existsSync(sessions)) return EMPTY_CODEX_QUOTA_READINGS
+  if (!existsSync(sessions)) return []
+  try {
+    const root = realpathSync(home)
+    return [...new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions })]
+      .sort()
+      .flatMap((relative) => {
+        const path = join(sessions, relative)
+        const entry = lstatSync(path, { throwIfNoEntry: false })
+        if (!entry || entry.isSymbolicLink()) return []
+        const resolved = realpathSync(path)
+        return resolved.startsWith(root + sep) ? [resolved] : []
+      })
+  } catch {
+    return []
+  }
+}
+
+export function codexQuotaReadingsSince(home: string | undefined, offsets: Map<string, number>) {
   const chunks: string[] = []
-  for (const relative of [
-    ...new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions }),
-  ].sort()) {
-    const path = join(sessions, relative)
+  for (const path of confinedCodexRollouts(home)) {
     try {
       const text = readFileSync(path, 'utf8')
       chunks.push(text.slice(offsets.get(path) ?? 0))

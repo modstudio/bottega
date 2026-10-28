@@ -101,7 +101,9 @@ test('reconcile restores every vendor usage column from the terminal snapshot', 
   expect(
     db()
       .query(
-        `SELECT vendor_tokens, model_calls, peak_call_tokens, vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
+        `SELECT vendor_tokens, model_calls, peak_call_tokens, quota_used_percent_start,
+                quota_used_percent_end, quota_window_minutes, quota_resets_at,
+                vendor_cost_usd, vendor_input_tokens, vendor_output_tokens,
                 vendor_estimated_cost_usd, vendor_cost_source
            FROM run WHERE record_id=?`,
       )
@@ -110,6 +112,10 @@ test('reconcile restores every vendor usage column from the terminal snapshot', 
     vendor_tokens: 34,
     model_calls: 2,
     peak_call_tokens: 20,
+    quota_used_percent_start: 12,
+    quota_used_percent_end: 13,
+    quota_window_minutes: 10_080,
+    quota_resets_at: 1_793_774_132,
     vendor_cost_usd: null,
     vendor_input_tokens: 12,
     vendor_output_tokens: 22,

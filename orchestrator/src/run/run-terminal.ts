@@ -40,7 +40,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
-import type { CodexQuotaReadings } from '../transport/codex-quota.ts'
+import type { QuotaReadings } from '../transport/quota-readings.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -276,7 +276,7 @@ export type TerminalInput = {
   callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
-  quotaReadings: CodexQuotaReadings
+  quotaReadings: QuotaReadings
   effectiveModel: string | null
   resolvedSession: string | null
   name: string
@@ -308,7 +308,7 @@ function terminalUsageSnapshot(input: TerminalInput, name: string) {
   }
 }
 
-function quotaColumnValues(readings: CodexQuotaReadings) {
+function quotaColumnValues(readings: QuotaReadings) {
   return [
     readings.quotaUsedPercentStart,
     readings.quotaUsedPercentEnd,

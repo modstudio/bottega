@@ -110,7 +110,6 @@ const concerns: ConcernManifest = {
 }
 
 export const modules: ArchitectureModule[] = [
-  module('orchestrator/src/transport/codex-quota.ts', []),
   module('orchestrator/src/project/project-agent-keys.ts', []),
   module('orchestrator/src/route/route-policy.ts', []),
   module('orchestrator/src/route/route-statistics.ts', ['../state/statistics.ts']),

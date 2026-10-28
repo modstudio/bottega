@@ -66,7 +66,7 @@ import {
   sandboxReasonPrefix,
   selectReadonlySandbox,
 } from '../sandbox/sandbox.ts'
-import { EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
+import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import {
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
@@ -806,7 +806,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     callUsage: Awaited<ReturnType<typeof runLive>>['callUsage'] = null,
     costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
-  let quotaReadings = EMPTY_CODEX_QUOTA_READINGS
+  let quotaReadings = EMPTY_QUOTA_READINGS
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let contract: WorkerReply | null = null

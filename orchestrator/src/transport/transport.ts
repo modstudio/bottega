@@ -7,7 +7,7 @@ import { job } from '../jobs/jobs.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
 import type { AjvValidator } from './ajv-validator.ts'
-import type { CodexQuotaReadings } from './codex-quota.ts'
+import type { QuotaReadings } from './quota-readings.ts'
 import type { AgentBilling, VendorUsage } from './vendor-usage.ts'
 
 export {
@@ -193,7 +193,7 @@ export type TransportResult = {
   tokens: number | null
   costUsd: number | null
   vendorUsage: VendorUsage
-  quotaReadings?: CodexQuotaReadings
+  quotaReadings?: QuotaReadings
   sessionId: string | null
   stopReason: string | null
   error: string | null

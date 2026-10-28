@@ -39,7 +39,7 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
-import { type CodexQuotaReadings, EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
+import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -377,7 +377,7 @@ export type LiveResult = {
   callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
-  quotaReadings: CodexQuotaReadings
+  quotaReadings: QuotaReadings
   resolvedSession: string | null
   effectiveModel: string | null
   replyFileError: string | null
@@ -479,7 +479,7 @@ function runUsageResult(
   callUsage: RunCallUsage | null,
   costUsd: number | null,
   vendorUsage: VendorUsage,
-  quotaReadings: CodexQuotaReadings,
+  quotaReadings: QuotaReadings,
 ) {
   return { vendorTokens, callUsage, costUsd, vendorUsage, quotaReadings }
 }
@@ -560,7 +560,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     callUsage: { value: RunCallUsage | null } = { value: null }
   let costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
-  let quotaReadings = EMPTY_CODEX_QUOTA_READINGS
+  let quotaReadings = EMPTY_QUOTA_READINGS
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let replyFileError: string | null = null
@@ -826,7 +826,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
     vendorUsage = collected.vendorUsage
-    quotaReadings = collected.quotaReadings ?? EMPTY_CODEX_QUOTA_READINGS
+    quotaReadings = collected.quotaReadings ?? EMPTY_QUOTA_READINGS
     effectiveModel = collected.effectiveModel ?? effectiveModel
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output

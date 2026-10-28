@@ -25,9 +25,6 @@ type ReportedCostRunRow = {
   vendor_cost_usd: number | null
   vendor_estimated_cost_usd: number | null
   vendor_cost_source: string | null
-  quota_used_percent_start: number | null
-  quota_used_percent_end: number | null
-  quota_window_minutes: number | null
   quota_resets_at: number | null
 }
 
@@ -191,10 +188,10 @@ export function reportedRunCost(input: {
   quotaWindows?: readonly SubscriptionQuotaWindow[]
 }): ReportedRunCost {
   if (input.billing === 'subscription') {
-    if (input.runTokens == null) return { usd: null, source: SUBSCRIPTION_NO_TOKENS_SOURCE }
     if (input.priceUnavailable) {
       return { usd: null, source: SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE }
     }
+    if (input.runTokens == null) return { usd: null, source: SUBSCRIPTION_NO_TOKENS_SOURCE }
     const quota = quotaCost({ ...input, runTokens: input.runTokens })
     if (quota) return quota
     return amortizedSubscriptionShare({
@@ -218,9 +215,6 @@ function reportedCostRunRow(row: CostRowFields): ReportedCostRunRow {
     vendor_cost_usd: nullableNumber(row.vendor_cost_usd),
     vendor_estimated_cost_usd: nullableNumber(row.vendor_estimated_cost_usd),
     vendor_cost_source: row.vendor_cost_source == null ? null : String(row.vendor_cost_source),
-    quota_used_percent_start: nullableNumber(row.quota_used_percent_start),
-    quota_used_percent_end: nullableNumber(row.quota_used_percent_end),
-    quota_window_minutes: nullableNumber(row.quota_window_minutes),
     quota_resets_at: nullableNumber(row.quota_resets_at),
   }
 }

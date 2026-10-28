@@ -29,9 +29,6 @@ type ChainCostRow = {
   vendor_cost_usd: number | null
   vendor_estimated_cost_usd: number | null
   vendor_cost_source: string | null
-  quota_used_percent_start: number | null
-  quota_used_percent_end: number | null
-  quota_window_minutes: number | null
   quota_resets_at: number | null
 }
 
@@ -74,8 +71,7 @@ export function routeCostFacts(input: {
       `SELECT COALESCE(r.parent_run_record_id, r.record_id) AS rootRecordId,
               r.agent, r.started_at, r.vendor_tokens, r.vendor_cost_usd,
               r.vendor_estimated_cost_usd, r.vendor_cost_source,
-              r.quota_used_percent_start, r.quota_used_percent_end,
-              r.quota_window_minutes, r.quota_resets_at
+              r.quota_resets_at
          FROM run r
          JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
         WHERE root.job = ? AND root.status IN ('ok','failed','stale') AND root.probe = 0

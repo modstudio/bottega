@@ -9,6 +9,8 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const runLifecycleModules: ArchitectureModule[] = [
+  module('orchestrator/src/transport/quota-readings.ts', []),
+  module('orchestrator/src/transport/codex-quota.ts', ['./quota-readings.ts']),
   module('orchestrator/src/close/conversation-liveness.ts', [
     'node:fs',
     '../../../shared/brand.ts',
@@ -279,7 +281,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-wall-deadline.ts',
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',
-    '../transport/codex-quota.ts',
+    '../transport/quota-readings.ts',
     '../transport/transport.ts',
     '../transport/transport-goose-ledger.ts',
     '../worktree/worktree-types.ts',
@@ -369,7 +371,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../jobs/jobs.ts',
     '../run-owned-paths.ts',
-    '../transport/codex-quota.ts',
+    '../transport/quota-readings.ts',
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
     './run-acp-writer.ts',
@@ -460,7 +462,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-usage-columns.ts',
     './shared-git-config.ts',
     '../sandbox/sandbox.ts',
-    '../transport/codex-quota.ts',
+    '../transport/quota-readings.ts',
     '../transport/transport.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',

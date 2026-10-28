@@ -18,7 +18,7 @@ import { db, sessionId } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { isReaderJob, job } from '../jobs/jobs.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
-import { EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
+import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/transport.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import * as acpWriter from './run-acp-writer.ts'
@@ -159,7 +159,7 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
     callUsage: null,
     costUsd: null,
     vendorUsage: EMPTY_VENDOR_USAGE,
-    quotaReadings: EMPTY_CODEX_QUOTA_READINGS,
+    quotaReadings: EMPTY_QUOTA_READINGS,
     effectiveModel: null,
     resolvedSession: null,
     name: 'harness',

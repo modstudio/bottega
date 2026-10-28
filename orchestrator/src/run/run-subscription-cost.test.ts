@@ -192,6 +192,20 @@ describe('reportedRunCost', () => {
       }),
     ).toEqual({ usd: null, source: SUBSCRIPTION_NO_TOKENS_SOURCE })
   })
+
+  test('an unavailable price takes precedence over null tokens', () => {
+    expect(
+      reportedRunCost({
+        billing: 'subscription',
+        billedUsd: null,
+        storedSource: null,
+        monthlyPriceUsd: null,
+        runTokens: null,
+        monthTokens: null,
+        priceUnavailable: true,
+      }),
+    ).toEqual({ usd: null, source: SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE })
+  })
 })
 
 test('the shared row adapter returns cost fields and keeps the stored columns', () => {
