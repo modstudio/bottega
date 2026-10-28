@@ -490,6 +490,25 @@ function releasedCloseOut(
   return successfulReleaseResult(rootRecordId, treePath, treeAbsent, result)
 }
 
+type CloseOutRunRow = {
+  record_id: string
+  root_record_id: string
+  project_record_id: string | null
+  job: string
+  repo: string | null
+  cwd: string | null
+  worktree: string | null
+  branch: string | null
+  base_commit: string | null
+  carry_base_commit: string | null
+  worktree_source: Worktree['source'] | null
+  minted_branch: string | null
+  status: string
+  agent_pid: number | null
+  session_id: string | null
+  launch_key: string | null
+}
+
 /** One cleanup path for terminalisation, explicit close-out, and sweep. */
 function attemptCloseOutRun(
   runId: string,
@@ -505,34 +524,18 @@ function attemptCloseOutRun(
   const row = db()
     .query(
       `SELECT record_id, COALESCE(parent_run_record_id,record_id) root_record_id, project_record_id, job, repo, cwd, worktree, branch,
-            base_commit, worktree_source, minted_branch, status, agent_pid,session_id,launch_key
+            base_commit, carry_base_commit, worktree_source, minted_branch, status, agent_pid,session_id,launch_key
        FROM run WHERE record_id=?`,
     )
-    .get(runId) as {
-    record_id: string
-    root_record_id: string
-    project_record_id: string | null
-    job: string
-    repo: string | null
-    cwd: string | null
-    worktree: string | null
-    branch: string | null
-    base_commit: string | null
-    worktree_source: Worktree['source'] | null
-    minted_branch: string | null
-    status: string
-    agent_pid: number | null
-    session_id: string | null
-    launch_key: string | null
-  } | null
+    .get(runId) as CloseOutRunRow | null
   if (!row) throw new Error(`no run ${runId}`)
   const root = db()
     .query(
-      `SELECT project_record_id,job,repo,cwd,worktree,branch,base_commit,worktree_source,minted_branch,status,
+      `SELECT project_record_id,job,repo,cwd,worktree,branch,base_commit,carry_base_commit,worktree_source,minted_branch,status,
               session_id,launch_key
        FROM run WHERE record_id=?`,
     )
-    .get(row.root_record_id) as typeof row
+    .get(row.root_record_id) as CloseOutRunRow | null
   const resolvedTreePath = row.worktree ?? root?.worktree ?? null
   const missingTreeResult = missingTreeConversationResult(row.root_record_id, resolvedTreePath)
   if (missingTreeResult) return missingTreeResult
@@ -568,6 +571,8 @@ function attemptCloseOutRun(
   if (preRemovalHold) return preRemovalHold
   const retainedBranch = retainedBranchForCloseOut(effective.minted_branch)
   const turnHead = turnHeadForCloseOut(row, treePath)
+  const readerBaseCommit =
+    root?.carry_base_commit ?? row.carry_base_commit ?? effective.base_commit ?? ''
   const recordRetainedBranch = (tip: string | null, retainedRef?: string | null) => {
     if (!retainedBranch || !tip) return
     writeTransaction(() => {
@@ -750,7 +755,7 @@ function attemptCloseOutRun(
               treeAbsent,
               treePath,
               repoRoot,
-              baseCommit: effective.base_commit ?? '',
+              baseCommit: readerBaseCommit,
               dryRun: Boolean(options.dryRun),
             })
             if (!scratch.proceed) return scratch.result
