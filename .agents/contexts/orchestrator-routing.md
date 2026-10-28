@@ -34,15 +34,18 @@ The architect owns design, the spec, every decision the spec did not settle, and
 
 # Scoring is not optional
 
-`bottega score` measures delegation. **Never score an unread run:** guessed verdicts teach the router falsely.
+`bottega score` is the only thing that measures whether delegation works.
 
-- A run records `CLAUDE_CODE_SESSION_ID`; only that session may judge it, and a refusal names the owner. Shared `CLAUDE_CODE_BRIDGE_SESSION_ID` is never identity: `sessionId()` returns the primary id or nothing, and owner-required mutations refuse without it.
-- `bottega score pending` lists your unscored runs and exits nonzero until none remain. The Stop hook raises them once per turn before finish and stands down after asking.
-- `bottega question answer` and `bottega run continue` refuse escaped or confinement-unverified chains and name `bottega review confinement clear`. Unread `bottega run tell` messages surface at the harness checkpoint before final parsing. Every write verb's `--help` has no side effects.
+- Every run records the session from `CLAUDE_CODE_SESSION_ID`. Only that session can judge it. `bottega score` **refuses** another session's run. `CLAUDE_CODE_BRIDGE_SESSION_ID` is shared and is never an identity: `sessionId()` returns the primary id or nothing, and a mutation that needs an owner refuses rather than proceeding under the shared id.
+- `bottega score pending` lists your own unscored runs and exits nonzero while any remain.
+- A Stop hook raises them before a session finishes, once per turn, and stands down if it has already asked.
+- `bottega question answer` and `bottega run continue` refuse escaped and confinement-unverified chains, naming `bottega review confinement clear`. Unread `bottega run tell` messages surface at the harness checkpoint before the final parse. Every write verb prints usage on `--help` with no side effects.
+
+**Never score a run you did not read.** A guessed verdict teaches the router something false. Nobody may score another session's runs. The refusal names the owning session.
 
 # The two halves of the ratio
 
-Commands drive the numerator down; **`bottega score` alone measures the denominator.** Unscored and badly scored runs must differ or effectiveness is unknowable.
+Every command here drives the numerator down. **`bottega score` is the only thing that measures the denominator.** A run nobody scored and a run scored badly must stay distinguishable. Delegation that is never scored is delegation you cannot tell is working.
 
 # Routing
 
@@ -54,7 +57,7 @@ Pairwise judgments are collected at score time. `bottega agent stats` reports Br
 
 **Exploration goes to agents that might win, not to ones already known not to work here.**
 
-**Quality decides alone whenever the gap is real, except under a cost rule that is switched on; a tie is broken by facts.** A gap smaller than `NOISE_BAND` is noise. Inside that band the tie goes first to an agent that spends no metered quota, then to the faster one by median run time. Where a rule in `DEFAULT_ROUTE_COST_POLICY` (overridable through `routing.cost_policy`) is on, an agent below the rule's floor is excluded, and a pricier agent wins only when its quality gain at the rule's rate is worth its cost per accepted result. `bottega agent cost-backtest` measures a rule change before it ships.
+**Quality decides alone whenever the gap is real, except under a cost rule that is switched on; a tie is broken by facts.** A gap smaller than `NOISE_BAND` is noise. Inside that band the tie goes first to an agent that spends no metered quota, then to the faster one by median run time. Cost policy and provider-failure rules live in `.agents/contexts/orchestrator-routing-cost.md`.
 
 **Proven scores are shrunk toward the field before they are ranked:** `(points + MIN_SAMPLE * prior) / (evidence + MIN_SAMPLE)`, prior being the mean raw score of every proven agent on that job. Reports keep the raw mean beside the shrunk score.
 
@@ -88,8 +91,6 @@ A failing behavioral canon eval closes exploration for the default eval agent un
 
 **So is context.** A job declares its working set; an agent whose window cannot hold that is excluded, the same kind of fact as lacking `readsRepo`. Errand jobs sit at `ERRAND` tokens, deep jobs at `DEEP`. Eligibility requires `OUTPUT_RESERVE` on top, because a server allows window minus prompt for the reply. The declared window is the one the server reports; `bottega machine doctor` reads it from `/v1/models`. Cloud agents declare no ceiling until one fails on window.
 
-**A metered agent is routed only when its row opts in, and only for jobs that do not write the repository.** Spend limits live in the provider key's own settings.
-
 Retrieval-shaped jobs (`file-question`, `canon-lookup`, `summarize`) prefer the local model. Judgment-shaped jobs (`safety`, `craft`, `understand`, `review-lens`) prefer cloud agents. Preference orders agents that could do a job; eligibility says which ones can.
 
 # A third axis: did it build what it was asked to build?
@@ -111,26 +112,6 @@ There is one `scoreboard()` and the views call it. A test asserts every cell mat
 # Activity counters and score windows
 
 The routing matrix and guide do not take a dashboard activity window. Their bound is `EVIDENCE_WINDOW`, the most recent judgments for a job, agent, and the agent's current model. A model swap starts a fresh posterior. Per-repo tallies report activity, not routing evidence, and take neither window. Empty-window sums are coalesced, because SQLite `SUM` over no rows is null while `COUNT` is zero.
-
-# When an agent runs out of plan
-
-No CLI here reports remaining quota, so exhaustion is caught on the failure (`FAILURE_KINDS`). Truncation is not evidence the agent was wrong. `NEEDS_HUMAN` kinds notify immediately.
-
-**Escaped** means an outside change overlapped the run's own diff: classified and attributed, never failed over, and landing that chain is refused even when marked unreviewed. Non-overlapping divergence is recorded and does not fail the run. **Confinement unverified** has the same terminal and landing-blocking effect, but records an observer failure. A checkout unavailable before launch is excluded with a warning that names the stale register entry. The detector never drops findings, scores, or the review.
-
-**Routing then avoids a `COOLS_DOWN` agent for `COOLDOWN_MIN` minutes**, unless it is the only one left. Only the most recent run is consulted; a single success clears it. **A probe is how you say "I fixed it"** — the cooling query is the one place probes are not filtered out. `bottega machine doctor` prints this when anything is cooling.
-
-A vendor **content refusal** fails over immediately, but neither cools the agent nor counts as routing evidence. Keep it distinct from a headless `denied`.
-
-# Infrastructure and policy failures are not verdicts
-
-**`unreachable` is not evidence about the agent** and is excluded from the evidence count entirely, not weighted down. Host incidents: `bottega doc show local-model-host-incidents --scope machine`. `NOT_EVIDENCE` lists the kinds that say nothing about competence.
-
-**`unreachable` tells a person but does not cool the agent down.** A cooldown is for a condition that cannot be observed without spending a run (`COOLS_DOWN`). Reachability is measured directly before every routing decision. `NEEDS_HUMAN`, `COOLS_DOWN` and `NOT_EVIDENCE` are three separate lists.
-
-**Reachability is a routing input, not a run outcome.** `bottega run start` probes the local endpoint before it routes. The probe is cached per process; longer-lived processes refresh it. **`bottega machine doctor` is where you look** — box, tunnel, server, in that order.
-
-**An agent's window must hold the working set and a reply.** Eligibility requires `OUTPUT_RESERVE` on top of the job's `contextTokens`.
 
 # Knowing what to use for what
 
