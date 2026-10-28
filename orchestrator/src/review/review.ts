@@ -537,13 +537,15 @@ function reviewProjectName(database: Database, projectRecordId: string | null): 
   )
 }
 
-const reviewTierSizeValues = (
+function reviewTierSizeValues(
   tier: NonNullable<ReturnType<typeof measureReviewChange>>['tier'] | null,
-): [number | null, number | null, number | null] => [
-  tier?.size ?? null,
-  tier?.insertions ?? null,
-  tier?.deletions ?? null,
-]
+): { size: number | null; insertions: number | null; deletions: number | null } {
+  return {
+    size: tier?.size ?? null,
+    insertions: tier?.insertions ?? null,
+    deletions: tier?.deletions ?? null,
+  }
+}
 
 export function recordReviews(
   entries: { runId: string; output: ReviewReply }[],
@@ -582,15 +584,13 @@ export function recordReviews(
     )
   })()
   const [projectRecordId, role] = reviewProjectAndRole(runs)
-  const projectName = reviewProjectName(database, projectRecordId)
   const pathSet = measured ? serializePathSet(measured.pathSet) : null
   const reviewRecordId = writeTransaction(() => {
     const tier = measured?.tier ?? null
-    const first = runs[0]!
     const round = reviewRoundForRecording(database, {
-      project: projectName,
-      branch: first.branch,
-      launch_key: first.launch_key,
+      project: reviewProjectName(database, projectRecordId),
+      branch: runs[0]!.branch,
+      launch_key: runs[0]!.launch_key,
       patch_id: measured?.patchId ?? null,
       path_set: pathSet,
       role,
@@ -607,7 +607,9 @@ export function recordReviews(
         nowIso(),
         tier?.tier ?? null,
         tier?.risk ?? null,
-        ...reviewTierSizeValues(tier),
+        reviewTierSizeValues(tier).size,
+        reviewTierSizeValues(tier).insertions,
+        reviewTierSizeValues(tier).deletions,
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
         projectRecordId,
