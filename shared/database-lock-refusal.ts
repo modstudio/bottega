@@ -46,7 +46,7 @@ export function databaseLockHolder(
  * Name the holder by its executable and script only: its other arguments belong to
  * another process and may carry a secret, and this refusal reaches recorded run output.
  */
-function holderSummary(command: string): string {
+export function databaseLockHolderCommandSummary(command: string): string {
   const [executable = '', script] = command.trim().split(/\s+/)
   const base = (token: string) => token.split('/').pop() ?? token
   return script?.includes('/') ? `${base(executable)} ${base(script)}` : base(executable)
@@ -55,7 +55,7 @@ function holderSummary(command: string): string {
 export function formatDatabaseLockRefusal(facts: DatabaseLockRefusalFacts): string {
   const holder =
     'pid' in facts.holder
-      ? `pid ${facts.holder.pid}; command ${facts.holder.command ? holderSummary(facts.holder.command) : 'unavailable'}`
+      ? `pid ${facts.holder.pid}; command ${facts.holder.command ? databaseLockHolderCommandSummary(facts.holder.command) : 'unavailable'}`
       : `unknown (${facts.holder.unavailable})`
   return (
     `database write refused: database is locked\n` +

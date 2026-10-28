@@ -7,8 +7,9 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../shared/commander-public-path.ts'
-import { formatDatabaseLockRefusal, isDatabaseLocked } from '../../shared/database-lock-refusal.ts'
+import { isDatabaseLocked } from '../../shared/database-lock-refusal.ts'
 import { installationVersionText } from '../../shared/install-root.ts'
+import { recordDatabaseLockRefusal } from '../../shared/store-lock-refusal-log.ts'
 import { HubCommand } from './cli-command.ts'
 import { registerCoreCommands } from './core-cli.ts'
 import { DB_PATH, hubDatabaseLockHolder, nowIso, withReadOnlyDatabaseAccess } from './db.ts'
@@ -70,6 +71,12 @@ function literalHelp(argv: string[]): string[] {
   return argv
 }
 
+async function cliErrorMessage(error: unknown, argv: readonly string[]): Promise<string> {
+  if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
+  const facts = { store: DB_PATH, holder: await hubDatabaseLockHolder() }
+  return recordDatabaseLockRefusal(facts, argv)
+}
+
 export async function run(
   command: Command,
   argv: string[],
@@ -87,17 +94,7 @@ export async function run(
     await (usesReadOnlyStoreHandle(argv) ? withReadOnlyDatabaseAccess(parse) : parse())
     return Number(process.exitCode ?? 0)
   } catch (error) {
-    if (!(error instanceof CommanderError))
-      console.error(
-        isDatabaseLocked(error)
-          ? formatDatabaseLockRefusal({
-              store: DB_PATH,
-              holder: await hubDatabaseLockHolder(),
-            })
-          : error instanceof Error
-            ? error.message
-            : String(error),
-      )
+    if (!(error instanceof CommanderError)) console.error(await cliErrorMessage(error, argv))
     return exitCodeFor(error)
   } finally {
     if (argv.includes('--verbose')) console.error(`${PLATFORM_SLUG} ${argv[0]} done at ${nowIso()}`)

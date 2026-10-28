@@ -167,6 +167,7 @@ export const hubModuleSpecs = [
       '../../shared/brand.ts',
       '../../shared/commander-public-path.ts',
       '../../shared/database-lock-refusal.ts',
+      '../../shared/store-lock-refusal-log.ts',
       'commander',
       '../../shared/install-root.ts',
       './cli-command.ts',
