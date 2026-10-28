@@ -22,6 +22,7 @@ const candidate = (
   meanCostPerRun,
   acceptedShare,
   evidence: 10,
+  proven: true,
   free: false,
   latencyMs: 100,
 })

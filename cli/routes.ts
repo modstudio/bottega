@@ -184,9 +184,17 @@ export const ROUTES = (
       'agent probe',
       'prove registration capabilities and clear a quota cooldown on success',
     ),
-    ...['context', 'contract', 'guide', 'stats', 'routing-backtest', 'metric', 'pick', 'jobs'].map(
-      (name) => route(`agent ${name}`, 'orch', name),
-    ),
+    ...[
+      'context',
+      'contract',
+      'guide',
+      'stats',
+      'routing-backtest',
+      'cost-backtest',
+      'metric',
+      'pick',
+      'jobs',
+    ].map((name) => route(`agent ${name}`, 'orch', name)),
     route('dashboard start', 'hub', 'serve', 'start the local dashboard'),
     route(
       'dashboard check',

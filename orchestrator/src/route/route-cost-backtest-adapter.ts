@@ -8,14 +8,18 @@ import { JOBS } from '../jobs/jobs.ts'
 import { reviewTierSizeClass } from '../review/review-tier-classifier.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
 import { median } from '../state/statistics.ts'
-import { promptSizeBucketLabel, samePromptSizeBucket } from './prompt-size-bucket.ts'
+import {
+  promptSizeBucket,
+  promptSizeBucketLabel,
+  samePromptSizeBucket,
+} from './prompt-size-bucket.ts'
 import { EVIDENCE_WINDOW } from './route.ts'
 import {
-  type CostEvidenceRoot,
-  type CostPerAcceptedResult,
-  type RouteCostFacts,
   allRouteCostFacts,
+  type CostEvidenceRoot,
+  type RouteCostFacts,
   routeCostPerAccepted,
+  routeMeanCostPerRun,
 } from './route-cost.ts'
 import {
   type CostBacktestCandidate,
@@ -26,7 +30,7 @@ import {
   routeCostBacktest,
 } from './route-cost-backtest.ts'
 import { DEFAULT_ROUTE_COST_POLICY, resolveRouteCostPolicy } from './route-cost-policy.ts'
-import { MIN_SAMPLE, thompsonRank } from './route-selection.ts'
+import { currentPolicySelection, MIN_SAMPLE, thompsonRank } from './route-selection.ts'
 import { routingEvidenceWindow } from './route-statistics.ts'
 import {
   type RoutingBacktestEvent,
@@ -57,25 +61,20 @@ function variantsFor(group: string): CostBacktestVariant[] {
   )
 }
 
-function meanCostPerRun(roots: CostEvidenceRoot[], facts: RouteCostFacts): CostPerAcceptedResult {
-  const rows = roots.flatMap((root) => facts.get(root.record_id) ?? [])
-  if (roots.length === 0 || rows.length === 0) return { unknown: 'cost unavailable' }
-  const priced = rows.filter(
-    (row): row is { usd: number; source: string | null } => row.usd !== null,
+function factsAvailableBefore(
+  roots: CostEvidenceRoot[],
+  facts: RouteCostFacts,
+  startedAt: string,
+): RouteCostFacts {
+  return new Map(
+    roots.map((root) => [
+      root.record_id,
+      (facts.get(root.record_id) ?? []).filter(
+        (row) =>
+          row.availableAt !== null && row.availableAt !== undefined && row.availableAt < startedAt,
+      ),
+    ]),
   )
-  const unpriced = rows.filter((row) => row.usd === null)
-  if (unpriced.length > 0 && priced.length * 2 < rows.length) {
-    const counts = new Map<string, number>()
-    for (const row of unpriced) {
-      const source = row.source ?? 'cost unavailable'
-      counts.set(source, (counts.get(source) ?? 0) + 1)
-    }
-    return { unknown: [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 'cost unavailable' }
-  }
-  const total = priced.reduce((sum, row) => sum + row.usd, 0)
-  const imputedMean = priced.length ? total / priced.length : 0
-  const result = { usd: (total + imputedMean * unpriced.length) / roots.length }
-  return unpriced.length ? { ...result, imputed: unpriced.length } : result
 }
 
 function cellCandidates(
@@ -130,11 +129,18 @@ function cellCandidates(
   for (const row of raw)
     if (row.score !== null)
       row.shrunk = (row.score * row.evidence + MIN_SAMPLE * prior) / (row.evidence + MIN_SAMPLE)
+  if (raw.length === 0) return { candidates: [], baselineAgent: null, eligible: 0 }
   const proven = raw.filter((row) => row.evidence >= MIN_SAMPLE && row.score !== null)
-  if (proven.length === 0) return { candidates: [], baselineAgent: null, eligible: raw.length }
-  const ranking = thompsonRank(proven, false)
-  const candidates = ranking.posterior.map(({ candidate, mean }) => {
+  const baseline = currentPolicySelection(raw, JOBS[decision.job]?.prefer ?? [], false)
+  const means = new Map(
+    (proven.length ? thompsonRank(proven, false).posterior : []).map((row) => [
+      row.candidate.agent,
+      row.mean,
+    ]),
+  )
+  const candidates = raw.map((candidate) => {
     const roots = candidate.rows
+    const causalFacts = factsAvailableBefore(roots, facts, decision.startedAt)
     const accepted = roots.filter(
       (root) =>
         root.delivery === 'full' &&
@@ -143,21 +149,23 @@ function cellCandidates(
     ).length
     return {
       agent: candidate.agent,
-      qualityValue: mean,
+      qualityValue: means.get(candidate.agent) ?? 0.5,
       shrunk: candidate.shrunk,
-      costPerAccepted: routeCostPerAccepted(decision.job, roots, facts),
-      meanCostPerRun: meanCostPerRun(roots, facts),
-      acceptedShare: accepted / roots.length,
+      costPerAccepted: routeCostPerAccepted(decision.job, roots, causalFacts),
+      meanCostPerRun: routeMeanCostPerRun(roots, causalFacts),
+      acceptedShare: roots.length ? accepted / roots.length : null,
       evidence: candidate.evidence,
+      proven: candidate.evidence >= MIN_SAMPLE && candidate.score !== null,
       free: candidate.free,
       latencyMs: candidate.latencyMs,
     }
   })
-  return { candidates, baselineAgent: ranking.chosen.agent, eligible: raw.length }
+  return { candidates, baselineAgent: baseline.chosen.agent, eligible: raw.length }
 }
 
 function enoughForScoped(cell: ReturnType<typeof cellCandidates>): boolean {
-  return cell.candidates.length >= 2 || (cell.eligible === 1 && cell.candidates.length === 1)
+  const proven = cell.candidates.filter((candidate) => candidate.proven).length
+  return proven >= 2 || (cell.eligible === 1 && proven === 1)
 }
 
 export function gatherRouteCostBacktest(
@@ -178,7 +186,7 @@ export function gatherRouteCostBacktest(
   const facts = allRouteCostFacts(context)
   const evidenceByCell = new Map<string, RoutingBacktestEvent[]>()
   for (const row of all) {
-    const key = `${row.job}\0${promptSizeBucketLabel(row.promptBytes)}`
+    const key = `${row.job}\0${promptSizeBucketLabel(promptSizeBucket(row.promptBytes))}`
     evidenceByCell.set(key, [...(evidenceByCell.get(key) ?? []), row])
   }
   const decisions: CostBacktestDecision[] = []
@@ -186,7 +194,9 @@ export function gatherRouteCostBacktest(
   const provenAgents = new Map<string, Set<string>>()
   for (const decision of all.filter((row) => Date.parse(row.startedAt) >= since)) {
     const causal = causalEvidenceBefore(
-      evidenceByCell.get(`${decision.job}\0${promptSizeBucketLabel(decision.promptBytes)}`) ?? [],
+      evidenceByCell.get(
+        `${decision.job}\0${promptSizeBucketLabel(promptSizeBucket(decision.promptBytes))}`,
+      ) ?? [],
       decision.startedAt,
     )
     const lens = lensByRun.get(decision.record_id) ?? null
@@ -209,7 +219,7 @@ export function gatherRouteCostBacktest(
       scope.lens,
       Boolean(JOBS[decision.job]?.needs.writesRepo),
     )
-    const promptBucket = promptSizeBucketLabel(decision.promptBytes)
+    const promptBucket = promptSizeBucketLabel(promptSizeBucket(decision.promptBytes))
     decisions.push({
       job: decision.job,
       promptBucket,
@@ -220,12 +230,10 @@ export function gatherRouteCostBacktest(
       variants: variantsFor(resolved.group),
     })
     const key = `${decision.job}\0${promptBucket}\0${scope.lens ?? ''}`
+    const proven = cell.candidates.filter((candidate) => candidate.proven)
     provenAgents.set(
       key,
-      new Set([
-        ...(provenAgents.get(key) ?? []),
-        ...cell.candidates.map((candidate) => candidate.agent),
-      ]),
+      new Set([...(provenAgents.get(key) ?? []), ...proven.map((candidate) => candidate.agent)]),
     )
     fairnessRuns.push({
       job: decision.job,

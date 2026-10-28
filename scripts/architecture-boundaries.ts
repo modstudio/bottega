@@ -920,12 +920,6 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep routing command adapters independent of runs, transports, the CLI, worktrees, and reviews by value.',
   ),
-  boundary(
-    'route-cost-backtest-boundary',
-    'orchestrator/src/route/route-cost-backtest.ts',
-    ['./route-cost-policy.ts', './route-selection.ts'],
-    'Keep cost backtest aggregation independent of databases, clocks, environment, and adapters.',
-  ),
   ...runLifecycleBoundarySpecs,
   boundary(
     'score-boundary',

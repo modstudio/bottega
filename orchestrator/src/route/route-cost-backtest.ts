@@ -11,8 +11,9 @@ export type CostBacktestCandidate = {
   shrunk: number | null
   costPerAccepted: { usd: number; imputed?: number } | { unknown: string }
   meanCostPerRun: { usd: number; imputed?: number } | { unknown: string }
-  acceptedShare: number
+  acceptedShare: number | null
   evidence: number
+  proven: boolean
   free: boolean
   latencyMs: number | null
 }
@@ -29,7 +30,7 @@ export type CostBacktestDecision = {
   variants: CostBacktestVariant[]
 }
 
-export type CostBacktestFigure = {
+type CostBacktestFigure = {
   variant: CostBacktestVariant
   decisions: { n: number }
   routingShift: {
@@ -55,7 +56,7 @@ export type CostBacktestFigure = {
   }
 }
 
-export type CostBacktestGroup = { group: string; n: number; figures: CostBacktestFigure[] }
+type CostBacktestGroup = { group: string; n: number; figures: CostBacktestFigure[] }
 
 export type FairnessRun = {
   job: string
@@ -73,7 +74,7 @@ export type FairnessCell = {
   agents: Array<{
     agent: string
     runs: number
-    medianPromptBytes: number
+    medianPromptBytes: number | null
     sizeClasses: Record<string, number>
     modalSizeClass: number | null
   }>
@@ -101,64 +102,67 @@ function pickedCost(candidate: CostBacktestCandidate): number | null {
   return 'usd' in candidate.meanCostPerRun ? candidate.meanCostPerRun.usd : null
 }
 
+function isImputed(candidate: CostBacktestCandidate): boolean {
+  return (
+    ('usd' in candidate.meanCostPerRun && Boolean(candidate.meanCostPerRun.imputed)) ||
+    ('usd' in candidate.costPerAccepted && Boolean(candidate.costPerAccepted.imputed))
+  )
+}
+
+function evaluateDecision(decision: CostBacktestDecision, variant: CostBacktestVariant) {
+  const baseline = decision.candidates.find((row) => row.agent === decision.baselineAgent)!
+  const proven = decision.candidates.filter((candidate) => candidate.proven)
+  const baselineProven = proven.find((candidate) => candidate.agent === baseline.agent)
+  const selected = baselineProven
+    ? selectByCostPolicy(proven, variant, NOISE_BAND, BETA_SCALE, baselineProven)
+    : null
+  const picked = selected?.chosen ?? baseline
+  return {
+    baseline,
+    picked,
+    baselineCost: pickedCost(baseline),
+    pickedCost: pickedCost(picked),
+    allBelowFloor: Boolean(selected?.floorIgnored),
+    allCostsUnknown: selected ? selected.allCostsUnknown : proven.length === 0,
+    imputed: isImputed(baseline) || isImputed(picked),
+  }
+}
+
 function figure(
   decisions: CostBacktestDecision[],
   variant: CostBacktestVariant,
   windowDays: number,
 ): CostBacktestFigure {
-  let shifted = 0
-  let baselineUsd = 0
-  let variantUsd = 0
-  let baselineUnpriced = 0
-  let variantUnpriced = 0
-  let baselineAccepted = 0
-  let variantAccepted = 0
-  let allBelowFloor = 0
-  let allCostsUnknown = 0
-  let pickedOrBaselineImputed = 0
+  const evaluated = decisions.map((decision) => evaluateDecision(decision, variant))
+  const shiftedRows = evaluated.filter((row) => row.picked.agent !== row.baseline.agent)
   const moves = new Map<string, number>()
-  for (const decision of decisions) {
-    const baseline = decision.candidates.find((row) => row.agent === decision.baselineAgent)!
-    const selected = selectByCostPolicy(
-      decision.candidates,
-      variant,
-      NOISE_BAND,
-      BETA_SCALE,
-      baseline,
-    )
-    const picked = selected.chosen
-    if (picked.agent !== baseline.agent) {
-      shifted++
-      const key = `${baseline.agent}\0${picked.agent}`
-      moves.set(key, (moves.get(key) ?? 0) + 1)
-    }
-    const baselineCost = pickedCost(baseline)
-    const variantCost = pickedCost(picked)
-    if (baselineCost === null) baselineUnpriced++
-    else baselineUsd += baselineCost
-    if (variantCost === null) variantUnpriced++
-    else variantUsd += variantCost
-    baselineAccepted += baseline.acceptedShare
-    variantAccepted += picked.acceptedShare
-    if (selected.floorIgnored) allBelowFloor++
-    if (selected.allCostsUnknown) allCostsUnknown++
-    if (
-      ('usd' in baseline.meanCostPerRun && baseline.meanCostPerRun.imputed) ||
-      ('usd' in picked.meanCostPerRun && picked.meanCostPerRun.imputed) ||
-      ('usd' in baseline.costPerAccepted && baseline.costPerAccepted.imputed) ||
-      ('usd' in picked.costPerAccepted && picked.costPerAccepted.imputed)
-    )
-      pickedOrBaselineImputed++
+  for (const row of shiftedRows) {
+    const key = `${row.baseline.agent}\0${row.picked.agent}`
+    moves.set(key, (moves.get(key) ?? 0) + 1)
   }
+  const pricedBaseline = evaluated.flatMap((row) =>
+    row.baselineCost === null ? [] : [row.baselineCost],
+  )
+  const pricedVariant = evaluated.flatMap((row) =>
+    row.pickedCost === null ? [] : [row.pickedCost],
+  )
+  const accepted = evaluated.filter(
+    (row) => row.baseline.acceptedShare !== null && row.picked.acceptedShare !== null,
+  )
+  const baselineUsd = pricedBaseline.reduce((sum, cost) => sum + cost, 0)
+  const variantUsd = pricedVariant.reduce((sum, cost) => sum + cost, 0)
+  const baselineAccepted = accepted.reduce((sum, row) => sum + row.baseline.acceptedShare!, 0)
+  const variantAccepted = accepted.reduce((sum, row) => sum + row.picked.acceptedShare!, 0)
   const n = decisions.length
+  const acceptedN = accepted.length
   const scale = windowDays > 0 ? 7 / windowDays : 0
   return {
     variant,
     decisions: { n },
     routingShift: {
       n,
-      count: shifted,
-      share: n ? shifted / n : 0,
+      count: shiftedRows.length,
+      share: n ? shiftedRows.length / n : 0,
       moves: [...moves]
         .map(([key, count]) => {
           const [from, to] = key.split('\0')
@@ -173,16 +177,21 @@ function figure(
       baseline: baselineUsd * scale,
       variant: variantUsd * scale,
       delta: (variantUsd - baselineUsd) * scale,
-      baselineUnpriced,
-      variantUnpriced,
+      baselineUnpriced: n - pricedBaseline.length,
+      variantUnpriced: n - pricedVariant.length,
     },
     acceptedRate: {
-      n,
-      baseline: n ? baselineAccepted / n : 0,
-      variant: n ? variantAccepted / n : 0,
-      deltaPoints: n ? ((variantAccepted - baselineAccepted) / n) * 100 : 0,
+      n: acceptedN,
+      baseline: acceptedN ? baselineAccepted / acceptedN : 0,
+      variant: acceptedN ? variantAccepted / acceptedN : 0,
+      deltaPoints: acceptedN ? ((variantAccepted - baselineAccepted) / acceptedN) * 100 : 0,
     },
-    fallbacks: { n, allBelowFloor, allCostsUnknown, pickedOrBaselineImputed },
+    fallbacks: {
+      n,
+      allBelowFloor: evaluated.filter((row) => row.allBelowFloor).length,
+      allCostsUnknown: evaluated.filter((row) => row.allCostsUnknown).length,
+      pickedOrBaselineImputed: evaluated.filter((row) => row.imputed).length,
+    },
   }
 }
 
@@ -193,12 +202,13 @@ export function fairnessReport(
   const cells = new Map<string, FairnessRun[]>()
   for (const run of runs) {
     const key = `${run.job}\0${run.promptBucket}\0${run.lens ?? ''}`
-    if ((provenAgents.get(key)?.size ?? 0) < 2) continue
+    const proven = provenAgents.get(key)
+    if ((proven?.size ?? 0) < 2 || !proven?.has(run.agent)) continue
     cells.set(key, [...(cells.get(key) ?? []), run])
   }
   return [...cells].map(([key, rows]) => {
     const [job, promptBucket, rawLens] = key.split('\0')
-    const agents = [...new Set(rows.map((row) => row.agent))].sort().map((agent) => {
+    const agents = [...provenAgents.get(key)!].sort().map((agent) => {
       const agentRows = rows.filter((row) => row.agent === agent)
       const sizeClasses: Record<string, number> = {}
       for (const row of agentRows)
@@ -210,12 +220,18 @@ export function fairnessReport(
       return {
         agent,
         runs: agentRows.length,
-        medianPromptBytes: median(agentRows.map((row) => row.promptBytes)),
+        medianPromptBytes: agentRows.length
+          ? median(agentRows.map((row) => row.promptBytes))
+          : null,
         sizeClasses,
         modalSizeClass: modal ? Number(modal[0]) : null,
       }
     })
-    const medians = agents.map((agent) => agent.medianPromptBytes).filter((value) => value > 0)
+    const medians = agents.flatMap((agent) =>
+      agent.medianPromptBytes !== null && agent.medianPromptBytes > 0
+        ? [agent.medianPromptBytes]
+        : [],
+    )
     const promptRatio = medians.length > 1 ? Math.max(...medians) / Math.min(...medians) : 1
     const modes = new Set(
       agents.map((agent) => agent.modalSizeClass).filter((value) => value !== null),
