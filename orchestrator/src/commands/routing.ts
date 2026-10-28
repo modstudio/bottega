@@ -2,7 +2,12 @@
 /** Registers routing report adapters. Must not own routing behavior. */
 import type { Command } from 'commander'
 import { ensureLocalHealth } from '../agent/model-host.ts'
-import { guideCommand, routingBacktestCommand, statsCommand } from '../route/routing-commands.ts'
+import {
+  costBacktestCommand,
+  guideCommand,
+  routingBacktestCommand,
+  statsCommand,
+} from '../route/routing-commands.ts'
 import { loadSubscriptionCostContext } from '../run/run-subscription-prices.ts'
 import { duration, log, optionFlags } from './support.ts'
 
@@ -32,6 +37,21 @@ export function register(program: Command): void {
         subscriptionCost: await loadSubscriptionCostContext(),
       }),
     )
+
+  program
+    .command('cost-backtest')
+    .description('backtest cost-policy variants against historical routing decisions')
+    .option('--days <value>', 'number of days to replay', '7')
+    .option('--without <agents>', 'comma-separated agents to treat as absent from every decision')
+    .option('--json', 'write the report as JSON')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      costBacktestCommand(optionFlags(options), {
+        log,
+        dur: duration,
+        subscriptionCost: await loadSubscriptionCostContext(),
+      })
+    })
 
   program
     .command('routing-backtest')

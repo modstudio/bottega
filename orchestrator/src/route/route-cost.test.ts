@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { reportedRunCost } from '../run/run-subscription-cost.ts'
-import { costPerAcceptedResult, routeCostPerAccepted } from './route-cost.ts'
+import { costPerAcceptedResult, routeCostPerAccepted, routeMeanCostPerRun } from './route-cost.ts'
 
 const row = (usd: number | null, source = 'vendor') => ({ usd, source })
 
@@ -27,6 +27,18 @@ test('rejected runs still add to cost per accepted result', () => {
       { accepted: false, rows: [row(0.75)] },
     ]),
   ).toEqual({ usd: 1 })
+})
+
+test('mean cost per run divides equal-cost accepted and rejected chains by both runs', () => {
+  const roots = [
+    { record_id: 'accepted', delivery: 'full', quality: 'right', fidelity: null },
+    { record_id: 'rejected', delivery: 'full', quality: 'mixed', fidelity: null },
+  ]
+  const costs = new Map([
+    ['accepted', [row(0.25)]],
+    ['rejected', [row(0.25)]],
+  ])
+  expect(routeMeanCostPerRun(roots, costs)).toEqual({ usd: 0.25 })
 })
 
 test('a writing chain adds fix-round turn costs to its root', () => {

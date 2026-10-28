@@ -17,6 +17,11 @@ export type ReviewTier = {
 
 export type ReviewTierFile = { path: string; insertions: number; deletions: number }
 
+/** The size-class thresholds shared by review classification and recorded-diff reports. */
+export function reviewTierSizeClass(productLines: number): 0 | 1 | 2 | 3 {
+  return productLines <= 10 ? 0 : productLines <= 50 ? 1 : productLines <= 400 ? 2 : 3
+}
+
 type CompiledReviewRiskPath = Omit<ReviewRiskMap['paths'][number], 'pattern'> & {
   pattern: RegExp
 }
@@ -151,8 +156,7 @@ export function classifyReviewTier(input: {
   const insertions = countedFiles.reduce((sum, file) => sum + file.insertions, 0)
   const deletions = countedFiles.reduce((sum, file) => sum + file.deletions, 0)
   const productLines = insertions + deletions
-  let size: 0 | 1 | 2 | 3 =
-    productLines <= 10 ? 0 : productLines <= 50 ? 1 : productLines <= 400 ? 2 : 3
+  let size: 0 | 1 | 2 | 3 = reviewTierSizeClass(productLines)
   const reasons = [riskReason, `size ${size}: ${productLines} product lines`]
   if (productFiles.length > 8 && size < 3) {
     size = (size + 1) as 1 | 2 | 3

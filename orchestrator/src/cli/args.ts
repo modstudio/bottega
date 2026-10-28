@@ -457,6 +457,7 @@ export const CLI_COMMANDS = new Set([
   'retry',
   'review',
   'routing-backtest',
+  'cost-backtest',
   'run',
   'run-identities',
   'question-identities',

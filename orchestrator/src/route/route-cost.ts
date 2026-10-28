@@ -31,16 +31,53 @@ type ChainCostRow = {
   vendor_estimated_cost_usd: number | null
   vendor_cost_source: string | null
   quota_resets_at: number | null
+  latency_ms: number | null
 }
 
-type ReportedCost = { usd: number | null; source: string | null }
+type ReportedCost = { usd: number | null; source: string | null; availableAt?: string | null }
 export type RouteCostFacts = Map<string, ReportedCost[]>
 
-/** Prices all work spent on the cell against only the chains that earned an accepted result. */
-export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
-  const accepted = chains.filter((chain) => chain.accepted).length
-  if (accepted === 0) return { unknown: 'no accepted results' }
+function pricedFacts(rows: ChainCostRow[], context: SubscriptionCostContext): RouteCostFacts {
+  const costsByRoot: RouteCostFacts = new Map()
+  for (const row of rows) {
+    const cost = withReportedCost(row, context)
+    costsByRoot.set(row.rootRecordId, [
+      ...(costsByRoot.get(row.rootRecordId) ?? []),
+      {
+        usd: cost.cost_usd,
+        source: cost.cost_source,
+        availableAt:
+          row.latency_ms === null
+            ? null
+            : new Date(Date.parse(row.started_at) + row.latency_ms).toISOString(),
+      },
+    ])
+  }
+  return costsByRoot
+}
+
+/** Price every eligible historical chain once for causal replay adapters. */
+export function allRouteCostFacts(context?: SubscriptionCostContext): RouteCostFacts {
+  const rows = db()
+    .query(
+      `SELECT COALESCE(r.parent_run_record_id, r.record_id) AS rootRecordId,
+              r.agent, r.started_at, r.vendor_tokens, r.vendor_cost_usd,
+              r.vendor_estimated_cost_usd, r.vendor_cost_source, r.quota_resets_at, r.latency_ms
+         FROM run r
+         JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
+        WHERE root.status IN ('ok','failed','stale') AND root.probe = 0
+          AND root.evidence_excluded IS NULL AND root.executor <> 'harness'`,
+    )
+    .all() as ChainCostRow[]
+  return pricedFacts(rows, context ?? { facts: subscriptionCostFacts(), prices: {} })
+}
+
+function costPerDenominator(
+  chains: AcceptedResultChain[],
+  denominator: number,
+): CostPerAcceptedResult {
   const rows = chains.flatMap((chain) => chain.rows)
+  if (rows.length === 0) return { unknown: 'cost unavailable' }
   const priced = rows.filter(
     (row): row is { usd: number; source: string | null } => row.usd !== null,
   )
@@ -56,8 +93,21 @@ export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcc
   }
   const pricedTotal = priced.reduce((sum, row) => sum + row.usd, 0)
   const mean = priced.length === 0 ? 0 : pricedTotal / priced.length
-  const result = { usd: (pricedTotal + mean * unpriced.length) / accepted }
+  const result = { usd: (pricedTotal + mean * unpriced.length) / denominator }
   return unpriced.length === 0 ? result : { ...result, imputed: unpriced.length }
+}
+
+/** Prices all work spent on the cell against only the chains that earned an accepted result. */
+export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
+  const accepted = chains.filter((chain) => chain.accepted).length
+  return accepted === 0 ? { unknown: 'no accepted results' } : costPerDenominator(chains, accepted)
+}
+
+/** Mean chain cost with the same partial-pricing imputation as cost per accepted result. */
+function costPerRunResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
+  return chains.length === 0
+    ? { unknown: 'cost unavailable' }
+    : costPerDenominator(chains, chains.length)
 }
 
 export function routeCostFacts(input: {
@@ -72,7 +122,7 @@ export function routeCostFacts(input: {
       `SELECT COALESCE(r.parent_run_record_id, r.record_id) AS rootRecordId,
               r.agent, r.started_at, r.vendor_tokens, r.vendor_cost_usd,
               r.vendor_estimated_cost_usd, r.vendor_cost_source,
-              r.quota_resets_at
+              r.quota_resets_at, r.latency_ms
          FROM run r
          JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
         WHERE root.job = ? AND root.status IN ('ok','failed','stale') AND root.probe = 0
@@ -87,15 +137,7 @@ export function routeCostFacts(input: {
       ...(input.lens ? [input.lens] : []),
     ) as ChainCostRow[]
   const context = input.context ?? { facts: subscriptionCostFacts(), prices: {} }
-  const costsByRoot: RouteCostFacts = new Map()
-  for (const row of rows) {
-    const cost = withReportedCost(row, context)
-    costsByRoot.set(row.rootRecordId, [
-      ...(costsByRoot.get(row.rootRecordId) ?? []),
-      { usd: cost.cost_usd, source: cost.cost_source },
-    ])
-  }
-  return costsByRoot
+  return pricedFacts(rows, context)
 }
 
 export function routeCostPerAccepted(
@@ -111,6 +153,15 @@ export function routeCostPerAccepted(
         (!jobTakesFidelity(jobName) || root.fidelity === 'faithful'),
       rows: costsByRoot.get(root.record_id) ?? [],
     })),
+  )
+}
+
+export function routeMeanCostPerRun(
+  roots: CostEvidenceRoot[],
+  costsByRoot: RouteCostFacts,
+): CostPerAcceptedResult {
+  return costPerRunResult(
+    roots.map((root) => ({ accepted: false, rows: costsByRoot.get(root.record_id) ?? [] })),
   )
 }
 

@@ -916,8 +916,9 @@ export const importBoundaries: ImportBoundary[] = [
       './route.ts',
       './route-selection.ts',
       './routing-backtest.ts',
+      './route-cost-backtest-adapter.ts',
     ],
-    'Keep routing command adapters independent of runs, transports, the CLI, worktrees, and reviews by value.',
+    'Keep routing command adapters independent of runs, transports, the CLI, and worktrees; the cost backtest adapter deliberately depends on review landed-diff size classes.',
   ),
   ...runLifecycleBoundarySpecs,
   boundary(

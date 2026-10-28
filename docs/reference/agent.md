@@ -8,6 +8,7 @@ agents, jobs, and routing
 - [bottega agent add](#bottega-agent-add)
 - [bottega agent context](#bottega-agent-context)
 - [bottega agent contract](#bottega-agent-contract)
+- [bottega agent cost-backtest](#bottega-agent-cost-backtest)
 - [bottega agent guide](#bottega-agent-guide)
 - [bottega agent jobs](#bottega-agent-jobs)
 - [bottega agent list](#bottega-agent-list)
@@ -31,6 +32,7 @@ agents, jobs, and routing
 - [bottega agent add](./agent.md#bottega-agent-add)
 - [bottega agent context](./agent.md#bottega-agent-context)
 - [bottega agent contract](./agent.md#bottega-agent-contract)
+- [bottega agent cost-backtest](./agent.md#bottega-agent-cost-backtest)
 - [bottega agent guide](./agent.md#bottega-agent-guide)
 - [bottega agent jobs](./agent.md#bottega-agent-jobs)
 - [bottega agent list](./agent.md#bottega-agent-list)
@@ -77,6 +79,22 @@ show the resolved architect context for a checkout
 **Synopsis:** `bottega agent contract <job>`
 
 print the worker reply contract for a job
+
+### Related
+
+- [bottega agent](./agent.md#bottega-agent)
+
+## bottega agent cost-backtest
+
+**Synopsis:** `bottega agent cost-backtest [--days <value>] [--without <agents>] [--json]`
+
+backtest cost-policy variants against historical routing decisions
+
+### Options
+
+- `--days <value>`: number of days to replay (default: 7)
+- `--without <agents>`: comma-separated agents to treat as absent from every decision
+- `--json`: write the report as JSON
 
 ### Related
 
