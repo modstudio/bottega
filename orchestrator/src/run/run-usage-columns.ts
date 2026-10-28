@@ -1,5 +1,6 @@
 // concern: run usage columns
-/** Maps transport usage into the four columns persisted on a run. */
+/** Maps transport usage and quota readings into the columns persisted on a run. */
+import type { QuotaReadings } from '../transport/quota-readings.ts'
 import { SUBSCRIPTION_STORED_SOURCE, type VendorUsage } from '../transport/vendor-usage.ts'
 
 export type RunUsageColumns = {
@@ -35,5 +36,17 @@ export function runUsageColumnValues(columns: RunUsageColumns) {
     columns.vendorOutputTokens,
     columns.vendorEstimatedCostUsd,
     columns.vendorCostSource,
+  ] as const
+}
+
+/** The quota readings as persisted on a run row. */
+export type RunQuotaColumns = QuotaReadings
+
+export function quotaReadingsColumnValues(readings: RunQuotaColumns) {
+  return [
+    readings.quotaUsedPercentStart,
+    readings.quotaUsedPercentEnd,
+    readings.quotaWindowMinutes,
+    readings.quotaResetsAt,
   ] as const
 }

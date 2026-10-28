@@ -1,8 +1,11 @@
 import { expect, test } from 'bun:test'
-import { rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
+import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import { type TransportAgent, transportFor } from './transport.ts'
+import { codexQuotaReadingsSince } from './transport-cli.ts'
 
 async function resultLineUsage(billing: TransportAgent['billing']) {
   const resultLine = JSON.stringify({
@@ -83,4 +86,63 @@ test('subscription CLI reply cost is not persisted', async () => {
     costSource: 'none',
   })
   rmSync(outPath, { force: true })
+})
+
+function tokenCountLine(usedPercent: number): string {
+  return JSON.stringify({
+    type: 'event_msg',
+    payload: {
+      type: 'token_count',
+      rate_limits: {
+        primary: { used_percent: usedPercent, window_minutes: 10_080, resets_at: 1_793_774_132 },
+      },
+    },
+  })
+}
+
+test('Codex quota observation reads only the turn-appended part of a nested rollout', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-codex-quota-'))
+  const codexHome = join(root, 'codex')
+  const sessions = join(codexHome, 'sessions', '2026', '10', '28')
+  const rollout = join(sessions, 'rollout-turn.jsonl')
+  mkdirSync(sessions, { recursive: true })
+  const earlierTurn = `${tokenCountLine(10)}\n`
+  writeFileSync(rollout, `${earlierTurn}${tokenCountLine(12)}\n${tokenCountLine(15)}\n`)
+  try {
+    const offsets = new Map([[realpathSync(rollout), Buffer.byteLength(earlierTurn)]])
+    expect(codexQuotaReadingsSince(codexHome, offsets)).toEqual({
+      quotaUsedPercentStart: 12,
+      quotaUsedPercentEnd: 15,
+      quotaWindowMinutes: 10_080,
+      quotaResetsAt: 1_793_774_132,
+    })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Codex quota observation does not read a symlinked rollout', () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-codex-quota-'))
+  const codexHome = join(root, 'codex')
+  const sessions = join(codexHome, 'sessions', '2026', '10', '28')
+  const outside = join(root, 'outside.jsonl')
+  mkdirSync(sessions, { recursive: true })
+  writeFileSync(
+    outside,
+    JSON.stringify({
+      type: 'event_msg',
+      payload: {
+        type: 'token_count',
+        rate_limits: {
+          primary: { used_percent: 12, window_minutes: 10_080, resets_at: 1_793_774_132 },
+        },
+      },
+    }),
+  )
+  symlinkSync(outside, join(sessions, 'rollout-linked.jsonl'))
+  try {
+    expect(codexQuotaReadingsSince(codexHome, new Map())).toEqual(EMPTY_QUOTA_READINGS)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
 })

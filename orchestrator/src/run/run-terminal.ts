@@ -40,6 +40,7 @@ import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
+import type { QuotaReadings } from '../transport/quota-readings.ts'
 import type { VendorUsage } from '../transport/transport.ts'
 import { type Changes, changesIn } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
@@ -68,7 +69,11 @@ import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
 import { observedTestOutcome } from './run-test-outcome.ts'
-import { runUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
+import {
+  quotaReadingsColumnValues,
+  runUsageColumns,
+  runUsageColumnValues,
+} from './run-usage-columns.ts'
 import {
   shouldSnapshotSharedGitConfig,
   terminalSharedGitConfigHeader,
@@ -275,6 +280,7 @@ export type TerminalInput = {
   callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
+  quotaReadings: QuotaReadings
   effectiveModel: string | null
   resolvedSession: string | null
   name: string
@@ -295,19 +301,14 @@ export type TerminalResult = {
   artifactsPersisted: boolean
 }
 
-function terminalUsageSnapshot(
-  vendorTokens: number | null,
-  callUsage: RunCallUsage | null,
-  costUsd: number | null,
-  vendorUsage: VendorUsage,
-  name: string,
-) {
+function terminalUsageSnapshot(input: TerminalInput, name: string) {
   return {
-    vendorTokens,
-    modelCalls: callUsage?.modelCalls ?? null,
-    peakCallTokens: callUsage?.peakCallTokens ?? null,
-    vendorCostUsd: costUsd,
-    ...runUsageColumns(vendorUsage, AGENTS[name]?.billing),
+    vendorTokens: input.vendorTokens,
+    modelCalls: input.callUsage?.modelCalls ?? null,
+    peakCallTokens: input.callUsage?.peakCallTokens ?? null,
+    vendorCostUsd: input.costUsd,
+    ...runUsageColumns(input.vendorUsage, AGENTS[name]?.billing),
+    ...input.quotaReadings,
   }
 }
 
@@ -854,7 +855,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     promptPath,
     exitCode,
     latencyMs: Date.now() - started,
-    ...terminalUsageSnapshot(vendorTokens, input.callUsage, costUsd, vendorUsage, name),
+    ...terminalUsageSnapshot(input, name),
     model: effectiveModel,
     vendorSession: resolvedSession,
     preConfinement,
@@ -870,7 +871,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     escalations: writesJob ? acceptedQuestions.length : null,
   }
   persistTerminalSnapshot(claim.id, terminalSnapshot)
-  const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
   const provenanceSilent = reviewHidesGap(parsedReview, input, provenanceWrongProjectTool)
   const localMachineId = machineId()
   const writeTerminalRow = () =>
@@ -879,7 +879,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
       db()
         .query(
           `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                        vendor_tokens=?, model_calls=?, peak_call_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                        vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                         vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                         status=CASE WHEN status='stopped' THEN status ELSE ? END,
                         error=CASE WHEN status='stopped' THEN error ELSE ? END,
@@ -898,6 +898,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           vendorTokens,
           input.callUsage?.modelCalls ?? null,
           input.callUsage?.peakCallTokens ?? null,
+          ...quotaReadingsColumnValues(input.quotaReadings),
           costUsd,
           ...runUsageColumnValues(runUsageColumns(vendorUsage, AGENTS[name]?.billing)),
           effectiveModel,
@@ -907,7 +908,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           resolvedSession,
           preConfinement,
           confinementEvent ? JSON.stringify(confinementEvent) : null,
-          reviewProvenance,
+          parsedReview ? JSON.stringify(parsedReview.provenance) : null,
           provenanceSilent ? 'silent' : null,
           claim.id,
         )

@@ -36,20 +36,11 @@ function nullableRunResourceSource(value: unknown): RunResourceSource | null {
   return source as RunResourceSource
 }
 
-function nullableInteger(value: unknown): number | null {
+function nullableInteger(value: unknown, column: string): number | null {
   if (value == null) return null
   const integer = Number(value)
   if (!Number.isInteger(integer)) {
-    throw new OutboxRowError('run resource samples must be an integer or null', 'row-validation')
-  }
-  return integer
-}
-
-function nullableModelCalls(value: unknown): number | null {
-  if (value == null) return null
-  const integer = Number(value)
-  if (!Number.isInteger(integer)) {
-    throw new OutboxRowError('run.model_calls must be an integer or null', 'row-validation')
+    throw new OutboxRowError(`${column} must be an integer or null`, 'row-validation')
   }
   return integer
 }
@@ -68,8 +59,12 @@ function nullableRoundedBigint(value: unknown): bigint | null {
 export function runUsageRecordValues(row: Record<string, unknown>) {
   return {
     vendorTokens: nullableBigint(row.vendorTokens),
-    modelCalls: nullableModelCalls(row.modelCalls),
+    modelCalls: nullableInteger(row.modelCalls, 'run.model_calls'),
     peakCallTokens: nullableBigint(row.peakCallTokens),
+    quotaUsedPercentStart: nullableNumber(row.quotaUsedPercentStart),
+    quotaUsedPercentEnd: nullableNumber(row.quotaUsedPercentEnd),
+    quotaWindowMinutes: nullableInteger(row.quotaWindowMinutes, 'run.quota_window_minutes'),
+    quotaResetsAt: nullableBigint(row.quotaResetsAt),
     vendorCostUsd: nullableNumber(row.vendorCostUsd),
     vendorInputTokens: nullableBigint(row.vendorInputTokens),
     vendorOutputTokens: nullableBigint(row.vendorOutputTokens),
@@ -77,7 +72,7 @@ export function runUsageRecordValues(row: Record<string, unknown>) {
     vendorCostSource: nullableVendorCostSource(row.vendorCostSource),
     resourceCpuMs: nullableRoundedBigint(row.resourceCpuMs),
     resourcePeakRssBytes: nullableRoundedBigint(row.resourcePeakRssBytes),
-    resourceSamples: nullableInteger(row.resourceSamples),
+    resourceSamples: nullableInteger(row.resourceSamples, 'run.resource_samples'),
     resourceSource: nullableRunResourceSource(row.resourceSource),
   }
 }

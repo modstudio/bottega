@@ -42,7 +42,12 @@ import {
   namedRunArtifactPaths,
   type RunArtifactListingEntry,
 } from './run-artifact-retention.ts'
-import { type RunUsageColumns, runUsageColumnValues } from './run-usage-columns.ts'
+import {
+  quotaReadingsColumnValues,
+  type RunQuotaColumns,
+  type RunUsageColumns,
+  runUsageColumnValues,
+} from './run-usage-columns.ts'
 
 /**
  * How long a run's prompt and reply are kept on disk.
@@ -304,33 +309,34 @@ export function runTerminalReplyPath(id: string, runsDir = RUNS_DIR): string {
   return join(runsDir, id, 'reply.txt')
 }
 
-export type TerminalSnapshot = RunUsageColumns & {
-  status: string
-  error: string | null
-  failureKind: string | null
-  output: string
-  outputPath: string
-  promptPath: string
-  exitCode: number | null
-  latencyMs: number
-  vendorTokens: number | null
-  modelCalls: number | null
-  peakCallTokens: number | null
-  vendorCostUsd: number | null
-  model: string | null
-  vendorSession: string | null
-  preConfinement: string | null
-  confinement: string | null
-  filesChanged: number | null
-  changedPaths: string | null
-  linesAdded: number | null
-  linesRemoved: number | null
-  testsRan: number | null
-  testsPassed: number | null
-  testsClaimDisagrees: number | null
-  deviations: number | null
-  escalations: number | null
-}
+export type TerminalSnapshot = RunUsageColumns &
+  RunQuotaColumns & {
+    status: string
+    error: string | null
+    failureKind: string | null
+    output: string
+    outputPath: string
+    promptPath: string
+    exitCode: number | null
+    latencyMs: number
+    vendorTokens: number | null
+    modelCalls: number | null
+    peakCallTokens: number | null
+    vendorCostUsd: number | null
+    model: string | null
+    vendorSession: string | null
+    preConfinement: string | null
+    confinement: string | null
+    filesChanged: number | null
+    changedPaths: string | null
+    linesAdded: number | null
+    linesRemoved: number | null
+    testsRan: number | null
+    testsPassed: number | null
+    testsClaimDisagrees: number | null
+    deviations: number | null
+    escalations: number | null
+  }
 
 export function persistTerminalSnapshot(id: string, snapshot: TerminalSnapshot): void {
   mkdirSync(join(RUNS_DIR, id), { recursive: true })
@@ -378,7 +384,7 @@ export function reconcileRun(id: string): string {
     db()
       .query(
         `UPDATE run SET latency_ms=?, exit_code=?, output_bytes=?, output_path=?, prompt_path=?,
-                      vendor_tokens=?, model_calls=?, peak_call_tokens=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
+                      vendor_tokens=?, model_calls=?, peak_call_tokens=?, quota_used_percent_start=?, quota_used_percent_end=?, quota_window_minutes=?, quota_resets_at=?, vendor_cost_usd=?, vendor_input_tokens=?, vendor_output_tokens=?,
                       vendor_estimated_cost_usd=?, vendor_cost_source=?, model=COALESCE(?, model),
                       status=?, error=?, failure_kind=?, vendor_session=COALESCE(?, vendor_session),
                       pre_confinement=?, confinement=?, unreconciled=0,
@@ -395,6 +401,7 @@ export function reconcileRun(id: string): string {
         snapshot.vendorTokens,
         snapshot.modelCalls,
         snapshot.peakCallTokens,
+        ...quotaReadingsColumnValues(snapshot),
         snapshot.vendorCostUsd,
         ...runUsageColumnValues(snapshot),
         snapshot.model,

@@ -35,6 +35,10 @@ export type RecordRun = {
   vendorTokens: number | null
   modelCalls: number | null
   peakCallTokens: number | null
+  quotaUsedPercentStart: number | null
+  quotaUsedPercentEnd: number | null
+  quotaWindowMinutes: number | null
+  quotaResetsAt: number | null
   vendorCostUsd: number | null
   vendorInputTokens: number | null
   vendorOutputTokens: number | null
@@ -106,6 +110,10 @@ function runRow(row: Record<string, unknown>): RecordRun {
     vendorTokens: numeric(row.vendor_tokens),
     modelCalls: numeric(row.model_calls),
     peakCallTokens: numeric(row.peak_call_tokens),
+    quotaUsedPercentStart: numeric(row.quota_used_percent_start),
+    quotaUsedPercentEnd: numeric(row.quota_used_percent_end),
+    quotaWindowMinutes: numeric(row.quota_window_minutes),
+    quotaResetsAt: numeric(row.quota_resets_at),
     vendorCostUsd: numeric(row.vendor_cost_usd),
     vendorInputTokens: numeric(row.vendor_input_tokens),
     vendorOutputTokens: numeric(row.vendor_output_tokens),
@@ -147,7 +155,8 @@ export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> 
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job,
         r.status, r.latency_ms, r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens,
-        r.model_calls, r.peak_call_tokens,
+        r.model_calls, r.peak_call_tokens, r.quota_used_percent_start, r.quota_used_percent_end,
+        r.quota_window_minutes, r.quota_resets_at,
         r.vendor_cost_usd, r.vendor_input_tokens, r.vendor_output_tokens,
         r.vendor_estimated_cost_usd, r.vendor_cost_source, r.label, r.lens,
         r.parent_run_id, r.turn, r.evidence_excluded,
@@ -261,7 +270,8 @@ export async function viewRecordRuns(input: RecordRunsWindowInput): Promise<Reco
       SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job, r.status, r.latency_ms,
         r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens, r.model_calls,
-        r.peak_call_tokens, r.vendor_cost_usd,
+        r.peak_call_tokens, r.quota_used_percent_start, r.quota_used_percent_end,
+        r.quota_window_minutes, r.quota_resets_at, r.vendor_cost_usd,
         r.vendor_input_tokens, r.vendor_output_tokens, r.vendor_estimated_cost_usd,
         r.vendor_cost_source,
         r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded, r.probe,

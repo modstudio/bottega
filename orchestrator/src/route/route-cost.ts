@@ -12,7 +12,7 @@ export type AcceptedResultChain = {
   rows: Array<{ usd: number | null; source: string | null }>
 }
 
-export type CostPerAcceptedResult = { usd: number } | { unknown: string }
+export type CostPerAcceptedResult = { usd: number; imputed?: number } | { unknown: string }
 
 export type CostEvidenceRoot = {
   record_id: string
@@ -29,6 +29,7 @@ type ChainCostRow = {
   vendor_cost_usd: number | null
   vendor_estimated_cost_usd: number | null
   vendor_cost_source: string | null
+  quota_resets_at: number | null
 }
 
 type ReportedCost = { usd: number | null; source: string | null }
@@ -36,15 +37,26 @@ export type RouteCostFacts = Map<string, ReportedCost[]>
 
 /** Prices all work spent on the cell against only the chains that earned an accepted result. */
 export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
-  let totalUsd = 0
-  for (const chain of chains) {
-    for (const row of chain.rows) {
-      if (row.usd === null) return { unknown: row.source ?? 'cost unavailable' }
-      totalUsd += row.usd
-    }
-  }
   const accepted = chains.filter((chain) => chain.accepted).length
-  return accepted === 0 ? { unknown: 'no accepted results' } : { usd: totalUsd / accepted }
+  if (accepted === 0) return { unknown: 'no accepted results' }
+  const rows = chains.flatMap((chain) => chain.rows)
+  const priced = rows.filter(
+    (row): row is { usd: number; source: string | null } => row.usd !== null,
+  )
+  const unpriced = rows.filter((row) => row.usd === null)
+  if (unpriced.length > 0 && priced.length * 2 < rows.length) {
+    const counts = new Map<string, number>()
+    for (const row of unpriced) {
+      const source = row.source ?? 'cost unavailable'
+      counts.set(source, (counts.get(source) ?? 0) + 1)
+    }
+    const dominant = [...counts].sort((left, right) => right[1] - left[1])[0]?.[0]
+    return { unknown: dominant ?? 'cost unavailable' }
+  }
+  const pricedTotal = priced.reduce((sum, row) => sum + row.usd, 0)
+  const mean = priced.length === 0 ? 0 : pricedTotal / priced.length
+  const result = { usd: (pricedTotal + mean * unpriced.length) / accepted }
+  return unpriced.length === 0 ? result : { ...result, imputed: unpriced.length }
 }
 
 export function routeCostFacts(input: {
@@ -58,7 +70,8 @@ export function routeCostFacts(input: {
     .query(
       `SELECT COALESCE(r.parent_run_record_id, r.record_id) AS rootRecordId,
               r.agent, r.started_at, r.vendor_tokens, r.vendor_cost_usd,
-              r.vendor_estimated_cost_usd, r.vendor_cost_source
+              r.vendor_estimated_cost_usd, r.vendor_cost_source,
+              r.quota_resets_at
          FROM run r
          JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
         WHERE root.job = ? AND root.status IN ('ok','failed','stale') AND root.probe = 0

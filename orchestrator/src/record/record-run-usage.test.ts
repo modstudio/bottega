@@ -14,4 +14,7 @@ test('run usage keeps per-call facts nullable and validates the count', () => {
   expect(() => runUsageRecordValues({ modelCalls: 1.5 })).toThrow(
     'run.model_calls must be an integer or null',
   )
+  expect(() => runUsageRecordValues({ quotaWindowMinutes: 10.5 })).toThrow(
+    'run.quota_window_minutes must be an integer or null',
+  )
 })
