@@ -73,14 +73,14 @@ test('stats reports chain cost per accepted result beside the existing cost', ()
   })
   score(accepted, 'full', 'right')
   score(rejected, 'full', 'wrong')
-  for (const [id, cost] of [
-    [accepted, 0.2],
-    [turn, 0.3],
-    [rejected, 0.5],
+  for (const [id, cost, source] of [
+    [accepted, 0.2, 'vendor'],
+    [turn, null, 'none'],
+    [rejected, 0.5, 'vendor'],
   ] as const) {
     db()
       .query('UPDATE run SET vendor_cost_usd=?,vendor_cost_source=? WHERE record_id=?')
-      .run(cost, 'vendor', id)
+      .run(cost, source, id)
   }
   const lines: string[] = []
   statsCommand(
@@ -98,7 +98,7 @@ test('stats reports chain cost per accepted result beside the existing cost', ()
     },
   )
   expect(lines[0]).toContain('cost  $/accepted')
-  expect(lines.find((line) => line.includes('codex'))).toEndWith('$1.0000')
+  expect(lines.find((line) => line.includes('codex'))).toEndWith('$1.0500 (1 imputed)')
 })
 
 test('stats distinguishes an unpriced cell from one with no accepted result', () => {

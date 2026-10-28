@@ -46,7 +46,8 @@ function guideRouteLine(g: JobGuide): string {
 }
 
 function formattedCostPerAccepted(value: ReturnType<typeof scoreboard>[number]['costPerAccepted']) {
-  if ('usd' in value) return `$${value.usd.toFixed(4)}`
+  if ('usd' in value)
+    return `$${value.usd.toFixed(4)}${value.imputed ? ` (${value.imputed} imputed)` : ''}`
   return value.unknown === 'no accepted results' ? '—' : `unpriced (${value.unknown})`
 }
 

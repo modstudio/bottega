@@ -14,6 +14,7 @@ import {
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/vendor-usage.ts'
+import { EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
 import * as productionClaim from './run-claim.ts'
 import * as productionClose from './run-close.ts'
 import type { LiveInput, LiveResult } from './run-live.ts'
@@ -190,6 +191,7 @@ beforeAll(async () => {
       callUsage: null,
       costUsd: null,
       vendorUsage: EMPTY_VENDOR_USAGE,
+      quotaReadings: EMPTY_CODEX_QUOTA_READINGS,
       resolvedSession: null,
       effectiveModel: null,
       replyFileError: null,

@@ -126,7 +126,7 @@ function listingTurns(recordId: string, json: boolean) {
   if (!json) return undefined
   return db()
     .query(
-      `SELECT record_id, number, started_at, agent, executor, latency_ms, vendor_tokens, model_calls, peak_call_tokens, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
+      `SELECT record_id, number, started_at, agent, executor, latency_ms, vendor_tokens, model_calls, peak_call_tokens, quota_used_percent_start, quota_used_percent_end, quota_window_minutes, quota_resets_at, vendor_cost_usd, vendor_estimated_cost_usd, vendor_cost_source, status, turn, input_tree, sandbox, resource_cpu_ms, resource_peak_rss_bytes, resource_samples, resource_source
          FROM run WHERE record_id = ? OR parent_run_record_id = ?
         ORDER BY turn, number`,
     )
@@ -564,7 +564,7 @@ export async function runListingCommand(
             COALESCE(r.label, r.prompt_head) AS prompt_head, r.route_reason, r.sandbox
             ${
               json
-                ? ', r.cwd, r.session_id, r.started_by_user_id, r.model_calls, r.peak_call_tokens, r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
+                ? ', r.cwd, r.session_id, r.started_by_user_id, r.model_calls, r.peak_call_tokens, r.quota_used_percent_start, r.quota_used_percent_end, r.quota_window_minutes, r.quota_resets_at, r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source, r.probe, r.exit_code, r.input_tree, r.head_commit, r.review_ref,' +
                   ' r.prompt_path, r.branch, r.branch_kept, r.branch_kept_tip, r.retry_of_record_id, r.launch_key, r.evidence_excluded, r.resource_cpu_ms, r.resource_peak_rss_bytes, r.resource_samples, r.resource_source'
                 : ''
             }

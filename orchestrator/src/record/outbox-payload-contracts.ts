@@ -9,7 +9,7 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
+  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   projectId: null,
@@ -20,6 +20,10 @@ const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
   evidenceUnvoid: null,
   modelCalls: null,
   peakCallTokens: null,
+  quotaUsedPercentStart: null,
+  quotaUsedPercentEnd: null,
+  quotaWindowMinutes: null,
+  quotaResetsAt: null,
   vendorInputTokens: null,
   vendorOutputTokens: null,
   vendorEstimatedCostUsd: null,

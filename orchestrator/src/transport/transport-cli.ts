@@ -1,11 +1,13 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { constants as osConstants } from 'node:os'
+import { join } from 'node:path'
 import { execa } from 'execa'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { EMPTY_CODEX_QUOTA_READINGS, parseCodexQuotaReadings } from './codex-quota.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import {
   type AgentTransport,
@@ -167,6 +169,8 @@ async function cliLaunch(opts: TransportStartOpts) {
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
+  const codex = workerHarnessName(opts.agent) === 'codex'
+  const rolloutOffsets = codex ? codexRolloutOffsets(opts.home) : new Map<string, number>()
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)
   const p = spawnCliChild(launchArgv, opts, stdinPrompt)
 
@@ -183,7 +187,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
   const { stdoutTask, stderrTask } = startCliStreamReaders({
     stdout: p.stdout!,
     stderr: p.stderr!,
-    codex: workerHarnessName(opts.agent) === 'codex',
+    codex,
     push: (event) => pushEvent(eventForBilling(opts.agent.billing, event)),
   })
 
@@ -205,6 +209,9 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
+        const quotaReadings = codex
+          ? codexQuotaReadingsSince(opts.home, rolloutOffsets)
+          : EMPTY_CODEX_QUOTA_READINGS
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -256,6 +263,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           parsed: reply ?? null,
           tokens,
           ...usage,
+          quotaReadings,
           sessionId,
           stopReason,
           error: replyError,
@@ -305,6 +313,41 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
     collect,
   }
   return handle
+}
+
+function codexRolloutOffsets(home: string | undefined): Map<string, number> {
+  if (!home) return new Map()
+  const sessions = join(home, 'sessions')
+  if (!existsSync(sessions)) return new Map()
+  const offsets = new Map<string, number>()
+  for (const relative of new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions })) {
+    const path = join(sessions, relative)
+    try {
+      offsets.set(path, statSync(path).size)
+    } catch {
+      // Rollout observation is best-effort and never changes the run outcome.
+    }
+  }
+  return offsets
+}
+
+function codexQuotaReadingsSince(home: string | undefined, offsets: Map<string, number>) {
+  if (!home) return EMPTY_CODEX_QUOTA_READINGS
+  const sessions = join(home, 'sessions')
+  if (!existsSync(sessions)) return EMPTY_CODEX_QUOTA_READINGS
+  const chunks: string[] = []
+  for (const relative of [
+    ...new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions }),
+  ].sort()) {
+    const path = join(sessions, relative)
+    try {
+      const text = readFileSync(path, 'utf8')
+      chunks.push(text.slice(offsets.get(path) ?? 0))
+    } catch {
+      // Rollout observation is best-effort and never changes the run outcome.
+    }
+  }
+  return parseCodexQuotaReadings(chunks.join('\n'))
 }
 
 export function configuredCliAsk(

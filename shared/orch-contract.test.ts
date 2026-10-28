@@ -24,6 +24,10 @@ test('run parsing preserves root and turn usage fields', () => {
     vendor_tokens: 300,
     model_calls: 2,
     peak_call_tokens: 200,
+    quota_used_percent_start: 12,
+    quota_used_percent_end: 13,
+    quota_window_minutes: 10_080,
+    quota_resets_at: 1_793_774_132,
     vendor_cost_usd: null,
     prompt_head: 'test',
     probe: 0,
@@ -38,6 +42,10 @@ test('run parsing preserves root and turn usage fields', () => {
         vendor_tokens: 150,
         model_calls: 1,
         peak_call_tokens: 125,
+        quota_used_percent_start: 13,
+        quota_used_percent_end: 13,
+        quota_window_minutes: 10_080,
+        quota_resets_at: 1_793_774_132,
         vendor_cost_usd: null,
         status: 'ok',
       },
@@ -46,8 +54,11 @@ test('run parsing preserves root and turn usage fields', () => {
 
   expect(parsed.model_calls).toBe(2)
   expect(parsed.peak_call_tokens).toBe(200)
+  expect(parsed.quota_used_percent_start).toBe(12)
+  expect(parsed.quota_used_percent_end).toBe(13)
   expect(parsed.turns?.[0]?.model_calls).toBe(1)
   expect(parsed.turns?.[0]?.peak_call_tokens).toBe(125)
+  expect(parsed.turns?.[0]?.quota_used_percent_start).toBe(13)
 })
 
 test('a run row from a producer without usage fields still parses', () => {

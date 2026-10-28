@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   amortizedSubscriptionShare,
   reportedRunCost,
+  SUBSCRIPTION_QUOTA_SHARE_SOURCE,
   SUBSCRIPTION_AMORTIZED_SOURCE,
   SUBSCRIPTION_NO_TOKENS_SOURCE,
   SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE,
@@ -17,6 +18,20 @@ const grokContext = {
   },
   prices: { grok: 100 },
 }
+
+const quotaWindow = (
+  harness: string,
+  resetsAt: number,
+  usedPercentStart: number,
+  usedPercentEnd: number,
+) => ({
+  harness,
+  resetsAt,
+  windowMinutes: 10_080,
+  usedPercentStart,
+  usedPercentEnd,
+  tokens: 1_000,
+})
 
 describe('amortizedSubscriptionShare', () => {
   test('is the run tokens over the month tokens times the monthly price', () => {
@@ -74,6 +89,108 @@ describe('reportedRunCost', () => {
         monthTokens: 111,
       }),
     ).toEqual({ usd: 0.11, source: 'billed' })
+  })
+
+  test('prices a run from its qualifying quota window', () => {
+    const result = reportedRunCost({
+      billing: 'subscription',
+      billedUsd: null,
+      storedSource: null,
+      monthlyPriceUsd: 200,
+      runTokens: 100,
+      monthTokens: 1_000,
+      harness: 'codex',
+      startedAt: '2026-10-28T00:00:00.000Z',
+      quotaResetsAt: 1_800,
+      quotaWindows: [quotaWindow('codex', 1_800, 10, 15)],
+    })
+    expect(result.source).toBe(SUBSCRIPTION_QUOTA_SHARE_SOURCE)
+    expect(result.usd).toBeCloseTo((200 * 10_080 * 0.05 * 100) / (43_830 * 1_000))
+  })
+
+  test('a non-qualifying own window borrows the nearest earlier qualifying window', () => {
+    const result = reportedRunCost({
+      billing: 'subscription',
+      billedUsd: null,
+      storedSource: null,
+      monthlyPriceUsd: 200,
+      runTokens: 100,
+      monthTokens: 1_000,
+      harness: 'codex',
+      startedAt: '1970-01-01T00:33:20.000Z',
+      quotaResetsAt: 2_000,
+      quotaWindows: [
+        quotaWindow('codex', 2_000, 10, 11),
+        quotaWindow('codex', 1_900, 10, 13),
+        quotaWindow('codex', 2_100, 10, 16),
+      ],
+    })
+    expect(result.usd).toBeCloseTo((200 * 10_080 * 0.03 * 100) / (43_830 * 1_000))
+  })
+
+  test('a non-qualifying own window borrows a later window when none is earlier', () => {
+    const result = reportedRunCost({
+      billing: 'subscription',
+      billedUsd: null,
+      storedSource: null,
+      monthlyPriceUsd: 200,
+      runTokens: 100,
+      monthTokens: 1_000,
+      harness: 'codex',
+      startedAt: '1970-01-01T00:33:20.000Z',
+      quotaResetsAt: 2_000,
+      quotaWindows: [quotaWindow('codex', 2_000, 10, 11), quotaWindow('codex', 2_100, 10, 16)],
+    })
+    expect(result.usd).toBeCloseTo((200 * 10_080 * 0.06 * 100) / (43_830 * 1_000))
+  })
+
+  test('a historical run uses the qualifying window nearest its start', () => {
+    const result = reportedRunCost({
+      billing: 'subscription',
+      billedUsd: null,
+      storedSource: null,
+      monthlyPriceUsd: 200,
+      runTokens: 100,
+      monthTokens: 1_000,
+      harness: 'codex',
+      startedAt: '1970-01-01T00:33:20.000Z',
+      quotaWindows: [quotaWindow('codex', 1_000, 10, 13), quotaWindow('codex', 2_100, 10, 16)],
+    })
+    expect(result.usd).toBeCloseTo((200 * 10_080 * 0.06 * 100) / (43_830 * 1_000))
+  })
+
+  test('no qualifying window falls back to monthly amortization', () => {
+    expect(
+      reportedRunCost({
+        billing: 'subscription',
+        billedUsd: null,
+        storedSource: null,
+        monthlyPriceUsd: 200,
+        runTokens: 100,
+        monthTokens: 1_000,
+        harness: 'codex',
+        startedAt: '2026-10-28T00:00:00.000Z',
+        quotaResetsAt: 1_800,
+        quotaWindows: [quotaWindow('codex', 1_800, 10, 12)],
+      }),
+    ).toEqual({ usd: 20, source: SUBSCRIPTION_AMORTIZED_SOURCE })
+  })
+
+  test('null tokens stay unpriced even when a quota window qualifies', () => {
+    expect(
+      reportedRunCost({
+        billing: 'subscription',
+        billedUsd: null,
+        storedSource: null,
+        monthlyPriceUsd: 200,
+        runTokens: null,
+        monthTokens: 1_000,
+        harness: 'codex',
+        startedAt: '2026-10-28T00:00:00.000Z',
+        quotaResetsAt: 1_800,
+        quotaWindows: [quotaWindow('codex', 1_800, 10, 15)],
+      }),
+    ).toEqual({ usd: null, source: SUBSCRIPTION_NO_TOKENS_SOURCE })
   })
 })
 

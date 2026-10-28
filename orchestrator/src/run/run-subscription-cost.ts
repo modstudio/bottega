@@ -1,8 +1,12 @@
 // concern: run-subscription-cost
-/** Derives a subscription run's dollar cost from its share of the monthly price. */
+/**
+ * Derives subscription cost from quota consumption when observed. Usage outside Bottega
+ * inflates that consumption, deliberately producing a conservative cost estimate.
+ */
 import type { Agent } from '../agent/agents.ts'
 
 export const SUBSCRIPTION_AMORTIZED_SOURCE = 'subscription, amortized'
+export const SUBSCRIPTION_QUOTA_SHARE_SOURCE = 'subscription, quota share'
 export const SUBSCRIPTION_UNPRICED_SOURCE = 'subscription, unpriced'
 export const SUBSCRIPTION_NO_TOKENS_SOURCE = 'subscription, no tokens'
 export const SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE = 'subscription, price unavailable'
@@ -21,6 +25,10 @@ type ReportedCostRunRow = {
   vendor_cost_usd: number | null
   vendor_estimated_cost_usd: number | null
   vendor_cost_source: string | null
+  quota_used_percent_start: number | null
+  quota_used_percent_end: number | null
+  quota_window_minutes: number | null
+  quota_resets_at: number | null
 }
 
 type CostRowFields = {
@@ -30,6 +38,10 @@ type CostRowFields = {
   vendor_cost_usd?: unknown
   vendor_estimated_cost_usd?: unknown
   vendor_cost_source?: unknown
+  quota_used_percent_start?: unknown
+  quota_used_percent_end?: unknown
+  quota_window_minutes?: unknown
+  quota_resets_at?: unknown
 }
 
 type SubscriptionAgent = {
@@ -40,7 +52,20 @@ type SubscriptionAgent = {
 export type SubscriptionCostFacts = {
   agents: Readonly<Record<string, SubscriptionAgent>>
   monthTokens: Readonly<Record<string, number>>
+  quotaWindows?: readonly SubscriptionQuotaWindow[]
 }
+
+export type SubscriptionQuotaWindow = {
+  harness: string
+  resetsAt: number
+  windowMinutes: number
+  usedPercentStart: number
+  usedPercentEnd: number
+  tokens: number
+}
+
+const QUOTA_MIN_WINDOW_PERCENT = 3
+const AVERAGE_MONTH_MINUTES = 43_830
 
 export type SubscriptionCostContext = {
   facts: SubscriptionCostFacts
@@ -94,6 +119,64 @@ export function amortizedSubscriptionShare(input: {
   }
 }
 
+function qualifyingQuotaWindows(
+  harness: string,
+  windows: readonly SubscriptionQuotaWindow[],
+): SubscriptionQuotaWindow[] {
+  return windows.filter(
+    (window) =>
+      window.harness === harness &&
+      window.usedPercentEnd - window.usedPercentStart >= QUOTA_MIN_WINDOW_PERCENT &&
+      window.tokens > 0,
+  )
+}
+
+function nearestQuotaWindow(
+  windows: readonly SubscriptionQuotaWindow[],
+  targetSeconds: number,
+): SubscriptionQuotaWindow | null {
+  return (
+    [...windows].sort((left, right) => {
+      const distance =
+        Math.abs(left.resetsAt - targetSeconds) - Math.abs(right.resetsAt - targetSeconds)
+      return distance || left.resetsAt - right.resetsAt
+    })[0] ?? null
+  )
+}
+
+function quotaSubscriptionShare(input: {
+  monthlyPriceUsd: number
+  runTokens: number
+  window: SubscriptionQuotaWindow
+}): ReportedRunCost {
+  const percent = input.window.usedPercentEnd - input.window.usedPercentStart
+  const fee = (input.monthlyPriceUsd * input.window.windowMinutes) / AVERAGE_MONTH_MINUTES
+  const rate = (fee * (percent / 100)) / input.window.tokens
+  return { usd: input.runTokens * rate, source: SUBSCRIPTION_QUOTA_SHARE_SOURCE }
+}
+
+function quotaCost(input: {
+  monthlyPriceUsd: number | null
+  runTokens: number
+  harness?: string | null
+  startedAt?: string
+  quotaResetsAt?: number | null
+  quotaWindows?: readonly SubscriptionQuotaWindow[]
+}): ReportedRunCost | null {
+  if (input.monthlyPriceUsd === null || input.harness == null) return null
+  const windows = qualifyingQuotaWindows(input.harness, input.quotaWindows ?? [])
+  if (windows.length === 0) return null
+  const target = input.quotaResetsAt ?? Math.floor(Date.parse(input.startedAt ?? '') / 1000)
+  const window = Number.isFinite(target) ? nearestQuotaWindow(windows, target) : null
+  return window
+    ? quotaSubscriptionShare({
+        monthlyPriceUsd: input.monthlyPriceUsd,
+        runTokens: input.runTokens,
+        window,
+      })
+    : null
+}
+
 export function reportedRunCost(input: {
   billing: AgentBilling | null | undefined
   billedUsd: number | null
@@ -102,11 +185,18 @@ export function reportedRunCost(input: {
   runTokens: number | null
   monthTokens: number | null
   priceUnavailable?: boolean
+  harness?: string | null
+  startedAt?: string
+  quotaResetsAt?: number | null
+  quotaWindows?: readonly SubscriptionQuotaWindow[]
 }): ReportedRunCost {
   if (input.billing === 'subscription') {
+    if (input.runTokens == null) return { usd: null, source: SUBSCRIPTION_NO_TOKENS_SOURCE }
     if (input.priceUnavailable) {
       return { usd: null, source: SUBSCRIPTION_PRICE_UNAVAILABLE_SOURCE }
     }
+    const quota = quotaCost({ ...input, runTokens: input.runTokens })
+    if (quota) return quota
     return amortizedSubscriptionShare({
       monthlyPriceUsd: input.monthlyPriceUsd,
       runTokens: input.runTokens,
@@ -128,6 +218,10 @@ function reportedCostRunRow(row: CostRowFields): ReportedCostRunRow {
     vendor_cost_usd: nullableNumber(row.vendor_cost_usd),
     vendor_estimated_cost_usd: nullableNumber(row.vendor_estimated_cost_usd),
     vendor_cost_source: row.vendor_cost_source == null ? null : String(row.vendor_cost_source),
+    quota_used_percent_start: nullableNumber(row.quota_used_percent_start),
+    quota_used_percent_end: nullableNumber(row.quota_used_percent_end),
+    quota_window_minutes: nullableNumber(row.quota_window_minutes),
+    quota_resets_at: nullableNumber(row.quota_resets_at),
   }
 }
 
@@ -148,6 +242,10 @@ function reportedCostForRun(
         ? null
         : (context.facts.monthTokens[subscriptionMonthTokenKey(harness, run.started_at)] ?? null),
     priceUnavailable: Boolean(harness && context.unavailable && harness in context.unavailable),
+    harness,
+    startedAt: run.started_at,
+    quotaResetsAt: run.quota_resets_at,
+    quotaWindows: context.facts.quotaWindows ?? [],
   })
 }
 

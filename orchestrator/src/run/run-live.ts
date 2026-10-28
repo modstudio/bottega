@@ -39,6 +39,7 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
+import { type CodexQuotaReadings, EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
 import {
   EMPTY_VENDOR_USAGE,
   type TransportHandle,
@@ -82,6 +83,16 @@ import {
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
+}
+
+function replySchema(
+  replyFileText: string | null,
+  customContract: boolean,
+  originalSchemaPath: string | null,
+): unknown {
+  return replyFileText !== null || customContract
+    ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
+    : null
 }
 
 function outputCeilingReached(
@@ -366,6 +377,7 @@ export type LiveResult = {
   callUsage: RunCallUsage | null
   costUsd: number | null
   vendorUsage: VendorUsage
+  quotaReadings: CodexQuotaReadings
   resolvedSession: string | null
   effectiveModel: string | null
   replyFileError: string | null
@@ -467,8 +479,9 @@ function runUsageResult(
   callUsage: RunCallUsage | null,
   costUsd: number | null,
   vendorUsage: VendorUsage,
+  quotaReadings: CodexQuotaReadings,
 ) {
-  return { vendorTokens, callUsage, costUsd, vendorUsage }
+  return { vendorTokens, callUsage, costUsd, vendorUsage, quotaReadings }
 }
 
 function preserveLiveGooseLedger(input: LiveInput): void {
@@ -547,6 +560,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     callUsage: { value: RunCallUsage | null } = { value: null }
   let costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
+  let quotaReadings = EMPTY_CODEX_QUOTA_READINGS
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let replyFileError: string | null = null
@@ -812,25 +826,23 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     vendorTokens = collected.tokens
     costUsd = collected.costUsd
     vendorUsage = collected.vendorUsage
+    quotaReadings = collected.quotaReadings ?? EMPTY_CODEX_QUOTA_READINGS
     effectiveModel = collected.effectiveModel ?? effectiveModel
     resolvedSession = collected.sessionId ?? vendorSession
     output = collected.output
     const replyFile = join(scratchDir, REPLY_FILE_NAME)
     const replyFileText = readReplyFile(replyFile)
     const replyContractKind = replyContract(opts.schemaPath, textReplyContract)
-    const validationSchema =
-      replyFileText !== null || replyContractKind === 'custom'
-        ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))
-        : null
+    const schema = replySchema(replyFileText, replyContractKind === 'custom', originalSchemaPath)
     const ruling = collectReplySource({
       replyFileText,
       contract: replyContractKind,
       fallbackText: output,
       dialect: resolvedDialect,
-      schema: validationSchema,
+      schema,
     })
     output = ruling.output
-    replyFileError = classifiedReplyFileError(ruling, validationSchema ?? resolvedDialect.schema)
+    replyFileError = classifiedReplyFileError(ruling, schema ?? resolvedDialect.schema)
     replyFilePresent = ruling.replyFilePresent
     if (ruling.rewriteOutputFile) writeFileSync(outPath, output)
     const transportQuestions = collected.asking
@@ -992,7 +1004,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     idleTreePgid: idleKill.treePgid,
     exitCode,
     output,
-    ...runUsageResult(vendorTokens, callUsage.value, costUsd, vendorUsage),
+    ...runUsageResult(vendorTokens, callUsage.value, costUsd, vendorUsage, quotaReadings),
     resolvedSession,
     effectiveModel,
     replyFileError,

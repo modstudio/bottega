@@ -41,18 +41,23 @@ test('cost per accepted result is unknown without an accepted run', () => {
   })
 })
 
-test('an unpriced subscription run names its unknown source', () => {
-  const cost = reportedRunCost({
-    billing: 'subscription',
-    billedUsd: null,
-    storedSource: null,
-    monthlyPriceUsd: null,
-    runTokens: 100,
-    monthTokens: 100,
-  })
-  expect(costPerAcceptedResult([{ accepted: true, rows: [cost] }])).toEqual({
-    unknown: 'subscription, unpriced',
-  })
+test('one unpriced row among priced rows is charged the priced mean and reported', () => {
+  const result = costPerAcceptedResult([
+    { accepted: true, rows: [row(0.2), row(null, 'none'), row(0.4)] },
+  ])
+  expect(result).toMatchObject({ imputed: 1 })
+  expect('usd' in result ? result.usd : null).toBeCloseTo(0.9)
+})
+
+test('below half priced is unknown with the dominant unpriced source', () => {
+  expect(
+    costPerAcceptedResult([
+      {
+        accepted: true,
+        rows: [row(0.2), row(null, 'none'), row(null, 'none'), row(null, 'estimated')],
+      },
+    ]),
+  ).toEqual({ unknown: 'none' })
 })
 
 test('acceptance requires the job-specific score dimensions', () => {

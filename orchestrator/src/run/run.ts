@@ -71,6 +71,7 @@ import {
   EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
 } from '../transport/transport.ts'
+import { EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
 import { resolveNewTreeBase } from '../worktree/trunk-base-choice.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
@@ -805,6 +806,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     callUsage: Awaited<ReturnType<typeof runLive>>['callUsage'] = null,
     costUsd: number | null = null
   let vendorUsage = EMPTY_VENDOR_USAGE
+  let quotaReadings = EMPTY_CODEX_QUOTA_READINGS
   let resolvedSession: string | null = vendorSession
   let effectiveModel: string | null = null
   let contract: WorkerReply | null = null
@@ -873,6 +875,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           callUsage,
           costUsd,
           vendorUsage,
+          quotaReadings,
           resolvedSession,
           effectiveModel,
           contract,
@@ -1003,6 +1006,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
             callUsage,
             costUsd,
             vendorUsage,
+            quotaReadings,
             effectiveModel,
             resolvedSession,
             name,
