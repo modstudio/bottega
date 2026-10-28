@@ -245,7 +245,7 @@ async function holdAndRenewLease(
     const legDurations = legs
       .map((leg) => `${JSON.stringify(leg.source)}=${leg.durationMs}ms`)
       .join(' ')
-    console.log(
+    console.error(
       `hub: collect lease hold holder=${JSON.stringify(holder)} held_ms=${Date.now() - startedAt}${legDurations ? ` legs ${legDurations}` : ''}`,
     )
   }
@@ -356,7 +356,7 @@ export async function withLease<T>(
       if (Date.now() >= deadline) {
         const lease = collectLease()
         const observed = lease && !('unreadable' in lease) ? lease : null
-        console.log(
+        console.error(
           `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${Date.now() - startedAt} refused holder=${JSON.stringify(observed?.holder ?? 'unknown')} holder_age_ms=${observed?.age ?? 'unknown'}`,
         )
         return { ran: false, heldBy: observed?.holder ?? null }
@@ -364,7 +364,7 @@ export async function withLease<T>(
       await new Promise((r) => setTimeout(r, 250))
     }
     if (polls > 1)
-      console.log(
+      console.error(
         `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${Date.now() - startedAt} acquired`,
       )
     if (ownsIntent) {
