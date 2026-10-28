@@ -12,6 +12,7 @@ describe('deriveObservedTestOutcome', () => {
       deriveObservedTestOutcome({
         focused: [],
         gate: [],
+        latestFinishedGateExecutionId: null,
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
@@ -21,8 +22,77 @@ describe('deriveObservedTestOutcome', () => {
   test('an executed passing focused run establishes the claimed outcome', () => {
     expect(
       deriveObservedTestOutcome({
-        focused: [{ executed: true, passed: true }],
+        focused: [{ executed: true, passed: true, paths: ['passing.test.ts'] }],
         gate: [],
+        latestFinishedGateExecutionId: null,
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false })
+  })
+
+  test('a passing rerun replaces a failed result for the same path set', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [
+          { executed: true, passed: false, paths: ['b.test.ts', 'a.test.ts'] },
+          { executed: true, passed: true, paths: ['a.test.ts', 'b.test.ts'] },
+        ],
+        gate: [],
+        latestFinishedGateExecutionId: null,
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false })
+  })
+
+  test('a failing rerun replaces a passing result for the same path set', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [
+          { executed: true, passed: true, paths: ['a.test.ts'] },
+          { executed: true, passed: false, paths: ['a.test.ts'] },
+        ],
+        gate: [],
+        latestFinishedGateExecutionId: null,
+        claim: null,
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: true, passed: false, claimDisagrees: false })
+  })
+
+  test('a passing different path set does not replace an earlier failed path set', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [
+          { executed: true, passed: false, paths: ['a.test.ts'] },
+          { executed: true, passed: true, paths: ['b.test.ts'] },
+        ],
+        gate: [],
+        latestFinishedGateExecutionId: null,
+        claim: null,
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: true, passed: false, claimDisagrees: false })
+  })
+
+  test('only unit-test checks from the latest finished gate count', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [],
+        gate: [
+          {
+            executed: true,
+            passed: false,
+            gateExecutionId: 'earlier',
+          },
+          {
+            executed: true,
+            passed: true,
+            gateExecutionId: 'latest',
+          },
+        ],
+        latestFinishedGateExecutionId: 'latest',
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
@@ -34,6 +104,7 @@ describe('deriveObservedTestOutcome', () => {
       deriveObservedTestOutcome({
         focused: [],
         gate: [],
+        latestFinishedGateExecutionId: null,
         claim: null,
         focusedRunnerRegistered: true,
       }),
@@ -49,6 +120,7 @@ describe('deriveObservedTestOutcome', () => {
       deriveObservedTestOutcome({
         focused: [],
         gate: [],
+        latestFinishedGateExecutionId: null,
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: false,
       }),
