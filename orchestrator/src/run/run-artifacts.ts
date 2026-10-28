@@ -34,7 +34,6 @@ import { CONNECTION_SCHEMA_INVARIANT } from '../database/migration-compatibility
 import { type ArtifactPathEvent, recordRunWarning, runEventsPath } from '../events.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
-import type { QuotaReadings } from '../transport/quota-readings.ts'
 import { KEEP_RUN_FILES_DAYS } from './run-artifact-limits.ts'
 import {
   type ArtifactPathSource,
@@ -45,6 +44,7 @@ import {
 } from './run-artifact-retention.ts'
 import {
   quotaReadingsColumnValues,
+  type RunQuotaColumns,
   type RunUsageColumns,
   runUsageColumnValues,
 } from './run-usage-columns.ts'
@@ -310,7 +310,7 @@ export function runTerminalReplyPath(id: string, runsDir = RUNS_DIR): string {
 }
 
 export type TerminalSnapshot = RunUsageColumns &
-  QuotaReadings & {
+  RunQuotaColumns & {
     status: string
     error: string | null
     failureKind: string | null

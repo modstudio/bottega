@@ -39,7 +39,10 @@ export function runUsageColumnValues(columns: RunUsageColumns) {
   ] as const
 }
 
-export function quotaReadingsColumnValues(readings: QuotaReadings) {
+/** The quota readings as persisted on a run row. */
+export type RunQuotaColumns = QuotaReadings
+
+export function quotaReadingsColumnValues(readings: RunQuotaColumns) {
   return [
     readings.quotaUsedPercentStart,
     readings.quotaUsedPercentEnd,
