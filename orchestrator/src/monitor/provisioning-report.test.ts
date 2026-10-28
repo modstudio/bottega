@@ -11,11 +11,13 @@ const sample = (durationMs: number, entries = durationMs): ProvisioningObservati
   hostLoad: {
     gates: 0,
     loadavg: durationMs,
+    cpuBusy: null,
     ncpu: 8,
     freeMem: 1,
     pressure: 'normal',
     swapUsed: 2,
     swapTotal: 3,
+    swapGrowthBytesPerSec: null,
     recentAdmissions: 0,
     waitingRequests: 0,
     oldestWaitMs: 0,

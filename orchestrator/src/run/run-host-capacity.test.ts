@@ -15,11 +15,13 @@ import {
 const loaded = (): HostLoad => ({
   gates: 0,
   loadavg: 16,
+  cpuBusy: null,
   ncpu: 8,
   freeMem: 8 * 1024 * 1024 * 1024,
   pressure: 'unknown',
   swapUsed: 0,
   swapTotal: 0,
+  swapGrowthBytesPerSec: null,
   recentAdmissions: 0,
   waitingRequests: 0,
   oldestWaitMs: 0,

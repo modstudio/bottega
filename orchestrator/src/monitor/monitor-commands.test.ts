@@ -18,11 +18,13 @@ import type { MonitorHostLoad } from './monitor-types.ts'
 const hostLoad: MonitorHostLoad = {
   gates: 0,
   loadavg: 15.75,
+  cpuBusy: null,
   ncpu: 16,
   freeMem: 1,
   pressure: 'normal',
   swapUsed: 0,
   swapTotal: 0,
+  swapGrowthBytesPerSec: null,
   recentAdmissions: 0,
   waitingRequests: 0,
   oldestWaitMs: 0,

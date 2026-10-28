@@ -6,6 +6,7 @@ import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
 import type { HostLoad } from './gate-load.ts'
 import {
+  capacityRatesSince,
   decideHostCapacityAdmission,
   decideHostSlotAdmission,
   HOST_SLOT_HELD_ENV,
@@ -44,16 +45,86 @@ test('swap parsing supports macOS and Linux samples', () => {
     total: 2_097_152,
     used: 1_572_864,
   })
+  expect(parseSwapUsage('unrecognized swap output')).toBeNull()
+})
+
+const cpuTimes = (
+  over: Partial<{ user: number; nice: number; sys: number; idle: number; irq: number }> = {},
+) => ({
+  user: 0,
+  nice: 0,
+  sys: 0,
+  idle: 0,
+  irq: 0,
+  ...over,
+})
+
+describe('capacity rates', () => {
+  test('idle and saturated CPU deltas produce busy cores on the ncpu scale', () => {
+    const previous = { at: 0, cpuTimes: [cpuTimes(), cpuTimes()], swapUsed: null }
+    expect(
+      capacityRatesSince(previous, {
+        at: 250,
+        cpuTimes: [cpuTimes({ idle: 100 }), cpuTimes({ idle: 100 })],
+        swapUsed: null,
+      }).cpuBusy,
+    ).toBe(0)
+    expect(
+      capacityRatesSince(previous, {
+        at: 250,
+        cpuTimes: [cpuTimes({ user: 100 }), cpuTimes({ sys: 100 })],
+        swapUsed: null,
+      }).cpuBusy,
+    ).toBe(2)
+  })
+
+  test('CPU and swap rates fall back independently', () => {
+    const rates = capacityRatesSince(
+      { at: 1_000, cpuTimes: [cpuTimes()], swapUsed: null },
+      { at: 2_000, cpuTimes: [cpuTimes({ user: 50, idle: 50 })], swapUsed: null },
+    )
+    expect(rates.cpuBusy).toBe(0.5)
+    expect(rates.swapGrowthBytesPerSec).toBeNull()
+  })
+
+  test('swap growth uses the sample interval in seconds', () => {
+    expect(
+      capacityRatesSince(
+        { at: 1_000, cpuTimes: [], swapUsed: 1_024 },
+        { at: 1_500, cpuTimes: [], swapUsed: 2_048 },
+      ).swapGrowthBytesPerSec,
+    ).toBe(2_048)
+  })
+
+  test('a window below the minimum produces no new rates', () => {
+    expect(
+      capacityRatesSince(
+        { at: 1_000, cpuTimes: [cpuTimes()], swapUsed: 0 },
+        { at: 1_249, cpuTimes: [cpuTimes({ user: 100 })], swapUsed: 1_024 },
+      ),
+    ).toEqual({ cpuBusy: null, swapGrowthBytesPerSec: null })
+  })
+
+  test('one zero-delta core does not discard other cores busy delta', () => {
+    expect(
+      capacityRatesSince(
+        { at: 0, cpuTimes: [cpuTimes(), cpuTimes()], swapUsed: null },
+        { at: 250, cpuTimes: [cpuTimes(), cpuTimes({ user: 100 })], swapUsed: null },
+      ).cpuBusy,
+    ).toBe(2)
+  })
 })
 
 const idle = (over: Partial<HostLoad> = {}): HostLoad => ({
   gates: 1,
   loadavg: 0.2,
+  cpuBusy: null,
   ncpu: 8,
   freeMem: 8 * 1024 * 1024 * 1024,
   pressure: 'unknown',
   swapUsed: 0,
   swapTotal: 0,
+  swapGrowthBytesPerSec: null,
   recentAdmissions: 0,
   waitingRequests: 0,
   oldestWaitMs: 0,
@@ -64,10 +135,12 @@ const decision = (load: HostLoad, platform: NodeJS.Platform = 'linux') =>
   decideHostSlotAdmission({
     heldSlots: load.gates,
     loadavg: load.loadavg,
+    cpuBusy: load.cpuBusy,
     ncpu: load.ncpu,
     recentAdmissions: load.recentAdmissions,
     freeMem: load.freeMem,
     pressure: load.pressure,
+    swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
     platform,
   })
 
@@ -76,10 +149,12 @@ describe('gate load hold', () => {
     const base = {
       heldWork: 1,
       loadavg: 8,
+      cpuBusy: null,
       ncpu: 8,
       recentAdmissions: 0,
       freeMem: 512 * 1024 * 1024,
       pressure: 'unknown' as const,
+      swapGrowthBytesPerSec: null,
       limit: null,
       platform: 'linux' as const,
     }
@@ -102,10 +177,12 @@ describe('gate load hold', () => {
     const input = {
       heldWork: 0,
       loadavg: 16,
+      cpuBusy: null,
       ncpu: 8,
       recentAdmissions: 0,
       freeMem: 8 * 1024 * 1024 * 1024,
       pressure: 'unknown' as const,
+      swapGrowthBytesPerSec: null,
       limit: null,
       platform: 'linux' as const,
     }
@@ -156,11 +233,33 @@ describe('gate load hold', () => {
     )
   })
 
-  test('macOS memory holds only on warning or critical pressure', () => {
+  test('CPU busy measurement supersedes load average and falls back when unavailable', () => {
+    expect(decision(idle({ loadavg: 32, cpuBusy: 1, ncpu: 8 })).heldOn).toEqual([])
+    expect(decision(idle({ loadavg: 0.2, cpuBusy: 8, ncpu: 8 })).heldOn).toEqual(['load'])
+    expect(decision(idle({ loadavg: 8, cpuBusy: null, ncpu: 8 })).heldOn).toEqual(['load'])
+  })
+
+  test('macOS warning holds only with unknown or growing swap and critical always holds', () => {
     const lowFreeMem = 64 * 1024 * 1024
-    expect(decision(idle({ freeMem: lowFreeMem, pressure: 'warning' }), 'darwin').heldOn).toEqual([
-      'memory',
-    ])
+    expect(
+      decision(
+        idle({ freeMem: lowFreeMem, pressure: 'warning', swapGrowthBytesPerSec: 0 }),
+        'darwin',
+      ).heldOn,
+    ).toEqual([])
+    expect(
+      decision(
+        idle({
+          freeMem: lowFreeMem,
+          pressure: 'warning',
+          swapGrowthBytesPerSec: 2 * 1024 * 1024,
+        }),
+        'darwin',
+      ).heldOn,
+    ).toEqual(['memory'])
+    expect(
+      decision(idle({ pressure: 'warning', swapGrowthBytesPerSec: null }), 'darwin').heldOn,
+    ).toEqual(['memory'])
     expect(decision(idle({ freeMem: lowFreeMem, pressure: 'critical' }), 'darwin').heldOn).toEqual([
       'memory',
     ])
@@ -254,7 +353,7 @@ describe('gate load hold', () => {
       error.mockRestore()
     }
     expect(lines[0]).toStartWith('waiting 50ms for host capacity ')
-    expect(lines[0]).toContain('gates=1 loadavg=0.2 ncpu=8')
+    expect(lines[0]).toContain('gates=1 loadavg=0.2 cpu_busy=unknown swap_growth=unknown ncpu=8')
     expect(lines[0]).toContain('free_mb=64 floor_mb=1024')
     expect(lines[0]).toContain('floor_mb=1024 pressure=unknown held_on=memory')
     expect(lines[0]).toContain('held_on=memory')

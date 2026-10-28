@@ -20,11 +20,13 @@ import { resolveStatePaths } from '../../shared/state-directory.ts'
 export type HostLoad = {
   gates: number
   loadavg: number
+  cpuBusy: number | null
   ncpu: number
   freeMem: number
   pressure: MemoryPressure
   swapUsed: number
   swapTotal: number
+  swapGrowthBytesPerSec: number | null
   recentAdmissions: number
   waitingRequests: number
   oldestWaitMs: number
@@ -46,8 +48,11 @@ export const HOST_LOAD_RESERVATION_MS = 60_000
 export const HOST_SLOT_HELD_ENV = 'BOTTEGA_HOST_SLOT_HELD'
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
+const CAPACITY_SAMPLE_MIN_WINDOW_MS = 250
+const CAPACITY_RATE_MAX_AGE_MS = 5_000
 const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
+const SWAP_GROWTH_HOLD_BYTES_PER_SEC = 2 * MEBIBYTE_BYTES
 const GATE_HOLD_CONDITION_ORDER: HostHoldCondition[] = ['gates', 'load', 'memory', 'queue']
 
 function gatePidDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -216,7 +221,7 @@ function readMemoryPressure(platform: NodeJS.Platform): MemoryPressure {
   }
 }
 
-export function parseSwapUsage(output: string): { used: number; total: number } {
+export function parseSwapUsage(output: string): { used: number; total: number } | null {
   const mac = /total = ([\d.]+)([KMG])\s+used = ([\d.]+)([KMG])/i.exec(output)
   const scale = (value: string, unit: string) =>
     Number(value) *
@@ -228,10 +233,10 @@ export function parseSwapUsage(output: string): { used: number; total: number } 
     const totalBytes = Number(total[1]) * 1024
     return { total: totalBytes, used: Math.max(0, totalBytes - Number(free[1]) * 1024) }
   }
-  return { used: 0, total: 0 }
+  return null
 }
 
-function readSwap(platform: NodeJS.Platform): { used: number; total: number } {
+function readSwap(platform: NodeJS.Platform): { used: number; total: number } | null {
   try {
     if (platform === 'darwin') {
       const result = Bun.spawnSync(['/usr/sbin/sysctl', '-n', 'vm.swapusage'], {
@@ -239,13 +244,104 @@ function readSwap(platform: NodeJS.Platform): { used: number; total: number } {
         stderr: 'ignore',
         timeout: MEMORY_PRESSURE_READ_TIMEOUT_MS,
       })
-      return result.exitCode === 0
-        ? parseSwapUsage(result.stdout.toString())
-        : { used: 0, total: 0 }
+      return result.exitCode === 0 ? parseSwapUsage(result.stdout.toString()) : null
     }
     if (platform === 'linux') return parseSwapUsage(readFileSync('/proc/meminfo', 'utf8'))
   } catch {}
-  return { used: 0, total: 0 }
+  return null
+}
+
+type CpuTimes = ReturnType<typeof cpus>[number]['times']
+export type CapacitySample = {
+  at: number
+  cpuTimes: CpuTimes[]
+  swapUsed: number | null
+}
+
+function cpuBusySince(previous: CapacitySample, current: CapacitySample): number | null {
+  if (current.at <= previous.at || current.cpuTimes.length !== previous.cpuTimes.length) return null
+  let idleDelta = 0
+  let totalDelta = 0
+  for (const [index, times] of current.cpuTimes.entries()) {
+    const before = previous.cpuTimes[index]
+    if (!before) return null
+    const idle = times.idle - before.idle
+    const total =
+      times.user -
+      before.user +
+      (times.nice - before.nice) +
+      (times.sys - before.sys) +
+      idle +
+      (times.irq - before.irq)
+    idleDelta += idle
+    totalDelta += total
+  }
+  if (totalDelta <= 0) return null
+  return (1 - idleDelta / totalDelta) * current.cpuTimes.length
+}
+
+export function capacityRatesSince(
+  previous: CapacitySample,
+  current: CapacitySample,
+): { cpuBusy: number | null; swapGrowthBytesPerSec: number | null } {
+  const elapsedMs = current.at - previous.at
+  if (elapsedMs < CAPACITY_SAMPLE_MIN_WINDOW_MS)
+    return { cpuBusy: null, swapGrowthBytesPerSec: null }
+  return {
+    cpuBusy: cpuBusySince(previous, current),
+    swapGrowthBytesPerSec:
+      previous.swapUsed === null || current.swapUsed === null
+        ? null
+        : (current.swapUsed - previous.swapUsed) / (elapsedMs / 1_000),
+  }
+}
+
+type CachedRate = { at: number; value: number | null }
+let previousCpuSample: CapacitySample | null = null
+let previousSwapSample: CapacitySample | null = null
+let latestCpuBusy: CachedRate | null = null
+let latestSwapGrowth: CachedRate | null = null
+
+function freshRate(rate: CachedRate | null, now: number): number | null {
+  return rate && now - rate.at <= CAPACITY_RATE_MAX_AGE_MS ? rate.value : null
+}
+
+function measureCapacityRates(
+  platform: NodeJS.Platform,
+  now: number,
+  swap: { used: number; total: number } | null,
+): { cpuBusy: number | null; swapGrowthBytesPerSec: number | null } {
+  const cpuTimes = cpus().map(({ times }) => times)
+  const currentCpu: CapacitySample = {
+    at: now,
+    cpuTimes,
+    swapUsed: null,
+  }
+  if (!previousCpuSample) previousCpuSample = currentCpu
+  else if (now - previousCpuSample.at >= CAPACITY_SAMPLE_MIN_WINDOW_MS) {
+    latestCpuBusy = {
+      at: now,
+      value: capacityRatesSince(previousCpuSample, currentCpu).cpuBusy,
+    }
+    previousCpuSample = currentCpu
+  }
+
+  if (platform === 'darwin' && swap) {
+    const currentSwap: CapacitySample = { at: now, cpuTimes: [], swapUsed: swap.used }
+    if (!previousSwapSample) previousSwapSample = currentSwap
+    else if (now - previousSwapSample.at >= CAPACITY_SAMPLE_MIN_WINDOW_MS) {
+      latestSwapGrowth = {
+        at: now,
+        value: capacityRatesSince(previousSwapSample, currentSwap).swapGrowthBytesPerSec,
+      }
+      previousSwapSample = currentSwap
+    }
+  }
+
+  return {
+    cpuBusy: freshRate(latestCpuBusy, now),
+    swapGrowthBytesPerSec: platform === 'darwin' ? freshRate(latestSwapGrowth, now) : null,
+  }
 }
 
 export function measureHostLoad(
@@ -256,14 +352,17 @@ export function measureHostLoad(
 ): HostLoad {
   const leases = liveLeases(gatePidDir(env), selfPid)
   const swap = readSwap(platform)
+  const rates = measureCapacityRates(platform, now, swap)
   return {
     gates: leases.length,
     loadavg: loadavg()[0] ?? 0,
+    cpuBusy: rates.cpuBusy,
     ncpu: Math.max(1, cpus().length),
     freeMem: freemem(),
     pressure: readMemoryPressure(platform),
-    swapUsed: swap.used,
-    swapTotal: swap.total,
+    swapUsed: swap?.used ?? 0,
+    swapTotal: swap?.total ?? 0,
+    swapGrowthBytesPerSec: rates.swapGrowthBytesPerSec,
     recentAdmissions: leases.filter((lease) => now - lease.admittedAt < HOST_LOAD_RESERVATION_MS)
       .length,
     ...measureHostWaiters(env, selfPid, now),
@@ -282,10 +381,12 @@ export function measureHostSlotLeases(
 export function decideHostCapacityAdmission(input: {
   heldWork: number
   loadavg: number
+  cpuBusy: number | null
   ncpu: number
   recentAdmissions: number
   freeMem: number
   pressure: MemoryPressure
+  swapGrowthBytesPerSec: number | null
   limit: number | null
   platform: NodeJS.Platform
   waitedMs?: number
@@ -299,10 +400,14 @@ export function decideHostCapacityAdmission(input: {
   if (input.heldWork === 0) return { admit: true, heldOn: [], boundReached: false }
   const conditions: HostHoldCondition[] = []
   if (input.limit !== null && input.heldWork >= input.limit) conditions.push('gates')
-  if (input.loadavg + input.recentAdmissions >= input.ncpu) conditions.push('load')
+  if ((input.cpuBusy ?? input.loadavg) + input.recentAdmissions >= input.ncpu)
+    conditions.push('load')
   const memoryHeld =
     input.platform === 'darwin'
-      ? input.pressure === 'warning' || input.pressure === 'critical'
+      ? input.pressure === 'critical' ||
+        (input.pressure === 'warning' &&
+          (input.swapGrowthBytesPerSec === null ||
+            input.swapGrowthBytesPerSec >= SWAP_GROWTH_HOLD_BYTES_PER_SEC))
       : input.freeMem < FREE_MEM_FLOOR_BYTES
   if (memoryHeld) conditions.push('memory')
   return { admit: conditions.length === 0, heldOn: conditions, boundReached: false }
@@ -312,10 +417,12 @@ export function decideHostCapacityAdmission(input: {
 export function decideHostSlotAdmission(input: {
   heldSlots: number
   loadavg: number
+  cpuBusy: number | null
   ncpu: number
   recentAdmissions: number
   freeMem: number
   pressure: MemoryPressure
+  swapGrowthBytesPerSec: number | null
   limit?: number
   platform: NodeJS.Platform
 }): HostSlotDecision {
@@ -343,7 +450,7 @@ type GateHoldOpts = {
 export class HostSlotWaitAborted extends Error {}
 
 export function formatGateWait(state: GateWaitState): string {
-  return `waiting ${state.delayedMs}ms for host capacity (gates=${state.load.gates} loadavg=${state.load.loadavg} ncpu=${state.load.ncpu} free_mb=${Math.floor(state.load.freeMem / MEBIBYTE_BYTES)} floor_mb=${Math.floor(FREE_MEM_FLOOR_BYTES / MEBIBYTE_BYTES)} pressure=${state.load.pressure} held_on=${state.heldOn.join('+')})`
+  return `waiting ${state.delayedMs}ms for host capacity (gates=${state.load.gates} loadavg=${state.load.loadavg} cpu_busy=${state.load.cpuBusy ?? 'unknown'} swap_growth=${state.load.swapGrowthBytesPerSec ?? 'unknown'} ncpu=${state.load.ncpu} free_mb=${Math.floor(state.load.freeMem / MEBIBYTE_BYTES)} floor_mb=${Math.floor(FREE_MEM_FLOOR_BYTES / MEBIBYTE_BYTES)} pressure=${state.load.pressure} held_on=${state.heldOn.join('+')})`
 }
 
 async function interruptibleSleep(
@@ -420,10 +527,12 @@ function tryReserveHostSlot(input: {
     const decision = decideHostSlotAdmission({
       heldSlots: measured.gates,
       loadavg: measured.loadavg,
+      cpuBusy: measured.cpuBusy,
       ncpu: measured.ncpu,
       recentAdmissions: measured.recentAdmissions,
       freeMem: measured.freeMem,
       pressure: measured.pressure,
+      swapGrowthBytesPerSec: measured.swapGrowthBytesPerSec,
       limit: input.limit,
       platform: input.platform,
     })

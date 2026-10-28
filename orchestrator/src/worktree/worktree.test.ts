@@ -11,11 +11,13 @@ import { type CreateWorkerWorktreeOptions, recordProvisioning } from './worktree
 const hostLoad = {
   gates: 0,
   loadavg: 0,
+  cpuBusy: null,
   ncpu: 1,
   freeMem: 1,
   pressure: 'normal' as const,
   swapUsed: 0,
   swapTotal: 0,
+  swapGrowthBytesPerSec: null,
   recentAdmissions: 0,
   waitingRequests: 0,
   oldestWaitMs: 0,
