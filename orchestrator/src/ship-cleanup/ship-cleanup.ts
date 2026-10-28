@@ -70,6 +70,7 @@ export type ShipCleanupReport = {
   mainCheckoutPath: string
   freed: { artifacts: number; scratch: number; worktrees: number }
   removed: { artifacts: string[]; scratch: string[]; worktrees: string[]; branches: string[] }
+  absentWorktrees: string[]
   reclaimed: { processes: string[]; compose: string[] }
   gone: string[]
   kept: ShipCleanupKeptItem[]
@@ -197,6 +198,7 @@ function emptyReport(
     mainCheckoutPath,
     freed: { artifacts: 0, scratch: 0, worktrees: 0 },
     removed: { artifacts: [], scratch: [], worktrees: [], branches: [] },
+    absentWorktrees: [],
     reclaimed: { processes: [], compose: [] },
     gone: [],
     kept: [],
@@ -309,7 +311,10 @@ function closeBranchWorktree(
     }
     const result = adapter.closeOut(row.record_id)
     if (result.outcome === 'released' || result.outcome === 'absent') {
-      if (row.worktree) report.removed.worktrees.push(row.worktree)
+      if (row.worktree) {
+        if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
+        else report.absentWorktrees.push(row.worktree)
+      }
       if (result.outcome === 'released' && row.worktree)
         removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
       return null
@@ -366,8 +371,9 @@ function releaseLandingTree(
     return remedy
   }
   const result = adapter.removeLandingTree(row.worktree)
-  if (result.outcome === 'released') {
-    report.removed.worktrees.push(row.worktree)
+  if (result.outcome === 'released' || result.outcome === 'absent') {
+    if (result.outcome === 'released') report.removed.worktrees.push(row.worktree)
+    else report.absentWorktrees.push(row.worktree)
     removedNow.set(row.worktree, runIdsByTree.get(row.worktree) ?? new Set([row.record_id]))
     return null
   }
@@ -766,7 +772,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
 
 function deployFromLine(report: ShipCleanupReport): string {
   return report.landingBranch
-    ? `deploy from: the landing branch ${report.landingBranch} — pull it in the main checkout ${report.mainCheckoutPath}, or run ${PLATFORM_SLUG} tree create --base origin/${report.landingBranch}`
+    ? `deploy from: the landing branch ${report.landingBranch} — pull it in the main checkout ${report.mainCheckoutPath}, or run ${PLATFORM_SLUG} tree create --name deploy-${report.landingBranch} --base origin/${report.landingBranch}`
     : `deploy from: the merged landing branch — the register declares none (settings.trunk); pull it in the main checkout ${report.mainCheckoutPath} once it is declared`
 }
 
@@ -779,6 +785,7 @@ export function formatShipCleanup(report: ShipCleanupReport): string {
   for (const item of report.reclaimed.processes) lines.push(`reclaimed process: ${item}`)
   for (const item of report.reclaimed.compose) lines.push(`reclaimed Compose resource: ${item}`)
   for (const path of report.removed.worktrees) lines.push(`released tree: ${path}`)
+  for (const path of report.absentWorktrees) lines.push(`already absent tree: ${path}`)
   if (report.removed.worktrees.length) {
     lines.push(deployFromLine(report))
   }
