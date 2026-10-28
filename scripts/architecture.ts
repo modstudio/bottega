@@ -563,6 +563,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/review/review-coverage-match.ts', []),
   module('orchestrator/src/review/review-declared-globs.ts', []),
+  module('orchestrator/src/review/review-finding-location.ts', []),
   module('orchestrator/src/review/review-evidence-sql.ts', [
     '../evidence/evidence-query.ts',
     '../project/project-injection.ts',
