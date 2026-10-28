@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { insertContention } from '../database/contention.ts'
 import { db } from '../database/db.ts'
@@ -205,5 +206,57 @@ describe('harness health', () => {
       { sessionId: 'session-b', waitsSuffered: 1, invalidationsCaused: 1 },
     ])
     expect(report.header).toContain('never routing evidence')
+  })
+
+  test('contention adds lock-refusal counts and the most frequent holder per store', () => {
+    const report = harnessHealth(3, db(), new Date('2026-09-07T12:00:00.000Z'), () => [
+      {
+        at: '2026-09-07T10:00:00.000Z',
+        store: '/state/hub/hub.db',
+        holderCommand: `${PLATFORM_SLUG} record`,
+        holderPid: 10,
+        verb: 'task set',
+      },
+      {
+        at: '2026-09-07T10:01:00.000Z',
+        store: '/state/hub/hub.db',
+        holderCommand: `${PLATFORM_SLUG} record`,
+        holderPid: 10,
+        verb: 'note new',
+      },
+      {
+        at: '2026-09-07T10:02:00.000Z',
+        store: '/state/hub/hub.db',
+        holderCommand: `${PLATFORM_SLUG} serve`,
+        holderPid: 11,
+        verb: 'task close',
+      },
+      {
+        at: '2026-09-07T10:03:00.000Z',
+        store: '/state/orchestrator/orchestrator.db',
+        holderCommand: null,
+        holderPid: null,
+        verb: 'run start',
+      },
+    ])
+
+    expect(
+      report.contention.resources.filter((row) => row.kind.startsWith('store /state/')),
+    ).toEqual([
+      {
+        kind: 'store /state/hub/hub.db',
+        count: 3,
+        totalDurationMs: 0,
+        meanDurationMs: 0,
+        topKeys: [{ key: `${PLATFORM_SLUG} record`, count: 2 }],
+      },
+      {
+        kind: 'store /state/orchestrator/orchestrator.db',
+        count: 1,
+        totalDurationMs: 0,
+        meanDurationMs: 0,
+        topKeys: [],
+      },
+    ])
   })
 })

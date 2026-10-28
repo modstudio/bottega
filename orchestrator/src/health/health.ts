@@ -6,6 +6,10 @@ import {
   HarnessHealthSchema,
   HostLoadSchema,
 } from '../../../shared/orch-contract.ts'
+import {
+  readStoreLockRefusalsSince,
+  type StoreLockRefusalEntry,
+} from '../../../shared/store-lock-refusal-log.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { attributionCounts, parseConfinement } from '../confinement/confinement.ts'
 import { summarizeContention } from '../database/contention.ts'
@@ -22,6 +26,7 @@ type HealthClass = FailureKind | 'stale'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
+type ContentionResourceRow = HarnessHealth['contention']['resources'][number]
 
 export function throttleBuckets(input: { database: Database; from: string }): ThrottleBucket[] {
   const runs = input.database
@@ -53,6 +58,46 @@ export function landingsWithPostStepError(database: Database = db()): {
       WHERE status='install_failed' AND error IS NOT NULL ORDER BY started_at,record_id`,
     )
     .all() as { project: string; branch: string; error: string }[]
+}
+
+function storeLockRefusalRows(entries: readonly StoreLockRefusalEntry[]): ContentionResourceRow[] {
+  const byStore = new Map<string, StoreLockRefusalEntry[]>()
+  for (const entry of entries) {
+    const matching = byStore.get(entry.store) ?? []
+    matching.push(entry)
+    byStore.set(entry.store, matching)
+  }
+  return [...byStore]
+    .map(([store, matching]) => {
+      const holders = new Map<string, number>()
+      for (const entry of matching) {
+        if (entry.holderCommand)
+          holders.set(entry.holderCommand, (holders.get(entry.holderCommand) ?? 0) + 1)
+      }
+      const topHolder = [...holders]
+        .map(([key, count]) => ({ key, count }))
+        .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key))[0]
+      return {
+        kind: `store ${store}`,
+        count: matching.length,
+        totalDurationMs: 0,
+        meanDurationMs: 0,
+        topKeys: topHolder ? [topHolder] : [],
+      }
+    })
+    .sort((left, right) => left.kind.localeCompare(right.kind))
+}
+
+function contentionHealth(
+  database: Database,
+  from: string,
+  readStoreRefusals: (since: string) => StoreLockRefusalEntry[],
+): HarnessHealth['contention'] {
+  const contention = summarizeContention(database, from)
+  return {
+    ...contention,
+    resources: [...contention.resources, ...storeLockRefusalRows(readStoreRefusals(from))],
+  }
 }
 
 export type HealthRunRow = {
@@ -128,6 +173,7 @@ export function harnessHealth(
   days = HEALTH_DEFAULT_DAYS,
   database: Database = db(),
   now = new Date(),
+  readStoreRefusals: (since: string) => StoreLockRefusalEntry[] = readStoreLockRefusalsSince,
 ): HarnessHealth {
   if (!Number.isInteger(days) || days < 1) throw new Error('--days must be a positive integer')
   const firstDay = new Date(
@@ -313,6 +359,6 @@ export function harnessHealth(
       .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
     provenance,
     flakes,
-    contention: summarizeContention(database, from),
+    contention: contentionHealth(database, from, readStoreRefusals),
   })
 }

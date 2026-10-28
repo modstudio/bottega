@@ -13,6 +13,7 @@ import {
   isDatabaseLocked,
 } from '../../../shared/database-lock-refusal.ts'
 import { processCommandLine } from '../../../shared/process-identity.ts'
+import { appendStoreLockRefusal } from '../../../shared/store-lock-refusal-log.ts'
 import {
   sampleWalWriteLock,
   type WalWriteLockSampleResult,
@@ -157,23 +158,28 @@ export async function lockedStoreMessage(
   error: unknown,
   inspect: (storePath: string) => Promise<WalWriteLockSampleResult> = sampleWalWriteLock,
   commandOf: (pid: number) => string | null = processCommandLine,
+  argv: readonly string[] = [],
 ): Promise<string> {
   if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
   try {
     const sampled = await inspect(DB_PATH)
-    return formatDatabaseLockRefusal({
+    const facts = {
       store: DB_PATH,
       holder: databaseLockHolder({
         sampled,
         command:
           sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
       }),
-    })
+    }
+    appendStoreLockRefusal(facts, argv)
+    return formatDatabaseLockRefusal(facts)
   } catch (inspectionError) {
-    return formatDatabaseLockRefusal({
+    const facts = {
       store: DB_PATH,
       holder: databaseLockHolder({ failed: inspectionError }),
-    })
+    }
+    appendStoreLockRefusal(facts, argv)
+    return formatDatabaseLockRefusal(facts)
   }
 }
 
@@ -208,7 +214,8 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
-    if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error))
+    if (!(error instanceof CommanderError))
+      console.error(await lockedStoreMessage(error, undefined, undefined, argv))
     return code
   }
 }
