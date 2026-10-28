@@ -61,14 +61,23 @@ test('a depth-zero write records a closed long-hold window without changing its 
 })
 
 test('a write that cannot acquire the lock is not recorded as a hold', () => {
+  const readings = [100, 1_200, 2_000, 2_010]
+  const realNow = performance.now.bind(performance)
   db().exec('PRAGMA busy_timeout = 1')
   const holder = new Database(DB_PATH, { readwrite: true, create: false })
   holder.exec('BEGIN IMMEDIATE')
+  const now = spyOn(performance, 'now').mockImplementation(() =>
+    new Error().stack?.includes('/hub/src/db.ts') ? (readings.shift() ?? 2_010) : realNow(),
+  )
   try {
     expect(() => writeTransaction(() => undefined)).toThrow('database is locked')
+    holder.exec('ROLLBACK')
+    // A later write closes any window the refused one opened; timing the busy wait would log it.
+    writeTransaction(() => undefined)
     expect(readStoreWriteHoldsSince('1970-01-01T00:00:00.000Z')).toEqual([])
   } finally {
-    holder.exec('ROLLBACK')
+    now.mockRestore()
+    if (holder.inTransaction) holder.exec('ROLLBACK')
     holder.close()
   }
 })
