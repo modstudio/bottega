@@ -218,11 +218,11 @@ describe('collect lease', () => {
       cycleFinished = resolve
     })
     const stop = watch('watcher', undefined, {
-      initial: async () => {
+      initial: async (): Promise<undefined> => {
         cycleFinished()
       },
-      fast: async () => {},
-      slow: async () => {},
+      fast: async () => undefined,
+      slow: async () => undefined,
     })
     await finished
     await Bun.sleep(0)
@@ -258,15 +258,15 @@ describe('collect lease', () => {
     const didStartExplicit = new Promise<void>((resolve) => (explicitStarted = resolve))
     let watcherCycles = 0
     const stop = watch('turn-watch', undefined, {
-      initial: async () => {
+      initial: async (): Promise<undefined> => {
         watcherCycles++
         initialStarted()
         await initialCanFinish
       },
-      fast: async () => {
+      fast: async (): Promise<undefined> => {
         watcherCycles++
       },
-      slow: async () => {},
+      slow: async () => undefined,
     })
     try {
       await didStartInitial
@@ -341,12 +341,12 @@ describe('collect lease', () => {
     let started!: () => void
     const didStart = new Promise<void>((resolve) => (started = resolve))
     const stop = watch('long-watch', undefined, {
-      initial: async () => {
+      initial: async (): Promise<undefined> => {
         started()
         await canFinish
       },
-      fast: async () => {},
-      slow: async () => {},
+      fast: async () => undefined,
+      slow: async () => undefined,
       renewEveryMs: 5,
     })
     try {
@@ -368,15 +368,15 @@ describe('collect lease', () => {
     let report!: (error: Error) => void
     const reported = new Promise<Error>((resolve) => (report = resolve))
     const stop = watch('losing-watch', report, {
-      initial: async (guard) => {
+      initial: async (guard): Promise<undefined> => {
         legs.push('first')
         releaseLease('losing-watch')
         expect(acquireLease('takeover')).toBeTrue()
         guard.assertHeld('first')
         legs.push('second')
       },
-      fast: async () => {},
-      slow: async () => {},
+      fast: async () => undefined,
+      slow: async () => undefined,
     })
     try {
       const error = await reported
@@ -405,16 +405,19 @@ describe('collect lease', () => {
     let now = '2026-10-12T12:00:02.000Z'
     let newestQueuedAt = '2026-10-12T12:00:01.000Z'
     const stop = watch('shared-outbox-watch', undefined, {
-      initial: async () => initialized(),
+      initial: async () => {
+        initialized()
+        return undefined
+      },
       outbox: async () => {
         drains++
         return waitingOutboxReport()
       },
       outboxClock: () => now,
-      slow: async (_guard, schedule) => {
+      slow: async (_guard, schedule): Promise<undefined> => {
         await schedule!.slow()
       },
-      fast: async (_guard, schedule) => {
+      fast: async (_guard, schedule): Promise<undefined> => {
         await schedule!.fast({ pendingCount: 1, newestQueuedAt })
       },
     })
@@ -462,7 +465,10 @@ describe('collect lease', () => {
     let completedCycles = 0
     const errors: Error[] = []
     const stop = watch('deadline-outbox-watch', (error) => errors.push(error), {
-      initial: async () => initialized(),
+      initial: async () => {
+        initialized()
+        return undefined
+      },
       outbox: async () => {
         await hostedCreateTask(
           {},
@@ -476,7 +482,7 @@ describe('collect lease', () => {
         return waitingOutboxReport()
       },
       outboxClock: () => '2026-10-12T12:00:02.000Z',
-      fast: async (guard, schedule) => {
+      fast: async (guard, schedule): Promise<undefined> => {
         localCycles++
         await collectFastHostedOutbox(
           schedule!,
@@ -490,7 +496,7 @@ describe('collect lease', () => {
         )
         completedCycles++
       },
-      slow: async () => {},
+      slow: async () => undefined,
     })
     try {
       await ready

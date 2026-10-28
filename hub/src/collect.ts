@@ -114,8 +114,8 @@ export type CollectLegResult =
     }
   | { source: string; ok: false; error: string; durationMs: number }
 
-// biome-ignore lint/suspicious/noConfusingVoidType: cycle work may intentionally produce no legs.
-type CollectCycleResult = CollectLegResult[] | void
+/** Cycle work returns the legs it ran, or nothing when it ran none. */
+type CollectCycleResult = CollectLegResult[] | undefined
 
 export function formatCollectLeg(result: CollectLegResult): string {
   const separator = result.source.length >= 18 ? ' ' : ''
