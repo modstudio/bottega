@@ -39,14 +39,17 @@ function mcpFlagValues(argv: string[]): Array<string | undefined> {
   return values
 }
 
-/** Derive `--mcp` mode from argv: bare flag requires, `prefer`/`require` select, anything else refuses. */
+/**
+ * Derive `--mcp` mode from argv: bare requires; following `require`/`prefer` selects;
+ * any other following token stays positional; an unknown inline value refuses.
+ */
 export function parseRequestedMcp(argv: string[]): McpMode | undefined {
   const values = mcpFlagValues(argv)
   if (values.length > 1) throw new Error('--mcp may be supplied only once')
   if (!values.length) return undefined
   const raw = values[0]
-  if (raw === undefined || raw === 'require') return 'require'
-  if (raw === 'prefer') return 'prefer'
+  if (raw === undefined) return 'require'
+  if (isMcpMode(raw)) return raw
   throw new Error(
     `--mcp received ${JSON.stringify(raw)}; accepted values are ${MCP_MODE_VALUES.join(' and ')}`,
   )

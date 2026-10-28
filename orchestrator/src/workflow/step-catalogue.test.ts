@@ -315,6 +315,13 @@ test(`${PLATFORM_SLUG} run start dispatches require a prompt or file`, () => {
   expect(
     validateStepCatalogue(
       definition(
+        `Dispatch \`${PLATFORM_SLUG} run start review-lens --review b --key AB-1 --lens correctness --mcp "Review AB-1: the change."\`.`,
+      ),
+    ),
+  ).toEqual([])
+  expect(
+    validateStepCatalogue(
+      definition(
         `Dispatch \`/checkout/bin/${PLATFORM_SLUG} run start implement --key DEV-1 --file specification.md\`.`,
       ),
     ),
