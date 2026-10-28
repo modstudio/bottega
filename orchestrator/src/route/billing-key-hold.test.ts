@@ -21,6 +21,7 @@ describe('billing key holds', () => {
   test('billing on one agent holds its sibling but not another key', () => {
     expect(decideBillingKeyHolds(agents, [run({})])).toEqual([
       {
+        id: '["ONE_KEY","https://one.test"]',
         secretName: 'ONE_KEY',
         baseUrl: 'https://one.test',
         agents: ['a', 'b'],
@@ -47,5 +48,21 @@ describe('billing key holds', () => {
 
   test('a billing failure paid by a project key holds nothing', () => {
     expect(decideBillingKeyHolds(agents, [run({ endpoint_key_source: 'project' })])).toEqual([])
+  })
+
+  test('a failed row with no failure kind is a successful answer and clears the hold', () => {
+    expect(
+      decideBillingKeyHolds(agents, [
+        run({}),
+        run({
+          record_id: 'b',
+          number: 2,
+          agent: 'b',
+          failure_kind: null,
+          endpoint_key_source: null,
+          finished_at: 2,
+        }),
+      ]),
+    ).toEqual([])
   })
 })

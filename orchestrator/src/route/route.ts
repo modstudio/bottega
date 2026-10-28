@@ -23,7 +23,7 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
-import { billingKeyHoldRefusal, billingKeyHolds } from './billing-key-hold.ts'
+import { billingKeyHoldRefusal, decideBillingKeyHolds } from './billing-key-hold.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
   PROMPT_SIZE_BOUNDARY,
@@ -64,9 +64,10 @@ export type { Candidate } from './route-candidate.ts'
 
 import {
   type CoolingFailure,
-  coolingFailures,
   coolingPhrase,
   coolingRefusal,
+  decideCoolingFailures,
+  recentTerminalRuns,
 } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
@@ -112,7 +113,7 @@ export const EVIDENCE_WINDOW = 40
 
 function operationalRoutingRefusal(
   name: string,
-  billingHold: ReturnType<typeof billingKeyHolds>[number] | undefined,
+  billingHold: ReturnType<typeof decideBillingKeyHolds>[number] | undefined,
   cooling: string | null,
   failure: CoolingFailure,
   probeAgent: string | undefined,
@@ -364,9 +365,14 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
   // a human has fixed the quota or the login, without waiting out the hour or
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
-  const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
+  const agentList = Object.values(AGENTS)
+  const terminalRuns = recentTerminalRuns(
+    db(),
+    agentList.map((agent) => agent.name),
+  )
+  const coolingByAgent = decideCoolingFailures(terminalRuns, COOLDOWN_MIN)
   const billingHoldByAgent = new Map(
-    billingKeyHolds(db(), Object.values(AGENTS)).flatMap((hold) =>
+    decideBillingKeyHolds(agentList, terminalRuns).flatMap((hold) =>
       hold.agents.map((agent) => [agent, hold] as const),
     ),
   )
@@ -485,6 +491,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       why,
       cooling,
       billingHold: billingHold ?? null,
+      billingHoldRefusal: billingHold ? billingKeyHoldRefusal(billingHold) : null,
       declared,
       preferred: Boolean(a.preferredJobs?.includes(jobName)),
       maxConcurrent: a.maxConcurrent ?? null,

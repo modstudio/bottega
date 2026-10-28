@@ -1330,6 +1330,14 @@
       "tag": "0175_run_endpoint_key_source",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 176,
+      "version": "6",
+      "when": 1793577600041,
+      "tag": "0176_run_agent_terminal_recency",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

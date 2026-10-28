@@ -30,6 +30,8 @@ export type Candidate = {
   cooling: string | null
   /** Shared provider account currently held by a billing failure. */
   billingHold: BillingKeyHold | null
+  /** Canonical operator remedy for the shared provider account hold. */
+  billingHoldRefusal: string | null
   declared: string[] | null
   preferred: boolean
   maxConcurrent: number | null

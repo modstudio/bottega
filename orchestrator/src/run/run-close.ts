@@ -24,7 +24,7 @@ import { reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
-import { agentsOnBillingKey, billingKeyHolds } from '../route/billing-key-hold.ts'
+import { agentsOnBillingKey } from '../route/billing-key-hold.ts'
 import {
   decideFailover,
   failoverAttemptLimit,
@@ -172,7 +172,6 @@ function storedFailoverSelectionConstraints(
   billingFailure: { agent: string; keySource: 'agent' | 'project' } | null,
 ) {
   const agents = Object.values(AGENTS)
-  const heldAgents = billingKeyHolds(db(), agents).flatMap((hold) => hold.agents)
   const failedKeyAgents =
     billingFailure?.keySource === 'agent' ? agentsOnBillingKey(agents, billingFailure.agent) : []
   return failoverSelectionConstraints({
@@ -181,7 +180,9 @@ function storedFailoverSelectionConstraints(
     avoided: opts.avoid,
     distinctModels: opts.distinctModels,
     tried,
-    billingExcluded: [...heldAgents, ...failedKeyAgents],
+    // Held keys are excluded by the single routing pass inside successor
+    // selection. Only the just-failed key needs carrying as a hard constraint.
+    billingExcluded: failedKeyAgents,
     transportExcluded: first.transport
       ? agentsIneligibleForTransport(opts.job, first.transport)
       : [],

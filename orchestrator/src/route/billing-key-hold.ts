@@ -1,6 +1,5 @@
 // concern: route
-/** Decides and reads machine-local routing holds shared by agents on one billing key. */
-import type { Database } from 'bun:sqlite'
+/** Decides machine-local routing holds shared by agents on one billing key. */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { type FailureKind, PROVIDER_UNSERVED } from '../failure/failure.ts'
 
@@ -20,7 +19,11 @@ export type BillingKeyRun = {
   endpoint_key_source: 'agent' | 'project' | null
   finished_at: number
 }
-export type BillingKeyHold = BillingKey & { agents: string[]; failingRunNumber: number }
+export type BillingKeyHold = BillingKey & {
+  id: string
+  agents: string[]
+  failingRunNumber: number
+}
 
 /** The account identity that makes separate agent rows spend the same balance. */
 function billingKeyForAgent(agent: BillingKeyAgent): BillingKey | null {
@@ -74,39 +77,9 @@ export function decideBillingKeyHolds(
   return [...groups.entries()].flatMap(([id, group]) => {
     const run = latest.get(id)
     return run?.failure_kind === 'billing'
-      ? [{ ...group.key, agents: group.agents.sort(), failingRunNumber: run.number }]
+      ? [{ ...group.key, id, agents: group.agents.sort(), failingRunNumber: run.number }]
       : []
   })
-}
-
-/** Store adapter for the pure billing-key hold decision. */
-export function billingKeyHolds(
-  database: Database,
-  agents: readonly BillingKeyAgent[],
-): BillingKeyHold[] {
-  const providerUnservedSql = [...PROVIDER_UNSERVED].map((kind) => `'${kind}'`).join(',')
-  const rows = database
-    .query(
-      `WITH relevant AS (
-         SELECT record_id,number,agent,status,failure_kind,endpoint_key_source,
-                (julianday(started_at) + latency_ms / 86400000.0) AS finished_at,
-                ROW_NUMBER() OVER (
-                  PARTITION BY agent
-                  ORDER BY julianday(started_at) + latency_ms / 86400000.0 DESC, record_id DESC
-                ) AS recency
-           FROM run
-          WHERE status IN ('ok','failed') AND latency_ms IS NOT NULL
-            AND COALESCE(endpoint_key_source,'agent')='agent'
-            AND (
-              failure_kind='billing' OR
-              NOT (status='failed' AND failure_kind IN (${providerUnservedSql}))
-            )
-       )
-       SELECT record_id,number,agent,status,failure_kind,endpoint_key_source,finished_at
-         FROM relevant WHERE recency=1`,
-    )
-    .all() as BillingKeyRun[]
-  return decideBillingKeyHolds(agents, rows)
 }
 
 export function billingKeyHoldRefusal(hold: BillingKeyHold): string {
