@@ -12,6 +12,7 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { mergePullRequest } from '../pull-request/pr-merge.ts'
+import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { log } from './support.ts'
 
 const forbiddenGithubFlag = (value: string): string | null => {
@@ -64,7 +65,7 @@ function createPullRequestCommand(
       ceilingRuling: options.ceilingRuling,
       fromOperator: options.fromOperator,
     },
-    options.cwd ?? process.cwd(),
+    resolveReviewCommandCwd(options.cwd),
   )
   if (result.output) log(result.output)
   if (result.overrideId !== null) {
@@ -89,7 +90,7 @@ export function register(program: Command): void {
     .option('--cwd <tree>', 'verify and merge from this worktree')
     .allowExcessArguments(false)
     .action((target: string, options) => {
-      const outcome = mergePullRequest(target, options.cwd ?? process.cwd())
+      const outcome = mergePullRequest(target, resolveReviewCommandCwd(options.cwd))
       log(outcome.output)
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     })

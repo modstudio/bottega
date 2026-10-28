@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import type { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   ANSWER_CHANNEL_CLI,
@@ -255,10 +256,31 @@ function refuseOwnedMessageOption(
   refusedOptions: Readonly<Record<string, string>> | undefined,
 ): void {
   const optionName = arg.split('=', 1)[0]!
-  const owningCommand = refusedOptions?.[optionName]
-  if (owningCommand) {
-    throw new Error(`${optionName} is not an option here; ${owningCommand} takes ${optionName}`)
+  const refusal = refusedOptions?.[optionName]
+  if (refusal) throw new Error(refusal)
+}
+
+/** Derive flag-shaped text that belongs to another registered owner command. */
+export function refusedOwnerOptions(
+  command: Command,
+  publicCommand: string,
+  publicGroup: string,
+): Readonly<Record<string, string>> {
+  let root = command
+  while (root.parent) root = root.parent
+  const own = new Set(command.options.map((option) => option.long).filter(Boolean))
+  const refused: Record<string, string> = {}
+  const visit = (candidate: Command): void => {
+    for (const option of candidate.options) {
+      if (!option.long || own.has(option.long) || refused[option.long]) continue
+      refused[option.long] =
+        `${option.long} is not an option of ${publicCommand}; ` +
+        `see ${PLATFORM_SLUG} ${publicGroup} --help`
+    }
+    for (const child of candidate.commands) visit(child)
   }
+  for (const child of root.commands) visit(child)
+  return refused
 }
 
 export function parseAnswerChannelArgs(args: string[]): {
@@ -378,26 +400,15 @@ export function parseContinueArgs(args: string[], usage: string): ContinueArgs {
   return { identifier, sources: { commandFile, positionals } }
 }
 
-export function parseAnswerTextSources(args: string[]): AnswerTextSources {
+export function parseAnswerTextSources(
+  args: string[],
+  refusedOptions?: Readonly<Record<string, string>>,
+): AnswerTextSources {
   return parseWorkerMessageArgs(args, {
     booleans: ANSWER_BOOLEANS,
     questions: true,
     questionOperatorFlags: true,
-    refusedOptions: {
-      '--all': `${PLATFORM_SLUG} question inbox`,
-      '--active': `${PLATFORM_SLUG} question inbox`,
-      '--cwd': `${PLATFORM_SLUG} question inbox`,
-      '--reason': `${PLATFORM_SLUG} question close`,
-      '--since': `${PLATFORM_SLUG} question ruling list`,
-      '--kind': `${PLATFORM_SLUG} question ruling list`,
-      '--because': `${PLATFORM_SLUG} question ruling overturn`,
-      '--replacement': `${PLATFORM_SLUG} question ruling overturn`,
-      '--replacement-file': `${PLATFORM_SLUG} question ruling overturn`,
-      '--as': `${PLATFORM_SLUG} question ruling file`,
-      '--scope': `${PLATFORM_SLUG} question ruling file`,
-      '--subject': `${PLATFORM_SLUG} question ruling file`,
-      '--title': `${PLATFORM_SLUG} question ruling file`,
-    },
+    refusedOptions,
   })
 }
 

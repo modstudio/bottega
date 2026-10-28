@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, relative } from 'node:path'
 import { Command } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pullRequestCiCommandOutcome, register, validateGithubArguments } from './pull-request.ts'
@@ -13,6 +16,21 @@ test('PR create consumes --cwd instead of forwarding it to GitHub', () => {
 
   expect(create.opts().cwd).toBe('/tmp/DEV-1849-tree')
   expect(parsed.unknown).toEqual(['--title', 'DEV-1849 title'])
+})
+
+test('PR create resolves a relative --cwd before admission', async () => {
+  const tree = mkdtempSync(join(tmpdir(), 'pr-create-relative-'))
+  try {
+    const relativeTree = relative(process.cwd(), tree)
+    const program = new Command().exitOverride()
+    register(program)
+
+    await expect(
+      program.parseAsync(['node', 'orch', 'pr', 'create', '--cwd', relativeTree]),
+    ).rejects.toThrow(`cannot resolve a project for ${tree}`)
+  } finally {
+    rmSync(tree, { recursive: true, force: true })
+  }
 })
 
 test('PR admission accepts GitHub content arguments', () => {

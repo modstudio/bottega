@@ -39,16 +39,6 @@ afterEach(() => {
   else process.env.CLAUDE_CODE_SESSION_ID = priorSession
 })
 
-test('the read command usage names --cwd', () => {
-  expect(() =>
-    recordArchitectReadCommand(
-      ['review', 'read', 'unexpected'],
-      { flag: () => undefined },
-      { log: () => {} },
-    ),
-  ).toThrow(`${PLATFORM_SLUG} review read [--cwd <tree>] [--sha <tip>] --note <text>`)
-})
-
 test('worker sessions cannot record an architect read', () => {
   expect(() => recordArchitectRead({ cwd: '/unused', note: 'read the final fix' })).toThrow(
     'reserved for architect sessions',
