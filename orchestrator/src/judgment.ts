@@ -13,6 +13,7 @@ import { JOBS, job } from './jobs/jobs.ts'
 import { findingsCloseOutRefusal } from './judgment-closeout-refusal.ts'
 import { machineId } from './record/machine-identity.ts'
 import { cleanReviewEvidence, parseReviewOutput } from './review/review.ts'
+import { type ReviewOutputState, reviewCaptureRefusal } from './review/review-capture-refusal.ts'
 import {
   duplicateFindingRefusal,
   type ParsedDuplicateFinding,
@@ -552,13 +553,14 @@ export async function judgeRun(
     reviewRecordId = lens?.review_record_id ?? null
     assertRunReviewFindingIntegrity(id)
     if (delivery !== 'none' && !reviewRecordId) {
+      let outputState: ReviewOutputState = 'missing'
       if (row.output_path && existsSync(row.output_path)) {
+        outputState = 'invalid'
         parsedOutput = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
       }
-      if (!parsedOutput)
-        throw new Error(
-          `run ${id} has no recorded review; recover it with ${PLATFORM_SLUG} review record ${id}`,
-        )
+      if (!parsedOutput) {
+        throw new Error(reviewCaptureRefusal(id, outputState))
+      }
     } else if (delivery !== 'none') {
       storedGrades = Object.fromEntries(
         REVIEW_GRADE_NAMES.flatMap((name) => (lens?.[name] ? [[name, lens[name]]] : [])),
@@ -863,10 +865,10 @@ function loadScoreReviewOutput(
     .get(id) as { record_id: string; findings: number } | null
   if (existing) return { output: null, findings: existing.findings }
   if (!outputPath || !existsSync(outputPath)) {
-    throw new Error(`run ${id} has no recorded output to capture as a review`)
+    throw new Error(reviewCaptureRefusal(id, 'missing'))
   }
   const output = parseReviewOutput(readFileSync(outputPath, 'utf8'))
-  if (!output) throw new Error(`run ${id} output does not satisfy the review contract`)
+  if (!output) throw new Error(reviewCaptureRefusal(id, 'invalid'))
   const evidence = cleanReviewEvidence(id, output)
   if (evidence.failure) throw new Error(`run ${id} cannot be scored: ${evidence.failure}`)
   return { output, findings: output.findings.length }

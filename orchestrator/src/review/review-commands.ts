@@ -13,6 +13,7 @@ import { projectAt, projectByName } from '../project/projects.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
+import { reviewCaptureRefusal } from './review-capture-refusal.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
@@ -477,10 +478,10 @@ export function recordReviewCommand(
       output_path: string | null
     } | null
     if (!row?.output_path || !existsSync(row.output_path)) {
-      throw new Error(`run ${runId} has no recorded output`)
+      throw new Error(reviewCaptureRefusal(runId, 'missing'))
     }
     const output = parseReviewOutput(readFileSync(row.output_path, 'utf8'))
-    if (!output) throw new Error(`run ${runId} output does not satisfy the review contract`)
+    if (!output) throw new Error(reviewCaptureRefusal(runId, 'invalid'))
     return { runId, output }
   })
   const reviewRecordId = recordReviews(entries)
