@@ -1,7 +1,8 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
+import { refreshAgents } from '../agent/agent-registry.ts'
 import { resolveFailover } from '../collect/collect.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
@@ -16,6 +17,19 @@ import {
 } from '../failure/failure.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
 import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
+
+afterEach(refreshAgents)
+
+function shareBillingKey(...agents: string[]): void {
+  const placeholders = agents.map(() => '?').join(',')
+  db()
+    .query(
+      `UPDATE agent SET base_url='https://shared.test',api_key_secret='SHARED_KEY'
+        WHERE name IN (${placeholders})`,
+    )
+    .run(...agents)
+  refreshAgents()
+}
 
 describe('failure classification', () => {
   test('contract failures fail over as scoreable none evidence without cooldown or notification', () => {
@@ -225,6 +239,7 @@ describe('failure classification', () => {
       'daily_quota',
       'quota',
       'billing',
+      'provider_error',
       'auth',
       'entitlement',
       'unreachable',
@@ -439,6 +454,75 @@ describe('routing counts failures as evidence', () => {
     expect(c.why).toContain(`run '${PLATFORM_SLUG} agent probe codex' to clear it`)
   })
 
+  test('a shared billing-key failure holds routing until a successful probe clears it', () => {
+    shareBillingKey('codex', 'grok')
+    const failure = addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'billing' })
+    expect(
+      db().query('SELECT endpoint_key_source FROM run WHERE record_id=?').get(failure),
+    ).toEqual({ endpoint_key_source: null })
+
+    const held = candidates('craft').find((candidate) => candidate.agent === 'grok')!
+    expect(held.eligible).toBe(false)
+    expect(held.billingHold).toMatchObject({ secretName: 'SHARED_KEY', agents: ['codex', 'grok'] })
+    expect(held.why).toContain('billing key SHARED_KEY is held')
+    expect(held.why).toContain(`run '${PLATFORM_SLUG} agent probe <agent>'`)
+
+    addRun({ agent: 'grok', job: 'agent-probe' })
+    expect(
+      candidates('craft').find((candidate) => candidate.agent === 'codex')!.billingHold,
+    ).toBeNull()
+  })
+
+  test('a project-paid billing failure does not hold the agent billing key', () => {
+    shareBillingKey('codex', 'grok')
+    const failure = addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'billing' })
+    db().query("UPDATE run SET endpoint_key_source='project' WHERE record_id=?").run(failure)
+    expect(
+      candidates('craft').find((candidate) => candidate.agent === 'grok')!.billingHold,
+    ).toBeNull()
+  })
+
+  test('provider-error streak routing cools only an uninterrupted recent streak', () => {
+    const base = Date.now() - 10 * 60_000
+    for (let index = 0; index < 3; index++) {
+      addRun({
+        agent: 'codex',
+        job: 'craft',
+        status: 'failed',
+        kind: 'provider_error',
+        startedAt: new Date(base + index * 60_000).toISOString(),
+      })
+    }
+    const cooling = candidates('craft').find((candidate) => candidate.agent === 'codex')!
+    expect(cooling.eligible).toBe(false)
+    expect(cooling.cooling).toContain('provider_error')
+
+    addRun({
+      agent: 'codex',
+      job: 'agent-probe',
+      startedAt: new Date(base + 4 * 60_000).toISOString(),
+    })
+    expect(candidates('craft').find((candidate) => candidate.agent === 'codex')!.cooling).toBeNull()
+
+    db().exec('DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run;')
+    addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'provider_error' })
+    addRun({ agent: 'codex', job: 'craft', status: 'failed', kind: 'provider_error' })
+    addRun({ agent: 'codex', job: 'craft' })
+    expect(candidates('craft').find((candidate) => candidate.agent === 'codex')!.cooling).toBeNull()
+
+    db().exec('DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run;')
+    for (let index = 0; index < 3; index++) {
+      addRun({
+        agent: 'codex',
+        job: 'craft',
+        status: 'failed',
+        kind: 'provider_error',
+        startedAt: new Date(Date.now() - (70 + index) * 60_000).toISOString(),
+      })
+    }
+    expect(candidates('craft').find((candidate) => candidate.agent === 'codex')!.cooling).toBeNull()
+  })
+
   test('probe sub-turns do not affect cooldown while a successful registration probe clears it', () => {
     const base = Date.now() - 10 * 60_000
     addRun({
@@ -496,33 +580,104 @@ describe('routing counts failures as evidence', () => {
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
   })
 
-  test('a later-id success finishing before quota failures does not mask them', () => {
-    // IDs are launch order, not completion
-    // order. The success launches last but completes while its older siblings
-    // are still running; their later quota deaths must open the circuit.
-    const base = Date.now() - 10 * 60_000
+  test('an earliest-starting quota failure that finishes last opens the circuit', () => {
+    // The long quota run starts first but finishes five minutes ago. Later
+    // quota and successful runs all finish over an hour ago, so neither launch
+    // order nor the latest rows by start time may hide the recent failure.
+    const base = Date.now() - 70 * 60_000
     addRun({
       agent: 'grok',
       job: 'review-lens',
       status: 'failed',
       kind: 'quota',
       startedAt: new Date(base).toISOString(),
-      latency: 8 * 60_000,
+      latency: 65 * 60_000,
     })
     addRun({
       agent: 'grok',
       job: 'review-lens',
       status: 'failed',
       kind: 'quota',
-      startedAt: new Date(base + 1000).toISOString(),
-      latency: 8 * 60_000,
+      startedAt: new Date(base + 60_000).toISOString(),
+      latency: 60_000,
+    })
+    for (let index = 2; index <= 4; index++)
+      addRun({
+        agent: 'grok',
+        job: 'review-lens',
+        startedAt: new Date(base + index * 60_000).toISOString(),
+        latency: 60_000,
+      })
+
+    const c = candidates('review-lens').find((x) => x.agent === 'grok')!
+    expect(c.cooling).toContain('quota')
+    expect(c.eligible).toBe(false)
+  })
+
+  test('a provider-error streak that finishes last cools despite later-starting successes', () => {
+    // Three long provider errors start first and finish within the cooldown;
+    // three short successes start after them and finish earlier. The streak is
+    // the agent's latest by completion, so only a completion-ordered read sees it.
+    const now = Date.now()
+    for (let index = 0; index < 3; index++)
+      addRun({
+        agent: 'codex',
+        job: 'craft',
+        status: 'failed',
+        kind: 'provider_error',
+        startedAt: new Date(now - (50 - index) * 60_000).toISOString(),
+        latency: 45 * 60_000,
+      })
+    for (let index = 0; index < 3; index++)
+      addRun({
+        agent: 'codex',
+        job: 'craft',
+        startedAt: new Date(now - (40 - index) * 60_000).toISOString(),
+        latency: 60_000,
+      })
+
+    const c = candidates('craft').find((x) => x.agent === 'codex')!
+    expect(c.cooling).toContain('provider_error')
+    expect(c.eligible).toBe(false)
+  })
+
+  test('the latest quota failure by completion cools behind newer non-cooling failures', () => {
+    // A long quota failure finishes five minutes ago; a later-starting quota
+    // failure finished long before it. Three contract failures, which neither
+    // cool nor clear, finish after it, so only the per-category lookup ordered
+    // by completion can return the recent quota row.
+    const now = Date.now()
+    addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      startedAt: new Date(now - 120 * 60_000).toISOString(),
+      latency: 60_000,
     })
     addRun({
       agent: 'grok',
       job: 'review-lens',
-      startedAt: new Date(base + 2000).toISOString(),
-      latency: 2 * 60_000,
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(now - 100 * 60_000).toISOString(),
+      latency: 95 * 60_000,
     })
+    addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(now - 90 * 60_000).toISOString(),
+      latency: 60_000,
+    })
+    for (let index = 0; index < 3; index++)
+      addRun({
+        agent: 'grok',
+        job: 'review-lens',
+        status: 'failed',
+        kind: 'contract',
+        startedAt: new Date(now - (4 - index) * 60_000).toISOString(),
+        latency: 30_000,
+      })
 
     const c = candidates('review-lens').find((x) => x.agent === 'grok')!
     expect(c.cooling).toContain('quota')
@@ -543,8 +698,8 @@ describe('routing counts failures as evidence', () => {
     expect(c.score).toBe(weigh('full', 'right'))
   })
 
-  test('vendor billing and auth failures are not evidence', () => {
-    for (const kind of ['quota', 'auth']) {
+  test('provider and account failures are not routing evidence', () => {
+    for (const kind of ['quota', 'auth', 'provider_error']) {
       db().exec('DELETE FROM score; DELETE FROM run_mutation_audit; DELETE FROM run;')
       addRun({ agent: 'codex', job: 'craft', status: 'failed', kind })
       const c = candidates('craft').find((x) => x.agent === 'codex')!

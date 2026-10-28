@@ -84,6 +84,7 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
       startedByUserId: null,
       replySchemaName: 'WORKER_SCHEMA',
       carriedQuestionIds: [carriedQuestionRecordId],
+      endpointKeySource: 'project',
       assertDispatchAllowed: () => {},
     }
     await expect(
@@ -115,6 +116,9 @@ test('a later claim records a UUID ruling identity and never resurrects a failed
         record_id: reservedRecordId,
       },
     )
+    expect(
+      db().query('SELECT endpoint_key_source FROM run WHERE record_id=?').get(claimed.claim.id),
+    ).toEqual({ endpoint_key_source: 'project' })
     expect(
       db()
         .query<{ record_id: string }, [string]>(

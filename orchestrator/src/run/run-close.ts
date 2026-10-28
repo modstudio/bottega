@@ -6,6 +6,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { AGENTS } from '../agent/agent-registry.ts'
 import { reclaimTerminalTree } from '../close/close-out.ts'
 import type { WorkerReply } from '../contract/contract.ts'
 import { db, writeTransaction } from '../database/db.ts'
@@ -23,6 +24,7 @@ import { reclaimsTreeByDefault } from '../jobs/jobs.ts'
 import { mcpRequestFromStored, requiredMcpServer } from '../mcp/mcp-preflight.ts'
 import { resolveBranchRef, stackAt } from '../project/projects.ts'
 import type { ReviewRole } from '../review/review-role.ts'
+import { agentsOnBillingKey } from '../route/billing-key-hold.ts'
 import {
   decideFailover,
   failoverAttemptLimit,
@@ -140,6 +142,7 @@ export function failoverSelectionConstraints(input: {
   distinctModels: string[] | undefined
   tried: string[]
   transportExcluded: string[]
+  billingExcluded?: string[]
 }): {
   pinnedTransport: TransportName | null
   successorTransport: TransportName | undefined
@@ -156,6 +159,7 @@ export function failoverSelectionConstraints(input: {
         ...(input.avoided ?? []),
         ...input.tried,
         ...(pinnedTransport ? input.transportExcluded : []),
+        ...(input.billingExcluded ?? []),
       ]),
     ],
   }
@@ -165,17 +169,32 @@ function storedFailoverSelectionConstraints(
   first: { transport: TransportName | null; transport_explicit: number },
   opts: Pick<CloseOptions, 'job' | 'avoid' | 'distinctModels'>,
   tried: string[],
+  billingFailure: { agent: string; keySource: 'agent' | 'project' } | null,
 ) {
+  const agents = Object.values(AGENTS)
+  const failedKeyAgents =
+    billingFailure?.keySource === 'agent' ? agentsOnBillingKey(agents, billingFailure.agent) : []
   return failoverSelectionConstraints({
     transport: first.transport,
     transportExplicit: first.transport_explicit,
     avoided: opts.avoid,
     distinctModels: opts.distinctModels,
     tried,
+    // Held keys are excluded by the single routing pass inside successor
+    // selection. Only the just-failed key needs carrying as a hard constraint.
+    billingExcluded: failedKeyAgents,
     transportExcluded: first.transport
       ? agentsIneligibleForTransport(opts.job, first.transport)
       : [],
   })
+}
+
+function billingFailureForFailover(
+  failureKind: string | null,
+  agent: string,
+  keySource: 'agent' | 'project',
+): { agent: string; keySource: 'agent' | 'project' } | null {
+  return failureKind === 'billing' ? { agent, keySource } : null
 }
 
 export async function selectFailoverSuccessor(input: {
@@ -368,7 +387,12 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     } else {
       try {
         const originalPrompt = readFileSync(first.prompt_path!, 'utf8')
-        const transportConstraints = storedFailoverSelectionConstraints(first, opts, tried)
+        const transportConstraints = storedFailoverSelectionConstraints(
+          first,
+          opts,
+          tried,
+          billingFailureForFailover(failureKind, name, input.endpointKey.source),
+        )
         const selected = await selectFailoverSuccessor({
           runId: claim.id,
           job: opts.job,

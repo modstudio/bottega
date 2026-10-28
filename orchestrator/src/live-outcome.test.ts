@@ -111,6 +111,33 @@ describe('live outcome derivation', () => {
     })
   })
 
+  test('goose provider error reply is a provider failure despite the sandbox banner', () => {
+    const reply =
+      'sandbox host: MCP was requested; srt blocks MCP transports; run is unconfined\n\n' +
+      'Ran into this error: Request failed: Bad request (400): Provider returned error.\n\n' +
+      'Please retry if you think this is a transient or recoverable error.'
+    expect(outcome({ writesJob: false, output: reply })).toEqual({
+      status: 'failed',
+      failureKind: 'provider_error',
+      error: reply.trim(),
+    })
+  })
+
+  test('billing wording in a goose provider error envelope stays billing', () => {
+    expect(
+      outcome({
+        writesJob: false,
+        output:
+          'Ran into this error: Request failed: Bad request (400): Please check your account with your provider to add more credits.',
+      }).failureKind,
+    ).toBe('billing')
+  })
+
+  test('a review that quotes Request failed is still an answer', () => {
+    const review = 'Finding: the log says `Request failed:` but the retry path silently ignores it.'
+    expect(outcome({ writesJob: false, output: review }).status).toBe('ok')
+  })
+
   test('a non-zero exit with no stdout records the stderr tail ahead of the reply notice', () => {
     const stderr = 'Session not found locally for session abc\nRequest failed with status 404'
     const replyNotice = 'reply did not match the worker contract:\n'

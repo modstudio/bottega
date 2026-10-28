@@ -232,4 +232,17 @@ describe('terminal evidence assessment', () => {
     expect(assessment.status).toBe('ok')
     expect(assessment.provenanceWrongProjectTool).toBeNull()
   })
+
+  test('a provider failure is not replaced by review contract assessment', () => {
+    expect(
+      assessEvidence(
+        { status: 'failed', error: 'provider failed', failureKind: 'provider_error' },
+        { ...base, findingsJob: true, outputPresent: true, reviewReply: null },
+      ),
+    ).toMatchObject({
+      status: 'failed',
+      error: 'provider failed',
+      failureKind: 'provider_error',
+    })
+  })
 })

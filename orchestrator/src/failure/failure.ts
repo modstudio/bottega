@@ -26,6 +26,8 @@ export const FAILURE_KINDS = [
   /** The vendor account cannot spend until its balance or billing limit is restored. */
   'billing',
   'auth',
+  /** The provider returned an error for the request, so no answer exists to judge. */
+  'provider_error',
   /**
    * The vendor will not serve this account for the product. Neither waiting nor
    * re-authenticating fixes it; an administrator has to grant the entitlement.
@@ -188,6 +190,10 @@ const PATTERNS: [FailureKind, RegExp][] = [
     'auth',
     /\b(401|403|unauthori[sz]ed|forbidden|authentication required|not (?:logged in|signed in|authenticated)|invalid (?:api )?key|expired token|please (?:log|sign) in|re-?authenticate)\b/i,
   ],
+  [
+    'provider_error',
+    /(?:Request failed:[\s\S]{0,160}\b\d{3}\b[\s\S]{0,100}Provider returned error|Ran into this error:\s*Request failed:)/i,
+  ],
   /**
    * Nothing answered. The endpoint is not there at all.
    *
@@ -255,10 +261,11 @@ const NON_ANSWER = [
   /^\[API Error:/i, // Qwen Code / Gemini CLI lineage
   /^\[Error:/i,
   /^Error:\s*timeout waiting for response/i,
+  /^Ran into this error:\s*Request failed:/i,
 ]
 
 export function isNonAnswer(text: string): boolean {
-  const t = text.trim()
+  const t = text.trim().replace(/^(?:sandbox[^\n]*\n\s*)+/i, '')
   if (!t) return true
   const [first = ''] = t.split('\n', 1)
   try {
@@ -375,6 +382,7 @@ export const FAILS_OVER: FailureKind[] = [
   'daily_quota',
   'quota',
   'billing',
+  'provider_error',
   'auth',
   'entitlement',
   'content_refusal',
@@ -419,6 +427,7 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'daily_quota',
   'quota',
   'billing',
+  'provider_error',
   'auth',
   'entitlement',
   'unreachable',
@@ -445,6 +454,7 @@ export const PROVIDER_UNSERVED: ReadonlySet<FailureKind> = new Set([
   'capacity',
   'entitlement',
   'unreachable',
+  'provider_error',
 ])
 
 export type BillingHold = { enabled: 0; disabledReason: string }

@@ -23,6 +23,11 @@ import { calibrationFor } from '../runtime/calibration-port.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
+import {
+  type BillingKeyHold,
+  billingKeyHoldRefusal,
+  decideBillingKeyHolds,
+} from './billing-key-hold.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
 import {
   PROMPT_SIZE_BOUNDARY,
@@ -30,6 +35,7 @@ import {
   promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
+import type { Candidate } from './route-candidate.ts'
 import {
   attachRouteCosts,
   type CostPerAcceptedResult,
@@ -56,49 +62,20 @@ import {
   NOISE_BAND,
   weightCase,
 } from './route-selection.ts'
-import {
-  aggregateEvidence,
-  type RunUsageMedians,
-  routingEvidenceWindow,
-  runUsageMedians,
-} from './route-statistics.ts'
+import { aggregateEvidence, routingEvidenceWindow, runUsageMedians } from './route-statistics.ts'
 
-import { coolingFailures, coolingPhrase, coolingRefusal } from './routing-cooldown.ts'
+export type { Candidate } from './route-candidate.ts'
+
+import {
+  type CoolingFailure,
+  coolingPhrase,
+  coolingRefusal,
+  decideCoolingFailures,
+  recentTerminalRuns,
+} from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
-
-export type Candidate = {
-  agent: string
-  runs: number
-  scored: number
-  /** Failed or abandoned runs without an explicit judgment. */
-  failures: number
-  /** Explicit judgments whose delivery was none, used by the exploration filter. */
-  none: number
-  /** Explicit verdicts plus unjudged failures; the MIN_SAMPLE denominator. */
-  evidence: number
-  evidenceModel: string | null
-  /** Mean verdict weight, or null until anything has been judged. */
-  score: number | null
-  /** Score pulled toward the job-wide proven-agent mean by MIN_SAMPLE judgments. */
-  shrunk: number | null
-  latencyMs: number | null
-  tokens: number
-  usage: RunUsageMedians
-  costUsd: number
-  free: boolean
-  eligible: boolean
-  why: string
-  /** Most recent uncleared quota or stale-auth failure. */
-  cooling: string | null
-  declared: string[] | null
-  preferred: boolean
-  maxConcurrent: number | null
-  runningRunIds: string[]
-  routedReason?: string
-  costPerAccepted?: CostPerAcceptedResult
-}
 
 type RouteConstraints = {
   agents?: string[]
@@ -137,6 +114,18 @@ export const COOLDOWN_MIN = 60
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
+
+function operationalRoutingRefusal(
+  name: string,
+  billingHold: BillingKeyHold | undefined,
+  cooling: string | null,
+  failure: CoolingFailure | undefined,
+  probeAgent: string | undefined,
+): string | null {
+  if (probeAgent === name) return null
+  if (billingHold) return billingKeyHoldRefusal(billingHold)
+  return cooling && failure ? coolingRefusal(name, failure, COOLDOWN_MIN) : null
+}
 
 export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
   const rows = db()
@@ -380,7 +369,17 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
   // a human has fixed the quota or the login, without waiting out the hour or
   // pretending a trivial reply was real work. Adding `AND probe = 0` here for
   // consistency would remove the only way to clear a cooldown.
-  const coolingByAgent = coolingFailures(db(), COOLDOWN_MIN)
+  const agentList = Object.values(AGENTS)
+  const terminalRuns = recentTerminalRuns(
+    db(),
+    agentList.map((agent) => agent.name),
+  )
+  const coolingByAgent = decideCoolingFailures(terminalRuns, COOLDOWN_MIN)
+  const billingHoldByAgent = new Map(
+    decideBillingKeyHolds(agentList, terminalRuns).flatMap((hold) =>
+      hold.agents.map((agent) => [agent, hold] as const),
+    ),
+  )
   const runningByAgent = runningRunsByAgent()
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
@@ -405,6 +404,14 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const currentModel = modelOverride ?? a.model
     const failure = coolingByAgent.get(name)
     const cooling = failure ? coolingPhrase(failure) : null
+    const billingHold = billingHoldByAgent.get(name)
+    const operationalRefusal = operationalRoutingRefusal(
+      name,
+      billingHold,
+      cooling,
+      failure,
+      coolingProbeAgent,
+    )
     const h = hist.get(name)
     const window = routingEvidenceWindow(evidenceRows, name, currentModel, EVIDENCE_WINDOW)
     const recent = aggregateEvidence(window.rows)
@@ -421,9 +428,9 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
-    } else if (cooling && coolingProbeAgent !== name) {
+    } else if (operationalRefusal) {
       eligible = false
-      why = coolingRefusal(name, failure!, COOLDOWN_MIN)
+      why = operationalRefusal
     } else if (unavailable) {
       eligible = false
       why = unavailable
@@ -487,6 +494,8 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       eligible,
       why,
       cooling,
+      billingHold: billingHold ?? null,
+      billingHoldRefusal: billingHold ? billingKeyHoldRefusal(billingHold) : null,
       declared,
       preferred: Boolean(a.preferredJobs?.includes(jobName)),
       maxConcurrent: a.maxConcurrent ?? null,

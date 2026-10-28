@@ -120,6 +120,15 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/brand.ts',
     '../failure/failure.ts',
   ]),
+  module('orchestrator/src/route/billing-key-hold.ts', [
+    '../../../shared/brand.ts',
+    '../failure/failure.ts',
+  ]),
+  module('orchestrator/src/route/route-candidate.ts', [
+    './billing-key-hold.ts',
+    './route-cost.ts',
+    './route-statistics.ts',
+  ]),
   module('orchestrator/src/route/training-data-eligibility.ts', [
     '../../../shared/brand.ts',
     '../../../shared/repository-visibility.ts',
