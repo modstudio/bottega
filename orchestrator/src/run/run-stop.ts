@@ -12,9 +12,12 @@ import {
   verifyBranchOwnershipAfterCleanup,
   withCleanupLock,
 } from '../cleanup/cleanup.ts'
-import { releaseStoppedReaderClone } from '../close/close-out-stop-release.ts'
+import {
+  keptStoppedReaderClone,
+  releaseStoppedReaderClone,
+  stoppedConversationIsReaderClone,
+} from '../close/close-out-stop-release.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
-import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type TerminalDockerTeardown,
@@ -49,7 +52,7 @@ import type { RecordedRunSharedGitConfigInput } from './shared-git-config-check.
 import {
   decideStopCloseOut,
   STOP_CLOSE_OUT_LEASE_WAIT_MS,
-  waitForStopCloseOutLease,
+  type StopCloseOutLeaseOutcome,
 } from './stop-close-out-decision.ts'
 import { stoppedWorktreeLine } from './stopped-worktree-decision.ts'
 
@@ -94,35 +97,44 @@ function dockerStopMessage(dockerTeardown: TerminalDockerTeardown): string {
   return 'found no Docker containers to reclaim'
 }
 
-function stopCoordinatorExtraPids(pid: number | null): number[] {
-  return pid && pid !== process.pid ? [pid] : []
-}
-
 function stopCoordinatorPid(pid: number | null): number | null {
   return pid && pid !== process.pid ? pid : null
 }
 
-function keptReaderCloneForHeldLease(
-  cleanupRow: { record_id: string; job: string; worktree: string | null },
-  coordinatorPid: number | null,
-): ReturnType<typeof releaseStoppedReaderClone> {
-  if (!cleanupRow.worktree || !isReadOnlyRepositoryJob(cleanupRow.job)) {
-    return { outcome: 'not-applicable', detail: null }
+function waitMs(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** Poll the close-out lease until it is free or the named bound elapses. */
+export function waitForStopCloseOutLease(
+  runId: string,
+  boundMs: number,
+  deps: {
+    leaseHeld: (id: string) => boolean
+    now?: () => number
+    wait?: (ms: number) => void
+    pollMs?: number
+  },
+): StopCloseOutLeaseOutcome {
+  if (!deps.leaseHeld(runId)) return 'free'
+  const now = deps.now ?? Date.now
+  const wait = deps.wait ?? waitMs
+  const pollMs = deps.pollMs ?? 50
+  const deadline = now() + boundMs
+  while (now() < deadline) {
+    wait(Math.min(pollMs, Math.max(0, deadline - now())))
+    if (!deps.leaseHeld(runId)) return 'held-then-free'
   }
-  const pidClause =
-    coordinatorPid != null
-      ? `coordinator pid ${coordinatorPid} is still alive`
-      : 'coordinator is not alive'
-  return {
-    outcome: 'kept',
-    detail: `close-out lease still held; ${pidClause}`,
-  }
+  return 'still-held'
 }
 
 function stoppedReaderCloneRelease(
   row: StopRow,
   cleanupRow: ReturnType<typeof stopCleanupRow>,
 ): ReturnType<typeof releaseStoppedReaderClone> {
+  if (!stoppedConversationIsReaderClone(cleanupRow.record_id)) {
+    return { outcome: 'not-applicable', detail: null }
+  }
   const lease = waitForStopCloseOutLease(row.record_id, STOP_CLOSE_OUT_LEASE_WAIT_MS, {
     leaseHeld: (id) => runCloseOutLeaseState(id) === 'held',
   })
@@ -133,9 +145,9 @@ function stoppedReaderCloneRelease(
     coordinatorPid,
   })
   if (decision.action === 'leave-for-sweep') {
-    return keptReaderCloneForHeldLease(cleanupRow, decision.coordinatorPid)
+    return keptStoppedReaderClone(decision.coordinatorPid)
   }
-  return releaseStoppedReaderClone(cleanupRow.record_id, stopCoordinatorExtraPids(row.pid))
+  return releaseStoppedReaderClone(cleanupRow.record_id, decision.extraPids)
 }
 
 function logStoppedRun(

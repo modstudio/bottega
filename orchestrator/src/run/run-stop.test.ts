@@ -13,7 +13,8 @@ import * as resourceOwnership from '../resources/resource-ownership.ts'
 import { candidates } from '../route/route.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import type { RunProcessTerminationPlan, TerminateRunProcessesResult } from './run-process.ts'
-import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal } from './run-stop.ts'
+import { abandonRun, stoppedRunLine, stopRun, stopTerminationRefusal, waitForStopCloseOutLease } from './run-stop.ts'
+import { STOP_CLOSE_OUT_LEASE_WAIT_MS } from './stop-close-out-decision.ts'
 
 const presentation = () => {
   const lines: string[] = []

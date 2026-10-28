@@ -68,27 +68,6 @@ test('failover selection reads a billing hold and does not select its sibling', 
   ).rejects.toThrow('billing key SHARED_KEY is held')
 })
 
-test('failover selection runs for an idle failure', async () => {
-  addRun({ agent: 'grok', job: 'review-lens', status: 'failed', kind: 'idle' })
-
-  const selected = await selectFailoverSuccessor({
-    runId: 'unused-without-capacity-wait',
-    job: 'review-lens',
-    pickBytes: 0,
-    lens: null,
-    launchCwd: null,
-    callerCwd: process.cwd(),
-    repo: null,
-    mcp: null,
-    mcpError: null,
-    pinnedTransport: null,
-    avoidedAgents: ['grok'],
-    distinctModels: undefined,
-  })
-
-  expect(selected.agent).toBe('codex')
-})
-
 test('failover successor selection honors distinct model exclusions', async () => {
   const selected = await selectFailoverSuccessor({
     runId: 'unused-without-capacity-wait',

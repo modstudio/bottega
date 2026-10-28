@@ -8,7 +8,6 @@ export const runStopBoundarySpecs = [
       '../cleanup/cleanup.ts',
       '../close/close-out-stop-release.ts',
       '../database/db.ts',
-      '../jobs/jobs.ts',
       '../record/machine-identity.ts',
       '../resources/resource-ownership.ts',
       './run-authority.ts',
