@@ -7,6 +7,7 @@ import {
   decideFilesystemOrphanAfterRemoval,
   decideFilesystemOrphanEligibility,
   decideFilesystemOrphanUnderLock,
+  decideProjectSweep,
   decideRecordedRunCloseOut,
   decideRecordedRunPointer,
   decideRecordedRunPostInventory,
@@ -25,6 +26,39 @@ import {
   shouldExpireUnjudgedOwner,
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
+
+describe('project sweep held worktrees', () => {
+  test('runs with an empty variable when no worktree is held', () => {
+    expect(decideProjectSweep({ heldPaths: [], honorsHeld: false, dryRun: false })).toEqual({
+      action: 'run',
+      environment: { BOTTEGA_HELD_WORKTREES: '' },
+      execute: true,
+    })
+  })
+
+  test('runs with held worktrees listed when the project honors them', () => {
+    expect(
+      decideProjectSweep({ heldPaths: ['/trees/a', '/trees/b'], honorsHeld: true, dryRun: false }),
+    ).toEqual({
+      action: 'run',
+      environment: { BOTTEGA_HELD_WORKTREES: '/trees/a\n/trees/b' },
+      execute: true,
+    })
+  })
+
+  test('skips held worktrees without the declaration and names the remedy', () => {
+    const decision = decideProjectSweep({
+      heldPaths: ['/trees/a'],
+      honorsHeld: false,
+      dryRun: false,
+    })
+    expect(decision).toEqual({
+      action: 'skip',
+      reason:
+        'held worktrees: /trees/a; declare worktree.sweep_honors_held once the project sweep skips every path listed in BOTTEGA_HELD_WORKTREES',
+    })
+  })
+})
 
 describe('conversation project ownership', () => {
   const root = { record_id: '10', projectRecordId: 'project-a' }

@@ -209,6 +209,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-task-linking.ts',
     './workflow-text.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-cursor-worktrees.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-result.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',

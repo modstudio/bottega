@@ -677,9 +677,10 @@ export function removeFor(
 export function sweepWithTool(
   tool: WorktreeTool,
   repoRoot: string,
+  environment: NodeJS.ProcessEnv,
 ): { ok: boolean; out: string; exitCode: number | null } | null {
   if (!tool.sweep) return null
-  const result = runShellTool(tool.sweep, {}, repoRoot)
+  const result = runShellTool(tool.sweep, {}, repoRoot, environment)
   return { ok: result.ok, out: result.out, exitCode: result.exitCode }
 }
 

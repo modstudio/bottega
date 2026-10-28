@@ -150,7 +150,9 @@ export const cleanupBoundarySpecs = [
       './reader-clone-archive-retention.ts',
       './stray-worktree-sweep.ts',
       './cleanup-sweep-docker.ts',
+      './cleanup-sweep-orphan-report.ts',
       './claim-reconciliation.ts',
+      './project-sweep.ts',
       '../close/close-out.ts',
       '../board/board-service.ts',
       '../board/board-claim-service.ts',
@@ -185,6 +187,35 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  },
+  {
+    name: 'cleanup-sweep-orphan-report-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-orphan-report.ts',
+    allowed: [
+      '../project/projects.ts',
+      '../resources/docker-resources.ts',
+      './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep orphan sweep reporting over canonical inventory and pure cleanup rulings.',
+  },
+  {
+    name: 'project-sweep-boundary',
+    file: 'orchestrator/src/cleanup/project-sweep.ts',
+    allowed: [
+      '../database/db.ts',
+      'node:fs',
+      '../project/projects.ts',
+      '../reclaim/orphan-process-reclaim.ts',
+      '../workflow/workflow-cursor-worktrees.ts',
+      '../worktree/worktree-remove.ts',
+      './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep project sweep execution as the adapter over the held-tree ruling, cleanup lock, and declared worktree command.',
   },
   {
     name: 'unjudged-run-remedy-boundary',

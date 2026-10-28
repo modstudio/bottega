@@ -417,6 +417,31 @@ export function decideFilesystemOrphanAfterRemoval(
   }
 }
 
+export type ProjectSweepDecision =
+  | { action: 'run'; environment: { BOTTEGA_HELD_WORKTREES: string }; execute: boolean }
+  | { action: 'skip'; reason: string }
+
+/** Decide whether a project's sweep has declared the held-tree safety contract. */
+export function decideProjectSweep(input: {
+  heldPaths: readonly string[]
+  honorsHeld: boolean
+  dryRun: boolean
+}): ProjectSweepDecision {
+  if (input.heldPaths.length && !input.honorsHeld) {
+    return {
+      action: 'skip',
+      reason:
+        `held worktrees: ${input.heldPaths.join(', ')}; declare worktree.sweep_honors_held once ` +
+        'the project sweep skips every path listed in BOTTEGA_HELD_WORKTREES',
+    }
+  }
+  return {
+    action: 'run',
+    environment: { BOTTEGA_HELD_WORKTREES: input.heldPaths.join('\n') },
+    execute: !input.dryRun,
+  }
+}
+
 export type FilesystemOrphanAfterInventoryFacts = {
   runIdPresent: boolean
   inventory: 'unavailable' | 'empty' | 'leaked'

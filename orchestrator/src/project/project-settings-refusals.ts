@@ -52,6 +52,13 @@ export function retiredReadonlyDockerProblems(worktree: unknown): string[] {
     : []
 }
 
+export function sweepHonorsHeldProblems(worktree: ProjectSettings['worktree']): string[] {
+  return worktree?.sweep_honors_held !== undefined &&
+    typeof worktree.sweep_honors_held !== 'boolean'
+    ? ['worktree.sweep_honors_held must be a boolean']
+    : []
+}
+
 export function autonomyProblems(value: unknown): string[] {
   try {
     validateAutonomySettings(value, 'project')

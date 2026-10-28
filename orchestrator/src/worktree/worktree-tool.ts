@@ -7,11 +7,12 @@ export function runShellTool(
   template: string,
   vars: Record<string, string>,
   cwd: string,
+  environment: NodeJS.ProcessEnv = {},
 ): { ok: boolean; out: string; stdout: string; exitCode: number | null } {
   const cmd = fillTool(template, vars)
   const p = Bun.spawnSync(['sh', '-c', cmd], {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env: { ...targetGitEnvironment(cwd), ...environment },
     stdout: 'pipe',
     stderr: 'pipe',
   })

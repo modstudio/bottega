@@ -68,6 +68,8 @@ export type WorktreeTool = {
    * leak is not the directory: it is the database still sitting behind it.
    */
   sweep?: string
+  /** Declares that sweep skips every path listed in BOTTEGA_HELD_WORKTREES. */
+  sweep_honors_held?: boolean
   /**
    * What a branch is allowed to be called here.
    *
