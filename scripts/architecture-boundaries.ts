@@ -960,6 +960,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../project/projects.ts',
       '../review/review-evidence-sql.ts',
       './branch-state.ts',
+      './branch-trunk-tip.ts',
       '../run/run-status.ts',
       '../worktree/worktree-types.ts',
     ],

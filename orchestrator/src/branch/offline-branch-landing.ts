@@ -13,6 +13,7 @@ import {
   findRecordedBranchLanding,
   type PatchEquivalentForm,
 } from './branch-state.ts'
+import { resolveLandingTrunkTip } from './branch-trunk-tip.ts'
 
 export type OfflineBranchLandingCandidate = {
   projectId: string
@@ -110,13 +111,7 @@ function observeProject(
   const trunk = project.settings.trunk?.trim()
   if (!trunk) return []
   const branches = localBranches(project)
-  const trunkTip = git(
-    project.path,
-    'rev-parse',
-    '--verify',
-    '--end-of-options',
-    `${trunk}^{commit}`,
-  )
+  const trunkTip = resolveLandingTrunkTip(trunk, (args) => git(project.path, ...args))
   return candidates.flatMap((candidate) => {
     const tip = branches.get(candidate.branch)
     if (!tip) return [{ ...candidate, branchExists: false, landed: false }]

@@ -15,6 +15,7 @@ export const branchModuleSpecs = [
       './branch-ref-guard.ts',
       './branch-settlement.ts',
       './branch-state.ts',
+      './branch-trunk-tip.ts',
       './merged-pull-request.ts',
       './other-branch-state.ts',
       './task-branch.ts',
@@ -85,6 +86,7 @@ export const branchModuleSpecs = [
     allowed: ['bun:sqlite', '../database/db.ts'],
   },
   { file: 'orchestrator/src/branch/branch-state.ts', allowed: ['./merged-pull-request.ts'] },
+  { file: 'orchestrator/src/branch/branch-trunk-tip.ts', allowed: [] },
   {
     file: 'orchestrator/src/branch/offline-branch-landing.ts',
     allowed: [
@@ -94,6 +96,7 @@ export const branchModuleSpecs = [
       '../project/projects.ts',
       './branch-landing-records.ts',
       './branch-state.ts',
+      './branch-trunk-tip.ts',
       './task-branch.ts',
     ],
   },

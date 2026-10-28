@@ -19,6 +19,7 @@ import {
   pullRequestCarriesKey,
   type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
+import { resolveLandingTrunkTip } from './branch-trunk-tip.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
   type GitHubPullRequest,
@@ -572,12 +573,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 
   const byBranch = new Map<string, typeof rows>()
   for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
-  const trunkTip = taskBranchGit(repoRoot, [
-    'rev-parse',
-    '--verify',
-    '--end-of-options',
-    `${trunk}^{commit}`,
-  ])
+  const trunkTip = resolveLandingTrunkTip(trunk, (args) => taskBranchGit(repoRoot, args))
   const candidates: TaskBranchCandidate[] = []
   const liveBranches = [...byBranch].filter(([branch]) => !isTaskBranchSuperseded(branch, rows))
   for (const [branch, branchRows] of liveBranches) {

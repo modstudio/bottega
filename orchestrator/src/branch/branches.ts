@@ -34,6 +34,7 @@ import {
   shouldSettleTruncatedBranch,
   type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
+import { resolveLandingTrunkTip } from './branch-trunk-tip.ts'
 import {
   GH_MERGED_PR_LIMIT,
   type MergedPullRequest,
@@ -301,13 +302,7 @@ function branchReportFor(
   let newlyRecordedLandings: RecordedLandingReport[] = []
   let wouldRecordLandings: AutomaticLandingPreview[] = []
   let observations: string[] = []
-  const trunkTip = git(
-    project.path,
-    'rev-parse',
-    '--verify',
-    '--end-of-options',
-    `${trunk}^{commit}`,
-  )
+  const trunkTip = resolveLandingTrunkTip(trunk, (args) => git(project.path, ...args))
   const minted = new Map<string, Map<string, RunRow[]>>()
   const protectedRuns = new Map<string, RunRow[]>()
   for (const run of runs) {
