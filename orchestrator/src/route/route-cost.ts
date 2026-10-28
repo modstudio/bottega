@@ -36,6 +36,34 @@ type ChainCostRow = {
 type ReportedCost = { usd: number | null; source: string | null }
 export type RouteCostFacts = Map<string, ReportedCost[]>
 
+function pricedFacts(rows: ChainCostRow[], context: SubscriptionCostContext): RouteCostFacts {
+  const costsByRoot: RouteCostFacts = new Map()
+  for (const row of rows) {
+    const cost = withReportedCost(row, context)
+    costsByRoot.set(row.rootRecordId, [
+      ...(costsByRoot.get(row.rootRecordId) ?? []),
+      { usd: cost.cost_usd, source: cost.cost_source },
+    ])
+  }
+  return costsByRoot
+}
+
+/** Price every eligible historical chain once for causal replay adapters. */
+export function allRouteCostFacts(context?: SubscriptionCostContext): RouteCostFacts {
+  const rows = db()
+    .query(
+      `SELECT COALESCE(r.parent_run_record_id, r.record_id) AS rootRecordId,
+              r.agent, r.started_at, r.vendor_tokens, r.vendor_cost_usd,
+              r.vendor_estimated_cost_usd, r.vendor_cost_source, r.quota_resets_at
+         FROM run r
+         JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
+        WHERE root.status IN ('ok','failed','stale') AND root.probe = 0
+          AND root.evidence_excluded IS NULL AND root.executor <> 'harness'`,
+    )
+    .all() as ChainCostRow[]
+  return pricedFacts(rows, context ?? { facts: subscriptionCostFacts(), prices: {} })
+}
+
 /** Prices all work spent on the cell against only the chains that earned an accepted result. */
 export function costPerAcceptedResult(chains: AcceptedResultChain[]): CostPerAcceptedResult {
   const accepted = chains.filter((chain) => chain.accepted).length
@@ -87,15 +115,7 @@ export function routeCostFacts(input: {
       ...(input.lens ? [input.lens] : []),
     ) as ChainCostRow[]
   const context = input.context ?? { facts: subscriptionCostFacts(), prices: {} }
-  const costsByRoot: RouteCostFacts = new Map()
-  for (const row of rows) {
-    const cost = withReportedCost(row, context)
-    costsByRoot.set(row.rootRecordId, [
-      ...(costsByRoot.get(row.rootRecordId) ?? []),
-      { usd: cost.cost_usd, source: cost.cost_source },
-    ])
-  }
-  return costsByRoot
+  return pricedFacts(rows, context)
 }
 
 export function routeCostPerAccepted(

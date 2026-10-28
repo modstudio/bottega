@@ -14,7 +14,7 @@ import { routingEvidenceWindow } from './route-statistics.ts'
 const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))
 
-type Event = {
+export type RoutingBacktestEvent = {
   record_id: string
   agent: string
   job: string
@@ -28,6 +28,11 @@ type Event = {
   weight: number
   none: boolean
   scored: boolean
+  delivery: string | null
+  quality: string | null
+  fidelity: string | null
+  linesAdded: number | null
+  linesRemoved: number | null
   /** When this result first existed for a live routing decision to observe. */
   evidenceAt: string | null
   /** When a successful run's latency became observable, whether scored or not. */
@@ -44,6 +49,7 @@ type OperationalEvent = {
 
 type ReplayOptions = { includeVoided?: boolean; cooldowns?: boolean }
 
+type Event = RoutingBacktestEvent
 type History = Event[]
 type PolicyChoice = { agent: string; expected: string }
 
@@ -84,7 +90,7 @@ function seeded(seed: number): () => number {
   }
 }
 
-function staticEligible(agent: string, jobName: string, promptBytes: number): boolean {
+export function staticEligible(agent: string, jobName: string, promptBytes: number): boolean {
   const a = AGENTS[agent]
   const j = JOBS[jobName]
   if (
@@ -259,7 +265,7 @@ function thompsonChoice(
   return { agent: ranked.chosen.agent, expected: ranked.expected.agent }
 }
 
-function events(includeVoided = false): Event[] {
+export function routingBacktestEvents(includeVoided = false): Event[] {
   type Row = Omit<Event, 'weight' | 'none' | 'scored' | 'evidenceAt' | 'latencyAt'> & {
     delivery: Parameters<typeof weigh>[0] | null
     quality: Parameters<typeof weigh>[1]
@@ -268,11 +274,39 @@ function events(includeVoided = false): Event[] {
     executor: 'external' | 'harness'
   }
   const database = db()
+  const terminationByRoot = new Map(
+    (
+      database
+        .query(
+          `SELECT rootId, startedAt, latencyMs, status FROM (
+             SELECT COALESCE(parent_run_record_id, record_id) AS rootId,
+                    started_at AS startedAt, latency_ms AS latencyMs, status,
+                    ROW_NUMBER() OVER (
+                      PARTITION BY COALESCE(parent_run_record_id, record_id)
+                      ORDER BY turn DESC, number DESC
+                    ) AS position
+               FROM run
+           ) WHERE position=1`,
+        )
+        .all() as Array<{
+        rootId: string
+        startedAt: string
+        latencyMs: number | null
+        status: string
+      }>
+    ).map((row) => [
+      row.rootId,
+      ['ok', 'failed', 'stale', 'stopped'].includes(row.status) && row.latencyMs !== null
+        ? new Date(Date.parse(row.startedAt) + row.latencyMs).toISOString()
+        : null,
+    ]),
+  )
   const rows = database
     .query(
       `SELECT r.record_id, r.agent, r.job, r.stack, r.model, r.prompt_bytes AS promptBytes,
             r.started_at AS startedAt, r.latency_ms AS latencyMs, r.status,
-            r.failure_kind AS failureKind, r.executor,
+            r.failure_kind AS failureKind, r.executor, r.lines_added AS linesAdded,
+            r.lines_removed AS linesRemoved,
             s.delivery, s.quality, s.fidelity, s.scored_at AS scoredAt
        FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
       WHERE r.parent_run_record_id IS NULL AND r.probe=0
@@ -295,11 +329,11 @@ function events(includeVoided = false): Event[] {
       failureKind: row.failureKind,
       executor: row.executor,
     })
-      ? (row.scoredAt ?? chainTerminationAt(database, row.record_id))
+      ? (row.scoredAt ?? terminationByRoot.get(row.record_id) ?? null)
       : null
     const latencyAt =
       row.status === 'ok' && row.latencyMs !== null
-        ? chainTerminationAt(database, row.record_id)
+        ? (terminationByRoot.get(row.record_id) ?? null)
         : null
     return {
       record_id: row.record_id,
@@ -318,6 +352,11 @@ function events(includeVoided = false): Event[] {
           : weigh(row.delivery, row.quality, row.fidelity),
       none: row.delivery === 'none',
       scored: row.delivery !== null,
+      delivery: row.delivery,
+      quality: row.quality,
+      fidelity: row.fidelity,
+      linesAdded: row.linesAdded,
+      linesRemoved: row.linesRemoved,
       evidenceAt,
       latencyAt,
     }
@@ -462,7 +501,7 @@ export function routingBacktest(
   options: ReplayOptions = {},
 ): RoutingBacktest {
   return replay(
-    events(options.includeVoided),
+    routingBacktestEvents(options.includeVoided),
     operationalEvents(),
     jobName,
     seed,
@@ -474,7 +513,7 @@ export function routingBacktestEnsemble(
   jobName?: string,
   options: ReplayOptions = {},
 ): RoutingBacktestEnsemble {
-  const all = events(options.includeVoided)
+  const all = routingBacktestEvents(options.includeVoided)
   const operations = operationalEvents()
   const trajectories = ROUTING_BACKTEST_SEEDS.map((seed) =>
     replay(all, operations, jobName, seed, options.cooldowns !== false),

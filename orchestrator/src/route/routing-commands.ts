@@ -9,6 +9,7 @@ import { duelMatrices } from '../score/duel.ts'
 import { guide, type JobGuide } from '../state/guide.ts'
 import { promptSizeBucketLabel } from './prompt-size-bucket.ts'
 import { evidenceFor, pick, scoreboard } from './route.ts'
+import { gatherRouteCostBacktest } from './route-cost-backtest-adapter.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
 import {
   type RoutingBacktest,
@@ -21,6 +22,60 @@ type RoutingPresentation = {
   log(...values: unknown[]): void
   dur(ms: number | null | undefined): string
   subscriptionCost?: Parameters<typeof scoreboard>[1]
+}
+
+export function costBacktestCommand(flags: RoutingFlags, presentation: RoutingPresentation): void {
+  const rawDays = flags.flag('days') ?? '7'
+  const days = Number(rawDays)
+  if (!/^\d+$/.test(rawDays) || !Number.isSafeInteger(days) || days < 1)
+    throw new Error('--days must be a positive integer')
+  const report = gatherRouteCostBacktest(days, presentation.subscriptionCost)
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify({ days, ...report }))
+    return
+  }
+  presentation.log(`cost-policy backtest (${days} days; scaled to seven days)`)
+  for (const group of report.groups) {
+    presentation.log(`\n${group.group} (n=${group.n})`)
+    presentation.log(
+      'variant | shifts | weekly baseline -> policy (delta; unpriced b/p) | accepted baseline -> policy (delta pp) | below/unknown/imputed',
+    )
+    for (const row of group.figures) {
+      const mark = row.variant.shippedDefault ? ' *default' : ''
+      const moves = row.routingShift.moves
+        .slice(0, 3)
+        .map((move) => `${move.from}->${move.to} ${move.count}`)
+        .join(', ')
+      presentation.log(
+        `${row.variant.name}${mark} | ${row.routingShift.count}/${row.routingShift.n} ` +
+          `(${(row.routingShift.share * 100).toFixed(1)}%; ${moves || 'none'}) | ` +
+          `$${row.usdPerWeek.baseline.toFixed(2)} -> $${row.usdPerWeek.variant.toFixed(2)} ` +
+          `(${row.usdPerWeek.delta >= 0 ? '+' : ''}$${row.usdPerWeek.delta.toFixed(2)}; ` +
+          `${row.usdPerWeek.baselineUnpriced}/${row.usdPerWeek.variantUnpriced}, n=${row.usdPerWeek.n}) | ` +
+          `${(row.acceptedRate.baseline * 100).toFixed(1)}% -> ` +
+          `${(row.acceptedRate.variant * 100).toFixed(1)}% ` +
+          `(${row.acceptedRate.deltaPoints >= 0 ? '+' : ''}${row.acceptedRate.deltaPoints.toFixed(1)}, n=${row.acceptedRate.n}) | ` +
+          `${row.fallbacks.allBelowFloor}/${row.fallbacks.allCostsUnknown}/` +
+          `${row.fallbacks.pickedOrBaselineImputed} (n=${row.fallbacks.n})`,
+      )
+    }
+  }
+  presentation.log('\nfairness flags')
+  const flagged = report.fairness.filter((cell) => cell.flagged)
+  if (flagged.length === 0) presentation.log('none')
+  for (const cell of flagged) {
+    presentation.log(
+      `${cell.job} [${cell.promptBucket}]${cell.lens ? ` / ${cell.lens}` : ''}: ` +
+        `${cell.reasons.join('; ')}; ` +
+        cell.agents
+          .map(
+            (agent) =>
+              `${agent.agent} n=${agent.runs} prompt-median=${agent.medianPromptBytes} ` +
+              `size=${JSON.stringify(agent.sizeClasses)}`,
+          )
+          .join(', '),
+    )
+  }
 }
 type PickOptions = {
   jobName: string
