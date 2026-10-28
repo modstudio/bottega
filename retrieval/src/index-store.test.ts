@@ -10,12 +10,28 @@ import {
   applyRefresh,
   configureIndexDatabase,
   indexedRows,
+  isReadOnlyIndexError,
   planCodeCache,
   storedRows,
 } from './index-store.ts'
 import { planRefresh } from './refresh-plan.ts'
 
 const vector = [1, ...Array.from<number>({ length: 1_023 }).fill(0)]
+
+test('classifies SQLite read-only errors and permission errors on index files', () => {
+  const databasePath = '/state/retrieval.db'
+
+  expect(isReadOnlyIndexError({ code: 'SQLITE_READONLY' }, databasePath)).toBe(true)
+  expect(isReadOnlyIndexError({ code: 'SQLITE_READONLY_DBMOVED' }, databasePath)).toBe(true)
+  expect(isReadOnlyIndexError({ code: 'EACCES', path: `${databasePath}-wal` }, databasePath)).toBe(
+    true,
+  )
+  expect(
+    isReadOnlyIndexError({ code: 'EPERM', path: `${databasePath}-journal` }, databasePath),
+  ).toBe(true)
+  expect(isReadOnlyIndexError({ code: 'EACCES', path: '/other/file' }, databasePath)).toBe(false)
+  expect(isReadOnlyIndexError({ code: 'SQLITE_BUSY' }, databasePath)).toBe(false)
+})
 
 test('two handles interleave cold schema creation and reject a stale repeated refresh', () => {
   const directory = mkdtempSync(join(tmpdir(), 'retrieval-concurrency-test-'))

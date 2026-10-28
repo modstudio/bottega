@@ -2,8 +2,8 @@
 /** Owns the SQLite document-vector schema and transactions. */
 
 import { Database } from 'bun:sqlite'
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { EMBEDDING_DIMENSION, EMBEDDING_MODEL, INSTRUCTION_VERSION } from './contract.ts'
 import type {
   PlannedDelete,
@@ -167,17 +167,21 @@ export function touchCodeCache(
   contentHashes: string[],
   now = Date.now(),
 ): void {
+  database
+    .transaction(() => {
+      touchCodeCacheRows(database, contentHashes, now)
+    })
+    .immediate()
+}
+
+function touchCodeCacheRows(database: Database, contentHashes: string[], now: number): void {
   const touch = database.query(`
     UPDATE code_vector_cache SET last_seen_at = ?
      WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
   `)
-  database
-    .transaction(() => {
-      for (const contentHash of new Set(contentHashes)) {
-        touch.run(now, contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
-      }
-    })
-    .immediate()
+  for (const contentHash of new Set(contentHashes)) {
+    touch.run(now, contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
+  }
 }
 
 export function applyCodeCacheRefresh(
@@ -196,10 +200,6 @@ export function applyCodeCacheRefresh(
       content_hash, model, dimension, instruction_version, document, vector, last_seen_at
     ) VALUES (?, ?, ?, ?, ?, ?, ?)
   `)
-  const touch = database.query(`
-    UPDATE code_vector_cache SET last_seen_at = ?
-     WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
-  `)
   const prune = database.query('DELETE FROM code_vector_cache WHERE last_seen_at < ?')
   return database
     .transaction(() => {
@@ -216,9 +216,7 @@ export function applyCodeCacheRefresh(
         )
         embedded += Number(result.changes)
       }
-      for (const contentHash of new Set(input.seenContentHashes)) {
-        touch.run(now, contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
-      }
+      touchCodeCacheRows(database, input.seenContentHashes, now)
       const pruned = Number(prune.run(now - retentionMs).changes)
       return { embedded, pruned }
     })
@@ -237,8 +235,53 @@ export function openIndexDatabase(path: string): Database {
   }
 }
 
-export function openReadonlyIndexDatabase(path: string): Database {
+function openReadonlyIndexDatabase(path: string): Database {
   return new Database(path, { readonly: true })
+}
+
+function isIndexPermissionError(code: string | undefined): boolean {
+  return code === 'EACCES' || code === 'EPERM'
+}
+
+function errorCode(error: unknown): string | undefined {
+  return error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined
+}
+
+export function isReadOnlyIndexError(error: unknown, databasePath: string): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = errorCode(error)
+  if (code === 'SQLITE_READONLY' || code?.startsWith('SQLITE_READONLY_')) return true
+  if (!isIndexPermissionError(code)) return false
+  if (!('path' in error) || typeof error.path !== 'string') return false
+  const path = resolve(error.path)
+  const database = resolve(databasePath)
+  return (
+    path === database ||
+    path === `${database}-wal` ||
+    path === `${database}-shm` ||
+    path === `${database}-journal`
+  )
+}
+
+function isMissingIndexError(error: unknown, databasePath: string): boolean {
+  const code = errorCode(error)
+  return !existsSync(databasePath) && (code === 'SQLITE_CANTOPEN' || isIndexPermissionError(code))
+}
+
+export function openSearchIndexDatabase(path: string): { database: Database; readonly: boolean } {
+  try {
+    return { database: openIndexDatabase(path), readonly: false }
+  } catch (error) {
+    if (isMissingIndexError(error, path)) {
+      throw new Error(
+        'there is no retrieval index yet; a search from a session that can write the state directory builds it',
+      )
+    }
+    if (!isReadOnlyIndexError(error, path)) throw error
+    return { database: openReadonlyIndexDatabase(path), readonly: true }
+  }
 }
 
 export function storedRows(database: Database, corpusKey = 'docs'): StoredVectorRow[] {

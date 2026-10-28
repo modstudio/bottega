@@ -90,6 +90,23 @@ test('orchestrator adapter forwards optional document address filters', async ()
   ])
 })
 
+test('orchestrator adapter carries a successful retrieval stderr notice', async () => {
+  const output = {
+    query: 'meaning',
+    k: 1,
+    contract: { model: 'model', dimension: 1024, instructionVersion: 'doc-search-v1' },
+    refresh: { embedded: 0, deleted: 0, unchanged: 0, stale: 0 },
+    results: [],
+  }
+  await expect(
+    searchDocs('meaning', 1, {}, async () => ({
+      stdout: JSON.stringify(output),
+      stderr: ' index has 3 stale chunks \n',
+      exitCode: 0,
+    })),
+  ).resolves.toEqual({ ...output, notice: 'index has 3 stale chunks' })
+})
+
 test('orchestrator adapter refuses malformed or failed retrieval output', async () => {
   await expect(
     searchDocs('meaning', 1, {}, async () => ({ stdout: '{}', stderr: '', exitCode: 0 })),

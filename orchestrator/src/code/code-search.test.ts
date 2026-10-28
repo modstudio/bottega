@@ -61,3 +61,20 @@ test('code search parses the shared result contract', async () => {
   )
   expect(result).toEqual(output)
 })
+
+test('code search carries a successful retrieval stderr notice', async () => {
+  const output = {
+    query: 'meaning',
+    k: 1,
+    contract: { model: 'model', dimension: 1024, instructionVersion: 'doc-search-v1' },
+    refresh: { embedded: 0, deleted: 0, unchanged: 0, stale: 0, pruned: 0 },
+    results: [],
+  }
+  await expect(
+    searchProjectCode(project(true), '/projects/fixture', 'meaning', 1, async () => ({
+      stdout: JSON.stringify(output),
+      stderr: ' index has 2 stale chunks \n',
+      exitCode: 0,
+    })),
+  ).resolves.toEqual({ ...output, notice: 'index has 2 stale chunks' })
+})
