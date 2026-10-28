@@ -76,6 +76,7 @@ import {
   retainedBranchPruneCommand,
   retainedBranchReason,
 } from './retained-branch.ts'
+import { preArchiveHold } from './tree-process-cwd-hold.ts'
 
 const retainedRefForRun = (tip: string | null, runId: string) =>
   tip ? `refs/orch/retained/${runId}` : null
@@ -771,8 +772,8 @@ function attemptCloseOutRun(
                 detail: `coordinator lease for run ${ownerText([owner]).replace('\n', ' is still held\n')}`,
               }
             terminateRunProcesses(row.record_id, [process.pid])
-            const landingHold = landingTreeReleaseHold(landingReleaseInput)
-            if (landingHold) return landingHold
+            const hold = preArchiveHold(landingReleaseInput, treeAbsent, processInventory.rows)
+            if (hold) return hold
             const archive = archiveReaderScratchForRelease({
               runId: extractionRunId(row),
               treePath,
@@ -786,7 +787,6 @@ function attemptCloseOutRun(
                 outcome: 'held' as const,
                 detail: `${archive.detail}; clone and claim retained`,
               }
-            const archivedScratchPath = archive.path
             const branchSnapshot = retainedBranch ? branchTip(repoRoot, retainedBranch) : null
             const retainedRef = retainedRefForRun(branchSnapshot, row.root_record_id)
             const pinFailure = protectRetainedBranch({
@@ -815,8 +815,8 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent || archivedScratchPath !== null,
-              archivedScratchPath !== null,
+              treeAbsent || archive.path !== null,
+              archive.path !== null,
             )
             if (retainedBranch && branchSnapshot) {
               const branchAfter = branchTip(repoRoot, retainedBranch)
@@ -892,7 +892,7 @@ function attemptCloseOutRun(
                 detail: `worktree was acquired during cleanup by run(s): ${ownerText(acquired)}`,
               }
             const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
-            released.detail = readerScratchReleaseDetail(released.detail, archivedScratchPath)
+            released.detail = readerScratchReleaseDetail(released.detail, archive.path)
             return released
           },
           options.lockTimeoutMs,

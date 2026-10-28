@@ -8,6 +8,7 @@ import {
   LANDING_TREE_JOB,
   landingTreeCommandBase,
   landingTreeCommandCapability,
+  landingTreeExistingCheckoutRefusal,
   landingTreeHoldDecision,
   landingTreeOpeningRefusal,
   landingTreeReleaseDecision,
@@ -68,6 +69,32 @@ describe('landing-tree run adoption', () => {
 })
 
 describe('landing-tree decisions', () => {
+  test('a terminal recorded tree directs removal before retrying the open command', () => {
+    expect(
+      landingTreeExistingCheckoutRefusal({
+        branch: 'DEV-1834-fix',
+        path: '/tmp/retained-tree',
+        terminalRunNumber: 22310,
+        retryCommand: `${PLATFORM_SLUG} tree open run-id`,
+      }),
+    ).toBe(
+      `branch DEV-1834-fix already has a live tree at /tmp/retained-tree, recorded for terminal run 22310; close-out releases that tree when nothing runs in it; run ${PLATFORM_SLUG} tree remove /tmp/retained-tree, then ${PLATFORM_SLUG} tree open run-id`,
+    )
+  })
+
+  test('another checked-out tree keeps the existing use-or-release message', () => {
+    expect(
+      landingTreeExistingCheckoutRefusal({
+        branch: 'DEV-1834-fix',
+        path: '/tmp/other-tree',
+        terminalRunNumber: null,
+        retryCommand: `${PLATFORM_SLUG} tree open run-id`,
+      }),
+    ).toBe(
+      `branch DEV-1834-fix already has a live tree at /tmp/other-tree; use that path or release it with ${PLATFORM_SLUG} tree remove /tmp/other-tree`,
+    )
+  })
+
   test('keeps a clean existing landing tree without holding close-out', () => {
     expect(
       landingTreeHoldDecision(

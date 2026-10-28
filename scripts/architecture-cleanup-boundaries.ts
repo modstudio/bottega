@@ -1,5 +1,27 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'tree-process-cwd-decision-boundary',
+    file: 'orchestrator/src/close/tree-process-cwd-decision.ts',
+    allowed: ['../worktree/removal-working-directory.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep the tree process cwd decision pure and independent of filesystems, stores, and processes.',
+  },
+  {
+    name: 'tree-process-cwd-hold-boundary',
+    file: 'orchestrator/src/close/tree-process-cwd-hold.ts',
+    allowed: [
+      'node:fs',
+      '../../../shared/brand.ts',
+      '../resources/process-inventory.ts',
+      './close-out-release-holds.ts',
+      './tree-process-cwd-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep process cwd observation independent of stores, routing, transports, and worktree removal.',
+  },
+  {
     name: 'session-adopt-boundary',
     file: 'orchestrator/src/session/session-adopt.ts',
     allowed: [

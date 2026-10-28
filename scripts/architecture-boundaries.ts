@@ -197,6 +197,7 @@ export const importBoundaries: ImportBoundary[] = [
       './close-out-release-holds.ts',
       './reader-scratch-close-out.ts',
       './retained-branch.ts',
+      './tree-process-cwd-hold.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
       '../hook-tree/hook-tree.ts',

@@ -66,6 +66,21 @@ export function landingTreeOpeningRefusal(input: {
   return null
 }
 
+export function landingTreeExistingCheckoutRefusal(input: {
+  branch: string
+  path: string
+  terminalRunNumber: number | null
+  retryCommand: string
+}): string {
+  if (input.terminalRunNumber === null) {
+    return `branch ${input.branch} already has a live tree at ${input.path}; use that path or release it with ${PLATFORM_SLUG} tree remove ${input.path}`
+  }
+  return (
+    `branch ${input.branch} already has a live tree at ${input.path}, recorded for terminal run ${input.terminalRunNumber}; ` +
+    `close-out releases that tree when nothing runs in it; run ${PLATFORM_SLUG} tree remove ${input.path}, then ${input.retryCommand}`
+  )
+}
+
 export function landingTreeCommandCapability(
   create: WorktreeCreate | string,
 ): { allowed: true } | { allowed: false; reason: string } {

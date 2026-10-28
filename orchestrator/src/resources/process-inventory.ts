@@ -92,7 +92,11 @@ export function parseProcessTable(output: string): ProcessFact[] {
   })
 }
 
-function processCwds(): { values: Map<number, string>; error: string | null } {
+/** Bounded inventory of live process working directories reported by lsof. */
+export function processWorkingDirectories(): {
+  values: Map<number, string>
+  error: string | null
+} {
   try {
     const { process: found, error } = observeBoundedSubprocess(
       'lsof',
@@ -152,7 +156,7 @@ export function joinProcessCwd(
 function observeProcesses(): { facts: ProcessFact[]; error: string | null } {
   const before = processTableSnapshot()
   if (before.error) return before
-  const cwds = processCwds()
+  const cwds = processWorkingDirectories()
   if (cwds.error) return { facts: before.facts, error: cwds.error }
   const after = processTableSnapshot()
   const births = new Map(after.facts.map((fact) => [fact.pid, fact.startTime]))
