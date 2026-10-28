@@ -86,13 +86,14 @@ print the worker reply contract for a job
 
 ## bottega agent cost-backtest
 
-**Synopsis:** `bottega agent cost-backtest [--days <value>] [--json]`
+**Synopsis:** `bottega agent cost-backtest [--days <value>] [--without <agents>] [--json]`
 
 backtest cost-policy variants against historical routing decisions
 
 ### Options
 
 - `--days <value>`: number of days to replay (default: 7)
+- `--without <agents>`: comma-separated agents to treat as absent from every decision
 - `--json`: write the report as JSON
 
 ### Related

@@ -454,3 +454,18 @@ describe('routing backtest statistics', () => {
     )
   })
 })
+
+test('static replay eligibility honors the agent declared job list', () => {
+  const original = db().query("SELECT jobs FROM agent WHERE name='codex'").get() as {
+    jobs: string | null
+  }
+  try {
+    db().query("UPDATE agent SET jobs='[\"file-question\"]' WHERE name='codex'").run()
+    refreshAgents()
+    expect(staticEligible('codex', 'file-question', 0)).toBeTrue()
+    expect(staticEligible('codex', 'summarize', 0)).toBeFalse()
+  } finally {
+    db().query("UPDATE agent SET jobs=? WHERE name='codex'").run(original.jobs)
+    refreshAgents()
+  }
+})

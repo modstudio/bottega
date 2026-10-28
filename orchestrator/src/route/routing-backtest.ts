@@ -95,6 +95,7 @@ export function staticEligible(agent: string, jobName: string, promptBytes: numb
   const a = AGENTS[agent]
   const j = JOBS[jobName]
   if (!a || !j || a.enabled === false || a.legacy || promptBytes > a.maxPromptBytes) return false
+  if (a.jobs && !a.jobs.includes(jobName)) return false
   if (
     !meteredRouteEligibility({
       billing: a.billing,

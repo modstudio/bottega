@@ -42,6 +42,7 @@ export function register(program: Command): void {
     .command('cost-backtest')
     .description('backtest cost-policy variants against historical routing decisions')
     .option('--days <value>', 'number of days to replay', '7')
+    .option('--without <agents>', 'comma-separated agents to treat as absent from every decision')
     .option('--json', 'write the report as JSON')
     .allowExcessArguments(false)
     .action(async (options) => {

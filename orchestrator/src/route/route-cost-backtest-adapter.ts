@@ -1,6 +1,7 @@
 // concern: route cost backtest adapter
 /** Rebuilds causal routing snapshots from the local evidence store. */
 
+import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -82,6 +83,7 @@ function cellCandidates(
   facts: RouteCostFacts,
   lensRuns: Map<string, Set<string>>,
   operations: ReturnType<typeof routingOperationalEvents>,
+  excluded: ReadonlySet<string>,
 ): { candidates: CostBacktestCandidate[]; baselineAgent: string | null; eligible: number } {
   const scopedIds = scope.lens ? lensRuns.get(scope.lens) : null
   const scopedEvidence = scopedIds ? history.filter((row) => scopedIds.has(row.record_id)) : history
@@ -95,7 +97,7 @@ function cellCandidates(
     operations,
     true,
     scope.stack,
-  )
+  ).filter((row) => !excluded.has(row.agent))
   if (raw.length === 0) return { candidates: [], baselineAgent: null, eligible: 0 }
   const proven = raw.filter((row) => row.evidence >= MIN_SAMPLE && row.score !== null)
   const baseline = currentPolicySelection(raw, JOBS[decision.job]?.prefer ?? [], false)
@@ -139,6 +141,7 @@ export function gatherRouteCostBacktestSnapshots(
   days: number,
   context?: SubscriptionCostContext,
   now = new Date(),
+  excluded: ReadonlySet<string> = new Set(),
 ) {
   const all = routingBacktestEvents()
   const operations = routingOperationalEvents()
@@ -176,13 +179,15 @@ export function gatherRouteCostBacktestSnapshots(
       lens: requestedLens,
       stack: requestedLens ? null : decision.stack,
     }
+    const cellIn = (within: typeof scope) =>
+      cellCandidates(decision, causal, causalLatency, within, facts, lensRuns, operations, excluded)
     let cell =
       scope.lens || scope.stack
-        ? cellCandidates(decision, causal, causalLatency, scope, facts, lensRuns, operations)
+        ? cellIn(scope)
         : { candidates: [], baselineAgent: null, eligible: 0 }
     if (!enoughForScoped(cell)) {
       scope = { lens: null, stack: null }
-      cell = cellCandidates(decision, causal, causalLatency, scope, facts, lensRuns, operations)
+      cell = cellIn(scope)
     }
     if (cell.candidates.length === 0 || cell.baselineAgent === null) continue
     const resolved = resolveRouteCostPolicy(
@@ -226,7 +231,10 @@ export function gatherRouteCostBacktest(
   days: number,
   context?: SubscriptionCostContext,
   now = new Date(),
+  excluded: ReadonlySet<string> = new Set(),
 ) {
-  const snapshot = gatherRouteCostBacktestSnapshots(days, context, now)
+  const unknown = [...excluded].filter((name) => !AGENTS[name])
+  if (unknown.length) throw new Error(`--without names no agent: ${unknown.join(', ')}`)
+  const snapshot = gatherRouteCostBacktestSnapshots(days, context, now, excluded)
   return routeCostBacktest(snapshot.decisions, snapshot.fairnessRuns, snapshot.provenAgents, days)
 }

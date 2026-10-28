@@ -86,8 +86,17 @@ export function costBacktestCommand(flags: RoutingFlags, presentation: RoutingPr
   const days = Number(rawDays)
   if (!/^\d+$/.test(rawDays) || !Number.isSafeInteger(days) || days < 1)
     throw new Error('--days must be a positive integer')
-  const report = gatherRouteCostBacktest(days, presentation.subscriptionCost)
-  if (flags.has('json')) presentation.log(JSON.stringify({ days, ...report }))
+  const without = (flags.flag('without') ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean)
+  const report = gatherRouteCostBacktest(
+    days,
+    presentation.subscriptionCost,
+    new Date(),
+    new Set(without),
+  )
+  if (flags.has('json')) presentation.log(JSON.stringify({ days, without, ...report }))
   else printCostBacktest(report, days, presentation.log)
 }
 type PickOptions = {
