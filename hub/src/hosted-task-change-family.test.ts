@@ -201,6 +201,7 @@ test('no change-log capability fails the follower leg with the release remedy', 
   expect(results.find((result) => result.source === 'hosted task changes')).toEqual({
     source: 'hosted task changes',
     ok: false,
+    durationMs: expect.any(Number),
     error:
       'the hosted hub does not serve the change log; release the hosted hub at or after the version that does',
   })
@@ -697,6 +698,7 @@ test('a failing log leg is reported independently', async () => {
     {
       source: 'hosted outbox',
       ok: true,
+      durationMs: expect.any(Number),
       hostedOutbox: {
         queued: 0,
         sent: 0,
@@ -711,6 +713,7 @@ test('a failing log leg is reported independently', async () => {
     {
       source: 'hosted task changes',
       ok: false,
+      durationMs: expect.any(Number),
       error:
         'hosted task change pulls failed: space-one: hosted hub refused the request (503): offline',
     },
@@ -722,6 +725,7 @@ test('the collect line prints the change counts and resets per space', () => {
     formatCollectLeg({
       source: 'hosted task changes',
       ok: true,
+      durationMs: 0,
       hostedChanges: {
         upsertsChanged: 3,
         upsertsNoop: 10,

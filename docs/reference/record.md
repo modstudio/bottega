@@ -8,6 +8,7 @@ the hosted record and outbox
 - [bottega record audit-secrets](#bottega-record-audit-secrets)
 - [bottega record doctor](#bottega-record-doctor)
 - [bottega record help](#bottega-record-help)
+- [bottega record lease](#bottega-record-lease)
 - [bottega record migrate](#bottega-record-migrate)
 - [bottega record outbox](#bottega-record-outbox)
 - [bottega record outbox discard](#bottega-record-outbox-discard)
@@ -53,6 +54,7 @@ the hosted record and outbox
 - [bottega record audit-secrets](./record.md#bottega-record-audit-secrets)
 - [bottega record doctor](./record.md#bottega-record-doctor)
 - [bottega record help](./record.md#bottega-record-help)
+- [bottega record lease](./record.md#bottega-record-lease)
 - [bottega record migrate](./record.md#bottega-record-migrate)
 - [bottega record outbox](./record.md#bottega-record-outbox)
 - [bottega record public-doc](./record.md#bottega-record-public-doc)
@@ -99,6 +101,20 @@ check hosted record configuration and access
 **Synopsis:** `bottega record help [command]`
 
 display help for command
+
+### Related
+
+- [bottega record](./record.md#bottega-record)
+
+## bottega record lease
+
+**Synopsis:** `bottega record lease [--json]`
+
+show the current local collect lease
+
+### Options
+
+- `--json`: write the lease state as JSON
 
 ### Related
 

@@ -235,6 +235,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'record audit-secrets',
   'record doctor',
   'record help',
+  'record lease',
   'record migrate',
   'record outbox',
   'record outbox discard',

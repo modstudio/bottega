@@ -38,6 +38,7 @@ import {
   type StoredLeaseGuard,
   type StoredLeaseStartFacts,
   storedLeaseHolder,
+  storedLeaseSnapshot,
 } from './store-lease.ts'
 import { hoursAgo } from './time.ts'
 
@@ -107,10 +108,14 @@ export type CollectLegResult =
   | {
       source: string
       ok: true
+      durationMs: number
       hostedChanges?: HostedChangeLegReport
       hostedOutbox?: HostedOutboxReport
     }
-  | { source: string; ok: false; error: string }
+  | { source: string; ok: false; error: string; durationMs: number }
+
+/** Cycle work returns the legs it ran, or nothing when it ran none. */
+type CollectCycleResult = CollectLegResult[] | undefined
 
 export function formatCollectLeg(result: CollectLegResult): string {
   const separator = result.source.length >= 18 ? ' ' : ''
@@ -122,15 +127,26 @@ export function formatCollectLeg(result: CollectLegResult): string {
   return `${result.source.padEnd(18)}ok`
 }
 
-async function settleLeg(source: string, work: () => Promise<unknown>): Promise<CollectLegResult> {
+type CollectLegSuccess = Omit<Extract<CollectLegResult, { ok: true }>, 'source' | 'durationMs'>
+
+async function settleTimedLeg<T>(
+  source: string,
+  work: () => Promise<T>,
+  success: (value: T) => CollectLegSuccess | null,
+): Promise<CollectLegResult | null> {
+  const startedAt = Date.now()
   try {
-    await work()
-    return { source, ok: true }
+    const details = success(await work())
+    return details === null ? null : { source, ...details, durationMs: Date.now() - startedAt }
   } catch (error) {
     const message = (error as Error).message
     console.error(`hub: ${source} collect failed: ${message}`)
-    return { source, ok: false, error: message }
+    return { source, ok: false, error: message, durationMs: Date.now() - startedAt }
   }
+}
+
+async function settleLeg(source: string, work: () => Promise<unknown>): Promise<CollectLegResult> {
+  return (await settleTimedLeg(source, work, () => ({ ok: true })))!
 }
 
 type HostedCollectDependencies = {
@@ -169,13 +185,12 @@ export async function hostedCollectLegs(
   for (const { name: source, work } of legs) {
     guard?.assertHeld(previous)
     if (source === 'hosted outbox') {
-      try {
-        results.push({ source, ok: true, hostedOutbox: (await work()) as HostedOutboxReport })
-      } catch (error) {
-        const message = (error as Error).message
-        console.error(`hub: ${source} collect failed: ${message}`)
-        results.push({ source, ok: false, error: message })
-      }
+      results.push(
+        (await settleTimedLeg(source, work, (report) => ({
+          ok: true,
+          hostedOutbox: report as HostedOutboxReport,
+        })))!,
+      )
     } else {
       const changeResult = await settleChangeLeg(source, work)
       if (changeResult) results.push(changeResult)
@@ -190,15 +205,9 @@ async function settleChangeLeg(
   source: string,
   work: () => Promise<HostedChangeLegReport | null | undefined>,
 ): Promise<CollectLegResult | null> {
-  try {
-    const report = await work()
-    if (report == null) return null
-    return { source, ok: true, hostedChanges: report }
-  } catch (error) {
-    const message = (error as Error).message
-    console.error(`hub: ${source} collect failed: ${message}`)
-    return { source, ok: false, error: message }
-  }
+  return settleTimedLeg(source, work, (report) =>
+    report == null ? null : { ok: true, hostedChanges: report },
+  )
 }
 
 /** Long enough to outlast a slow pass, short enough that a dead holder frees it. */
@@ -210,22 +219,36 @@ const COLLECT_INTENT_KEY = 'collect.lease.intent'
 export type LeaseGuard = StoredLeaseGuard
 
 /** Run work under one renewing lease that has already been acquired. */
-async function holdAndRenewLease<T>(
+async function holdAndRenewLease(
   holder: string,
-  fn: (guard: LeaseGuard) => Promise<T>,
+  fn: (guard: LeaseGuard) => Promise<CollectCycleResult>,
   renewEveryMs: number,
 ) {
-  return holdStoredLease({
-    key: COLLECT_LEASE_KEY,
-    holder,
-    durationMs: COLLECT_LEASE_MS,
-    renewEveryMs,
-    work: fn,
-    lostMessage: (heldBy, afterLeg) =>
-      `${heldBy ?? 'another process'} holds the collect lease; collection stopped${
-        afterLeg ? ` after ${afterLeg}` : ''
-      }; a leg already running was allowed to finish`,
-  })
+  const startedAt = Date.now()
+  let legs: CollectLegResult[] = []
+  try {
+    const result = await holdStoredLease({
+      key: COLLECT_LEASE_KEY,
+      holder,
+      durationMs: COLLECT_LEASE_MS,
+      renewEveryMs,
+      trackSince: true,
+      work: fn,
+      lostMessage: (heldBy, afterLeg) =>
+        `${heldBy ?? 'another process'} holds the collect lease; collection stopped${
+          afterLeg ? ` after ${afterLeg}` : ''
+        }; a leg already running was allowed to finish`,
+    })
+    if (result.value) legs = result.value
+    return result
+  } finally {
+    const legDurations = legs
+      .map((leg) => `${JSON.stringify(leg.source)}=${leg.durationMs}ms`)
+      .join(' ')
+    console.log(
+      `hub: collect lease hold holder=${JSON.stringify(holder)} held_ms=${Date.now() - startedAt}${legDurations ? ` legs ${legDurations}` : ''}`,
+    )
+  }
 }
 
 /**
@@ -258,6 +281,7 @@ export function acquireLease(holder: string): boolean {
     holder,
     COLLECT_LEASE_MS,
     (facts) => watcherMayStartCycle(holder, facts),
+    true,
   )
 }
 
@@ -280,6 +304,7 @@ function acquireExplicitLease(holder: string): boolean {
     holder,
     COLLECT_LEASE_MS,
     (facts) => explicitRequestMayAcquire(holder, facts),
+    true,
   )
 }
 
@@ -318,21 +343,44 @@ export async function withLease<T>(
   fn: (guard: LeaseGuard) => Promise<T>,
   waitMs = 30_000,
   renewEveryMs = LEASE_RENEW_MS,
+  collectLegs?: (value: T) => CollectLegResult[],
 ): Promise<{ ran: true; value: T } | { ran: false; heldBy: string | null }> {
-  const deadline = Date.now() + waitMs
+  const startedAt = Date.now()
+  const deadline = startedAt + waitMs
+  let polls = 0
   let ownsIntent = false
   try {
     while (!acquireExplicitLease(holder)) {
+      polls++
       if (!ownsIntent) ownsIntent = acquireStoredLeaseIntent(COLLECT_INTENT_KEY, holder, deadline)
-      if (Date.now() >= deadline) return { ran: false, heldBy: leaseHolder() }
+      if (Date.now() >= deadline) {
+        const lease = collectLease()
+        const observed = lease && !('unreadable' in lease) ? lease : null
+        console.log(
+          `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${Date.now() - startedAt} refused holder=${JSON.stringify(observed?.holder ?? 'unknown')} holder_age_ms=${observed?.age ?? 'unknown'}`,
+        )
+        return { ran: false, heldBy: observed?.holder ?? null }
+      }
       await new Promise((r) => setTimeout(r, 250))
     }
+    if (polls > 1)
+      console.log(
+        `hub: collect lease wait waiter=${JSON.stringify(holder)} waited_ms=${Date.now() - startedAt} acquired`,
+      )
     if (ownsIntent) {
       releaseStoredLease(COLLECT_INTENT_KEY, holder)
       ownsIntent = false
     }
-    const result = await holdAndRenewLease(holder, fn, renewEveryMs)
-    return result.ran ? result : { ran: false, heldBy: result.heldBy }
+    let value: T | undefined
+    const result = await holdAndRenewLease(
+      holder,
+      async (guard) => {
+        value = await fn(guard)
+        return collectLegs?.(value)
+      },
+      renewEveryMs,
+    )
+    return result.ran ? { ran: true, value: value as T } : { ran: false, heldBy: result.heldBy }
   } finally {
     if (ownsIntent) releaseStoredLease(COLLECT_INTENT_KEY, holder)
   }
@@ -340,6 +388,26 @@ export async function withLease<T>(
 
 export function leaseHolder(): string | null {
   return storedLeaseHolder(COLLECT_LEASE_KEY)
+}
+
+export type CollectLeaseStatus = {
+  holder: string
+  since: number | null
+  age: number | null
+  until: number
+}
+
+/** Current collect lease state for read-only operator and cross-concern observation. */
+export function collectLease(
+  now = Date.now(),
+): CollectLeaseStatus | import('./store-lease.ts').UnreadableStoredLease | null {
+  const lease = storedLeaseSnapshot(COLLECT_LEASE_KEY, now)
+  if (!lease) return null
+  if ('unreadable' in lease) return lease
+  return {
+    ...lease,
+    age: lease.since === null ? null : Math.max(0, now - lease.since),
+  }
 }
 
 const stamp = (key: string) =>
@@ -412,15 +480,11 @@ export async function collectFastHostedOutbox(
 ): Promise<CollectLegResult | null> {
   const source = 'hosted outbox'
   guard?.assertHeld()
-  let result: CollectLegResult | null
-  try {
-    const report = await schedule.fast((dependencies.pending ?? pendingHostedOutboxSummary)())
-    result = report ? { source, ok: true, hostedOutbox: report } : null
-  } catch (error) {
-    const message = (error as Error).message
-    console.error(`hub: ${source} collect failed: ${message}`)
-    result = { source, ok: false, error: message }
-  }
+  const result = await settleTimedLeg(
+    source,
+    () => schedule.fast((dependencies.pending ?? pendingHostedOutboxSummary)()),
+    (report) => (report ? { ok: true, hostedOutbox: report } : null),
+  )
   guard?.assertHeld(result ? source : undefined)
   return result
 }
@@ -580,15 +644,15 @@ export function watch(
     initial?: (
       guard: LeaseGuard,
       outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-    ) => Promise<unknown>
+    ) => Promise<CollectCycleResult>
     fast?: (
       guard: LeaseGuard,
       outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-    ) => Promise<unknown>
+    ) => Promise<CollectCycleResult>
     slow?: (
       guard: LeaseGuard,
       outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-    ) => Promise<unknown>
+    ) => Promise<CollectCycleResult>
     outbox?: () => Promise<HostedOutboxReport>
     pendingOutbox?: () => PendingHostedOutbox
     outboxClock?: () => string
@@ -608,7 +672,7 @@ export function watch(
       work: (
         guard: LeaseGuard,
         outboxSchedule: HostedOutboxDrainSchedule<HostedOutboxReport> | null,
-      ) => Promise<unknown>,
+      ) => Promise<CollectCycleResult>,
     ) =>
     async () => {
       if (stopping || busy || !acquireLease(holder)) return
@@ -638,7 +702,7 @@ export function watch(
         leaseGuard.assertHeld('operator notifications')
         await deliverOperatorWaitingEmails()
         leaseGuard.assertHeld('operator waiting emails')
-        await collectFast({}, leaseGuard)
+        const results = await collectFast({}, leaseGuard)
         if (outboxSchedule) {
           const result = await collectFastHostedOutbox(
             outboxSchedule,
@@ -646,7 +710,9 @@ export function watch(
             leaseGuard,
           )
           if (result) console.log(formatCollectLeg(result))
+          if (result) results.push(result)
         }
+        return results
       }),
   )
   const slow = runCycle(
@@ -664,8 +730,9 @@ export function watch(
       leaseGuard.assertHeld('operator notifications')
       await deliverOperatorWaitingEmails()
       leaseGuard.assertHeld('operator waiting emails')
-      await collectFast({}, leaseGuard)
-      await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
+      const fastResults = await collectFast({}, leaseGuard)
+      const slowResults = await collectSlow(true, leaseGuard, outboxSchedule ?? undefined)
+      return [...fastResults, ...slowResults]
     })
   void runCycle(initial)()
   const a = setInterval(() => void fast(), FAST_MS)

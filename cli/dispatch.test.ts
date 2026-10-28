@@ -109,8 +109,14 @@ test('routes public and composite commands with unchanged remaining arguments', 
   const calls: string[] = []
   const dispatch = entries(calls)
   expect(await dispatchBinary(['run', 'result', '42', '--json'], dispatch, () => '')).toBe(0)
+  expect(await dispatchBinary(['record', 'lease', '--json'], dispatch, () => '')).toBe(0)
   expect(await dispatchBinary(['machine', 'doctor'], dispatch, () => '')).toBe(0)
-  expect(calls).toEqual(['orchestrator: result 42 --json', 'orchestrator: doctor', 'hub: doctor'])
+  expect(calls).toEqual([
+    'orchestrator: result 42 --json',
+    'hub: lease --json',
+    'orchestrator: doctor',
+    'hub: doctor',
+  ])
 })
 
 test('unknown groups fail without entering a concern', async () => {

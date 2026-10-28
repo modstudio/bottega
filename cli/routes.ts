@@ -158,6 +158,7 @@ export const ROUTES = (
       ],
     },
     route('record pull', 'hub', 'collect', 'ingest every source into the local record'),
+    route('record lease', 'hub', 'lease', 'show the current local collect lease'),
     route('record push', 'orch', 'sync', "push this machine's orchestrator record"),
     route(
       'record outbox trace',

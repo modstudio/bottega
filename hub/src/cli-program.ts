@@ -50,6 +50,7 @@ const READ_ONLY_STORE_COMMANDS = ['list', 'show'] as const
 
 /** Store queries whose result does not refresh an external tracker. */
 export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
+  if (argv[0] === 'lease') return true
   if (argv[0] !== 'task') return false
   if (!READ_ONLY_STORE_COMMANDS.includes(argv[1] as (typeof READ_ONLY_STORE_COMMANDS)[number]))
     return false
