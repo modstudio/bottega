@@ -3,10 +3,10 @@ import { treeProcessCwdDecision } from './tree-process-cwd-decision.ts'
 
 const decide = (
   cwdByPid: ReadonlyMap<number, string>,
-  options: { ownPid?: number; scanError?: string | null; treePath?: string } = {},
+  options: { ownPid?: number; scanError?: string | null; treePaths?: string[] } = {},
 ) =>
   treeProcessCwdDecision({
-    treePath: options.treePath ?? '/real/tree',
+    treePaths: options.treePaths ?? ['/real/tree'],
     cwdByPid,
     ownPid: options.ownPid ?? 99,
     scanError: options.scanError ?? null,
@@ -43,7 +43,23 @@ describe('tree process cwd decision', () => {
 
   test('matches symlinked spellings after the adapter supplies real paths', () => {
     expect(
-      decide(new Map([[12, '/physical/tree/subdir']]), { treePath: '/physical/tree' }),
+      decide(new Map([[12, '/physical/tree/subdir']]), { treePaths: ['/physical/tree'] }),
     ).toMatchObject({ action: 'hold' })
+  })
+
+  test('holds when a cwd matches only the recorded tree spelling', () => {
+    expect(
+      decide(new Map([[12, '/recorded/tree/subdir']]), {
+        treePaths: ['/physical/tree', '/recorded/tree'],
+      }),
+    ).toMatchObject({ action: 'hold' })
+  })
+
+  test('ignores an unresolvable cwd outside every tree spelling', () => {
+    expect(
+      decide(new Map([[12, '/deleted/other-tree']]), {
+        treePaths: ['/physical/tree', '/recorded/tree'],
+      }),
+    ).toEqual({ action: 'proceed' })
   })
 })

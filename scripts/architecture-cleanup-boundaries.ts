@@ -12,6 +12,7 @@ export const cleanupBoundarySpecs = [
     file: 'orchestrator/src/close/tree-process-cwd-hold.ts',
     allowed: [
       'node:fs',
+      'node:path',
       '../../../shared/brand.ts',
       '../resources/process-inventory.ts',
       './close-out-release-holds.ts',

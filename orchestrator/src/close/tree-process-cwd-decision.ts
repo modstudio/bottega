@@ -11,9 +11,9 @@ export type TreeProcessCwdDecision =
       reason: { kind: 'processes'; processes: { pid: number; cwd: string }[] }
     }
 
-/** All paths are real paths; the adapter resolves them before asking the decision. */
+/** Paths are normalized spellings; the adapter resolves them before asking the decision. */
 export function treeProcessCwdDecision(input: {
-  treePath: string
+  treePaths: readonly string[]
   cwdByPid: ReadonlyMap<number, string>
   ownPid: number
   scanError: string | null
@@ -23,7 +23,9 @@ export function treeProcessCwdDecision(input: {
   }
   const processes = [...input.cwdByPid]
     .filter(
-      ([pid, cwd]) => pid !== input.ownPid && workingDirectoryIsInsideTree(cwd, input.treePath),
+      ([pid, cwd]) =>
+        pid !== input.ownPid &&
+        input.treePaths.some((treePath) => workingDirectoryIsInsideTree(cwd, treePath)),
     )
     .map(([pid, cwd]) => ({ pid, cwd }))
     .sort((left, right) => left.pid - right.pid)
