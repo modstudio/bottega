@@ -34,18 +34,15 @@ The architect owns design, the spec, every decision the spec did not settle, and
 
 # Scoring is not optional
 
-`bottega score` is the only thing that measures whether delegation works.
+`bottega score` measures delegation. **Never score an unread run:** guessed verdicts teach the router falsely.
 
-- Every run records the session from `CLAUDE_CODE_SESSION_ID`. Only that session can judge it. `bottega score` **refuses** another session's run. `CLAUDE_CODE_BRIDGE_SESSION_ID` is shared and is never an identity: `sessionId()` returns the primary id or nothing, and a mutation that needs an owner refuses rather than proceeding under the shared id.
-- `bottega score pending` lists your own unscored runs and exits nonzero while any remain.
-- A Stop hook raises them before a session finishes, once per turn, and stands down if it has already asked.
-- `bottega question answer` and `bottega run continue` refuse escaped and confinement-unverified chains, naming `bottega review confinement clear`. Unread `bottega run tell` messages surface at the harness checkpoint before the final parse. Every write verb prints usage on `--help` with no side effects.
-
-**Never score a run you did not read.** A guessed verdict teaches the router something false. Nobody may score another session's runs. The refusal names the owning session.
+- A run records `CLAUDE_CODE_SESSION_ID`; only that session may judge it, and a refusal names the owner. Shared `CLAUDE_CODE_BRIDGE_SESSION_ID` is never identity: `sessionId()` returns the primary id or nothing, and owner-required mutations refuse without it.
+- `bottega score pending` lists your unscored runs and exits nonzero until none remain. The Stop hook raises them once per turn before finish and stands down after asking.
+- `bottega question answer` and `bottega run continue` refuse escaped or confinement-unverified chains and name `bottega review confinement clear`. Unread `bottega run tell` messages surface at the harness checkpoint before final parsing. Every write verb's `--help` has no side effects.
 
 # The two halves of the ratio
 
-Every command here drives the numerator down. **`bottega score` is the only thing that measures the denominator.** A run nobody scored and a run scored badly must stay distinguishable. Delegation that is never scored is delegation you cannot tell is working.
+Commands drive the numerator down; **`bottega score` alone measures the denominator.** Unscored and badly scored runs must differ or effectiveness is unknowable.
 
 # Routing
 
@@ -57,7 +54,7 @@ Pairwise judgments are collected at score time. `bottega agent stats` reports Br
 
 **Exploration goes to agents that might win, not to ones already known not to work here.**
 
-**Quality decides alone whenever the gap is real; a tie is broken by facts.** A gap smaller than `NOISE_BAND` is noise. Inside that band the tie goes first to an agent that spends no metered quota, then to the faster one by median run time.
+**Quality decides alone whenever the gap is real, except under a cost rule that is switched on; a tie is broken by facts.** A gap smaller than `NOISE_BAND` is noise. Inside that band the tie goes first to an agent that spends no metered quota, then to the faster one by median run time. Where a rule in `DEFAULT_ROUTE_COST_POLICY` (overridable through `routing.cost_policy`) is on, an agent below the rule's floor is excluded, and a pricier agent wins only when its quality gain at the rule's rate is worth its cost per accepted result. `bottega agent cost-backtest` measures a rule change before it ships.
 
 **Proven scores are shrunk toward the field before they are ranked:** `(points + MIN_SAMPLE * prior) / (evidence + MIN_SAMPLE)`, prior being the mean raw score of every proven agent on that job. Reports keep the raw mean beside the shrunk score.
 

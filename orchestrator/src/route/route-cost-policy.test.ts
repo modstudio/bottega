@@ -104,29 +104,61 @@ describe('cost policy selection', () => {
   })
 })
 
-test('resolver applies a named lens tier and defaults an unlisted writing job to writing', () => {
+test('resolver switches on only the high-stakes lens tier by default', () => {
   expect(resolveRouteCostPolicy(DEFAULT_ROUTE_COST_POLICY, 'review-lens', 'safety', false)).toEqual(
     {
+      enabled: true,
       group: 'high-stakes',
       floor: 0.9,
       rate: 3,
     },
   )
+  expect(
+    resolveRouteCostPolicy(DEFAULT_ROUTE_COST_POLICY, 'review-lens', 'architecture', false),
+  ).toMatchObject({ enabled: false, group: 'standard' })
+  expect(
+    resolveRouteCostPolicy(DEFAULT_ROUTE_COST_POLICY, 'review-lens', 'craft', false),
+  ).toMatchObject({ enabled: false, group: 'review' })
+  expect(resolveRouteCostPolicy(DEFAULT_ROUTE_COST_POLICY, 'implement', null, true)).toMatchObject({
+    enabled: false,
+    group: 'writing',
+  })
+  expect(resolveRouteCostPolicy(DEFAULT_ROUTE_COST_POLICY, 'summarize', null, false)).toMatchObject(
+    {
+      enabled: false,
+      group: 'light',
+    },
+  )
   expect(resolveRouteCostPolicy(DEFAULT_ROUTE_COST_POLICY, 'new-writer', null, true)).toEqual({
+    enabled: false,
     group: 'writing',
     floor: null,
     rate: 3,
   })
 })
 
-test('config deeply merges an override and refuses a bad field by name', () => {
+test('config deeply merges per-rule switches and refuses a bad field by name', () => {
   const policy = parseRouteCostPolicy(
-    JSON.stringify({ enabled: true, groups: { review: { floor: 0.75 } } }),
+    JSON.stringify({
+      groups: { review: { enabled: true, floor: 0.75 } },
+      lensTiers: { 'high-stakes': { enabled: false } },
+    }),
   )
-  expect(policy.enabled).toBe(true)
-  expect(policy.groups.review).toEqual({ jobs: ['review-lens'], rate: 1.25, floor: 0.75 })
+  expect(policy.groups.review).toEqual({
+    enabled: true,
+    jobs: ['review-lens'],
+    rate: 1.25,
+    floor: 0.75,
+  })
+  expect(policy.lensTiers['high-stakes'].enabled).toBe(false)
   expect(policy.groups.writing).toEqual(DEFAULT_ROUTE_COST_POLICY.groups.writing)
   expect(() => parseRouteCostPolicy(JSON.stringify({ groups: { review: { rate: 0.5 } } }))).toThrow(
     'routing.cost_policy field groups.review.rate',
+  )
+})
+
+test('config refuses the removed policy-wide switch and names the per-rule fields', () => {
+  expect(() => parseRouteCostPolicy(JSON.stringify({ enabled: true }))).toThrow(
+    'use groups.<rule>.enabled or lensTiers.<rule>.enabled',
   )
 })

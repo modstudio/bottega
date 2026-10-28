@@ -101,7 +101,7 @@ test('stats reports chain cost per accepted result beside the existing cost', ()
   )
   expect(lines[0]).toContain('cost  $/accepted')
   const row = lines.find((line) => line.includes('codex'))!
-  expect(row).toContain('review floor=80% rate=1.25x BELOW')
+  expect(row).toContain('review off floor=80% rate=1.25x BELOW')
   expect(row).toEndWith('$1.0500 (1 imputed)')
 })
 
@@ -146,7 +146,7 @@ test('stats resolves and marks a named lens tier', () => {
     { log: (...parts) => lines.push(parts.join(' ')), dur: String },
   )
   expect(lines.find((line) => line.includes('codex'))).toContain(
-    'high-stakes floor=90% rate=3x BELOW',
+    'high-stakes on floor=90% rate=3x BELOW',
   )
 })
 
@@ -167,11 +167,15 @@ test('pick refuses an unmet constraint instead of silently routing', () => {
   expect(() => preview(['grok', 'codex'])).toThrow('routing constraints leave no eligible agent')
 })
 
-test('pick reports the source of each resolved lens profile', () => {
+test('pick reports the source and switch of each resolved lens policy', () => {
   const output = preview([], [], 'correctness')
   expect(output).toContain('selected profiles: framework=default@1 source=generic')
-  expect(output).toContain('cost policy (off): would pick')
+  expect(output).toContain('cost policy (on): picked')
   expect(output).toContain('rate 3x/+5 (correctness, high-stakes)')
+
+  const standard = preview([], [], 'architecture')
+  expect(standard).toContain('cost policy (off): would pick')
+  expect(standard).toContain('architecture, standard')
 })
 
 test('guide continues across harness and external delegation classes', () => {

@@ -30,7 +30,7 @@ export function prepareCostPolicy<T extends { agent: string }, P>(input: {
 }): PreparedCostPolicy<T & { costPerAccepted?: P }> {
   const configured = readRouteCostPolicy()
   const resolved = resolveRouteCostPolicy(configured, input.job, input.lens, input.writesRepo)
-  if (!configured.enabled && !input.explain)
+  if (!resolved.enabled && !input.explain)
     return { configured, resolved, candidates: input.admitted, priced: false }
   const prices = new Map(input.pricedRows().map((row) => [row.agent, row.costPerAccepted]))
   return {
@@ -45,6 +45,6 @@ export function prepareCostPolicy<T extends { agent: string }, P>(input: {
 }
 
 export function enabledCostRule(prepared: PreparedCostPolicy<unknown>) {
-  if (!prepared.configured.enabled) return undefined
+  if (!prepared.resolved.enabled) return undefined
   return { enabled: true, rate: prepared.resolved.rate, floor: prepared.resolved.floor }
 }

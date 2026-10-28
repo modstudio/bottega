@@ -3,7 +3,7 @@
 
 import { median } from '../state/statistics.ts'
 import type { PromptSizeBucket } from './prompt-size-bucket.ts'
-import type { CostPolicyRule } from './route-cost-policy.ts'
+import type { CostPolicyParameters } from './route-cost-policy.ts'
 import { selectByCostPolicy } from './route-cost-policy.ts'
 import { BETA_SCALE, NOISE_BAND } from './route-selection.ts'
 
@@ -20,7 +20,7 @@ export type CostBacktestCandidate = {
   latencyMs: number | null
 }
 
-export type CostBacktestVariant = CostPolicyRule & { name: string; shippedDefault: boolean }
+export type CostBacktestVariant = CostPolicyParameters & { name: string; shippedDefault: boolean }
 
 export type CostBacktestDecision = {
   job: string
