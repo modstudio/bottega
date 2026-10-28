@@ -2,20 +2,20 @@
 /** Derives a run's test outcome from Bottega's tool observations, never the worker's claim. */
 
 import type { Database } from 'bun:sqlite'
-import { existsSync, readFileSync } from 'node:fs'
 import { UNIT_TEST_CHECK_CATEGORY } from '../../../shared/check-execution.ts'
-import { runEventsPath } from '../events.ts'
+import { readEventLog, runEventsPath } from '../events.ts'
 import { hasFocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 
-export type FocusedTestExecutionObservation = {
-  executed: true
-  passed: boolean
+type TestExecutionObservation = { passed: boolean }
+export type FocusedTestExecutionObservation = TestExecutionObservation & {
   paths: readonly string[]
 }
-export type GateTestExecutionObservation = {
-  executed: true
-  passed: boolean
+type GateTestExecutionObservation = TestExecutionObservation & {
   gateExecutionId: string
+}
+export type GateTestObservations = {
+  checks: readonly GateTestExecutionObservation[]
+  latestFinishedExecutionId: string | null
 }
 export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null
 
@@ -27,8 +27,7 @@ export type ObservedTestOutcome = {
 
 export function deriveObservedTestOutcome(input: {
   focused: readonly FocusedTestExecutionObservation[]
-  gate: readonly GateTestExecutionObservation[]
-  latestFinishedGateExecutionId: string | null
+  gate: GateTestObservations
   claim: TestOutcomeClaim
   focusedRunnerRegistered: boolean
 }): ObservedTestOutcome {
@@ -37,8 +36,8 @@ export function deriveObservedTestOutcome(input: {
     const pathSet = JSON.stringify([...new Set(execution.paths)].sort())
     latestFocused.set(pathSet, execution)
   }
-  const latestGateExecutions = input.gate.filter(
-    (execution) => execution.gateExecutionId === input.latestFinishedGateExecutionId,
+  const latestGateExecutions = input.gate.checks.filter(
+    (execution) => execution.gateExecutionId === input.gate.latestFinishedExecutionId,
   )
   const executions = [...latestFocused.values(), ...latestGateExecutions]
   if (executions.length === 0 && !input.focusedRunnerRegistered) {
@@ -55,52 +54,29 @@ export function deriveObservedTestOutcome(input: {
 }
 
 function focusedTestObservations(runId: string): FocusedTestExecutionObservation[] {
-  const path = runEventsPath(runId)
-  if (!existsSync(path)) return []
-  return readFileSync(path, 'utf8')
-    .split('\n')
-    .flatMap((line): FocusedTestExecutionObservation[] => {
-      if (!line.trim()) return []
-      try {
-        const event = JSON.parse(line) as {
-          type?: unknown
-          started?: unknown
-          paths?: unknown
-          exitCode?: unknown
-          timedOut?: unknown
-        }
-        if (
-          event.type !== 'focused_test' ||
-          event.started !== true ||
-          !Array.isArray(event.paths) ||
-          !event.paths.every((path): path is string => typeof path === 'string') ||
-          typeof event.exitCode !== 'number' ||
-          typeof event.timedOut !== 'boolean'
-        )
-          return []
-        return [
-          { executed: true, passed: event.exitCode === 0 && !event.timedOut, paths: event.paths },
-        ]
-      } catch {
-        return []
-      }
-    })
+  return readEventLog(runEventsPath(runId)).flatMap((event): FocusedTestExecutionObservation[] => {
+    if (
+      event.type !== 'focused_test' ||
+      event.started !== true ||
+      !Array.isArray(event.paths) ||
+      !event.paths.every((path): path is string => typeof path === 'string') ||
+      typeof event.exitCode !== 'number' ||
+      typeof event.timedOut !== 'boolean'
+    )
+      return []
+    return [{ passed: event.exitCode === 0 && !event.timedOut, paths: event.paths }]
+  })
 }
 
-function gateTestObservations(
-  database: Database,
-  runId: string,
-): {
-  checks: GateTestExecutionObservation[]
-  latestFinishedExecutionId: string | null
-} {
+function gateTestObservations(database: Database, runId: string): GateTestObservations {
   const latestFinishedExecution = database
-    .query<{ record_id: string }, [string]>(
-      `SELECT record_id FROM gate_execution
-       WHERE run_record_id=? AND finished_at IS NOT NULL
-       ORDER BY finished_at DESC,record_id DESC LIMIT 1`,
+    .query<{ record_id: string }, [string, string]>(
+      `SELECT DISTINCT g.record_id FROM gate_execution g
+       JOIN check_execution c ON c.gate_execution_record_id=g.record_id
+       WHERE g.run_record_id=? AND g.finished_at IS NOT NULL AND c.category=?
+       ORDER BY g.finished_at DESC,g.record_id DESC LIMIT 1`,
     )
-    .get(runId)
+    .get(runId, UNIT_TEST_CHECK_CATEGORY)
   const rows = database
     .query<{ exit_code: number; gate_execution_record_id: string }, [string, string]>(
       `SELECT c.exit_code,c.gate_execution_record_id FROM check_execution c
@@ -110,7 +86,6 @@ function gateTestObservations(
     .all(runId, UNIT_TEST_CHECK_CATEGORY)
   return {
     checks: rows.map((row) => ({
-      executed: true,
       passed: row.exit_code === 0,
       gateExecutionId: row.gate_execution_record_id,
     })),
@@ -133,8 +108,7 @@ export function observedTestOutcome(
   const gate = gateTestObservations(database, runId)
   return deriveObservedTestOutcome({
     focused: focusedTestObservations(runId),
-    gate: gate.checks,
-    latestFinishedGateExecutionId: gate.latestFinishedExecutionId,
+    gate,
     claim,
     focusedRunnerRegistered: hasFocusedTestRunner(settings.focusedTests),
   })

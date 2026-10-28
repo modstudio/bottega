@@ -11,8 +11,7 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
@@ -22,9 +21,8 @@ describe('deriveObservedTestOutcome', () => {
   test('an executed passing focused run establishes the claimed outcome', () => {
     expect(
       deriveObservedTestOutcome({
-        focused: [{ executed: true, passed: true, paths: ['passing.test.ts'] }],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        focused: [{ passed: true, paths: ['passing.test.ts'] }],
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
@@ -35,11 +33,10 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [
-          { executed: true, passed: false, paths: ['b.test.ts', 'a.test.ts'] },
-          { executed: true, passed: true, paths: ['a.test.ts', 'b.test.ts'] },
+          { passed: false, paths: ['b.test.ts', 'a.test.ts'] },
+          { passed: true, paths: ['a.test.ts', 'b.test.ts'] },
         ],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
@@ -50,11 +47,10 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [
-          { executed: true, passed: true, paths: ['a.test.ts'] },
-          { executed: true, passed: false, paths: ['a.test.ts'] },
+          { passed: true, paths: ['a.test.ts'] },
+          { passed: false, paths: ['a.test.ts'] },
         ],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: null,
         focusedRunnerRegistered: true,
       }),
@@ -65,11 +61,10 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [
-          { executed: true, passed: false, paths: ['a.test.ts'] },
-          { executed: true, passed: true, paths: ['b.test.ts'] },
+          { passed: false, paths: ['a.test.ts'] },
+          { passed: true, paths: ['b.test.ts'] },
         ],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: null,
         focusedRunnerRegistered: true,
       }),
@@ -80,19 +75,13 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [],
-        gate: [
-          {
-            executed: true,
-            passed: false,
-            gateExecutionId: 'earlier',
-          },
-          {
-            executed: true,
-            passed: true,
-            gateExecutionId: 'latest',
-          },
-        ],
-        latestFinishedGateExecutionId: 'latest',
+        gate: {
+          checks: [
+            { passed: false, gateExecutionId: 'earlier' },
+            { passed: true, gateExecutionId: 'latest' },
+          ],
+          latestFinishedExecutionId: 'latest',
+        },
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
@@ -103,8 +92,7 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: null,
         focusedRunnerRegistered: true,
       }),
@@ -119,8 +107,7 @@ describe('deriveObservedTestOutcome', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [],
-        gate: [],
-        latestFinishedGateExecutionId: null,
+        gate: { checks: [], latestFinishedExecutionId: null },
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: false,
       }),
@@ -171,6 +158,49 @@ describe('deriveObservedTestOutcome', () => {
          VALUES (?,?,?,?,?,?)`,
       )
       .run(newRecordId(), gateRecordId, 'unit suite', UNIT_TEST_CHECK_CATEGORY, 100, 1)
+
+    expect(observedTestOutcome(db(), runId, { ran: true, passed: false })).toEqual({
+      ran: true,
+      passed: false,
+      claimDisagrees: false,
+    })
+  })
+
+  test('a later cancelled gate without unit-test checks does not replace a completed gate', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    const completedGateRecordId = db()
+      .query<{ record_id: string }, [string, string, string, string, string]>(
+        `INSERT INTO gate_execution
+            (record_id,run_record_id,requested_at,started_at,finished_at,exit_code)
+           VALUES (?,?,?,?,?,1) RETURNING record_id`,
+      )
+      .get(
+        newRecordId(),
+        runId,
+        '2026-10-21T00:00:00.000Z',
+        '2026-10-21T00:00:00.000Z',
+        '2026-10-21T00:00:01.000Z',
+      )!.record_id
+    db()
+      .query(
+        `INSERT INTO check_execution
+          (record_id,gate_execution_record_id,check_name,category,wall_ms,exit_code)
+         VALUES (?,?,?,?,?,?)`,
+      )
+      .run(newRecordId(), completedGateRecordId, 'unit suite', UNIT_TEST_CHECK_CATEGORY, 100, 1)
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,cancelled_reason)
+         VALUES (?,?,?,?,?)`,
+      )
+      .run(
+        newRecordId(),
+        runId,
+        '2026-10-21T00:00:02.000Z',
+        '2026-10-21T00:00:03.000Z',
+        'broker closed',
+      )
 
     expect(observedTestOutcome(db(), runId, { ran: true, passed: false })).toEqual({
       ran: true,
