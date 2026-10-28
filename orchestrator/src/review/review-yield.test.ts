@@ -532,12 +532,24 @@ describe('review yield', () => {
       risk: number,
       size: number,
       pathSet: string,
+      lineCounts?: { insertions: number; deletions: number; bumped?: boolean },
     ) => {
       db()
         .query(
-          'UPDATE review SET project_record_id=?,tier_risk=?,tier_size=?,path_set=? WHERE record_id=?',
+          'UPDATE review SET project_record_id=?,tier_risk=?,tier_size=?,tier_insertions=?,tier_deletions=?,tier_reasons=?,path_set=? WHERE record_id=?',
         )
-        .run(projectId, risk, size, pathSet, reviewId)
+        .run(
+          projectId,
+          risk,
+          size,
+          lineCounts?.insertions ?? null,
+          lineCounts?.deletions ?? null,
+          lineCounts?.bumped
+            ? JSON.stringify(['size 2: 100 product lines (more than 8 raises size one tier)'])
+            : null,
+          pathSet,
+          reviewId,
+        )
       db()
         .query(
           `UPDATE run SET project_record_id=?,repo='slice-project'
@@ -576,7 +588,11 @@ describe('review yield', () => {
       overlap: 'unique',
     })
     addFinding(craftTests, craftTestsLens, 1, 'high', 'accepted', 'high')
-    attach(craftTests, craftTestsLens, 2, 2, '["foo.test.ts"]')
+    attach(craftTests, craftTestsLens, 2, 2, '["foo.test.ts"]', {
+      insertions: 20,
+      deletions: 80,
+      bumped: true,
+    })
 
     const craftBoth = addReview(
       '2026-09-08T18:03:00Z',
@@ -619,6 +635,15 @@ describe('review yield', () => {
     expect(report.bySize.find((row) => row.key === 'craft / size 2')).toMatchObject({
       runs: 2,
       mediumPlusAcceptedYield: 1,
+    })
+    expect(
+      report.byDeletionShare.find((row) => row.key === 'craft / deletion-heavy'),
+    ).toMatchObject({ runs: 1 })
+    expect(report.byDeletionShare.find((row) => row.key === 'correctness / unknown')).toMatchObject(
+      { runs: 1 },
+    )
+    expect(report.byFileCountBump.find((row) => row.key === 'craft / bumped')).toMatchObject({
+      runs: 1,
     })
     expect(report.byRisk.find((row) => row.key === 'craft / risk 2')).toMatchObject({
       runs: 3,
@@ -832,6 +857,8 @@ describe('review yield text table', () => {
       filters: { project: null, since: null, until: null, task: null, lens: null, agent: null },
       lenses: [row('craft')],
       bySize: [row('craft / size 0')],
+      byDeletionShare: [row('craft / mixed')],
+      byFileCountBump: [row('craft / not bumped')],
       byRisk: [row('craft / risk 2')],
       byArea: [row('craft / test-quality')],
       lensPairs: [],
@@ -844,6 +871,10 @@ describe('review yield text table', () => {
     })
     expect(text).toContain('BY SIZE')
     expect(text).toContain('craft / size 0')
+    expect(text).toContain('BY DELETION SHARE')
+    expect(text).toContain('craft / mixed')
+    expect(text).toContain('BY FILE-COUNT BUMP')
+    expect(text).toContain('craft / not bumped')
     expect(text).toContain('BY RISK')
     expect(text).toContain('craft / risk 2')
     expect(text).toContain('BY AREA')

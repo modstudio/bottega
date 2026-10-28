@@ -31,7 +31,8 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
   const row = database
     .query<Record<string, unknown>, [string]>(
       `SELECT review.record_id,review.number,review.recorded_at,review.completed_at,review.tier,
-              review.tier_risk,review.tier_size,review.tier_reasons,review.tier_reason,review.patch_id,
+              review.tier_risk,review.tier_size,review.tier_insertions,review.tier_deletions,
+              review.tier_reasons,review.tier_reason,review.patch_id,
               review.path_set,review.commit_message,review.outdated_at,review.outdated_reason,review.role,review.round,
               project.name AS project_name, project.record_id AS project_record_id FROM review
       LEFT JOIN project ON project.record_id=review.project_record_id WHERE review.record_id=?`,
@@ -54,6 +55,8 @@ export function enqueueReview(database: Database, reviewRecordId: string): void 
       tier: row.tier,
       tierRisk: row.tier_risk,
       tierSize: row.tier_size,
+      tierInsertions: row.tier_insertions,
+      tierDeletions: row.tier_deletions,
       tierReasons: json(row.tier_reasons),
       tierReason: row.tier_reason,
       role: row.role,

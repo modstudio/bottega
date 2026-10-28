@@ -537,6 +537,14 @@ function reviewProjectName(database: Database, projectRecordId: string | null): 
   )
 }
 
+const reviewTierSizeValues = (
+  tier: NonNullable<ReturnType<typeof measureReviewChange>>['tier'] | null,
+): [number | null, number | null, number | null] => [
+  tier?.size ?? null,
+  tier?.insertions ?? null,
+  tier?.deletions ?? null,
+]
+
 export function recordReviews(
   entries: { runId: string; output: ReviewReply }[],
   database: Database = writableDb(),
@@ -589,9 +597,9 @@ export function recordReviews(
     })
     const review = database
       .query(
-        `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_reasons, tier_reason, project_record_id, role,
+        `INSERT INTO review (record_id, number, recorded_at, tier, tier_risk, tier_size, tier_insertions, tier_deletions, tier_reasons, tier_reason, project_record_id, role,
                            patch_id, path_set, commit_message, round)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
       )
       .get(
         newRecordId(),
@@ -599,7 +607,7 @@ export function recordReviews(
         nowIso(),
         tier?.tier ?? null,
         tier?.risk ?? null,
-        tier?.size ?? null,
+        ...reviewTierSizeValues(tier),
         tier ? JSON.stringify(tier.reasons) : null,
         tier?.reasons[tier.risk >= tier.size ? 0 : 1] ?? null,
         projectRecordId,

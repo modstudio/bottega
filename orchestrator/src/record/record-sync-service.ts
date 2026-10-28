@@ -313,6 +313,8 @@ function reviewValues(row: Payload, projectId: string | null) {
     tier: nullableNumber(row.tier),
     tierRisk: nullableNumber(row.tierRisk),
     tierSize: nullableNumber(row.tierSize),
+    tierInsertions: nullableNumber(row.tierInsertions),
+    tierDeletions: nullableNumber(row.tierDeletions),
     tierReasons: jsonString(row.tierReasons),
     tierReason: nullableString(row.tierReason),
     role: String(row.role),

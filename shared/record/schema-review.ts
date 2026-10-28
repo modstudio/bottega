@@ -24,6 +24,8 @@ export const review = pgTable.withRLS(
     tier: integer(),
     tierRisk: integer('tier_risk'),
     tierSize: integer('tier_size'),
+    tierInsertions: integer('tier_insertions'),
+    tierDeletions: integer('tier_deletions'),
     tierReasons: jsonb('tier_reasons'),
     tierReason: text('tier_reason'),
     role: text().notNull().default('round'),

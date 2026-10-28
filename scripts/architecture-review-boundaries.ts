@@ -259,7 +259,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
   {
     name: 'review-tier-classifier-boundary',
     file: 'orchestrator/src/review/review-tier-classifier.ts',
-    allowed: ['../../../shared/file-kind.ts'],
+    allowed: ['../../../shared/file-kind.ts', './review-vocabulary.ts'],
     typeOnlyAllowed: ['../project/project-injection.ts'],
     reason: 'Keep tier classification independent of git, stores, processes, and clocks.',
   },

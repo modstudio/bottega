@@ -12,6 +12,7 @@ export const REVIEW_COVERAGE = ['empty', 'partial', 'adequate'] as const
 export const REVIEW_LIMITS = ['named', 'absent'] as const
 export const REVIEW_OVERLAP = ['unique', 'shared', 'none', 'alone'] as const
 export const REVIEW_SEVERITY = ['critical', 'high', 'medium', 'low'] as const
+export const REVIEW_FILE_COUNT_BUMP_REASON = 'more than 8 raises size one tier'
 const REVIEW_LENS_SELECTION_REASON = [
   'initial',
   'accepted-finding',

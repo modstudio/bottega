@@ -158,11 +158,11 @@ describe('review tier classification', () => {
     const actual = classify(
       [
         { path: 'docs/huge.md', insertions: 1000, deletions: 0 },
-        { path: 'hub/web/src/tiny.tsx', insertions: 5, deletions: 0 },
+        { path: 'hub/web/src/tiny.tsx', insertions: 3, deletions: 2 },
       ],
       webRisk,
     )
-    expect(actual).toMatchObject({ risk: 1, size: 0, tier: 0 })
+    expect(actual).toMatchObject({ risk: 1, size: 0, tier: 0, insertions: 3, deletions: 2 })
     expect(actual.reasons.join('\n')).toContain('5 product lines')
     expect(actual.reasons.join('\n')).toContain('size 0 lowered risk 1 by one')
   })
