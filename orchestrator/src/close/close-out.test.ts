@@ -858,7 +858,7 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
     expect(closeOutRun(fixture.id, { intent: 'terminal' })).toMatchObject({
       outcome: 'live',
       detail:
-        `live run(s): ${sharer} (running, launched from this tree; its confinement watches this checkout)\n` +
+        `live run(s): ${sharer} (running, launched from this tree; automatic failover relaunches from it)\n` +
         `cleared by: ${PLATFORM_SLUG} run wait ${sharer}, then rerun this command`,
     })
     expect(commands).not.toContain('teardown-marker')

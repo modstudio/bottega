@@ -64,7 +64,7 @@ export function liveOwnerRefusalText(live: LiveOwner[]): string {
     if (relation === 'worktree') return 'runs in this tree'
     if (relation === 'cwd') return 'works in this tree'
     if (relation === 'launch_cwd')
-      return 'launched from this tree; its confinement watches this checkout'
+      return 'launched from this tree; automatic failover relaunches from it'
     return 'this conversation'
   }
   return (
