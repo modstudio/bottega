@@ -209,7 +209,7 @@ test('document refreshes leave code cache rows intact and code refresh prunes ex
       now: 1,
     })
     applyRefresh(database, { corpusKey: 'docs', delete: [], upsert: [] })
-    expect(planCodeCache(database, ['old'], 1).hits).toHaveLength(1)
+    expect(planCodeCache(database, ['old']).hits).toHaveLength(1)
 
     const refreshed = applyCodeCacheRefresh(database, {
       seenContentHashes: ['current'],
@@ -218,8 +218,8 @@ test('document refreshes leave code cache rows intact and code refresh prunes ex
       retentionMs: 50,
     })
     expect(refreshed).toEqual({ embedded: 1, pruned: 1 })
-    expect(planCodeCache(database, ['old'], 101).hits).toHaveLength(0)
-    expect(planCodeCache(database, ['current'], 101).hits).toHaveLength(1)
+    expect(planCodeCache(database, ['old']).hits).toHaveLength(0)
+    expect(planCodeCache(database, ['current']).hits).toHaveLength(1)
   } finally {
     database.close()
     rmSync(directory, { recursive: true })

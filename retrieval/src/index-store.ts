@@ -126,11 +126,7 @@ export function configureIndexDatabase(database: Database): void {
     .immediate()
 }
 
-export function planCodeCache(
-  database: Database,
-  contentHashes: string[],
-  now = Date.now(),
-): CodeCachePlan {
+export function planCodeCache(database: Database, contentHashes: string[]): CodeCachePlan {
   const find = database.query<
     {
       content_hash: string
@@ -146,31 +142,40 @@ export function planCodeCache(
       FROM code_vector_cache
      WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
   `)
+  const hits: CodeCacheRow[] = []
+  const missingContentHashes: string[] = []
+  for (const contentHash of new Set(contentHashes)) {
+    const row = find.get(contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
+    if (!row) {
+      missingContentHashes.push(contentHash)
+      continue
+    }
+    hits.push({
+      contentHash: row.content_hash,
+      model: row.model,
+      dimension: row.dimension,
+      instructionVersion: row.instruction_version,
+      document: row.document,
+      vector: new Uint8Array(row.vector),
+    })
+  }
+  return { hits, missingContentHashes }
+}
+
+export function touchCodeCache(
+  database: Database,
+  contentHashes: string[],
+  now = Date.now(),
+): void {
   const touch = database.query(`
     UPDATE code_vector_cache SET last_seen_at = ?
      WHERE content_hash = ? AND model = ? AND dimension = ? AND instruction_version = ?
   `)
-  return database
+  database
     .transaction(() => {
-      const hits: CodeCacheRow[] = []
-      const missingContentHashes: string[] = []
       for (const contentHash of new Set(contentHashes)) {
-        const row = find.get(contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
-        if (!row) {
-          missingContentHashes.push(contentHash)
-          continue
-        }
         touch.run(now, contentHash, EMBEDDING_MODEL, EMBEDDING_DIMENSION, INSTRUCTION_VERSION)
-        hits.push({
-          contentHash: row.content_hash,
-          model: row.model,
-          dimension: row.dimension,
-          instructionVersion: row.instruction_version,
-          document: row.document,
-          vector: new Uint8Array(row.vector),
-        })
       }
-      return { hits, missingContentHashes }
     })
     .immediate()
 }
@@ -223,8 +228,17 @@ export function applyCodeCacheRefresh(
 export function openIndexDatabase(path: string): Database {
   mkdirSync(dirname(path), { recursive: true })
   const database = new Database(path, { create: true })
-  configureIndexDatabase(database)
-  return database
+  try {
+    configureIndexDatabase(database)
+    return database
+  } catch (error) {
+    database.close()
+    throw error
+  }
+}
+
+export function openReadonlyIndexDatabase(path: string): Database {
+  return new Database(path, { readonly: true })
 }
 
 export function storedRows(database: Database, corpusKey = 'docs'): StoredVectorRow[] {

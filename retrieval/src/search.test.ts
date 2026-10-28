@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type Chunk, chunkDocument, type DocIdentity } from './corpus/chunks.ts'
@@ -72,6 +72,73 @@ test('refreshes and searches the SQLite Float32 index with bounded Unicode snipp
     expect(Array.from(result.results[0]!.snippet)).toHaveLength(500)
     expect(result.results[0]).toMatchObject({ truncated: true, rerankScore: 0.9 })
   } finally {
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('searches a read-only index without refreshing it', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-readonly-search-test-'))
+  const databasePath = join(directory, 'retrieval.db')
+  const embeddingInputs: string[][] = []
+  const clients = {
+    embed: async (_url: string, input: string[]) => {
+      embeddingInputs.push(input)
+      return input.map(() => [1, ...Array.from<number>({ length: 1_023 }).fill(0)])
+    },
+    rerank: async (_url: string, _query: string, documents: string[]) =>
+      documents.map((_document, index) => documents.length - index),
+  }
+  const stderr = spyOn(console, 'error').mockImplementation(() => {})
+  try {
+    await search('seed', 2, {
+      databasePath,
+      loadChunks: async () => [chunk('changed', 'old'), chunk('deleted')],
+      clients,
+    })
+    const legacy = new Database(databasePath)
+    legacy.exec('ALTER TABLE document_vector DROP COLUMN status')
+    legacy.close()
+    embeddingInputs.length = 0
+    chmodSync(databasePath, 0o444)
+    chmodSync(directory, 0o555)
+
+    const result = await search('question', 2, {
+      databasePath,
+      loadChunks: async () => [chunk('changed', 'new'), chunk('added')],
+      clients,
+    })
+
+    expect(result.refresh).toEqual({ embedded: 0, deleted: 0, unchanged: 0, stale: 0 })
+    expect(result.results).toHaveLength(2)
+    expect(embeddingInputs).toHaveLength(1)
+    expect(embeddingInputs[0]).toHaveLength(1)
+    expect(stderr).toHaveBeenLastCalledWith(
+      'retrieval index was not refreshed because this caller cannot write it; 3 chunks are out of date; a writer refreshes it on its next search',
+    )
+  } finally {
+    stderr.mockRestore()
+    chmodSync(directory, 0o755)
+    if (existsSync(databasePath)) chmodSync(databasePath, 0o644)
+    rmSync(directory, { recursive: true })
+  }
+})
+
+test('refuses when a read-only caller has no existing index', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'retrieval-readonly-missing-test-'))
+  const databasePath = join(directory, 'retrieval.db')
+  chmodSync(directory, 0o555)
+  try {
+    await expect(
+      search('question', 1, {
+        databasePath,
+        loadChunks: async () => [chunk('one')],
+        clients: { embed: async () => [], rerank: async () => [] },
+      }),
+    ).rejects.toThrow(
+      'there is no retrieval index yet; a search from a session that can write the state directory builds it',
+    )
+  } finally {
+    chmodSync(directory, 0o755)
     rmSync(directory, { recursive: true })
   }
 })

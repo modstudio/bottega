@@ -3,6 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { resolveRetrievalDatabase } from '../../shared/state-directory.ts'
 import {
   EMBEDDING_DIMENSION,
@@ -12,7 +14,7 @@ import {
   RERANK_CANDIDATES,
 } from './contract.ts'
 import { type Chunk, chunkDocument } from './corpus/chunks.ts'
-import { openIndexDatabase } from './index-store.ts'
+import { openIndexDatabase, openReadonlyIndexDatabase } from './index-store.ts'
 import type { StoredVectorIdentity } from './refresh-plan.ts'
 import { embed, endpointsFromEnvironment, rerank } from './services/endpoints.ts'
 import { cosineTopK } from './vector-ranking.ts'
@@ -55,12 +57,15 @@ export type SearchStrategy<Row extends SearchableRow, Refresh extends RefreshCou
   ): {
     embed: IndexedCandidate[]
     unchanged: number
+    delete: number
   }
+  beforeEmbed?(database: Database, candidates: IndexedCandidate[]): void
   apply(
     database: Database,
     candidates: IndexedCandidate[],
     embedded: Array<IndexedCandidate & { vector: number[] }>,
   ): Refresh
+  readonlyRefresh(): Refresh
   rows(database: Database, candidates: IndexedCandidate[]): Row[]
 }
 
@@ -72,6 +77,63 @@ export const currentContract = {
 
 function contentHash(chunk: Chunk): string {
   return createHash('sha256').update(chunkDocument(chunk)).digest('hex')
+}
+
+export function isReadOnlyIndexError(error: unknown, databasePath: string): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : undefined
+  if (code === 'SQLITE_READONLY' || code?.startsWith('SQLITE_READONLY_')) return true
+  if (code !== 'EACCES' && code !== 'EPERM') return false
+  if (!('path' in error) || typeof error.path !== 'string') return false
+  const path = resolve(error.path)
+  const database = resolve(databasePath)
+  return (
+    path === database ||
+    path === `${database}-wal` ||
+    path === `${database}-shm` ||
+    path === `${database}-journal`
+  )
+}
+
+function openSearchDatabase(databasePath: string): { database: Database; readonly: boolean } {
+  try {
+    return { database: openIndexDatabase(databasePath), readonly: false }
+  } catch (error) {
+    if (!existsSync(databasePath)) {
+      const code =
+        error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+          ? error.code
+          : undefined
+      if (code !== 'SQLITE_CANTOPEN' && code !== 'EACCES' && code !== 'EPERM') throw error
+      throw new Error(
+        'there is no retrieval index yet; a search from a session that can write the state directory builds it',
+      )
+    }
+    if (!isReadOnlyIndexError(error, databasePath)) throw error
+    return { database: openReadonlyIndexDatabase(databasePath), readonly: true }
+  }
+}
+
+async function embedCandidates(
+  candidates: IndexedCandidate[],
+  embedUrl: string,
+  client: SearchClients['embed'],
+): Promise<Array<IndexedCandidate & { vector: number[] }>> {
+  const embedded: Array<IndexedCandidate & { vector: number[] }> = []
+  for (let start = 0; start < candidates.length; start += EMBED_BATCH_SIZE) {
+    const batch = candidates.slice(start, start + EMBED_BATCH_SIZE)
+    const vectors = await client(
+      embedUrl,
+      batch.map(({ document }) => document),
+    )
+    if (vectors.length !== batch.length) {
+      throw new Error('embedding endpoint did not return one vector per indexed chunk')
+    }
+    embedded.push(
+      ...batch.map((candidate, index) => ({ ...candidate, vector: vectors[index] ?? [] })),
+    )
+  }
+  return embedded
 }
 
 export async function indexedSearch<
@@ -101,7 +163,9 @@ export async function indexedSearch<
   const environment = options.environment ?? process.env
   const endpoints = endpointsFromEnvironment(environment)
   const clients = options.clients ?? { embed, rerank }
-  const database = openIndexDatabase(options.databasePath ?? resolveRetrievalDatabase(environment))
+  const databasePath = options.databasePath ?? resolveRetrievalDatabase(environment)
+  const opened = openSearchDatabase(databasePath)
+  const { database } = opened
   try {
     const candidates = (await strategy.loadChunks()).map((chunk) => ({
       chunk,
@@ -109,21 +173,18 @@ export async function indexedSearch<
       document: chunkDocument(chunk),
     }))
     const plan = strategy.plan(database, candidates)
-    const embedded: Array<IndexedCandidate & { vector: number[] }> = []
-    for (let start = 0; start < plan.embed.length; start += EMBED_BATCH_SIZE) {
-      const batch = plan.embed.slice(start, start + EMBED_BATCH_SIZE)
-      const vectors = await clients.embed(
-        endpoints.embedUrl,
-        batch.map(({ document }) => document),
-      )
-      if (vectors.length !== batch.length) {
-        throw new Error('embedding endpoint did not return one vector per indexed chunk')
-      }
-      embedded.push(
-        ...batch.map((candidate, index) => ({ ...candidate, vector: vectors[index] ?? [] })),
+    if (opened.readonly) {
+      console.error(
+        `retrieval index was not refreshed because this caller cannot write it; ${plan.embed.length + plan.delete} chunks are out of date; a writer refreshes it on its next search`,
       )
     }
-    const refresh = strategy.apply(database, candidates, embedded)
+    if (!opened.readonly) strategy.beforeEmbed?.(database, candidates)
+    const embedded = opened.readonly
+      ? []
+      : await embedCandidates(plan.embed, endpoints.embedUrl, clients.embed)
+    const refresh = opened.readonly
+      ? strategy.readonlyRefresh()
+      : strategy.apply(database, candidates, embedded)
     const [queryVector] = await clients.embed(endpoints.embedUrl, [queryDocument(query)])
     const queryArray = new Float32Array(queryVector ?? [])
     if (queryArray.length !== EMBEDDING_DIMENSION) {
