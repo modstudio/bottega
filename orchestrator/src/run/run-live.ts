@@ -88,7 +88,7 @@ function readReplyFile(path: string): string | null {
 function replySchema(
   replyFileText: string | null,
   customContract: boolean,
-  originalSchemaPath: string | null,
+  originalSchemaPath: string | null | undefined,
 ): unknown {
   return replyFileText !== null || customContract
     ? JSON.parse(readFileSync(originalSchemaPath!, 'utf8'))

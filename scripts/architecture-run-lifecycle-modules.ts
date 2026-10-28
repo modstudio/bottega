@@ -369,6 +369,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../git/git-environment.ts',
     '../jobs/jobs.ts',
     '../run-owned-paths.ts',
+    '../transport/codex-quota.ts',
     '../transport/transport.ts',
     '../worktree/worktree-types.ts',
     './run-acp-writer.ts',

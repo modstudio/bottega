@@ -876,7 +876,6 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     escalations: writesJob ? acceptedQuestions.length : null,
   }
   persistTerminalSnapshot(claim.id, terminalSnapshot)
-  const reviewProvenance = parsedReview ? JSON.stringify(parsedReview.provenance) : null
   const provenanceSilent = reviewHidesGap(parsedReview, input, provenanceWrongProjectTool)
   const localMachineId = machineId()
   const writeTerminalRow = () =>
@@ -914,7 +913,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
           resolvedSession,
           preConfinement,
           confinementEvent ? JSON.stringify(confinementEvent) : null,
-          reviewProvenance,
+          parsedReview ? JSON.stringify(parsedReview.provenance) : null,
           provenanceSilent ? 'silent' : null,
           claim.id,
         )

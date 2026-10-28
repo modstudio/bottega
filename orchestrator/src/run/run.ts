@@ -66,12 +66,12 @@ import {
   sandboxReasonPrefix,
   selectReadonlySandbox,
 } from '../sandbox/sandbox.ts'
+import { EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
 import {
   assertAcpReady,
   EMPTY_VENDOR_USAGE,
   selectAgentForTransport,
 } from '../transport/transport.ts'
-import { EMPTY_CODEX_QUOTA_READINGS } from '../transport/codex-quota.ts'
 import { resolveNewTreeBase } from '../worktree/trunk-base-choice.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { assertAcpPolicyAllowed } from './run-acp-policy.ts'
