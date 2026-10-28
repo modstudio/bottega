@@ -13,21 +13,24 @@ export function landingTrunkRef(
 
 export function resolveLandingTrunkTip(
   trunk: string,
-  probe: (args: string[]) => boolean,
-  revParse: (ref: string) => string,
+  git: (args: string[]) => string,
 ): string {
-  const remoteTrackingRefExists = probe([
-    'show-ref',
-    '--verify',
-    '--quiet',
-    `refs/remotes/origin/${trunk}`,
-  ])
-  const localIsAncestorOfRemote =
-    remoteTrackingRefExists &&
-    probe(['merge-base', '--is-ancestor', '--end-of-options', trunk, `origin/${trunk}`])
+  let remoteTrackingRefExists = false
+  try {
+    git(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`])
+    remoteTrackingRefExists = true
+  } catch {}
+
+  let localIsAncestorOfRemote = false
+  if (remoteTrackingRefExists) {
+    try {
+      git(['merge-base', '--is-ancestor', '--end-of-options', trunk, `origin/${trunk}`])
+      localIsAncestorOfRemote = true
+    } catch {}
+  }
   const ref = landingTrunkRef(trunk, {
     remoteTrackingRefExists,
     localIsAncestorOfRemote,
   })
-  return revParse(`${ref}^{commit}`)
+  return git(['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`])
 }

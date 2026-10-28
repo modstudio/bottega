@@ -39,21 +39,6 @@ function git(cwd: string, ...args: string[]): string {
   return process.stdout.toString().trim()
 }
 
-function landingTrunkTip(cwd: string, trunk: string): string {
-  return resolveLandingTrunkTip(
-    trunk,
-    (args) => {
-      try {
-        git(cwd, ...args)
-        return true
-      } catch {
-        return false
-      }
-    },
-    (ref) => git(cwd, 'rev-parse', '--verify', '--end-of-options', ref),
-  )
-}
-
 function localBranches(project: Project): Map<string, string> {
   const output = git(
     project.path,
@@ -126,7 +111,7 @@ function observeProject(
   const trunk = project.settings.trunk?.trim()
   if (!trunk) return []
   const branches = localBranches(project)
-  const trunkTip = landingTrunkTip(project.path, trunk)
+  const trunkTip = resolveLandingTrunkTip(trunk, (args) => git(project.path, ...args))
   return candidates.flatMap((candidate) => {
     const tip = branches.get(candidate.branch)
     if (!tip) return [{ ...candidate, branchExists: false, landed: false }]

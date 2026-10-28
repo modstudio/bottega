@@ -28,17 +28,12 @@ test('a project without a fetched trunk keeps using its local trunk', () => {
   ).toBe('main')
 })
 
-test('the adapter skips the ancestry probe when no fetched trunk exists', () => {
-  const probes: string[][] = []
-  const tip = resolveLandingTrunkTip(
-    'main',
-    (args) => {
-      probes.push(args)
-      return false
-    },
-    (ref) => `resolved ${ref}`,
-  )
+test('the adapter keeps the local trunk when the fetched trunk has diverged', () => {
+  const tip = resolveLandingTrunkTip('main', (args) => {
+    if (args[0] === 'show-ref') return ''
+    if (args[0] === 'merge-base') throw new Error('not an ancestor')
+    return args.at(-1) ?? ''
+  })
 
-  expect(probes).toEqual([['show-ref', '--verify', '--quiet', 'refs/remotes/origin/main']])
-  expect(tip).toBe('resolved main^{commit}')
+  expect(tip).toBe('main^{commit}')
 })

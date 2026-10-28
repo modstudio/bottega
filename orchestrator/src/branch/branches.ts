@@ -131,21 +131,6 @@ function git(cwd: string, ...args: string[]): string {
   return command(cwd, ['git', ...args], `git ${args.join(' ')}`)
 }
 
-function branchLandingTrunkTip(cwd: string, trunk: string): string {
-  return resolveLandingTrunkTip(
-    trunk,
-    (args) => {
-      try {
-        git(cwd, ...args)
-        return true
-      } catch {
-        return false
-      }
-    },
-    (ref) => git(cwd, 'rev-parse', '--verify', '--end-of-options', ref),
-  )
-}
-
 function recordedBranchLandings(): BranchLandingRecord[] {
   return readBranchLandingRecords()
 }
@@ -317,7 +302,7 @@ function branchReportFor(
   let newlyRecordedLandings: RecordedLandingReport[] = []
   let wouldRecordLandings: AutomaticLandingPreview[] = []
   let observations: string[] = []
-  const trunkTip = branchLandingTrunkTip(project.path, trunk)
+  const trunkTip = resolveLandingTrunkTip(trunk, (args) => git(project.path, ...args))
   const minted = new Map<string, Map<string, RunRow[]>>()
   const protectedRuns = new Map<string, RunRow[]>()
   for (const run of runs) {

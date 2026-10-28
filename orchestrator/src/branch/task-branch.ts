@@ -443,21 +443,6 @@ function taskBranchGit(
   return p.stdout.toString().trim()
 }
 
-function taskBranchLandingTrunkTip(cwd: string, trunk: string): string {
-  return resolveLandingTrunkTip(
-    trunk,
-    (args) => {
-      try {
-        taskBranchGit(cwd, args)
-        return true
-      } catch {
-        return false
-      }
-    },
-    (ref) => taskBranchGit(cwd, ['rev-parse', '--verify', '--end-of-options', ref]),
-  )
-}
-
 /** Exit zero is true, exit one is false; any other exit throws naming the command. */
 export function taskBranchIsAncestor(cwd: string, ancestor: string, descendant: string): boolean {
   const process = Bun.spawnSync(
@@ -588,7 +573,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
 
   const byBranch = new Map<string, typeof rows>()
   for (const row of rows) byBranch.set(row.branch, [...(byBranch.get(row.branch) ?? []), row])
-  const trunkTip = taskBranchLandingTrunkTip(repoRoot, trunk)
+  const trunkTip = resolveLandingTrunkTip(trunk, (args) => taskBranchGit(repoRoot, args))
   const candidates: TaskBranchCandidate[] = []
   const liveBranches = [...byBranch].filter(([branch]) => !isTaskBranchSuperseded(branch, rows))
   for (const [branch, branchRows] of liveBranches) {
