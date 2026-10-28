@@ -614,6 +614,76 @@ describe('routing counts failures as evidence', () => {
     expect(c.eligible).toBe(false)
   })
 
+  test('a provider-error streak that finishes last cools despite later-starting successes', () => {
+    // Three long provider errors start first and finish within the cooldown;
+    // three short successes start after them and finish earlier. The streak is
+    // the agent's latest by completion, so only a completion-ordered read sees it.
+    const now = Date.now()
+    for (let index = 0; index < 3; index++)
+      addRun({
+        agent: 'codex',
+        job: 'craft',
+        status: 'failed',
+        kind: 'provider_error',
+        startedAt: new Date(now - (50 - index) * 60_000).toISOString(),
+        latency: 45 * 60_000,
+      })
+    for (let index = 0; index < 3; index++)
+      addRun({
+        agent: 'codex',
+        job: 'craft',
+        startedAt: new Date(now - (40 - index) * 60_000).toISOString(),
+        latency: 60_000,
+      })
+
+    const c = candidates('craft').find((x) => x.agent === 'codex')!
+    expect(c.cooling).toContain('provider_error')
+    expect(c.eligible).toBe(false)
+  })
+
+  test('the latest quota failure by completion cools behind newer non-cooling failures', () => {
+    // A long quota failure finishes five minutes ago; a later-starting quota
+    // failure finished long before it. Three contract failures, which neither
+    // cool nor clear, finish after it, so only the per-category lookup ordered
+    // by completion can return the recent quota row.
+    const now = Date.now()
+    addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      startedAt: new Date(now - 120 * 60_000).toISOString(),
+      latency: 60_000,
+    })
+    addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(now - 100 * 60_000).toISOString(),
+      latency: 95 * 60_000,
+    })
+    addRun({
+      agent: 'grok',
+      job: 'review-lens',
+      status: 'failed',
+      kind: 'quota',
+      startedAt: new Date(now - 90 * 60_000).toISOString(),
+      latency: 60_000,
+    })
+    for (let index = 0; index < 3; index++)
+      addRun({
+        agent: 'grok',
+        job: 'review-lens',
+        status: 'failed',
+        kind: 'contract',
+        startedAt: new Date(now - (4 - index) * 60_000).toISOString(),
+        latency: 30_000,
+      })
+
+    const c = candidates('review-lens').find((x) => x.agent === 'grok')!
+    expect(c.cooling).toContain('quota')
+    expect(c.eligible).toBe(false)
+  })
+
   test('an outage is not a verdict — the room failed, not the agent', () => {
     // The local model host was powered off for eleven hours. Routing kept sending
     // qwen-local its best job and kept recording the failures against it.
