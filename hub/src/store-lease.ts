@@ -8,14 +8,24 @@ export type StoredLeaseStartFacts = {
   now: number
 }
 
-type StoredLeaseValue = { holder: string; until: number }
+type StoredLeaseValue = { holder: string; until: number; since?: number }
+
+export type StoredLeaseSnapshot = {
+  holder: string
+  since: number | null
+  until: number
+}
 
 function storedValue(value: string | undefined): StoredLeaseValue | null {
   if (value === undefined) return null
   try {
     const parsed = JSON.parse(value) as Partial<StoredLeaseValue>
     return typeof parsed.holder === 'string' && typeof parsed.until === 'number'
-      ? { holder: parsed.holder, until: parsed.until }
+      ? {
+          holder: parsed.holder,
+          until: parsed.until,
+          ...(typeof parsed.since === 'number' ? { since: parsed.since } : {}),
+        }
       : null
   } catch {
     return null
@@ -39,10 +49,38 @@ function takeSettingRow(
     .run(key, JSON.stringify(value), now, holder)
 }
 
-export function acquireStoredLease(key: string, holder: string, durationMs: number): boolean {
+/** A renewal preserves the original acquisition instant, including an unknown legacy instant. */
+function renewedStoredLeaseValue(
+  current: StoredLeaseValue | null,
+  holder: string,
+  until: number,
+  now: number,
+): StoredLeaseValue {
+  if (current?.holder !== holder || current.until <= now) return { holder, until, since: now }
+  return { holder, until, ...(current.since === undefined ? {} : { since: current.since }) }
+}
+
+export function acquireStoredLease(
+  key: string,
+  holder: string,
+  durationMs: number,
+  trackSince = false,
+): boolean {
   const now = Date.now()
   const row = writeTransaction((conn) => {
-    takeSettingRow(conn, key, { holder, until: now + durationMs }, now, holder)
+    const current = storedValue(
+      conn.query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`).get(key)
+        ?.value,
+    )
+    takeSettingRow(
+      conn,
+      key,
+      trackSince
+        ? renewedStoredLeaseValue(current, holder, now + durationMs, now)
+        : { holder, until: now + durationMs },
+      now,
+      holder,
+    )
     return conn.query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`).get(key)
   })
   try {
@@ -59,6 +97,7 @@ export function acquireStoredLeaseWhen(
   holder: string,
   durationMs: number,
   mayStart: (facts: StoredLeaseStartFacts) => boolean,
+  trackSince = false,
 ): boolean {
   const now = Date.now()
   return writeTransaction((conn) => {
@@ -78,7 +117,15 @@ export function acquireStoredLeaseWhen(
       })
     )
       return false
-    takeSettingRow(conn, key, { holder, until: now + durationMs }, now, holder)
+    takeSettingRow(
+      conn,
+      key,
+      trackSince
+        ? renewedStoredLeaseValue(lease, holder, now + durationMs, now)
+        : { holder, until: now + durationMs },
+      now,
+      holder,
+    )
     const acquired = conn
       .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
       .get(key)
@@ -107,15 +154,20 @@ export function releaseStoredLease(key: string, holder: string): void {
 }
 
 export function storedLeaseHolder(key: string): string | null {
+  return storedLeaseSnapshot(key)?.holder ?? null
+}
+
+/** Read an unexpired lease without upgrading the store handle or repairing legacy values. */
+export function storedLeaseSnapshot(key: string, now = Date.now()): StoredLeaseSnapshot | null {
   const row = db()
     .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
     .get(key)
-  if (!row) return null
-  try {
-    const lease = JSON.parse(row.value) as { holder: string; until: number }
-    return lease.until > Date.now() ? lease.holder : null
-  } catch {
-    return null
+  const lease = storedValue(row?.value)
+  if (!lease || lease.until <= now) return null
+  return {
+    holder: lease.holder,
+    since: lease.since ?? null,
+    until: lease.until,
   }
 }
 
@@ -151,6 +203,7 @@ export async function holdStoredLease<T>(options: {
   holder: string
   durationMs: number
   renewEveryMs: number
+  trackSince?: boolean
   work: (guard: StoredLeaseGuard) => Promise<T>
   lostMessage: (heldBy: string | null, afterLeg?: string) => string
 }): Promise<HeldStoredLeaseResult<T>> {
@@ -168,7 +221,7 @@ export async function holdStoredLease<T>(options: {
   const renewal = setInterval(() => {
     if (
       lostBy === undefined &&
-      !acquireStoredLease(options.key, options.holder, options.durationMs)
+      !acquireStoredLease(options.key, options.holder, options.durationMs, options.trackSince)
     )
       markLost()
   }, options.renewEveryMs)

@@ -69,6 +69,11 @@ export const monitorModules: MonitorModule[] = [
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/monitor-canon-summary.ts', ['../canon/canon.ts']),
+  module('orchestrator/src/monitor/monitor-collect-lease.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/self-spawn.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-gate-tooling.ts', [
     'bun:sqlite',
     '../branch/offline-branch-landing.ts',
@@ -104,6 +109,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-issue-filing.ts',
     './monitor-canon-drift.ts',
     './monitor-canon-summary.ts',
+    './monitor-collect-lease.ts',
     './monitor-customer-guides.ts',
     './monitor-notices.ts',
     './monitor-outbox.ts',

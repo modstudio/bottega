@@ -7,7 +7,14 @@ import {
   ASKED_VIA_VALUES,
   QUESTION_DELIVERY_MODE_VALUES,
 } from '../../shared/question-vocabulary.ts'
-import { collectOnce, formatCollectLeg, releaseLease, watch, withLease } from './collect.ts'
+import {
+  collectLease,
+  collectOnce,
+  formatCollectLeg,
+  releaseLease,
+  watch,
+  withLease,
+} from './collect.ts'
 import {
   formatMigrationRepairSummary,
   migrateDatabaseWithQuestionIdentityMap,
@@ -51,6 +58,7 @@ async function collect(
   for (const result of results) console.log(formatCollectLeg(result))
   console.log(`\ncollected in ${human(Date.now() - t0)}`)
   if (results.some((result) => !result.ok)) process.exitCode = 1
+  return results
 }
 
 function printTasks(hours = '48'): void {
@@ -133,6 +141,23 @@ function printRulingStats(days: number | undefined): void {
 }
 
 function registerCollectionCommands(program: Command): void {
+  program
+    .command('lease')
+    .description('show the current collect lease without changing it')
+    .option('--json', 'write the lease state as JSON')
+    .action((options: { json?: boolean }) => {
+      requireDatabase()
+      const lease = collectLease()
+      const payload = lease
+        ? { free: false, ...lease }
+        : { free: true, holder: null, since: null, age: null, until: null }
+      if (options.json) console.log(JSON.stringify(payload))
+      else if (!lease) console.log('collect lease is free')
+      else
+        console.log(
+          `collect lease held by ${lease.holder}; since ${lease.since ?? 'unknown'}; age ${lease.age ?? 'unknown'}ms; until ${lease.until}`,
+        )
+    })
   program
     .command('migrate')
     .description('apply pending checksummed schema migrations')

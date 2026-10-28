@@ -46,6 +46,7 @@ import { hostPressureObservation, persistedHostPressureDetail } from './host-pre
 import { branchInventoryDecision, branchMonitorConditions } from './monitor-branches.ts'
 import { observeProjectCanonDrift } from './monitor-canon-drift.ts'
 import { monitorCanonSummary } from './monitor-canon-summary.ts'
+import { observeCollectLease } from './monitor-collect-lease.ts'
 import {
   abandonedBootstrapConditions,
   age,
@@ -125,13 +126,15 @@ async function initialMonitorObservations(
 }> {
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
+  const collectLease = observeCollectLease(clock)
   return {
     conditions: [
       ...hostPressure.conditions,
       ...staleCustomerGuideCommandConditions(),
       ...diskPressure.conditions,
+      ...collectLease.conditions,
     ],
-    errors: diskPressure.errors,
+    errors: [...diskPressure.errors, ...collectLease.errors],
     hostPressure: hostPressure.report,
   }
 }

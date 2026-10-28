@@ -8,11 +8,29 @@ import { createTaskDocument, getTaskDocument } from './task-document.ts'
 
 beforeEach(resetFixtureStore)
 
-test('task queries use a read-only store handle unless show refreshes its tracker', () => {
+test('lease and task queries use a read-only store handle unless show refreshes its tracker', () => {
+  expect(usesReadOnlyStoreHandle(['lease', '--json'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['task', 'list'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['task', 'show', 'DEV-1'])).toBeTrue()
   expect(usesReadOnlyStoreHandle(['task', 'show', 'DEV-1', '--fresh'])).toBeFalse()
   expect(usesReadOnlyStoreHandle(['task', 'set', 'DEV-1'])).toBeFalse()
+})
+
+test('lease JSON reports a free store through the read-only command', async () => {
+  const stdout: string[] = []
+  const log = spyOn(console, 'log').mockImplementation((message) => stdout.push(String(message)))
+  try {
+    expect(await run(createHubProgram(), ['lease', '--json'])).toBe(0)
+    expect(JSON.parse(stdout.at(-1) ?? '')).toEqual({
+      free: true,
+      holder: null,
+      since: null,
+      age: null,
+      until: null,
+    })
+  } finally {
+    log.mockRestore()
+  }
 })
 
 function command(root: Command, ...path: string[]): Command {

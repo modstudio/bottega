@@ -55,8 +55,13 @@ describe('run ingest', () => {
     })
 
     expect(results).toEqual([
-      { source: 'runs', ok: true },
-      { source: 'transcripts', ok: false, error: 'identity returned HTML' },
+      expect.objectContaining({ source: 'runs', ok: true, durationMs: expect.any(Number) }),
+      expect.objectContaining({
+        source: 'transcripts',
+        ok: false,
+        error: 'identity returned HTML',
+        durationMs: expect.any(Number),
+      }),
     ])
     expect(
       db()
