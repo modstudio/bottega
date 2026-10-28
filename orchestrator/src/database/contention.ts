@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { StoreLockRefusalEntry } from '../../../shared/store-lock-refusal-log.ts'
+import type { StoreWriteHoldEntry } from '../../../shared/store-write-hold-log.ts'
 import { enqueueContention } from '../record/landing-outbox.ts'
 
 const RESOURCE_KINDS = [
@@ -14,6 +15,8 @@ const RESOURCE_KINDS = [
   'register',
   'lock',
 ] as const
+export const STORE_LOCK_REFUSAL_KIND = 'store-lock-refusal'
+export const STORE_WRITE_HOLD_KIND = 'store-write-hold'
 const EVENT_KINDS = ['wait', 'refusal', 'invalidation', 'retry', 'timeout'] as const
 
 type ResourceKind = (typeof RESOURCE_KINDS)[number]
@@ -32,7 +35,7 @@ export type ContentionWrite = {
 }
 
 type ContentionResourceSummary = {
-  kind: ResourceKind | 'store-lock-refusal'
+  kind: ResourceKind | typeof STORE_LOCK_REFUSAL_KIND | typeof STORE_WRITE_HOLD_KIND
   count: number
   totalDurationMs: number
   meanDurationMs: number
@@ -98,7 +101,7 @@ export function summarizeStoreLockRefusals(
   entries: readonly StoreLockRefusalEntry[],
 ): ContentionResourceSummary {
   return {
-    kind: 'store-lock-refusal',
+    kind: STORE_LOCK_REFUSAL_KIND,
     count: entries.length,
     totalDurationMs: 0,
     meanDurationMs: 0,
@@ -106,6 +109,19 @@ export function summarizeStoreLockRefusals(
       entries,
       (entry) => `${basename(entry.store)} held by ${entry.holderCommand ?? 'unknown'}`,
     ),
+  }
+}
+
+export function summarizeStoreWriteHolds(
+  entries: readonly StoreWriteHoldEntry[],
+): ContentionResourceSummary {
+  const totalDurationMs = entries.reduce((sum, entry) => sum + entry.spanMs, 0)
+  return {
+    kind: STORE_WRITE_HOLD_KIND,
+    count: entries.length,
+    totalDurationMs,
+    meanDurationMs: entries.length ? Math.round(totalDurationMs / entries.length) : 0,
+    topKeys: topKeys(entries, (entry) => `${basename(entry.store)} ${entry.caller}`),
   }
 }
 

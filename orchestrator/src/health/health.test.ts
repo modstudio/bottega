@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
-import { insertContention } from '../database/contention.ts'
+import {
+  insertContention,
+  STORE_LOCK_REFUSAL_KIND,
+  STORE_WRITE_HOLD_KIND,
+} from '../database/contention.ts'
 import { db } from '../database/db.ts'
 import { harnessHealth } from './health.ts'
 
@@ -208,41 +212,66 @@ describe('harness health', () => {
     expect(report.header).toContain('never routing evidence')
   })
 
-  test('contention adds lock-refusal counts grouped by store and holder', () => {
-    const report = harnessHealth(3, db(), new Date('2026-09-07T12:00:00.000Z'), () => [
-      {
-        at: '2026-09-07T10:00:00.000Z',
-        store: '/state/hub/hub.db',
-        holderCommand: `${PLATFORM_SLUG} record`,
-        holderPid: 10,
-        verb: 'task set',
-      },
-      {
-        at: '2026-09-07T10:01:00.000Z',
-        store: '/state/hub/hub.db',
-        holderCommand: `${PLATFORM_SLUG} record`,
-        holderPid: 10,
-        verb: 'note new',
-      },
-      {
-        at: '2026-09-07T10:02:00.000Z',
-        store: '/state/hub/hub.db',
-        holderCommand: `${PLATFORM_SLUG} serve`,
-        holderPid: 11,
-        verb: 'task close',
-      },
-      {
-        at: '2026-09-07T10:03:00.000Z',
-        store: '/state/orchestrator/orchestrator.db',
-        holderCommand: null,
-        holderPid: null,
-        verb: 'run start',
-      },
-    ])
+  test('contention adds lock refusal and write hold measurements', () => {
+    const report = harnessHealth(
+      3,
+      db(),
+      new Date('2026-09-07T12:00:00.000Z'),
+      () => [
+        {
+          at: '2026-09-07T10:00:00.000Z',
+          store: '/state/hub/hub.db',
+          holderCommand: `${PLATFORM_SLUG} record`,
+          holderPid: 10,
+          verb: 'task set',
+        },
+        {
+          at: '2026-09-07T10:01:00.000Z',
+          store: '/state/hub/hub.db',
+          holderCommand: `${PLATFORM_SLUG} record`,
+          holderPid: 10,
+          verb: 'note new',
+        },
+        {
+          at: '2026-09-07T10:02:00.000Z',
+          store: '/state/hub/hub.db',
+          holderCommand: `${PLATFORM_SLUG} serve`,
+          holderPid: 11,
+          verb: 'task close',
+        },
+        {
+          at: '2026-09-07T10:03:00.000Z',
+          store: '/state/orchestrator/orchestrator.db',
+          holderCommand: null,
+          holderPid: null,
+          verb: 'run start',
+        },
+      ],
+      () => [
+        {
+          at: '2026-09-07T10:04:00.000Z',
+          store: '/state/hub/hub.db',
+          spanMs: 1_200,
+          longestMs: 900,
+          transactions: 3,
+          caller: 'hub/src/outbox.ts:452',
+        },
+        {
+          at: '2026-09-07T10:05:00.000Z',
+          store: '/state/hub/hub.db',
+          spanMs: 1_800,
+          longestMs: 1_500,
+          transactions: 1,
+          caller: 'hub/src/outbox.ts:452',
+        },
+      ],
+    )
 
-    expect(report.contention.resources.filter((row) => row.kind === 'store-lock-refusal')).toEqual([
+    expect(
+      report.contention.resources.filter((row) => row.kind === STORE_LOCK_REFUSAL_KIND),
+    ).toEqual([
       {
-        kind: 'store-lock-refusal',
+        kind: STORE_LOCK_REFUSAL_KIND,
         count: 4,
         totalDurationMs: 0,
         meanDurationMs: 0,
@@ -253,5 +282,12 @@ describe('harness health', () => {
         ],
       },
     ])
+    expect(report.contention.resources.find((row) => row.kind === STORE_WRITE_HOLD_KIND)).toEqual({
+      kind: STORE_WRITE_HOLD_KIND,
+      count: 2,
+      totalDurationMs: 3_000,
+      meanDurationMs: 1_500,
+      topKeys: [{ key: 'hub.db hub/src/outbox.ts:452', count: 2 }],
+    })
   })
 })

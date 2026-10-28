@@ -1,8 +1,8 @@
 import { constants, Database } from 'bun:sqlite'
 import { existsSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { dirname, join, relative, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { FROZEN_STATE_NAMES, PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
 import { classifyCaller } from '../../shared/caller-classification.ts'
 import {
@@ -24,6 +24,7 @@ import {
   temporaryStateStoreMigrationAllowed,
 } from '../../shared/state-directory.ts'
 import { decideStoreAccess, type StoreAccessDecision } from '../../shared/store-access.ts'
+import { appendStoreWriteHold } from '../../shared/store-write-hold-log.ts'
 import { sampleWalWriteLock, type WalWriteLockSampleResult } from '../../shared/store-write-lock.ts'
 import { assertTestHubDatabasePath } from '../../shared/test-hub-database.ts'
 import {
@@ -33,6 +34,11 @@ import {
   readUserVersion,
   staleWriteRefusal,
 } from './migrations.ts'
+import {
+  finishWriteTransaction,
+  type WriteHoldWindow,
+  writeTransactionNeedsCaller,
+} from './write-hold.ts'
 
 export type { Project } from './projects.ts'
 
@@ -178,6 +184,8 @@ const databaseAccess = createReadOnlyDatabaseAccess()
 let openedUserVersion: number | null = null
 let schemaReload: ((from: number, to: number) => void) | null = null
 const writeDepth = new WeakMap<Database, number>()
+const writeHoldWindows = new WeakMap<Database, WriteHoldWindow>()
+const dbSourcePath = fileURLToPath(import.meta.url)
 
 /** Ensure an ordinary store-needing command has a current, authorized store. */
 export function requireDatabase(): void {
@@ -188,12 +196,39 @@ export function requireDatabase(): void {
 }
 
 export function closeDatabaseForFixture(): void {
+  if (handle) writeHoldWindows.delete(handle)
   handle?.close()
   readOnlyHandle?.close()
   handle = null
   readOnlyHandle = null
   openedUserVersion = null
   schemaReload = null
+}
+
+function writeCaller(): string | null {
+  for (const line of new Error().stack?.split('\n').slice(1) ?? []) {
+    const matched = line.match(/(?:\(|\s)(file:\/\/[^():]+|\/[^():]+):(\d+):\d+\)?$/)
+    if (!matched?.[1] || !matched[2]) continue
+    const path = matched[1].startsWith('file://') ? fileURLToPath(matched[1]) : matched[1]
+    if (resolve(path) === resolve(dbSourcePath)) continue
+    const fromCheckout = relative(checkout, path)
+    if (fromCheckout.startsWith('..')) continue
+    return `${fromCheckout}:${matched[2]}`
+  }
+  return null
+}
+
+function measureFinishedWrite(conn: Database, beganMs: number, endedMs: number): void {
+  try {
+    const current = writeHoldWindows.get(conn) ?? null
+    const durationMs = endedMs - beganMs
+    const caller = writeTransactionNeedsCaller(current, beganMs, durationMs) ? writeCaller() : null
+    const measured = finishWriteTransaction(current, { beganMs, endedMs, caller })
+    writeHoldWindows.set(conn, measured.state)
+    if (measured.entry) appendStoreWriteHold(measured.entry)
+  } catch {
+    // Measurement must never change the transaction's result or error.
+  }
 }
 
 /** Long-lived processes (bottega dashboard start) reload instead of refusing a write after a migrate. */
@@ -321,10 +356,13 @@ export function writeTransaction<T>(fn: (conn: Database) => T, database?: Databa
   const depth = writeDepth.get(conn) ?? 0
   if (depth === 0) conn.exec('PRAGMA query_only = OFF')
   writeDepth.set(conn, depth + 1)
+  const beganMs = depth === 0 ? performance.timeOrigin + performance.now() : 0
   try {
     return conn.transaction(() => fn(conn)).immediate()
   } finally {
     if (depth === 0) {
+      const endedMs = performance.timeOrigin + performance.now()
+      measureFinishedWrite(conn, beganMs, endedMs)
       writeDepth.delete(conn)
       conn.exec('PRAGMA query_only = ON')
     } else {

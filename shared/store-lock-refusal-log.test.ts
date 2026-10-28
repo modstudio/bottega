@@ -79,3 +79,9 @@ test('an unreadable refusal log names the path and cause', () => {
   expect((failure as Error).message).toContain(`store lock refusal log could not be read: ${path}`)
   expect((failure as Error).message).toContain('EISDIR')
 })
+
+test('an unparseable start time names the remedy', () => {
+  expect(() => readStoreLockRefusalsSince('not-a-time')).toThrow(
+    'cleared by: provide since as an ISO 8601 timestamp',
+  )
+})
