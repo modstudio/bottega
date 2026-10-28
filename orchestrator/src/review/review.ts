@@ -12,6 +12,11 @@ export { parseReviewOutput, parseReviewReply } from '../contract/contract.ts'
 import { job } from '../jobs/jobs.ts'
 import { currentCoverage, projectRecord, reviewBranchNames } from './review-coverage.ts'
 import { filesCoveredIntersectChanged } from './review-coverage-match.ts'
+import {
+  type FindingLocationFact,
+  findingLocationNote,
+  reviewFindingRepositoryPath,
+} from './review-finding-location.ts'
 import { measureReviewChange, serializePathSet } from './review-group.ts'
 import {
   git,
@@ -39,6 +44,50 @@ export type CleanReviewEvidence =
   | { failure: string; note: null; kind: 'unevidenced' | 'harness' }
   | { failure: null; note: string | null }
 
+function findingLocationFacts(
+  runId: string,
+  output: ReviewReply,
+  database: Database,
+): FindingLocationFact[] {
+  const paths = output.findings.map((finding, index) => ({
+    finding: index + 1,
+    path: reviewFindingRepositoryPath(finding.location),
+  }))
+  const checked = paths.filter(
+    (fact): fact is { finding: number; path: string } => fact.path !== null,
+  )
+  if (!checked.length) return []
+  const unknown = checked.map((fact): FindingLocationFact => ({ ...fact, resolution: 'unknown' }))
+  try {
+    const run = database
+      .query(
+        'SELECT repo, base_commit, input_tree, head_commit, review_ref, changed_paths FROM run WHERE record_id=?',
+      )
+      .get(runId) as
+      | (Pick<
+          RunRow,
+          'base_commit' | 'input_tree' | 'head_commit' | 'review_ref' | 'changed_paths'
+        > & { repo: string | null })
+      | null
+    const endpoint = run ? reviewChangeRange(run)?.to : null
+    const repo = run?.repo ? projectPath(database, run.repo) : null
+    if (!endpoint || !repo || !git(repo, ['cat-file', '-e', `${endpoint}^{tree}`]).ok)
+      return unknown
+    return checked.map((fact): FindingLocationFact => {
+      const result = git(repo, ['cat-file', '-e', `${endpoint}:${fact.path}`])
+      if (result.ok) return { ...fact, resolution: 'resolves' }
+      return {
+        ...fact,
+        resolution: /does not exist in|exists on disk, but not in/.test(result.err)
+          ? 'absent'
+          : 'unknown',
+      }
+    })
+  } catch {
+    return unknown
+  }
+}
+
 export function normalizeCoveredPath(path: string): string {
   const repositoryPath = path
     .trim()
@@ -59,7 +108,12 @@ export function cleanReviewEvidence(
   if (!provenance.files_covered.length && !provenance.commands_run.length) {
     return { failure: UNEVIDENCED_REVIEW_ERROR, note: null, kind: 'unevidenced' }
   }
-  if (output.findings.length) return { failure: null, note: null }
+  if (output.findings.length) {
+    return {
+      failure: null,
+      note: findingLocationNote(findingLocationFacts(runId, output, database)),
+    }
+  }
   const unavailable = (why: string): CleanReviewEvidence => ({
     failure: `clean review changed-path coverage not checked: ${why}`,
     note: null,

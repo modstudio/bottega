@@ -289,6 +289,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../jobs/jobs.ts',
       './review-coverage.ts',
       './review-coverage-match.ts',
+      './review-finding-location.ts',
       './review-group.ts',
       './review-role.ts',
       './review-pins.ts',
