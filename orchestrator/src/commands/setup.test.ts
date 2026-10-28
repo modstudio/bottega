@@ -1,10 +1,12 @@
-import { afterEach, expect, test } from 'bun:test'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Command } from 'commander'
 import { FROZEN_STATE_NAMES, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../../../shared/state-directory.ts'
+import type { SetupPlan } from '../setup/setup-engine.ts'
+import type { SetupService } from '../setup/setup-service.ts'
 import { register } from './setup.ts'
 import { drainStdout } from './support.ts'
 
@@ -54,36 +56,55 @@ test('setup plan reports a legacy state-file move without creating the destinati
   }
 })
 
-test('setup apply reaches its state-file action without creating the destination first', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'setup-apply-state-file-'))
-  const directory = join(root, 'orchestrator')
-  const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
-  const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
-  mkdirSync(directory, { recursive: true })
-  writeFileSync(legacy, 'legacy')
-  process.env.BOTTEGA_STATE_HOME = root
-  delete process.env.BOTTEGA_ORCHESTRATOR_DB
-  try {
-    const program = new Command().exitOverride()
-    register(program)
-    const refusal = await program
-      .parseAsync(['node', PLATFORM_SLUG, 'setup', 'apply', '--yes', '--json'])
-      .then(
-        () => null,
-        (error: unknown) => String(error),
-      )
-    // A linked-worktree binary refuses before the move; a main-checkout binary performs it.
-    // Either way the destination is never created empty ahead of the state-file action.
-    if (refusal === null) {
-      expect(readFileSync(current, 'utf8')).toBe('legacy')
-      expect(existsSync(legacy)).toBeFalse()
-    } else {
-      expect(refusal).toContain('refusing to migrate the store from a linked-worktree binary')
-      expect(existsSync(current)).toBeFalse()
+describe('setup apply state-file action', () => {
+  let root: string
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'setup-apply-state-file-'))
+    process.env.BOTTEGA_STATE_HOME = root
+    delete process.env.BOTTEGA_ORCHESTRATOR_DB
+  })
+
+  test('setup apply reaches its state-file action without creating the destination first', async () => {
+    const directory = join(root, 'orchestrator')
+    const legacy = join(directory, LEGACY_ORCHESTRATOR_DATABASE)
+    const current = join(directory, FROZEN_STATE_NAMES.orchestratorDatabase)
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(legacy, 'legacy')
+    let serviceCalled = false
+    let destinationExistedWhenCalled: boolean | null = null
+    const emptyPlan: SetupPlan = {
+      facts: { machine: {} as SetupPlan['facts']['machine'], repositories: [] },
+      proposals: [],
+      registrations: [],
+      questions: [],
+      notices: [],
     }
-  } finally {
-    rmSync(root, { recursive: true, force: true })
-  }
+    const emptyOutcome = { plan: emptyPlan, actions: [], results: [] }
+    const service: SetupService = {
+      plan: async () => emptyPlan,
+      dryRun: async () => ({ ...emptyPlan, diff: [] }),
+      prepare: async () => ({ plan: emptyPlan, migration: null }),
+      cancel: async () => null,
+      applyPreparedActions: async () => [],
+      apply: async () => emptyOutcome,
+      applyRecommended: async () => {
+        serviceCalled = true
+        destinationExistedWhenCalled = existsSync(current)
+        return emptyOutcome
+      },
+    }
+
+    try {
+      const program = new Command().exitOverride()
+      register(program, service)
+      await program.parseAsync(['node', PLATFORM_SLUG, 'setup', 'apply', '--yes', '--json'])
+      expect(serviceCalled).toBeTrue()
+      expect(destinationExistedWhenCalled).toBeFalse()
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
 })
 
 test('setup restore refuses a worker-marked caller before reading the backup', async () => {
