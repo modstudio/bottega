@@ -61,22 +61,28 @@ export type EndpointApiKeyRetryDecision =
   | { retry: true; delayMs: number }
   | { retry: false; retriesExhausted: boolean }
 
-export const ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS = 3
+export const ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS = 6
 /** Hosted slowness lasts seconds, so the retry window spans seconds rather than milliseconds. */
 const ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS = 2_000
+const ENDPOINT_API_KEY_RESOLUTION_MAX_RETRY_DELAY_MS = 15_000
 
 /** Pure policy: retry only transient hosted failures, up to the endpoint-key attempt bound. */
 export function decideEndpointApiKeyRetry(
   failure: SecretResolutionFailureClassification | null,
   attemptNumber: number,
+  randomValue: number,
 ): EndpointApiKeyRetryDecision {
   const transient = isTransientSecretResolutionFailure(failure)
   if (!transient || attemptNumber < 1) return { retry: false, retriesExhausted: false }
   if (attemptNumber >= ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS)
     return { retry: false, retriesExhausted: true }
+  const baseDelayMs = Math.min(
+    ENDPOINT_API_KEY_RESOLUTION_MAX_RETRY_DELAY_MS,
+    ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS * 2 ** (attemptNumber - 1),
+  )
   return {
     retry: true,
-    delayMs: ENDPOINT_API_KEY_RESOLUTION_INITIAL_RETRY_DELAY_MS * 2 ** (attemptNumber - 1),
+    delayMs: Math.floor(baseDelayMs * (0.8 + randomValue * 0.4)),
   }
 }
 
@@ -84,13 +90,18 @@ async function resolveNamedEndpointApiKey(
   name: string,
   resolver: typeof readEnvValuesWithHosted,
   sleep: (delayMs: number) => Promise<void>,
+  random: () => number,
   exhaustedRetryCommand: string,
 ): Promise<string | undefined> {
   for (let attempt = 1; attempt <= ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS; attempt += 1) {
     try {
       return (await resolver([name]))[name]
     } catch (error) {
-      const retry = decideEndpointApiKeyRetry(classifySecretResolutionFailure(error), attempt)
+      const retry = decideEndpointApiKeyRetry(
+        classifySecretResolutionFailure(error),
+        attempt,
+        random(),
+      )
       if (retry.retry) {
         await sleep(retry.delayMs)
         continue
@@ -141,6 +152,7 @@ export async function resolveEndpointApiKeyEnv(
   resolver: typeof readEnvValuesWithHosted = readEnvValuesWithHosted,
   options: {
     sleep?: (delayMs: number) => Promise<void>
+    random?: () => number
     exhaustedRetryCommand?: string
     projectSecret?: { project: string; agentSecret: string }
   } = {},
@@ -153,6 +165,7 @@ export async function resolveEndpointApiKeyEnv(
           name,
           resolver,
           options.sleep ?? Bun.sleep,
+          options.random ?? Math.random,
           options.exhaustedRetryCommand ?? RUN_RETRY_REMEDY,
         )
       : undefined

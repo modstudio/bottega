@@ -127,25 +127,32 @@ test('a sealed-store failure is not reported as an unset secret', async () => {
 })
 
 test('endpoint key retry policy retries only transient failures within the attempt bound', () => {
-  expect(decideEndpointApiKeyRetry({ kind: 'hosted-failure' }, 1)).toEqual({
+  expect(decideEndpointApiKeyRetry({ kind: 'hosted-failure' }, 1, 0.5)).toEqual({
     retry: true,
     delayMs: 2_000,
   })
-  expect(decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'unreachable' }, 2)).toEqual({
+  expect(decideEndpointApiKeyRetry({ kind: 'hosted-failure' }, 1, 0)).toEqual({
     retry: true,
-    delayMs: 4_000,
+    delayMs: 1_600,
   })
   expect(
-    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 429 }, 1),
+    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'unreachable' }, 2, 0.5),
+  ).toEqual({ retry: true, delayMs: 4_000 })
+  expect(
+    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 429 }, 1, 0.5),
   ).toEqual({ retry: true, delayMs: 2_000 })
   expect(
-    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 503 }, 1),
+    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 503 }, 1, 0.5),
   ).toEqual({ retry: true, delayMs: 2_000 })
   expect(
-    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 403 }, 1),
+    decideEndpointApiKeyRetry({ kind: 'config-client', reason: 'response', status: 403 }, 1, 0.5),
   ).toEqual({ retry: false, retriesExhausted: false })
   expect(
-    decideEndpointApiKeyRetry({ kind: 'hosted-failure' }, ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS),
+    decideEndpointApiKeyRetry(
+      { kind: 'hosted-failure' },
+      ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS,
+      0.5,
+    ),
   ).toEqual({ retry: false, retriesExhausted: true })
 })
 
@@ -164,6 +171,7 @@ test('endpoint key resolution succeeds after one transient failure without a rea
       sleep: async (delayMs) => {
         delays.push(delayMs)
       },
+      random: () => 0.5,
     },
   )
 
@@ -179,13 +187,23 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
   const error = new HostedSecretError('SEALED_KEY', 'hosted-failure', cause)
 
   let refusal = ''
+  let attempts = 0
+  const delays: number[] = []
+  const randomValues = [0, 1, 0, 1, 0]
+  let randomIndex = 0
   try {
     await resolveEndpointApiKeyEnv(
       { baseUrl: 'https://example.test/v1', apiKeySecret: 'SEALED_KEY' },
       async () => {
+        attempts += 1
         throw error
       },
-      { sleep: async () => {} },
+      {
+        sleep: async (delayMs) => {
+          delays.push(delayMs)
+        },
+        random: () => randomValues[randomIndex++]!,
+      },
     )
   } catch (caught) {
     refusal = String((caught as Error).message)
@@ -196,6 +214,8 @@ test('an exhausted transient refusal safely names its cause and retry remedy', a
   expect(refusal).toContain('reason: response')
   expect(refusal).toContain(`cleared by: ${PLATFORM_SLUG} run retry <run>`)
   expect(refusal).not.toContain(sensitiveMarker)
+  expect(attempts).toBe(ENDPOINT_API_KEY_RESOLUTION_MAX_ATTEMPTS)
+  expect(delays).toEqual([1_600, 4_800, 6_400, 18_000, 12_000])
 })
 
 test('a wrapped 403 refuses immediately with the access remedy', async () => {
