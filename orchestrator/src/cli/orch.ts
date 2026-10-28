@@ -144,8 +144,15 @@ async function cliEntry(
       const { writeAskServerFailure } = await import('../ask/ask-failure.ts')
       writeAskServerFailure(error)
     }
-    if (!COLLECTION_COMMANDS.has(argv[0] ?? '')) throw error
-    return degradedCollection(argv, error)
+    if (COLLECTION_COMMANDS.has(argv[0] ?? '')) return degradedCollection(argv, error)
+    try {
+      const { exitCodeFor, lockedStoreMessage } = await import('./program.ts')
+      console.error(await lockedStoreMessage(error))
+      return exitCodeFor(error)
+    } catch {
+      console.error(error instanceof Error ? error.message : String(error))
+      return 1
+    }
   }
 }
 
