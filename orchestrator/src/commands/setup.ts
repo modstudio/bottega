@@ -59,12 +59,13 @@ async function applyNonInteractiveSetup(
 
 async function reversePreparedSetup(
   migration: Parameters<typeof setupService.cancel>[0],
+  service: SetupService,
 ): Promise<void> {
-  const reversed = await setupService.cancel(migration)
+  const reversed = await service.cancel(migration)
   if (reversed) log(reversed)
 }
 
-async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
+async function applyInteractiveSetup(options: SetupOptions, service: SetupService): Promise<void> {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     console.error(
       `${PLATFORM_SLUG} machine setup requires both stdin and stdout to be TTYs; use ${PLATFORM_SLUG} machine setup apply --yes or ${PLATFORM_SLUG} machine setup apply --answers <file>`,
@@ -73,7 +74,7 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
     return
   }
   const folders = inputs(options)
-  const prepared = await setupService.prepare(folders)
+  const prepared = await service.prepare(folders)
   introduceSetup(folders)
   const plan = await gatherSetupPlan(
     () => Promise.resolve(prepared.plan),
@@ -83,7 +84,7 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
     Boolean(prepared.migration),
   )
   if (plan === SETUP_CANCEL) {
-    await reversePreparedSetup(prepared.migration)
+    await reversePreparedSetup(prepared.migration, service)
     return
   }
   let actionsStarted = false
@@ -94,18 +95,18 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
       clackSetupPrompter,
       (actions) => {
         actionsStarted = true
-        return setupService.applyPreparedActions(actions, prepared.migration)
+        return service.applyPreparedActions(actions, prepared.migration)
       },
       Boolean(prepared.migration),
     )
   } catch (error) {
     if (!actionsStarted) {
-      await reversePreparedSetup(prepared.migration)
+      await reversePreparedSetup(prepared.migration, service)
     }
     throw error
   }
   if (outcome.kind !== 'applied') {
-    await reversePreparedSetup(prepared.migration)
+    await reversePreparedSetup(prepared.migration, service)
   }
   if (outcome.kind === 'cancelled') process.exitCode = 130
   if (outcome.kind === 'applied' && setupResultsRequireAttention(outcome.results)) {
@@ -119,7 +120,7 @@ export function register(program: Command, service: SetupService = setupService)
     .description('inspect and configure this machine interactively')
     .option('--in <folder>', 'folder to inspect', collect, [])
     .allowExcessArguments(false)
-    .action(applyInteractiveSetup)
+    .action((options: SetupOptions) => applyInteractiveSetup(options, service))
   setup
     .command('restore <backup-dir>')
     .description('restore a reversible environment migration backup')
