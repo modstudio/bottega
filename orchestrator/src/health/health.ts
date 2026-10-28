@@ -12,7 +12,7 @@ import {
 } from '../../../shared/store-lock-refusal-log.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { attributionCounts, parseConfinement } from '../confinement/confinement.ts'
-import { summarizeContention } from '../database/contention.ts'
+import { summarizeContention, summarizeStoreLockRefusals } from '../database/contention.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
@@ -26,7 +26,6 @@ type HealthClass = FailureKind | 'stale'
 
 type HealthClassRow = HarnessHealth['classes'][number] & { kind: HealthClass }
 type HealthVerdictRow = HarnessHealth['falseVerdicts'][number]
-type ContentionResourceRow = HarnessHealth['contention']['resources'][number]
 
 export function throttleBuckets(input: { database: Database; from: string }): ThrottleBucket[] {
   const runs = input.database
@@ -60,34 +59,6 @@ export function landingsWithPostStepError(database: Database = db()): {
     .all() as { project: string; branch: string; error: string }[]
 }
 
-function storeLockRefusalRows(entries: readonly StoreLockRefusalEntry[]): ContentionResourceRow[] {
-  const byStore = new Map<string, StoreLockRefusalEntry[]>()
-  for (const entry of entries) {
-    const matching = byStore.get(entry.store) ?? []
-    matching.push(entry)
-    byStore.set(entry.store, matching)
-  }
-  return [...byStore]
-    .map(([store, matching]) => {
-      const holders = new Map<string, number>()
-      for (const entry of matching) {
-        if (entry.holderCommand)
-          holders.set(entry.holderCommand, (holders.get(entry.holderCommand) ?? 0) + 1)
-      }
-      const topHolder = [...holders]
-        .map(([key, count]) => ({ key, count }))
-        .sort((left, right) => right.count - left.count || left.key.localeCompare(right.key))[0]
-      return {
-        kind: `store ${store}`,
-        count: matching.length,
-        totalDurationMs: 0,
-        meanDurationMs: 0,
-        topKeys: topHolder ? [topHolder] : [],
-      }
-    })
-    .sort((left, right) => left.kind.localeCompare(right.kind))
-}
-
 function contentionHealth(
   database: Database,
   from: string,
@@ -96,7 +67,7 @@ function contentionHealth(
   const contention = summarizeContention(database, from)
   return {
     ...contention,
-    resources: [...contention.resources, ...storeLockRefusalRows(readStoreRefusals(from))],
+    resources: [...contention.resources, summarizeStoreLockRefusals(readStoreRefusals(from))],
   }
 }
 

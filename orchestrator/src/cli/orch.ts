@@ -147,7 +147,7 @@ async function cliEntry(
     if (COLLECTION_COMMANDS.has(argv[0] ?? '')) return degradedCollection(argv, error)
     try {
       const { exitCodeFor, lockedStoreMessage } = await import('./program.ts')
-      console.error(await lockedStoreMessage(error, undefined, undefined, argv))
+      console.error(await lockedStoreMessage(error, { argv }))
       return exitCodeFor(error)
     } catch {
       console.error(error instanceof Error ? error.message : String(error))

@@ -7,13 +7,9 @@ import {
   type PublicCommandInvocation,
   publicCommandUsage,
 } from '../../../shared/commander-public-path.ts'
-import {
-  databaseLockHolder,
-  formatDatabaseLockRefusal,
-  isDatabaseLocked,
-} from '../../../shared/database-lock-refusal.ts'
+import { databaseLockHolder, isDatabaseLocked } from '../../../shared/database-lock-refusal.ts'
 import { processCommandLine } from '../../../shared/process-identity.ts'
-import { appendStoreLockRefusal } from '../../../shared/store-lock-refusal-log.ts'
+import { recordDatabaseLockRefusal } from '../../../shared/store-lock-refusal-log.ts'
 import {
   sampleWalWriteLock,
   type WalWriteLockSampleResult,
@@ -156,11 +152,14 @@ export function usesReadOnlyStoreHandle(argv: readonly string[]): boolean {
 
 export async function lockedStoreMessage(
   error: unknown,
-  inspect: (storePath: string) => Promise<WalWriteLockSampleResult> = sampleWalWriteLock,
-  commandOf: (pid: number) => string | null = processCommandLine,
-  argv: readonly string[] = [],
+  options: {
+    argv?: readonly string[]
+    inspect?: (storePath: string) => Promise<WalWriteLockSampleResult>
+    commandOf?: (pid: number) => string | null
+  } = {},
 ): Promise<string> {
   if (!isDatabaseLocked(error)) return error instanceof Error ? error.message : String(error)
+  const { argv = [], inspect = sampleWalWriteLock, commandOf = processCommandLine } = options
   try {
     const sampled = await inspect(DB_PATH)
     const facts = {
@@ -171,15 +170,13 @@ export async function lockedStoreMessage(
           sampled.supported && sampled.holderPid !== null ? commandOf(sampled.holderPid) : null,
       }),
     }
-    appendStoreLockRefusal(facts, argv)
-    return formatDatabaseLockRefusal(facts)
+    return recordDatabaseLockRefusal(facts, argv)
   } catch (inspectionError) {
     const facts = {
       store: DB_PATH,
       holder: databaseLockHolder({ failed: inspectionError }),
     }
-    appendStoreLockRefusal(facts, argv)
-    return formatDatabaseLockRefusal(facts)
+    return recordDatabaseLockRefusal(facts, argv)
   }
 }
 
@@ -214,8 +211,7 @@ export async function run(argv: string[], invocation?: PublicCommandInvocation):
     return Number(process.exitCode ?? 0)
   } catch (error) {
     const code = exitCodeFor(error)
-    if (!(error instanceof CommanderError))
-      console.error(await lockedStoreMessage(error, undefined, undefined, argv))
+    if (!(error instanceof CommanderError)) console.error(await lockedStoreMessage(error, { argv }))
     return code
   }
 }

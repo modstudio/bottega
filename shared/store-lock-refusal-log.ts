@@ -1,10 +1,11 @@
 /** Best-effort file adapter for store lock refusals that cannot be written to either store. */
 
 import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import {
   type DatabaseLockRefusalFacts,
   databaseLockHolderCommandSummary,
+  formatDatabaseLockRefusal,
 } from './database-lock-refusal.ts'
 import { resolveStateRoot, type StateEnvironment } from './state-directory.ts'
 
@@ -59,7 +60,7 @@ export function appendStoreLockRefusal(
   try {
     const paths = logPaths(process.env)
     const line = `${JSON.stringify(refusalEntry(facts, argv, options.now ?? new Date()))}\n`
-    mkdirSync(resolveStateRoot(process.env), { recursive: true })
+    mkdirSync(dirname(paths.current), { recursive: true })
     const maxBytes = options.maxBytes ?? STORE_LOCK_REFUSAL_LOG_MAX_BYTES
     let currentBytes = 0
     try {
@@ -74,6 +75,15 @@ export function appendStoreLockRefusal(
   } catch {
     // Measurement is best-effort and must never replace the original store refusal.
   }
+}
+
+/** Record one refusal best-effort and return the message presented to the caller. */
+export function recordDatabaseLockRefusal(
+  facts: DatabaseLockRefusalFacts,
+  argv: readonly string[],
+): string {
+  appendStoreLockRefusal(facts, argv)
+  return formatDatabaseLockRefusal(facts)
 }
 
 function parsedEntry(value: unknown): StoreLockRefusalEntry | null {
@@ -104,8 +114,14 @@ function readLog(path: string): StoreLockRefusalEntry[] {
           return []
         }
       })
-  } catch {
-    return []
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    const cause = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `store lock refusal log could not be read: ${path}: ${cause}\n` +
+        `cleared by: make ${path} readable or remove it so a new log can be created`,
+      { cause: error },
+    )
   }
 }
 

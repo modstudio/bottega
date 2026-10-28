@@ -208,7 +208,7 @@ describe('harness health', () => {
     expect(report.header).toContain('never routing evidence')
   })
 
-  test('contention adds lock-refusal counts and the most frequent holder per store', () => {
+  test('contention adds lock-refusal counts grouped by store and holder', () => {
     const report = harnessHealth(3, db(), new Date('2026-09-07T12:00:00.000Z'), () => [
       {
         at: '2026-09-07T10:00:00.000Z',
@@ -240,22 +240,17 @@ describe('harness health', () => {
       },
     ])
 
-    expect(
-      report.contention.resources.filter((row) => row.kind.startsWith('store /state/')),
-    ).toEqual([
+    expect(report.contention.resources.filter((row) => row.kind === 'store-lock-refusal')).toEqual([
       {
-        kind: 'store /state/hub/hub.db',
-        count: 3,
+        kind: 'store-lock-refusal',
+        count: 4,
         totalDurationMs: 0,
         meanDurationMs: 0,
-        topKeys: [{ key: `${PLATFORM_SLUG} record`, count: 2 }],
-      },
-      {
-        kind: 'store /state/orchestrator/orchestrator.db',
-        count: 1,
-        totalDurationMs: 0,
-        meanDurationMs: 0,
-        topKeys: [],
+        topKeys: [
+          { key: `hub.db held by ${PLATFORM_SLUG} record`, count: 2 },
+          { key: `hub.db held by ${PLATFORM_SLUG} serve`, count: 1 },
+          { key: 'orchestrator.db held by unknown', count: 1 },
+        ],
       },
     ])
   })

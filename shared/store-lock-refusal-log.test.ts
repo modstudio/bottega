@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { chmodSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { STATE_HOME_ENV } from './state-directory.ts'
@@ -64,4 +64,18 @@ test('an append failure in an unwritable state directory does not throw', () => 
       ['run', 'start'],
     ),
   ).not.toThrow()
+})
+
+test('an unreadable refusal log names the path and cause', () => {
+  const path = join(stateHome, 'store-lock-refusals.jsonl')
+  mkdirSync(path)
+  let failure: unknown
+  try {
+    readStoreLockRefusalsSince('2026-10-28T00:00:00.000Z')
+  } catch (error) {
+    failure = error
+  }
+  expect(failure).toBeInstanceOf(Error)
+  expect((failure as Error).message).toContain(`store lock refusal log could not be read: ${path}`)
+  expect((failure as Error).message).toContain('EISDIR')
 })

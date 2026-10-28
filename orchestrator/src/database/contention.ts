@@ -1,5 +1,7 @@
 import type { Database } from 'bun:sqlite'
+import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
+import type { StoreLockRefusalEntry } from '../../../shared/store-lock-refusal-log.ts'
 import { enqueueContention } from '../record/landing-outbox.ts'
 
 const RESOURCE_KINDS = [
@@ -30,7 +32,7 @@ export type ContentionWrite = {
 }
 
 type ContentionResourceSummary = {
-  kind: ResourceKind
+  kind: ResourceKind | 'store-lock-refusal'
   count: number
   totalDurationMs: number
   meanDurationMs: number
@@ -77,6 +79,36 @@ const emptyContention = (): ContentionSummary => ({
   sessions: [],
 })
 
+function topKeys<T>(
+  rows: readonly T[],
+  keyOf: (row: T) => string,
+): { key: string; count: number }[] {
+  const keys = new Map<string, number>()
+  for (const row of rows) {
+    const key = keyOf(row)
+    keys.set(key, (keys.get(key) ?? 0) + 1)
+  }
+  return [...keys]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+    .slice(0, 3)
+}
+
+export function summarizeStoreLockRefusals(
+  entries: readonly StoreLockRefusalEntry[],
+): ContentionResourceSummary {
+  return {
+    kind: 'store-lock-refusal',
+    count: entries.length,
+    totalDurationMs: 0,
+    meanDurationMs: 0,
+    topKeys: topKeys(
+      entries,
+      (entry) => `${basename(entry.store)} held by ${entry.holderCommand ?? 'unknown'}`,
+    ),
+  }
+}
+
 export function contentionTableExists(d: Database): boolean {
   return !!d.query("SELECT 1 FROM sqlite_master WHERE type='table' AND name='contention'").get()
 }
@@ -118,18 +150,12 @@ export function summarizeContention(d: Database, from: string): ContentionSummar
       (sum, row) => sum + Math.max(0, row.duration_ms ?? 0),
       0,
     )
-    const keys = new Map<string, number>()
-    for (const row of matching) keys.set(row.resource_key, (keys.get(row.resource_key) ?? 0) + 1)
-    const topKeys = [...keys]
-      .map(([key, count]) => ({ key, count }))
-      .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
-      .slice(0, 3)
     return {
       kind,
       count: matching.length,
       totalDurationMs,
       meanDurationMs: matching.length ? Math.round(totalDurationMs / matching.length) : 0,
-      topKeys,
+      topKeys: topKeys(matching, (row) => row.resource_key),
     }
   })
   const sessions = new Map<string, ContentionSessionSummary>()

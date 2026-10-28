@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { CommanderError } from 'commander'
 import { FROZEN_ENV_NAMES } from '../../../shared/brand.ts'
 import type { PublicCommandInvocation } from '../../../shared/commander-public-path.ts'
+import { readStoreLockRefusalsSince } from '../../../shared/store-lock-refusal-log.ts'
 import { dir } from '../../test/fixtures/store.ts'
 import {
   MIGRATION_DRAIN_REFUSAL_EXIT_CODE,
@@ -151,9 +152,14 @@ test('run query verbs use the read-only store handle', () => {
 })
 
 test('a failed holder inspection cannot hide the original database lock refusal', async () => {
-  const message = await lockedStoreMessage({ code: 'SQLITE_BUSY' }, async () => {
-    throw new Error('shared-memory file is unreadable')
-  })
+  const message = await lockedStoreMessage(
+    { code: 'SQLITE_BUSY' },
+    {
+      inspect: async () => {
+        throw new Error('shared-memory file is unreadable')
+      },
+    },
+  )
   expect(message).toContain('database write refused: database is locked')
   expect(message).toContain(
     'holder: unknown (lock-holder inspection failed: shared-memory file is unreadable)',
@@ -164,18 +170,35 @@ test('a failed holder inspection cannot hide the original database lock refusal'
 test("a locked orchestrator store refusal names the sampled holder's pid and summarized command", async () => {
   const message = await lockedStoreMessage(
     { code: 'SQLITE_BUSY' },
-    async () => ({
-      supported: true,
-      classification: 'held',
-      holderPid: 4242,
-      sampleCount: 5,
-      samples: [4242, 4242, 4242, 4242, 4242],
-    }),
-    (pid) => `/opt/bun /opt/orchestrator/src/cli/orch.ts run start --pid ${pid} --token fixture`,
+    {
+      argv: ['run', 'start', '--token', 'fixture'],
+      inspect: async () => ({
+        supported: true,
+        classification: 'held',
+        holderPid: 4242,
+        sampleCount: 5,
+        samples: [4242, 4242, 4242, 4242, 4242],
+      }),
+      commandOf: (pid) =>
+        `/opt/bun /opt/orchestrator/src/cli/orch.ts run start --pid ${pid} --token fixture`,
+    },
   )
   expect(message).toContain('store: ')
   expect(message).toContain('holder: pid 4242; command bun orch.ts')
   expect(message).toContain('then retry the command')
+  expect(
+    readStoreLockRefusalsSince('1970-01-01T00:00:00.000Z').filter(
+      (entry) => entry.holderPid === 4242,
+    ),
+  ).toEqual([
+    {
+      at: expect.any(String),
+      store: expect.any(String),
+      holderCommand: 'bun orch.ts',
+      holderPid: 4242,
+      verb: 'run start',
+    },
+  ])
 })
 
 test('store-free setup invocations reach the executable entry without creating or mutating a store', async () => {
