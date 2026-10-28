@@ -69,6 +69,45 @@ export const runModuleSpecs = [
     allowed: [],
   },
   {
+    file: 'orchestrator/src/route/route-policy.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/route/route-selection.ts',
+    allowed: ['../score/score.ts', './route-cost-policy.ts', './route-policy.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/route-metered-policy.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/route/route-metered-policy-adapter.ts',
+    allowed: ['../agent/agents.ts', '../jobs/jobs.ts', './route-metered-policy.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/route-cost-policy.ts',
+    allowed: [],
+  },
+  {
+    file: 'orchestrator/src/route/route-cost-policy-adapter.ts',
+    allowed: ['../../../shared/machine-config.ts', './route-cost-policy.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/route-statistics.ts',
+    allowed: ['../state/statistics.ts'],
+  },
+  {
+    file: 'orchestrator/src/route/route-cost.ts',
+    allowed: [
+      '../database/db.ts',
+      '../jobs/job-fidelity.ts',
+      '../run/run-subscription-cost.ts',
+      '../run/run-subscription-cost-store.ts',
+      './prompt-size-bucket.ts',
+      './route-statistics.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/route/routing-refusal.ts',
     allowed: ['../refusal-error.ts'],
   },

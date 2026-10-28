@@ -8,7 +8,8 @@ import { bradleyTerry } from '../score/agreement.ts'
 import { duelMatrices } from '../score/duel.ts'
 import { guide, type JobGuide } from '../state/guide.ts'
 import { promptSizeBucketLabel } from './prompt-size-bucket.ts'
-import { evidenceFor, MIN_SAMPLE, pick, scoreboard } from './route.ts'
+import { evidenceFor, pick, scoreboard } from './route.ts'
+import { MIN_SAMPLE } from './route-selection.ts'
 import {
   type RoutingBacktest,
   routingBacktest,
@@ -49,6 +50,13 @@ function formattedCostPerAccepted(value: ReturnType<typeof scoreboard>[number]['
   if ('usd' in value)
     return `$${value.usd.toFixed(4)}${value.imputed ? ` (${value.imputed} imputed)` : ''}`
   return value.unknown === 'no accepted results' ? '—' : `unpriced (${value.unknown})`
+}
+
+function formattedCostPolicy(row: ReturnType<typeof scoreboard>[number]): string {
+  const floor =
+    row.costPolicy.floor === null ? 'none' : `${(row.costPolicy.floor * 100).toFixed(0)}%`
+  const below = row.belowCostFloor ? ' BELOW' : ''
+  return `${row.costPolicy.group} floor=${floor} rate=${row.costPolicy.rate}x${below}`
 }
 
 export function routingBacktestCommand(
@@ -318,9 +326,7 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
       // Failures are part of the score, so they are shown beside it rather than
       // left for someone to wonder why the percentage looks low.
       const judged = r.failures ? `${r.evidence}(${r.failures}f)` : String(r.evidence)
-      const policy =
-        `${r.costPolicy.group} floor=${r.costPolicy.floor === null ? 'none' : `${(r.costPolicy.floor * 100).toFixed(0)}%`}` +
-        ` rate=${r.costPolicy.rate}x${r.belowCostFloor ? ' BELOW' : ''}`
+      const policy = formattedCostPolicy(r)
       const metric = (value: number | null) =>
         value === null ? '—' : Math.round(value).toLocaleString()
       log(

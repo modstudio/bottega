@@ -1,5 +1,4 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { readMachineValue } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import {
@@ -21,7 +20,7 @@ import {
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
-import { FIDELITY_PENALTY, WEIGHT, weigh } from '../score/score.ts'
+import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { transportPinIneligibility } from '../transport/transport.ts'
 import { assertExternalDelegation, harnessSelection } from './harness-delegation.ts'
@@ -31,20 +30,31 @@ import {
   promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
-import { type CostPerAcceptedResult, routeCostFacts, routeCostPerAccepted } from './route-cost.ts'
 import {
-  type CostPolicySelection,
-  costAwareRank,
-  costPolicyReason,
-  parseRouteCostPolicy,
+  attachRouteCosts,
+  type CostPerAcceptedResult,
+  routeCostFacts,
+  routeCostPerAccepted,
+} from './route-cost.ts'
+import {
+  appendCostPolicyReason,
+  costPolicyExplanation,
   resolveRouteCostPolicy,
 } from './route-cost-policy.ts'
 import {
-  type PolicyCandidate,
-  type PolicySelection,
-  rankThompson,
-  selectCurrentPolicy,
-} from './route-policy.ts'
+  enabledCostRule,
+  findingsPolicyLens,
+  prepareCostPolicy,
+  readRouteCostPolicy,
+} from './route-cost-policy-adapter.ts'
+import { agentMeteredRouteEligibility } from './route-metered-policy-adapter.ts'
+import {
+  type CurrentPolicySelection,
+  currentPolicySelection,
+  MIN_SAMPLE,
+  NOISE_BAND,
+  weightCase,
+} from './route-selection.ts'
 import {
   aggregateEvidence,
   type RunUsageMedians,
@@ -124,8 +134,6 @@ type CandidateOptions = {
 export const COOLDOWN_MIN = 60
 
 /** Below this many JUDGMENTS — verdicts plus unjudged failures — a score is noise. */
-export const MIN_SAMPLE = 5
-
 /** Only this many of an agent's most recent judgments describe its current ability. */
 export const EVIDENCE_WINDOW = 40
 
@@ -228,72 +236,6 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
   if (!['ok', 'failed', 'stale'].includes(row.status)) return false
   if (NOT_EVIDENCE.includes(row.failureKind as (typeof NOT_EVIDENCE)[number])) return false
   return row.delivery !== null || ['failed', 'stale'].includes(row.status)
-}
-
-/** How often to spend a run on an agent that has not earned a score yet. */
-const EXPLORE_RATE = 0.25
-
-/** Keep testing proven challengers so a leader cannot hold the route forever. */
-export const STANDING_EXPLORE_RATE = 0.1
-const STANDING_EXPLORE_FLOOR = 0.03
-
-/** The leader's cell evidence decays the standing draw, without retiring it. */
-export function standingExploreRate(leaderEvidence: number): number {
-  return Math.max(
-    STANDING_EXPLORE_FLOOR,
-    STANDING_EXPLORE_RATE / Math.sqrt(leaderEvidence / MIN_SAMPLE),
-  )
-}
-
-/** One adjacent quality step in the current judgment matrix. */
-export const QUALITY_STEP = weigh('full', 'right') - weigh('full', 'mixed')
-export const NOISE_BAND = QUALITY_STEP / MIN_SAMPLE
-/** Linear width of the judgment-weight range mapped onto a Beta probability. */
-export const BETA_SCALE = 1.5
-export const POSTERIOR_NOISE_BAND = NOISE_BAND / BETA_SCALE
-
-export function betaContribution(weight: number): { successes: number; failures: number } {
-  const successes = (weight + 0.5) / BETA_SCALE
-  return { successes, failures: 1 - successes }
-}
-
-type ThompsonCandidate = Pick<Candidate, 'agent' | 'evidence' | 'score' | 'free' | 'latencyMs'> & {
-  precision?: number | null
-}
-
-/** The one Thompson ranking used by every historical replay trajectory. */
-export function thompsonRank<T extends ThompsonCandidate>(
-  candidates: readonly T[],
-  draw = true,
-  rng: () => number = Math.random,
-): {
-  chosen: T
-  expected: T
-  posteriorMean: number
-  tied: number
-  posterior: Array<{ candidate: T; mean: number; sample: number }>
-} {
-  return rankThompson(candidates, draw, rng, MIN_SAMPLE, betaContribution, POSTERIOR_NOISE_BAND)
-}
-
-/** Build the SQL score from the judgment matrix and fidelity penalty. */
-export function weightCase(): string {
-  const arms: string[] = []
-  for (const [delivery, row] of Object.entries(WEIGHT)) {
-    if (typeof row === 'number') {
-      arms.push(`WHEN s.delivery = '${delivery}' THEN ${row}`)
-    } else {
-      for (const [quality, w] of Object.entries(row)) {
-        arms.push(`WHEN s.delivery = '${delivery}' AND s.quality = '${quality}' THEN ${w}`)
-      }
-    }
-  }
-  const pen = Object.entries(FIDELITY_PENALTY)
-    .map(([f, w]) => `WHEN s.fidelity = '${f}' THEN ${w}`)
-    .join(' ')
-  // Mirror weigh(): a delivered but unusable answer cannot score below no answer.
-  const floor = WEIGHT.none as number
-  return `MAX((CASE ${arms.join(' ')} ELSE 0 END) + (CASE ${pen} ELSE 0 END), ${floor})`
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one pass keeps candidate evidence and eligibility coherent
@@ -562,21 +504,13 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       c.shrunk = (c.score * c.evidence + MIN_SAMPLE * prior) / (c.evidence + MIN_SAMPLE)
     }
   }
-  if (priceCost) {
-    const facts = routeCostFacts({ jobName, promptBytes, stack, lens })
-    for (const candidate of result) {
-      candidate.costPerAccepted = routeCostPerAccepted(
-        jobName,
-        routingEvidenceWindow(
-          evidenceRows,
-          candidate.agent,
-          candidate.evidenceModel!,
-          EVIDENCE_WINDOW,
-        ).rows,
-        facts,
-      )
-    }
-  }
+  attachRouteCosts(
+    result,
+    evidenceRows,
+    { jobName, promptBytes, stack, lens },
+    EVIDENCE_WINDOW,
+    priceCost,
+  )
   return { result, evidenceRows }
 }
 
@@ -603,7 +537,7 @@ export function scoreboard(
   subscriptionCost?: SubscriptionCostContext,
   lens?: string,
 ): Scored[] {
-  const policy = parseRouteCostPolicy(readMachineValue('routing.cost_policy'))
+  const policy = readRouteCostPolicy()
   return Object.keys(JOBS)
     .filter((j) => !onlyJob || j === onlyJob)
     .flatMap((j) =>
@@ -764,57 +698,6 @@ function evidenceCellName(ev: ReturnType<typeof evidenceFor>): string {
   if (ev.level === 'lens') return `lens ${ev.lens} cell`
   if (ev.level === 'stack') return `stack ${ev.stack} cell`
   return 'job-wide cell'
-}
-
-type CurrentPolicyCandidate = PolicyCandidate
-type PricedPolicyCandidate = CurrentPolicyCandidate & { costPerAccepted: CostPerAcceptedResult }
-export type CurrentPolicySelection<T extends CurrentPolicyCandidate> = PolicySelection<T> & {
-  costPolicy?: CostPolicySelection<T>
-}
-
-/** The incumbent ranking policy, independent of where its evidence came from. */
-export function currentPolicySelection<T extends CurrentPolicyCandidate>(
-  candidates: readonly T[],
-  prefer: readonly string[],
-  explore = true,
-  rng: () => number = Math.random,
-  explorationExcluded: ReadonlySet<string> = new Set(),
-  declaredPreferences: ReadonlySet<string> = new Set(),
-  costPolicy?: {
-    enabled: boolean
-    rate: number
-    floor: number | null
-  },
-): CurrentPolicySelection<T> {
-  let costSelection: CostPolicySelection<T> | undefined
-  const selected = selectCurrentPolicy(
-    candidates,
-    prefer,
-    explore,
-    rng,
-    explorationExcluded,
-    declaredPreferences,
-    {
-      minSample: MIN_SAMPLE,
-      exploreRate: EXPLORE_RATE,
-      standingExploreRate,
-      rank: (proven, draw, rankRng) => {
-        if (!costPolicy?.enabled) return thompsonRank(proven, draw, rankRng)
-        const ranked = costAwareRank(
-          proven as readonly (T & PricedPolicyCandidate)[],
-          draw,
-          rankRng,
-          costPolicy,
-          NOISE_BAND,
-          BETA_SCALE,
-          thompsonRank,
-        )
-        costSelection = ranked.costPolicy as CostPolicySelection<T>
-        return ranked
-      },
-    },
-  )
-  return costSelection ? { ...selected, costPolicy: costSelection } : selected
 }
 
 function capacityRefusal(
@@ -997,34 +880,25 @@ function pickExternal(
         .precision,
     }))
   }
-  const configuredCostPolicy = parseRouteCostPolicy(readMachineValue('routing.cost_policy'))
-  const resolvedCostPolicy = resolveRouteCostPolicy(
-    configuredCostPolicy,
-    jobName,
-    j.findings ? lens?.trim() || null : null,
-    Boolean(j.needs.writesRepo),
-  )
-  const explainCostPolicy = !explore
-  const pricedRows =
-    configuredCostPolicy.enabled || explainCostPolicy
-      ? candidates(jobName, promptBytes, {
-          stack: ev.level === 'stack' ? ev.stack : undefined,
-          lens: ev.level === 'lens' ? ev.lens : undefined,
-          modelOverride: avoid.model,
-          requiredMcp: avoid.requiredMcp,
-          pinnedTransport: avoid.pinnedTransport,
-          transportPinSource: avoid.transportPinSource,
-          projectName: avoid.project,
-          priceCost: true,
-        })
-      : null
-  const priced = pricedRows
-    ? eligible.map((candidate) => ({
-        ...candidate,
-        costPerAccepted: pricedRows.find((row) => row.agent === candidate.agent)!.costPerAccepted!,
-      }))
-    : null
-  if (priced) eligible = priced
+  const preparedCostPolicy = prepareCostPolicy({
+    job: jobName,
+    lens: findingsPolicyLens(Boolean(j.findings), lens),
+    writesRepo: Boolean(j.needs.writesRepo),
+    explain: !explore,
+    admitted: eligible,
+    pricedRows: () =>
+      candidates(jobName, promptBytes, {
+        stack: ev.level === 'stack' ? ev.stack : undefined,
+        lens: ev.level === 'lens' ? ev.lens : undefined,
+        modelOverride: avoid.model,
+        requiredMcp: avoid.requiredMcp,
+        pinnedTransport: avoid.pinnedTransport,
+        transportPinSource: avoid.transportPinSource,
+        projectName: avoid.project,
+        priceCost: true,
+      }),
+  })
+  eligible = preparedCostPolicy.candidates
   const failingEvals = failingDefaultCanonEvals()
   const explorationExcluded = new Set(failingEvals.length ? [failingEvals[0]!.agent] : [])
   const notExplored = failingEvals.map(
@@ -1046,39 +920,38 @@ function pickExternal(
     rng,
     explorationExcluded,
     new Set(declaredPreferences),
-    configuredCostPolicy.enabled
-      ? { enabled: true, rate: resolvedCostPolicy.rate, floor: resolvedCostPolicy.floor }
-      : undefined,
+    enabledCostRule(preparedCostPolicy),
   )
   const chosen = selected.chosen
-  const hypothetical =
-    !configuredCostPolicy.enabled && explainCostPolicy && priced
-      ? currentPolicySelection(
-          priced,
-          [...declaredPreferences, ...j.prefer],
-          false,
-          rng,
-          explorationExcluded,
-          new Set(declaredPreferences),
-          { enabled: true, rate: resolvedCostPolicy.rate, floor: resolvedCostPolicy.floor },
-        )
-      : null
-  const costReason =
-    priced && (configuredCostPolicy.enabled || hypothetical)
-      ? costPolicyReason(
-          configuredCostPolicy.enabled,
-          (configuredCostPolicy.enabled ? selected : hypothetical!) as CurrentPolicySelection<
-            Candidate & { costPerAccepted: CostPerAcceptedResult }
-          >,
-          chosen as Candidate & { costPerAccepted: CostPerAcceptedResult },
-          resolvedCostPolicy,
-          j.findings ? lens?.trim() || null : null,
-        )
-      : null
+  const costReason = costPolicyExplanation({
+    priced: preparedCostPolicy.priced,
+    enabled: preparedCostPolicy.configured.enabled,
+    selected: selected as CurrentPolicySelection<
+      Candidate & { costPerAccepted: CostPerAcceptedResult }
+    >,
+    hypothetical: () =>
+      currentPolicySelection(
+        preparedCostPolicy.candidates as Array<
+          Candidate & { costPerAccepted: CostPerAcceptedResult }
+        >,
+        [...declaredPreferences, ...j.prefer],
+        false,
+        rng,
+        explorationExcluded,
+        new Set(declaredPreferences),
+        {
+          enabled: true,
+          rate: preparedCostPolicy.resolved.rate,
+          floor: preparedCostPolicy.resolved.floor,
+        },
+      ),
+    resolved: preparedCostPolicy.resolved,
+    lens: findingsPolicyLens(Boolean(j.findings), lens),
+  })
   const policy = explore ? 'thompson' : 'mean'
   const carriedReason = (computed: string) => {
     const base = chosen.routedReason ?? withConstraint(computed)
-    return costReason && !chosen.routedReason ? `${base}; ${costReason}` : base
+    return appendCostPolicyReason(base, costReason, Boolean(chosen.routedReason))
   }
   if (selected.mode === 'challenger')
     return {
@@ -1130,55 +1003,6 @@ function pickExternal(
     agent: chosen.agent,
     reason: carriedReason(`${policy}; ${pct}, tied with ${selected.tied - 1} other — ${edge}`),
   }
-}
-
-export function meteredRouteEligibility(input: {
-  billing: string
-  routeMetered: boolean
-  trainsOnInputs?: boolean
-  writesRepo: boolean
-  name: string
-  explicitlyNamedAgent?: string
-}): { eligible: boolean; why: string; mayAutoRouteNamedJob: boolean } {
-  if (
-    (input.billing !== 'metered' && !input.trainsOnInputs) ||
-    input.explicitlyNamedAgent === input.name
-  )
-    return {
-      eligible: true,
-      why: '',
-      mayAutoRouteNamedJob: input.explicitlyNamedAgent === input.name,
-    }
-  if (!input.routeMetered)
-    return {
-      eligible: false,
-      why: input.trainsOnInputs
-        ? 'a provider that may train on inputs is not opted in for automatic routing'
-        : 'metered billing is not opted in for automatic routing',
-      mayAutoRouteNamedJob: false,
-    }
-  if (input.writesRepo)
-    return {
-      eligible: false,
-      why: 'metered routing opt-in is limited to jobs that do not write the repository',
-      mayAutoRouteNamedJob: false,
-    }
-  return { eligible: true, why: '', mayAutoRouteNamedJob: true }
-}
-
-export function agentMeteredRouteEligibility(
-  jobName: string,
-  agent: Pick<Agent, 'billing' | 'routeMetered' | 'name' | 'trainsOnInputs'>,
-  explicitlyNamedAgent?: string,
-): ReturnType<typeof meteredRouteEligibility> {
-  return meteredRouteEligibility({
-    billing: agent.billing,
-    routeMetered: Boolean(agent.routeMetered),
-    trainsOnInputs: Boolean(agent.trainsOnInputs),
-    writesRepo: Boolean(job(jobName).needs.writesRepo),
-    name: agent.name,
-    explicitlyNamedAgent,
-  })
 }
 
 function routePolicyEligibility(

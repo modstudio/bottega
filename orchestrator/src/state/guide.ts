@@ -12,13 +12,8 @@ import {
   type PromptSizeBucket,
   promptSizeBucket,
 } from '../route/prompt-size-bucket.ts'
-import {
-  type candidates,
-  evidenceFor,
-  MIN_SAMPLE,
-  pick,
-  promptBucketsForJob,
-} from '../route/route.ts'
+import { type candidates, evidenceFor, pick, promptBucketsForJob } from '../route/route.ts'
+import { MIN_SAMPLE } from '../route/route-selection.ts'
 import { median } from './statistics.ts'
 
 type AgentOnJob = {

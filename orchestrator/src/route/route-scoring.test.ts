@@ -3,7 +3,8 @@ import { addRun, score } from '../../test/fixtures/store.ts'
 import { label } from '../outcome.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
-import { candidates, MIN_SAMPLE, NOISE_BAND, QUALITY_STEP, weightCase } from './route.ts'
+import { candidates } from './route.ts'
+import { MIN_SAMPLE, NOISE_BAND, QUALITY_STEP, weightCase } from './route-selection.ts'
 
 describe('the scoring matrix', () => {
   test('no answer costs more than a wrong answer, because it is a different failure', () => {

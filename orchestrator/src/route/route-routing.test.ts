@@ -15,15 +15,9 @@ import { RefusalError } from '../refusal-error.ts'
 import { weigh } from '../score/score.ts'
 import { guide } from '../state/guide.ts'
 import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
-import {
-  candidates,
-  EVIDENCE_WINDOW,
-  evidenceFor,
-  MIN_SAMPLE,
-  meteredRouteEligibility,
-  pick,
-  scoreboard,
-} from './route.ts'
+import { candidates, EVIDENCE_WINDOW, evidenceFor, pick, scoreboard } from './route.ts'
+import { meteredRouteEligibility } from './route-metered-policy.ts'
+import { MIN_SAMPLE } from './route-selection.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 test('guide reports harness work without dropping externally delegated jobs', () => {

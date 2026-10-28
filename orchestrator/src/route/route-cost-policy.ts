@@ -1,13 +1,13 @@
 // concern: route cost policy
 /** Pure configuration, resolution, and proven-candidate selection for cost-aware routing. */
 
-export const COST_NOISE_MULTIPLE = 1.05
+const COST_NOISE_MULTIPLE = 1.05
 /** A cost difference under five percent is noise. */
-export const COST_NOISE_LOG = Math.log(COST_NOISE_MULTIPLE)
+const COST_NOISE_LOG = Math.log(COST_NOISE_MULTIPLE)
 
 export type CostPolicyRule = { rate: number; floor: number | null }
-export type CostPolicyGroup = CostPolicyRule & { jobs: string[] }
-export type CostPolicyLensTier = CostPolicyRule & { lenses: string[] }
+type CostPolicyGroup = CostPolicyRule & { jobs: string[] }
+type CostPolicyLensTier = CostPolicyRule & { lenses: string[] }
 export type RouteCostPolicy = {
   enabled: boolean
   groups: {
@@ -259,7 +259,7 @@ function costPhrase(value: ExplainableCandidate['costPerAccepted']): string {
   return 'usd' in value ? `$${value.usd.toFixed(3)} per accepted` : `cost ${value.unknown}`
 }
 
-export function costPolicyReason<T extends ExplainableCandidate>(
+function costPolicyReason<T extends ExplainableCandidate>(
   enabled: boolean,
   selection: { chosen: T; costPolicy?: CostPolicySelection<T> },
   incumbent: T,
@@ -280,6 +280,34 @@ export function costPolicyReason<T extends ExplainableCandidate>(
     `cost policy (${enabled ? 'on' : 'off'}): ${enabled ? 'picked' : 'would pick'} ` +
     `${chosen.agent} — ${comparison}, rate ${resolved.rate}x/+5 (${cell})${ignored}`
   )
+}
+
+export function costPolicyExplanation<T extends ExplainableCandidate>(input: {
+  priced: boolean
+  enabled: boolean
+  selected: { chosen: T; costPolicy?: CostPolicySelection<T> }
+  hypothetical: () => { chosen: T; costPolicy?: CostPolicySelection<T> }
+  resolved: ResolvedCostPolicy
+  lens: string | null
+}): string | null {
+  if (!input.priced) return null
+  const selection = input.enabled ? input.selected : input.hypothetical()
+  return costPolicyReason(
+    input.enabled,
+    selection,
+    input.selected.chosen,
+    input.resolved,
+    input.lens,
+  )
+}
+
+export function appendCostPolicyReason(
+  base: string,
+  costReason: string | null,
+  carried: boolean,
+): string {
+  if (!costReason || carried) return base
+  return `${base}; ${costReason}`
 }
 
 function currentTieOrder<T extends CostPolicyCandidate>(left: T, right: T): number {

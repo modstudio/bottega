@@ -9,18 +9,16 @@ import {
   recordReview,
   triageFinding,
 } from '../review/review-triage.ts'
+import { candidates, EVIDENCE_WINDOW, pick } from './route.ts'
 import {
   BETA_SCALE,
-  candidates,
   currentPolicySelection,
-  EVIDENCE_WINDOW,
   MIN_SAMPLE,
   NOISE_BAND,
   POSTERIOR_NOISE_BAND,
-  pick,
   STANDING_EXPLORE_RATE,
   standingExploreRate,
-} from './route.ts'
+} from './route-selection.ts'
 
 describe('routing exploration', () => {
   test('a disabled cost policy leaves the current decision unchanged for a fixed rng', () => {

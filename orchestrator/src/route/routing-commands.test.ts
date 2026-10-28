@@ -6,7 +6,7 @@ import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { recordDuels } from '../score/duel.ts'
-import { MIN_SAMPLE } from './route.ts'
+import { MIN_SAMPLE } from './route-selection.ts'
 import { guideCommand, pickCommand, statsCommand } from './routing-commands.ts'
 
 const preview = (avoid: string[] = [], distinctModels: string[] = [], lens?: string) => {
