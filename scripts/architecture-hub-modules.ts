@@ -55,6 +55,7 @@ export const hubModuleSpecs = [
   { file: 'hub/src/push-contract.ts', allowed: [] },
   { file: 'hub/src/outbox-lifecycle.ts', allowed: [] },
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
+  { file: 'hub/src/write-hold.ts', allowed: [] },
   {
     file: 'hub/src/hosted-route-identity.ts',
     allowed: ['../../shared/record-space-membership.ts', '../../shared/record-space-request.ts'],

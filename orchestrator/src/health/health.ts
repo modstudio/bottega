@@ -10,9 +10,17 @@ import {
   readStoreLockRefusalsSince,
   type StoreLockRefusalEntry,
 } from '../../../shared/store-lock-refusal-log.ts'
+import {
+  readStoreWriteHoldsSince,
+  type StoreWriteHoldEntry,
+} from '../../../shared/store-write-hold-log.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { attributionCounts, parseConfinement } from '../confinement/confinement.ts'
-import { summarizeContention, summarizeStoreLockRefusals } from '../database/contention.ts'
+import {
+  summarizeContention,
+  summarizeStoreLockRefusals,
+  summarizeStoreWriteHolds,
+} from '../database/contention.ts'
 import { db } from '../database/db.ts'
 import { readEventLog, runEventsPath } from '../events.ts'
 import { clusterErrorText, FAILURE_KINDS, type FailureKind } from '../failure/failure.ts'
@@ -63,11 +71,16 @@ function contentionHealth(
   database: Database,
   from: string,
   readStoreRefusals: (since: string) => StoreLockRefusalEntry[],
+  readStoreHolds: (since: string) => StoreWriteHoldEntry[],
 ): HarnessHealth['contention'] {
   const contention = summarizeContention(database, from)
   return {
     ...contention,
-    resources: [...contention.resources, summarizeStoreLockRefusals(readStoreRefusals(from))],
+    resources: [
+      ...contention.resources,
+      summarizeStoreLockRefusals(readStoreRefusals(from)),
+      summarizeStoreWriteHolds(readStoreHolds(from)),
+    ],
   }
 }
 
@@ -145,6 +158,7 @@ export function harnessHealth(
   database: Database = db(),
   now = new Date(),
   readStoreRefusals: (since: string) => StoreLockRefusalEntry[] = readStoreLockRefusalsSince,
+  readStoreHolds: (since: string) => StoreWriteHoldEntry[] = readStoreWriteHoldsSince,
 ): HarnessHealth {
   if (!Number.isInteger(days) || days < 1) throw new Error('--days must be a positive integer')
   const firstDay = new Date(
@@ -330,6 +344,6 @@ export function harnessHealth(
       .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
     provenance,
     flakes,
-    contention: contentionHealth(database, from, readStoreRefusals),
+    contention: contentionHealth(database, from, readStoreRefusals, readStoreHolds),
   })
 }
