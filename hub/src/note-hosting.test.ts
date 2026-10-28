@@ -8,7 +8,7 @@ import { confirmCount } from './hosted-tasks.ts'
 import { createNote, getNote, promoteNote } from './note.ts'
 import { noteApi } from './note-api.ts'
 import { applyHostedNoteRows } from './note-cache.ts'
-import { hostedNoteChanges } from './note-client.ts'
+import { hostedNoteChanges, hostedReapNotes } from './note-client.ts'
 import { nextNoteNumber } from './note-number.ts'
 import { showTask } from './task.ts'
 
@@ -130,6 +130,19 @@ describe('hosted-only note safety', () => {
 
   test('reap refuses a confirmation count mismatch', () => {
     expect(() => confirmCount(2, 1, 'bulk-only')).toThrow('confirmation count 2')
+  })
+
+  test('reap refuses an older hosted API that omits maintenance counts', async () => {
+    await expect(
+      hostedReapNotes(
+        { stale: [], annotated: [], restored: [], deleted: [], confirmation: 0, cutoff: '' },
+        {
+          baseUrl: 'https://hub.example.test',
+          token: 'test',
+          fetch: async () => Response.json({ marked: 0, deleted: 0 }),
+        },
+      ),
+    ).rejects.toThrow('scripts/deploy/hosted api')
   })
   test('an unreachable hosted write refuses and leaves the cache unchanged', async () => {
     const before = db().query<{ count: number }, []>('SELECT count(*) count FROM note').get()!.count

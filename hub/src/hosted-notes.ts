@@ -295,6 +295,8 @@ export async function reapHostedNotes(
   identity: TaskIdentity,
   input: {
     stale: Array<{ recordId: string; reason: string; at: string }>
+    annotated: Array<{ recordId: string; reason: string | null }>
+    restored: Array<{ recordId: string; reason: string | null }>
     deleted: string[]
     confirmation: number
     cutoff: string
@@ -305,6 +307,14 @@ export async function reapHostedNotes(
       await tx`UPDATE hub_note SET stale_at=${row.at}::timestamptz,
       stale_reason=${row.reason},updated_at=now() WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
       AND stale_at IS NULL AND deleted_at IS NULL`
+    for (const row of input.annotated)
+      await tx`UPDATE hub_note SET stale_reason=${row.reason},updated_at=now()
+      WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
+      AND stale_at IS NULL AND deleted_at IS NULL`
+    for (const row of input.restored)
+      await tx`UPDATE hub_note SET stale_at=NULL,stale_reason=${row.reason},updated_at=now()
+      WHERE space_id=${identity.spaceId}::uuid AND id=${row.recordId}::uuid
+      AND COALESCE(stale_reason, '') NOT LIKE 'dropped:%' AND deleted_at IS NULL`
     const found = input.deleted.length
       ? rows<{ id: string }>(
           await tx`SELECT id FROM hub_note WHERE space_id=${identity.spaceId}::uuid
@@ -323,7 +333,12 @@ export async function reapHostedNotes(
       await tx`UPDATE hub_note_acknowledgement a SET deleted_at=now(),updated_at=now()
         FROM hub_note n WHERE a.space_id=${identity.spaceId}::uuid AND n.space_id=a.space_id
         AND n.id=a.note_id AND n.id IN ${tx(found.map((row) => row.id))} AND a.deleted_at IS NULL`
-    return { marked: input.stale.length, deleted: found.length }
+    return {
+      marked: input.stale.length,
+      annotated: input.annotated.length,
+      restored: input.restored.length,
+      deleted: found.length,
+    }
   })
 }
 

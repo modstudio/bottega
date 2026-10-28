@@ -88,7 +88,9 @@ async function keepNoteCommand(ids: string[], project?: string): Promise<void> {
 async function staleNoteCommand(): Promise<void> {
   const result = await staleNotes()
   for (const row of result.reasons) console.log(noteStaleLine(row))
-  console.log(`${result.marked} marked stale; ${result.deleted} deleted`)
+  console.log(
+    `${result.marked} marked stale; ${result.annotated} annotated; ${result.restored} restored; ${result.deleted} deleted`,
+  )
 }
 
 async function curateNoteCommand(scheduled: boolean): Promise<void> {
@@ -317,8 +319,16 @@ export function noteFiledOutput(note: {
 }
 
 export const NOTE_DUPLICATE_PROMPT = "Enter a note label for the same finding, or 'new':"
-export const noteListLine = (note: { label: string; sightings: number; text: string }) =>
-  `${note.label.padEnd(20)} x${note.sightings}  ${note.text}`
+export const noteListLine = (note: {
+  label: string
+  sightings: number
+  text: string
+  stale_at?: string | null
+  stale_reason?: string | null
+}) =>
+  `${note.label.padEnd(20)} x${note.sightings}  ${note.text}${
+    !note.stale_at && note.stale_reason ? `  anchor gone: ${note.stale_reason}` : ''
+  }`
 export const noteKeepLine = (note: { label: string }, already: boolean) =>
   `note ${note.label} ${already ? 'already kept' : 'kept'} for this session`
 export const noteSameLine = (note: { label: string; sightings: number }) =>

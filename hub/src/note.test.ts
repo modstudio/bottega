@@ -105,7 +105,12 @@ const hosted = {
       })
     }
     if (url.pathname === '/v1/notes/reap')
-      return Response.json({ marked: body.stale.length, deleted: body.deleted.length })
+      return Response.json({
+        marked: body.stale.length,
+        annotated: body.annotated.length,
+        restored: body.restored.length,
+        deleted: body.deleted.length,
+      })
     return Response.json({ error: 'unexpected route' }, { status: 500 })
   },
 }
@@ -515,8 +520,8 @@ describe('suggestion notes', () => {
         runExists: async () => new Set(),
         now: () => new Date('2026-09-07T12:00:00.000Z'),
       })
-      expect(result.deleted).toBeGreaterThanOrEqual(1)
-      expect(() => getNote(doomed)).toThrow(`no note ${doomed}`)
+      expect(result.restored).toBeGreaterThanOrEqual(1)
+      expect(getNote(doomed)).toMatchObject({ stale_at: null, stale_reason: null })
     })
 
     test('a hosted-bound install with BOTTEGA_HOSTED_URL unset refuses note writes', async () => {
@@ -847,7 +852,7 @@ describe('suggestion notes', () => {
       `${file}:1 no longer has its anchored content`,
       'run 999 aged out',
       'branch deleted-branch was deleted',
-      'trunk moved 51 commits past the anchor',
+      undefined,
     ])
   })
 
@@ -859,6 +864,7 @@ describe('suggestion notes', () => {
         project: 'workshop',
         files: [],
         run_id: 404,
+        run_record_id: '40404040-4040-4040-8040-404040404040',
         branch: null,
         commit: null,
         session_id: null,
@@ -881,6 +887,14 @@ describe('suggestion notes', () => {
     const doomed = add(1, null)
     const repeated = add(2, null)
     const recent = add(1, null, '2026-09-01T00:00:00.000Z')
+    writeTransaction((conn) =>
+      conn
+        .query(
+          `INSERT INTO note_acknowledgement
+           (record_id,note_record_id,session_id,acknowledged_at,sightings) VALUES (?,?,?,?,?)`,
+        )
+        .run(crypto.randomUUID(), doomed.recordId, 'reviewer', old, 1),
+    )
     const result = await staleNotes({
       runExists: async () => new Set(),
       now: () => new Date('2026-09-07T12:00:00.000Z'),

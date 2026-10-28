@@ -86,8 +86,19 @@ export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, opt
     input,
     options,
   )
-export const hostedReapNotes = (body: unknown, options?: Options) =>
-  request<{ marked: number; deleted: number }>('/v1/notes/reap', 'POST', body, options)
+export const hostedReapNotes = async (body: unknown, options?: Options) => {
+  const result = await request<{
+    marked: number
+    annotated?: number
+    restored?: number
+    deleted: number
+  }>('/v1/notes/reap', 'POST', body, options)
+  if (typeof result.annotated !== 'number' || typeof result.restored !== 'number')
+    throw new Error(
+      'hosted note maintenance is out of date; run `scripts/deploy/hosted api` and retry',
+    )
+  return { ...result, annotated: result.annotated, restored: result.restored }
+}
 export async function hostedNoteChanges(cursor: string | null, options?: Options) {
   await assertNoteCapabilities(options)
   const query = new URLSearchParams({ includeDeleted: 'true' })
