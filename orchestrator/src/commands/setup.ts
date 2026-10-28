@@ -9,7 +9,7 @@ import { clackSetupPrompter, gatherSetupPlan, introduceSetup } from '../setup/se
 import { restoreSetupEnvironment } from '../setup/setup-environment-runtime.ts'
 import { gatherSetupFacts } from '../setup/setup-facts.ts'
 import { runInteractiveSetup, SETUP_CANCEL } from '../setup/setup-interactive.ts'
-import { setupService } from '../setup/setup-service.ts'
+import { type SetupService, setupService } from '../setup/setup-service.ts'
 import { collect, log } from './support.ts'
 
 type SetupOptions = { in?: string[]; json?: boolean; yes?: boolean; answers?: string }
@@ -25,7 +25,10 @@ function refuseWorkerRestore(): void {
   )
 }
 
-async function applyNonInteractiveSetup(options: SetupOptions): Promise<void> {
+async function applyNonInteractiveSetup(
+  options: SetupOptions,
+  service: SetupService,
+): Promise<void> {
   if (Boolean(options.yes) === Boolean(options.answers)) {
     throw new Error(
       `${PLATFORM_SLUG} machine setup apply requires exactly one of --yes or --answers <file>`,
@@ -41,8 +44,8 @@ async function applyNonInteractiveSetup(options: SetupOptions): Promise<void> {
     }
   }
   const outcome = options.yes
-    ? await setupService.applyRecommended(folders)
-    : await setupService.apply(folders, answerValue)
+    ? await service.applyRecommended(folders)
+    : await service.apply(folders, answerValue)
   const { plan, actions, results } = outcome
   if (setupResultsRequireAttention(results)) process.exitCode = 1
   log(
@@ -56,12 +59,13 @@ async function applyNonInteractiveSetup(options: SetupOptions): Promise<void> {
 
 async function reversePreparedSetup(
   migration: Parameters<typeof setupService.cancel>[0],
+  service: SetupService,
 ): Promise<void> {
-  const reversed = await setupService.cancel(migration)
+  const reversed = await service.cancel(migration)
   if (reversed) log(reversed)
 }
 
-async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
+async function applyInteractiveSetup(options: SetupOptions, service: SetupService): Promise<void> {
   if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {
     console.error(
       `${PLATFORM_SLUG} machine setup requires both stdin and stdout to be TTYs; use ${PLATFORM_SLUG} machine setup apply --yes or ${PLATFORM_SLUG} machine setup apply --answers <file>`,
@@ -70,7 +74,7 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
     return
   }
   const folders = inputs(options)
-  const prepared = await setupService.prepare(folders)
+  const prepared = await service.prepare(folders)
   introduceSetup(folders)
   const plan = await gatherSetupPlan(
     () => Promise.resolve(prepared.plan),
@@ -80,7 +84,7 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
     Boolean(prepared.migration),
   )
   if (plan === SETUP_CANCEL) {
-    await reversePreparedSetup(prepared.migration)
+    await reversePreparedSetup(prepared.migration, service)
     return
   }
   let actionsStarted = false
@@ -91,18 +95,18 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
       clackSetupPrompter,
       (actions) => {
         actionsStarted = true
-        return setupService.applyPreparedActions(actions, prepared.migration)
+        return service.applyPreparedActions(actions, prepared.migration)
       },
       Boolean(prepared.migration),
     )
   } catch (error) {
     if (!actionsStarted) {
-      await reversePreparedSetup(prepared.migration)
+      await reversePreparedSetup(prepared.migration, service)
     }
     throw error
   }
   if (outcome.kind !== 'applied') {
-    await reversePreparedSetup(prepared.migration)
+    await reversePreparedSetup(prepared.migration, service)
   }
   if (outcome.kind === 'cancelled') process.exitCode = 130
   if (outcome.kind === 'applied' && setupResultsRequireAttention(outcome.results)) {
@@ -110,13 +114,13 @@ async function applyInteractiveSetup(options: SetupOptions): Promise<void> {
   }
 }
 
-export function register(program: Command): void {
+export function register(program: Command, service: SetupService = setupService): void {
   const setup = program
     .command('setup')
     .description('inspect and configure this machine interactively')
     .option('--in <folder>', 'folder to inspect', collect, [])
     .allowExcessArguments(false)
-    .action(applyInteractiveSetup)
+    .action((options: SetupOptions) => applyInteractiveSetup(options, service))
   setup
     .command('restore <backup-dir>')
     .description('restore a reversible environment migration backup')
@@ -139,7 +143,7 @@ export function register(program: Command): void {
     .option('--json', 'write the setup plan as compact JSON')
     .allowExcessArguments(false)
     .action(async (options: SetupOptions) => {
-      const plan = await setupService.dryRun(inputs(options))
+      const plan = await service.dryRun(inputs(options))
       log(JSON.stringify(plan, null, options.json ? undefined : 2))
     })
   setup
@@ -150,5 +154,5 @@ export function register(program: Command): void {
     .option('--answers <file>', 'JSON file containing explicit setup answers')
     .option('--json', 'write the setup result as compact JSON')
     .allowExcessArguments(false)
-    .action(applyNonInteractiveSetup)
+    .action((options: SetupOptions) => applyNonInteractiveSetup(options, service))
 }

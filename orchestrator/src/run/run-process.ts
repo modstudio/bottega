@@ -201,9 +201,10 @@ function commandIsRunExecutor(command: string): boolean {
 export function isOrchWorkerProcess(
   env: Record<string, string | undefined> = process.env,
   pid = process.pid,
-  inventory: ProcessInventory = processTable(),
+  inventory?: ProcessInventory,
 ): boolean {
   if (env.BOTTEGA_RUN_ID) return true
+  inventory ??= processTable()
   if (!inventory.ascertainable) return false
 
   const byPid = new Map(inventory.rows.map((row) => [row.pid, row]))
