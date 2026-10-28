@@ -140,23 +140,34 @@ function printRulingStats(days: number | undefined): void {
     )
 }
 
+function printCollectLease(json: boolean): void {
+  requireDatabase()
+  const lease = collectLease()
+  if (lease && 'unreadable' in lease) {
+    console.error(
+      `collect lease setting ${lease.key} cannot be parsed; inspect or delete that row in the hub store`,
+    )
+    process.exitCode = 1
+    return
+  }
+  const payload = lease
+    ? { free: false, ...lease }
+    : { free: true, holder: null, since: null, age: null, until: null }
+  if (json) console.log(JSON.stringify(payload))
+  else if (!lease) console.log('collect lease is free')
+  else
+    console.log(
+      `collect lease held by ${lease.holder}; since ${lease.since ?? 'unknown'}; age ${lease.age ?? 'unknown'}ms; until ${lease.until}`,
+    )
+}
+
 function registerCollectionCommands(program: Command): void {
   program
     .command('lease')
     .description('show the current collect lease without changing it')
     .option('--json', 'write the lease state as JSON')
     .action((options: { json?: boolean }) => {
-      requireDatabase()
-      const lease = collectLease()
-      const payload = lease
-        ? { free: false, ...lease }
-        : { free: true, holder: null, since: null, age: null, until: null }
-      if (options.json) console.log(JSON.stringify(payload))
-      else if (!lease) console.log('collect lease is free')
-      else
-        console.log(
-          `collect lease held by ${lease.holder}; since ${lease.since ?? 'unknown'}; age ${lease.age ?? 'unknown'}ms; until ${lease.until}`,
-        )
+      printCollectLease(options.json ?? false)
     })
   program
     .command('migrate')
@@ -202,8 +213,12 @@ function registerCollectionCommands(program: Command): void {
         stop = watch(holder, (error) => console.error(`hub: collect failed: ${error.message}`))
         await new Promise(() => {})
       }
-      const result = await withLease(`collect:${process.pid}`, (guard) =>
-        collect(guard, options.since, options.only),
+      const result = await withLease(
+        `collect:${process.pid}`,
+        (guard) => collect(guard, options.since, options.only),
+        undefined,
+        undefined,
+        (legs) => legs,
       )
       if (!result.ran) {
         console.error(

@@ -725,6 +725,7 @@ test('the collect line prints the change counts and resets per space', () => {
     formatCollectLeg({
       source: 'hosted task changes',
       ok: true,
+      durationMs: 0,
       hostedChanges: {
         upsertsChanged: 3,
         upsertsNoop: 10,

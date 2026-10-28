@@ -64,12 +64,12 @@ export function observeCollectLease(
   spawn: typeof Bun.spawnSync = Bun.spawnSync,
 ): { conditions: MonitorCondition[]; errors: string[] } {
   const command = [...bottegaEntryArgv(PLATFORM_SLUG), 'record', 'lease', '--json']
-  const child = spawn(command, { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } })
-  if (child.exitCode !== 0) {
-    const detail = child.stderr.toString().trim() || `exit status ${child.exitCode}`
-    return { conditions: [], errors: [`collect lease observation unavailable: ${detail}`] }
-  }
   try {
+    const child = spawn(command, { stdout: 'pipe', stderr: 'pipe', env: { ...process.env } })
+    if (child.exitCode !== 0) {
+      const detail = child.stderr.toString().trim() || `exit status ${child.exitCode}`
+      return { conditions: [], errors: [`collect lease observation unavailable: ${detail}`] }
+    }
     const lease = parsedCollectLease(JSON.parse(child.stdout.toString()))
     const condition = collectLeaseHeldCondition(lease.holder, lease.since, now)
     return { conditions: condition ? [condition] : [], errors: [] }

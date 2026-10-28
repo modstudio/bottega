@@ -16,6 +16,11 @@ export type StoredLeaseSnapshot = {
   until: number
 }
 
+export type UnreadableStoredLease = {
+  unreadable: true
+  key: string
+}
+
 function storedValue(value: string | undefined): StoredLeaseValue | null {
   if (value === undefined) return null
   try {
@@ -60,6 +65,16 @@ function renewedStoredLeaseValue(
   return { holder, until, ...(current.since === undefined ? {} : { since: current.since }) }
 }
 
+function nextStoredLeaseValue(
+  current: StoredLeaseValue | null,
+  holder: string,
+  until: number,
+  now: number,
+  trackSince: boolean,
+): StoredLeaseValue {
+  return trackSince ? renewedStoredLeaseValue(current, holder, until, now) : { holder, until }
+}
+
 export function acquireStoredLease(
   key: string,
   holder: string,
@@ -75,19 +90,13 @@ export function acquireStoredLease(
     takeSettingRow(
       conn,
       key,
-      trackSince
-        ? renewedStoredLeaseValue(current, holder, now + durationMs, now)
-        : { holder, until: now + durationMs },
+      nextStoredLeaseValue(current, holder, now + durationMs, now, trackSince),
       now,
       holder,
     )
     return conn.query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`).get(key)
   })
-  try {
-    return (JSON.parse(row!.value) as { holder: string }).holder === holder
-  } catch {
-    return false
-  }
+  return storedValue(row?.value)?.holder === holder
 }
 
 /** Atomically apply a caller's start decision and acquire its stored lease. */
@@ -120,9 +129,7 @@ export function acquireStoredLeaseWhen(
     takeSettingRow(
       conn,
       key,
-      trackSince
-        ? renewedStoredLeaseValue(lease, holder, now + durationMs, now)
-        : { holder, until: now + durationMs },
+      nextStoredLeaseValue(lease, holder, now + durationMs, now, trackSince),
       now,
       holder,
     )
@@ -154,16 +161,22 @@ export function releaseStoredLease(key: string, holder: string): void {
 }
 
 export function storedLeaseHolder(key: string): string | null {
-  return storedLeaseSnapshot(key)?.holder ?? null
+  const lease = storedLeaseSnapshot(key)
+  return lease && !('unreadable' in lease) ? lease.holder : null
 }
 
 /** Read an unexpired lease without upgrading the store handle or repairing legacy values. */
-export function storedLeaseSnapshot(key: string, now = Date.now()): StoredLeaseSnapshot | null {
+export function storedLeaseSnapshot(
+  key: string,
+  now = Date.now(),
+): StoredLeaseSnapshot | UnreadableStoredLease | null {
   const row = db()
     .query<{ value: string }, [string]>(`SELECT value FROM setting WHERE key=?`)
     .get(key)
+  if (!row) return null
   const lease = storedValue(row?.value)
-  if (!lease || lease.until <= now) return null
+  if (!lease) return { unreadable: true, key }
+  if (lease.until <= now) return null
   return {
     holder: lease.holder,
     since: lease.since ?? null,

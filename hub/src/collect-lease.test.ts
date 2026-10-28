@@ -411,7 +411,9 @@ describe('collect lease', () => {
         return waitingOutboxReport()
       },
       outboxClock: () => now,
-      slow: async (_guard, schedule) => schedule!.slow(),
+      slow: async (_guard, schedule) => {
+        await schedule!.slow()
+      },
       fast: async (_guard, schedule) => {
         await schedule!.fast({ pendingCount: 1, newestQueuedAt })
       },
