@@ -11,10 +11,7 @@ export function landingTrunkRef(
   return facts.remoteTrackingRefExists && facts.localIsAncestorOfRemote ? `origin/${trunk}` : trunk
 }
 
-export function resolveLandingTrunkTip(
-  trunk: string,
-  git: (args: string[]) => string,
-): string {
+export function resolveLandingTrunkTip(trunk: string, git: (args: string[]) => string): string {
   let remoteTrackingRefExists = false
   try {
     git(['show-ref', '--verify', '--quiet', `refs/remotes/origin/${trunk}`])
