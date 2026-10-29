@@ -1344,8 +1344,7 @@
       "version": "6",
       "when": 1793577600042,
       "tag": "0177_codex_review_lens",
-      "breakpoints": true,
-      "compatibility": "additive"
+      "breakpoints": true
     },
     {
       "idx": 178,
