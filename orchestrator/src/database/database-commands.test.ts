@@ -366,7 +366,7 @@ test('a populated pre-0117 store reaches the fence before filesystem discovery',
 test('pending conversion with a live run changes neither files nor schema', async () => {
   const fixture = pendingFenceFixture('asking', false)
   await expect(migrateCommand({ log: () => {} })).rejects.toThrow(
-    `cleared by: ${PLATFORM_SLUG} machine update`,
+    `run ${fixture.id} is live; wait for it to finish or stop it, then rerun ${PLATFORM_SLUG} machine migrate`,
   )
   expect(existsSync(join(PRELOAD_RUNS, String(fixture.id)))).toBeFalse()
   expect(existsSync(join(PRELOAD_RUNS, fixture.recordId))).toBeFalse()

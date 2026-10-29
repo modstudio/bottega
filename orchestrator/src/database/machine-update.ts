@@ -6,12 +6,8 @@ import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { INSTALL_HOME_ENV, installRoot } from '../../../shared/install-root.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
-import { RUN_WALL_TIME_CEILING_MS } from '../jobs/jobs.ts'
 import { projectAt } from '../project/projects.ts'
-import {
-  formatMigrationInFlightRun,
-  migrationInFlightRuns,
-} from '../run/migration-in-flight-runs.ts'
+import { migrationInFlightRuns } from '../run/migration-in-flight-runs.ts'
 import { DATABASE_RESOLUTION, missingDatabaseMessage } from './database-location.ts'
 import {
   DB_PATH,
@@ -29,19 +25,20 @@ import {
   setMigrationDrainPhase,
 } from './migration-drain.ts'
 import { decideMigrationDrain } from './migration-drain-decision.ts'
+import { waitForMigrationDrain } from './migration-drain-wait.ts'
 import { ORCHESTRATOR_MIGRATION_JOURNAL_SOURCE } from './migration-journal-sources.ts'
 import { claimMigrationWindow, clearMigrationWindow } from './migration-window.ts'
 import { migrationState, storeJournalPosition } from './migrations.ts'
 
-const MIGRATION_DRAIN_POLL_MS = 1_000
-/** Headroom after forced kill for worker terminalisation to release the run lease. */
-const MIGRATION_TERMINALISATION_HEADROOM_MS = 5 * 60_000
-/** Additional headroom for repository close-out to release its distinct close-out lease. */
-const MIGRATION_CLOSE_OUT_HEADROOM_MS = 5 * 60_000
-const MIGRATION_DRAIN_WAIT_MAX_MS =
-  RUN_WALL_TIME_CEILING_MS + MIGRATION_TERMINALISATION_HEADROOM_MS + MIGRATION_CLOSE_OUT_HEADROOM_MS
-
 type Presentation = { log(value: string): void }
+
+function assertNoActiveDrain(active: { migration: string; pid: number } | null): void {
+  if (!active) return
+  throw new Error(
+    `migration drain is already active for ${active.migration} ` +
+      `(holder pid ${active.pid}); wait for ${PLATFORM_SLUG} machine update to finish`,
+  )
+}
 
 function sameCheckout(left: string, right: string): boolean {
   return realpathOrSpelled(left) === realpathOrSpelled(right)
@@ -85,35 +82,6 @@ function runMigration(cwd: string): void {
   })
   if (result.exitCode !== 0)
     throw new Error(`${PLATFORM_SLUG} machine migrate failed with exit ${result.exitCode}`)
-}
-
-async function waitForDrain(input: {
-  migration: string
-  presentation: Presentation
-  now: () => number
-  sleep: (ms: number) => Promise<unknown>
-}): Promise<void> {
-  const started = input.now()
-  let lastReport = ''
-  for (;;) {
-    const runs = withSynchronousDatabaseForMigrationStep((database) =>
-      migrationInFlightRuns(database),
-    )
-    if (runs.length === 0) return
-    const report = runs.map(formatMigrationInFlightRun).join(', ')
-    if (report !== lastReport) {
-      input.presentation.log(`draining for migration ${input.migration}; waiting on ${report}`)
-      lastReport = report
-    }
-    if (input.now() - started >= MIGRATION_DRAIN_WAIT_MAX_MS) {
-      throw new Error(
-        `migration drain wait bound reached; runs still in flight: ${runs.map(formatMigrationInFlightRun).join(', ')}; ` +
-          `answer or stop them, then re-run ${PLATFORM_SLUG} machine update; if the pulled store is already behind, ` +
-          `run ${PLATFORM_SLUG} machine migrate --force-in-flight "<reason>" --from-operator`,
-      )
-    }
-    await input.sleep(MIGRATION_DRAIN_POLL_MS)
-  }
 }
 
 function applyImmediateUpdate(input: {
@@ -204,12 +172,7 @@ export async function machineUpdateCommand(
       pendingMigration: journal[position.index]?.tag ?? null,
     }
   })
-  if (initial.activeDrain) {
-    throw new Error(
-      `migration drain is already active for ${initial.activeDrain.migration} ` +
-        `(holder pid ${initial.activeDrain.pid}); wait for ${PLATFORM_SLUG} machine update to finish`,
-    )
-  }
+  assertNoActiveDrain(initial.activeDrain)
   if (initial.decision.action === 'fence') {
     const migration = initial.decision.migration
     withSynchronousDatabaseForMigrationStep((database) =>
@@ -218,15 +181,23 @@ export async function machineUpdateCommand(
     try {
       const now = deps.now ?? Date.now
       const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms))
+      const drainStartedAt = now()
+      const inFlight = () =>
+        withSynchronousDatabaseForMigrationStep((database) => migrationInFlightRuns(database))
       for (;;) {
-        await waitForDrain({ migration, presentation, now, sleep })
+        await waitForMigrationDrain({
+          migration,
+          presentation,
+          startedAt: drainStartedAt,
+          now,
+          sleep,
+          inFlight,
+        })
         withSynchronousDatabaseForMigrationStep((database) =>
           setMigrationDrainPhase(database, 'migrating'),
         )
         deps.afterDrainPromoted?.()
-        const raced = withSynchronousDatabaseForMigrationStep((database) =>
-          migrationInFlightRuns(database),
-        )
+        const raced = inFlight()
         if (raced.length === 0) break
         withSynchronousDatabaseForMigrationStep((database) =>
           setMigrationDrainPhase(database, 'draining'),
