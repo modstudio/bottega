@@ -2,8 +2,8 @@
 /** Times statements on adapter-owned SQLite handles and records slow executions without changing their outcome. */
 import type { Database } from 'bun:sqlite'
 
-export const SLOW_STATEMENT_MS = 100
-export const STATEMENT_FINGERPRINT_LENGTH = 240
+const SLOW_STATEMENT_MS = 100
+const STATEMENT_FINGERPRINT_LENGTH = 240
 
 const STRING_LITERAL = /'(?:''|[^'])*'/g
 const BLOB_LITERAL = /\b[xX]'[0-9a-fA-F]*'/g

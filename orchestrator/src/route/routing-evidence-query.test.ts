@@ -7,6 +7,7 @@ import { routingEvidenceWindow } from './route-statistics.ts'
 import {
   boundedRoutingEvidenceRows,
   isRoutingEvidence,
+  ROUTING_EVIDENCE_SQL,
   type RoutingEvidenceInput,
 } from './routing-evidence-query.ts'
 
@@ -23,6 +24,7 @@ type SeededRow = RoutingEvidenceInput & {
 }
 
 test('the bounded SQL returns the same current-model window as the routing predicate', () => {
+  expect(ROUTING_EVIDENCE_SQL).toContain("r.executor <> 'harness'")
   const currentModel = AGENTS.codex!.model
   const job = 'craft'
   const addScored = (options: Parameters<typeof addRun>[0]) => {
