@@ -56,6 +56,16 @@ export type ProjectMcpProject = {
   settings: { workerMcpServers?: string[]; mcpServer?: string }
 }
 
+/** Whether a writer must withhold one project server instead of attaching it directly. */
+export function projectMcpWriterWithholds(config: McpServerConfig): boolean {
+  return Boolean(
+    Object.keys(config.env ?? {}).length ||
+      Object.keys(config.headers ?? {}).length ||
+      config.headersHelper ||
+      (!config.url && !config.command),
+  )
+}
+
 /** Which project servers attach to one run, and how a harness must reach them. */
 export type ProjectMcpSelection =
   | { kind: 'reader'; servers: Record<string, ReaderProxyServer>; withheld: ProjectMcpWithheld[] }
@@ -87,19 +97,13 @@ function selectDirectProjectMcpServers(
   const withheld: ProjectMcpWithheld[] = []
   for (const [name, entry] of Object.entries(projectServers)) {
     if (disabled.has(name)) continue
-    if (
-      Object.keys(entry.env ?? {}).length ||
-      Object.keys(entry.headers ?? {}).length ||
-      entry.headersHelper
-    ) {
+    if (projectMcpWriterWithholds(entry)) {
       withheld.push(writerWithheld(name, project))
     } else if (entry.url) {
       servers[name] = { url: entry.url }
     } else if (entry.command) {
       const command = resolveProjectMcpCommand(entry.command, cwd)
       servers[name] = { command, args: entry.args ?? [], cwd }
-    } else {
-      withheld.push(writerWithheld(name, project))
     }
   }
   return { kind: 'direct', servers, withheld }
