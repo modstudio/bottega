@@ -11,6 +11,8 @@ import {
   type HostCapacityDecision,
   type HostHoldCondition,
   measureHostLoad,
+  type RecordedHostLoad,
+  recordedHostLoad,
 } from '../gate-load.ts'
 import { activeCores, HOST_RESERVATION_EVIDENCE_DAYS, reservedCores } from './host-reservation.ts'
 import { TERMINAL_RUN_STATUS_SQL } from './run-status.ts'
@@ -164,7 +166,7 @@ function capacityDecision(input: {
     maxWaitMs: RUN_HOST_WAIT_MAX_MS,
     hasOlderWaiter: repositories.hasOlderWaiter,
   })
-  return { decision, load }
+  return { decision, load, reservedCores: repositories.recentReservedCores }
 }
 
 export type RunHostCapacityQueue = {
@@ -219,6 +221,7 @@ function finishWait(input: {
   outcome: RunHostCapacityWait['outcome']
   boundReached?: boolean
   drainingFor: string | null
+  hostLoad: RecordedHostLoad | null
 }): RunHostCapacityWait {
   if (input.outcome === 'stopped')
     input.database.query('UPDATE run SET host_wait_since=NULL WHERE record_id=?').run(input.runId)
@@ -236,6 +239,7 @@ function finishWait(input: {
     durationMs: result.waitedMs,
     cause: waitCause(result.heldOn, result.outcome, result.boundReached),
     runId: input.runId,
+    hostLoad: input.hostLoad,
   })
   return result
 }
@@ -299,6 +303,8 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
   let drainingFor: string | null = null
   let waiting = false
   let sampledInitialLoad = false
+  let nextDecisionUsesResample = false
+  let lastHeldHostLoad: RecordedHostLoad | null = null
   let previousPollMs: number | undefined
   const samplesByAgent = new Map<string, number[]>()
   const finish = (at: number, outcome: RunHostCapacityWait['outcome'], boundReached = false) =>
@@ -311,6 +317,7 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       outcome,
       boundReached,
       drainingFor,
+      hostLoad: lastHeldHostLoad,
     })
   for (;;) {
     const at = input.now()
@@ -324,9 +331,17 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       heldOn.add('migration')
       return finish(at, 'stopped')
     }
-    const { decision, load } = capacityDecision({ ...input, at, started, samplesByAgent })
+    const { decision, load, reservedCores } = capacityDecision({
+      ...input,
+      at,
+      started,
+      samplesByAgent,
+    })
+    const decisionUsesResample = nextDecisionUsesResample
+    nextDecisionUsesResample = false
     if (shouldResampleInitialLoad(decision, load.cpuBusy, sampledInitialLoad)) {
       sampledInitialLoad = true
+      nextDecisionUsesResample = true
       await input.sleep(CAPACITY_SAMPLE_MIN_WINDOW_MS)
       continue
     }
@@ -337,6 +352,10 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       (outcome, boundReached) => finish(at, outcome, boundReached),
     )
     if (admitted.done) return admitted.result
+    lastHeldHostLoad = recordedHostLoad(load, {
+      resampled: decisionUsesResample,
+      reservedCores,
+    })
     for (const condition of decision.heldOn) heldOn.add(condition)
     if (!waiting) {
       waiting = true

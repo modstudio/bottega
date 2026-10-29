@@ -518,6 +518,7 @@ export function contentionValues(row: Payload) {
     cause: nullableString(row.cause),
     runId: nullableString(row.runId),
     landingId: nullableString(row.landingId),
+    hostLoad: row.hostLoad,
     withheldFields: row.withheldFields,
   }
 }

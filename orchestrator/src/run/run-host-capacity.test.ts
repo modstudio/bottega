@@ -312,6 +312,15 @@ describe('run host capacity', () => {
 
     expect(HOST_RESERVATION_FLOOR_CORES * 12).toBe(3)
     expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
+    const contention = db()
+      .query<{ host_load: string }, [string]>(
+        "SELECT host_load FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+      )
+      .get(runId)!
+    expect(JSON.parse(contention.host_load)).toMatchObject({
+      recentAdmissions: 0,
+      reservedCores: 3,
+    })
   })
 
   test('samples CPU before recording a load-average wait', async () => {
@@ -352,7 +361,7 @@ describe('run host capacity', () => {
     ).toEqual({ count: 0 })
   })
 
-  test('a still-busy resample records a wait and continues through queue and drain checks', async () => {
+  test('a second holding decision after a resample records the sampled source', async () => {
     const blocker = repositoryRun()
     const older = repositoryRun()
     db()
@@ -401,7 +410,90 @@ describe('run host capacity', () => {
       heldOn: ['load', 'queue', 'migration'],
       drainingFor: '0155_rebuild',
     })
+    const contention = db()
+      .query<{ host_load: string }, [string]>(
+        "SELECT host_load FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+      )
+      .get(runId)!
+    expect(JSON.parse(contention.host_load)).toMatchObject({
+      cpuBusy: 16,
+      cpuBusySource: 'sampled',
+      reservedCores: 0,
+    })
     clearMigrationDrain(db())
+  })
+
+  test('the first holding decision after a resample records the resampled source', async () => {
+    repositoryRun()
+    const runId = repositoryRun()
+    let now = Date.parse('2026-01-01T00:02:00.000Z')
+    let measurements = 0
+    let sleeps = 0
+
+    await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: () => ({
+        ...loaded(),
+        cpuBusy: measurements++ === 0 ? null : 16,
+      }),
+      sleep: async (ms) => {
+        now += ms
+        sleeps += 1
+        if (sleeps === 2) db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+      },
+    })
+
+    const contention = db()
+      .query<{ host_load: string }, [string]>(
+        "SELECT host_load FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+      )
+      .get(runId)!
+    expect(JSON.parse(contention.host_load)).toMatchObject({
+      cpuBusy: 16,
+      cpuBusySource: 'resampled',
+    })
+  })
+
+  test('a load-average wait records the fallback source and decision figures', async () => {
+    repositoryRun()
+    const runId = repositoryRun()
+    let now = Date.parse('2026-01-01T00:02:00.000Z')
+    let sleeps = 0
+
+    await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: () => ({ ...loaded(), cpuBusy: null }),
+      sleep: async (ms) => {
+        now += ms
+        sleeps += 1
+        if (sleeps === 2) db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+      },
+    })
+
+    const contention = db()
+      .query<{ host_load: string }, [string]>(
+        "SELECT host_load FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+      )
+      .get(runId)!
+    expect(JSON.parse(contention.host_load)).toEqual({
+      loadavg: 16,
+      cpuBusy: null,
+      ncpu: 8,
+      recentAdmissions: 0,
+      freeMem: 8 * 1024 * 1024 * 1024,
+      pressure: 'unknown',
+      swapGrowthBytesPerSec: null,
+      cpuBusySource: 'loadavg',
+      reservedCores: 0,
+    })
   })
 
   test('holding records host_wait_since before sleeping', async () => {

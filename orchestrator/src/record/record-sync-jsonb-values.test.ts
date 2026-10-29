@@ -105,6 +105,7 @@ const payload: RecordPayload = {
   resourceKind: 'gate',
   resourceKey: 'gate',
   eventKind: 'wait',
+  hostLoad: OBJECT,
   loadAtFailure: OBJECT,
   test: 'test',
   file: 'file.ts',
@@ -196,7 +197,7 @@ const cases: Array<{
   {
     name: 'contention',
     values: () => contentionValues(payload),
-    fields: ['withheldFields'],
+    fields: ['hostLoad', 'withheldFields'],
   },
   {
     name: 'test flake',

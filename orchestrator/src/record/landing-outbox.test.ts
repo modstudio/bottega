@@ -57,9 +57,10 @@ test('landing evidence backfill enqueues references in order, maps every column,
     .run()
   database
     .query(`INSERT INTO contention
-      (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_record_id,landing_record_id)
+      (record_id,at,session_id,resource_kind,resource_key,event_kind,duration_ms,cause,run_record_id,landing_record_id,host_load)
       VALUES ('01990000-0000-7000-8000-000000000025','2026-09-15T00:08:00Z','session','lock',
-       'resource','wait',12,'cause','run-record','01990000-0000-7000-8000-000000000021')`)
+       'resource','wait',12,'cause','run-record','01990000-0000-7000-8000-000000000021',
+       '{"loadavg":6,"cpuBusy":5,"ncpu":4,"recentAdmissions":2,"freeMem":3000,"pressure":"warning","swapGrowthBytesPerSec":30,"cpuBusySource":"sampled"}')`)
     .run()
   database
     .query(`INSERT INTO test_flake
@@ -109,6 +110,11 @@ test('landing evidence backfill enqueues references in order, maps every column,
   expect(JSON.parse(rows[4]!.payload)).toMatchObject({
     runId: 'run-record',
     landingId: firstLanding.id,
+    hostLoad: {
+      loadavg: 6,
+      cpuBusy: 5,
+      cpuBusySource: 'sampled',
+    },
   })
   expect(JSON.parse(rows[5]!.payload).projectName).toBeNull()
 

@@ -177,6 +177,7 @@ export const contention = pgTable.withRLS(
     cause: text(),
     runId: uuid('run_id'),
     landingId: uuid('landing_id'),
+    hostLoad: jsonb('host_load'),
     withheldFields: jsonb('withheld_fields'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
