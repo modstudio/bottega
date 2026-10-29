@@ -9,6 +9,7 @@ const ids = {
   structuredRun: '01990000-0000-7000-8000-000000001853',
   invalidRun: '01990000-0000-7000-8000-000000001854',
   nullRun: '01990000-0000-7000-8000-000000001855',
+  nulEscapeRun: '01990000-0000-7000-8000-000000001862',
   review: '01990000-0000-7000-8000-000000001856',
   reviewLens: '01990000-0000-7000-8000-000000001857',
   reviewFinding: '01990000-0000-7000-8000-000000001858',
@@ -57,7 +58,11 @@ export async function seedRepair(transaction: Transaction, userId: string): Prom
        NULL, NULL, NULL, NULL, now(), now()),
       ('${ids.nullRun}', '${input.spaceId}', '${ids.machine}', '${input.userId}', now(),
        'migration-check', 'proof', 'prompt', 6, 'prompt', false, 'ok', 1,
-       NULL, NULL, NULL, NULL, false, false, false, NULL, NULL, NULL, NULL, now(), now());
+       NULL, NULL, NULL, NULL, false, false, false, NULL, NULL, NULL, NULL, now(), now()),
+      ('${ids.nulEscapeRun}', '${input.spaceId}', '${ids.machine}', '${input.userId}', now(),
+       'migration-check', 'proof', 'prompt', 6, 'prompt', false, 'ok', 1,
+       NULL, NULL, to_jsonb('["a\\u0000b"]'::text), NULL, false, false, false,
+       NULL, NULL, NULL, NULL, now(), now());
     INSERT INTO run_score
       (run_id, space_id, delivery, quality, fidelity, scored_at, scored_by, withheld_fields, updated_at)
     VALUES ('${ids.run}', '${input.spaceId}', 'full', 'right', 'faithful', now(),
@@ -201,6 +206,7 @@ export async function proveRepair(transaction: Transaction, userId: string): Pro
     structured: boolean
     invalid: boolean
     null_value: boolean
+    nul_escape: boolean
   }>(`
     SELECT
       changed_paths='["a"]'::jsonb AND doc_revisions='["a"]'::jsonb
@@ -210,13 +216,16 @@ export async function proveRepair(transaction: Transaction, userId: string): Pro
         AS structured,
       (SELECT changed_paths=to_jsonb('not json'::text) FROM "run" WHERE id='${ids.invalidRun}')
         AS invalid,
-      (SELECT changed_paths IS NULL FROM "run" WHERE id='${ids.nullRun}') AS null_value
+      (SELECT changed_paths IS NULL FROM "run" WHERE id='${ids.nullRun}') AS null_value,
+      (SELECT outside_worktree_writes=to_jsonb('["a\\u0000b"]'::text)
+        FROM "run" WHERE id='${ids.nulEscapeRun}') AS nul_escape
     FROM "run" WHERE id='${ids.structuredRun}'
   `)
   if (
     !untouched.rows[0]?.structured ||
     !untouched.rows[0].invalid ||
-    !untouched.rows[0].null_value
+    !untouched.rows[0].null_value ||
+    !untouched.rows[0].nul_escape
   ) {
     throw new Error(
       `DEV-1885 jsonb string repair changed an excluded value: ${JSON.stringify(untouched.rows)}`,
