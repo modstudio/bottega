@@ -337,6 +337,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/migration-drain-state.ts',
     '../gate-load.ts',
     './host-reservation.ts',
+    './run-status.ts',
   ]),
   module('orchestrator/src/run/run-reply-source.ts', [
     '../contract/contract.ts',

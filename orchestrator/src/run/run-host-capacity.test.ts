@@ -3,9 +3,10 @@ import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
 import { CAPACITY_SAMPLE_MIN_WINDOW_MS, type HostLoad } from '../gate-load.ts'
-import { HOST_RESERVATION_MIN_SAMPLES } from './host-reservation.ts'
+import { HOST_RESERVATION_FLOOR_CORES, HOST_RESERVATION_MIN_SAMPLES } from './host-reservation.ts'
 import {
   RUN_HOST_CAPACITY_WAITERS_SQL,
+  RUN_HOST_RESERVATION_SAMPLES_SQL,
   RUN_HOST_WAIT_MAX_MS,
   RUNNING_REPOSITORY_FACTS_SQL,
   runHostCapacityQueue,
@@ -51,16 +52,17 @@ const addRecentAdmissions = (count: number, now: number, agent: string) => {
 const addCpuSamples = (count: number, now: number, agent: string, cores: number) => {
   for (let index = 0; index < count; index++) {
     const latency = 1_000
+    const startedAt = now - 60_000 - index
     const runId = addRun({
       agent,
       job: 'implement',
       status: 'ok',
       latency,
-      startedAt: new Date(now - 60_000 - index).toISOString(),
+      startedAt: new Date(startedAt).toISOString(),
     })
     db()
-      .query('UPDATE run SET resource_cpu_ms=? WHERE record_id=?')
-      .run(cores * latency, runId)
+      .query('UPDATE run SET resource_cpu_ms=?, agent_start_time=? WHERE record_id=?')
+      .run(cores * latency, new Date(startedAt).toString(), runId)
   }
 }
 
@@ -80,6 +82,14 @@ describe('run host capacity', () => {
       expect(details).toContain('run_running_repository_idx')
       expect(details).not.toMatch(/SCAN run(?! USING)/)
     }
+  })
+
+  test('the named reservation sample query accepts an agent set', () => {
+    expect(
+      db()
+        .query(RUN_HOST_RESERVATION_SAMPLES_SQL)
+        .all('2026-01-01T00:00:00.000Z', JSON.stringify([])),
+    ).toEqual([])
   })
 
   test('a pre-spawn host-capacity waiter stops when a migration drain appears', async () => {
@@ -282,6 +292,28 @@ describe('run host capacity', () => {
     expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
   })
 
+  test('floor-sized reservations hold when their sum reaches host capacity', async () => {
+    const now = Date.parse('2026-01-01T00:02:00.000Z')
+    addRecentAdmissions(12, now, 'codex')
+    addCpuSamples(HOST_RESERVATION_MIN_SAMPLES, now, 'codex', 0.05)
+    const runId = repositoryRun()
+
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: () => ({ ...loaded(), cpuBusy: 13, ncpu: 16 }),
+      sleep: async () => {
+        db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+      },
+    })
+
+    expect(HOST_RESERVATION_FLOOR_CORES * 12).toBe(3)
+    expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
+  })
+
   test('samples CPU before recording a load-average wait', async () => {
     repositoryRun()
     const runId = repositoryRun()
@@ -318,6 +350,58 @@ describe('run host capacity', () => {
         )
         .get(runId),
     ).toEqual({ count: 0 })
+  })
+
+  test('a still-busy resample records a wait and continues through queue and drain checks', async () => {
+    const blocker = repositoryRun()
+    const older = repositoryRun()
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:01:00.000Z', older)
+    const runId = repositoryRun()
+    let now = Date.parse('2026-01-01T00:02:00.000Z')
+    let measurements = 0
+    const sleeps: number[] = []
+    let recordedWait = false
+
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      random: () => 0.5,
+      measure: () => ({
+        ...loaded(),
+        cpuBusy: measurements++ === 0 ? null : 16,
+      }),
+      sleep: async (ms) => {
+        sleeps.push(ms)
+        now += ms
+        if (sleeps.length === 2) {
+          recordedWait =
+            (
+              db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId) as {
+                host_wait_since: string | null
+              }
+            ).host_wait_since !== null
+          db().query("UPDATE run SET status='ok' WHERE record_id=?").run(blocker)
+        }
+        if (sleeps.length === 3) {
+          setMigrationDrain(db(), '0155_rebuild')
+        }
+      },
+    })
+
+    expect(measurements).toBe(3)
+    expect(sleeps).toEqual([CAPACITY_SAMPLE_MIN_WINDOW_MS, 1_000, 2_000])
+    expect(recordedWait).toBe(true)
+    expect(result).toMatchObject({
+      outcome: 'stopped',
+      heldOn: ['load', 'queue', 'migration'],
+      drainingFor: '0155_rebuild',
+    })
+    clearMigrationDrain(db())
   })
 
   test('holding records host_wait_since before sleeping', async () => {
