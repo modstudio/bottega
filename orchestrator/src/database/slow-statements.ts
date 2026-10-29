@@ -26,12 +26,16 @@ export type StatementTimingOptions = {
   now?: () => number
 }
 
+const instrumented = new WeakSet<Database>()
+
 /**
  * Keep the public bun:sqlite shape: callers still receive a Database and its native statements.
  * Only the statement execution methods are interposed; every other property is read from the
  * native receiver so transaction helpers and connection state retain their Bun semantics.
  */
 export function instrumentDatabase(database: Database, options: StatementTimingOptions): Database {
+  if (instrumented.has(database)) return database
+  instrumented.add(database)
   const thresholdMs = options.thresholdMs ?? SLOW_STATEMENT_MS
   const now = options.now ?? performance.now.bind(performance)
   let recording = false
@@ -86,14 +90,15 @@ export function instrumentDatabase(database: Database, options: StatementTimingO
       },
     })
 
-  return new Proxy(database, {
-    get(target, property) {
-      const value = Reflect.get(target, property, target)
-      if (typeof value !== 'function') return value
-      if (property === 'query' || property === 'prepare') {
-        return (sql: string) => statement(sql, Reflect.apply(value, target, [sql]))
-      }
-      return value.bind(target)
-    },
+  const query = database.query.bind(database)
+  const prepare = database.prepare.bind(database)
+  Object.defineProperty(database, 'query', {
+    configurable: true,
+    value: (sql: string) => statement(sql, query(sql)),
   })
+  Object.defineProperty(database, 'prepare', {
+    configurable: true,
+    value: (sql: string) => statement(sql, prepare(sql)),
+  })
+  return database
 }
