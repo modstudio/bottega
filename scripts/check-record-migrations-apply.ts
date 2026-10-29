@@ -19,7 +19,6 @@ import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
-import { proveRepair, repair, seedRepair } from './record-jsonb-string-repair-proof.ts'
 import {
   proofRunOwnerRequired,
   runOwnerBackfill,
@@ -923,7 +922,6 @@ async function applyAndProveMigration(
   }
   await seedMigrationProof(transaction, migration.name)
   await applyRecordMigration(transaction, migration)
-  if (migration.name === repair) await proveRepair(transaction, platformOperatorId)
   await proofDocumentMigration(transaction, migration)
   if (migration.name === boardSharedSpacesMigration)
     await proofBoardThreadAuthorBackfill(transaction)
@@ -933,7 +931,6 @@ async function applyAndProveMigration(
 }
 
 async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
-  if (name === repair) await seedRepair(transaction, platformOperatorId)
   if (name === brokenDocBackfill) await seedDocBackfillProof(transaction)
   if (name === audienceVocabularyBackfill) await seedAudienceVocabularyBackfill(transaction)
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
