@@ -157,6 +157,7 @@ export async function userCanonImportCommand(
     rows: rows.map((row) => ({ ...row, title: row.slug })),
     reason,
   })
+  for (const warning of result.writeWarnings ?? []) presentation.log(`warning: ${warning}`)
   printFindings(result.findings, presentation.log)
   presentation.log(`imported ${result.rows.length} canon rows, removed ${result.deletions.length}`)
   if (result.bootstrap) {

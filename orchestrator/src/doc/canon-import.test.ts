@@ -1,14 +1,78 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setDoc } from '../../test/fixtures/docs.ts'
 import {
   createMemoryRecordApiClient,
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
+import type { SecretScanner } from '../secret-scan/secret-scan.ts'
 import { importCanon } from './canon-import.ts'
+import { DOC_SECRET_SCANNER_KEY } from './doc-secret-scan.ts'
 import { getDoc, listDocs } from './docs.ts'
 
 const owner = '01990000-0000-7000-8000-000000000091'
+const scannerHolder = globalThis as typeof globalThis & {
+  [DOC_SECRET_SCANNER_KEY]?: SecretScanner
+}
+
+afterEach(() => {
+  scannerHolder[DOC_SECRET_SCANNER_KEY] = () => ({ status: 'clean' })
+  delete process.env.BOTTEGA_RECORD_API_URL
+})
+
+test('a finding in one row refuses the whole canon import before either store is written', async () => {
+  let hostedWrites = 0
+  const client = createMemoryRecordApiClient()
+  installRecordApiClient({
+    ...client,
+    importCanon: async (input) => {
+      hostedWrites++
+      return client.importCanon(input)
+    },
+  })
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  scannerHolder[DOC_SECRET_SCANNER_KEY] = (body) =>
+    body === 'secret body'
+      ? {
+          status: 'found',
+          findings: [{ ruleId: 'github-pat', line: 4 }],
+        }
+      : { status: 'clean' }
+
+  await expect(
+    importCanon({
+      address: { kind: 'user', owner },
+      reason: 'refuse secret-bearing import',
+      rows: [
+        { slug: 'AGENTS.md', title: 'AGENTS.md', body: 'clean body' },
+        { slug: '.agents/rules/secret.md', title: 'secret.md', body: 'secret body' },
+      ],
+    }),
+  ).rejects.toThrow('secret scan refused canon/_/.agents/rules/secret.md: github-pat at line 4')
+  expect(listDocs({ scope: 'canon', subject: null, owner })).toEqual([])
+  expect(hostedWrites).toBe(0)
+})
+
+test('an unavailable canon scanner writes all rows and returns one warning', async () => {
+  scannerHolder[DOC_SECRET_SCANNER_KEY] = () => ({
+    status: 'unavailable',
+    reason: 'gitleaks timed out',
+  })
+
+  const result = await importCanon({
+    address: { kind: 'user', owner },
+    reason: 'allow unchecked import',
+    rows: [
+      { slug: 'AGENTS.md', title: 'AGENTS.md', body: 'first body' },
+      { slug: '.agents/rules/second.md', title: 'second.md', body: 'second body' },
+    ],
+  })
+
+  expect(result.writeWarnings).toEqual([
+    'secret scan could not run for canon/_/AGENTS.md: gitleaks timed out; write allowed unchecked',
+  ])
+  expect(listDocs({ scope: 'canon', subject: null, owner })).toHaveLength(2)
+})
 
 test('a hosted batch failure leaves every local user canon row unchanged', async () => {
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'

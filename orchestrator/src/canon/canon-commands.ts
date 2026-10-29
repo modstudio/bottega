@@ -254,6 +254,9 @@ async function canonImportCommand(
     rows: rows.map((row) => ({ ...row, title: row.slug })),
     reason,
   })
+  result.writeWarnings?.forEach((warning) => {
+    presentation.log(`warning: ${warning}`)
+  })
   printFindings(result.findings, presentation.log)
   presentation.log(`imported ${result.rows.length} canon rows, removed ${result.deletions.length}`)
   if (result.bootstrap) {

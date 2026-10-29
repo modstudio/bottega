@@ -17,12 +17,19 @@ import { WORKER_ENVIRONMENT_MARKERS } from '../../shared/caller-classification.t
 import { CONFIG_HOME_ENV, HARNESS_ENV_FILE_ENV } from '../../shared/config-directory.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { createTestHubDatabaseGuard, mintTestHubDatabase } from '../../shared/test-hub-database.ts'
+import { DOC_SECRET_SCANNER_KEY } from '../src/doc/doc-secret-scan.ts'
+import type { SecretScanner } from '../src/secret-scan/secret-scan.ts'
 import {
   beginTestSetup,
   beginTestTeardown,
   recordTestSetup,
   recordTestTeardown,
 } from './gate-timings-reporter.ts'
+
+const docSecretScannerHolder = globalThis as typeof globalThis & {
+  [DOC_SECRET_SCANNER_KEY]?: SecretScanner
+}
+docSecretScannerHolder[DOC_SECRET_SCANNER_KEY] = () => ({ status: 'clean' })
 
 export const dir = mkdtempSync(join(tmpdir(), 'orch-test-'))
 const originalPath = process.env.PATH
