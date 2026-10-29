@@ -30,6 +30,7 @@ export const databaseBoundarySpecs: ImportBoundary[] = [
       `${source}migration-window-state.ts`,
       `${source}migrations.ts`,
       `${source}project-register-store.ts`,
+      `${source}slow-statements.ts`,
       `${source}store-actor.ts`,
       `${source}wal-persistence.ts`,
       `${source}write-probe.ts`,

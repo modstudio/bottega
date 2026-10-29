@@ -157,6 +157,15 @@ export const runModuleSpecs = [
     allowed: ['../state/statistics.ts'],
   },
   {
+    file: 'orchestrator/src/route/routing-evidence-query.ts',
+    allowed: [
+      '../database/db.ts',
+      '../failure/failure.ts',
+      './prompt-size-bucket.ts',
+      './route-selection.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/route/route-cost.ts',
     allowed: [
       '../database/db.ts',

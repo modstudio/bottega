@@ -3,9 +3,10 @@ import { Database } from 'bun:sqlite'
 import { copyFileSync, existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 
-export const LARGE_TABLE_ROW_THRESHOLD = 10_000
-export const SLOW_AUDIT_STATEMENT_MS = 25
+const LARGE_TABLE_ROW_THRESHOLD = 10_000
+const SLOW_AUDIT_STATEMENT_MS = 25
 
 type Binding = string | number | bigint | boolean | null | Uint8Array
 type Captured = { label: string; sql: string; bindings: Binding[] }
@@ -213,7 +214,7 @@ async function main(): Promise<void> {
     throw new Error(`refusing live operator store ${store}; pass --allow-live-store explicitly`)
   }
 
-  const work = mkdtempSync(join(tmpdir(), 'bottega-planner-audit-'))
+  const work = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-planner-audit-`))
   try {
     const { captured, measuredStore } = await captureEntryPoints(store, work)
     const withoutRoutingIndexes = args.includes('--without-routing-indexes')
@@ -262,40 +263,44 @@ async function main(): Promise<void> {
     }
     planner.close()
 
-    if (args.includes('--json')) {
-      console.log(
-        JSON.stringify(
-          {
-            mode: withoutRoutingIndexes ? 'without-routing-indexes' : 'current',
-            thresholds: {
-              largeTableRows: LARGE_TABLE_ROW_THRESHOLD,
-              slowStatementMs: SLOW_AUDIT_STATEMENT_MS,
-            },
-            rows,
-          },
-          null,
-          2,
-        ),
-      )
-      return
-    }
-    console.log(
-      `thresholds: large table >= ${LARGE_TABLE_ROW_THRESHOLD} rows; slow >= ${SLOW_AUDIT_STATEMENT_MS} ms`,
-    )
-    console.table(
-      rows.map((row, index) => ({
-        id: index + 1,
-        entry: row.label,
-        scan: row.largeTableScan ? 'LARGE' : '',
-        ms: row.elapsedMs.toFixed(1),
-        pages: row.pagesRead ?? 'unknown',
-        plan: row.plan.join(' | '),
-        sql: row.sql.replace(/\s+/g, ' ').trim().slice(0, 90),
-      })),
-    )
+    printReport(rows, withoutRoutingIndexes, args.includes('--json'))
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
+}
+
+function printReport(rows: AuditRow[], withoutRoutingIndexes: boolean, json: boolean): void {
+  if (json) {
+    console.log(
+      JSON.stringify(
+        {
+          mode: withoutRoutingIndexes ? 'without-routing-indexes' : 'current',
+          thresholds: {
+            largeTableRows: LARGE_TABLE_ROW_THRESHOLD,
+            slowStatementMs: SLOW_AUDIT_STATEMENT_MS,
+          },
+          rows,
+        },
+        null,
+        2,
+      ),
+    )
+    return
+  }
+  console.log(
+    `thresholds: large table >= ${LARGE_TABLE_ROW_THRESHOLD} rows; slow >= ${SLOW_AUDIT_STATEMENT_MS} ms`,
+  )
+  console.table(
+    rows.map((row, index) => ({
+      id: index + 1,
+      entry: row.label,
+      scan: row.largeTableScan ? 'LARGE' : '',
+      ms: row.elapsedMs.toFixed(1),
+      pages: row.pagesRead ?? 'unknown',
+      plan: row.plan.join(' | '),
+      sql: row.sql.replace(/\s+/g, ' ').trim().slice(0, 90),
+    })),
+  )
 }
 
 if (import.meta.main) await main()

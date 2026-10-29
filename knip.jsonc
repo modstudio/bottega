@@ -45,6 +45,7 @@
         "scripts/check.ts!",
         "scripts/check-*.ts!",
         "scripts/affected-tests.ts!",
+        "scripts/audit-hot-store-statements.ts!",
         "scripts/test-focused.ts!",
         "scripts/test-preload.ts!",
         "scripts/**/*.test.ts",

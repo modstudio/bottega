@@ -22,6 +22,7 @@
     "check": "bun scripts/check.ts",
     "check:suite": "bun scripts/check.ts --suite",
     "test:focused": "bun scripts/test-focused.ts",
+    "audit:hot-store": "bun scripts/audit-hot-store-statements.ts",
     "release:build": "bun scripts/build-release.ts",
     "release:binary": "bun scripts/build-binary.ts",
     "release:artifacts": "bun scripts/build-release-artifacts.ts",
