@@ -1,6 +1,13 @@
 import { expect, test } from 'bun:test'
-import { reportedRunCost } from '../run/run-subscription-cost.ts'
-import { costPerAcceptedResult, routeCostPerAccepted, routeMeanCostPerRun } from './route-cost.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
+import { reportedRunCost, type SubscriptionCostContext } from '../run/run-subscription-cost.ts'
+import {
+  costPerAcceptedResult,
+  routeCostFacts,
+  routeCostPerAccepted,
+  routeMeanCostPerRun,
+} from './route-cost.ts'
 
 const row = (usd: number | null, source = 'vendor') => ({ usd, source })
 
@@ -89,4 +96,47 @@ test('acceptance requires the job-specific score dimensions', () => {
       unknown: 'no accepted results',
     })
   }
+})
+
+test('the root-bounded cost read matches the old cell read for window roots and their turns', () => {
+  const root = addRun({
+    agent: 'codex',
+    job: 'craft',
+    startedAt: '2026-01-01T00:00:00Z',
+    latency: 1_000,
+  })
+  const turn = addRun({
+    agent: 'codex',
+    job: 'craft',
+    parent: root,
+    turn: 2,
+    startedAt: '2026-01-01T00:01:00Z',
+    latency: 2_000,
+  })
+  const outside = addRun({
+    agent: 'codex',
+    job: 'craft',
+    startedAt: '2026-01-02T00:00:00Z',
+  })
+  db()
+    .query("UPDATE run SET vendor_cost_usd=?, vendor_cost_source='vendor' WHERE record_id=?")
+    .run(0.25, root)
+  db()
+    .query("UPDATE run SET vendor_cost_usd=?, vendor_cost_source='vendor' WHERE record_id=?")
+    .run(0.5, turn)
+  db()
+    .query("UPDATE run SET vendor_cost_usd=?, vendor_cost_source='vendor' WHERE record_id=?")
+    .run(1, outside)
+
+  const context: SubscriptionCostContext = {
+    facts: { agents: {}, monthTokens: {} },
+    prices: {},
+  }
+  const actual = routeCostFacts({ rootRecordIds: [root], context })
+
+  expect(actual.get(root)).toEqual([
+    { usd: 0.25, source: 'vendor', availableAt: '2026-01-01T00:00:01.000Z' },
+    { usd: 0.5, source: 'vendor', availableAt: '2026-01-01T00:01:02.000Z' },
+  ])
+  expect(actual.has(outside)).toBe(false)
 })

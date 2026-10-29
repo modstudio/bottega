@@ -644,16 +644,23 @@ describe('one score, reported the same everywhere', () => {
   })
 
   test('every cell in the scoreboard matches candidates() for its job', () => {
-    score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right')
+    const priced = addRun({ agent: 'grok', job: 'craft' })
+    score(priced, 'full', 'right')
+    db()
+      .query("UPDATE run SET vendor_cost_usd=0.25, vendor_cost_source='vendor' WHERE record_id=?")
+      .run(priced)
     addRun({ agent: 'codex', job: 'craft', status: 'stale' })
     score(addRun({ agent: 'grok', job: 'safety' }), 'full', 'mixed')
     for (const cell of scoreboard()) {
       const promptBytes = cell.promptBucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
-      const c = candidates(cell.job, promptBytes).find((x) => x.agent === cell.agent)!
+      const c = candidates(cell.job, promptBytes, { priceCost: true }).find(
+        (x) => x.agent === cell.agent,
+      )!
       expect(cell.score).toBe(c.score)
       expect(cell.shrunk).toBe(c.shrunk)
       expect(cell.evidence).toBe(c.evidence)
       expect(cell.runs).toBe(c.runs)
+      expect(cell.costPerAccepted).toEqual(c.costPerAccepted!)
     }
   })
 

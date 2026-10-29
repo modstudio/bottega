@@ -1,11 +1,13 @@
 // concern: route-cost
-/** Gathers and prices the complete chains in one routing evidence window. */
+/**
+ * Prices run chains for routing cost rules, either for caller-selected evidence roots or over all
+ * eligible history. Callers own evidence windowing.
+ */
 
 import { db } from '../database/db.ts'
 import { jobTakesFidelity } from '../jobs/job-fidelity.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
-import { promptBucketSql } from './prompt-size-bucket.ts'
 import { routingEvidenceWindow } from './route-statistics.ts'
 
 export type AcceptedResultChain = {
@@ -110,32 +112,29 @@ function costPerRunResult(chains: AcceptedResultChain[]): CostPerAcceptedResult 
     : costPerDenominator(chains, chains.length)
 }
 
+/** rootRecordIds must be roots admitted by routing-evidence-query.ts:boundedRoutingEvidenceRows. */
 export function routeCostFacts(input: {
-  jobName: string
-  promptBytes: number
-  stack?: string | null
-  lens?: string | null
+  rootRecordIds: string[]
   context?: SubscriptionCostContext
 }): RouteCostFacts {
   const rows = db()
     .query(
-      `SELECT COALESCE(r.parent_run_record_id, r.record_id) AS rootRecordId,
-              r.agent, r.started_at, r.vendor_tokens, r.vendor_cost_usd,
-              r.vendor_estimated_cost_usd, r.vendor_cost_source,
+      `WITH evidence_root(rootRecordId) AS (
+         SELECT value FROM json_each(?)
+       )
+       SELECT roots.rootRecordId, r.agent, r.started_at, r.vendor_tokens,
+              r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source,
               r.quota_resets_at, r.latency_ms
-         FROM run r
-         JOIN run root ON root.record_id = COALESCE(r.parent_run_record_id, r.record_id)
-        WHERE root.job = ? AND root.status IN ('ok','failed','stale') AND root.probe = 0
-          AND root.evidence_excluded IS NULL AND root.executor <> 'harness'
-          AND ${promptBucketSql('root', input.promptBytes)}
-          ${input.stack ? 'AND root.stack = ?' : ''}
-          ${input.lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = root.record_id AND rl.lens = ?)' : ''}`,
+         FROM evidence_root roots
+         JOIN run r ON r.record_id = roots.rootRecordId
+       UNION ALL
+       SELECT roots.rootRecordId, r.agent, r.started_at, r.vendor_tokens,
+              r.vendor_cost_usd, r.vendor_estimated_cost_usd, r.vendor_cost_source,
+              r.quota_resets_at, r.latency_ms
+         FROM evidence_root roots
+         JOIN run r INDEXED BY run_parent_turn ON r.parent_run_record_id = roots.rootRecordId`,
     )
-    .all(
-      input.jobName,
-      ...(input.stack ? [input.stack] : []),
-      ...(input.lens ? [input.lens] : []),
-    ) as ChainCostRow[]
+    .all(JSON.stringify(input.rootRecordIds)) as ChainCostRow[]
   const context = input.context ?? { facts: subscriptionCostFacts(), prices: {} }
   return pricedFacts(rows, context)
 }
@@ -165,6 +164,32 @@ export function routeMeanCostPerRun(
   )
 }
 
+/**
+ * Window each candidate's evidence, read their root costs once, and price each candidate in order.
+ */
+export function routeCostsForCandidates<
+  T extends { agent: string; evidenceModel: string | null },
+  E extends CostEvidenceRoot & { agent: string; model: string | null; startedAt: string },
+>(
+  candidates: T[],
+  evidenceRows: E[],
+  jobName: string,
+  evidenceWindow: number,
+  context?: SubscriptionCostContext,
+): Array<{ candidate: T; costPerAccepted: CostPerAcceptedResult }> {
+  const windows = candidates.map((candidate) =>
+    routingEvidenceWindow(evidenceRows, candidate.agent, candidate.evidenceModel!, evidenceWindow),
+  )
+  const rootRecordIds = [
+    ...new Set(windows.flatMap((window) => window.rows.map((row) => row.record_id))),
+  ]
+  const facts = routeCostFacts({ rootRecordIds, context })
+  return candidates.map((candidate, index) => ({
+    candidate,
+    costPerAccepted: routeCostPerAccepted(jobName, windows[index]!.rows, facts),
+  }))
+}
+
 export function attachRouteCosts<
   T extends {
     agent: string
@@ -175,19 +200,17 @@ export function attachRouteCosts<
 >(
   candidates: T[],
   evidenceRows: E[],
-  input: { jobName: string; promptBytes: number; stack?: string | null; lens?: string | null },
+  input: { jobName: string },
   evidenceWindow: number,
   enabled: boolean,
 ): void {
   if (!enabled) return
-  const facts = routeCostFacts(input)
-  for (const candidate of candidates) {
-    const window = routingEvidenceWindow(
-      evidenceRows,
-      candidate.agent,
-      candidate.evidenceModel!,
-      evidenceWindow,
-    )
-    candidate.costPerAccepted = routeCostPerAccepted(input.jobName, window.rows, facts)
+  for (const { candidate, costPerAccepted } of routeCostsForCandidates(
+    candidates,
+    evidenceRows,
+    input.jobName,
+    evidenceWindow,
+  )) {
+    candidate.costPerAccepted = costPerAccepted
   }
 }
