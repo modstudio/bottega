@@ -82,7 +82,6 @@ function payload(source: string, kind: keyof typeof recordKinds): Payload {
 const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
-const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
 function evidenceCollision(kind: string, id: string): OutboxRowError {
   return new OutboxRowError(
@@ -304,7 +303,7 @@ async function pushRun(
   })
 }
 
-function reviewValues(row: Payload, projectId: string | null) {
+export function reviewValues(row: Payload, projectId: string | null) {
   return {
     ...commonReviewRecordValues(row),
     projectId,
@@ -315,11 +314,11 @@ function reviewValues(row: Payload, projectId: string | null) {
     tierSize: nullableNumber(row.tierSize),
     tierInsertions: nullableNumber(row.tierInsertions),
     tierDeletions: nullableNumber(row.tierDeletions),
-    tierReasons: jsonString(row.tierReasons),
+    tierReasons: row.tierReasons,
     tierReason: nullableString(row.tierReason),
     role: String(row.role),
     patchId: nullableString(row.patchId),
-    pathSet: jsonString(row.pathSet),
+    pathSet: row.pathSet,
     commitMessage: nullableString(row.commitMessage),
     outdatedAt: nullableDate(row.outdatedAt),
     outdatedReason: nullableString(row.outdatedReason),
@@ -327,7 +326,11 @@ function reviewValues(row: Payload, projectId: string | null) {
   }
 }
 
-const questionValues = (row: Payload, projectId: string | null, workflowTaskId: string | null) => ({
+export const questionValues = (
+  row: Payload,
+  projectId: string | null,
+  workflowTaskId: string | null,
+) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   runId: nullableString(row.runId),
@@ -342,7 +345,7 @@ const questionValues = (row: Payload, projectId: string | null, workflowTaskId: 
   revision: Number(row.revision),
   askedAt: date(row.askedAt),
   question: String(row.question),
-  options: jsonString(row.options),
+  options: row.options,
   recommendation: nullableString(row.recommendation),
   why: nullableString(row.why),
   askedVia: nullableString(row.askedVia),
@@ -367,12 +370,12 @@ const questionValues = (row: Payload, projectId: string | null, workflowTaskId: 
   filedAt: nullableDate(row.filedAt),
   closedAt: nullableDate(row.closedAt),
   closeReason: nullableString(row.closeReason),
-  withheldFields: jsonString(row.withheldFields),
+  withheldFields: row.withheldFields,
   createdAt: date(row.createdAt),
   updatedAt: date(row.updatedAt),
 })
 
-function reviewLensValues(row: Payload) {
+export function reviewLensValues(row: Payload) {
   return {
     ...commonReviewRecordValues(row),
     reviewId: String(row.reviewId),
@@ -382,13 +385,13 @@ function reviewLensValues(row: Payload) {
     model: nullableString(row.model),
     treeInspected: nullableString(row.treeInspected),
     reviewedTree: nullableString(row.reviewedTree),
-    standardsRead: jsonString(row.standardsRead)!,
-    filesCovered: jsonString(row.filesCovered)!,
-    commandsRun: jsonString(row.commandsRun)!,
-    couldNotVerify: jsonString(row.couldNotVerify)!,
-    mcpTools: jsonString(row.mcpTools)!,
-    docsRead: jsonString(row.docsRead)!,
-    substitutes: jsonString(row.substitutes)!,
+    standardsRead: row.standardsRead,
+    filesCovered: row.filesCovered,
+    commandsRun: row.commandsRun,
+    couldNotVerify: row.couldNotVerify,
+    mcpTools: row.mcpTools,
+    docsRead: row.docsRead,
+    substitutes: row.substitutes,
     reproduced: nullableString(row.reproduced),
     coverage: nullableString(row.coverage),
     limits: nullableString(row.limits),
@@ -397,7 +400,7 @@ function reviewLensValues(row: Payload) {
   }
 }
 
-function reviewFindingValues(row: Payload) {
+export function reviewFindingValues(row: Payload) {
   return {
     ...commonReviewRecordValues(row),
     reviewId: String(row.reviewId),
@@ -423,7 +426,7 @@ const landingCommonValues = (row: Payload) => ({
   updatedAt: date(row.updatedAt),
 })
 
-function landingValues(row: Payload, projectId: string | null) {
+export function landingValues(row: Payload, projectId: string | null) {
   return {
     ...landingCommonValues(row),
     projectId,
@@ -435,15 +438,15 @@ function landingValues(row: Payload, projectId: string | null) {
     sessionId: nullableString(row.sessionId),
     startedAt: date(row.startedAt),
     finishedAt: nullableDate(row.finishedAt),
-    pathSet: jsonString(row.pathSet),
+    pathSet: row.pathSet,
     requestedAt: nullableDate(row.requestedAt),
-    steps: jsonString(row.steps),
+    steps: row.steps,
     causingLandingId: nullableString(row.causingLandingId),
-    withheldFields: jsonString(row.withheldFields),
+    withheldFields: row.withheldFields,
   }
 }
 
-function landingOverrideValues(row: Payload, projectId: string | null) {
+export function landingOverrideValues(row: Payload, projectId: string | null) {
   return {
     ...landingCommonValues(row),
     projectId,
@@ -451,13 +454,13 @@ function landingOverrideValues(row: Payload, projectId: string | null) {
     tip: String(row.tip),
     tree: String(row.tree),
     patchId: nullableString(row.patchId),
-    pathSet: jsonString(row.pathSet),
+    pathSet: row.pathSet,
     reason: String(row.reason),
     attribution: String(row.attribution),
-    missingLenses: jsonString(row.missingLenses),
+    missingLenses: row.missingLenses,
     sessionId: nullableString(row.sessionId),
     at: date(row.at),
-    withheldFields: jsonString(row.withheldFields),
+    withheldFields: row.withheldFields,
   }
 }
 
@@ -503,7 +506,7 @@ function landingTriageSnapshotValues(row: Payload, projectId: string | null) {
   }
 }
 
-function contentionValues(row: Payload) {
+export function contentionValues(row: Payload) {
   return {
     ...landingCommonValues(row),
     at: date(row.at),
@@ -515,20 +518,20 @@ function contentionValues(row: Payload) {
     cause: nullableString(row.cause),
     runId: nullableString(row.runId),
     landingId: nullableString(row.landingId),
-    withheldFields: jsonString(row.withheldFields),
+    withheldFields: row.withheldFields,
   }
 }
 
-function testFlakeValues(row: Payload) {
+export function testFlakeValues(row: Payload) {
   return {
     ...landingCommonValues(row),
     projectId: null,
     test: String(row.test),
     file: String(row.file),
-    loadAtFailure: jsonString(row.loadAtFailure)!,
+    loadAtFailure: row.loadAtFailure,
     signal: nullableString(row.signal),
     at: date(row.at),
-    withheldFields: jsonString(row.withheldFields),
+    withheldFields: row.withheldFields,
   }
 }
 

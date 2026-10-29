@@ -14,7 +14,7 @@ const nullableString = (value: unknown) => (value == null ? null : String(value)
 const nullableDate = (value: unknown) => (value == null ? null : new Date(String(value)))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
-function values(row: RecordPayload, projectId: string | null) {
+export function pullRequestCiValues(row: RecordPayload, projectId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
@@ -30,11 +30,11 @@ function values(row: RecordPayload, projectId: string | null) {
     event: nullableString(row.event),
     headCommit: nullableString(row.headCommit),
     conclusion: nullableString(row.conclusion),
-    failedJobs: row.failedJobs == null ? null : JSON.stringify(row.failedJobs),
+    failedJobs: row.failedJobs,
     workflowCreatedAt: nullableDate(row.workflowCreatedAt),
     workflowCompletedAt: nullableDate(row.workflowCompletedAt),
     recordedAt: new Date(String(row.recordedAt)),
-    withheldFields: row.withheldFields == null ? null : JSON.stringify(row.withheldFields),
+    withheldFields: row.withheldFields,
     createdAt: new Date(String(row.createdAt)),
     updatedAt: new Date(String(row.updatedAt)),
   }
@@ -52,7 +52,7 @@ async function pushPullRequestCi(
   if (!requireOwnedUpsert) throw new Error('pull-request CI sync requires collision refusal')
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const write = values(row, await projectRecordId(tx, row, principal, projectIds))
+    const write = pullRequestCiValues(row, await projectRecordId(tx, row, principal, projectIds))
     const existingOwned = await existingEvidenceOwned(
       tx,
       'pull_request_ci',

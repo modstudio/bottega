@@ -8,7 +8,6 @@ const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const bigint = (value: unknown) => BigInt(String(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
-const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
 export function runRecordValues(
   row: Payload,
@@ -46,7 +45,7 @@ export function runRecordValues(
     parentRunId: nullableString(row.parentRunId),
     turn: Number(row.turn),
     filesChanged: nullableNumber(row.filesChanged),
-    changedPaths: jsonString(row.changedPaths),
+    changedPaths: row.changedPaths,
     linesAdded: nullableNumber(row.linesAdded),
     linesRemoved: nullableNumber(row.linesRemoved),
     testsRan: nullableNumber(row.testsRan),
@@ -65,29 +64,29 @@ export function runRecordValues(
     baseCommit: nullableString(row.baseCommit),
     mintedBranch: nullableString(row.mintedBranch),
     docsInjected: nullableNumber(row.docsInjected),
-    docRevisions: jsonString(row.docRevisions),
+    docRevisions: row.docRevisions,
     canonSha: nullableString(row.canonSha),
     transport: nullableString(row.transport),
     sessionId: nullableString(row.sessionId),
     routeReason: nullableString(row.routeReason),
     noFailover: Boolean(row.noFailover),
     automaticFailover: Boolean(row.automaticFailover),
-    outsideWorktreeWrites: jsonString(row.outsideWorktreeWrites),
-    reviewProvenance: jsonString(row.reviewProvenance),
+    outsideWorktreeWrites: row.outsideWorktreeWrites,
+    reviewProvenance: row.reviewProvenance,
     provenanceStatus: nullableString(row.provenanceStatus),
     workPreserved: Boolean(row.workPreserved),
     closeOutOutcome: nullableString(row.closeOutOutcome),
     closeOutDetail: nullableString(row.closeOutDetail),
     provisioningKind: nullableString(row.provisioningKind),
     provisioningMs: nullableBigint(row.provisioningMs),
-    provisioningPhases: jsonString(row.provisioningPhases),
+    provisioningPhases: row.provisioningPhases,
     provisioningEntries: nullableBigint(row.provisioningEntries),
     provisioningEntriesLimited:
       row.provisioningEntriesLimited == null ? null : Boolean(row.provisioningEntriesLimited),
-    provisioningHostLoad: jsonString(row.provisioningHostLoad),
+    provisioningHostLoad: row.provisioningHostLoad,
     provisioningOutcome: nullableString(row.provisioningOutcome),
-    provisioningEntryRoots: jsonString(row.provisioningEntryRoots),
-    withheldFields: jsonString(row.withheldFields),
+    provisioningEntryRoots: row.provisioningEntryRoots,
+    withheldFields: row.withheldFields,
     createdAt: date(row.createdAt),
     updatedAt: date(row.updatedAt),
   }
