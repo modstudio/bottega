@@ -213,17 +213,15 @@ export function openReadOnlyDatabase(path = DB_PATH): Database {
  * which Bun's Linux SQLite accepts only with SQLITE_OPEN_URI passed explicitly.
  */
 function openReadOnlyStore(path: string, immutable: boolean): Database {
-  if (!immutable)
-    return instrumentDatabase(new Database(path, { readonly: true }), {
-      recorder: recordSlowStatement,
-    })
-  return instrumentDatabase(
-    new Database(
-      `${pathToFileURL(path).href}?immutable=1`,
-      constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
-    ),
-    { recorder: recordSlowStatement },
-  )
+  const database = !immutable
+    ? new Database(path, { readonly: true })
+    : new Database(
+        `${pathToFileURL(path).href}?immutable=1`,
+        constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
+      )
+  return sameStore(path, DB_PATH)
+    ? instrumentDatabase(database, { recorder: recordSlowStatement })
+    : database
 }
 
 function openOwnedWritableDatabase(path: string, options: { create: boolean }): Database {

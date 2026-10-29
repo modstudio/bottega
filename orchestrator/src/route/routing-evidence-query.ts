@@ -29,7 +29,7 @@ export type RoutingEvidenceInput = {
   executor?: 'external' | 'harness'
 }
 
-/** The production quality-evidence predicate, shared with causal replay. */
+/** Row-shape form for causal replay and tests, kept equal to the SQL form by its test. */
 export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
   if (row.executor === 'harness') return false
   if (!['ok', 'failed', 'stale'].includes(row.status)) return false
@@ -37,7 +37,7 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
   return row.delivery !== null || ['failed', 'stale'].includes(row.status)
 }
 
-/** SQL form of isRoutingEvidence for the bounded evidence query. */
+/** The routing evidence predicate executed by the bounded production query. */
 export const ROUTING_EVIDENCE_SQL = `r.status IN ('ok','failed','stale')
         AND r.executor <> 'harness'
         AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})

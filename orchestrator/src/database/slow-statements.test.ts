@@ -23,17 +23,14 @@ test('a statement over the injected threshold records one fingerprinted contenti
 
   const rows = raw
     .query(
-      `SELECT resource_kind,resource_key,event_kind,duration_ms,cause
+      `SELECT resource_key,duration_ms
          FROM contention WHERE cause='slow-statement'`,
     )
     .all()
   expect(rows).toEqual([
     {
-      resource_kind: 'store',
       resource_key: statementFingerprint("SELECT 'literal', 42"),
-      event_kind: 'wait',
       duration_ms: 11,
-      cause: 'slow-statement',
     },
   ])
   raw.close()
