@@ -3,6 +3,7 @@ import { basename } from 'node:path'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import type { StoreLockRefusalEntry } from '../../../shared/store-lock-refusal-log.ts'
 import type { StoreWriteHoldEntry } from '../../../shared/store-write-hold-log.ts'
+import type { RecordedHostLoad } from '../gate-load.ts'
 import { enqueueContention } from '../record/landing-outbox.ts'
 
 const RESOURCE_KINDS = [
@@ -32,6 +33,7 @@ export type ContentionWrite = {
   cause?: string | null
   runId?: string | null
   landingId?: string | null
+  hostLoad?: RecordedHostLoad | null
 }
 
 type ContentionResourceSummary = {
@@ -136,8 +138,8 @@ export function insertContention(d: Database, row: ContentionWrite): void {
   const inserted = d
     .query(
       `INSERT INTO contention
-         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_record_id, landing_record_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
+         (record_id, at, session_id, resource_kind, resource_key, event_kind, duration_ms, cause, run_record_id, landing_record_id, host_load)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?) RETURNING record_id`,
     )
     .get(
       newRecordId(),
@@ -150,6 +152,7 @@ export function insertContention(d: Database, row: ContentionWrite): void {
       row.cause ?? null,
       row.runId ?? null,
       row.landingId ?? null,
+      row.hostLoad == null ? null : JSON.stringify(row.hostLoad),
     ) as { record_id: string }
   enqueueContention(d, inserted.record_id, at)
 }

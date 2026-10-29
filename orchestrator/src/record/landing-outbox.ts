@@ -155,6 +155,7 @@ function buildContentionRecordPayload(row: LocalRow, machineId: string, at: stri
     eventKind: row.event_kind,
     durationMs: row.duration_ms,
     cause: row.cause,
+    hostLoad: json(row.host_load),
     runId: row.run_record_id,
     landingId: row.landing_record_id,
     createdAt: row.at,
@@ -308,7 +309,7 @@ export function enqueueContention(database: Database, recordId: string, at = now
     .query<LocalRow, [string]>(
       `SELECT contention.record_id,contention.at,contention.session_id,contention.resource_kind,
               contention.resource_key,contention.event_kind,contention.duration_ms,contention.cause,
-              contention.landing_record_id,run.record_id AS run_record_id
+              contention.landing_record_id,contention.host_load,run.record_id AS run_record_id
        FROM contention LEFT JOIN run ON run.record_id=contention.run_record_id
        WHERE contention.record_id=?`,
     )

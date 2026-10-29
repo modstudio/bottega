@@ -31,6 +31,19 @@ export type HostLoad = {
   waitingRequests: number
   oldestWaitMs: number
 }
+export type RecordedHostLoad = Pick<
+  HostLoad,
+  | 'loadavg'
+  | 'cpuBusy'
+  | 'ncpu'
+  | 'recentAdmissions'
+  | 'freeMem'
+  | 'pressure'
+  | 'swapGrowthBytesPerSec'
+> & {
+  cpuBusySource: 'sampled' | 'resampled' | 'loadavg'
+  reservedCores?: number
+}
 export type MemoryPressure = 'normal' | 'warning' | 'critical' | 'unknown'
 export type HostHoldCondition = 'gates' | 'load' | 'memory' | 'queue'
 export type GateWaitState = {
