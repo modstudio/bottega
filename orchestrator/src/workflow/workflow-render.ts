@@ -239,7 +239,11 @@ export function renderWorkflowStep(step: WorkflowStep): string {
   const close = closeContract(step)
   const guidance = step.floor.map(
     (kind) =>
-      `Evidence for ${kind}: ${evidenceGuidance(kind as FloorKind, Boolean(step.operatorRuling))}.`,
+      `Evidence for ${kind}: ${evidenceGuidance(
+        kind as FloorKind,
+        Boolean(step.operatorRuling),
+        step.floor.some((otherKind) => otherKind !== 'ruling'),
+      )}.`,
   )
   const notice = step.notice ? `${step.notice}\n` : ''
   const autonomyLines = cursorAutonomyLines(step)

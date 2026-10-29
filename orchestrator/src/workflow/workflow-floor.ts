@@ -33,9 +33,13 @@ export const floorGuidance = {
   'tracker-transition': 'make the tracker transition and pass `--task <KEY>`',
 } satisfies Record<FloorKind, string>
 
-export function evidenceGuidance(kind: FloorKind, operatorRuling: boolean): string {
+export function evidenceGuidance(
+  kind: FloorKind,
+  operatorRuling: boolean,
+  hasOtherFloor = false,
+): string {
   if (kind === 'ruling' && operatorRuling)
-    return `call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\``
+    return `only the operator's answer closes this floor: ask with \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), have the operator answer, or relay the operator's answer with \`rule_workflow\` \`from_operator\` (or \`${PLATFORM_SLUG} workflow rule --from-operator\`), then pass \`--ruling <the returned question id>\`${hasOtherFloor ? "; another floor's evidence closes this step instead (any one floor is enough)" : ''}`
   return floorGuidance[kind]
 }
 

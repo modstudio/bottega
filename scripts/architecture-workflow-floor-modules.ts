@@ -59,6 +59,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/self-spawn.ts',
   ]),
   module('orchestrator/src/workflow/workflow-cursor-task-reference.ts', ['bun:sqlite']),
+  module('orchestrator/src/workflow/workflow-rule-answer.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    './step-catalogue.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
@@ -193,6 +198,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-rule-answer.ts',
     './workflow-self-ruling-mutation.ts',
     './workflows.ts',
     './workflow-cursor-transition.ts',
