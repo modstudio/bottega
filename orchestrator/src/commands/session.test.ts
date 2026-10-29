@@ -77,3 +77,10 @@ test('session adopt maps --cut-off to cut-off consent for a recently seen gone p
     else process.env.CLAUDE_CODE_SESSION_ID = prior
   }
 })
+
+test('session losses requires an explicit transcript selection', async () => {
+  const result = await runRegisteredCommand(['session', 'losses', '--json'])
+  expect(result.code).toBe(1)
+  expect(result.output).toContain('--session <id>')
+  expect(result.output).toContain('--all')
+})

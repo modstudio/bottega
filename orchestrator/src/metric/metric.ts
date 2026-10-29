@@ -1,24 +1,21 @@
-import type { Dirent } from 'node:fs'
-import { createReadStream, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
-import { createInterface } from 'node:readline'
-import type { Readable } from 'node:stream'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { isProjectRepository, type Project, projects } from '../project/projects.ts'
+import {
+  claudeUsage,
+  readTranscriptLines as readSourceLines,
+  transcriptSources as sourcesUnderRoot,
+  type TranscriptSource,
+} from './transcript-reader.ts'
 
 // A one-day collection over 34 current transcripts took 33m 7s on the
 // production state. Two hours leaves substantial room for the normal 30-day
 // pass while still turning an overnight stall into a loud, bounded failure.
 const METRIC_COLLECTION_DEADLINE_MS = 2 * 60 * 60 * 1000
 
-export type MetricTranscriptSource = {
-  file: string
-  modifiedAt: Date
-  open(): Readable
-}
+export type MetricTranscriptSource = TranscriptSource
 
 type MetricCollectionOptions = {
   deadlineMs?: number
@@ -80,38 +77,20 @@ class MetricCollectionDeadline {
   }
 }
 
-async function releaseStream(stream: Readable): Promise<void> {
-  if (stream.closed) return
-  await new Promise<void>((resolve) => {
-    stream.once('close', resolve)
-    stream.destroy()
-  })
-}
-
 async function readTranscriptLines(
   source: MetricTranscriptSource,
   deadline: MetricCollectionDeadline,
   consume: (line: string) => void,
 ): Promise<void> {
   deadline.beginUnit(`transcript ${source.file}`)
-  const stream = source.open()
-  const lines = createInterface({ input: stream, crlfDelay: Infinity })
-  const abort = () => {
-    lines.close()
-    stream.destroy()
-  }
-  deadline.signal.addEventListener('abort', abort, { once: true })
   try {
-    for await (const line of lines) {
-      deadline.checkpoint()
-      consume(line)
-      deadline.checkpoint()
-    }
+    await readSourceLines(source, consume, {
+      signal: deadline.signal,
+      beforeLine: () => deadline.checkpoint(),
+      afterLine: () => deadline.checkpoint(),
+    })
     deadline.checkpoint()
   } finally {
-    deadline.signal.removeEventListener('abort', abort)
-    lines.close()
-    await releaseStream(stream)
     deadline.endUnit()
   }
 }
@@ -168,26 +147,6 @@ function metricDayStart(days: number, now: number): Date {
 
 const metricDaysAgo = (days: number, now: number): string =>
   metricCalendarDay(metricDayStart(days, now))
-
-/** Every .jsonl transcript under the configured transcript root. */
-function transcripts(dir: string, out: string[] = []): string[] {
-  let entries: Dirent[]
-  try {
-    entries = readdirSync(dir, { withFileTypes: true })
-  } catch {
-    return out
-  }
-  for (const e of entries) {
-    const p = join(dir, e.name)
-    if (e.isDirectory()) transcripts(p, out)
-    else if (e.name.endsWith('.jsonl')) out.push(p)
-  }
-  return out
-}
-
-function configuredTranscripts(root: string): string[] {
-  return root === '' ? [] : transcripts(root)
-}
 
 /**
  * Claude token spend per day, read from the transcripts themselves rather than
@@ -293,13 +252,12 @@ async function claudeTokensByDay(
       }
       const day = d.timestamp ? metricCalendarDay(d.timestamp) : ''
       if (!day || day < since) return
-      const u = d.message?.usage
+      const u = claudeUsage(d.message?.usage)
       if (!u) return
       const row = days.get(day) ?? { tokens: 0, cacheRead: 0, messages: 0, canon: 0, other: 0 }
-      const cr = u.cache_read_input_tokens ?? 0
+      const cr = u.cacheRead
       row.cacheRead += cr
-      const spend =
-        cr + (u.cache_creation_input_tokens ?? 0) + (u.input_tokens ?? 0) + (u.output_tokens ?? 0)
+      const spend = cr + u.cacheCreation + u.input + u.output
       row.tokens += spend
       // Work outside the canon repos ships no task key, so counting it in the
       // numerator inflates the ratio against a denominator it never touched.
@@ -316,13 +274,7 @@ async function claudeTokensByDay(
 
 function transcriptSources(): MetricTranscriptSource[] {
   const transcriptRoot = readMachineValue('hub.transcript_root')
-  const sources: MetricTranscriptSource[] = []
-  for (const file of configuredTranscripts(transcriptRoot)) {
-    try {
-      sources.push({ file, modifiedAt: statSync(file).mtime, open: () => createReadStream(file) })
-    } catch {}
-  }
-  return sources
+  return sourcesUnderRoot(transcriptRoot)
 }
 
 type DayActivity = {

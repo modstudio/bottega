@@ -18,5 +18,12 @@ export const metricModules: MetricModule[] = [
     '../database/db.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
+    './transcript-reader.ts',
+  ]),
+  module('orchestrator/src/metric/transcript-reader.ts', [
+    'node:fs',
+    'node:path',
+    'node:readline',
+    'node:stream',
   ]),
 ]

@@ -8,6 +8,7 @@ architect session lifecycle
 - [bottega session adopt](#bottega-session-adopt)
 - [bottega session close-out](#bottega-session-close-out)
 - [bottega session help](#bottega-session-help)
+- [bottega session losses](#bottega-session-losses)
 
 ## bottega session
 
@@ -20,6 +21,7 @@ architect session lifecycle
 - [bottega session adopt](./session.md#bottega-session-adopt)
 - [bottega session close-out](./session.md#bottega-session-close-out)
 - [bottega session help](./session.md#bottega-session-help)
+- [bottega session losses](./session.md#bottega-session-losses)
 
 ## bottega session adopt
 
@@ -58,6 +60,24 @@ release and verify everything one session owns
 **Synopsis:** `bottega session help [command]`
 
 display help for command
+
+### Related
+
+- [bottega session](./session.md#bottega-session)
+
+## bottega session losses
+
+**Synopsis:** `bottega session losses [--session <id>] [--all] [--since <date>] [--json] [--judge]`
+
+measure losses around Claude transcript compaction boundaries
+
+### Options
+
+- `--session <id>`: select one session; repeat to select more
+- `--all`: select every readable transcript
+- `--since <date>`: include rows at or after this ISO date
+- `--json`: write the report as JSON
+- `--judge`: dispatch blind semantic-loss judges without waiting
 
 ### Related
 

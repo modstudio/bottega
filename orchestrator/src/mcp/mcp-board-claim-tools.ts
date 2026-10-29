@@ -14,9 +14,19 @@ const result = (value: unknown) => ({
   content: [{ type: 'text' as const, text: JSON.stringify(value) }],
 })
 
+export const BOARD_CLAIM_TOOL_NAMES = [
+  'board_claim_take',
+  'board_claim_renew',
+  'board_claim_release',
+  'board_claim_list',
+  'board_claim_release_task',
+] as const
+
+const [takeTool, renewTool, releaseTool, listTool, releaseTaskTool] = BOARD_CLAIM_TOOL_NAMES
+
 export function registerBoardClaimTools(server: McpServer): void {
   server.registerTool(
-    'board_claim_take',
+    takeTool,
     {
       description: 'Take or renew a coordination claim.',
       inputSchema: z.object({
@@ -44,7 +54,7 @@ export function registerBoardClaimTools(server: McpServer): void {
       ),
   )
   server.registerTool(
-    'board_claim_renew',
+    renewTool,
     {
       description: 'Renew a live coordination claim.',
       inputSchema: z.object({ id: z.string().min(1) }),
@@ -52,7 +62,7 @@ export function registerBoardClaimTools(server: McpServer): void {
     async ({ id }) => result(await boardClaimRenew(id)),
   )
   server.registerTool(
-    'board_claim_release',
+    releaseTool,
     {
       description: 'Release a live coordination claim.',
       inputSchema: z.object({ id: z.string().min(1) }),
@@ -60,7 +70,7 @@ export function registerBoardClaimTools(server: McpServer): void {
     async ({ id }) => result(await boardClaimRelease(id)),
   )
   server.registerTool(
-    'board_claim_list',
+    listTool,
     {
       description: 'List coordination claims for a project.',
       inputSchema: z.object({ project: z.string().min(1).optional(), all: z.boolean().optional() }),
@@ -69,7 +79,7 @@ export function registerBoardClaimTools(server: McpServer): void {
     async ({ project, all }) => result(await boardClaimList(project, all ?? false)),
   )
   server.registerTool(
-    'board_claim_release_task',
+    releaseTaskTool,
     {
       description: 'Release live claims for a closed task.',
       inputSchema: z.object({ key: z.string().min(1), project: z.string().min(1) }),
