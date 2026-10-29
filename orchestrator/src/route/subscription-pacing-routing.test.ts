@@ -30,3 +30,41 @@ test('candidates pace codex reading work but never implementation', () => {
     subscriptionPacingHold: null,
   })
 })
+
+test('a pacing probe bypasses every operational hold', () => {
+  const now = Date.now()
+  const windowMinutes = 10_080
+  const reading = addRun({
+    agent: 'codex',
+    job: 'understand',
+    startedAt: new Date(now - 60_000).toISOString(),
+  })
+  db()
+    .query(
+      `UPDATE run SET quota_used_percent_start=21, quota_used_percent_end=21,
+                      quota_window_minutes=?, quota_resets_at=? WHERE record_id=?`,
+    )
+    .run(windowMinutes, Math.floor((now + windowMinutes * 60_000 * 0.9) / 1000), reading)
+
+  expect(
+    candidates('understand', 0, { coolingProbeAgent: 'codex' }).find(
+      (candidate) => candidate.agent === 'codex',
+    ),
+  ).toMatchObject({ eligible: true, subscriptionPacingHold: { estimatePercent: 21 } })
+})
+
+test('candidates show the no-data pacing hold', () => {
+  db()
+    .query(
+      `UPDATE run SET quota_used_percent_start=NULL, quota_used_percent_end=NULL,
+                      quota_window_minutes=NULL, quota_resets_at=NULL
+        WHERE agent='codex'`,
+    )
+    .run()
+
+  expect(candidates('understand').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+    eligible: false,
+    why: expect.stringContaining('no reading in the current window and no calibration'),
+    subscriptionPacingHold: { estimatePercent: null },
+  })
+})

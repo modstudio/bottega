@@ -31,6 +31,17 @@ test('on pace allows a high-stakes lens while standard work needs headroom', () 
   expect(decideSubscriptionPacing(input({ reading }))?.headroomPercent).toBe(PACE_HEADROOM_PERCENT)
 })
 
+test('standard work with zero use is allowed before headroom has accrued', () => {
+  expect(
+    decideSubscriptionPacing(
+      input({
+        now: nowAt(PACE_HEADROOM_PERCENT / 2),
+        reading: { usedPercentEnd: 0, windowMinutes: WINDOW_MINUTES, resetsAt: RESET_SECONDS },
+      }),
+    ),
+  ).toBeNull()
+})
+
 test('a writing job is never paced', () => {
   expect(decideSubscriptionPacing(input({ writesRepo: true }))).toBeNull()
 })
@@ -64,4 +75,16 @@ test('calibration estimates current-window use without a reading', () => {
 
 test('no current reading and no calibration holds every paced job', () => {
   expect(decideSubscriptionPacing(input({ reading: null }))?.estimatePercent).toBeNull()
+})
+
+test('a malformed reset cannot make the refusal formatter throw', () => {
+  expect(
+    decideSubscriptionPacing(
+      input({
+        reading: null,
+        tokensSinceReading: 1,
+        calibration: { tokensPerPercent: 1, windowMinutes: WINDOW_MINUTES, resetsAt: 1e20 },
+      }),
+    )?.refusal,
+  ).toContain('resets at an unknown time')
 })

@@ -56,6 +56,11 @@ export const DEFAULT_ROUTE_COST_POLICY: RouteCostPolicy = {
   },
 }
 
+/** Static lens classification shared by cost policy and operational pacing. */
+export function isHighStakesLens(lens: string | null): boolean {
+  return Boolean(lens && DEFAULT_ROUTE_COST_POLICY.lensTiers['high-stakes'].lenses.includes(lens))
+}
+
 type JsonObject = Record<string, unknown>
 
 function objectAt(value: unknown, field: string): JsonObject {

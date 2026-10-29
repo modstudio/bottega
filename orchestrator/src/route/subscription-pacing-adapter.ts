@@ -3,7 +3,11 @@
 import type { Database } from 'bun:sqlite'
 import type { Agent } from '../agent/agents.ts'
 import { harnessCollectsQuotaReadings } from '../transport/codex-quota.ts'
-import { decideSubscriptionPacing, type SubscriptionPacingHold } from './subscription-pacing.ts'
+import {
+  decideSubscriptionPacing,
+  type SubscriptionPacingHold,
+  subscriptionJobIsUnpaced,
+} from './subscription-pacing.ts'
 import { subscriptionPacingFacts } from './subscription-pacing-store.ts'
 
 export function subscriptionPacingHolds(
@@ -11,7 +15,7 @@ export function subscriptionPacingHolds(
   agents: readonly Agent[],
   input: { now?: number; writesRepo: boolean; highStakesLens: boolean },
 ): Map<string, SubscriptionPacingHold> {
-  if (input.writesRepo) return new Map()
+  if (subscriptionJobIsUnpaced(input.writesRepo)) return new Map()
   const paced = agents.filter(
     (agent) => agent.billing === 'subscription' && harnessCollectsQuotaReadings(agent.harness),
   )

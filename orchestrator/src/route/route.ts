@@ -48,6 +48,7 @@ import {
   belowCostFloor,
   costPolicyExplanation,
   findingsPolicyLens,
+  isHighStakesLens,
   resolveRouteCostPolicy,
 } from './route-cost-policy.ts'
 import {
@@ -127,8 +128,9 @@ function operationalRoutingRefusal(
   failure: CoolingFailure | undefined,
   probeAgent: string | undefined,
 ): string | null {
+  if (probeAgent === name) return null
   if (billingHold) return billingKeyHoldRefusal(billingHold)
-  if (probeAgent !== name && cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN)
+  if (cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN)
   return subscriptionPacingHold?.refusal ?? null
 }
 
@@ -371,13 +373,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       hold.agents.map((agent) => [agent, hold] as const),
     ),
   )
-  const highStakesLens =
-    resolveRouteCostPolicy(
-      readRouteCostPolicy(),
-      jobName,
-      lens ?? null,
-      Boolean(j.needs.writesRepo),
-    ).group === 'high-stakes'
+  const highStakesLens = isHighStakesLens(lens ?? null)
   const subscriptionPacingHoldByAgent = subscriptionPacingHolds(db(), agentList, {
     writesRepo: Boolean(j.needs.writesRepo),
     highStakesLens,
@@ -429,6 +425,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const unavailable = unavailableReason(name)
     const runningRunIds = runningByAgent.get(name) ?? []
     const declared = a.jobs ?? null
+    const missingCapability = missingRequiredCapability(a.caps, j.needs)
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
@@ -464,9 +461,9 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
         `${Math.round(a.contextTokens / 1024)}K context is short of the ` +
         `~${Math.round(j.contextTokens / 1024)}K this job's working set needs ` +
         `plus ${Math.round(OUTPUT_RESERVE / 1024)}K to answer in`
-    } else if (missingRequiredCapability(a.caps, j.needs)) {
+    } else if (missingCapability) {
       eligible = false
-      why = missingRequiredCapability(a.caps, j.needs)!
+      why = missingCapability
     }
     ;({ eligible, why } = applyMcpEligibility(eligible, why, mcpWhy))
     if (eligible && a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {

@@ -36,6 +36,19 @@ test('missing or garbled fixture lines leave quota readings null', () => {
   expect(parseCodexQuotaReadings('{garbled}\n{"type":"event_msg"}')).toEqual(EMPTY_QUOTA_READINGS)
 })
 
+test('drops primary readings with invalid ranges', () => {
+  for (const line of [
+    tokenCount(-1),
+    tokenCount(101),
+    tokenCount(1, 0),
+    tokenCount(1, 10_080, 1),
+    tokenCount(1, 10_080, 1e20),
+    tokenCount(Number.NaN),
+  ]) {
+    expect(parseCodexQuotaReadings(line)).toEqual(EMPTY_QUOTA_READINGS)
+  }
+})
+
 test('uses the first reading from the last quota window when a turn crosses a reset', () => {
   const earlierReset = 1_793_774_132
   const laterReset = 1_794_378_932

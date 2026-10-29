@@ -217,7 +217,7 @@ copyFileSync(template, store)
                0,?,?,?,?,?,?,'stale',1000,1,0,0,0,?,?,'external',1)`,
     )
     .run(
-      new Date(now - 60_000).toISOString(),
+      new Date(now - 86_400_000).toISOString(),
       'codex',
       'agent-probe-quota',
       'quota-fixture',
