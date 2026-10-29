@@ -3,20 +3,29 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
 import { db } from '../database/db.ts'
-import { readTranscriptRows, transcriptSources } from '../metric/transcript-reader.ts'
+import { getDoc } from '../doc/docs.ts'
+import {
+  readTranscriptRows,
+  readTranscriptSessionId,
+  transcriptSources,
+} from '../metric/transcript-reader.ts'
 import { detach } from '../run/run-dispatch.ts'
+import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import {
   type ClaimLifecycle,
   type CursorLifecycle,
+  hasTranscriptRowTime,
   type LifecycleFacts,
   measureSessionLosses,
   type RunLifecycle,
   type SessionLossReport,
   type TranscriptRow,
+  transcriptRowTime,
 } from './session-losses.ts'
 
 type JudgeVerdict = {
@@ -24,12 +33,24 @@ type JudgeVerdict = {
   verdict: 're-asked' | 'contradicted-ruling' | 'neither'
   earlierTurn: string
 }
-type JudgeState = { runId: string; status: string; verdicts: JudgeVerdict[] | null }
-export type SessionLossOutput = SessionLossReport & {
+type JudgeState = {
+  runId: string | null
+  status: string
+  verdicts: JudgeVerdict[] | null
+  rubricRevision: string | null
+  error?: string
+}
+type SessionLossOutput = Omit<SessionLossReport, 'boundaries'> & {
   boundaries: Array<
-    SessionLossReport['boundaries'][number] & { candidateFile: string; judge: JudgeState | null }
+    Omit<SessionLossReport['boundaries'][number], 'candidates'> & {
+      candidateFile: string
+      candidateCount: number
+      judge: JudgeState | null
+    }
   >
 }
+type SessionLossFailure = { sessionId: string; error: 'no timestamped rows' }
+export type SessionLossResult = SessionLossOutput | SessionLossFailure
 
 type RunRow = {
   record_id: string
@@ -77,7 +98,7 @@ function runFacts(sessionId: string): RunLifecycle[] {
       id,
       number: root.number,
       startedAt: root.started_at,
-      terminalAt: ['ok', 'failed', 'stale', 'stopped'].includes(root.status)
+      terminalAt: TERMINAL_RUN_STATUS_SET.has(root.status)
         ? (stoppedAt ?? finished.at(-1) ?? null)
         : null,
     }
@@ -171,12 +192,23 @@ const judgeSchema = {
 
 function foldedJudge(sidecar: string): JudgeState | null {
   if (!existsSync(sidecar)) return null
-  const { runId } = JSON.parse(readFileSync(sidecar, 'utf8')) as { runId: string }
+  const { runId, rubricRevision } = JSON.parse(readFileSync(sidecar, 'utf8')) as {
+    runId: string
+    rubricRevision?: string
+  }
+  if (!rubricRevision)
+    return {
+      runId,
+      status: 'rubric-unrecorded',
+      verdicts: null,
+      rubricRevision: null,
+    }
   const row = db().query('SELECT status,output_path FROM run WHERE record_id=?').get(runId) as {
     status: string
     output_path: string | null
   } | null
-  if (!row) return { runId, status: 'missing', verdicts: null }
+  if (!row)
+    return { runId, status: 'missing', verdicts: null, rubricRevision: rubricRevision ?? null }
   let verdicts: JudgeVerdict[] | null = null
   if (row.output_path && existsSync(row.output_path)) {
     try {
@@ -184,13 +216,33 @@ function foldedJudge(sidecar: string): JudgeState | null {
         .verdicts
     } catch {}
   }
-  return { runId, status: row.status, verdicts }
+  return { runId, status: row.status, verdicts, rubricRevision: rubricRevision ?? null }
 }
 
-async function dispatchJudge(candidateFile: string, schemaPath: string): Promise<string> {
+type JudgeRubric = { body: string; revision: string }
+
+const rubricSetCommand =
+  `${PLATFORM_SLUG} doc set compaction-loss-rubric --scope job --subject understand ` +
+  '--title "Compaction loss rubric" --reason "establish DEV-1854 judge rubric" ' +
+  '--delivery demand --file <rubric.md>'
+
+function judgeRubric(): JudgeRubric {
+  const doc = getDoc('job', 'understand', 'compaction-loss-rubric')
+  if (doc?.status !== 'current' || doc.delivery !== 'demand' || !doc.revision)
+    throw new Error(
+      `compaction-loss judge rubric job/understand/compaction-loss-rubric is absent, not current, or not demand-delivered; set it with: ${rubricSetCommand}`,
+    )
+  return { body: doc.body, revision: doc.revision }
+}
+
+async function dispatchJudge(
+  candidateFile: string,
+  schemaPath: string,
+  rubric: JudgeRubric,
+): Promise<string> {
   return detach(
     'understand',
-    `Apply the injected compaction-loss rubric to every candidate in ${candidateFile}. Return one verdict per candidate and cite the earlier turn by timestamp and text.`,
+    `Compaction-loss rubric (revision ${rubric.revision}):\n\n${rubric.body}\n\nCandidate file: ${candidateFile}\n\nApply the rubric to every candidate. Return one verdict per candidate and cite the earlier turn by timestamp and text.`,
     { cwd: process.cwd(), schema: schemaPath, label: 'compaction-loss judge' },
   )
 }
@@ -208,13 +260,35 @@ function validatedSince(input: LossInput): number | null {
   return since
 }
 
-async function transcriptRowsBySession(root: string): Promise<Map<string, TranscriptRow[]>> {
-  const bySession = new Map<string, TranscriptRow[]>()
-  for (const source of transcriptSources(root, 'throw')) {
+type Source = ReturnType<typeof transcriptSources>[number]
+
+async function transcriptRowsForSession(
+  sessionId: string,
+  sources: Source[],
+): Promise<TranscriptRow[]> {
+  const allRows: TranscriptRow[] = []
+  for (const source of sources) {
     const rows = await readTranscriptRows<TranscriptRow>(source)
     const recorded = rows.find((row) => typeof row.sessionId === 'string')?.sessionId
-    const sessionId = recorded ?? basename(source.file, '.jsonl')
-    bySession.set(sessionId, [...(bySession.get(sessionId) ?? []), ...rows])
+    if (recorded && recorded !== sessionId)
+      throw new Error(
+        `transcript ${source.file} is named for session ${sessionId} but its first sessionId row is ${recorded}`,
+      )
+    allRows.push(...rows)
+  }
+  return allRows
+}
+
+async function sourcesBySession(root: string, selectedIds: string[] | null) {
+  const sources = transcriptSources(root, 'throw')
+  const selected = selectedIds ? new Set(selectedIds) : null
+  const bySession = new Map<string, Source[]>()
+  for (const source of sources) {
+    const sessionId = basename(source.file, '.jsonl')
+    if (selected && !selected.has(sessionId)) continue
+    const recorded = await readTranscriptSessionId(source)
+    if (recorded !== sessionId) continue
+    bySession.set(sessionId, [...(bySession.get(sessionId) ?? []), source])
   }
   return bySession
 }
@@ -224,53 +298,92 @@ async function outputBoundary(
   sessionId: string,
   directory: string,
   schemaPath: string,
-  shouldJudge: boolean,
+  rubric: JudgeRubric | null,
 ): Promise<SessionLossOutput['boundaries'][number]> {
   const candidateFile = join(directory, `${sessionId}-${Date.parse(boundary.at)}.json`)
   writeFileSync(candidateFile, `${JSON.stringify(boundary.candidates, null, 2)}\n`, { mode: 0o600 })
   const sidecar = `${candidateFile}.judge.json`
   let judge = foldedJudge(sidecar)
-  if (shouldJudge && boundary.candidates.candidates.length && !judge) {
-    const runId = await dispatchJudge(candidateFile, schemaPath)
-    writeFileSync(sidecar, `${JSON.stringify({ runId }, null, 2)}\n`, { mode: 0o600 })
-    judge = { runId, status: 'running', verdicts: null }
+  if (
+    rubric &&
+    boundary.candidates.candidates.length &&
+    (!judge || judge.status === 'rubric-unrecorded')
+  ) {
+    try {
+      const runId = await dispatchJudge(candidateFile, schemaPath, rubric)
+      writeFileSync(
+        sidecar,
+        `${JSON.stringify({ runId, rubricRevision: rubric.revision }, null, 2)}\n`,
+        { mode: 0o600 },
+      )
+      judge = {
+        runId,
+        status: 'running',
+        verdicts: null,
+        rubricRevision: rubric.revision,
+      }
+    } catch (error) {
+      judge = {
+        runId: null,
+        status: 'dispatch-failed',
+        verdicts: null,
+        rubricRevision: rubric.revision,
+        error: error instanceof Error ? error.message : String(error),
+      }
+    }
   }
-  return { ...boundary, candidateFile, judge }
+  const { candidates, ...mechanical } = boundary
+  return {
+    ...mechanical,
+    candidateFile,
+    candidateCount: candidates.candidates.length,
+    judge,
+  }
 }
 
 const rowsSince = (rows: TranscriptRow[], since: number | null) =>
   since === null
     ? rows
-    : rows.filter(
-        (row) =>
-          Number.isFinite(Date.parse(row.timestamp ?? '')) && Date.parse(row.timestamp!) >= since,
-      )
+    : rows.filter((row) => hasTranscriptRowTime(row) && transcriptRowTime(row) >= since)
 
-export async function sessionLosses(input: LossInput): Promise<SessionLossOutput[]> {
+async function outputSession(
+  sessionId: string,
+  sources: Source[],
+  since: number | null,
+  directory: string,
+  schemaPath: string,
+  rubric: JudgeRubric | null,
+): Promise<SessionLossResult> {
+  const allRows = await transcriptRowsForSession(sessionId, sources)
+  const report = measureSessionLosses(sessionId, rowsSince(allRows, since), factsFor(sessionId))
+  if (!report) return { sessionId, error: 'no timestamped rows' }
+  const boundaries: SessionLossOutput['boundaries'] = []
+  for (const boundary of report.boundaries)
+    boundaries.push(await outputBoundary(boundary, sessionId, directory, schemaPath, rubric))
+  return { ...report, boundaries }
+}
+
+export async function sessionLosses(input: LossInput): Promise<SessionLossResult[]> {
   const since = validatedSince(input)
   const root = readMachineValue('hub.transcript_root')
   if (!root) throw new Error('cannot read transcript directory hub.transcript_root: path is empty')
-  const bySession = await transcriptRowsBySession(root)
-  for (const sessionId of input.sessions)
+  const bySession = await sourcesBySession(root, input.all ? null : input.sessions)
+  for (const sessionId of input.sessions) {
     if (!bySession.has(sessionId))
       throw new Error(`named session ${sessionId} has no transcript under ${root}`)
+  }
 
   const selected = input.all
     ? [...bySession.entries()]
     : input.sessions.map((id) => [id, bySession.get(id)!] as const)
+  const rubric = input.judge ? judgeRubric() : null
   const directory = stateDirectory()
   const schemaPath = join(directory, 'judge-schema.json')
   writeFileSync(schemaPath, `${JSON.stringify(judgeSchema, null, 2)}\n`, { mode: 0o600 })
-  const output: SessionLossOutput[] = []
-  for (const [sessionId, allRows] of selected) {
-    const report = measureSessionLosses(sessionId, rowsSince(allRows, since), factsFor(sessionId))
-    if (!report) continue
-    const boundaries = await Promise.all(
-      report.boundaries.map((boundary) =>
-        outputBoundary(boundary, sessionId, directory, schemaPath, input.judge),
-      ),
+  const output: SessionLossResult[] = []
+  for (const [sessionId, sessionSources] of selected)
+    output.push(
+      await outputSession(sessionId, sessionSources, since, directory, schemaPath, rubric),
     )
-    output.push({ ...report, boundaries })
-  }
   return output
 }

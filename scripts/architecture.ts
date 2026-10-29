@@ -49,6 +49,7 @@ import { runModuleSpecs } from './architecture-run-modules.ts'
 import { runResumeModuleSpecs } from './architecture-run-resume-modules.ts'
 import { runRetryModuleSpecs } from './architecture-run-retry.ts'
 import { sessionContextModules } from './architecture-session-context-modules.ts'
+import { sessionLossesModules } from './architecture-session-losses-modules.ts'
 import { settingsModules } from './architecture-settings-modules.ts'
 import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { spareModules } from './architecture-spare-modules.ts'
@@ -63,15 +64,11 @@ import { worktreeModules } from './architecture-worktree-modules.ts'
 export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }
 type ArchitectureCycle = { cycle: string[]; reason: string }
+type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
 type ConcernManifest = {
   roots: typeof CONCERNS
   shared: { root: 'shared'; reason: string }
-  exceptions: Array<{
-    from: string
-    to: string
-    dependencyTypes: string[]
-    reason: string
-  }>
+  exceptions: ArchitectureException[]
 }
 
 const module = (file: string, allowed: string[]): ArchitectureModule => ({
@@ -166,6 +163,7 @@ export const modules: ArchitectureModule[] = [
   ...docModules,
   ...subjectModules,
   ...metricModules,
+  ...sessionLossesModules,
   module('orchestrator/src/doc/doc-write-tree.ts', [
     'node:fs',
     '../../../shared/git.ts',

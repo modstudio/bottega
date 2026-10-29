@@ -1,5 +1,3 @@
-import { createInterface } from 'node:readline'
-import type { Readable } from 'node:stream'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -7,6 +5,7 @@ import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 import { isProjectRepository, type Project, projects } from '../project/projects.ts'
 import {
   claudeUsage,
+  readTranscriptLines as readSourceLines,
   transcriptSources as sourcesUnderRoot,
   type TranscriptSource,
 } from './transcript-reader.ts'
@@ -78,38 +77,20 @@ class MetricCollectionDeadline {
   }
 }
 
-async function releaseStream(stream: Readable): Promise<void> {
-  if (stream.closed) return
-  await new Promise<void>((resolve) => {
-    stream.once('close', resolve)
-    stream.destroy()
-  })
-}
-
 async function readTranscriptLines(
   source: MetricTranscriptSource,
   deadline: MetricCollectionDeadline,
   consume: (line: string) => void,
 ): Promise<void> {
   deadline.beginUnit(`transcript ${source.file}`)
-  const stream = source.open()
-  const lines = createInterface({ input: stream, crlfDelay: Infinity })
-  const abort = () => {
-    lines.close()
-    stream.destroy()
-  }
-  deadline.signal.addEventListener('abort', abort, { once: true })
   try {
-    for await (const line of lines) {
-      deadline.checkpoint()
-      consume(line)
-      deadline.checkpoint()
-    }
+    await readSourceLines(source, consume, {
+      signal: deadline.signal,
+      beforeLine: () => deadline.checkpoint(),
+      afterLine: () => deadline.checkpoint(),
+    })
     deadline.checkpoint()
   } finally {
-    deadline.signal.removeEventListener('abort', abort)
-    lines.close()
-    await releaseStream(stream)
     deadline.endUnit()
   }
 }

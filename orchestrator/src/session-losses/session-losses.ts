@@ -2,6 +2,8 @@
 /** Pure compaction-loss policy over transcript rows and lifecycle facts. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { PLATFORM_COMMAND_WORDS } from '../../../shared/command-spellings.ts'
+import { BOARD_CLAIM_TOOL_NAMES } from '../mcp/mcp-board-claim-tools.ts'
 import { type ClaudeUsage, claudeUsage } from '../metric/transcript-reader.ts'
 
 const LOSS_JUDGE_WINDOW_TURNS = 8
@@ -58,8 +60,8 @@ type CandidateFile = {
 }
 type BoundaryLoss = {
   at: string
-  preTokens: number
-  postTokens: number
+  preTokens: number | null
+  postTokens: number | null
   trigger: string
   before: WindowStats
   after: WindowStats
@@ -81,9 +83,33 @@ export type SessionLossReport = {
   boundaries: BoundaryLoss[]
 }
 
-const timeOf = (row: TranscriptRow) => Date.parse(row.timestamp ?? '')
-const hasTime = (row: TranscriptRow): row is TranscriptRow & { timestamp: string } =>
-  Number.isFinite(timeOf(row))
+export const transcriptRowTime = (row: TranscriptRow) => Date.parse(row.timestamp ?? '')
+export const hasTranscriptRowTime = (
+  row: TranscriptRow,
+): row is TranscriptRow & { timestamp: string } => Number.isFinite(transcriptRowTime(row))
+
+function declaredCommandPattern(commands: string[]): RegExp {
+  const declared = commands.map((command) => {
+    if (!(PLATFORM_COMMAND_WORDS as readonly string[]).includes(command))
+      throw new Error(`session-loss command spelling is not declared: ${command}`)
+    return command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replaceAll(' ', String.raw`\s+`)
+  })
+  return new RegExp(String.raw`(?:${PLATFORM_SLUG}\s+)?(?:${declared.join('|')})\b`)
+}
+
+const runCollectionCommand = declaredCommandPattern([
+  'run result',
+  'run wait',
+  'run continue',
+  'score',
+])
+const claimCommand = declaredCommandPattern([
+  'board claim renew',
+  'board claim release',
+  'board claim take',
+])
+const workflowAwaitCommand = declaredCommandPattern(['workflow await'])
+const claimMutationTools = new Set<string>(BOARD_CLAIM_TOOL_NAMES.slice(0, 3))
 
 function textOf(content: unknown): string {
   if (typeof content === 'string') return content
@@ -158,11 +184,8 @@ function toolText(row: TranscriptRow): string {
 
 function namesRun(row: TranscriptRow, run: RunLifecycle): boolean {
   const text = toolText(row)
-  const command = new RegExp(
-    String.raw`(?:${PLATFORM_SLUG}\s+)?(?:run\s+(?:result|wait|continue)|score)\b`,
-  )
   return (
-    command.test(text) &&
+    runCollectionCommand.test(text) &&
     (text.includes(run.id) || new RegExp(`(?:^|\\D)${run.number}(?:\\D|$)`).test(text))
   )
 }
@@ -174,12 +197,9 @@ function namesRun(row: TranscriptRow, run: RunLifecycle): boolean {
  * mutable renewed_at is never historical evidence.
  */
 function handlesClaim(row: TranscriptRow, claim: ClaimLifecycle): boolean {
-  const cliAction = new RegExp(
-    String.raw`(?:${PLATFORM_SLUG}\s+)?board\s+claim\s+(?:renew|release|take)\b`,
-  )
   return toolsOf(row).some((tool) => {
     const text = `${tool.name} ${JSON.stringify(tool.input)}`
-    const action = cliAction.test(text) || /board_claim_(?:renew|release|take)\b/.test(text)
+    const action = claimCommand.test(text) || claimMutationTools.has(tool.name)
     return action && (text.includes(claim.subject) || text.includes(claim.id))
   })
 }
@@ -195,7 +215,9 @@ function lostItems(
   rows: TranscriptRow[],
   facts: LifecycleFacts,
 ): BoundaryLoss['lost'] {
-  const windowRows = rows.filter((row) => timeOf(row) > boundary && timeOf(row) <= windowEnd)
+  const windowRows = rows.filter(
+    (row) => transcriptRowTime(row) > boundary && transcriptRowTime(row) <= windowEnd,
+  )
   const runs = facts.runs.filter((run) => {
     const terminal = run.terminalAt ? Date.parse(run.terminalAt) : null
     if (Date.parse(run.startedAt) > boundary || (terminal !== null && terminal <= boundary))
@@ -204,7 +226,7 @@ function lostItems(
       windowEnd,
       terminal === null ? Number.POSITIVE_INFINITY : terminal + facts.unjudgedOwnerWindowMs,
     )
-    return !windowRows.some((row) => timeOf(row) <= end && namesRun(row, run))
+    return !windowRows.some((row) => transcriptRowTime(row) <= end && namesRun(row, run))
   })
   const cursors = facts.cursors.filter((cursor) => {
     const terminal = cursor.terminalAt ? Date.parse(cursor.terminalAt) : null
@@ -230,7 +252,7 @@ function lostItems(
 
 function awaitQuestion(input: unknown): string | null {
   const text = typeof input === 'string' ? input : JSON.stringify(input)
-  if (!new RegExp(String.raw`(?:${PLATFORM_SLUG}\s+)?workflow\s+await\b`).test(text)) return null
+  if (!workflowAwaitCommand.test(text)) return null
   return text.match(/--question(?:=|\s+)["']([^"']+)["']/)?.[1] ?? text
 }
 
@@ -283,13 +305,15 @@ export function measureSessionLosses(
   inputRows: TranscriptRow[],
   facts: LifecycleFacts,
 ): SessionLossReport | null {
-  const rows = inputRows.filter(hasTime).sort((left, right) => timeOf(left) - timeOf(right))
+  const rows = inputRows
+    .filter(hasTranscriptRowTime)
+    .sort((left, right) => transcriptRowTime(left) - transcriptRowTime(right))
   if (!rows.length) return null
   const indexes = rows.flatMap((row, index) =>
     row.type === 'system' && row.subtype === 'compact_boundary' ? [index] : [],
   )
-  const first = timeOf(rows[0]!)
-  const last = timeOf(rows.at(-1)!)
+  const first = transcriptRowTime(rows[0]!)
+  const last = transcriptRowTime(rows.at(-1)!)
   const wallHours = Math.max((last - first) / 3_600_000, 0)
   const tokens = tokenSplit(rows)
   const perHour = (value: number) => (wallHours === 0 ? 0 : value / wallHours)
@@ -302,14 +326,14 @@ export function measureSessionLosses(
     const metadata = boundary.compactMetadata ?? {}
     return {
       at: boundary.timestamp!,
-      preTokens: metadata.preTokens ?? 0,
-      postTokens: metadata.postTokens ?? 0,
+      preTokens: metadata.preTokens ?? null,
+      postTokens: metadata.postTokens ?? null,
       trigger: metadata.trigger ?? 'unknown',
       before: windowStats(beforeRows),
       after: windowStats(afterRows),
       lost: lostItems(
-        timeOf(boundary),
-        next < rows.length ? timeOf(rows[next]!) : last,
+        transcriptRowTime(boundary),
+        next < rows.length ? transcriptRowTime(rows[next]!) : last,
         rows,
         facts,
       ),

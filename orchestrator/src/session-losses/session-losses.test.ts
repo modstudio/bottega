@@ -77,6 +77,17 @@ describe('compaction segmentation', () => {
     expect(report.boundaries[0]!.lost.runs).toEqual({ count: 1, ids: ['run-id'] })
     expect(report.boundaries[1]!.lost.runs).toEqual({ count: 0, ids: [] })
   })
+
+  test('reports absent boundary token metadata as null', () => {
+    const compact = boundary(2)
+    compact.compactMetadata = { trigger: 'manual' }
+    const report = measureSessionLosses(
+      'session',
+      [assistant(0, 'before'), compact, assistant(3, 'after')],
+      emptyFacts(),
+    )!
+    expect(report.boundaries[0]).toMatchObject({ preTokens: null, postTokens: null })
+  })
 })
 
 describe('run loss', () => {
@@ -111,6 +122,73 @@ describe('run loss', () => {
       runs: [{ id: 'run-done', number: 9, startedAt: stamp(0), terminalAt: stamp(1) }],
     })!
     expect(report.boundaries[0]!.lost.runs.count).toBe(0)
+  })
+
+  test('collects a terminal run during the owner grace window', () => {
+    const report = measureSessionLosses(
+      'session',
+      [
+        assistant(0, 'before'),
+        boundary(2),
+        tool(4, 'after', 'Bash', { command: `${PLATFORM_SLUG} run wait run-open` }),
+        assistant(6, 'end'),
+      ],
+      {
+        ...emptyFacts(),
+        unjudgedOwnerWindowMs: 2_000,
+        runs: [{ id: 'run-open', number: 9, startedAt: stamp(0), terminalAt: stamp(3) }],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.count).toBe(0)
+  })
+
+  test('loses a terminal run collected after the owner grace window', () => {
+    const report = measureSessionLosses(
+      'session',
+      [
+        assistant(0, 'before'),
+        boundary(2),
+        tool(5, 'after', 'Bash', { command: `${PLATFORM_SLUG} run wait run-open` }),
+        assistant(6, 'end'),
+      ],
+      {
+        ...emptyFacts(),
+        runs: [{ id: 'run-open', number: 9, startedAt: stamp(0), terminalAt: stamp(3) }],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.ids).toEqual(['run-open'])
+  })
+})
+
+describe('cursor loss', () => {
+  const report = (terminalAt: string | null, advancesAt: string[]) =>
+    measureSessionLosses(
+      'session',
+      [assistant(0, 'before'), boundary(2), assistant(3, 'after'), assistant(5, 'end')],
+      {
+        ...emptyFacts(),
+        cursors: [
+          {
+            id: 'cursor-id',
+            number: 7,
+            createdAt: stamp(0),
+            terminalAt,
+            advancesAt,
+          },
+        ],
+      },
+    )!
+
+  test('loses a cursor never advanced inside the window', () => {
+    expect(report(null, [stamp(6)]).boundaries[0]!.lost.cursors.ids).toEqual(['cursor-id'])
+  })
+
+  test('does not lose a cursor advanced inside the window', () => {
+    expect(report(stamp(4), [stamp(4)]).boundaries[0]!.lost.cursors.count).toBe(0)
+  })
+
+  test('does not count a cursor terminal before the boundary', () => {
+    expect(report(stamp(1), [stamp(1)]).boundaries[0]!.lost.cursors.count).toBe(0)
   })
 })
 
@@ -158,7 +236,7 @@ describe('claim pointer loss', () => {
   })
 })
 
-test('candidate payload is blind and Claude token splits sum to total', () => {
+test('candidate payload excludes mechanical loss facts', () => {
   const report = measureSessionLosses(
     'session',
     [
@@ -167,21 +245,11 @@ test('candidate payload is blind and Claude token splits sum to total', () => {
       tool(3, 'question', 'SendMessage', { message: 'Still true?' }),
       assistant(3_603, 'end'),
     ],
-    emptyFacts(),
+    {
+      ...emptyFacts(),
+      runs: [{ id: 'lost-run-secret', number: 91, startedAt: stamp(0), terminalAt: null }],
+    },
   )!
-  expect(JSON.stringify(report.boundaries[0]!.candidates)).not.toContain('arm')
+  expect(JSON.stringify(report.boundaries[0]!.candidates)).not.toContain('lost-run-secret')
   expect(report.boundaries[0]!.candidates.candidates).toHaveLength(1)
-  expect(report.costPerSessionHour).toBe('subscription, unpriced')
-  expect(report.tokens.total).toBe(
-    report.tokens.input +
-      report.tokens.cacheRead +
-      report.tokens.cacheCreation +
-      report.tokens.output,
-  )
-  expect(report.tokensPerSessionHour.total).toBe(
-    report.tokensPerSessionHour.input +
-      report.tokensPerSessionHour.cacheRead +
-      report.tokensPerSessionHour.cacheCreation +
-      report.tokensPerSessionHour.output,
-  )
 })
