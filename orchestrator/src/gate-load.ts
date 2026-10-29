@@ -48,7 +48,7 @@ export const HOST_LOAD_RESERVATION_MS = 60_000
 export const HOST_SLOT_HELD_ENV = 'BOTTEGA_HOST_SLOT_HELD'
 const FREE_MEM_FLOOR_BYTES = 1024 * 1024 * 1024
 const GATE_HOLD_POLL_MS = 250
-const CAPACITY_SAMPLE_MIN_WINDOW_MS = 250
+export const CAPACITY_SAMPLE_MIN_WINDOW_MS = 250
 const CAPACITY_RATE_MAX_AGE_MS = 5_000
 const MEMORY_PRESSURE_READ_TIMEOUT_MS = 100
 const MEBIBYTE_BYTES = 1024 * 1024
@@ -383,6 +383,7 @@ export function decideHostCapacityAdmission(input: {
   loadavg: number
   cpuBusy: number | null
   ncpu: number
+  /** CPU cores reserved by work admitted before it appears in the measured load. */
   recentAdmissions: number
   freeMem: number
   pressure: MemoryPressure
