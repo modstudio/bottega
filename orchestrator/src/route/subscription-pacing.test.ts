@@ -77,7 +77,7 @@ test('no current reading and no calibration holds every paced job', () => {
   expect(decideSubscriptionPacing(input({ reading: null }))?.estimatePercent).toBeNull()
 })
 
-test('a malformed reset cannot make the refusal formatter throw', () => {
+test('a calibration with an out-of-range reset is treated as no calibration', () => {
   expect(
     decideSubscriptionPacing(
       input({
@@ -86,5 +86,5 @@ test('a malformed reset cannot make the refusal formatter throw', () => {
         calibration: { tokensPerPercent: 1, windowMinutes: WINDOW_MINUTES, resetsAt: 1e20 },
       }),
     )?.refusal,
-  ).toContain('resets at an unknown time')
+  ).toContain('no reading in the current window and no calibration')
 })

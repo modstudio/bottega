@@ -5,7 +5,7 @@ import { QUOTA_MIN_WINDOW_PERCENT } from '../run/run-subscription-cost.ts'
 import type { QuotaPacingCalibration, QuotaPacingReading } from './subscription-pacing.ts'
 
 /** Recent quota windows searched per harness for the latest usable calibration. */
-const SUBSCRIPTION_PACING_WINDOW_LIMIT = 8
+export const SUBSCRIPTION_PACING_WINDOW_LIMIT = 8
 
 export const SUBSCRIPTION_PACING_FACTS_SQL = `
   WITH paced(harness) AS (SELECT value FROM json_each(?)),

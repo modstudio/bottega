@@ -56,7 +56,10 @@ export const DEFAULT_ROUTE_COST_POLICY: RouteCostPolicy = {
   },
 }
 
-/** Static lens classification shared by cost policy and operational pacing. */
+/**
+ * Classifies from the shipped DEFAULT_ROUTE_COST_POLICY lens list and deliberately
+ * ignores routing.cost_policy overrides, so candidate routing never parses machine config.
+ */
 export function isHighStakesLens(lens: string | null): boolean {
   return Boolean(lens && DEFAULT_ROUTE_COST_POLICY.lensTiers['high-stakes'].lenses.includes(lens))
 }

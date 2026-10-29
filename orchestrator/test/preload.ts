@@ -214,7 +214,7 @@ copyFileSync(template, store)
                substr(lower(hex(randomblob(2))),2) || '-' ||
                substr('89ab',abs(random()) % 4 + 1,1) || substr(lower(hex(randomblob(2))),2) || '-' ||
                lower(hex(randomblob(6))),
-               0,?,?,?,?,?,?,'stale',1000,1,0,0,0,?,?,'external',1)`,
+               0,?,?,?,?,?,?,'ok',1000,1,0,0,0,?,?,'external',1)`,
     )
     .run(
       new Date(now - 86_400_000).toISOString(),

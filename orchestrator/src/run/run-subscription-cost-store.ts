@@ -9,7 +9,7 @@ import {
   subscriptionMonthTokenKey,
 } from './run-subscription-cost.ts'
 
-/** Shared quota-window aggregation used by pricing and subscription pacing. */
+/** Pricing's complete quota-window aggregation. */
 export const SUBSCRIPTION_QUOTA_WINDOWS_SQL = `
   SELECT a.harness AS harness, r.quota_resets_at AS resetsAt,
          MAX(r.quota_window_minutes) AS windowMinutes,

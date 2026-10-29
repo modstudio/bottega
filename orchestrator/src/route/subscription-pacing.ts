@@ -1,6 +1,8 @@
 // concern: route subscription pacing
 /** Pure pacing policy for quota-bound subscription agents. */
 
+import { usableQuotaReset } from '../transport/codex-quota.ts'
+
 export const PACE_HEADROOM_PERCENT = 5
 
 export type QuotaPacingReading = {
@@ -43,7 +45,7 @@ function currentReading(
     reading.usedPercentEnd > 100 ||
     !Number.isFinite(reading.windowMinutes) ||
     reading.windowMinutes <= 0 ||
-    !Number.isFinite(reading.resetsAt)
+    !usableQuotaReset(reading.resetsAt)
   )
     return null
   const startsAt = reading.resetsAt - reading.windowMinutes * 60
@@ -60,11 +62,7 @@ function percent(value: number): string {
 }
 
 function resetTimestamp(resetsAt: number): string {
-  try {
-    return new Date(resetsAt * 1000).toISOString()
-  } catch {
-    return 'at an unknown time'
-  }
+  return new Date(resetsAt * 1000).toISOString()
 }
 
 /** Repository-writing work always has first claim on a subscription allowance. */
@@ -85,7 +83,7 @@ export function decideSubscriptionPacing(
     input.calibration.tokensPerPercent > 0 &&
     Number.isFinite(input.calibration.windowMinutes) &&
     input.calibration.windowMinutes > 0 &&
-    Number.isFinite(input.calibration.resetsAt)
+    usableQuotaReset(input.calibration.resetsAt)
       ? input.calibration
       : null
   const headroomPercent = input.highStakesLens ? 0 : PACE_HEADROOM_PERCENT
