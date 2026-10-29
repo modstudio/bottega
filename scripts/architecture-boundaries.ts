@@ -960,6 +960,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../git/git-environment.ts',
       './merged-pull-request.ts',
       '../project/projects.ts',
+      '../resources/resource-claims.ts',
       '../review/review-evidence-sql.ts',
       './branch-state.ts',
       './branch-trunk-tip.ts',

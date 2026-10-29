@@ -10,11 +10,14 @@ import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
 import {
   resolveTaskBranch,
+  resolveTaskBranchCandidates,
+  selectContinuedTaskBranch,
   type TaskBranchLandingRefusal,
   TaskBranchLandingRefusalError,
+  taskBranchCandidateNotice,
   taskBranchReuseNotice,
 } from '../branch/task-branch.ts'
-import { resolveCompatibleTaskBranch } from '../branch/task-branch-reuse.ts'
+import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
@@ -335,12 +338,25 @@ function warnTaskBranchBypass(
 function resolveTaskBranchForDispatch(
   cwd: string,
   key: string,
-  reportReuse: boolean,
+  branch: string | undefined,
+  report: boolean,
   error: (...values: unknown[]) => void,
 ): ReturnType<typeof resolveTaskBranch> {
-  const candidate = resolveCompatibleTaskBranch(cwd, key, sessionId())
-  if (candidate && reportReuse) error(taskBranchReuseNotice(candidate))
-  return candidate
+  const candidates = resolveTaskBranchCandidates(cwd, key)
+  if (!branch) {
+    const notice = taskBranchCandidateNotice(candidates)
+    if (notice && report) error(notice)
+    return null
+  }
+  const candidate = selectContinuedTaskBranch(candidates, key, branch)
+  const compatible = compatibleTaskBranch(cwd, candidate)
+  if (!compatible) {
+    throw new Error(
+      `refusing --continue ${branch}: its tip is already contained by the caller checkout`,
+    )
+  }
+  if (report) error(taskBranchReuseNotice(compatible))
+  return compatible
 }
 
 const scoreSuffix = (jobName: string) =>
@@ -588,8 +604,8 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       warnCallerDrift: (cwd, base) => warnCallerDrift(cwd, base, presentation.error),
       warnTaskBranchBypass: (cwd, key, base) =>
         warnTaskBranchBypass(cwd, key, base, presentation.error),
-      resolveTaskBranchForDispatch: (cwd, key, reportReuse) =>
-        resolveTaskBranchForDispatch(cwd, key, reportReuse, presentation.error),
+      resolveTaskBranchForDispatch: (cwd, key, branch, report) =>
+        resolveTaskBranchForDispatch(cwd, key, branch, report, presentation.error),
       contractConflicts,
       warnImplementContractConflicts: (conflicts, id) => {
         if (!conflicts.length) return

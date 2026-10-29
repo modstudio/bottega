@@ -28,6 +28,12 @@ export const ORCH_DO_OPTIONS = [
     description: 'use this revision as the writing run base',
   },
   {
+    flags: '--continue <value>',
+    name: 'continue',
+    value: 'required',
+    description: 'continue an existing task branch',
+  },
+  {
     flags: '--review <value>',
     name: 'review',
     value: 'required',

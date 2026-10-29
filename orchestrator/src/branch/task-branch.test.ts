@@ -2,8 +2,9 @@ import { afterEach, describe, expect, mock, spyOn, test } from 'bun:test'
 import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
-import { db } from '../database/db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { claimTreePlanForCandidate } from '../run/run-claim-plan.ts'
 import {
   GH_TARGETED_MERGED_PR_LIMIT,
@@ -16,11 +17,13 @@ import {
   decideTaskBranchPullRequestCheck,
   isTaskBranchSuperseded,
   resolveTaskBranch,
+  selectContinuedTaskBranch,
   selectMaximalTaskBranchCandidates,
   type TaskBranchCandidate,
   type TaskBranchRunRow,
   taskBranchAmbiguityRefusal,
   taskBranchCandidacySql,
+  taskBranchCandidateNotice,
   taskBranchContainedTips,
   taskBranchLandingRefusalMessage,
   taskBranchLandingTreeRefusal,
@@ -30,6 +33,36 @@ import {
 afterEach(() => {
   mock.restore()
   rmSync(join(dir, 'landing-tree-owner-repo'), { recursive: true, force: true })
+})
+
+test('task branch candidate notice lists continuation commands for every candidate', () => {
+  const candidate = (branch: string, tip: string): TaskBranchCandidate => ({
+    branch,
+    tip,
+    commitCount: 1,
+    mergeBase: 'base',
+    projectId: 'project-1',
+    projectName: 'project',
+    nominatingRuns: [],
+    trunk: 'main',
+    worktree: null,
+    worktreeOwnerJob: null,
+  })
+  expect(taskBranchCandidateNotice([])).toBeNull()
+  const notice = taskBranchCandidateNotice([
+    candidate('DEV-1843-a', 'tip-a'),
+    candidate('DEV-1843-b', 'tip-b'),
+  ])
+  expect(notice).toContain('DEV-1843-a')
+  expect(notice).toContain('--continue DEV-1843-a')
+  expect(notice).toContain('DEV-1843-b')
+  expect(notice).toContain('--continue DEV-1843-b')
+})
+
+test('explicit continuation refuses a branch outside the task candidates', () => {
+  expect(() => selectContinuedTaskBranch([], 'DEV-1843', 'DEV-9999-other')).toThrow(
+    'DEV-9999-other: it is not a live, unlanded branch for task DEV-1843',
+  )
 })
 
 function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
@@ -69,11 +102,18 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
   const landing = addRun({ agent: 'codex', job: 'landing-tree', status: 'running' })
   db()
     .query(
-      `UPDATE run SET worktree=?,project_record_id=?,
+      `UPDATE run SET project_record_id=?,
        evidence_excluded='landing tree lifecycle row; not agent execution'
       WHERE record_id=?`,
     )
-    .run(landingTree, projectId, landing)
+    .run(projectId, landing)
+  db()
+    .query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,kind,allocation_key,state,claimed_at)
+       VALUES (?,?,?,?,?,'claimed',?)`,
+    )
+    .run(newRecordId(), landing, landing, 'worktree', landingTree, nowIso())
   const newerTerminalOwner = addRun({ agent: 'codex', job: 'implement', status: 'stale' })
   db()
     .query(
@@ -81,7 +121,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
        evidence_excluded='superseded fixture owner'
       WHERE record_id=?`,
     )
-    .run(landingTree, projectId, newerTerminalOwner)
+    .run(null, projectId, newerTerminalOwner)
 
   const originalSpawnSync = Bun.spawnSync
   spyOn(Bun, 'spawnSync').mockImplementation(((argv: string[], options?: object) => {
@@ -144,7 +184,7 @@ test('an evidence-excluded landing-tree owner refuses dispatch planning', () => 
       refusalMessage: taskBranchLandingTreeRefusal,
     }),
   ).toThrow(
-    `refusing task branch DEV-1398-orch-14461: it is checked out in architect landing tree ${landingTree}.`,
+    `refusing task branch DEV-1398-orch-14461: it is checked out in architect-owned landing-tree tree ${landingTree}.`,
   )
 })
 

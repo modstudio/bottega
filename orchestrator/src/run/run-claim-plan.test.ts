@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { taskBranchLandingTreeRefusal } from '../branch/task-branch.ts'
 import {
   claimedRunBranch,
@@ -103,30 +102,32 @@ describe('claim tree plan', () => {
     expect(decideClaimTreePlan(facts)).toEqual(expected)
   })
 
-  test('a candidate in an architect landing tree is refused with both remedies', () => {
-    const ruling = decideClaimTreePlan({
-      ...defaultFacts,
-      repoJob: true,
-      resolvedTaskWorktree: {
+  test.each(['hook-tree', 'landing-tree', 'canon-mirror', 'issue-before-tree'])(
+    'a candidate in architect lifecycle tree %s is refused',
+    (ownerJob) => {
+      const ruling = decideClaimTreePlan({
+        ...defaultFacts,
+        repoJob: true,
+        resolvedTaskWorktree: {
+          path: '/tmp/DEV-1398-landing',
+          branch: 'DEV-1398-writer',
+          ownerJob,
+          freshBase: 'main',
+        },
+      })
+      expect(ruling).toEqual({
+        mode: 'refuse',
         path: '/tmp/DEV-1398-landing',
         branch: 'DEV-1398-writer',
-        ownerJob: 'landing-tree',
         freshBase: 'main',
-      },
-    })
-    expect(ruling).toEqual({
-      mode: 'refuse',
-      path: '/tmp/DEV-1398-landing',
-      branch: 'DEV-1398-writer',
-      freshBase: 'main',
-    })
-    if (ruling.mode !== 'refuse') throw new Error('expected a landing-tree refusal')
-    expect(taskBranchLandingTreeRefusal(ruling)).toBe(
-      'refusing task branch DEV-1398-writer: it is checked out in architect landing tree /tmp/DEV-1398-landing.\n' +
-        `cleared by: ${PLATFORM_SLUG} tree remove /tmp/DEV-1398-landing, then dispatch again; ` +
-        'or dispatch again with --base main to start a fresh branch',
-    )
-  })
+        ownerJob,
+      })
+      if (ruling.mode !== 'refuse') throw new Error('expected a lifecycle-tree refusal')
+      expect(taskBranchLandingTreeRefusal(ruling)).toContain(`architect-owned ${ownerJob} tree`)
+      expect(taskBranchLandingTreeRefusal(ruling)).toContain('start from trunk with --base main')
+      expect(taskBranchLandingTreeRefusal(ruling)).toContain('land through that tree')
+    },
+  )
 })
 
 describe('task branch resolution eligibility', () => {
@@ -137,6 +138,7 @@ describe('task branch resolution eligibility', () => {
     taskKey: 'DEV-831',
     isResume: false,
     hasExplicitBase: false,
+    taskBranchSupplied: true,
   }
 
   test.each([
@@ -148,12 +150,19 @@ describe('task branch resolution eligibility', () => {
       name: 'has an explicit base and is not resuming',
       input: { ...eligible, hasExplicitBase: true },
     },
+    {
+      name: 'has no explicitly supplied task branch and is not resuming',
+      input: { ...eligible, taskBranchSupplied: false, isResume: false },
+    },
   ])('returns false when $name', ({ input }) => {
     expect(shouldResolveTaskBranch(input)).toBe(false)
   })
 
   test('returns true for an eligible launch and for a resume with an explicit base', () => {
     expect(shouldResolveTaskBranch(eligible)).toBe(true)
+    expect(
+      shouldResolveTaskBranch({ ...eligible, taskBranchSupplied: false, isResume: true }),
+    ).toBe(true)
     expect(shouldResolveTaskBranch({ ...eligible, isResume: true, hasExplicitBase: true })).toBe(
       true,
     )

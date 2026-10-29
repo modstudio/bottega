@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { leftoverRemedy, worktreeCreateVariables } from './worktree-create.ts'
+import {
+  commandCreatedBranchMatches,
+  leftoverRemedy,
+  worktreeCreateVariables,
+} from './worktree-create.ts'
 
 describe('worktreeCreateVariables', () => {
   test('uses the default branch template and derives the worktree name', () => {
@@ -76,5 +80,54 @@ describe('leftoverRemedy', () => {
 
     expect(message).toContain('The project created branch DEV-736-orch-42')
     expect(message).toContain('  (project declares no remove command)')
+  })
+
+  test('never fills a continued branch into a branch-removing command', () => {
+    const message = leftoverRemedy(
+      'bin/remove {branch} {path}',
+      { ...vars, branch: 'DEV-1843-existing' },
+      '/tmp/orch-42',
+      'DEV-1843-existing',
+    )
+
+    expect(message).toContain('existing branch DEV-1843-existing')
+    expect(message).toContain('must be kept')
+    expect(message).not.toContain("bin/remove 'DEV-1843-existing'")
+  })
+
+  test('fills the observed branch into a continued-create removal command', () => {
+    const message = leftoverRemedy(
+      'bin/remove {branch} {path}',
+      { ...vars, branch: 'DEV-1843-existing' },
+      '/tmp/orch-42',
+      'DEV-1843-existing',
+      'unexpected-branch',
+    )
+
+    expect(message).toContain("bin/remove 'unexpected-branch' '/tmp/orch-42'")
+    expect(message).not.toContain("bin/remove 'DEV-1843-existing'")
+  })
+
+  test('does not fill a branch-removing command for a detached continued create', () => {
+    const message = leftoverRemedy(
+      'bin/remove {branch} {path}',
+      { ...vars, branch: 'DEV-1843-existing' },
+      '/tmp/orch-42',
+      'DEV-1843-existing',
+      null,
+    )
+
+    expect(message).toContain('tree is detached and must be inspected first')
+    expect(message).not.toContain('bin/remove')
+  })
+})
+
+describe('command-created existing branch postcondition', () => {
+  test('accepts only the requested symbolic branch for an attached create', () => {
+    expect(
+      commandCreatedBranchMatches('DEV-1843-existing', false, 'refs/heads/DEV-1843-existing'),
+    ).toBe(true)
+    expect(commandCreatedBranchMatches('DEV-1843-existing', false, 'refs/heads/other')).toBe(false)
+    expect(commandCreatedBranchMatches('DEV-1843-existing', false, null)).toBe(false)
   })
 })

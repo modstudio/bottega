@@ -5,6 +5,7 @@
  */
 
 import type { ResumeCreationLifecycle } from './resume-tree.ts'
+import { isSyntheticLifecycleJob } from './synthetic-lifecycle-job.ts'
 
 export type ClaimTreePlanFacts = {
   resolvedTaskWorktree: {
@@ -20,7 +21,7 @@ export type ClaimTreePlanFacts = {
 
 export type ClaimTreePlanRuling =
   | { mode: 'attach' }
-  | { mode: 'refuse'; path: string; branch: string; freshBase: string }
+  | { mode: 'refuse'; path: string; branch: string; freshBase: string; ownerJob: string }
   | { mode: 'isolate' }
   | { mode: 'create' }
   | { mode: 'caller' }
@@ -51,12 +52,16 @@ export function claimedRunBranch(
 
 /** Decide the claimed run's working-tree mode before performing any effects. */
 export function decideClaimTreePlan(facts: ClaimTreePlanFacts): ClaimTreePlanRuling {
-  if (facts.resolvedTaskWorktree?.ownerJob === 'landing-tree') {
+  if (
+    facts.resolvedTaskWorktree?.ownerJob &&
+    isSyntheticLifecycleJob(facts.resolvedTaskWorktree.ownerJob)
+  ) {
     return {
       mode: 'refuse',
       path: facts.resolvedTaskWorktree.path,
       branch: facts.resolvedTaskWorktree.branch,
       freshBase: facts.resolvedTaskWorktree.freshBase,
+      ownerJob: facts.resolvedTaskWorktree.ownerJob,
     }
   }
   if (facts.resolvedTaskWorktree) return { mode: 'attach' }
@@ -122,8 +127,10 @@ export function shouldResolveTaskBranch(input: {
   taskKey: string | null
   isResume: boolean
   hasExplicitBase: boolean
+  taskBranchSupplied: boolean
 }): boolean {
   return (
+    (input.taskBranchSupplied || input.isResume) &&
     input.repoJob &&
     input.writesJob &&
     !input.hasWorktree &&

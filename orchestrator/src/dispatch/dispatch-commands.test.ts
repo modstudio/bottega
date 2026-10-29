@@ -6,6 +6,7 @@ import {
   lensDispatchNotices,
   reviewMemoryBranch,
   reviewRoleForDispatch,
+  validateContinueBranchOptions,
 } from './dispatch-commands.ts'
 
 test('findings dispatch leaves the default role to run dispatch unless explicitly supplementary', () => {
@@ -40,4 +41,16 @@ test('unknown catalogue lens notice is omitted for the free-form inline job', ()
 test('explicit --review target keys memory independently of the caller checkout branch', () => {
   expect(reviewMemoryBranch('main', 'DEV-1373-target')).toBe('DEV-1373-target')
   expect(reviewMemoryBranch('DEV-1373-caller', null)).toBe('DEV-1373-caller')
+})
+
+test('explicit branch continuation is limited to keyed implement and fix without base', () => {
+  expect(() =>
+    validateContinueBranchOptions('implement', 'DEV-1843-a', 'main', 'DEV-1843'),
+  ).toThrow('--continue cannot be combined with --base')
+  expect(() =>
+    validateContinueBranchOptions('review-lens', 'DEV-1843-a', undefined, 'DEV-1843'),
+  ).toThrow('--continue is only valid for the implement and fix jobs')
+  expect(() => validateContinueBranchOptions('fix', 'DEV-1843-a', undefined, undefined)).toThrow(
+    '--continue requires --key',
+  )
 })

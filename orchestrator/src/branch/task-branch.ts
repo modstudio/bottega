@@ -10,6 +10,7 @@ import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { checkedOutWorktree, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { projectAt, projects } from '../project/projects.ts'
+import { runsClaimingWorktreePath } from '../resources/resource-claims.ts'
 import { reviewRunEvidenceSql } from '../review/review-evidence-sql.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import type { TaskBranchNominatingRun } from '../run/run-types.ts'
@@ -51,11 +52,11 @@ export function taskBranchLandingTreeRefusal(refusal: {
   path: string
   branch: string
   freshBase: string
+  ownerJob: string
 }): string {
   return (
-    `refusing task branch ${refusal.branch}: it is checked out in architect landing tree ${refusal.path}.\n` +
-    `cleared by: ${PLATFORM_SLUG} tree remove ${refusal.path}, then dispatch again; ` +
-    `or dispatch again with --base ${refusal.freshBase} to start a fresh branch`
+    `refusing task branch ${refusal.branch}: it is checked out in architect-owned ${refusal.ownerJob} tree ${refusal.path}.\n` +
+    `cleared by: start from trunk with --base ${refusal.freshBase}, or land through that tree`
   )
 }
 
@@ -480,6 +481,7 @@ function resolvedTaskBranchWorktree(input: {
   const owner = owners.find(
     (row) => row.worktree && realpathOrSpelled(row.worktree) === realpathOrSpelled(input.path!),
   )
+  const claimOwner = owner ? null : runsClaimingWorktreePath(db(), input.path)[0]
   const source = owner?.worktree_source
   return {
     worktree: {
@@ -497,7 +499,7 @@ function resolvedTaskBranchWorktree(input: {
       // Null records that this run attached; it did not mint the task branch.
       mintedBranch: null,
     },
-    ownerJob: owner?.job ?? null,
+    ownerJob: owner?.job ?? claimOwner?.job ?? null,
   }
 }
 
@@ -537,7 +539,7 @@ export function taskBranchPatchEquivalent(input: {
   return cherry.split('\n').some((line) => line.startsWith('+ ')) ? null : 'squash'
 }
 
-export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCandidate | null {
+export function resolveTaskBranchCandidates(cwd: string, launchKey: string): TaskBranchCandidate[] {
   const repoRoot = repoRootOf(cwd)
   const project =
     projectAt(cwd) ??
@@ -546,7 +548,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
           (candidate) => realpathOrSpelled(candidate.path) === realpathOrSpelled(repoRoot),
         ) ?? null)
       : null)
-  if (!project || !repoRoot) return null
+  if (!project || !repoRoot) return []
   const rows = db()
     .query(
       `WITH candidate AS (SELECT run.*, run.record_id AS run_record_id FROM run)
@@ -562,7 +564,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       ORDER BY candidate.number`,
     )
     .all(launchKey, project.recordId) as ResolvedTaskBranchRunRow[]
-  if (rows.length === 0) return null
+  if (rows.length === 0) return []
 
   const trunk = project.settings.trunk?.trim()
   if (!trunk) {
@@ -630,7 +632,7 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
     })
   }
 
-  const maximal = selectMaximalTaskBranchCandidates(
+  return selectMaximalTaskBranchCandidates(
     candidates,
     launchKey,
     taskBranchContainedTips(
@@ -638,9 +640,13 @@ export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCan
       (ancestor, descendant) => taskBranchIsAncestor(repoRoot, ancestor, descendant),
     ),
   )
+}
+
+export function resolveTaskBranch(cwd: string, launchKey: string): TaskBranchCandidate | null {
+  const maximal = resolveTaskBranchCandidates(cwd, launchKey)
   if (maximal.length === 0) return null
   if (maximal.length === 1) return maximal[0]!
-  throw new Error(taskBranchAmbiguityRefusal(launchKey, trunk, maximal))
+  throw new Error(taskBranchAmbiguityRefusal(launchKey, maximal[0]!.trunk, maximal))
 }
 
 /** Compose the dispatch notice for deliberate reuse of an unlanded task branch. */
@@ -650,4 +656,31 @@ export function taskBranchReuseNotice(candidate: TaskBranchCandidate): string {
     `(runs ${candidate.nominatingRuns.map((run) => run.record_id).join(', ')}); ` +
     `use --base ${candidate.trunk} to start over`
   )
+}
+
+export function taskBranchCandidateNotice(
+  candidates: readonly TaskBranchCandidate[],
+): string | null {
+  if (candidates.length === 0) return null
+  return [
+    '! existing unlanded task branches:',
+    ...candidates.map(
+      (candidate) =>
+        `  ${candidate.branch} at tip ${candidate.tip}; --continue ${candidate.branch}`,
+    ),
+  ].join('\n')
+}
+
+export function selectContinuedTaskBranch(
+  candidates: readonly TaskBranchCandidate[],
+  key: string,
+  branch: string,
+): TaskBranchCandidate {
+  const candidate = candidates.find((item) => item.branch === branch)
+  if (!candidate) {
+    throw new Error(
+      `refusing --continue ${branch}: it is not a live, unlanded branch for task ${key}`,
+    )
+  }
+  return candidate
 }
