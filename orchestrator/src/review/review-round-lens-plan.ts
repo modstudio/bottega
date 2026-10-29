@@ -226,7 +226,7 @@ export function applicableRoundLensPlan(input: {
   fixPathsByLens: Readonly<Record<string, readonly string[]>>
 }): ReviewFunnelPlan {
   const newlyTouched =
-    input.postFix.kind === 're-lens'
+    input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
       ? newlyTouchedPathsByLens({
           relevant: input.relevant,
           facts: input.facts,
@@ -240,6 +240,8 @@ export function applicableRoundLensPlan(input: {
         Object.fromEntries(input.relevant.lenses.map((lens) => [lens, 'initial'])),
       )
     if (input.postFix.kind === 'no-round-needed')
+      return selectReviewApplicability(input.relevant, [])
+    if (input.postFix.kind === 'comparison-failed' && input.postFix.tierThreePaths.length === 0)
       return selectReviewApplicability(input.relevant, [])
     const touchedLenses = Object.keys(newlyTouched)
     const lenses = roundLensPlan({

@@ -40,7 +40,10 @@ export function roundApplicabilityForChange(input: {
   postFix: PostFixReviewDecision
   review: ReviewSettings | undefined
 }): ReviewFunnelPlan {
-  const fixPaths = input.postFix.kind === 're-lens' ? input.postFix.fixPaths : []
+  const fixPaths =
+    input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
+      ? input.postFix.fixPaths
+      : []
   const fixPathsByLens = lensesSelectingPaths(fixPaths, input.review)
   return applicableRoundLensPlan({
     relevant: input.relevant,
@@ -92,7 +95,9 @@ export function budgetedRoundApplicabilityForChange(
         facts,
         postFix: input.postFix,
         fixPathsByLens: lensesSelectingPaths(
-          input.postFix.kind === 're-lens' ? input.postFix.fixPaths : [],
+          input.postFix.kind === 're-lens' || input.postFix.kind === 'comparison-failed'
+            ? input.postFix.fixPaths
+            : [],
           input.review,
         ),
       })

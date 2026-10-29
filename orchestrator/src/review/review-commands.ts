@@ -236,6 +236,11 @@ function printReviewRoundStatus(
   output: ReturnType<typeof reviewTierOutput>,
   log: (...values: unknown[]) => void,
 ): void {
+  if (output.post_fix.kind === 'comparison-failed') {
+    log(
+      `completed review ${output.post_fix.reviewNumber} fix comparison failed: ${output.post_fix.error}; treating every current changed path as fixed`,
+    )
+  }
   if (
     !output.lenses.length &&
     !output.secondOpinion &&

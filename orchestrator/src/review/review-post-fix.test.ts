@@ -8,10 +8,156 @@ import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { serializePathSet } from './review-group.ts'
 import { measureChangeIdentity, pinRef } from './review-pins.ts'
 import {
+  fixFilesFromPatches,
   gatherPostFixReviewFacts,
   latestCompletedReview,
+  mapPatchPaths,
+  type PerPathPatch,
+  pathNeutralContentIdentity,
   postFixReviewDecision,
 } from './review-post-fix.ts'
+import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
+
+const patch = (path: string, patchId: string, insertions = 1, deletions = 0): PerPathPatch => ({
+  path,
+  patchId,
+  insertions,
+  deletions,
+})
+
+test('a squashed change attributes only the file whose patch changed', () => {
+  const reviewed = [patch('src/a.ts', 'a'), patch('src/b.ts', 'b')]
+  const current = [patch('src/a.ts', 'a'), patch('src/b.ts', 'b-fixed', 2, 1)]
+
+  expect(fixFilesFromPatches(reviewed, current)).toEqual([
+    { path: 'src/b.ts', insertions: 2, deletions: 1 },
+  ])
+})
+
+test('a file added by the fix is a fix file with current-change counts', () => {
+  expect(fixFilesFromPatches([], [patch('src/new.ts', 'new', 4, 0)])).toEqual([
+    { path: 'src/new.ts', insertions: 4, deletions: 0 },
+  ])
+})
+
+test('a file dropped from the change is a fix file with reviewed-change counts', () => {
+  expect(fixFilesFromPatches([patch('src/dropped.ts', 'old', 3, 1)], [])).toEqual([
+    { path: 'src/dropped.ts', insertions: 3, deletions: 1 },
+  ])
+})
+
+test('a reviewed path mapped through a trunk rename keeps the same patch', () => {
+  const reviewed = mapPatchPaths(
+    [patch('critical/reviewed.ts', 'unchanged-patch')],
+    new Map([['critical/reviewed.ts', 'critical/renamed.ts']]),
+  )
+
+  expect(fixFilesFromPatches(reviewed, [patch('critical/renamed.ts', 'unchanged-patch')])).toEqual(
+    [],
+  )
+})
+
+test('path-neutral content identity preserves whitespace and diff body lines', () => {
+  const whitespaceBefore = `diff --git a/src/a.ts b/src/a.ts
+index 1111111..2222222 100644
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1 @@
+-old
++changed
+`
+  const whitespaceAfter = whitespaceBefore.replace('+changed\n', '+changed \n')
+  const commentOne = `diff --git a/query.sql b/query.sql
+index 1111111..2222222 100644
+--- a/query.sql
++++ b/query.sql
+@@ -1 +0,0 @@
+--- comment one
+`
+  const commentTwo = commentOne.replace('comment one', 'comment two')
+
+  expect(pathNeutralContentIdentity(whitespaceBefore)).not.toBe(
+    pathNeutralContentIdentity(whitespaceAfter),
+  )
+  expect(pathNeutralContentIdentity(commentOne)).not.toBe(pathNeutralContentIdentity(commentTwo))
+})
+
+test('path-neutral content identity ignores paths and hunk line numbers', () => {
+  const first = `diff --git a/src/a.ts b/src/a.ts
+index 1111111..2222222 100644
+--- a/src/a.ts
++++ b/src/a.ts
+@@ -1 +1 @@
+-old
++changed
+`
+  const shiftedAndRenamed = `diff --git a/lib/renamed.ts b/lib/renamed.ts
+index aaaaaaa..bbbbbbb 100644
+--- a/lib/renamed.ts
++++ b/lib/renamed.ts
+@@ -101 +205 @@
+-old
++changed
+`
+
+  expect(pathNeutralContentIdentity(first)).toBe(pathNeutralContentIdentity(shiftedAndRenamed))
+})
+
+test('a mode-only section has a content identity distinct from no change', () => {
+  const modeOnly = `diff --git a/script.sh b/script.sh
+old mode 100644
+new mode 100755
+`
+  expect(pathNeutralContentIdentity(modeOnly)).not.toBe(pathNeutralContentIdentity(''))
+})
+
+test('a failed comparison selects a round from every current changed path', () => {
+  const postFix = postFixReviewDecision({
+    facts: {
+      completed: { number: 1, identity: 'review', launchKey: 'DEV-1644', runIds: [] },
+      reviewedTip: 'reviewed',
+      fixFiles: [
+        { path: 'critical/change.ts', insertions: 2, deletions: 1 },
+        { path: 'src/change.ts', insertions: 1, deletions: 0 },
+      ],
+      comparisonError: 'section count mismatch',
+    },
+    tier: 3,
+    review: {
+      lenses: [
+        { lens: 'safety', paths: ['critical/**'] },
+        { lens: 'craft', paths: ['src/**'] },
+      ],
+      risk: {
+        paths: [{ pattern: '^critical/', tier: 3, reason: 'critical surface' }],
+        unlisted: 2,
+      },
+    },
+  })
+
+  expect(postFix).toMatchObject({
+    kind: 'comparison-failed',
+    error: 'section count mismatch',
+    fixPaths: ['critical/change.ts', 'src/change.ts'],
+    tierThreePaths: ['critical/change.ts'],
+  })
+  expect(
+    applicableRoundLensPlan({
+      relevant: { lenses: ['safety', 'craft'] },
+      facts: {
+        reviewedPathsByLens: { safety: [], craft: [] },
+        completedLenses: ['safety', 'craft'],
+        satisfiedSecondOpinionLenses: [],
+        latestAcceptedOrModifiedLenses: [],
+      },
+      postFix,
+      fixPathsByLens: {
+        safety: ['critical/change.ts'],
+        craft: ['src/change.ts'],
+      },
+    }).round,
+  ).toMatchObject({ lenses: ['safety', 'craft'] })
+})
 
 const unidentifiedTipFacts = {
   completed: { number: 7, identity: null, launchKey: null, runIds: [] },
