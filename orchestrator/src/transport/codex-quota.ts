@@ -1,20 +1,8 @@
 // concern: codex-quota
 /** Parses quota readings from the Codex rollout text written by one turn. */
-import { EMPTY_QUOTA_READINGS, type QuotaReadings } from './quota-readings.ts'
+import { EMPTY_QUOTA_READINGS, type QuotaReadings, usableQuotaReset } from './quota-readings.ts'
 
 type PrimaryRateLimit = { usedPercent: number; windowMinutes: number; resetsAt: number }
-
-const MIN_SANE_RESET_SECONDS = 946_684_800 // 2000-01-01
-const MAX_SANE_RESET_SECONDS = 4_102_444_800 // 2100-01-01
-
-/** Quota resets outside this range are not usable by parsing or routing. */
-export function usableQuotaReset(resetsAt: number): boolean {
-  return (
-    Number.isFinite(resetsAt) &&
-    resetsAt >= MIN_SANE_RESET_SECONDS &&
-    resetsAt <= MAX_SANE_RESET_SECONDS
-  )
-}
 
 /** Harnesses whose transport persists quota readings on completed runs. */
 export function harnessCollectsQuotaReadings(harness: string | undefined): boolean {
@@ -32,12 +20,7 @@ function primaryRateLimit(value: unknown): PrimaryRateLimit | null {
   const windowMinutes = finiteNumber(row.window_minutes)
   const resetsAt = finiteNumber(row.resets_at)
   if (usedPercent === null || windowMinutes === null || resetsAt === null) return null
-  if (
-    usedPercent < 0 ||
-    usedPercent > 100 ||
-    windowMinutes <= 0 ||
-    !usableQuotaReset(resetsAt)
-  )
+  if (usedPercent < 0 || usedPercent > 100 || windowMinutes <= 0 || !usableQuotaReset(resetsAt))
     return null
   return { usedPercent, windowMinutes, resetsAt }
 }

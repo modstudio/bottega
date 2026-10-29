@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import {
-  subscriptionPacingFacts,
-  SUBSCRIPTION_PACING_WINDOW_LIMIT,
-} from './subscription-pacing-store.ts'
 import { decideSubscriptionPacing } from './subscription-pacing.ts'
+import {
+  SUBSCRIPTION_PACING_WINDOW_LIMIT,
+  subscriptionPacingFacts,
+} from './subscription-pacing-store.ts'
 
 test('pacing facts add post-reading tokens using the latest qualified calibration', () => {
   const now = Date.now()

@@ -1,7 +1,7 @@
 // concern: route subscription pacing
 /** Pure pacing policy for quota-bound subscription agents. */
 
-import { usableQuotaReset } from '../transport/codex-quota.ts'
+import { usableQuotaReset } from '../transport/quota-readings.ts'
 
 export const PACE_HEADROOM_PERCENT = 5
 

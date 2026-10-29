@@ -78,7 +78,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/route/subscription-pacing.ts',
-    allowed: [],
+    allowed: ['../transport/quota-readings.ts'],
   },
   {
     file: 'orchestrator/src/route/subscription-pacing-store.ts',
