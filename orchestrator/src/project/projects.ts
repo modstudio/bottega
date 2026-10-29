@@ -143,6 +143,48 @@ export function resolveBranchRef(value: string): {
   return { branch: row.branch, runId: recordId }
 }
 
+export type ReviewTipRunFact = {
+  branch: string | null
+  headCommit: string | null
+  launchKey: string | null
+}
+
+/** Most recent same-task branch whose run tip is the reviewed commit. */
+export function reviewBranchForCommit(
+  commit: string,
+  launchKey: string | null | undefined,
+  runsNewestFirst: readonly ReviewTipRunFact[],
+): string | null {
+  const task = launchKey?.trim().toUpperCase()
+  if (!task) return null
+  return (
+    runsNewestFirst.find(
+      (run) =>
+        run.branch && run.headCommit === commit && run.launchKey?.trim().toUpperCase() === task,
+    )?.branch ?? null
+  )
+}
+
+/** Adapt recorded same-project run tips into the pure review-target branch decision. */
+export function recordedReviewBranch(
+  projectRecordId: string,
+  commit: string,
+  launchKey: string | null | undefined,
+  database: Database = db(),
+): string | null {
+  const task = launchKey?.trim().toUpperCase()
+  if (!task) return null
+  const facts = database
+    .query<ReviewTipRunFact, [string, string, string]>(
+      `SELECT branch,head_commit AS headCommit,launch_key AS launchKey FROM run
+        WHERE project_record_id=? AND head_commit=? AND branch IS NOT NULL
+          AND upper(trim(launch_key))=?
+        ORDER BY number DESC LIMIT 1`,
+    )
+    .all(projectRecordId, commit, task)
+  return reviewBranchForCommit(commit, launchKey, facts)
+}
+
 /** Whether recorded facts prove that an absent tree has run-owned teardown. */
 export function absentTreeTeardownPlan(input: {
   recipeSnapshot: string | null

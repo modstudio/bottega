@@ -5,6 +5,7 @@ export type BranchMintFact = {
   mintedBranch: string
   launchBase: string | null
   launchKey: string | null
+  headCommit: string | null
 }
 
 /** Current branch first, followed by same-task minted ancestors until the first invalid link. */
@@ -18,7 +19,23 @@ export function branchReviewLineage(
   let descendant = minted.get(branch)
   while (descendant?.launchBase) {
     const launchBase = descendant.launchBase.replace(/^refs\/heads\//, '')
-    const ancestor = minted.get(launchBase)
+    const launchKey = descendant.launchKey
+    const headMatches = /^[0-9a-f]{7,40}$/.test(launchBase)
+      ? [
+          ...new Map(
+            mintFacts
+              .filter(
+                (fact) =>
+                  fact.launchKey === launchKey &&
+                  !visited.has(fact.mintedBranch) &&
+                  fact.headCommit?.startsWith(launchBase),
+              )
+              .map((fact) => [fact.mintedBranch, fact]),
+          ).values(),
+        ]
+      : []
+    const ancestor =
+      minted.get(launchBase) ?? (headMatches.length === 1 ? headMatches[0] : undefined)
     if (
       !ancestor ||
       ancestor.launchKey !== descendant.launchKey ||

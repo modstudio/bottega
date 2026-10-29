@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
 import { codeSearchCommand } from '../code/code-commands.ts'
 import { db, writableDb } from '../database/db.ts'
 import { PROJECT_REFERENCES } from './project-reference-counts.ts'
@@ -14,17 +15,62 @@ import {
   projectRemovalRefusal,
   projectRepositoryRefusal,
   projects,
+  recordedReviewBranch,
   removeProject,
   retiredProjectAt,
   retiredProjectByName,
   retiredProjectRefusal,
   retireProject,
+  reviewBranchForCommit,
   stackAt,
   suppliedUnknownKeyProblems,
   unretireProject,
   upsertProject,
   validateProjectSettings,
 } from './projects.ts'
+
+test('a review sha takes the most recent same-task run branch', () => {
+  expect(
+    reviewBranchForCommit('reviewed-tip', 'dev-1852', [
+      { branch: 'newest', headCommit: 'reviewed-tip', launchKey: 'DEV-1852' },
+      { branch: 'other-task', headCommit: 'reviewed-tip', launchKey: 'DEV-OTHER' },
+      { branch: 'older', headCommit: 'reviewed-tip', launchKey: 'DEV-1852' },
+    ]),
+  ).toBe('newest')
+  expect(
+    reviewBranchForCommit('reviewed-tip', 'DEV-1852', [
+      { branch: 'other-task', headCommit: 'reviewed-tip', launchKey: 'DEV-OTHER' },
+    ]),
+  ).toBeNull()
+})
+
+test('the review branch adapter selects the newest same-task run at a tip', () => {
+  const database = db()
+  const projectId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'review-tip-fixture','/fixture','{}')",
+    )
+    .run(projectId)
+  const addTipRun = (branch: string, launchKey: string, headCommit = 'reviewed-tip') => {
+    const run = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      repo: 'review-tip-fixture',
+      projectRecordId: projectId,
+      headCommit,
+    })
+    database
+      .query('UPDATE run SET branch=?,launch_key=? WHERE record_id=?')
+      .run(branch, launchKey, run)
+  }
+  addTipRun('older', 'DEV-1852')
+  addTipRun('newer', ' dev-1852 ')
+  addTipRun('other-task', 'DEV-OTHER')
+
+  expect(recordedReviewBranch(projectId, 'reviewed-tip', 'DEV-1852', database)).toBe('newer')
+  expect(recordedReviewBranch(projectId, 'absent-tip', 'DEV-1852', database)).toBeNull()
+})
 
 const none = Object.fromEntries(
   PROJECT_REFERENCES.map(([key]) => [key, 0]),

@@ -9,6 +9,7 @@ import {
   reviewLensGraded,
   reviewLensSettled,
   reviewRoundTriageComplete,
+  reviewsForAdmission,
   reviewsForTriage,
   type TriageReviewRow,
 } from './review-group.ts'
@@ -233,6 +234,58 @@ test('a rebase credits the complete round from the same branch and never another
       reviewRecordIds: selected.branchReviews.map((row) => row.reviewRecordId).sort(),
     },
   })
+})
+
+test("admission counts an identical change from the same task but not another task's", () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const projectId = newRecordId()
+  database
+    .query(
+      "INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture','/fixture','{}')",
+    )
+    .run(projectId)
+  const addRun = (branch: string, launchKey: string, patchId?: string) => {
+    const runId = newRecordId()
+    database
+      .query(
+        `INSERT INTO run
+           (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,
+            project_record_id,branch,minted_branch,launch_key)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-10-29','codex','review-lens',
+                 'sha',1,'head','ok','fixture',?,?,?,?)`,
+      )
+      .run(runId, projectId, branch, patchId ? null : branch, launchKey)
+    if (!patchId) return
+    const reviewId = newRecordId()
+    database
+      .query(
+        `INSERT INTO review (record_id,number,recorded_at,completed_at,project_record_id,patch_id,path_set,tier)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-29','2026-10-29',?,?,'["a.ts"]',1)`,
+      )
+      .run(reviewId, projectId, patchId)
+    database
+      .query(
+        `INSERT INTO review_lens
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,?,'correctness','codex','model','[]','["a.ts"]','[]','[]')`,
+      )
+      .run(newRecordId(), reviewId, runId)
+  }
+  addRun('target-branch', 'DEV-1852')
+  addRun('reviewed-elsewhere', 'DEV-1852', 'same-change')
+  addRun('other-task', 'DEV-9999', 'same-change')
+
+  const selected = reviewsForAdmission(database, {
+    project: 'fixture',
+    branch: 'target-branch',
+    patchId: 'same-change',
+    pathSet: ['a.ts'],
+  })
+  expect(selected.reviews).toHaveLength(1)
+  expect(selected.reviews[0]?.lenses[0]?.lens).toBe('correctness')
+  expect(selected.branchReviews).toEqual([])
+  expect(reviewBudgetForBranch(database, 'fixture', 'target-branch', null).roundsUsed).toBe(0)
 })
 
 test('a fix branch inherits its parent review and starts at round two', () => {

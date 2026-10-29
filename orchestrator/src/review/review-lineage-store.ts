@@ -7,10 +7,15 @@ import { branchReviewLineage } from './review-lineage.ts'
 export function reviewLineage(database: Database, project: string, branch: string): string[] {
   const facts = database
     .query<
-      { minted_branch: string; launch_base: string | null; launch_key: string | null },
+      {
+        minted_branch: string
+        launch_base: string | null
+        launch_key: string | null
+        head_commit: string | null
+      },
       [string]
     >(
-      `SELECT minted_branch,launch_base,launch_key FROM run
+      `SELECT minted_branch,launch_base,launch_key,head_commit FROM run
         WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
           AND minted_branch IS NOT NULL
         ORDER BY number`,
@@ -20,6 +25,7 @@ export function reviewLineage(database: Database, project: string, branch: strin
       mintedBranch: row.minted_branch,
       launchBase: row.launch_base,
       launchKey: row.launch_key,
+      headCommit: row.head_commit,
     }))
   return branchReviewLineage(branch, facts)
 }

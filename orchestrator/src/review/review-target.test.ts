@@ -13,6 +13,7 @@ import {
   implicitReviewBranchFrom,
   implicitReviewRefusal,
   reviewArtifactBlock,
+  reviewTargetRef,
   reviewTrunkRef,
 } from './review-target.ts'
 
@@ -45,6 +46,34 @@ describe('review target', () => {
 
   test('falls back to the local trunk when no remote-tracking ref exists', () => {
     expect(reviewTrunkRef(false, 'main')).toBe('main')
+  })
+
+  test('uses a remote-only branch while retaining its unqualified branch name', () => {
+    expect(
+      reviewTargetRef({
+        reviewRef: 'DEV-1852-remote',
+        branch: 'DEV-1852-remote',
+        localBranchExists: false,
+        remoteBranchExists: true,
+        commitExists: true,
+      }),
+    ).toEqual({ kind: 'branch', ref: 'refs/remotes/origin/DEV-1852-remote' })
+  })
+
+  test('a missing review branch names the fetch remedy', () => {
+    expect(
+      reviewTargetRef({
+        reviewRef: 'DEV-1852-missing',
+        branch: 'DEV-1852-missing',
+        localBranchExists: false,
+        remoteBranchExists: false,
+        commitExists: false,
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      message:
+        'cannot resolve --review DEV-1852-missing: neither refs/heads/DEV-1852-missing nor refs/remotes/origin/DEV-1852-missing exists, and DEV-1852-missing is not a local commit; cleared by: git fetch origin DEV-1852-missing',
+    })
   })
 
   test('refuses a ref whose commit is its trunk merge base', () => {

@@ -11,7 +11,7 @@ import {
   reviewChangedPaths,
   targetGitEnvironment,
 } from '../git/git-environment.ts'
-import { projectAt, resolveBranchRef } from '../project/projects.ts'
+import { projectAt, recordedReviewBranch, resolveBranchRef } from '../project/projects.ts'
 import { resolveBase } from '../worktree/worktree-caller.ts'
 
 const EXPLICIT_REVIEW_JOBS = new Set(['review-lens', 'safety', 'craft'])
@@ -59,6 +59,33 @@ export function spawnGitProbe(cwd: string): (args: string[]) => boolean {
       stdout: 'ignore',
       stderr: 'ignore',
     }).exitCode === 0
+}
+
+export type ReviewTargetRefDecision =
+  | { kind: 'branch'; ref: string }
+  | { kind: 'commit'; ref: string }
+  | { kind: 'refuse'; message: string }
+
+/** Select a local branch, its fetched origin branch, or an already-present commit object. */
+export function reviewTargetRef(input: {
+  reviewRef: string
+  branch: string
+  localBranchExists: boolean
+  remoteBranchExists: boolean
+  commitExists: boolean
+}): ReviewTargetRefDecision {
+  if (input.localBranchExists) return { kind: 'branch', ref: `refs/heads/${input.branch}` }
+  if (input.remoteBranchExists) {
+    return { kind: 'branch', ref: `refs/remotes/origin/${input.branch}` }
+  }
+  if (input.commitExists) return { kind: 'commit', ref: input.branch }
+  return {
+    kind: 'refuse',
+    message:
+      `cannot resolve --review ${input.reviewRef}: neither refs/heads/${input.branch} nor ` +
+      `refs/remotes/origin/${input.branch} exists, and ${input.branch} is not a local commit; ` +
+      `cleared by: git fetch origin ${input.branch}`,
+  }
 }
 
 /** Landing-branch merge-base of a reviewed tip. Shared by tier, dispatch, and admission. */
@@ -183,6 +210,7 @@ export function resolveReviewTarget(
   cwd: string,
   reviewRef?: string,
   carry = false,
+  launchKey?: string,
 ): { branch: string; commit: string; base: string } | null {
   if (reviewRef === undefined) return null
   if (!takesReviewTarget(jobName)) {
@@ -192,7 +220,33 @@ export function resolveReviewTarget(
   // (readonly_create or plain git), never worktree.create: the writing recipe's
   // placeholders and detached support are irrelevant here.
   const project = projectAt(cwd)
-  const { branch } = resolveBranchRef(reviewRef)
+  const resolved = resolveBranchRef(reviewRef)
+  const probe = spawnGitProbe(cwd)
+  const targetRef = reviewTargetRef({
+    reviewRef,
+    branch: resolved.branch,
+    localBranchExists: probe(['show-ref', '--verify', '--quiet', `refs/heads/${resolved.branch}`]),
+    remoteBranchExists: probe([
+      'show-ref',
+      '--verify',
+      '--quiet',
+      `refs/remotes/origin/${resolved.branch}`,
+    ]),
+    commitExists: probe([
+      'rev-parse',
+      '--verify',
+      '--quiet',
+      '--end-of-options',
+      `${resolved.branch}^{commit}`,
+    ]),
+  })
+  if (targetRef.kind === 'refuse') throw new Error(targetRef.message)
+  const commit = resolveBase(cwd, `${targetRef.ref}^{commit}`)
+  const matchingBranch =
+    targetRef.kind === 'commit' && project
+      ? recordedReviewBranch(project.recordId, commit, launchKey)
+      : null
+  const branch = matchingBranch ?? resolved.branch
   if (carry && branchOf(cwd) !== branch) {
     throw new Error(
       `--review ${reviewRef} resolves to branch ${branch}, but --carry was requested from ` +
@@ -206,7 +260,6 @@ export function resolveReviewTarget(
         '--review needs one to measure the reviewed change',
     )
   }
-  const commit = resolveBase(cwd, `${branch}^{commit}`)
   const base = resolveReviewBase(cwd, commit, trunk)
   if (!base) {
     throw new Error(`cannot find merge-base between review target ${branch} and trunk ${trunk}`)
