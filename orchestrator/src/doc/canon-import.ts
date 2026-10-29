@@ -11,12 +11,36 @@ import { hostedDocClient } from './doc-hosted-client.ts'
 import type { Doc } from './doc-read-store.ts'
 import { getDocStore, listDocsStore } from './doc-read-store.ts'
 import { assertLocalRevisionWrite, insertLocalRevision } from './doc-revision-store.ts'
+import {
+  addSecretScanWarning,
+  defaultDocSecretScanner,
+  secretScanRefusal,
+} from './doc-secret-scan.ts'
 import { resolvedDocWriteIdentity } from './doc-write-identity.ts'
 
 export type CanonImportRow = { slug: string; title: string; body: string }
 export type LocalCanonImportAddress =
   | { kind: 'user'; owner: string }
   | { kind: 'project'; subject: string; projectId: string }
+type CanonImportResult = RecordCanonImportResult & { writeWarnings?: string[] }
+
+function canonDocAddress(address: LocalCanonImportAddress, row: CanonImportRow) {
+  return {
+    scope: 'canon',
+    subject: address.kind === 'project' ? address.subject : null,
+    slug: row.slug,
+    body: row.body,
+  }
+}
+
+function scanCanonImportRows(address: LocalCanonImportAddress, rows: CanonImportRow[]) {
+  const scans = rows.map((row) => ({ row, outcome: defaultDocSecretScanner(row.body) }))
+  const refusals = scans.flatMap(({ row, outcome }) =>
+    outcome.status === 'found' ? [secretScanRefusal(canonDocAddress(address, row), outcome)] : [],
+  )
+  if (refusals.length > 0) throw new Error(refusals.join('\n'))
+  return scans.find(({ outcome }) => outcome.status === 'unavailable')
+}
 
 function hostedProjectId(projectId: string): string {
   return db()
@@ -65,10 +89,11 @@ export async function importCanon(input: {
   rows: CanonImportRow[]
   reason: string
   author?: string
-}): Promise<RecordCanonImportResult> {
+}): Promise<CanonImportResult> {
   const refusal = workerStoreWriteRefusal('document', 'importCanon', process.env)
   if (refusal) throw new Error(refusal)
   writableDb()
+  const unavailableSecretScan = scanCanonImportRows(input.address, input.rows)
   const identity = resolvedDocWriteIdentity(input)
   const subject = input.address.kind === 'project' ? input.address.subject : null
   const owner = input.address.kind === 'user' ? input.address.owner : null
@@ -112,7 +137,7 @@ export async function importCanon(input: {
       })
     },
   })
-  return writeTransaction(() => {
+  const written = writeTransaction(() => {
     const live = listDocsStore({ scope: 'canon', subject, owner, status: 'current' })
     const liveBySlug = new Map(live.map((row) => [row.slug, row]))
     for (const row of current) {
@@ -153,4 +178,11 @@ export async function importCanon(input: {
     }
     return hosted
   })
+  return unavailableSecretScan?.outcome.status === 'unavailable'
+    ? addSecretScanWarning(
+        written,
+        canonDocAddress(input.address, unavailableSecretScan.row),
+        unavailableSecretScan.outcome,
+      )
+    : written
 }

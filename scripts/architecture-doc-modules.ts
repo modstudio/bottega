@@ -11,6 +11,18 @@ const module = (file: string, allowed: string[]): DocModule => ({
 })
 
 export const docModules: DocModule[] = [
+  module('orchestrator/src/secret-scan/secret-scan-decision.ts', []),
+  module('orchestrator/src/secret-scan/secret-scan.ts', ['node:os', './secret-scan-decision.ts']),
+  module('orchestrator/src/doc/doc-secret-scan.ts', [
+    '../../../shared/brand.ts',
+    '../secret-scan/secret-scan.ts',
+    '../secret-scan/secret-scan-decision.ts',
+  ]),
+  module('orchestrator/src/doc/doc-restore-state.ts', [
+    './doc-read-store.ts',
+    './doc-reference-write.ts',
+    './doc-revision-store.ts',
+  ]),
   module('orchestrator/src/doc/resume-brief-author.ts', [
     'bun:sqlite',
     '../database/db.ts',

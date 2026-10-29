@@ -218,6 +218,7 @@ const userCanonBoundarySpecs: ImportBoundary[] = [
       'orchestrator/src/doc/doc-read-store.ts',
       'orchestrator/src/doc/doc-hosted-client.ts',
       'orchestrator/src/doc/canon-import-collision.ts',
+      'orchestrator/src/doc/doc-secret-scan.ts',
       'orchestrator/src/doc/doc-revision-store.ts',
       'orchestrator/src/doc/doc-write-identity.ts',
     ],

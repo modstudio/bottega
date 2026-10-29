@@ -54,12 +54,13 @@ import {
   getDocStore,
 } from './doc-read-store.ts'
 import {
-  assertLocalReferenceRestore,
   assertLocalReferenceWrite,
   assertLocalStoredReferenceWrite,
   skipsProseLint,
 } from './doc-reference-write.ts'
+import { referenceRestoreState } from './doc-restore-state.ts'
 import * as rw from './doc-resume-write.ts'
+import { addSecretScanWarning, defaultDocSecretScanner, scanDocBody } from './doc-secret-scan.ts'
 import {
   docSubjects,
   validateDocSubject,
@@ -99,7 +100,6 @@ export type ConsumedDoc = Doc & { already_consumed: boolean }
 import { parseResumeFrontmatter, resumeAge, resumeFrontmatter } from './doc-resume-frontmatter.ts'
 import {
   assertLocalRevisionWrite,
-  currentDocRevision,
   diffStoredDocRevisions,
   getStoredDocRevision,
   listStoredDocRevisions,
@@ -373,19 +373,6 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (refusal) throw new Error(refusal)
 }
 
-function referenceRestoreState(
-  scope: string,
-  subject: string | null,
-  slug: string,
-  owner: string | null,
-  revision: DocRevision,
-): [string | null, Doc | null] {
-  const expectedCurrent = currentDocRevision(scope, subject, slug, owner)
-  const current = getDoc(scope, subject, slug, owner)
-  assertLocalReferenceRestore(current, revision)
-  return [expectedCurrent, current]
-}
-
 async function setDocWithOp(
   input: DocWriteInput,
   requestedOp?: 'import',
@@ -396,6 +383,7 @@ async function setDocWithOp(
     refuseSettingsAddress(input.scope, input.subject, input.owner)
   if (ownedAddress) throw new Error(ownedAddress)
   validate(input.scope, input.subject, input.slug)
+  const secretScan = scanDocBody(input, defaultDocSecretScanner)
   const identity = resolvedDocWriteIdentity(input)
   const owner = input.owner ?? null
   const prior = getDoc(input.scope, input.subject, input.slug, owner)
@@ -473,7 +461,7 @@ async function setDocWithOp(
       })
     },
   })
-  return written
+  return addSecretScanWarning(written, input, secretScan)
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {
