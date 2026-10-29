@@ -275,7 +275,8 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
                        THEN ${weightCase()} ELSE 0 END) AS pts,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END) AS tokens,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END) AS cost
-         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
+         FROM run r INDEXED BY run_routing_evidence_cover
+         LEFT JOIN score s ON s.run_record_id = r.record_id
         -- Child turns are excluded: a conversation is ONE piece of evidence
         -- about an agent, and its root row carries the outcome. Counting each
         -- turn would let an agent cross MIN_SAMPLE by asking questions.
@@ -298,24 +299,50 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     cost: number
   }[]
   const hist = new Map(rows.map((r) => [r.agent, r]))
+  const currentModels = JSON.stringify(
+    Object.fromEntries(
+      Object.values(AGENTS).map((agent) => [agent.name, modelOverride ?? agent.model]),
+    ),
+  )
   const evidenceRows = (
     db()
       .query(
-        `SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
+        `WITH current_agent(agent, model) AS (
+           SELECT key, value FROM json_each(?)
+         ), ranked AS (
+         SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
               r.executor,
               r.failure_kind AS failureKind, r.vendor_tokens AS vendorTokens,
               r.model_calls AS modelCalls, r.peak_call_tokens AS peakCallTokens,
-              s.delivery, s.quality, s.fidelity, ${weightCase()} AS pts
-         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
+              s.delivery, s.quality, s.fidelity, ${weightCase()} AS pts,
+              ROW_NUMBER() OVER (
+                PARTITION BY r.agent ORDER BY r.started_at DESC, r.record_id DESC
+              ) AS evidence_rank
+         FROM current_agent ca
+         JOIN run r INDEXED BY run_routing_evidence_cover
+           ON r.agent = ca.agent AND (r.model = ca.model OR r.model IS NULL)
+         LEFT JOIN score s ON s.run_record_id = r.record_id
         WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
           AND r.evidence_excluded IS NULL
           AND r.executor <> 'harness'
           AND r.parent_run_record_id IS NULL
+          AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+          AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))
           AND ${promptBucketSql('r', promptBytes)}
           ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}`,
+          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}
+         )
+         SELECT record_id,agent,model,startedAt,status,executor,failureKind,vendorTokens,
+                modelCalls,peakCallTokens,delivery,quality,fidelity,pts
+           FROM ranked WHERE evidence_rank <= ?`,
       )
-      .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
+      .all(
+        currentModels,
+        jobName,
+        ...(stack ? [stack] : []),
+        ...(lens ? [lens] : []),
+        EVIDENCE_WINDOW,
+      ) as {
       record_id: string
       agent: string
       model: string | null
@@ -334,7 +361,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
   ).filter(isRoutingEvidence)
   const lat = db()
     .query(
-      `SELECT agent, latency_ms FROM run
+      `SELECT agent, latency_ms FROM run INDEXED BY run_routing_latency_cover
         -- Latency is per TURN here, deliberately: "how long does this agent
         -- take to answer" is a question about a turn, and a chain's total is a
         -- question about how much the architect had to be asked.
