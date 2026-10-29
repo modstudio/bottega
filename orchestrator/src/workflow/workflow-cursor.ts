@@ -68,6 +68,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
+import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import {
   bindCloseSelfRuling,
   type WorkflowSelfRulingInput,
@@ -952,7 +953,6 @@ export function ruleWorkflow(
   cursor?: number,
 ): { summary: string; questionId: number } {
   if (!ruling?.trim()) throw new Error('--ruling is required')
-  const personName = resolvedRulingPersonName(fromOperator)
   return writeTransaction(() => {
     linkResolvedWorkflowTask(project, args, context, d)
     const row = findCursor(project, slug, mode, args, context, d, cursor)
@@ -962,6 +962,12 @@ export function ruleWorkflow(
       )
     if (row.state !== 'awaiting-ruling')
       throw new Error(`${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling`)
+    const step = pinnedWorkflowRuleStep(row, cursorName(slug, mode, row.workflow_key), d)
+    const refusal = decideWorkflowRuleAnswer({
+      fromOperator,
+      operatorRuling: Boolean(step.operatorRuling),
+    })
+    if (refusal) throw new Error(refusal)
     const actor = sessionId()
     const adoptionReason = authorizeWorkflowQuestionMutation({
       owner: row.session_id,
@@ -989,7 +995,7 @@ export function ruleWorkflow(
         at,
         actor,
         fromOperator,
-        personName,
+        personName: resolvedRulingPersonName(fromOperator),
         channel,
         adoptionReason,
       },

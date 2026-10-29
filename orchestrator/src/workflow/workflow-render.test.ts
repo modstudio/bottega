@@ -403,11 +403,36 @@ describe('workflow rendering', () => {
       `Autonomy: auto (built-in) — this step cannot be closed by an agent self-ruling; close with another floor's evidence, or put a ruling recorded with \`--from-operator\` with \`${PLATFORM_SLUG} workflow await\` when that is the evidence you use.`,
     )
     expect(rendered).toContain(
-      `Evidence for ruling: call \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), answer it with \`rule_workflow\`, then pass \`--ruling <the returned question id>\`.`,
+      `Evidence for ruling: only the operator's answer closes this floor: ask with \`await_workflow_ruling\` (or \`${PLATFORM_SLUG} workflow await\`), have the operator answer, or relay the operator's answer with \`rule_workflow\` \`from_operator\` (or \`${PLATFORM_SLUG} workflow rule --from-operator\`), then pass \`--ruling <the returned question id>\`; another floor's evidence closes this step instead (any one floor is enough).`,
     )
     expect(rendered).not.toContain('rule yourself')
     expect(rendered).not.toContain('self_ruling')
     expect(rendered).not.toContain('--self-ruling')
+  })
+
+  test('an operator-only ruling floor without alternatives omits the other-floor clause', () => {
+    const rendered = renderWorkflowStep({
+      slug: 'acceptance',
+      title: "Check the task's acceptance criteria",
+      body: 'Write a table of every criterion.',
+      floor: ['ruling'],
+      expectedStatus: undefined,
+      commandEvidence: undefined,
+      job: null,
+      autonomy: 'auto',
+      needs: [],
+      operatorRuling: true,
+      resolvedAutonomy: { value: 'auto', scope: 'built-in' },
+      workflow: 'ship-task',
+      version: 1,
+      catalogueVersion: 1,
+      project: 'fixture',
+      mode: 'full',
+      facts: {},
+      next: null,
+    })
+    expect(rendered).toContain("only the operator's answer closes this floor")
+    expect(rendered).not.toContain("another floor's evidence")
   })
 
   test('resolved close-task with tracker-transition and operatorRuling offers no ruling', () => {
