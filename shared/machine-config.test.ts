@@ -5,9 +5,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from './brand.ts'
 import { CONFIG_HOME_ENV } from './config-directory.ts'
 import {
-  deleteMachineDelegation,
+  deleteMachineValue,
   editMachinePermission,
   editMachinePermissionTable,
+  listMachineEntries,
   MACHINE_CONFIG,
   machineId,
   readDelegationSettings,
@@ -15,7 +16,7 @@ import {
   readMachineValue,
   resolveMachineValue,
   setMachineAutonomy,
-  setMachineDelegation,
+  setMachineValue,
   storedMachineId,
 } from './machine-config.ts'
 
@@ -78,7 +79,10 @@ describe('machine config resolution', () => {
         silent,
         freshWarnings(),
       ),
-    ).toBe('canonical')
+    ).toEqual({
+      value: 'canonical',
+      source: { kind: 'environment', name: 'BOTTEGA_MODEL_HOST_URL' },
+    })
     expect(
       resolveMachineValue(
         MACHINE_CONFIG,
@@ -89,7 +93,10 @@ describe('machine config resolution', () => {
         silent,
         freshWarnings(),
       ),
-    ).toBe('legacy')
+    ).toEqual({
+      value: 'legacy',
+      source: { kind: 'environment', name: 'BOTTEGA_LOCAL_BASE_URL' },
+    })
     expect(
       resolveMachineValue(
         MACHINE_CONFIG,
@@ -100,10 +107,10 @@ describe('machine config resolution', () => {
         silent,
         freshWarnings(),
       ),
-    ).toBe(9000)
+    ).toEqual({ value: 9000, source: { kind: 'machine-file' } })
     expect(
       resolveMachineValue(MACHINE_CONFIG, {}, {}, 'hub.port', path, silent, freshWarnings()),
-    ).toBe(7778)
+    ).toEqual({ value: 7778, source: { kind: 'default' } })
   })
 
   test('warns once when a legacy environment variable supplies the value', () => {
@@ -162,7 +169,10 @@ describe('machine config resolution', () => {
         silent,
         freshWarnings(),
       ),
-    ).toBe('')
+    ).toEqual({
+      value: '',
+      source: { kind: 'environment', name: 'BOTTEGA_TRANSCRIPT_ROOT' },
+    })
   })
 
   test('expands HOME in path defaults', () => {
@@ -176,7 +186,7 @@ describe('machine config resolution', () => {
         silent,
         freshWarnings(),
       ),
-    ).toBe('/home/operator/Projects')
+    ).toEqual({ value: '/home/operator/Projects', source: { kind: 'default' } })
     expect(
       resolveMachineValue(
         MACHINE_CONFIG,
@@ -187,7 +197,7 @@ describe('machine config resolution', () => {
         silent,
         freshWarnings(),
       ),
-    ).toBe('/home/operator/.claude/projects')
+    ).toEqual({ value: '/home/operator/.claude/projects', source: { kind: 'default' } })
   })
 
   test('reads a machine value from the configured root and otherwise uses its default', () => {
@@ -213,14 +223,50 @@ describe('machine config resolution', () => {
         'delegation.implement': 'external',
         'delegation.review': 'external',
       })
-      setMachineDelegation('delegation.review', 'harness', env)
+      setMachineValue('delegation.review', 'harness', env)
       expect(readDelegationSettings(env)).toEqual({
         'delegation.implement': 'external',
         'delegation.review': 'harness',
       })
-      expect(() => setMachineDelegation('delegation.review', 'sometimes', env)).toThrow(
+      expect(() => setMachineValue('delegation.review', 'sometimes', env)).toThrow(
         'key delegation.review must be one of external, harness',
       )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('catalogue values list only when stored and delete prunes empty tables', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-catalogue-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      setMachineValue('hub.port', '9000', env)
+      setMachineValue('routing.cost_policy', '{"enabled":false}', env)
+      expect(listMachineEntries(env)).toEqual([
+        { key: 'hub.port', value: '9000', scope: 'machine' },
+        { key: 'routing.cost_policy', value: '{"enabled":false}', scope: 'machine' },
+      ])
+
+      deleteMachineValue('routing.cost_policy', env)
+      expect(readFileSync(join(config, 'machine.toml'), 'utf8')).not.toContain('[routing]')
+      expect(listMachineEntries(env)).toEqual([
+        { key: 'hub.port', value: '9000', scope: 'machine' },
+      ])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('machine identity is validated before machine.toml is patched', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-id-validation-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      expect(() => setMachineValue('machine.id', 'work-laptop', env)).toThrow(
+        `refusing machine config key machine.id: value must be a UUID; write a valid value with \`${PLATFORM_SLUG} machine config set --machine machine.id <uuid>\``,
+      )
+      expect(() => readFileSync(join(config, 'machine.toml'), 'utf8')).toThrow()
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -236,10 +282,10 @@ describe('machine config resolution', () => {
       expect(() => readDelegationSettings(env)).toThrow(
         `key delegation.review must be one of external, harness; cleared by: ${PLATFORM_SLUG} machine config set --machine delegation.review external`,
       )
-      setMachineDelegation('delegation.review', 'harness', env)
+      setMachineValue('delegation.review', 'harness', env)
       expect(readDelegationSettings(env)['delegation.review']).toBe('harness')
       writeFileSync(join(config, 'machine.toml'), '[delegation]\nreview = "sometimes"\n')
-      deleteMachineDelegation('delegation.review', env)
+      deleteMachineValue('delegation.review', env)
       expect(readDelegationSettings(env)['delegation.review']).toBe('external')
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -345,7 +391,7 @@ describe('machine permission overlay', () => {
       mkdirSync(config)
       const file = join(config, 'machine.toml')
       writeFileSync(file, '[autonomy]\nrelease = "push"\n')
-      setMachineAutonomy('autonomy.release', 'production', env)
+      setMachineAutonomy('autonomy.release', 'promote', env)
       const written = readFileSync(file, 'utf8')
       expect(written).toContain('ship-to = "production"')
       expect(written).not.toContain('release =')

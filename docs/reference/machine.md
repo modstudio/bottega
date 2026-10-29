@@ -152,13 +152,14 @@ delete one configuration value
 
 ## bottega machine config get
 
-**Synopsis:** `bottega machine config get <key> [--space] [--json]`
+**Synopsis:** `bottega machine config get <key> [--space] [--machine] [--json]`
 
 show one configuration value
 
 ### Options
 
 - `--space`: read the value from the active space scope
+- `--machine`: read the value from machine.toml only
 - `--json`: write the configuration row as JSON
 
 ### Related

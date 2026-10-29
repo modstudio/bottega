@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import { ConfigEntrySchema, MachineConfigFileEntrySchema } from '../../shared/config-contract.ts'
 import {
   DOC_AUDIENCES,
   DOC_KINDS,
@@ -30,7 +31,6 @@ import {
 } from '../../shared/docs.ts'
 import { assetPath } from '../../shared/install-root.ts'
 import type {
-  MachineConfigFileEntry,
   MachinePermissionOperation,
   MachinePermissionOverlay,
 } from '../../shared/machine-config.ts'
@@ -618,21 +618,6 @@ const DocRowSchema = z.object({
   created_at: z.string(),
   updated_at: z.string(),
 })
-
-const ConfigEntrySchema = z.object({
-  key: z.string(),
-  environment: z.string(),
-  scope: z.enum(['user', 'space']),
-  value: z.string(),
-  rowVersion: z.number(),
-  updatedAt: z.string(),
-})
-
-export const MachineConfigFileEntrySchema = z.object({
-  key: z.string(),
-  value: z.string(),
-  scope: z.literal('machine'),
-}) satisfies z.ZodType<MachineConfigFileEntry>
 
 export const MachineConfigListSchema = z.array(MachineConfigFileEntrySchema)
 

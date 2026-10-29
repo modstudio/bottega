@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { setMachineDelegation } from '../../../shared/machine-config.ts'
+import { setMachineValue } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
@@ -23,7 +23,7 @@ import { trainingDataEligibility } from './training-data-eligibility.ts'
 beforeEach(() => seedNeutralCodexQuotaReading())
 
 test('guide reports harness work without dropping externally delegated jobs', () => {
-  setMachineDelegation('delegation.implement', 'harness')
+  setMachineValue('delegation.implement', 'harness')
   try {
     const rows = guide()
     expect(rows.find((row) => row.job === 'implement')).toMatchObject({
@@ -35,7 +35,7 @@ test('guide reports harness work without dropping externally delegated jobs', ()
     })
     expect(rows.find((row) => row.job === 'review-lens')?.routesTo).not.toBeNull()
   } finally {
-    setMachineDelegation('delegation.implement', 'external')
+    setMachineValue('delegation.implement', 'external')
   }
 })
 

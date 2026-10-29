@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
-import { setMachineDelegation } from '../../../shared/machine-config.ts'
+import { setMachineValue } from '../../../shared/machine-config.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
 import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
@@ -181,7 +181,7 @@ test('pick reports the source and switch of each resolved lens policy', () => {
 })
 
 test('guide continues across harness and external delegation classes', () => {
-  setMachineDelegation('delegation.implement', 'harness')
+  setMachineValue('delegation.implement', 'harness')
   try {
     const lines: string[] = []
     guideCommand(
@@ -195,6 +195,6 @@ test('guide continues across harness and external delegation classes', () => {
     expect(output).toContain('review-lens')
     expect(output).toContain('routes to')
   } finally {
-    setMachineDelegation('delegation.implement', 'external')
+    setMachineValue('delegation.implement', 'external')
   }
 })

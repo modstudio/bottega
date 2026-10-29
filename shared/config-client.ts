@@ -32,7 +32,7 @@ export class ConfigClientError extends Error {
 }
 
 export type ConfigScope = 'user' | 'space'
-type ConfigEntry = {
+export type ConfigEntry = {
   key: string
   environment: string
   scope: ConfigScope

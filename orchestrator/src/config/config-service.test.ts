@@ -1,15 +1,19 @@
 import { afterEach, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { ConfigClient } from '../../../shared/config-client.ts'
+import { type ConfigClient, ConfigClientError } from '../../../shared/config-client.ts'
+import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { readHostedConfigIdentity } from '../../../shared/hosted-config-space.ts'
 import { readMachineKey } from '../../../shared/machine-key-store.ts'
 import { readTrustList } from '../../../shared/trust-list.ts'
 import {
   applyLegacyEnvironmentSecretMigration,
+  configHome,
   deleteEntry,
+  deleteMachineEntry,
+  getConfigEntry,
   machineInit,
   migrateLegacyEnvironmentSecrets,
   planRotation,
@@ -19,6 +23,7 @@ import {
   secretDeleteRemedy,
   secretEnvironmentDecision,
   secretSetRemedy,
+  setConfigEntry,
   setEntry,
   setSecret,
 } from './config-service.ts'
@@ -26,6 +31,184 @@ import {
 const roots: string[] = []
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+test('the declared home chooses machine and hosted keys and refuses an unsupported scope with its remedy', () => {
+  expect(configHome('routing.cost_policy')).toBe('machine')
+  expect(configHome('autonomy.preset')).toBe('user')
+  expect(() => configHome('subscription.codex.monthly_usd', 'space')).toThrow(
+    `refusing config key subscription.codex.monthly_usd in hosted space scope: its home is hosted user scope; write it with \`${PLATFORM_SLUG} machine config set subscription.codex.monthly_usd <value>\``,
+  )
+  expect(() => configHome('subscription.codex.monthly_usd', 'machine', 'get')).toThrow(
+    `${PLATFORM_SLUG} machine config get subscription.codex.monthly_usd`,
+  )
+  expect(() => configHome('routing.cost_policy', 'space', 'get')).toThrow(
+    `${PLATFORM_SLUG} machine config get --machine routing.cost_policy`,
+  )
+  expect(() => configHome('unknown.key')).toThrow(
+    `accepted families are machine catalogue keys, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+  )
+})
+
+test('machine delete refuses an unknown key with every accepted family and the list remedy', () => {
+  expect(() => deleteMachineEntry('unknown.key')).toThrow(
+    `accepted families are machine catalogue keys and autonomy.*; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+  )
+})
+
+test('routing cost policy defaults to machine.toml and get reports the machine file source', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-home-'))
+  roots.push(root)
+  const config = join(root, 'config')
+  const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+  const client = {
+    listEntries: async () => [{ key: 'routing.cost_policy', scope: 'space' }],
+    getEntry: async () => {
+      throw new Error('unexpected hosted read')
+    },
+    putEntry: async () => {
+      throw new Error('unexpected hosted write')
+    },
+  } as unknown as ConfigClient
+
+  await setConfigEntry(
+    'routing.cost_policy',
+    '{"enabled":false}',
+    undefined,
+    undefined,
+    client,
+    env,
+  )
+  await expect(
+    getConfigEntry('routing.cost_policy', undefined, client, env),
+  ).resolves.toMatchObject({
+    key: 'routing.cost_policy',
+    value: '{"enabled":false}',
+    home: 'machine',
+    source: 'machine.toml',
+    ignoredHostedScopes: ['space'],
+  })
+})
+
+test('machine-home set and get do not construct an unconfigured hosted client', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-recordless-'))
+  roots.push(root)
+  const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }
+  const notConfigured = () => {
+    throw new ConfigClientError('not-configured', '/v1/config')
+  }
+
+  await expect(
+    setConfigEntry(
+      'routing.cost_policy',
+      '{"enabled":false}',
+      undefined,
+      undefined,
+      undefined,
+      env,
+      notConfigured,
+    ),
+  ).resolves.toMatchObject({ home: 'machine' })
+  await expect(
+    getConfigEntry('routing.cost_policy', undefined, undefined, env, notConfigured),
+  ).resolves.toMatchObject({
+    value: '{"enabled":false}',
+    source: 'machine.toml',
+    ignoredHostedScopes: [],
+  })
+})
+
+test('effective machine get prefers the declared environment over machine.toml', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-env-'))
+  roots.push(root)
+  const config = join(root, 'config')
+  const env = { HOME: root, [CONFIG_HOME_ENV]: config, BOTTEGA_HUB_PORT: '9100' }
+  mkdirSync(config)
+  writeFileSync(join(config, 'machine.toml'), '[hub]\nport = 9000\n')
+  const client = { listEntries: async () => [] } as unknown as ConfigClient
+
+  await expect(getConfigEntry('hub.port', undefined, client, env)).resolves.toMatchObject({
+    value: '9100',
+    source: 'environment BOTTEGA_HUB_PORT',
+  })
+})
+
+test('explicit machine get reads machine.toml while the environment holds another value', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-file-only-'))
+  roots.push(root)
+  const config = join(root, 'config')
+  const env = { HOME: root, [CONFIG_HOME_ENV]: config, BOTTEGA_HUB_PORT: '9100' }
+  mkdirSync(config)
+  writeFileSync(join(config, 'machine.toml'), '[hub]\nport = 9000\n')
+
+  await expect(getConfigEntry('hub.port', 'machine', undefined, env)).resolves.toMatchObject({
+    value: '9000',
+    source: 'machine.toml',
+  })
+})
+
+test('subscription space refusal happens before any hosted write', async () => {
+  const calls: string[] = []
+  const client = {
+    getEntry: async () => {
+      calls.push('get')
+      return {}
+    },
+    putEntry: async () => {
+      calls.push('put')
+      return {}
+    },
+  } as unknown as ConfigClient
+
+  await expect(
+    setConfigEntry('subscription.codex.monthly_usd', '200', 'space', undefined, client),
+  ).rejects.toThrow('its home is hosted user scope')
+  expect(calls).toEqual([])
+})
+
+test('invalid hosted subscription and autonomy values are refused before any write', async () => {
+  const calls: string[] = []
+  const client = {
+    getEntry: async () => {
+      calls.push('get')
+      return {}
+    },
+    putEntry: async () => {
+      calls.push('put')
+      return {}
+    },
+  } as unknown as ConfigClient
+
+  await expect(
+    setConfigEntry('subscription.codex.monthly_usd', 'not-a-price', 'user', undefined, client),
+  ).rejects.toThrow('value must be a non-negative number')
+  await expect(
+    setConfigEntry('autonomy.preset', 'sometimes', 'user', undefined, client),
+  ).rejects.toThrow('value must be one of')
+  expect(calls).toEqual([])
+})
+
+test('hosted autonomy get reports the machine value that outranks it locally', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'config-autonomy-shadow-'))
+  roots.push(root)
+  const env = { HOME: root, [CONFIG_HOME_ENV]: join(root, 'config') }
+  const client = {
+    getEntry: async () => ({
+      key: 'autonomy.preset',
+      environment: 'default',
+      scope: 'user',
+      value: 'manual',
+      rowVersion: 1,
+      updatedAt: '2026-10-29T00:00:00.000Z',
+    }),
+  } as unknown as ConfigClient
+  await setConfigEntry('autonomy.preset', 'autonomous', 'machine', undefined, undefined, env)
+
+  await expect(getConfigEntry('autonomy.preset', undefined, client, env)).resolves.toMatchObject({
+    value: 'manual',
+    source: 'hosted user scope',
+    outrankingMachineValue: 'autonomous',
+  })
 })
 
 test('secret set refuses an empty piped value and names the key and both remedies', () => {

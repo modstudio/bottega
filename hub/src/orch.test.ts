@@ -13,11 +13,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../shared/brand.ts'
+import { MachineConfigFileEntrySchema } from '../../shared/config-contract.ts'
 import { INSTALL_HOME_ENV } from '../../shared/install-root.ts'
 import {
   listMachineEntries,
   setMachineAutonomy,
-  setMachineDelegation,
+  setMachineValue,
 } from '../../shared/machine-config.ts'
 import { OperatorWaitingItemSchema, OrchBlockersSchema } from '../../shared/orch-contract.ts'
 import {
@@ -30,7 +31,6 @@ import {
   contextGet,
   decodeRunsJson,
   fileRulingArgv,
-  MachineConfigFileEntrySchema,
   MachineConfigListSchema,
   MachinePermissionOverlaySchema,
   MachinePermissionResultSchema,
@@ -97,10 +97,9 @@ test('the machine config list schema accepts autonomy and delegation rows togeth
   try {
     const env = { BOTTEGA_CONFIG_HOME: root }
     setMachineAutonomy('autonomy.stage.review', 'auto', env)
-    setMachineDelegation('delegation.review', 'harness', env)
+    setMachineValue('delegation.review', 'harness', env)
     expect(MachineConfigListSchema.parse(listMachineEntries(env))).toEqual([
       { key: 'autonomy.stage.review', value: 'auto', scope: 'machine' },
-      { key: 'delegation.implement', value: 'external', scope: 'machine' },
       { key: 'delegation.review', value: 'harness', scope: 'machine' },
     ])
   } finally {

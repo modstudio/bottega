@@ -20,7 +20,6 @@ import {
   DELEGATION_SETTING_KEYS,
   type DelegationSettingKey,
   type DelegationSettings,
-  isDelegationKey,
 } from './delegation-mode.ts'
 import { containsSecretShaped } from './secret-shaped.ts'
 import { SETTINGS_PERMISSION_LISTS, type SettingsPermissionList } from './settings-summary.ts'
@@ -28,15 +27,23 @@ import {
   isShipToConfigKey,
   readStoredShipTo,
   SHIP_TO_CONFIG_KEY,
+  SHIP_TO_VALUES,
   storedShipToLevel,
 } from './ship-to.ts'
 
-type MachineConfigEntry = {
+export type MachineConfigEntry = {
   environment?: string
   legacyEnvironment?: string
   type: 'string' | 'integer'
   default: string | number
   values?: readonly string[]
+  validator?: (value: string | number) => string | null
+}
+
+const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+function machineIdValidation(value: string | number): string | null {
+  return typeof value === 'string' && MACHINE_ID.test(value) ? null : 'value must be a UUID'
 }
 
 /**
@@ -64,8 +71,12 @@ export const MACHINE_CONFIG = {
     type: 'string',
     default: '$HOME/.claude/projects',
   },
-  'hub.port': { environment: 'BOTTEGA_HUB_PORT', type: 'integer', default: 7778 },
-  'machine.id': { type: 'string', default: '' },
+  'hub.port': {
+    environment: 'BOTTEGA_HUB_PORT',
+    type: 'integer',
+    default: 7778,
+  },
+  'machine.id': { type: 'string', default: '', validator: machineIdValidation },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',
@@ -85,7 +96,11 @@ export const MACHINE_CONFIG = {
     type: 'string',
     default: '',
   },
-  'model_host.ssh_alias': { environment: 'LOCAL_MODEL_HOST', type: 'string', default: '' },
+  'model_host.ssh_alias': {
+    environment: 'LOCAL_MODEL_HOST',
+    type: 'string',
+    default: '',
+  },
   'model_host.tunnel_local_port': { type: 'integer', default: 8010 },
   'model_host.tunnel_remote_port': { type: 'integer', default: 8000 },
   'record.tunnel_app': { type: 'string', default: '' },
@@ -95,10 +110,22 @@ export const MACHINE_CONFIG = {
   // The spare-hands lane: best-effort nightly jobs for free-tier agents only.
   // A task key that owns the lane's cost, so an operator can move it to a
   // standing maintenance task without a code change.
-  'spare.task_key': { environment: 'BOTTEGA_SPARE_TASK_KEY', type: 'string', default: 'DEV-1676' },
+  'spare.task_key': {
+    environment: 'BOTTEGA_SPARE_TASK_KEY',
+    type: 'string',
+    default: 'DEV-1676',
+  },
   // When the nightly runner may start, and the clock time it stops for the night.
-  'spare.start_time': { environment: 'BOTTEGA_SPARE_START_TIME', type: 'string', default: '22:00' },
-  'spare.stop_time': { environment: 'BOTTEGA_SPARE_STOP_TIME', type: 'string', default: '05:00' },
+  'spare.start_time': {
+    environment: 'BOTTEGA_SPARE_START_TIME',
+    type: 'string',
+    default: '22:00',
+  },
+  'spare.stop_time': {
+    environment: 'BOTTEGA_SPARE_STOP_TIME',
+    type: 'string',
+    default: '05:00',
+  },
 } as const satisfies Record<string, MachineConfigEntry>
 
 export type MachineConfigKey = keyof typeof MACHINE_CONFIG
@@ -106,6 +133,23 @@ type MachineConfigValue<Key extends MachineConfigKey> =
   (typeof MACHINE_CONFIG)[Key]['type'] extends 'integer' ? number : string
 
 const warnedLegacyVariables = new Set<string>()
+
+export function isMachineConfigKey(key: string): key is MachineConfigKey {
+  return Object.hasOwn(MACHINE_CONFIG, key)
+}
+
+export type ConfigHome = 'machine' | 'user' | 'space'
+
+export function isSubscriptionPriceKey(key: string): boolean {
+  return /^subscription\.[^.]+\.monthly_usd$/.test(key)
+}
+
+export function configHomes(key: string): readonly ConfigHome[] | null {
+  if (isMachineConfigKey(key)) return ['machine']
+  if (key.startsWith('autonomy.')) return ['user', 'space', 'machine']
+  if (isSubscriptionPriceKey(key)) return ['user']
+  return null
+}
 
 export type MachinePermissionOverlay = {
   additions: Record<SettingsPermissionList, string[]>
@@ -270,6 +314,11 @@ function resolvedDefault(entry: MachineConfigEntry, env: ConfigEnvironment, key:
 }
 
 /** Resolve one value from already-gathered facts, without reading the filesystem. */
+export type MachineValueSource =
+  | { kind: 'environment'; name: string }
+  | { kind: 'machine-file' }
+  | { kind: 'default' }
+
 export function resolveMachineValue<
   Table extends Record<string, MachineConfigEntry>,
   Key extends keyof Table & string,
@@ -281,7 +330,10 @@ export function resolveMachineValue<
   path: string,
   warn: (message: string) => void,
   warned: Set<string>,
-): Table[Key]['type'] extends 'integer' ? number : string {
+): {
+  value: Table[Key]['type'] extends 'integer' ? number : string
+  source: MachineValueSource
+} {
   validateFile(table, parsed, path)
   const entry = table[key]
   if (!entry) throw new Error(`refusing machine config ${path}: unknown key ${key}`)
@@ -289,20 +341,25 @@ export function resolveMachineValue<
   let value: unknown
   let environmentValue = false
   let environmentSource: string | undefined
+  let source: MachineValueSource
   if (entry.environment && env[entry.environment] !== undefined) {
     value = env[entry.environment]
     environmentValue = true
     environmentSource = entry.environment
+    source = { kind: 'environment', name: entry.environment }
   } else if (entry.legacyEnvironment && env[entry.legacyEnvironment] !== undefined) {
     value = env[entry.legacyEnvironment]
     environmentValue = true
     environmentSource = entry.legacyEnvironment
+    source = { kind: 'environment', name: entry.legacyEnvironment }
     if (!warned.has(entry.legacyEnvironment)) {
       warned.add(entry.legacyEnvironment)
       warn(`${entry.legacyEnvironment} is deprecated; use ${entry.environment}`)
     }
   } else {
-    value = fileValue(parsed, key) ?? resolvedDefault(entry, env, key)
+    const stored = fileValue(parsed, key)
+    value = stored ?? resolvedDefault(entry, env, key)
+    source = stored === undefined ? { kind: 'default' } : { kind: 'machine-file' }
   }
 
   const result = valueSchema(entry, environmentValue).safeParse(value)
@@ -316,7 +373,10 @@ export function resolveMachineValue<
     throw new Error(`refusing machine config ${path}: key ${key} must be ${expected}`)
   }
   assertAllowedMachineValue(key, entry, result.data)
-  return result.data as Table[Key]['type'] extends 'integer' ? number : string
+  return {
+    value: result.data as Table[Key]['type'] extends 'integer' ? number : string,
+    source,
+  }
 }
 
 function machineConfigPath(env: ConfigEnvironment = process.env): string {
@@ -495,14 +555,21 @@ function autonomyEntryKind(key: string): 'preset' | 'rulings' | 'ship-to' | 'val
   throw new Error(`accepted machine keys: ${MACHINE_AUTONOMY_KEYS}`)
 }
 
-function validateAutonomyEntry(key: string, value: string): void {
+export function validateAutonomyEntry(key: string, value: string): void {
   const kind = autonomyEntryKind(key)
-  const valid =
-    (kind === 'preset' && AUTONOMY_PRESETS.includes(value as never)) ||
-    (kind === 'rulings' && ['agent', 'user'].includes(value)) ||
-    (kind === 'ship-to' && storedShipToLevel(value) !== undefined) ||
-    (kind === 'value' && AUTONOMY_VALUES.includes(value as never))
-  if (!valid) throw new Error(`accepted machine keys: ${MACHINE_AUTONOMY_KEYS}`)
+  if (kind === 'ship-to') {
+    if (storedShipToLevel(value) === undefined)
+      throw new Error(
+        `refusing autonomy config key ${key}: value must be one of ${SHIP_TO_VALUES.join(', ')}`,
+      )
+    return
+  }
+  const accepted =
+    kind === 'preset' ? AUTONOMY_PRESETS : kind === 'rulings' ? ['agent', 'user'] : AUTONOMY_VALUES
+  if (!accepted.includes(value as never))
+    throw new Error(
+      `refusing autonomy config key ${key}: value must be one of ${accepted.join(', ')}`,
+    )
 }
 
 export function setMachineAutonomy(
@@ -629,7 +696,94 @@ export function readMachineValue<Key extends MachineConfigKey>(
     path,
     (message) => process.stderr.write(`${message}\n`),
     warnedLegacyVariables,
+  ).value
+}
+
+export function readMachineValueWithSource<Key extends MachineConfigKey>(
+  key: Key,
+  env: ConfigEnvironment = process.env,
+): { value: MachineConfigValue<Key>; source: MachineValueSource } {
+  const path = machineConfigPath(env)
+  const parsed = readMachineFile(path)
+  return resolveMachineValue(
+    MACHINE_CONFIG,
+    env,
+    parsed,
+    key,
+    path,
+    (message) => process.stderr.write(`${message}\n`),
+    warnedLegacyVariables,
   )
+}
+
+export function readMachineFileValue(
+  key: MachineConfigKey,
+  env: ConfigEnvironment = process.env,
+): string | number | undefined {
+  const path = machineConfigPath(env)
+  const parsed = readMachineFile(path)
+  const value = fileValue(parsed, key)
+  if (value === undefined) return undefined
+  const entry = MACHINE_CONFIG[key]
+  const result = valueSchema(entry, false).safeParse(value)
+  if (!result.success) {
+    const expected = entry.type === 'integer' ? 'an integer' : 'a string'
+    throw new Error(`refusing machine config ${path}: key ${key} must be ${expected}`)
+  }
+  assertAllowedMachineValue(key, entry, result.data)
+  return result.data
+}
+
+export function setMachineValue(
+  key: MachineConfigKey,
+  value: string,
+  env: ConfigEnvironment = process.env,
+): string | number {
+  const entry: MachineConfigEntry = MACHINE_CONFIG[key]
+  const parsedValue = entry.type === 'integer' && /^-?\d+$/.test(value) ? Number(value) : value
+  const result = valueSchema(entry, false).safeParse(parsedValue)
+  if (!result.success) {
+    const expected = entry.type === 'integer' ? 'an integer' : 'a string'
+    throw new Error(`refusing machine config key ${key}: value must be ${expected}`)
+  }
+  assertAllowedMachineValue(key, entry, result.data)
+  const validation = entry.validator?.(result.data)
+  if (validation)
+    throw new Error(
+      `refusing machine config key ${key}: ${validation}; write a valid value with \`${PLATFORM_SLUG} machine config set --machine ${key} <uuid>\``,
+    )
+  atomicPatch((root) => {
+    const parts = key.split('.')
+    let table = root
+    for (const part of parts.slice(0, -1)) {
+      if (table[part] === undefined) table[part] = {}
+      table = table[part] as Record<string, unknown>
+    }
+    table[parts.at(-1)!] = result.data
+  }, env)
+  return result.data
+}
+
+export function deleteMachineValue(
+  key: MachineConfigKey,
+  env: ConfigEnvironment = process.env,
+): void {
+  atomicPatch((root) => {
+    const parts = key.split('.')
+    const tables = [root]
+    let table = root
+    for (const part of parts.slice(0, -1)) {
+      const child = table[part]
+      if (typeof child !== 'object' || child === null || Array.isArray(child)) return
+      table = child as Record<string, unknown>
+      tables.push(table)
+    }
+    delete table[parts.at(-1)!]
+    for (let index = tables.length - 1; index > 0; index--) {
+      if (Object.keys(tables[index]!).length) break
+      delete tables[index - 1]![parts[index - 1]!]
+    }
+  }, env)
 }
 
 export function readDelegationSettings(env: ConfigEnvironment = process.env): DelegationSettings {
@@ -638,47 +792,16 @@ export function readDelegationSettings(env: ConfigEnvironment = process.env): De
   ) as DelegationSettings
 }
 
-const ACCEPTED_DELEGATION_KEYS = Object.values(DELEGATION_SETTING_KEYS).join(', ')
-
-export function setMachineDelegation(
-  key: string,
-  value: string,
-  env: ConfigEnvironment = process.env,
-): void {
-  if (!isDelegationKey(key))
-    throw new Error(`accepted machine delegation keys: ${ACCEPTED_DELEGATION_KEYS}`)
-  assertAllowedMachineValue(key, MACHINE_CONFIG[key], value)
-  atomicPatch((root) => {
-    const delegation = (root.delegation as Record<string, unknown> | undefined) ?? {}
-    delegation[key.split('.')[1]!] = value
-    root.delegation = delegation
-  }, env)
-}
-
-export function deleteMachineDelegation(key: string, env: ConfigEnvironment = process.env): void {
-  if (!isDelegationKey(key))
-    throw new Error(`accepted machine delegation keys: ${ACCEPTED_DELEGATION_KEYS}`)
-  atomicPatch((root) => {
-    const delegation = root.delegation as Record<string, unknown> | undefined
-    if (!delegation) return
-    delete delegation[key.split('.')[1]!]
-    if (!Object.keys(delegation).length) delete root.delegation
-  }, env)
-}
-
 export function listMachineEntries(env: ConfigEnvironment = process.env): MachineConfigFileEntry[] {
-  const delegation = readDelegationSettings(env)
-  return [
-    ...Object.entries(delegation).map(([key, value]) => ({
-      key,
-      value,
-      scope: 'machine' as const,
-    })),
-    ...listMachineAutonomy(env),
-  ].sort((left, right) => left.key.localeCompare(right.key))
+  const catalogue = Object.keys(MACHINE_CONFIG).flatMap((key) => {
+    const value = readMachineFileValue(key as MachineConfigKey, env)
+    return value === undefined ? [] : [{ key, value: String(value), scope: 'machine' as const }]
+  })
+  return [...catalogue, ...listMachineAutonomy(env)].sort((left, right) =>
+    left.key.localeCompare(right.key),
+  )
 }
 
-const MACHINE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const MACHINE_ID_LOCK_WAIT_MS = 10_000
 const MACHINE_ID_LOCK_POLL_MS = 10
 
@@ -700,7 +823,10 @@ const machineIdentityLockWait: MachineIdentityLockWait = {
 export function storedMachineId(env: ConfigEnvironment = process.env): string | null {
   const id = readMachineValue('machine.id', env)
   if (!id) return null
-  if (!MACHINE_ID.test(id)) throw new Error(`refusing machine config: machine.id must be a UUID`)
+  if (!MACHINE_ID.test(id))
+    throw new Error(
+      `refusing machine config: machine.id must be a UUID; write a valid value with \`${PLATFORM_SLUG} machine config set --machine machine.id <uuid>\``,
+    )
   return id
 }
 

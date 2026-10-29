@@ -16,7 +16,7 @@ import {
   deleteEntry,
   deleteMachineEntry,
   deleteSecret,
-  getEntry,
+  getConfigEntry,
   listEntries,
   listSecrets,
   machineInit,
@@ -24,8 +24,7 @@ import {
   machineShow,
   machineTrust,
   sealSecretDecision,
-  setEntry,
-  setMachineEntry,
+  setConfigEntry,
   setSecret,
 } from '../config/config-service.ts'
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
@@ -49,32 +48,47 @@ function registerConfigSet(config: Command): void {
     .action(async (key, value, options) => {
       const write = shipToWrite(key, value)
       assertConfigWriteAllowed(write.key, write.value)
-      if (options.machine) {
-        if (options.space || options.expect)
-          throw new Error(
-            'refusing machine config set: --machine cannot be combined with --space or --expect',
-          )
-        const row = setMachineEntry(write.key, write.value)
-        if (options.json) log(JSON.stringify(row))
-        else
+      if (options.machine && options.space) {
+        throw new Error('refusing machine config set: --machine cannot be combined with --space')
+      }
+      const written = await setConfigEntry(
+        write.key,
+        write.value,
+        options.machine ? 'machine' : options.space ? 'space' : undefined,
+        expectedRowVersion(options.expect),
+      )
+      if (options.json) log(configSetPresentation(written))
+      else {
+        log(
+          `wrote ${written.key} to ${written.home === 'machine' ? 'machine' : `hosted ${written.home} scope`}`,
+        )
+        if (written.home === 'machine' && written.key.startsWith('autonomy.'))
           log(
             `machine settings take effect at the next session start (or after \`${PLATFORM_SLUG} machine settings apply\`)`,
           )
-        return
       }
-      const row = await setEntry(
-        write.key,
-        write.value,
-        scope(options),
-        expectedRowVersion(options.expect),
+    })
+}
+
+function registerConfigGet(config: Command): void {
+  config
+    .command('get <key>')
+    .description('show one configuration value')
+    .option('--space', 'read the value from the active space scope')
+    .option('--machine', 'read the value from machine.toml only')
+    .option('--json', 'write the configuration row as JSON')
+    .action(async (key, options) => {
+      if (options.machine && options.space)
+        throw new Error('refusing machine config get: --machine cannot be combined with --space')
+      const result = await getConfigEntry(
+        key,
+        options.machine ? 'machine' : options.space ? 'space' : undefined,
       )
-      if (options.json) log(configGetPresentation(row, true))
+      for (const line of configReadPresentation(result, Boolean(options.json))) log(line)
     })
 }
 
 const scope = (options: { space?: boolean }): ConfigScope => (options.space ? 'space' : 'user')
-type ConfigRow = Awaited<ReturnType<typeof getEntry>>
-
 function expectedRowVersion(value: string | undefined): number | null | undefined {
   if (value === undefined) return undefined
   if (value === 'null') return null
@@ -112,8 +126,25 @@ function shipToWrite(key: string, value: string): { key: string; value: string }
   return { key: SHIP_TO_CONFIG_KEY, value: storedShipToLevel(value) ?? value }
 }
 
-export const configGetPresentation = (row: ConfigRow, json: boolean) =>
-  json ? JSON.stringify(row) : row.value
+export const configSetPresentation = (result: Awaited<ReturnType<typeof setConfigEntry>>): string =>
+  JSON.stringify(result.row)
+
+export const configReadPresentation = (
+  result: Awaited<ReturnType<typeof getConfigEntry>>,
+  json: boolean,
+) =>
+  json
+    ? [JSON.stringify(result)]
+    : [
+        result.value,
+        `source: ${result.source}`,
+        ...(result.outrankingMachineValue === undefined
+          ? []
+          : [
+              `machine.toml value outranks it at the local user scope: ${result.outrankingMachineValue}`,
+            ]),
+        ...result.ignoredHostedScopes.map((ignored) => `ignored hosted value: ${ignored} scope`),
+      ]
 export const configListPresentation = (
   rows: { scope: string; key: string; value: string }[],
   json: boolean,
@@ -176,15 +207,7 @@ async function sealPipedSecret(key: string, options: { space?: boolean }): Promi
 export function register(program: Command): void {
   const config = program.command('config').description('manage scoped configuration values')
   registerMachineCommands(config)
-  config
-    .command('get <key>')
-    .description('show one configuration value')
-    .option('--space', 'read the value from the active space scope')
-    .option('--json', 'write the configuration row as JSON')
-    .action(async (key, options) => {
-      const row = await getEntry(key, scope(options))
-      log(configGetPresentation(row, Boolean(options.json)))
-    })
+  registerConfigGet(config)
   registerConfigSet(config)
   config
     .command('list')
