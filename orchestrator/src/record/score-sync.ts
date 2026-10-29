@@ -8,9 +8,8 @@ import type { RecordPayload as Payload } from './record-sync-contract.ts'
 import { validateRecordVerdict } from './record-verdicts.ts'
 
 const nullableString = (value: unknown) => (value == null ? null : String(value))
-const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
-function scoreValues(row: VerdictPayload) {
+export function scoreValues(row: VerdictPayload) {
   return {
     runId: String(row.id),
     spaceId: String(row.spaceId),
@@ -20,7 +19,7 @@ function scoreValues(row: VerdictPayload) {
     note: nullableString(row.note),
     scoredAt: new Date(row.scoredAt),
     scoredBy: String(row.scoredBy),
-    withheldFields: jsonString(row.withheldFields),
+    withheldFields: row.withheldFields,
     updatedAt: new Date(row.updatedAt),
   }
 }

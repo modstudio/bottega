@@ -11,7 +11,7 @@ import type { RecordPayload, RecordPrincipal } from './record-sync-contract.ts'
 import { bindPrincipal } from './record-sync-principal.ts'
 import { type ProjectResolutionCache, projectRecordId } from './record-sync-project-identity.ts'
 
-function values(row: RecordPayload, projectId: string | null) {
+export function branchDisposalValues(row: RecordPayload, projectId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
@@ -26,7 +26,7 @@ function values(row: RecordPayload, projectId: string | null) {
     archiveExpiresAt: new Date(String(row.archiveExpiresAt)),
     actorSession: String(row.actorSession),
     disposedAt: new Date(String(row.disposedAt)),
-    withheldFields: row.withheldFields == null ? null : JSON.stringify(row.withheldFields),
+    withheldFields: row.withheldFields,
     createdAt: new Date(String(row.createdAt)),
     updatedAt: new Date(String(row.updatedAt)),
   }
@@ -42,7 +42,7 @@ export async function pushBranchDisposal(
   if (!existingEvidenceOwned) throw new Error('branch disposal sync requires collision ownership')
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
-    const write = values(row, await projectRecordId(tx, row, principal, projectIds))
+    const write = branchDisposalValues(row, await projectRecordId(tx, row, principal, projectIds))
     await existingEvidenceOwned(tx, 'branch_disposal', write.id, write.machineId, principal)
     const { id: _id, createdAt: _createdAt, ...updates } = write
     const written = await drizzle({ client: tx })

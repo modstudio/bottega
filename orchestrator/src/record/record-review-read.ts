@@ -21,7 +21,7 @@ export function reviewReadRecordValues(
     branch: String(row.branch),
     tip: String(row.tip),
     patchId: String(row.patchId),
-    pathSet: JSON.stringify(row.pathSet),
+    pathSet: row.pathSet,
     tier: Number(row.tier),
     note: String(row.note),
     sessionId: row.sessionId == null ? null : String(row.sessionId),

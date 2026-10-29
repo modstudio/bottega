@@ -10,9 +10,8 @@ const date = (value: unknown) => new Date(String(value))
 const nullableDate = (value: unknown) => (value == null ? null : date(value))
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 const nullableString = (value: unknown) => (value == null ? null : String(value))
-const jsonString = (value: unknown) => (value == null ? null : JSON.stringify(value))
 
-function releaseValues(row: Payload, projectId: string | null) {
+export function releaseValues(row: Payload, projectId: string | null) {
   return {
     id: String(row.id),
     spaceId: String(row.spaceId),
@@ -36,7 +35,7 @@ function releaseValues(row: Payload, projectId: string | null) {
     liveMatchesCandidate:
       row.liveMatchesCandidate == null ? null : Boolean(row.liveMatchesCandidate),
     warning: nullableString(row.warning),
-    withheldFields: jsonString(row.withheldFields),
+    withheldFields: row.withheldFields,
     createdAt: date(row.createdAt),
     updatedAt: date(row.updatedAt),
   }

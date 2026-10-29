@@ -614,7 +614,7 @@ test('an old-shape landing override syncs with a null change group', async () =>
   })
   const values = remote.parameters.find((parameters) => parameters.includes('legacy override'))
   expect(values).toContain('operator')
-  expect(values).toContain('[]')
+  expect(values).toContainEqual([])
   expect(values?.filter((value) => value === null)).toHaveLength(6)
   local.close()
 })
@@ -1008,7 +1008,7 @@ test('a payload from another machine is refused before a record write', async ()
   local.close()
 })
 
-test('every populated JSONB run value is bound as one JSON string', async () => {
+test('every populated JSONB run value is bound as its structured value', async () => {
   const jsonValues = {
     changedPaths: ['a.ts'],
     docRevisions: [12, 14],
@@ -1026,6 +1026,6 @@ test('every populated JSONB run value is bound as one JSON string', async () => 
     blocked: [],
   })
   const bound = remote.parameters.flat()
-  for (const value of Object.values(jsonValues)) expect(bound).toContain(JSON.stringify(value))
+  for (const value of Object.values(jsonValues)) expect(bound).toContainEqual(value)
   local.close()
 })

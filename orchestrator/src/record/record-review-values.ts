@@ -7,7 +7,7 @@ export const commonReviewRecordValues = (row: Payload) => ({
   id: String(row.id),
   spaceId: String(row.spaceId),
   machineId: String(row.machineId),
-  withheldFields: row.withheldFields == null ? null : JSON.stringify(row.withheldFields),
+  withheldFields: row.withheldFields,
   createdAt: new Date(String(row.createdAt)),
   updatedAt: new Date(String(row.updatedAt)),
 })
