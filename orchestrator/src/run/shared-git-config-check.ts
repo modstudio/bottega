@@ -4,6 +4,7 @@ export type RecordedRunSharedGitConfigInput = {
   runId: string
   job: string
   worktree: string | null
+  branch: string | null
 }
 
 export function sharedGitConfigCheckSkipReason(input: {

@@ -36,11 +36,20 @@ function namesRunTree(value: GitConfigValue, worktree: string): boolean {
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
+function branchNameFromConfigKey(key: string): string | null {
+  if (!key.startsWith('branch.')) return null
+  const variableSeparator = key.lastIndexOf('.')
+  return variableSeparator > 'branch.'.length
+    ? key.slice('branch.'.length, variableSeparator)
+    : null
+}
+
 /** Classify changed keys without reading files or applying repairs. */
 export function decideSharedGitConfigChanges(
   before: GitConfigValues,
   after: GitConfigValues,
   worktree: string,
+  runBranch: string | null,
 ): SharedGitConfigAction[] {
   const actions: SharedGitConfigAction[] = []
   for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
@@ -48,6 +57,8 @@ export function decideSharedGitConfigChanges(
     const newValues = after[key] ?? []
     if (valuesEqual(oldValues, newValues)) continue
     const runTreeValue = newValues.some((value) => namesRunTree(value, worktree))
+    const branchName = branchNameFromConfigKey(key)
+    if (!runTreeValue && runBranch && branchName !== null && branchName !== runBranch) continue
     actions.push({
       kind: runTreeValue ? 'repair' : 'report',
       change: oldValues.length === 0 ? 'added' : newValues.length === 0 ? 'removed' : 'changed',
@@ -381,6 +392,7 @@ function loadTerminalComparison(input: { runId: string; worktree: string; snapsh
 export function terminalSharedGitConfigHeader(input: {
   runId: string
   worktree: string | null
+  branch: string | null
   expected: boolean
   runsDir?: string
 }): string | null {
@@ -397,7 +409,12 @@ export function terminalSharedGitConfigHeader(input: {
     const { snapshot, target, after } = comparison
     comparisonRan = true
     const headers: string[] = []
-    for (const action of decideSharedGitConfigChanges(snapshot.values, after, input.worktree)) {
+    for (const action of decideSharedGitConfigChanges(
+      snapshot.values,
+      after,
+      input.worktree,
+      input.branch,
+    )) {
       const description = actionDescription(action, target)
       if (action.kind === 'report') {
         const detail = `shared git config changed: ${description}`

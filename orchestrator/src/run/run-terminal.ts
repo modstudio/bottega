@@ -365,6 +365,7 @@ function terminalOperationalHeader(input: TerminalInput, current: string | null)
     terminalSharedGitConfigHeader({
       runId: input.claim.id,
       worktree: input.worktree?.path ?? null,
+      branch: input.worktree?.branch ?? null,
       expected: shouldSnapshotSharedGitConfig(input.writesJob, input.worktree?.path ?? null),
     }),
   ].filter((part): part is string => Boolean(part))

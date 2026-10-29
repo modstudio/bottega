@@ -23,6 +23,7 @@ describe('writing-run shared git config decision', () => {
           'core.worktree': [tree],
         },
         tree,
+        null,
       ),
     ).toEqual([
       {
@@ -50,6 +51,7 @@ describe('writing-run shared git config decision', () => {
         { 'user.name': ['Ada'], 'core.hookspath': ['/projects/old/.githooks'] },
         { 'user.name': ['Test'], 'core.hookspath': ['/projects/app/.githooks'] },
         tree,
+        null,
       ),
     ).toEqual([
       {
@@ -73,7 +75,7 @@ describe('writing-run shared git config decision', () => {
 
   test('returns no action when the config did not change', () => {
     expect(
-      decideSharedGitConfigChanges({ 'user.name': ['Ada'] }, { 'user.name': ['Ada'] }, tree),
+      decideSharedGitConfigChanges({ 'user.name': ['Ada'] }, { 'user.name': ['Ada'] }, tree, null),
     ).toEqual([])
   })
 
@@ -92,7 +94,7 @@ describe('writing-run shared git config decision', () => {
 
   test('detects a change between valueless and explicitly empty entries', () => {
     expect(
-      decideSharedGitConfigChanges({ 'merge.ff': [null] }, { 'merge.ff': [''] }, tree),
+      decideSharedGitConfigChanges({ 'merge.ff': [null] }, { 'merge.ff': [''] }, tree, null),
     ).toEqual([
       {
         kind: 'report',
@@ -101,6 +103,147 @@ describe('writing-run shared git config decision', () => {
         namesRunTree: false,
         oldValues: [null],
         newValues: [''],
+      },
+    ])
+  })
+
+  test("does not attribute another branch's removed base key to the run", () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'branch.technical/STAR-6206-work.base': ['/projects/app'] },
+        {},
+        tree,
+        'DEV-1851-work',
+      ),
+    ).toEqual([])
+  })
+
+  test("reports the run's own branch key", () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'branch.DEV-1851-work.remote': ['origin'] },
+        { 'branch.DEV-1851-work.remote': ['fork'] },
+        tree,
+        'DEV-1851-work',
+      ),
+    ).toEqual([
+      {
+        kind: 'report',
+        change: 'changed',
+        key: 'branch.DEV-1851-work.remote',
+        namesRunTree: false,
+        oldValues: ['origin'],
+        newValues: ['fork'],
+      },
+    ])
+  })
+
+  test('reports a changed non-branch key', () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'remote.origin.url': ['old'] },
+        { 'remote.origin.url': ['new'] },
+        tree,
+        'DEV-1851-work',
+      ),
+    ).toEqual([
+      {
+        kind: 'report',
+        change: 'changed',
+        key: 'remote.origin.url',
+        namesRunTree: false,
+        oldValues: ['old'],
+        newValues: ['new'],
+      },
+    ])
+  })
+
+  test("repairs a run-tree value in another branch's section", () => {
+    expect(
+      decideSharedGitConfigChanges(
+        {},
+        { 'branch.someone-else.hookspath': [`${tree}/.githooks`] },
+        tree,
+        'DEV-1851-work',
+      ),
+    ).toEqual([
+      {
+        kind: 'repair',
+        change: 'added',
+        key: 'branch.someone-else.hookspath',
+        namesRunTree: true,
+        oldValues: [],
+        newValues: [`${tree}/.githooks`],
+      },
+    ])
+  })
+
+  test('parses dots and slashes as part of a branch subsection', () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'branch.feature/release.1.remote': ['origin'] },
+        { 'branch.feature/release.1.remote': ['fork'] },
+        tree,
+        'feature/release.1',
+      ),
+    ).toHaveLength(1)
+  })
+
+  test('reports another branch change when the run branch is unknown', () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'branch.someone-else.remote': ['origin'] },
+        { 'branch.someone-else.remote': ['fork'] },
+        tree,
+        null,
+      ),
+    ).toHaveLength(1)
+  })
+
+  test('reports a top-level branch variable that has no subsection', () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'branch.autosetupmerge': ['false'] },
+        { 'branch.autosetupmerge': ['true'] },
+        tree,
+        'DEV-1851-work',
+      ),
+    ).toHaveLength(1)
+  })
+
+  test('reports another branch change when the run branch is empty', () => {
+    expect(
+      decideSharedGitConfigChanges(
+        { 'branch.someone-else.remote': ['origin'] },
+        { 'branch.someone-else.remote': ['fork'] },
+        tree,
+        '',
+      ),
+    ).toHaveLength(1)
+  })
+
+  test('matches branch subsections exactly and case-sensitively', () => {
+    expect(
+      decideSharedGitConfigChanges(
+        {
+          'branch.DEV-1851-Work.remote': ['origin'],
+          'branch.dev-1851-work.remote': ['origin'],
+        },
+        {
+          'branch.DEV-1851-Work.remote': ['fork'],
+          'branch.dev-1851-work.remote': ['fork'],
+        },
+        tree,
+        'DEV-1851-Work',
+      ),
+    ).toEqual([
+      {
+        kind: 'report',
+        change: 'changed',
+        key: 'branch.DEV-1851-Work.remote',
+        namesRunTree: false,
+        oldValues: ['origin'],
+        newValues: ['fork'],
       },
     ])
   })

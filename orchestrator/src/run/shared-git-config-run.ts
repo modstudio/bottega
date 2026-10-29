@@ -20,6 +20,7 @@ export function terminalSharedGitConfigForRecordedRun(
   return terminalSharedGitConfigHeader({
     runId: input.runId,
     worktree: input.worktree,
+    branch: input.branch,
     expected: Boolean(recordedJob.needs.writesRepo) && Boolean(input.worktree),
   })
 }

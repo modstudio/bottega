@@ -243,6 +243,7 @@ type RunningRow = {
   started_at: string
   job: string
   worktree: string | null
+  branch: string | null
   executor: 'external' | 'harness'
   session_last_seen: string | null
   session_id: string | null
@@ -401,7 +402,7 @@ export function reapStale(
   const now = Date.now()
   const rows = d
     .query(
-      `SELECT r.number, r.record_id, r.pid, r.agent_pid, r.agent, r.started_at, r.job, r.worktree,
+      `SELECT r.number, r.record_id, r.pid, r.agent_pid, r.agent, r.started_at, r.job, r.worktree, r.branch,
               r.executor, r.session_id, r.harness_wall_bound_ms, seen.last_seen AS session_last_seen
          FROM run r LEFT JOIN session_seen seen ON seen.session_id=r.session_id
         WHERE r.status='running'`,
@@ -526,7 +527,12 @@ function reapDeadRun(
     return
   }
   // The check spawns git, so it runs after the claim commits rather than holding the write lock.
-  const header = checkSharedGitConfig({ runId: id, job: row.job, worktree: row.worktree })
+  const header = checkSharedGitConfig({
+    runId: id,
+    job: row.job,
+    worktree: row.worktree,
+    branch: row.branch,
+  })
   if (!header) return
   recordRunSharedGitConfigHeader(d, id, header, localMachineId, finishedAt)
 }
