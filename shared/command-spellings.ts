@@ -342,6 +342,7 @@ export const PLATFORM_COMMAND_WORDS = [
   'session adopt',
   'session close-out',
   'session help',
+  'session losses',
   'task',
   'task close',
   'task comment',

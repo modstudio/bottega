@@ -8,10 +8,30 @@ import {
   formatSessionCloseOut,
   SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE,
 } from '../session/session-close-out.ts'
-import { log } from './support.ts'
+import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
+import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
+import { collect, log } from './support.ts'
 
 export function register(program: Command): void {
   const session = program.command('session').description('manage the calling architect session')
+  session
+    .command('losses')
+    .description('measure losses around Claude transcript compaction boundaries')
+    .option('--session <id>', 'select one session; repeat to select more', collect, [])
+    .option('--all', 'select every readable transcript')
+    .option('--since <date>', 'include rows at or after this ISO date')
+    .option('--json', 'write the report as JSON')
+    .option('--judge', 'dispatch blind semantic-loss judges without waiting')
+    .allowExcessArguments(false)
+    .action(async (options) => {
+      const report = await sessionLosses({
+        sessions: options.session,
+        all: Boolean(options.all),
+        since: options.since,
+        judge: Boolean(options.judge),
+      })
+      log(options.json ? JSON.stringify(report) : formatSessionLosses(report))
+    })
   session
     .command('close-out')
     .description('release and verify everything one session owns')
