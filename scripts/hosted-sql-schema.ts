@@ -100,6 +100,7 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   'orchestrator/test/postgres-board-receipt-revision-proof.ts',
   'orchestrator/test/postgres-board-route-edge-proof.ts',
   'orchestrator/test/postgres-board-reply-proof.ts',
+  'orchestrator/test/postgres-board-thread-expiry-proof.ts',
   'orchestrator/test/postgres-board-shared-space-api-proof.ts',
   'orchestrator/test/postgres-canon-refusal-proof.ts',
   'orchestrator/test/postgres-customer-auth-proof.ts',

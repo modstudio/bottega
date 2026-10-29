@@ -372,6 +372,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'orchestrator/src/record/record-board-messages.ts',
     [
       'bun',
+      '../../../shared/board-duration.ts',
       '../../../shared/board-purpose.ts',
       '../../../shared/board-reply-audience-options.ts',
       '../../../shared/record-id.ts',

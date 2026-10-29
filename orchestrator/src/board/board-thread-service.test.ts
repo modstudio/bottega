@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
@@ -62,6 +63,13 @@ test('question replies reach the prior participants but never the replier', () =
   expect(
     claimNotices(false, architect('thread-first'), clock + 2).map((row) => row.recordId),
   ).not.toContain(first.recordId)
+  expect(
+    (
+      db()
+        .query('SELECT expires_at FROM board_message WHERE record_id=?')
+        .get(question.recordId) as { expires_at: string }
+    ).expires_at,
+  ).toBe(new Date(clock + 1 + BOARD_REQUEST_DEFAULT_EXPIRY_MS).toISOString())
   expect(claimNotices(false, {}, clock + 2).map((row) => row.recordId)).toContain(first.recordId)
 
   const second = replyToThread(
