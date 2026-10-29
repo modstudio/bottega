@@ -16,12 +16,86 @@ import {
 
 test('runs --unscored uses the shared definition of an owed judgment', () => {
   const wanted = addRun({ agent: 'grok', job: 'craft', session: 'owed-session' })
+  const failed = addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'failed',
+    kind: 'contract',
+    session: 'owed-session',
+  })
+  addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'failed',
+    kind: 'auth',
+    session: 'owed-session',
+  })
+  const resumed = addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'failed',
+    kind: 'contract',
+    session: 'owed-session',
+  })
+  addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'running',
+    parent: resumed,
+    turn: 2,
+    session: 'owed-session',
+  })
+  const judged = addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'failed',
+    kind: 'contract',
+    session: 'owed-session',
+  })
+  score(judged, 'none')
+  const excluded = addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'failed',
+    kind: 'contract',
+    session: 'owed-session',
+  })
+  db().query("UPDATE run SET evidence_excluded='voided' WHERE record_id=?").run(excluded)
+  const stopped = addRun({
+    agent: 'grok',
+    job: 'craft',
+    status: 'stopped',
+    kind: 'stopped',
+    session: 'owed-session',
+  })
   addRun({ agent: 'grok', job: 'craft', probe: 1, session: 'owed-session' })
-  addRun({ agent: 'grok', job: 'craft', status: 'failed', session: 'owed-session' })
   addRun({ agent: 'grok', job: 'craft', status: 'running', session: 'owed-session' })
-  const parent = addRun({ agent: 'grok', job: 'craft', status: 'failed', session: 'owed-session' })
-  addRun({ agent: 'grok', job: 'craft', parent, turn: 2, session: 'owed-session' })
-  expect(pendingForSession('owed-session').map((row) => row.record_id)).toEqual([wanted])
+  expect(pendingForSession('owed-session').map((row) => row.record_id)).toEqual([
+    wanted,
+    failed,
+    stopped,
+  ])
+})
+
+test('a scored failover successor does not judge its failed predecessor', () => {
+  const predecessor = addRun({
+    agent: 'codex',
+    job: 'craft',
+    status: 'failed',
+    kind: 'contract',
+    session: 'failover-session',
+  })
+  const successor = addRun({
+    agent: 'grok',
+    job: 'craft',
+    session: 'failover-session',
+  })
+  db()
+    .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+    .run(predecessor, successor)
+  score(successor, 'full', 'right')
+
+  expect(pendingForSession('failover-session').map((row) => row.record_id)).toEqual([predecessor])
 })
 
 describe('the activity window', () => {

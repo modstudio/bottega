@@ -18,11 +18,46 @@ REQUIRED_REPLY_KEYS = {
     "deviations", "blockers", "tests",
 }
 REPLY_STATUSES = {"done", "asking", "refused"}
+# Literal mirror of failure.ts isNotEvidenceFailure. route-unscored.test.ts
+# holds the copies equal because this Python hook cannot import TypeScript.
+NOT_EVIDENCE = {
+    "capacity",
+    "daily_quota",
+    "quota",
+    "billing",
+    "provider_error",
+    "auth",
+    "entitlement",
+    "unreachable",
+    "context",
+    "cost",
+    "content_refusal",
+    "interrupted",
+    "idle",
+    "truncated",
+    "escaped",
+    "confinement_unverified",
+    "sandbox_denied",
+    "mcp_unverified",
+    "harness",
+    "abandoned",
+    "unevidenced",
+}
 
 
 class HeldTreeDecision(NamedTuple):
     block: bool
     in_flight_line: str | None
+
+
+def unscored_remedy(status: str, failure_kind: str | None, agent: str) -> str:
+    if status == "ok":
+        return "axes"
+    if failure_kind in NOT_EVIDENCE or (
+        failure_kind == "stopped" and agent == "(pending)"
+    ):
+        return "void"
+    return "none"
 
 
 def decide_held_tree(tree: dict) -> HeldTreeDecision:

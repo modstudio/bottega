@@ -76,6 +76,7 @@ describe('unscored filed-issue loop runs', () => {
       { runId: diagnosis, job: 'diagnose', issueKey: 'DEV-1' },
       { runId: fix, job: 'issue-worker', issueKey: 'DEV-1' },
       { runId: lens, job: 'review-lens', issueKey: 'DEV-1' },
+      { runId: failed, job: 'diagnose', issueKey: 'DEV-1' },
     ])
   })
 })

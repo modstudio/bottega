@@ -24,9 +24,9 @@ import {
   type RemovedTreeDockerCleanup,
   reclaimRemovedTreeDockerResources,
 } from '../cleanup/cleanup-sweep-docker.ts'
-import { renderUnjudgedRunRemedy } from '../cleanup/unjudged-run-remedy.ts'
 import { closeOutRun } from '../close/close-out.ts'
 import { writableDb } from '../database/db.ts'
+import { renderUnjudgedRunRemedy } from '../evidence/unjudged-run-remedy.ts'
 import { type HookTreeRemovalResult, removeHookTreeResult } from '../hook-tree/tree.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import {
@@ -60,6 +60,7 @@ type RunRow = {
   evidence_excluded: string | null
   failure_kind: string | null
   root_failure_kind: string | null
+  root_agent: string
   worktree: string | null
 }
 
@@ -135,7 +136,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
     .query(
       `SELECT r.record_id,r.number,r.parent_run_record_id,r.started_at,r.job,r.status,r.branch,
               r.minted_branch,r.launch_key,r.evidence_excluded,r.failure_kind,r.worktree,
-              root.number AS root_number,root.failure_kind AS root_failure_kind
+              root.number AS root_number,root.failure_kind AS root_failure_kind,root.agent AS root_agent
          FROM run r
          JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
         WHERE r.project_record_id=? ORDER BY r.number`,
@@ -172,6 +173,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       judged: scored.has(rootId) || excludedRoots.has(rootId),
       failureKind: row.failure_kind,
       rootFailureKind: row.root_failure_kind,
+      rootAgent: row.root_agent,
       worktree: row.worktree,
     }
   })

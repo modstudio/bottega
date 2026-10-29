@@ -6,7 +6,7 @@ import {
   decideUnjudgedRunRemedy,
   providerDidNotServeRun,
   type UnjudgedRunRemedy,
-} from '../cleanup/unjudged-run-remedy.ts'
+} from '../evidence/unjudged-run-remedy.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 
@@ -28,6 +28,7 @@ export type ShipCleanupRunFact = {
   judged: boolean
   failureKind: string | null
   rootFailureKind: string | null
+  rootAgent: string
   worktree: string | null
 }
 
@@ -210,7 +211,7 @@ function decideScopedRun(
       worktreeAction: 'close',
       reason: 'run has no recorded verdict',
       ...(run.record_id === run.root_record_id
-        ? { remedy: decideUnjudgedRunRemedy(run.rootFailureKind) }
+        ? { remedy: decideUnjudgedRunRemedy(run.rootFailureKind, run.rootAgent) }
         : {}),
     }
   }

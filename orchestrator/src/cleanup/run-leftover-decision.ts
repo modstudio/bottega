@@ -1,8 +1,8 @@
 // concern: scheduled run-store leftover cleanup policy
 
+import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from '../evidence/unjudged-run-remedy.ts'
 import { RUN_LEFTOVER_MAX_AGE_DAYS } from '../run/run-artifact-limits.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { decideUnjudgedRunRemedy, type UnjudgedRunRemedy } from './unjudged-run-remedy.ts'
 
 const RUN_LEFTOVER_MAX_AGE_MS = RUN_LEFTOVER_MAX_AGE_DAYS * 24 * 60 * 60 * 1000
 
@@ -14,6 +14,7 @@ export type RunLeftoverFacts = {
   finishedAt: number | null
   judged: boolean
   failureKind: string | null
+  agent: string
   newestEntryAt: number | null
   clock: number
 }
@@ -54,7 +55,7 @@ export function decideRunLeftover(facts: RunLeftoverFacts): RunLeftoverDecision 
     return {
       action: 'keep',
       reason: 'no recorded verdict',
-      remedy: decideUnjudgedRunRemedy(facts.failureKind),
+      remedy: decideUnjudgedRunRemedy(facts.failureKind, facts.agent),
     }
   return { action: 'remove', reason: 'terminal run is older than the run leftover age cap' }
 }

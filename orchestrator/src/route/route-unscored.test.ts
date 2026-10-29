@@ -11,26 +11,27 @@ import {
   unscoredCount,
   voidedSql,
 } from '../evidence/evidence-query.ts'
+import { NOT_EVIDENCE } from '../failure/failure.ts'
 
 describe('what counts as unscored', () => {
-  test('only a successful, non-probe, unjudged run is owed a judgment', () => {
+  test('every terminal, served, non-probe, unjudged run is owed a judgment', () => {
     addRun({ agent: 'grok', job: 'craft' }) // owed
     addRun({ agent: 'grok', job: 'craft', probe: 1 }) // calibration
-    addRun({ agent: 'grok', job: 'craft', status: 'failed' }) // already none
-    addRun({ agent: 'grok', job: 'craft', status: 'stale' }) // already none
+    addRun({ agent: 'grok', job: 'craft', status: 'failed', kind: 'contract' }) // owed
+    addRun({ agent: 'grok', job: 'craft', status: 'stale' }) // owed
+    addRun({ agent: 'grok', job: 'craft', status: 'failed', kind: 'auth' }) // unserved
     addRun({ agent: 'grok', job: 'craft', status: 'running' }) // not finished
     score(addRun({ agent: 'grok', job: 'craft' }), 'full', 'right') // judged
 
-    // `runs - scores` — what doctor and the card used to do — would say 5.
-    expect(unscoredCount()).toBe(1)
+    expect(unscoredCount()).toBe(3)
   })
 
   test('doctor and pending cannot disagree, because they share the rule', () => {
     const mine = addRun({ agent: 'grok', job: 'craft' })
     db().query('UPDATE run SET session_id=? WHERE record_id=?').run('S', mine)
-    addRun({ agent: 'grok', job: 'craft', status: 'failed' })
-    expect(pendingForSession('S').length).toBe(1)
-    expect(unscoredCount()).toBe(1)
+    addRun({ agent: 'grok', job: 'craft', status: 'failed', kind: 'contract', session: 'S' })
+    expect(pendingForSession('S').length).toBe(2)
+    expect(unscoredCount()).toBe(2)
   })
 
   test('the count honors the dashboard window', () => {
@@ -198,6 +199,17 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
     expect(hook).toContain(`${PLATFORM_SLUG} note keep {note_label}`)
     expect(hook).toContain(`${PLATFORM_SLUG} note drop {note_label}`)
     expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label} --title "<the point>"`)
+  })
+
+  test("the hook's not-evidence kinds match the canonical set", () => {
+    const hook = readFileSync(
+      fileURLToPath(new URL('../../hooks/score_reminder_decision.py', import.meta.url)),
+      'utf8',
+    )
+    const literal = hook.match(/NOT_EVIDENCE = \{([\s\S]*?)\n\}/)?.[1]
+    expect(literal).toBeDefined()
+    const hookKinds = [...(literal?.matchAll(/["']([^"']+)["']/g) ?? [])].map((match) => match[1]!)
+    expect(new Set(hookKinds)).toEqual(new Set([...NOT_EVIDENCE, 'unevidenced']))
   })
 
   test("the hook's newest-turn output-path rule matches the canonical SQL", () => {

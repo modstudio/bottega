@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db, sessionId } from '../database/db.ts'
 import { pendingCommand } from './pending-commands.ts'
@@ -47,4 +48,33 @@ test('pending marks a refusal from the latest turn and ignores done and absent r
     rmSync(refusedPath, { force: true })
     rmSync(donePath, { force: true })
   }
+})
+
+test('pending gives failed runs the remedy that releases their cleanup hold', () => {
+  const owner = sessionId()
+  const contract = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    kind: 'contract',
+    session: owner,
+  })
+  const interrupted = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'failed',
+    kind: 'interrupted',
+    session: owner,
+  })
+  const output: string[] = []
+
+  pendingCommand(() => '', { log: (value) => output.push(value), setExitCode: () => {} })
+
+  const shown = output.join('\n')
+  expect(shown).toContain(
+    `${PLATFORM_SLUG} score ${contract} none   # codex/implement  head  failed/contract`,
+  )
+  expect(shown).toContain(
+    `${PLATFORM_SLUG} score ${interrupted} none --void --note "<why>"   # codex/implement  head  failed/interrupted`,
+  )
 })

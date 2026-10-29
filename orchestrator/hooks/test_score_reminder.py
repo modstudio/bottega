@@ -12,11 +12,32 @@ SPEC.loader.exec_module(score_reminder_decision)
 
 decide_held_tree = score_reminder_decision.decide_held_tree
 refusal_score_guidance = score_reminder_decision.refusal_score_guidance
+unscored_remedy = score_reminder_decision.unscored_remedy
 WRITING_JOBS = score_reminder_decision.WRITING_JOBS
 REQUIRED_REPLY_KEYS = score_reminder_decision.REQUIRED_REPLY_KEYS
 REPLY_STATUSES = score_reminder_decision.REPLY_STATUSES
 FIXTURE = PATH.parents[1] / "src" / "close" / "held-tree-json.fixture.json"
 REFUSAL_FIXTURE = PATH.parents[1] / "src" / "score" / "refusal-guidance.fixture.json"
+
+
+class UnscoredRemedyTest(unittest.TestCase):
+    def test_ok_uses_axes(self):
+        self.assertEqual(unscored_remedy("ok", None, "codex"), "axes")
+
+    def test_interrupted_failure_is_void(self):
+        self.assertEqual(unscored_remedy("failed", "interrupted", "codex"), "void")
+
+    def test_unevidenced_failure_is_void(self):
+        self.assertEqual(unscored_remedy("failed", "unevidenced", "codex"), "void")
+
+    def test_pending_agent_stopped_failure_is_void(self):
+        self.assertEqual(unscored_remedy("stopped", "stopped", "(pending)"), "void")
+
+    def test_resolved_agent_stopped_failure_uses_none(self):
+        self.assertEqual(unscored_remedy("stopped", "stopped", "codex"), "none")
+
+    def test_contract_failure_uses_none(self):
+        self.assertEqual(unscored_remedy("failed", "contract", "codex"), "none")
 
 
 class HeldTreeDecisionTest(unittest.TestCase):

@@ -421,6 +421,7 @@ export const importBoundaries: ImportBoundary[] = [
     [
       '../database/db.ts',
       '../failure/failure.ts',
+      '../run/run-status.ts',
       '../run/synthetic-lifecycle-job.ts',
       'bun:sqlite',
     ],

@@ -7,7 +7,7 @@ import { newRecordId } from '../../shared/record-id.ts'
 import { callerIdentityRefusal } from './caller-classification.ts'
 import { callerIdentity, db, nowIso, sessionId, writeTransaction } from './database/db.ts'
 import { UNJUDGED_EXCLUSION_REASON } from './evidence/unjudged-expiry.ts'
-import { isNotEvidenceFailure } from './failure/failure.ts'
+import { isNotEvidenceFailure, pendingAgentVoidAllowed } from './failure/failure.ts'
 import { jobTakesFidelity } from './jobs/job-fidelity.ts'
 import { JOBS, job } from './jobs/jobs.ts'
 import { findingsCloseOutRefusal } from './judgment-closeout-refusal.ts'
@@ -761,8 +761,7 @@ function refusePendingAgentScore(
   failureKind: string | null,
   flags: JudgmentFlags,
 ): void {
-  const pendingVoidAllowed =
-    flags.has('void') && (failureKind === 'stopped' || isNotEvidenceFailure(failureKind))
+  const pendingVoidAllowed = flags.has('void') && pendingAgentVoidAllowed(failureKind)
   if (agent === '(pending)' && !pendingVoidAllowed) {
     throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
   }

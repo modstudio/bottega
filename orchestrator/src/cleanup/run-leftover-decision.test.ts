@@ -13,6 +13,7 @@ function facts(overrides: Partial<RunLeftoverFacts>): RunLeftoverFacts {
     finishedAt: old,
     judged: true,
     failureKind: null,
+    agent: 'codex',
     newestEntryAt: old,
     clock,
     ...overrides,

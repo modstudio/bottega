@@ -778,7 +778,7 @@ export async function monitor(
       kind: 'unscored-run',
       subject: `run:${run.record_id}`,
       since: run.started_at,
-      detail: `completed run ${run.record_id} has no score`,
+      detail: `terminal run ${run.record_id} has no score`,
       action: 'reported; only its owning reader may score it',
       ownerSession: run.session_id,
     })
