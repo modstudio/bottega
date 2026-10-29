@@ -136,8 +136,8 @@ describe('reapStale', () => {
   test('a stale writing run checks shared config before recording its terminal result', () => {
     const id = addRun({ agent: 'grok', job: 'implement', status: 'running' })
     db()
-      .query('UPDATE run SET pid=?, agent_pid=?, worktree=? WHERE record_id=?')
-      .run(4194304, 4194304, '/trees/run', id)
+      .query('UPDATE run SET pid=?, agent_pid=?, worktree=?, branch=? WHERE record_id=?')
+      .run(4194304, 4194304, '/trees/run', 'DEV-1851-work', id)
     const checked: unknown[] = []
 
     expect(
@@ -146,7 +146,9 @@ describe('reapStale', () => {
         return 'shared git config changed: user.name (changed; value names run tree: no) in /repo/.git/config'
       }),
     ).toBe(1)
-    expect(checked).toEqual([{ runId: id, job: 'implement', worktree: '/trees/run' }])
+    expect(checked).toEqual([
+      { runId: id, job: 'implement', worktree: '/trees/run', branch: 'DEV-1851-work' },
+    ])
     expect(
       (
         db().query('SELECT error FROM run WHERE record_id=?').get(id) as {

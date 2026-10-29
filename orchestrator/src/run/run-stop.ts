@@ -199,7 +199,7 @@ export type RunStopHelpers = RunControlHelpers & {
 function finishAbandonedRun(
   abandoned: {
     row: { record_id: string; job: string }
-    cleanupRow: { worktree: string | null }
+    cleanupRow: { worktree: string | null; branch: string | null }
   },
   helpers: RunControlHelpers,
   options: RunStopOptions,
@@ -209,6 +209,7 @@ function finishAbandonedRun(
     runId: row.record_id,
     job: row.job,
     worktree: cleanupRow.worktree,
+    branch: cleanupRow.branch,
   })
   if (header) {
     recordRunSharedGitConfigHeader(db(), row.record_id, header, machineId(), nowIso())
@@ -361,6 +362,7 @@ export async function stopRun(
     runId: row.record_id,
     job: row.job,
     worktree: row.worktree,
+    branch: row.branch,
   })
   if (sharedGitConfigHeader) {
     recordRunSharedGitConfigHeader(
