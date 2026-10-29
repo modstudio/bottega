@@ -14,7 +14,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveHubDatabase } from '../../../shared/state-directory.ts'
 import type { Agent } from '../agent/agents.ts'
 import type { Project } from '../project/projects.ts'
+import { codexScopeArgs } from '../sandbox/codex-mcp-scope.ts'
 import { RequiredMcpProbeRefusalError } from '../sandbox/project-mcp-preflight.ts'
+import {
+  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+  PROJECT_MCP_WRITER_WITHHELD_REASON,
+  projectMcpWriterRemedy,
+} from '../sandbox/project-mcp-scope.ts'
 import { grokAskCommandFromConfig, grokAskServerCommand } from '../sandbox/sandbox.ts'
 import { carriedRefusalFailure } from './run-prelaunch-refusal.ts'
 import { prepareClaimedWorkerMcpConfig, prepareWorkerHomeLaunch } from './run-worker-home.ts'
@@ -217,4 +223,46 @@ test('--mcp require refuses a required server the selection never handed over', 
   expect(error).toBeInstanceOf(RequiredMcpProbeRefusalError)
   expect(error?.message).toContain('starship: not configured in the tree')
   expect(carriedRefusalFailure(error)?.failureKind).toBe('mcp_unverified')
+})
+
+test('Codex preflight refuses a helper-auth server delivered by the mcp-run fallback', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'orch-codex-helper-fallback-'))
+  roots.push(root)
+  const runDir = join(root, 'run')
+  const home = join(runDir, 'home')
+  mkdirSync(runDir)
+  const withheld = {
+    name: 'starship',
+    reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
+    advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+    remedy: projectMcpWriterRemedy(starship),
+  }
+  const fallbackArgs = codexScopeArgs({ mcp: true, mcpServer: 'starship', home })
+  expect(fallbackArgs.join('\n')).toContain(join(home, '.claude', 'mcp', 'mcp-run'))
+
+  const error = await rejection(
+    prepareWorkerHomeLaunch({
+      agent: { name: 'codex', harness: 'codex' } as Agent,
+      sandbox: 'host',
+      runDir,
+      runNumber: 44,
+      runRecordId: '44000000-0000-4000-8000-000000000000',
+      runToken: 'token',
+      environment: {},
+      grokEnvironment: {},
+      includeStore: false,
+      mcpLaunch: {
+        codex: { servers: {}, withheld: [withheld] },
+        grok: null,
+        projectSelection: { kind: 'direct', servers: {}, withheld: [withheld] },
+      },
+      mcpMode: 'require',
+      project: starship,
+    }),
+  )
+
+  expect(error).toBeInstanceOf(RequiredMcpProbeRefusalError)
+  expect(error?.message).toContain(
+    "starship: withheld from this run's MCP scope (inline env/headers, a headersHelper, or no launch definition)",
+  )
 })
