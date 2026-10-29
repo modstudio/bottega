@@ -12,6 +12,7 @@ import {
   type HostHoldCondition,
   measureHostLoad,
   type RecordedHostLoad,
+  recordedHostLoad,
 } from '../gate-load.ts'
 import { activeCores, HOST_RESERVATION_EVIDENCE_DAYS, reservedCores } from './host-reservation.ts'
 import { TERMINAL_RUN_STATUS_SQL } from './run-status.ts'
@@ -296,30 +297,13 @@ function shouldResampleInitialLoad(
   )
 }
 
-function recordedHostLoad(
-  load: ReturnType<typeof measureHostLoad>,
-  reservedCores: number,
-  resampled: boolean,
-): RecordedHostLoad {
-  return {
-    loadavg: load.loadavg,
-    cpuBusy: load.cpuBusy,
-    ncpu: load.ncpu,
-    recentAdmissions: load.recentAdmissions,
-    freeMem: load.freeMem,
-    pressure: load.pressure,
-    swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
-    cpuBusySource: load.cpuBusy === null ? 'loadavg' : resampled ? 'resampled' : 'sampled',
-    reservedCores,
-  }
-}
-
 async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityWait | null> {
   const started = input.now()
   const heldOn = new Set<HostHoldCondition | 'migration'>()
   let drainingFor: string | null = null
   let waiting = false
   let sampledInitialLoad = false
+  let nextDecisionUsesResample = false
   let lastHeldHostLoad: RecordedHostLoad | null = null
   let previousPollMs: number | undefined
   const samplesByAgent = new Map<string, number[]>()
@@ -353,8 +337,11 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       started,
       samplesByAgent,
     })
+    const decisionUsesResample = nextDecisionUsesResample
+    nextDecisionUsesResample = false
     if (shouldResampleInitialLoad(decision, load.cpuBusy, sampledInitialLoad)) {
       sampledInitialLoad = true
+      nextDecisionUsesResample = true
       await input.sleep(CAPACITY_SAMPLE_MIN_WINDOW_MS)
       continue
     }
@@ -365,7 +352,10 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       (outcome, boundReached) => finish(at, outcome, boundReached),
     )
     if (admitted.done) return admitted.result
-    lastHeldHostLoad = recordedHostLoad(load, reservedCores, sampledInitialLoad)
+    lastHeldHostLoad = recordedHostLoad(load, {
+      resampled: decisionUsesResample,
+      reservedCores,
+    })
     for (const condition of decision.heldOn) heldOn.add(condition)
     if (!waiting) {
       waiting = true

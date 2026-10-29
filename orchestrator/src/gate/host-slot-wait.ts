@@ -2,7 +2,7 @@
 
 import { nowIso, tryWriteContention } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { formatGateWait, type GateWaitState, type RecordedHostLoad } from '../gate-load.ts'
+import { formatGateWait, type GateWaitState, recordedHostLoad } from '../gate-load.ts'
 
 export function recordGateLogEvent(runId: string, timestamp: string, logPath: string): void {
   appendRunEvent(runId, { ts: timestamp, type: 'gate_log', logPath })
@@ -24,16 +24,6 @@ export function hostSlotWaitCallbacks(input: {
       appendRunEvent(input.runId, { ts: nowIso(), type: 'text', text: message })
     },
     onWaitFinished(state: GateWaitState) {
-      const hostLoad: RecordedHostLoad = {
-        loadavg: state.load.loadavg,
-        cpuBusy: state.load.cpuBusy,
-        ncpu: state.load.ncpu,
-        recentAdmissions: state.load.recentAdmissions,
-        freeMem: state.load.freeMem,
-        pressure: state.load.pressure,
-        swapGrowthBytesPerSec: state.load.swapGrowthBytesPerSec,
-        cpuBusySource: state.load.cpuBusy === null ? 'loadavg' : 'sampled',
-      }
       tryWriteContention({
         resourceKind: 'cpu',
         resourceKey: 'host-capacity',
@@ -41,7 +31,7 @@ export function hostSlotWaitCallbacks(input: {
         durationMs: state.delayedMs,
         cause: state.heldOn.join('+'),
         runId: input.runId,
-        hostLoad,
+        hostLoad: recordedHostLoad(state.load),
       })
     },
   }

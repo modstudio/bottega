@@ -44,6 +44,23 @@ export type RecordedHostLoad = Pick<
   cpuBusySource: 'sampled' | 'resampled' | 'loadavg'
   reservedCores?: number
 }
+
+export function recordedHostLoad(
+  load: HostLoad,
+  options: { resampled?: boolean; reservedCores?: number } = {},
+): RecordedHostLoad {
+  return {
+    loadavg: load.loadavg,
+    cpuBusy: load.cpuBusy,
+    ncpu: load.ncpu,
+    recentAdmissions: load.recentAdmissions,
+    freeMem: load.freeMem,
+    pressure: load.pressure,
+    swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
+    cpuBusySource: load.cpuBusy === null ? 'loadavg' : options.resampled ? 'resampled' : 'sampled',
+    ...(options.reservedCores === undefined ? {} : { reservedCores: options.reservedCores }),
+  }
+}
 export type MemoryPressure = 'normal' | 'warning' | 'critical' | 'unknown'
 export type HostHoldCondition = 'gates' | 'load' | 'memory' | 'queue'
 export type GateWaitState = {

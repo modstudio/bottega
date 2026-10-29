@@ -330,7 +330,6 @@
     "cause",
     "runId",
     "landingId",
-    "hostLoad",
     "createdAt",
     "updatedAt"
   ],
