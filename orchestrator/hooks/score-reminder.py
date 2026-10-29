@@ -11,7 +11,12 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
-from score_reminder_decision import WRITING_JOBS, decide_held_tree, refusal_score_guidance
+from score_reminder_decision import (
+    WRITING_JOBS,
+    decide_held_tree,
+    refusal_score_guidance,
+    unscored_remedy,
+)
 
 GLOBAL_BUDGET_SECONDS = 20
 
@@ -87,6 +92,7 @@ def main() -> int:
             """SELECT r.record_id, r.agent, r.job, substr(COALESCE(r.label, r.prompt_head), 1, 60),
                       s.delivery, s.quality, s.fidelity, review.record_id,
                       rl.reproduced, rl.coverage, rl.limits, rl.overlap,
+                      r.status, r.failure_kind,
                       CASE WHEN EXISTS (SELECT 1 FROM run child WHERE child.parent_run_record_id=r.record_id)
                         THEN (SELECT child.output_path FROM run child
                                 WHERE child.parent_run_record_id=r.record_id
@@ -95,7 +101,8 @@ def main() -> int:
                  FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
                  LEFT JOIN review_lens rl ON rl.run_record_id = r.record_id
                  LEFT JOIN review ON review.record_id = rl.review_record_id
-                WHERE r.session_id = ? AND r.status = 'ok'
+                WHERE r.session_id = ? AND r.status IN ('ok','failed','stale','stopped')
+                  AND COALESCE(r.failure_kind, '') NOT IN ('billing', 'auth', 'quota', 'daily_quota', 'capacity', 'entitlement', 'unreachable', 'provider_error')
                   AND r.evidence_excluded IS NULL
                   -- A probe is excluded from routing and reporting by design, so
                   -- scoring one teaches the router nothing - which is this hook's
@@ -272,7 +279,7 @@ def main() -> int:
             "fidelity": pair_fidelity, "partners": [],
         })
         entry["partners"].append((partner, agent, reason))
-    for i, a, j, p, delivery, quality, fidelity, review_id, reproduced, coverage, limits, overlap, output_path in rows:
+    for i, a, j, p, delivery, quality, fidelity, review_id, reproduced, coverage, limits, overlap, status, failure_kind, output_path in rows:
         axes = delivery or "<none|partial|full>"
         if delivery is None or delivery != "none":
             axes += " " + (quality or "<wrong|mixed|right>")
@@ -304,10 +311,17 @@ def main() -> int:
             ids = ",".join(str(partner) for partner, _, _ in run_pairs)
             missing.append(f"--better-than {ids} | --worse-than {ids} | --same-as {ids}")
         suffix = "  rescore" if delivery is not None else ""
-        lines.append(
-            f'  bottega score {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
-            .replace("  --note", " --note")
-        )
+        remedy = unscored_remedy(status, failure_kind, a)
+        if remedy == "axes":
+            lines.append(
+                f'  bottega score {i} {axes} {" ".join(missing)} --note "..."   # {a}/{j}  {p}{suffix}'
+                .replace("  --note", " --note")
+            )
+        else:
+            void_arg = " --void" if remedy == "void" else ""
+            lines.append(
+                f'  bottega score {i} none{void_arg} --note "..."   # {a}/{j}  {p}{suffix}'
+            )
         refusal = refusal_score_guidance(output_path, j)
         if refusal:
             lines.append(f"    {refusal}")
@@ -345,7 +359,7 @@ def main() -> int:
             lines.append("")
         lines.extend(in_flight_lines)
     if rows:
-        needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _, _ in rows)
+        needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _, _, _, _ in rows)
         intro = (
             f"{len(rows)} delegated run{'s' if len(rows) > 1 else ''} from this session "
             f"{'have' if len(rows) > 1 else 'has'} not been scored"

@@ -328,6 +328,18 @@ describe('run listing', () => {
     ).toEqual(older.reverse())
   })
 
+  test('runs --unscored lists a failover chain when its failed predecessor is unscored', async () => {
+    const predecessor = insert('failed', 'understand')
+    const successor = insert('ok', 'understand')
+    db()
+      .query('UPDATE run SET retry_of_record_id=?,automatic_failover=1 WHERE record_id=?')
+      .run(predecessor, successor)
+    score(successor, 'full', 'right')
+
+    const rows = (await command({ unscored: true, json: true })).map(runJson)
+    expect(rows.map((row) => row.record_id)).toContain(predecessor)
+  })
+
   test('runs --id returns the union requested and reports unknown ids', async () => {
     const first = insert('ok')
     insert('ok')

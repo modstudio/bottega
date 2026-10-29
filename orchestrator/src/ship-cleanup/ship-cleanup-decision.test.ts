@@ -21,6 +21,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   judged: true,
   failureKind: null,
   rootFailureKind: null,
+  rootAgent: 'codex',
   worktree: '/trees/1',
   ...overrides,
 })

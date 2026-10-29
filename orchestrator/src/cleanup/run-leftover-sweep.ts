@@ -8,6 +8,7 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { releaseSandboxDirectoryForConversation } from '../close/close-out.ts'
 import { db } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
+import { renderUnjudgedRunRemedy, type UnjudgedRunRemedy } from '../evidence/unjudged-run-remedy.ts'
 import {
   noRepoIsolatePath,
   RUNS_DIR,
@@ -24,7 +25,6 @@ import {
   type RunLeftoverKeepReason,
   type RunLeftoverKind,
 } from './run-leftover-decision.ts'
-import { renderUnjudgedRunRemedy, type UnjudgedRunRemedy } from './unjudged-run-remedy.ts'
 
 type RunRow = {
   record_id: string
@@ -35,6 +35,7 @@ type RunRow = {
   project_record_id: string | null
   judged: number
   root_failure_kind: string | null
+  root_agent: string
 }
 
 type Measurement = {
@@ -290,7 +291,7 @@ function rowsForSweep(database: Database, projectRecordId: string | null): RunRo
   return database
     .query(
       `SELECT r.record_id,r.number,r.parent_run_record_id,r.status,r.project_record_id,
-              root.number AS root_number,root.failure_kind AS root_failure_kind,
+              root.number AS root_number,root.failure_kind AS root_failure_kind,root.agent AS root_agent,
               ${EVIDENCE_CLOSED_SQL} AS judged
          FROM run r
          JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
@@ -348,6 +349,7 @@ function sweepRecordedLeftovers(
       finishedAt: terminationByRoot.get(rootId) ?? null,
       judged: Boolean(row.judged) || (input.evidenceClosedRootIds?.has(rootId) ?? false),
       failureKind: row.root_failure_kind,
+      agent: row.root_agent,
       newestEntryAt: null,
       clock,
     }
@@ -387,6 +389,7 @@ function sweepRecordedLeftovers(
           finishedAt: facts.finishedAt,
           judged: facts.judged,
           failureKind: row.root_failure_kind,
+          agent: row.root_agent,
           newestEntryAt: null,
           clock,
         }),
@@ -427,6 +430,7 @@ function sweepOrphans(
       finishedAt: null,
       judged: false,
       failureKind: null,
+      agent: '(orphan)',
       newestEntryAt: measurement.complete ? measurement.newestEntryAt : null,
       clock,
     })

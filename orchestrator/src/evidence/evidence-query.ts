@@ -4,7 +4,8 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
+import { NOT_EVIDENCE_SQL, PROVIDER_UNSERVED_SQL } from '../failure/failure.ts'
+import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 
 /**
@@ -60,7 +61,9 @@ export function excludeSharedOutputRuns(d: Database = db()): number {
  * evidence is not an owed judgment.
  */
 function unscoredWhere(exclusion: string): string {
-  return `r.status = 'ok' AND ${exclusion} AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
+  return `r.status IN ${TERMINAL_RUN_STATUS_SQL}
+   AND COALESCE(r.failure_kind, '') NOT IN (${PROVIDER_UNSERVED_SQL})
+   AND ${exclusion} AND COALESCE(r.probe, 0) = 0 AND r.parent_run_record_id IS NULL
    AND COALESCE((SELECT c.status FROM run c WHERE c.parent_run_record_id = r.record_id
                   ORDER BY c.turn DESC LIMIT 1), r.status) <> 'running'
    AND (s.delivery IS NULL
@@ -237,7 +240,7 @@ export function pendingForSession(sid: string | null) {
   if (!sid) return []
   return db()
     .query(
-      `SELECT r.record_id, r.agent, r.job, r.repo,
+      `SELECT r.record_id, r.agent, r.job, r.repo, r.status, r.failure_kind,
             COALESCE(r.label, r.prompt_head) AS prompt_head,
             ${newestTurnOutputPathSql('r')} AS output_path,
             CASE WHEN s.delivery IS NOT NULL THEN 1 ELSE 0 END AS rescore
@@ -252,6 +255,8 @@ export function pendingForSession(sid: string | null) {
     repo: string | null
     prompt_head: string
     output_path: string | null
+    status: string
+    failure_kind: string | null
     rescore: number
   }[]
 }

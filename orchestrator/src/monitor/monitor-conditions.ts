@@ -122,7 +122,8 @@ export function unscoredRuns(database = db()): AddressedRun[] {
   return database
     .query(
       `SELECT r.record_id, r.started_at, r.session_id
-       FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id WHERE ${UNSCORED_WHERE}`,
+       FROM run r LEFT JOIN score s ON s.run_record_id=r.record_id
+       WHERE ${UNSCORED_WHERE} AND r.status <> 'stale'`,
     )
     .all() as AddressedRun[]
 }

@@ -461,6 +461,11 @@ export const PROVIDER_UNSERVED: ReadonlySet<FailureKind> = new Set([
   'provider_error',
 ])
 
+/** SQL literal list for the canonical provider-unserved failure kinds. */
+export const PROVIDER_UNSERVED_SQL = [...PROVIDER_UNSERVED]
+  .map((failureKind) => `'${failureKind}'`)
+  .join(', ')
+
 export type BillingHold = { enabled: 0; disabledReason: string }
 export type EffectiveBillingKey = {
   secretName: string | null
@@ -491,6 +496,11 @@ export function isNotEvidenceFailure(failureKind: string | null): boolean {
     failureKind === 'unevidenced' ||
     (failureKind !== null && NOT_EVIDENCE.includes(failureKind as FailureKind))
   )
+}
+
+/** Whether a run with the placeholder pending agent may be voided. */
+export function pendingAgentVoidAllowed(failureKind: string | null): boolean {
+  return failureKind === 'stopped' || isNotEvidenceFailure(failureKind)
 }
 
 /**

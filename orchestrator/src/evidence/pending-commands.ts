@@ -6,6 +6,7 @@ import { sessionId } from '../database/db.ts'
 import { unrecordedPairsForSession } from '../score/duel.ts'
 import { refusalScoreGuidanceFromPath } from '../score/refusal-guidance.ts'
 import { pendingForSession } from './evidence-query.ts'
+import { decideUnjudgedRunRemedy, renderUnjudgedRunRemedy } from './unjudged-run-remedy.ts'
 export function pendingCommand(
   pairHint: (partner: { id: string; agent: string; reason?: string }) => string,
   presentation: { log(value: string): void; setExitCode(code: number): void },
@@ -31,9 +32,17 @@ function renderRows(
   presentation.log(`${rows.length} run${rows.length === 1 ? '' : 's'} you made are unscored:\n`)
   for (const row of rows) {
     const refusal = refusalScoreGuidanceFromPath(row.output_path, row.job)
-    presentation.log(
-      `  ${PLATFORM_SLUG} score ${row.record_id} <none|partial|full> [wrong|mixed|right]   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}${row.rescore ? '  rescore' : ''}`,
-    )
+    if (row.status === 'ok') {
+      presentation.log(
+        `  ${PLATFORM_SLUG} score ${row.record_id} <none|partial|full> [wrong|mixed|right]   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}${row.rescore ? '  rescore' : ''}`,
+      )
+    } else {
+      const remedyKind = decideUnjudgedRunRemedy(row.failure_kind, row.agent)
+      const remedy = renderUnjudgedRunRemedy(remedyKind, row.record_id)
+      presentation.log(
+        `  ${remedy}   # ${row.agent}/${row.job}  ${row.prompt_head.slice(0, 40)}  ${row.status}/${row.failure_kind ?? 'none'}${row.rescore ? '  rescore' : ''}`,
+      )
+    }
     if (refusal) presentation.log(`    ${refusal}`)
   }
 }

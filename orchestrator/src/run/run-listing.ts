@@ -433,9 +433,10 @@ function unscoredListingClauses(enabled: boolean, where: string[]): { cte: strin
   if (!enabled) return { cte: '', join: '' }
   const owedWhere = UNSCORED_WHERE.replaceAll('r.', 'owed.').replaceAll('s.', 'owed_score.')
   where.push(`EXISTS (
-    SELECT 1 FROM run owed
+    SELECT 1 FROM failover_chain chain
+    JOIN run owed ON owed.record_id = chain.root_id
     LEFT JOIN score owed_score ON owed_score.run_record_id = owed.record_id
-    WHERE owed.record_id = final.root_id AND ${owedWhere}
+    WHERE chain.origin_id = final.origin_id AND ${owedWhere}
   )`)
   return {
     cte: `WITH RECURSIVE failover_chain(origin_id, root_id) AS (

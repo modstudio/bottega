@@ -126,7 +126,7 @@ describe('scheduled run leftover sweep adapter', () => {
       }
     ).number
     expect(lines.join('\n')).toContain(`example runs: ${runNumber}`)
-    expect(lines.join('\n')).toContain(`${PLATFORM_SLUG} score ${runNumber}`)
+    expect(lines.join('\n')).toContain(`${PLATFORM_SLUG} score ${runNumber} none`)
 
     const dry = sweepRunLeftovers({
       dryRun: true,
@@ -177,7 +177,7 @@ describe('scheduled run leftover sweep adapter', () => {
 
   test.each([
     ['unevidenced', 'none --void --note "<why>"'],
-    ['other', ''],
+    ['other', 'none'],
   ] as const)('names one root remedy for an unjudged %s chain', (kind, suffix) => {
     const runsDir = runsRoot()
     const root = addRun({
@@ -215,7 +215,7 @@ describe('scheduled run leftover sweep adapter', () => {
         number: number
       }
     ).number
-    const command = `${PLATFORM_SLUG} score ${rootNumber}${suffix ? ` ${suffix}` : ''}`
+    const command = `${PLATFORM_SLUG} score ${rootNumber} ${suffix}`
     expect(lines.filter((line) => line.trim() === command)).toHaveLength(1)
   })
 
@@ -233,13 +233,13 @@ describe('scheduled run leftover sweep adapter', () => {
 
     expect(keptRunLeftoverLines(kept, false)).toEqual([
       'kept 7 run artifacts with no recorded verdict (70 bytes); example runs: 1, 2, 3, 4, 5; and 2 more',
-      `  ${PLATFORM_SLUG} score 1`,
-      `  ${PLATFORM_SLUG} score 2`,
-      `  ${PLATFORM_SLUG} score 3`,
-      `  ${PLATFORM_SLUG} score 4`,
-      `  ${PLATFORM_SLUG} score 5`,
-      `  ${PLATFORM_SLUG} score 6`,
-      `  ${PLATFORM_SLUG} score 7`,
+      `  ${PLATFORM_SLUG} score 1 none`,
+      `  ${PLATFORM_SLUG} score 2 none`,
+      `  ${PLATFORM_SLUG} score 3 none`,
+      `  ${PLATFORM_SLUG} score 4 none`,
+      `  ${PLATFORM_SLUG} score 5 none`,
+      `  ${PLATFORM_SLUG} score 6 none`,
+      `  ${PLATFORM_SLUG} score 7 none`,
     ])
   })
 
