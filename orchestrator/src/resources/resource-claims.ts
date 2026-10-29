@@ -6,6 +6,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../run/run-status.ts'
 import { SYNTHETIC_LIFECYCLE_JOBS } from '../run/synthetic-lifecycle-job.ts'
 
@@ -41,6 +42,27 @@ type CheckoutRemovalAttribution = {
   attribution: 'tree_removal' | 'unattributed'
   removalSession: string | null
   removalRun: string | null
+}
+
+export type ClaimedWorktreeOwner = {
+  record_id: string
+  job: string
+  allocation_key: string
+}
+
+/** Runs whose live worktree claim resolves to the requested filesystem path. */
+export function runsClaimingWorktreePath(database: Database, path: string): ClaimedWorktreeOwner[] {
+  const canonicalPath = realpathOrSpelled(path)
+  const claimed = database
+    .query(
+      `SELECT run.record_id,run.job,resource_claim.allocation_key
+       FROM resource_claim INDEXED BY resource_claim_one_live_allocation
+       JOIN run ON run.record_id=resource_claim.root_run_record_id
+       WHERE resource_claim.kind='worktree' AND resource_claim.state='claimed'
+       ORDER BY run.number`,
+    )
+    .all() as ClaimedWorktreeOwner[]
+  return claimed.filter((row) => realpathOrSpelled(row.allocation_key) === canonicalPath)
 }
 
 /** Attribution proved by a worktree claim explicitly released after a run began. */

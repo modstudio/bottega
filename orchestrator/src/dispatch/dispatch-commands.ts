@@ -147,7 +147,8 @@ type DispatchPresentation = {
   resolveTaskBranchForDispatch(
     cwd: string,
     key: string,
-    reportReuse: boolean,
+    branch: string | undefined,
+    report: boolean,
   ): NonNullable<DetachSpec['resolvedTaskBranch']> | null
   contractConflicts(prompt: string): { line: number; text: string }[]
   warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: string): void
@@ -219,6 +220,46 @@ export function resolveDispatchBase(
   return isWorktreeRelative(base) ? resolved : base
 }
 
+export function validateContinueBranchOptions(
+  jobName: string,
+  branch: string | undefined,
+  base: string | undefined,
+  key: string | undefined,
+): void {
+  if (!branch) return
+  if (jobName !== 'implement' && jobName !== 'fix') {
+    throw new Error('--continue is only valid for the implement and fix jobs')
+  }
+  if (base) throw new Error('--continue cannot be combined with --base')
+  if (!key) throw new Error('--continue requires --key')
+}
+
+function writingBranchOptions(input: {
+  jobName: string
+  base: string | undefined
+  continueBranch: string | undefined
+  key: string | undefined
+  cwd: string
+  presentation: Pick<DispatchPresentation, 'resolveBase' | 'isWorktreeRelativeRef'>
+}): string | undefined {
+  validateContinueBranchOptions(input.jobName, input.continueBranch, input.base, input.key)
+  if (!input.base) return undefined
+  if (input.jobName !== 'implement' && input.jobName !== 'fix') {
+    throw new Error('--base is only valid for the implement and fix jobs')
+  }
+  return resolveDispatchBase(
+    input.cwd,
+    input.base,
+    input.presentation.resolveBase,
+    input.presentation.isWorktreeRelativeRef,
+  )
+}
+
+function existingRequestedCwd(value: string | undefined): string | undefined {
+  if (value && !existsSync(value)) throw new Error(`--cwd does not exist: ${value}`)
+  return value
+}
+
 /** Choose the branch whose earlier review rulings belong in this dispatch. */
 export function reviewMemoryBranch(
   callerBranch: string | null,
@@ -247,28 +288,22 @@ function taskBranchBypassWarningKey(
   return base && writesRepo ? (key ?? null) : null
 }
 
-function taskBranchReuseKey(
-  base: string | undefined,
-  writesRepo: boolean,
-  key: string | undefined,
-): string | null {
-  return !base && writesRepo ? (key ?? null) : null
-}
-
 function resolveTaskBranchReuse(
   input: {
     porcelain: boolean
     base: string | undefined
+    continueBranch: string | undefined
     writesRepo: boolean
     key: string | undefined
   },
   resolve: (
     key: string,
-    reportReuse: boolean,
+    branch: string | undefined,
+    report: boolean,
   ) => NonNullable<DetachSpec['resolvedTaskBranch']> | null,
 ): DetachSpec['resolvedTaskBranch'] | undefined {
-  const key = taskBranchReuseKey(input.base, input.writesRepo, input.key)
-  return key ? resolve(key, !input.porcelain) : undefined
+  if (!input.writesRepo || input.base || !input.key) return undefined
+  return resolve(input.key, input.continueBranch, !input.porcelain)
 }
 
 const projectNames = () =>
@@ -382,8 +417,6 @@ export async function dispatchCommand(
     contractConflicts,
     warnImplementContractConflicts,
     checkoutHasUncommittedWork,
-    resolveBase,
-    isWorktreeRelativeRef,
     implicitReviewWarning,
     resolveCallerCheckout,
     resolveDispatchOptions,
@@ -400,9 +433,7 @@ export async function dispatchCommand(
     resolved = await resolveDispatchOptions(jobName)
   const reviewRole = reviewRoleForDispatch(requested.findings, has('supplementary'))
   const { agent, agentExplicit, transport, transportExplicit, avoid, distinctModels } = resolved
-  const requestedCwd = flag('cwd')
-  if (requestedCwd && !existsSync(requestedCwd))
-    throw new Error(`--cwd does not exist: ${requestedCwd}`)
+  const requestedCwd = existingRequestedCwd(flag('cwd'))
   const explicitRepo = flag('repo')
   const caller = resolveCallerCheckout(requestedCwd, explicitRepo)
   const callerCwd = caller.callerCwd
@@ -410,15 +441,17 @@ export async function dispatchCommand(
   const dispatchProject = assertDispatchableProject(explicitRepo, callerCwd, Boolean(requestedCwd))
   const dispatchProjectName = dispatchProject?.name ?? null
   // Check project-required inputs before reading the prompt so a missing key does not pay for stdin.
-  const requestedBase = flag('base')
-  let base = requestedBase
+  const requestedBase = flag('base'),
+    continueBranch = flag('continue')
   const reviewRef = flag('review')
-  if (requestedBase) {
-    if (jobName !== 'implement' && jobName !== 'fix') {
-      throw new Error('--base is only valid for the implement and fix jobs')
-    }
-    base = resolveDispatchBase(callerCwd, requestedBase, resolveBase, isWorktreeRelativeRef)
-  }
+  const base = writingBranchOptions({
+    jobName,
+    continueBranch,
+    base: requestedBase,
+    key: flag('key'),
+    cwd: callerCwd,
+    presentation,
+  })
   const seed = preflight(
     jobName,
     callerCwd,
@@ -465,10 +498,11 @@ export async function dispatchCommand(
     {
       porcelain,
       base,
+      continueBranch,
       writesRepo: Boolean(requested.needs.writesRepo),
       key: flag('key'),
     },
-    (key, reportReuse) => resolveTaskBranchForDispatch(callerCwd, key, reportReuse),
+    (key, branch, report) => resolveTaskBranchForDispatch(callerCwd, key, branch, report),
   )
   if (requested.findings && requested.needs.readsRepo && !reviewRef) {
     error(`! ${implicitReviewWarning(callerCwd)}`)

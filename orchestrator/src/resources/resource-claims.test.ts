@@ -16,6 +16,7 @@ import {
   recipePortAllocation,
   recipePortClaimForRun,
   releaseRecipeAllocationClaims,
+  runsClaimingWorktreePath,
   sandboxDirectoryRelease,
   settleClaims,
   settledStateForCloseOut,
@@ -80,6 +81,37 @@ describe('resource claim decisions', () => {
     expect(claimKindForCreation('trust_heading')).toBe('trust_entry')
     expect(claimKindForCreation('serve_port')).toBe('port')
     expect(claimKindForCreation('database')).toBe('database')
+  })
+
+  test('worktree ownership includes only live claims for the canonical path', () => {
+    const database = db()
+    const releasedRun = resourceRun()
+    const claimedRun = resourceRun()
+    const otherRun = resourceRun()
+    const path = '/tmp/resource-claim-owned-tree'
+    const insert = database.query(
+      `INSERT INTO resource_claim
+       (record_id,root_run_record_id,run_record_id,project_record_id,kind,allocation_key,
+        identity,label,state,claimed_at,settled_at)
+       VALUES (?,?,?,?, 'worktree', ?,NULL,NULL,?,?,?)`,
+    )
+    insert.run(newRecordId(), releasedRun, releasedRun, null, path, 'released', nowIso(), nowIso())
+    insert.run(newRecordId(), claimedRun, claimedRun, null, path, 'claimed', nowIso(), null)
+    insert.run(
+      newRecordId(),
+      otherRun,
+      otherRun,
+      null,
+      '/tmp/resource-claim-other-tree',
+      'claimed',
+      nowIso(),
+      null,
+    )
+
+    expect(runsClaimingWorktreePath(database, path)).toEqual([
+      { record_id: claimedRun, job: 'implement', allocation_key: path },
+    ])
+    expect(runsClaimingWorktreePath(database, '/tmp/resource-claim-missing-tree')).toEqual([])
   })
 
   test('a sandbox directory is recorded once per conversation root', () => {

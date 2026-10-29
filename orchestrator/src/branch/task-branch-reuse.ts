@@ -31,7 +31,7 @@ export function taskBranchSessionRefusal(candidate: TaskBranchCandidate): string
     `refusing task branch ${candidate.branch} tip ${candidate.tip}: ` +
     `nominating run ownership (${ownership}) does not include the dispatching session.\n` +
     `cleared by: repeat the dispatch with --base ${candidate.trunk} to start a fresh branch, ` +
-    `or --base ${candidate.branch} to build on it deliberately`
+    `or --continue ${candidate.branch} to continue it deliberately`
   )
 }
 
@@ -114,7 +114,7 @@ function taskBranchGit(cwd: string, args: string[], allowExitOne = false): strin
 }
 
 /** Gather the caller's Git facts once and apply the pure reuse decision. */
-function compatibleTaskBranch(
+export function compatibleTaskBranch(
   cwd: string,
   candidate: TaskBranchCandidate,
 ): TaskBranchCandidate | null {

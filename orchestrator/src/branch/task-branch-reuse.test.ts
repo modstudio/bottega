@@ -48,7 +48,7 @@ describe('task branch nominating session ownership', () => {
     expect(message).toContain('DEV-1225-orch-7000 tip abc123')
     expect(message).toContain('runs 7000, 7001: session-a')
     expect(message).toContain('--base main')
-    expect(message).toContain('--base DEV-1225-orch-7000')
+    expect(message).toContain('--continue DEV-1225-orch-7000')
   })
 
   test('session enforcement throws the refusal for a candidate nominated only by another session', () => {

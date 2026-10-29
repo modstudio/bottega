@@ -33,6 +33,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/ask/ask-lifecycle.ts', ['@modelcontextprotocol/server', '../events.ts']),
   module('orchestrator/src/resources/resource-claims.ts', [
     '../../../shared/record-id.ts',
+    '../git/checkout-identity.ts',
     '../run/run-status.ts',
     '../run/synthetic-lifecycle-job.ts',
   ]),
@@ -177,7 +178,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-artifacts.ts',
     './run-worker-home.ts',
   ]),
-  module('orchestrator/src/run/run-claim-plan.ts', ['./resume-tree.ts']),
+  module('orchestrator/src/run/run-claim-plan.ts', [
+    './resume-tree.ts',
+    './synthetic-lifecycle-job.ts',
+  ]),
   module('orchestrator/src/run/run-task-reference.ts', [
     '../../../shared/brand.ts',
     '../../../shared/self-spawn.ts',

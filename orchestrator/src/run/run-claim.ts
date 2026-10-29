@@ -119,6 +119,24 @@ type ClaimOptions = {
   resume?: RunResumeOptions
 }
 
+function shouldResolveClaimTaskBranch(
+  opts: ClaimOptions,
+  repoJob: boolean,
+  writesJob: boolean,
+  taskKey: string | null,
+  isResume: boolean,
+): boolean {
+  return shouldResolveTaskBranch({
+    repoJob,
+    writesJob,
+    hasWorktree: Boolean(opts.resume?.worktree),
+    taskKey,
+    isResume,
+    hasExplicitBase: opts.base !== undefined,
+    taskBranchSupplied: opts.resolvedTaskBranch !== undefined,
+  })
+}
+
 const explicitRunFlags = (opts: ClaimOptions) =>
   [opts.automaticFailover ? 1 : 0, opts.agentExplicit ? 1 : 0, opts.transport ? 1 : 0] as const
 
@@ -319,14 +337,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let resolvedTaskBranch: TaskBranchCandidate | null = null
   const attachableTaskKey = taskBranchKey(launchKey, Boolean(resumePlan))
   if (
-    shouldResolveTaskBranch({
+    shouldResolveClaimTaskBranch(
+      opts,
       repoJob,
       writesJob,
-      hasWorktree: Boolean(opts.resume?.worktree),
-      taskKey: attachableTaskKey,
-      isResume: resume.workspaceSource === 'retained',
-      hasExplicitBase: opts.base !== undefined,
-    })
+      attachableTaskKey,
+      resume.workspaceSource === 'retained',
+    )
   ) {
     resolvedTaskBranch = taskBranchResolution(
       opts.resolvedTaskBranch,
@@ -334,11 +351,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       attachableTaskKey!,
       opts.ownerSession ?? sessionId(),
     )
-    if (resolvedTaskBranch && !resolvedTaskBranch.worktree && worktreeTool?.create) {
-      // A command-backed declaration cannot attach an existing ref; it retains
-      // the prior new-branch behavior instead.
-      resolvedTaskBranch = null
-    }
   }
   const { attachedTree, claimTreePlan } = claimTreePlanForCandidate({
     candidate: resolvedTaskBranch,

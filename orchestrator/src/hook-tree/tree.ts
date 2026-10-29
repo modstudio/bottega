@@ -11,7 +11,10 @@ import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database
 import { git } from '../git/git-environment.ts'
 import { projectAt, projects, resolvedWorktreeTool, stackAt } from '../project/projects.ts'
 import { trackedHookBranch } from '../recipe/tracked-recipe.ts'
-import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
+import {
+  recordCreatedWorktreeClaims,
+  runsClaimingWorktreePath,
+} from '../resources/resource-claims.ts'
 import { acquireRunLease } from '../run/run-lease.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import { HOOK_TREE_JOB, isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
@@ -221,6 +224,13 @@ export function removeHookTreeResult(requestedPath: string): HookTreeRemovalResu
   }
 }
 
+export function absentClaimedHookTreeDecision(input: {
+  pathExists: boolean
+  hasHistoricalWorktreeClaim: boolean
+}): 'absent' | 'refuse' {
+  return !input.pathExists && input.hasHistoricalWorktreeClaim ? 'absent' : 'refuse'
+}
+
 function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
   const wanted = canonicalPath(requestedPath)
   const recordedOwners = (
@@ -234,26 +244,8 @@ function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
   ).filter((row) => canonicalPath(row.worktree) === wanted)
   const owners = recordedOwners.length
     ? recordedOwners
-    : (
-        db()
-          .query(
-            `SELECT run.record_id,run.job,resource_claim.allocation_key worktree
-             FROM resource_claim JOIN run ON run.record_id=resource_claim.root_run_record_id
-             WHERE resource_claim.kind='worktree' ORDER BY run.number`,
-          )
-          .all() as { record_id: string; job: string; worktree: string }[]
-      ).filter((row) => isSyntheticLifecycleJob(row.job) && canonicalPath(row.worktree) === wanted)
-  if (!owners.length) {
-    const project = registeredProjectContaining(wanted)
-    if (!project) {
-      throw new Error(
-        `no orchestrator run records the worktree at ${requestedPath}; no registered project contains it, so its main checkout cannot be established and the orchestrator will not remove it`,
-      )
-    }
-    throw new Error(
-      `no orchestrator run records the worktree at ${requestedPath}; ${unownedProjectTreeRemovalRemedy({ treePath: requestedPath, mainCheckoutPath: project.path })}`,
-    )
-  }
+    : runsClaimingWorktreePath(db(), wanted).filter((row) => isSyntheticLifecycleJob(row.job))
+  if (!owners.length) return unownedHookTreeRemovalResult(requestedPath, wanted)
   if (owners.every((row) => !isSyntheticLifecycleJob(row.job))) {
     throw new Error(
       `${requestedPath} belongs to run${owners.length === 1 ? '' : 's'} ${owners.map((row) => row.record_id).join(', ')}, which ${owners.length === 1 ? 'is' : 'are'} not architect tree runs; close ${owners.length === 1 ? 'it' : 'them'} with ${owners.map((row) => `${PLATFORM_SLUG} run close-out ${row.record_id}`).join('; ')}`,
@@ -270,6 +262,35 @@ function removeRecordedHookTree(requestedPath: string): HookTreeRemovalResult {
   if (result.outcome === 'absent') return { outcome: 'absent' }
   if (result.outcome === 'held') return { outcome: 'kept', reason: result.detail }
   return { outcome: 'failed', detail: `tree teardown ${result.outcome}: ${result.detail}` }
+}
+
+function unownedHookTreeRemovalResult(
+  requestedPath: string,
+  canonicalRequestedPath: string,
+): HookTreeRemovalResult {
+  const historicalClaim = db()
+    .query(
+      `SELECT 1 FROM resource_claim
+       WHERE kind='worktree' AND allocation_key IN (?,?) LIMIT 1`,
+    )
+    .get(requestedPath, canonicalRequestedPath)
+  if (
+    absentClaimedHookTreeDecision({
+      pathExists: existsSync(requestedPath),
+      hasHistoricalWorktreeClaim: historicalClaim !== null,
+    }) === 'absent'
+  ) {
+    return { outcome: 'absent' }
+  }
+  const project = registeredProjectContaining(canonicalRequestedPath)
+  if (!project) {
+    throw new Error(
+      `no orchestrator run records the worktree at ${requestedPath}; no registered project contains it, so its main checkout cannot be established and the orchestrator will not remove it`,
+    )
+  }
+  throw new Error(
+    `no orchestrator run records the worktree at ${requestedPath}; ${unownedProjectTreeRemovalRemedy({ treePath: requestedPath, mainCheckoutPath: project.path })}`,
+  )
 }
 
 export function removeHookTree(requestedPath: string): void {

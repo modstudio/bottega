@@ -274,7 +274,7 @@ function refuseScoredBlockedByTree(id: string, exclusion: EvidenceExclusion): vo
 
 function recordEvidenceExclusion(
   id: string,
-  row: { failure_kind: string | null; job: string },
+  row: { failure_kind: string | null; job: string; agent?: string },
   exclusion: EvidenceExclusion,
   flags: JudgmentFlags,
   options: ScoreOptions,
@@ -285,7 +285,12 @@ function recordEvidenceExclusion(
   const delivery = options.words[0] as Delivery | undefined
   const quality = options.words[1] as Quality | undefined
   const fidelity = options.words[2] as Fidelity | undefined
-  const cannotRecord = blocked ? null : voidCannotRecord(row.failure_kind)
+  const pendingStopped = row.agent === '(pending)' && row.failure_kind === 'stopped'
+  const cannotRecord = blocked
+    ? null
+    : pendingStopped
+      ? 'stopped before routing'
+      : voidCannotRecord(row.failure_kind)
   const scoredFidelity =
     !cannotRecord && delivery ? scoredVoidFidelity(row.job, delivery, quality, fidelity) : undefined
   const excludedReason = blocked
@@ -756,7 +761,9 @@ function refusePendingAgentScore(
   failureKind: string | null,
   flags: JudgmentFlags,
 ): void {
-  if (agent === '(pending)' && !(flags.has('void') && isNotEvidenceFailure(failureKind))) {
+  const pendingVoidAllowed =
+    flags.has('void') && (failureKind === 'stopped' || isNotEvidenceFailure(failureKind))
+  if (agent === '(pending)' && !pendingVoidAllowed) {
     throw new Error(`run ${id} cannot be scored: its agent is the placeholder '(pending)'`)
   }
 }

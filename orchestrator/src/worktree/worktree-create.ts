@@ -51,7 +51,20 @@ export function leftoverRemedy(
   removeTemplate: string | undefined,
   vars: Record<string, string>,
   path: string,
+  existingBranch?: string,
+  observedBranch?: string | null,
 ): string {
+  if (existingBranch) {
+    const branchState = continuedTreeBranchState(observedBranch)
+    const remove = continuedTreeRemoveCommand(removeTemplate, vars, path, observedBranch)
+    return (
+      `\nThe tree was meant to sit on the existing branch ${existingBranch}, which holds the task's work and must be kept.\n` +
+      `${branchState}\n` +
+      (remove
+        ? `Remove the tree and its provisioned resources after inspection:\n  ${remove}`
+        : 'No remove command was filled because its {branch} value is not safe to infer.')
+    )
+  }
   const remove = removeTemplate
     ? fillTool(removeTemplate, { ...vars, path })
     : '(project declares no remove command)'
@@ -59,6 +72,71 @@ export function leftoverRemedy(
     `\nThe project created branch ${vars.branch} and may have provisioned resources.\n` +
     `Remove them when you have inspected the tree:\n  ${remove}`
   )
+}
+
+function continuedTreeBranchState(observedBranch: string | null | undefined): string {
+  if (observedBranch === null) return 'The tree is detached and must be inspected first.'
+  if (observedBranch) return `The project left the tree on branch ${observedBranch}.`
+  return 'The branch currently checked out in the tree has not been established; inspect it before removal.'
+}
+
+function continuedTreeRemoveCommand(
+  removeTemplate: string | undefined,
+  vars: Record<string, string>,
+  path: string,
+  observedBranch: string | null | undefined,
+): string | null {
+  if (!removeTemplate) return '(project declares no remove command)'
+  if (!observedBranch && removeTemplate.includes('{branch}')) return null
+  return fillTool(removeTemplate, {
+    ...vars,
+    ...(observedBranch ? { branch: observedBranch } : {}),
+    path,
+  })
+}
+
+export function commandCreatedBranchMatches(
+  existingBranch: string | undefined,
+  detached: boolean,
+  symbolicHead: string | null,
+): boolean {
+  return !existingBranch || detached || symbolicHead === `refs/heads/${existingBranch}`
+}
+
+function assertCommandCreatedCheckout(
+  detached: boolean,
+  existingBranch: string | undefined,
+  path: string,
+  base: string,
+  projectName: string,
+  leftover: (path: string, observedBranch?: string | null) => string,
+): void {
+  if (detached) {
+    const symbolicHead = gitOk(['symbolic-ref', '-q', 'HEAD'], path)
+    const head = gitOk(['rev-parse', 'HEAD'], path)
+    if (symbolicHead !== null || head !== base) {
+      throw new Error(
+        `project ${projectName}: worktree.create detached review ` +
+          `postcondition failed; expected detached HEAD at ${base}, got ` +
+          `${symbolicHead ?? '(detached HEAD)'} at ${head ?? '(unresolved)'}.` +
+          leftover(path),
+      )
+    }
+    return
+  }
+  if (!existingBranch) return
+  const symbolicHead = gitOk(['symbolic-ref', '-q', 'HEAD'], path)
+  const expected = `refs/heads/${existingBranch}`
+  if (!commandCreatedBranchMatches(existingBranch, detached, symbolicHead)) {
+    const observedBranch = symbolicHead?.startsWith('refs/heads/')
+      ? symbolicHead.slice('refs/heads/'.length)
+      : null
+    throw new Error(
+      `project ${projectName}: worktree.create existing branch ` +
+        `postcondition failed; expected ${expected}, got ${symbolicHead ?? '(detached HEAD)'}.` +
+        leftover(path, observedBranch),
+    )
+  }
 }
 
 function runRecordedRecipe(
@@ -313,7 +391,8 @@ function createWithToolUnlocked(
    * teardown has lost work. Every such error therefore carries the branch and
    * the project's ready-to-paste remove command.
    */
-  const leftover = (path: string) => leftoverRemedy(tool.remove, vars, path)
+  const leftover = (path: string, observedBranch?: string | null) =>
+    leftoverRemedy(tool.remove, vars, path, existingBranch, observedBranch)
 
   /**
    * WHERE IT PUT THE WORKTREE is read from the tool's LAST LINE, not hunted for.
@@ -392,18 +471,7 @@ function createWithToolUnlocked(
         leftover(path),
     )
   }
-  if (detached) {
-    const symbolicHead = gitOk(['symbolic-ref', '-q', 'HEAD'], path)
-    const head = gitOk(['rev-parse', 'HEAD'], path)
-    if (symbolicHead !== null || head !== base) {
-      throw new Error(
-        `project ${projectName}: worktree.create detached review ` +
-          `postcondition failed; expected detached HEAD at ${base}, got ` +
-          `${symbolicHead ?? '(detached HEAD)'} at ${head ?? '(unresolved)'}.` +
-          leftover(path),
-      )
-    }
-  }
+  assertCommandCreatedCheckout(detached, existingBranch, path, base, projectName, leftover)
   // A command without {base} may deliberately choose its own floor. Read the
   // commit from the tree it actually created so the run record and every later
   // diff name that floor rather than the caller checkout's incidental HEAD.
