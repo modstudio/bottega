@@ -146,7 +146,7 @@ export function insertContention(d: Database, row: ContentionWrite): void {
       row.resourceKind,
       row.resourceKey,
       row.eventKind,
-      row.durationMs ?? null,
+      row.durationMs == null ? null : Math.round(row.durationMs),
       row.cause ?? null,
       row.runId ?? null,
       row.landingId ?? null,
