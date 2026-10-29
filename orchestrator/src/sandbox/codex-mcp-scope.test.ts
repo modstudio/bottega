@@ -104,6 +104,31 @@ test('project server overlay takes the place of the mcp-run definition for the s
   expect(entries.join('\n')).not.toContain('.claude/mcp/mcp-run')
 })
 
+test('withheld project server suppresses mcp-run while an undeclared server keeps the fallback', () => {
+  const withheld = serverEntries(
+    codexScopeArgs({
+      mcp: true,
+      mcpServer: 'starship',
+      home: '/operator',
+      withheldProjectServers: ['starship'],
+    }),
+  )
+  expect(withheld.some((entry) => entry.startsWith('mcp_servers.starship='))).toBe(false)
+  expect(withheld.join('\n')).not.toContain('.claude/mcp/mcp-run')
+
+  const undeclared = serverEntries(
+    codexScopeArgs({
+      mcp: true,
+      mcpServer: 'starship',
+      home: '/operator',
+      withheldProjectServers: ['different-server'],
+    }),
+  )
+  expect(undeclared).toContain(
+    'mcp_servers.starship={command="/operator/.claude/mcp/mcp-run",args=["starship"]}',
+  )
+})
+
 test('reading-job project overlays all use the credential-free reader proxy', () => {
   const scope = scopeForRun(
     'codex',

@@ -79,6 +79,8 @@ export type ArgvOpts = {
   mcpServer?: string
   /** Credential-free project MCP launch definitions resolved by dispatch. */
   projectServers?: Record<string, { command?: string; args?: string[]; cwd?: string; url?: string }>
+  /** Project MCP server names intentionally withheld from a writing worker. */
+  withheldProjectServers?: string[]
   /** HOME inherited by the vendor process. */
   home?: string
   /** Grok-only scoped trust for the disposable cwd orchestrator created. */
@@ -236,6 +238,7 @@ export type TransportStartOpts = {
   mcp?: boolean
   mcpServer?: string
   projectServers?: ArgvOpts['projectServers']
+  withheldProjectServers?: ArgvOpts['withheldProjectServers']
   /** Project MCP servers this run attaches, and how; transports that cannot render them ignore it. */
   projectMcpSelection?: ProjectMcpSelection | null
   trustCwd?: string

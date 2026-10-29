@@ -17,6 +17,7 @@ import {
   type McpTransportPinFacts,
   requiredMcpIneligibility,
 } from '../mcp/mcp-native-attachment.ts'
+import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
@@ -68,6 +69,7 @@ import { aggregateEvidence, routingEvidenceWindow, runUsageMedians } from './rou
 
 export type { Candidate } from './route-candidate.ts'
 
+import { requiredProjectMcpWriterIneligibility } from '../sandbox/project-mcp-scope.ts'
 import {
   type CoolingFailure,
   coolingPhrase,
@@ -144,13 +146,15 @@ function memoizedRepositoryReader(
   }
 }
 
-function mcpCandidateIneligibility(
+export function mcpCandidateIneligibility(
   agent: Pick<Agent, 'name' | 'harness' | 'defaultTransport' | 'mcpToolNamePattern'>,
   requiredMcp: RequiredMcpServer | undefined,
   listedTools: string[] | undefined,
   pinnedTransport?: 'cli' | 'acp',
   transportPinSource?: McpTransportPinFacts['transportPinSource'],
+  writerIneligibility?: string | null,
 ): string | null {
+  if (writerIneligibility) return writerIneligibility
   const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, {
     pinnedTransport,
     transportPinSource,
@@ -194,10 +198,19 @@ function routingPassFacts(
 ): {
   mcpListing: ReturnType<typeof latestMcpListing>
   routeProject: Project | null
+  requiredMcpConfig: McpServerConfig | undefined
+  requiredMcpProject: Project | null
 } {
+  const requiredMcpProject = requiredMcp ? projectByName(requiredMcp.project) : null
   return {
     mcpListing: requiredMcp ? latestMcpListing(requiredMcp.projectId, requiredMcp.server) : null,
     routeProject: projectName ? projectByName(projectName) : null,
+    // A new run's tree does not exist during routing, so read the registered checkout;
+    // launch preflight backstops any tree whose MCP config later differs.
+    requiredMcpConfig: requiredMcpProject
+      ? readMcpConfig(requiredMcpProject.path)[requiredMcp!.server]
+      : undefined,
+    requiredMcpProject,
   }
 }
 
@@ -218,7 +231,10 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
   } = options
   const j = job(jobName)
   const readCurrentRepository = memoizedRepositoryReader(repositoryReader)
-  const { mcpListing, routeProject } = routingPassFacts(requiredMcp, projectName)
+  const { mcpListing, routeProject, requiredMcpConfig, requiredMcpProject } = routingPassFacts(
+    requiredMcp,
+    projectName,
+  )
   // Probes and evidence-excluded runs do not establish agent quality.
   const rows = db()
     .query(
@@ -336,6 +352,15 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     highStakesLens,
   })
   const runningByAgent = runningRunsByAgent()
+  const writerMcpIneligibility = requiredMcp
+    ? requiredProjectMcpWriterIneligibility(
+        requiredMcp.server,
+        requiredMcp.mode,
+        Boolean(j.needs.writesRepo),
+        requiredMcpConfig,
+        requiredMcpProject,
+      )
+    : null
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
       agent,
@@ -343,6 +368,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       mcpListing?.listedTools,
       pinnedTransport,
       transportPinSource,
+      writerMcpIneligibility,
     )
   const policyEligibility = (agent: Agent) =>
     routePolicyEligibility(
