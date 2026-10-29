@@ -17,6 +17,8 @@ type ArgumentCursor = {
   workflow_version_record_id?: string
   args: string
   closed: string
+  ordinal: number
+  step_slug: string
 }
 
 export const workflowKeyOf = (args: Record<string, string>): string => args.key?.trim() ?? ''
@@ -28,8 +30,33 @@ export type CursorArgumentDecision =
       rebindings: Array<{ name: string; oldValue: string; newValue: string }>
     }
   | { action: 'refuse'; reason: string }
+  | {
+      action: 'refuse'
+      kind: 'compose-branch'
+      storedBranch: string
+      suppliedBranch: string
+    }
 
-export function decideCursorArguments(
+function composeBranchRebindConflict(
+  stored: Record<string, string>,
+  supplied: Record<string, string>,
+  rebindable: ReadonlySet<string>,
+  composing: boolean,
+): { storedBranch: string; suppliedBranch: string } | null {
+  const storedBranch = stored.branch?.trim()
+  const suppliedBranch = supplied.branch?.trim()
+  if (
+    !composing ||
+    !storedBranch ||
+    !suppliedBranch ||
+    suppliedBranch === storedBranch ||
+    !rebindable.has('branch')
+  )
+    return null
+  return { storedBranch: stored.branch!, suppliedBranch: supplied.branch! }
+}
+
+function decideCursorArgumentMerge(
   stored: Record<string, string>,
   supplied: Record<string, string>,
   rebindable: ReadonlySet<string>,
@@ -58,6 +85,22 @@ export function decideCursorArguments(
   return { action: 'merge', args: merged, rebindings }
 }
 
+export function decideCursorArguments(
+  stored: Record<string, string>,
+  supplied: Record<string, string>,
+  rebindable: ReadonlySet<string>,
+  composing = false,
+): CursorArgumentDecision {
+  const branchConflict = composeBranchRebindConflict(stored, supplied, rebindable, composing)
+  return branchConflict
+    ? {
+        action: 'refuse',
+        kind: 'compose-branch',
+        ...branchConflict,
+      }
+    : decideCursorArgumentMerge(stored, supplied, rebindable)
+}
+
 function rebindableArguments(row: ArgumentCursor, d: Database): Set<string> {
   const current = resolvedProductionWorkflows(row.project, d).find(
     ({ slug }) => slug === row.workflow_slug,
@@ -81,16 +124,27 @@ export function applyCursorArguments(
   row: ArgumentCursor,
   supplied: Record<string, string>,
   d: Database,
+  composing = false,
 ): Record<string, string> {
-  const decision = decideCursorArguments(
-    JSON.parse(row.args) as Record<string, string>,
-    supplied,
-    rebindableArguments(row, d),
-  )
-  if (decision.action === 'refuse')
+  const stored = JSON.parse(row.args) as Record<string, string>
+  const rebindable = rebindableArguments(row, d)
+  const decision = decideCursorArguments(stored, supplied, rebindable, composing)
+  if (decision.action === 'refuse') {
+    if ('kind' in decision) {
+      const cursor = workflowCursorReference(row.id).cli
+      throw new Error(
+        `workflow compose cannot rebind open cursor ${row.id} from stored branch "${decision.storedBranch}" ` +
+          `at step ${row.ordinal + 1} ${row.step_slug}; finish it with ` +
+          `${PLATFORM_SLUG} workflow next ${row.workflow_slug}${cursor}, or abandon it with ` +
+          `${PLATFORM_SLUG} workflow abandon ${row.workflow_slug}${cursor} --reason "<text>"; ` +
+          `a renamed branch of the same change continues through ` +
+          `${PLATFORM_SLUG} workflow next ${row.workflow_slug}${cursor} with the new branch`,
+      )
+    }
     throw new Error(
       `${decision.reason}; ${PLATFORM_SLUG} workflow abandon${workflowCursorReference(row.id).cli} --reason "<why>"`,
     )
+  }
   const encoded = JSON.stringify(decision.args)
   if (decision.rebindings.length) {
     const at = nowIso()

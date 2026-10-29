@@ -272,7 +272,7 @@ export function composeWorkflowWithCursor(
         )
       : null
     const start = decideCursorStart(existing?.state ?? null)
-    if (existing && start === 'reuse') applyCursorArguments(existing, args, d)
+    if (existing && start === 'reuse') applyCursorArguments(existing, args, d, true)
     const row = insertCursor(composition, context, d, autonomy, commitCount)
     return {
       ...cursorComposition(row, d, live),
