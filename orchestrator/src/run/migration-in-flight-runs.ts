@@ -2,6 +2,11 @@
 /** Owns the pre-migration view of runs whose coordinators are still in flight. */
 
 import type { Database } from 'bun:sqlite'
+import {
+  type PidRecordIdentity,
+  pidAlive,
+  pidRecordIdentity,
+} from '../../../shared/process-identity.ts'
 import { isFreshRunHostWait } from './run-host-capacity.ts'
 import { heldRunCloseOutLeaseIds, heldRunLeaseIds } from './run-lease.ts'
 
@@ -14,15 +19,9 @@ export type MigrationInFlightRun = {
 }
 
 export function formatMigrationInFlightRun(run: MigrationInFlightRun): string {
-  const holder =
-    run.kind === 'run-lease'
-      ? `, holder pid ${run.holderPid ?? 'unknown'}`
-      : run.kind === 'close-out'
-        ? ', closing'
-        : run.holderPid
-          ? `, coordinator pid ${run.holderPid}`
-          : ''
-  return `${run.name} (${run.status}${holder})`
+  const holder = `, holder pid ${run.holderPid ?? 'unknown'}`
+  const closing = run.kind === 'close-out' ? ', closing' : ''
+  return `${run.name} (${run.status}${holder}${closing})`
 }
 
 /** Names coordinators that can still touch the store, regardless of their row status. */
@@ -85,7 +84,23 @@ function migrationCloseOutHoldingRuns(database: Database): MigrationInFlightRun[
   return migrationHeldRuns(database, heldRunCloseOutLeaseIds(), 'close-out')
 }
 
-/** Runs that can still acquire or currently hold an old-schema coordinator lease. */
+export function askingRowMayHoldOldSchema(input: {
+  hasLease: boolean
+  coordinatorAlive: boolean
+  agentIdentity: PidRecordIdentity
+}): boolean {
+  return (
+    input.hasLease ||
+    input.coordinatorAlive ||
+    input.agentIdentity === 'live' ||
+    input.agentIdentity === 'unknown'
+  )
+}
+
+/**
+ * Answers "may a live process still hold a handle the migration would invalidate?".
+ * An asking row is excluded only when neither coordinator nor agent may still be alive.
+ */
 export function migrationInFlightRuns(database: Database): MigrationInFlightRun[] {
   const closing = migrationCloseOutHoldingRuns(database)
   const holding = migrationLeaseHoldingRuns(database)
@@ -99,6 +114,8 @@ export function migrationInFlightRuns(database: Database): MigrationInFlightRun[
         record_id?: string | null
         status: string
         pid?: number | null
+        agent_pid?: number | null
+        agent_start_time?: string | null
         host_wait_since?: string | null
       },
       []
@@ -107,11 +124,27 @@ export function migrationInFlightRuns(database: Database): MigrationInFlightRun[
   for (const row of rows) {
     const name = row.record_id ?? (row.number ? `#${row.number}` : `#${row.id}`)
     const existing = byName.get(name)
+    let askingHolderPid: number | null = null
+    if (row.status === 'asking') {
+      const coordinatorAlive = pidAlive(row.pid ?? null)
+      const agentIdentity = pidRecordIdentity(row.agent_pid, row.agent_start_time)
+      if (
+        !askingRowMayHoldOldSchema({
+          hasLease: existing !== undefined,
+          coordinatorAlive,
+          agentIdentity,
+        })
+      ) {
+        continue
+      }
+      askingHolderPid = coordinatorAlive ? (row.pid ?? null) : (row.agent_pid ?? null)
+    }
     byName.set(name, {
       name,
       status: row.status,
       waiting: isFreshRunHostWait(row.status, row.host_wait_since),
-      holderPid: existing?.holderPid ?? row.pid ?? null,
+      holderPid:
+        row.status === 'asking' ? askingHolderPid : (existing?.holderPid ?? row.pid ?? null),
       kind: existing?.kind ?? 'row',
     })
   }

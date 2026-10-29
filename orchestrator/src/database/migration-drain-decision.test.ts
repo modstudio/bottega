@@ -33,4 +33,16 @@ describe('migration drain decision', () => {
       }),
     ).toEqual({ action: 'fence', migration: '0002_rebuild' })
   })
+
+  test('fences an unknown compatibility token', () => {
+    expect(
+      decideMigrationDrain({
+        journal: [
+          ...journal.slice(0, 2),
+          { idx: 2, when: 3, tag: '0002_future', compatibility: 'future-token' },
+        ],
+        storeVersion: 2,
+      }),
+    ).toEqual({ action: 'fence', migration: '0002_future' })
+  })
 })

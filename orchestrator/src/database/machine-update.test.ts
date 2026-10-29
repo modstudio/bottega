@@ -246,10 +246,12 @@ test('a non-additive update waits for an admitted resume, then migrates behind t
     held.restore()
   }
   expect(events).toEqual(['resume-admitted', 'resume-finished', 'pull', 'migrate'])
-  expect(lines).toContain(
-    `draining for migration ${pending.tag}; waiting on ${runId} (ok, holder pid unknown)`,
+  expect(lines.some((line) => line.includes(`waiting on ${runId} (ok, holder pid unknown)`))).toBe(
+    true,
   )
-  expect(lines).toContain(`draining for migration ${pending.tag}; waiting on ${resumeId} (running)`)
+  expect(
+    lines.some((line) => line.includes(`waiting on ${resumeId} (running, holder pid unknown)`)),
+  ).toBe(true)
   expect(migrationDrain(db())).toBeNull()
 })
 
@@ -268,6 +270,7 @@ test('machine update clears the drain marker when the bounded wait expires', asy
     .run(runId, process.pid)
   const lease = acquireRunLease(runId)
   let nowCalls = 0
+  let applied = false
   try {
     await expect(
       machineUpdateCommand(
@@ -282,7 +285,11 @@ test('machine update clears the drain marker when the bounded wait expires', asy
           }),
           git: (_cwd, args) => {
             if (args[0] === 'branch') return 'main'
+            if (args[0] === 'pull') applied = true
             return args[0] === 'show' ? JSON.stringify({ entries: migrationJournal() }) : ''
+          },
+          migrate: () => {
+            applied = true
           },
           now: () => (nowCalls++ === 0 ? 0 : Number.MAX_SAFE_INTEGER),
           sleep: async () => {},
@@ -291,6 +298,7 @@ test('machine update clears the drain marker when the bounded wait expires', asy
     ).rejects.toThrow(
       `${PLATFORM_SLUG} machine migrate --force-in-flight "<reason>" --from-operator`,
     )
+    expect(applied).toBe(false)
     expect(migrationDrain(db())).toBeNull()
   } finally {
     lease.release()

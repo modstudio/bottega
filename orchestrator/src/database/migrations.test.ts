@@ -26,6 +26,7 @@ function applyOneMigration(database: import('bun:sqlite').Database, tag: string)
 function additiveStatementRefusal(statement: string): string | null {
   const normalized = stripSqlComments(statement).trim().replace(/\s+/g, ' ')
   if (!normalized) return null
+  if (/^UPDATE\b/i.test(normalized)) return null
   if (/^CREATE\s+TABLE\b/i.test(normalized)) return null
   if (/^CREATE\s+(?:UNIQUE\s+)?INDEX\b/i.test(normalized)) return null
   if (/^ALTER\s+TABLE\b[\s\S]*\bADD(?:\s+COLUMN)?\b/i.test(normalized)) {

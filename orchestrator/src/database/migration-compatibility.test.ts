@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   decideInFlightMigration,
   inFlightMigrationCompatibility,
+  validatedMigrationJournalEntries,
 } from './migration-compatibility.ts'
 
 describe('in-flight migration compatibility', () => {
@@ -38,6 +39,13 @@ describe('in-flight migration compatibility', () => {
     expect(inFlightMigrationCompatibility(entries, 1, 2)).toBe('additive')
     expect(inFlightMigrationCompatibility(entries, 1, 3)).toBe('incompatible')
     expect(inFlightMigrationCompatibility(entries, 2, 4)).toBe('incompatible')
+    expect(
+      inFlightMigrationCompatibility(
+        [...entries, { idx: 3, when: 4, tag: '0003', compatibility: 'future-token' }],
+        3,
+        4,
+      ),
+    ).toBe('incompatible')
   })
 
   test('a range past an all-additive journal is incompatible', () => {
@@ -48,5 +56,40 @@ describe('in-flight migration compatibility', () => {
     expect(inFlightMigrationCompatibility(entries, entries.length, entries.length + 2)).toBe(
       'incompatible',
     )
+  })
+
+  test('new journal entries must declare non-empty compatibility metadata', () => {
+    const legacy = Array.from({ length: 181 }, (_, idx) => ({ idx, when: idx, tag: `${idx}` }))
+    expect(() =>
+      validatedMigrationJournalEntries([...legacy, { idx: 181, when: 181, tag: '0181_missing' }]),
+    ).toThrow("migration 0181_missing must declare compatibility as 'additive' or 'fenced'")
+    expect(
+      validatedMigrationJournalEntries([
+        ...legacy,
+        { idx: 181, when: 181, tag: '0181_additive', compatibility: 'additive' },
+        { idx: 182, when: 182, tag: '0182_fenced', compatibility: 'fenced' },
+      ]).slice(-2),
+    ).toEqual([
+      { idx: 181, when: 181, tag: '0181_additive', compatibility: 'additive' },
+      { idx: 182, when: 182, tag: '0182_fenced', compatibility: 'fenced' },
+    ])
+    expect(
+      validatedMigrationJournalEntries([
+        ...legacy,
+        { idx: 181, when: 181, tag: '0181_future', compatibility: 'future-token' },
+      ]).at(-1),
+    ).toEqual({ idx: 181, when: 181, tag: '0181_future', compatibility: 'future-token' })
+    expect(() =>
+      validatedMigrationJournalEntries([
+        ...legacy,
+        { idx: 181, when: 181, tag: '0181_empty', compatibility: '' },
+      ]),
+    ).toThrow('invalid migration compatibility for 0181_empty: expected a non-empty string')
+    expect(() =>
+      validatedMigrationJournalEntries([
+        ...legacy,
+        { idx: 181, when: 181, tag: '0181_non_string', compatibility: 1 },
+      ]),
+    ).toThrow('invalid migration compatibility for 0181_non_string: expected a non-empty string')
   })
 })

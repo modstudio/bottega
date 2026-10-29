@@ -305,13 +305,13 @@ describe('Drizzle migration journal', () => {
     rmSync(dir, { recursive: true, force: true })
   })
 
-  test('a journal with an unknown compatibility label is refused at load', () => {
+  test('a journal with an empty compatibility label is refused at load', () => {
     const dir = mkdtempSync(join(tmpdir(), 'orch-compatibility-invalid-'))
     mkdirSync(join(dir, 'meta'))
     writeFileSync(
       join(dir, 'meta', '_journal.json'),
       JSON.stringify({
-        entries: [{ idx: 0, when: 100, tag: '0000_first', compatibility: 'breaking' }],
+        entries: [{ idx: 0, when: 100, tag: '0000_first', compatibility: '' }],
       }),
     )
     expect(() => migrationJournal(dir)).toThrow('invalid migration compatibility for 0000_first')

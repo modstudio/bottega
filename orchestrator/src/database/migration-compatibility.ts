@@ -9,8 +9,10 @@ export type MigrationJournalEntry = {
   idx: number
   when: number
   tag: string
-  compatibility?: 'additive'
+  compatibility?: string
 }
+
+const LAST_LEGACY_COMPATIBILITY_OPTIONAL_INDEX = 180
 
 export type InFlightMigrationDecision =
   | { action: 'keep-going' }
@@ -44,8 +46,18 @@ export function validatedMigrationJournalEntries(entries: unknown[]): MigrationJ
         `invalid migration journal index for ${entry.tag ?? `entry ${position}`}: expected ${position}, got ${String(entry.idx)}`,
       )
     }
-    if (entry.compatibility !== undefined && entry.compatibility !== 'additive') {
-      throw new Error(`invalid migration compatibility for ${entry.tag}`)
+    if (
+      entry.compatibility !== undefined &&
+      (typeof entry.compatibility !== 'string' || entry.compatibility.length === 0)
+    ) {
+      throw new Error(
+        `invalid migration compatibility for ${entry.tag ?? `entry ${position}`}: expected a non-empty string`,
+      )
+    }
+    if (position > LAST_LEGACY_COMPATIBILITY_OPTIONAL_INDEX && entry.compatibility === undefined) {
+      throw new Error(
+        `migration ${entry.tag ?? `entry ${position}`} must declare compatibility as 'additive' or 'fenced'`,
+      )
     }
   }
   return entries as MigrationJournalEntry[]
