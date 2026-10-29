@@ -1,6 +1,6 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import { addRun, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
@@ -12,6 +12,8 @@ import {
   routingBacktestEnsemble,
   staticEligible,
 } from './routing-backtest.ts'
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 test('static replay eligibility mirrors live metered opt-in', () => {
   const original = db()

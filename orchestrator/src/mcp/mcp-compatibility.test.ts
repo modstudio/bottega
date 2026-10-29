@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
+import { seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { candidates, pick } from '../route/route.ts'
@@ -10,6 +11,8 @@ import {
 import { requiredMcpIneligibility } from './mcp-native-attachment.ts'
 
 const grok = '^[A-Za-z0-9_-]{1,64}$'
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 describe('MCP tool-name compatibility', () => {
   test('dotted names are incompatible with the grok grammar', () => {

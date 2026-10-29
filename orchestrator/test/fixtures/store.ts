@@ -66,6 +66,26 @@ export function addRun(o: {
     )
   return recordId
 }
+
+/** Test-only neutral current-window reading for files that need paced codex eligibility. */
+export function seedNeutralCodexQuotaReading(now = Date.now()): string {
+  const windowMinutes = 10_080
+  const resetsAt = Math.floor((now + windowMinutes * 60_000 * 0.9) / 1000)
+  const recordId = addRun({
+    agent: 'codex',
+    job: 'agent-probe-quota',
+    startedAt: new Date(now - 86_400_000).toISOString(),
+    probe: 1,
+  })
+  db()
+    .query(
+      `UPDATE run SET number=0, vendor_tokens=0, quota_used_percent_start=0,
+                      quota_used_percent_end=0, quota_window_minutes=?, quota_resets_at=?
+        WHERE record_id=?`,
+    )
+    .run(windowMinutes, resetsAt, recordId)
+  return recordId
+}
 export function score(
   runId: string,
   delivery: string,
