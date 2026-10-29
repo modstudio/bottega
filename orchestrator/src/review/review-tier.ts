@@ -57,23 +57,31 @@ export function resolveTierRange(
 }
 
 export function diffNumstat(repo: string, from: string, to: string): ReviewTierFile[] {
-  const result = Bun.spawnSync(['git', 'diff', '--no-renames', '--numstat', `${from}..${to}`], {
-    cwd: repo,
-    env: targetGitEnvironment(repo),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = Bun.spawnSync(
+    ['git', 'diff', '--no-renames', '--numstat', '-z', `${from}..${to}`],
+    {
+      cwd: repo,
+      env: targetGitEnvironment(repo),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   if (result.exitCode !== 0)
     throw new Error(result.stderr.toString().trim() || `git diff exited ${result.exitCode}`)
   return result.stdout
     .toString()
-    .trim()
-    .split('\n')
+    .split('\0')
     .filter(Boolean)
-    .map((line) => {
-      const [added, removed, ...path] = line.split('\t')
+    .map((row) => {
+      const firstSeparator = row.indexOf('\t')
+      const secondSeparator = row.indexOf('\t', firstSeparator + 1)
+      if (firstSeparator < 0 || secondSeparator < 0) {
+        throw new Error('git diff --numstat -z returned a malformed row')
+      }
+      const added = row.slice(0, firstSeparator)
+      const removed = row.slice(firstSeparator + 1, secondSeparator)
       return {
-        path: path.join('\t'),
+        path: row.slice(secondSeparator + 1),
         insertions: Number(added) || 0,
         deletions: Number(removed) || 0,
       }

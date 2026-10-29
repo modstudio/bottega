@@ -37,11 +37,21 @@ export type PostFixReviewFacts =
       completed: CompletedReview
       reviewedTip: string | null
       fixFiles: ReviewTierFile[] | null
+      comparisonError?: string
     }
 
 export type PostFixReviewDecision =
   | { kind: 'no-completed-round' }
   | { kind: 'reviewed-tip-unidentified'; reviewNumber: number }
+  | {
+      kind: 'comparison-failed'
+      reviewNumber: number
+      reviewedTip: string
+      error: string
+      fixPaths: string[]
+      tierThreePaths: string[]
+      applicability: ApplicableReview
+    }
   | {
       kind: 'no-round-needed'
       reviewNumber: number
@@ -57,6 +67,18 @@ export type PostFixReviewDecision =
       tierThreePaths: string[]
       applicability: ApplicableReview
     }
+
+export type PerPathPatch = ReviewTierFile & { patchId: string }
+
+export function mapPatchPaths(
+  patches: PerPathPatch[],
+  renamedPaths: ReadonlyMap<string, string>,
+): PerPathPatch[] {
+  return patches.map((patch) => ({
+    ...patch,
+    path: renamedPaths.get(patch.path) ?? patch.path,
+  }))
+}
 
 type CompletedReviewEvidenceRow = Pick<
   ReviewRoundEvidenceRow,
@@ -138,68 +160,140 @@ function matchingReviewedTip(
   return match
 }
 
+/** Compare two branch changes without depending on how either change was committed. */
+export function fixFilesFromPatches(
+  reviewed: PerPathPatch[],
+  current: PerPathPatch[],
+): ReviewTierFile[] {
+  const reviewedByPath = new Map(reviewed.map((file) => [file.path, file]))
+  const currentByPath = new Map(current.map((file) => [file.path, file]))
+  const paths = new Set([...reviewedByPath.keys(), ...currentByPath.keys()])
+  return [...paths].sort().flatMap((path) => {
+    const before = reviewedByPath.get(path)
+    const after = currentByPath.get(path)
+    if (before?.patchId === after?.patchId) return []
+    const source = after ?? before
+    return source ? [{ path, insertions: source.insertions, deletions: source.deletions }] : []
+  })
+}
+
+/** Hash a single diff section by its content and metadata, independent of path and hunk offsets. */
+export function pathNeutralContentIdentity(section: string): string {
+  let header = true
+  const normalized = section
+    .split('\n')
+    .flatMap((line) => {
+      if (line.startsWith('@@')) {
+        header = false
+        return ['@@']
+      }
+      if (line === 'GIT binary patch') {
+        header = false
+        return [line]
+      }
+      if (line.startsWith('Binary files ')) {
+        header = false
+        return ['Binary files differ']
+      }
+      if (
+        header &&
+        (line.startsWith('diff --git ') ||
+          line.startsWith('index ') ||
+          line.startsWith('--- ') ||
+          line.startsWith('+++ ') ||
+          line.startsWith('rename from ') ||
+          line.startsWith('rename to ') ||
+          line.startsWith('copy from ') ||
+          line.startsWith('copy to '))
+      ) {
+        return []
+      }
+      return [line]
+    })
+    .join('\n')
+  return new Bun.CryptoHasher('sha256').update(normalized).digest('hex')
+}
+
+function diffSections(diff: string): string[] {
+  return diff ? diff.split(/(?=^diff --git )/m).filter(Boolean) : []
+}
+
+function changePatches(
+  repo: string,
+  tip: string,
+  trunkRef: string,
+): { mergeBase: string; patches: PerPathPatch[] } {
+  const mergeBase = git(repo, ['merge-base', tip, trunkRef])
+  if (!mergeBase.ok) throw new Error(mergeBase.err)
+  const files = diffNumstat(repo, mergeBase.out, tip)
+  const diff = git(repo, [
+    'diff',
+    '--binary',
+    '--no-ext-diff',
+    '--no-color',
+    '--no-renames',
+    '--unified=0',
+    `${mergeBase.out}..${tip}`,
+  ])
+  if (!diff.ok) throw new Error(diff.err)
+  const sections = diffSections(new TextDecoder().decode(diff.stdout))
+  if (sections.length !== files.length) {
+    throw new Error(
+      `git diff section count ${sections.length} did not match numstat count ${files.length}`,
+    )
+  }
+  const patches = files.map((file, index) => ({
+    ...file,
+    patchId: pathNeutralContentIdentity(sections[index]!),
+  }))
+  return { mergeBase: mergeBase.out, patches }
+}
+
+function trunkRenames(
+  repo: string,
+  reviewedBase: string,
+  currentBase: string,
+): Map<string, string> {
+  const result = git(repo, [
+    'diff',
+    '--name-status',
+    '--find-renames',
+    '-z',
+    `${reviewedBase}..${currentBase}`,
+  ])
+  if (!result.ok) throw new Error(result.err)
+  const fields = result.out.split('\0').filter(Boolean)
+  const renames = new Map<string, string>()
+  for (let index = 0; index < fields.length; ) {
+    const status = fields[index++]!
+    const path = fields[index++]
+    if (!path) throw new Error('git diff --name-status omitted a changed path')
+    if (!status.startsWith('R')) continue
+    const renamedPath = fields[index++]
+    if (!renamedPath) throw new Error('git diff --name-status omitted a renamed path')
+    renames.set(path, renamedPath)
+  }
+  return renames
+}
+
 function branchFixFiles(
   repo: string,
   reviewedTip: string,
   currentTip: string,
   trunkRef: string,
 ): ReviewTierFile[] {
-  const commits = git(repo, [
-    'rev-list',
-    '--reverse',
-    '--parents',
-    currentTip,
-    '--not',
-    reviewedTip,
-    trunkRef,
-  ])
-  if (!commits.ok) throw new Error(commits.err)
-  const files = new Map<string, ReviewTierFile>()
-  const addFiles = (changed: ReviewTierFile[]) => {
-    for (const file of changed) {
-      const previous = files.get(file.path)
-      files.set(file.path, {
-        path: file.path,
-        insertions: (previous?.insertions ?? 0) + file.insertions,
-        deletions: (previous?.deletions ?? 0) + file.deletions,
-      })
-    }
-  }
-  for (const row of commits.out.split('\n').filter(Boolean)) {
-    const [commit, firstParent, ...mergedParents] = row.split(' ')
-    if (!commit || !firstParent) throw new Error(`could not identify the parent of ${commit}`)
-    const mergesLandingBranch = mergedParents.some(
-      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
-    )
-    if (!mergesLandingBranch) {
-      addFiles(diffNumstat(repo, firstParent, commit))
-      continue
-    }
-    const landingParent = mergedParents.find(
-      (parent) => git(repo, ['merge-base', '--is-ancestor', parent, trunkRef]).ok,
-    )!
-    const automatic = git(repo, [
-      'merge-tree',
-      '--write-tree',
-      '--name-only',
-      '--no-messages',
-      firstParent,
-      landingParent,
-    ])
-    const [automaticTree, ...conflictedPaths] = automatic.out.split('\n').filter(Boolean)
-    if (!automaticTree || !git(repo, ['cat-file', '-e', `${automaticTree}^{tree}`]).ok) {
-      throw new Error(automatic.err)
-    }
-    const resolved = diffNumstat(repo, automaticTree, commit)
-    const resolvedPaths = new Set(resolved.map(({ path }) => path))
-    addFiles(resolved)
-    addFiles(
-      conflictedPaths
-        .filter((path) => !resolvedPaths.has(path))
-        .map((path) => ({ path, insertions: 0, deletions: 0 })),
-    )
-  }
-  return [...files.values()]
+  const reviewed = changePatches(repo, reviewedTip, trunkRef)
+  const current = changePatches(repo, currentTip, trunkRef)
+  return fixFilesFromPatches(
+    mapPatchPaths(reviewed.patches, trunkRenames(repo, reviewed.mergeBase, current.mergeBase)),
+    current.patches,
+  )
+}
+
+function currentChangeFiles(repo: string, currentTip: string, trunkRef: string): ReviewTierFile[] {
+  const mergeBase = git(repo, ['merge-base', currentTip, trunkRef])
+  if (!mergeBase.ok) throw new Error(mergeBase.err)
+  return diffNumstat(repo, mergeBase.out, currentTip)
 }
 
 /** Gather repository and review-store evidence without making the review-policy decision. */
@@ -227,8 +321,21 @@ export function gatherPostFixReviewFacts(input: {
       reviewedTip,
       fixFiles: branchFixFiles(input.repo, reviewedTip, input.to, input.trunkRef),
     }
-  } catch {
-    return { completed, reviewedTip: null, fixFiles: null }
+  } catch (cause) {
+    const comparisonError = String((cause as Error)?.message ?? cause)
+    let fixFiles: ReviewTierFile[] = []
+    try {
+      fixFiles = currentChangeFiles(input.repo, input.to, input.trunkRef)
+    } catch (fallbackCause) {
+      const fallbackError = String((fallbackCause as Error)?.message ?? fallbackCause)
+      return {
+        completed,
+        reviewedTip,
+        fixFiles,
+        comparisonError: `${comparisonError}; current change paths also failed: ${fallbackError}`,
+      }
+    }
+    return { completed, reviewedTip, fixFiles, comparisonError }
   }
 }
 
@@ -239,7 +346,27 @@ export function postFixReviewDecision(input: {
   review: ReviewSettings | undefined
 }): PostFixReviewDecision {
   if (!input.facts.completed) return { kind: 'no-completed-round' }
-  const { completed, reviewedTip, fixFiles } = input.facts
+  const { completed, reviewedTip, fixFiles, comparisonError } = input.facts
+  if (reviewedTip && fixFiles && comparisonError) {
+    const tierThreePaths =
+      input.tier === POST_FIX_RELENS_TIER ? tierThreeRiskPaths(fixFiles, input.review?.risk) : []
+    return {
+      kind: 'comparison-failed',
+      reviewNumber: completed.number,
+      reviewedTip,
+      error: comparisonError,
+      fixPaths: fixFiles.map(({ path }) => path),
+      tierThreePaths,
+      applicability:
+        tierThreePaths.length > 0
+          ? applicablePostFixReview(
+              POST_FIX_RELENS_TIER,
+              fixFiles.map(({ path }) => path),
+              input.review,
+            )
+          : applicableReview(0, [], input.review),
+    }
+  }
   if (input.tier !== POST_FIX_RELENS_TIER) {
     return {
       kind: 'no-round-needed',
