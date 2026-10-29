@@ -214,11 +214,13 @@ function lostItems(
   windowEnd: number,
   rows: TranscriptRow[],
   facts: LifecycleFacts,
+  alreadyLost: { runs: Set<string>; cursors: Set<string>; claims: Set<string> },
 ): BoundaryLoss['lost'] {
   const windowRows = rows.filter(
     (row) => transcriptRowTime(row) > boundary && transcriptRowTime(row) <= windowEnd,
   )
   const runs = facts.runs.filter((run) => {
+    if (alreadyLost.runs.has(run.id)) return false
     const terminal = run.terminalAt ? Date.parse(run.terminalAt) : null
     if (Date.parse(run.startedAt) > boundary || (terminal !== null && terminal <= boundary))
       return false
@@ -229,12 +231,14 @@ function lostItems(
     return !windowRows.some((row) => transcriptRowTime(row) <= end && namesRun(row, run))
   })
   const cursors = facts.cursors.filter((cursor) => {
+    if (alreadyLost.cursors.has(cursor.id)) return false
     const terminal = cursor.terminalAt ? Date.parse(cursor.terminalAt) : null
     if (Date.parse(cursor.createdAt) > boundary || (terminal !== null && terminal <= boundary))
       return false
     return !cursor.advancesAt.some((advanced) => within(advanced, boundary, windowEnd))
   })
   const claims = facts.claims.filter((claim) => {
+    if (alreadyLost.claims.has(claim.id)) return false
     const closed = claim.closedAt ? Date.parse(claim.closedAt) : null
     if (Date.parse(claim.takenAt) > boundary || (closed !== null && closed <= boundary))
       return false
@@ -243,11 +247,15 @@ function lostItems(
       windowRows.some((row) => handlesClaim(row, claim))
     )
   })
-  return {
+  const lost = {
     runs: { count: runs.length, ids: runs.map((run) => run.id) },
     cursors: { count: cursors.length, ids: cursors.map((cursor) => cursor.id) },
     claims: { count: claims.length, ids: claims.map((claim) => claim.id) },
   }
+  for (const id of lost.runs.ids) alreadyLost.runs.add(id)
+  for (const id of lost.cursors.ids) alreadyLost.cursors.add(id)
+  for (const id of lost.claims.ids) alreadyLost.claims.add(id)
+  return lost
 }
 
 function awaitQuestion(input: unknown): string | null {
@@ -317,6 +325,11 @@ export function measureSessionLosses(
   const wallHours = Math.max((last - first) / 3_600_000, 0)
   const tokens = tokenSplit(rows)
   const perHour = (value: number) => (wallHours === 0 ? 0 : value / wallHours)
+  const alreadyLost = {
+    runs: new Set<string>(),
+    cursors: new Set<string>(),
+    claims: new Set<string>(),
+  }
   const boundaries = indexes.map((index, boundaryNumber): BoundaryLoss => {
     const boundary = rows[index]!
     const previous = boundaryNumber === 0 ? -1 : indexes[boundaryNumber - 1]!
@@ -336,6 +349,7 @@ export function measureSessionLosses(
         next < rows.length ? transcriptRowTime(rows[next]!) : last,
         rows,
         facts,
+        alreadyLost,
       ),
       candidates: candidateFile(sessionId, boundary.timestamp!, beforeRows, afterRows),
     }

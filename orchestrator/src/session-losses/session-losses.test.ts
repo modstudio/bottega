@@ -124,6 +124,34 @@ describe('run loss', () => {
     expect(report.boundaries[0]!.lost.runs.count).toBe(0)
   })
 
+  test('does not count a failed run with no latency that ended before the boundary', () => {
+    const report = measureSessionLosses('session', transcript(false), {
+      ...emptyFacts(),
+      runs: [{ id: 'run-failed', number: 9, startedAt: stamp(0), terminalAt: stamp(0) }],
+    })!
+    expect(report.boundaries[0]!.lost.runs.count).toBe(0)
+  })
+
+  test('counts a run left uncollected across boundaries only at the first boundary', () => {
+    const report = measureSessionLosses(
+      'session',
+      [
+        assistant(0, 'before'),
+        boundary(1),
+        assistant(2, 'one'),
+        boundary(3),
+        assistant(4, 'two'),
+        boundary(5),
+        assistant(6, 'three'),
+      ],
+      {
+        ...emptyFacts(),
+        runs: [{ id: 'run-open', number: 9, startedAt: stamp(0), terminalAt: null }],
+      },
+    )!
+    expect(report.boundaries.map((item) => item.lost.runs.ids)).toEqual([['run-open'], [], []])
+  })
+
   test('collects a terminal run during the owner grace window', () => {
     const report = measureSessionLosses(
       'session',
@@ -189,6 +217,10 @@ describe('cursor loss', () => {
 
   test('does not count a cursor terminal before the boundary', () => {
     expect(report(stamp(1), [stamp(1)]).boundaries[0]!.lost.cursors.count).toBe(0)
+  })
+
+  test('does not count a terminal cursor with no closing advance after it closed', () => {
+    expect(report(stamp(1), []).boundaries[0]!.lost.cursors.count).toBe(0)
   })
 })
 

@@ -58,6 +58,7 @@ type RunRow = {
   started_at: string
   status: string
   latency_ms: number | null
+  last_event_at: string | null
   parent_run_record_id: string | null
 }
 
@@ -65,6 +66,7 @@ function runFacts(sessionId: string): RunLifecycle[] {
   const rows = db()
     .query(
       `SELECT member.record_id,member.number,member.started_at,member.status,member.latency_ms,
+              member.last_event_at,
               member.parent_run_record_id
          FROM run root JOIN run member
            ON member.record_id=root.record_id OR member.parent_run_record_id=root.record_id
@@ -79,27 +81,25 @@ function runFacts(sessionId: string): RunLifecycle[] {
   }
   return [...chains.entries()].map(([id, turns]) => {
     const root = turns.find((turn) => turn.record_id === id)!
-    const finished = turns.flatMap((turn) =>
-      turn.latency_ms === null
-        ? []
-        : [new Date(Date.parse(turn.started_at) + turn.latency_ms).toISOString()],
-    )
+    const lastTurn = turns.at(-1)!
+    const latencyAt =
+      lastTurn.latency_ms === null
+        ? null
+        : new Date(Date.parse(lastTurn.started_at) + lastTurn.latency_ms).toISOString()
     const stoppedAt =
-      root.status === 'stopped'
-        ? ((
-            db()
-              .query(
-                "SELECT at FROM run_mutation_audit WHERE root_run_record_id=? AND action='stop' ORDER BY at DESC LIMIT 1",
-              )
-              .get(id) as { at: string } | null
-          )?.at ?? null)
-        : null
+      (
+        db()
+          .query(
+            "SELECT at FROM run_mutation_audit WHERE root_run_record_id=? AND action='stop' ORDER BY at DESC LIMIT 1",
+          )
+          .get(id) as { at: string } | null
+      )?.at ?? null
     return {
       id,
       number: root.number,
       startedAt: root.started_at,
       terminalAt: TERMINAL_RUN_STATUS_SET.has(root.status)
-        ? (stoppedAt ?? finished.at(-1) ?? null)
+        ? (stoppedAt ?? latencyAt ?? lastTurn.last_event_at ?? lastTurn.started_at)
         : null,
     }
   })
@@ -108,12 +108,13 @@ function runFacts(sessionId: string): RunLifecycle[] {
 function cursorFacts(sessionId: string): CursorLifecycle[] {
   const rows = db()
     .query(
-      'SELECT record_id,number,created_at,state,closed FROM workflow_cursor WHERE session_id=?',
+      'SELECT record_id,number,created_at,updated_at,state,closed FROM workflow_cursor WHERE session_id=?',
     )
     .all(sessionId) as Array<{
     record_id: string
     number: number
     created_at: string
+    updated_at: string
     state: string
     closed: string
   }>
@@ -126,7 +127,9 @@ function cursorFacts(sessionId: string): CursorLifecycle[] {
       number: row.number,
       createdAt: row.created_at,
       terminalAt:
-        row.state === 'done' || row.state === 'abandoned' ? (advancesAt.at(-1) ?? null) : null,
+        row.state === 'done' || row.state === 'abandoned'
+          ? (advancesAt.at(-1) ?? row.updated_at)
+          : null,
       advancesAt,
     }
   })
