@@ -357,8 +357,8 @@ hand-rolled mechanism where a maintained one exists is a defect: name and
 replace it rather than extending it.
 
 Preserve the value proposition, not incidental machinery. A subsystem that is
-neither product nor bought plumbing is a liability and should be replaced even
-when much of it already exists.
+neither product nor bought plumbing is a liability to replace, however much of
+it exists.
 
 Biome owns TypeScript, TSX and JSON formatting and lint rules. Change
 `biome.jsonc` rather than suppressing an enforced rule.
@@ -372,8 +372,7 @@ not the research question.
 
 Separate novel product behavior from its ordinary internal machinery because
 the halves usually have different build-or-buy answers. Record negative
-results in the specification so later work does not pay to repeat the same
-search.
+results in the specification so later work does not repeat the search.
 
 ## Review rounds are a funnel
 
@@ -393,7 +392,7 @@ A well-sized change leaves by its third round. At the ceiling the architect
 rules: if no finding left can cause harm, land with test-only fixes and file
 the rest.
 
-Respect the review concurrency ceiling defined by the orchestration policy.
+Respect the orchestration policy's review concurrency ceiling.
 When a gate cannot run, record why and land on the evidence available; do not
 spend another turn re-presenting an unchanged recommendation.
 
@@ -407,8 +406,9 @@ surface shows afterwards.
 A worker has no network; repeat its timings that cross one from the main
 checkout.
 
-A fix without class-level measurement is instance patching. The monitor ranks
-above a patch because it reveals prevalence, cost and unseen paths.
+A fix lands with a guard that stops or flags its whole class, named in its task
+and pull request; without one it is instance patching. The guard states its
+measured time, per the caution rule.
 
 ---
 description: Test value, placement, isolation, runtime, and suite-budget rules
