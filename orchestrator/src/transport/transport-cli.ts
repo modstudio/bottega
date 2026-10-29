@@ -7,7 +7,7 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { parseCodexQuotaReadings } from './codex-quota.ts'
+import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import {
@@ -170,7 +170,7 @@ async function cliLaunch(opts: TransportStartOpts) {
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: stream and process closure share one transport handle state
 async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
-  const codex = workerHarnessName(opts.agent) === 'codex'
+  const codex = harnessCollectsQuotaReadings(workerHarnessName(opts.agent))
   const codexHome = codex ? opts.env.CODEX_HOME : undefined
   const rolloutOffsets = codexRolloutOffsets(codexHome)
   const { launchArgv, stdinPrompt } = await cliLaunch(opts)

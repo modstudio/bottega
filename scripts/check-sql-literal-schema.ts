@@ -7,6 +7,7 @@ import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
 import { PROJECT_REFERENCES } from '../orchestrator/src/project/project-reference-counts.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../orchestrator/src/run/run-status.ts'
+import { SUBSCRIPTION_QUOTA_WINDOWS_SQL } from '../orchestrator/src/run/run-subscription-cost-store.ts'
 
 type ConcernName = 'orchestrator' | 'hub' | 'shared'
 type Concern = { name: ConcernName; root: string; migrate(database: Database): unknown }
@@ -48,6 +49,10 @@ const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
   TERMINAL_RUN_STATUS_SQL: {
     values: [TERMINAL_RUN_STATUS_SQL],
     declaredIn: 'orchestrator/src/run/run-status.ts',
+  },
+  SUBSCRIPTION_QUOTA_WINDOWS_SQL: {
+    values: [SUBSCRIPTION_QUOTA_WINDOWS_SQL],
+    declaredIn: 'orchestrator/src/run/run-subscription-cost-store.ts',
   },
 }
 

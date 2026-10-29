@@ -1,7 +1,7 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
-import { addRun, score } from '../../test/fixtures/store.ts'
+import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { refreshAgents } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
 import {
@@ -24,6 +24,8 @@ import {
 const costPolicyAgents = ['codex', 'grok'] as const
 type CostPolicyAgent = (typeof costPolicyAgents)[number]
 type AgentBilling = { billing: string; route_metered: number }
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 function seedCostPolicyLens(lens: 'correctness' | 'architecture'): void {
   for (let i = 0; i < MIN_SAMPLE; i++) {

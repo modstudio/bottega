@@ -35,6 +35,7 @@ import {
   promptBucketSql,
   samePromptSizeBucket,
 } from './prompt-size-bucket.ts'
+import { promptBucketsForJob } from './prompt-size-bucket-store.ts'
 import type { Candidate } from './route-candidate.ts'
 import {
   attachRouteCosts,
@@ -47,6 +48,7 @@ import {
   belowCostFloor,
   costPolicyExplanation,
   findingsPolicyLens,
+  isHighStakesLens,
   resolveRouteCostPolicy,
 } from './route-cost-policy.ts'
 import {
@@ -55,6 +57,7 @@ import {
   readRouteCostPolicy,
 } from './route-cost-policy-adapter.ts'
 import { agentMeteredRouteEligibility } from './route-metered-policy-adapter.ts'
+import { missingRequiredCapability } from './route-policy.ts'
 import {
   type CurrentPolicySelection,
   currentPolicySelection,
@@ -75,6 +78,8 @@ import {
 } from './routing-cooldown.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
+import type { SubscriptionPacingHold } from './subscription-pacing.ts'
+import { subscriptionPacingHolds } from './subscription-pacing-adapter.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 type RouteConstraints = {
@@ -117,6 +122,7 @@ export const EVIDENCE_WINDOW = 40
 
 function operationalRoutingRefusal(
   name: string,
+  subscriptionPacingHold: SubscriptionPacingHold | undefined,
   billingHold: BillingKeyHold | undefined,
   cooling: string | null,
   failure: CoolingFailure | undefined,
@@ -124,21 +130,8 @@ function operationalRoutingRefusal(
 ): string | null {
   if (probeAgent === name) return null
   if (billingHold) return billingKeyHoldRefusal(billingHold)
-  return cooling && failure ? coolingRefusal(name, failure, COOLDOWN_MIN) : null
-}
-
-export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
-  const rows = db()
-    .query(
-      `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
-         FROM run
-        WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
-          AND evidence_excluded IS NULL AND executor <> 'harness'
-          AND parent_run_record_id IS NULL AND agent != '(pending)'`,
-    )
-    .all(PROMPT_SIZE_BOUNDARY, jobName) as { bucket: PromptSizeBucket }[]
-  const have = new Set(rows.map((row) => row.bucket))
-  return (['small', 'large'] as const).filter((bucket) => have.has(bucket))
+  if (cooling && failure) return coolingRefusal(name, failure, COOLDOWN_MIN)
+  return subscriptionPacingHold?.refusal ?? null
 }
 
 function memoizedRepositoryReader(
@@ -380,6 +373,11 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       hold.agents.map((agent) => [agent, hold] as const),
     ),
   )
+  const highStakesLens = isHighStakesLens(lens ?? null)
+  const subscriptionPacingHoldByAgent = subscriptionPacingHolds(db(), agentList, {
+    writesRepo: Boolean(j.needs.writesRepo),
+    highStakesLens,
+  })
   const runningByAgent = runningRunsByAgent()
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
@@ -405,8 +403,10 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const failure = coolingByAgent.get(name)
     const cooling = failure ? coolingPhrase(failure) : null
     const billingHold = billingHoldByAgent.get(name)
+    const subscriptionPacingHold = subscriptionPacingHoldByAgent.get(name)
     const operationalRefusal = operationalRoutingRefusal(
       name,
+      subscriptionPacingHold,
       billingHold,
       cooling,
       failure,
@@ -425,6 +425,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     const unavailable = unavailableReason(name)
     const runningRunIds = runningByAgent.get(name) ?? []
     const declared = a.jobs ?? null
+    const missingCapability = missingRequiredCapability(a.caps, j.needs)
     if (declared && !declared.includes(jobName)) {
       eligible = false
       why = `not declared for ${jobName}`
@@ -460,14 +461,9 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
         `${Math.round(a.contextTokens / 1024)}K context is short of the ` +
         `~${Math.round(j.contextTokens / 1024)}K this job's working set needs ` +
         `plus ${Math.round(OUTPUT_RESERVE / 1024)}K to answer in`
-    } else {
-      for (const [cap, need] of Object.entries(j.needs)) {
-        if (need && !a.caps[cap as keyof typeof a.caps]) {
-          eligible = false
-          why = `lacks ${cap}`
-          break
-        }
-      }
+    } else if (missingCapability) {
+      eligible = false
+      why = missingCapability
     }
     ;({ eligible, why } = applyMcpEligibility(eligible, why, mcpWhy))
     if (eligible && a.maxConcurrent && runningRunIds.length >= a.maxConcurrent) {
@@ -496,6 +492,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       cooling,
       billingHold: billingHold ?? null,
       billingHoldRefusal: billingHold ? billingKeyHoldRefusal(billingHold) : null,
+      subscriptionPacingHold: subscriptionPacingHold ?? null,
       declared,
       preferred: Boolean(a.preferredJobs?.includes(jobName)),
       maxConcurrent: a.maxConcurrent ?? null,

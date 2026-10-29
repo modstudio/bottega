@@ -61,7 +61,7 @@ export type SubscriptionQuotaWindow = {
   tokens: number
 }
 
-const QUOTA_MIN_WINDOW_PERCENT = 3
+export const QUOTA_MIN_WINDOW_PERCENT = 3
 const AVERAGE_MONTH_MINUTES = 43_830
 
 export type SubscriptionCostContext = {

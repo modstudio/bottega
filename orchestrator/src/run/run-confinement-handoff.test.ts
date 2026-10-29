@@ -1,9 +1,10 @@
-import { afterEach, beforeAll, expect, mock, spyOn, test } from 'bun:test'
+import { afterEach, beforeAll, beforeEach, expect, mock, spyOn, test } from 'bun:test'
 import { mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
+import { seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import * as productionModelHost from '../agent/model-host.ts'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import {
@@ -28,6 +29,8 @@ let classified: ConfinementEvent | null = null
 let runLiveFixture: ((input: LiveInput) => Promise<LiveResult>) | null = null
 let runUnderTest: typeof import('./run.ts').run
 let caller: string
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 async function loadRunUnderTest(): Promise<typeof import('./run.ts').run> {
   spyOn(productionClaim, 'claimRun').mockImplementation(

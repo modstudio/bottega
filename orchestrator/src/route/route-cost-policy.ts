@@ -56,6 +56,14 @@ export const DEFAULT_ROUTE_COST_POLICY: RouteCostPolicy = {
   },
 }
 
+/**
+ * Classifies from the shipped DEFAULT_ROUTE_COST_POLICY lens list and deliberately
+ * ignores routing.cost_policy overrides, so candidate routing never parses machine config.
+ */
+export function isHighStakesLens(lens: string | null): boolean {
+  return Boolean(lens && DEFAULT_ROUTE_COST_POLICY.lensTiers['high-stakes'].lenses.includes(lens))
+}
+
 type JsonObject = Record<string, unknown>
 
 function objectAt(value: unknown, field: string): JsonObject {

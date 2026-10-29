@@ -1,13 +1,15 @@
-import { expect, test } from 'bun:test'
+import { beforeEach, expect, test } from 'bun:test'
 import { setMachineDelegation } from '../../../shared/machine-config.ts'
 import { reviewReply } from '../../test/fixtures/replies.ts'
-import { addRun, score } from '../../test/fixtures/store.ts'
+import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { recordDuels } from '../score/duel.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
 import { guideCommand, pickCommand, statsCommand } from './routing-commands.ts'
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 const preview = (avoid: string[] = [], distinctModels: string[] = [], lens?: string) => {
   const lines: string[] = []

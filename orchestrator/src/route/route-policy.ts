@@ -26,6 +26,15 @@ type RouteTieCandidate = Pick<
 >
 type PosteriorCandidate = RouteTieCandidate & Pick<PolicyCandidate, 'score'>
 
+export function missingRequiredCapability(
+  capabilities: Readonly<Record<string, boolean>>,
+  needs: Readonly<Record<string, boolean | undefined>>,
+): string | null {
+  for (const [capability, needed] of Object.entries(needs))
+    if (needed && !capabilities[capability]) return `lacks ${capability}`
+  return null
+}
+
 /** Stable quality-rank tie order shared by the incumbent and cost policies. */
 export function routeCandidateTieOrder<T extends RouteTieCandidate>(left: T, right: T): number {
   return (

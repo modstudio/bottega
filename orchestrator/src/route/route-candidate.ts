@@ -3,6 +3,7 @@
 import type { BillingKeyHold } from './billing-key-hold.ts'
 import type { CostPerAcceptedResult } from './route-cost.ts'
 import type { RunUsageMedians } from './route-statistics.ts'
+import type { SubscriptionPacingHold } from './subscription-pacing.ts'
 
 export type Candidate = {
   agent: string
@@ -32,6 +33,8 @@ export type Candidate = {
   billingHold: BillingKeyHold | null
   /** Canonical operator remedy for the shared provider account hold. */
   billingHoldRefusal: string | null
+  /** Quota-bound subscription currently ahead of its window pace. */
+  subscriptionPacingHold: SubscriptionPacingHold | null
   declared: string[] | null
   preferred: boolean
   maxConcurrent: number | null

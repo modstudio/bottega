@@ -1,11 +1,13 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { reviewReply } from '../../test/fixtures/replies.ts'
-import { addRun, score } from '../../test/fixtures/store.ts'
+import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { guide } from '../state/guide.ts'
 import { evidenceFor, pick } from './route.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 describe('findings routing narrows to a lens only when that buys a comparison', () => {
   const judgedLensRun = (

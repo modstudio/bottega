@@ -1,11 +1,11 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { setMachineDelegation } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { addRun, score } from '../../test/fixtures/store.ts'
+import { addRun, score, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { recordAgentProbe } from '../agent/agent-probe.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
@@ -19,6 +19,8 @@ import { candidates, EVIDENCE_WINDOW, evidenceFor, pick, scoreboard } from './ro
 import { meteredRouteEligibility } from './route-metered-policy.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
+
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 test('guide reports harness work without dropping externally delegated jobs', () => {
   setMachineDelegation('delegation.implement', 'harness')

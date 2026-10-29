@@ -1,10 +1,11 @@
-import { afterEach, expect, test } from 'bun:test'
-import { addRun } from '../../test/fixtures/store.ts'
+import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { addRun, seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import { AGENTS, refreshAgents } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
 import { failoverSelectionConstraints, selectFailoverSuccessor } from './run-close.ts'
 
 afterEach(refreshAgents)
+beforeEach(() => seedNeutralCodexQuotaReading())
 
 test('failover pins only an explicit transport and excludes agents that cannot honor it', () => {
   expect(

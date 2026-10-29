@@ -137,7 +137,7 @@ assertTestHubDatabase()
 
 const { registerStandardRuntime } = await import('../src/runtime/runtime-registration.ts')
 registerStandardRuntime()
-const { DB_PATH, closeDatabaseForFixture } = await import('../src/database/db.ts')
+const { DB_PATH, closeDatabaseForFixture, db } = await import('../src/database/db.ts')
 const { applyMigrations } = await import('../src/database/migrations.ts')
 const { excludeSharedOutputRuns } = await import('../src/evidence/evidence-query.ts')
 const { seedWorkflows } = await import('../src/workflow/workflow-seeds.ts')
@@ -210,8 +210,6 @@ const { createMemoryRecordApiClient, installRecordApiClient } = await import(
   './fixtures/record-api.ts'
 )
 installRecordApiClient(createMemoryRecordApiClient())
-
-const { db } = await import('../src/database/db.ts')
 
 /**
  * Run ids keep climbing across tests, as they did when tables were cleared

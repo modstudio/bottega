@@ -1,8 +1,13 @@
 // concern: codex-quota
 /** Parses quota readings from the Codex rollout text written by one turn. */
-import { EMPTY_QUOTA_READINGS, type QuotaReadings } from './quota-readings.ts'
+import { EMPTY_QUOTA_READINGS, type QuotaReadings, usableQuotaReset } from './quota-readings.ts'
 
 type PrimaryRateLimit = { usedPercent: number; windowMinutes: number; resetsAt: number }
+
+/** Harnesses whose transport persists quota readings on completed runs. */
+export function harnessCollectsQuotaReadings(harness: string | undefined): boolean {
+  return harness === 'codex'
+}
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -15,6 +20,8 @@ function primaryRateLimit(value: unknown): PrimaryRateLimit | null {
   const windowMinutes = finiteNumber(row.window_minutes)
   const resetsAt = finiteNumber(row.resets_at)
   if (usedPercent === null || windowMinutes === null || resetsAt === null) return null
+  if (usedPercent < 0 || usedPercent > 100 || windowMinutes <= 0 || !usableQuotaReset(resetsAt))
+    return null
   return { usedPercent, windowMinutes, resetsAt }
 }
 
