@@ -321,6 +321,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/run-child-priority.ts', ['node:os']),
   module('orchestrator/src/run/run-test-workers.ts', ['node:os']),
+  module('orchestrator/src/run/host-reservation.ts', []),
   module('orchestrator/src/run/run-agent-capacity.ts', [
     '../../../shared/brand.ts',
     '../database/db.ts',
@@ -335,6 +336,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../database/migration-drain-state.ts',
     '../gate-load.ts',
+    './host-reservation.ts',
   ]),
   module('orchestrator/src/run/run-reply-source.ts', [
     '../contract/contract.ts',

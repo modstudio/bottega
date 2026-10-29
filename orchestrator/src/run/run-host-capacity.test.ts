@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
-import type { HostLoad } from '../gate-load.ts'
+import { CAPACITY_SAMPLE_MIN_WINDOW_MS, type HostLoad } from '../gate-load.ts'
+import { HOST_RESERVATION_MIN_SAMPLES } from './host-reservation.ts'
 import {
   RUN_HOST_CAPACITY_WAITERS_SQL,
   RUN_HOST_WAIT_MAX_MS,
@@ -15,7 +16,7 @@ import {
 const loaded = (): HostLoad => ({
   gates: 0,
   loadavg: 16,
-  cpuBusy: null,
+  cpuBusy: 16,
   ncpu: 8,
   freeMem: 8 * 1024 * 1024 * 1024,
   pressure: 'unknown',
@@ -27,15 +28,40 @@ const loaded = (): HostLoad => ({
   oldestWaitMs: 0,
 })
 
-const repositoryRun = (repo: string | null = '/repo') => {
+const repositoryRun = (repo: string | null = '/repo', agent = 'codex') => {
   const runId = addRun({
-    agent: 'codex',
+    agent,
     job: 'implement',
     status: 'running',
     repo: repo ?? undefined,
   })
   db().query('UPDATE run SET worktree=? WHERE record_id=?').run(`/worktrees/${runId}`, runId)
   return runId
+}
+
+const addRecentAdmissions = (count: number, now: number, agent: string) => {
+  for (let index = 0; index < count; index++) {
+    const runId = repositoryRun('/repo', agent)
+    db()
+      .query('UPDATE run SET agent_start_time=? WHERE record_id=?')
+      .run(new Date(now - 1_000).toISOString(), runId)
+  }
+}
+
+const addCpuSamples = (count: number, now: number, agent: string, cores: number) => {
+  for (let index = 0; index < count; index++) {
+    const latency = 1_000
+    const runId = addRun({
+      agent,
+      job: 'implement',
+      status: 'ok',
+      latency,
+      startedAt: new Date(now - 60_000 - index).toISOString(),
+    })
+    db()
+      .query('UPDATE run SET resource_cpu_ms=? WHERE record_id=?')
+      .run(cores * latency, runId)
+  }
 }
 
 describe('run host capacity', () => {
@@ -203,13 +229,95 @@ describe('run host capacity', () => {
         env: {},
         platform: 'linux',
         now: () => now,
-        measure: () => ({ ...loaded(), loadavg: 7 }),
+        measure: () => ({ ...loaded(), loadavg: 7, cpuBusy: 7 }),
         sleep: async () => {
           slept = true
         },
       }),
     ).toBeNull()
     expect(slept).toBe(false)
+  })
+
+  test('recent runs reserve the measured cores for their agent', async () => {
+    const now = Date.parse('2026-01-01T00:02:00.000Z')
+    addRecentAdmissions(12, now, 'codex')
+    addCpuSamples(HOST_RESERVATION_MIN_SAMPLES, now, 'codex', 0.05)
+    const runId = repositoryRun()
+    let slept = false
+
+    expect(
+      await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        env: {},
+        platform: 'linux',
+        now: () => now,
+        measure: () => ({ ...loaded(), cpuBusy: 6, ncpu: 16 }),
+        sleep: async () => {
+          slept = true
+        },
+      }),
+    ).toBeNull()
+    expect(slept).toBe(false)
+  })
+
+  test('recent runs reserve a full core when their agent has too little evidence', async () => {
+    const now = Date.parse('2026-01-01T00:02:00.000Z')
+    addRecentAdmissions(12, now, 'grok')
+    addCpuSamples(HOST_RESERVATION_MIN_SAMPLES - 1, now, 'grok', 0.05)
+    const runId = repositoryRun()
+
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: () => ({ ...loaded(), cpuBusy: 6, ncpu: 16 }),
+      sleep: async () => {
+        db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+      },
+    })
+
+    expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
+  })
+
+  test('samples CPU before recording a load-average wait', async () => {
+    repositoryRun()
+    const runId = repositoryRun()
+    let now = Date.parse('2026-01-01T00:02:00.000Z')
+    let measurements = 0
+    const sleeps: number[] = []
+
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: () => ({
+        ...loaded(),
+        cpuBusy: measurements++ === 0 ? null : 2,
+        ncpu: 16,
+      }),
+      sleep: async (ms) => {
+        sleeps.push(ms)
+        now += ms
+      },
+    })
+
+    expect(result).toBeNull()
+    expect(sleeps).toEqual([CAPACITY_SAMPLE_MIN_WINDOW_MS])
+    expect(db().query('SELECT host_wait_since FROM run WHERE record_id=?').get(runId)).toEqual({
+      host_wait_since: null,
+    })
+    expect(
+      db()
+        .query(
+          "SELECT count(*) AS count FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+        )
+        .get(runId),
+    ).toEqual({ count: 0 })
   })
 
   test('holding records host_wait_since before sleeping', async () => {
