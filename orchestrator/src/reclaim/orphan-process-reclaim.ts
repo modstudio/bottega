@@ -3,6 +3,7 @@
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  type PidRecordIdentity,
   pidAlive,
   pidRecordIdentity,
   processSignalOutcome,
@@ -323,6 +324,55 @@ export type RemovedTreeProcessCleanup = {
   errors: string[]
 }
 
+export type RemovedTreeProcessDecision =
+  | { action: 'reclaim'; orphan: OwnedOrphanProcess }
+  | { action: 'keep'; orphan: OwnedOrphanProcess; reason: string }
+
+/**
+ * Decide which removed-tree candidates are roots that still exist and how each
+ * root is handled. Identity is sampled once per candidate before ancestry is
+ * considered, so a child whose inventoried parent is gone becomes a root.
+ */
+export function removedTreeProcessDecisions(
+  candidates: readonly OwnedOrphanProcess[],
+  liveWorktrees: ReadonlySet<string>,
+  identity: (orphan: OwnedOrphanProcess) => PidRecordIdentity,
+): RemovedTreeProcessDecision[] {
+  const identities = candidates.map(identity)
+  const gone = identities.map((value) => value === 'dead' || value === 'reused')
+  const candidateByPid = new Map(candidates.map((orphan, index) => [orphan.pid, index]))
+
+  const handledAsRoot = (index: number): boolean => {
+    const path: number[] = [index]
+    const positions = new Map<number, number>([[index, 0]])
+    let cursor = index
+    while (true) {
+      const parent = candidateByPid.get(candidates[cursor]!.ppid)
+      if (parent === undefined || gone[parent]) return path.length === 1
+      const cycleStart = positions.get(parent)
+      if (cycleStart !== undefined) {
+        const cycle = path.slice(cycleStart)
+        return cycle.includes(index) && index === Math.min(...cycle)
+      }
+      path.push(parent)
+      positions.set(parent, path.length - 1)
+      cursor = parent
+    }
+  }
+
+  const decisions: RemovedTreeProcessDecision[] = []
+  for (const [index, orphan] of candidates.entries()) {
+    if (gone[index] || !handledAsRoot(index)) continue
+    const decision = automaticOrphanReclaimDecision(orphan, liveWorktrees, true)
+    decisions.push(
+      decision.reclaim
+        ? { action: 'reclaim', orphan }
+        : { action: 'keep', orphan, reason: decision.reason },
+    )
+  }
+  return decisions
+}
+
 /** Reclaim cwd-owned processes for trees this operation itself has just removed. */
 export function reclaimRemovedTreeProcesses(
   treePaths: readonly string[],
@@ -334,15 +384,18 @@ export function reclaimRemovedTreeProcesses(
   const liveWorktrees = liveRunWorktrees()
   const orphans = orphansWithOwnershipEvidence(inventory.orphans)
   const candidates = orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
-  const candidatePids = new Set(candidates.map(({ pid }) => pid))
-  for (const orphan of candidates) {
-    if (candidatePids.has(orphan.ppid)) continue
-    const decision = automaticOrphanReclaimDecision(orphan, liveWorktrees, true)
-    if (!decision.reclaim) {
-      result.kept.push({ item: `process ${orphan.pid}`, reason: decision.reason })
+  const decisions = removedTreeProcessDecisions(candidates, liveWorktrees, (orphan) =>
+    pidRecordIdentity(orphan.pid, orphan.startTime),
+  )
+  for (const decision of decisions) {
+    if (decision.action === 'keep') {
+      result.kept.push({
+        item: `process ${decision.orphan.pid}`,
+        reason: `${decision.reason}; command: ${decision.orphan.command}`,
+      })
       continue
     }
-    const reclaimed = reclaimOrphanProcess(String(orphan.pid), false)
+    const reclaimed = reclaimOrphanProcess(String(decision.orphan.pid), false)
     if (reclaimed.ok) result.reclaimed.push(reclaimed.action)
     else result.errors.push(reclaimed.action)
   }
