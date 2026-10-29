@@ -144,13 +144,14 @@ async function captureEntryPoints(
   let currentLabel = 'open-hooks'
 
   const [
-    { db, ensureMachineIdentity },
+    { db, ensureMachineIdentity, migrateDatabase },
     { excludeSharedOutputRuns },
     { seedLenses },
     reviewRounds,
     runLiveness,
     sharedGit,
     { seedWorkflows },
+    promptBuckets,
     route,
     jobs,
     runtime,
@@ -162,11 +163,15 @@ async function captureEntryPoints(
     import('../orchestrator/src/run/run-liveness.ts'),
     import('../orchestrator/src/run/shared-git-config-run.ts'),
     import('../orchestrator/src/workflow/workflow-seeds.ts'),
+    import('../orchestrator/src/route/prompt-size-bucket-store.ts'),
     import('../orchestrator/src/route/route.ts'),
     import('../orchestrator/src/jobs/jobs.ts'),
     import('../orchestrator/src/runtime/runtime-registration.ts'),
   ])
   runtime.registerStandardRuntime()
+  // The source store may trail this checkout's journal. Migrate only the disposable copy before
+  // opening it through the adapter so capture uses the schema and indexes this binary audits.
+  migrateDatabase()
   const processDatabase = db()
   captureHandle(processDatabase, captured, () => currentLabel)
 
@@ -181,7 +186,7 @@ async function captureEntryPoints(
 
   for (const jobName of Object.keys(jobs.JOBS)) {
     currentLabel = `prompt-buckets:${jobName}`
-    route.promptBucketsForJob(jobName)
+    promptBuckets.promptBucketsForJob(jobName)
     currentLabel = `candidates:${jobName}`
     route.candidates(jobName)
   }
