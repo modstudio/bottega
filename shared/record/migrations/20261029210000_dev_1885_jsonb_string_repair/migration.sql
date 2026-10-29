@@ -1,3 +1,4 @@
+SET LOCAL lock_timeout = '5s';--> statement-breakpoint
 CREATE FUNCTION pg_temp.dev_1885_jsonb_value(value jsonb)
 RETURNS jsonb
 LANGUAGE plpgsql
