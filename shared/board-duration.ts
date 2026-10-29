@@ -11,6 +11,16 @@ export function boardDefaultExpiryMs(purpose: BoardPurpose): number {
   return BOARD_STANDING_DEFAULT_EXPIRY_MS
 }
 
+export function extendedBoardThreadExpiry(
+  currentExpiry: string | null,
+  replyTime: number,
+  purpose: BoardPurpose | null,
+): string | null {
+  if (currentExpiry === null) return null
+  const extension = replyTime + boardDefaultExpiryMs(purpose ?? 'request')
+  return new Date(Math.max(Date.parse(currentExpiry), extension)).toISOString()
+}
+
 export function parseBoardDuration(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value.trim())
   const grammarMessage = `invalid duration ${value}; use a positive value such as 30m or 1d`

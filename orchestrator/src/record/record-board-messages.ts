@@ -2,6 +2,7 @@
 /** Owns hosted board message writes and thread reads. Must not know HTTP or local stores. */
 
 import type { SQL } from 'bun'
+import { extendedBoardThreadExpiry } from '../../../shared/board-duration.ts'
 import {
   type BoardPurpose,
   defaultBoardPurpose,
@@ -680,6 +681,7 @@ async function insertReplyCopyingRoot(
   clock: number,
   authorProjectId: string | null,
   audience: string | null,
+  extendedExpiry: string | null,
 ): Promise<HostedBoardMessage> {
   await requireOwnedHostedRunAndMachine(tx, input.userId, {
     runId: input.authorRunId,
@@ -705,6 +707,20 @@ async function insertReplyCopyingRoot(
     RETURNING id
   `
   if (!inserted[0]) throw new RecordBoardError(`board message ${input.rootId} not found`, 404)
+  if (extendedExpiry !== null) {
+    const extension = (await tx`
+      SELECT public.board_message_extend_thread_expiry(
+        ${rootId}::uuid,
+        ${extendedExpiry}::timestamptz
+      ) AS extended
+    `) as { extended: boolean }[]
+    if (!extension[0]?.extended) {
+      throw new RecordBoardError(
+        `board thread ${input.rootId} could not extend its expiry; refresh it and retry the reply`,
+        409,
+      )
+    }
+  }
   return viewById(tx, input.id, clock)
 }
 
@@ -779,6 +795,11 @@ export async function replyHostedBoardMessage(
     if (decision === 'drop-duplicate' && duplicate[0])
       return viewById(tx, String(duplicate[0].id), clock)
     if (decision === 'rate-limited') throw new RecordBoardError(RATE_LIMITED, 429)
+    const computedExpiry = extendedBoardThreadExpiry(
+      iso(rootRow.row.expires_at),
+      clock,
+      rootRow.row.purpose == null ? null : parseBoardPurpose(String(rootRow.row.purpose)),
+    )
     return insertReplyCopyingRoot(
       tx,
       input,
@@ -788,6 +809,7 @@ export async function replyHostedBoardMessage(
       clock,
       authorProjectId,
       audience,
+      computedExpiry,
     )
   })
 }

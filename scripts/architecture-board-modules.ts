@@ -229,6 +229,7 @@ export const boardModules: BoardModule[] = [
     './board-operations.ts',
   ]),
   module('orchestrator/src/board/board-thread-service.ts', [
+    '../../../shared/board-duration.ts',
     '../../../shared/brand.ts',
     '../../../shared/board-reply-audience-options.ts',
     '../../../shared/record-id.ts',

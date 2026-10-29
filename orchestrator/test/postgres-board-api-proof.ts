@@ -21,6 +21,7 @@ import { registerBoardReplyProof } from './postgres-board-reply-proof.ts'
 import { registerBoardRouteEdgeProof } from './postgres-board-route-edge-proof.ts'
 import { registerBoardSharedSpaceApiProof } from './postgres-board-shared-space-api-proof.ts'
 import { registerBoardStreamProof } from './postgres-board-stream-proof.ts'
+import { registerBoardThreadExpiryProofs } from './postgres-board-thread-expiry-proof.ts'
 
 type Succeeds = (user: string, password: string, source: string) => string
 
@@ -294,6 +295,11 @@ export function registerBoardApiProofs(input: {
     origin: () => origin,
     token: () => tokenA,
     project: PROJECT,
+    caseSession,
+  })
+  registerBoardThreadExpiryProofs({
+    origin: () => origin,
+    token: () => tokenA,
     caseSession,
   })
 
@@ -612,7 +618,7 @@ export function registerBoardApiProofs(input: {
       )
     const seen = new Set<string>()
     let after = '0'
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 500; i++) {
       const body = await page(after)
       const items = body.items as Array<{ message: { id: string; revision: string } }>
       if (items.length === 0) break

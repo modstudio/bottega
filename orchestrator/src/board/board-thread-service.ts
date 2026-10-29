@@ -1,3 +1,4 @@
+import { extendedBoardThreadExpiry } from '../../../shared/board-duration.ts'
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
@@ -150,6 +151,26 @@ function replyAudienceFacts(root: MessageRow, database: ReturnType<typeof writab
   }
 }
 
+function extendThreadExpiry(
+  root: MessageRow,
+  clock: number,
+  database: ReturnType<typeof writableDb>,
+): void {
+  const expiresAt = extendedBoardThreadExpiry(root.expires_at, clock, root.purpose)
+  if (expiresAt === root.expires_at) return
+  database
+    .query('UPDATE board_message SET expires_at=? WHERE record_id=?')
+    .run(expiresAt, root.record_id)
+}
+
+function validateReplyBody(body: string): void {
+  if (!body.trim()) throw new Error('board reply body is required; provide --body')
+  if (body.length > BOARD_BODY_MAX_CHARS)
+    throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
+  if (containsSecretShaped(body))
+    throw new Error('board reply contains secret-shaped text; remove the credential and retry')
+}
+
 export function replyToThread(
   recordId: string,
   body: string,
@@ -158,11 +179,7 @@ export function replyToThread(
   cwd = process.cwd(),
   audience: ReplyAudienceOption | null = null,
 ): ReplyResult {
-  if (!body.trim()) throw new Error('board reply body is required; provide --body')
-  if (body.length > BOARD_BODY_MAX_CHARS)
-    throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(body))
-    throw new Error('board reply contains secret-shaped text; remove the credential and retry')
+  validateReplyBody(body)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
@@ -242,6 +259,7 @@ export function replyToThread(
         createdAt,
         root.record_id,
       )
+    extendThreadExpiry(root, clock, database)
     const reached = addReplyReceipts(root, replyRecordId, reader, audience, facts, database)
     return {
       recordId: replyRecordId,
