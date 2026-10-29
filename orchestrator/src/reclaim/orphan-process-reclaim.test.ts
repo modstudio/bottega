@@ -7,6 +7,7 @@ import {
   type OwnedOrphanProcess,
   orphanProcessReverification,
   orphanSignalPlan,
+  removedTreeProcessDecisions,
   signalFreshOrphanPlan,
 } from './orphan-process-reclaim.ts'
 
@@ -96,6 +97,75 @@ test('automatic reclaim requires positive evidence that a run started the proces
     reclaim: false,
     reason: 'process environment could not be read to prove a run started it',
   })
+})
+
+test('removed-tree decisions omit dead and reused roots after reading every identity once', () => {
+  const candidates = [orphan({ pid: 40 }), orphan({ pid: 41 })]
+  const reads: number[] = []
+  expect(
+    removedTreeProcessDecisions(candidates, new Set(), (candidate) => {
+      reads.push(candidate.pid)
+      return candidate.pid === 40 ? 'dead' : 'reused'
+    }),
+  ).toEqual([])
+  expect(reads).toEqual([40, 41])
+})
+
+test('removed-tree decisions keep live and unknown roots with the unchanged reason', () => {
+  const live = orphan({ pid: 40, match: 'argument', command: 'live-command' })
+  const unknown = orphan({ pid: 41, match: 'argument', command: 'unknown-command' })
+  expect(
+    removedTreeProcessDecisions([live, unknown], new Set(), (candidate) =>
+      candidate.pid === 40 ? 'live' : 'unknown',
+    ),
+  ).toEqual([
+    {
+      action: 'keep',
+      orphan: live,
+      reason: 'argument-only match requires manual reclaim',
+    },
+    {
+      action: 'keep',
+      orphan: unknown,
+      reason: 'argument-only match requires manual reclaim',
+    },
+  ])
+})
+
+test('removed-tree decisions do not reclaim an eligible root that is dead', () => {
+  expect(removedTreeProcessDecisions([orphan()], new Set(), () => 'dead')).toEqual([])
+})
+
+test('a child of a dead candidate is handled as a root', () => {
+  const parent = orphan({ pid: 40 })
+  const child = orphan({ pid: 41, ppid: 40, match: 'argument' })
+  expect(
+    removedTreeProcessDecisions([parent, child], new Set(), (candidate) =>
+      candidate.pid === 40 ? 'dead' : 'live',
+    ),
+  ).toEqual([
+    {
+      action: 'keep',
+      orphan: child,
+      reason: 'argument-only match requires manual reclaim',
+    },
+  ])
+})
+
+test('a child of a live candidate is handled through its parent', () => {
+  const parent = orphan({ pid: 40 })
+  const child = orphan({ pid: 41, ppid: 40, match: 'argument' })
+  expect(removedTreeProcessDecisions([parent, child], new Set(), () => 'live')).toEqual([
+    { action: 'reclaim', orphan: parent },
+  ])
+})
+
+test('a candidate parent cycle still has one handled root', () => {
+  const first = orphan({ pid: 40, ppid: 41 })
+  const second = orphan({ pid: 41, ppid: 40 })
+  expect(removedTreeProcessDecisions([first, second], new Set(), () => 'live')).toEqual([
+    { action: 'reclaim', orphan: first },
+  ])
 })
 
 test('a candidate in a recorded run process group is run residue whatever its environment says', () => {
