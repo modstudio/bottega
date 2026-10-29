@@ -40,8 +40,7 @@ import type { Candidate } from './route-candidate.ts'
 import {
   attachRouteCosts,
   type CostPerAcceptedResult,
-  routeCostFacts,
-  routeCostPerAccepted,
+  routeCostsForCandidates,
 } from './route-cost.ts'
 import {
   appendCostPolicyReason,
@@ -469,13 +468,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       c.shrunk = (c.score * c.evidence + MIN_SAMPLE * prior) / (c.evidence + MIN_SAMPLE)
     }
   }
-  attachRouteCosts(
-    result,
-    evidenceRows,
-    { jobName, promptBytes, stack, lens },
-    EVIDENCE_WINDOW,
-    priceCost,
-  )
+  attachRouteCosts(result, evidenceRows, { jobName }, EVIDENCE_WINDOW, priceCost)
   return { result, evidenceRows }
 }
 
@@ -511,32 +504,28 @@ export function scoreboard(
           const promptBytes = bucket === 'small' ? 0 : PROMPT_SIZE_BOUNDARY
           const cellLens = findingsPolicyLens(Boolean(job(j).findings), lens)
           const pass = candidatePass(j, promptBytes, { lens: cellLens })
-          const costFacts = routeCostFacts({
-            jobName: j,
-            promptBytes,
-            lens: cellLens,
-            context: subscriptionCost,
-          })
+          const pricedCandidates = routeCostsForCandidates(
+            pass.result,
+            pass.evidenceRows,
+            j,
+            EVIDENCE_WINDOW,
+            subscriptionCost,
+          )
           const costPolicy = resolveRouteCostPolicy(
             policy,
             j,
             cellLens,
             Boolean(job(j).needs.writesRepo),
           )
-          return pass.result
-            .filter((c) => c.runs > 0 || c.failures > 0)
-            .map((c) => ({
+          return pricedCandidates
+            .filter(({ candidate }) => candidate.runs > 0 || candidate.failures > 0)
+            .map(({ candidate: c, costPerAccepted }) => ({
               ...c,
               job: j,
               promptBucket: bucket,
               costPolicy,
               belowCostFloor: belowCostFloor(c.shrunk, costPolicy.floor, NOISE_BAND),
-              costPerAccepted: routeCostPerAccepted(
-                j,
-                routingEvidenceWindow(pass.evidenceRows, c.agent, c.evidenceModel!, EVIDENCE_WINDOW)
-                  .rows,
-                costFacts,
-              ),
+              costPerAccepted,
             }))
         })(),
       ),
