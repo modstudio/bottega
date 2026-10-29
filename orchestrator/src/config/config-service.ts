@@ -11,7 +11,6 @@ import {
   type DataKey,
 } from '../../../shared/config-client.ts'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
-import { isDelegationKey } from '../../../shared/delegation-mode.ts'
 import {
   readHostedConfigIdentity,
   writeHostedConfigIdentity,
@@ -22,12 +21,19 @@ import {
   openHostedSecret,
 } from '../../../shared/hosted-secret-opening.ts'
 import {
+  type ConfigHome,
+  configHomes,
   deleteMachineAutonomy,
-  deleteMachineDelegation,
+  deleteMachineValue,
+  isMachineConfigKey,
+  isSubscriptionPriceKey,
   listMachineAutonomy,
-  listMachineEntries,
+  type MachineConfigKey,
+  readMachineFileValue,
+  readMachineValueWithSource,
   setMachineAutonomy,
-  setMachineDelegation,
+  setMachineValue,
+  validateAutonomyEntry,
 } from '../../../shared/machine-config.ts'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import {
@@ -641,6 +647,185 @@ export async function getEntry(key: string, scope: ConfigScope, client = configC
   return client.getEntry(key, scope, HOSTED_CONFIG_ENVIRONMENT)
 }
 
+export type { ConfigHome }
+export type ConfigReadResult = {
+  key: string
+  value: string
+  home: ConfigHome
+  source: string
+  ignoredHostedScopes: ConfigScope[]
+  outrankingMachineValue?: string
+  row?: Awaited<ReturnType<typeof getEntry>>
+}
+
+function acceptedHomes(key: string): readonly ConfigHome[] {
+  const homes = configHomes(key)
+  if (homes) return homes
+  throw new Error(
+    `refusing config key ${key}: accepted families are machine catalogue keys, autonomy.*, and subscription.<harness>.monthly_usd; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+  )
+}
+
+function homeLabel(home: ConfigHome): string {
+  return home === 'machine' ? 'machine' : `hosted ${home} scope`
+}
+
+function setRemedy(key: string, home: ConfigHome): string {
+  const flag = home === 'machine' ? '--machine ' : home === 'space' ? '--space ' : ''
+  return `${PLATFORM_SLUG} machine config set ${flag}${key} <value>`
+}
+
+function getRemedy(key: string): string {
+  const homes = configHomes(key) ?? []
+  const flags = [
+    ...(homes.includes('machine') ? ['--machine'] : []),
+    ...(homes.includes('space') ? ['--space'] : []),
+  ]
+  const selector = homes.includes('user')
+    ? flags.length
+      ? ` [${flags.join('|')}]`
+      : ''
+    : ` ${flags.join('|')}`
+  return `${PLATFORM_SLUG} machine config get${selector} ${key}`
+}
+
+export function configHome(
+  key: string,
+  requested?: ConfigHome,
+  operation: 'get' | 'set' = 'set',
+): ConfigHome {
+  const homes = acceptedHomes(key)
+  const chosen = requested ?? homes[0]!
+  if (homes.includes(chosen)) return chosen
+  const home = homes[0]!
+  const remedy =
+    operation === 'get'
+      ? `read it with \`${getRemedy(key)}\``
+      : `write it with \`${setRemedy(key, home)}\``
+  throw new Error(
+    `refusing config key ${key} in ${homeLabel(chosen)}: its home is ${homeLabel(home)}; ${remedy}`,
+  )
+}
+
+function validateHostedValue(key: string, value: string): void {
+  if (key.startsWith('autonomy.')) {
+    validateAutonomyEntry(key, value)
+    return
+  }
+  if (isSubscriptionPriceKey(key)) {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < 0)
+      throw new Error(`refusing config key ${key}: value must be a non-negative number`)
+  }
+}
+
+export async function setConfigEntry(
+  key: string,
+  value: string,
+  requested: ConfigHome | undefined,
+  expectedRowVersion?: number | null,
+  client: ConfigClient | undefined = undefined,
+  env: ConfigEnvironment = process.env,
+  clientFactory: () => ConfigClient = () => configClient(env),
+) {
+  const home = configHome(key, requested)
+  if (home === 'machine') {
+    if (expectedRowVersion !== undefined)
+      throw new Error(
+        `refusing config key ${key}: --expect applies only to hosted values; write its machine home with \`${setRemedy(key, home)}\``,
+      )
+    const row = setMachineEntry(key, value, env)
+    return { key: row.key, value: String(row.value), home, row }
+  }
+  validateHostedValue(key, value)
+  const row = await setEntry(key, value, home, expectedRowVersion, client ?? clientFactory())
+  return { key: row.key, value: row.value, home, row }
+}
+
+function machineSourceLabel(source: ReturnType<typeof readMachineValueWithSource>['source']) {
+  if (source.kind === 'environment') return `environment ${source.name}`
+  if (source.kind === 'machine-file') return 'machine.toml'
+  return 'default'
+}
+
+async function ignoredHostedScopes(
+  key: string,
+  clientFactory: () => ConfigClient,
+): Promise<ConfigScope[]> {
+  try {
+    const rows = await clientFactory().listEntries(HOSTED_CONFIG_ENVIRONMENT)
+    return rows
+      .filter((row) => row.key === key)
+      .map((row) => row.scope)
+      .sort()
+  } catch (error) {
+    if (error instanceof ConfigClientError && error.reason === 'not-configured') return []
+    throw error
+  }
+}
+
+export async function getConfigEntry(
+  key: string,
+  requested: ConfigHome | undefined,
+  client: ConfigClient | undefined = undefined,
+  env: ConfigEnvironment = process.env,
+  clientFactory: () => ConfigClient = () => configClient(env),
+): Promise<ConfigReadResult> {
+  const home = configHome(key, requested, 'get')
+  if (home === 'machine') {
+    if (key.startsWith('autonomy.')) {
+      const row = listMachineAutonomy(env).find((candidate) => candidate.key === key)
+      if (!row)
+        throw new Error(
+          `machine.toml has no value for ${key}; write it with \`${setRemedy(key, 'machine')}\``,
+        )
+      return {
+        key,
+        value: row.value,
+        home,
+        source: 'machine.toml',
+        ignoredHostedScopes: [],
+      }
+    }
+    const machineKey = key as MachineConfigKey
+    if (requested === 'machine') {
+      const value = readMachineFileValue(machineKey, env)
+      if (value === undefined)
+        throw new Error(
+          `machine.toml has no value for ${key}; write it with \`${setRemedy(key, 'machine')}\``,
+        )
+      return {
+        key,
+        value: String(value),
+        home,
+        source: 'machine.toml',
+        ignoredHostedScopes: [],
+      }
+    }
+    const resolved = readMachineValueWithSource(machineKey, env)
+    return {
+      key,
+      value: String(resolved.value),
+      home,
+      source: machineSourceLabel(resolved.source),
+      ignoredHostedScopes: await ignoredHostedScopes(key, () => client ?? clientFactory()),
+    }
+  }
+  const row = await getEntry(key, home, client ?? clientFactory())
+  const machineRow = key.startsWith('autonomy.')
+    ? listMachineAutonomy(env).find((candidate) => candidate.key === key)
+    : undefined
+  return {
+    key: row.key,
+    value: row.value,
+    home,
+    source: `hosted ${home} scope`,
+    ignoredHostedScopes: [],
+    outrankingMachineValue: machineRow?.value,
+    row,
+  }
+}
+
 export async function setEntry(
   key: string,
   value: string,
@@ -695,22 +880,26 @@ export async function deleteEntry(
   })
 }
 
-export function setMachineEntry(key: string, value: string) {
-  if (isDelegationKey(key)) {
-    setMachineDelegation(key, value)
-    return listMachineEntries().find((row) => row.key === key)!
+function setMachineEntry(key: string, value: string, env: ConfigEnvironment = process.env) {
+  if (isMachineConfigKey(key)) {
+    const stored = setMachineValue(key, value, env)
+    return { key, value: String(stored), scope: 'machine' as const }
   }
-  setMachineAutonomy(key, value)
+  setMachineAutonomy(key, value, env)
   const storedKey = isShipToConfigKey(key) ? SHIP_TO_CONFIG_KEY : key
-  return listMachineAutonomy().find((row) => row.key === storedKey)!
+  return listMachineAutonomy(env).find((row) => row.key === storedKey)!
 }
 
-export function deleteMachineEntry(key: string): void {
-  if (isDelegationKey(key)) {
-    deleteMachineDelegation(key)
+export function deleteMachineEntry(key: string, env: ConfigEnvironment = process.env): void {
+  if (isMachineConfigKey(key)) {
+    deleteMachineValue(key, env)
     return
   }
-  deleteMachineAutonomy(key)
+  if (!configHomes(key)?.includes('machine'))
+    throw new Error(
+      `refusing machine config key ${key}: accepted families are machine catalogue keys and autonomy.*; inspect machine keys with \`${PLATFORM_SLUG} machine config list --machine\``,
+    )
+  deleteMachineAutonomy(key, env)
 }
 
 export async function listSecrets(client = configClient()) {

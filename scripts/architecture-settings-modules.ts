@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): SettingsModule => ({
 })
 
 export const settingsModules: SettingsModule[] = [
+  module('shared/config-contract.ts', ['zod', './config-client.ts', './machine-config.ts']),
   module('orchestrator/src/project/project-injection.ts', [
     '../../../shared/brand.ts',
     'zod',

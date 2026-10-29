@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
-import { setMachineDelegation } from '../../../shared/machine-config.ts'
+import { setMachineValue } from '../../../shared/machine-config.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { candidates, pick } from './route.ts'
 
 test('the shared routing path launches a first harness turn and still refuses failover', () => {
-  setMachineDelegation('delegation.implement', 'harness')
+  setMachineValue('delegation.implement', 'harness')
   try {
     expect(
       pick('implement', undefined, 0, true, null, {}, false, undefined, Math.random, {
@@ -23,16 +23,16 @@ test('the shared routing path launches a first harness turn and still refuses fa
       "this machine runs implement work through the harness's own sub-agent (delegation.implement=harness)",
     )
   } finally {
-    setMachineDelegation('delegation.implement', 'external')
+    setMachineValue('delegation.implement', 'external')
   }
 })
 
 test('the shared routing path launches a review job assigned to the harness', () => {
-  setMachineDelegation('delegation.review', 'harness')
+  setMachineValue('delegation.review', 'harness')
   try {
     expect(pick('review-lens')).toEqual({ agent: 'harness', reason: 'machine delegation mode' })
   } finally {
-    setMachineDelegation('delegation.review', 'external')
+    setMachineValue('delegation.review', 'external')
   }
 })
 
