@@ -1,9 +1,17 @@
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
-import { readProjectReview, recordProjectReviewCommand } from './review-record-command.ts'
+import {
+  emptyProjectReviewRefusal,
+  readProjectReview,
+  recordProjectReviewCommand,
+  reviewRecordCommandOperations,
+} from './review-record-command.ts'
 import type { ReviewRecordFindingsFile } from './review-record-findings.ts'
 
 type Operations = NonNullable<Parameters<typeof recordProjectReviewCommand>[4]>
@@ -117,6 +125,171 @@ test('refuses incomplete triage with the judge remedy', () => {
   ).toThrow(
     `review triage for DEV-1110-record is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score`,
   )
+})
+
+test('refuses an empty lineage when completed same-task rounds are on other branches', () => {
+  const refusal = emptyProjectReviewRefusal({
+    selectedReviewCount: 0,
+    taskKey: 'DEV-1852',
+    lineage: ['current-fix', 'original-fix'],
+    completedReviewBranches: ['reviewed-a', 'reviewed-b'],
+  })
+  expect(refusal).toContain('review lineage [current-fix, original-fix] selected no review rounds')
+  expect(refusal).toContain('task DEV-1852')
+  expect(refusal).toContain('branches [reviewed-a, reviewed-b]')
+
+  expect(
+    emptyProjectReviewRefusal({
+      selectedReviewCount: 0,
+      taskKey: 'DEV-1852',
+      lineage: ['current-fix'],
+      completedReviewBranches: [],
+    }),
+  ).toBeNull()
+})
+
+test('project-record carries a real store refusal to the operator before writing', () => {
+  const database = db()
+  const cwd = mkdtempSync(join(tmpdir(), 'review-project-record-'))
+  const git = (...argv: string[]) => {
+    const result = Bun.spawnSync(['git', ...argv], { cwd, stdout: 'pipe', stderr: 'pipe' })
+    if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+  }
+  try {
+    git('init', '-b', 'main')
+    git('config', 'user.name', 'Fixture')
+    git('config', 'user.email', 'fixture@example.test')
+    writeFileSync(join(cwd, 'a.ts'), 'base\n')
+    git('add', 'a.ts')
+    git('commit', '-m', 'base')
+    git('checkout', '-b', 'current-fix')
+    writeFileSync(join(cwd, 'a.ts'), 'base\nchange\n')
+    git('add', 'a.ts')
+    git('commit', '-m', 'change')
+
+    const projectId = newRecordId()
+    database.query('INSERT INTO project (record_id,name,path,settings) VALUES (?,?,?,?)').run(
+      projectId,
+      'fixture-record-command',
+      cwd,
+      JSON.stringify({
+        trunk: 'main',
+        review: {
+          lenses: [{ lens: 'correctness' }],
+          record: 'project-review record --findings {findings}',
+        },
+      }),
+    )
+    const current = addRun({
+      agent: 'codex',
+      job: 'implement',
+      repo: 'fixture-record-command',
+      projectRecordId: projectId,
+    })
+    const reviewed = addRun({
+      agent: 'codex',
+      job: 'review-lens',
+      repo: 'fixture-record-command',
+      projectRecordId: projectId,
+    })
+    database
+      .query("UPDATE run SET branch='current-fix',launch_key='DEV-1852' WHERE record_id=?")
+      .run(current)
+    database
+      .query("UPDATE run SET branch='reviewed-elsewhere',launch_key='DEV-1852' WHERE record_id=?")
+      .run(reviewed)
+    const reviewId = newRecordId()
+    database
+      .query(
+        `INSERT INTO review
+           (record_id,number,recorded_at,completed_at,project_record_id,patch_id,path_set,tier,role)
+         VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-29','2026-10-29',?,
+                 'reviewed-patch','["a.ts"]',2,'round')`,
+      )
+      .run(reviewId, projectId)
+    database
+      .query(
+        `INSERT INTO review_lens
+           (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+         VALUES (?,?,?,'correctness','codex','model','[]','[]','[]','[]')`,
+      )
+      .run(newRecordId(), reviewId, reviewed)
+
+    let writes = 0
+    let runs = 0
+    expect(() =>
+      recordProjectReviewCommand(
+        'current-fix',
+        cwd,
+        'record reviewed change',
+        { log() {} },
+        {
+          ...reviewRecordCommandOperations(database),
+          write: () => {
+            writes += 1
+          },
+          run: () => {
+            runs += 1
+            return { exitCode: 0, stdout: '', stderr: '' }
+          },
+        },
+      ),
+    ).toThrow(
+      /review lineage \[current-fix\] selected no review rounds for task DEV-1852.*branches \[reviewed-elsewhere\]/,
+    )
+    expect({ writes, runs }).toEqual({ writes: 0, runs: 0 })
+  } finally {
+    rmSync(cwd, { recursive: true, force: true })
+  }
+})
+
+test('project review store detects completed same-task rounds outside the searched lineage', () => {
+  const database = db()
+  database
+    .query("INSERT OR IGNORE INTO project (record_id,name,path,settings) VALUES (?,?,?,'{}')")
+    .run(newRecordId(), 'fixture', '/fixture/fixture')
+  const current = addRun({ agent: 'codex', job: 'implement', repo: 'fixture' })
+  const reviewed = addRun({ agent: 'codex', job: 'review-lens', repo: 'fixture' })
+  database
+    .query(
+      `UPDATE run SET branch='current-fix',minted_branch='current-fix',launch_key='DEV-1852',
+              project_record_id=(SELECT record_id FROM project WHERE name='fixture')
+        WHERE record_id=?`,
+    )
+    .run(current)
+  database
+    .query(
+      `UPDATE run SET branch='reviewed-elsewhere',launch_key='DEV-1852',
+              project_record_id=(SELECT record_id FROM project WHERE name='fixture')
+        WHERE record_id=?`,
+    )
+    .run(reviewed)
+  const reviewId = newRecordId()
+  database
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,project_record_id,patch_id,path_set,tier,role)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM review),'2026-10-29','2026-10-29',
+               (SELECT record_id FROM project WHERE name='fixture'),
+               'reviewed-patch','["src/a.ts"]',2,'round')`,
+    )
+    .run(reviewId)
+  database
+    .query(
+      `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,model,standards_read,files_covered,commands_run,could_not_verify)
+       VALUES (?,?,?,'correctness','codex','model','[]','[]','[]','[]')`,
+    )
+    .run(newRecordId(), reviewId, reviewed)
+
+  const selected = readProjectReview(database, {
+    project: 'fixture',
+    branch: 'current-fix',
+    patchId: 'current-patch',
+    pathSet: ['src/a.ts'],
+  })
+  expect(selected.rows).toEqual([])
+  expect(selected.refusal).toContain('review lineage [current-fix]')
+  expect(selected.refusal).toContain('branches [reviewed-elsewhere]')
 })
 
 test('a failed project command reports its output', () => {

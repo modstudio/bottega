@@ -211,12 +211,58 @@ export function reviewsForTriage(
   }
 }
 
+/** Task attributed to the branch's most recent run or minting run. */
+export function reviewTaskKeyForBranch(
+  database: Database,
+  project: string,
+  branch: string,
+): string | null {
+  const row = database
+    .query<{ launch_key: string }, [string, string]>(
+      `SELECT launch_key FROM run
+        WHERE project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND branch=? AND launch_key IS NOT NULL AND trim(launch_key)<>''
+        ORDER BY number DESC LIMIT 1`,
+    )
+    .get(project, branch)
+  return row?.launch_key.trim().toUpperCase() ?? null
+}
+
+/** Admission candidates from lineage plus exact same-task change evidence on any branch. */
+export function reviewsForAdmission(
+  database: Database,
+  group: ChangeGroup,
+): { reviews: TriageReviewRow[]; branchReviews: TriageReviewRow[] } {
+  const branchReviews = reviewsForBranch(database, group.project, group.branch)
+  const taskKey = reviewTaskKeyForBranch(database, group.project, group.branch)
+  if (!taskKey) return { branchReviews, reviews: reviewsForChangeGroup(branchReviews, group) }
+  const exactReviewIds = database
+    .query<{ record_id: string }, [string, string, string, string]>(
+      `SELECT DISTINCT r.record_id FROM review r INDEXED BY review_project_patch
+         JOIN review_lens rl ON rl.review_record_id=r.record_id
+         JOIN run ON run.record_id=rl.run_record_id
+        WHERE r.project_record_id=(SELECT record_id FROM project WHERE name=?)
+          AND r.patch_id=? AND r.path_set=? AND upper(trim(run.launch_key))=?`,
+    )
+    .all(group.project, group.patchId, serializePathSet(group.pathSet), taskKey.toUpperCase())
+    .map(({ record_id }) => record_id)
+  const candidates = reviewsForBranch(
+    database,
+    group.project,
+    group.branch,
+    undefined,
+    exactReviewIds,
+  )
+  return { branchReviews, reviews: reviewsForChangeGroup(candidates, group) }
+}
+
 /** All review rounds recorded by runs on a branch, newest first. */
 function reviewsForBranch(
   database: Database,
   project: string,
   branch: string,
   includeReviewId?: string,
+  includeReviewIds: readonly string[] = [],
 ): TriageReviewRow[] {
   const lineage = reviewLineage(database, project, branch)
   const rows = database
@@ -243,7 +289,7 @@ function reviewsForBranch(
         ordinal: number | null
         disposition: string | null
       },
-      [string, ...string[], string | null]
+      (string | null)[]
     >(
       `SELECT r.record_id review_record_id,r.number review_number,r.recorded_at,r.completed_at,r.tier,r.role,r.patch_id,r.path_set,
               rl.record_id lens_id,rl.run_record_id,rl.lens,rl.model,s.delivery,rl.reproduced,rl.coverage,rl.limits,rl.overlap,
@@ -253,10 +299,11 @@ function reviewsForBranch(
          LEFT JOIN score s ON s.run_record_id=run.record_id
          LEFT JOIN review_finding rf ON rf.review_lens_record_id=rl.record_id
         WHERE run.project_record_id=(SELECT record_id FROM project WHERE name=?)
-          AND (run.branch IN (${lineage.map(() => '?').join(',')}) OR r.record_id=?)
+          AND (run.branch IN (${lineage.map(() => '?').join(',')}) OR r.record_id=?
+               OR r.record_id IN (${includeReviewIds.map(() => '?').join(',') || 'NULL'}))
         ORDER BY r.number DESC,rl.record_id,rf.ordinal`,
     )
-    .all(project, ...lineage, includeReviewId ?? null)
+    .all(project, ...lineage, includeReviewId ?? null, ...includeReviewIds)
   const reviews = new Map<string, TriageReviewRow>()
   for (const row of rows) {
     const review = reviews.get(row.review_record_id) ?? {

@@ -169,7 +169,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   )
   const reviewTarget =
     opts.resolvedReviewTarget ??
-    resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry)
+    resolveReviewTarget(opts.job, opts.cwd ?? process.cwd(), opts.review, opts.carry, opts.key)
   const implicitReview = implicitReviewClaim(callerCwd, !!reviewTarget, !!requestedJob.findings)
   const coverageBase = reviewTarget?.base ?? implicitReview.coverageBase
   // Programmatic callers also refuse a bad ref before a run row or worktree exists.

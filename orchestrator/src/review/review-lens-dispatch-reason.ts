@@ -15,6 +15,7 @@ export function reviewLensSelectionReasonForDispatch(input: {
   review: string | undefined
   cwd: string
   repo?: string
+  key?: string
 }): ReviewLensSelectionReason {
   if (!input.lens) return OPERATOR_ORDERED
   if (input.jobName !== 'review-lens' || !input.review) return OPERATOR_ORDERED
@@ -26,11 +27,12 @@ function funnelReasonForLens(input: {
   review: string
   cwd: string
   repo?: string
+  key?: string
 }): ReviewLensSelectionReason {
   const project = input.repo ? projectByName(input.repo) : projectAt(input.cwd)
   if (!project) return OPERATOR_ORDERED
   const checkout = input.repo ? project.path : input.cwd
-  const target = resolveReviewTarget('review-lens', checkout, input.review)
+  const target = resolveReviewTarget('review-lens', checkout, input.review, false, input.key)
   if (!target) return OPERATOR_ORDERED
   const trunk = project.settings.trunk?.trim()
   if (!trunk) return OPERATOR_ORDERED

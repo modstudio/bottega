@@ -13,7 +13,7 @@ import {
   branchRunOwnerSession,
   type ChangeGroup,
   measureChangeGroup,
-  reviewsForTriage,
+  reviewsForAdmission,
   serializePathSet,
   type TriageReviewRow,
 } from '../review/review-group.ts'
@@ -135,7 +135,7 @@ export function resolvePullRequestChange(
 }
 
 function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
-  const reviews = reviewsForTriage(database, change.group)
+  const reviews = reviewsForAdmission(database, change.group)
   const lineage = reviewLineage(database, change.project.name, change.branch)
   const grouped = new Map<string, TriageReviewRow[]>()
   for (const review of reviews.branchReviews) {

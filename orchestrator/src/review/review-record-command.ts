@@ -13,6 +13,7 @@ import {
   measureChangeGroup,
   reviewRoundTriageComplete,
   reviewsForTriage,
+  reviewTaskKeyForBranch,
 } from './review-group.ts'
 import { reviewLineage } from './review-lineage-store.ts'
 import { type ReviewRecordRow, reviewRecordFindings } from './review-record-findings.ts'
@@ -24,6 +25,7 @@ type ResolvedReviewRecord = {
   complete: boolean
   tier: 0 | 1 | 2 | 3
   rows: ReviewRecordRow[]
+  refusal?: string | null
 }
 
 type ReviewRecordCommandResult = {
@@ -44,6 +46,24 @@ const PROJECT_REVIEW_RECORD_USAGE = `${PLATFORM_SLUG} review project-record <bra
 
 export function projectReviewRecordInputRefusal(condition: string): string {
   return `${condition}\ncleared by: ${PROJECT_REVIEW_RECORD_USAGE}`
+}
+
+/** Refuse an empty lineage when completed same-task rounds prove review evidence exists elsewhere. */
+export function emptyProjectReviewRefusal(input: {
+  selectedReviewCount: number
+  taskKey: string | null
+  lineage: readonly string[]
+  completedReviewBranches: readonly string[]
+}): string | null {
+  if (input.selectedReviewCount || !input.taskKey || !input.completedReviewBranches.length) {
+    return null
+  }
+  return (
+    `review lineage [${input.lineage.join(', ')}] selected no review rounds for task ` +
+    `${input.taskKey}, but completed task rounds exist on branches ` +
+    `[${input.completedReviewBranches.join(', ')}]; cleared by: make the reviewed branch inherit ` +
+    'one of those branches through a same-task --base, or run and complete its review'
+  )
 }
 
 type Presentation = { log(...values: unknown[]): void }
@@ -67,10 +87,26 @@ function git(cwd: string, argv: string[]): string {
 export function readProjectReview(
   database: Database,
   group: ChangeGroup,
-): { complete: boolean; rows: ReviewRecordRow[] } {
+): { complete: boolean; rows: ReviewRecordRow[]; refusal: string | null } {
   const selectedReviews = reviewsForTriage(database, group).branchReviews
   const selectedIds = new Set(selectedReviews.map(({ reviewRecordId }) => reviewRecordId))
   const lineage = reviewLineage(database, group.project, group.branch)
+  const taskKey = reviewTaskKeyForBranch(database, group.project, group.branch)
+  const completedReviewBranches = taskKey
+    ? database
+        .query<{ branch: string }, [string, string, ...string[]]>(
+          `SELECT DISTINCT run.branch FROM review r INDEXED BY review_project_id
+             JOIN review_lens rl ON rl.review_record_id=r.record_id
+             JOIN run ON run.record_id=rl.run_record_id
+            WHERE r.project_record_id=(SELECT record_id FROM project WHERE name=?)
+              AND r.completed_at IS NOT NULL AND r.role='round'
+              AND upper(trim(run.launch_key))=? AND run.branch IS NOT NULL
+              AND run.branch NOT IN (${lineage.map(() => '?').join(',')})
+            ORDER BY run.branch`,
+        )
+        .all(group.project, taskKey.toUpperCase(), ...lineage)
+        .map(({ branch }) => branch)
+    : []
   const rows = database
     .query<
       {
@@ -100,6 +136,12 @@ export function readProjectReview(
   return {
     complete: selectedReviews.every(reviewRoundTriageComplete),
     rows: rows.map(({ review: _review, finding: _finding, ...row }) => row),
+    refusal: emptyProjectReviewRefusal({
+      selectedReviewCount: selectedReviews.length,
+      taskKey,
+      lineage,
+      completedReviewBranches,
+    }),
   }
 }
 
@@ -117,10 +159,13 @@ function resolveReview(
     complete: branchReview.complete,
     tier: measured.tier.tier,
     rows: branchReview.rows,
+    refusal: branchReview.refusal,
   }
 }
 
-function defaultOperations(database: Database = db()): ReviewRecordCommandOperations {
+export function reviewRecordCommandOperations(
+  database: Database = db(),
+): ReviewRecordCommandOperations {
   return {
     project: (cwd) => projectAt(cwd, database),
     review: (project, cwd, branch) => resolveReview(project, cwd, branch, database),
@@ -164,7 +209,7 @@ export function recordProjectReviewCommand(
   cwd: string | undefined,
   reason: string | undefined,
   presentation: Presentation,
-  operations: ReviewRecordCommandOperations = defaultOperations(),
+  operations: ReviewRecordCommandOperations = reviewRecordCommandOperations(),
 ): void {
   if (!cwd)
     throw new Error(
@@ -185,6 +230,7 @@ export function recordProjectReviewCommand(
     return
   }
   const review = operations.review(project, cwd, branch)
+  if (review.refusal) throw new Error(review.refusal)
   if (!review.complete) {
     throw new Error(
       `review triage for ${branch} is incomplete; finish every lens and finding with ${PLATFORM_SLUG} score`,

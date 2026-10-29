@@ -338,7 +338,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       .query(
         `SELECT prompt_path, launch_cwd, launch_seed, launch_key, launch_base,
               no_failover, session_id, mcp, mcp_error, schema_path, probe, label, lens, review_role, repo,
-              base_commit, head_commit, review_ref, transport, transport_explicit
+              branch, base_commit, head_commit, review_ref, transport, transport_explicit
          FROM run WHERE record_id=?`,
       )
       .get(attempts[0]!.record_id) as {
@@ -357,6 +357,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
       lens: string | null
       review_role: ReviewRole | null
       repo: string | null
+      branch: string | null
       base_commit: string | null
       head_commit: string | null
       review_ref: string | null
@@ -452,7 +453,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
           resolvedReviewTarget:
             first.review_ref && first.base_commit && first.head_commit
               ? {
-                  branch: resolveBranchRef(first.review_ref).branch,
+                  branch: first.branch ?? resolveBranchRef(first.review_ref).branch,
                   commit: first.head_commit,
                   base: first.base_commit,
                 }
