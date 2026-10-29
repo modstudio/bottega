@@ -16,7 +16,9 @@ const reapStaleRuns = (database: Parameters<typeof reapStale>[0]) =>
 export function registerStandardHooks(): void {
   if (registered) return
   registerOpenHooks({
-    afterWritableOpen: [ensureMachineIdentity, excludeSharedOutputRuns, reapStaleRuns],
+    // Shared-output exclusion is a backfill: run-keyed output names cannot collide, and its
+    // two whole-table scans would otherwise run on every writable open.
+    afterWritableOpen: [ensureMachineIdentity, reapStaleRuns],
     afterInitialize: [
       ensureMachineIdentity,
       excludeSharedOutputRuns,
