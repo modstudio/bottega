@@ -1,7 +1,7 @@
 // concern: routing-evidence-query
 /** Reads only the current-model evidence window consumed by routing. */
 import { db } from '../database/db.ts'
-import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE, NOT_EVIDENCE_SQL } from '../failure/failure.ts'
 import { promptBucketSql } from './prompt-size-bucket.ts'
 import { weightCase } from './route-selection.ts'
 
@@ -22,7 +22,26 @@ export type RoutingEvidenceRow = {
   peakCallTokens: number | null
 }
 
-const notEvidenceSql = () => NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
+export type RoutingEvidenceInput = {
+  status: string
+  delivery: string | null
+  failureKind: string | null
+  executor?: 'external' | 'harness'
+}
+
+/** The production quality-evidence predicate, shared with causal replay. */
+export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
+  if (row.executor === 'harness') return false
+  if (!['ok', 'failed', 'stale'].includes(row.status)) return false
+  if (NOT_EVIDENCE.includes(row.failureKind as (typeof NOT_EVIDENCE)[number])) return false
+  return row.delivery !== null || ['failed', 'stale'].includes(row.status)
+}
+
+/** SQL form of isRoutingEvidence for the bounded evidence query. */
+export const ROUTING_EVIDENCE_SQL = `r.status IN ('ok','failed','stale')
+        AND r.executor <> 'harness'
+        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
+        AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))`
 
 export function boundedRoutingEvidenceRows(input: {
   jobName: string
@@ -49,11 +68,9 @@ export function boundedRoutingEvidenceRows(input: {
        JOIN run r INDEXED BY run_routing_evidence_cover
          ON r.agent = ca.agent AND (r.model = ca.model OR r.model IS NULL)
        LEFT JOIN score s ON s.run_record_id = r.record_id
-      WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
-        AND r.evidence_excluded IS NULL AND r.executor <> 'harness'
+      WHERE r.job = ? AND ${ROUTING_EVIDENCE_SQL} AND r.probe = 0
+        AND r.evidence_excluded IS NULL
         AND r.parent_run_record_id IS NULL
-        AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
-        AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))
         AND ${promptBucketSql('r', promptBytes)}
         ${stack ? 'AND r.stack = ?' : ''}
         ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}

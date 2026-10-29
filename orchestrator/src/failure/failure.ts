@@ -446,6 +446,9 @@ export const NOT_EVIDENCE: FailureKind[] = [
   'abandoned',
 ]
 
+/** SQL literal list for the canonical non-evidence failure kinds. */
+export const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
+
 /** Provider failures where no answer exists for a person to judge. */
 export const PROVIDER_UNSERVED: ReadonlySet<FailureKind> = new Set([
   'billing',

@@ -214,20 +214,42 @@ export function openReadOnlyDatabase(path = DB_PATH): Database {
  */
 function openReadOnlyStore(path: string, immutable: boolean): Database {
   if (!immutable)
-    return instrumentDatabase(new Database(path, { readonly: true }), { writable: false })
+    return instrumentDatabase(new Database(path, { readonly: true }), {
+      recorder: recordSlowStatement,
+    })
   return instrumentDatabase(
     new Database(
       `${pathToFileURL(path).href}?immutable=1`,
       constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
     ),
-    { writable: false },
+    { recorder: recordSlowStatement },
   )
 }
 
 function openOwnedWritableDatabase(path: string, options: { create: boolean }): Database {
   return instrumentDatabase(new Database(path, { readwrite: true, create: options.create }), {
-    writable: true,
+    recorder: recordSlowStatement,
   })
+}
+
+function openUninstrumentedOwnedWritableDatabase(
+  path: string,
+  options: { create: boolean },
+): Database {
+  return new Database(path, { readwrite: true, create: options.create })
+}
+
+function recordSlowStatement(fingerprint: string, durationMs: number): void {
+  tryWriteContention(
+    {
+      resourceKind: 'store',
+      resourceKey: fingerprint,
+      eventKind: 'wait',
+      durationMs,
+      cause: 'slow-statement',
+    },
+    { busyTimeoutMs: 0 },
+  )
 }
 
 /** Run one read command against a SQLite-enforced read-only process handle. */
@@ -700,7 +722,7 @@ export function tryWriteContention(
   try {
     if (storeWritesRefused() || registeredStoreWriteProtected) return
     if (opts?.busyTimeoutMs === 0) {
-      const d = openOwnedWritableDatabase(DB_PATH, { create: false })
+      const d = openUninstrumentedOwnedWritableDatabase(DB_PATH, { create: false })
       try {
         d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
         keepJournalSidecars(d)

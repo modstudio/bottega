@@ -39,34 +39,6 @@ function flattenedBindings(args: unknown[]): Binding[] {
   return values as Binding[]
 }
 
-function captureHandle(database: Database, captured: Captured[], label: () => string): Database {
-  const prepare = database.prepare.bind(database)
-  const query = database.query.bind(database)
-  const statement = (sql: string, native: object) =>
-    new Proxy(native, {
-      get(target, property) {
-        const value = Reflect.get(target, property, target)
-        if (typeof value !== 'function') return value
-        if (!['get', 'all', 'run', 'values', 'iterate'].includes(String(property))) {
-          return value.bind(target)
-        }
-        return (...args: unknown[]) => {
-          captured.push({ label: label(), sql, bindings: flattenedBindings(args) })
-          return Reflect.apply(value, target, args)
-        }
-      },
-    })
-  Object.defineProperty(database, 'prepare', {
-    configurable: true,
-    value: (sql: string) => statement(sql, prepare(sql)),
-  })
-  Object.defineProperty(database, 'query', {
-    configurable: true,
-    value: (sql: string) => statement(sql, query(sql)),
-  })
-  return database
-}
-
 function sqlLiteral(value: Binding): string {
   if (value === null) return 'NULL'
   if (typeof value === 'number' || typeof value === 'bigint') return String(value)
@@ -112,6 +84,16 @@ function sqliteStats(
   return { pages: misses ? Number(misses[1]) : null, ms: timer ? Number(timer[1]) * 1_000 : 0 }
 }
 
+/** Make one transactionally consistent snapshot, including committed WAL pages. */
+function snapshotStore(sourcePath: string, targetPath: string): void {
+  const source = new Database(sourcePath, { readonly: true })
+  try {
+    source.query('VACUUM INTO ?').run(targetPath)
+  } finally {
+    source.close()
+  }
+}
+
 function tableRows(database: Database, table: string): number {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) return 0
   const exists = database
@@ -137,32 +119,24 @@ async function captureEntryPoints(
   work: string,
 ): Promise<{ captured: Captured[]; measuredStore: string }> {
   const routeStore = join(work, 'route.db')
-  copyFileSync(store, routeStore)
+  snapshotStore(store, routeStore)
   process.env.BOTTEGA_ORCHESTRATOR_DB = routeStore
   process.env.BOTTEGA_ORCHESTRATOR_DB_WRITE = '1'
   const captured: Captured[] = []
   let currentLabel = 'open-hooks'
 
   const [
-    { db, ensureMachineIdentity, migrateDatabase },
-    { excludeSharedOutputRuns },
-    { seedLenses },
-    reviewRounds,
-    runLiveness,
-    sharedGit,
-    { seedWorkflows },
+    { db, migrateDatabase },
+    { interposeStatementExecutions },
+    { STANDARD_OPEN_HOOKS },
     promptBuckets,
     route,
     jobs,
     runtime,
   ] = await Promise.all([
     import('../orchestrator/src/database/db.ts'),
-    import('../orchestrator/src/evidence/evidence-query.ts'),
-    import('../orchestrator/src/lens/lens-seeds.ts'),
-    import('../orchestrator/src/review/review-round-backfill.ts'),
-    import('../orchestrator/src/run/run-liveness.ts'),
-    import('../orchestrator/src/run/shared-git-config-run.ts'),
-    import('../orchestrator/src/workflow/workflow-seeds.ts'),
+    import('../orchestrator/src/database/slow-statements.ts'),
+    import('../orchestrator/src/runtime/store-hooks.ts'),
     import('../orchestrator/src/route/prompt-size-bucket-store.ts'),
     import('../orchestrator/src/route/route.ts'),
     import('../orchestrator/src/jobs/jobs.ts'),
@@ -173,16 +147,14 @@ async function captureEntryPoints(
   // opening it through the adapter so capture uses the schema and indexes this binary audits.
   migrateDatabase()
   const processDatabase = db()
-  captureHandle(processDatabase, captured, () => currentLabel)
+  interposeStatementExecutions(processDatabase, (sql, args) => {
+    captured.push({ label: currentLabel, sql, bindings: flattenedBindings(args) })
+  })
 
   // The real writable-open happened before db() exposed its handle. Replay the exact registered
   // hooks against a disposable copy so the source store remains read-only.
-  ensureMachineIdentity(processDatabase)
-  runLiveness.reapStale(processDatabase, sharedGit.terminalSharedGitConfigForRecordedRun)
-  excludeSharedOutputRuns(processDatabase)
-  reviewRounds.backfillReviewRounds(processDatabase)
-  seedLenses(processDatabase)
-  seedWorkflows(processDatabase)
+  for (const hook of STANDARD_OPEN_HOOKS.afterWritableOpen ?? []) hook(processDatabase)
+  for (const hook of STANDARD_OPEN_HOOKS.afterInitialize ?? []) hook(processDatabase)
 
   for (const jobName of Object.keys(jobs.JOBS)) {
     currentLabel = `prompt-buckets:${jobName}`

@@ -7,10 +7,11 @@ import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
 import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { samePromptSizeBucket } from './prompt-size-bucket.ts'
-import { COOLDOWN_MIN, EVIDENCE_WINDOW, isRoutingEvidence } from './route.ts'
+import { COOLDOWN_MIN, EVIDENCE_WINDOW } from './route.ts'
 import { meteredRouteEligibility } from './route-metered-policy.ts'
 import { currentPolicySelection, MIN_SAMPLE, thompsonRank } from './route-selection.ts'
 import { routingEvidenceWindow } from './route-statistics.ts'
+import { isRoutingEvidence } from './routing-evidence-query.ts'
 
 const ROUTING_BACKTEST_SEED = 287
 export const ROUTING_BACKTEST_SEEDS = Object.freeze(Array.from({ length: 20 }, (_, i) => i + 1))

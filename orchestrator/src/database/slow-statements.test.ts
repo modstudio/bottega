@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { insertContention } from './contention.ts'
 import { instrumentDatabase, statementFingerprint } from './slow-statements.ts'
 import { migratedTestDatabase } from './test-database.fixture.ts'
 
@@ -6,7 +7,14 @@ test('a statement over the injected threshold records one fingerprinted contenti
   const raw = migratedTestDatabase()
   const ticks = [0, 11]
   const database = instrumentDatabase(raw, {
-    writable: true,
+    recorder: (fingerprint, durationMs) =>
+      insertContention(raw, {
+        resourceKind: 'store',
+        resourceKey: fingerprint,
+        eventKind: 'wait',
+        durationMs,
+        cause: 'slow-statement',
+      }),
     thresholdMs: 10,
     now: () => ticks.shift() ?? 11,
   })
