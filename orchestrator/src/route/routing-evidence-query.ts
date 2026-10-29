@@ -38,7 +38,7 @@ export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
 }
 
 /** The routing evidence predicate executed by the bounded production query. */
-export const ROUTING_EVIDENCE_SQL = `r.status IN ('ok','failed','stale')
+const ROUTING_EVIDENCE_SQL = `r.status IN ('ok','failed','stale')
         AND r.executor <> 'harness'
         AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
         AND (s.delivery IS NOT NULL OR r.status IN ('failed','stale'))`
