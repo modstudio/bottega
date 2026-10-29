@@ -60,6 +60,7 @@ import {
   storeMigrationState,
 } from './migrations.ts'
 import { initializeDefaultLocalProject } from './project-register-store.ts'
+import { instrumentDatabase } from './slow-statements.ts'
 import {
   cachedHandleWriteRefusal,
   LINKED_WORKTREE_WRITE_REFUSAL,
@@ -212,10 +213,40 @@ export function openReadOnlyDatabase(path = DB_PATH): Database {
  * which Bun's Linux SQLite accepts only with SQLITE_OPEN_URI passed explicitly.
  */
 function openReadOnlyStore(path: string, immutable: boolean): Database {
-  if (!immutable) return new Database(path, { readonly: true })
-  return new Database(
-    `${pathToFileURL(path).href}?immutable=1`,
-    constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
+  const database = !immutable
+    ? new Database(path, { readonly: true })
+    : new Database(
+        `${pathToFileURL(path).href}?immutable=1`,
+        constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI,
+      )
+  return sameStore(path, DB_PATH)
+    ? instrumentDatabase(database, { recorder: recordSlowStatement })
+    : database
+}
+
+function openOwnedWritableDatabase(path: string, options: { create: boolean }): Database {
+  return instrumentDatabase(new Database(path, { readwrite: true, create: options.create }), {
+    recorder: recordSlowStatement,
+  })
+}
+
+function openUninstrumentedOwnedWritableDatabase(
+  path: string,
+  options: { create: boolean },
+): Database {
+  return new Database(path, { readwrite: true, create: options.create })
+}
+
+function recordSlowStatement(fingerprint: string, durationMs: number): void {
+  tryWriteContention(
+    {
+      resourceKind: 'store',
+      resourceKey: fingerprint,
+      eventKind: 'wait',
+      durationMs,
+      cause: 'slow-statement',
+    },
+    { busyTimeoutMs: 0 },
   )
 }
 
@@ -471,12 +502,21 @@ export function openProcessStoreHandle(
   })
   const openMode = readerOpenMode(lifetime, access.openMode)
   if (openMode === 'read-write') {
-    return { database: new Database(path, { readwrite: true, create: false }), openMode }
+    return {
+      database: openOwnedWritableDatabase(path, { create: false }),
+      openMode,
+    }
   }
   if (openMode === 'read-only-immutable') {
-    return { database: openReadOnlyStore(path, true), openMode }
+    return {
+      database: openReadOnlyStore(path, true),
+      openMode,
+    }
   }
-  return { database: openPersistentReadOnlyDatabase(path), openMode }
+  return {
+    database: openPersistentReadOnlyDatabase(path),
+    openMode,
+  }
 }
 
 export function db(writable = false): Database {
@@ -680,7 +720,7 @@ export function tryWriteContention(
   try {
     if (storeWritesRefused() || registeredStoreWriteProtected) return
     if (opts?.busyTimeoutMs === 0) {
-      const d = new Database(DB_PATH, { readwrite: true, create: false })
+      const d = openUninstrumentedOwnedWritableDatabase(DB_PATH, { create: false })
       try {
         d.exec('PRAGMA busy_timeout = 0; PRAGMA foreign_keys = ON')
         keepJournalSidecars(d)
@@ -734,10 +774,7 @@ export function createDatabasePrivately<T>(
 ): { published: boolean; result: T } {
   mkdirSync(dirname(path), { recursive: true })
   const temporary = `${path}.create-${process.pid}-${randomUUID()}.tmp`
-  let database: Database | null = new Database(temporary, {
-    readwrite: true,
-    create: true,
-  })
+  let database: Database | null = openOwnedWritableDatabase(temporary, { create: true })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     keepJournalSidecars(database)
@@ -822,7 +859,7 @@ export function migrateDatabase(
       // The winning creator published only after checkpointing and closing.
       // Opening it here makes the losing attempt observe that complete store
       // before reporting successful initialization to its caller.
-      const winner = new Database(DB_PATH, { readwrite: true, create: false })
+      const winner = openOwnedWritableDatabase(DB_PATH, { create: false })
       try {
         winner.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
         keepJournalSidecars(winner)
@@ -833,7 +870,7 @@ export function migrateDatabase(
     }
     return { path: DB_PATH, versions: created.result }
   }
-  const d = new Database(DB_PATH, { readwrite: true, create: false })
+  const d = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
     d.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     keepJournalSidecars(d)
@@ -870,7 +907,7 @@ export async function withDatabaseForMigrationStep<T>(
   action: (database: Database) => Promise<T>,
 ): Promise<T> {
   refuseStoreMigrationFromRestrictedCaller()
-  const database = new Database(DB_PATH, { readwrite: true, create: false })
+  const database = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     keepJournalSidecars(database)
@@ -883,7 +920,7 @@ export async function withDatabaseForMigrationStep<T>(
 /** Give a synchronous migration adapter a handle while the store is intentionally mid-journal. */
 export function withSynchronousDatabaseForMigrationStep<T>(action: (database: Database) => T): T {
   refuseStoreMigrationFromRestrictedCaller()
-  const database = new Database(DB_PATH, { readwrite: true, create: false })
+  const database = openOwnedWritableDatabase(DB_PATH, { create: false })
   try {
     database.exec('PRAGMA busy_timeout = 15000; PRAGMA foreign_keys = ON;')
     keepJournalSidecars(database)

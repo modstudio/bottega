@@ -6,7 +6,7 @@ export function promptBucketsForJob(jobName: string): PromptSizeBucket[] {
   const rows = db()
     .query(
       `SELECT DISTINCT CASE WHEN prompt_bytes < ? THEN 'small' ELSE 'large' END AS bucket
-         FROM run
+         FROM run INDEXED BY run_routing_prompt_bucket_cover
         WHERE job = ? AND status IN ('ok','failed','stale') AND probe = 0
           AND evidence_excluded IS NULL AND executor <> 'harness'
           AND parent_run_record_id IS NULL AND agent != '(pending)'`,

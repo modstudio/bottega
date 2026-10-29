@@ -1353,6 +1353,14 @@
       "tag": "0178_run_quota_window_index",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 179,
+      "version": "6",
+      "when": 1793577600044,
+      "tag": "0179_routing_evidence_covering_indexes",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

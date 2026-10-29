@@ -8,7 +8,7 @@ import {
 } from '../agent/model-host.ts'
 import { failingDefaultCanonEvals } from '../canon/canon-eval-status.ts'
 import { db } from '../database/db.ts'
-import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
 import { noEligibleAgentRefusal } from '../jobs/delegation.ts'
 import { JOBS, job, jobContextBudget, OUTPUT_RESERVE } from '../jobs/jobs.ts'
 import { decideMcpGrammarRuling, type RequiredMcpServer } from '../mcp/mcp-compatibility.ts'
@@ -76,6 +76,7 @@ import {
   decideCoolingFailures,
   recentTerminalRuns,
 } from './routing-cooldown.ts'
+import { boundedRoutingEvidenceRows } from './routing-evidence-query.ts'
 import { AgentCapacityError, RoutingRefusalError } from './routing-refusal.ts'
 import { runningRunsByAgent } from './running-runs.ts'
 import type { SubscriptionPacingHold } from './subscription-pacing.ts'
@@ -201,26 +202,6 @@ function routingPassFacts(
   }
 }
 
-/** NOT_EVIDENCE as a SQL list, so the two definitions cannot drift apart. */
-function notEvidenceSql(): string {
-  return NOT_EVIDENCE.map((k) => `'${k}'`).join(', ')
-}
-
-export type RoutingEvidenceInput = {
-  status: string
-  delivery: string | null
-  failureKind: string | null
-  executor?: 'external' | 'harness'
-}
-
-/** The production quality-evidence predicate, shared with causal replay. */
-export function isRoutingEvidence(row: RoutingEvidenceInput): boolean {
-  if (row.executor === 'harness') return false
-  if (!['ok', 'failed', 'stale'].includes(row.status)) return false
-  if (NOT_EVIDENCE.includes(row.failureKind as (typeof NOT_EVIDENCE)[number])) return false
-  return row.delivery !== null || ['failed', 'stale'].includes(row.status)
-}
-
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: one pass keeps candidate evidence and eligibility coherent
 function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptions = {}) {
   const {
@@ -245,7 +226,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       `SELECT r.agent AS agent,
               SUM(CASE WHEN r.status = 'ok' THEN 1 ELSE 0 END) AS runs,
               SUM(CASE WHEN s.delivery IS NOT NULL
-                        AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+                        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
                        THEN 1 ELSE 0 END) AS scored,
               -- Only failures NOBODY JUDGED. A run contributes exactly one
               -- judgment: an explicit score if it has one, otherwise the
@@ -269,13 +250,14 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
               -- undone by whoever was tidying their pending list. A run that
               -- is not evidence is not evidence whoever looks at it.
               SUM(CASE WHEN r.status IN ('failed','stale') AND s.delivery IS NULL
-                        AND COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+                        AND COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
                        THEN 1 ELSE 0 END) AS failures,
-              SUM(CASE WHEN COALESCE(r.failure_kind, '') NOT IN (${notEvidenceSql()})
+              SUM(CASE WHEN COALESCE(r.failure_kind, '') NOT IN (${NOT_EVIDENCE_SQL})
                        THEN ${weightCase()} ELSE 0 END) AS pts,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_tokens, 0) ELSE 0 END) AS tokens,
               SUM(CASE WHEN r.status = 'ok' THEN COALESCE(r.vendor_cost_usd, 0) ELSE 0 END) AS cost
-         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
+         FROM run r INDEXED BY run_routing_evidence_cover
+         LEFT JOIN score s ON s.run_record_id = r.record_id
         -- Child turns are excluded: a conversation is ONE piece of evidence
         -- about an agent, and its root row carries the outcome. Counting each
         -- turn would let an agent cross MIN_SAMPLE by asking questions.
@@ -298,43 +280,19 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     cost: number
   }[]
   const hist = new Map(rows.map((r) => [r.agent, r]))
-  const evidenceRows = (
-    db()
-      .query(
-        `SELECT r.record_id, r.agent, r.model, r.started_at AS startedAt, r.status,
-              r.executor,
-              r.failure_kind AS failureKind, r.vendor_tokens AS vendorTokens,
-              r.model_calls AS modelCalls, r.peak_call_tokens AS peakCallTokens,
-              s.delivery, s.quality, s.fidelity, ${weightCase()} AS pts
-         FROM run r LEFT JOIN score s ON s.run_record_id = r.record_id
-        WHERE r.job = ? AND r.status IN ('ok','failed','stale') AND r.probe = 0
-          AND r.evidence_excluded IS NULL
-          AND r.executor <> 'harness'
-          AND r.parent_run_record_id IS NULL
-          AND ${promptBucketSql('r', promptBytes)}
-          ${stack ? 'AND r.stack = ?' : ''}
-          ${lens ? 'AND EXISTS (SELECT 1 FROM review_lens rl WHERE rl.run_record_id = r.record_id AND rl.lens = ?)' : ''}`,
-      )
-      .all(jobName, ...(stack ? [stack] : []), ...(lens ? [lens] : [])) as {
-      record_id: string
-      agent: string
-      model: string | null
-      startedAt: string
-      status: string
-      executor: 'external' | 'harness'
-      failureKind: string | null
-      delivery: string | null
-      quality: string | null
-      fidelity: string | null
-      pts: number | null
-      vendorTokens: number | null
-      modelCalls: number | null
-      peakCallTokens: number | null
-    }[]
-  ).filter(isRoutingEvidence)
+  const evidenceRows = boundedRoutingEvidenceRows({
+    jobName,
+    promptBytes,
+    stack,
+    lens,
+    currentModels: Object.fromEntries(
+      Object.values(AGENTS).map((agent) => [agent.name, modelOverride ?? agent.model]),
+    ),
+    limit: EVIDENCE_WINDOW,
+  })
   const lat = db()
     .query(
-      `SELECT agent, latency_ms FROM run
+      `SELECT agent, latency_ms FROM run INDEXED BY run_routing_latency_cover
         -- Latency is per TURN here, deliberately: "how long does this agent
         -- take to answer" is a question about a turn, and a chain's total is a
         -- question about how much the architect had to be asked.

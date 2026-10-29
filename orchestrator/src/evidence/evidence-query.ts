@@ -4,7 +4,7 @@
  */
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
-import { NOT_EVIDENCE } from '../failure/failure.ts'
+import { NOT_EVIDENCE_SQL } from '../failure/failure.ts'
 import { agentExecutionStatsSql } from '../run/synthetic-lifecycle-job.ts'
 
 /**
@@ -101,8 +101,6 @@ export function voidedSql(alias = 'r'): string {
 }
 
 export const VOIDED_SQL = voidedSql()
-
-const NOT_EVIDENCE_SQL = NOT_EVIDENCE.map((kind) => `'${kind}'`).join(', ')
 
 const SCORED_EVIDENCE_SQL = `s.delivery IS NOT NULL
    AND r.evidence_excluded IS NULL

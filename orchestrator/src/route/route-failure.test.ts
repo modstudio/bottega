@@ -16,7 +16,8 @@ import {
   NOT_EVIDENCE,
 } from '../failure/failure.ts'
 import { WEIGHT, weigh } from '../score/score.ts'
-import { candidates, isRoutingEvidence, scoreboard } from './route.ts'
+import { candidates, scoreboard } from './route.ts'
+import { isRoutingEvidence } from './routing-evidence-query.ts'
 
 afterEach(refreshAgents)
 
