@@ -29,6 +29,31 @@ describe('workflow cursor arguments', () => {
     })
     expect(
       decideCursorArguments(
+        { key: 'DEV-822', branch: 'DEV-822-old' },
+        { branch: 'DEV-822-new' },
+        new Set(['branch']),
+        true,
+      ),
+    ).toEqual({
+      action: 'refuse',
+      kind: 'compose-branch',
+      storedBranch: 'DEV-822-old',
+      suppliedBranch: 'DEV-822-new',
+    })
+    expect(
+      decideCursorArguments(
+        { key: 'DEV-822', branch: 'DEV-822-work' },
+        { branch: ' DEV-822-work ' },
+        new Set(['branch']),
+        true,
+      ),
+    ).toEqual({
+      action: 'merge',
+      args: { key: 'DEV-822', branch: ' DEV-822-work ' },
+      rebindings: [{ name: 'branch', oldValue: 'DEV-822-work', newValue: ' DEV-822-work ' }],
+    })
+    expect(
+      decideCursorArguments(
         { key: 'DEV-822', branch: 'DEV-822-work' },
         { branch: 'DEV-999-work' },
         none,

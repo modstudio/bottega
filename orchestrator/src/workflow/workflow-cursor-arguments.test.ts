@@ -71,6 +71,8 @@ test.each([
       workflow_version: version,
       args: JSON.stringify({ key: 'DEV-1499', branch: 'before' }),
       closed: '[]',
+      ordinal: 0,
+      step_slug: 'lens',
     }
 
     expect(applyCursorArguments(row, { key: 'DEV-1499', branch: 'after' }, database())).toEqual({
