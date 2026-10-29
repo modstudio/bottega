@@ -36,7 +36,7 @@ import {
   sampleProcesses,
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
-import type { CodexMcpServer } from '../sandbox/codex-mcp-scope.ts'
+import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
 import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
@@ -332,7 +332,7 @@ export type LiveInput = {
   writes: boolean
   usingMcp: boolean
   mcpServerName: string | null
-  codexMcpScope: { servers: Record<string, CodexMcpServer> } | null
+  codexMcpScope: CodexMcpScope | null
   projectMcpSelection: ProjectMcpSelection | null
   mcpTrustGranted: boolean
   writableRoots: string[]
@@ -500,6 +500,13 @@ function clearRunTimer(timer: ReturnType<typeof setTimeout> | null): null {
   return null
 }
 
+function codexTransportMcpScope(scope: CodexMcpScope | null) {
+  return {
+    projectServers: scope?.servers,
+    withheldProjectServers: scope?.withheld.map((server) => server.name),
+  }
+}
+
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -659,7 +666,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       sandboxWorkspaceWriteNetworkAccess: codexSandbox.workspaceWriteNetworkAccess,
       mcp: usingMcp,
       mcpServer: mcpServerName ?? undefined,
-      projectServers: codexMcpScope?.servers,
+      ...codexTransportMcpScope(codexMcpScope),
       projectMcpSelection: input.projectMcpSelection,
       trustCwd: mcpTrustGranted ? cwd : undefined,
       writableRoots,

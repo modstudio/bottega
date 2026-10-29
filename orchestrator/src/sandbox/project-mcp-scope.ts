@@ -57,7 +57,7 @@ export type ProjectMcpProject = {
 }
 
 /** Whether a writer must withhold one project server instead of attaching it directly. */
-export function projectMcpWriterWithholds(config: McpServerConfig): boolean {
+function projectMcpWriterWithholds(config: McpServerConfig): boolean {
   return Boolean(
     Object.keys(config.env ?? {}).length ||
       Object.keys(config.headers ?? {}).length ||
@@ -82,6 +82,23 @@ function writerWithheld(
     advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
     remedy: projectMcpWriterRemedy(project),
   }
+}
+
+/** Refuse a required writing route when its project server cannot enter the worker scope. */
+export function requiredProjectMcpWriterIneligibility(
+  server: string,
+  mode: 'require' | 'prefer',
+  writesRepository: boolean,
+  config: McpServerConfig | undefined,
+  project: { name: string; path: string } | null,
+): string | null {
+  if (mode !== 'require' || !writesRepository || !config || !projectMcpWriterWithholds(config))
+    return null
+  const withheld = writerWithheld(server, project)
+  return (
+    `required project MCP server '${server}' is withheld from writing workers ` +
+    `(${withheld.reason}); ${withheld.advice}; cleared by: ${withheld.remedy}`
+  )
 }
 
 function selectDirectProjectMcpServers(

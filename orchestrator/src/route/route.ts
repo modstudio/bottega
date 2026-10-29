@@ -69,12 +69,7 @@ import { aggregateEvidence, routingEvidenceWindow, runUsageMedians } from './rou
 
 export type { Candidate } from './route-candidate.ts'
 
-import {
-  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
-  PROJECT_MCP_WRITER_WITHHELD_REASON,
-  projectMcpWriterRemedy,
-  projectMcpWriterWithholds,
-} from '../sandbox/project-mcp-scope.ts'
+import { requiredProjectMcpWriterIneligibility } from '../sandbox/project-mcp-scope.ts'
 import {
   type CoolingFailure,
   coolingPhrase,
@@ -157,24 +152,9 @@ export function mcpCandidateIneligibility(
   listedTools: string[] | undefined,
   pinnedTransport?: 'cli' | 'acp',
   transportPinSource?: McpTransportPinFacts['transportPinSource'],
-  writerScope?: {
-    writesRepository: boolean
-    config: McpServerConfig | undefined
-    project: Pick<Project, 'name' | 'path'> | null
-  },
+  writerIneligibility?: string | null,
 ): string | null {
-  if (
-    requiredMcp?.mode === 'require' &&
-    writerScope?.writesRepository &&
-    writerScope.config &&
-    projectMcpWriterWithholds(writerScope.config)
-  ) {
-    return (
-      `required project MCP server '${requiredMcp.server}' is withheld from writing workers ` +
-      `(${PROJECT_MCP_WRITER_WITHHELD_REASON}); ${PROJECT_MCP_WRITER_WITHHELD_ADVICE}; ` +
-      `cleared by: ${projectMcpWriterRemedy(writerScope.project)}`
-    )
-  }
+  if (writerIneligibility) return writerIneligibility
   const requiredWhy = requiredMcpIneligibility(agent, requiredMcp, {
     pinnedTransport,
     transportPinSource,
@@ -225,6 +205,8 @@ function routingPassFacts(
   return {
     mcpListing: requiredMcp ? latestMcpListing(requiredMcp.projectId, requiredMcp.server) : null,
     routeProject: projectName ? projectByName(projectName) : null,
+    // A new run's tree does not exist during routing, so read the registered checkout;
+    // launch preflight backstops any tree whose MCP config later differs.
     requiredMcpConfig: requiredMcpProject
       ? readMcpConfig(requiredMcpProject.path)[requiredMcp!.server]
       : undefined,
@@ -370,6 +352,15 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     highStakesLens,
   })
   const runningByAgent = runningRunsByAgent()
+  const writerMcpIneligibility = requiredMcp
+    ? requiredProjectMcpWriterIneligibility(
+        requiredMcp.server,
+        requiredMcp.mode,
+        Boolean(j.needs.writesRepo),
+        requiredMcpConfig,
+        requiredMcpProject,
+      )
+    : null
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
       agent,
@@ -377,11 +368,7 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       mcpListing?.listedTools,
       pinnedTransport,
       transportPinSource,
-      {
-        writesRepository: Boolean(j.needs.writesRepo),
-        config: requiredMcpConfig,
-        project: requiredMcpProject,
-      },
+      writerMcpIneligibility,
     )
   const policyEligibility = (agent: Agent) =>
     routePolicyEligibility(

@@ -30,10 +30,11 @@ type CodexScopeOpts = {
   mcp?: boolean
   mcpServer?: string
   projectServers?: Record<string, CodexMcpServer>
+  withheldProjectServers?: string[]
   home?: string
 }
 
-export type CodexMcpServer = {
+type CodexMcpServer = {
   command?: string
   args?: string[]
   cwd?: string
@@ -164,7 +165,8 @@ export function codexScopeArgs(opts: CodexScopeOpts): string[] {
   if (
     opts.mcpServer &&
     opts.mcpServer !== MCP_SERVER_NAME &&
-    !opts.projectServers?.[opts.mcpServer]
+    !opts.projectServers?.[opts.mcpServer] &&
+    !opts.withheldProjectServers?.includes(opts.mcpServer)
   ) {
     const fallback = {
       command: join(opts.home ?? '', '.claude', 'mcp', 'mcp-run'),

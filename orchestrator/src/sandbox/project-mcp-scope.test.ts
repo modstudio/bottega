@@ -11,7 +11,6 @@ import {
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   projectMcpWithheldLine,
   projectMcpWriterRemedy,
-  projectMcpWriterWithholds,
   selectProjectMcpServers,
 } from './project-mcp-scope.ts'
 
@@ -40,17 +39,6 @@ const CONFIG: Record<string, McpServerConfig> = {
   noLaunch: { name: 'noLaunch' },
 }
 const PROJECT = { name: 'starship', path: '/project', settings: {} }
-
-test.each([
-  ['inline environment', CONFIG.secretEnv!, true],
-  ['inline header', CONFIG.secretHeader!, true],
-  ['header helper', CONFIG.helperHeader!, true],
-  ['missing launch', CONFIG.noLaunch!, true],
-  ['auth-free URL', CONFIG.remote!, false],
-  ['command', CONFIG.local!, false],
-])('writer withhold predicate classifies %s', (_name, config, withheld) => {
-  expect(projectMcpWriterWithholds(config as McpServerConfig)).toBe(withheld)
-})
 
 test('a writing run attaches every project server except the withheld ones', () => {
   const selection = selectProjectMcpServers('writer', CONFIG, PROJECT, '/project', true)

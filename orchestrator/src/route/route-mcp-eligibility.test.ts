@@ -10,6 +10,7 @@ import { upsertProject } from '../project/projects.ts'
 import {
   PROJECT_MCP_WRITER_WITHHELD_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
+  requiredProjectMcpWriterIneligibility,
 } from '../sandbox/project-mcp-scope.ts'
 import { mcpCandidateIneligibility, pick } from './route.ts'
 
@@ -81,11 +82,10 @@ test.each(AGENT_CASES.flatMap((agent) => SERVER_CASES.map((server) => ({ agent, 
       undefined,
       undefined,
       undefined,
-      {
-        writesRepository: true,
-        config,
-        project: { name: 'starship', path: '/project' },
-      },
+      requiredProjectMcpWriterIneligibility('starship', 'require', true, config, {
+        name: 'starship',
+        path: '/project',
+      }),
     )
 
     if (withheld) {
@@ -110,11 +110,10 @@ test.each(AGENT_CASES)('$harness remains eligible for a helper-auth reader serve
       undefined,
       undefined,
       undefined,
-      {
-        writesRepository: false,
-        config: SERVER_CASES[0]!.config,
-        project: { name: 'starship', path: '/project' },
-      },
+      requiredProjectMcpWriterIneligibility('starship', 'require', false, SERVER_CASES[0]!.config, {
+        name: 'starship',
+        path: '/project',
+      }),
     ),
   ).toBeNull()
 })

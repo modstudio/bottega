@@ -145,6 +145,7 @@ async function cliLaunch(opts: TransportStartOpts) {
     mcp: opts.mcp,
     mcpServer: opts.mcpServer,
     projectServers: opts.projectServers,
+    withheldProjectServers: opts.withheldProjectServers,
     home: opts.env.HOME,
     trustCwd: opts.trustCwd,
     model: opts.model,
