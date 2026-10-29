@@ -59,7 +59,7 @@ import {
   runTaskIdentityDecision,
 } from './record-sync-run-task-identity.ts'
 import { runRecordValues } from './record-sync-run-values.ts'
-import { nullableBigint, nullableNumber, nullableUuid } from './record-value-conversions.ts'
+import { nullableNumber, nullableRoundedBigint, nullableUuid } from './record-value-conversions.ts'
 import { pushScore } from './score-sync.ts'
 
 function payload(source: string, kind: keyof typeof recordKinds): Payload {
@@ -511,7 +511,7 @@ function contentionValues(row: Payload) {
     resourceKind: String(row.resourceKind),
     resourceKey: String(row.resourceKey),
     eventKind: String(row.eventKind),
-    durationMs: nullableBigint(row.durationMs),
+    durationMs: nullableRoundedBigint(row.durationMs, 'contention.duration_ms'),
     cause: nullableString(row.cause),
     runId: nullableString(row.runId),
     landingId: nullableString(row.landingId),

@@ -7,7 +7,11 @@ import {
   type PersistedVendorCostSource,
 } from '../transport/vendor-usage.ts'
 import { OutboxRowError } from './outbox-failure.ts'
-import { nullableBigint, nullableNumber } from './record-value-conversions.ts'
+import {
+  nullableBigint,
+  nullableNumber,
+  nullableRoundedBigint,
+} from './record-value-conversions.ts'
 
 const VENDOR_COST_SOURCE_SET = new Set<string>(PERSISTED_VENDOR_COST_SOURCES)
 const RUN_RESOURCE_SOURCE_SET = new Set<string>(RUN_RESOURCE_SOURCES)
@@ -45,17 +49,6 @@ function nullableInteger(value: unknown, column: string): number | null {
   return integer
 }
 
-function nullableRoundedBigint(value: unknown): bigint | null {
-  if (value == null) return null
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new OutboxRowError(
-      'run resource measurement must be a finite number or null',
-      'row-validation',
-    )
-  }
-  return BigInt(Math.round(value))
-}
-
 export function runUsageRecordValues(row: Record<string, unknown>) {
   return {
     vendorTokens: nullableBigint(row.vendorTokens),
@@ -70,8 +63,11 @@ export function runUsageRecordValues(row: Record<string, unknown>) {
     vendorOutputTokens: nullableBigint(row.vendorOutputTokens),
     vendorEstimatedCostUsd: nullableNumber(row.vendorEstimatedCostUsd),
     vendorCostSource: nullableVendorCostSource(row.vendorCostSource),
-    resourceCpuMs: nullableRoundedBigint(row.resourceCpuMs),
-    resourcePeakRssBytes: nullableRoundedBigint(row.resourcePeakRssBytes),
+    resourceCpuMs: nullableRoundedBigint(row.resourceCpuMs, 'run.resource_cpu_ms'),
+    resourcePeakRssBytes: nullableRoundedBigint(
+      row.resourcePeakRssBytes,
+      'run.resource_peak_rss_bytes',
+    ),
     resourceSamples: nullableInteger(row.resourceSamples, 'run.resource_samples'),
     resourceSource: nullableRunResourceSource(row.resourceSource),
   }
