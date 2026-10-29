@@ -7,6 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { resolveStatePaths } from '../../../shared/state-directory.ts'
 import { UNJUDGED_OWNER_WINDOW_MS } from '../cleanup/cleanup-sweep-decisions.ts'
+import { REPLY_FILE_NAME } from '../contract/contract.ts'
 import { db } from '../database/db.ts'
 import { getDoc } from '../doc/docs.ts'
 import {
@@ -14,6 +15,7 @@ import {
   readTranscriptSessionId,
   transcriptSources,
 } from '../metric/transcript-reader.ts'
+import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
 import { detach } from '../run/run-dispatch.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import {
@@ -206,20 +208,37 @@ function foldedJudge(sidecar: string): JudgeState | null {
       verdicts: null,
       rubricRevision: null,
     }
-  const row = db().query('SELECT status,output_path FROM run WHERE record_id=?').get(runId) as {
+  const row = db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {
     status: string
-    output_path: string | null
   } | null
-  if (!row)
-    return { runId, status: 'missing', verdicts: null, rubricRevision: rubricRevision ?? null }
-  let verdicts: JudgeVerdict[] | null = null
-  if (row.output_path && existsSync(row.output_path)) {
-    try {
-      verdicts = (JSON.parse(readFileSync(row.output_path, 'utf8')) as { verdicts: JudgeVerdict[] })
-        .verdicts
-    } catch {}
+  if (!row) return { runId, status: 'missing', verdicts: null, rubricRevision }
+  if (!TERMINAL_RUN_STATUS_SET.has(row.status))
+    return { runId, status: row.status, verdicts: null, rubricRevision }
+  return { runId, rubricRevision, ...judgeReply(runId, row.status) }
+}
+
+/** Reads the judge's schema-bound reply file; the run's output text may carry harness notices. */
+function judgeReply(
+  runId: string,
+  status: string,
+): Pick<JudgeState, 'status' | 'verdicts' | 'error'> {
+  const paths = [runArtifactsDir(runId), runScratchDir(runId)].map((dir) =>
+    join(dir, REPLY_FILE_NAME),
+  )
+  const path = paths.find((candidate) => existsSync(candidate))
+  if (!path)
+    return { status: 'reply-missing', verdicts: null, error: `no reply at ${paths.join(' or ')}` }
+  try {
+    const { verdicts } = JSON.parse(readFileSync(path, 'utf8')) as { verdicts?: unknown }
+    if (!Array.isArray(verdicts)) throw new Error('no verdicts array')
+    return { status, verdicts: verdicts as JudgeVerdict[] }
+  } catch (error) {
+    return {
+      status: 'reply-unreadable',
+      verdicts: null,
+      error: `${path}: ${error instanceof Error ? error.message : String(error)}`,
+    }
   }
-  return { runId, status: row.status, verdicts, rubricRevision: rubricRevision ?? null }
 }
 
 type JudgeRubric = { body: string; revision: string }
