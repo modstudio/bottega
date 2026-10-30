@@ -10,6 +10,7 @@ export const HOSTED_API_P95_THRESHOLD_SECONDS = 2
 export const HOSTED_PRESSURE_CLEAR_MS = 15 * 60_000
 
 type HostedMeasure = 'steal' | 'throttle' | 'api-p95'
+type RequiredMeasure = Extract<HostedMeasure, 'steal' | 'api-p95'>
 export type HostedPressureState = {
   status: 'clear' | 'pressure'
   onsetAt: string | null
@@ -45,13 +46,22 @@ export const CLEAR_HOSTED_PRESSURE_STATE: HostedPressureState = {
 const action = 'feature lanes hold new dispatch; read-only work continues'
 
 function observationError(
-  observation: HostedPressureObservation,
+  observation: Extract<HostedPressureObservation, { kind: 'failed' }>,
   detail: string,
-  series?: 'steal' | 'api-p95',
+): MonitorCondition
+function observationError(
+  observation: HostedPressureSample,
+  detail: string,
+  series: RequiredMeasure,
+): MonitorCondition
+function observationError(
+  observation: HostedPressureSample | Extract<HostedPressureObservation, { kind: 'failed' }>,
+  detail: string,
+  series?: RequiredMeasure,
 ): MonitorCondition {
   return {
     kind: 'observation-error',
-    subject: `hosted-metrics:${observation.kind === 'failed' ? observation.query : (series ?? 'sample')}`,
+    subject: `hosted-metrics:${observation.kind === 'failed' ? observation.query : series}`,
     since: observation.at,
     ageMs: 0,
     detail,
@@ -83,6 +93,16 @@ function pressureCondition(
   }
 }
 
+function conditionsWithStandingPressure(
+  previous: HostedPressureState,
+  observation: HostedPressureSample | Extract<HostedPressureObservation, { kind: 'failed' }>,
+  errors: MonitorCondition[],
+): MonitorCondition[] {
+  return previous.status === 'pressure'
+    ? [pressureCondition(previous, observation), ...errors]
+    : errors
+}
+
 function failedDecision(
   previous: HostedPressureState,
   observation: Extract<HostedPressureObservation, { kind: 'failed' }>,
@@ -93,24 +113,24 @@ function failedDecision(
   )
   return {
     state: previous,
-    conditions:
-      previous.status === 'pressure' ? [pressureCondition(previous, observation), error] : [error],
+    conditions: conditionsWithStandingPressure(previous, observation, [error]),
   }
 }
 
 function sampleErrors(observation: HostedPressureSample): MonitorCondition[] {
-  const errors: MonitorCondition[] = []
-  if (observation.stealFraction === 'absent') {
-    errors.push(
-      observationError(observation, 'hosted metrics query steal returned no series', 'steal'),
-    )
-  }
-  if (observation.apiP95Seconds === 'absent') {
-    errors.push(
-      observationError(observation, 'hosted metrics query api-p95 returned no series', 'api-p95'),
-    )
-  }
-  return errors
+  const requiredMeasures: RequiredMeasure[] = ['steal', 'api-p95']
+  return requiredMeasures.flatMap((measure) => {
+    const value = measure === 'steal' ? observation.stealFraction : observation.apiP95Seconds
+    return value === 'absent'
+      ? [
+          observationError(
+            observation,
+            `hosted metrics query ${measure} returned no series`,
+            measure,
+          ),
+        ]
+      : []
+  })
 }
 
 function breachedMeasures(observation: HostedPressureSample): HostedMeasure[] {
@@ -166,10 +186,7 @@ export function decideHostedPressure(
   if (errors.length > 0) {
     return {
       state: previous,
-      conditions:
-        previous.status === 'pressure'
-          ? [pressureCondition(previous, observation), ...errors]
-          : errors,
+      conditions: conditionsWithStandingPressure(previous, observation, errors),
     }
   }
   if (previous.status === 'clear') return { state: CLEAR_HOSTED_PRESSURE_STATE, conditions: [] }

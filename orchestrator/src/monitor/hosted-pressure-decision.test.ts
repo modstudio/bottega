@@ -49,9 +49,8 @@ describe('hosted pressure decision', () => {
       'pressure',
     )
     expect(
-      decideHostedPressure(below, sample({}, start + 60_000 + HOSTED_PRESSURE_CLEAR_MS)).state
-        .status,
-    ).toBe('clear')
+      decideHostedPressure(below, sample({}, start + 60_000 + HOSTED_PRESSURE_CLEAR_MS)).state,
+    ).toEqual(CLEAR_HOSTED_PRESSURE_STATE)
     const breachedAgain = decideHostedPressure(
       below,
       sample({ apiP95Seconds: 2 }, start + 11 * 60_000),
@@ -60,8 +59,8 @@ describe('hosted pressure decision', () => {
     expect(decideHostedPressure(belowAgain, sample({}, start + 26 * 60_000)).state.status).toBe(
       'pressure',
     )
-    expect(decideHostedPressure(belowAgain, sample({}, start + 27 * 60_000)).state.status).toBe(
-      'clear',
+    expect(decideHostedPressure(belowAgain, sample({}, start + 27 * 60_000)).state).toEqual(
+      CLEAR_HOSTED_PRESSURE_STATE,
     )
   })
 
