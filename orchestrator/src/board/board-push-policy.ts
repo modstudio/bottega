@@ -10,6 +10,22 @@ export type DeferredReplySuccessor = { replyRecordId: string; threadTitle: strin
 
 export const DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT = 3
 
+export function withdrawalPending(input: {
+  withdrawnAt: string | null
+  deliveredAt: string | null
+  authorSession: string | null
+  readerSession: string
+  alreadyDelivered: boolean
+}): boolean {
+  return (
+    input.withdrawnAt !== null &&
+    input.deliveredAt !== null &&
+    input.authorSession !== input.readerSession &&
+    !input.alreadyDelivered &&
+    Date.parse(input.deliveredAt) < Date.parse(input.withdrawnAt)
+  )
+}
+
 export function reportReplySuccessorDecision(input: {
   rootAuthorLive: boolean
   rootAuthorReceivedReply: boolean

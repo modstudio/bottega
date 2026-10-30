@@ -178,6 +178,33 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                          AND r.acknowledged_at IS NOT NULL)))""",
             (session, session, session),
         ).fetchall()
+        local_withdrawals = connection.execute(
+            """SELECT 'withdrawn:' || CAST(m.number AS TEXT) FROM board_message m
+               JOIN board_receipt r ON r.message_record_id=m.record_id
+                AND r.reader_session=?
+               WHERE m.thread_root_record_id IS NULL
+                 AND m.withdrawn_at IS NOT NULL
+                 AND r.delivered_at IS NOT NULL
+                 AND julianday(r.delivered_at)<julianday(m.withdrawn_at)
+                 AND (m.author_session IS NULL OR m.author_session<>?)
+                 AND NOT EXISTS (SELECT 1 FROM board_withdrawal_delivery d
+                   WHERE d.reader_session=? AND d.message_record_id=m.record_id)""",
+            (session, session, session),
+        ).fetchall()
+        hosted_withdrawals = connection.execute(
+            """SELECT 'withdrawn:' || m.id FROM hosted_board_message_cache m
+               JOIN hosted_board_receipt_cache r ON r.message_id=m.id
+                AND r.reader_session=?
+               WHERE json_extract(m.payload,'$.threadRootId') IS NULL
+                 AND json_extract(m.payload,'$.withdrawnAt') IS NOT NULL
+                 AND r.delivered_at IS NOT NULL
+                 AND julianday(r.delivered_at)<julianday(json_extract(m.payload,'$.withdrawnAt'))
+                 AND (json_extract(m.payload,'$.authorSession') IS NULL
+                      OR json_extract(m.payload,'$.authorSession')<>?)
+                 AND NOT EXISTS (SELECT 1 FROM board_withdrawal_delivery d
+                   WHERE d.reader_session=? AND d.message_record_id=m.id)""",
+            (session, session, session),
+        ).fetchall()
         row = connection.execute(
             "SELECT value FROM schema_meta WHERE key='board_hosted_refresh_at'"
         ).fetchone()
@@ -186,7 +213,10 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
             refreshed = calendar.timegm(
                 time.strptime(str(row[0])[:19], "%Y-%m-%dT%H:%M:%S")
             )
-        candidates = {str(item[0]) for item in [*local, *hosted]}
+        candidates = {
+            str(item[0])
+            for item in [*local, *hosted, *local_withdrawals, *hosted_withdrawals]
+        }
         return candidates, time.time() - refreshed >= refresh_seconds
     finally:
         connection.close()

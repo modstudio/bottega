@@ -10,6 +10,7 @@ import {
   deferredReplySuccessorWarning,
   reportReplySuccessorDecision,
   selectPushNotices,
+  withdrawalPending,
 } from './board-push-policy.ts'
 import { claimPushNotices, markNoticesDelivered, postNotice } from './board-service.ts'
 import { replyToThread } from './board-thread-service.ts'
@@ -46,6 +47,24 @@ const successorDecision = (
     replyPostedAt: '2026-10-16T11:00:00.000Z',
     ...input,
   })
+
+const pendingWithdrawal = (input: Partial<Parameters<typeof withdrawalPending>[0]> = {}) =>
+  withdrawalPending({
+    withdrawnAt: '2026-10-16T12:00:00.000Z',
+    deliveredAt: '2026-10-16T11:00:00.000Z',
+    authorSession: 'author',
+    readerSession: 'reader',
+    alreadyDelivered: false,
+    ...input,
+  })
+
+test('a withdrawal is pending only after an earlier delivery to another session', () => {
+  expect(pendingWithdrawal()).toBe(true)
+  expect(pendingWithdrawal({ deliveredAt: null })).toBe(false)
+  expect(pendingWithdrawal({ authorSession: 'reader' })).toBe(false)
+  expect(pendingWithdrawal({ alreadyDelivered: true })).toBe(false)
+  expect(pendingWithdrawal({ deliveredAt: '2026-10-16T12:00:00.001Z' })).toBe(false)
+})
 
 test('a report reply successor is withheld when the reporter received the reply', () => {
   expect(successorDecision({ rootAuthorReceivedReply: true })).toBe(false)

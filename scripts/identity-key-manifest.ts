@@ -445,6 +445,12 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
   },
   {
     store: 'orchestrator',
+    table: 'board_withdrawal_delivery',
+    reason:
+      'machine-local session delivery marker written by orchestrator/src/board/board-push-service.ts; never pushed',
+  },
+  {
+    store: 'orchestrator',
     table: 'outbox',
     reason:
       'machine-local sync delivery queue (DEV-1214 out of scope: the outbox builds on the record); hosted identity is the payload UUID, and the integer is a per-machine insertion sequence and transport correlation',
@@ -577,6 +583,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'release_ledger.session_id',
     'review_read.session_id',
     'run.session_id',
+    'board_withdrawal_delivery.reader_session',
     'session_board_hold.session_id',
     'session_seen.session_id',
     'spawn.session_id',
@@ -704,6 +711,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'board_reach_recording_failure.record_id',
     'board_receipt.record_id',
     'board_receipt.message_record_id',
+    'board_withdrawal_delivery.message_record_id',
     'branch_landing_record.record_id',
     'branch_landing_record.project_record_id',
     'branch_disposal.record_id',
