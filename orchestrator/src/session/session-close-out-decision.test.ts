@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
   classifySessionCloseOut,
   plannedTreeOwnerMatches,
+  type ResumeHandoffRootFacts,
+  resumeHandoffRootIsOwed,
   type SessionOwnershipFacts,
   sessionCloseOutVerdict,
   sessionOwnedRunIds,
@@ -19,7 +21,45 @@ const facts = (overrides: Partial<SessionOwnershipFacts> = {}): SessionOwnership
   ...overrides,
 })
 
+const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHandoffRootFacts => ({
+  runs: [{ status: 'ok' }],
+  pendingScore: false,
+  branches: [{ project: 'p', branch: 'landed', taskKey: 'DEV-1', state: 'landed' }],
+  heldRunResources: {
+    rootRecordId: 'root',
+    worktree: false,
+    refGuard: false,
+    retainedRef: false,
+    claim: false,
+    owesRecordedTeardown: false,
+    unknown: false,
+  },
+  ...overrides,
+})
+
 describe('session close-out decisions', () => {
+  test('resume handoff moves exactly roots the author still owes', () => {
+    const held = handoffFacts().heldRunResources!
+    const cases: [string, ResumeHandoffRootFacts, boolean][] = [
+      ['live', handoffFacts({ runs: [{ status: 'running' }] }), true],
+      ['pending score and incomplete review', handoffFacts({ pendingScore: true }), true],
+      [
+        'unlanded branch',
+        handoffFacts({
+          branches: [{ project: 'p', branch: 'open', taskKey: 'DEV-1', state: 'unlanded' }],
+        }),
+        true,
+      ],
+      ['held tree', handoffFacts({ heldRunResources: { ...held, worktree: true } }), true],
+      ['scored and landed', handoffFacts(), false],
+      ['excluded', handoffFacts({ pendingScore: false }), false],
+      ['finished turn', handoffFacts({ runs: [{ status: 'ok' }, { status: 'failed' }] }), false],
+    ]
+
+    for (const [label, input, expected] of cases)
+      expect(resumeHandoffRootIsOwed(input), label).toBe(expected)
+  })
+
   test('run ownership includes every turn in a chain the session dispatched', () => {
     expect(
       sessionOwnedRunIds('owner', [

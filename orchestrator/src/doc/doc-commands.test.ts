@@ -738,7 +738,7 @@ describe('scoped operator docs', () => {
       ])
 
       expect(result.code).toBe(0)
-      expect(result.out).toContain('resume handoff moved 1 run(s)')
+      expect(result.out).toContain('1 moved (owed), 0 left with the author (finished)')
       expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
         session_id: 'command-brief-consumer',
       })

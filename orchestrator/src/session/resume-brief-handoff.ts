@@ -11,6 +11,7 @@ import {
   resumeBriefAuthorSession,
 } from '../doc/resume-brief-author.ts'
 import type { SessionProcessProbe } from '../run/session-liveness-adapter.ts'
+import { resumeHandoffOwedRootIds } from './resume-handoff-selection.ts'
 import {
   type AdoptionOptions,
   adoptSessionRuns,
@@ -60,13 +61,13 @@ function adoptionHandoff(
         `run ${recordId} is now owned by ${currentOwner ?? 'no session'}`,
     ),
   ].filter((outcome): outcome is string => outcome !== null)
-  if (report.totalRuns > 0)
+  if (report.totalRuns > 0 || report.totalFinished > 0)
     return {
       authorSession: author,
       status: 'moved',
       report,
       lines: [
-        `resume handoff moved ${report.totalRuns} run(s) and ${report.totalTurns} turn(s) from ${author} to ${report.toSession}${remaining ? `; ${outcomes.join('; ')}` : ''}`,
+        `resume handoff: ${report.totalRuns} moved (owed), ${report.totalFinished} left with the author (finished); ${report.totalTurns} turn(s) moved from ${author} to ${report.toSession}${remaining ? `; ${outcomes.join('; ')}` : ''}`,
       ],
     }
   if (remaining)
@@ -128,6 +129,7 @@ async function handoffFromAuthor(
         probe: options.probe,
         machine: options.machine,
         transfer: options.transfer,
+        resumeHandoffRootIds: resumeHandoffOwedRootIds(database, author),
       },
     )
     return adoptionHandoff(author, report, command, options.machine ?? 'unknown')

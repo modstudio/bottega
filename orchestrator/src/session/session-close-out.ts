@@ -14,14 +14,14 @@ import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
 import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
-import { projectByName } from '../project/projects.ts'
+import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
 import { parseRetainedRef } from '../resources/resource-inventory.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { observeGrokTrustHeadings } from '../sandbox/grok-trust.ts'
 import { shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
-import { hasAbsentTreeTeardownPlan } from '../worktree/worktree-remove.ts'
+import { hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand } from '../worktree/worktree-remove.ts'
 import {
   classifySessionCloseOut,
   plannedTreeOwnerMatches,
@@ -89,7 +89,7 @@ type RunRow = {
   session_id: string | null
 }
 
-function ownedRuns(database: Database, session: string): SessionOwnedRun[] {
+export function ownedRuns(database: Database, session: string): SessionOwnedRun[] {
   const identities = database
     .query('SELECT record_id,parent_run_record_id,session_id FROM run ORDER BY number')
     .all() as {
@@ -221,7 +221,7 @@ function observeOwnedBranch(
   }
 }
 
-function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
+export function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   const wanted = new Map<string, { project: string; branch: string; taskKey: string | null }>()
   for (const run of runs) {
     if (run.project && run.mintedBranch)
@@ -304,6 +304,7 @@ function observeRepositoryHeldResources(
   repository: string,
   projectRoots: readonly ProjectRootResources[],
 ): { guardRoots: string[]; retainedRoots: string[]; teardownRoots: string[] } {
+  const registeredRemoveCommand = Boolean(resolvedWorktreeTool(projectAt(repository))?.remove)
   const guardDirectory = refGuardDirectory(repository)
   if (!guardDirectory) throw new Error(`git common directory could not be read at ${repository}`)
   const retained = Bun.spawnSync(
@@ -340,7 +341,10 @@ function observeRepositoryHeldResources(
       .filter(
         ({ rootRecordId, members }) =>
           !members.some((member) => Boolean(member.worktree && existsSync(member.worktree))) &&
-          hasAbsentTreeTeardownPlan(repository, rootRecordId),
+          hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand(
+            rootRecordId,
+            registeredRemoveCommand,
+          ),
       )
       .map(({ rootRecordId }) => rootRecordId),
   }
@@ -410,7 +414,7 @@ function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun
   }
 }
 
-function heldRunResources(
+export function heldRunResources(
   database: Database,
   runs: readonly SessionOwnedRun[],
 ): { resources: SessionHeldRunResources[]; errors: ResourceObservationError[] } {

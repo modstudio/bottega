@@ -120,6 +120,53 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   return { mechanical, process }
 }
 
+function isLiveSessionRun(status: string): boolean {
+  return status === 'running' || status === 'asking'
+}
+
+function isTerminalSessionRun(status: string): boolean {
+  return TERMINAL_RUN_STATUS_SET.has(status)
+}
+
+function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
+  return Boolean(
+    held &&
+      (held.worktree ||
+        held.refGuard ||
+        held.retainedRef ||
+        held.claim ||
+        held.owesRecordedTeardown ||
+        held.unknown),
+  )
+}
+
+function isBranchProved(branch: SessionOwnedBranch): boolean {
+  return branch.state === 'landed' || branch.state === 'superseded' || branch.state === 'empty'
+}
+
+export type ResumeHandoffRootFacts = {
+  runs: readonly Pick<SessionOwnedRun, 'status'>[]
+  pendingScore: boolean
+  branches: readonly SessionOwnedBranch[]
+  heldRunResources: SessionHeldRunResources | undefined
+}
+
+/**
+ * Whether a resume handoff's author still owes work on one root.
+ *
+ * Incomplete reviews are represented by their unscored lens runs: while a review is incomplete,
+ * those roots remain pending-score roots. Close-out's existing run, resource, and branch predicates
+ * are composed here so the handoff cannot invent different meanings for those facts.
+ */
+export function resumeHandoffRootIsOwed(facts: ResumeHandoffRootFacts): boolean {
+  return (
+    facts.runs.some((run) => !isTerminalSessionRun(run.status)) ||
+    facts.pendingScore ||
+    facts.branches.some((branch) => !isBranchProved(branch)) ||
+    holdsReleaseResource(facts.heldRunResources)
+  )
+}
+
 function classifyRuns(
   runs: readonly SessionOwnedRun[],
   heldRunResources: readonly SessionHeldRunResources[],
@@ -129,7 +176,7 @@ function classifyRuns(
   const actedRoots = new Set<string>()
   const dirtyRoots = new Set(runs.filter((run) => run.dirty).map((run) => run.rootRecordId))
   for (const run of runs) {
-    if (run.status === 'running' || run.status === 'asking') {
+    if (isLiveSessionRun(run.status)) {
       process.push({
         kind: 'live-run',
         runId: run.recordId,
@@ -138,7 +185,7 @@ function classifyRuns(
       })
       continue
     }
-    if (!TERMINAL_RUN_STATUS_SET.has(run.status)) continue
+    if (!isTerminalSessionRun(run.status)) continue
     if (actedRoots.has(run.rootRecordId)) continue
     actedRoots.add(run.rootRecordId)
     const held = heldRunResources.find((candidate) => candidate.rootRecordId === run.rootRecordId)
@@ -163,18 +210,6 @@ function classifyRuns(
   }
 }
 
-function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
-  return Boolean(
-    held &&
-      (held.worktree ||
-        held.refGuard ||
-        held.retainedRef ||
-        held.claim ||
-        held.owesRecordedTeardown ||
-        held.unknown),
-  )
-}
-
 function classifyBranches(
   branches: readonly SessionOwnedBranch[],
   mechanical: SessionMechanicalAction[],
@@ -189,7 +224,7 @@ function classifyBranches(
         taskKey: branch.taskKey,
       })
     }
-    if (branch.state === 'landed' || branch.state === 'superseded' || branch.state === 'empty') {
+    if (isBranchProved(branch)) {
       mechanical.push({ kind: 'prune-branch', project: branch.project, branch: branch.branch })
     } else {
       process.push({ kind: 'unproved-branch', project: branch.project, branch: branch.branch })

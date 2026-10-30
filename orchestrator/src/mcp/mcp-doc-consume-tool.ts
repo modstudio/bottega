@@ -20,7 +20,7 @@ export function registerMcpDocConsumeTool(
     'consume_doc',
     {
       description:
-        "Mark a resume brief consumed and hand its author's runs to the consuming session.",
+        "Mark a resume brief consumed and hand its author's owed runs (live, pending a score, or still holding a branch or run resource) to the consuming session; finished runs stay with the author.",
       inputSchema: z.object({
         scope: z.string(),
         subject: z.string().nullable().optional(),
