@@ -6,7 +6,7 @@ import { shouldWriteFinishFailure } from './run-finish-failure.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
-import { finalizeTerminalChain } from './run-terminal.ts'
+import { finalizeTerminalChain } from './run-terminal-chain.ts'
 
 function enqueueFailedReservedRun(
   reserveId: string,

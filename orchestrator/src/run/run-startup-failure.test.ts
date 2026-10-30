@@ -3,12 +3,12 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { finishRunWithFallback } from './run-terminal-fallback.ts'
 import {
   recordNeverStartedRunFailure,
   recordRunFinishFailure,
   recordRunStartupFailure,
 } from './run-startup-failure.ts'
+import { finishRunWithFallback } from './run-terminal-fallback.ts'
 
 test('a finish failure terminalises and publishes a non-terminal run', () => {
   const id = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })

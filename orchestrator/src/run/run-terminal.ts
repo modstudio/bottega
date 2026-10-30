@@ -27,7 +27,6 @@ import {
   billingHoldForFailure,
   type classify,
   type EffectiveBillingKey,
-  FAILS_OVER,
 } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
@@ -49,11 +48,6 @@ import {
   checkpointSkippedLine,
   latestCheckpoint,
 } from './checkpoint.ts'
-import {
-  closeRunChainQuestions,
-  QUESTION_CLOSE_CHAIN_TERMINAL,
-  retireRunChainQuestionDeliveries,
-} from './question-close.ts'
 import {
   persistRunArtifacts,
   persistTerminalSnapshot,
@@ -81,6 +75,7 @@ import {
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
+import { finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
@@ -131,50 +126,6 @@ function writeOperationalState(
     input.billingHoldDetail,
     input.endpointKey,
   )
-}
-
-function closeTerminalQuestions(
-  database: Database,
-  rootId: string,
-  status: string,
-  failureKind: ReturnType<typeof classify> | null,
-): void {
-  if (status === 'asking' || status === 'running') return
-  if (failureKind && FAILS_OVER.includes(failureKind)) return
-  closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
-}
-
-export function finalizeTerminalChain(
-  database: Database,
-  input: {
-    runId: string
-    parentRunId: string | null
-    status: string
-    failureKind: ReturnType<typeof classify> | null
-    error: string | null
-    record: [machineId: string, finishedAt: string]
-  },
-): void {
-  const rootId = input.parentRunId ?? input.runId
-  if (input.parentRunId !== null && input.status === 'asking') {
-    database
-      .query(
-        `UPDATE run SET status='asking', error=?, failure_kind=NULL
-        WHERE record_id=? AND parent_run_record_id IS NULL AND status NOT IN ('stopped', 'stale')`,
-      )
-      .run(input.error, input.parentRunId)
-  }
-  closeTerminalQuestions(database, rootId, input.status, input.failureKind)
-  if (input.parentRunId !== null) {
-    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record)
-  }
-  if (
-    input.status !== 'asking' &&
-    input.status !== 'running' &&
-    !(input.failureKind && FAILS_OVER.includes(input.failureKind))
-  ) {
-    retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
-  }
 }
 
 type TerminalMcpRuling = {

@@ -214,6 +214,30 @@ function closeHarnessRun(facts: FinishFacts, terminal: TerminalResult) {
   })
 }
 
+function guardedHarnessFinish(facts: FinishFacts, localMachineId: string) {
+  const { decision, owned } = facts
+  return withRunCloseOutLease(
+    owned.record_id,
+    () => {},
+    async () => {
+      const current = db()
+        .query('SELECT * FROM run WHERE record_id=?')
+        .get(owned.record_id) as HarnessRow | null
+      const currentRefusal = finishRefusal(current, sessionId(), owned.record_id)
+      if (currentRefusal) throw new Error(currentRefusal)
+      writeFileSync(facts.outPath, decision.output)
+      return closeHarnessRun(
+        facts,
+        await finishRunWithFallback(() => harnessTerminalInput(facts, localMachineId), {
+          runId: owned.record_id,
+          started: facts.started,
+          machineId: localMachineId,
+        }),
+      )
+    },
+  )
+}
+
 export async function finishHarnessRun(id: string) {
   const localMachineId = machineId()
   const row = db().query('SELECT * FROM run WHERE record_id=?').get(id) as HarnessRow | null
@@ -296,22 +320,5 @@ export async function finishHarnessRun(id: string) {
       }
     })(),
   }
-  return withRunCloseOutLease(
-    complete.record_id,
-    () => {},
-    async () => {
-      const current = db().query('SELECT * FROM run WHERE record_id=?').get(id) as HarnessRow | null
-      const currentRefusal = finishRefusal(current, sessionId(), id)
-      if (currentRefusal) throw new Error(currentRefusal)
-      writeFileSync(facts.outPath, decision.output)
-      return closeHarnessRun(
-        facts,
-        await finishRunWithFallback(() => harnessTerminalInput(facts, localMachineId), {
-          runId: complete.record_id,
-          started: facts.started,
-          machineId: localMachineId,
-        }),
-      )
-    },
-  )
+  return guardedHarnessFinish(facts, localMachineId)
 }

@@ -104,6 +104,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-liveness.ts',
     './run-number.ts',
     './run-outbox.ts',
+    './run-terminal-chain.ts',
   ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
@@ -467,6 +468,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './question-close.ts',
     './question-outbox.ts',
     './run-terminal-blockers.ts',
+    './run-terminal-chain.ts',
     './run-terminal-change.ts',
     './run-terminal-premature.ts',
     './run-terminal-precedence.ts',
@@ -478,6 +480,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
+  ]),
+  module('orchestrator/src/run/run-terminal-chain.ts', [
+    'bun:sqlite',
+    '../failure/failure.ts',
+    './question-close.ts',
+    './run-liveness.ts',
   ]),
   module('orchestrator/src/run/run-terminal-fallback.ts', [
     './run-startup-failure.ts',
