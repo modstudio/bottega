@@ -54,7 +54,8 @@ export function noEligibleAgentRefusal(
   const remedies = []
   if (excluded.some((line) => line.endsWith(`not declared for ${jobName}`))) {
     remedies.push(
-      `declare a probed agent with ${PLATFORM_SLUG} agent set <agent> --jobs ${jobName}`,
+      // --jobs replaces the allowed list, so the remedy keeps the agent's current jobs.
+      `declare a probed agent with ${PLATFORM_SLUG} agent set <agent> --jobs <its current jobs>,${jobName}`,
     )
   }
   remedies.push(
