@@ -9,7 +9,7 @@ import {
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
-import { taskSpaceIdentity } from './hosted-route-identity.ts'
+import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
 import { parseIdentitySetRequest } from './identity-set-contract.ts'
 import {
   type HostedPushChange,
@@ -28,7 +28,7 @@ type Dependencies = {
 }
 type ChangeIdentity = Exclude<
   Awaited<ReturnType<typeof taskSpaceIdentity>>,
-  null | { refusedSpace: string }
+  { kind: 'refused-space' | 'unauthenticated' | 'unavailable' }
 >
 
 const allowed = Object.keys(READABLE_HUB_CHANGES) as ReadableHubChangeTable[]
@@ -128,8 +128,8 @@ async function identityWho(
 
 function refusedSpace(
   who: Awaited<ReturnType<typeof taskSpaceIdentity>>,
-): who is { refusedSpace: string } {
-  return Boolean(who && 'refusedSpace' in who && who.refusedSpace)
+): who is { kind: 'refused-space'; refusedSpace: string } {
+  return who.kind === 'refused-space'
 }
 
 function refusedSpaceResponse(space: string) {
@@ -150,7 +150,8 @@ async function identitySetResponse(
 ): Promise<Response> {
   if (request.method !== 'GET') return new Response('not found', { status: 404 })
   const who = await identityWho(request, config, dependencies)
-  if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
+    return identityRefusalResponse(who)
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
   let input: ReturnType<typeof parseIdentitySetRequest>
   try {
@@ -176,7 +177,8 @@ async function changeLogResponse(
   if (request.method !== 'GET' && request.method !== 'POST')
     return new Response('not found', { status: 404 })
   const who = await identityWho(request, config, dependencies)
-  if (!who) return json({ error: 'authorization and an active space are required' }, 401)
+  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
+    return identityRefusalResponse(who)
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
   if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
   let input: ReturnType<typeof requestInput>

@@ -1,12 +1,8 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import {
-  parseRecordSpaceMemberships,
-  type RecordSpaceMembership,
-} from '../../shared/record-space-membership.ts'
+import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
-  recordSpaceRequestDecision,
 } from '../../shared/record-space-request.ts'
 import { listHostedNotes } from './hosted-note-list.ts'
 import {
@@ -19,6 +15,7 @@ import {
   reapHostedNotes,
 } from './hosted-notes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
+import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -35,33 +32,6 @@ const json = (value: unknown, status = 200) => Response.json(value, { status })
 const call = <T>(stub: unknown, real: T): T => {
   if (process.env.NODE_ENV === 'test' && !stub) throw new Error(TEST_REFUSAL)
   return (stub ?? real) as T
-}
-
-async function authenticate(
-  request: Request,
-  config: HostedRouteConfig,
-  dependencies: Dependencies,
-): Promise<Identity | { refusedSpace: string } | null> {
-  const authorization = request.headers.get('authorization')
-  if (!authorization) return null
-  const response = await (dependencies.fetch ?? fetch)(
-    `${config.recordApiUrl.replace(/\/$/, '')}/v1/whoami`,
-    { headers: { authorization } },
-  )
-  const identity = (await response.json().catch(() => null)) as {
-    user?: { id?: string }
-    activeSpaceId?: string
-    memberships?: unknown
-  } | null
-  if (!response.ok || !identity?.user?.id || !identity.activeSpaceId) return null
-  const memberships = parseRecordSpaceMemberships(identity.memberships)
-  const decision = recordSpaceRequestDecision(
-    request.headers.get('x-record-space'),
-    identity.activeSpaceId,
-    memberships,
-  )
-  if (!decision.allowed) return { refusedSpace: decision.requestedSpace }
-  return { userId: identity.user.id, spaceId: decision.spaceId!, memberships }
 }
 
 async function readRoute(context: RouteContext): Promise<Response | null> {
@@ -162,9 +132,15 @@ export async function noteApi(
   const url = new URL(request.url)
   if (!url.pathname.startsWith('/v1/notes')) return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
-  const who = await authenticate(request, config, dependencies)
-  if (!who) return json({ error: 'authorization and an active space are required' }, 401)
-  if ('refusedSpace' in who)
+  const who = await taskSpaceIdentity(
+    request,
+    config.recordApiUrl,
+    (dependencies.fetch ?? fetch) as typeof fetch,
+    true,
+  )
+  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
+    return identityRefusalResponse(who)
+  if (who.kind === 'refused-space')
     return json(
       {
         error: `record space '${who.refusedSpace}' is not among the caller's memberships`,

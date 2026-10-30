@@ -44,6 +44,7 @@ test('change route binds a requested member space and parses its bounded request
   expect(response?.status).toBe(200)
   expect(received).toEqual({
     identity: {
+      kind: 'authenticated',
       userId: 'user-1',
       spaceId: 'space-b',
       spaceIds: ['space-a', 'space-b'],

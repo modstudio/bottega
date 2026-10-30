@@ -715,7 +715,7 @@ test('a failing log leg is reported independently', async () => {
       ok: false,
       durationMs: expect.any(Number),
       error:
-        'hosted task change pulls failed: space-one: hosted hub refused the request (503): offline',
+        'hosted task change pulls failed: space-one: hosted hub refused the request (503): offline. nothing was written',
     },
   ])
 })

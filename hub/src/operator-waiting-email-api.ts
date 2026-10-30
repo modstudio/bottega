@@ -1,12 +1,12 @@
 // concern: operator-waiting-email-api
 /** Authenticated hosted endpoint for idempotent operator-waiting email delivery. */
 
-import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
+import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   OperatorEmailBudgetExceededError,
@@ -33,34 +33,20 @@ export async function operatorWaitingEmailApi(
   if (request.method !== 'POST') return new Response('not found', { status: 404 })
   if (process.env.NODE_ENV === 'test' && (!dependencies.fetch || !dependencies.send))
     throw new Error(TEST_REFUSAL)
-  const authorization = request.headers.get('authorization')
-  if (!authorization)
-    return Response.json(
-      { error: 'authorization and an active space are required' },
-      { status: 401 },
-    )
-  const identityResponse = await (dependencies.fetch ?? fetch)(
-    `${config.recordApiUrl.replace(/\/$/, '')}/v1/whoami`,
-    { headers: { authorization } },
+  const identity = await taskSpaceIdentity(
+    request,
+    config.recordApiUrl,
+    dependencies.fetch ?? fetch,
+    false,
   )
-  const identity = (await identityResponse.json().catch(() => null)) as Record<
-    string,
-    unknown
-  > | null
-  const user = identity?.user as Record<string, unknown> | undefined
-  if (
-    !identityResponse.ok ||
-    typeof user?.id !== 'string' ||
-    typeof identity?.activeSpaceId !== 'string'
-  )
-    return Response.json(
-      { error: 'authorization and an active space are required' },
-      { status: 401 },
-    )
+  if (identity.kind === 'unauthenticated' || identity.kind === 'unavailable')
+    return identityRefusalResponse(identity)
+  if (identity.kind === 'refused-space')
+    throw new Error('operator waiting email identity refused a space it ignored')
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
-    identity.activeSpaceId,
-    parseRecordSpaceMemberships(identity.memberships),
+    identity.spaceId,
+    identity.memberships,
   )
   if (!access.allowed)
     return Response.json({ error: access.error, remedy: access.remedy }, { status: 403 })
@@ -70,7 +56,7 @@ export async function operatorWaitingEmailApi(
   try {
     const result = await (dependencies.send ?? sendOperatorWaitingEmail)(
       config.recordDatabaseUrl,
-      { userId: user.id, spaceId: identity.activeSpaceId },
+      { userId: identity.userId, spaceId: identity.spaceId },
       parsed.data,
       { mail: dependencies.mail ?? sesReportMailClient() },
     )

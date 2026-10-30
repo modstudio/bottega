@@ -9,7 +9,7 @@ type JsonBodyResult = { ok: true; value: unknown } | JsonBodyFailure
 
 const JSON_MEDIA_TYPE = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json(?:\s*;|$)/i
 
-export function diagnosticUrl(value: string): string {
+function diagnosticUrl(value: string): string {
   try {
     const url = new URL(value)
     return `${url.origin}${url.pathname}`
