@@ -73,6 +73,7 @@ import {
   prepareReaderScratchCloseOut,
   prepareReaderScratchRelease,
   readerScratchReleaseDetail,
+  type SharedReaderArchiveIdentity,
 } from './reader-scratch-close-out.ts'
 import {
   retainedBranchForCloseOut,
@@ -431,11 +432,9 @@ function presentTreeOwnershipResult(input: {
   })
 }
 
-function sharedReaderArchiveIdentity(
-  treePath: string,
-): { path: string; sharerRunIds: string[] } | null {
+function sharedReaderArchiveIdentity(treePath: string): SharedReaderArchiveIdentity | null {
   if (!isSharedReaderWorktreeClaim(db(), treePath)) return null
-  return { path: treePath, sharerRunIds: recordedWorktreeSharerRunIds(db(), treePath) }
+  return { sharerRunIds: recordedWorktreeSharerRunIds(db(), treePath) }
 }
 
 function releasedCloseOut(
@@ -757,7 +756,7 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent || release.treeMoved,
+              treeAbsent || (scratch.archive !== null && scratch.archive.shared === null),
               release.path !== null,
             )
             if (retainedBranch && branchSnapshot) {

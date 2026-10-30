@@ -3,7 +3,6 @@ import { type ReaderTreeObservation, readerTreeHealthConditions } from './reader
 
 const reader: ReaderTreeObservation = {
   runId: '40000000-0000-4000-8000-000000000000',
-  runNumber: 1,
   project: 'alpha',
   worktree: '/alpha/tree-a',
   commit: 'abc123',
@@ -22,14 +21,12 @@ test('reader tree health reports dirty sharing and duplicate confined clones', (
     {
       ...reader,
       runId: '41000000-0000-4000-8000-000000000000',
-      runNumber: 2,
       dirty: true,
       dirtyDetail: 'tracked path changed',
     },
     {
       ...reader,
       runId: '42000000-0000-4000-8000-000000000000',
-      runNumber: 3,
       worktree: '/alpha/tree-b',
     },
   ])

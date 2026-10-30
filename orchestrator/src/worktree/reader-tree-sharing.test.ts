@@ -8,6 +8,7 @@ const eligible: ReaderTreeSharingFacts = {
   mcpRequested: false,
   sandboxOverride: undefined,
   projectRegistered: true,
+  readonlyRecipeDeclared: false,
 }
 
 describe('readerTreeSharing', () => {
@@ -22,6 +23,7 @@ describe('readerTreeSharing', () => {
     ['MCP reader', { mcpRequested: true }],
     ['host override', { sandboxOverride: 'host' }],
     ['unregistered project', { projectRegistered: false }],
+    ['project with a declared read-only recipe', { readonlyRecipeDeclared: true }],
   ] as const)('gives %s its own tree', (_name, changed) => {
     expect(readerTreeSharing({ ...eligible, ...changed })).toBe('own')
   })

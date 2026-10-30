@@ -3,8 +3,11 @@
 
 import { nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { projectAt } from '../project/projects.ts'
 import { isReadonlySandboxCandidate } from '../sandbox/sandbox.ts'
+import { appendProvisioningPhases } from '../worktree/provisioning-measurement.ts'
 import { readerTreeSharing } from '../worktree/reader-tree-sharing.ts'
+import { toolFor } from '../worktree/worktree-preflight.ts'
 
 type ClaimSharingInput = {
   name: string
@@ -12,7 +15,7 @@ type ClaimSharingInput = {
   repoJob: boolean
   reviewTarget: { commit: string } | null
   mcpRequest: unknown
-  runProjectId: string | null
+  callerCwd: string
 }
 
 function readerTreeSharingForClaim(input: ClaimSharingInput): 'shared' | 'own' {
@@ -26,15 +29,20 @@ function readerTreeSharingForClaim(input: ClaimSharingInput): 'shared' | 'own' {
     }),
     mcpRequested: Boolean(input.mcpRequest),
     sandboxOverride: process.env.BOTTEGA_SANDBOX,
-    projectRegistered: input.runProjectId !== null,
+    projectRegistered: projectAt(input.callerCwd) !== null,
+    readonlyRecipeDeclared: Boolean(toolFor(input.callerCwd)?.readonly_create),
   })
 }
 
 function recordSharedReaderFallback(runId: string, reason: string): void {
+  const detail = reason.replaceAll('\n', ' ')
+  appendProvisioningPhases(runId, [
+    { phase: 'shared-reader-fallback', name: detail, durationMs: 0 },
+  ])
   appendRunEvent(runId, {
     ts: nowIso(),
     type: 'text',
-    text: `shared reader tree was not reusable; provisioned own tree: ${reason.replaceAll('\n', ' ')}`,
+    text: `shared reader tree was not reusable; provisioned own tree: ${detail}`,
   })
 }
 

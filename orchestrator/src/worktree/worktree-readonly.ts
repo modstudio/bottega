@@ -106,7 +106,6 @@ function createReadOnlyWorktreeAt(
 
 export type SharedReaderResolution = {
   worktree: Worktree
-  shared: boolean
   fallbackReason: string | null
 }
 
@@ -124,20 +123,16 @@ export function resolveSharedReadOnlyWorktree(input: {
   const path = sharedReviewWorktreePath(repoRoot, input.commit)
   if (!existsSync(path)) {
     return {
-      worktree: {
-        ...createReadOnlyWorktreeAt(
-          repoRoot,
-          path,
-          input.runId,
-          input.commit,
-          input.record,
-          input.provision,
-          input.provisionTimeoutMs,
-          true,
-        ),
-        sharedReader: true,
-      },
-      shared: true,
+      worktree: createReadOnlyWorktreeAt(
+        repoRoot,
+        path,
+        input.runId,
+        input.commit,
+        input.record,
+        input.provision,
+        input.provisionTimeoutMs,
+        true,
+      ),
       fallbackReason: null,
     }
   }
@@ -164,12 +159,12 @@ export function resolveSharedReadOnlyWorktree(input: {
         ),
         sharedReader: false,
       },
-      shared: false,
       fallbackReason: String((error as Error).message ?? error),
     }
   }
-  input.record?.(candidate)
-  return { worktree: { ...candidate, sharedReader: true }, shared: true, fallbackReason: null }
+  const attached = { ...candidate, sharedReader: true }
+  input.record?.(attached)
+  return { worktree: attached, fallbackReason: null }
 }
 
 export type RemoteTrackingRef = { ref: string; object: string }

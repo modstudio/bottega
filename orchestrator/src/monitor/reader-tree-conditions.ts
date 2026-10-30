@@ -4,16 +4,20 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { pidAlive } from '../../../shared/process-identity.ts'
+import { SESSION_LIVE_MS } from '../database/db.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
-import { gitResult } from '../git/git-environment.ts'
-import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
+import { isReadOnlyRepositoryJob, JOBS } from '../jobs/jobs.ts'
+import { withWorktreeLease } from '../project/project-lock.ts'
 import { isSharedReaderWorktreeClaim } from '../resources/resource-claims.ts'
+import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
+import { runLeaseState } from '../run/run-lease.ts'
+import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
 export type ReaderTreeObservation = {
   runId: string
-  runNumber: number
   project: string
   worktree: string
   commit: string | null
@@ -67,41 +71,82 @@ export function readerTreeHealthConditions(
 }
 
 export function observeReaderTreeConditions(database: Database): MonitorCondition[] {
+  const readOnlyJobs = Object.values(JOBS)
+    .filter((candidate) => isReadOnlyRepositoryJob(candidate.name))
+    .map((candidate) => candidate.name)
   const rows = database
     .query(
-      `SELECT r.record_id, r.number, r.job, r.worktree, r.started_at, r.status, r.sandbox,
-              COALESCE(p.name, r.repo, 'unregistered') project
+      `SELECT r.record_id, r.job, r.worktree, r.started_at, r.status, r.sandbox, r.pid,
+              r.executor, r.session_id, r.harness_wall_bound_ms,
+              (SELECT last_seen FROM session_seen WHERE session_id=r.session_id) session_last_seen,
+              COALESCE(
+                (SELECT json_extract(rc.identity, '$.head') FROM resource_claim rc
+                  WHERE rc.kind='worktree' AND rc.allocation_key=r.worktree
+                  ORDER BY rc.claimed_at LIMIT 1),
+                r.carry_base_commit, r.base_commit
+              ) reviewed_commit,
+              COALESCE(p.name, r.repo, 'unregistered') project, p.path repo_root
        FROM run r LEFT JOIN project p ON p.record_id=r.project_record_id
-       WHERE r.worktree IS NOT NULL`,
+       WHERE r.worktree IS NOT NULL AND r.job IN (${readOnlyJobs.map(() => '?').join(',')})`,
     )
-    .all() as {
+    .all(...readOnlyJobs) as {
     record_id: string
-    number: number
     job: string
     worktree: string
     started_at: string
     status: string
     sandbox: string | null
+    pid: number | null
+    executor: 'external' | 'harness'
+    session_id: string | null
+    harness_wall_bound_ms: number | null
+    session_last_seen: string | null
+    reviewed_commit: string | null
     project: string
+    repo_root: string | null
   }[]
+  const now = Date.now()
   const observations = rows.map((row): ReaderTreeObservation => {
-    const present = existsSync(row.worktree)
-    const head = present ? gitResult(['rev-parse', 'HEAD'], row.worktree) : null
-    const dirty = present ? worktreeDirty(row.worktree) : null
     return {
       runId: row.record_id,
-      runNumber: row.number,
       project: row.project,
       worktree: realpathOrSpelled(row.worktree),
-      commit: head?.ok ? head.stdout.trim() : null,
+      commit: row.reviewed_commit,
       startedAt: row.started_at,
-      live: row.status === 'running' || row.status === 'asking',
+      live: runAlive({
+        status: row.status,
+        lease: runLeaseState(row.record_id),
+        pidAlive: pidAlive(row.pid),
+        ...recordedRunLivenessFacts(
+          row,
+          now,
+          SESSION_LIVE_MS,
+          recordedOwnerProcess(database, row.session_id, now),
+        ),
+      }),
       confined: row.sandbox === 'srt',
-      readOnly: isReadOnlyRepositoryJob(row.job),
-      dirty: dirty?.dirty ?? null,
-      dirtyDetail: dirty?.detail ?? null,
+      readOnly: true,
+      dirty: null,
+      dirtyDetail: null,
       shared: isSharedReaderWorktreeClaim(database, row.worktree),
     }
   })
+  const rowByPath = Map.groupBy(rows, (row) => realpathOrSpelled(row.worktree))
+  for (const [path, pathObservations] of Map.groupBy(observations, (row) => row.worktree)) {
+    if (!pathObservations.some((row) => row.shared) || pathObservations.some((row) => row.live))
+      continue
+    const repoRoot = rowByPath.get(path)?.find((row) => row.repo_root)?.repo_root
+    if (!repoRoot || !existsSync(path)) continue
+    const dirty = withWorktreeLease(
+      repoRoot,
+      path,
+      { session: null, what: 'observe released shared reader tree' },
+      () => worktreeDirty(path),
+    )
+    for (const observation of pathObservations) {
+      observation.dirty = dirty.dirty
+      observation.dirtyDetail = dirty.detail
+    }
+  }
   return readerTreeHealthConditions(observations)
 }

@@ -57,6 +57,7 @@ import {
   type prepareWorkerMcpConfig,
 } from '../worktree/worktree-mcp.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
+import { sharedReviewWorktreePath } from '../worktree/worktree-readonly.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
@@ -702,7 +703,17 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             }),
           )
         const callerProject = projectAt(callerCwd)
-        worktree = withWorktreeCreateLock(repoRoot, () => {
+        const sharingOptions = readerTreeSharingOptions(input, claim.id)
+        const withCreationLocks = <T>(action: () => T): T =>
+          sharingOptions.sharedReviewCommit
+            ? withWorktreeLease(
+                repoRoot,
+                sharedReviewWorktreePath(repoRoot, sharingOptions.sharedReviewCommit),
+                { session: sessionId(), what: `attach shared reader ${claim.id}` },
+                () => withWorktreeCreateLock(repoRoot, action),
+              )
+            : withWorktreeCreateLock(repoRoot, action)
+        worktree = withCreationLocks(() => {
           assertBranchHasNoAliveOwner({
             branch: existingBranch,
             conversationRootId: resumePlan?.rootId ?? claim.id,
@@ -739,7 +750,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             mainStackRequiredServices: callerProject?.settings.mainStack?.requiredServices,
             mainStackProject: callerProject ?? undefined,
             provisionTimeoutMs: timeoutMs,
-            ...readerTreeSharingOptions(input, claim.id),
+            ...sharingOptions,
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE record_id=?').get(claim.id) as {

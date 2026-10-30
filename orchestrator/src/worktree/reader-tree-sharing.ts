@@ -8,6 +8,7 @@ export type ReaderTreeSharingFacts = {
   mcpRequested: boolean
   sandboxOverride: string | undefined
   projectRegistered: boolean
+  readonlyRecipeDeclared: boolean
 }
 
 export function readerTreeSharing(facts: ReaderTreeSharingFacts): 'shared' | 'own' {
@@ -16,7 +17,8 @@ export function readerTreeSharing(facts: ReaderTreeSharingFacts): 'shared' | 'ow
     facts.readonlySandboxCandidate &&
     !facts.mcpRequested &&
     facts.sandboxOverride !== 'host' &&
-    facts.projectRegistered
+    facts.projectRegistered &&
+    !facts.readonlyRecipeDeclared
     ? 'shared'
     : 'own'
 }

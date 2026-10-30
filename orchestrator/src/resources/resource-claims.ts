@@ -50,14 +50,11 @@ export type ClaimedWorktreeOwner = {
   allocation_key: string
 }
 
-/** Whether this exact claimed checkout was minted as a commit-keyed shared reader. */
+/** Whether this exact checkout was minted as a commit-keyed shared reader. */
 export function isSharedReaderWorktreeClaim(database: Database, path: string): boolean {
   const canonicalPath = realpathOrSpelled(path)
   const claims = database
-    .query(
-      `SELECT allocation_key,identity FROM resource_claim
-       WHERE kind='worktree' AND state='claimed'`,
-    )
+    .query(`SELECT allocation_key,identity FROM resource_claim WHERE kind='worktree'`)
     .all() as { allocation_key: string; identity: string | null }[]
   return claims.some((claim) => {
     if (realpathOrSpelled(claim.allocation_key) !== canonicalPath || !claim.identity) return false
