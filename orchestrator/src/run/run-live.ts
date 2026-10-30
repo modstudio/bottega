@@ -5,7 +5,6 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { projectCodeGitEnv } from '../../../shared/git.ts'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
@@ -60,7 +59,11 @@ import {
 import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
-import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
+import {
+  raiseForHostCapacityWait,
+  startRunAfterHostCapacity,
+  waitForLiveRunHostCapacity,
+} from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { collectReplySource, replyContract } from './run-reply-source.ts'
@@ -250,7 +253,7 @@ type LiveOptions = {
   job: string
 }
 
-async function startAfterHostCapacity(input: {
+export async function startAfterHostCapacity(input: {
   repoJob: boolean
   claim: { id: string }
   opts: Pick<LiveOptions, 'resume'>
@@ -283,17 +286,7 @@ async function startAfterHostCapacity(input: {
     stop: (handle) => input.transport.cancel(handle),
   })
   const hostWait = result.wait
-  if (hostWait?.drainingFor) {
-    throw new Error(
-      `run stopped for migration drain ${hostWait.drainingFor}; re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
-    )
-  }
-  if (hostWait?.boundReached) {
-    const message = `host capacity wait bound reached after ${hostWait.waitedMs}ms; starting run`
-    console.error(`orch: ${message}`)
-    recordRunWarning(runId, message)
-  }
-  if (!result.handle) throw new Error('run stopped while waiting for host capacity')
+  raiseForHostCapacityWait(hostWait, runId, !result.handle)
   return result.handle
 }
 

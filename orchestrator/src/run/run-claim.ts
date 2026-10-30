@@ -583,8 +583,8 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
   /**
-   * A directory that is not a git repository, or a worktree path already taken,
-   * throws here — and this used to happen outside the try/finally below, so the
+   * Cutting the worktree after the row exists throws here when a directory is not
+   * a git repository or its worktree path is taken. This used to happen outside the try/finally below, so the
    * row stayed `running` for ever with no process behind it until the stale
    * sweep guessed at it half an hour later. The rule three lines into this
    * function is that a run always writes its own terminal state; that has to

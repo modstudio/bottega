@@ -74,7 +74,7 @@ export function formatHostAdmissionsLine(report: MonitorResult['hostAdmissions']
   const loadavg = report.highestLoadavg?.toFixed(2) ?? 'none'
   const cpuBusy = report.highestCpuBusy?.toFixed(2) ?? 'none'
   const pressures = report.pressures.join(',') || 'none'
-  return `host admissions (${report.windowMs}ms): ${report.admitted} admitted, ${report.held} held; admitting peak load ${loadavg}, CPU ${cpuBusy}; pressure ${pressures}`
+  return `host admissions (${report.windowMs}ms): ${report.admitted} admitted (${report.held} after a hold); admitting peak load ${loadavg}, CPU ${cpuBusy}; pressure ${pressures}`
 }
 
 type Options = {

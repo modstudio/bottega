@@ -2,8 +2,10 @@
 /** Knows the repository-run host wait adapter. Must not know transports or routing. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { activeMigrationDrain } from '../database/migration-drain-state.ts'
+import { recordRunWarning } from '../events.ts'
 import {
   CAPACITY_SAMPLE_MIN_WINDOW_MS,
   decideHostCapacityAdmission,
@@ -61,7 +63,7 @@ export const RUN_HOST_CAPACITY_WAITERS_SQL = `SELECT record_id, host_wait_since 
         WHERE status='running' AND host_wait_since IS NOT NULL
         ORDER BY host_wait_since ASC, record_id ASC`
 
-export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT record_id, agent, agent_start_time, host_wait_since FROM run
+export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT record_id FROM run
         WHERE status='running' AND host_wait_since IS NULL AND record_id<>? AND
               (worktree IS NOT NULL OR host_admission IS NOT NULL)`
 
@@ -89,12 +91,7 @@ function runningRepositoryFacts(
   now: number,
   samplesByAgent: Map<string, number[]>,
 ): RunningRepositoryFacts {
-  const rows = database.query(RUNNING_REPOSITORY_FACTS_SQL).all(runId) as {
-    record_id: string
-    agent: string
-    agent_start_time: string | null
-    host_wait_since: string | null
-  }[]
+  const rows = database.query(RUNNING_REPOSITORY_FACTS_SQL).all(runId) as { record_id: string }[]
   const reservations = database.query(RUN_HOST_RESERVATIONS_SQL).all(runId) as {
     record_id: string
     agent: string
@@ -166,12 +163,13 @@ function capacityDecision(input: {
     input.samplesByAgent,
   )
   const load = input.load
+  const recentAdmissions = load.recentAdmissions + repositories.recentReservedCores
   const decision = decideHostCapacityAdmission({
     heldWork: repositories.running,
     loadavg: load.loadavg,
     cpuBusy: load.cpuBusy,
     ncpu: load.ncpu,
-    recentAdmissions: load.recentAdmissions + repositories.recentReservedCores,
+    recentAdmissions,
     freeMem: load.freeMem,
     pressure: load.pressure,
     swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
@@ -181,7 +179,12 @@ function capacityDecision(input: {
     maxWaitMs: RUN_HOST_WAIT_MAX_MS,
     hasOlderWaiter: repositories.hasOlderWaiter,
   })
-  return { decision, load, reservedCores: repositories.recentReservedCores }
+  return {
+    decision,
+    load,
+    reservedCores: repositories.recentReservedCores,
+    admissionFacts: { heldWork: repositories.running, recentAdmissions },
+  }
 }
 
 export type RunHostAdmission = {
@@ -209,7 +212,7 @@ function admissionRecord(
   started: number,
   decision: HostCapacityDecision,
   load: HostLoad,
-  repositories: RunningRepositoryFacts,
+  facts: { heldWork: number; recentAdmissions: number },
 ): RunHostAdmission {
   return {
     at: new Date(at).toISOString(),
@@ -221,8 +224,8 @@ function admissionRecord(
       loadavg: load.loadavg,
       cpuBusy: load.cpuBusy,
       ncpu: load.ncpu,
-      recentAdmissions: load.recentAdmissions + repositories.recentReservedCores,
-      heldWork: repositories.running,
+      recentAdmissions: facts.recentAdmissions,
+      heldWork: facts.heldWork,
       pressure: load.pressure,
       swapUsed: load.swapUsed,
       swapTotal: load.swapTotal,
@@ -242,31 +245,14 @@ function decideAndRecordAdmission(input: {
   samplesByAgent: Map<string, number[]>
 }) {
   return writeTransaction(() => {
-    const repositories = runningRepositoryFacts(
-      input.database,
-      input.runId,
+    const result = capacityDecision(input)
+    const record = admissionRecord(
       input.at,
-      input.samplesByAgent,
+      input.started,
+      result.decision,
+      result.load,
+      result.admissionFacts,
     )
-    const decision = decideHostCapacityAdmission({
-      heldWork: repositories.running,
-      loadavg: input.load.loadavg,
-      cpuBusy: input.load.cpuBusy,
-      ncpu: input.load.ncpu,
-      recentAdmissions: input.load.recentAdmissions + repositories.recentReservedCores,
-      freeMem: input.load.freeMem,
-      pressure: input.load.pressure,
-      swapGrowthBytesPerSec: input.load.swapGrowthBytesPerSec,
-      limit: null,
-      platform: input.platform,
-      waitedMs: input.at - input.started,
-      maxWaitMs: RUN_HOST_WAIT_MAX_MS,
-      hasOlderWaiter:
-        runHostCapacityWaiters(input.database).findIndex(
-          (waiter) => waiter.record_id === input.runId,
-        ) > 0,
-    })
-    const record = admissionRecord(input.at, input.started, decision, input.load, repositories)
     input.database
       .query(
         `UPDATE run SET host_admission_first=COALESCE(host_admission_first,?),
@@ -276,12 +262,12 @@ function decideAndRecordAdmission(input: {
       )
       .run(
         JSON.stringify(record),
-        decision.admit ? 1 : 0,
+        result.decision.admit ? 1 : 0,
         JSON.stringify(record),
-        decision.admit ? 1 : 0,
+        result.decision.admit ? 1 : 0,
         input.runId,
       )
-    return { decision, load: input.load, reservedCores: repositories.recentReservedCores }
+    return result
   }, input.database)
 }
 
@@ -370,6 +356,25 @@ export type RunHostCapacityWait = {
   heldOn: Array<HostHoldCondition | 'migration'>
   boundReached: boolean
   drainingFor: string | null
+}
+
+/** Apply the shared operator-facing policy for a completed host-capacity wait. */
+export function raiseForHostCapacityWait(
+  wait: RunHostCapacityWait | null,
+  runId: string,
+  stopped: boolean,
+): void {
+  if (wait?.drainingFor) {
+    throw new Error(
+      `run stopped for migration drain ${wait.drainingFor}; re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
+    )
+  }
+  if (wait?.boundReached) {
+    const message = `host capacity wait bound reached after ${wait.waitedMs}ms; starting run`
+    console.error(`orch: ${message}`)
+    recordRunWarning(runId, message)
+  }
+  if (stopped) throw new Error('run stopped while waiting for host capacity')
 }
 
 type RunHostWaitLoop = {

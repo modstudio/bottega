@@ -8,7 +8,7 @@ import { decideFailover } from '../route/failover.ts'
 import { candidates, pick } from '../route/route.ts'
 import { isRoutingEvidence } from '../route/routing-evidence-query.ts'
 import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
-import { replyFileFallbackError } from './run-live.ts'
+import { replyFileFallbackError, startAfterHostCapacity } from './run-live.ts'
 import { firstThrottleObserver } from './run-throttle.ts'
 
 test('a missing reply file leaves a visible final-message fallback notice', () => {
@@ -17,6 +17,42 @@ test('a missing reply file leaves a visible final-message fallback notice', () =
     `reply.json missing at ${path}; used final-message fallback`,
   )
   expect(replyFileFallbackError(path, true, null)).toBeNull()
+})
+
+test('run-live starts an admitted repository run without a second host wait', async () => {
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  db()
+    .query('UPDATE run SET host_admission_first=?,host_admission=? WHERE record_id=?')
+    .run('{"decision":"admit"}', '{"decision":"admit"}', runId)
+  let starts = 0
+  const handle = { pid: 123 }
+  const transport = {
+    start: async () => {
+      starts++
+      return handle
+    },
+  } as unknown as Parameters<typeof startAfterHostCapacity>[0]['transport']
+
+  const started = await startAfterHostCapacity({
+    repoJob: true,
+    claim: { id: runId },
+    opts: {},
+    transport,
+    startOpts: {} as Parameters<typeof startAfterHostCapacity>[0]['startOpts'],
+  })
+
+  expect(started).toBe(handle as typeof started)
+  expect(starts).toBe(1)
+  expect(db().query('SELECT host_admission FROM run WHERE record_id=?').get(runId)).toEqual({
+    host_admission: '{"decision":"admit"}',
+  })
+  expect(
+    db()
+      .query(
+        "SELECT count(*) AS count FROM contention WHERE run_record_id=? AND resource_key='host-capacity'",
+      )
+      .get(runId),
+  ).toEqual({ count: 0 })
 })
 
 test('a missing reply at the launched turn ceiling names the ceiling; below it or without a ceiling does not', () => {

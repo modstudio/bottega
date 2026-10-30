@@ -1,7 +1,10 @@
 import { expect, test } from 'bun:test'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import type { RunHostAdmission } from '../run/run-host-capacity.ts'
 import {
   HOST_ADMISSION_MONITOR_WINDOW_MS,
+  hostAdmissionSummary,
   summarizeHostAdmissions,
 } from './host-admission-summary.ts'
 
@@ -29,6 +32,31 @@ const admission = (
     swapGrowthBytesPerSec: null,
     freeMem: 1,
   },
+})
+
+test('the adapter selects only admissions inside the named window', () => {
+  const now = Date.parse('2026-10-30T12:00:00.000Z')
+  const recent = admission(now - 1_000, 'admit', 4, 3, 'normal')
+  const oldRun = addRun({ agent: 'codex', job: 'implement' })
+  const recentRun = addRun({ agent: 'codex', job: 'implement' })
+  db()
+    .query('UPDATE run SET host_admission_first=?,host_admission=? WHERE record_id=?')
+    .run(
+      '{"old":"unparsed"}',
+      JSON.stringify(admission(now - 3_600_001, 'admit', 8, 7, 'warning')),
+      oldRun,
+    )
+  db()
+    .query('UPDATE run SET host_admission_first=?,host_admission=? WHERE record_id=?')
+    .run(JSON.stringify(recent), JSON.stringify(recent), recentRun)
+
+  expect(hostAdmissionSummary(db(), now)).toMatchObject({
+    admitted: 1,
+    held: 0,
+    highestLoadavg: 4,
+    highestCpuBusy: 3,
+    pressures: ['normal'],
+  })
 })
 
 test('summarizes recent first holds and admitting-decision host pressure', () => {

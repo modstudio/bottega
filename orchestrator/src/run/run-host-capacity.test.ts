@@ -11,7 +11,6 @@ import {
   RUNNING_REPOSITORY_FACTS_SQL,
   runHostCapacityQueue,
   startRunAfterHostCapacity,
-  waitForLiveRunHostCapacity,
   waitForRunHostCapacity,
 } from './run-host-capacity.ts'
 
@@ -643,41 +642,6 @@ describe('run host capacity', () => {
     })
     expect(result.handle).toBeNull()
     expect(cancelled).toBe(true)
-  })
-
-  test('run-live admission skips a claimed run already admitted before provisioning', async () => {
-    repositoryRun()
-    const runId = repositoryRun()
-    db()
-      .query('UPDATE run SET host_admission_first=?,host_admission=? WHERE record_id=?')
-      .run('{"decision":"admit"}', '{"decision":"admit"}', runId)
-    let spawned = false
-
-    const result = await startRunAfterHostCapacity({
-      wait: () =>
-        waitForLiveRunHostCapacity({
-          database: db(),
-          runId,
-          repoJob: true,
-          existingChain: false,
-          env: {},
-          platform: 'linux',
-          measure: loaded,
-          sleep: async () => {
-            throw new Error('run-live attempted a second host admission wait')
-          },
-        }),
-      isRunning: () => true,
-      spawn: async () => {
-        spawned = true
-        return 'handle'
-      },
-      stop: async () => {},
-    })
-
-    expect(result.wait).toBeNull()
-    expect(result.handle).toBe('handle')
-    expect(spawned).toBe(true)
   })
 
   test('a stop during the wait prevents the spawn', async () => {

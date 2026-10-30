@@ -46,12 +46,15 @@ export function summarizeHostAdmissions(
 }
 
 export function hostAdmissionSummary(database: Database, clock: number): HostAdmissionSummary {
+  const windowStart = new Date(clock - HOST_ADMISSION_MONITOR_WINDOW_MS).toISOString()
+  const windowEnd = new Date(clock).toISOString()
   const rows = database
     .query(
       `SELECT host_admission_first,host_admission FROM run
-        WHERE host_admission_first IS NOT NULL AND host_admission IS NOT NULL`,
+        WHERE host_admission_first IS NOT NULL AND host_admission IS NOT NULL
+          AND json_extract(host_admission,'$.at') BETWEEN ? AND ?`,
     )
-    .all() as { host_admission_first: string; host_admission: string }[]
+    .all(windowStart, windowEnd) as { host_admission_first: string; host_admission: string }[]
   return summarizeHostAdmissions(
     rows.map((row) => ({
       first: JSON.parse(row.host_admission_first) as RunHostAdmission,
