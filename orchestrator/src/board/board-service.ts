@@ -587,7 +587,9 @@ export function withdrawNotice(id: string, env: Environment = process.env, clock
   if (actor.kind !== 'operator' && actor.session !== row.author_session)
     throw new Error(`only the notice author or operator may withdraw board notice ${id}`)
   writableDb()
-    .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE record_id=?')
+    .query(
+      "UPDATE board_message SET withdrawn_reason=CASE WHEN withdrawn_at IS NULL THEN 'author' ELSE withdrawn_reason END,withdrawn_at=COALESCE(withdrawn_at,?) WHERE record_id=?",
+    )
     .run(new Date(clock).toISOString(), row.record_id)
 }
 

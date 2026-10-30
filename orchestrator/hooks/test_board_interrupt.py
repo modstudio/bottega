@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import types
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,19 @@ PATH = Path(__file__).with_name("board-interrupt.py")
 SPEC = importlib.util.spec_from_file_location("board_interrupt", PATH)
 board_interrupt = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(board_interrupt)
+
+
+@contextmanager
+def orchestrator_store(path):
+    previous = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
+    os.environ["BOTTEGA_ORCHESTRATOR_DB"] = path
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("BOTTEGA_ORCHESTRATOR_DB", None)
+        else:
+            os.environ["BOTTEGA_ORCHESTRATOR_DB"] = previous
 
 
 class BoardInterruptPresenceTest(unittest.TestCase):
@@ -59,7 +73,7 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 """
                 CREATE TABLE board_message(record_id TEXT,number INTEGER,kind TEXT,
                   ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,
-                  author_session TEXT,thread_root_record_id TEXT);
+                  author_session TEXT,thread_root_record_id TEXT,withdrawn_reason TEXT);
                 CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,
                   delivered_at TEXT,acknowledged_at TEXT);
                 CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
@@ -73,35 +87,30 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                   ('board_hosted_refresh_at','2026-10-30T12:00:00.000Z');
                 INSERT INTO board_message VALUES
                   ('message-id',7,'notice',0,'2026-10-30T11:00:00.000Z',
-                   '2026-10-31T12:00:00.000Z','author',NULL);
+                   '2026-10-31T12:00:00.000Z','author',NULL,'author');
                 INSERT INTO board_receipt VALUES
                   ('message-id','reader','2026-10-30T10:00:00.000Z',NULL);
                 """
             )
             connection.commit()
-            previous = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
-            os.environ["BOTTEGA_ORCHESTRATOR_DB"] = path
             try:
-                candidates, _ = board_interrupt.cheap_state("reader", 300)
-                self.assertIn("withdrawn:7", candidates)
-                connection.execute(
-                    "INSERT INTO board_withdrawal_delivery VALUES (?,?,?,?,?)",
-                    (
-                        "delivery-id",
-                        "reader",
-                        "message-id",
-                        "local",
-                        "2026-10-30T11:01:00.000Z",
-                    ),
-                )
-                connection.commit()
-                candidates, _ = board_interrupt.cheap_state("reader", 300)
-                self.assertNotIn("withdrawn:7", candidates)
+                with orchestrator_store(path):
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertIn("withdrawn:7", candidates)
+                    connection.execute(
+                        "INSERT INTO board_withdrawal_delivery VALUES (?,?,?,?,?)",
+                        (
+                            "delivery-id",
+                            "reader",
+                            "message-id",
+                            "local",
+                            "2026-10-30T11:01:00.000Z",
+                        ),
+                    )
+                    connection.commit()
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertNotIn("withdrawn:7", candidates)
             finally:
-                if previous is None:
-                    os.environ.pop("BOTTEGA_ORCHESTRATOR_DB", None)
-                else:
-                    os.environ["BOTTEGA_ORCHESTRATOR_DB"] = previous
                 connection.close()
 
     def test_cheap_state_keeps_ordinary_candidates_without_withdrawal_table(self):
@@ -141,18 +150,13 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 """
             )
             connection.commit()
-            previous = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
-            os.environ["BOTTEGA_ORCHESTRATOR_DB"] = path
             try:
-                candidates, _ = board_interrupt.cheap_state("reader", 300)
-                self.assertIn("8", candidates)
-                self.assertIn("hosted-live", candidates)
-                self.assertFalse(any(item.startswith("withdrawn:") for item in candidates))
+                with orchestrator_store(path):
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertIn("8", candidates)
+                    self.assertIn("hosted-live", candidates)
+                    self.assertFalse(any(item.startswith("withdrawn:") for item in candidates))
             finally:
-                if previous is None:
-                    os.environ.pop("BOTTEGA_ORCHESTRATOR_DB", None)
-                else:
-                    os.environ["BOTTEGA_ORCHESTRATOR_DB"] = previous
                 connection.close()
 
 

@@ -26,6 +26,7 @@ export function withdrawalDeliveryText(input: {
 
 export function withdrawalPending(input: {
   isRoot: boolean
+  withdrawnReason: string | null
   withdrawnAt: string | null
   deliveredAt: string | null
   authorSession: string | null
@@ -34,6 +35,7 @@ export function withdrawalPending(input: {
 }): boolean {
   return (
     input.isRoot &&
+    input.withdrawnReason === 'author' &&
     input.withdrawnAt !== null &&
     input.deliveredAt !== null &&
     input.authorSession !== input.readerSession &&

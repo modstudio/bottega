@@ -54,6 +54,7 @@ const successorDecision = (
 const pendingWithdrawal = (input: Partial<Parameters<typeof withdrawalPending>[0]> = {}) =>
   withdrawalPending({
     isRoot: true,
+    withdrawnReason: 'author',
     withdrawnAt: '2026-10-16T12:00:00.000Z',
     deliveredAt: '2026-10-16T11:00:00.000Z',
     authorSession: 'author',
@@ -65,6 +66,10 @@ const pendingWithdrawal = (input: Partial<Parameters<typeof withdrawalPending>[0
 test('a withdrawal is pending only after an earlier delivery to another session', () => {
   expect(pendingWithdrawal()).toBe(true)
   expect(pendingWithdrawal({ isRoot: false })).toBe(false)
+  expect(pendingWithdrawal({ withdrawnReason: null })).toBe(false)
+  expect(pendingWithdrawal({ withdrawnReason: 'adopted' })).toBe(false)
+  expect(pendingWithdrawal({ withdrawnReason: 'suggestion-promoted' })).toBe(false)
+  expect(pendingWithdrawal({ withdrawnReason: 'suggestion-declined' })).toBe(false)
   expect(pendingWithdrawal({ deliveredAt: null })).toBe(false)
   expect(pendingWithdrawal({ authorSession: 'reader' })).toBe(false)
   expect(pendingWithdrawal({ alreadyDelivered: true })).toBe(false)

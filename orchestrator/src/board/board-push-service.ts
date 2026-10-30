@@ -114,6 +114,7 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
     if (
       !withdrawalPending({
         isRoot: row.thread_root_record_id === null,
+        withdrawnReason: row.withdrawn_reason,
         withdrawnAt: row.withdrawn_at,
         deliveredAt,
         authorSession: row.author_session,
@@ -142,6 +143,7 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
     if (
       !withdrawalPending({
         isRoot: message.threadRootId === null,
+        withdrawnReason: 'author',
         withdrawnAt: message.withdrawnAt,
         deliveredAt,
         authorSession: message.authorSession,

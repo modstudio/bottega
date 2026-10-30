@@ -19,6 +19,7 @@ import {
 } from './board-adoption-policy.ts'
 import { claimBoardNotices } from './board-delivery.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
+import { pendingBoardDelivery } from './board-push-service.ts'
 import { postNotice, withdrawNotice } from './board-service.ts'
 import { askQuestion, replyToThread } from './board-thread-service.ts'
 
@@ -403,6 +404,12 @@ test('confirmed adoption uploads roots before replies, then receipts and claims,
       )
       .get()?.count,
   ).toBe(3)
+  expect(
+    db().query('SELECT withdrawn_reason FROM board_message WHERE record_id=?').get(notice.recordId),
+  ).toEqual({ withdrawn_reason: 'adopted' })
+  expect(
+    (await pendingBoardDelivery({ session: 'reader', budgetMs: 0, clock: NOW + 1 })).delivery,
+  ).toEqual([])
   expect(
     db().query('SELECT close_reason FROM board_claim WHERE record_id=?').get(localClaim.recordId),
   ).toEqual({

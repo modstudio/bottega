@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
+import { pendingBoardDelivery } from './board-push-service.ts'
 import { claimNotices } from './board-service.ts'
 import {
   declineBoardSuggestion,
@@ -79,22 +80,48 @@ test('worker suggestion can be edited, posted with both origins, and withdrawn',
     `architect owning-architect (claude-code, suggestion-project), from run ${run.id}`,
   )
   expect(
-    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(suggested.recordId),
-  ).toEqual({ withdrawn_at: new Date(clock + 2).toISOString() })
+    db()
+      .query('SELECT withdrawn_at,withdrawn_reason FROM board_message WHERE record_id=?')
+      .get(suggested.recordId),
+  ).toEqual({
+    withdrawn_at: new Date(clock + 2).toISOString(),
+    withdrawn_reason: 'suggestion-promoted',
+  })
 })
 
-test('worker suggestion can be declined', () => {
+test('worker suggestion can be declined without reporting an author withdrawal', async () => {
   const clock = Date.now() + 200_000
   const run = runFixture('declining-architect')
   const suggested = suggestBoardPost(run.id, { title: 'Decline', body: 'No longer needed' }, clock)
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), suggested.recordId, 'declining-architect', 1, new Date(clock).toISOString())
   declineBoardSuggestion(
     suggested.recordId,
     { CLAUDE_CODE_SESSION_ID: 'declining-architect' },
     clock + 1,
   )
   expect(
-    db().query('SELECT withdrawn_at FROM board_message WHERE record_id=?').get(suggested.recordId),
-  ).toEqual({ withdrawn_at: new Date(clock + 1).toISOString() })
+    db()
+      .query('SELECT withdrawn_at,withdrawn_reason FROM board_message WHERE record_id=?')
+      .get(suggested.recordId),
+  ).toEqual({
+    withdrawn_at: new Date(clock + 1).toISOString(),
+    withdrawn_reason: 'suggestion-declined',
+  })
+  expect(
+    (
+      await pendingBoardDelivery({
+        session: 'declining-architect',
+        budgetMs: 0,
+        clock: clock + 2,
+      })
+    ).delivery,
+  ).toEqual([])
 })
 
 test('refused suggestion post leaves the suggestion live', () => {

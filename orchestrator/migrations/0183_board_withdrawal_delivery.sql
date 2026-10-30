@@ -6,3 +6,5 @@ CREATE TABLE board_withdrawal_delivery (
   delivered_at TEXT NOT NULL,
   UNIQUE (reader_session,message_record_id)
 );
+
+ALTER TABLE board_message ADD COLUMN withdrawn_reason TEXT;

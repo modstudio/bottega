@@ -204,7 +204,9 @@ export function postBoardSuggestion(
     }
     const posted = postNoticeInTransaction(notice, env, clock, cwd, database)
     database
-      .query('UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?) WHERE record_id=?')
+      .query(
+        "UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?),withdrawn_reason=COALESCE(withdrawn_reason,'suggestion-promoted') WHERE record_id=?",
+      )
       .run(new Date(clock).toISOString(), row.record_id)
     return posted
   }, database)
@@ -220,7 +222,9 @@ export function declineBoardSuggestion(
     const row = suggestion(id, database)
     authorizeDisposal(row, env)
     database
-      .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=?')
+      .query(
+        "UPDATE board_message SET withdrawn_at=?,withdrawn_reason='suggestion-declined' WHERE record_id=?",
+      )
       .run(new Date(clock).toISOString(), row.record_id)
   }, database)
 }

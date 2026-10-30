@@ -86,6 +86,7 @@ export type MessageRow = {
   expires_at: string | null
   created_at: string
   withdrawn_at: string | null
+  withdrawn_reason: string | null
   author_harness: string | null
   author_project: string | null
   author_run_record_id: string | null
@@ -101,7 +102,7 @@ export type MessageRow = {
 }
 
 export const BOARD_MESSAGE_COLUMNS =
-  'record_id,number,kind,purpose,author_kind,author_session,audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,author_harness,author_project,author_run_record_id,thread_root_record_id,accepted_reply_record_id,accepted_by,accepted_at,note_record_id,note_label,note_pending_error,note_filing_started_at,claim_record_id'
+  'record_id,number,kind,purpose,author_kind,author_session,audience,title,body,ack_required,ack_deadline,expires_at,created_at,withdrawn_at,withdrawn_reason,author_harness,author_project,author_run_record_id,thread_root_record_id,accepted_reply_record_id,accepted_by,accepted_at,note_record_id,note_label,note_pending_error,note_filing_started_at,claim_record_id'
 
 function rootPurpose(
   kind: 'notice' | 'question',

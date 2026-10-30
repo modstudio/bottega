@@ -182,6 +182,10 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
             "SELECT 1 FROM sqlite_master WHERE type='table' "
             "AND name='board_withdrawal_delivery'"
         ).fetchone()
+        has_withdrawn_reason = connection.execute(
+            "SELECT 1 FROM pragma_table_info('board_message') "
+            "WHERE name='withdrawn_reason'"
+        ).fetchone()
         local_withdrawals = (
             connection.execute(
                 """SELECT 'withdrawn:' || CAST(m.number AS TEXT) FROM board_message m
@@ -189,6 +193,7 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                 AND r.reader_session=?
                WHERE m.thread_root_record_id IS NULL
                  AND m.withdrawn_at IS NOT NULL
+                 AND m.withdrawn_reason='author'
                  AND r.delivered_at IS NOT NULL
                  AND julianday(r.delivered_at)<julianday(m.withdrawn_at)
                  AND (m.author_session IS NULL OR m.author_session<>?)
@@ -196,7 +201,7 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                    WHERE d.reader_session=? AND d.message_record_id=m.record_id)""",
                 (session, session, session),
             ).fetchall()
-            if has_withdrawal_delivery
+            if has_withdrawal_delivery and has_withdrawn_reason
             else []
         )
         hosted_withdrawals = (

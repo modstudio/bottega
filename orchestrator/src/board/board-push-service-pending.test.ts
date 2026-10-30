@@ -6,7 +6,7 @@ import { db } from '../database/db.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { boardAcknowledge, boardStatus } from './board-operations.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
-import { acknowledgeNotice, postNotice } from './board-service.ts'
+import { acknowledgeNotice, postNotice, withdrawNotice } from './board-service.ts'
 
 test('a delivered local notice reports its withdrawal once to that reader only', async () => {
   const clock = Date.parse('2026-10-30T10:00:00.000Z')
@@ -29,9 +29,7 @@ test('a delivered local notice reports its withdrawal once to that reader only',
     )
     .run(newRecordId(), notice.recordId, reader, 1, new Date(clock + 1).toISOString())
   const withdrawnAt = new Date(clock + 2).toISOString()
-  db()
-    .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=?')
-    .run(withdrawnAt, notice.recordId)
+  withdrawNotice(notice.recordId, {}, clock + 2)
 
   const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 3 })
   expect(pending.delivery).toEqual([
@@ -63,6 +61,35 @@ test('a delivered local notice reports its withdrawal once to that reader only',
   ).toEqual({ source: 'local', delivered_at: new Date(clock + 4).toISOString() })
   expect(
     (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 5 })).delivery,
+  ).toEqual([])
+})
+
+test('an adoption-retired local notice does not report an author withdrawal', async () => {
+  const clock = Date.parse('2026-10-30T10:30:00.000Z')
+  const reader = 'adoption-retirement-reader'
+  const notice = postNotice(
+    {
+      audience: `session:${reader}`,
+      title: 'Still open hosted',
+      body: 'This local row was retired by adoption.',
+      purpose: 'information',
+    },
+    {},
+    clock,
+  )
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), notice.recordId, reader, 1, new Date(clock + 1).toISOString())
+  db()
+    .query("UPDATE board_message SET withdrawn_at=?,withdrawn_reason='adopted' WHERE record_id=?")
+    .run(new Date(clock + 2).toISOString(), notice.recordId)
+
+  expect(
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 3 })).delivery,
   ).toEqual([])
 })
 
