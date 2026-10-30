@@ -2,9 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { decideConditionalAdvance } from './workflow-cursor-transition.ts'
+import { expandWorkflowModeSteps } from './workflow-step-sequences.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { normalizeWorkflowYaml, parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
+
+const repositoryRoot = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 const store: WorkflowTreeStore = {
   sequences: [{ slug: 'quality', title: 'Quality', steps: ['verify'] }],
@@ -111,5 +116,48 @@ describe('planWorkflowHydration', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('tracked plan-task design signoff', () => {
+  const tracked = parseWorkflowTree(collectWorkflowTree(repositoryRoot))
+  const planTask = tracked.workflows.find(({ slug }) => slug === 'plan-task')!.definition
+  const designSignoff = tracked.steps.find(({ slug }) => slug === 'design-signoff')!
+
+  test('operator revision reenters design', () => {
+    expect(designSignoff.outcomes).toEqual(['approved', 'revise'])
+    expect(designSignoff.reenter).toEqual({ to: 'design', outcome: 'revise' })
+  })
+
+  test.each(['feature', 'fix'])('%s requires operator signoff for schema or names', (slug) => {
+    const mode = planTask.modes.find((candidate) => candidate.slug === slug)!
+    const steps = expandWorkflowModeSteps(mode.steps, tracked.sequences)
+    const designOrdinal = steps.findIndex((step) => step.slug === 'design')
+    const signoffOrdinal = steps.findIndex((step) => step.slug === 'design-signoff')
+    const decomposeOrdinal = steps.findIndex((step) => step.slug === 'decompose')
+
+    expect(steps.findIndex((step) => step.slug === 'prior-art')).toBeLessThan(designOrdinal)
+    expect(decideConditionalAdvance(steps, [], designOrdinal, 'schema-or-names').ordinal).toBe(
+      signoffOrdinal,
+    )
+    expect(decideConditionalAdvance(steps, [], designOrdinal, 'neither').ordinal).toBe(
+      decomposeOrdinal,
+    )
+    expect(designSignoff.operatorRuling).toBe(true)
+  })
+
+  test('the fix path skips prior art, design, and signoff for a new symptom', () => {
+    const mode = planTask.modes.find((candidate) => candidate.slug === 'fix')!
+    const steps = expandWorkflowModeSteps(mode.steps, tracked.sequences)
+    const recurrenceOrdinal = steps.findIndex((step) => step.slug === 'recurrence')
+
+    expect(decideConditionalAdvance(steps, [], recurrenceOrdinal, 'new-symptom')).toMatchObject({
+      ordinal: steps.findIndex((step) => step.slug === 'decompose'),
+      skipped: [
+        { step: { slug: 'prior-art' } },
+        { step: { slug: 'design' } },
+        { step: { slug: 'design-signoff' } },
+      ],
+    })
   })
 })
