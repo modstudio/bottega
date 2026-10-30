@@ -72,6 +72,23 @@ test('session hold is idempotent and releases the open row with its reason', () 
   })
 })
 
+test('session hold releases a reaped local message by its record id without hosted adoption', () => {
+  const id = addMessage()
+  sessionHold(
+    { on: id },
+    { env, at: '2026-10-30T02:30:00.000Z', recordId: () => newRecordId() },
+  )
+  db().query('DELETE FROM board_message WHERE record_id=?').run(id)
+
+  expect(
+    sessionHold(
+      { release: id, reason: 'message was reaped' },
+      { env, at: '2026-10-30T02:45:00.000Z' },
+    ),
+  ).toEqual({ action: 'released', messageRecordId: id, reason: 'message was reaped' })
+  expect(sessionHold({}, { env })).toEqual({ action: 'listed', holds: [] })
+})
+
 test('session hold resolves a local board number for holding and release', () => {
   const id = addMessage()
   const number = db()

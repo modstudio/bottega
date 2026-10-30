@@ -84,6 +84,7 @@ export function sessionHold(
     database,
     messageIdentifier,
     options.env ?? process.env,
+    input.release === undefined,
   ).recordId
   if (input.on) {
     if (!messageExists(database, messageRecordId))
