@@ -247,6 +247,7 @@ export function registerRecordBoardRoutes(
           .enum(['true', 'false'])
           .optional()
           .transform((value) => value === 'true'),
+        ownTitlePrefix: headerValueSchema.optional(),
       })
       .safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid board messages query' }, 400)

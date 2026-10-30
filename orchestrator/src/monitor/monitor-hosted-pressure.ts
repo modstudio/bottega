@@ -4,8 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readEnvValuesWithHosted } from '../../../shared/env-source.ts'
+import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { withinHostedBoardRefreshBudget } from '../board/board-hosted-refresh-budget.ts'
+import { hostedBoardPostInput } from '../board/board-operations.ts'
+import { boardActor } from '../board/board-store.ts'
 import { db, writeTransaction } from '../database/db.ts'
+import { type RecordApiClient, recordApiClient } from '../record/record-api-client.ts'
+import {
+  decideHostedPressureAnnouncement,
+  HOSTED_PRESSURE_NOTICE_PREFIX,
+} from './hosted-pressure-announcement.ts'
 import {
   CLEAR_HOSTED_PRESSURE_STATE,
   decideHostedPressure,
@@ -15,6 +24,7 @@ import {
 } from './hosted-pressure-decision.ts'
 
 const HOSTED_METRICS_QUERY_BUDGET_MS = 3_000
+const HOSTED_PRESSURE_ANNOUNCE_BUDGET_MS = 3_000
 export const HOSTED_METRICS_INTERVAL_MS = 5 * 60_000
 export const HOSTED_METRICS_ORG = PLATFORM_SLUG
 const HOSTED_RECORD_APP = `${PLATFORM_SLUG}-record`
@@ -36,6 +46,12 @@ type Dependencies = {
   fetch?: typeof globalThis.fetch
   resolveToken?: typeof readEnvValuesWithHosted
   failFastStoreClaim?: boolean
+  boardClient?: Pick<
+    RecordApiClient,
+    'listBoardMessages' | 'postBoardMessage' | 'withdrawBoardMessage'
+  >
+  env?: Record<string, string | undefined>
+  cwd?: string
 }
 type CacheRow = {
   checked_at: string
@@ -147,6 +163,54 @@ function claimTransaction<T>(database: Database, failFast: boolean | undefined, 
   }
 }
 
+async function announceTransition(
+  previous: HostedPressureState,
+  decision: HostedPressureDecision,
+  observation: HostedPressureObservation,
+  dependencies: Dependencies,
+  clock: number,
+): Promise<void> {
+  const env = dependencies.env ?? process.env
+  if (!resolveRecordApiUrl(env)?.trim()) return
+  const client = dependencies.boardClient ?? recordApiClient()
+  await withinHostedBoardRefreshBudget(async (signal) => {
+    const overview = await client.listBoardMessages(
+      { kind: 'notice', ownTitlePrefix: HOSTED_PRESSURE_NOTICE_PREFIX },
+      signal,
+    )
+    const actions = decideHostedPressureAnnouncement(
+      previous,
+      decision.state,
+      observation,
+      overview.messages,
+    )
+    for (const action of actions) {
+      if (action.kind === 'withdraw') {
+        await client.withdrawBoardMessage(
+          action.id,
+          { authorSession: boardActor(env).session },
+          signal,
+        )
+        continue
+      }
+      await client.postBoardMessage(
+        hostedBoardPostInput(
+          'notice',
+          {
+            audience: 'architects:all',
+            purpose: 'request',
+            title: action.notice.title,
+            body: action.notice.body,
+            expiresMs: action.notice.expiresMs,
+          },
+          { env, clock, cwd: dependencies.cwd },
+        ),
+        signal,
+      )
+    }
+  }, HOSTED_PRESSURE_ANNOUNCE_BUDGET_MS)
+}
+
 /** Claim one interval, observe outside the transaction, then persist the resulting episode state. */
 export async function checkHostedPressureCached(
   dependencies: Dependencies = {},
@@ -193,5 +257,23 @@ export async function checkHostedPressureCached(
       )
       .run(JSON.stringify(decision.state), JSON.stringify(observation), failure, at)
   })
+  if (previous.status !== decision.state.status) {
+    try {
+      await announceTransition(previous, decision, observation, dependencies, clock)
+    } catch (error) {
+      try {
+        claimTransaction(database, dependencies.failFastStoreClaim, () => {
+          database
+            .query(
+              `UPDATE hosted_pressure_cache SET last_error=?
+               WHERE singleton=1 AND checked_at=?`,
+            )
+            .run(`hosted pressure announcement failed: ${String(error)}`, at)
+        })
+      } catch {
+        // A newly busy local store must not turn a hosted announcement failure into a heartbeat failure.
+      }
+    }
+  }
   return decision
 }

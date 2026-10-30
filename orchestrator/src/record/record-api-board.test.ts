@@ -173,19 +173,21 @@ test('board list validates filters and binds every caller space', async () => {
       kind?: string
       open?: boolean
       includeEnded?: boolean
+      ownTitlePrefix?: string
     }) => {
       expect(input).toMatchObject({
         userId: identity.user.id,
         kind: 'question',
         open: true,
         includeEnded: false,
+        ownTitlePrefix: 'Hosted pressure: %_',
       })
       expect(input.spaceIds).toEqual(['space-a', 'space-b'])
       return expected
     },
   })
   const response = await app.request(
-    '/v1/board/messages?kind=question&open=true&includeEnded=false',
+    '/v1/board/messages?kind=question&open=true&includeEnded=false&ownTitlePrefix=Hosted%20pressure%3A%20%25_',
   )
   expect(response.status).toBe(200)
   expect(await response.json()).toEqual(expected)

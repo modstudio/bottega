@@ -131,6 +131,12 @@ export async function listHostedBoardOverview(
           OR (kind='question' AND accepted_reply_id IS NULL))
         AND (${input.includeEnded ?? false}::boolean=TRUE
           OR (withdrawn_at IS NULL AND expires_at>${now}::timestamptz))
+        AND (${input.ownTitlePrefix ?? null}::text IS NULL
+          OR (kind='notice'
+            AND author_user_id=${input.userId}
+            AND withdrawn_at IS NULL
+            AND expires_at>${now}::timestamptz
+            AND starts_with(title, ${input.ownTitlePrefix ?? null})))
       ORDER BY created_at DESC, id DESC
       LIMIT ${BOARD_MESSAGES_PAGE_LIMIT + 1}
     `) as Record<string, unknown>[]

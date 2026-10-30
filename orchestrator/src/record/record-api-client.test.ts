@@ -330,7 +330,8 @@ describe('record API client test safety', () => {
     const previousUrl = process.env.BOTTEGA_RECORD_API_URL
     process.env.NODE_ENV = 'development'
     process.env.BOTTEGA_RECORD_API_URL = 'https://api.example.test'
-    const calls: Array<{ url: string; method: string; body: unknown }> = []
+    const calls: Array<{ url: string; method: string; body: unknown; signal: AbortSignal | null }> =
+      []
     const originalFetch = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -338,14 +339,24 @@ describe('record API client test safety', () => {
         url,
         method: init?.method ?? 'GET',
         body: init?.body ? JSON.parse(String(init.body)) : null,
+        signal: init?.signal ?? null,
       })
       return Response.json({ error: 'nope' }, { status: 409 })
     }) as typeof fetch
     try {
       const client = recordApiClient()
       const id = newRecordId()
+      const boardSignal = new AbortController().signal
       await expect(
-        client.listBoardMessages({ kind: 'question', open: true, includeEnded: false }),
+        client.listBoardMessages(
+          {
+            kind: 'question',
+            open: true,
+            includeEnded: false,
+            ownTitlePrefix: 'Hosted pressure: %_',
+          },
+          boardSignal,
+        ),
       ).rejects.toThrow(/nope/)
       await expect(client.getBoardThread(id)).rejects.toThrow(/nope/)
       await expect(client.getBoardStatus(id)).rejects.toThrow(/nope/)
@@ -367,8 +378,9 @@ describe('record API client test safety', () => {
         }),
       ).rejects.toMatchObject({ message: 'nope', kind: 'refused', status: 409 })
       expect(calls[0]).toMatchObject({
-        url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false',
+        url: 'https://api.example.test/v1/board/messages?kind=question&open=true&includeEnded=false&ownTitlePrefix=Hosted+pressure%3A+%25_',
         method: 'GET',
+        signal: boardSignal,
       })
       expect(calls[1]).toMatchObject({
         url: `https://api.example.test/v1/board/threads/${id}`,

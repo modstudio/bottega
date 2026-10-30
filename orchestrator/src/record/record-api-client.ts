@@ -349,10 +349,17 @@ export type RecordApiClient = ProjectIdentityClient &
     counts(
       destination?: RecordRequestDestination,
     ): Promise<{ docs: number; revisions: number; scores: number; voids: number }>
-    listBoardMessages(query?: HostedBoardOverviewFilters): Promise<HostedBoardOverview>
-    postBoardMessage(input: HostedBoardPostInput): Promise<HostedBoardMessage>
+    listBoardMessages(
+      query?: HostedBoardOverviewFilters,
+      signal?: AbortSignal,
+    ): Promise<HostedBoardOverview>
+    postBoardMessage(input: HostedBoardPostInput, signal?: AbortSignal): Promise<HostedBoardMessage>
     replyBoardMessage(rootId: string, input: HostedBoardReplyInput): Promise<HostedBoardMessage>
-    withdrawBoardMessage(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
+    withdrawBoardMessage(
+      id: string,
+      input?: HostedBoardSessionInput,
+      signal?: AbortSignal,
+    ): Promise<HostedBoardMessage>
     acceptBoardAnswer(id: string, input: HostedBoardAcceptInput): Promise<HostedBoardThread>
     takeBoardFilingLease(id: string, input?: HostedBoardSessionInput): Promise<HostedBoardMessage>
     completeBoardFilingLease(
@@ -886,25 +893,27 @@ const recordRunClient = (request = defaultRequest): Pick<RecordApiClient, Record
 })
 
 const recordBoardClient = (request = defaultRequest): Pick<RecordApiClient, RecordBoardMethod> => ({
-  listBoardMessages: (query = {}) => {
+  listBoardMessages: (query = {}, signal) => {
     const search = new URLSearchParams()
     if (query.kind) search.set('kind', query.kind)
     if (query.open !== undefined) search.set('open', String(query.open))
     if (query.includeEnded !== undefined) search.set('includeEnded', String(query.includeEnded))
+    if (query.ownTitlePrefix !== undefined) search.set('ownTitlePrefix', query.ownTitlePrefix)
     const suffix = search.toString()
-    return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`)
+    return request(`/v1/board/messages${suffix ? `?${suffix}` : ''}`, { signal })
   },
-  postBoardMessage: (input) =>
-    request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input) }),
+  postBoardMessage: (input, signal) =>
+    request('/v1/board/messages', { method: 'PUT', body: JSON.stringify(input), signal }),
   replyBoardMessage: (rootId, input) =>
     request(`/v1/board/messages/${rootId}/replies`, {
       method: 'POST',
       body: hostedBoardReplyBody(input),
     }),
-  withdrawBoardMessage: (id, input) =>
+  withdrawBoardMessage: (id, input, signal) =>
     request(`/v1/board/messages/${id}/withdraw`, {
       method: 'POST',
       body: JSON.stringify(input ?? {}),
+      signal,
     }),
   acceptBoardAnswer: (id, input) =>
     request(`/v1/board/messages/${id}/accept`, { method: 'POST', body: JSON.stringify(input) }),
