@@ -410,20 +410,33 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
     ["json_extract(m.payload,'$.authorSession')<>?", 'message.authorSession !== session'],
     ['later.author_session IS m.author_session', 'root.authorSession === withdrawn.authorSession'],
     ["instr(m.title, ':')>0", 'withdrawalSupersessionPrefix(withdrawn.title)'],
-    ['julianday(later.created_at)>julianday(m.created_at)', 'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)'],
+    [
+      'julianday(later.created_at)>julianday(m.created_at)',
+      'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)',
+    ],
     ['later_receipt.message_record_id=later.record_id', 'addressed(row, session, clock, database)'],
-    ["json_extract(later.payload,'$.authorSession')", 'root.authorSession === withdrawn.authorSession'],
-    ["instr(json_extract(m.payload,'$.title'), ':')>0", 'withdrawalSupersessionPrefix(withdrawn.title)'],
-    ["julianday(json_extract(later.payload,'$.createdAt'))", 'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)'],
-    ['later_receipt.message_id=later.id', 'cachedMessageAddressed(row, session, clock, database)'],
+    [
+      "json_extract(later.payload,'$.authorSession')",
+      'root.authorSession === withdrawn.authorSession',
+    ],
+    [
+      "instr(json_extract(m.payload,'$.title'), ':')>0",
+      'withdrawalSupersessionPrefix(withdrawn.title)',
+    ],
+    [
+      "julianday(json_extract(later.payload,'$.createdAt'))",
+      'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)',
+    ],
+    [
+      'later_receipt.message_id=later.id',
+      'cachedMessageAddressesReader(row, session, clock, database)',
+    ],
     ['later_receipt.audience_at_posting=1', 'addressed(row, session, clock, database)'],
   ] as const) {
     expect(hook).toContain(hookClause)
     expect(`${owner}\n${policy}`).toContain(ownerClause)
   }
-  const graceLiterals = [
-    ...hook.matchAll(/WITHDRAWAL_SUPERSESSION_GRACE_DAYS\s*=\s*([\d.]+)/g),
-  ]
+  const graceLiterals = [...hook.matchAll(/WITHDRAWAL_SUPERSESSION_GRACE_DAYS\s*=\s*([\d.]+)/g)]
   expect(graceLiterals).toHaveLength(1)
   for (const literal of graceLiterals)
     expect(Number(literal[1])).toBeCloseTo(WITHDRAWAL_SUPERSESSION_GRACE_MS / 86_400_000, 15)

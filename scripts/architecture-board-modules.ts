@@ -41,6 +41,7 @@ export const boardModules: BoardModule[] = [
     '../../../shared/record-api-url.ts',
     '../database/db.ts',
   ]),
+  module('orchestrator/src/board/board-hosted-refresh-budget.ts', []),
   module('orchestrator/src/board/board-hosted-cache.ts', [
     'bun:sqlite',
     '../../../shared/board-purpose.ts',
@@ -48,6 +49,7 @@ export const boardModules: BoardModule[] = [
     '../database/db.ts',
     '../record/record-api-client.ts',
     '../record/record-board-contract.ts',
+    './board-hosted-refresh-budget.ts',
     './board-hosted-verification-policy.ts',
     './board-mode.ts',
     './board-policy.ts',

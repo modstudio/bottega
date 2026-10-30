@@ -9,6 +9,7 @@ import {
   BOARD_RECEIPT_WRITE_BUDGET_MS,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
+  cachedMessageAddressesReader,
   cachedRows,
   claimCachedHostedForPush,
   refreshHostedBoard,
@@ -121,10 +122,7 @@ function pendingWithdrawals(
     createdAt: row.created_at,
   })
   const localRoots = localRows
-    .filter(
-      (row) =>
-        row.thread_root_record_id === null && addressed(row, session, clock, database),
-    )
+    .filter((row) => row.thread_root_record_id === null && addressed(row, session, clock, database))
     .map(localSupersessionFact)
   const local = localRows.flatMap((row) => {
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
@@ -162,7 +160,7 @@ function pendingWithdrawals(
     .filter(
       (row) =>
         row.message.threadRootId === null &&
-        cachedMessageAddressed(row, session, clock, database),
+        cachedMessageAddressesReader(row, session, clock, database),
     )
     .map(hostedSupersessionFact)
   const hosted = hostedRows.flatMap((row) => {

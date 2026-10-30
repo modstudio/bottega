@@ -13,6 +13,7 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
+import { withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
 import { hostedBoardVerificationNoticeDecision } from './board-hosted-verification-policy.ts'
 import { boardMode } from './board-mode.ts'
 import {
@@ -94,31 +95,6 @@ function recordRefresh(database: Database, at: number, outcome: string): void {
     setMeta(database, BOARD_REFRESH_OUTCOME_KEY, outcome)
     if (outcome === 'success') setMeta(database, BOARD_VERIFIED_AT_KEY, new Date(at).toISOString())
   }, database)
-}
-
-async function within<T>(
-  operation: (signal: AbortSignal) => Promise<T>,
-  remainingMs: number,
-): Promise<T> {
-  if (remainingMs <= 0) throw new Error('hosted board refresh budget spent')
-  const controller = new AbortController()
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      operation(controller.signal).catch((error: unknown) => {
-        if (controller.signal.aborted) throw new Error('hosted board refresh budget spent')
-        throw error
-      }),
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => {
-          controller.abort()
-          reject(new Error('hosted board refresh budget spent'))
-        }, remainingMs)
-      }),
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
 }
 
 function cachedRevision(database: Database, id: string): string | null {
@@ -298,7 +274,7 @@ async function flushReceipts(
   }[]
   for (const row of rows) {
     try {
-      await within(
+      await withinHostedBoardRefreshBudget(
         (signal) =>
           client.putBoardReceipt(
             {
@@ -357,7 +333,7 @@ async function fetchHostedPages(
   let after = meta(database, BOARD_REFRESH_CURSOR_KEY) ?? '0'
   while (now() < deadline) {
     const query = { after, limit: BOARD_CHANGES_PAGE_LIMIT }
-    const page = await within(
+    const page = await withinHostedBoardRefreshBudget(
       (signal) => client.listBoardChanges({ ...query, signal }),
       deadline - now(),
     )
@@ -726,14 +702,14 @@ function takeHostedReportReplySuccessor(
   }, context.database)
 }
 
-function messageAddressed(
+function messageAddressesReader(
   row: { message: HostedBoardMessage; tags: BoardTag[] },
   context: HostedClaimContext,
 ): boolean {
   const { message, tags } = row
   if (message.kind === 'reply')
     return replyAddressesReader(message, context) || hostedReplySuccessorPush(message, context)
-  if (!message.audience || !hostedMessageIsLive(message, context.clock)) return false
+  if (!message.audience) return false
   const audience = parseAudience(message.audience)
   if (
     (audience.kind === 'operator' || audience.kind === 'architects') &&
@@ -759,6 +735,23 @@ function messageAddressed(
   if (!addressed) return false
   if (message.kind === 'question' && context.reader.startsWith('run:')) return false
   return true
+}
+
+function messageAddressed(
+  row: { message: HostedBoardMessage; tags: BoardTag[] },
+  context: HostedClaimContext,
+): boolean {
+  if (row.message.kind !== 'reply' && !hostedMessageIsLive(row.message, context.clock)) return false
+  return messageAddressesReader(row, context)
+}
+
+export function cachedMessageAddressesReader(
+  row: { message: HostedBoardMessage; tags: BoardTag[] },
+  reader: string,
+  clock: number,
+  database: Database,
+): boolean {
+  return messageAddressesReader(row, loadClaimContext(database, reader, true, clock, row))
 }
 
 export function cachedMessageAddressed(
@@ -1010,7 +1003,7 @@ export async function syncCachedHostedReceipt(
   const client = input.client ?? recordApiClient()
   const deadline = input.deadline ?? Date.now() + BOARD_RECEIPT_WRITE_BUDGET_MS
   try {
-    await within(
+    await withinHostedBoardRefreshBudget(
       (signal) =>
         client.putBoardReceipt(
           {

@@ -65,10 +65,9 @@ test('only the final delivered local replacement reports its withdrawal', async 
       })
     ).delivery.map((item) => item.id),
   ).toEqual([`withdrawn:${notice.number}`])
-  db().query('UPDATE board_message SET audience=? WHERE record_id=?').run(
-    `session:${reader}`,
-    replacement.recordId,
-  )
+  db()
+    .query('UPDATE board_message SET audience=? WHERE record_id=?')
+    .run(`session:${reader}`, replacement.recordId)
   expect(
     (
       await pendingBoardDelivery({
@@ -167,7 +166,7 @@ test('an adoption-retired local notice does not report an author withdrawal', as
   ).toEqual([])
 })
 
-test('only the final delivered hosted replacement reports its withdrawal', async () => {
+test('a withdrawn addressed hosted replacement still supersedes the prior withdrawal', async () => {
   const clock = Date.parse('2026-10-30T11:00:00.000Z')
   const reader = 'hosted-withdrawal-reader'
   db()
