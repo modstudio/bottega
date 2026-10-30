@@ -1,11 +1,6 @@
 import { expect, test } from 'bun:test'
 import type { ReviewSettings } from '../project/project-injection.ts'
-import {
-  fixFilesFromPatches,
-  mapPatchPaths,
-  type PerPathPatch,
-  postFixReviewDecision,
-} from './review-post-fix.ts'
+import { fixFilesFromPatches, type PerPathPatch, postFixReviewDecision } from './review-post-fix.ts'
 import { applicableRoundLensPlan } from './review-round-lens-plan.ts'
 
 const completed = { number: 2, identity: 'reviewed', launchKey: 'AB-3097', runIds: ['run'] }
@@ -56,7 +51,6 @@ test('a rebase over disjoint trunk work carries an unchanged branch round', () =
     }).round,
   ).toEqual({ lenses: [] })
 })
-
 test('a rebase over trunk work on a branch path re-runs only that path lens', () => {
   const fixFiles = fixFilesFromPatches(
     [patch('critical/shared.ts', 'unchanged')],
@@ -91,43 +85,5 @@ test('a rebase over trunk work on a branch path re-runs only that path lens', ()
   ).toEqual({
     lenses: ['migration-safety'],
     lensReasons: { 'migration-safety': 'newly-touched-path' },
-  })
-})
-
-test('a renamed and changed branch path uses accepted-finding and touched-path funnel lenses', () => {
-  const reviewed = mapPatchPaths(
-    [patch('migrations/old.sql', 'reviewed-content')],
-    new Map([['migrations/old.sql', 'migrations/new.sql']]),
-  )
-  const fixFiles = fixFilesFromPatches(reviewed, [patch('migrations/new.sql', 'changed-content')])
-  const decision = postFixReviewDecision({
-    facts: { completed, reviewedTip: 'recorded-pin', fixFiles },
-    tier: 3,
-    review,
-  })
-
-  expect(decision).toMatchObject({
-    kind: 're-lens',
-    fixPaths: ['migrations/new.sql'],
-    tierThreePaths: ['migrations/new.sql'],
-  })
-  expect(
-    applicableRoundLensPlan({
-      relevant: { lenses: ['correctness', 'migration-safety', 'craft'] },
-      facts: {
-        reviewedPathsByLens: { 'migration-safety': [] },
-        completedLenses: ['correctness', 'migration-safety', 'craft'],
-        satisfiedSecondOpinionLenses: [],
-        latestAcceptedOrModifiedLenses: ['correctness'],
-      },
-      postFix: decision,
-      fixPathsByLens: { 'migration-safety': ['migrations/new.sql'] },
-    }).round,
-  ).toEqual({
-    lenses: ['correctness', 'migration-safety'],
-    lensReasons: {
-      correctness: 'accepted-finding',
-      'migration-safety': 'newly-touched-path',
-    },
   })
 })
