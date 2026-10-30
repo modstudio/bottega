@@ -13,10 +13,6 @@ export function machineId(): string {
   return id
 }
 
-export function machineName(): string {
-  return machineNames().displayName
-}
-
 export function machineNames(): { shortName: string; displayName: string } {
   const stored = storedMachineNames()
   if (stored) return stored

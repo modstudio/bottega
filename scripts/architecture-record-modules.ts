@@ -109,6 +109,11 @@ export const recordModules: RecordModule[] = [
     './record-catalogue-contract.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-api-client-machine.ts', [
+    './record-api-client-paths.ts',
+    './record-auth.ts',
+    './record-sync-contract.ts',
+  ]),
   module('orchestrator/src/record/record-cache-lens.ts', [
     'bun:sqlite',
     '../database/db.ts',

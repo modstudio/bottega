@@ -287,6 +287,7 @@ const catalogueRoutes = [
 ]
 
 function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
+  registerRecordMachineRoutes(app, deps)
   registerRecordInvitationRoute(app, deps)
   registerRecordSyncRoute(app, deps)
 }
@@ -330,7 +331,6 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     return context.json(context.get('identity'))
   })
-  registerRecordMachineRoutes(app, deps)
   registerSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {

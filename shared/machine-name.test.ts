@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from './brand.ts'
 import {
   decideMachineNameClaim,
   defaultShortName,
@@ -35,7 +36,7 @@ test('decides every claim outcome, including retired and former claims', () => {
   })
   expect(decideMachineNameClaim(claims, 'mine', 'office')).toEqual({
     status: 'refused',
-    reason: expect.stringContaining('bottega machine rename'),
+    reason: expect.stringContaining(`${PLATFORM_SLUG} machine rename`),
   })
   expect(decideMachineNameClaim(claims, 'mine', 'old')).toEqual({
     status: 'refused',

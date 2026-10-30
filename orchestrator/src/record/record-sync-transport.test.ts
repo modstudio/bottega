@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
@@ -83,6 +84,24 @@ test('sync sends ordered bounded batches and applies each response before contin
   expect(batches.flat()).toEqual(
     Array.from({ length: RECORD_SYNC_BATCH_SIZE + 1 }, (_, index) => index + 1),
   )
+})
+
+test('a machine-name refusal still applies the synced batch and is reported once', async () => {
+  using local = localOutbox(1)
+  const client = {
+    whoami,
+    sync: async (request: { rows: { id: number }[] }) => ({
+      results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+      machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
+    }),
+  }
+
+  expect(await syncRecord({ ...options(local), client })).toMatchObject({
+    pushed: 1,
+    pending: 0,
+    machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
+  })
+  expect(local.query('SELECT synced_at FROM outbox WHERE id=1').get()).toEqual({ synced_at: STAMP })
 })
 
 test('a malformed ordered response marks no local row', async () => {

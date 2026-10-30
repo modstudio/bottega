@@ -17,6 +17,7 @@ import { MISSING_HOSTED_REVISION_REMEDY, RECORD_WRITE_REMEDY } from '../doc/doc-
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
 import { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
 import { type RecordLensClient, recordLensClient } from './record-api-client-lens.ts'
+import { type RecordMachineClient, recordMachineClient } from './record-api-client-machine.ts'
 import {
   boardClaimListPath,
   docSearchParams,
@@ -72,7 +73,6 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
-import type { RecordSyncRequest, RecordSyncResponse } from './record-sync-contract.ts'
 
 const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
@@ -199,11 +199,10 @@ export type {
 
 export type RecordApiClient = ProjectIdentityClient &
   RecordLensClient &
+  RecordMachineClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient & {
-    whoami(): Promise<RecordIdentity>
-    sync?(input: RecordSyncRequest): Promise<RecordSyncResponse>
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
     setActiveOrganization(input: {
       organizationId?: string
@@ -216,12 +215,6 @@ export type RecordApiClient = ProjectIdentityClient &
       role: 'member' | 'admin' | 'owner'
       organizationId: string
     }): Promise<{ id: string }>
-    renameMachine?(input: {
-      machineId: string
-      shortName?: string
-      displayName?: string
-    }): Promise<{ ok: true }>
-    retireMachine?(shortName: string): Promise<{ machineId: string }>
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
@@ -717,6 +710,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
     throw new Error(TEST_REFUSAL)
   return {
+    ...recordMachineClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),
@@ -952,8 +946,6 @@ function recordIdentityAndSpaceClient(
   request = defaultRequest,
 ): Pick<RecordApiClient, RecordIdentityAndSpaceMethod> {
   return {
-    whoami: () => request('/v1/whoami', { schema: recordIdentityResponse }),
-    sync: (input) => request('/v1/sync', { method: 'POST', body: JSON.stringify(input) }),
     createOrganization: (input) =>
       request('/api/auth/organization/create', {
         method: 'POST',
@@ -981,10 +973,6 @@ function recordIdentityAndSpaceClient(
         method: 'POST',
         body: JSON.stringify(input),
       }),
-    renameMachine: (input) =>
-      request('/v1/machine/name', { method: 'PUT', body: JSON.stringify(input) }),
-    retireMachine: (shortName) =>
-      request('/v1/machine/retire', { method: 'POST', body: JSON.stringify({ shortName }) }),
   }
 }
 

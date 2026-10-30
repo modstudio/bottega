@@ -50,6 +50,13 @@ const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
     reasonText: `${executeKeyword}s a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows`,
   },
   {
+    migration: '20261030010346_dev_1868_machine_claim_project_move_classification',
+    table: '*',
+    operation: 'EXECUTE',
+    reason: 'dynamic-sql-force-enabled',
+    reasonText: `${executeKeyword}s a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows`,
+  },
+  {
     migration: '20260924180716_dev_906_doc_latest_revision',
     table: 'doc',
     operation: 'UPDATE',

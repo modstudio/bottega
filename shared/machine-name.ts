@@ -1,7 +1,7 @@
 import { PLATFORM_SLUG } from './brand.ts'
 
-export const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
-export const DISPLAY_NAME_RULE = '1-60 characters'
+const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
+const DISPLAY_NAME_RULE = '1-60 characters'
 
 export function shortNameRefusal(value: string): string | null {
   return /^[a-z][a-z0-9-]{1,19}$/.test(value) ? null : `short name must be ${SHORT_NAME_RULE}`

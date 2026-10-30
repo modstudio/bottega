@@ -734,6 +734,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-api-client-paths.ts',
       './record-api-client-settings.ts',
       './record-api-client-lens.ts',
+      './record-api-client-machine.ts',
       './record-api-client-port.ts',
       './record-api-client-workflow.ts',
       './record-board-contract.ts',
