@@ -846,6 +846,7 @@ export function createAskHttpHandler(
 export function startAskHttpEndpoint(runId: string, token: string): AskLoopback {
   const server = Bun.serve({
     hostname: '127.0.0.1',
+    idleTimeout: 10,
     port: 0,
     fetch: createAskHttpHandler(runId, token),
   })

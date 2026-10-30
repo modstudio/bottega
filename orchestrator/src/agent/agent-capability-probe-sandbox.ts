@@ -67,6 +67,7 @@ function probeProject(worktree: string): Project {
 function openProbeAskListener(): CapabilityProbeAskListener {
   const server = Bun.serve({
     hostname: '127.0.0.1',
+    idleTimeout: 10,
     port: 0,
     fetch: () => new Response(null, { status: 404 }),
   })

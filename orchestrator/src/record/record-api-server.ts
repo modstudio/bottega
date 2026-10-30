@@ -1,6 +1,7 @@
 // concern: record-api-server
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
+import { HOSTED_SERVER_IDLE_TIMEOUT_SECONDS } from '../../../shared/hosted-server.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
 import { recordApi } from './record-api.ts'
@@ -159,6 +160,7 @@ function serveRecordApi(
 ) {
   const server = Bun.serve({
     hostname: '0.0.0.0',
+    idleTimeout: HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port,
     fetch: async (request, bunServer) => {
       const started = performance.now()
