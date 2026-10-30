@@ -19,6 +19,7 @@ import {
   worktreeLeaseName,
 } from '../project/project-lock.ts'
 import {
+  isSharedReaderWorktreeClaim,
   type ResourceClaimState,
   recordRetainedRefClaim,
   sandboxDirectoryRelease,
@@ -29,6 +30,7 @@ import {
   conversationWorktreeSpellings,
   liveWorktreeSharers,
   otherConversationWorktreeSharers,
+  recordedWorktreeSharerRunIds,
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
@@ -65,13 +67,13 @@ import {
   coordinatorLeaseHold,
   liveCloseOutResult,
   missingTreeConversationResult,
-  liveOwnerRefusalText as ownerText,
 } from './conversation-liveness.ts'
 import {
   extractionRunId,
   prepareReaderScratchCloseOut,
   prepareReaderScratchRelease,
   readerScratchReleaseDetail,
+  type SharedReaderArchiveIdentity,
 } from './reader-scratch-close-out.ts'
 import {
   retainedBranchForCloseOut,
@@ -416,13 +418,28 @@ function presentTreeOwnershipResult(input: {
   dryRun?: boolean
 }): CloseOutResult | null {
   if (input.treeAbsent) return null
-  const ownership = inspectTreeOwnership(input.treePath, input.repoRoot, input.conversationIds)
+  const ownership = inspectTreeOwnership(
+    input.treePath,
+    input.repoRoot,
+    input.conversationIds,
+    recordedWorktreeSharerRunIds(db(), input.treePath),
+  )
   return ownershipCloseOutResult({
     runId: input.runId,
     treePath: input.treePath,
     decision: adoptedTreeCloseOutDecision(ownership),
     dryRun: input.dryRun,
   })
+}
+
+function sharedReaderArchiveIdentity(treePath: string): SharedReaderArchiveIdentity | null {
+  if (!isSharedReaderWorktreeClaim(db(), treePath)) return null
+  return { sharerRunIds: recordedWorktreeSharerRunIds(db(), treePath) }
+}
+
+/** Whether the archive step already moved this whole checkout away. */
+function readerArchiveMovedTree(archive: { shared: unknown } | null): boolean {
+  return archive !== null && archive.shared === null
 }
 
 function releasedCloseOut(
@@ -696,6 +713,7 @@ function attemptCloseOutRun(
               repoRoot,
               baseCommit: readerBaseCommit,
               dryRun: false,
+              shared: sharedReaderArchiveIdentity(treePath),
             })
             if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.
@@ -743,7 +761,7 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent || release.path !== null,
+              treeAbsent || readerArchiveMovedTree(scratch.archive),
               release.path !== null,
             )
             if (retainedBranch && branchSnapshot) {
@@ -812,13 +830,7 @@ function attemptCloseOutRun(
                 detail: result.detail,
               })
             const acquired = liveRows()
-            if (acquired.length)
-              return {
-                runId: row.root_record_id,
-                worktree: treePath,
-                outcome: 'failed' as const,
-                detail: `worktree was acquired during cleanup by run(s): ${ownerText(acquired)}`,
-              }
+            if (acquired.length) return liveCloseOutResult(row.root_record_id, treePath, acquired)!
             const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
             released.detail = readerScratchReleaseDetail(released.detail, release)
             return released

@@ -12,7 +12,10 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { git } from '../git/git-environment.ts'
 import { upsertProject } from '../project/projects.ts'
+import { createReadOnlyWorktree } from './worktree-readonly.ts'
 import {
   branchTip,
   changesInIndex,
@@ -20,6 +23,7 @@ import {
   readOnlyRemovalRefusal,
   removeBranch,
   removeFor,
+  removeReadOnlyDirectory,
 } from './worktree-remove.ts'
 
 const directories: string[] = []
@@ -238,6 +242,44 @@ branch refs/heads/DEV-1470-guard
         borrowedSource: repoRoot,
       }),
     ).toBeNull()
+  })
+
+  test('a reader release that leaves provisioned residue reports failure', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'orch-remove-reader-residue-'))
+    const runId = addRun({ agent: 'claude', job: 'review-lens', status: 'running' })
+    let vendor = ''
+    try {
+      git(['init', '--initial-branch=main'], repoRoot)
+      git(
+        [
+          '-c',
+          'user.name=Orch Test',
+          '-c',
+          'user.email=orch@example.invalid',
+          'commit',
+          '--allow-empty',
+          '-m',
+          'base',
+        ],
+        repoRoot,
+      )
+      const base = git(['rev-parse', 'HEAD'], repoRoot)
+      const worktree = createReadOnlyWorktree(repoRoot, runId, base)
+      vendor = join(worktree.path, 'vendor')
+      const pkg = join(vendor, 'pkg')
+      mkdirSync(pkg, { recursive: true })
+      writeFileSync(join(pkg, 'file'), 'provisioned\n')
+      chmodSync(vendor, 0o500)
+
+      const outcome = removeReadOnlyDirectory(worktree)
+
+      expect(outcome.removed).toBeFalse()
+      expect(outcome.detail).toContain(worktree.path)
+      expect(existsSync(worktree.path)).toBeTrue()
+    } finally {
+      if (vendor && existsSync(vendor)) chmodSync(vendor, 0o700)
+      rmSync(repoRoot, { recursive: true, force: true })
+    }
   })
 
   test('forced fallback leaves a branch removeFor decided to keep', () => {

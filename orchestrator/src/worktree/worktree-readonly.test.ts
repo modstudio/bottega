@@ -20,7 +20,62 @@ import {
   landingRemoteTrackingRefs,
   parseRemoteTrackingRefs,
   type RemoteTrackingRef,
+  resolveSharedReadOnlyWorktree,
+  sharedReviewWorktreePath,
 } from './worktree-readonly.ts'
+import type { Worktree } from './worktree-types.ts'
+
+test('shared review readers attach once and a dirty candidate falls back to an own clone', () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'orch-shared-review-worktree-'))
+  const first = addRun({ agent: 'claude', job: 'review-lens', status: 'running' })
+  const second = addRun({ agent: 'claude', job: 'review-lens', status: 'running' })
+  const third = addRun({ agent: 'claude', job: 'review-lens', status: 'running' })
+  try {
+    git(['init', '--initial-branch=main'], repoRoot)
+    writeFileSync(join(repoRoot, 'tracked.txt'), 'clean\n')
+    git(['add', 'tracked.txt'], repoRoot)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '-m',
+        'base',
+      ],
+      repoRoot,
+    )
+    const commit = git(['rev-parse', 'HEAD'], repoRoot)
+    const records: { runId: string; tree: Worktree }[] = []
+    const resolveFor = (runId: string) =>
+      resolveSharedReadOnlyWorktree({
+        cwd: repoRoot,
+        runId,
+        commit,
+        record: (tree) => records.push({ runId, tree }),
+      })
+
+    const created = resolveFor(first)
+    const attached = resolveFor(second)
+    expect(created.worktree.path).toBe(realpathSync(sharedReviewWorktreePath(repoRoot, commit)))
+    expect(attached.worktree.path).toBe(created.worktree.path)
+    expect(created.fallbackReason).toBeNull()
+    expect(created.worktree.sharedReader).toBeTrue()
+    expect(attached.fallbackReason).toBeNull()
+    expect(attached.worktree.sharedReader).toBeTrue()
+    expect(records[1]).toMatchObject({ runId: second, tree: { sharedReader: true } })
+    expect(records).toHaveLength(2)
+
+    writeFileSync(join(created.worktree.path, 'tracked.txt'), 'escaped\n')
+    const fallback = resolveFor(third)
+    expect(fallback.fallbackReason).toContain('does not agree with HEAD')
+    expect(fallback.worktree.sharedReader).toBeFalse()
+    expect(fallback.worktree.path).not.toBe(created.worktree.path)
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true })
+  }
+})
 
 test('landing remote-tracking refs selects the landing branch on every remote', () => {
   const refs: RemoteTrackingRef[] = [

@@ -99,6 +99,7 @@ import {
 } from './orphan-inventory-conditions.ts'
 import { orphanProcessConditions } from './orphan-processes.ts'
 import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
+import { observeReaderTreeConditions } from './reader-tree-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
 
@@ -635,13 +636,17 @@ function terminalCloseOutDetail(run: {
 
 function appendRunConditions(
   conditions: MonitorCondition[],
+  errors: string[],
   database: Database,
   clock: number,
 ): void {
+  const readerTrees = observeReaderTreeConditions(database)
   conditions.push(
     ...staleRunConditions(database, clock),
     ...runTokenJumpConditions(database, clock),
+    ...readerTrees.conditions,
   )
+  errors.push(...readerTrees.errors)
 }
 
 export async function monitor(
@@ -771,7 +776,7 @@ export async function monitor(
     })
   }
 
-  appendRunConditions(conditions, database, clock)
+  appendRunConditions(conditions, errors, database, clock)
   conditions.push(...terminalProcessAliveConditions(clock))
   appendOrphanProcessObservations(conditions, errors, clock)
 

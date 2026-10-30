@@ -33,6 +33,7 @@ export type TreeOwnership = 'owned' | 'attached' | 'unknown'
 
 export type TreeOwnershipInput = {
   conversationRunIds: readonly string[]
+  treeSharerRunIds: readonly string[]
   repoRoot: string
   checkout: boolean | 'unknown'
   marker:
@@ -176,7 +177,12 @@ export function treeOwnership(input: TreeOwnershipInput): TreeOwnership {
     if (input.marker.runRecordId === null || input.marker.repoRoot === null) return 'unknown'
     const markerRoot = resolve(input.marker.repoRoot).replace(/\/$/, '')
     const expectedRoot = resolve(input.repoRoot).replace(/\/$/, '')
-    return conversation.has(input.marker.runRecordId) && markerRoot === expectedRoot
+    const sharers = new Set(input.treeSharerRunIds)
+    const sharedOwnership =
+      sharers.has(input.marker.runRecordId) &&
+      input.conversationRunIds.some((id) => sharers.has(id))
+    return (conversation.has(input.marker.runRecordId) || sharedOwnership) &&
+      markerRoot === expectedRoot
       ? 'owned'
       : 'attached'
   }
@@ -189,10 +195,12 @@ export function inspectTreeOwnership(
   path: string,
   repoRoot: string,
   conversationRunIds: readonly string[],
+  treeSharerRunIds: readonly string[] = [],
 ): TreeOwnership {
   if (!existsSync(path)) {
     return treeOwnership({
       conversationRunIds,
+      treeSharerRunIds,
       repoRoot,
       checkout: 'unknown',
       marker: { state: 'absent' },
@@ -206,6 +214,7 @@ export function inspectTreeOwnership(
       : { state: read.state }
   return treeOwnership({
     conversationRunIds,
+    treeSharerRunIds,
     repoRoot,
     checkout: checkout === null ? 'unknown' : checkout === 'true',
     marker,

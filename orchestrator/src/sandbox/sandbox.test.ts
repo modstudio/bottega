@@ -647,6 +647,35 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.enableWeakerNetworkIsolation).toBe(true)
   })
 
+  test('sandbox selection removes the shared reader worktree from writable roots', () => {
+    const selected = selectReadonlySandbox({
+      agent: 'grok',
+      readsRepo: true,
+      writesRepo: false,
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      scratchDir: '/runs/scratch',
+      project: fixtureProject(),
+      path: '/usr/bin',
+      sharedReader: true,
+    })
+    expect(selected.sandbox).toBe('srt')
+    expect(selected.profile?.filesystem.allowWrite).toEqual(['/runs/evidence', '/runs/scratch'])
+    expect(selected.profile?.filesystem.allowWrite).not.toContain('/runs/tree')
+
+    const own = selectReadonlySandbox({
+      agent: 'grok',
+      readsRepo: true,
+      writesRepo: false,
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      scratchDir: '/runs/scratch',
+      project: fixtureProject(),
+      path: '/usr/bin',
+    })
+    expect(own.profile?.filesystem.allowWrite).toContain('/runs/tree')
+  })
+
   test('profile construction includes the exact token-directory deny without creating it', () => {
     const environment = {
       HOME: homedir(),

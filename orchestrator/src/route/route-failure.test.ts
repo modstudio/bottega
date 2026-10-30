@@ -428,14 +428,15 @@ describe('routing counts failures as evidence', () => {
     // and routing still refuses it for the remaining fifty-five because the
     // last run had failed `unreachable`.
     fixtureProjectRecordId(db())
+    const startedAt = new Date(Date.now() - 5 * 60_000).toISOString()
     db()
       .query(
         `INSERT INTO run (record_id,number,started_at, agent, job, prompt_sha, prompt_bytes, prompt_head,
                         status, failure_kind, project_record_id)
-       VALUES ('${newRecordId()}',1,datetime('now','-5 minutes'),'qwen-local','file-question','s',10,'h',
+       VALUES ('${newRecordId()}',1,?,'qwen-local','file-question','s',10,'h',
                'failed','unreachable',(SELECT record_id FROM project ORDER BY name LIMIT 1))`,
       )
-      .run()
+      .run(startedAt)
     const c = candidates('file-question').find((x) => x.agent === 'qwen-local')!
     expect(c.cooling).toBeNull()
   })
@@ -553,6 +554,8 @@ describe('routing counts failures as evidence', () => {
   })
 
   test('daily quota cools only through its UTC day while minute quota uses the ordinary cooldown', () => {
+    const startOfUtcDay = new Date()
+    startOfUtcDay.setUTCHours(0, 0, 0, 0)
     const run = addRun({
       agent: 'codex',
       job: 'craft',
@@ -560,24 +563,24 @@ describe('routing counts failures as evidence', () => {
       kind: 'daily_quota',
     })
     db()
-      .query("UPDATE run SET started_at=datetime('now','start of day') WHERE record_id=?")
-      .run(run)
+      .query('UPDATE run SET started_at=? WHERE record_id=?')
+      .run(startOfUtcDay.toISOString(), run)
     const daily = candidates('craft').find((x) => x.agent === 'codex')!
     expect(daily.cooling).toContain('daily_quota')
     expect(daily.why).toContain('next UTC day')
 
     db()
-      .query("UPDATE run SET started_at=datetime('now','start of day','-1 day') WHERE record_id=?")
-      .run(run)
+      .query('UPDATE run SET started_at=? WHERE record_id=?')
+      .run(new Date(startOfUtcDay.getTime() - 24 * 60 * 60_000).toISOString(), run)
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
 
     db()
-      .query(
-        "UPDATE run SET failure_kind='quota',started_at=datetime('now','-61 minutes') WHERE record_id=?",
-      )
-      .run(run)
+      .query("UPDATE run SET failure_kind='quota',started_at=? WHERE record_id=?")
+      .run(new Date(Date.now() - 61 * 60_000).toISOString(), run)
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toBeNull()
-    db().query("UPDATE run SET started_at=datetime('now','-5 minutes') WHERE record_id=?").run(run)
+    db()
+      .query('UPDATE run SET started_at=? WHERE record_id=?')
+      .run(new Date(Date.now() - 5 * 60_000).toISOString(), run)
     expect(candidates('craft').find((x) => x.agent === 'codex')!.cooling).toContain('quota')
   })
 

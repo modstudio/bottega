@@ -50,6 +50,22 @@ export type ClaimedWorktreeOwner = {
   allocation_key: string
 }
 
+/** Whether this exact checkout was minted as a commit-keyed shared reader. */
+export function isSharedReaderWorktreeClaim(database: Database, path: string): boolean {
+  const canonicalPath = realpathOrSpelled(path)
+  const claims = database
+    .query(`SELECT allocation_key,identity FROM resource_claim WHERE kind='worktree'`)
+    .all() as { allocation_key: string; identity: string | null }[]
+  return claims.some((claim) => {
+    if (realpathOrSpelled(claim.allocation_key) !== canonicalPath || !claim.identity) return false
+    try {
+      return JSON.parse(claim.identity).sharedReader === true
+    } catch {
+      return false
+    }
+  })
+}
+
 /** Runs whose live worktree claim resolves to the requested filesystem path. */
 export function runsClaimingWorktreePath(database: Database, path: string): ClaimedWorktreeOwner[] {
   const canonicalPath = realpathOrSpelled(path)
@@ -606,6 +622,7 @@ export function recordCreatedWorktreeClaims(
     owned: boolean
     path: string
     head: string
+    sharedReader?: boolean
     mintedBranch: string | null
     label: string
     claimedAt: string
@@ -621,7 +638,13 @@ export function recordCreatedWorktreeClaims(
       kind,
       allocationKey: kind === 'worktree' ? input.path : `refs/heads/${branch}`,
       identity:
-        kind === 'worktree' ? JSON.stringify({ path: input.path, head: input.head }) : input.head,
+        kind === 'worktree'
+          ? JSON.stringify({
+              path: input.path,
+              head: input.head,
+              ...(input.sharedReader ? { sharedReader: true } : {}),
+            })
+          : input.head,
     })
   }
 }

@@ -12,6 +12,21 @@ const module = (file: string, allowed: string[]): MonitorModule => ({
 })
 
 export const monitorModules: MonitorModule[] = [
+  module('orchestrator/src/monitor/reader-tree-conditions.ts', [
+    'node:fs',
+    '../../../shared/brand.ts',
+    '../../../shared/process-identity.ts',
+    '../database/db.ts',
+    '../git/checkout-identity.ts',
+    '../jobs/jobs.ts',
+    '../project/project-lock.ts',
+    '../resources/resource-claims.ts',
+    '../run/run-alive.ts',
+    '../run/run-lease.ts',
+    '../run/run-owner-session-liveness.ts',
+    '../worktree/worktree-attribution.ts',
+    './monitor-types.ts',
+  ]),
   module('orchestrator/src/host-load-sample.ts', [
     'bun:sqlite',
     './database/db.ts',
@@ -125,6 +140,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-record-tunnel.ts',
     './monitor-result.ts',
     './monitor-retrieval-pins.ts',
+    './reader-tree-conditions.ts',
     './ratcheted-rule-conditions.ts',
     './monitor-stray-worktrees.ts',
     './monitor-harness-load.ts',

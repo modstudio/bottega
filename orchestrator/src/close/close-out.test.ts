@@ -684,7 +684,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail:
-        `live run(s): ${child} (running, this conversation)\n` +
+        `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
         `cleared by: ${PLATFORM_SLUG} run wait ${child}, then rerun this command`,
     })
     expect(db().query('SELECT worktree FROM run WHERE record_id=?').get(id)).toEqual({
@@ -694,7 +694,7 @@ test('absent terminal landing-tree close-out clears its pointer and settles miss
     expect(closeOutRun(id, { intent: 'sweep' })).toMatchObject({
       outcome: 'live',
       detail:
-        `live run(s): ${child} (running, this conversation)\n` +
+        `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
         `cleared by: ${PLATFORM_SLUG} run wait ${child}, then rerun this command`,
     })
     db().query("UPDATE run SET status='ok',pid=NULL WHERE record_id=?").run(child)
@@ -745,7 +745,7 @@ test('absent landing-tree close-out rechecks conversation liveness before cleari
     expect(closeOutRun(id, { intent: 'explicit' })).toMatchObject({
       outcome: 'live',
       detail:
-        `live run(s): ${child} (running, this conversation)\n` +
+        `tree ${tree} has live run(s): ${child} (running, this conversation)\n` +
         `cleared by: ${PLATFORM_SLUG} run wait ${child}, then rerun this command`,
     })
     expect(becameAlive).toBe(true)
@@ -994,7 +994,7 @@ test('a live sharer blocks absent-tree recipe teardown', () => {
     expect(closeOutRun(fixture.id, { intent: 'terminal' })).toMatchObject({
       outcome: 'live',
       detail:
-        `live run(s): ${sharer} (running, launched from this tree; automatic failover relaunches from it)\n` +
+        `tree ${fixture.tree} has live run(s): run 2 [${sharer}] (running, launched from this tree; automatic failover relaunches from it)\n` +
         `cleared by: ${PLATFORM_SLUG} run wait ${sharer}, then rerun this command`,
     })
     expect(commands).not.toContain('teardown-marker')

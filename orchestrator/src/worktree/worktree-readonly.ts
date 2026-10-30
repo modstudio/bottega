@@ -28,6 +28,11 @@ export function readOnlyWorktreePath(repoRoot: string, runId: string): string {
   return join(repoRoot, '.claude', 'worktrees', `orch-${runId}`)
 }
 
+/** One deterministic checkout for every confined lens reviewing this commit. */
+export function sharedReviewWorktreePath(repoRoot: string, commit: string): string {
+  return join(repoRoot, '.claude', 'worktrees', `orch-review-${commit.slice(0, 12)}`)
+}
+
 export function createReadOnlyWorktree(
   cwd: string,
   runId: string,
@@ -39,10 +44,31 @@ export function createReadOnlyWorktree(
   const repoRoot = repoRootOf(cwd)
   if (!repoRoot) throw new Error(`not a git repository: ${cwd}`)
   const path = readOnlyWorktreePath(repoRoot, runId)
+  return createReadOnlyWorktreeAt(
+    repoRoot,
+    path,
+    runId,
+    base,
+    record,
+    provision,
+    provisionTimeoutMs,
+  )
+}
+
+function createReadOnlyWorktreeAt(
+  repoRoot: string,
+  path: string,
+  runId: string,
+  base: string,
+  record?: RecordWorktree,
+  provision: WorktreeProvision = [],
+  provisionTimeoutMs?: number,
+  sharedReader = false,
+): Worktree {
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const }
+  const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const, sharedReader }
   try {
     const landingBranch = projectAt(repoRoot)?.settings.trunk?.trim() || null
     const remoteTrackingRefs = landingRemoteTrackingRefs(
@@ -76,6 +102,69 @@ export function createReadOnlyWorktree(
       `${error instanceof Error ? error.message : String(error)}\ncleanup: ${cleanup.detail}`,
     )
   }
+}
+
+export type SharedReaderResolution = {
+  worktree: Worktree
+  fallbackReason: string | null
+}
+
+/** Create, attach to, or conservatively decline the shared review checkout. */
+export function resolveSharedReadOnlyWorktree(input: {
+  cwd: string
+  runId: string
+  commit: string
+  record?: RecordWorktree
+  provision?: WorktreeProvision
+  provisionTimeoutMs?: number
+}): SharedReaderResolution {
+  const repoRoot = repoRootOf(input.cwd)
+  if (!repoRoot) throw new Error(`not a git repository: ${input.cwd}`)
+  const path = sharedReviewWorktreePath(repoRoot, input.commit)
+  if (!existsSync(path)) {
+    return {
+      worktree: createReadOnlyWorktreeAt(
+        repoRoot,
+        path,
+        input.runId,
+        input.commit,
+        input.record,
+        input.provision,
+        input.provisionTimeoutMs,
+        true,
+      ),
+      fallbackReason: null,
+    }
+  }
+  const candidate = {
+    path,
+    branch: '',
+    base: input.commit,
+    repoRoot,
+    source: 'clone' as const,
+  }
+  try {
+    verifyFreshWorktree(candidate)
+    verifyBorrowedCheckout(path, repoRoot)
+  } catch (error) {
+    return {
+      worktree: {
+        ...createReadOnlyWorktree(
+          repoRoot,
+          input.runId,
+          input.commit,
+          input.record,
+          input.provision,
+          input.provisionTimeoutMs,
+        ),
+        sharedReader: false,
+      },
+      fallbackReason: String((error as Error).message ?? error),
+    }
+  }
+  const attached = { ...candidate, sharedReader: true }
+  input.record?.(attached)
+  return { worktree: attached, fallbackReason: null }
 }
 
 export type RemoteTrackingRef = { ref: string; object: string }

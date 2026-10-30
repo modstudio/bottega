@@ -12,6 +12,7 @@ import { leakedResourceLines, resourcesForRuns } from '../resources/docker-resou
 import { settleClaims } from '../resources/resource-claims.ts'
 import {
   otherConversationWorktreeSharers,
+  recordedWorktreeSharerRunIds,
   type WorktreeSharerRow,
 } from '../resources/resource-ownership.ts'
 import {
@@ -428,7 +429,12 @@ function assertDiscardTreeOwnership(row: CleanupRow, repoRoot: string, force: bo
       )
       .all(row.record_id) as { record_id: string }[]
   ).map((turn) => turn.record_id)
-  const ownership = inspectTreeOwnership(row.worktree, repoRoot, conversationIds)
+  const ownership = inspectTreeOwnership(
+    row.worktree,
+    repoRoot,
+    conversationIds,
+    recordedWorktreeSharerRunIds(db(), row.worktree),
+  )
   if (ownership === 'attached') {
     throw new Error(
       `refusing to remove attached tree ${row.worktree}; ` +
