@@ -1,6 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
-import { boardHeaderValue, quoteBoardBody } from './board-render.ts'
+import { BOARD_TITLE_MAX_CHARS, boardHeaderValue } from './board-policy.ts'
+import { quoteBoardBody } from './board-render.ts'
 
 export function renderBoardQuestion(message: {
   id: number | string

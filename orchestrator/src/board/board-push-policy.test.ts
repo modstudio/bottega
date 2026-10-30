@@ -135,14 +135,30 @@ test('a read-only delivery defers a reply successor instead of claiming it', () 
     createdAt: postedAt,
     expiresAt: null,
     reportReplySuccessor: true,
-    replyRecordId: 'reply-record-id',
     threadTitle: 'Report thread',
   }
   expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
     notices: [],
     withheldOlderCount: 0,
     deferredReplySuccessorCount: 1,
-    deferredReplySuccessors: [{ replyRecordId: 'reply-record-id', threadTitle: 'Report thread' }],
+    deferredReplySuccessors: [successor],
+  })
+})
+
+test('a read-only delivery does not defer an expired reply successor', () => {
+  const successor = {
+    ackRequired: false,
+    ackDeadline: null,
+    createdAt: postedAt,
+    expiresAt: '2026-10-16T11:59:59.999Z',
+    reportReplySuccessor: true,
+    threadTitle: 'Expired report thread',
+  }
+  expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
+    notices: [],
+    withheldOlderCount: 1,
+    deferredReplySuccessorCount: 0,
+    deferredReplySuccessors: [],
   })
 })
 

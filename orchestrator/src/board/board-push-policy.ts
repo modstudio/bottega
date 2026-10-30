@@ -2,7 +2,7 @@
 /** Decides whether a board message belongs in a reader's pushed delivery. */
 
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
-import { type PresenceFact, resolveAudience } from './board-policy.ts'
+import { boardHeaderValue, type PresenceFact, resolveAudience } from './board-policy.ts'
 
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
@@ -135,7 +135,6 @@ export function selectPushNotices<
     expiresAt: string | null
     purpose?: BoardPurpose
     reportReplySuccessor?: boolean
-    replyRecordId?: string
     threadTitle?: string
   },
 >(
@@ -147,19 +146,10 @@ export function selectPushNotices<
   notices: T[]
   withheldOlderCount: number
   deferredReplySuccessorCount: number
-  deferredReplySuccessors: DeferredReplySuccessor[]
+  deferredReplySuccessors: T[]
 } {
-  const deferredReplySuccessors: DeferredReplySuccessor[] = []
+  const deferredReplySuccessors: T[] = []
   const notices = candidates.flatMap((notice) => {
-    if (notice.reportReplySuccessor && !claimReplySuccessors) {
-      if (notice.replyRecordId === undefined || notice.threadTitle === undefined)
-        throw new Error('deferred report reply successor is missing its record id or thread title')
-      deferredReplySuccessors.push({
-        replyRecordId: notice.replyRecordId,
-        threadTitle: notice.threadTitle,
-      })
-      return []
-    }
     const decision = boardPushDecision({
       acknowledgementRequired: notice.ackRequired,
       postedAt: notice.createdAt,
@@ -171,6 +161,10 @@ export function selectPushNotices<
       reportReplySuccessor: notice.reportReplySuccessor,
     })
     if (decision === 'withheld') return []
+    if (notice.reportReplySuccessor && !claimReplySuccessors) {
+      deferredReplySuccessors.push(notice)
+      return []
+    }
     return [notice]
   })
   return {
@@ -181,8 +175,6 @@ export function selectPushNotices<
   }
 }
 
-const warningValue = (value: string): string => value.replace(/[\r\n\u2028\u2029]/g, ' ')
-
 export function deferredReplySuccessorWarning(
   replies: DeferredReplySuccessor[],
   deliveryCommand: string,
@@ -192,12 +184,12 @@ export function deferredReplySuccessorWarning(
     .slice(0, DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT)
     .map(
       (reply) =>
-        `"${warningValue(reply.threadTitle)}" (reply ${warningValue(reply.replyRecordId)})`,
+        `"${boardHeaderValue(reply.threadTitle)}" (reply ${boardHeaderValue(reply.replyRecordId)})`,
     )
     .join(', ')
   const remaining = replies.length - DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT
   const more = remaining > 0 ? `, and ${remaining} more` : ''
-  return `Deferred report replies: ${named}${more}. Each is held, not lost. The next board delivery that can claim it delivers it. Run ${warningValue(deliveryCommand)} to deliver it now.`
+  return `Deferred report replies: ${named}${more}. Each is held, not lost. The next board delivery that can claim it delivers it. Run ${boardHeaderValue(deliveryCommand)} to deliver it now.`
 }
 
 export const missingReaderStartWarning = (reader: string): string =>
