@@ -61,13 +61,10 @@ function repositoryStorageAbsent(treePath: string): boolean {
   if (!index.ok || index.stdout.split('\n').some((line) => line.startsWith('160000 '))) return false
   const tracked = gitResult(['ls-files', '-z'], treePath)
   if (!tracked.ok) return false
-  const trackedDirectories = new Set(
-    tracked.stdout
-      .split('\0')
-      .filter(Boolean)
-      .map((path) => dirname(path))
-      .filter((directory) => directory !== '.'),
-  )
+  const trackedDirectories = new Set<string>()
+  for (const path of tracked.stdout.split('\0').filter(Boolean))
+    for (let directory = dirname(path); directory !== '.'; directory = dirname(directory))
+      trackedDirectories.add(directory)
   if ([...trackedDirectories].some((directory) => existsSync(join(treePath, directory, '.git'))))
     return false
   const untracked = gitResult(

@@ -38,8 +38,9 @@ export function closeOutFixture(
   git(['init', '--initial-branch=main'], repo)
   writeFileSync(join(repo, 'tracked.txt'), 'committed\n')
   if (options.trackedDirectory) {
-    mkdirSync(join(repo, 'tracked-directory'), { recursive: true })
-    writeFileSync(join(repo, 'tracked-directory', 'tracked.txt'), 'committed nested\n')
+    // Tracked only below the nested repository's root, so only an ancestor check finds it.
+    mkdirSync(join(repo, 'tracked-directory', 'inner'), { recursive: true })
+    writeFileSync(join(repo, 'tracked-directory', 'inner', 'tracked.txt'), 'committed nested\n')
   }
   if (options.submodule) {
     mkdirSync(nestedSource, { recursive: true })
