@@ -10,9 +10,7 @@ import { join, resolve } from 'node:path'
 import { restoreBranch } from '../branch/branch-ref-guard.ts'
 import { db, nowIso, sessionId, writeTransaction } from '../database/db.ts'
 import { gitContext, targetGitEnvironment } from '../git/git-environment.ts'
-import { hookTreeHoldDecision } from '../hook-tree/hook-tree.ts'
 import { isGroupKillablePgid, runHasLiveDescendants } from '../idle-kill.ts'
-import { landingTreeHoldDecision } from '../landing-tree/landing-tree.ts'
 import {
   projectLockState,
   reclaimStaleProjectLock,
@@ -37,9 +35,7 @@ import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { removeFreeRunCloseOutLease, removeFreeRunLease } from '../run/run-lease.ts'
 import { processTable, terminateRunProcesses } from '../run/run-process.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
-import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
-import { inspectTreeOwnership, worktreeDirty } from '../worktree/worktree-attribution.ts'
+import { inspectTreeOwnership } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { releaseAbsentCloseOutResidue } from './absent-close-out-residue.ts'
@@ -83,6 +79,7 @@ import {
   retainedBranchReason,
   retainedRefForRun,
 } from './retained-branch.ts'
+import { closeOutKeepTreeDecision, conversationKeepTreeHold, treeNamersText } from './tree-keep.ts'
 import { treeProcessCwdHold } from './tree-process-cwd-hold.ts'
 
 export type { CloseOutResult } from './close-out-report.ts'
@@ -104,78 +101,6 @@ type RunIdRow = { record_id: string }
 
 function terminateCloseOutProcesses(dryRun: boolean, runId: string): void {
   if (!dryRun) terminateRunProcesses(runId, [process.pid])
-}
-
-function conversationKeepTreeHold(rootId: string, now: string): ConversationKeepTreeHold {
-  const rows = db()
-    .query(
-      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
-       WHERE record_id=? OR parent_run_record_id=? ORDER BY number`,
-    )
-    .all(rootId, rootId) as {
-    job: string
-    keep_tree: number
-    keep_tree_until: string | null
-    keep_tree_reason: string | null
-    started_at: string
-    worktree: string | null
-    branch: string | null
-  }[]
-  const treeExists = rows.some((row) => row.worktree !== null && existsSync(row.worktree))
-  const expired: { held: false; expiredAt: string }[] = []
-  for (const row of rows) {
-    const decision = keepTreeHold({
-      keepTree: row.keep_tree,
-      keepTreeUntil: row.keep_tree_until,
-      startedAt: row.started_at,
-      now,
-    })
-    if (decision.held) {
-      return landingTreeHoldDecision(
-        { job: row.job, treeExists, branch: row.branch, runId: rootId },
-        !row.worktree || !existsSync(row.worktree) || !worktreeDirty(row.worktree).dirty,
-        hookTreeHoldDecision(
-          { job: row.job, treeExists },
-          {
-            ...decision,
-            reason: row.keep_tree_reason ?? 'explicit --keep-tree',
-          },
-        ),
-      )
-    }
-    if ('expiredAt' in decision) expired.push(decision)
-  }
-  const latest = expired.sort((a, b) => Date.parse(b.expiredAt) - Date.parse(a.expiredAt))[0]
-  const hook = rows.some((row) => row.job === HOOK_TREE_JOB) ? HOOK_TREE_JOB : ''
-  const landingRows = rows.filter((row) => row.job === LANDING_TREE_JOB)
-  return landingTreeHoldDecision(
-    {
-      job: landingRows[0]?.job ?? '',
-      treeExists,
-      branch: landingRows[0]?.branch ?? null,
-      runId: rootId,
-    },
-    landingRows
-      .filter((row) => row.worktree && existsSync(row.worktree))
-      .every((row) => !worktreeDirty(row.worktree!).dirty),
-    hookTreeHoldDecision({ job: hook, treeExists }, latest ?? { held: false as const }),
-  )
-}
-
-function closeOutKeepTreeDecision(
-  rootId: string,
-  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove',
-): ConversationKeepTreeHold {
-  if (intent === 'tree-remove') return { held: false }
-  if (intent === 'sweep') {
-    const landing = db()
-      .query(
-        'SELECT 1 present FROM run WHERE (record_id=? OR parent_run_record_id=?) AND job=? LIMIT 1',
-      )
-      .get(rootId, rootId, LANDING_TREE_JOB)
-    if (landing) return { held: false }
-  }
-  return conversationKeepTreeHold(rootId, nowIso())
 }
 
 /** Drop the conversation root's keep-tree hold so terminal close-out can reclaim the tree. */
@@ -924,25 +849,50 @@ function appendRetainedBranchDetail(result: CloseOutAttemptResult): CloseOutAtte
   return result
 }
 
+function conversationRootAndWorktree(runId: string): {
+  rootRecordId: string
+  worktree: string | null
+} {
+  const row = db()
+    .query(
+      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id,worktree FROM run WHERE record_id=?',
+    )
+    .get(runId) as { root_record_id: string; worktree: string | null } | null
+  if (!row) throw new Error(`no run ${runId}`)
+  const root = db().query('SELECT worktree FROM run WHERE record_id=?').get(row.root_record_id) as {
+    worktree: string | null
+  } | null
+  return { rootRecordId: row.root_record_id, worktree: row.worktree ?? root?.worktree ?? null }
+}
+
+function closeOutCallerDetail(detail: string, intent: CloseOutOptions['intent']): string {
+  return `${detail}; close-out intent=${intent} pid=${process.pid} ppid=${process.ppid}`
+}
+
+function appendTreeNamingDetail(
+  result: CloseOutAttemptResult,
+  naming: ReturnType<typeof closeOutKeepTreeDecision>['naming'],
+): void {
+  if (naming.action === 'proceed-named') {
+    result.detail += `; ${treeNamersText(naming.namers)} names this tree`
+  }
+}
+
 /** Run one close-out attempt and retain its outcome for observation and retry. */
 function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): CloseOutResult {
-  const root = db()
-    .query(
-      'SELECT COALESCE(parent_run_record_id,record_id) root_record_id FROM run WHERE record_id=?',
-    )
-    .get(runId) as { root_record_id: string } | null
-  if (!root) throw new Error(`no run ${runId}`)
-  closeTerminalChainQuestions(root.root_record_id, Boolean(options.dryRun))
-  const keepTreeDecision = closeOutKeepTreeDecision(root.root_record_id, options.intent)
+  const root = conversationRootAndWorktree(runId)
+  closeTerminalChainQuestions(root.rootRecordId, Boolean(options.dryRun))
+  const keepTree = closeOutKeepTreeDecision(root.rootRecordId, root.worktree, options.intent)
   // Spellings are taken while the tree still exists, because a removed
   // symlinked path no longer resolves to the identity its other rows share.
-  const spellingsBefore = conversationWorktreeSpellings(db(), root.root_record_id)
-  let result = attemptCloseOutRun(runId, { ...options, keepTreeDecision })
-  if (!keepTreeDecision.held && 'expiredAt' in keepTreeDecision) {
-    result.detail = `${result.detail}; keep-tree hold expired at ${keepTreeDecision.expiredAt}`
+  const spellingsBefore = conversationWorktreeSpellings(db(), root.rootRecordId)
+  let result = attemptCloseOutRun(runId, { ...options, keepTreeDecision: keepTree.hold })
+  if (!keepTree.hold.held && 'expiredAt' in keepTree.hold) {
+    result.detail = `${result.detail}; keep-tree hold expired at ${keepTree.hold.expiredAt}`
   }
   if (!options.dryRun) {
     result = appendRetainedBranchDetail(result)
+    appendTreeNamingDetail(result, keepTree.naming)
     writeTransaction(() => {
       result = settlementLivenessResult(result)
       result.detail = releaseAbsentCloseOutResidue({
@@ -951,6 +901,7 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
         detail: result.detail,
         dryRun: false,
       })
+      const settledDetail = closeOutCallerDetail(result.detail, options.intent)
       const settled = settledStateForCloseOut(result.outcome, 'worktree')
       const settledAt = nowIso()
       db()
@@ -959,7 +910,7 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
             SET close_out_outcome=?, close_out_detail=?, close_out_attempted_at=?
           WHERE record_id=?`,
         )
-        .run(result.outcome, result.detail, settledAt, result.runId)
+        .run(result.outcome, settledDetail, settledAt, result.runId)
       if (
         result.worktree &&
         pointerMustClear(result.outcome, result.worktree) &&
@@ -980,7 +931,7 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
           kind: 'worktree',
           state: settled,
           settledAt,
-          detail: result.detail,
+          detail: settledDetail,
         })
       }
     })
@@ -1000,7 +951,7 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
       if (!options.dryRun) {
         db()
           .query('UPDATE run SET close_out_detail=? WHERE record_id=?')
-          .run(result.detail, result.runId)
+          .run(closeOutCallerDetail(result.detail, options.intent), result.runId)
       }
     }
   }

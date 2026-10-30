@@ -43,7 +43,7 @@ test('reads valid worktree arguments only from open workflow cursors', () => {
   add('running', '{malformed')
 
   expect(openCursorWorktrees(d)).toEqual([
-    { project: 'fixture', worktree: '/trees/running' },
-    { project: 'fixture', worktree: '/trees/awaiting' },
+    { number: 1, workflow: 'fixture', project: 'fixture', worktree: '/trees/running' },
+    { number: 2, workflow: 'fixture', project: 'fixture', worktree: '/trees/awaiting' },
   ])
 })

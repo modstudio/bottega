@@ -2,10 +2,8 @@
 /** Applies the held-tree decision to one project's declared sweep command. */
 
 import { existsSync, realpathSync } from 'node:fs'
-import { db } from '../database/db.ts'
+import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import type { Project } from '../project/projects.ts'
-import { liveRunWorktrees } from '../reclaim/orphan-process-reclaim.ts'
-import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { sweepWithTool } from '../worktree/worktree-remove.ts'
 import type { CleanupPresentation } from './cleanup.ts'
 import { withCleanupLock } from './cleanup.ts'
@@ -55,19 +53,7 @@ export function sweepProject(input: {
     const outcome = withCleanupLock(project.path, `project sweep for ${project.name}`, null, () => {
       const current = heldProjectTrees()
       for (const path of heldPaths) current.add(project.name, path)
-      for (const row of openCursorWorktrees())
-        if (row.project === project.name) current.add(row.project, row.worktree)
-      const live = liveRunWorktrees()
-      const runRows = db()
-        .query<{ project: string | null; worktree: string }, []>(
-          `SELECT COALESCE(run.repo,project.name) project,run.worktree
-             FROM run LEFT JOIN project ON project.record_id=run.project_record_id
-            WHERE run.worktree IS NOT NULL`,
-        )
-        .all()
-      for (const row of runRows)
-        if (row.project === project.name && live.has(row.worktree))
-          current.add(row.project, row.worktree)
+      for (const path of namedProjectTreePaths(project.name)) current.add(project.name, path)
       const decision = decideProjectSweep({
         heldPaths: [...(current.byProject.get(project.name) ?? [])].sort(),
         honorsHeld: tool.sweep_honors_held === true,

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
+import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
 import { heldRunCloseOutLeaseIds, withRunCloseOutLease } from '../run/run-lease.ts'
@@ -157,10 +158,65 @@ function closeOutFixture(
   return { id, repo, tree, spawnCommands }
 }
 
+function openCursorNaming(worktree: string): number {
+  const cursor = db()
+    .query<{ number: number }, string[]>(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+         question,total_steps,created_at,updated_at,enforcement)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'segnavia','ship-task',
+               'default','','',NULL,?,?,?,0,'review-lenses','running','[]',NULL,1,
+               '2026-10-30','2026-10-30','floors') RETURNING number`,
+    )
+    .get(
+      newRecordId(),
+      workflowVersionRecordId(db()),
+      catalogueVersionRecordId(db()),
+      JSON.stringify({ worktree }),
+    )
+  return cursor!.number
+}
+
 describe('close-out extraction decision', () => {
   test('rejects filing a child turn extraction under the conversation root', () => {
     expect(extractionRunId({ record_id: 'run-record-id-4267' })).toBe('run-record-id-4267')
   })
+})
+
+describe('close-out of a tree named by an open workflow cursor', () => {
+  for (const intent of ['terminal', 'sweep'] as const) {
+    test(`${intent} holds the named tree`, () => {
+      const fixture = closeOutFixture('owned')
+      const number = openCursorNaming(fixture.tree)
+      try {
+        const result = closeOutRun(fixture.id, { intent })
+
+        expect(result.outcome).toBe('held')
+        expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
+        expect(existsSync(fixture.tree)).toBe(true)
+      } finally {
+        rmSync(fixture.repo, { recursive: true, force: true })
+      }
+    })
+  }
+
+  for (const intent of ['explicit', 'tree-remove'] as const) {
+    test(`${intent} proceeds and reports the cursor naming the tree`, () => {
+      const fixture = closeOutFixture('owned')
+      const number = openCursorNaming(fixture.tree)
+      try {
+        const result = closeOutRun(fixture.id, { intent })
+
+        expect(result.outcome).toBe('released')
+        expect(result.detail).toContain(`open workflow cursor ${number} (ship-task, segnavia)`)
+        expect(result.detail).toEndWith('names this tree')
+        expect(existsSync(fixture.tree)).toBe(false)
+      } finally {
+        rmSync(fixture.repo, { recursive: true, force: true })
+      }
+    })
+  }
 })
 
 test('close-out forgets an attached tree without removing its directory', () => {

@@ -695,10 +695,24 @@ function finishDefaultDatabaseOpen(d: Database, openMode: StoreOpenMode, writabl
   if (writable && registeredStoreWriteProtected) throw new Error(LINKED_WORKTREE_WRITE_REFUSAL)
 }
 
-export function liveRuns(database: Database = db()): { worktree: string | null }[] {
-  return database.query(`SELECT worktree FROM run WHERE status IN ('running','asking')`).all() as {
-    worktree: string | null
-  }[]
+export type LiveRun = {
+  recordId: string
+  rootRecordId: string
+  project: string | null
+  worktree: string | null
+}
+
+export function liveRuns(database: Database = db()): LiveRun[] {
+  return database
+    .query(
+      `SELECT run.record_id recordId,
+              COALESCE(run.parent_run_record_id,run.record_id) rootRecordId,
+              COALESCE(run.repo,project.name) project,
+              run.worktree
+         FROM run LEFT JOIN project ON project.record_id=run.project_record_id
+        WHERE run.status IN ('running','asking')`,
+    )
+    .all() as LiveRun[]
 }
 
 /** Open the only sanctioned multi-statement write transaction. */

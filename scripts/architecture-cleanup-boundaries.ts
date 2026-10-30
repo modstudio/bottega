@@ -1,5 +1,24 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'tree-keep-boundary',
+    file: 'orchestrator/src/close/tree-keep.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:fs',
+      '../database/db.ts',
+      '../hook-tree/hook-tree.ts',
+      '../landing-tree/landing-tree.ts',
+      '../run/synthetic-lifecycle-job.ts',
+      '../workflow/workflow-cursor-worktrees.ts',
+      '../worktree/keep-tree-hold.ts',
+      '../worktree/worktree-attribution.ts',
+      './close-out-report.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep tree naming and keep policy in one adapter over cursor, live-run, and existing hold evidence.',
+  },
+  {
     name: 'tree-process-cwd-decision-boundary',
     file: 'orchestrator/src/close/tree-process-cwd-decision.ts',
     allowed: ['../worktree/removal-working-directory.ts'],
@@ -254,11 +273,9 @@ export const cleanupBoundarySpecs = [
     name: 'project-sweep-boundary',
     file: 'orchestrator/src/cleanup/project-sweep.ts',
     allowed: [
-      '../database/db.ts',
       'node:fs',
+      '../close/tree-keep.ts',
       '../project/projects.ts',
-      '../reclaim/orphan-process-reclaim.ts',
-      '../workflow/workflow-cursor-worktrees.ts',
       '../worktree/worktree-remove.ts',
       './cleanup.ts',
       './cleanup-sweep-decisions.ts',

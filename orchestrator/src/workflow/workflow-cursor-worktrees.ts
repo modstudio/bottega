@@ -4,12 +4,17 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 
-export type OpenCursorWorktree = { project: string; worktree: string }
+export type OpenCursorWorktree = {
+  number: number
+  workflow: string
+  project: string
+  worktree: string
+}
 
 export function openCursorWorktrees(database: Database = db()): OpenCursorWorktree[] {
   const rows = database
-    .query<{ project: string; args: string }, []>(
-      `SELECT project,args FROM workflow_cursor
+    .query<{ number: number; workflow: string; project: string; args: string }, []>(
+      `SELECT number,workflow_slug workflow,project,args FROM workflow_cursor
        WHERE state NOT IN ('done','abandoned')
        ORDER BY number`,
     )
@@ -18,7 +23,7 @@ export function openCursorWorktrees(database: Database = db()): OpenCursorWorktr
     try {
       const worktree = (JSON.parse(row.args) as Record<string, unknown>).worktree
       return typeof worktree === 'string' && worktree.trim()
-        ? [{ project: row.project, worktree }]
+        ? [{ number: row.number, workflow: row.workflow, project: row.project, worktree }]
         : []
     } catch {
       return []
