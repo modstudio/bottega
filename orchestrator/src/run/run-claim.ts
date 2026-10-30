@@ -587,7 +587,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const runtimeDirExisted = existsSync(runtimeDir)
   /**
    * Cutting the worktree can FAIL, and the row already exists by now.
-   *
    * A directory that is not a git repository, or a worktree path already taken,
    * throws here — and this used to happen outside the try/finally below, so the
    * row stayed `running` for ever with no process behind it until the stale
@@ -597,12 +596,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   let cwd = callerCwd
   try {
-    await admitFreshRepositoryRun({
-      database: db(),
-      runId: claim.id,
-      repoJob,
-      existingChain: opts.resume !== undefined,
-    })
+    await admitFreshRepositoryRun(db(), claim.id, repoJob, opts.resume !== undefined)
     switch (claimTreePlan.mode) {
       case 'attach':
         worktree = attachedTree!

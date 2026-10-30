@@ -188,7 +188,7 @@ describe('run host capacity', () => {
           WHERE record_id IN (SELECT value FROM json_each(?)) ORDER BY number`,
       )
       .all(JSON.stringify(runIds))
-    expect(JSON.parse(rows[0]!.host_admission)).toMatchObject({
+    expect(JSON.parse(rows[0]!.host_admission!)).toMatchObject({
       decision: 'admit',
       sample: { recentAdmissions: 0 },
     })

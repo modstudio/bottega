@@ -65,7 +65,7 @@ export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT record_id, agent, agent_star
         WHERE status='running' AND host_wait_since IS NULL AND record_id<>? AND
               (worktree IS NOT NULL OR host_admission IS NOT NULL)`
 
-export const RUN_HOST_RESERVATIONS_SQL = `SELECT record_id, agent, agent_start_time, host_admission FROM run
+const RUN_HOST_RESERVATIONS_SQL = `SELECT record_id, agent, agent_start_time, host_admission FROM run
         WHERE status='running' AND record_id<>? AND
               (host_admission IS NOT NULL OR
                (worktree IS NOT NULL AND host_wait_since IS NULL AND agent_start_time IS NOT NULL))`
