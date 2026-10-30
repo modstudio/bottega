@@ -336,7 +336,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
-  const taskRecordId = links.taskRecordId
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
@@ -415,7 +414,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         launchCwd,
         launchSeed,
         launchKey,
-        taskRecordId,
+        links.taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
@@ -462,7 +461,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         launchCwd,
         launchSeed,
         launchKey,
-        taskRecordId,
+        links.taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
@@ -586,7 +585,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
   /**
-   * Cutting the worktree can FAIL, and the row already exists by now.
    * A directory that is not a git repository, or a worktree path already taken,
    * throws here — and this used to happen outside the try/finally below, so the
    * row stayed `running` for ever with no process behind it until the stale
