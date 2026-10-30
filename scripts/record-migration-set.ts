@@ -4,7 +4,6 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { SQL } from 'bun'
-import { pendingRecordMigrationNames } from '../orchestrator/src/postgres/postgres-migrate.ts'
 
 export type RecordMigration = { name: string; sql: Uint8Array }
 
@@ -41,6 +40,9 @@ if (import.meta.main) {
   if (process.argv.includes('--pending')) {
     const url = process.env.BOTTEGA_RECORD_MIGRATE_URL
     if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to read pending migrations')
+    const { pendingRecordMigrationNames } = await import(
+      '../orchestrator/src/postgres/postgres-migrate.ts'
+    )
     const sql = new SQL(url)
     try {
       process.stdout.write((await pendingRecordMigrationNames(sql)).join('\n'))
