@@ -104,6 +104,11 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-board-stream.ts', [
     './record-api-client-paths.ts',
   ]),
+  module('orchestrator/src/record/record-api-client-board.ts', [
+    './record-api-client-board-stream.ts',
+    './record-api-client-paths.ts',
+    './record-board-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-lens.ts', [
     './record-api-client-paths.ts',
     './record-catalogue-contract.ts',

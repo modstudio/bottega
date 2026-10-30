@@ -149,6 +149,7 @@ export type HostedBoardOverviewFilters = {
   kind?: 'notice' | 'question'
   open?: boolean
   includeEnded?: boolean
+  ownTitlePrefix?: string
 }
 
 export type HostedBoardOverview = {

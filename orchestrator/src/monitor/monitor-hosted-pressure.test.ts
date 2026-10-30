@@ -92,3 +92,46 @@ test('a failed query is stored and returned as an observation error', async () =
     db().query('SELECT last_error FROM hosted_pressure_cache WHERE singleton=1').get(),
   ).toEqual({ last_error: 'hosted metrics query steal failed: Error: HTTP 503' })
 })
+
+test('a failed onset post preserves the state and records the announcement error', async () => {
+  let postInput: { audience?: string; purpose?: string; expiresAt?: string } | undefined
+  let stateDuringPost: string | undefined
+  const database = db()
+  const result = await checkHostedPressureCached({
+    database,
+    clock: base,
+    env: {
+      BOTTEGA_RECORD_API_URL: 'https://record.example.test',
+      CLAUDE_CODE_SESSION_ID: 'hosted-pressure-monitor',
+    },
+    fetch: (async (input: RequestInfo | URL) => {
+      const query = new URL(String(input)).searchParams.get('query')
+      const value = query?.includes('mode="steal"') ? '0.25' : '0'
+      return Response.json({ status: 'success', data: { result: [{ value: [base, value] }] } })
+    }) as unknown as typeof fetch,
+    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    boardClient: {
+      listBoardMessages: async () => ({ messages: [], truncated: false }),
+      postBoardMessage: async (input) => {
+        postInput = input
+        stateDuringPost = (
+          database.query('SELECT state FROM hosted_pressure_cache WHERE singleton=1').get() as {
+            state: string
+          }
+        ).state
+        throw new Error('board unavailable')
+      },
+      withdrawBoardMessage: async () => {
+        throw new Error('unexpected withdrawal')
+      },
+    },
+  })
+  expect(result.state.status).toBe('pressure')
+  expect(postInput).toMatchObject({ audience: 'architects:all', purpose: 'request' })
+  expect(JSON.parse(stateDuringPost!)).toEqual(result.state)
+  const row = database
+    .query('SELECT state,last_error FROM hosted_pressure_cache WHERE singleton=1')
+    .get() as { state: string; last_error: string }
+  expect(JSON.parse(row.state)).toEqual(result.state)
+  expect(row.last_error).toBe('hosted pressure announcement failed: Error: board unavailable')
+})

@@ -50,12 +50,22 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/brand.ts',
     './monitor-types.ts',
   ]),
+  module('orchestrator/src/monitor/hosted-pressure-announcement.ts', [
+    '../record/record-board-contract.ts',
+    './hosted-pressure-decision.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-hosted-pressure.ts', [
     'bun:sqlite',
     '../../../shared/brand.ts',
     '../../../shared/env-source.ts',
     '../../../shared/record-id.ts',
+    '../../../shared/record-api-url.ts',
+    '../board/board-hosted-refresh-budget.ts',
+    '../board/board-operations.ts',
+    '../board/board-store.ts',
     '../database/db.ts',
+    '../record/record-api-client.ts',
+    './hosted-pressure-announcement.ts',
     './hosted-pressure-decision.ts',
   ]),
   module('orchestrator/src/monitor/monitor-types.ts', [

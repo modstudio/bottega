@@ -198,4 +198,46 @@ export function registerBoardOverviewProof(input: ProofInput): void {
     expect(withEnded.messages.some((row) => row.id === withdrawn.id)).toBeTrue()
     expect(withEnded.messages.some((row) => row.id === accepted.id)).toBeFalse()
   })
+
+  test('board overview owner title prefix is literal and excludes ended notices', async () => {
+    const prefix = 'Hosted pressure: cpu%_'
+    const matching = post(input.tokenA(), 'notice', 'operator', 'pressure-literal', {
+      title: `${prefix} steal=0.25`,
+    })
+    const overmatch = post(input.tokenA(), 'notice', 'operator', 'pressure-overmatch', {
+      title: 'Hosted pressure: cpuXX steal=0.25',
+    })
+    const otherOwner = post(input.tokenB(), 'notice', 'operator', 'pressure-other-owner', {
+      title: `${prefix} api-p95=3s`,
+    })
+    const withdrawn = post(input.tokenA(), 'notice', 'operator', 'pressure-withdrawn', {
+      title: `${prefix} withdrawn`,
+    })
+    const expired = post(input.tokenA(), 'notice', 'operator', 'pressure-expired', {
+      title: `${prefix} expired`,
+    })
+    await Promise.all(
+      [matching, overmatch, otherOwner, withdrawn, expired].map(async (item) =>
+        body(await item.response),
+      ),
+    )
+    await body(
+      await fetch(`${input.origin()}/v1/board/messages/${withdrawn.id}/withdraw`, {
+        method: 'POST',
+        headers: headers(input.tokenA()),
+        body: JSON.stringify({ authorSession: input.caseSession('overview-prefix-withdraw') }),
+      }),
+    )
+    input.succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE board_message SET expires_at=now() - interval '1 second' WHERE id='${expired.id}';`,
+    )
+
+    const filtered = await list(
+      input.tokenA(),
+      `?kind=notice&ownTitlePrefix=${encodeURIComponent(prefix)}`,
+    )
+    expect(filtered.messages.map((row) => row.id)).toEqual([matching.id])
+  })
 }

@@ -9,7 +9,7 @@ export const HOSTED_THROTTLE_THRESHOLD = 0.1
 export const HOSTED_API_P95_THRESHOLD_SECONDS = 2
 export const HOSTED_PRESSURE_CLEAR_MS = 15 * 60_000
 
-type HostedMeasure = 'steal' | 'throttle' | 'api-p95'
+export type HostedMeasure = 'steal' | 'throttle' | 'api-p95'
 type RequiredMeasure = Extract<HostedMeasure, 'steal' | 'api-p95'>
 export type HostedPressureState = {
   status: 'clear' | 'pressure'

@@ -391,11 +391,12 @@ function authorFacts(env: Environment, database = db()) {
   }
 }
 
-function hostedPostInput(
+export function hostedBoardPostInput(
   kind: 'notice' | 'question',
   input: PostNoticeInput,
-  c: ReturnType<typeof context>,
+  inputContext: Context = {},
 ) {
+  const c = context(inputContext)
   const actor = authorFacts(c.env)
   const localProject = projectAt(c.cwd)
   const project = localProject?.name
@@ -459,7 +460,7 @@ export async function boardPost(input: PostNoticeInput, inputContext?: Context) 
   }
   const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
   if (audienceRefusal) throw new Error(audienceRefusal)
-  const row = await hostedClient(c).postBoardMessage(hostedPostInput('notice', input, c))
+  const row = await hostedClient(c).postBoardMessage(hostedBoardPostInput('notice', input, c))
   return {
     recordId: row.id,
     number: null,
@@ -482,7 +483,7 @@ export async function boardAsk(
   }
   const audienceRefusal = architectsPostingRefusal(audience, projectAt(c.cwd)?.name)
   if (audienceRefusal) throw new Error(audienceRefusal)
-  const row = await hostedClient(c).postBoardMessage(hostedPostInput('question', input, c))
+  const row = await hostedClient(c).postBoardMessage(hostedBoardPostInput('question', input, c))
   return {
     recordId: row.id,
     number: null,
