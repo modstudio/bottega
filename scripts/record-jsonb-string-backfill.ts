@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 import { SQL } from 'bun'
+import { PLATFORM_NAME } from '../shared/brand.ts'
 
-export const BATCH_SIZE = 500
-export const BATCH_PAUSE_MS = 200
+const BATCH_SIZE = 500
+const BATCH_PAUSE_MS = 200
 export const MAX_CONSECUTIVE_TIMEOUTS = 5
 
 export type BackfillColumn = {
@@ -106,7 +107,7 @@ function parseArguments(argv: string[]): Arguments {
   const databaseUrl = argv[0]
   if (!databaseUrl || databaseUrl.startsWith('--')) {
     throw new Error(
-      'database URL must be the first argument; run through `bottega machine config secret run`',
+      `database URL must be the first argument; run through \`${PLATFORM_NAME.toLowerCase()} machine config secret run\``,
     )
   }
   let userId: string | undefined
