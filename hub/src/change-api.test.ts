@@ -287,6 +287,15 @@ test('push client accepts one outcome per requested id and refuses a malformed s
       fetch: async () => Response.json([]),
     }),
   ).rejects.toThrow('do not match the requested ids')
+  await expect(
+    hostedPushChanges(body, {
+      baseUrl: 'https://hub.example.test',
+      token: 'session',
+      fetch: async () => {
+        throw new Error('offline')
+      },
+    }),
+  ).rejects.toThrow('safe to retry')
 })
 
 test('identity-set route binds the requested space and refuses a non-member before reading', async () => {

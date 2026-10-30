@@ -63,6 +63,18 @@ export function identityRefusalResponse(
   )
 }
 
+export function identityRefusal(identity: TaskSpaceIdentity): Response | null {
+  if (identity.kind === 'unauthenticated' || identity.kind === 'unavailable')
+    return identityRefusalResponse(identity)
+  return null
+}
+
+export function assertAuthenticatedIdentity(
+  identity: TaskSpaceIdentity,
+): asserts identity is Extract<TaskSpaceIdentity, { kind: 'authenticated' }> {
+  if (identity.kind !== 'authenticated') throw new Error('identity refusal returned no response')
+}
+
 export async function taskSpaceIdentity(
   request: Request,
   base: string,

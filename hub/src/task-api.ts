@@ -5,7 +5,11 @@ import {
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
-import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  assertAuthenticatedIdentity,
+  identityRefusal,
+  taskSpaceIdentity,
+} from './hosted-route-identity.ts'
 import { listHostedTasks } from './hosted-task-list.ts'
 import { hostedTaskPresence, softDeleteHostedTasks } from './hosted-task-prune.ts'
 import { createHostedDocument, createHostedTask, getHostedTask } from './hosted-tasks.ts'
@@ -155,8 +159,8 @@ export async function taskApi(
     (dependencies.fetch ?? fetch) as typeof fetch,
     honorRequestedSpace,
   )
-  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
-    return identityRefusalResponse(who)
+  const refusal = identityRefusal(who)
+  if (refusal) return refusal
   if (who.kind === 'refused-space')
     return json(
       {
@@ -165,6 +169,7 @@ export async function taskApi(
       },
       403,
     )
+  assertAuthenticatedIdentity(who)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
     who.spaceId,

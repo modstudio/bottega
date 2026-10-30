@@ -1,5 +1,3 @@
-import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
-
 export type HostedRequestSafety = 'probe' | 'idempotent' | 'non-idempotent'
 
 type HostedRefusal = {
@@ -8,7 +6,6 @@ type HostedRefusal = {
   body?: unknown
   cause?: unknown
   safety: HostedRequestSafety
-  hostedConfigured: boolean
 }
 
 function objectBody(value: unknown): Record<string, unknown> | null {
@@ -38,10 +35,14 @@ export function hostedRefusalError(refusal: HostedRefusal): Error {
   const serverRemedy =
     typeof body?.remedy === 'string' && body.remedy.trim() ? body.remedy.trim() : null
   const retry = retryStatement(refusal)
+  const serverStatesWriteOutcome = [
+    'nothing was written',
+    'safe to retry',
+    'check before retrying',
+  ].some((statement) => serverRemedy?.toLowerCase().includes(statement))
   const remedies = [
     serverRemedy,
-    refusal.hostedConfigured ? null : MISSING_HOSTED_URL_REMEDY,
-    serverRemedy?.toLowerCase().includes(retry) ? null : retry,
+    serverStatesWriteOutcome || serverRemedy?.toLowerCase().includes(retry) ? null : retry,
   ]
     .filter((value): value is string => value !== null)
     .map((value) => value.replace(/[.\s]+$/, ''))

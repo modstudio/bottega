@@ -64,7 +64,7 @@ export const hubModuleSpecs = [
       '../../shared/record-space-request.ts',
     ],
   },
-  { file: 'hub/src/hosted-refusal.ts', allowed: ['./hosted-write-mode.ts'] },
+  { file: 'hub/src/hosted-refusal.ts', allowed: [] },
   {
     file: 'hub/src/hosted-changes.ts',
     allowed: [

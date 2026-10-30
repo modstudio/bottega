@@ -8,7 +8,6 @@ describe('hosted refusal text', () => {
       statusText: 'Unauthorized',
       body: { error: 'record session is missing or expired', remedy: 'sign in again' },
       safety: 'probe',
-      hostedConfigured: true,
     })
     expect(error.message).toBe(
       'hosted hub refused the request (401): record session is missing or expired. sign in again. nothing was written',
@@ -19,7 +18,6 @@ describe('hosted refusal text', () => {
     const error = hostedRefusalError({
       cause: new TypeError('connection closed'),
       safety: 'non-idempotent',
-      hostedConfigured: true,
     })
     expect(error.message).toBe(
       'hosted hub refused the request (network error): connection closed. the write may have been applied; check before retrying',
@@ -31,10 +29,21 @@ describe('hosted refusal text', () => {
       status: 422,
       statusText: 'Unprocessable Content',
       safety: 'non-idempotent',
-      hostedConfigured: true,
     })
     expect(error.message).toBe(
       'hosted hub refused the request (422): Unprocessable Content. nothing was written',
     )
+  })
+
+  test('trusts a server remedy that says a non-idempotent write was not applied', () => {
+    const error = hostedRefusalError({
+      status: 503,
+      body: { error: 'record API unavailable (503)', remedy: 'nothing was written; retry' },
+      safety: 'non-idempotent',
+    })
+    expect(error.message).toBe(
+      'hosted hub refused the request (503): record API unavailable (503). nothing was written; retry',
+    )
+    expect(error.message).not.toContain('check before retrying')
   })
 })

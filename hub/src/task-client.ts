@@ -146,7 +146,7 @@ async function responseObject(
       options,
     )
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety, hostedConfigured: true })
+    throw hostedRefusalError({ cause: error, safety })
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
@@ -157,7 +157,6 @@ async function responseObject(
       statusText: response.statusText,
       body: value,
       safety,
-      hostedConfigured: true,
     })
   return { response, value: value as Record<string, unknown> }
 }
@@ -176,7 +175,6 @@ async function request<T>(
       statusText: response.statusText,
       body: value,
       safety,
-      hostedConfigured: true,
     })
   return value as T
 }
@@ -210,7 +208,6 @@ export async function hostedGetTask(
         statusText: response.statusText,
         body: value,
         safety: 'probe',
-        hostedConfigured: true,
       }).message,
     )
   return value as { task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }
@@ -240,7 +237,6 @@ async function operatorWaitingEmailRequest(
       statusText: response.statusText,
       body: value,
       safety: 'idempotent',
-      hostedConfigured: true,
     })
   const parsed = operatorWaitingEmailResponseSchema.safeParse(value)
   if (!parsed.success) throw new Error('hosted hub returned an invalid operator waiting email')
@@ -516,7 +512,7 @@ export async function hostedPushChanges(
       options,
     )
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety: 'idempotent', hostedConfigured: true })
+    throw hostedRefusalError({ cause: error, safety: 'idempotent' })
   }
   const result = await jsonBody(response, url)
   if (!result.ok || !Array.isArray(result.value))
@@ -525,7 +521,6 @@ export async function hostedPushChanges(
       statusText: response.statusText,
       body: result.ok ? result.value : undefined,
       safety: 'idempotent',
-      hostedConfigured: true,
     })
   if (!response.ok)
     throw hostedRefusalError({
@@ -533,7 +528,6 @@ export async function hostedPushChanges(
       statusText: response.statusText,
       body: result.value,
       safety: 'idempotent',
-      hostedConfigured: true,
     })
   const outcomes = result.value.map((value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -601,7 +595,7 @@ async function taskIdentityResponse(
       options,
     )
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety: 'probe', hostedConfigured: true })
+    throw hostedRefusalError({ cause: error, safety: 'probe' })
   }
   return { response, url }
 }
@@ -612,13 +606,30 @@ async function taskIdentityResult(
   const { response, url } = await taskIdentityResponse(options)
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
+  const body =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null
+  if (response.status === 404 && !(typeof body?.remedy === 'string' && body.remedy.trim())) {
+    const error = hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety: 'probe',
+    })
+    const detail =
+      typeof body?.error === 'string' && body.error.trim()
+        ? body.error
+        : response.statusText.trim() || String(response.status)
+    error.message = `hosted hub does not serve the task identity route (404): ${detail}; redeploy the hosted hub from this revision`
+    throw error
+  }
   if (!bodyResult.ok || !value || typeof value !== 'object' || Array.isArray(value))
     throw hostedRefusalError({
       status: response.status,
       statusText: response.statusText,
       body: value,
       safety: 'probe',
-      hostedConfigured: true,
     })
   const object = value as Record<string, unknown>
   if (!response.ok) {
@@ -627,7 +638,6 @@ async function taskIdentityResult(
       statusText: response.statusText,
       body: object,
       safety: 'probe',
-      hostedConfigured: true,
     })
     if (response.status === 401) return { unauthorized: true, error }
     throw error

@@ -16,7 +16,11 @@ import {
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
-import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  assertAuthenticatedIdentity,
+  identityRefusal,
+  taskSpaceIdentity,
+} from './hosted-route-identity.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -163,10 +167,11 @@ export async function reportApi(
     (dependencies.fetch ?? fetch) as typeof fetch,
     false,
   )
-  if (identity.kind === 'unauthenticated' || identity.kind === 'unavailable')
-    return identityRefusalResponse(identity)
+  const refusal = identityRefusal(identity)
+  if (refusal) return refusal
   if (identity.kind === 'refused-space')
     throw new Error('report identity refused a space it ignored')
+  assertAuthenticatedIdentity(identity)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
     identity.spaceId,

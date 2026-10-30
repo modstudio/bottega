@@ -46,7 +46,7 @@ async function request<T>(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
-    throw hostedRefusalError({ cause: error, safety, hostedConfigured: true })
+    throw hostedRefusalError({ cause: error, safety })
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
@@ -55,7 +55,6 @@ async function request<T>(
       status: response.status,
       statusText: response.statusText,
       safety,
-      hostedConfigured: true,
     })
   const value = bodyResult.value as Record<string, unknown> | null
   if (!response.ok)
@@ -64,7 +63,6 @@ async function request<T>(
       statusText: response.statusText,
       body: value,
       safety,
-      hostedConfigured: true,
     })
   return value as T
 }

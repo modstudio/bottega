@@ -6,7 +6,11 @@ import {
   recordSpaceAccessDecision,
 } from '../../shared/record-space-request.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
-import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  assertAuthenticatedIdentity,
+  identityRefusal,
+  taskSpaceIdentity,
+} from './hosted-route-identity.ts'
 import { operatorWaitingEmailRequestSchema } from './operator-waiting-email-contract.ts'
 import {
   OperatorEmailBudgetExceededError,
@@ -39,10 +43,11 @@ export async function operatorWaitingEmailApi(
     dependencies.fetch ?? fetch,
     false,
   )
-  if (identity.kind === 'unauthenticated' || identity.kind === 'unavailable')
-    return identityRefusalResponse(identity)
+  const refusal = identityRefusal(identity)
+  if (refusal) return refusal
   if (identity.kind === 'refused-space')
     throw new Error('operator waiting email identity refused a space it ignored')
+  assertAuthenticatedIdentity(identity)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
     identity.spaceId,

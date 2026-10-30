@@ -15,7 +15,11 @@ import {
   reapHostedNotes,
 } from './hosted-notes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
-import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  assertAuthenticatedIdentity,
+  identityRefusal,
+  taskSpaceIdentity,
+} from './hosted-route-identity.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -138,8 +142,8 @@ export async function noteApi(
     (dependencies.fetch ?? fetch) as typeof fetch,
     true,
   )
-  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
-    return identityRefusalResponse(who)
+  const refusal = identityRefusal(who)
+  if (refusal) return refusal
   if (who.kind === 'refused-space')
     return json(
       {
@@ -148,6 +152,7 @@ export async function noteApi(
       },
       403,
     )
+  assertAuthenticatedIdentity(who)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
     who.spaceId,

@@ -9,7 +9,11 @@ import {
 import { listHostedIdentitySet } from './hosted-identity-set.ts'
 import { applyHostedPushChanges } from './hosted-push-changes.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
-import { identityRefusalResponse, taskSpaceIdentity } from './hosted-route-identity.ts'
+import {
+  assertAuthenticatedIdentity,
+  identityRefusal,
+  taskSpaceIdentity,
+} from './hosted-route-identity.ts'
 import { parseIdentitySetRequest } from './identity-set-contract.ts'
 import {
   type HostedPushChange,
@@ -150,9 +154,10 @@ async function identitySetResponse(
 ): Promise<Response> {
   if (request.method !== 'GET') return new Response('not found', { status: 404 })
   const who = await identityWho(request, config, dependencies)
-  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
-    return identityRefusalResponse(who)
+  const refusal = identityRefusal(who)
+  if (refusal) return refusal
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
+  assertAuthenticatedIdentity(who)
   let input: ReturnType<typeof parseIdentitySetRequest>
   try {
     input = parseIdentitySetRequest(url)
@@ -177,9 +182,10 @@ async function changeLogResponse(
   if (request.method !== 'GET' && request.method !== 'POST')
     return new Response('not found', { status: 404 })
   const who = await identityWho(request, config, dependencies)
-  if (who.kind === 'unauthenticated' || who.kind === 'unavailable')
-    return identityRefusalResponse(who)
+  const refusal = identityRefusal(who)
+  if (refusal) return refusal
   if (refusedSpace(who)) return refusedSpaceResponse(who.refusedSpace)
+  assertAuthenticatedIdentity(who)
   if (request.method === 'POST') return pushResponse(request, config, dependencies, who)
   let input: ReturnType<typeof requestInput>
   try {
