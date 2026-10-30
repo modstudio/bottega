@@ -109,6 +109,18 @@ const receiptSchema = z
     acknowledged: z.boolean().optional(),
   })
   .strict()
+const overviewQuerySchema = z.object({
+  kind: z.enum(['notice', 'question']).optional(),
+  open: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+  includeEnded: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+  ownTitlePrefix: headerValueSchema.optional(),
+})
 const takeClaimSchema = z
   .object({
     id: idSchema,
@@ -236,20 +248,7 @@ export function registerRecordBoardRoutes(
   app.get('/v1/board/messages', async (context) => {
     const tenant = tenantOf(context)
     if (!tenant) return helpers.noSpace(context)
-    const query = z
-      .object({
-        kind: z.enum(['notice', 'question']).optional(),
-        open: z
-          .enum(['true', 'false'])
-          .optional()
-          .transform((value) => value === 'true'),
-        includeEnded: z
-          .enum(['true', 'false'])
-          .optional()
-          .transform((value) => value === 'true'),
-        ownTitlePrefix: headerValueSchema.optional(),
-      })
-      .safeParse(context.req.query())
+    const query = overviewQuerySchema.safeParse(context.req.query())
     if (!query.success) return context.json({ error: 'invalid board messages query' }, 400)
     try {
       return context.json(await deps.listBoardMessages({ ...tenant, ...query.data }))

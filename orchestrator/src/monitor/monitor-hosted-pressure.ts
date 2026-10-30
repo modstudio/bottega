@@ -163,7 +163,7 @@ function claimTransaction<T>(database: Database, failFast: boolean | undefined, 
   }
 }
 
-async function announceTransition(
+async function announceHostedPressureTransition(
   previous: HostedPressureState,
   decision: HostedPressureDecision,
   observation: HostedPressureObservation,
@@ -259,7 +259,7 @@ export async function checkHostedPressureCached(
   })
   if (previous.status !== decision.state.status) {
     try {
-      await announceTransition(previous, decision, observation, dependencies, clock)
+      await announceHostedPressureTransition(previous, decision, observation, dependencies, clock)
     } catch (error) {
       try {
         claimTransaction(database, dependencies.failFastStoreClaim, () => {
