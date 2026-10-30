@@ -1,5 +1,12 @@
 export const cleanupBoundarySpecs = [
   {
+    name: 'tree-keep-decision-boundary',
+    file: 'orchestrator/src/close/tree-keep-decision.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason: 'Keep the tree naming decision independent of observation adapters.',
+  },
+  {
     name: 'tree-keep-boundary',
     file: 'orchestrator/src/close/tree-keep.ts',
     allowed: [
@@ -13,10 +20,18 @@ export const cleanupBoundarySpecs = [
       '../worktree/keep-tree-hold.ts',
       '../worktree/worktree-attribution.ts',
       './close-out-report.ts',
+      './tree-keep-decision.ts',
     ],
     typeOnlyAllowed: [],
     reason:
       'Keep tree naming and keep policy in one adapter over cursor, live-run, and existing hold evidence.',
+  },
+  {
+    name: 'cleanup-sweep-named-tree-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-named-tree.ts',
+    allowed: ['node:fs', 'node:path'],
+    typeOnlyAllowed: [],
+    reason: 'Keep named filesystem-orphan observation independent of the cleanup sweep adapter.',
   },
   {
     name: 'tree-process-cwd-decision-boundary',
@@ -218,10 +233,12 @@ export const cleanupBoundarySpecs = [
       './reader-clone-archive-retention.ts',
       './stray-worktree-sweep.ts',
       './cleanup-sweep-docker.ts',
+      './cleanup-sweep-named-tree.ts',
       './cleanup-sweep-orphan-report.ts',
       './claim-reconciliation.ts',
       './project-sweep.ts',
       '../close/close-out.ts',
+      '../close/tree-keep.ts',
       '../close/tree-process-cwd-hold.ts',
       '../board/board-service.ts',
       '../board/board-claim-service.ts',

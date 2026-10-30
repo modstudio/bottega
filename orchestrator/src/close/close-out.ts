@@ -79,7 +79,8 @@ import {
   retainedBranchReason,
   retainedRefForRun,
 } from './retained-branch.ts'
-import { closeOutKeepTreeDecision, conversationKeepTreeHold, treeNamersText } from './tree-keep.ts'
+import { closeOutKeepTreeDecision, conversationKeepTreeHold } from './tree-keep.ts'
+import { type CloseOutIntent, treeNamersText } from './tree-keep-decision.ts'
 import { treeProcessCwdHold } from './tree-process-cwd-hold.ts'
 
 export type { CloseOutResult } from './close-out-report.ts'
@@ -88,7 +89,7 @@ const CONVERSATION_IDS_SQL =
   'SELECT record_id FROM run WHERE record_id=? OR parent_run_record_id=? ORDER BY number'
 
 type CloseOutOptions = {
-  intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
+  intent: CloseOutIntent
   dryRun?: boolean
   lockTimeoutMs?: number
   extraPids?: number[]
@@ -378,6 +379,23 @@ function lockedLiveOrForgottenHold(
   })
 }
 
+function lockedCloseOutHold(
+  runId: string,
+  treePath: string,
+  live: { record_id: string; status: string }[],
+  options: { dryRun?: boolean; intent: CloseOutIntent },
+): CloseOutResult | null {
+  const liveHold = lockedLiveOrForgottenHold(runId, treePath, live, options.dryRun)
+  if (liveHold) return liveHold
+  const keepTree = closeOutKeepTreeDecision(runId, treePath, options.intent)
+  if (keepTree.naming.action !== 'hold') return null
+  return heldConversationCloseOutResult(
+    runId,
+    treePath,
+    keepTree.hold as Extract<ConversationKeepTreeHold, { held: true }>,
+  )
+}
+
 function turnHeadForCloseOut(
   row: { branch: string | null; minted_branch: string | null },
   treePath: string,
@@ -439,7 +457,7 @@ type CloseOutRunRow = {
 function attemptCloseOutRun(
   runId: string,
   options: {
-    intent: 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
+    intent: CloseOutIntent
     dryRun?: boolean
     lockTimeoutMs?: number
     extraPids?: number[]
@@ -667,12 +685,7 @@ function attemptCloseOutRun(
           repoRoot,
           { session: sessionId(), what: `close-out ${row.root_record_id}` },
           () => {
-            const lockedHold = lockedLiveOrForgottenHold(
-              row.root_record_id,
-              treePath,
-              liveRows(),
-              options.dryRun,
-            )
+            const lockedHold = lockedCloseOutHold(row.root_record_id, treePath, liveRows(), options)
             if (lockedHold) return lockedHold
             const scratch = prepareReaderScratchCloseOut({
               runId: row.root_record_id,
@@ -872,10 +885,14 @@ function closeOutCallerDetail(detail: string, intent: CloseOutOptions['intent'])
 function appendTreeNamingDetail(
   result: CloseOutAttemptResult,
   naming: ReturnType<typeof closeOutKeepTreeDecision>['naming'],
+  options: CloseOutOptions,
 ): void {
-  if (naming.action === 'proceed-named') {
-    result.detail += `; ${treeNamersText(naming.namers)} names this tree`
-  }
+  if (naming.action !== 'proceed-named') return
+  result.detail += `; ${treeNamersText(naming.namers)} names this tree`
+  if (options.dryRun) return
+  db()
+    .query('UPDATE run SET close_out_detail=? WHERE record_id=?')
+    .run(closeOutCallerDetail(result.detail, options.intent), result.runId)
 }
 
 /** Run one close-out attempt and retain its outcome for observation and retry. */
@@ -892,7 +909,6 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
   }
   if (!options.dryRun) {
     result = appendRetainedBranchDetail(result)
-    appendTreeNamingDetail(result, keepTree.naming)
     writeTransaction(() => {
       result = settlementLivenessResult(result)
       result.detail = releaseAbsentCloseOutResidue({
@@ -955,6 +971,7 @@ function closeOutRunHoldingLease(runId: string, options: CloseOutOptions): Close
       }
     }
   }
+  appendTreeNamingDetail(result, keepTree.naming, options)
   if (!options.dryRun && ['released', 'absent', 'forgotten'].includes(result.outcome)) {
     const turns = db()
       .query(

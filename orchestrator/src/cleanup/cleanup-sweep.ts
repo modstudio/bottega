@@ -9,6 +9,7 @@ import { reapBoardReach } from '../board/board-reach.ts'
 import { reapBoardMessages } from '../board/board-service.ts'
 import { pruneExpiredBranchDisposalArchives } from '../branch/branch-disposal.ts'
 import { closeOutRun } from '../close/close-out.ts'
+import { namedProjectTreePaths } from '../close/tree-keep.ts'
 import { treeProcessCwdHold } from '../close/tree-process-cwd-hold.ts'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { expireUnjudgedRun, unjudgedRuns } from '../evidence/unjudged-expiry.ts'
@@ -79,6 +80,7 @@ import {
   UNJUDGED_OWNER_WINDOW_MS,
 } from './cleanup-sweep-decisions.ts'
 import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
+import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
 import { finishRemovedOrphan, reportOrphanAfterRemovalKeep } from './cleanup-sweep-orphan-report.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
@@ -122,6 +124,15 @@ async function sweepOrphanProcesses(
     }
   }
   return failed
+}
+
+function rememberedWorktrees(): Set<string> {
+  const rows = db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
+    worktree: string
+  }[]
+  return new Set(
+    rows.map((row) => (existsSync(row.worktree) ? realpathSync(row.worktree) : row.worktree)),
+  )
 }
 
 export type SweepOptions = {
@@ -875,16 +886,12 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
    * list as a worktree is kept; uncommitted work is extracted before removal.
    * A project's own removal refusal remains final through removeWithTool().
    */
-  const remembered = new Set(
-    (
-      db().query('SELECT worktree FROM run WHERE worktree IS NOT NULL').all() as {
-        worktree: string
-      }[]
-    ).map((r) => (existsSync(r.worktree) ? realpathSync(r.worktree) : r.worktree)),
-  )
+  const remembered = rememberedWorktrees()
   for (const p of sweepProjects) {
     const root = join(p.path, '.claude', 'worktrees')
     if (!existsSync(root)) continue
+    const namedTrees = namedProjectTreePaths(p.name)
+    holdNamedFilesystemOrphans(namedTrees, root, p.name, remembered, keep, addHeld)
     for (const entry of readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue
       const path = join(root, entry.name)

@@ -4,9 +4,10 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, dir } from '../../test/fixtures/store.ts'
-import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
+import { addOpenCursorWorktree } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
+import { RUNS_DIR } from '../run/run-artifacts.ts'
 import { heldRunCloseOutLeaseIds, withRunCloseOutLease } from '../run/run-lease.ts'
 import {
   clearConversationKeepTreeHold,
@@ -86,11 +87,20 @@ function cwdObservationResult(
   return spawnResult(stdout, observation?.exitCode ?? 0)
 }
 
+function beforeLockedObservation(
+  command: string[],
+  tree: string,
+  observe?: (tree: string) => void,
+): void {
+  if (command.join(' ') === 'ps -axo pid=,ppid=,pgid=,command=') observe?.(tree)
+}
+
 function closeOutFixture(
   ownership: 'owned' | 'attached',
   retainedRefDeleteFails = false,
   landingObservation?: 'clean' | 'becomes-dirty' | 'missing-branch',
   cwdObservation?: { stdout?: string | ((tree: string) => string); exitCode?: number },
+  observeBeforeLock?: (tree: string) => void,
 ) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
@@ -125,6 +135,7 @@ function closeOutFixture(
   const spawnCommands: string[][] = []
   spyOn(Bun, 'spawnSync').mockImplementation(((command: string[]) => {
     spawnCommands.push(command)
+    beforeLockedObservation(command, tree, observeBeforeLock)
     const cwdResult = cwdObservationResult(command, cwdObservation, tree)
     if (cwdResult) return cwdResult
     const observed = landingObservationResult(
@@ -158,26 +169,6 @@ function closeOutFixture(
   return { id, repo, tree, spawnCommands }
 }
 
-function openCursorNaming(worktree: string): number {
-  const cursor = db()
-    .query<{ number: number }, string[]>(
-      `INSERT INTO workflow_cursor
-        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
-         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
-         question,total_steps,created_at,updated_at,enforcement)
-       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),'segnavia','ship-task',
-               'default','','',NULL,?,?,?,0,'review-lenses','running','[]',NULL,1,
-               '2026-10-30','2026-10-30','floors') RETURNING number`,
-    )
-    .get(
-      newRecordId(),
-      workflowVersionRecordId(db()),
-      catalogueVersionRecordId(db()),
-      JSON.stringify({ worktree }),
-    )
-  return cursor!.number
-}
-
 describe('close-out extraction decision', () => {
   test('rejects filing a child turn extraction under the conversation root', () => {
     expect(extractionRunId({ record_id: 'run-record-id-4267' })).toBe('run-record-id-4267')
@@ -188,7 +179,7 @@ describe('close-out of a tree named by an open workflow cursor', () => {
   for (const intent of ['terminal', 'sweep'] as const) {
     test(`${intent} holds the named tree`, () => {
       const fixture = closeOutFixture('owned')
-      const number = openCursorNaming(fixture.tree)
+      const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
       try {
         const result = closeOutRun(fixture.id, { intent })
 
@@ -204,7 +195,8 @@ describe('close-out of a tree named by an open workflow cursor', () => {
   for (const intent of ['explicit', 'tree-remove'] as const) {
     test(`${intent} proceeds and reports the cursor naming the tree`, () => {
       const fixture = closeOutFixture('owned')
-      const number = openCursorNaming(fixture.tree)
+      const number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: fixture.tree })
+      mkdirSync(join(RUNS_DIR, `sandbox-${fixture.id}`), { recursive: true })
       try {
         const result = closeOutRun(fixture.id, { intent })
 
@@ -217,6 +209,25 @@ describe('close-out of a tree named by an open workflow cursor', () => {
       }
     })
   }
+
+  test('terminal rechecks cursor naming after its pre-lock observation', () => {
+    let number = 0
+    const fixture = closeOutFixture('owned', false, undefined, undefined, (tree) => {
+      if (!number) number = addOpenCursorWorktree(db(), { project: 'segnavia', worktree: tree })
+    })
+    try {
+      const result = closeOutRun(fixture.id, { intent: 'terminal' })
+
+      expect(number).toBeGreaterThan(0)
+      expect(result.outcome).toBe('held')
+      expect(result.detail).toBe(
+        `tree kept because open workflow cursor ${number} (ship-task, segnavia) names it`,
+      )
+      expect(existsSync(fixture.tree)).toBe(true)
+    } finally {
+      rmSync(fixture.repo, { recursive: true, force: true })
+    }
+  })
 })
 
 test('close-out forgets an attached tree without removing its directory', () => {

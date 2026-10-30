@@ -1,40 +1,58 @@
-import { describe, expect, test } from 'bun:test'
-import { decideTreeKeep, type TreeNamer } from './tree-keep.ts'
+import { afterEach, expect, test } from 'bun:test'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
+import { addOpenCursorWorktree } from '../../test/fixtures/workflow.ts'
+import { db } from '../database/db.ts'
+import { namedProjectTreePaths } from './tree-keep.ts'
 
-const cursor: TreeNamer = {
-  kind: 'cursor',
-  number: 1003,
-  workflow: 'ship-task',
-  project: 'segnavia',
+const created: string[] = []
+
+afterEach(() => {
+  for (const path of created.splice(0)) rmSync(path, { recursive: true, force: true })
+})
+
+function tree(): string {
+  const path = mkdtempSync(join(dir, 'named-project-tree-'))
+  created.push(path)
+  return path
 }
-const liveRun: TreeNamer = { kind: 'live-run', recordId: 'run-record-id' }
 
-describe('tree keep decision', () => {
-  for (const intent of ['terminal', 'sweep'] as const) {
-    test(`${intent} proceeds without a namer and holds for either namer kind`, () => {
-      expect(decideTreeKeep({ intent, namers: [] })).toEqual({ action: 'proceed' })
-      expect(decideTreeKeep({ intent, namers: [cursor] })).toEqual({
-        action: 'hold',
-        namers: [cursor],
-      })
-      expect(decideTreeKeep({ intent, namers: [liveRun] })).toEqual({
-        action: 'hold',
-        namers: [liveRun],
-      })
-    })
-  }
+test('named project paths hold a tree named by an open cursor', () => {
+  const project = `cursor-project-${newRecordId()}`
+  const worktree = tree()
+  addOpenCursorWorktree(db(), { project, worktree })
 
-  for (const intent of ['explicit', 'tree-remove'] as const) {
-    test(`${intent} proceeds without a namer and reports either namer kind`, () => {
-      expect(decideTreeKeep({ intent, namers: [] })).toEqual({ action: 'proceed' })
-      expect(decideTreeKeep({ intent, namers: [cursor] })).toEqual({
-        action: 'proceed-named',
-        namers: [cursor],
-      })
-      expect(decideTreeKeep({ intent, namers: [liveRun] })).toEqual({
-        action: 'proceed-named',
-        namers: [liveRun],
-      })
-    })
-  }
+  expect(namedProjectTreePaths(project)).toEqual(new Set([realpathSync(worktree)]))
+})
+
+test('named project paths hold a tree named by a live run', () => {
+  const project = `live-project-${newRecordId()}`
+  const worktree = tree()
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: project })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(worktree, run)
+
+  expect(namedProjectTreePaths(project)).toEqual(new Set([realpathSync(worktree)]))
+})
+
+test('named project paths canonicalize a symlinked cursor spelling', () => {
+  const project = `symlink-project-${newRecordId()}`
+  const worktree = tree()
+  const links = tree()
+  const link = join(links, 'tree-link')
+  mkdirSync(worktree, { recursive: true })
+  symlinkSync(worktree, link)
+  addOpenCursorWorktree(db(), { project, worktree: link })
+
+  expect(namedProjectTreePaths(project)).toEqual(new Set([realpathSync(worktree)]))
+})
+
+test('named project paths do not hold a terminal run worktree', () => {
+  const project = `terminal-project-${newRecordId()}`
+  const worktree = tree()
+  const run = addRun({ agent: 'codex', job: 'implement', status: 'ok', repo: project })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run(worktree, run)
+
+  expect(namedProjectTreePaths(project)).toEqual(new Set())
 })

@@ -11,37 +11,13 @@ import { openCursorWorktrees } from '../workflow/workflow-cursor-worktrees.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { ConversationKeepTreeHold } from './close-out-report.ts'
-
-export type CloseOutIntent = 'terminal' | 'explicit' | 'sweep' | 'tree-remove'
-
-export type TreeNamer =
-  | { kind: 'cursor'; number: number; workflow: string; project: string }
-  | { kind: 'live-run'; recordId: string }
-
-export type TreeKeepDecision =
-  | { action: 'proceed' }
-  | { action: 'hold'; namers: TreeNamer[] }
-  | { action: 'proceed-named'; namers: TreeNamer[] }
-
-export function decideTreeKeep(input: {
-  intent: CloseOutIntent
-  namers: TreeNamer[]
-}): TreeKeepDecision {
-  if (input.namers.length === 0) return { action: 'proceed' }
-  return input.intent === 'terminal' || input.intent === 'sweep'
-    ? { action: 'hold', namers: input.namers }
-    : { action: 'proceed-named', namers: input.namers }
-}
-
-export function treeNamersText(namers: readonly TreeNamer[]): string {
-  return namers
-    .map((namer) =>
-      namer.kind === 'cursor'
-        ? `open workflow cursor ${namer.number} (${namer.workflow}, ${namer.project})`
-        : `live run ${namer.recordId}`,
-    )
-    .join(', ')
-}
+import {
+  type CloseOutIntent,
+  decideTreeKeep,
+  type TreeKeepDecision,
+  type TreeNamer,
+  treeNamersText,
+} from './tree-keep-decision.ts'
 
 function realTreePath(path: string): string | null {
   if (!existsSync(path)) return null
@@ -90,7 +66,7 @@ export function namedProjectTreePaths(project: string, database: Database = db()
   const named = new Set<string>()
   for (const path of candidates) {
     const canonical = realTreePath(path)
-    if (canonical && treeKeepNamers(canonical, '', database).length > 0) named.add(canonical)
+    if (canonical) named.add(canonical)
   }
   return named
 }
