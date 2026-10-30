@@ -116,6 +116,7 @@ export async function main(argv: string[]): Promise<number> {
   } catch (e) {
     const message = String((e as Error)?.message ?? e)
     const diagnostic = startupFailureDiagnostic(e)
+    const runFinishFailed = (e as { runFinishFailed?: boolean }).runFinishFailed === true
     /**
      * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
      *
@@ -125,8 +126,10 @@ export async function main(argv: string[]): Promise<number> {
      * this codebase already reserves for "orchestrator was wrong", and like `unreachable`
      * and `interrupted` it is never counted as evidence about an agent.
      */
-    await recordStartupFailure(id, message)
-    console.error(`orch: run ${id} could not start: ${diagnostic}`)
+    if (!runFinishFailed) await recordStartupFailure(id, message)
+    console.error(
+      `orch: run ${id} ${runFinishFailed ? 'finish failed' : 'could not start'}: ${diagnostic}`,
+    )
     return 1
   }
 }

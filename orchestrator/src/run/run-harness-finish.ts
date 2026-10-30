@@ -17,6 +17,7 @@ import {
 import { db, sessionId } from '../database/db.ts'
 import { repoRootOf } from '../git/git-environment.ts'
 import { isReaderJob, job } from '../jobs/jobs.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import { EMPTY_VENDOR_USAGE } from '../transport/transport.ts'
@@ -34,7 +35,8 @@ import { decideHarnessReply } from './run-harness-reply.ts'
 import { withRunCloseOutLease } from './run-lease.ts'
 import { checksReviewedCommit } from './run-pack-prompt.ts'
 import { replyContract } from './run-reply-source.ts'
-import { finishRun } from './run-terminal.ts'
+import type { TerminalInput, TerminalResult } from './run-terminal.ts'
+import { finishRunWithFallback } from './run-terminal-fallback.ts'
 
 type HarnessRow = {
   record_id: string
@@ -91,13 +93,13 @@ type FinishFacts = {
   worktree: Worktree | null
   decision: ReturnType<typeof decideHarnessReply>
   workerReply: WorkerReply | null
-  parsedReply: Parameters<typeof finishRun>[0]['parsedReply']
+  parsedReply: TerminalInput['parsedReply']
   acceptedQuestions: ReturnType<typeof realQuestions>
   error: string | null
   confinement: HarnessConfinementSnapshot
 }
 
-function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[0] {
+function harnessTerminalInput(facts: FinishFacts): TerminalInput {
   const { acceptedQuestions, decision, error, outPath, owned, requestedJob, scratchDir } = facts
   const refused = facts.workerReply?.status === 'refused'
   return {
@@ -108,6 +110,7 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
     proc: null,
     askLoopback: null,
     claim: { id: owned.record_id, number: owned.number },
+    machineId: machineId(),
     writesJob: Boolean(requestedJob.needs.writesRepo),
     worktree: facts.worktree,
     launchKey: owned.launch_key,
@@ -169,7 +172,7 @@ function harnessTerminalInput(facts: FinishFacts): Parameters<typeof finishRun>[
   }
 }
 
-function closeHarnessRun(facts: FinishFacts, terminal: Awaited<ReturnType<typeof finishRun>>) {
+function closeHarnessRun(facts: FinishFacts, terminal: TerminalResult) {
   const { decision, outPath, owned, requestedJob } = facts
   return closeRun({
     failureKind: terminal.failureKind,
@@ -300,7 +303,7 @@ export async function finishHarnessRun(id: string) {
       const currentRefusal = finishRefusal(current, sessionId(), id)
       if (currentRefusal) throw new Error(currentRefusal)
       writeFileSync(facts.outPath, decision.output)
-      return closeHarnessRun(facts, await finishRun(harnessTerminalInput(facts)))
+      return closeHarnessRun(facts, await finishRunWithFallback(harnessTerminalInput(facts)))
     },
   )
 }

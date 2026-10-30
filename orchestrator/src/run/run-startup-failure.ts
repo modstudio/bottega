@@ -1,7 +1,8 @@
-// concern: run-startup-failure
-/** Records and publishes startup failures before or after a run is claimed. */
+// concern: run lifecycle failure fallback
+/** Records and publishes failures outside the ordinary terminal writer. */
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
+import { shouldWriteFinishFailure } from './run-finish-failure.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { nextRunNumber } from './run-number.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
@@ -60,6 +61,31 @@ export function recordRunStartupFailure(
       ).changes
     if (changed !== 1) return
     enqueueFailedReservedRun(reserveId, database, localMachineId, finishedAt)
+  })
+}
+
+export function recordRunFinishFailure(input: {
+  runId: string
+  error: unknown
+  started: number
+  machineId: string
+}): void {
+  const detail = input.error instanceof Error ? input.error.message : String(input.error)
+  const finishedAt = nowIso()
+  writeTransaction(() => {
+    const database = db()
+    const row = database.query('SELECT status FROM run WHERE record_id=?').get(input.runId) as {
+      status: string
+    } | null
+    if (!row || !shouldWriteFinishFailure(row.status)) return
+    const changed = database
+      .query(
+        `UPDATE run SET status='failed', failure_kind='harness', error=?, latency_ms=?
+         WHERE record_id=? AND status=?`,
+      )
+      .run(`finish failed: ${detail}`, Date.now() - input.started, input.runId, row.status).changes
+    if (changed !== 1) return
+    enqueueFailedReservedRun(input.runId, database, input.machineId, finishedAt)
   })
 }
 

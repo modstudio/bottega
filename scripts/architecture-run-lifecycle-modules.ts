@@ -76,6 +76,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'bun:sqlite',
   ]),
   module('orchestrator/src/run/run-status.ts', []),
+  module('orchestrator/src/run/run-finish-failure.ts', ['./run-status.ts']),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
     '../route/route-metered-policy-adapter.ts',
@@ -99,6 +100,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
     '../record/machine-identity.ts',
+    './run-finish-failure.ts',
     './run-liveness.ts',
     './run-number.ts',
     './run-outbox.ts',
@@ -379,6 +381,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../database/db.ts',
     '../git/git-environment.ts',
     '../jobs/jobs.ts',
+    '../record/machine-identity.ts',
     '../run-owned-paths.ts',
     '../transport/quota-readings.ts',
     '../transport/transport.ts',
@@ -393,6 +396,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-reply-source.ts',
     './run-pack-prompt.ts',
     './run-terminal.ts',
+    './run-terminal-fallback.ts',
   ]),
   module('orchestrator/src/run/run-launch.ts', [
     '../route/failover.ts',
@@ -446,7 +450,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../failure/failure.ts',
     '../idle-kill.ts',
     '../jobs/jobs.ts',
-    '../record/machine-identity.ts',
     '../mcp/mcp-preflight.ts',
     '../outcome.ts',
     '../operator/operator-waiting.ts',
@@ -475,6 +478,10 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
+  ]),
+  module('orchestrator/src/run/run-terminal-fallback.ts', [
+    './run-startup-failure.ts',
+    './run-terminal.ts',
   ]),
   module('orchestrator/src/run/shared-git-config.ts', [
     'node:fs',

@@ -40,6 +40,7 @@ import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -122,7 +123,8 @@ import {
   recordRunStartupFailure,
 } from './run-startup-failure.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
-import { finishRun, type TerminalInput } from './run-terminal.ts'
+import type { TerminalInput } from './run-terminal.ts'
+import { finishRunWithFallback } from './run-terminal-fallback.ts'
 import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -555,6 +557,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
+  const localMachineId = machineId()
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
@@ -956,13 +959,14 @@ export async function run(opts: RunOptions): Promise<RunResult> {
             confinementEvent,
             preConfinement,
             artifactsPersisted,
-          } = await finishRun({
+          } = await finishRunWithFallback({
             timer,
             checkpointTimer,
             resourceObserver,
             proc,
             askLoopback,
             claim,
+            machineId: localMachineId,
             writesJob,
             worktree,
             launchKey,

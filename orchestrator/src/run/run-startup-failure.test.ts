@@ -3,7 +3,53 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { upsertProject } from '../project/projects.ts'
-import { recordNeverStartedRunFailure, recordRunStartupFailure } from './run-startup-failure.ts'
+import {
+  recordNeverStartedRunFailure,
+  recordRunFinishFailure,
+  recordRunStartupFailure,
+} from './run-startup-failure.ts'
+
+test('a finish failure terminalises and publishes a non-terminal run', () => {
+  const id = addRun({ agent: 'codex', job: 'review-lens', status: 'asking' })
+
+  recordRunFinishFailure({
+    runId: id,
+    error: new Error('machine identity lookup broke'),
+    started: Date.now() - 25,
+    machineId: 'machine-finish-fallback',
+  })
+
+  expect(
+    db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+  ).toEqual({
+    status: 'failed',
+    failure_kind: 'harness',
+    error: 'finish failed: machine identity lookup broke',
+  })
+  expect(db().query("SELECT kind FROM outbox WHERE row_id=? AND kind='run'").get(id)).toEqual({
+    kind: 'run',
+  })
+})
+
+test.each(['ok', 'stopped'])('a finish failure leaves a %s run unchanged', (status) => {
+  const id = addRun({ agent: 'codex', job: 'review-lens', status })
+
+  recordRunFinishFailure({
+    runId: id,
+    error: 'late finish failure',
+    started: Date.now(),
+    machineId: 'machine-finish-fallback',
+  })
+
+  expect(
+    db().query('SELECT status, failure_kind, error FROM run WHERE record_id=?').get(id),
+  ).toEqual({
+    status,
+    failure_kind: null,
+    error: null,
+  })
+  expect(db().query("SELECT kind FROM outbox WHERE row_id=? AND kind='run'").get(id)).toBeNull()
+})
 
 test('a refusal after detach keeps the printed run queryable as failed', () => {
   const id = addRun({ agent: '(pending)', job: 'review-lens', status: 'running' })

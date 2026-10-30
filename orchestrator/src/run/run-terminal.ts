@@ -36,7 +36,6 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
@@ -235,6 +234,7 @@ export type TerminalInput = {
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   askLoopback: AskLoopback | null
   claim: { id: string; number: number }
+  machineId: string
   writesJob: boolean
   worktree: Worktree | null
   launchKey: string | null
@@ -873,7 +873,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
   persistTerminalSnapshot(claim.id, terminalSnapshot)
   const provenanceSilent = reviewHidesGap(parsedReview, input, provenanceWrongProjectTool)
-  const localMachineId = machineId()
+  const localMachineId = input.machineId
   const writeTerminalRow = () =>
     writeTransaction(() => {
       const finishedAt = nowIso()
