@@ -43,8 +43,8 @@ function holdBackLastNonAdditiveMigration(database: ReturnType<typeof db>) {
 
 function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
   const journal = migrationJournal()
-  const boundary = journal.findLastIndex((entry) => entry.compatibility !== 'additive')
-  const held = journal.slice(boundary + 1).map((entry) => ({
+  const pendingIndex = journal.findLastIndex((entry) => entry.compatibility === 'additive')
+  const held = journal.slice(pendingIndex, pendingIndex + 1).map((entry) => ({
     entry,
     applied: database
       .query<{ hash: string; created_at: number; version: string | null }, [number]>(
@@ -59,6 +59,7 @@ function holdBackLastAdditiveMigration(database: ReturnType<typeof db>) {
   }
   return {
     pending: held[0]!.entry,
+    journal: journal.slice(0, pendingIndex + 1),
     restore() {
       for (const { applied } of held) {
         database
@@ -113,7 +114,7 @@ test('an additive machine update marks only the store-open window around pull an
         }),
         git: (_cwd, args) => {
           if (args[0] === 'branch') return 'main'
-          if (args[0] === 'show') return JSON.stringify({ entries: migrationJournal() })
+          if (args[0] === 'show') return JSON.stringify({ entries: held.journal })
           if (args[0] === 'pull') {
             expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
             expect(migrationDrain(db())).toBeNull()
@@ -154,7 +155,7 @@ test('an additive machine update clears the store-open window when migrate throw
             args[0] === 'branch'
               ? 'main'
               : args[0] === 'show'
-                ? JSON.stringify({ entries: migrationJournal() })
+                ? JSON.stringify({ entries: held.journal })
                 : '',
           migrate: () => {
             expect(migrationWindow(db())?.migration).toBe(held.pending.tag)
