@@ -4,6 +4,7 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ConfigEnvironment } from '../../../shared/config-directory.ts'
 import { scrubbedGitEnv } from '../../../shared/git.ts'
+import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import type { Project } from '../project/projects.ts'
 import { runOwnedPaths } from '../run-owned-paths.ts'
 import {
@@ -67,6 +68,7 @@ function probeProject(worktree: string): Project {
 function openProbeAskListener(): CapabilityProbeAskListener {
   const server = Bun.serve({
     hostname: '127.0.0.1',
+    idleTimeout: LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS,
     port: 0,
     fetch: () => new Response(null, { status: 404 }),
   })

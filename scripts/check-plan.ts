@@ -139,6 +139,7 @@ export const ROOT_TEST_FILES = [
   'scripts/architecture-undeclared-modules.test.ts',
   'scripts/architecture-violation-baseline.test.ts',
   'scripts/check-hub-ui-styles.test.ts',
+  'scripts/check-bun-serve-timeout.test.ts',
   'scripts/check-launchd-templates.test.ts',
   'scripts/check-record-project-space-ownership.test.ts',
   'scripts/check-machine-state.test.ts',

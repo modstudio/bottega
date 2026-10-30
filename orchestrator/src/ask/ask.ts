@@ -63,6 +63,7 @@ import {
 import { formatRecordedGateResult, recordedGateResult } from '../gate/gate-result.ts'
 import { requestGateExecution } from '../gate/gate-run.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { machineId } from '../record/machine-identity.ts'
@@ -846,6 +847,7 @@ export function createAskHttpHandler(
 export function startAskHttpEndpoint(runId: string, token: string): AskLoopback {
   const server = Bun.serve({
     hostname: '127.0.0.1',
+    idleTimeout: LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS,
     port: 0,
     fetch: createAskHttpHandler(runId, token),
   })

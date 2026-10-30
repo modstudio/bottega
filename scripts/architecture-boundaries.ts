@@ -475,6 +475,7 @@ export const importBoundaries: ImportBoundary[] = [
       'bun',
       '@trpc/server/adapters/fetch',
       '../../shared/built-commit.ts',
+      '../../shared/hosted-server.ts',
       './app-static.ts',
       './change-api.ts',
       './hosted-health.ts',

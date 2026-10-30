@@ -100,6 +100,7 @@ export const recordApiBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-api-server.ts',
     [
       '../../../shared/built-commit.ts',
+      '../../../shared/hosted-server.ts',
       'bun:sqlite',
       '../postgres/postgres-migrate.ts',
       './record-config.ts',

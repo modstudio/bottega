@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch'
 import { SQL } from 'bun'
 import { readBuiltCommit } from '../../shared/built-commit.ts'
+import * as hostedServer from '../../shared/hosted-server.ts'
 import { appStaticPath, resolveAppStatic } from './app-static.ts'
 import { changeApi } from './change-api.ts'
 import { hostedHealthResponse } from './hosted-health.ts'
@@ -94,8 +95,21 @@ function startHostedServer(environment: ServerEnvironment = process.env) {
   const fetch = hostedRequestHandler(routeConfig)
   const server = Bun.serve({
     hostname: config.hostname,
+    idleTimeout: hostedServer.HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
     port: config.port,
-    fetch,
+    fetch: async (request) => {
+      const started = performance.now()
+      const response = await fetch(request)
+      console.log(
+        hostedServer.hostedAccessLogLine({
+          method: request.method,
+          pathname: new URL(request.url).pathname,
+          status: response.status,
+          durationMs: performance.now() - started,
+        }),
+      )
+      return response
+    },
   })
   let stopping = false
   const shutdown = async () => {

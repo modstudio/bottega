@@ -469,6 +469,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-postgres-array-bindings.ts'),
     staticCheck('scripts/check-outbox-payload-contracts.ts'),
     staticCheck('scripts/check-record-migrations-apply.ts'),
+    staticCheck('scripts/check-bun-serve-timeout.ts'),
     staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
     staticCheck('scripts/check-docker-workspaces.ts'),
     staticCheck('scripts/check-hub-packages.ts'),
