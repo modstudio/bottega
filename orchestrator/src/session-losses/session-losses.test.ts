@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { measureSessionLosses, type TranscriptRow } from './session-losses.ts'
+import {
+  measureSessionLosses,
+  structuredToolNamesRun,
+  type TranscriptRow,
+} from './session-losses.ts'
 
 const stamp = (second: number) => new Date(Date.UTC(2026, 9, 28, 12, 0, second)).toISOString()
 const usage = (input = 1, cacheRead = 2, cacheCreation = 3, output = 4) => ({
@@ -185,6 +189,67 @@ describe('run loss', () => {
       },
     )!
     expect(report.boundaries[0]!.lost.runs.ids).toEqual(['run-open'])
+  })
+
+  test.each([
+    [['orch', 'result', '9559'].join(' '), 9559],
+    [['orch', 'judge', '9558'].join(' '), 9558],
+  ])('%s collects run %i', (command, number) => {
+    const report = measureSessionLosses(
+      'session',
+      [assistant(0, 'before'), boundary(2), tool(3, 'after', 'Bash', { command })],
+      {
+        ...emptyFacts(),
+        runs: [{ id: `run-${number}`, number, startedAt: stamp(0), terminalAt: null }],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.count).toBe(0)
+  })
+
+  test.each([9559, '9559'])('an MCP run field of %p collects the run', (value) => {
+    const run = { id: 'run-9559', number: 9559, startedAt: stamp(0), terminalAt: null }
+    const runTool = { name: 'mcp__bottega__next_workflow_step', input: { run: value } }
+    expect(structuredToolNamesRun(runTool, run)).toBe(true)
+    const report = measureSessionLosses(
+      'session',
+      [assistant(0, 'before'), boundary(2), tool(3, 'after', runTool.name, runTool.input)],
+      {
+        ...emptyFacts(),
+        runs: [run],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.count).toBe(0)
+  })
+
+  test('free text in an MCP input does not collect the run', () => {
+    const run = { id: 'run-9559', number: 9559, startedAt: stamp(0), terminalAt: null }
+    const boardPost = { name: 'mcp__bottega__board_post', input: { body: 'Collected run 9559' } }
+    expect(structuredToolNamesRun(boardPost, run)).toBe(false)
+    const report = measureSessionLosses(
+      'session',
+      [assistant(0, 'before'), boundary(2), tool(3, 'after', boardPost.name, boardPost.input)],
+      {
+        ...emptyFacts(),
+        runs: [run],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.ids).toEqual(['run-9559'])
+  })
+
+  test('an older command does not collect a run whose number is only a prefix', () => {
+    const report = measureSessionLosses(
+      'session',
+      [
+        assistant(0, 'before'),
+        boundary(2),
+        tool(3, 'after', 'Bash', { command: ['orch', 'result', '95590'].join(' ') }),
+      ],
+      {
+        ...emptyFacts(),
+        runs: [{ id: 'run-9559', number: 9559, startedAt: stamp(0), terminalAt: null }],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.ids).toEqual(['run-9559'])
   })
 })
 
