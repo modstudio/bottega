@@ -317,7 +317,7 @@ describe('hosted-only task safety', () => {
           },
         },
       ),
-    ).rejects.toThrow('hosted hub is unreachable')
+    ).rejects.toThrow('the write may have been applied; check before retrying')
     expect(db().query<{ count: number }, []>(`SELECT count(*) count FROM task`).get()!.count).toBe(
       before,
     )
@@ -572,7 +572,7 @@ describe('hosted-only task safety', () => {
     }
 
     await expect(hostedCreateTask({}, options)).rejects.toThrow(
-      'hosted hub refused the request (404): task not found. Create the task in the active space.',
+      'hosted hub refused the request (404): task not found. Create the task in the active space. nothing was written',
     )
   })
 
@@ -587,7 +587,7 @@ describe('hosted-only task safety', () => {
           requestDeadlineMs: 5,
         },
       ),
-    ).rejects.toThrow('hosted hub is unreachable: request timed out after 5ms')
+    ).rejects.toThrow('network error): request timed out after 5ms')
   })
 
   test('a missing hosted task identity route requires redeployment', async () => {

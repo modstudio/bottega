@@ -361,7 +361,7 @@ test('a failed send family leaves both earlier family results intact', async () 
   expect(results.find((result) => result.source === 'hosted send changes')).toMatchObject({
     ok: false,
     error:
-      'hosted send change pulls failed: space-one: hosted hub refused the request (503): offline',
+      'hosted send change pulls failed: space-one: hosted hub refused the request (503): offline. nothing was written',
   })
   expect(cursor()).toBeNull()
 })

@@ -1,13 +1,14 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { diagnosticUrl, jsonBody } from '../../shared/http-json.ts'
+import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { RecordSpaceMembership } from '../../shared/record-space-membership.ts'
 import type { HostedAcknowledgement, HostedNote } from './hosted-notes.ts'
+import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import type { HostedSend } from './hosted-reports.ts'
 import type { HostedTaskPresencePair } from './hosted-task-prune.ts'
 import type { HostedComment, HostedDocument, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
-import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import { parseIdentitySetPage } from './identity-set-contract.ts'
 import {
   type OperatorWaitingEmailResult,
@@ -21,7 +22,6 @@ import type {
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} task client refuses a real hosted URL unless a stub is injected in tests`
 const REMEDY = MISSING_HOSTED_URL_REMEDY
-const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const HOSTED_REQUEST_DEADLINE_MS = 30_000
 export type TaskFetch = (input: string, init?: RequestInit) => Promise<Response>
@@ -121,6 +121,7 @@ async function responseObject(
   method: string,
   body?: unknown,
   options: HostedRequestOptions = {},
+  safety: HostedRequestSafety = 'probe',
 ): Promise<{ response: Response; value: Record<string, unknown> }> {
   const baseUrl = assertHostedTaskWriteConfigured(options)
   if (process.env.NODE_ENV === 'test' && !options.fetch) throw new Error(TEST_REFUSAL)
@@ -145,15 +146,18 @@ async function responseObject(
       options,
     )
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
+    throw hostedRefusalError({ cause: error, safety })
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
   if (!bodyResult.ok || !value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error(
-      `hosted hub refused the response from ${bodyResult.ok ? diagnosticUrl(url) : bodyResult.url} (status ${response.status}, content type ${bodyResult.ok ? (response.headers.get('content-type') ?? 'missing') : bodyResult.contentType}): expected a JSON object. ${REMEDY}`,
-    )
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety,
+    })
   return { response, value: value as Record<string, unknown> }
 }
 
@@ -162,14 +166,16 @@ async function request<T>(
   method: string,
   body?: unknown,
   options: HostedRequestOptions = {},
+  safety: HostedRequestSafety = 'probe',
 ): Promise<T> {
-  const { response, value } = await responseObject(path, method, body, options)
+  const { response, value } = await responseObject(path, method, body, options, safety)
   if (!response.ok)
-    throw new Error(
-      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}${
-        value.remedy ? `. ${String(value.remedy)}` : ''
-      }`,
-    )
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety,
+    })
   return value as T
 }
 
@@ -197,13 +203,18 @@ export async function hostedGetTask(
   if (!response.ok)
     throw new HostedTaskRequestError(
       response.status,
-      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}`,
+      hostedRefusalError({
+        status: response.status,
+        statusText: response.statusText,
+        body: value,
+        safety: 'probe',
+      }).message,
     )
   return value as { task: HostedTask; comments: HostedComment[]; documents: HostedDocument[] }
 }
 
 export const hostedCreateTask = (body: unknown, options?: Parameters<typeof request>[3]) =>
-  request<HostedTask>('/v1/tasks', 'POST', body, options)
+  request<HostedTask>('/v1/tasks', 'POST', body, options, 'non-idempotent')
 export const hostedCreateOperatorWaitingEmail = (
   body: unknown,
   options?: Parameters<typeof request>[3],
@@ -218,11 +229,15 @@ async function operatorWaitingEmailRequest(
     'POST',
     body,
     options,
+    'idempotent',
   )
   if (!response.ok)
-    throw new Error(
-      `hosted hub refused the request (${response.status}): ${String(value.error ?? 'unknown error')}`,
-    )
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety: 'idempotent',
+    })
   const parsed = operatorWaitingEmailResponseSchema.safeParse(value)
   if (!parsed.success) throw new Error('hosted hub returned an invalid operator waiting email')
   return parsed.data
@@ -232,7 +247,13 @@ export const hostedCreateDocument = (
   body: unknown,
   options?: Parameters<typeof request>[3],
 ) =>
-  request<HostedDocument>(`/v1/tasks/${encodeURIComponent(key)}/documents`, 'POST', body, options)
+  request<HostedDocument>(
+    `/v1/tasks/${encodeURIComponent(key)}/documents`,
+    'POST',
+    body,
+    options,
+    'non-idempotent',
+  )
 export async function hostedListTasks(options?: Parameters<typeof request>[3]) {
   type Result = {
     tasks: HostedTask[]
@@ -280,7 +301,7 @@ export const hostedDeleteTasks = (
     comments: number
     documents: number
     statusEvents: number
-  }>('/v1/tasks', 'DELETE', { ids, confirmation }, options)
+  }>('/v1/tasks', 'DELETE', { ids, confirmation }, options, 'idempotent')
 
 export async function hostedTaskChanges(
   cursor: string | null,
@@ -491,14 +512,23 @@ export async function hostedPushChanges(
       options,
     )
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
+    throw hostedRefusalError({ cause: error, safety: 'idempotent' })
   }
   const result = await jsonBody(response, url)
   if (!result.ok || !Array.isArray(result.value))
-    throw new Error(
-      `hosted hub returned a malformed push response from ${result.ok ? diagnosticUrl(url) : result.url}: expected a JSON list`,
-    )
-  if (!response.ok) throw new Error(`hosted hub refused the push request (${response.status})`)
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: result.ok ? result.value : undefined,
+      safety: 'idempotent',
+    })
+  if (!response.ok)
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: result.value,
+      safety: 'idempotent',
+    })
   const outcomes = result.value.map((value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value))
       throw new Error('hosted hub returned a malformed push outcome')
@@ -537,7 +567,7 @@ export async function hostedPushChanges(
 }
 
 type TaskIdentityResult =
-  | { unauthorized: true }
+  | { unauthorized: true; error: Error }
   | { unauthorized: false; value: Record<string, unknown> }
 
 async function taskIdentityResponse(
@@ -565,7 +595,7 @@ async function taskIdentityResponse(
       options,
     )
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
+    throw hostedRefusalError({ cause: error, safety: 'probe' })
   }
   return { response, url }
 }
@@ -574,26 +604,44 @@ async function taskIdentityResult(
   options: Parameters<typeof request>[3] = {},
 ): Promise<TaskIdentityResult> {
   const { response, url } = await taskIdentityResponse(options)
-  if (response.status === 401) return { unauthorized: true }
   const bodyResult = await jsonBody(response, url)
   const value = bodyResult.ok ? bodyResult.value : null
+  const body =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null
+  if (response.status === 404 && !(typeof body?.remedy === 'string' && body.remedy.trim())) {
+    const error = hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety: 'probe',
+    })
+    const detail =
+      typeof body?.error === 'string' && body.error.trim()
+        ? body.error
+        : response.statusText.trim() || String(response.status)
+    error.message = `hosted hub does not serve the task identity route (404): ${detail}; redeploy the hosted hub from this revision`
+    throw error
+  }
   if (!bodyResult.ok || !value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error(
-      `hosted hub refused the response from ${bodyResult.ok ? diagnosticUrl(url) : bodyResult.url} (status ${response.status}, content type ${bodyResult.ok ? (response.headers.get('content-type') ?? 'missing') : bodyResult.contentType}): expected a JSON object. ${REMEDY}`,
-    )
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: value,
+      safety: 'probe',
+    })
   const object = value as Record<string, unknown>
-  if (response.status === 404)
-    throw new Error(
-      `hosted hub does not serve the task identity route (404): ${String(
-        object.error ?? 'unknown error',
-      )}${object.remedy ? `. ${String(object.remedy)}` : ''}; redeploy the hosted hub from this revision`,
-    )
-  if (!response.ok)
-    throw new Error(
-      `hosted hub refused the request (${response.status}): ${String(object.error ?? 'unknown error')}${
-        object.remedy ? `. ${String(object.remedy)}` : ''
-      }`,
-    )
+  if (!response.ok) {
+    const error = hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      body: object,
+      safety: 'probe',
+    })
+    if (response.status === 401) return { unauthorized: true, error }
+    throw error
+  }
   validateTaskIdentityUser(object)
   return { unauthorized: false, value: object }
 }
@@ -615,7 +663,7 @@ export async function hostedTaskIdentity(
   options?: Parameters<typeof request>[3],
 ): Promise<HostedTaskIdentity> {
   const result = await taskIdentityResult(options)
-  if (result.unauthorized) throw new Error('hosted hub refused the request (401): unknown error')
+  if (result.unauthorized) throw result.error
   const value = result.value
   if (!value.activeSpaceId)
     throw new Error('hosted hub has no active space; switch spaces and retry')

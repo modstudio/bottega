@@ -36,7 +36,7 @@ type ProjectWriteFacts = {
 }
 
 export const MISSING_HOSTED_URL_REMEDY = `Run \`${PLATFORM_SLUG} record use <address>\`.`
-export const HOSTED_UNREACHABLE_REMEDY = 'Retry when the hosted record is reachable.'
+const HOSTED_UNREACHABLE_REMEDY = 'Retry when the hosted record is reachable.'
 
 export function hostedUnavailableRemedy(hostedUrl: string | null | undefined): string {
   return hostedUrl?.trim() ? HOSTED_UNREACHABLE_REMEDY : MISSING_HOSTED_URL_REMEDY

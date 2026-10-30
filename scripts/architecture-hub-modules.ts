@@ -58,8 +58,13 @@ export const hubModuleSpecs = [
   { file: 'hub/src/write-hold.ts', allowed: [] },
   {
     file: 'hub/src/hosted-route-identity.ts',
-    allowed: ['../../shared/record-space-membership.ts', '../../shared/record-space-request.ts'],
+    allowed: [
+      '../../shared/record-remedies.ts',
+      '../../shared/record-space-membership.ts',
+      '../../shared/record-space-request.ts',
+    ],
   },
+  { file: 'hub/src/hosted-refusal.ts', allowed: [] },
   {
     file: 'hub/src/hosted-changes.ts',
     allowed: [

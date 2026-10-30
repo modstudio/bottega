@@ -2,9 +2,10 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { jsonBody } from '../../shared/http-json.ts'
 import { readRecordSessionToken } from '../../shared/record-session.ts'
 import type { HostedAcknowledgement, HostedNote, PromoteNoteInput } from './hosted-notes.ts'
+import { type HostedRequestSafety, hostedRefusalError } from './hosted-refusal.ts'
 import type { HostedComment, HostedTask } from './hosted-tasks.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
-import { HOSTED_UNREACHABLE_REMEDY, MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
+import { MISSING_HOSTED_URL_REMEDY } from './hosted-write-mode.ts'
 import {
   assertNoteTriageStaleness,
   assertProjectNoteCounters,
@@ -14,7 +15,6 @@ import {
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} note client refuses a real hosted URL unless a stub is injected in tests`
 const REMEDY = MISSING_HOSTED_URL_REMEDY
-const UNREACHABLE_REMEDY = HOSTED_UNREACHABLE_REMEDY
 type NoteFetch = (input: string, init?: RequestInit) => Promise<Response>
 type Options = { baseUrl?: string; token?: string | null; fetch?: NoteFetch; recordSpace?: string }
 class HostedNoteRequestError extends Error {
@@ -31,6 +31,7 @@ async function request<T>(
   method: string,
   body?: unknown,
   options: Options = {},
+  safety: HostedRequestSafety = 'probe',
 ): Promise<T> {
   if (options.recordSpace) {
     const identity = await hostedTaskIdentity(options)
@@ -56,19 +57,26 @@ async function request<T>(
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   } catch (error) {
-    throw new Error(`hosted hub is unreachable: ${(error as Error).message}. ${UNREACHABLE_REMEDY}`)
+    throw hostedRefusalError({ cause: error, safety })
   }
   const url = `${baseUrl.replace(/\/$/, '')}${path}`
   const bodyResult = await jsonBody(response, url)
   if (!bodyResult.ok)
-    throw new Error(
-      `hosted notes refused the response from ${bodyResult.url} (status ${bodyResult.status}, content type ${bodyResult.contentType}): expected JSON. ${REMEDY}`,
-    )
+    throw hostedRefusalError({
+      status: response.status,
+      statusText: response.statusText,
+      safety,
+    })
   const value = bodyResult.value as Record<string, unknown> | null
   if (!response.ok)
     throw new HostedNoteRequestError(
       response.status,
-      `hosted hub refused the write (${response.status}): ${String(value?.error ?? 'unknown error')}. ${REMEDY}`,
+      hostedRefusalError({
+        status: response.status,
+        statusText: response.statusText,
+        body: value,
+        safety,
+      }).message,
     )
   return value as T
 }
@@ -78,7 +86,7 @@ async function assertNoteCapabilities(options?: Options) {
 }
 export const hostedCreateNote = async (body: unknown, options?: Options) => {
   await assertNoteCapabilities(options)
-  return request<HostedNote>('/v1/notes', 'POST', body, options)
+  return request<HostedNote>('/v1/notes', 'POST', body, options, 'non-idempotent')
 }
 export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, options?: Options) =>
   request<{ note: HostedNote; task: HostedTask | null; comment: HostedComment | null }>(
@@ -86,6 +94,7 @@ export const hostedPromoteNote = (recordId: string, input: PromoteNoteInput, opt
     'POST',
     input,
     options,
+    'non-idempotent',
   )
 export const hostedReapNotes = async (body: unknown, options?: Options) => {
   const identity = await hostedTaskIdentity(options)
@@ -99,7 +108,7 @@ export const hostedReapNotes = async (body: unknown, options?: Options) => {
     annotatedIds: string[]
     restoredIds: string[]
     deletedIds: string[]
-  }>('/v1/notes/reap', 'POST', body, options)
+  }>('/v1/notes/reap', 'POST', body, options, 'idempotent')
 }
 export async function hostedNoteChanges(cursor: string | null, options?: Options) {
   await assertNoteCapabilities(options)
@@ -120,6 +129,7 @@ export const hostedMirrorNotes = async (body: unknown, options?: Options) => {
     'PUT',
     body,
     options,
+    'idempotent',
   )
 }
 export const hostedNoteCounts = (options?: Options) =>

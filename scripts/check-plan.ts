@@ -253,3 +253,5 @@ export const STATIC_OMIT_GROUPS = {
     checks: ['scripts/check-gitleaks.ts'],
   },
 } as const
+
+export const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'

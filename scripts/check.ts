@@ -12,7 +12,12 @@ import {
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv, mainCheckoutOf } from '../shared/git'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
-import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
+import {
+  CHECK_LEGS,
+  HOSTED_REFUSAL_TEXT_CHECK,
+  ROOT_TEST_FILES,
+  STATIC_OMIT_GROUPS,
+} from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
@@ -471,6 +476,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-record-migrations-apply.ts'),
     staticCheck('scripts/check-bun-serve-timeout.ts'),
     staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
+    staticCheck(HOSTED_REFUSAL_TEXT_CHECK),
     staticCheck('scripts/check-docker-workspaces.ts'),
     staticCheck('scripts/check-hub-packages.ts'),
     staticCheck('scripts/check-hub-ui-styles.ts'),

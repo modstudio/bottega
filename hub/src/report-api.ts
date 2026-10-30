@@ -1,5 +1,4 @@
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { parseRecordSpaceMemberships } from '../../shared/record-space-membership.ts'
 import {
   recordRequestNature,
   recordSpaceAccessDecision,
@@ -17,6 +16,11 @@ import {
   updateHostedReportSubscription,
 } from './hosted-reports.ts'
 import type { HostedRouteConfig } from './hosted-route-config.ts'
+import {
+  assertAuthenticatedIdentity,
+  identityRefusal,
+  taskSpaceIdentity,
+} from './hosted-route-identity.ts'
 
 const TEST_REFUSAL = `${PLATFORM_SLUG} report API refuses real identity and database clients unless stubs are injected in tests`
 type Dependencies = { fetch?: typeof fetch; [key: string]: unknown }
@@ -157,26 +161,24 @@ export async function reportApi(
   if (!url.pathname.startsWith('/v1/report-subscriptions') && !url.pathname.startsWith('/v1/sends'))
     return null
   if (process.env.NODE_ENV === 'test' && !dependencies.fetch) throw new Error(TEST_REFUSAL)
-  const authorization = request.headers.get('authorization')
-  if (!authorization) return json({ error: 'authorization and an active space are required' }, 401)
-  const response = await (dependencies.fetch ?? fetch)(
-    `${config.recordApiUrl.replace(/\/$/, '')}/v1/whoami`,
-    { headers: { authorization } },
+  const identity = await taskSpaceIdentity(
+    request,
+    config.recordApiUrl,
+    (dependencies.fetch ?? fetch) as typeof fetch,
+    false,
   )
-  const identity = (await response.json().catch(() => null)) as {
-    user?: { id?: string }
-    activeSpaceId?: string
-    memberships?: unknown
-  } | null
-  if (!response.ok || !identity?.user?.id || !identity.activeSpaceId)
-    return json({ error: 'authorization and an active space are required' }, 401)
+  const refusal = identityRefusal(identity)
+  if (refusal) return refusal
+  if (identity.kind === 'refused-space')
+    throw new Error('report identity refused a space it ignored')
+  assertAuthenticatedIdentity(identity)
   const access = recordSpaceAccessDecision(
     recordRequestNature(request.method),
-    identity.activeSpaceId,
-    parseRecordSpaceMemberships(identity.memberships),
+    identity.spaceId,
+    identity.memberships,
   )
   if (!access.allowed) return json({ error: access.error, remedy: access.remedy }, 403)
-  const who = { userId: identity.user.id, spaceId: identity.activeSpaceId }
+  const who = { userId: identity.userId, spaceId: identity.spaceId }
   const body =
     request.method === 'GET'
       ? null
