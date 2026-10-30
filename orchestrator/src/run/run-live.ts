@@ -287,7 +287,7 @@ export async function startAfterHostCapacity(input: {
   })
   const hostWait = result.wait
   raiseForHostCapacityWait(hostWait, runId, !result.handle)
-  return result.handle
+  return result.handle!
 }
 
 const warnForRun = (runId: string) => (message: string) => recordRunWarning(runId, message)

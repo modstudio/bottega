@@ -4,7 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { raiseForHostCapacityWait, waitForRunHostCapacity } from './run-host-capacity.ts'
 
-type HostCapacityWaitDeps = Pick<
+export type HostCapacityWaitDeps = Pick<
   Parameters<typeof waitForRunHostCapacity>[0],
   'env' | 'platform' | 'now' | 'sleep' | 'random' | 'measure'
 >

@@ -69,7 +69,7 @@ import {
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
-import { admitFreshRepositoryRun } from './run-claim-host-capacity.ts'
+import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
@@ -186,6 +186,7 @@ export type ClaimInput = {
   replySchemaName: string
   carriedQuestionIds: string[]
   endpointKeySource: 'agent' | 'project'
+  admitDeps?: HostCapacityWaitDeps
   precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null } | null
   assertDispatchAllowed(): void
   recordDispatchRefusal?(cause: unknown): void
@@ -582,17 +583,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
-  /**
-   * Cutting the worktree after the row exists throws here when a directory is not
-   * a git repository or its worktree path is taken. This used to happen outside the try/finally below, so the
-   * row stayed `running` for ever with no process behind it until the stale
-   * sweep guessed at it half an hour later. The rule three lines into this
-   * function is that a run always writes its own terminal state; that has to
-   * hold for the setup as much as for the agent.
-   */
+  /** Cutting the worktree after the row exists throws for a non-repository or a
+   * taken worktree path. This used to happen outside the try/finally below, so
+   * its row stayed `running` with no process until the stale sweep guessed at it.
+   * A run must write its own terminal state for setup as well as for the agent. */
   let cwd = callerCwd
   try {
-    await admitFreshRepositoryRun(db(), claim.id, repoJob, opts.resume !== undefined)
+    await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
     switch (claimTreePlan.mode) {
       case 'attach':
         worktree = attachedTree!
