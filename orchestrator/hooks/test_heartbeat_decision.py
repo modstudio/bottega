@@ -51,6 +51,73 @@ class HeartbeatDecisionTest(unittest.TestCase):
         decision = heartbeat_decision.heartbeat_decision("12:34:56", [], 0, 0, 0, "", "")
         self.assertTrue(decision.should_exit)
         self.assertEqual(decision.lines, [])
+    def test_unreleased_live_hold_keeps_looping(self):
+        decision = heartbeat_decision.heartbeat_decision(
+            "12:34:56", [], 0, 0, 0, "", "", open_hold_count=1,
+            open_hold_detail="board:held Load gate: busy",
+        )
+        self.assertFalse(decision.should_exit)
+        self.assertIn("1 board hold(s)", decision.lines[0])
+        self.assertIn("board:held Load gate: busy", decision.lines[0])
+    def test_hold_resolution_releases_terminal_messages_and_superseded_prefix(self):
+        roots = [self.root()]
+        for field, reason in (("withdrawn_at", "withdrawn"), ("expires_at", "expired")):
+            with self.subTest(reason=reason):
+                changed = {**roots[0], field: "2026-10-30T00:30:00.000Z"}
+                open_holds, releases = heartbeat_decision.resolve_board_holds(
+                    [changed], [], [self.hold()], self.now,
+                )
+                self.assertEqual(open_holds, [])
+                self.assertEqual(releases[0].reason, reason)
+        successor = self.root(
+            id="new", title="Load gate: open", created_at="2026-10-30T02:00:00.000Z"
+        )
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            roots + [successor], [], [self.hold()], self.now,
+        )
+        self.assertEqual(open_holds, [])
+        self.assertEqual(releases[0].reason, "superseded by Load gate: open")
+        self.assertEqual(releases[0].superseding_id, "new")
+    def test_different_author_does_not_supersede_and_holder_reply_does_not_resolve(self):
+        successor = self.root(
+            id="new", author_session="other", title="Load gate: open",
+            created_at="2026-10-30T02:00:00.000Z",
+        )
+        self_reply = {
+            "root_id": "held", "author_session": "holder",
+            "created_at": "2026-10-30T02:00:00.000Z",
+        }
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            [self.root(), successor], [self_reply], [self.hold()], self.now,
+        )
+        self.assertEqual(open_holds, [self.hold()])
+        self.assertEqual(releases, [])
+    def test_later_reply_from_another_session_releases_the_hold(self):
+        reply = {
+            "root_id": "held", "author_session": "answerer",
+            "created_at": "2026-10-30T02:00:00.000Z",
+        }
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            [self.root()], [reply], [self.hold()], self.now,
+        )
+        self.assertEqual(open_holds, [])
+        self.assertEqual(releases[0].reason, "replied")
+    now = heartbeat_decision._timestamp("2026-10-30T03:00:00.000Z")
+    @staticmethod
+    def root(**overrides):
+        root = {
+            "id": "held", "title": "Load gate: busy", "author_session": "author",
+            "created_at": "2026-10-30T00:00:00.000Z",
+            "expires_at": "2026-10-31T00:00:00.000Z", "withdrawn_at": None,
+        }
+        root.update(overrides)
+        return root
+    @staticmethod
+    def hold():
+        return {
+            "message_id": "held", "session_id": "holder",
+            "created_at": "2026-10-30T01:00:00.000Z", "title": "Load gate: busy",
+        }
     @staticmethod
     def worker_question(**overrides):
         question = {"question_id": 7, "can_answer": True}

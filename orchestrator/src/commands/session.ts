@@ -8,6 +8,7 @@ import {
   formatSessionCloseOut,
   SESSION_CLOSE_OUT_RESIDUE_EXIT_CODE,
 } from '../session/session-close-out.ts'
+import { formatSessionHold, sessionHold } from '../session/session-hold.ts'
 import { sessionLosses } from '../session-losses/session-losses-adapter.ts'
 import { formatSessionLosses } from '../session-losses/session-losses-format.ts'
 import { collect, log } from './support.ts'
@@ -31,6 +32,16 @@ export function register(program: Command): void {
         judge: Boolean(options.judge),
       })
       log(options.json ? JSON.stringify(report) : formatSessionLosses(report))
+    })
+  session
+    .command('hold')
+    .description('keep the heartbeat waiting for a board message to change')
+    .option('--on <id>', 'hold for this board message')
+    .option('--release <id>', 'release the hold on this board message')
+    .option('--reason <text>', 'record why the hold was released')
+    .allowExcessArguments(false)
+    .action((options) => {
+      log(formatSessionHold(sessionHold(options)))
     })
   session
     .command('close-out')

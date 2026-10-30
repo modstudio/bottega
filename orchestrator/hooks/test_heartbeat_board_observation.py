@@ -29,7 +29,7 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
             CREATE TABLE board_message (
               record_id TEXT PRIMARY KEY, number INTEGER, kind TEXT, purpose TEXT,
               author_session TEXT, title TEXT, expires_at TEXT, withdrawn_at TEXT,
-              thread_root_record_id TEXT
+              thread_root_record_id TEXT, created_at TEXT
             );
             CREATE TABLE board_receipt (
               message_record_id TEXT, reader_session TEXT, delivered_at TEXT
@@ -40,13 +40,17 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
             CREATE TABLE hosted_board_receipt_cache (
               message_id TEXT, reader_session TEXT, delivered_at TEXT
             );
+            CREATE TABLE session_board_hold (
+              record_id TEXT, session_id TEXT, message_record_id TEXT,
+              created_at TEXT, released_at TEXT, release_reason TEXT
+            );
             """
         )
         connection.execute(
-            "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
                 "root-1", 12, "notice", "request", "asking-session", "Need a ruling",
-                "2099-01-15T09:00:00.000Z", None, None,
+                "2099-01-15T09:00:00.000Z", None, None, "2026-10-30T00:00:00.000Z",
             ),
         )
         connection.commit()
@@ -71,8 +75,8 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
     def reply(self, record_id, author, delivered):
         connection = sqlite3.connect(self.store.name)
         connection.execute(
-            "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
-            (record_id, 13, "reply", None, author, None, None, None, "root-1"),
+            "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (record_id, 13, "reply", None, author, None, None, None, "root-1", "2027-01-15T07:00:00.000Z"),
         )
         connection.execute(
             "INSERT INTO board_receipt VALUES (?,?,?)",

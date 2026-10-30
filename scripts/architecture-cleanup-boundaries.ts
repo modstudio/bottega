@@ -40,6 +40,18 @@ export const cleanupBoundarySpecs = [
       'Keep explicit session adoption as a service over authority, liveness, and outbox owners.',
   },
   {
+    name: 'session-board-hold-boundary',
+    file: 'orchestrator/src/session/session-hold.ts',
+    allowed: [
+      'bun:sqlite',
+      '../../../shared/brand.ts',
+      '../../../shared/record-id.ts',
+      '../database/db.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep session board holds local to their store-backed service.',
+  },
+  {
     name: 'resume-brief-handoff-boundary',
     file: 'orchestrator/src/session/resume-brief-handoff.ts',
     allowed: [
