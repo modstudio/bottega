@@ -57,6 +57,7 @@ import {
   terminalRunArtifactPaths,
 } from './run-artifacts.ts'
 import type { RunCallUsage } from './run-call-usage.ts'
+import { markTerminalRecorded } from './run-finish-error.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
@@ -542,6 +543,97 @@ function terminalConfinementSnapshots(input: TerminalInput) {
   return { after, before: input.frozenBefore, failures: input.confinementFailures }
 }
 
+type RecordedFinishInput = Pick<
+  TerminalResult,
+  | 'status'
+  | 'error'
+  | 'failureKind'
+  | 'changes'
+  | 'output'
+  | 'acceptedQuestions'
+  | 'confinementEvent'
+  | 'preConfinement'
+  | 'artifactsPersisted'
+> & {
+  runId: string
+  recordedFailureKind: string | null
+  name: string
+  started: number
+  confinementFailures: FreezeFailure[]
+  callerCwd: string
+  readerReply: ReaderReply | null
+  worktree: Worktree | null
+  opts: TerminalOptions
+  machineId: string
+}
+
+function persistRecordedArtifacts(input: RecordedFinishInput) {
+  try {
+    persistTerminalArtifacts(input.runId, input.readerReply, input.worktree, input.changes)
+    return input
+  } catch (artifactError) {
+    const persistenceError = `artifact persistence failed for ${runArtifactsDir(input.runId)}: ${String((artifactError as Error)?.message ?? artifactError)}`
+    const outcome = artifactPersistenceOutcome({
+      status: input.status,
+      error: input.error,
+      failureKind: input.failureKind,
+      persistenceError,
+    })
+    recordArtifactPersistenceFailure(db(), {
+      runId: input.runId,
+      parentRunId: claimIdentity(input.opts.resume).parent_run_record_id,
+      error: outcome.error,
+      machineId: input.machineId,
+      finishedAt: nowIso(),
+    })
+    teardownTerminalRunResources(db(), input.runId)
+    console.error(`orch: ${outcome.error}`)
+    return { ...input, ...outcome, artifactsPersisted: false }
+  }
+}
+
+function completeRecordedRun(input: RecordedFinishInput): TerminalResult {
+  try {
+    teardownTerminalRunResources(db(), input.runId)
+    if (input.recordedFailureKind === 'quota' || input.recordedFailureKind === 'timeout') {
+      tryWriteContention({
+        resourceKind: 'vendor',
+        resourceKey: input.name,
+        eventKind: input.recordedFailureKind === 'quota' ? 'refusal' : 'timeout',
+        durationMs: Date.now() - input.started,
+        cause: input.error,
+        runId: input.runId,
+      })
+    } else if (
+      input.recordedFailureKind === 'escaped' ||
+      input.recordedFailureKind === 'confinement_unverified'
+    ) {
+      tryWriteContention({
+        resourceKind: 'main_checkout',
+        resourceKey:
+          input.confinementEvent?.checkout ?? input.confinementFailures[0]?.path ?? input.callerCwd,
+        eventKind: 'invalidation',
+        cause: input.error,
+        runId: input.runId,
+      })
+    }
+    const finished = persistRecordedArtifacts(input)
+    return {
+      status: finished.status,
+      error: finished.error,
+      failureKind: finished.failureKind,
+      changes: finished.changes,
+      output: finished.output,
+      acceptedQuestions: finished.acceptedQuestions,
+      confinementEvent: finished.confinementEvent,
+      preConfinement: finished.preConfinement,
+      artifactsPersisted: finished.artifactsPersisted,
+    }
+  } catch (postTerminalError) {
+    throw markTerminalRecorded(postTerminalError)
+  }
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -973,61 +1065,25 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (!recorded) {
     throw new Error(`run ${claim.id} disappeared before terminalisation`)
   }
-  teardownTerminalRunResources(db(), claim.id)
-  if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
-    tryWriteContention({
-      resourceKind: 'vendor',
-      resourceKey: name,
-      eventKind: recorded.failure_kind === 'quota' ? 'refusal' : 'timeout',
-      durationMs: Date.now() - started,
-      cause: error,
-      runId: claim.id,
-    })
-  } else if (
-    recorded?.failure_kind === 'escaped' ||
-    recorded?.failure_kind === 'confinement_unverified'
-  ) {
-    const event = confinementEvent
-    tryWriteContention({
-      resourceKind: 'main_checkout',
-      resourceKey: event?.checkout ?? confinement.failures[0]?.path ?? callerCwd,
-      eventKind: 'invalidation',
-      cause: error,
-      runId: claim.id,
-    })
-  }
-
-  try {
-    persistTerminalArtifacts(claim.id, readerReply, worktree, changes)
-  } catch (e) {
-    artifactsPersisted = false
-    const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
-    ;({ status, error, failureKind } = artifactPersistenceOutcome({
-      status,
-      error,
-      failureKind,
-      persistenceError,
-    }))
-    recordArtifactPersistenceFailure(db(), {
-      runId: claim.id,
-      parentRunId: claimIdentity(opts.resume).parent_run_record_id,
-      error,
-      machineId: localMachineId,
-      finishedAt: nowIso(),
-    })
-    teardownTerminalRunResources(db(), claim.id)
-    console.error(`orch: ${error}`)
-  }
-
-  return {
-    status,
+  return completeRecordedRun({
+    runId: claim.id,
+    recordedFailureKind: recorded.failure_kind,
+    name,
+    started,
     error,
-    failureKind,
+    confinementEvent,
+    confinementFailures: confinement.failures,
+    callerCwd,
+    readerReply,
+    worktree,
     changes,
+    status,
+    failureKind,
+    opts,
+    machineId: localMachineId,
     output,
     acceptedQuestions,
-    confinementEvent,
     preConfinement,
     artifactsPersisted,
-  }
+  })
 }

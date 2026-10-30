@@ -1,6 +1,7 @@
 // concern: run terminal fallback
 /** Guarantees a finish-path exception leaves a terminal run and publication row behind. */
-import { recordRunFinishFailure } from './run-startup-failure.ts'
+import { isTerminalRecorded, markRunFinishFailed } from './run-finish-error.ts'
+import { recordRunFinishFailure } from './run-finish-failure.ts'
 import { finishRun, type TerminalInput, type TerminalResult } from './run-terminal.ts'
 
 export async function finishRunWithFallback(
@@ -10,15 +11,15 @@ export async function finishRunWithFallback(
   try {
     return await finishRun(build())
   } catch (error) {
-    recordRunFinishFailure({
-      runId: fallback.runId,
-      error,
-      started: fallback.started,
-      machineId: fallback.machineId,
-    })
-    throw Object.assign(new Error(String((error as Error)?.message ?? error), { cause: error }), {
-      runId: fallback.runId,
-      runFinishFailed: true,
-    })
+    if (!isTerminalRecorded(error)) {
+      recordRunFinishFailure({
+        runId: fallback.runId,
+        error,
+        started: fallback.started,
+        machineId: fallback.machineId,
+        terminalRecorded: false,
+      })
+    }
+    throw markRunFinishFailed(error, fallback.runId)
   }
 }

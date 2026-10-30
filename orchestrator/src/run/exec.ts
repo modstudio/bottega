@@ -30,6 +30,7 @@
 import { Database } from 'bun:sqlite'
 import { keepJournalSidecars } from '../database/wal-persistence.ts'
 import { RefusalError } from '../refusal-error.ts'
+import { isRunFinishFailed } from './run-finish-error.ts'
 
 type RunDispatchSpec = import('../route/failover.ts').DetachSpec & {
   /** Agent whose MCP startup checks completed before the coordinator started. */
@@ -116,7 +117,7 @@ export async function main(argv: string[]): Promise<number> {
   } catch (e) {
     const message = String((e as Error)?.message ?? e)
     const diagnostic = startupFailureDiagnostic(e)
-    const runFinishFailed = (e as { runFinishFailed?: boolean }).runFinishFailed === true
+    const runFinishFailed = isRunFinishFailed(e)
     /**
      * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
      *

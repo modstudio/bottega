@@ -76,7 +76,25 @@ export const runLifecycleModules: ArchitectureModule[] = [
     'bun:sqlite',
   ]),
   module('orchestrator/src/run/run-status.ts', []),
-  module('orchestrator/src/run/run-finish-failure.ts', ['./run-status.ts']),
+  module('orchestrator/src/run/run-finish-error.ts', []),
+  module('orchestrator/src/run/run-finish-failure.ts', [
+    '../database/db.ts',
+    './run-outbox.ts',
+    './run-status.ts',
+    './run-terminal-chain.ts',
+  ]),
+  module('orchestrator/src/run/exec.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../database/wal-persistence.ts',
+    '../refusal-error.ts',
+    '../route/failover.ts',
+    '../runtime/runtime-registration.ts',
+    './continuation-message.ts',
+    './run-finish-error.ts',
+    './run-startup-failure.ts',
+    './run.ts',
+  ]),
   module('orchestrator/src/run/run-acp-policy.ts', [
     '../agent/agents.ts',
     '../route/route-metered-policy-adapter.ts',
@@ -100,11 +118,9 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-startup-failure.ts', [
     '../database/db.ts',
     '../record/machine-identity.ts',
-    './run-finish-failure.ts',
     './run-liveness.ts',
     './run-number.ts',
     './run-outbox.ts',
-    './run-terminal-chain.ts',
   ]),
   module('orchestrator/src/run/branch-conversation-owner.ts', []),
   module('orchestrator/src/run/branch-owner-guard.ts', [
@@ -460,6 +476,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../review/review.ts',
     './run-artifacts.ts',
     './run-call-usage.ts',
+    './run-finish-error.ts',
     './run-liveness.ts',
     './run-outbox.ts',
     './run-process.ts',
@@ -488,7 +505,8 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-liveness.ts',
   ]),
   module('orchestrator/src/run/run-terminal-fallback.ts', [
-    './run-startup-failure.ts',
+    './run-finish-error.ts',
+    './run-finish-failure.ts',
     './run-terminal.ts',
   ]),
   module('orchestrator/src/run/shared-git-config.ts', [
