@@ -588,7 +588,11 @@ function cacheFirstSyncedMachineNames(
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
-  const identity = options.identity ?? { id: machineId(), ...machineNames() }
+  const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
+  const identity = {
+    ...requestedIdentity,
+    name: requestedIdentity.displayName ?? requestedIdentity.name ?? machineNames().displayName,
+  }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
   const backfill = options.backfill
     ? {

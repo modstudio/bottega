@@ -38,6 +38,7 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
+import { type RecordSessionClient, recordSessionClient } from './record-api-client-session.ts'
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
 import { bearerHeaders, RECORD_SIGN_IN_REMEDY, type RecordIdentity } from './record-auth.ts'
@@ -73,8 +74,6 @@ import type {
 import { storedRecordToken, storedRecordTokenAsync } from './record-session.ts'
 import type { SnapshotKind } from './record-snapshots.ts'
 import type { RecordSubject } from './record-subjects.ts'
-
-const TEST_REFUSAL = 'record API client refuses a real base URL unless a stub is injected in tests'
 
 export type RecordDocUpsertInput = {
   scope: string
@@ -200,6 +199,7 @@ export type {
 export type RecordApiClient = ProjectIdentityClient &
   RecordLensClient &
   RecordMachineClient &
+  RecordSessionClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient & {
@@ -561,7 +561,7 @@ export function recordApiBaseUrl(
     !environment.BOTTEGA_TEST_POSTGRES_CONTAINER &&
     !injectedClient()
   )
-    throw new Error(TEST_REFUSAL)
+    throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return url.replace(/\/$/, '')
 }
 
@@ -708,9 +708,10 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
   const injected = injectedClient()
   if (injected) return injected
   if (process.env.NODE_ENV === 'test' && !process.env.BOTTEGA_TEST_POSTGRES_CONTAINER)
-    throw new Error(TEST_REFUSAL)
+    throw new Error('record API client refuses a real base URL unless a stub is injected in tests')
   return {
-    ...recordMachineClient(request, recordIdentityResponse),
+    ...recordMachineClient(request),
+    ...recordSessionClient(request, recordIdentityResponse),
     ...recordIdentityAndSpaceClient(request),
     ...recordSnapshotAndPublicDocClient(request),
     ...recordDocReadClient(request),

@@ -67,7 +67,7 @@ import {
   type TrustList,
   unpinTrustedMachine,
 } from '../../../shared/trust-list.ts'
-import { claimCurrentMachineNames } from '../record/record-space.ts'
+import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 
 const bytes = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))

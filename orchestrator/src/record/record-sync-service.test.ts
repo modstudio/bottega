@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
+import { hostname } from 'node:os'
 import { SQL } from 'bun'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { defaultShortName } from './machine-name.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 
@@ -26,6 +29,14 @@ const JSONB_PROJECT_ID = '01990000-0000-7000-8000-000000001888'
 const JSONB_MACHINE_ID = '01990000-0000-7000-8000-000000001889'
 const JSONB_RUN_ID = '01990000-0000-7000-8000-000000001890'
 const JSONB_OVERRIDE_ID = '01990000-0000-7000-8000-000000001891'
+const CLAIM_SPACE_ID = '01990000-0000-7000-8000-000000001892'
+const CLAIM_USER_ID = '01990000-0000-7000-8000-000000001893'
+const CLAIM_MEMBERSHIP_ID = '01990000-0000-7000-8000-000000001894'
+const CLAIM_PROJECT_ID = '01990000-0000-7000-8000-000000001895'
+const CLAIM_HOLDER_ID = '01990000-0000-7000-8000-000000001896'
+const CLAIM_REQUESTER_ID = '01990000-0000-7000-8000-000000001897'
+const CLAIM_ID = '01990000-0000-7000-8000-000000001898'
+const CLAIM_RUN_ID = '01990000-0000-7000-8000-000000001899'
 const STAMP = '2026-10-26T06:00:00.000Z'
 
 function runPayload(id: string, taskId: string | null) {
@@ -141,6 +152,91 @@ realPostgres('hosted run task references', () => {
       await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${OTHER_SPACE_ID}::uuid`
       await admin`DELETE FROM "user" WHERE id=${USER_ID}::uuid`
+      await Promise.all([actor.close(), admin.close()])
+    }
+  })
+})
+
+realPostgres('hosted machine name claims', () => {
+  test('a held name leaves canonical names and claims unset while syncing rows', async () => {
+    const admin = new SQL(adminUrl!)
+    const actor = new SQL(actorUrl!)
+    try {
+      await admin`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${CLAIM_SPACE_ID}::uuid,'Machine claim proof','machine-claim-proof',now())`
+      await admin`INSERT INTO "user" (id,email,name,created_at)
+        VALUES (${CLAIM_USER_ID}::uuid,'machine-claim-proof@example.test','Machine Claim Proof',now())`
+      await admin`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${CLAIM_MEMBERSHIP_ID}::uuid,${CLAIM_SPACE_ID}::uuid,${CLAIM_USER_ID}::uuid,
+          'member','write',now())`
+      await admin`INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+        VALUES (${CLAIM_PROJECT_ID}::uuid,${CLAIM_SPACE_ID}::uuid,'machine-claim-proof',ARRAY['DEV'],now())`
+      await admin`INSERT INTO machine
+        (id,user_id,name,short_name,display_name,registered_at,last_seen)
+        VALUES (${CLAIM_HOLDER_ID}::uuid,${CLAIM_USER_ID}::uuid,'Holder machine','held-name',
+          'Holder machine',${STAMP}::timestamptz,${STAMP}::timestamptz)`
+      await admin`INSERT INTO machine_name_claim (id,space_id,short_name,machine_id,claimed_at)
+        VALUES (${CLAIM_ID}::uuid,${CLAIM_SPACE_ID}::uuid,'held-name',${CLAIM_HOLDER_ID}::uuid,
+          ${STAMP}::timestamptz)`
+
+      const run = runPayload(CLAIM_RUN_ID, null)
+      Object.assign(run, {
+        spaceId: CLAIM_SPACE_ID,
+        projectId: CLAIM_PROJECT_ID,
+        projectName: 'machine-claim-proof',
+        machineId: CLAIM_REQUESTER_ID,
+        taskKey: null,
+      })
+      const result = await syncHostedRecord({
+        url: actorUrl!,
+        postgres: actor,
+        identity: {
+          user: { id: CLAIM_USER_ID },
+          activeSpaceId: CLAIM_SPACE_ID,
+          personalSpaceId: CLAIM_SPACE_ID,
+          memberships: [
+            { space_id: CLAIM_SPACE_ID, slug: 'machine-claim-proof', permission: 'write' },
+          ],
+        },
+        request: {
+          machine: {
+            id: CLAIM_REQUESTER_ID,
+            name: 'Requested display',
+            shortName: 'held-name',
+            displayName: 'Requested display',
+            seenAt: STAMP,
+          },
+          rows: [{ id: 1, kind: 'run', payload: JSON.stringify(run), spaceHint: null }],
+        },
+      })
+
+      expect(result).toEqual({
+        results: [{ id: 1, status: 'synced' }],
+        machineNameRefusal: `short name held-name is held by Holder machine (held-name); choose another with \`${PLATFORM_SLUG} machine rename --short-name <name>\``,
+      })
+      const [machine] = await admin<
+        { name: string; short_name: string | null; display_name: string | null }[]
+      >`SELECT name,short_name,display_name FROM machine WHERE id=${CLAIM_REQUESTER_ID}::uuid`
+      expect(machine).toEqual({
+        name: defaultShortName(hostname()),
+        short_name: null,
+        display_name: null,
+      })
+      const [effects] = await admin<{ claims: number; runs: number }[]>`
+        SELECT
+          (SELECT count(*)::int FROM machine_name_claim WHERE machine_id=${CLAIM_REQUESTER_ID}::uuid) AS claims,
+          (SELECT count(*)::int FROM run WHERE id=${CLAIM_RUN_ID}::uuid) AS runs`
+      expect(effects).toEqual({ claims: 0, runs: 1 })
+    } finally {
+      await admin`DELETE FROM run WHERE id=${CLAIM_RUN_ID}::uuid`
+      await admin`DELETE FROM machine_name_claim WHERE id=${CLAIM_ID}::uuid`
+      await admin`DELETE FROM machine WHERE id IN (${CLAIM_REQUESTER_ID}::uuid,${CLAIM_HOLDER_ID}::uuid)`
+      await admin`DELETE FROM project WHERE id=${CLAIM_PROJECT_ID}::uuid`
+      await admin`DELETE FROM hub_change WHERE space_id=${CLAIM_SPACE_ID}::uuid`
+      await admin`DELETE FROM hub_change_head WHERE space_id=${CLAIM_SPACE_ID}::uuid`
+      await admin`DELETE FROM membership WHERE id=${CLAIM_MEMBERSHIP_ID}::uuid`
+      await admin`DELETE FROM space WHERE id=${CLAIM_SPACE_ID}::uuid`
+      await admin`DELETE FROM "user" WHERE id=${CLAIM_USER_ID}::uuid`
       await Promise.all([actor.close(), admin.close()])
     }
   })

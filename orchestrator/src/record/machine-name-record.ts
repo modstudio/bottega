@@ -1,11 +1,16 @@
 // concern: machine-name-record
 /** Atomically claims and updates hosted machine names. Must not know CLI presentation. */
+
+import { hostname } from 'node:os'
 import { SQL } from 'bun'
+import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
+import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import {
   decideMachineNameClaim,
+  defaultShortName,
   displayNameRefusal,
   shortNameRefusal,
-} from '../../../shared/machine-name.ts'
+} from './machine-name.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordPrincipal } from './record-sync-contract.ts'
 import {
@@ -15,9 +20,12 @@ import {
 import { bindPrincipal } from './record-sync-principal.ts'
 
 function writableSpaces(identity: RecordIdentity): string[] {
-  return identity.memberships
-    .filter((row) => String(row.permission) === 'write')
-    .map((row) => String(row.space_id))
+  const memberships = parseRecordSpaceMemberships(identity.memberships)
+  return memberships
+    .filter(
+      (membership) => recordSpaceAccessDecision('write', membership.spaceId, memberships).allowed,
+    )
+    .map((membership) => membership.spaceId)
 }
 
 async function claimInSpace(
@@ -78,11 +86,12 @@ export async function upsertHostedMachine(
   const shortName = identity.shortName ?? identity.name
   const displayName = identity.displayName ?? identity.name
   if (!shortName || !displayName) throw new Error('machine sync requires short and display names')
+  const initialName = defaultShortName(hostname())
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const owned = await tx`
       INSERT INTO machine (id,user_id,name,registered_at,last_seen)
-      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${displayName},${seenAt}::timestamptz,
+      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${initialName},${seenAt}::timestamptz,
         ${seenAt}::timestamptz)
       ON CONFLICT (id) DO UPDATE SET last_seen=excluded.last_seen
       WHERE machine.user_id=excluded.user_id RETURNING user_id
@@ -137,6 +146,12 @@ export async function renameHostedMachine(input: {
         await tx`SELECT short_name,display_name FROM machine WHERE id=${input.machineId}::uuid AND user_id=${input.identity.user.id}::uuid FOR UPDATE`
       if (!owned.length)
         throw new Error(`machine ${input.machineId} is not registered to the signed-in user`)
+      if (!input.shortName && owned[0]!.short_name == null)
+        throw new Error(`machine ${input.machineId} has no hosted short name; pass --short-name`)
+      if (!input.displayName && owned[0]!.display_name == null)
+        throw new Error(
+          `machine ${input.machineId} has no hosted display name; pass --display-name`,
+        )
       const shortName = input.shortName ?? String(owned[0]!.short_name)
       const displayName = input.displayName ?? String(owned[0]!.display_name)
       if (input.shortName) {

@@ -2,11 +2,7 @@
 /** Owns interactive CLI collection of machine names. */
 import { hostname } from 'node:os'
 import { createInterface } from 'node:readline/promises'
-import {
-  defaultShortName,
-  displayNameRefusal,
-  shortNameRefusal,
-} from '../../../shared/machine-name.ts'
+import { defaultShortName, displayNameRefusal, shortNameRefusal } from '../record/machine-name.ts'
 
 export async function requestedMachineNames(options: { shortName?: string; displayName?: string }) {
   const fallback = defaultShortName(hostname())

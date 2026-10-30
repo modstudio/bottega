@@ -2,13 +2,12 @@
 /** Owns record membership and active-space changes. Must not know CLI presentation. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { type StoredMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
+import type { StoredMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
-import { machineId } from './machine-identity.ts'
+import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { syncRecord } from './record-sync.ts'
 
 const RECORD_SPACE_ROLES = ['member', 'admin', 'owner'] as const
 export type RecordSpaceRole = (typeof RECORD_SPACE_ROLES)[number]
@@ -90,12 +89,6 @@ export async function switchRecordSpace(
   await client.setActiveOrganization({ organizationId: selected.spaceId })
   if (names) await claimCurrentMachineNames(names)
   return selected
-}
-
-export async function claimCurrentMachineNames(names: StoredMachineNames): Promise<void> {
-  const result = await syncRecord({ identity: { id: machineId(), ...names } })
-  if (result.machineNameRefusal) throw new Error(result.machineNameRefusal)
-  writeMachineNames(names)
 }
 
 export function refuseDuplicateRecordSpaceSlug(

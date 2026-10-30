@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from './brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   decideMachineNameClaim,
   defaultShortName,

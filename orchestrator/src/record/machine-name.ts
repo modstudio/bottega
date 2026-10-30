@@ -1,4 +1,4 @@
-import { PLATFORM_SLUG } from './brand.ts'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
 const DISPLAY_NAME_RULE = '1-60 characters'

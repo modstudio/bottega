@@ -249,6 +249,8 @@ export const ROUTES = (
       'efficiency',
       'sweep',
       'reclaim',
+      'rename',
+      'retire',
       'config',
       'settings',
       'setup',

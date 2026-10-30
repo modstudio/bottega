@@ -1,6 +1,13 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  machineId as establishMachineId,
+  storedMachineNames,
+} from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
@@ -102,6 +109,33 @@ test('a machine-name refusal still applies the synced batch and is reported once
     machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
   })
   expect(local.query('SELECT synced_at FROM outbox WHERE id=1').get()).toEqual({ synced_at: STAMP })
+})
+
+test('a first-sync name refusal does not cache the unclaimed defaults', async () => {
+  using local = localOutbox(0)
+  const root = mkdtempSync(join(tmpdir(), 'machine-name-refusal-'))
+  const previous = process.env.BOTTEGA_CONFIG_HOME
+  const env = { ...process.env, BOTTEGA_CONFIG_HOME: root }
+  establishMachineId(null, env)
+  process.env.BOTTEGA_CONFIG_HOME = root
+  try {
+    const client = {
+      whoami,
+      sync: async () => ({
+        results: [],
+        machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
+      }),
+    }
+
+    expect(await syncRecord({ local, now: () => STAMP, client })).toMatchObject({
+      machineNameRefusal: expect.any(String),
+    })
+    expect(storedMachineNames(env)).toBeNull()
+  } finally {
+    if (previous === undefined) delete process.env.BOTTEGA_CONFIG_HOME
+    else process.env.BOTTEGA_CONFIG_HOME = previous
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('a malformed ordered response marks no local row', async () => {
