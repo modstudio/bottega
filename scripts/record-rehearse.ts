@@ -1,15 +1,16 @@
 #!/usr/bin/env bun
-export const REHEARSAL_APP = 'bottega-record-backup'
-export const REHEARSAL_VM_SIZE = 'shared-cpu-1x'
-export const REHEARSAL_VM_MEMORY_MB = '1024'
-export const REHEARSAL_WAIT_TIMEOUT_MS = 20 * 60 * 1000
-export const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 
-const tokenName = 'BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN'
-const sealingCommand =
-  'bottega machine config secret run --name BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN -- bun scripts/record-rehearse.ts'
+const REHEARSAL_APP = `${PLATFORM_SLUG}-record-backup`
+const REHEARSAL_VM_SIZE = 'shared-cpu-1x'
+const REHEARSAL_VM_MEMORY_MB = '1024'
+const REHEARSAL_WAIT_TIMEOUT_MS = 20 * 60 * 1000
+const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
 
-export type CommandResult = { exitCode: number; stdout: string; stderr: string }
+const tokenName = `${PLATFORM_SLUG.toUpperCase()}_RECORD_REHEARSAL_FLY_TOKEN`
+const sealingCommand = `${PLATFORM_SLUG} machine config secret run --name ${tokenName} -- bun scripts/record-rehearse.ts`
+
+type CommandResult = { exitCode: number; stdout: string; stderr: string }
 export type RehearsalCommandRunner = (
   argv: readonly string[],
   options?: { env?: Record<string, string>; timeoutMs?: number },

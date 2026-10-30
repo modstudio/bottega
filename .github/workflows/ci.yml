@@ -313,7 +313,7 @@ jobs:
         run: bun scripts/check-record-rehearsal.ts
       - name: Pass outside the merge guard
         if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
-        run: echo 'record rehearsal: no merge guard event'
+        run: "echo 'record rehearsal: no merge guard event'"
 
   ci:
     if: always()

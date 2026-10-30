@@ -17,7 +17,7 @@ export function recordMigrationSetHash(migrations: readonly RecordMigration[]): 
   return hash.digest('hex')
 }
 
-export function readRecordMigrations(folder: string): RecordMigration[] {
+function readRecordMigrations(folder: string): RecordMigration[] {
   return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
     if (!entry.isDirectory()) return []
     const path = join(folder, entry.name, 'migration.sql')
