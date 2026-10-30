@@ -41,8 +41,8 @@ async function claimInSpace(
   if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
   if (decision.status === 'claim') {
     const inserted = await tx`
-      INSERT INTO machine_name_claim (space_id,short_name,machine_id,claimed_at)
-      VALUES (${input.spaceId}::uuid,${input.shortName},${input.machineId}::uuid,${input.now}::timestamptz)
+      INSERT INTO machine_name_claim (id,space_id,short_name,machine_id,claimed_at)
+      VALUES (${Bun.randomUUIDv7()}::uuid,${input.spaceId}::uuid,${input.shortName},${input.machineId}::uuid,${input.now}::timestamptz)
       ON CONFLICT (space_id,short_name) DO NOTHING RETURNING machine_id
     `
     if (inserted.length === 0) {

@@ -196,6 +196,7 @@ export const machine = pgTable('machine', {
 export const machineNameClaim = pgTable.withRLS(
   'machine_name_claim',
   {
+    id: identity(),
     spaceId: spaceIdentity(),
     shortName: text('short_name').notNull(),
     machineId: uuid('machine_id')
