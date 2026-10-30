@@ -124,16 +124,9 @@ describe('tracked plan-task design signoff', () => {
   const planTask = tracked.workflows.find(({ slug }) => slug === 'plan-task')!.definition
   const designSignoff = tracked.steps.find(({ slug }) => slug === 'design-signoff')!
 
-  const expectDesignSignoffRecovery = (step: typeof designSignoff) => {
-    expect(step.outcomes).toEqual(['approved', 'revise'])
-    expect(step.reenter).toEqual({ to: 'design', outcome: 'revise' })
-  }
-
   test('operator revision reenters design', () => {
-    expectDesignSignoffRecovery(designSignoff)
-
-    const withoutReenter = { ...designSignoff, reenter: undefined }
-    expect(() => expectDesignSignoffRecovery(withoutReenter)).toThrow()
+    expect(designSignoff.outcomes).toEqual(['approved', 'revise'])
+    expect(designSignoff.reenter).toEqual({ to: 'design', outcome: 'revise' })
   })
 
   test.each(['feature', 'fix'])('%s requires operator signoff for schema or names', (slug) => {
