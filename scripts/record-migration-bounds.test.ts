@@ -25,9 +25,33 @@ describe('record migration bounds', () => {
     )
   })
 
+  test('refuses a zero set_config statement timeout', () => {
+    expect(() =>
+      assertMigrationBounds([migration("SELECT SET_CONFIG('STATEMENT_TIMEOUT', '0min', true);")]),
+    ).toThrow(/fixture_migration.*SET_CONFIG.*STATEMENT_TIMEOUT/)
+  })
+
+  test('refuses a default statement timeout', () => {
+    expect(() =>
+      assertMigrationBounds([migration('SET SESSION statement_timeout TO DEFAULT;')]),
+    ).toThrow(/fixture_migration.*SET SESSION statement_timeout TO DEFAULT/)
+  })
+
+  test('refuses reset all', () => {
+    expect(() => assertMigrationBounds([migration('RESET ALL;')])).toThrow(
+      /fixture_migration.*RESET ALL/,
+    )
+  })
+
   test('accepts a raised local statement timeout', () => {
     expect(() =>
       assertMigrationBounds([migration("SET LOCAL statement_timeout = '5min';")]),
+    ).not.toThrow()
+  })
+
+  test('accepts a raised set_config statement timeout', () => {
+    expect(() =>
+      assertMigrationBounds([migration("SELECT set_config('statement_timeout', '5min', false);")]),
     ).not.toThrow()
   })
 })
