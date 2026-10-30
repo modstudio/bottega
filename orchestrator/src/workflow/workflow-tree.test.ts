@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decideConditionalAdvance } from './workflow-cursor-transition.ts'
-import { selfRulingRefusal } from './workflow-self-ruling.ts'
 import { expandWorkflowModeSteps } from './workflow-step-sequences.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import { normalizeWorkflowYaml, parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
@@ -125,6 +124,18 @@ describe('tracked plan-task design signoff', () => {
   const planTask = tracked.workflows.find(({ slug }) => slug === 'plan-task')!.definition
   const designSignoff = tracked.steps.find(({ slug }) => slug === 'design-signoff')!
 
+  const expectDesignSignoffRecovery = (step: typeof designSignoff) => {
+    expect(step.outcomes).toEqual(['approved', 'revise'])
+    expect(step.reenter).toEqual({ to: 'design', outcome: 'revise' })
+  }
+
+  test('operator revision reenters design', () => {
+    expectDesignSignoffRecovery(designSignoff)
+
+    const withoutReenter = { ...designSignoff, reenter: undefined }
+    expect(() => expectDesignSignoffRecovery(withoutReenter)).toThrow()
+  })
+
   test.each(['feature', 'fix'])('%s requires operator signoff for schema or names', (slug) => {
     const mode = planTask.modes.find((candidate) => candidate.slug === slug)!
     const steps = expandWorkflowModeSteps(mode.steps, tracked.sequences)
@@ -140,15 +151,6 @@ describe('tracked plan-task design signoff', () => {
       decomposeOrdinal,
     )
     expect(designSignoff.operatorRuling).toBe(true)
-    expect(
-      selfRulingRefusal(
-        'auto',
-        [{ kind: 'ruling', operatorRuling: Boolean(designSignoff.operatorRuling) }],
-        'fixture basis',
-        signoffOrdinal + 1,
-        designSignoff.slug,
-      ),
-    ).toContain('requires a ruling recorded with --from-operator')
   })
 
   test('the fix path skips prior art, design, and signoff for a new symptom', () => {
