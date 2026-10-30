@@ -193,6 +193,7 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                 AND r.reader_session=?
                WHERE m.thread_root_record_id IS NULL
                  AND m.withdrawn_at IS NOT NULL
+                 AND julianday('now')-julianday(m.withdrawn_at)>=0.0020833333333333333 -- WITHDRAWAL_SUPERSESSION_GRACE_MS
                  AND m.withdrawn_reason='author'
                  AND r.delivered_at IS NOT NULL
                  AND julianday(r.delivered_at)<julianday(m.withdrawn_at)
@@ -220,6 +221,7 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                 AND r.reader_session=?
                WHERE json_extract(m.payload,'$.threadRootId') IS NULL
                  AND json_extract(m.payload,'$.withdrawnAt') IS NOT NULL
+                 AND julianday('now')-julianday(json_extract(m.payload,'$.withdrawnAt'))>=0.0020833333333333333 -- WITHDRAWAL_SUPERSESSION_GRACE_MS
                  AND r.delivered_at IS NOT NULL
                  AND julianday(r.delivered_at)<julianday(json_extract(m.payload,'$.withdrawnAt'))
                  AND (json_extract(m.payload,'$.authorSession') IS NULL

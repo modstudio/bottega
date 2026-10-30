@@ -11,6 +11,7 @@ import {
   isWithdrawalDeliveryId,
   reportReplySuccessorDecision,
   selectPushNotices,
+  WITHDRAWAL_SUPERSESSION_GRACE_MS,
   withdrawalDeliveryId,
   withdrawalDeliveryText,
   withdrawalPending,
@@ -62,11 +63,17 @@ const pendingWithdrawal = (input: Partial<Parameters<typeof withdrawalPending>[0
     authorSession: 'author',
     readerSession: 'reader',
     alreadyDelivered: false,
+    now: Date.parse('2026-10-16T12:00:00.000Z') + WITHDRAWAL_SUPERSESSION_GRACE_MS,
     ...input,
   })
 
 test('a withdrawal is pending only after an earlier delivery to another session', () => {
   expect(pendingWithdrawal()).toBe(true)
+  expect(
+    pendingWithdrawal({
+      now: Date.parse('2026-10-16T12:00:00.000Z') + WITHDRAWAL_SUPERSESSION_GRACE_MS - 1,
+    }),
+  ).toBe(false)
   expect(pendingWithdrawal({ isRoot: false })).toBe(false)
   expect(pendingWithdrawal({ withdrawnReason: null })).toBe(false)
   expect(pendingWithdrawal({ withdrawnReason: 'adopted' })).toBe(false)

@@ -109,7 +109,11 @@ function withdrawalDelivery(input: {
   }
 }
 
-function pendingWithdrawals(session: string, database: Database): PendingWithdrawal[] {
+function pendingWithdrawals(
+  session: string,
+  clock: number,
+  database: Database,
+): PendingWithdrawal[] {
   const localRows = messageRows(database)
   const localRoots = localRows
     .filter((row) => row.thread_root_record_id === null)
@@ -129,6 +133,7 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
         authorSession: row.author_session,
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
+        now: clock,
       }) ||
       withdrawalSuperseded(
         {
@@ -174,6 +179,7 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
         authorSession: message.authorSession,
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, message.id),
+        now: clock,
       }) ||
       withdrawalSuperseded(
         {
@@ -203,12 +209,13 @@ function stampPendingWithdrawals(
   session: string,
   requestedIds: Set<string>,
   deliveredAt: string,
+  clock: number,
 ): void {
   const stamp = database.query(
     `INSERT OR IGNORE INTO board_withdrawal_delivery
      (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
   )
-  for (const row of pendingWithdrawals(session, database))
+  for (const row of pendingWithdrawals(session, clock, database))
     if (requestedIds.has(row.id))
       stamp.run(newRecordId(), session, row.messageRecordId, row.source, deliveredAt)
 }
@@ -362,7 +369,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     ...localPendingAcknowledgements(input.session, beganAt, clock, database),
     ...hostedPendingAcknowledgements(input.session, beganAt, clock, database),
   ]
-  const withdrawals = pendingWithdrawals(input.session, database)
+  const withdrawals = pendingWithdrawals(input.session, clock, database)
   const withdrawalDeliveries: BoardDelivery[] = withdrawals.map((item) => ({
     id: item.id,
     text: item.text,
@@ -472,7 +479,7 @@ export async function markBoardDeliveryDelivered(input: {
       }
     }
   writeTransaction(() => {
-    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt)
+    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt, clock)
     const localStamp = database.query(
       `INSERT INTO board_receipt
        (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)

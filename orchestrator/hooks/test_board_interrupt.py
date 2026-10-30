@@ -87,16 +87,23 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 INSERT INTO schema_meta VALUES
                   ('board_hosted_refresh_at','2026-10-30T12:00:00.000Z');
                 INSERT INTO board_message VALUES
-                  ('message-id',7,'notice',0,'2026-10-30T11:00:00.000Z',
+                  ('message-id',7,'notice',0,datetime('now','-1 minute'),
                    '2026-10-31T12:00:00.000Z','author',NULL,'author',
-                   'Load gate: HOLD','2026-10-30T09:00:00.000Z');
+                   'Load gate: HOLD',datetime('now','-10 minutes'));
                 INSERT INTO board_receipt VALUES
-                  ('message-id','reader','2026-10-30T10:00:00.000Z',NULL);
+                  ('message-id','reader',datetime('now','-5 minutes'),NULL);
                 """
             )
             connection.commit()
             try:
                 with orchestrator_store(path):
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertNotIn("withdrawn:7", candidates)
+                    connection.execute(
+                        "UPDATE board_message SET withdrawn_at=datetime('now','-4 minutes') "
+                        "WHERE record_id='message-id'"
+                    )
+                    connection.commit()
                     candidates, _ = board_interrupt.cheap_state("reader", 300)
                     self.assertIn("withdrawn:7", candidates)
                     connection.execute(
@@ -106,13 +113,13 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                             8,
                             "notice",
                             0,
-                            "2026-10-30T12:00:00.000Z",
+                            None,
                             "2026-10-31T12:00:00.000Z",
                             "author",
                             None,
                             "author",
                             "Load gate: HOLD",
-                            "2026-10-30T10:00:00.000Z",
+                            datetime.now(timezone.utc).isoformat(),
                         ),
                     )
                     connection.commit()

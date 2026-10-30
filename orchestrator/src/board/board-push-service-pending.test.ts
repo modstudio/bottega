@@ -5,6 +5,7 @@ import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { boardAcknowledge, boardStatus } from './board-operations.ts'
+import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { acknowledgeNotice, postNotice, withdrawNotice } from './board-service.ts'
 
@@ -46,7 +47,13 @@ test('only the final delivered local replacement reports its withdrawal', async 
     .run('load-gate-author', notice.recordId, replacement.recordId)
 
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 4 })).delivery,
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: clock + 2 + WITHDRAWAL_SUPERSESSION_GRACE_MS,
+      })
+    ).delivery,
   ).toEqual([])
   db()
     .query(
@@ -58,7 +65,17 @@ test('only the final delivered local replacement reports its withdrawal', async 
   const replacementWithdrawnAt = new Date(clock + 5).toISOString()
   withdrawNotice(replacement.recordId, {}, clock + 5)
 
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 6 })
+  expect(
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: clock + 5 + WITHDRAWAL_SUPERSESSION_GRACE_MS - 1,
+      })
+    ).delivery,
+  ).toEqual([])
+  const pendingClock = clock + 5 + WITHDRAWAL_SUPERSESSION_GRACE_MS
+  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
   expect(pending.delivery).toEqual([
     {
       id: `withdrawn:${replacement.number}`,
@@ -70,14 +87,14 @@ test('only the final delivered local replacement reports its withdrawal', async 
     },
   ])
   expect(
-    (await pendingBoardDelivery({ session: 'never-reached', budgetMs: 0, clock: clock + 6 }))
+    (await pendingBoardDelivery({ session: 'never-reached', budgetMs: 0, clock: pendingClock }))
       .delivery,
   ).toEqual([])
 
   await markBoardDeliveryDelivered({
     session: reader,
     ids: pending.delivery.map((item) => item.id),
-    clock: clock + 7,
+    clock: pendingClock + 1,
   })
   expect(
     db()
@@ -85,9 +102,10 @@ test('only the final delivered local replacement reports its withdrawal', async 
         'SELECT source,delivered_at FROM board_withdrawal_delivery WHERE reader_session=? AND message_record_id=?',
       )
       .get(reader, replacement.recordId),
-  ).toEqual({ source: 'local', delivered_at: new Date(clock + 7).toISOString() })
+  ).toEqual({ source: 'local', delivered_at: new Date(pendingClock + 1).toISOString() })
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 8 })).delivery,
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
+      .delivery,
   ).toEqual([])
 })
 
@@ -116,7 +134,13 @@ test('an adoption-retired local notice does not report an author withdrawal', as
     .run(new Date(clock + 2).toISOString(), notice.recordId)
 
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 3 })).delivery,
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: clock + 1 + WITHDRAWAL_SUPERSESSION_GRACE_MS,
+      })
+    ).delivery,
   ).toEqual([])
 })
 
@@ -212,7 +236,8 @@ test('only the final delivered hosted replacement reports its withdrawal', async
     .query('UPDATE hosted_board_message_cache SET revision=?,payload=? WHERE id=?')
     .run(replacement.revision, JSON.stringify(replacement), replacement.id)
 
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 5 })
+  const pendingClock = clock + 4 + WITHDRAWAL_SUPERSESSION_GRACE_MS
+  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
   expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${replacement.id}`])
   expect(pending.delivery[0]!.text).toBe(
     `WITHDRAWN: "Load gate: HOLD" (${replacement.id}) was withdrawn by its author at ${replacementWithdrawnAt}; anything you paused for it may resume.`,
@@ -220,7 +245,7 @@ test('only the final delivered hosted replacement reports its withdrawal', async
   await markBoardDeliveryDelivered({
     session: reader,
     ids: pending.delivery.map((item) => item.id),
-    clock: clock + 6,
+    clock: pendingClock + 1,
   })
   expect(
     db()
@@ -230,7 +255,8 @@ test('only the final delivered hosted replacement reports its withdrawal', async
       .get(reader, replacement.id),
   ).toEqual({ source: 'hosted' })
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 7 })).delivery,
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
+      .delivery,
   ).toEqual([])
 })
 

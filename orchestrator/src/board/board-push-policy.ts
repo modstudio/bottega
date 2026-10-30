@@ -9,6 +9,7 @@ export type BoardReaderStart = string | null | 'unbounded'
 export type DeferredReplySuccessor = { replyRecordId: string; threadTitle: string }
 
 export const DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT = 3
+export const WITHDRAWAL_SUPERSESSION_GRACE_MS = 3 * 60 * 1_000
 const WITHDRAWAL_DELIVERY_PREFIX = 'withdrawn:'
 
 export const withdrawalDeliveryId = (id: string): string => `${WITHDRAWAL_DELIVERY_PREFIX}${id}`
@@ -53,6 +54,7 @@ export function withdrawalPending(input: {
   authorSession: string | null
   readerSession: string
   alreadyDelivered: boolean
+  now: number
 }): boolean {
   return (
     input.isRoot &&
@@ -61,7 +63,8 @@ export function withdrawalPending(input: {
     input.deliveredAt !== null &&
     input.authorSession !== input.readerSession &&
     !input.alreadyDelivered &&
-    Date.parse(input.deliveredAt) < Date.parse(input.withdrawnAt)
+    Date.parse(input.deliveredAt) < Date.parse(input.withdrawnAt) &&
+    input.now - Date.parse(input.withdrawnAt) >= WITHDRAWAL_SUPERSESSION_GRACE_MS
   )
 }
 
