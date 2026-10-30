@@ -414,7 +414,10 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
       'julianday(later.created_at)>julianday(m.created_at)',
       'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)',
     ],
-    ['later_receipt.message_record_id=later.record_id', 'addressed(row, session, clock, database)'],
+    [
+      'later_receipt.message_record_id=later.record_id',
+      'addressed(root.row, session, clock, database)',
+    ],
     [
       "json_extract(later.payload,'$.authorSession')",
       'root.authorSession === withdrawn.authorSession',
@@ -429,9 +432,9 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
     ],
     [
       'later_receipt.message_id=later.id',
-      'cachedMessageAddressesReader(row, session, clock, database)',
+      'cachedMessageAddressesReader(root.row, session, clock, database)',
     ],
-    ['later_receipt.audience_at_posting=1', 'addressed(row, session, clock, database)'],
+    ['later_receipt.audience_at_posting=1', 'addressed(root.row, session, clock, database)'],
   ] as const) {
     expect(hook).toContain(hookClause)
     expect(`${owner}\n${policy}`).toContain(ownerClause)
