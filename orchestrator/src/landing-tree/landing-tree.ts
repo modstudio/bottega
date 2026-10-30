@@ -79,8 +79,8 @@ export function landingTreeExistingCheckoutRefusal(input: {
     ? `${PLATFORM_SLUG} tree remove ${input.path}`
     : `${PLATFORM_SLUG} run close-out ${input.terminalRun.recordId}`
   return (
-    `branch ${input.branch} already has a live tree at ${input.path}, recorded for terminal run ${input.terminalRun.recordId}; ` +
-    `close-out releases that tree when nothing runs in it; run ${releaseCommand}, then ${input.retryCommand}`
+    `branch ${input.branch} already has a tree at ${input.path}, owned by terminal run ${input.terminalRun.recordId}; ` +
+    `do not work in that tree, because close-out may release it at any time; run ${releaseCommand}, then ${input.retryCommand}`
   )
 }
 

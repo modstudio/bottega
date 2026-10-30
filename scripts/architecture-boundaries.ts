@@ -27,8 +27,6 @@ import { setupModuleSpecs } from './architecture-setup-modules.ts'
 import { workflowBoundarySpecs } from './architecture-workflow-boundaries.ts'
 import { worktreeBoundarySpecs } from './architecture-worktree-boundaries.ts'
 
-const landing = '../landing-tree/landing-tree.ts'
-
 const normalizeTarget = (file: string, target: string) =>
   target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target
 
@@ -197,13 +195,12 @@ export const importBoundaries: ImportBoundary[] = [
       './close-out-release-holds.ts',
       './reader-scratch-close-out.ts',
       './retained-branch.ts',
+      './tree-keep-decision.ts',
+      './tree-keep.ts',
       './tree-process-cwd-hold.ts',
       '../database/db.ts',
       '../git/git-environment.ts',
-      '../hook-tree/hook-tree.ts',
-      landing,
       '../idle-kill.ts',
-      '../worktree/keep-tree-hold.ts',
       '../../../shared/process-identity.ts',
       '../project/project-lock.ts',
       '../project/projects.ts',
@@ -216,7 +213,6 @@ export const importBoundaries: ImportBoundary[] = [
       '../run/run-lease.ts',
       '../run/run-process.ts',
       '../run/run-status.ts',
-      '../run/synthetic-lifecycle-job.ts',
       '../worktree/worktree.ts',
       '../worktree/worktree-attribution.ts',
       '../worktree/worktree-remove.ts',

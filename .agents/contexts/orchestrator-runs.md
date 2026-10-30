@@ -22,7 +22,7 @@ Readers never commit, push or merge; a findings review runs no suites, one probe
 
 # Lifecycle, locks and invariants
 
-A run: `reserved` → `attached` → `running` → `asking` → `ok` | `failed` | `stopped` | `stale`. A chain inherits its last turn's state. A branch: `cut` → `built` → `reviewed` → `pull-requested` → `merged` | `abandoned`; rework outdates its review. Trunk moves through a GitHub pull request merged on GitHub.
+A run: `reserved` → `attached` → `running` → `asking` → `ok` | `failed` | `stopped` | `stale`. A chain inherits its last turn's state. A branch: `cut` → `built` → `reviewed` → `pull-requested` → `merged` | `abandoned`; rework outdates its review.
 
 Two lock purposes, two files. Creation and resume attachment take `project-lock.ts:withWorktreeCreateLock` (`orch-create.lock`). Cleanup from discard, abandon, stop and sweep takes `project-lock.ts:withCleanupLock` (`orch-cleanup.lock`). **One lock per purpose.** Same-tree attachment and cleanup take `project-lock.ts:withWorktreeLease` first, purpose lock second, so they cannot interleave or deadlock.
 
@@ -44,7 +44,7 @@ Detach claims a reserved id before routing; the asking session still owns the ru
 
 # Delegating implementation
 
-Writing runs checkpoint on schedule and at limits or stop. Update `$BOTTEGA_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.
+Update `$BOTTEGA_SCRATCH/progress.json` after each item. `worktree-remove.ts:changesIn` preserves the full diff against the immutable run base.
 
 Workers do not register Git worktrees; they make baseline copies under `$BOTTEGA_SCRATCH`.
 
@@ -80,7 +80,7 @@ A `readsRepo` job without `writesRepo` does not use `create`, its branch templat
 
 # Cleaning up follows ownership
 
-A run's tree closes when the run terminalises. Close-out and `bottega machine sweep` release it unless someone is alive there or it holds unique work. Close-out keeps the branch for landing. Sweep deletes a run-minted branch only when the prune classifier proves it landed, superseded or empty, never when unlanded or unknown. `bottega machine reclaim branch` requires the same proof for commits absent from trunk: a recorded tip proves identity, not landing. Close-out of an absent tree releases its ref guard and retained ref. Sweep retries terminal rows still held or failed, and reclaims grok trust entries of gone trees. A finished conversation's sandbox goes with its tree. Sweep reports releases, absences, reasons. Automatic teardown removes only the run-labelled tree; an attached tree is forgotten, never removed. Restore checks SQL table and constraint counts, not exit status alone. Project sweeps run only if they honor `BOTTEGA_HELD_WORKTREES` or no live run, open cursor or safety keep holds a tree.
+A run's tree closes when the run terminalises. Close-out and `bottega machine sweep` release it unless someone is alive there, it holds unique work, or an open cursor or live run names it on an automatic intent (`tree-keep-decision.ts:decideTreeKeep`). Close-out keeps the branch for landing. Sweep deletes a run-minted branch only when the prune classifier proves it landed, superseded or empty, never when unlanded or unknown. `bottega machine reclaim branch` requires the same proof for commits absent from trunk: a recorded tip proves identity, not landing. Close-out of an absent tree releases its ref guard and retained ref. Sweep retries terminal rows still held or failed, reclaims grok trust entries of gone trees, and reports releases, absences and reasons. A finished conversation's sandbox goes with its tree. Automatic teardown removes only the run-labelled tree; an attached tree is forgotten, never removed. Restore checks SQL table and constraint counts, not exit status alone. Project sweeps run only if they honor `BOTTEGA_HELD_WORKTREES` or no live run, open cursor or safety keep holds a tree.
 
 **Land from a project-provisioned tree.** `bottega tree open <run>` opens an architect-owned tree on a finished run's branch through the project's lifecycle; a command-template `create` must accept `{branch}`. `bottega tree remove` releases it; sweep only when it is clean and landed. Never land from a hand-made `git worktree add`.
 

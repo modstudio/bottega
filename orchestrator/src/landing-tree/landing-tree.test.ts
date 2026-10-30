@@ -78,7 +78,7 @@ describe('landing-tree decisions', () => {
         retryCommand: `${PLATFORM_SLUG} tree open run-id`,
       }),
     ).toBe(
-      `branch DEV-1834-fix already has a live tree at /tmp/retained-tree, recorded for terminal run run-record-id; close-out releases that tree when nothing runs in it; run ${PLATFORM_SLUG} run close-out run-record-id, then ${PLATFORM_SLUG} tree open run-id`,
+      `branch DEV-1834-fix already has a tree at /tmp/retained-tree, owned by terminal run run-record-id; do not work in that tree, because close-out may release it at any time; run ${PLATFORM_SLUG} run close-out run-record-id, then ${PLATFORM_SLUG} tree open run-id`,
     )
   })
 

@@ -58,3 +58,27 @@ export function catalogueVersionRecordId(database: Database, n = 1): string {
   }
   return row.record_id
 }
+
+export function addOpenCursorWorktree(
+  database: Database,
+  input: { project: string; worktree: string },
+): number {
+  const cursor = database
+    .query<{ number: number }, string[]>(
+      `INSERT INTO workflow_cursor
+        (record_id,number,project,workflow_slug,mode_slug,workflow_key,instance_id,session_id,
+         workflow_version_record_id,catalogue_version_record_id,args,ordinal,step_slug,state,closed,
+         question,total_steps,created_at,updated_at,enforcement)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM workflow_cursor),?,'ship-task',
+               'default','','',NULL,?,?,?,0,'review-lenses','running','[]',NULL,1,
+               '2026-10-30','2026-10-30','floors') RETURNING number`,
+    )
+    .get(
+      newRecordId(),
+      input.project,
+      workflowVersionRecordId(database),
+      catalogueVersionRecordId(database),
+      JSON.stringify({ worktree: input.worktree }),
+    )
+  return cursor!.number
+}
