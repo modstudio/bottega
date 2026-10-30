@@ -221,6 +221,21 @@ describe('run loss', () => {
     expect(report.boundaries[0]!.lost.runs.count).toBe(0)
   })
 
+  test('an older MCP tool name with a run field collects the run', () => {
+    const run = { id: 'run-9559', number: 9559, startedAt: stamp(0), terminalAt: null }
+    const runTool = { name: 'mcp__orch__next_workflow_step', input: { run: 9559 } }
+    expect(structuredToolNamesRun(runTool, run)).toBe(true)
+    const report = measureSessionLosses(
+      'session',
+      [assistant(0, 'before'), boundary(2), tool(3, 'after', runTool.name, runTool.input)],
+      {
+        ...emptyFacts(),
+        runs: [run],
+      },
+    )!
+    expect(report.boundaries[0]!.lost.runs.count).toBe(0)
+  })
+
   test('free text in an MCP input does not collect the run', () => {
     const run = { id: 'run-9559', number: 9559, startedAt: stamp(0), terminalAt: null }
     const boardPost = { name: 'mcp__bottega__board_post', input: { body: 'Collected run 9559' } }
