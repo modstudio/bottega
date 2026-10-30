@@ -92,7 +92,9 @@ export function liveCloseOutResult(
     runId,
     worktree: treePath,
     outcome: 'live',
-    detail: `shared path ${treePath ?? '(no tree)'} has live run(s): ${liveOwnerRefusalText(live)}`,
+    detail: treePath
+      ? `tree ${treePath} has live run(s): ${liveOwnerRefusalText(live)}`
+      : `live run(s): ${liveOwnerRefusalText(live)}`,
   }
 }
 
