@@ -51,7 +51,7 @@ export const BACKFILL_COLUMNS: readonly BackfillColumn[] = [
     table: 'landing_override',
     column: 'missing_lenses',
     primaryKey: 'id',
-    narrowingPredicate: `jsonb_typeof(("missing_lenses" #>> '{}')::jsonb) = 'array'`,
+    narrowingPredicate: `CASE WHEN pg_input_is_valid("missing_lenses" #>> '{}', 'jsonb') THEN jsonb_typeof(("missing_lenses" #>> '{}')::jsonb) = 'array' ELSE false END`,
   },
   id('landing_override', 'withheld_fields'),
   id('pull_request_ci', 'failed_jobs'),

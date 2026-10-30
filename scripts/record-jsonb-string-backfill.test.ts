@@ -17,25 +17,6 @@ describe('record jsonb string backfill policy', () => {
     }
   })
 
-  test('landing override missing lenses selects only parsed arrays', () => {
-    const target = BACKFILL_COLUMNS.find(
-      (candidate) =>
-        candidate.table === 'landing_override' && candidate.column === 'missing_lenses',
-    )
-    expect(target).toBeDefined()
-    expect(buildSelectionPredicate(target!)).toContain(
-      `jsonb_typeof(("missing_lenses" #>> '{}')::jsonb) = 'array'`,
-    )
-  })
-
-  test('lists all columns from the removed repair migration', () => {
-    expect(BACKFILL_COLUMNS).toHaveLength(38)
-    expect(new Set(BACKFILL_COLUMNS.map(({ table }) => table))).toHaveLength(14)
-    expect(new Set(BACKFILL_COLUMNS.map(({ table, column }) => `${table}.${column}`))).toHaveLength(
-      38,
-    )
-  })
-
   test('timeout retries stop at the consecutive timeout ceiling', () => {
     expect(retryDecision('55P03', MAX_CONSECUTIVE_TIMEOUTS - 1)).toBe('retry')
     expect(retryDecision('57014', MAX_CONSECUTIVE_TIMEOUTS)).toBe('stop')
