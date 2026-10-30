@@ -1,10 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
   classifySessionCloseOut,
-  holdsReleaseResource,
-  isBranchProved,
-  isLiveSessionRun,
-  isTerminalSessionRun,
   plannedTreeOwnerMatches,
   type ResumeHandoffRootFacts,
   resumeHandoffRootIsOwed,
@@ -42,22 +38,6 @@ const handoffFacts = (overrides: Partial<ResumeHandoffRootFacts> = {}): ResumeHa
 })
 
 describe('session close-out decisions', () => {
-  test('shared root predicates preserve close-out meanings', () => {
-    expect(isLiveSessionRun('running')).toBe(true)
-    expect(isLiveSessionRun('asking')).toBe(true)
-    expect(isLiveSessionRun('ok')).toBe(false)
-    expect(isTerminalSessionRun('ok')).toBe(true)
-    expect(isTerminalSessionRun('running')).toBe(false)
-    expect(isBranchProved({ project: 'p', branch: 'b', taskKey: null, state: 'landed' })).toBe(true)
-    expect(isBranchProved({ project: 'p', branch: 'b', taskKey: null, state: 'unlanded' })).toBe(
-      false,
-    )
-    expect(holdsReleaseResource(handoffFacts().heldRunResources)).toBe(false)
-    expect(holdsReleaseResource({ ...handoffFacts().heldRunResources!, retainedRef: true })).toBe(
-      true,
-    )
-  })
-
   test('resume handoff moves exactly roots the author still owes', () => {
     const held = handoffFacts().heldRunResources!
     const cases: [string, ResumeHandoffRootFacts, boolean][] = [

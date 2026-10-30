@@ -120,15 +120,15 @@ export function classifySessionCloseOut(facts: SessionOwnershipFacts): {
   return { mechanical, process }
 }
 
-export function isLiveSessionRun(status: string): boolean {
+function isLiveSessionRun(status: string): boolean {
   return status === 'running' || status === 'asking'
 }
 
-export function isTerminalSessionRun(status: string): boolean {
+function isTerminalSessionRun(status: string): boolean {
   return TERMINAL_RUN_STATUS_SET.has(status)
 }
 
-export function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
+function holdsReleaseResource(held: SessionHeldRunResources | undefined): boolean {
   return Boolean(
     held &&
       (held.worktree ||
@@ -140,7 +140,7 @@ export function holdsReleaseResource(held: SessionHeldRunResources | undefined):
   )
 }
 
-export function isBranchProved(branch: SessionOwnedBranch): boolean {
+function isBranchProved(branch: SessionOwnedBranch): boolean {
   return branch.state === 'landed' || branch.state === 'superseded' || branch.state === 'empty'
 }
 

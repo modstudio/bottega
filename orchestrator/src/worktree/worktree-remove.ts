@@ -549,10 +549,20 @@ function recordedTeardownFacts(runId: string | undefined): {
 
 /** Whether an absent tree still has a recorded lifecycle capable of releasing its resources. */
 export function hasAbsentTreeTeardownPlan(repoRoot: string, runId: string): boolean {
+  return hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand(
+    runId,
+    Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove),
+  )
+}
+
+export function hasAbsentTreeTeardownPlanWithRegisteredRemoveCommand(
+  runId: string,
+  registeredRemoveCommand: boolean,
+): boolean {
   const facts = recordedTeardownFacts(runId)
   return absentTreeTeardownPlan({
     ...facts,
-    registeredRemoveCommand: Boolean(resolvedWorktreeTool(projectAt(repoRoot))?.remove),
+    registeredRemoveCommand,
   })
 }
 
