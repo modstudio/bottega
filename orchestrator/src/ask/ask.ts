@@ -35,6 +35,7 @@ import { McpServer, WebStandardStreamableHTTPServerTransport } from '@modelconte
 import { StdioServerTransport, serveStdio } from '@modelcontextprotocol/server/stdio'
 import { z } from 'zod'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
+import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../../../shared/local-listener.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   BOARD_ASK_REFRESH_BUDGET_MS,
@@ -846,7 +847,7 @@ export function createAskHttpHandler(
 export function startAskHttpEndpoint(runId: string, token: string): AskLoopback {
   const server = Bun.serve({
     hostname: '127.0.0.1',
-    idleTimeout: 10,
+    idleTimeout: LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS,
     port: 0,
     fetch: createAskHttpHandler(runId, token),
   })

@@ -1,7 +1,10 @@
 // concern: record-api-server
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
-import { HOSTED_SERVER_IDLE_TIMEOUT_SECONDS } from '../../../shared/hosted-server.ts'
+import {
+  HOSTED_SERVER_IDLE_TIMEOUT_SECONDS,
+  hostedAccessLogLine,
+} from '../../../shared/hosted-server.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
 import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
 import { recordApi } from './record-api.ts'
@@ -169,7 +172,12 @@ function serveRecordApi(
       }
       const response = await app.fetch(request)
       console.log(
-        `${request.method} ${new URL(request.url).pathname} ${response.status} ${Math.round(performance.now() - started)}ms`,
+        hostedAccessLogLine({
+          method: request.method,
+          pathname: new URL(request.url).pathname,
+          status: response.status,
+          durationMs: performance.now() - started,
+        }),
       )
       return response
     },
