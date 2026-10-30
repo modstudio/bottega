@@ -1,7 +1,7 @@
 // concern: session-losses
 /** Pure compaction-loss policy over transcript rows and lifecycle facts. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_TOOL_PREFIX, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_COMMAND_WORDS } from '../../../shared/command-spellings.ts'
 import { BOARD_CLAIM_TOOL_NAMES } from '../mcp/mcp-board-claim-tools.ts'
 import { type ClaudeUsage, claudeUsage } from '../metric/transcript-reader.ts'
@@ -103,6 +103,8 @@ const runCollectionCommand = declaredCommandPattern([
   'run continue',
   'score',
 ])
+// Older transcripts spell these commands with the `orch` prefix.
+const olderRunCollectionCommand = /\borch\s+(?:result|wait|continue|judge|score)\b/
 const claimCommand = declaredCommandPattern([
   'board claim renew',
   'board claim release',
@@ -182,11 +184,40 @@ function toolText(row: TranscriptRow): string {
     .join(' ')
 }
 
+const structuredRunFields = ['run', 'run_id', 'runId', 'runs'] as const
+const olderMcpToolPrefix = 'mcp__orch__'
+
+function valueNamesRun(value: unknown, run: RunLifecycle): boolean {
+  return (
+    value === run.id ||
+    value === run.number ||
+    (typeof value === 'string' && /^\d+$/.test(value) && Number(value) === run.number)
+  )
+}
+
+export function structuredToolNamesRun(
+  tool: { name: string; input: unknown },
+  run: RunLifecycle,
+): boolean {
+  if (!(tool.name.startsWith(MCP_TOOL_PREFIX) || tool.name.startsWith(olderMcpToolPrefix)))
+    return false
+  if (!tool.input || typeof tool.input !== 'object' || Array.isArray(tool.input)) return false
+  const input = tool.input as ObjectRow
+  return structuredRunFields.some((field) => {
+    const value = input[field]
+    return (
+      valueNamesRun(value, run) ||
+      (field === 'runs' && Array.isArray(value) && value.some((item) => valueNamesRun(item, run)))
+    )
+  })
+}
+
 function namesRun(row: TranscriptRow, run: RunLifecycle): boolean {
   const text = toolText(row)
   return (
-    runCollectionCommand.test(text) &&
-    (text.includes(run.id) || new RegExp(`(?:^|\\D)${run.number}(?:\\D|$)`).test(text))
+    ((runCollectionCommand.test(text) || olderRunCollectionCommand.test(text)) &&
+      (text.includes(run.id) || new RegExp(`(?:^|\\D)${run.number}(?:\\D|$)`).test(text))) ||
+    toolsOf(row).some((tool) => structuredToolNamesRun(tool, run))
   )
 }
 
