@@ -610,6 +610,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         mcp: Boolean(mcpMode),
         mcpAllowlist: mcpMode ? mcpLaunch.allowlist : [],
         writingAcp,
+        sharedReader: worktree?.sharedReader === true,
         ...writingAcpAsk.sandbox,
       })
       const home = await workerHome.prepareWorkerHomeLaunch({

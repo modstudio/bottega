@@ -61,6 +61,7 @@ import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
+import { readerTreeSharingOptions } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
@@ -210,6 +211,12 @@ function claimRecordId(reserveId: string | undefined): string {
     .get(reserveId)
   if (!reservation) throw new Error(`reserved run ${reserveId} does not exist`)
   return reserveId
+}
+
+function requiredRepositoryRoot(cwd: string): string {
+  const root = repoRootOf(cwd)
+  if (!root) throw new Error(`not a git repository: ${cwd}`)
+  return root
 }
 
 function claimableRow<T>(
@@ -610,8 +617,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         // A job that reads the repository must have a worktree, so a repository
         // it cannot be cut from is a hard failure.
         const tool = worktreeTool
-        const repoRoot = repoRootOf(callerCwd)
-        if (!repoRoot) throw new Error(`not a git repository: ${callerCwd}`)
+        const repoRoot = requiredRepositoryRoot(callerCwd)
         const toolLifecycle = resumeCreationLifecycle({
           hasCreate: Boolean(worktreeTool?.create),
           hasRecipe: Boolean(worktreeTool?.recipe),
@@ -733,6 +739,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             mainStackRequiredServices: callerProject?.settings.mainStack?.requiredServices,
             mainStackProject: callerProject ?? undefined,
             provisionTimeoutMs: timeoutMs,
+            ...readerTreeSharingOptions(input, claim.id),
           })
           const restored = restoreResumeIfNeeded(created, resumePlan, claim.id)
           const current = db().query('SELECT status FROM run WHERE record_id=?').get(claim.id) as {

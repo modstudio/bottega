@@ -1,6 +1,8 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { closeOutRun } from './close-out.ts'
@@ -11,6 +13,36 @@ import {
 } from './reader-scratch-close-out.fixture.ts'
 
 afterEach(() => mock.restore())
+
+test('dirty shared reader close-out archives only changed paths and names every sharer', () => {
+  const fixture = closeOutFixture()
+  const sharer = addRun({ agent: 'claude', job: 'review-lens', status: 'failed' })
+  try {
+    db()
+      .query('UPDATE run SET worktree=?,cwd=? WHERE record_id=?')
+      .run(fixture.worktree, fixture.worktree, sharer)
+    writeFileSync(join(fixture.worktree, 'tracked.txt'), 'escaped\n')
+    writeFileSync(join(fixture.worktree, 'untracked.txt'), 'escaped untracked\n')
+
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const archive = archivedClonePath(result.detail)
+    const pointer = JSON.parse(
+      readFileSync(join(runArtifactsDir(fixture.id), 'reader-clone-archive.json'), 'utf8'),
+    )
+    expect(result.outcome).toBe('released')
+    expect(existsSync(join(archive, 'uncommitted.patch'))).toBeTrue()
+    expect(readFileSync(join(archive, 'untracked', 'untracked.txt'), 'utf8')).toBe(
+      'escaped untracked\n',
+    )
+    expect(existsSync(join(archive, 'tracked.txt'))).toBeFalse()
+    expect(pointer).toMatchObject({
+      sharedPath: fixture.worktree,
+      sharerRunIds: [fixture.id, sharer],
+    })
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
 
 test('reader close-out releases a clean clone without nested repositories', () => {
   const fixture = closeOutFixture()

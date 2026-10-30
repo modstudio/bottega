@@ -29,6 +29,7 @@ import {
   conversationWorktreeSpellings,
   liveWorktreeSharers,
   otherConversationWorktreeSharers,
+  recordedWorktreeSharerRunIds,
   worktreePathSpellings,
 } from '../resources/resource-ownership.ts'
 import { RUNS_DIR } from '../run/run-artifacts.ts'
@@ -65,7 +66,6 @@ import {
   coordinatorLeaseHold,
   liveCloseOutResult,
   missingTreeConversationResult,
-  liveOwnerRefusalText as ownerText,
 } from './conversation-liveness.ts'
 import {
   extractionRunId,
@@ -416,7 +416,12 @@ function presentTreeOwnershipResult(input: {
   dryRun?: boolean
 }): CloseOutResult | null {
   if (input.treeAbsent) return null
-  const ownership = inspectTreeOwnership(input.treePath, input.repoRoot, input.conversationIds)
+  const ownership = inspectTreeOwnership(
+    input.treePath,
+    input.repoRoot,
+    input.conversationIds,
+    recordedWorktreeSharerRunIds(db(), input.treePath),
+  )
   return ownershipCloseOutResult({
     runId: input.runId,
     treePath: input.treePath,
@@ -696,6 +701,10 @@ function attemptCloseOutRun(
               repoRoot,
               baseCommit: readerBaseCommit,
               dryRun: false,
+              shared: (() => {
+                const sharerRunIds = recordedWorktreeSharerRunIds(db(), treePath)
+                return sharerRunIds.length > 1 ? { path: treePath, sharerRunIds } : null
+              })(),
             })
             if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.
@@ -743,7 +752,7 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent || release.path !== null,
+              treeAbsent || release.treeMoved,
               release.path !== null,
             )
             if (retainedBranch && branchSnapshot) {
@@ -812,13 +821,7 @@ function attemptCloseOutRun(
                 detail: result.detail,
               })
             const acquired = liveRows()
-            if (acquired.length)
-              return {
-                runId: row.root_record_id,
-                worktree: treePath,
-                outcome: 'failed' as const,
-                detail: `worktree was acquired during cleanup by run(s): ${ownerText(acquired)}`,
-              }
+            if (acquired.length) return liveCloseOutResult(row.root_record_id, treePath, acquired)!
             const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
             released.detail = readerScratchReleaseDetail(released.detail, release)
             return released

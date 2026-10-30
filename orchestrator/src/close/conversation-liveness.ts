@@ -30,6 +30,7 @@ type ConversationCloseOutResult = {
 
 type LiveOwner = {
   record_id: string
+  number?: number
   status: string
   relation?: 'worktree' | 'cwd' | 'launch_cwd'
 }
@@ -59,7 +60,7 @@ export function aliveConversationTurns(rootId: string): AliveTurn[] {
   )
 }
 
-export function liveOwnerRefusalText(live: LiveOwner[]): string {
+function liveOwnerRefusalText(live: LiveOwner[]): string {
   const relationPhrase = (relation: LiveOwner['relation']): string => {
     if (relation === 'worktree') return 'runs in this tree'
     if (relation === 'cwd') return 'works in this tree'
@@ -69,7 +70,11 @@ export function liveOwnerRefusalText(live: LiveOwner[]): string {
   }
   return (
     `${live
-      .map((owner) => `${owner.record_id} (${owner.status}, ${relationPhrase(owner.relation)})`)
+      .map(
+        (owner) =>
+          `${owner.number === undefined ? owner.record_id : `run ${owner.number} [${owner.record_id}]`} ` +
+          `(${owner.status}, ${relationPhrase(owner.relation)})`,
+      )
       .join(', ')}\n` +
     `cleared by: ${live
       .map((owner) => `${PLATFORM_SLUG} run wait ${owner.record_id}`)
@@ -87,7 +92,7 @@ export function liveCloseOutResult(
     runId,
     worktree: treePath,
     outcome: 'live',
-    detail: `live run(s): ${liveOwnerRefusalText(live)}`,
+    detail: `shared path ${treePath ?? '(no tree)'} has live run(s): ${liveOwnerRefusalText(live)}`,
   }
 }
 

@@ -12,4 +12,6 @@ export type Worktree = {
   source?: 'recipe' | 'git' | 'clone' | 'readonly_recipe'
   /** Branch this run minted. Null/absent means it must never delete row.branch. */
   mintedBranch?: string | null
+  /** This run attached to the confined commit-keyed reader clone. */
+  sharedReader?: boolean
 }

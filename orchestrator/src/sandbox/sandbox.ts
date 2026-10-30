@@ -481,6 +481,15 @@ export type ReadonlySandboxKind = {
   missingRoot: boolean
 }
 
+function readonlySandboxWriteRoots(input: {
+  sharedReader?: boolean
+  runtimeDir: string
+  scratchDir?: string
+}): string[] | undefined {
+  if (!input.sharedReader) return undefined
+  return [input.runtimeDir, ...(input.scratchDir ? [input.scratchDir] : [])]
+}
+
 /** Host-versus-srt decision dispatch uses before it builds an SRT profile. */
 export function selectReadonlySandboxKind(input: {
   agent: string
@@ -548,6 +557,7 @@ export function selectReadonlySandbox(input: {
   environment?: ConfigEnvironment
   writingAcp?: boolean
   askAddress?: string
+  sharedReader?: boolean
 }): SandboxSelection {
   const kind = selectReadonlySandboxKind({
     agent: input.agent,
@@ -604,6 +614,7 @@ export function selectReadonlySandbox(input: {
       baseUrl: input.baseUrl,
       mcpAllowlist: input.mcpAllowlist,
       environment: input.environment,
+      allowWrite: readonlySandboxWriteRoots(input),
     }),
   }
 }

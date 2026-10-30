@@ -647,6 +647,21 @@ describe('readonly-lens sandbox profile', () => {
     expect(profile.enableWeakerNetworkIsolation).toBe(true)
   })
 
+  test('a shared reader cannot write its worktree', () => {
+    const profile = readonlyLensProfile({
+      worktree: '/runs/tree',
+      runtimeDir: '/runs/evidence',
+      scratchDir: '/runs/scratch',
+      allowWrite: ['/runs/evidence', '/runs/scratch'],
+      project: fixtureProject(),
+      agent: 'grok',
+      path: '/usr/bin',
+      nodeModuleLinks: [],
+    })
+    expect(profile.filesystem.allowWrite).toEqual(['/runs/evidence', '/runs/scratch'])
+    expect(profile.filesystem.allowWrite).not.toContain('/runs/tree')
+  })
+
   test('profile construction includes the exact token-directory deny without creating it', () => {
     const environment = {
       HOME: homedir(),

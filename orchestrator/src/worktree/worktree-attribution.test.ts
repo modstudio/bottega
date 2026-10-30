@@ -35,6 +35,7 @@ const base: TreeOwnershipInput = {
     '40000000-0000-4000-8000-000000000000',
     '41000000-0000-4000-8000-000000000000',
   ],
+  treeSharerRunIds: [],
   repoRoot: '/projects/alpha',
   checkout: true,
   marker: { state: 'absent' },
@@ -63,6 +64,24 @@ describe('treeOwnership', () => {
           runRecordId: '42000000-0000-4000-8000-000000000000',
           repoRoot: '/projects/alpha',
         },
+      }),
+    ).toBe('attached')
+  })
+
+  test('owns a shared tree for a second recorded sharer only', () => {
+    const creator = '42000000-0000-4000-8000-000000000000'
+    expect(
+      treeOwnership({
+        ...base,
+        treeSharerRunIds: [creator, '40000000-0000-4000-8000-000000000000'],
+        marker: { state: 'present', runRecordId: creator, repoRoot: '/projects/alpha' },
+      }),
+    ).toBe('owned')
+    expect(
+      treeOwnership({
+        ...base,
+        treeSharerRunIds: [creator],
+        marker: { state: 'present', runRecordId: creator, repoRoot: '/projects/alpha' },
       }),
     ).toBe('attached')
   })

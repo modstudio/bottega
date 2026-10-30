@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { gitResult } from '../git/git-environment.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
+import { extractWorktree } from '../worktree/worktree-attribution.ts'
 import { dryRunReleaseResult, reconstructibilityHold } from './absent-tree-close-out.ts'
 import {
   formatReaderCloneArchiveStamp,
@@ -26,7 +27,10 @@ type ReaderCloneDisposableFacts = {
   noUniqueCommits: boolean
   noNestedStorage: boolean
 }
-type ReaderCloneArchivePlan = { facts: ReaderCloneDisposableFacts }
+type ReaderCloneArchivePlan = {
+  facts: ReaderCloneDisposableFacts
+  shared: { path: string; sharerRunIds: string[] } | null
+}
 type ReaderCloneCloseOutPlan =
   | { action: 'ordinary' | 'remove' }
   | { action: 'archive'; plan: ReaderCloneArchivePlan }
@@ -39,6 +43,7 @@ type ScratchCloseOutResult = {
 }
 type ReaderCloneArchiveRelease = {
   path: string | null
+  treeMoved: boolean
   ignoredRemovalFailure: string | null
 }
 
@@ -118,6 +123,7 @@ function readerScratchCloseOutPlan(input: {
   treePath: string
   repoRoot: string
   baseCommit: string
+  shared: { path: string; sharerRunIds: string[] } | null
 }): ReaderCloneCloseOutPlan {
   const readOnlyJob = isReadOnlyRepositoryJob(input.job)
   if (!input.terminal) return { action: 'hold', detail: 'conversation is not terminal' }
@@ -138,7 +144,8 @@ function readerScratchCloseOutPlan(input: {
     archiveSucceeded: null,
   })
   if (decision === 'keep') return { action: 'hold', detail: 'conversation is not terminal' }
-  if (decision === 'archive-then-release') return { action: 'archive', plan: { facts } }
+  if (decision === 'archive-then-release')
+    return { action: 'archive', plan: { facts, shared: input.shared } }
   if (decision === 'remove') return { action: 'remove' }
   return { action: 'ordinary' }
 }
@@ -152,10 +159,11 @@ export function prepareReaderScratchCloseOut(input: {
   repoRoot: string
   baseCommit: string
   dryRun: boolean
+  shared?: { path: string; sharerRunIds: string[] } | null
 }):
   | { proceed: true; archive: ReaderCloneArchivePlan | null }
   | { proceed: false; result: ScratchCloseOutResult } {
-  const plan = readerScratchCloseOutPlan(input)
+  const plan = readerScratchCloseOutPlan({ ...input, shared: input.shared ?? null })
   if (plan.action === 'hold')
     return {
       proceed: false,
@@ -227,6 +235,12 @@ function writeArchivePointer(input: {
         archivedAt: new Date().toISOString(),
         ...input.planned.facts,
         ignoredRemoved: input.ignoredRemoved,
+        ...(input.planned.shared
+          ? {
+              sharedPath: input.planned.shared.path,
+              sharerRunIds: input.planned.shared.sharerRunIds,
+            }
+          : {}),
       },
       null,
       2,
@@ -258,7 +272,24 @@ function archiveReaderScratchForRelease(input: {
   terminal: boolean
   planned: ReaderCloneArchivePlan | null
 }): ({ ok: true } & ReaderCloneArchiveRelease) | { ok: false; detail: string } {
-  if (!input.planned) return { ok: true, path: null, ignoredRemovalFailure: null }
+  if (!input.planned) return { ok: true, path: null, treeMoved: false, ignoredRemovalFailure: null }
+  if (input.planned.shared) {
+    const extracted = extractWorktree(input.treePath, input.runId)
+    if (!extracted.ok) return { ok: false, detail: extracted.detail }
+    const pointer = join(runArtifactsDir(input.runId), 'reader-clone-archive.json')
+    writeArchivePointer({
+      pointer,
+      destination: extracted.dest,
+      planned: input.planned,
+      ignoredRemoved: true,
+    })
+    return {
+      ok: true,
+      path: extracted.dest,
+      treeMoved: false,
+      ignoredRemovalFailure: null,
+    }
+  }
   writeConveniencePatch(input.runId, input.treePath)
   const destination = archiveDestination(input.runId)
   const artifacts = runArtifactsDir(input.runId)
@@ -324,6 +355,7 @@ function archiveReaderScratchForRelease(input: {
     ? {
         ok: true,
         path: destination,
+        treeMoved: true,
         ignoredRemovalFailure,
       }
     : { ok: false, detail: `reader clone archive did not permit release (${decision})` }
@@ -354,6 +386,7 @@ export function prepareReaderScratchRelease(input: {
     return {
       proceed: true,
       path: archive.path,
+      treeMoved: archive.treeMoved,
       ignoredRemovalFailure: archive.ignoredRemovalFailure,
     }
   return {

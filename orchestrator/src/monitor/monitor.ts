@@ -99,6 +99,7 @@ import {
 } from './orphan-inventory-conditions.ts'
 import { orphanProcessConditions } from './orphan-processes.ts'
 import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
+import { observeReaderTreeConditions } from './reader-tree-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
 
@@ -641,6 +642,7 @@ function appendRunConditions(
   conditions.push(
     ...staleRunConditions(database, clock),
     ...runTokenJumpConditions(database, clock),
+    ...observeReaderTreeConditions(database),
   )
 }
 

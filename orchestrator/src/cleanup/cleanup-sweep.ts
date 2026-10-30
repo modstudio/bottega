@@ -32,7 +32,10 @@ import {
 import type { DockerResource } from '../resources/docker-resources.ts'
 import { sweepIdleMainStacks } from '../resources/main-stack.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
-import { liveWorktreeSharers } from '../resources/resource-ownership.ts'
+import {
+  liveWorktreeSharers,
+  recordedWorktreeSharerRunIds,
+} from '../resources/resource-ownership.ts'
 import { recordedRunLivenessFacts, runAlive } from '../run/run-alive.ts'
 import { auditRunMutation } from '../run/run-authority.ts'
 import {
@@ -510,7 +513,14 @@ function sweepTreeIsOwned(row: SweepCandidate): boolean {
       )
       .all(row.root_record_id, row.root_record_id) as { record_id: string }[]
   ).map((turn) => turn.record_id)
-  return inspectTreeOwnership(row.worktree, project.path, conversationIds) === 'owned'
+  return (
+    inspectTreeOwnership(
+      row.worktree,
+      project.path,
+      conversationIds,
+      recordedWorktreeSharerRunIds(db(), row.worktree),
+    ) === 'owned'
+  )
 }
 
 function shouldInventoryBeforeSweep(row: SweepCandidate, dry: boolean): boolean {

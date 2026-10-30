@@ -38,7 +38,11 @@ import {
   type RecordWorktree,
 } from './worktree-create.ts'
 import type { ProvisionEntry } from './worktree-provision.ts'
-import { createReadOnlyWithTool, createReadOnlyWorktree } from './worktree-readonly.ts'
+import {
+  createReadOnlyWithTool,
+  createReadOnlyWorktree,
+  resolveSharedReadOnlyWorktree,
+} from './worktree-readonly.ts'
 import type { Worktree } from './worktree-types.ts'
 
 export function worktreeExists(path: string): boolean {
@@ -66,6 +70,8 @@ export type CreateWorkerWorktreeOptions = {
   mainStackRequiredServices?: string[]
   mainStackProject?: { recordId: string; name: string }
   provisionTimeoutMs?: number
+  sharedReviewCommit?: string
+  recordSharedFallback?: (reason: string) => void
 }
 
 export function recordProvisioning(
@@ -132,7 +138,17 @@ export function createReadOnlyWorktreeForTool(input: {
 }
 
 function createReadOnlyWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {
-  return createReadOnlyWorktreeForTool(options)
+  if (!options.sharedReviewCommit) return createReadOnlyWorktreeForTool(options)
+  const resolution = resolveSharedReadOnlyWorktree({
+    cwd: options.cwd,
+    runId: options.runId,
+    commit: options.sharedReviewCommit,
+    record: options.record,
+    provision: options.tool?.readonly_provision,
+    provisionTimeoutMs: options.provisionTimeoutMs,
+  })
+  if (resolution.fallbackReason) options.recordSharedFallback?.(resolution.fallbackReason)
+  return resolution.worktree
 }
 
 function createWritingWorkerWorktree(options: CreateWorkerWorktreeOptions): Worktree {

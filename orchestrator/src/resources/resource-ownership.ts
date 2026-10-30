@@ -32,6 +32,7 @@ import {
 
 export type WorktreeSharerRow = {
   record_id: string
+  number: number
   status: string
   scored: number
   relation: 'worktree' | 'cwd' | 'launch_cwd'
@@ -60,7 +61,7 @@ function worktreeSharers(
   if (!spellings.length) return []
   const candidates = database
     .query(
-      `SELECT r.record_id, COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id,
+      `SELECT r.record_id, r.number, COALESCE(r.parent_run_record_id, r.record_id) AS root_record_id,
             r.status, r.pid, r.executor, r.session_id, r.started_at, r.job, r.harness_wall_bound_ms,
             (SELECT last_seen FROM session_seen WHERE session_id=r.session_id) session_last_seen,
             CASE
@@ -178,6 +179,20 @@ export function worktreePathSpellings(database: Database, worktree: string): str
         return false
       }
     })
+}
+
+/** Every run row whose recorded worktree resolves to this exact checkout. */
+export function recordedWorktreeSharerRunIds(database: Database, worktree: string): string[] {
+  const spellings = worktreePathSpellings(database, worktree)
+  if (!spellings.length) return []
+  return (
+    database
+      .query(
+        `SELECT record_id FROM run
+         WHERE worktree IN (${spellings.map(() => '?').join(',')}) ORDER BY number`,
+      )
+      .all(...spellings) as { record_id: string }[]
+  ).map((row) => row.record_id)
 }
 
 /** Every recorded spelling of each tree one conversation points at. */

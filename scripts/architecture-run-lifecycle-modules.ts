@@ -61,6 +61,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './resume-tree.ts',
   ]),
   module('orchestrator/src/run/run-claim-inheritance.ts', ['../database/db.ts']),
+  module('orchestrator/src/run/reader-tree-sharing-claim.ts', [
+    '../database/db.ts',
+    '../events.ts',
+    '../sandbox/sandbox.ts',
+    '../worktree/reader-tree-sharing.ts',
+  ]),
   module('orchestrator/src/run/run-claim-transaction.ts', ['../database/db.ts']),
   module('orchestrator/src/run/run-retry-claim.ts', [
     '../git/git-environment.ts',
@@ -175,6 +181,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-claim-plan.ts',
     './run-claim-mcp.ts',
     './run-claim-inheritance.ts',
+    './reader-tree-sharing-claim.ts',
     './run-resume-kind.ts',
     './run-resume-options.ts',
     './run-resume-prompt.ts',
