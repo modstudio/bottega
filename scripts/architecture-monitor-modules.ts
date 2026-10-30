@@ -46,6 +46,18 @@ export const monitorModules: MonitorModule[] = [
     '../resources/session-process-anchoring.ts',
     './monitor-types.ts',
   ]),
+  module('orchestrator/src/monitor/hosted-pressure-decision.ts', [
+    '../../../shared/brand.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/monitor-hosted-pressure.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/env-source.ts',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './hosted-pressure-decision.ts',
+  ]),
   module('orchestrator/src/monitor/monitor-types.ts', [
     '../host-load-sample.ts',
     '../review/review-vocabulary.ts',
@@ -99,6 +111,7 @@ export const monitorModules: MonitorModule[] = [
     './monitor-branches.ts',
     './monitor-gate-tooling.ts',
     './host-pressure-conditions.ts',
+    './monitor-hosted-pressure.ts',
     './monitor-record-tunnel.ts',
     './monitor-result.ts',
     './monitor-retrieval-pins.ts',

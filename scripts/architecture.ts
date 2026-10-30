@@ -380,6 +380,7 @@ export const modules: ArchitectureModule[] = [
     '../board/board-service.ts',
     '../database/db.ts',
     './monitor-conditions.ts',
+    './monitor-hosted-pressure.ts',
     './monitor-types.ts',
     '../review/review-vocabulary.ts',
   ]),

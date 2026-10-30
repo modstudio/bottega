@@ -27,6 +27,7 @@ import {
   terminalCloseOutRuns,
   unscoredRuns,
 } from './monitor-conditions.ts'
+import { checkHostedPressureCached } from './monitor-hosted-pressure.ts'
 import {
   MONITOR_NOTICE_DELIVERY_POLICY,
   type MonitorNotice,
@@ -323,6 +324,11 @@ export async function claimMonitorNoticesForCommand(
   ownerSession: string,
   input: { skipBoardRefresh: boolean },
 ): Promise<{ notices: MonitorNotice[]; warning: string | null }> {
+  try {
+    await checkHostedPressureCached({ failFastStoreClaim: true })
+  } catch {
+    // Notice delivery is independent of an unavailable machine-local detector.
+  }
   let verificationSource: HostedVerificationSource = { source: 'stored' }
   if (!input.skipBoardRefresh) {
     await refreshHostedBoard({ budgetMs: BOARD_READ_REFRESH_BUDGET_MS })

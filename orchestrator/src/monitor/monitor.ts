@@ -74,6 +74,7 @@ import {
 import { staleCustomerGuideCommandConditions } from './monitor-customer-guides.ts'
 import { workerGateToolingConditions } from './monitor-gate-tooling.ts'
 import { observeProjectHarnessLoad } from './monitor-harness-load.ts'
+import { checkHostedPressureCached } from './monitor-hosted-pressure.ts'
 import { fileUnavailableMonitorIssues } from './monitor-issue-filing.ts'
 import { outboxConditions } from './monitor-outbox.ts'
 import { observeRecordTunnel } from './monitor-record-tunnel.ts'
@@ -127,8 +128,10 @@ async function initialMonitorObservations(
   const diskPressure = await diskPressureObservation(clock)
   const hostPressure = hostPressureObservation(database, clock)
   const collectLease = observeCollectLease(clock)
+  const hostedPressure = await checkHostedPressureCached({ database, clock })
   return {
     conditions: [
+      ...hostedPressure.conditions,
       ...hostPressure.conditions,
       ...staleCustomerGuideCommandConditions(),
       ...diskPressure.conditions,

@@ -29,6 +29,7 @@ beforeEach(() => {
 afterEach(() => {
   installRecordApiClient(null)
   delete process.env.BOTTEGA_RECORD_API_URL
+  delete process.env.BOTTEGA_FLY_METRICS_TOKEN
 })
 test('heartbeat delivery emits ordinary hosted beside local once with a failed-refresh warning', async () => {
   const session = 'monitor-hosted-reader'
@@ -191,6 +192,76 @@ test('notice claim succeeds while another connection holds the store writer', as
     writer.close()
   }
 })
+
+test('notice claim runs a due hosted-pressure check', async () => {
+  const session = 'monitor-hosted-pressure-due'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
+  const local = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Available after hosted pressure check',
+      body: 'hosted pressure check body',
+      ackRequired: false,
+    },
+    {},
+    Date.now(),
+  )
+  process.env.BOTTEGA_FLY_METRICS_TOKEN = 'token'
+  let stealFetchCalls = 0
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = (async (input) => {
+    const url = input instanceof URL ? input : new URL(String(input))
+    if (url.searchParams.get('query')?.includes('mode="steal"')) stealFetchCalls++
+    return new Response(
+      JSON.stringify({ status: 'success', data: { result: [{ value: [0, '0'] }] } }),
+      { status: 200 },
+    )
+  }) as typeof globalThis.fetch
+  try {
+    const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
+    expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
+    expect(stealFetchCalls).toBe(1)
+    expect(
+      db().query('SELECT checked_at FROM hosted_pressure_cache WHERE singleton=1').get(),
+    ).toEqual({ checked_at: expect.any(String) })
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('notice claim fails fast when the hosted-pressure store claim is busy', async () => {
+  const session = 'monitor-hosted-pressure-busy'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+         VALUES (?,'claude','architect','machine','monitor-project',(SELECT record_id FROM project WHERE name='monitor-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(session, '2026-10-05T11:00:00.000Z', new Date().toISOString())
+  const local = postNotice(
+    {
+      audience: `session:${session}`,
+      title: 'Available during hosted pressure writer',
+      body: 'fail-fast hosted pressure body',
+      ackRequired: false,
+    },
+    {},
+    Date.now(),
+  )
+  const writer = new Database(DB_PATH, { readwrite: true })
+  writer.exec('BEGIN IMMEDIATE')
+  try {
+    const delivery = await claimMonitorNoticesForCommand(session, { skipBoardRefresh: true })
+    expect(delivery.notices.map((notice) => notice.noticeId)).toContain(`board:${local.number}`)
+  } finally {
+    writer.exec('ROLLBACK')
+    writer.close()
+  }
+}, 1_000)
 
 test('read-only notice claim defers a report reply successor with a reason', async () => {
   const clock = Date.now()
