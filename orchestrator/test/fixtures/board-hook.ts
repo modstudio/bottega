@@ -26,9 +26,9 @@ export function createHookFixture(
   const database = new Database(databasePath)
   database.exec(`
     CREATE TABLE board_message(record_id TEXT,number INTEGER,kind TEXT,ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,author_session TEXT,thread_root_record_id TEXT);
-    CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT);
+    CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT,audience_at_posting INTEGER);
     CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
-    CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT);
+    CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,delivered_at TEXT,acknowledged_at TEXT,audience_at_posting INTEGER);
     CREATE TABLE board_withdrawal_delivery(record_id TEXT PRIMARY KEY,reader_session TEXT,message_record_id TEXT,source TEXT,delivered_at TEXT,UNIQUE(reader_session,message_record_id));
     CREATE TABLE schema_meta(key TEXT PRIMARY KEY,value TEXT);
   `)

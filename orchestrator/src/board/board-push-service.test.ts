@@ -27,6 +27,7 @@ import {
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { takeClaim } from './board-claim-service.ts'
+import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { BOARD_DELIVERY_MAX_MESSAGES, renderBoardNoticeOneLine } from './board-render.ts'
 import { postNotice } from './board-service.ts'
@@ -397,6 +398,7 @@ test('mid-session hosted delivery includes an ordinary notice, question, and par
 test('the hook SQL remains a deliberately broad prefilter of the TypeScript owner', () => {
   const hook = readFileSync(interruptHook, 'utf8')
   const owner = readFileSync(resolve(import.meta.dir, 'board-push-service.ts'), 'utf8')
+  const policy = readFileSync(resolve(import.meta.dir, 'board-push-policy.ts'), 'utf8')
   expect(hook).toContain('Broad prefilter for board-push-service.ts, the eligibility owner.')
   for (const [hookClause, ownerClause] of [
     ["m.kind='notice'", "row.kind === 'notice'"],
@@ -406,10 +408,39 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
     ["m.kind='notice'", "message.kind === 'notice'"],
     ["json_extract(m.payload,'$.ackRequired')=1", 'message.ackRequired'],
     ["json_extract(m.payload,'$.authorSession')<>?", 'message.authorSession !== session'],
+    ['later.author_session IS m.author_session', 'root.authorSession === withdrawn.authorSession'],
+    ["instr(m.title, ':')>0", 'withdrawalSupersessionPrefix(withdrawn.title)'],
+    [
+      'julianday(later.created_at)>julianday(m.created_at)',
+      'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)',
+    ],
+    ['later_receipt.message_record_id=later.record_id', 'addressed(row, session, clock, database)'],
+    [
+      "json_extract(later.payload,'$.authorSession')",
+      'root.authorSession === withdrawn.authorSession',
+    ],
+    [
+      "instr(json_extract(m.payload,'$.title'), ':')>0",
+      'withdrawalSupersessionPrefix(withdrawn.title)',
+    ],
+    [
+      "julianday(json_extract(later.payload,'$.createdAt'))",
+      'Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt)',
+    ],
+    [
+      'later_receipt.message_id=later.id',
+      'cachedMessageAddressesReader(row, session, clock, database)',
+    ],
+    ['later_receipt.audience_at_posting=1', 'addressed(row, session, clock, database)'],
   ] as const) {
     expect(hook).toContain(hookClause)
-    expect(owner).toContain(ownerClause)
+    expect(`${owner}\n${policy}`).toContain(ownerClause)
   }
+  const graceLiterals = [...hook.matchAll(/WITHDRAWAL_SUPERSESSION_GRACE_DAYS\s*=\s*([\d.]+)/g)]
+  expect(graceLiterals).toHaveLength(1)
+  for (const literal of graceLiterals)
+    expect(Number(literal[1])).toBeCloseTo(WITHDRAWAL_SUPERSESSION_GRACE_MS / 86_400_000, 15)
+  expect(hook.match(/WITHDRAWAL_SUPERSESSION_GRACE_DAYS/g)).toHaveLength(3)
 })
 
 test('delivery returns every pending notice and preserves its first delivered time', async () => {
@@ -769,7 +800,7 @@ test('PostToolUse passes recent reminders before selection and stamps only fresh
   addCandidate(item, 8)
   item.database
     .query(
-      "INSERT INTO board_receipt SELECT record_id,'reader',?,NULL FROM board_message WHERE number=7",
+      "INSERT INTO board_receipt(message_record_id,reader_session,delivered_at,acknowledged_at) SELECT record_id,'reader',?,NULL FROM board_message WHERE number=7",
     )
     .run(new Date().toISOString())
   item.database.query('UPDATE board_message SET ack_required=0 WHERE number=8').run()

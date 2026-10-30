@@ -9,6 +9,7 @@ import {
   BOARD_RECEIPT_WRITE_BUDGET_MS,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
+  cachedMessageAddressesReader,
   cachedRows,
   claimCachedHostedForPush,
   refreshHostedBoard,
@@ -23,6 +24,7 @@ import {
   withdrawalDeliveryId,
   withdrawalDeliveryText,
   withdrawalPending,
+  withdrawalSuperseded,
 } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
@@ -108,8 +110,21 @@ function withdrawalDelivery(input: {
   }
 }
 
-function pendingWithdrawals(session: string, database: Database): PendingWithdrawal[] {
-  const local = messageRows(database).flatMap((row) => {
+function pendingWithdrawals(
+  session: string,
+  clock: number,
+  database: Database,
+): PendingWithdrawal[] {
+  const localRows = messageRows(database)
+  const localSupersessionFact = (row: (typeof localRows)[number]) => ({
+    authorSession: row.author_session,
+    title: row.title ?? '',
+    createdAt: row.created_at,
+  })
+  const localRoots = localRows
+    .filter((row) => row.thread_root_record_id === null && addressed(row, session, clock, database))
+    .map(localSupersessionFact)
+  const local = localRows.flatMap((row) => {
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
     if (
       !withdrawalPending({
@@ -120,7 +135,9 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
         authorSession: row.author_session,
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
-      })
+        now: clock,
+      }) ||
+      withdrawalSuperseded(localSupersessionFact(row), localRoots)
     )
       return []
     return [
@@ -133,7 +150,21 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
       }),
     ]
   })
-  const hosted = cachedRows(database).flatMap(({ message }) => {
+  const hostedRows = cachedRows(database)
+  const hostedSupersessionFact = ({ message }: (typeof hostedRows)[number]) => ({
+    authorSession: message.authorSession,
+    title: message.title ?? '',
+    createdAt: message.createdAt,
+  })
+  const hostedRoots = hostedRows
+    .filter(
+      (row) =>
+        row.message.threadRootId === null &&
+        cachedMessageAddressesReader(row, session, clock, database),
+    )
+    .map(hostedSupersessionFact)
+  const hosted = hostedRows.flatMap((row) => {
+    const { message } = row
     const deliveredAt = receiptAt(
       database,
       'hosted_board_receipt_cache',
@@ -149,7 +180,9 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
         authorSession: message.authorSession,
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, message.id),
-      })
+        now: clock,
+      }) ||
+      withdrawalSuperseded(hostedSupersessionFact(row), hostedRoots)
     )
       return []
     return [
@@ -170,12 +203,13 @@ function stampPendingWithdrawals(
   session: string,
   requestedIds: Set<string>,
   deliveredAt: string,
+  clock: number,
 ): void {
   const stamp = database.query(
     `INSERT OR IGNORE INTO board_withdrawal_delivery
      (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
   )
-  for (const row of pendingWithdrawals(session, database))
+  for (const row of pendingWithdrawals(session, clock, database))
     if (requestedIds.has(row.id))
       stamp.run(newRecordId(), session, row.messageRecordId, row.source, deliveredAt)
 }
@@ -329,7 +363,7 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     ...localPendingAcknowledgements(input.session, beganAt, clock, database),
     ...hostedPendingAcknowledgements(input.session, beganAt, clock, database),
   ]
-  const withdrawals = pendingWithdrawals(input.session, database)
+  const withdrawals = pendingWithdrawals(input.session, clock, database)
   const withdrawalDeliveries: BoardDelivery[] = withdrawals.map((item) => ({
     id: item.id,
     text: item.text,
@@ -439,7 +473,7 @@ export async function markBoardDeliveryDelivered(input: {
       }
     }
   writeTransaction(() => {
-    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt)
+    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt, clock)
     const localStamp = database.query(
       `INSERT INTO board_receipt
        (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)

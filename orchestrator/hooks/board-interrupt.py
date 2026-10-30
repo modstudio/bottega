@@ -23,6 +23,7 @@ from board_hook_common import (
 )
 
 BOARD_PRESENCE_CALL_TIMEOUT_SECONDS = 1
+WITHDRAWAL_SUPERSESSION_GRACE_DAYS = 0.0020833333333333333
 
 
 def iso_utc_from_unix(seconds: float) -> str:
@@ -193,13 +194,33 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                 AND r.reader_session=?
                WHERE m.thread_root_record_id IS NULL
                  AND m.withdrawn_at IS NOT NULL
+                 AND julianday('now')-julianday(m.withdrawn_at)>=?
                  AND m.withdrawn_reason='author'
                  AND r.delivered_at IS NOT NULL
                  AND julianday(r.delivered_at)<julianday(m.withdrawn_at)
                  AND (m.author_session IS NULL OR m.author_session<>?)
+                 AND NOT EXISTS (SELECT 1 FROM board_message later
+                   WHERE later.thread_root_record_id IS NULL
+                     AND later.author_session IS m.author_session
+                     AND julianday(later.created_at)>julianday(m.created_at)
+                     AND instr(m.title, ':')>0
+                     AND trim(substr(later.title, 1,
+                       CASE WHEN instr(later.title, ':')>0
+                         THEN instr(later.title, ':')-1 ELSE length(later.title) END))
+                       =trim(substr(m.title, 1, instr(m.title, ':')-1))
+                     AND EXISTS (SELECT 1 FROM board_receipt later_receipt
+                       WHERE later_receipt.message_record_id=later.record_id
+                         AND later_receipt.reader_session=?
+                         AND later_receipt.audience_at_posting=1))
                  AND NOT EXISTS (SELECT 1 FROM board_withdrawal_delivery d
                    WHERE d.reader_session=? AND d.message_record_id=m.record_id)""",
-                (session, session, session),
+                (
+                    session,
+                    WITHDRAWAL_SUPERSESSION_GRACE_DAYS,
+                    session,
+                    session,
+                    session,
+                ),
             ).fetchall()
             if has_withdrawal_delivery and has_withdrawn_reason
             else []
@@ -211,13 +232,37 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                 AND r.reader_session=?
                WHERE json_extract(m.payload,'$.threadRootId') IS NULL
                  AND json_extract(m.payload,'$.withdrawnAt') IS NOT NULL
+                 AND julianday('now')-julianday(json_extract(m.payload,'$.withdrawnAt'))>=?
                  AND r.delivered_at IS NOT NULL
                  AND julianday(r.delivered_at)<julianday(json_extract(m.payload,'$.withdrawnAt'))
                  AND (json_extract(m.payload,'$.authorSession') IS NULL
                       OR json_extract(m.payload,'$.authorSession')<>?)
+                 AND NOT EXISTS (SELECT 1 FROM hosted_board_message_cache later
+                   WHERE json_extract(later.payload,'$.threadRootId') IS NULL
+                     AND json_extract(later.payload,'$.authorSession')
+                       IS json_extract(m.payload,'$.authorSession')
+                     AND julianday(json_extract(later.payload,'$.createdAt'))
+                       >julianday(json_extract(m.payload,'$.createdAt'))
+                     AND instr(json_extract(m.payload,'$.title'), ':')>0
+                     AND trim(substr(json_extract(later.payload,'$.title'), 1,
+                       CASE WHEN instr(json_extract(later.payload,'$.title'), ':')>0
+                         THEN instr(json_extract(later.payload,'$.title'), ':')-1
+                         ELSE length(json_extract(later.payload,'$.title')) END))
+                       =trim(substr(json_extract(m.payload,'$.title'), 1,
+                         instr(json_extract(m.payload,'$.title'), ':')-1))
+                     AND EXISTS (SELECT 1 FROM hosted_board_receipt_cache later_receipt
+                       WHERE later_receipt.message_id=later.id
+                         AND later_receipt.reader_session=?
+                         AND later_receipt.audience_at_posting=1))
                  AND NOT EXISTS (SELECT 1 FROM board_withdrawal_delivery d
                    WHERE d.reader_session=? AND d.message_record_id=m.id)""",
-                (session, session, session),
+                (
+                    session,
+                    WITHDRAWAL_SUPERSESSION_GRACE_DAYS,
+                    session,
+                    session,
+                    session,
+                ),
             ).fetchall()
             if has_withdrawal_delivery
             else []
