@@ -15,7 +15,6 @@ import {
   currentOrphanProcesses,
   type OrphanProcess,
   type ProcessFact,
-  processTableSnapshot,
 } from '../resources/process-inventory.ts'
 import { ancestorChain } from '../resources/session-process-anchoring.ts'
 
@@ -334,6 +333,8 @@ export type RemovedTreeProcessDecision =
  * Decide which removed-tree candidates are roots that still exist and how each
  * root is handled. Identity is sampled once per candidate before ancestry is
  * considered, so a child whose inventoried parent is gone becomes a root.
+ * ownAncestry is the calling process and its ancestors; candidates in it are
+ * omitted although alive, and their children are handled as roots.
  */
 export function removedTreeProcessDecisions(
   candidates: readonly OwnedOrphanProcess[],
@@ -390,13 +391,7 @@ export function reclaimRemovedTreeProcesses(
   const liveWorktrees = liveRunWorktrees()
   const orphans = orphansWithOwnershipEvidence(inventory.orphans)
   const candidates = orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
-  const processTable = processTableSnapshot()
-  const ownAncestry = new Set([
-    process.pid,
-    ...(processTable.error || processTable.facts.length === 0
-      ? []
-      : ancestorChain(process.pid, processTable.facts)),
-  ])
+  const ownAncestry = new Set([process.pid, ...ancestorChain(process.pid, inventory.facts)])
   const decisions = removedTreeProcessDecisions(candidates, liveWorktrees, ownAncestry, (orphan) =>
     pidRecordIdentity(orphan.pid, orphan.startTime),
   )
