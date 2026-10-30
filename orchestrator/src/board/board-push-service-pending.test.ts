@@ -8,13 +8,13 @@ import { boardAcknowledge, boardStatus } from './board-operations.ts'
 import { markBoardDeliveryDelivered, pendingBoardDelivery } from './board-push-service.ts'
 import { acknowledgeNotice, postNotice, withdrawNotice } from './board-service.ts'
 
-test('a delivered local notice reports its withdrawal once to that reader only', async () => {
+test('only the final delivered local replacement reports its withdrawal', async () => {
   const clock = Date.parse('2026-10-30T10:00:00.000Z')
   const reader = 'local-withdrawal-reader'
   const notice = postNotice(
     {
       audience: `session:${reader}`,
-      title: 'Changed direction',
+      title: 'Load gate: HOLD',
       body: 'Pause for this request.',
       purpose: 'request',
     },
@@ -28,39 +28,66 @@ test('a delivered local notice reports its withdrawal once to that reader only',
        VALUES (?,?,?,?,?)`,
     )
     .run(newRecordId(), notice.recordId, reader, 1, new Date(clock + 1).toISOString())
-  const withdrawnAt = new Date(clock + 2).toISOString()
   withdrawNotice(notice.recordId, {}, clock + 2)
+  const replacement = postNotice(
+    {
+      audience: `session:${reader}`,
+      title: 'Load gate: HOLD',
+      body: 'This later root replaces the withdrawn notice.',
+      purpose: 'request',
+    },
+    {},
+    clock + 3,
+  )
+  db()
+    .query(
+      "UPDATE board_message SET author_kind='architect',author_session=? WHERE record_id IN (?,?)",
+    )
+    .run('load-gate-author', notice.recordId, replacement.recordId)
 
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 3 })
+  expect(
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 4 })).delivery,
+  ).toEqual([])
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), replacement.recordId, reader, 1, new Date(clock + 4).toISOString())
+  const replacementWithdrawnAt = new Date(clock + 5).toISOString()
+  withdrawNotice(replacement.recordId, {}, clock + 5)
+
+  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 6 })
   expect(pending.delivery).toEqual([
     {
-      id: `withdrawn:${notice.number}`,
-      text: `WITHDRAWN: "Changed direction" (${notice.number}) was withdrawn by its author at ${withdrawnAt}; anything you paused for it may resume.`,
+      id: `withdrawn:${replacement.number}`,
+      text: `WITHDRAWN: "Load gate: HOLD" (${replacement.number}) was withdrawn by its author at ${replacementWithdrawnAt}; anything you paused for it may resume.`,
       requiresAcknowledgement: false,
-      createdAt: withdrawnAt,
+      createdAt: replacementWithdrawnAt,
       deliveredAt: null,
       purpose: 'information',
     },
   ])
   expect(
-    (await pendingBoardDelivery({ session: 'never-reached', budgetMs: 0, clock: clock + 3 }))
+    (await pendingBoardDelivery({ session: 'never-reached', budgetMs: 0, clock: clock + 6 }))
       .delivery,
   ).toEqual([])
 
   await markBoardDeliveryDelivered({
     session: reader,
     ids: pending.delivery.map((item) => item.id),
-    clock: clock + 4,
+    clock: clock + 7,
   })
   expect(
     db()
       .query(
         'SELECT source,delivered_at FROM board_withdrawal_delivery WHERE reader_session=? AND message_record_id=?',
       )
-      .get(reader, notice.recordId),
-  ).toEqual({ source: 'local', delivered_at: new Date(clock + 4).toISOString() })
+      .get(reader, replacement.recordId),
+  ).toEqual({ source: 'local', delivered_at: new Date(clock + 7).toISOString() })
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 5 })).delivery,
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 8 })).delivery,
   ).toEqual([])
 })
 
@@ -93,7 +120,7 @@ test('an adoption-retired local notice does not report an author withdrawal', as
   ).toEqual([])
 })
 
-test('a delivered hosted notice reports its cached withdrawal once', async () => {
+test('only the final delivered hosted replacement reports its withdrawal', async () => {
   const clock = Date.parse('2026-10-30T11:00:00.000Z')
   const reader = 'hosted-withdrawal-reader'
   const userId = newRecordId()
@@ -110,7 +137,7 @@ test('a delivered hosted notice reports its cached withdrawal once', async () =>
     kind: 'notice',
     purpose: 'information' as const,
     threadRootId: null,
-    title: 'Hosted direction',
+    title: 'Load gate: HOLD',
     body: 'Hosted body',
     audience: `session:${reader}`,
     origin: {
@@ -153,25 +180,57 @@ test('a delivered hosted notice reports its cached withdrawal once', async () =>
     )
     .run(newRecordId(), message.id, reader, deliveredAt)
 
-  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 2 })
-  expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${message.id}`])
+  const replacement = {
+    ...message,
+    id: newRecordId(),
+    createdAt: new Date(clock + 2).toISOString(),
+    withdrawnAt: null as string | null,
+    state: 'live',
+    revision: '1',
+  }
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(replacement.id, replacement.kind, null, replacement.revision, JSON.stringify(replacement))
+
+  expect(
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 3 })).delivery,
+  ).toEqual([])
+  db()
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,1,?,NULL,0)`,
+    )
+    .run(newRecordId(), replacement.id, reader, new Date(clock + 3).toISOString())
+  const replacementWithdrawnAt = new Date(clock + 4).toISOString()
+  replacement.withdrawnAt = replacementWithdrawnAt
+  replacement.state = 'withdrawn'
+  replacement.revision = '2'
+  db()
+    .query('UPDATE hosted_board_message_cache SET revision=?,payload=? WHERE id=?')
+    .run(replacement.revision, JSON.stringify(replacement), replacement.id)
+
+  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 5 })
+  expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${replacement.id}`])
   expect(pending.delivery[0]!.text).toBe(
-    `WITHDRAWN: "Hosted direction" (${message.id}) was withdrawn by its author at ${withdrawnAt}; anything you paused for it may resume.`,
+    `WITHDRAWN: "Load gate: HOLD" (${replacement.id}) was withdrawn by its author at ${replacementWithdrawnAt}; anything you paused for it may resume.`,
   )
   await markBoardDeliveryDelivered({
     session: reader,
     ids: pending.delivery.map((item) => item.id),
-    clock: clock + 3,
+    clock: clock + 6,
   })
   expect(
     db()
       .query(
         'SELECT source FROM board_withdrawal_delivery WHERE reader_session=? AND message_record_id=?',
       )
-      .get(reader, message.id),
+      .get(reader, replacement.id),
   ).toEqual({ source: 'hosted' })
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 4 })).delivery,
+    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 7 })).delivery,
   ).toEqual([])
 })
 

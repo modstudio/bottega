@@ -73,7 +73,8 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 """
                 CREATE TABLE board_message(record_id TEXT,number INTEGER,kind TEXT,
                   ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,
-                  author_session TEXT,thread_root_record_id TEXT,withdrawn_reason TEXT);
+                  author_session TEXT,thread_root_record_id TEXT,withdrawn_reason TEXT,
+                  title TEXT,created_at TEXT);
                 CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,
                   delivered_at TEXT,acknowledged_at TEXT);
                 CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
@@ -87,7 +88,8 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                   ('board_hosted_refresh_at','2026-10-30T12:00:00.000Z');
                 INSERT INTO board_message VALUES
                   ('message-id',7,'notice',0,'2026-10-30T11:00:00.000Z',
-                   '2026-10-31T12:00:00.000Z','author',NULL,'author');
+                   '2026-10-31T12:00:00.000Z','author',NULL,'author',
+                   'Load gate: HOLD','2026-10-30T09:00:00.000Z');
                 INSERT INTO board_receipt VALUES
                   ('message-id','reader','2026-10-30T10:00:00.000Z',NULL);
                 """
@@ -97,6 +99,25 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 with orchestrator_store(path):
                     candidates, _ = board_interrupt.cheap_state("reader", 300)
                     self.assertIn("withdrawn:7", candidates)
+                    connection.execute(
+                        "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            "replacement-id",
+                            8,
+                            "notice",
+                            0,
+                            "2026-10-30T12:00:00.000Z",
+                            "2026-10-31T12:00:00.000Z",
+                            "author",
+                            None,
+                            "author",
+                            "Load gate: HOLD",
+                            "2026-10-30T10:00:00.000Z",
+                        ),
+                    )
+                    connection.commit()
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertNotIn("withdrawn:7", candidates)
                     connection.execute(
                         "INSERT INTO board_withdrawal_delivery VALUES (?,?,?,?,?)",
                         (

@@ -14,6 +14,8 @@ import {
   withdrawalDeliveryId,
   withdrawalDeliveryText,
   withdrawalPending,
+  withdrawalSuperseded,
+  withdrawalSupersessionPrefix,
 } from './board-push-policy.ts'
 import { claimPushNotices, markNoticesDelivered, postNotice } from './board-service.ts'
 import { replyToThread } from './board-thread-service.ts'
@@ -88,6 +90,32 @@ test('withdrawal delivery owns its id and text format', () => {
     }),
   ).toBe(
     'WITHDRAWN: "Notice" (7) was withdrawn by its author at 2026-10-16T12:00:00.000Z; anything you paused for it may resume.',
+  )
+})
+
+test('a later root with the same author and title prefix supersedes a withdrawal', () => {
+  const withdrawn = {
+    authorSession: 'author',
+    title: 'Load gate: HOLD',
+    createdAt: '2026-10-16T11:00:00.000Z',
+  }
+  const root = (input: Partial<typeof withdrawn & { withdrawnAt: string | null }> = {}) => ({
+    ...withdrawn,
+    createdAt: '2026-10-16T12:00:00.000Z',
+    ...input,
+  })
+
+  expect(withdrawalSupersessionPrefix(' Load gate : HOLD')).toBe('Load gate')
+  expect(withdrawalSupersessionPrefix('Load gate')).toBeNull()
+  expect(withdrawalSuperseded(withdrawn, [root()])).toBe(true)
+  expect(withdrawalSuperseded(withdrawn, [root({ authorSession: 'other' })])).toBe(false)
+  expect(withdrawalSuperseded(withdrawn, [root({ title: 'Machine gate: HOLD' })])).toBe(false)
+  expect(withdrawalSuperseded(withdrawn, [root({ createdAt: '2026-10-16T10:00:00.000Z' })])).toBe(
+    false,
+  )
+  expect(withdrawalSuperseded({ ...withdrawn, title: 'Load gate' }, [root()])).toBe(false)
+  expect(withdrawalSuperseded(withdrawn, [root({ withdrawnAt: '2026-10-16T13:00:00.000Z' })])).toBe(
+    true,
   )
 })
 

@@ -23,6 +23,7 @@ import {
   withdrawalDeliveryId,
   withdrawalDeliveryText,
   withdrawalPending,
+  withdrawalSuperseded,
 } from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
@@ -109,7 +110,15 @@ function withdrawalDelivery(input: {
 }
 
 function pendingWithdrawals(session: string, database: Database): PendingWithdrawal[] {
-  const local = messageRows(database).flatMap((row) => {
+  const localRows = messageRows(database)
+  const localRoots = localRows
+    .filter((row) => row.thread_root_record_id === null)
+    .map((row) => ({
+      authorSession: row.author_session,
+      title: row.title ?? '',
+      createdAt: row.created_at,
+    }))
+  const local = localRows.flatMap((row) => {
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
     if (
       !withdrawalPending({
@@ -120,7 +129,15 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
         authorSession: row.author_session,
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
-      })
+      }) ||
+      withdrawalSuperseded(
+        {
+          authorSession: row.author_session,
+          title: row.title ?? '',
+          createdAt: row.created_at,
+        },
+        localRoots,
+      )
     )
       return []
     return [
@@ -133,7 +150,15 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
       }),
     ]
   })
-  const hosted = cachedRows(database).flatMap(({ message }) => {
+  const hostedRows = cachedRows(database)
+  const hostedRoots = hostedRows
+    .filter(({ message }) => message.threadRootId === null)
+    .map(({ message }) => ({
+      authorSession: message.authorSession,
+      title: message.title ?? '',
+      createdAt: message.createdAt,
+    }))
+  const hosted = hostedRows.flatMap(({ message }) => {
     const deliveredAt = receiptAt(
       database,
       'hosted_board_receipt_cache',
@@ -149,7 +174,15 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
         authorSession: message.authorSession,
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, message.id),
-      })
+      }) ||
+      withdrawalSuperseded(
+        {
+          authorSession: message.authorSession,
+          title: message.title ?? '',
+          createdAt: message.createdAt,
+        },
+        hostedRoots,
+      )
     )
       return []
     return [

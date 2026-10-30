@@ -16,6 +16,27 @@ export const withdrawalDeliveryId = (id: string): string => `${WITHDRAWAL_DELIVE
 export const isWithdrawalDeliveryId = (id: string): boolean =>
   id.startsWith(WITHDRAWAL_DELIVERY_PREFIX)
 
+const titlePrefix = (title: string): string => title.split(':', 1)[0]!.trim()
+
+export const withdrawalSupersessionPrefix = (title: string): string | null =>
+  title.includes(':') ? titlePrefix(title) : null
+
+export function withdrawalSuperseded(
+  withdrawn: { authorSession: string | null; title: string; createdAt: string },
+  laterRoots: Array<{ authorSession: string | null; title: string; createdAt: string }>,
+): boolean {
+  const prefix = withdrawalSupersessionPrefix(withdrawn.title)
+  return (
+    prefix !== null &&
+    laterRoots.some(
+      (root) =>
+        root.authorSession === withdrawn.authorSession &&
+        titlePrefix(root.title) === prefix &&
+        Date.parse(root.createdAt) > Date.parse(withdrawn.createdAt),
+    )
+  )
+}
+
 export function withdrawalDeliveryText(input: {
   id: string
   title: string
