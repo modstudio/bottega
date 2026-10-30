@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { clearMigrationDrain, setMigrationDrain } from '../database/migration-drain.ts'
@@ -53,7 +54,7 @@ test('claim admission raises the migration-drain remedy', async () => {
   setMigrationDrain(db(), '0199_test_drain')
   try {
     await expect(admitFreshRepositoryRun(db(), runId, true, false, deps)).rejects.toThrow(
-      'run stopped for migration drain 0199_test_drain; re-dispatch after bottega machine update finishes',
+      `run stopped for migration drain 0199_test_drain; re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
     )
   } finally {
     clearMigrationDrain(db())

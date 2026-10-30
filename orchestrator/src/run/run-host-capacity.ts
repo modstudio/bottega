@@ -2,10 +2,8 @@
 /** Knows the repository-run host wait adapter. Must not know transports or routing. */
 
 import type { Database } from 'bun:sqlite'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { activeMigrationDrain } from '../database/migration-drain-state.ts'
-import { recordRunWarning } from '../events.ts'
 import {
   CAPACITY_SAMPLE_MIN_WINDOW_MS,
   decideHostCapacityAdmission,
@@ -356,25 +354,6 @@ export type RunHostCapacityWait = {
   heldOn: Array<HostHoldCondition | 'migration'>
   boundReached: boolean
   drainingFor: string | null
-}
-
-/** Apply the shared operator-facing policy for a completed host-capacity wait. */
-export function raiseForHostCapacityWait(
-  wait: RunHostCapacityWait | null,
-  runId: string,
-  stopped: boolean,
-): void {
-  if (wait?.drainingFor) {
-    throw new Error(
-      `run stopped for migration drain ${wait.drainingFor}; re-dispatch after ${PLATFORM_SLUG} machine update finishes`,
-    )
-  }
-  if (wait?.boundReached) {
-    const message = `host capacity wait bound reached after ${wait.waitedMs}ms; starting run`
-    console.error(`orch: ${message}`)
-    recordRunWarning(runId, message)
-  }
-  if (stopped) throw new Error('run stopped while waiting for host capacity')
 }
 
 type RunHostWaitLoop = {

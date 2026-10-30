@@ -59,11 +59,8 @@ import {
 import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
-import {
-  raiseForHostCapacityWait,
-  startRunAfterHostCapacity,
-  waitForLiveRunHostCapacity,
-} from './run-host-capacity.ts'
+import { raiseForHostCapacityWait } from './run-claim-host-capacity.ts'
+import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { collectReplySource, replyContract } from './run-reply-source.ts'

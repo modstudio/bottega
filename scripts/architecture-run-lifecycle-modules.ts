@@ -318,6 +318,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../process-resource-sampler.ts',
     '../project/project-lock.ts',
     './run-process.ts',
+    './run-claim-host-capacity.ts',
     './run-host-capacity.ts',
     './run-board-prompt.ts',
     './run-reply-source.ts',
