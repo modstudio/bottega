@@ -18,6 +18,7 @@ import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import { candidates, EVIDENCE_WINDOW, evidenceFor, pick, scoreboard } from './route.ts'
 import { meteredRouteEligibility } from './route-metered-policy.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
+import { RoutingRefusalError } from './routing-refusal.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 beforeEach(() => seedNeutralCodexQuotaReading())
@@ -452,6 +453,32 @@ test('an enabled ACP agent declared for diagnose is routed when no CLI agent is 
         row.name,
       )
     }
+    refreshAgents()
+  }
+})
+
+test('a routing refusal remedies agents that do not declare the requested job', () => {
+  const rows = db().query('SELECT name,jobs FROM agent ORDER BY name').all() as {
+    name: string
+    jobs: string | null
+  }[]
+  try {
+    db().query('UPDATE agent SET jobs=?').run(JSON.stringify([]))
+    refreshAgents()
+
+    let refusal: unknown
+    try {
+      pick('diagnose')
+    } catch (error) {
+      refusal = error
+    }
+    expect(refusal).toBeInstanceOf(RoutingRefusalError)
+    expect((refusal as Error).message).toContain(
+      `${PLATFORM_SLUG} agent set <agent> --jobs <current jobs and diagnose, comma-separated>, then ${PLATFORM_SLUG} agent probe <agent> if its last probe did not cover diagnose`,
+    )
+  } finally {
+    const restore = db().query('UPDATE agent SET jobs=? WHERE name=?')
+    for (const row of rows) restore.run(row.jobs, row.name)
     refreshAgents()
   }
 })

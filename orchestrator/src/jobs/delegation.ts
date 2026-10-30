@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  DELEGATION_CLASS_LABELS,
   DELEGATION_SETTING_KEYS,
   type DelegationClass,
   type DelegationMode,
@@ -47,22 +48,20 @@ export function noEligibleAgentRefusal(
   jobName: string,
   capabilities: { writesRepo?: boolean },
   excluded: readonly string[],
+  undeclaredAgents: readonly string[],
 ): string {
   const headline = `no eligible agent for job "${jobName}"`
   const jobClass = delegationClass(capabilities)
   const detail = excluded.length ? `\n${excluded.join('\n')}` : ''
   const remedies = []
-  if (excluded.some((line) => line.endsWith(`not declared for ${jobName}`))) {
+  if (undeclaredAgents.length) {
     remedies.push(
-      // --jobs replaces the allowed list, so the remedy keeps the agent's current jobs.
-      `declare a probed agent with ${PLATFORM_SLUG} agent set <agent> --jobs <its current jobs>,${jobName}`,
+      `declare a probed agent: ${PLATFORM_SLUG} agent set <agent> --jobs <current jobs and ${jobName}, comma-separated>, then ${PLATFORM_SLUG} agent probe <agent> if its last probe did not cover ${jobName}`,
     )
   }
   remedies.push(
     `register and probe an agent with ${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe`,
-    jobClass === 'review'
-      ? `switch read-only jobs (all jobs that do not write the repository) to the harness with ${delegationRemedy(jobClass, 'harness')}`
-      : `switch repository-writing jobs to the harness with ${delegationRemedy(jobClass, 'harness')}`,
+    `switch ${DELEGATION_CLASS_LABELS[jobClass]} to the harness with ${delegationRemedy(jobClass, 'harness')}`,
   )
   return `${headline}${detail}\nremedy: ${remedies.join('; or ')}`
 }

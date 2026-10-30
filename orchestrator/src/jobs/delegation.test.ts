@@ -17,14 +17,21 @@ test('a harness class refuses external dispatch with its setting and exact switc
 })
 
 test('an empty external lane names agent setup and the shared harness remedy', () => {
-  expect(noEligibleAgentRefusal('understand', {}, [])).toContain(
+  expect(noEligibleAgentRefusal('understand', {}, [], [])).toContain(
     `${PLATFORM_SLUG} machine config set --machine delegation.review harness`,
   )
 })
 
 test('a read-only undeclared job names declaration and read-only harness remedies', () => {
-  const refusal = noEligibleAgentRefusal('diagnose', {}, ['codex: not declared for diagnose'])
+  const refusal = noEligibleAgentRefusal(
+    'diagnose',
+    {},
+    ['codex: not declared for diagnose'],
+    ['codex'],
+  )
 
-  expect(refusal).toContain(`${PLATFORM_SLUG} agent set <agent> --jobs <its current jobs>,diagnose`)
+  expect(refusal).toContain(
+    `${PLATFORM_SLUG} agent set <agent> --jobs <current jobs and diagnose, comma-separated>, then ${PLATFORM_SLUG} agent probe <agent> if its last probe did not cover diagnose`,
+  )
   expect(refusal).toContain('switch read-only jobs (all jobs that do not write the repository)')
 })
