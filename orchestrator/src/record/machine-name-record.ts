@@ -26,13 +26,15 @@ async function claimInSpace(
 ): Promise<void> {
   await bindPrincipal(tx, { userId: input.userId, spaceId: input.spaceId })
   const rows = await tx`
-    SELECT c.machine_id,c.short_name,m.retired_at FROM machine_name_claim c
+    SELECT c.machine_id,c.short_name,coalesce(m.display_name,m.name) AS display_name,m.retired_at
+    FROM machine_name_claim c
     JOIN machine m ON m.id=c.machine_id WHERE c.space_id=${input.spaceId}::uuid
   `
   const decision = decideMachineNameClaim(
     rows.map((row: Record<string, unknown>) => ({
       machineId: String(row.machine_id),
       shortName: String(row.short_name),
+      displayName: String(row.display_name),
       retired: row.retired_at != null,
     })),
     input.machineId,
@@ -47,7 +49,8 @@ async function claimInSpace(
     `
     if (inserted.length === 0) {
       const holder = await tx`
-        SELECT c.machine_id,c.short_name,m.retired_at FROM machine_name_claim c
+        SELECT c.machine_id,c.short_name,coalesce(m.display_name,m.name) AS display_name,m.retired_at
+        FROM machine_name_claim c
         JOIN machine m ON m.id=c.machine_id
         WHERE c.space_id=${input.spaceId}::uuid AND c.short_name=${input.shortName}
       `
@@ -55,6 +58,7 @@ async function claimInSpace(
         holder.map((row: Record<string, unknown>) => ({
           machineId: String(row.machine_id),
           shortName: String(row.short_name),
+          displayName: String(row.display_name),
           retired: row.retired_at != null,
         })),
         input.machineId,

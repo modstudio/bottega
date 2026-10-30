@@ -1,3 +1,5 @@
+ALTER TABLE "machine_name_claim" FORCE ROW LEVEL SECURITY;
+--> statement-breakpoint
 DO $$
 DECLARE
   definition text;

@@ -24,9 +24,9 @@ test('normalizes hostnames and bounds their length', () => {
 
 test('decides every claim outcome, including retired and former claims', () => {
   const claims = [
-    { machineId: 'mine', shortName: 'former', retired: false },
-    { machineId: 'other', shortName: 'office', retired: false },
-    { machineId: 'retired', shortName: 'old', retired: true },
+    { machineId: 'mine', shortName: 'former', displayName: 'My machine', retired: false },
+    { machineId: 'other', shortName: 'office', displayName: 'Office Mac', retired: false },
+    { machineId: 'retired', shortName: 'old', displayName: 'Old laptop', retired: true },
   ]
   expect(decideMachineNameClaim(claims, 'mine', 'new-name')).toEqual({ status: 'claim' })
   expect(decideMachineNameClaim(claims, 'mine', 'former')).toEqual({ status: 'held-by-self' })
@@ -36,10 +36,10 @@ test('decides every claim outcome, including retired and former claims', () => {
   })
   expect(decideMachineNameClaim(claims, 'mine', 'office')).toEqual({
     status: 'refused',
-    reason: expect.stringContaining(`${PLATFORM_SLUG} machine rename`),
+    reason: `short name office is held by Office Mac (office); choose another with \`${PLATFORM_SLUG} machine rename --short-name <name>\``,
   })
   expect(decideMachineNameClaim(claims, 'mine', 'old')).toEqual({
     status: 'refused',
-    reason: expect.stringContaining('(retired)'),
+    reason: `short name old is held by Old laptop (old), retired; choose another with \`${PLATFORM_SLUG} machine rename --short-name <name>\``,
   })
 })

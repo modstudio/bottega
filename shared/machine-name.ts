@@ -23,7 +23,12 @@ export function defaultShortName(hostname: string): string {
   return value.length >= 2 ? value : `${value || 'm'}-machine`.slice(0, 20)
 }
 
-export type MachineNameClaim = { machineId: string; shortName: string; retired: boolean }
+export type MachineNameClaim = {
+  machineId: string
+  shortName: string
+  displayName: string
+  retired: boolean
+}
 export type MachineNameClaimDecision =
   | { status: 'claim' }
   | { status: 'held-by-self' }
@@ -41,6 +46,6 @@ export function decideMachineNameClaim(
   if (held.machineId === machineId) return { status: 'held-by-self' }
   return {
     status: 'refused',
-    reason: `short name ${requestedName} is held by machine ${held.machineId}${held.retired ? ' (retired)' : ''}; choose another with \`${PLATFORM_SLUG} machine rename --short-name <name>\``,
+    reason: `short name ${requestedName} is held by ${held.displayName} (${held.shortName})${held.retired ? ', retired' : ''}; choose another with \`${PLATFORM_SLUG} machine rename --short-name <name>\``,
   }
 }

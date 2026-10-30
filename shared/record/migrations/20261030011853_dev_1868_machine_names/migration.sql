@@ -1,4 +1,5 @@
 CREATE TABLE "machine_name_claim" (
+	"id" uuid PRIMARY KEY,
 	"space_id" uuid NOT NULL,
 	"short_name" text NOT NULL,
 	"machine_id" uuid NOT NULL,
