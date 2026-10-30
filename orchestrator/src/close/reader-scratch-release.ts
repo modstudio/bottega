@@ -32,6 +32,17 @@ export type ReaderCloneArchiveRetentionFacts = {
 
 export type ReaderCloneArchive = { path: string; archivedMs: number }
 
+export function formatReaderCloneArchiveStamp(now: Date): string {
+  return now.toISOString().replaceAll(':', '').replaceAll('.', '')
+}
+
+export function parseReaderCloneArchiveStamp(path: string): number | null {
+  const match = path.match(/-(\d{4}-\d{2}-\d{2}T)(\d{2})(\d{2})(\d{2})(\d{3})Z$/)
+  if (!match) return null
+  const archivedMs = Date.parse(`${match[1]}${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`)
+  return Number.isNaN(archivedMs) ? null : archivedMs
+}
+
 export function readerCloneArchiveRetentionDecision(
   facts: ReaderCloneArchiveRetentionFacts,
 ): 'delete' | 'keep' {

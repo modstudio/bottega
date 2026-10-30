@@ -1,7 +1,8 @@
 // concern: archived reader clone retention
-import { existsSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { type Dirent, existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  parseReaderCloneArchiveStamp,
   type ReaderCloneArchive,
   readerCloneArchivePruneDecision,
 } from '../close/reader-scratch-release.ts'
@@ -18,26 +19,36 @@ export function readerCloneArchiveDirectory(runsDirectory = RUNS_DIR): string {
 
 type ArchivedDirectory = { path: string; archivedMs: number | null }
 
-function strayArchiveTimestamp(path: string): number | null {
-  const match = path.match(/-(\d{4}-\d{2}-\d{2}T)(\d{2})(\d{2})(\d{2})(\d{3})Z$/)
-  if (!match) return null
-  const archivedMs = Date.parse(`${match[1]}${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`)
-  return Number.isNaN(archivedMs) ? null : archivedMs
-}
-
-function archivedDirectories(root: string): ArchivedDirectory[] {
-  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+function archivedDirectories(
+  root: string,
+  onListFailure: (path: string, error: unknown) => void,
+): ArchivedDirectory[] {
+  let rootEntries: Dirent[]
+  try {
+    rootEntries = readdirSync(root, { withFileTypes: true })
+  } catch (error) {
+    onListFailure(root, error)
+    return []
+  }
+  return rootEntries.flatMap((entry) => {
     if (!entry.isDirectory()) return []
     const path = join(root, entry.name)
     // Stray directories sit one level below a marked project container. Every
     // unmarked directory retains the original whole-reader-clone layout.
     if (!existsSync(join(path, STRAY_WORKTREE_ARCHIVE_PROJECT_MARKER)))
-      return [{ path, archivedMs: null }]
-    return readdirSync(path, { withFileTypes: true })
+      return [{ path, archivedMs: parseReaderCloneArchiveStamp(path) }]
+    let projectEntries: Dirent[]
+    try {
+      projectEntries = readdirSync(path, { withFileTypes: true })
+    } catch (error) {
+      onListFailure(path, error)
+      return []
+    }
+    return projectEntries
       .filter((child) => child.isDirectory())
       .map((child) => {
         const childPath = join(path, child.name)
-        return { path: childPath, archivedMs: strayArchiveTimestamp(childPath) }
+        return { path: childPath, archivedMs: parseReaderCloneArchiveStamp(childPath) }
       })
   })
 }
@@ -54,7 +65,13 @@ export function pruneReaderCloneArchives(input: {
   if (!existsSync(root)) return counts
   const nowMs = input.nowMs ?? Date.now()
   const archives: ReaderCloneArchive[] = []
-  for (const archive of archivedDirectories(root)) {
+  const archivesToRead = archivedDirectories(root, (path, error) => {
+    counts.failed++
+    input.presentation.error(
+      `could not list reader clone archives in ${path}: ${String((error as Error).message ?? error)}`,
+    )
+  })
+  for (const archive of archivesToRead) {
     try {
       archives.push({
         path: archive.path,

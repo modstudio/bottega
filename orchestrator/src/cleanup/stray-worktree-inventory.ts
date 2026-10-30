@@ -19,6 +19,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, isAbsolute, join, relative, resolve } from 'node:path'
+import { formatReaderCloneArchiveStamp } from '../close/reader-scratch-release.ts'
 import { gitResult } from '../git/git-environment.ts'
 import {
   readerCloneArchiveDirectory,
@@ -300,10 +301,6 @@ export function inventoryStrayWorktreeDirectories(input: {
   return { directories, errors: [] }
 }
 
-function archiveTimestamp(now: Date): string {
-  return now.toISOString().replaceAll(':', '').replaceAll('.', '')
-}
-
 export function archiveStrayWorktreeDirectory(input: {
   directory: StrayWorktreeDirectory
   runsDirectory?: string
@@ -327,7 +324,7 @@ export function archiveStrayWorktreeDirectory(input: {
   const destination = resolve(
     archiveRoot,
     input.directory.project,
-    `${input.directory.name}-${archiveTimestamp(input.now ?? new Date())}`,
+    `${input.directory.name}-${formatReaderCloneArchiveStamp(input.now ?? new Date())}`,
   )
   if (!isWithin(destination, archiveRoot))
     return {
