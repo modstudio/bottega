@@ -15,10 +15,13 @@ import {
   syncCachedHostedReceipt,
 } from './board-hosted-cache.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
-import { boardHeaderValue, requireRealSession } from './board-policy.ts'
+import { requireRealSession } from './board-policy.ts'
 import {
   boardPushDecision,
   deferredReplySuccessorWarning,
+  isWithdrawalDeliveryId,
+  withdrawalDeliveryId,
+  withdrawalDeliveryText,
   withdrawalPending,
 } from './board-push-policy.ts'
 import {
@@ -93,10 +96,9 @@ function withdrawalDelivery(input: {
   messageRecordId: string
   source: 'local' | 'hosted'
 }): PendingWithdrawal {
-  const id = boardHeaderValue(input.id)
   return {
-    id: `withdrawn:${input.id}`,
-    text: `WITHDRAWN: "${boardHeaderValue(input.title)}" (${id}) was withdrawn by its author at ${boardHeaderValue(input.withdrawnAt)}; anything you paused for it may resume.`,
+    id: withdrawalDeliveryId(input.id),
+    text: withdrawalDeliveryText(input),
     requiresAcknowledgement: false,
     createdAt: input.withdrawnAt,
     deliveredAt: null,
@@ -108,10 +110,10 @@ function withdrawalDelivery(input: {
 
 function pendingWithdrawals(session: string, database: Database): PendingWithdrawal[] {
   const local = messageRows(database).flatMap((row) => {
-    if (row.thread_root_record_id !== null) return []
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
     if (
       !withdrawalPending({
+        isRoot: row.thread_root_record_id === null,
         withdrawnAt: row.withdrawn_at,
         deliveredAt,
         authorSession: row.author_session,
@@ -131,7 +133,6 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
     ]
   })
   const hosted = cachedRows(database).flatMap(({ message }) => {
-    if (message.threadRootId !== null) return []
     const deliveredAt = receiptAt(
       database,
       'hosted_board_receipt_cache',
@@ -140,6 +141,7 @@ function pendingWithdrawals(session: string, database: Database): PendingWithdra
     ).delivered_at
     if (
       !withdrawalPending({
+        isRoot: message.threadRootId === null,
         withdrawnAt: message.withdrawnAt,
         deliveredAt,
         authorSession: message.authorSession,
@@ -382,9 +384,9 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const messages = messageRows(database)
-  const withdrawalIds = new Set(input.ids.filter((id) => id.startsWith('withdrawn:')))
+  const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
-    if (id.startsWith('withdrawn:')) return []
+    if (isWithdrawalDeliveryId(id)) return []
     const identifier = resolveBoardDeliveryIdentifier(database, id)
     return identifier ? [identifier] : []
   })

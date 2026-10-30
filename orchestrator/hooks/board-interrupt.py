@@ -178,8 +178,13 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                          AND r.acknowledged_at IS NOT NULL)))""",
             (session, session, session),
         ).fetchall()
-        local_withdrawals = connection.execute(
-            """SELECT 'withdrawn:' || CAST(m.number AS TEXT) FROM board_message m
+        has_withdrawal_delivery = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='board_withdrawal_delivery'"
+        ).fetchone()
+        local_withdrawals = (
+            connection.execute(
+                """SELECT 'withdrawn:' || CAST(m.number AS TEXT) FROM board_message m
                JOIN board_receipt r ON r.message_record_id=m.record_id
                 AND r.reader_session=?
                WHERE m.thread_root_record_id IS NULL
@@ -189,10 +194,14 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                  AND (m.author_session IS NULL OR m.author_session<>?)
                  AND NOT EXISTS (SELECT 1 FROM board_withdrawal_delivery d
                    WHERE d.reader_session=? AND d.message_record_id=m.record_id)""",
-            (session, session, session),
-        ).fetchall()
-        hosted_withdrawals = connection.execute(
-            """SELECT 'withdrawn:' || m.id FROM hosted_board_message_cache m
+                (session, session, session),
+            ).fetchall()
+            if has_withdrawal_delivery
+            else []
+        )
+        hosted_withdrawals = (
+            connection.execute(
+                """SELECT 'withdrawn:' || m.id FROM hosted_board_message_cache m
                JOIN hosted_board_receipt_cache r ON r.message_id=m.id
                 AND r.reader_session=?
                WHERE json_extract(m.payload,'$.threadRootId') IS NULL
@@ -203,8 +212,11 @@ def cheap_state(session: str, refresh_seconds: int) -> tuple[set[str], bool]:
                       OR json_extract(m.payload,'$.authorSession')<>?)
                  AND NOT EXISTS (SELECT 1 FROM board_withdrawal_delivery d
                    WHERE d.reader_session=? AND d.message_record_id=m.id)""",
-            (session, session, session),
-        ).fetchall()
+                (session, session, session),
+            ).fetchall()
+            if has_withdrawal_delivery
+            else []
+        )
         row = connection.execute(
             "SELECT value FROM schema_meta WHERE key='board_hosted_refresh_at'"
         ).fetchone()

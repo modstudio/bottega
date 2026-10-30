@@ -8,8 +8,11 @@ import {
   boardPushDecision,
   DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT,
   deferredReplySuccessorWarning,
+  isWithdrawalDeliveryId,
   reportReplySuccessorDecision,
   selectPushNotices,
+  withdrawalDeliveryId,
+  withdrawalDeliveryText,
   withdrawalPending,
 } from './board-push-policy.ts'
 import { claimPushNotices, markNoticesDelivered, postNotice } from './board-service.ts'
@@ -50,6 +53,7 @@ const successorDecision = (
 
 const pendingWithdrawal = (input: Partial<Parameters<typeof withdrawalPending>[0]> = {}) =>
   withdrawalPending({
+    isRoot: true,
     withdrawnAt: '2026-10-16T12:00:00.000Z',
     deliveredAt: '2026-10-16T11:00:00.000Z',
     authorSession: 'author',
@@ -60,10 +64,26 @@ const pendingWithdrawal = (input: Partial<Parameters<typeof withdrawalPending>[0
 
 test('a withdrawal is pending only after an earlier delivery to another session', () => {
   expect(pendingWithdrawal()).toBe(true)
+  expect(pendingWithdrawal({ isRoot: false })).toBe(false)
   expect(pendingWithdrawal({ deliveredAt: null })).toBe(false)
   expect(pendingWithdrawal({ authorSession: 'reader' })).toBe(false)
   expect(pendingWithdrawal({ alreadyDelivered: true })).toBe(false)
   expect(pendingWithdrawal({ deliveredAt: '2026-10-16T12:00:00.001Z' })).toBe(false)
+})
+
+test('withdrawal delivery owns its id and text format', () => {
+  expect(withdrawalDeliveryId('7')).toBe('withdrawn:7')
+  expect(isWithdrawalDeliveryId('withdrawn:7')).toBe(true)
+  expect(isWithdrawalDeliveryId('7')).toBe(false)
+  expect(
+    withdrawalDeliveryText({
+      id: '7',
+      title: 'Notice',
+      withdrawnAt: '2026-10-16T12:00:00.000Z',
+    }),
+  ).toBe(
+    'WITHDRAWN: "Notice" (7) was withdrawn by its author at 2026-10-16T12:00:00.000Z; anything you paused for it may resume.',
+  )
 })
 
 test('a report reply successor is withheld when the reporter received the reply', () => {

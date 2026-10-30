@@ -104,6 +104,57 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                     os.environ["BOTTEGA_ORCHESTRATOR_DB"] = previous
                 connection.close()
 
+    def test_cheap_state_keeps_ordinary_candidates_without_withdrawal_table(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "orchestrator.db")
+            connection = sqlite3.connect(path)
+            connection.executescript(
+                """
+                CREATE TABLE board_message(record_id TEXT,number INTEGER,kind TEXT,
+                  ack_required INTEGER,withdrawn_at TEXT,expires_at TEXT,
+                  author_session TEXT,thread_root_record_id TEXT);
+                CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,
+                  delivered_at TEXT,acknowledged_at TEXT);
+                CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
+                CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,
+                  delivered_at TEXT,acknowledged_at TEXT);
+                CREATE TABLE schema_meta(key TEXT PRIMARY KEY,value TEXT);
+                INSERT INTO schema_meta VALUES
+                  ('board_hosted_refresh_at','2026-10-30T12:00:00.000Z');
+                INSERT INTO board_message VALUES
+                  ('local-live',8,'notice',0,NULL,'2099-10-31T12:00:00.000Z',
+                   'author',NULL),
+                  ('local-withdrawn',9,'notice',0,'2026-10-30T11:00:00.000Z',
+                   '2099-10-31T12:00:00.000Z','author',NULL);
+                INSERT INTO board_receipt VALUES
+                  ('local-withdrawn','reader','2026-10-30T10:00:00.000Z',NULL);
+                INSERT INTO hosted_board_message_cache VALUES
+                  ('hosted-live','notice',
+                   '{"withdrawnAt":null,"expiresAt":"2099-10-31T12:00:00.000Z",' ||
+                   '"authorSession":"author","ackRequired":false,"threadRootId":null}'),
+                  ('hosted-withdrawn','notice',
+                   '{"withdrawnAt":"2026-10-30T11:00:00.000Z",' ||
+                   '"expiresAt":"2099-10-31T12:00:00.000Z",' ||
+                   '"authorSession":"author","ackRequired":false,"threadRootId":null}');
+                INSERT INTO hosted_board_receipt_cache VALUES
+                  ('hosted-withdrawn','reader','2026-10-30T10:00:00.000Z',NULL);
+                """
+            )
+            connection.commit()
+            previous = os.environ.get("BOTTEGA_ORCHESTRATOR_DB")
+            os.environ["BOTTEGA_ORCHESTRATOR_DB"] = path
+            try:
+                candidates, _ = board_interrupt.cheap_state("reader", 300)
+                self.assertIn("8", candidates)
+                self.assertIn("hosted-live", candidates)
+                self.assertFalse(any(item.startswith("withdrawn:") for item in candidates))
+            finally:
+                if previous is None:
+                    os.environ.pop("BOTTEGA_ORCHESTRATOR_DB", None)
+                else:
+                    os.environ["BOTTEGA_ORCHESTRATOR_DB"] = previous
+                connection.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -9,8 +9,23 @@ export type BoardReaderStart = string | null | 'unbounded'
 export type DeferredReplySuccessor = { replyRecordId: string; threadTitle: string }
 
 export const DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT = 3
+const WITHDRAWAL_DELIVERY_PREFIX = 'withdrawn:'
+
+export const withdrawalDeliveryId = (id: string): string => `${WITHDRAWAL_DELIVERY_PREFIX}${id}`
+
+export const isWithdrawalDeliveryId = (id: string): boolean =>
+  id.startsWith(WITHDRAWAL_DELIVERY_PREFIX)
+
+export function withdrawalDeliveryText(input: {
+  id: string
+  title: string
+  withdrawnAt: string
+}): string {
+  return `WITHDRAWN: "${boardHeaderValue(input.title)}" (${boardHeaderValue(input.id)}) was withdrawn by its author at ${boardHeaderValue(input.withdrawnAt)}; anything you paused for it may resume.`
+}
 
 export function withdrawalPending(input: {
+  isRoot: boolean
   withdrawnAt: string | null
   deliveredAt: string | null
   authorSession: string | null
@@ -18,6 +33,7 @@ export function withdrawalPending(input: {
   alreadyDelivered: boolean
 }): boolean {
   return (
+    input.isRoot &&
     input.withdrawnAt !== null &&
     input.deliveredAt !== null &&
     input.authorSession !== input.readerSession &&
