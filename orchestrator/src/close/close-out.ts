@@ -820,7 +820,7 @@ function attemptCloseOutRun(
                 detail: `worktree was acquired during cleanup by run(s): ${ownerText(acquired)}`,
               }
             const released = releasedCloseOut(row.root_record_id, treePath, treeAbsent, result)
-            released.detail = readerScratchReleaseDetail(released.detail, release.path)
+            released.detail = readerScratchReleaseDetail(released.detail, release)
             return released
           },
           options.lockTimeoutMs,
