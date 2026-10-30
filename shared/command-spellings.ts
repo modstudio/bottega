@@ -155,6 +155,8 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine reclaim-fixture-questions',
   'machine reclassify-failures',
   'machine reconcile',
+  'machine rename',
+  'machine retire',
   'machine settings',
   'machine settings adopt',
   'machine settings apply',

@@ -30,6 +30,7 @@ import {
 import { parseSecretRunArgs, runNamedSecrets } from '../config/secret-run.ts'
 import { isOrchWorkerProcess, type ProcessInventory } from '../run/run-process.ts'
 import { subscriptionMonthlyUsdKey } from '../run/run-subscription-cost.ts'
+import { requestedMachineNames } from './machine-name-options.ts'
 import { log, rawArgv } from './support.ts'
 
 const SUBSCRIPTION_PRICE_HELP = `\nSubscription monthly prices are user-scope keys named subscription.<harness>.monthly_usd, for example ${subscriptionMonthlyUsdKey('codex')} and ${subscriptionMonthlyUsdKey('grok')}.\nExamples:\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('codex')} <usd>\n  ${PLATFORM_SLUG} machine config set ${subscriptionMonthlyUsdKey('grok')} <usd>\n`
@@ -156,7 +157,18 @@ function registerMachineCommands(config: Command): void {
     .command('init')
     .description('create this machine encryption identity')
     .option('--label <label>', 'label stored for this machine identity')
-    .action(async (options) => log(await machineInit(options.label)))
+    .option('--short-name <name>', 'short machine name')
+    .option('--display-name <name>', 'display machine name')
+    .action(async (options) =>
+      log(
+        await machineInit(
+          options.label,
+          undefined,
+          process.env,
+          await requestedMachineNames(options),
+        ),
+      ),
+    )
   machine
     .command('show')
     .description('show this machine public encryption identity')

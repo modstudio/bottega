@@ -17,7 +17,13 @@ export type RecordSyncRequestRow = {
 }
 
 export type RecordSyncRequest = {
-  machine: { id: string; name: string; seenAt: string }
+  machine: {
+    id: string
+    shortName?: string
+    displayName?: string
+    name?: string
+    seenAt: string
+  }
   rows: RecordSyncRequestRow[]
 }
 
@@ -27,4 +33,4 @@ export type RecordSyncRowResult =
   | { id: number; status: 'deferred'; reason: string; spaceId: string }
   | { id: number; status: 'held'; reason: string }
 
-export type RecordSyncResponse = { results: RecordSyncRowResult[] }
+export type RecordSyncResponse = { results: RecordSyncRowResult[]; machineNameRefusal?: string }

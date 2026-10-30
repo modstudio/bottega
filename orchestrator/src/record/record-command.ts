@@ -163,8 +163,9 @@ export async function recordSpaceCreateCommand(
 export async function recordSpaceSwitchCommand(
   value: string,
   presentation: Presentation,
+  names?: { shortName: string; displayName: string },
 ): Promise<void> {
-  const selected = await switchRecordSpace(value)
+  const selected = await switchRecordSpace(value, undefined, names)
   presentation.log(`active record space ${selected.slug}`)
 }
 
@@ -188,8 +189,9 @@ export async function recordSpaceInvitationsCommand(presentation: Presentation):
 export async function recordSpaceAcceptCommand(
   invitationId: string,
   presentation: Presentation,
+  names?: { shortName: string; displayName: string },
 ): Promise<void> {
-  const spaceId = await acceptRecordInvitation(invitationId)
+  const spaceId = await acceptRecordInvitation(invitationId, undefined, names)
   presentation.log(`accepted record invitation ${invitationId}; active space ${spaceId}`)
 }
 

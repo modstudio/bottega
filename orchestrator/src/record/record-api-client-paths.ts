@@ -70,8 +70,6 @@ export type RecordBoardMethod =
   | 'releaseBoardClaim'
   | 'listBoardClaims'
 export type RecordIdentityAndSpaceMethod =
-  | 'whoami'
-  | 'sync'
   | 'createOrganization'
   | 'setActiveOrganization'
   | 'listInvitations'
@@ -96,7 +94,7 @@ export type ProjectIdentityClient = {
   retireProject(id: string, destination?: RecordRequestDestination): Promise<{ name: string }>
 }
 
-type RecordClientRequest = <T>(
+export type RecordClientRequest = <T>(
   path: string,
   init?: RequestInit & { schema?: (body: unknown) => T; destinationSpaceId?: string },
 ) => Promise<T>

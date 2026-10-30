@@ -2,8 +2,10 @@
 /** Owns record membership and active-space changes. Must not know CLI presentation. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { StoredMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
+import { claimCurrentMachineNames } from './machine-name-command.ts'
 import { type RecordApiClient, recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
 
@@ -80,10 +82,12 @@ export async function requireRecordSpaceMembership(
 export async function switchRecordSpace(
   value: string,
   client: Pick<RecordApiClient, 'whoami' | 'setActiveOrganization'> = recordApiClient(),
+  names?: StoredMachineNames,
 ): Promise<RecordMembership> {
   const listed = await recordMemberships(client)
   const selected = resolveRecordSpace(value, listed.memberships)
   await client.setActiveOrganization({ organizationId: selected.spaceId })
+  if (names) await claimCurrentMachineNames(names)
   return selected
 }
 
@@ -140,7 +144,9 @@ export async function pendingRecordInvitations(
 export async function acceptRecordInvitation(
   invitationId: string,
   client: Pick<RecordApiClient, 'acceptInvitation'> = recordApiClient(),
+  names?: StoredMachineNames,
 ): Promise<string> {
   const accepted = await client.acceptInvitation(invitationId)
+  if (names) await claimCurrentMachineNames(names)
   return accepted.invitation.organizationId
 }

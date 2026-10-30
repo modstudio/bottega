@@ -145,6 +145,7 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
     kind: 'space',
     reason: 'space machine authorization',
   },
+  { table: 'machine_name_claim', kind: 'space', reason: 'space machine name reservation' },
   { table: 'membership', kind: 'space', reason: 'space membership' },
   {
     table: 'operator_waiting_email',

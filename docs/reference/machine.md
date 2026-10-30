@@ -36,6 +36,8 @@ upkeep of this machine
 - [bottega machine reclaim-fixture-questions](#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](#bottega-machine-reclassify-failures)
 - [bottega machine reconcile](#bottega-machine-reconcile)
+- [bottega machine rename](#bottega-machine-rename)
+- [bottega machine retire](#bottega-machine-retire)
 - [bottega machine settings](#bottega-machine-settings)
 - [bottega machine settings adopt](#bottega-machine-settings-adopt)
 - [bottega machine settings apply](#bottega-machine-settings-apply)
@@ -94,6 +96,8 @@ upkeep of this machine
 - [bottega machine reclaim-fixture-questions](./machine.md#bottega-machine-reclaim-fixture-questions)
 - [bottega machine reclassify-failures](./machine.md#bottega-machine-reclassify-failures)
 - [bottega machine reconcile](./machine.md#bottega-machine-reconcile)
+- [bottega machine rename](./machine.md#bottega-machine-rename)
+- [bottega machine retire](./machine.md#bottega-machine-retire)
 - [bottega machine settings](./machine.md#bottega-machine-settings)
 - [bottega machine setup](./machine.md#bottega-machine-setup)
 - [bottega machine setup-ask](./machine.md#bottega-machine-setup-ask)
@@ -218,13 +222,15 @@ display help for command
 
 ## bottega machine config machine init
 
-**Synopsis:** `bottega machine config machine init [--label <label>]`
+**Synopsis:** `bottega machine config machine init [--label <label>] [--short-name <name>] [--display-name <name>]`
 
 create this machine encryption identity
 
 ### Options
 
 - `--label <label>`: label stored for this machine identity
+- `--short-name <name>`: short machine name
+- `--display-name <name>`: display machine name
 
 ### Related
 
@@ -536,6 +542,35 @@ close open intervals whose orchestrator runs are terminal using exact run ids
 ### Options
 
 - `--dry-run`: report interval closures without writing them
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine rename
+
+**Synopsis:** `bottega machine rename [--short-name <name>] [--display-name <name>]`
+
+change this machine name
+
+### Options
+
+- `--short-name <name>`: short machine name
+- `--display-name <name>`: display machine name
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine retire
+
+**Synopsis:** `bottega machine retire <short-name> [--yes]`
+
+retire a machine and permanently reserve its names
+
+### Options
+
+- `--yes`: retire without interactive confirmation
 
 ### Related
 

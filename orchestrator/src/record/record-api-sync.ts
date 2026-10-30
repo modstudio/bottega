@@ -29,11 +29,15 @@ export type RecordSyncRouteDeps = {
 const bytes = (value: string) => new TextEncoder().encode(value).byteLength
 const payloadSchema = z.string().refine((value) => bytes(value) <= RECORD_SYNC_MAX_PAYLOAD_BYTES)
 const syncSchema = z.object({
-  machine: z.object({
-    id: z.string().uuid(),
-    name: z.string().min(1),
-    seenAt: z.string().datetime({ offset: true }),
-  }),
+  machine: z
+    .object({
+      id: z.string().uuid(),
+      shortName: z.string().min(1).optional(),
+      displayName: z.string().min(1).optional(),
+      name: z.string().min(1).optional(),
+      seenAt: z.string().datetime({ offset: true }),
+    })
+    .refine((machine) => Boolean(machine.name || (machine.shortName && machine.displayName))),
   rows: z
     .array(
       z.object({

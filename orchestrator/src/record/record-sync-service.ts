@@ -26,6 +26,7 @@ import {
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { upsertHostedMachine } from './machine-name-record.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
@@ -45,9 +46,8 @@ import type {
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
 import {
-  RecordSyncRequestRefusal,
+  MachineNameRefusal,
   recordSyncAuthorizationDecision,
-  recordSyncMachineOwnershipDecision,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
@@ -135,35 +135,6 @@ async function assertEvidenceReferencesOwned(input: {
       })
       const rows = await tx.unsafe(lookup.text, lookup.values)
       if (rows.length === 0) throw new OutboxRowError(referenceRefusal(reference), 'row-validation')
-    }
-  })
-}
-
-async function upsertMachine(
-  postgres: SQL,
-  seenAt: string,
-  identity: { id: string; name: string },
-  principal: RecordPrincipal,
-): Promise<void> {
-  await postgres.begin(async (tx) => {
-    await bindPrincipal(tx, principal)
-    const owned = await tx`
-      INSERT INTO machine (id,user_id,name,registered_at,last_seen)
-      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${identity.name},${seenAt}::timestamptz,
-        ${seenAt}::timestamptz)
-      ON CONFLICT (id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen
-      WHERE machine.user_id=excluded.user_id
-      RETURNING user_id
-    `
-    if (owned.length === 0) {
-      const owners = await tx`SELECT user_id FROM machine WHERE id=${identity.id}::uuid`
-      const decision = recordSyncMachineOwnershipDecision(
-        identity.id,
-        owners[0]?.user_id == null ? null : String(owners[0].user_id),
-        principal.userId,
-      )
-      if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
-      throw new Error(`machine ownership changed while registering ${identity.id}`)
     }
   })
 }
@@ -963,10 +934,16 @@ export async function syncHostedRecord(input: {
   try {
     const activeSpaceId = input.identity.activeSpaceId
     if (!activeSpaceId) throw new Error('record session has no active space')
-    await upsertMachine(postgres, input.request.machine.seenAt, input.request.machine, {
-      userId: input.identity.user.id,
-      spaceId: activeSpaceId,
-    })
+    let machineNameRefusal: string | undefined
+    try {
+      await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
+        userId: input.identity.user.id,
+        spaceId: activeSpaceId,
+      })
+    } catch (error) {
+      if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
+      else throw error
+    }
     const results: RecordSyncRowResult[] = []
     const projectIds: ProjectResolutionCache = new Map()
     for (const row of input.request.rows) {
@@ -980,7 +957,7 @@ export async function syncHostedRecord(input: {
         }),
       )
     }
-    return { results }
+    return { results, ...(machineNameRefusal ? { machineNameRefusal } : {}) }
   } finally {
     if (!input.postgres) await postgres.close()
   }

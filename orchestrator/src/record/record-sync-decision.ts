@@ -65,3 +65,5 @@ export function recordSyncReferenceRefusal(reference: { kind: string; id: string
 }
 
 export class RecordSyncRequestRefusal extends Error {}
+
+export class MachineNameRefusal extends RecordSyncRequestRefusal {}

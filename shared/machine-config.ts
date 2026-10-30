@@ -77,6 +77,8 @@ export const MACHINE_CONFIG = {
     default: 7778,
   },
   'machine.id': { type: 'string', default: '', validator: machineIdValidation },
+  'machine.short_name': { type: 'string', default: '' },
+  'machine.display_name': { type: 'string', default: '' },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',
@@ -828,6 +830,29 @@ export function storedMachineId(env: ConfigEnvironment = process.env): string | 
       `refusing machine config: machine.id must be a UUID; write a valid value with \`${PLATFORM_SLUG} machine config set --machine machine.id <uuid>\``,
     )
   return id
+}
+
+export type StoredMachineNames = { shortName: string; displayName: string }
+
+export function storedMachineNames(
+  env: ConfigEnvironment = process.env,
+): StoredMachineNames | null {
+  const shortName = readMachineValue('machine.short_name', env)
+  const displayName = readMachineValue('machine.display_name', env)
+  return shortName && displayName ? { shortName, displayName } : null
+}
+
+export function writeMachineNames(
+  names: StoredMachineNames,
+  env: ConfigEnvironment = process.env,
+): void {
+  atomicPatch((root) => {
+    root.machine = {
+      ...((root.machine as Record<string, unknown> | undefined) ?? {}),
+      short_name: names.shortName,
+      display_name: names.displayName,
+    }
+  }, env)
 }
 
 /** Carry over an existing identity or mint and persist this machine's identity once. */

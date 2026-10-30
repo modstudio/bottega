@@ -78,6 +78,8 @@ export async function syncCommand(
     return
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
+  if (result.machineNameRefusal)
+    presentation.log(`machine name not claimed: ${result.machineNameRefusal}`)
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
   for (const line of blockedOutboxLines(result.blocked)) presentation.log(line)
   for (const line of readOnlyDeferredLines(result.readOnlyDeferred ?? [])) presentation.log(line)

@@ -40,6 +40,7 @@ import { projectAt } from '../project/projects.ts'
 import { treeRefreshCommand } from '../recipe/tree-refresh.ts'
 import { treeReseedCommand } from '../recipe/tree-reseed.ts'
 import { reclaimCommand } from '../reclaim/reclaim-commands.ts'
+import { renameMachine, retireMachine } from '../record/machine-name-command.ts'
 import { fixDefectCommand, searchCommand, stateCommand } from '../record/record-commands.ts'
 import { continuationFindingsForRun } from '../review/review-continuation-findings.ts'
 import {
@@ -253,6 +254,34 @@ function registerEfficiencyCommands(program: Command): void {
 
 function registerMachineAttentionCommands(program: Command): void {
   registerEfficiencyCommands(program)
+  program
+    .command('rename')
+    .description('change this machine name')
+    .option('--short-name <name>', 'short machine name')
+    .option('--display-name <name>', 'display machine name')
+    .allowExcessArguments(false)
+    .action((options) =>
+      renameMachine({ shortName: options.shortName, displayName: options.displayName }),
+    )
+  program
+    .command('retire <short-name>')
+    .description('retire a machine and permanently reserve its names')
+    .option('--yes', 'retire without interactive confirmation')
+    .allowExcessArguments(false)
+    .action(async (shortName, options) => {
+      if (!options.yes) {
+        if (!process.stdin.isTTY)
+          throw new Error('machine retire requires an interactive terminal or --yes')
+        const { createInterface } = await import('node:readline/promises')
+        const terminal = createInterface({ input: process.stdin, output: process.stderr })
+        const answer = await terminal.question(
+          `Retire machine ${shortName}? Type the short name to confirm: `,
+        )
+        terminal.close()
+        if (answer !== shortName) throw new Error('machine retirement was not confirmed')
+      }
+      log(`retired ${await retireMachine(String(shortName))}`)
+    })
   program
     .command('setup-ask')
     .description('install the live worker question channel')

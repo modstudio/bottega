@@ -31,6 +31,7 @@ export type RecordSyncResult = {
   configured: boolean
   quarantined: QuarantinedOutboxRow[]
   blocked: BlockedOutboxRow[]
+  machineNameRefusal?: string
   held?: HeldRecordSyncRows[]
   quarantinedParentHolds?: QuarantinedParentHold[]
   readOnlyDeferred?: { spaceId: string; rows: number }[]
@@ -47,7 +48,7 @@ export type RecordSyncOptions = {
   backfill?: boolean
   local?: Database
   now?: () => string
-  identity?: { id: string; name: string }
+  identity?: { id: string; shortName?: string; displayName?: string; name?: string }
   projectSpaces?: Record<string, string>
   client?: {
     whoami: RecordApiClient['whoami']

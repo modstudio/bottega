@@ -2,6 +2,7 @@
 /** Composes and serves the record API. Must not own record queries or authentication policy. */
 import { readBuiltCommit } from '../../../shared/built-commit.ts'
 import { probeRecord, recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { renameHostedMachine, retireHostedMachine } from './machine-name-record.ts'
 import { recordApi } from './record-api.ts'
 import {
   recordAllowedOrigins,
@@ -331,6 +332,8 @@ function recordApiAccessDependencies(
 ) {
   return {
     syncRecord: syncHostedRecord,
+    renameMachine: renameHostedMachine,
+    retireMachine: retireHostedMachine,
     auth,
     readSession: async (headers: Headers) => {
       const current = await auth.api.getSession({ headers })

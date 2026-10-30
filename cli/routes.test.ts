@@ -104,6 +104,15 @@ test('every agent command verb has a public route to its owner entry', () => {
   }
 })
 
+test('machine rename and retire remedies resolve to their owner entries', () => {
+  expect(resolveRoute(['machine', 'rename', '--short-name', 'office'])).toMatchObject({
+    route: { owner: 'orch', argv: ['rename'] },
+  })
+  expect(resolveRoute(['machine', 'retire', 'office'])).toMatchObject({
+    route: { owner: 'orch', argv: ['retire'] },
+  })
+})
+
 test('every public route through the agent owner declares a supported verb', () => {
   for (const route of ROUTES) {
     if (route.owner !== 'orch' || route.argv?.[0] !== 'agent') continue

@@ -1,6 +1,15 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { hostname, tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import {
+  machineId as establishMachineId,
+  storedMachineNames,
+} from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { defaultShortName } from './machine-name.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
@@ -42,7 +51,11 @@ const whoami = async () => ({
 const options = (local: Database) => ({
   local,
   now: () => STAMP,
-  identity: { id: MACHINE_ID, name: 'test-machine' },
+  identity: {
+    id: MACHINE_ID,
+    shortName: 'requested-short',
+    displayName: 'Requested display',
+  },
 })
 
 test('sync sends an empty batch to register and refresh its machine', async () => {
@@ -59,7 +72,13 @@ test('sync sends an empty batch to register and refresh its machine', async () =
   expect(await syncRecord({ ...options(local), client })).toMatchObject({ pushed: 0, pending: 0 })
   expect(requests).toEqual([
     {
-      machine: { id: MACHINE_ID, name: 'test-machine', seenAt: STAMP },
+      machine: {
+        id: MACHINE_ID,
+        shortName: 'requested-short',
+        displayName: 'Requested display',
+        name: defaultShortName(hostname()),
+        seenAt: STAMP,
+      },
       rows: [],
     },
   ])
@@ -83,6 +102,51 @@ test('sync sends ordered bounded batches and applies each response before contin
   expect(batches.flat()).toEqual(
     Array.from({ length: RECORD_SYNC_BATCH_SIZE + 1 }, (_, index) => index + 1),
   )
+})
+
+test('a machine-name refusal still applies the synced batch and is reported once', async () => {
+  using local = localOutbox(1)
+  const client = {
+    whoami,
+    sync: async (request: { rows: { id: number }[] }) => ({
+      results: request.rows.map((row) => ({ id: row.id, status: 'synced' as const })),
+      machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
+    }),
+  }
+
+  expect(await syncRecord({ ...options(local), client })).toMatchObject({
+    pushed: 1,
+    pending: 0,
+    machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
+  })
+  expect(local.query('SELECT synced_at FROM outbox WHERE id=1').get()).toEqual({ synced_at: STAMP })
+})
+
+test('a first-sync name refusal does not cache the unclaimed defaults', async () => {
+  using local = localOutbox(0)
+  const root = mkdtempSync(join(tmpdir(), 'machine-name-refusal-'))
+  const previous = process.env.BOTTEGA_CONFIG_HOME
+  const env = { ...process.env, BOTTEGA_CONFIG_HOME: root }
+  establishMachineId(null, env)
+  process.env.BOTTEGA_CONFIG_HOME = root
+  try {
+    const client = {
+      whoami,
+      sync: async () => ({
+        results: [],
+        machineNameRefusal: `short name is held; run ${PLATFORM_SLUG} machine rename --short-name <name>`,
+      }),
+    }
+
+    expect(await syncRecord({ local, now: () => STAMP, client })).toMatchObject({
+      machineNameRefusal: expect.any(String),
+    })
+    expect(storedMachineNames(env)).toBeNull()
+  } finally {
+    if (previous === undefined) delete process.env.BOTTEGA_CONFIG_HOME
+    else process.env.BOTTEGA_CONFIG_HOME = previous
+    rmSync(root, { recursive: true, force: true })
+  }
 })
 
 test('a malformed ordered response marks no local row', async () => {
