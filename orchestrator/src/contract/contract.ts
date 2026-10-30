@@ -840,8 +840,8 @@ than what you expect would happen.
 
 ${CHANGE_GUIDE_INSTRUCTION}
 
-When the \`run_tests\` tool is available, use it with project-relative paths to execute the tests you add or change. If it says focused tests are still running, call \`run_tests\` again to collect their result. When \`run_tests\` accepts \`affected\`, call it once with \`affected: true\` after your own focused tests and before \`run_gate\`, and report its result in the tests section. A focused test run is evidence for this run; it is never the completion gate and does not replace the mandatory \`run_gate\` call below. When the \`run_gate\` tool is available, run it before reporting done,
-call it again while its reply says the gate is still running, and report done only with a finished result or a refusal, recording that last result in your reply's tests section.
+When the \`run_tests\` tool is available, use it with project-relative paths to execute the tests you add or change, and do not run those tests through your shell. A test run outside \`run_tests\` is neither observed nor counted, and you say so in the tests section. If it says focused tests are still running, call \`run_tests\` again to collect their result. When \`run_tests\` accepts \`affected\`, call it once with \`affected: true\` after your own focused tests, and report both results in the tests section. When the \`run_check\` tool is available, run it before reporting done,
+call it again while its reply says the check is still running, and record the last result in your reply's tests section. Never run the project's full gate or test suite yourself; the landing step runs the full gate once.
 
 REPORT WHAT STOPPED YOU, IN "blockers"
 

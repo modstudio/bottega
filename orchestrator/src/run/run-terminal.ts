@@ -910,7 +910,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
     testsRan: testOutcome ? nullableBooleanColumn(testOutcome.ran) : null,
     testsPassed: testOutcome?.passed == null ? null : testOutcome.passed ? 1 : 0,
-    testsClaimDisagrees: testOutcome ? (testOutcome.claimDisagrees ? 1 : 0) : null,
+    testsClaimDisagrees:
+      testOutcome?.claimDisagrees == null ? null : testOutcome.claimDisagrees ? 1 : 0,
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
     escalations: writesJob ? acceptedQuestions.length : null,
   }
@@ -983,7 +984,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
             changes?.deletions ?? null,
             nullableBooleanColumn(testOutcome!.ran),
             testOutcome!.passed == null ? null : testOutcome!.passed ? 1 : 0,
-            testOutcome!.claimDisagrees ? 1 : 0,
+            testOutcome!.claimDisagrees == null ? null : testOutcome!.claimDisagrees ? 1 : 0,
             contract?.deviations?.length ?? null,
             acceptedQuestions.length,
             claim.id,

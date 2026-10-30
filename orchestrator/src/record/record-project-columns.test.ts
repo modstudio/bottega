@@ -19,6 +19,7 @@ const samples = {
   docs: { setting: { path: 'docs' }, column: 'docs', value: { path: 'docs' } },
   envPrefix: { setting: 'PROBE', column: 'envPrefix', value: 'PROBE' },
   gate: { setting: 'bun run check', column: 'gate', value: 'bun run check' },
+  workerCheck: { setting: 'bun run lint', column: 'workerCheck', value: 'bun run lint' },
   gateInput: { setting: 'worktree', column: 'gateInput', value: 'worktree' },
   focusedTests: {
     setting: { command: 'scripts/test-focused', args: ['--ci'] },

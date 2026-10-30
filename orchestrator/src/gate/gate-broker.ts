@@ -55,6 +55,7 @@ type PendingGate = {
   record_id: string
   number: number
   run_record_id: string
+  purpose: 'gate' | 'worker-check'
   startedAt: string
 }
 type ActiveGate = {
@@ -85,7 +86,7 @@ function newGateProcessState(): GateProcessState {
   return { child: null, termination: null, timedOut: false, exitCode: -1 }
 }
 
-const PENDING_GATE_SQL = `SELECT record_id,number,run_record_id FROM gate_execution
+const PENDING_GATE_SQL = `SELECT record_id,number,run_record_id,purpose FROM gate_execution
   WHERE run_record_id=? AND started_at IS NULL AND finished_at IS NULL
   ORDER BY requested_at,record_id LIMIT 1`
 
@@ -104,7 +105,7 @@ function claimPendingGate(runId: string): PendingGate | null {
   })
 }
 
-function gatePlan(runId: string): {
+function gatePlan(runId: string, purpose: 'gate' | 'worker-check'): {
   command: string
   worktree: string
   baseCommit: string
@@ -131,6 +132,7 @@ function gatePlan(runId: string): {
   if (!row.base_commit) throw new Error(`run ${runId} has no recorded base commit`)
   const settings = JSON.parse(row.settings ?? '{}') as {
     gate?: unknown
+    workerCheck?: unknown
     gateInput?: unknown
     trunk?: unknown
     mainStack?: {
@@ -138,11 +140,14 @@ function gatePlan(runId: string): {
       requiredServices?: string[]
     }
   }
-  if (typeof settings.gate !== 'string' || !settings.gate.trim()) {
-    throw new Error(`run ${runId}'s project has no registered gate`)
+  const declared = purpose === 'worker-check' ? settings.workerCheck : settings.gate
+  if (typeof declared !== 'string' || !declared.trim()) {
+    throw new Error(
+      `run ${runId}'s project has no registered ${purpose === 'worker-check' ? 'workerCheck' : 'gate'}`,
+    )
   }
   return {
-    command: settings.gate.trim(),
+    command: declared.trim(),
     worktree: row.worktree,
     baseCommit: row.base_commit,
     trunk:
@@ -435,7 +440,7 @@ function prepareGateExecution(input: {
   environment: Record<string, string>
   record: (chunk: Buffer | string) => void
 }) {
-  const plan = gatePlan(input.request.run_record_id)
+  const plan = gatePlan(input.request.run_record_id, input.request.purpose)
   refuseInProgressCheckout(plan.worktree)
   const mainCheckout = requiredMainCheckout(input.environment, input.request.run_record_id)
   ensureMainStackStarted({

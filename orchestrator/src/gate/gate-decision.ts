@@ -220,13 +220,13 @@ export function decideGateEligibility(input: {
     return { eligible: false, message: 'This process is not a recognized orchestrator worker.' }
   }
   if (!input.writer) {
-    return { eligible: false, message: 'run_gate is available only to a writing worker run.' }
+    return { eligible: false, message: 'run_check is available only to a writing worker run.' }
   }
   const gate = input.gate?.trim()
   if (!gate) {
     return {
       eligible: false,
-      message: "This run's project has no registered gate, so nothing was run.",
+      message: "This run's project has no registered workerCheck, so nothing was run.",
     }
   }
   return { eligible: true, gate }
@@ -264,7 +264,7 @@ export function formatGateRequestDecision(decision: GateRequestDecision): string
     return `Gate execution ${decision.executionNumber} was already running; this call waited for the same execution.`
   }
   if (decision.action === 'return') {
-    return `Gate execution ${decision.executionNumber} finished after an earlier run_gate call stopped waiting; returning that result.`
+    return `Check execution ${decision.executionNumber} finished after an earlier run_check call stopped waiting; returning that result.`
   }
   return null
 }
@@ -280,8 +280,8 @@ export function decideGateWait(input: {
   return {
     wait: false,
     message:
-      `The gate is still running after ${input.executionElapsedMs}ms. ` +
-      'Call run_gate again to wait for this same execution. ' +
+      `The check is still running after ${input.executionElapsedMs}ms. ` +
+      'Call run_check again to wait for this same execution. ' +
       'Do not report done before you have its result.',
   }
 }

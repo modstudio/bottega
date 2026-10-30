@@ -94,7 +94,7 @@ export function recordedGateResult(runId: string): {
       `SELECT g.record_id,r.project_record_id,g.head_commit,g.run_record_id,g.exit_code,g.timed_out,g.elapsed_ms,
               g.finished_at,g.output_tail,g.cwd
        FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
-       WHERE g.finished_at IS NOT NULL`,
+       WHERE g.purpose='gate' AND g.finished_at IS NOT NULL`,
     )
     .all() as GateExecutionRow[]
   const cwdProjectIds = architectProjectIdsByCwd(rows)

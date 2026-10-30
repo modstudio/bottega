@@ -597,6 +597,13 @@ export function validateProjectSettings(
     ...projectAgentKeyProblems(settings.agentKeys),
   ]
 
+  if (
+    settings.workerCheck !== undefined &&
+    (typeof settings.workerCheck !== 'string' || !settings.workerCheck.trim())
+  ) {
+    problems.push('workerCheck must be a non-empty string')
+  }
+
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')
   }

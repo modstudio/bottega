@@ -27,7 +27,9 @@ export function observedTestsLine(input: {
   passed: number | null
   claimDisagrees: number | null
 }): string | null {
-  if (input.claimDisagrees === null) return null
+  if (input.claimDisagrees === null) {
+    return 'tests observed: unverified; tests_claim_disagrees: unverified'
+  }
   if (input.ran === null) {
     return 'tests observed: not observed; tests_claim_disagrees: false'
   }

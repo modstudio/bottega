@@ -97,25 +97,25 @@ describe('job contracts are visible before submission', () => {
     expect(text).toContain('one thing to verify there')
     expect(text).toContain('never replaces the diff')
   })
-  test('writers run the registered gate while readers inspect its recorded result', () => {
+  test('writers run focused tests and the worker check while readers inspect the landing gate', () => {
     expect(WORKER_PREAMBLE).toContain('When the `run_tests` tool is available')
     expect(WORKER_PREAMBLE).toContain(
       'If it says focused tests are still running, call `run_tests` again',
     )
     expect(WORKER_PREAMBLE).toContain('project-relative paths')
     expect(WORKER_PREAMBLE).toContain(
-      'call it once with `affected: true` after your own focused tests and before `run_gate`',
+      'call it once with `affected: true` after your own focused tests',
     )
     expect(WORKER_PREAMBLE).toContain('tests you add or change')
-    expect(WORKER_PREAMBLE).toContain('never the completion gate')
-    expect(WORKER_PREAMBLE).toContain('does not replace the mandatory `run_gate` call')
-    expect(WORKER_PREAMBLE).toContain('When the `run_gate` tool is available')
+    expect(WORKER_PREAMBLE).toContain('A test run outside `run_tests` is neither observed nor counted')
+    expect(WORKER_PREAMBLE).toContain('When the `run_check` tool is available')
     expect(WORKER_PREAMBLE).toContain(
-      'call it again while its reply says the gate is still running',
+      'call it again while its reply says the check is still running',
     )
-    expect(WORKER_PREAMBLE).toContain('report done only with a finished result or a refusal')
+    expect(WORKER_PREAMBLE).toContain("Never run the project's full gate or test suite yourself")
     expect(WORKER_PREAMBLE).toContain("reply's tests section")
     expect(READONLY_PREAMBLE).not.toContain('run_gate')
+    expect(WORKER_PREAMBLE).not.toContain('run_gate')
     expect(READONLY_PREAMBLE).not.toContain('run_tests')
     expect(READONLY_PREAMBLE).toContain(
       `Call the \`gate_result\` tool on the \`${WORKER_MCP_SERVER_NAME}\` MCP server`,

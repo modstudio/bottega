@@ -229,6 +229,7 @@ export const project = pgTable.withRLS(
     landingBranch: text('landing_branch'),
     productionBranch: text('production_branch'),
     gate: text(),
+    workerCheck: text('worker_check'),
     gateInput: text('gate_input'),
     focusedTests: jsonb('focused_tests'),
     requireCleanMain: boolean('require_clean_main').notNull().default(true),

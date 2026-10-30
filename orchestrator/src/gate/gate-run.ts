@@ -61,7 +61,10 @@ type ArchitectGateTopLevel = (cwd: string) => string | null
 export type ArchitectGateRecord = { number: number; exitCode: number }
 
 /** Record a worker-style gate request; the broker remains the only executor. */
-export function requestGateExecution(runId: string): {
+export function requestGateExecution(
+  runId: string,
+  purpose: 'gate' | 'worker-check' = 'gate',
+): {
   recordId: string
   number: number
   requestedAt: string
@@ -69,8 +72,10 @@ export function requestGateExecution(runId: string): {
   const requestedAt = nowIso()
   const recordId = newRecordId()
   db()
-    .query('INSERT INTO gate_execution (record_id,run_record_id,requested_at) VALUES (?,?,?)')
-    .run(recordId, runId, requestedAt)
+    .query(
+      'INSERT INTO gate_execution (record_id,run_record_id,requested_at,purpose) VALUES (?,?,?,?)',
+    )
+    .run(recordId, runId, requestedAt, purpose)
   const inserted = db()
     .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
     .get(recordId)

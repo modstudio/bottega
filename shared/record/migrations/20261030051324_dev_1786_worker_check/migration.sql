@@ -1,0 +1,1 @@
+ALTER TABLE "project" ADD COLUMN "worker_check" text;

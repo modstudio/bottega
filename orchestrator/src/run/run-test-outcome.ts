@@ -22,7 +22,7 @@ export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null
 export type ObservedTestOutcome = {
   ran: boolean | null
   passed: boolean | null
-  claimDisagrees: boolean
+  claimDisagrees: boolean | null
 }
 
 export function deriveObservedTestOutcome(input: {
@@ -41,15 +41,19 @@ export function deriveObservedTestOutcome(input: {
   )
   const executions = [...latestFocused.values(), ...latestGateExecutions]
   if (executions.length === 0 && !input.focusedRunnerRegistered) {
-    return { ran: null, passed: null, claimDisagrees: false }
+    return { ran: null, passed: null, claimDisagrees: null }
   }
   const ran = executions.length > 0
   const passed = ran ? executions.every((execution) => execution.passed) : null
-  const claimDisagrees = Boolean(
-    input.claim &&
-      ((input.claim.ran != null && input.claim.ran !== ran) ||
-        (input.claim.passed != null && input.claim.passed !== passed)),
-  )
+  const claimedObservation = input.claim?.ran === true || input.claim?.passed != null
+  const claimDisagrees =
+    claimedObservation && (!ran || passed === null)
+      ? null
+      : Boolean(
+          input.claim &&
+            ((input.claim.ran != null && input.claim.ran !== ran) ||
+              (input.claim.passed != null && input.claim.passed !== passed)),
+        )
   return { ran, passed, claimDisagrees }
 }
 

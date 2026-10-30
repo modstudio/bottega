@@ -410,7 +410,7 @@ function gatherGate(
     >(
       `SELECT record_id,number,finished_at,exit_code,run_record_id,cwd,head_commit
          FROM gate_execution
-        WHERE record_id=?`,
+        WHERE record_id=? AND purpose='gate'`,
     )
     .get(recordId)
   if (!row) throw new Error(`--gate ${recordId} does not exist`)
