@@ -136,6 +136,10 @@ type MachineConfigValue<Key extends MachineConfigKey> =
 
 const warnedMachineConfigMessages = new Set<string>()
 
+function writeWarning(message: string): void {
+  process.stderr.write(`${message}\n`)
+}
+
 function warnUnknownMachineKey(
   path: string,
   key: string,
@@ -310,7 +314,7 @@ function validateFile(
   table: Record<string, MachineConfigEntry>,
   parsed: unknown,
   path: string,
-  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
+  warn: (message: string) => void = writeWarning,
   warned: Set<string> = warnedMachineConfigMessages,
 ): void {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -723,7 +727,7 @@ export function readMachineValue<Key extends MachineConfigKey>(
     readMachineFile(path),
     key,
     path,
-    (message) => process.stderr.write(`${message}\n`),
+    writeWarning,
     warnedMachineConfigMessages,
   ).value
 }
@@ -740,7 +744,7 @@ export function readMachineValueWithSource<Key extends MachineConfigKey>(
     parsed,
     key,
     path,
-    (message) => process.stderr.write(`${message}\n`),
+    writeWarning,
     warnedMachineConfigMessages,
   )
 }
