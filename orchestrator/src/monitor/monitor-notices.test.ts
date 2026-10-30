@@ -1,6 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import {
   createMemoryRecordApiClient,
@@ -261,7 +262,11 @@ test('read-only notice claim defers a report reply successor with a reason', asy
   })
 
   expect(delivery.notices.map((notice) => notice.noticeId)).not.toContain(`board:${reply.number}`)
-  expect(delivery.warning).toContain('require a writable claim')
+  expect(delivery.warning).toContain(`"Successor report" (reply ${reply.recordId})`)
+  expect(delivery.warning).toContain('held, not lost')
+  expect(delivery.warning).toContain(
+    `${PLATFORM_SLUG} board pending --session monitor-successor-reader`,
+  )
   expect(
     db()
       .query('SELECT COUNT(*) count FROM board_receipt WHERE message_record_id=? AND successor=1')

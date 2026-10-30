@@ -27,6 +27,7 @@ import {
 import {
   type BoardDelivery,
   boardDeliveryForm,
+  boardPendingCommand,
   boundedBoardDelivery,
   renderPendingAcknowledgement,
 } from './board-render.ts'
@@ -238,7 +239,8 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
       localPush.warning,
       hostedPush.warning,
       deferredReplySuccessorWarning(
-        localPush.deferredReplySuccessorCount + hostedPush.deferredReplySuccessorCount,
+        [...localPush.deferredReplySuccessors, ...hostedPush.deferredReplySuccessors],
+        boardPendingCommand(input.session),
       ),
     ),
   }

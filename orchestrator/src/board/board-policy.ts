@@ -8,6 +8,12 @@ export const BOARD_POST_RATE_WINDOW_MS = 10 * 60 * 1000
 export const BOARD_DUPLICATE_WINDOW_MS = 10 * 60 * 1000
 export const BOARD_TITLE_MAX_CHARS = 120
 export const BOARD_BODY_MAX_CHARS = 4000
+export const HEADER_BREAK = /[\r\n\u2028\u2029]/g
+
+/** Stored values are untrusted too: no interpolated value may create a new header line. */
+export const boardHeaderValue = (value: string | number): string =>
+  String(value).replace(HEADER_BREAK, ' ')
+
 const BOARD_RETENTION_MS = 14 * 24 * 60 * 60 * 1000
 const RUN_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

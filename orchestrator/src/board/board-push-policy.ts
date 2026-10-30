@@ -2,10 +2,13 @@
 /** Decides whether a board message belongs in a reader's pushed delivery. */
 
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
-import { type PresenceFact, resolveAudience } from './board-policy.ts'
+import { boardHeaderValue, type PresenceFact, resolveAudience } from './board-policy.ts'
 
 export type BoardPushDecision = 'withheld' | 'ordinary' | 'acknowledgement'
 export type BoardReaderStart = string | null | 'unbounded'
+export type DeferredReplySuccessor = { replyRecordId: string; threadTitle: string }
+
+export const DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT = 3
 
 export function reportReplySuccessorDecision(input: {
   rootAuthorLive: boolean
@@ -132,19 +135,21 @@ export function selectPushNotices<
     expiresAt: string | null
     purpose?: BoardPurpose
     reportReplySuccessor?: boolean
+    threadTitle?: string
   },
 >(
   readerBeganAt: BoardReaderStart,
   candidates: T[],
   clock: number,
   claimReplySuccessors = true,
-): { notices: T[]; withheldOlderCount: number; deferredReplySuccessorCount: number } {
-  let deferredReplySuccessorCount = 0
+): {
+  notices: T[]
+  withheldOlderCount: number
+  deferredReplySuccessorCount: number
+  deferredReplySuccessors: T[]
+} {
+  const deferredReplySuccessors: T[] = []
   const notices = candidates.flatMap((notice) => {
-    if (notice.reportReplySuccessor && !claimReplySuccessors) {
-      deferredReplySuccessorCount += 1
-      return []
-    }
     const decision = boardPushDecision({
       acknowledgementRequired: notice.ackRequired,
       postedAt: notice.createdAt,
@@ -156,19 +161,36 @@ export function selectPushNotices<
       reportReplySuccessor: notice.reportReplySuccessor,
     })
     if (decision === 'withheld') return []
+    if (notice.reportReplySuccessor && !claimReplySuccessors) {
+      deferredReplySuccessors.push(notice)
+      return []
+    }
     return [notice]
   })
   return {
     notices,
-    withheldOlderCount: candidates.length - notices.length - deferredReplySuccessorCount,
-    deferredReplySuccessorCount,
+    withheldOlderCount: candidates.length - notices.length - deferredReplySuccessors.length,
+    deferredReplySuccessorCount: deferredReplySuccessors.length,
+    deferredReplySuccessors,
   }
 }
 
-export const deferredReplySuccessorWarning = (count: number): string | null =>
-  count > 0
-    ? `${count} report reply successor${count === 1 ? '' : 's'} require a writable claim and were deferred by this read-only delivery.`
-    : null
+export function deferredReplySuccessorWarning(
+  replies: DeferredReplySuccessor[],
+  deliveryCommand: string,
+): string | null {
+  if (!replies.length) return null
+  const named = replies
+    .slice(0, DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT)
+    .map(
+      (reply) =>
+        `"${boardHeaderValue(reply.threadTitle)}" (reply ${boardHeaderValue(reply.replyRecordId)})`,
+    )
+    .join(', ')
+  const remaining = replies.length - DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT
+  const more = remaining > 0 ? `, and ${remaining} more` : ''
+  return `Deferred report replies: ${named}${more}. Each is held, not lost. The next board delivery that can claim it delivers it. Run ${boardHeaderValue(deliveryCommand)} to deliver it now.`
+}
 
 export const missingReaderStartWarning = (reader: string): string =>
   `Board reader ${reader} has no recorded start; no messages were withheld by age.`

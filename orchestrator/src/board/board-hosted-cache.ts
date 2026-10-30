@@ -16,17 +16,19 @@ import {
 import { hostedBoardVerificationNoticeDecision } from './board-hosted-verification-policy.ts'
 import { boardMode } from './board-mode.ts'
 import {
+  boardHeaderValue,
   messageCanBeReaped,
   messageIsLive,
   OPERATOR_READER,
   parseAudience,
 } from './board-policy.ts'
 import {
+  type DeferredReplySuccessor,
   missingReaderStartWarning,
   replySuccessorAddressing,
   selectPushNotices,
 } from './board-push-policy.ts'
-import { boardHeaderValue, renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
+import { renderBoardNotice, renderBoardNoticeOneLine } from './board-render.ts'
 import * as replyAudience from './board-reply-audience.ts'
 import { boardReaderBeganAt, originText, presenceFacts, recipients } from './board-store.ts'
 import type { BoardTag } from './board-tags.ts'
@@ -57,6 +59,7 @@ export type HostedCacheNotice = {
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
   reportReplySuccessor?: boolean
+  threadTitle?: string
 }
 
 type RefreshInput = {
@@ -889,6 +892,11 @@ function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheN
         createdAt: message.createdAt,
         expiresAt: message.expiresAt,
         purpose: message.purpose ?? 'information',
+        ...(message.kind === 'reply'
+          ? {
+              threadTitle: context.messagesById.get(message.threadRootId ?? '')?.title ?? '',
+            }
+          : {}),
       }
       return message.kind === 'reply' && hostedReplySuccessorPush(message, context)
         ? { ...notice, reportReplySuccessor: true }
@@ -905,7 +913,7 @@ export function claimCachedHostedForPush(
 ): {
   notices: HostedCacheNotice[]
   withheldOlderCount: number
-  deferredReplySuccessorCount: number
+  deferredReplySuccessors: DeferredReplySuccessor[]
   warning: string | null
 } {
   const context = loadClaimContext(database, reader, all, clock)
@@ -924,7 +932,10 @@ export function claimCachedHostedForPush(
   return {
     notices,
     withheldOlderCount: selected.withheldOlderCount,
-    deferredReplySuccessorCount: selected.deferredReplySuccessorCount,
+    deferredReplySuccessors: selected.deferredReplySuccessors.map((notice) => ({
+      replyRecordId: notice.id,
+      threadTitle: notice.threadTitle!,
+    })),
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

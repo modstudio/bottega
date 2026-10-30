@@ -1,13 +1,12 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { BOARD_BODY_MAX_CHARS, BOARD_TITLE_MAX_CHARS } from './board-policy.ts'
+import {
+  BOARD_BODY_MAX_CHARS,
+  BOARD_TITLE_MAX_CHARS,
+  boardHeaderValue,
+  HEADER_BREAK,
+} from './board-policy.ts'
 import type { BoardTag } from './board-tags.ts'
-
-const HEADER_BREAK = /[\r\n\u2028\u2029]/g
-
-/** Stored values are untrusted too: no interpolated value may create a new header line. */
-export const boardHeaderValue = (value: string | number): string =>
-  String(value).replace(HEADER_BREAK, ' ')
 
 export const quoteBoardBody = (value: string): string =>
   `> ${value.slice(0, BOARD_BODY_MAX_CHARS).replace(HEADER_BREAK, '\n> ')}`
@@ -35,6 +34,9 @@ export type BoardDelivery = {
 }
 
 export type BoardDeliveryMoment = 'session-start' | 'running'
+
+export const boardPendingCommand = (session: string): string =>
+  `${PLATFORM_SLUG} board pending --session ${session}`
 
 export function boardDeliveryForm(
   purpose: BoardPurpose | undefined,
