@@ -89,7 +89,7 @@ type RunRow = {
   session_id: string | null
 }
 
-function ownedRuns(database: Database, session: string): SessionOwnedRun[] {
+export function ownedRuns(database: Database, session: string): SessionOwnedRun[] {
   const identities = database
     .query('SELECT record_id,parent_run_record_id,session_id FROM run ORDER BY number')
     .all() as {
@@ -221,7 +221,7 @@ function observeOwnedBranch(
   }
 }
 
-function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
+export function branchFacts(runs: readonly SessionOwnedRun[], dryRun: boolean) {
   const wanted = new Map<string, { project: string; branch: string; taskKey: string | null }>()
   for (const run of runs) {
     if (run.project && run.mintedBranch)
@@ -410,7 +410,7 @@ function heldGitRunResources(roots: ReadonlyMap<string, readonly SessionOwnedRun
   }
 }
 
-function heldRunResources(
+export function heldRunResources(
   database: Database,
   runs: readonly SessionOwnedRun[],
 ): { resources: SessionHeldRunResources[]; errors: ResourceObservationError[] } {

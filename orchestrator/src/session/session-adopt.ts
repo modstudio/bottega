@@ -36,9 +36,11 @@ export type SessionAdoptionReport = {
   toSession: string
   consent: SessionAdoptionConsent
   runs: SessionAdoptedRun[]
+  finished: SessionAdoptedRun[]
   notMoved: SessionAdoptionFailure[]
   totalRuns: number
   totalTurns: number
+  totalFinished: number
 }
 
 type SessionAdoptionConsent = 'standard' | 'resume-handoff' | 'cut-off'
@@ -58,6 +60,7 @@ export type AdoptionOptions = {
   actor?: string | null
   machine?: string
   transfer?: typeof transferRunMutationOwnership
+  resumeHandoffRootIds?: readonly string[]
 }
 
 function ownedRoots(database: Database, session: string): Root[] {
@@ -130,8 +133,9 @@ function remainingFailures(
   database: Database,
   target: string,
   failures: PendingSessionAdoptionFailure[],
+  intentionallyLeft: ReadonlySet<string>,
 ): PendingSessionAdoptionFailure[] {
-  const known = new Set(failures.map(({ recordId }) => recordId))
+  const known = new Set([...failures.map(({ recordId }) => recordId), ...intentionallyLeft])
   return ownedRoots(database, target)
     .filter(({ record_id }) => !known.has(record_id))
     .map((root) => ({
@@ -204,28 +208,47 @@ export function adoptSessionRuns(
   })
   const consent = options.consent ?? 'standard'
   assertAdoptionConsent(target, evidence, consent)
+  const roots = ownedRoots(database, target)
+  if (consent === 'resume-handoff' && !options.resumeHandoffRootIds)
+    throw new Error('resume handoff adoption requires its owed root selection')
+  const owedRootIds = new Set(
+    consent === 'resume-handoff'
+      ? options.resumeHandoffRootIds
+      : roots.map((root) => root.record_id),
+  )
+  const finished = roots
+    .filter((root) => !owedRootIds.has(root.record_id))
+    .map((root) => adoptedRun(database, root, target))
   const moved: SessionAdoptedRun[] = []
   const notMoved: PendingSessionAdoptionFailure[] = []
-  for (const root of ownedRoots(database, target)) {
+  for (const root of roots.filter((candidate) => owedRootIds.has(candidate.record_id))) {
     const outcome = transferRoot({ database, root, target, actor, reason, consent, options })
     if (outcome.moved) moved.push(outcome.moved)
     if (outcome.failed) notMoved.push(outcome.failed)
   }
-  notMoved.push(...remainingFailures(database, target, notMoved))
+  notMoved.push(
+    ...remainingFailures(database, target, notMoved, new Set(finished.map((run) => run.recordId))),
+  )
   return {
     fromSession: target,
     toSession: actor,
     consent,
     runs: moved,
+    finished,
     notMoved: currentFailureOwners(database, notMoved),
     totalRuns: moved.length,
     totalTurns: moved.reduce((sum, run) => sum + run.turns, 0),
+    totalFinished: finished.length,
   }
 }
 
 export function formatSessionAdoption(report: SessionAdoptionReport): string {
-  if (!report.runs.length && !report.notMoved.length)
+  if (!report.runs.length && !report.finished.length && !report.notMoved.length)
     return `session ${report.fromSession} owns no runs; consent: ${report.consent}`
+  const finished =
+    report.consent === 'resume-handoff'
+      ? `; ${report.totalFinished} finished run(s) left with the author`
+      : ''
   return [
     ...report.runs.map(
       (run) =>
@@ -235,6 +258,6 @@ export function formatSessionAdoption(report: SessionAdoptionReport): string {
       (run) =>
         `not moved run ${run.number} ${run.recordId} ${run.job} ${run.key ?? '-'}: ${run.turns} turn(s) (${run.reason})`,
     ),
-    `total: ${report.totalRuns} run(s), ${report.totalTurns} turn(s) moved; ${report.notMoved.length} run(s) remain; consent: ${report.consent}`,
+    `total: ${report.totalRuns} run(s), ${report.totalTurns} turn(s) moved${finished}; ${report.notMoved.length} run(s) remain; consent: ${report.consent}`,
   ].join('\n')
 }

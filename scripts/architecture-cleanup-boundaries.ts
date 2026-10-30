@@ -50,10 +50,23 @@ export const cleanupBoundarySpecs = [
       '../doc/docs.ts',
       '../doc/resume-brief-author.ts',
       '../run/session-liveness-adapter.ts',
+      './resume-handoff-selection.ts',
       './session-adopt.ts',
     ],
     typeOnlyAllowed: [],
     reason: 'Keep resume-to-run handoff in an adapter outside the document concern.',
+  },
+  {
+    name: 'resume-handoff-selection-boundary',
+    file: 'orchestrator/src/session/resume-handoff-selection.ts',
+    allowed: [
+      'bun:sqlite',
+      '../evidence/evidence-query.ts',
+      './session-close-out.ts',
+      './session-close-out-decision.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason: 'Keep resume handoff selection as the adapter over canonical close-out facts.',
   },
   {
     name: 'session-close-out-boundary',

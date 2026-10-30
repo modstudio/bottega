@@ -73,7 +73,7 @@ function unscoredWhere(exclusion: string): string {
 
 export const UNSCORED_WHERE = unscoredWhere('r.evidence_excluded IS NULL')
 
-const PENDING_SCORE_WHERE = UNSCORED_WHERE
+export const PENDING_SCORE_WHERE = UNSCORED_WHERE
 
 /**
  * The evidence boundary: a run leaves the owed-judgment ledger in two ways,

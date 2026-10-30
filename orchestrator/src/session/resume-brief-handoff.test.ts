@@ -8,6 +8,7 @@ import { getDoc, listDocRevisions, restoreDoc } from '../doc/docs.ts'
 import { resumeBriefAuthorSession } from '../doc/resume-brief-author.ts'
 import { upsertProject } from '../project/projects.ts'
 import { handoffConsumedResumeBrief, prepareResumeBriefHandoff } from './resume-brief-handoff.ts'
+import { adoptSessionRuns } from './session-adopt.ts'
 
 const previousSession = process.env.CLAUDE_CODE_SESSION_ID
 const machine = '00000000-0000-4000-8000-000000000001'
@@ -67,6 +68,52 @@ test("a successor consuming a resume brief receives the author's runs", async ()
   expect(handoff.status).toBe('moved')
   expect(handoff.report?.runs.map(({ recordId }) => recordId)).toEqual([root])
   expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(root)).toEqual({
+    session_id: 'brief-consumer',
+  })
+})
+
+test('a resume handoff moves only owed roots while explicit adoption still moves all', async () => {
+  const stored = await brief()
+  db().query('UPDATE project SET path=? WHERE name=?').run(process.cwd(), 'handoff-project')
+  const owed = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    session: 'brief-author',
+  })
+  const finished = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    session: 'brief-author',
+  })
+  db().query('UPDATE run SET evidence_excluded=? WHERE record_id=?').run('not evidence', finished)
+  authorSeen()
+  process.env.CLAUDE_CODE_SESSION_ID = 'brief-consumer'
+  const consumed = await consumeDoc('resume', 'handoff-project', stored.slug)
+
+  const handoff = await handoffConsumedResumeBrief(consumed, {
+    database: db(),
+    probe: () => ({ alive: false, startTime: null }),
+    machine,
+  })
+
+  expect(handoff.report).toMatchObject({ totalRuns: 1, totalFinished: 1 })
+  expect(handoff.report?.runs.map(({ recordId }) => recordId)).toEqual([owed])
+  expect(handoff.lines.join('\n')).toContain('1 moved (owed), 1 left with the author (finished)')
+  expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(finished)).toEqual({
+    session_id: 'brief-author',
+  })
+
+  const explicit = adoptSessionRuns('brief-author', 'move the remaining history', {
+    database: db(),
+    actor: 'brief-consumer',
+    now: Date.parse('2026-10-24T02:00:00.000Z'),
+    probe: () => ({ alive: false, startTime: null }),
+    machine,
+  })
+  expect(explicit.runs.map(({ recordId }) => recordId)).toEqual([finished])
+  expect(db().query('SELECT session_id FROM run WHERE record_id=?').get(finished)).toEqual({
     session_id: 'brief-consumer',
   })
 })
