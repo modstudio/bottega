@@ -1,12 +1,16 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
-  DELEGATION_CLASS_LABELS,
   DELEGATION_SETTING_KEYS,
   type DelegationClass,
   type DelegationMode,
   type DelegationSettings,
 } from '../../../shared/delegation-mode.ts'
 import type { Job } from './jobs.ts'
+
+const DELEGATION_CLASS_LABELS = {
+  implement: 'repository-writing jobs',
+  review: 'read-only jobs (all jobs that do not write the repository)',
+} as const satisfies Record<DelegationClass, string>
 
 export function delegationClass(capabilities: { writesRepo?: boolean }): DelegationClass {
   return capabilities.writesRepo ? 'implement' : 'review'
@@ -44,12 +48,13 @@ function delegationRemedy(jobClass: DelegationClass, mode: DelegationMode): stri
   return `${PLATFORM_SLUG} machine config set --machine ${DELEGATION_SETTING_KEYS[jobClass]} ${mode}`
 }
 
-export function noEligibleAgentRefusal(
-  jobName: string,
-  capabilities: { writesRepo?: boolean },
-  excluded: readonly string[],
-  undeclaredAgents: readonly string[],
-): string {
+export function noEligibleAgentRefusal(options: {
+  jobName: string
+  capabilities: { writesRepo?: boolean }
+  excluded: readonly string[]
+  undeclaredAgents: readonly string[]
+}): string {
+  const { jobName, capabilities, excluded, undeclaredAgents } = options
   const headline = `no eligible agent for job "${jobName}"`
   const jobClass = delegationClass(capabilities)
   const detail = excluded.length ? `\n${excluded.join('\n')}` : ''

@@ -778,7 +778,12 @@ function admittedCandidates(
         capacityCounts(capacityBlocked),
       )
     throw new RoutingRefusalError(
-      noEligibleAgentRefusal(jobName, job(jobName).needs, excluded, undeclaredAgents),
+      noEligibleAgentRefusal({
+        jobName,
+        capabilities: job(jobName).needs,
+        excluded,
+        undeclaredAgents,
+      }),
     )
   }
   const constrained = eligible.filter(

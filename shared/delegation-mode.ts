@@ -9,11 +9,6 @@ export const DELEGATION_SETTING_KEYS = {
   review: 'delegation.review',
 } as const satisfies Record<DelegationClass, string>
 
-export const DELEGATION_CLASS_LABELS = {
-  implement: 'repository-writing jobs',
-  review: 'read-only jobs (all jobs that do not write the repository)',
-} as const satisfies Record<DelegationClass, string>
-
 export type DelegationSettingKey =
   (typeof DELEGATION_SETTING_KEYS)[keyof typeof DELEGATION_SETTING_KEYS]
 
