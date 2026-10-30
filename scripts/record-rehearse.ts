@@ -9,6 +9,7 @@ const REHEARSAL_APP = `${PLATFORM_SLUG}-record-backup`
 const REHEARSAL_VM_SIZE = 'shared-cpu-1x'
 const REHEARSAL_VM_MEMORY_MB = '1024'
 const REHEARSAL_WAIT_TIMEOUT_MS = 20 * 60 * 1000
+const FLY_WAIT_TIMEOUT_SECONDS = 60
 const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
 
 const tokenName = `${PLATFORM_SLUG.toUpperCase()}_RECORD_REHEARSAL_FLY_TOKEN`
@@ -220,6 +221,76 @@ async function cleanupMachine(
   )
 }
 
+async function waitForMachineToStop(
+  runner: RehearsalCommandRunner,
+  machineId: string,
+  flyEnv: Record<string, string>,
+): Promise<void> {
+  const startedAt = Date.now()
+  while (true) {
+    const argv = [
+      'flyctl',
+      'machine',
+      'wait',
+      machineId,
+      '--app',
+      REHEARSAL_APP,
+      '--state',
+      'stopped',
+      '--wait-timeout',
+      `${FLY_WAIT_TIMEOUT_SECONDS}s`,
+    ]
+    const result = await runner(argv, {
+      env: flyEnv,
+      timeoutMs: (FLY_WAIT_TIMEOUT_SECONDS + 30) * 1000,
+    })
+    if (result.exitCode === 0) return
+    const output = `${result.stdout}\n${result.stderr}`
+    if (
+      !output.includes('deadline_exceeded') ||
+      Date.now() - startedAt >= REHEARSAL_WAIT_TIMEOUT_MS
+    ) {
+      checked(result, argv)
+    }
+  }
+}
+
+async function remoteHead(runner: RehearsalCommandRunner): Promise<string> {
+  const headArgv = ['git', 'rev-parse', 'HEAD']
+  const sha = checked(await runner(headArgv), headArgv)
+  const branchArgv = ['git', 'branch', '--show-current']
+  const branch = checked(await runner(branchArgv), branchArgv)
+  const remoteContainsArgv = ['git', 'branch', '--remotes', '--contains', sha]
+  const remoteContains = checked(await runner(remoteContainsArgv), remoteContainsArgv)
+  if (!remoteContains.split('\n').some((line) => line.trim().startsWith('origin/'))) {
+    throw new Error(
+      `record rehearsal refuses HEAD because it is not on origin; run: git push -u origin ${branch}`,
+    )
+  }
+  return sha
+}
+
+async function rehearsalFailure(
+  runner: RehearsalCommandRunner,
+  sha: string,
+  machineName: string,
+  error: unknown,
+  statusPosted: boolean,
+): Promise<Error> {
+  const originalMessage = `machine ${machineName}: ${error instanceof Error ? error.message : String(error)}`
+  if (statusPosted) return new Error(originalMessage)
+  try {
+    await postStatus(runner, sha, {
+      state: 'failure',
+      description: `REHEARSAL FAIL ${originalMessage}`.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
+    })
+    return new Error(originalMessage)
+  } catch (postError) {
+    const postMessage = postError instanceof Error ? postError.message : String(postError)
+    return new Error(`${originalMessage}; status post failed: ${postMessage}`)
+  }
+}
+
 export async function runRecordRehearsal(input: {
   token: string
   runner: RehearsalCommandRunner
@@ -229,8 +300,7 @@ export async function runRecordRehearsal(input: {
   if (checked(await input.runner(gitStatusArgv), gitStatusArgv)) {
     throw new Error('record rehearsal refuses a dirty working tree; commit the tree and rerun it')
   }
-  const headArgv = ['git', 'rev-parse', 'HEAD']
-  const sha = checked(await input.runner(headArgv), headArgv)
+  const sha = await remoteHead(input.runner)
   const machineName = `record-rehearsal-${sha.slice(0, 8)}-${Date.now()}`
   const flyEnv = { FLY_API_TOKEN: input.token }
   let statusPosted = false
@@ -249,22 +319,7 @@ export async function runRecordRehearsal(input: {
       throw new Error(
         `flyctl machine run did not report the launched Machine ID for ${machineName}`,
       )
-    const waitArgv = [
-      'flyctl',
-      'machine',
-      'wait',
-      machineId,
-      '--app',
-      REHEARSAL_APP,
-      '--state',
-      'stopped',
-      '--wait-timeout',
-      `${REHEARSAL_WAIT_TIMEOUT_MS / 1000}s`,
-    ]
-    checked(
-      await input.runner(waitArgv, { env: flyEnv, timeoutMs: REHEARSAL_WAIT_TIMEOUT_MS + 30_000 }),
-      waitArgv,
-    )
+    await waitForMachineToStop(input.runner, machineId, flyEnv)
     const details = await input.machineDetails(machineId, input.token)
     const logsArgv = ['flyctl', 'logs', '--app', REHEARSAL_APP, '--no-tail', '--machine', machineId]
     const logs = checked(await input.runner(logsArgv, { env: flyEnv }), logsArgv)
@@ -275,16 +330,7 @@ export async function runRecordRehearsal(input: {
     if (status.state === 'failure') throw new Error(status.description)
     result = lines
   } catch (error) {
-    if (!statusPosted) {
-      const message = `machine ${machineName}: ${error instanceof Error ? error.message : String(error)}`
-      await postStatus(input.runner, sha, {
-        state: 'failure',
-        description: `REHEARSAL FAIL ${message}`.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
-      })
-    }
-    failure = new Error(
-      `machine ${machineName}: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    failure = await rehearsalFailure(input.runner, sha, machineName, error, statusPosted)
   } finally {
     failure = (await cleanupMachine(input.runner, machineName, machineId, flyEnv)) ?? failure
   }

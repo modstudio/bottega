@@ -15,6 +15,17 @@ REHEARSAL RESTORE 123
 REHEARSAL MIGRATE 45
 REHEARSAL PASS ${hash}`
 
+function gitResult(argv: readonly string[]) {
+  if (argv[0] !== 'git') return undefined
+  if (argv[1] === 'status') return { exitCode: 0, stdout: '', stderr: '' }
+  if (argv[1] === 'rev-parse') return { exitCode: 0, stdout: 'deadbeef\n', stderr: '' }
+  if (argv[1] === 'branch' && argv[2] === '--show-current')
+    return { exitCode: 0, stdout: 'DEV-1896-test\n', stderr: '' }
+  if (argv[1] === 'branch' && argv[2] === '--remotes')
+    return { exitCode: 0, stdout: '  origin/DEV-1896-test\n', stderr: '' }
+  return undefined
+}
+
 test('parses contract lines and classifies a pass', () => {
   const prefixed = passOutput
     .split('\n')
@@ -38,8 +49,8 @@ test('destroys a launched machine when waiting for it fails', async () => {
   const calls: string[][] = []
   const runner: RehearsalCommandRunner = async (argv) => {
     calls.push([...argv])
-    if (argv[0] === 'git' && argv[1] === 'rev-parse')
-      return { exitCode: 0, stdout: 'deadbeef\n', stderr: '' }
+    const git = gitResult(argv)
+    if (git) return git
     if (argv[0] === 'flyctl' && argv[2] === 'run')
       return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
     if (argv[0] === 'flyctl' && argv[2] === 'wait')
@@ -63,8 +74,8 @@ test('finds a named machine and destroys it when launch output has no id', async
   let launchedName = ''
   const runner: RehearsalCommandRunner = async (argv) => {
     calls.push([...argv])
-    if (argv[0] === 'git' && argv[1] === 'rev-parse')
-      return { exitCode: 0, stdout: 'deadbeef\n', stderr: '' }
+    const git = gitResult(argv)
+    if (git) return git
     if (argv[0] === 'flyctl' && argv[2] === 'run') {
       launchedName = argv[argv.indexOf('--name') + 1]!
       return { exitCode: 0, stdout: 'started\n', stderr: '' }
@@ -125,8 +136,8 @@ test('runs, posts success and destroys the machine through the injected runner',
   const calls: string[][] = []
   const runner: RehearsalCommandRunner = async (argv) => {
     calls.push([...argv])
-    if (argv[0] === 'git' && argv[1] === 'rev-parse')
-      return { exitCode: 0, stdout: 'deadbeef\n', stderr: '' }
+    const git = gitResult(argv)
+    if (git) return git
     if (argv[0] === 'flyctl' && argv[1] === 'machine' && argv[2] === 'run')
       return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
     if (argv[0] === 'flyctl' && argv[1] === 'logs')
@@ -161,4 +172,104 @@ test('refuses a dirty tree before starting a machine', async () => {
       machineDetails: async () => ({}),
     }),
   ).rejects.toThrow('dirty working tree')
+})
+
+test('retries Fly deadline_exceeded waits until the machine stops', async () => {
+  const calls: string[][] = []
+  let waits = 0
+  const runner: RehearsalCommandRunner = async (argv) => {
+    calls.push([...argv])
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[2] === 'run')
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    if (argv[0] === 'flyctl' && argv[2] === 'wait') {
+      waits += 1
+      if (waits < 3) return { exitCode: 1, stdout: '', stderr: 'rpc error: deadline_exceeded' }
+    }
+    if (argv[0] === 'flyctl' && argv[1] === 'logs')
+      return { exitCode: 0, stdout: passOutput, stderr: '' }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({ events: [{ request: { exit_event: { exit_code: 0 } } }] }),
+    }),
+  ).resolves.toMatchObject({ hash })
+  expect(waits).toBe(3)
+  expect(
+    calls
+      .filter((argv) => argv[0] === 'flyctl' && argv[2] === 'wait')
+      .every((argv) => argv.includes('60s')),
+  ).toBe(true)
+})
+
+test('fails immediately on a non-deadline wait error', async () => {
+  let waits = 0
+  const runner: RehearsalCommandRunner = async (argv) => {
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[2] === 'run')
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    if (argv[0] === 'flyctl' && argv[2] === 'wait') {
+      waits += 1
+      return { exitCode: 1, stdout: '', stderr: 'permission denied' }
+    }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({}),
+    }),
+  ).rejects.toThrow('permission denied')
+  expect(waits).toBe(1)
+})
+
+test('refuses an unpushed HEAD before starting a machine', async () => {
+  const calls: string[][] = []
+  const runner: RehearsalCommandRunner = async (argv) => {
+    calls.push([...argv])
+    const git = gitResult(argv)
+    if (argv[0] === 'git' && argv[1] === 'branch' && argv[2] === '--remotes')
+      return { exitCode: 0, stdout: '  upstream/DEV-1896-test\n', stderr: '' }
+    if (git) return git
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({}),
+    }),
+  ).rejects.toThrow('git push -u origin DEV-1896-test')
+  expect(calls.some((argv) => argv[0] === 'flyctl' && argv[2] === 'run')).toBe(false)
+})
+
+test('preserves the original wait error when posting failure status also fails', async () => {
+  const originalWaitError = `wait failed with ${'full detail '.repeat(20)}`
+  const runner: RehearsalCommandRunner = async (argv) => {
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[2] === 'run')
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    if (argv[0] === 'flyctl' && argv[2] === 'wait')
+      return { exitCode: 1, stdout: '', stderr: originalWaitError }
+    if (argv[0] === 'gh') return { exitCode: 1, stdout: '', stderr: 'No commit found for SHA' }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  const rehearsal = runRecordRehearsal({
+    token: 'sealed-token',
+    runner,
+    machineDetails: async () => ({}),
+  })
+  await expect(rehearsal).rejects.toThrow(originalWaitError.trim())
+  await expect(rehearsal).rejects.toThrow('status post failed:')
 })
