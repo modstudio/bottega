@@ -357,11 +357,7 @@ test('a launch-key-bound review uses its cursor branch review round', () => {
 
 test('a foreign gate run is refused and a matching gate run is allowed', () => {
   const d = database()
-  const foreign = insertRun(d, {
-    project: 'other',
-    launchKey: 'DEV-1',
-    branch: 'other-branch',
-  })
+  const foreign = insertRun(d, { project: 'other', launchKey: 'DEV-1', branch: 'other-branch' })
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
@@ -370,11 +366,7 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     "--gate 1 project is other, not this cursor's fixture",
   )
 
-  const matching = insertRun(d, {
-    project: 'fixture',
-    launchKey: 'DEV-977',
-    branch: 'other-branch',
-  })
+  const matching = insertRun(d, { project: 'fixture', launchKey: 'DEV-977' })
   d.query(
     `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code)
      VALUES ('${newRecordId()}', ?, '2026-09-01','2026-09-01','2026-09-01',0)`,
@@ -386,6 +378,14 @@ test('a foreign gate run is refused and a matching gate run is allowed', () => {
     project: 'fixture',
     commit: null,
   })
+  d.query(
+    `INSERT INTO gate_execution (record_id,run_record_id,requested_at,purpose)
+     VALUES ('${newRecordId()}',?,'2026-09-01','worker-check')`,
+  ).run(matching)
+  expect(() => gather(d, { gate: 3 })).toThrow(
+    '--gate 3 is a worker-check execution, not a landing gate; ' +
+      `pass the gate recorded by the landing step (${PLATFORM_SLUG} gate run)`,
+  )
 })
 
 test('a foreign architect gate is refused and a matching architect gate is allowed', () => {

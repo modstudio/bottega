@@ -317,7 +317,7 @@ describe('the live ask channel always answers', () => {
       })
       expect(readerResult.isError).toBeUndefined()
       expect(resultText(readerResult)).toBe(
-        "No finished gate result is recorded. The writer's gate and the pre-merge local gate are the proof.",
+        'No finished gate result is recorded. The landing gate recorded for this commit and the pre-merge local gate are the proof.',
       )
       expect(
         (
@@ -604,6 +604,22 @@ describe('the live ask channel always answers', () => {
         62_000,
         'wrong commit',
         'other-commit',
+      )
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,purpose)
+         VALUES ('${newRecordId()}',?,?,?,?,?,?,?,?,'worker-check')`,
+      )
+      .run(
+        newerWriter,
+        '2026-10-01T13:00:00.000Z',
+        '2026-10-01T13:01:00.000Z',
+        1,
+        0,
+        63_000,
+        'newer worker check failure',
+        'reviewed-commit',
       )
 
     const connection = await askClient(reader)

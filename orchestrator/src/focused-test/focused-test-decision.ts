@@ -26,9 +26,7 @@ type FocusedTestCommandValidation = {
   problems: string[]
 }
 export type FocusedTestDeclarationValidation = {
-  runner: FocusedTestRunner | null
   runners: FocusedTestRunner[]
-  selector: FocusedTestSelector | null
   problems: string[]
 }
 export type FocusedTestRequest = { id: string; paths: string[]; affected: boolean }
@@ -299,9 +297,7 @@ function focusedTestDeclarationParts(value: unknown): {
 export function validateFocusedTestDeclaration(value: unknown): FocusedTestDeclarationValidation {
   const parts = focusedTestDeclarationParts(value)
   return {
-    runner: parts.runners[0] ?? null,
     runners: parts.runners,
-    selector: parts.selector.command,
     problems: [...new Set([...parts.runnerProblems, ...parts.selector.problems])],
   }
 }
@@ -318,7 +314,6 @@ export function hasFocusedTestRunner(value: unknown): boolean {
  * report.
  */
 export function declaredFocusedTestCommands(settings: string | null): {
-  runner: FocusedTestRunner | null
   runners: FocusedTestRunner[]
   selector: FocusedTestSelector | null
   selectorProblem: string | null
@@ -327,11 +322,10 @@ export function declaredFocusedTestCommands(settings: string | null): {
   try {
     parsed = JSON.parse(settings ?? '{}') as { focusedTests?: unknown } | null
   } catch {
-    return { runner: null, runners: [], selector: null, selectorProblem: null }
+    return { runners: [], selector: null, selectorProblem: null }
   }
   const parts = focusedTestDeclarationParts(parsed?.focusedTests)
   return {
-    runner: parts.runnerProblems.length ? null : (parts.runners[0] ?? null),
     runners: parts.runnerProblems.length ? [] : parts.runners,
     selector: parts.selector.problems.length
       ? null
@@ -350,7 +344,7 @@ export function declaredFocusedTestCommands(settings: string | null): {
   }
 }
 
-export type FocusedTestRunnerGroup = { runner: FocusedTestRunner; paths: string[] }
+type FocusedTestRunnerGroup = { runner: FocusedTestRunner; paths: string[] }
 export type FocusedTestRunnerSplit =
   | { kind: 'groups'; groups: FocusedTestRunnerGroup[] }
   | { kind: 'refuse'; paths: string[]; message: string }
@@ -540,12 +534,35 @@ export type FocusedTestSelectorOutcome =
     }
   | { kind: 'printed'; stdout: string }
 
+export type AffectedSelection =
+  | { kind: 'paths'; paths: string[] }
+  | { kind: 'none' }
+  | { kind: 'refuse'; message: string }
+
+/** Combine every runner's affected selector result without returning typed paths through stdout. */
+export function decideAffectedSelection(
+  outcomes: readonly { runner: FocusedTestRunner; outcome: FocusedTestSelectorOutcome }[],
+): AffectedSelection {
+  const paths: string[] = []
+  const seen = new Set<string>()
+  for (const { outcome } of outcomes) {
+    const selected = decideSelectorTestPaths(outcome)
+    if (selected.kind === 'refuse') return selected
+    for (const path of selected.paths) {
+      if (seen.has(path)) continue
+      seen.add(path)
+      paths.push(path)
+    }
+  }
+  return paths.length ? { kind: 'paths', paths } : { kind: 'none' }
+}
+
 export type FocusedTestSelectionInput =
   | { affected: false; requestedPaths: readonly string[] }
   | {
       affected: true
       requestedPaths: readonly string[]
-      selector: FocusedTestSelectorOutcome
+      selector: AffectedSelection | FocusedTestSelectorOutcome
     }
 
 /**
@@ -571,7 +588,11 @@ export function decideFocusedTestSelection(input: FocusedTestSelectionInput): Fo
   const requested = decideRequestedTestPaths(input.affected, input.requestedPaths)
   if (requested.kind === 'refuse') return requested
   const selected = input.affected
-    ? decideSelectorTestPaths(input.selector)
+    ? input.selector.kind === 'none'
+      ? { kind: 'paths' as const, paths: [] }
+      : input.selector.kind === 'paths' || input.selector.kind === 'refuse'
+        ? input.selector
+        : decideSelectorTestPaths(input.selector)
     : { kind: 'paths' as const, paths: [] }
   if (selected.kind === 'refuse') return selected
   const union = unionFocusedTestPaths(requested.paths, selected.paths)

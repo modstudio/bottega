@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   affectedSelectorPathRefusal,
+  decideAffectedSelection,
   decideFocusedTestEligibility,
   decideFocusedTestPathFacts,
   decideFocusedTestRequest,
@@ -191,11 +192,6 @@ describe('affected focused test selections', () => {
         affected: { command: 'scripts/affected-tests.ts', args: [] },
       }),
     ).toEqual({
-      runner: {
-        command: 'scripts/test-focused.ts',
-        args: [],
-        affected: { command: 'scripts/affected-tests.ts', args: [] },
-      },
       runners: [
         {
           command: 'scripts/test-focused.ts',
@@ -203,10 +199,8 @@ describe('affected focused test selections', () => {
           affected: { command: 'scripts/affected-tests.ts', args: [] },
         },
       ],
-      selector: { command: 'scripts/affected-tests.ts', args: [] },
       problems: [],
     })
-    expect(validateFocusedTestDeclaration({ command: 'runner', args: [] }).selector).toBeNull()
     expect(
       validateFocusedTestDeclaration({
         command: 'runner',
@@ -249,7 +243,6 @@ describe('affected focused test selections', () => {
       },
     })
     expect(declaredFocusedTestCommands(settings)).toEqual({
-      runner: { command: 'scripts/test-focused.ts', args: [] },
       runners: [{ command: 'scripts/test-focused.ts', args: [] }],
       selector: null,
       selectorProblem: 'focusedTests.affected.command must be a non-empty string',
@@ -260,6 +253,7 @@ describe('affected focused test selections', () => {
         authenticated: true,
         writer: true,
         ...commands,
+        runner: commands.runners[0] ?? null,
         affected: true,
       }),
     ).toEqual({
@@ -271,6 +265,7 @@ describe('affected focused test selections', () => {
         authenticated: true,
         writer: true,
         ...commands,
+        runner: commands.runners[0] ?? null,
         affected: false,
       }),
     ).toEqual({ eligible: true })
@@ -284,11 +279,10 @@ describe('affected focused test selections', () => {
         },
       }),
     ).toEqual({ kind: 'refuse', message: expect.stringContaining('focusedTests.affected.command') })
-    expect(declaredFocusedTestCommands('not json').runner).toBeNull()
+    expect(declaredFocusedTestCommands('not json').runners).toEqual([])
     expect(
       declaredFocusedTestCommands(JSON.stringify({ focusedTests: { command: 'r', args: [] } })),
     ).toEqual({
-      runner: { command: 'r', args: [] },
       runners: [{ command: 'r', args: [] }],
       selector: null,
       selectorProblem: null,
@@ -355,9 +349,40 @@ describe('affected focused test selections', () => {
         authenticated: true,
         writer: true,
         ...commands,
+        runner: commands.runners[0] ?? null,
         affected: true,
       }),
     ).toEqual({ eligible: true })
+  })
+
+  test('unions and deduplicates every runner selector outcome and keeps the first refusal', () => {
+    const bun = { command: 'bun', args: ['test'] }
+    const php = { command: 'phpunit', args: [] }
+    expect(
+      decideAffectedSelection([
+        { runner: bun, outcome: { kind: 'printed', stdout: 'shared.test.ts\nbun.test.ts\n' } },
+        { runner: php, outcome: { kind: 'printed', stdout: 'shared.test.ts\nphp.test.php\n' } },
+      ]),
+    ).toEqual({
+      kind: 'paths',
+      paths: ['shared.test.ts', 'bun.test.ts', 'php.test.php'],
+    })
+    expect(
+      decideAffectedSelection([
+        { runner: bun, outcome: { kind: 'printed', stdout: '../outside.test.ts\n' } },
+        {
+          runner: php,
+          outcome: {
+            kind: 'failed',
+            exitCode: 2,
+            timedOut: false,
+            overflowed: false,
+            stderrTail: 'later',
+          },
+        },
+      ]),
+    ).toEqual({ kind: 'refuse', message: expect.stringContaining('parent segment') })
+    expect(decideAffectedSelection([])).toEqual({ kind: 'none' })
   })
 
   test('refuses unmatched paths and overlapping runner declarations', () => {

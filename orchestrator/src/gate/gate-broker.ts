@@ -44,7 +44,7 @@ import {
   resolveGateCommand,
 } from './gate-decision.ts'
 import { prepareSyntheticGateIndex } from './gate-index.ts'
-import { cancelGateExecutions } from './gate-run.ts'
+import { cancelGateExecutions, type GatePurpose } from './gate-run.ts'
 import { hostSlotWaitCallbacks, recordGateLogEvent } from './host-slot-wait.ts'
 
 /** A pending check is a plain read; only an actual claim takes the write lock. */
@@ -55,7 +55,7 @@ type PendingGate = {
   record_id: string
   number: number
   run_record_id: string
-  purpose: 'gate' | 'worker-check'
+  purpose: GatePurpose
   startedAt: string
 }
 type ActiveGate = {
@@ -107,7 +107,7 @@ function claimPendingGate(runId: string): PendingGate | null {
 
 function gatePlan(
   runId: string,
-  purpose: 'gate' | 'worker-check',
+  purpose: GatePurpose,
 ): {
   command: string
   worktree: string

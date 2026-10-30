@@ -36,6 +36,9 @@ import {
   WORKER_GATE_BASE_ENV,
 } from './gate-decision.ts'
 
+/** The reason a gate execution row was requested. Enforced by gate_execution's SQL CHECK. */
+export type GatePurpose = 'gate' | 'worker-check'
+
 type ArchitectGateResult = {
   exitCode: number
   output: string
@@ -63,7 +66,7 @@ export type ArchitectGateRecord = { number: number; exitCode: number }
 /** Record a worker-style gate request; the broker remains the only executor. */
 export function requestGateExecution(
   runId: string,
-  purpose: 'gate' | 'worker-check' = 'gate',
+  purpose: GatePurpose = 'gate',
 ): {
   recordId: string
   number: number

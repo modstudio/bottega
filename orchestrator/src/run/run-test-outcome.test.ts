@@ -29,6 +29,17 @@ describe('deriveObservedTestOutcome', () => {
     ).toEqual({ ran: true, passed: true, claimDisagrees: false })
   })
 
+  test('an observed failed execution contradicts a passing claim', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [{ passed: false, paths: ['failing.test.ts'] }],
+        gate: { checks: [], latestFinishedExecutionId: null },
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: true, passed: false, claimDisagrees: true })
+  })
+
   test('a passing rerun replaces a failed result for the same path set', () => {
     expect(
       deriveObservedTestOutcome({
@@ -103,7 +114,7 @@ describe('deriveObservedTestOutcome', () => {
     })
   })
 
-  test('an absent focused runner makes an unobserved worker command non-disagreeing', () => {
+  test('an absent focused runner leaves an unobserved worker claim unverified', () => {
     expect(
       deriveObservedTestOutcome({
         focused: [],
@@ -175,6 +186,32 @@ describe('deriveObservedTestOutcome', () => {
       ran: true,
       passed: false,
       claimDisagrees: false,
+    })
+  })
+
+  test('reads a focused test refusal event as an unverified passing observation', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:00.000Z',
+      type: 'focused_test',
+      paths: ['passing.test.ts'],
+      started: true,
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 10,
+      logName: 'passing.log',
+      logPath: '/scratch/passing.log',
+    })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:01.000Z',
+      type: 'focused_test_refusal',
+      paths: ['unmatched.test.ts'],
+    })
+
+    expect(observedTestOutcome(db(), runId, { ran: true, passed: true })).toEqual({
+      ran: true,
+      passed: null,
+      claimDisagrees: null,
     })
   })
 

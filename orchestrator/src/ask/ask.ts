@@ -52,9 +52,9 @@ import { appendRunEvent } from '../events.ts'
 import { registerFocusedTestTool } from '../focused-test/focused-test-tool.ts'
 import {
   decideGateCancellation,
-  decideGateEligibility,
   decideGateRequest,
   decideGateWait,
+  decideWorkerCheckEligibility,
   formatGateRequestDecision,
   formatGateResult,
   RUN_GATE_WAIT_MS,
@@ -183,10 +183,10 @@ function checkEligibility(runId: string, token: string) {
   } catch {
     workerCheck = null
   }
-  return decideGateEligibility({
+  return decideWorkerCheckEligibility({
     authenticated: authenticatedWorkerRun(runId, token),
     writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
-    gate: workerCheck,
+    workerCheck,
   })
 }
 

@@ -7,12 +7,12 @@ import {
   decideBrokerLaunch,
   decideGateCancellation,
   decideGateCheckoutRefusal,
-  decideGateEligibility,
   decideGateExecutionFinalization,
   decideGateHeadCommit,
   decideGateRequest,
   decideGateToolingDiffBase,
   decideGateWait,
+  decideWorkerCheckEligibility,
   decideWorkerGateInput,
   formatGateRequestDecision,
   GATE_CLOSE_REASON,
@@ -211,12 +211,22 @@ test('broker execution finalizes normal and cancelled runs without losing lifecy
 describe('worker gate eligibility', () => {
   test('requires an authenticated writer with a registered worker check', () => {
     expect(
-      decideGateEligibility({ authenticated: true, writer: true, gate: ' scripts/gate ' }),
-    ).toEqual({ eligible: true, gate: 'scripts/gate' })
+      decideWorkerCheckEligibility({
+        authenticated: true,
+        writer: true,
+        workerCheck: ' scripts/gate ',
+      }),
+    ).toEqual({ eligible: true })
     expect(
-      decideGateEligibility({ authenticated: true, writer: false, gate: 'scripts/gate' }),
+      decideWorkerCheckEligibility({
+        authenticated: true,
+        writer: false,
+        workerCheck: 'scripts/gate',
+      }),
     ).toEqual({ eligible: false, message: 'run_check is available only to a writing worker run.' })
-    expect(decideGateEligibility({ authenticated: true, writer: true, gate: null })).toEqual({
+    expect(
+      decideWorkerCheckEligibility({ authenticated: true, writer: true, workerCheck: null }),
+    ).toEqual({
       eligible: false,
       message: "This run's project has no registered workerCheck, so nothing was run.",
     })

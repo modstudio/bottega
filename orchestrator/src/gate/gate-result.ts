@@ -112,7 +112,7 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
     const commit = input.headCommit ? ` for commit ${input.headCommit}` : ''
     return (
       `No finished gate result is recorded${commit}. ` +
-      "The writer's gate and the pre-merge local gate are the proof."
+      'The landing gate recorded for this commit and the pre-merge local gate are the proof.'
     )
   }
   const result = input.result

@@ -207,29 +207,26 @@ export function decideGateExecutionFinalization(input: {
   }
 }
 
-export type GateEligibility =
-  | { eligible: true; gate: string }
-  | { eligible: false; message: string }
+export type WorkerCheckEligibility = { eligible: true } | { eligible: false; message: string }
 
-export function decideGateEligibility(input: {
+export function decideWorkerCheckEligibility(input: {
   authenticated: boolean
   writer: boolean
-  gate: string | null
-}): GateEligibility {
+  workerCheck: string | null
+}): WorkerCheckEligibility {
   if (!input.authenticated) {
     return { eligible: false, message: 'This process is not a recognized orchestrator worker.' }
   }
   if (!input.writer) {
     return { eligible: false, message: 'run_check is available only to a writing worker run.' }
   }
-  const gate = input.gate?.trim()
-  if (!gate) {
+  if (!input.workerCheck?.trim()) {
     return {
       eligible: false,
       message: "This run's project has no registered workerCheck, so nothing was run.",
     }
   }
-  return { eligible: true, gate }
+  return { eligible: true }
 }
 
 export type GateRequestDecision =
