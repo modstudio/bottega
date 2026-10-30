@@ -16,6 +16,12 @@ test('refuses a Bun server without an explicit idle timeout', () => {
   ])
 })
 
+test('refuses a line-broken Bun server without an explicit idle timeout', () => {
+  expect(
+    bunServeTimeoutViolationLines('Bun\n  .serve({ fetch() {} })', 'hub/src/server.ts'),
+  ).toEqual([1])
+})
+
 test('refuses Bun.serve options that cannot be inspected inline', () => {
   expect(
     bunServeTimeoutViolationLines(

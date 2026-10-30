@@ -14,7 +14,7 @@ const SOURCE_FILE = /\.[cm]?[jt]sx?$/
 
 /** Return one-based lines of Bun.serve uses that cannot prove an inline idleTimeout. */
 export function bunServeTimeoutViolationLines(sourceText: string, path: string): number[] {
-  if (!isProductionSourceFile(path.replaceAll('\\', '/')) || !sourceText.includes('Bun.serve')) {
+  if (!isProductionSourceFile(path.replaceAll('\\', '/')) || !/Bun\s*\.\s*serve/.test(sourceText)) {
     return []
   }
   const source = ts.createSourceFile(

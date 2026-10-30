@@ -15,6 +15,7 @@ export const coreModuleSpecs = [
     file: 'orchestrator/src/process-resource-sampler.ts',
     allowed: ['../../shared/process-identity.ts'],
   },
+  { file: 'orchestrator/src/local-listener.ts', allowed: [] },
   { file: 'orchestrator/src/refusal-error.ts', allowed: [] },
   {
     file: 'orchestrator/src/secret-shaped-output.ts',

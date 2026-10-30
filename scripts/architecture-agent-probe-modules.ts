@@ -49,7 +49,7 @@ export const agentProbeModules = [
   module('orchestrator/src/agent/agent-capability-probe-sandbox.ts', [
     '../../../shared/config-directory.ts',
     '../../../shared/git.ts',
-    '../../../shared/local-listener.ts',
+    '../local-listener.ts',
     './agents.ts',
     '../project/projects.ts',
     '../run-owned-paths.ts',
