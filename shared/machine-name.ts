@@ -4,17 +4,20 @@ export const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a le
 export const DISPLAY_NAME_RULE = '1-60 characters'
 
 export function shortNameRefusal(value: string): string | null {
-  return /^[a-z][a-z0-9-]{1,19}$/.test(value)
-    ? null
-    : `short name must be ${SHORT_NAME_RULE}`
+  return /^[a-z][a-z0-9-]{1,19}$/.test(value) ? null : `short name must be ${SHORT_NAME_RULE}`
 }
 
 export function displayNameRefusal(value: string): string | null {
-  return value.length >= 1 && value.length <= 60 ? null : `display name must be ${DISPLAY_NAME_RULE}`
+  return value.length >= 1 && value.length <= 60
+    ? null
+    : `display name must be ${DISPLAY_NAME_RULE}`
 }
 
 export function defaultShortName(hostname: string): string {
-  let value = hostname.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  let value = hostname
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
   if (!/^[a-z]/.test(value)) value = `m-${value}`
   value = value.slice(0, 20).replace(/-+$/g, '')
   return value.length >= 2 ? value : `${value || 'm'}-machine`.slice(0, 20)

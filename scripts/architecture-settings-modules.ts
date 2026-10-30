@@ -53,6 +53,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/machine-config.ts',
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
+    '../record/record-space.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
     '../../../shared/brand.ts',
@@ -67,6 +68,12 @@ export const settingsModules: SettingsModule[] = [
     '../run/run-process.ts',
     '../run/run-subscription-cost.ts',
     './support.ts',
+    './machine-name-options.ts',
+  ]),
+  module('orchestrator/src/commands/machine-name-options.ts', [
+    'node:os',
+    'node:readline/promises',
+    '../../../shared/machine-name.ts',
   ]),
   module('orchestrator/src/commands/settings.ts', [
     '../../../shared/brand.ts',

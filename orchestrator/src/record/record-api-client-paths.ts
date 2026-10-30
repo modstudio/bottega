@@ -77,6 +77,8 @@ export type RecordIdentityAndSpaceMethod =
   | 'listInvitations'
   | 'acceptInvitation'
   | 'inviteMember'
+  | 'renameMachine'
+  | 'retireMachine'
 export type RecordBoardWatchMethod = 'releaseBoardTaskClaims' | 'openBoardStream'
 
 export type ProjectIdentityClient = {

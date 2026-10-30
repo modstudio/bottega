@@ -4,7 +4,6 @@ import { SQL } from 'bun'
 import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { decideMachineNameClaim } from '../../../shared/machine-name.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   contention as contentionRecord,
@@ -27,6 +26,7 @@ import {
 import { run as runRecord } from '../../../shared/record/schema-run.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { refuseHostedUnvoid, VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
+import { upsertHostedMachine } from './machine-name-record.ts'
 import { OutboxRowError, outboxErrorDetail, outboxFailureDisposition } from './outbox-failure.ts'
 import { HostedApiUpgradeRequiredError } from './outbox-held-contract.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
@@ -48,7 +48,6 @@ import type {
 import {
   RecordSyncRequestRefusal,
   recordSyncAuthorizationDecision,
-  recordSyncMachineOwnershipDecision,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
 import { ownedEvidenceLookup } from './record-sync-evidence-lookup.ts'
@@ -137,77 +136,6 @@ async function assertEvidenceReferencesOwned(input: {
       const rows = await tx.unsafe(lookup.text, lookup.values)
       if (rows.length === 0) throw new OutboxRowError(referenceRefusal(reference), 'row-validation')
     }
-  })
-}
-
-async function upsertMachine(
-  postgres: SQL,
-  seenAt: string,
-  identity: { id: string; shortName?: string; displayName?: string; name?: string },
-  principal: RecordPrincipal,
-): Promise<void> {
-  const shortName = identity.shortName ?? identity.name
-  const displayName = identity.displayName ?? identity.name
-  if (!shortName || !displayName) throw new Error('machine sync requires short and display names')
-  await postgres.begin(async (tx) => {
-    await bindPrincipal(tx, principal)
-    const owned = await tx`
-      INSERT INTO machine (id,user_id,name,registered_at,last_seen,short_name,display_name)
-      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${displayName},${seenAt}::timestamptz,
-        ${seenAt}::timestamptz,${shortName},${displayName})
-      ON CONFLICT (id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen,
-        short_name=excluded.short_name,display_name=excluded.display_name
-      WHERE machine.user_id=excluded.user_id
-      RETURNING user_id
-    `
-    if (owned.length === 0) {
-      const owners = await tx`SELECT user_id FROM machine WHERE id=${identity.id}::uuid`
-      const decision = recordSyncMachineOwnershipDecision(
-        identity.id,
-        owners[0]?.user_id == null ? null : String(owners[0].user_id),
-        principal.userId,
-      )
-      if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
-      throw new Error(`machine ownership changed while registering ${identity.id}`)
-    }
-    const rows = await tx`
-      SELECT c.machine_id,c.short_name,m.retired_at
-      FROM machine_name_claim c JOIN machine m ON m.id=c.machine_id
-      WHERE c.space_id=${principal.spaceId}::uuid
-    `
-    let decision = decideMachineNameClaim(
-      rows.map((row) => ({
-        machineId: String(row.machine_id),
-        shortName: String(row.short_name),
-        retired: row.retired_at != null,
-      })),
-      identity.id,
-      shortName,
-    )
-    if (decision.status === 'claim') {
-      const inserted = await tx`
-        INSERT INTO machine_name_claim (space_id,short_name,machine_id,claimed_at)
-        VALUES (${principal.spaceId}::uuid,${shortName},${identity.id}::uuid,${seenAt}::timestamptz)
-        ON CONFLICT (space_id,short_name) DO NOTHING RETURNING machine_id
-      `
-      if (inserted.length === 0) {
-        const holder = await tx`
-          SELECT c.machine_id,c.short_name,m.retired_at
-          FROM machine_name_claim c JOIN machine m ON m.id=c.machine_id
-          WHERE c.space_id=${principal.spaceId}::uuid AND c.short_name=${shortName}
-        `
-        decision = decideMachineNameClaim(
-          holder.map((row) => ({
-            machineId: String(row.machine_id),
-            shortName: String(row.short_name),
-            retired: row.retired_at != null,
-          })),
-          identity.id,
-          shortName,
-        )
-      }
-    }
-    if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
   })
 }
 
@@ -1006,10 +934,16 @@ export async function syncHostedRecord(input: {
   try {
     const activeSpaceId = input.identity.activeSpaceId
     if (!activeSpaceId) throw new Error('record session has no active space')
-    await upsertMachine(postgres, input.request.machine.seenAt, input.request.machine, {
-      userId: input.identity.user.id,
-      spaceId: activeSpaceId,
-    })
+    let machineNameRefusal: string | undefined
+    try {
+      await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
+        userId: input.identity.user.id,
+        spaceId: activeSpaceId,
+      })
+    } catch (error) {
+      if (error instanceof RecordSyncRequestRefusal) machineNameRefusal = error.message
+      else throw error
+    }
     const results: RecordSyncRowResult[] = []
     const projectIds: ProjectResolutionCache = new Map()
     for (const row of input.request.rows) {
@@ -1023,7 +957,7 @@ export async function syncHostedRecord(input: {
         }),
       )
     }
-    return { results }
+    return { results, ...(machineNameRefusal ? { machineNameRefusal } : {}) }
   } finally {
     if (!input.postgres) await postgres.close()
   }

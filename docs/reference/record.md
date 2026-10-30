@@ -413,9 +413,14 @@ manage hosted record spaces
 
 ## bottega record space accept
 
-**Synopsis:** `bottega record space accept <invitation-id>`
+**Synopsis:** `bottega record space accept <invitation-id> [--short-name <name>] [--display-name <name>]`
 
 accept an invitation to a hosted record space
+
+### Options
+
+- `--short-name <name>`: short machine name
+- `--display-name <name>`: display machine name
 
 ### Related
 
@@ -499,9 +504,14 @@ move a registered project to another space
 
 ## bottega record space switch
 
-**Synopsis:** `bottega record space switch <slug-or-id>`
+**Synopsis:** `bottega record space switch <slug-or-id> [--short-name <name>] [--display-name <name>]`
 
 select the active hosted record space
+
+### Options
+
+- `--short-name <name>`: short machine name
+- `--display-name <name>`: display machine name
 
 ### Related
 

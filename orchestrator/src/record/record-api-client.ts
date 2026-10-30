@@ -216,6 +216,12 @@ export type RecordApiClient = ProjectIdentityClient &
       role: 'member' | 'admin' | 'owner'
       organizationId: string
     }): Promise<{ id: string }>
+    renameMachine?(input: {
+      machineId: string
+      shortName?: string
+      displayName?: string
+    }): Promise<{ ok: true }>
+    retireMachine?(shortName: string): Promise<{ machineId: string }>
     putSnapshot(
       kind: SnapshotKind,
       input: { machineId: string; payload: unknown },
@@ -975,6 +981,10 @@ function recordIdentityAndSpaceClient(
         method: 'POST',
         body: JSON.stringify(input),
       }),
+    renameMachine: (input) =>
+      request('/v1/machine/name', { method: 'PUT', body: JSON.stringify(input) }),
+    retireMachine: (shortName) =>
+      request('/v1/machine/retire', { method: 'POST', body: JSON.stringify({ shortName }) }),
   }
 }
 

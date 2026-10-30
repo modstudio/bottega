@@ -569,7 +569,7 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'machine-identity-boundary',
     'orchestrator/src/record/machine-identity.ts',
-    ['node:os', '../../../shared/machine-config.ts'],
+    ['node:os', '../../../shared/machine-config.ts', '../../../shared/machine-name.ts'],
     'Enforce the machine-identity concern boundary.',
   ),
   ...mcpBoundarySpecs,
@@ -827,6 +827,7 @@ export const importBoundaries: ImportBoundary[] = [
     'orchestrator/src/record/record-sync.ts',
     [
       '../../../shared/brand.ts',
+      '../../../shared/machine-config.ts',
       '../../../shared/record-space-membership.ts',
       '../../../shared/record-api-url.ts',
       '../database/db.ts',

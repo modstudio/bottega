@@ -834,13 +834,18 @@ export function storedMachineId(env: ConfigEnvironment = process.env): string | 
 
 export type StoredMachineNames = { shortName: string; displayName: string }
 
-export function storedMachineNames(env: ConfigEnvironment = process.env): StoredMachineNames | null {
+export function storedMachineNames(
+  env: ConfigEnvironment = process.env,
+): StoredMachineNames | null {
   const shortName = readMachineValue('machine.short_name', env)
   const displayName = readMachineValue('machine.display_name', env)
   return shortName && displayName ? { shortName, displayName } : null
 }
 
-export function writeMachineNames(names: StoredMachineNames, env: ConfigEnvironment = process.env): void {
+export function writeMachineNames(
+  names: StoredMachineNames,
+  env: ConfigEnvironment = process.env,
+): void {
   atomicPatch((root) => {
     root.machine = {
       ...((root.machine as Record<string, unknown> | undefined) ?? {}),

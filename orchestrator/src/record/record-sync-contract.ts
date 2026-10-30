@@ -33,4 +33,4 @@ export type RecordSyncRowResult =
   | { id: number; status: 'deferred'; reason: string; spaceId: string }
   | { id: number; status: 'held'; reason: string }
 
-export type RecordSyncResponse = { results: RecordSyncRowResult[] }
+export type RecordSyncResponse = { results: RecordSyncRowResult[]; machineNameRefusal?: string }

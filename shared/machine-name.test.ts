@@ -15,7 +15,7 @@ test('validates machine names in both directions', () => {
   expect(displayNameRefusal('x'.repeat(61))).not.toBeNull()
 })
 
-test('normalises hostnames and bounds their length', () => {
+test('normalizes hostnames and bounds their length', () => {
   expect(defaultShortName('Office Mac.local')).toBe('office-mac-local')
   expect(defaultShortName('123_box')).toBe('m-123-box')
   expect(defaultShortName('This-is-a-very-long-machine-hostname')).toBe('this-is-a-very-long')

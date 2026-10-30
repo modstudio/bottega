@@ -29,6 +29,7 @@ import { pushCataloguesCommand } from '../record/record-push-catalogues.ts'
 import { pushDocsCommand } from '../record/record-push-docs.ts'
 import { useHostedRecord } from '../record/record-use.ts'
 import { requireHostedRecord } from '../record/record-write-authority.ts'
+import { requestedMachineNames } from './machine-name-options.ts'
 import { log } from './support.ts'
 
 const presentation = { log }
@@ -175,9 +176,11 @@ function registerSpaceCommands(record: Command): void {
     .command('switch')
     .description('select the active hosted record space')
     .argument('<slug-or-id>')
-    .action((value) =>
-      hostedCommand(`${PLATFORM_SLUG} record space switch`, () =>
-        recordSpaceSwitchCommand(String(value), presentation),
+    .option('--short-name <name>', 'short machine name')
+    .option('--display-name <name>', 'display machine name')
+    .action((value, options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space switch`, async () =>
+        recordSpaceSwitchCommand(String(value), presentation, await requestedMachineNames(options)),
       ),
     )
   space
@@ -202,9 +205,11 @@ function registerSpaceCommands(record: Command): void {
     .command('accept')
     .description('accept an invitation to a hosted record space')
     .argument('<invitation-id>')
-    .action((value) =>
-      hostedCommand(`${PLATFORM_SLUG} record space accept`, () =>
-        recordSpaceAcceptCommand(String(value), presentation),
+    .option('--short-name <name>', 'short machine name')
+    .option('--display-name <name>', 'display machine name')
+    .action((value, options) =>
+      hostedCommand(`${PLATFORM_SLUG} record space accept`, async () =>
+        recordSpaceAcceptCommand(String(value), presentation, await requestedMachineNames(options)),
       ),
     )
   space

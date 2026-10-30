@@ -198,15 +198,18 @@ export const machineNameClaim = pgTable.withRLS(
   {
     spaceId: spaceIdentity(),
     shortName: text('short_name').notNull(),
-    machineId: uuid('machine_id').notNull().references(() => machine.id),
+    machineId: uuid('machine_id')
+      .notNull()
+      .references(() => machine.id),
     claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull(),
   },
   (table) => {
-    const [selectPolicy, insertPolicy] = tenantPolicies(
-      'machine_name_claim',
-      table.spaceId,
-    )
-    return [unique('machine_name_claim_space_short_name_unique').on(table.spaceId, table.shortName), selectPolicy!, insertPolicy!]
+    const [selectPolicy, insertPolicy] = tenantPolicies('machine_name_claim', table.spaceId)
+    return [
+      unique('machine_name_claim_space_short_name_unique').on(table.spaceId, table.shortName),
+      selectPolicy!,
+      insertPolicy!,
+    ]
   },
 )
 

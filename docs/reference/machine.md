@@ -218,13 +218,15 @@ display help for command
 
 ## bottega machine config machine init
 
-**Synopsis:** `bottega machine config machine init [--label <label>]`
+**Synopsis:** `bottega machine config machine init [--label <label>] [--short-name <name>] [--display-name <name>]`
 
 create this machine encryption identity
 
 ### Options
 
 - `--label <label>`: label stored for this machine identity
+- `--short-name <name>`: short machine name
+- `--display-name <name>`: display machine name
 
 ### Related
 

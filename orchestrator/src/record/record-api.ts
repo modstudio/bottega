@@ -24,6 +24,7 @@ import {
   registerRecordInvitationRoute,
 } from './record-api-invitations.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
+import { type RecordMachineRouteDeps, registerRecordMachineRoutes } from './record-api-machine.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
@@ -93,168 +94,169 @@ type Deps = RecordSubjectRouteDeps &
   RecordWorkflowRouteDeps &
   RecordSettingsRouteDeps &
   RecordApiDeps
-type RecordApiDeps = RecordInvitationRouteDeps & {
-  clientAddresses: RecordClientAddresses
-  recordUrl: string
-  allowedOrigins?: string[]
-  auth: { handler(request: Request): Response | Promise<Response> }
-  readSession(headers: Headers): Promise<RecordIdentity | null>
-  readHealth(): Promise<{ ok: boolean; migrations: number }>
-  readCommit(): string | undefined
-  setActiveSpace(headers: Headers, spaceId: string): Promise<void>
-  readRuns(
-    input: Tenant & {
-      limit: number
-      before: RecordCursor | null
-      project?: string
-      agent?: string
-      job?: string
-      status?: string
-    },
-  ): Promise<RecordRun[]>
-  readRunsWindow(
-    input: Tenant & Omit<RecordRunsWindowInput, keyof Tenant>,
-  ): Promise<RecordRunsWindow>
-  readRun(input: Tenant & { id: string }): Promise<RecordRunDetail | null>
-  readReviews(
-    input: Tenant & { limit: number; before: RecordCursor | null },
-  ): Promise<Record<string, unknown>[]>
-  readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
-  readProjects(input: Tenant): Promise<RecordProject[]>
-  upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
-  retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
-  listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
-  listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
-  readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
-  searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
-  searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
-  readDoc(input: Tenant & { id: string; audience?: DocAudience }): Promise<RecordDoc | null>
-  listDocRevisions(
-    input: Tenant & { id: string; audience?: DocAudience },
-  ): Promise<RecordDocRevision[] | null>
-  upsertDoc(
-    input: Tenant & {
-      scope: string
-      subject: string | null
-      slug: string
-      title: string
-      body: string
-      delivery?: 'inject' | 'demand'
-      projectName?: string | null
-      reason: string
-      author: string
-      sessionId?: string | null
-      forceInject?: string
-      op?: RecordDocRevision['op']
-      at?: string
-      id?: string
-      revisionId?: string
-      expectedRevision?: string
-      generator?: DocGenerator
-    },
-  ): Promise<{ id: string; revisionId: string; writeWarnings?: string[] }>
-  reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
-  importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
-  importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
-  deleteDoc(
-    input: Tenant & z.infer<typeof docWriteContextSchema> & { id: string },
-  ): Promise<{ id: string; revisionId: string }>
-  consumeDoc(
-    input: Parameters<RecordApiDeps['deleteDoc']>[0],
-  ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
-  restoreDoc(
-    input: Tenant & {
-      id: string
-      revisionId: string
-      reason: string
-      author: string
-      sessionId?: string | null
-      expectedRevision?: string
-    },
-  ): Promise<{ id: string; revisionId: string }>
-  renameDocSubject(
-    input: Tenant & { from: string; to: string; count: number },
-  ): Promise<{ docs: number; revisions: number }>
-  countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
-  upsertScore(
-    input: Tenant &
-      Omit<VerdictInput, 'scoredBy'> & {
-        id: string
-        scoredBy: string
+type RecordApiDeps = RecordInvitationRouteDeps &
+  RecordMachineRouteDeps & {
+    clientAddresses: RecordClientAddresses
+    recordUrl: string
+    allowedOrigins?: string[]
+    auth: { handler(request: Request): Response | Promise<Response> }
+    readSession(headers: Headers): Promise<RecordIdentity | null>
+    readHealth(): Promise<{ ok: boolean; migrations: number }>
+    readCommit(): string | undefined
+    setActiveSpace(headers: Headers, spaceId: string): Promise<void>
+    readRuns(
+      input: Tenant & {
+        limit: number
+        before: RecordCursor | null
+        project?: string
+        agent?: string
+        job?: string
+        status?: string
       },
-  ): Promise<void>
-  voidRun(input: Tenant & { id: string; reason: string }): Promise<void>
-  unvoidRun(input: Tenant & { id: string; note: string }): Promise<void>
-  listScores(
-    input: Tenant & {
-      updatedSince?: string
-      limit: number
-      cursor: RecordCursor | null
-    },
-  ): Promise<RecordScore[]>
-  countScores(input: Tenant): Promise<{ scores: number; voids: number }>
-  upsertSnapshot(
-    input: Tenant & { kind: SnapshotKind; machineId: string; payload: unknown },
-  ): Promise<{ takenAt: string }>
-  listSnapshots(input: Tenant): Promise<RecordSnapshot[]>
-  listConfigEntries(input: Tenant & { environment?: string }): Promise<ConfigEntry[]>
-  getConfigEntry(
-    input: Tenant & { key: string; environment: string; scope: ConfigScope },
-  ): Promise<ConfigEntry | null>
-  putConfigEntry(
-    input: Tenant & {
-      key: string
-      environment: string
-      scope: ConfigScope
-      value: string
-      expectedRowVersion: number | null
-    },
-  ): Promise<ConfigEntry>
-  deleteConfigEntry(
-    input: Tenant & {
-      key: string
-      environment: string
-      scope: ConfigScope
-      expectedRowVersion: number
-    },
-  ): Promise<void>
-  listConfigSecrets(input: Tenant & { environment?: string }): Promise<ConfigSecretMetadata[]>
-  getConfigSecret(
-    input: Tenant & { key: string; environment: string; scope: ConfigScope },
-  ): Promise<ConfigSecret | null>
-  putConfigSecret(
-    input: Tenant & {
-      key: string
-      environment: string
-      scope: ConfigScope
-      dekId: string
-      envelope: Uint8Array
-      expectedRowVersion: number | null
-    },
-  ): Promise<ConfigSecretMetadata>
-  deleteConfigSecret(
-    input: Tenant & {
-      key: string
-      environment: string
-      scope: ConfigScope
-      expectedRowVersion: number
-    },
-  ): Promise<void>
-  currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
-  listDataKeys(input: Tenant): Promise<DataKey[]>
-  getDataKey(input: Tenant & { dekId: string; recipientKeyId: string }): Promise<DataKey | null>
-  createDataKey(
-    input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
-  ): Promise<{ id: string; version: number }>
-  addDataKeyWraps(input: Tenant & { dekId: string; wraps: ConfigWrapInput[] }): Promise<void>
-  retireDataKey(input: Tenant & { dekId: string }): Promise<void>
-  deleteDataKeyWraps(input: Tenant & { recipientKeyId: string }): Promise<void>
-  listMachineKeys(input: Tenant): Promise<MachineKey[]>
-  registerMachineKey(
-    input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
-  ): Promise<MachineKey>
-  revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
-} & RecordBoardDeps
+    ): Promise<RecordRun[]>
+    readRunsWindow(
+      input: Tenant & Omit<RecordRunsWindowInput, keyof Tenant>,
+    ): Promise<RecordRunsWindow>
+    readRun(input: Tenant & { id: string }): Promise<RecordRunDetail | null>
+    readReviews(
+      input: Tenant & { limit: number; before: RecordCursor | null },
+    ): Promise<Record<string, unknown>[]>
+    readReview(input: Tenant & { id: string }): Promise<Record<string, unknown> | null>
+    readProjects(input: Tenant): Promise<RecordProject[]>
+    upsertProject(input: Tenant & RecordProjectUpsertInput): Promise<{ id: string; name: string }>
+    retireProject(input: Tenant & { id: string }): Promise<{ name: string }>
+    listDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]>
+    listPublicDocs(input: { url: string }): Promise<PublicRecordDocTreeItem[]>
+    readPublicDoc(input: { url: string; id: string }): Promise<PublicRecordDoc | null>
+    searchPublicDocs(input: { url: string; query: string }): Promise<RecordDocSearchMatch[]>
+    searchDocs(input: Tenant & RecordDocSearchInput): Promise<RecordDocSearchMatch[]>
+    readDoc(input: Tenant & { id: string; audience?: DocAudience }): Promise<RecordDoc | null>
+    listDocRevisions(
+      input: Tenant & { id: string; audience?: DocAudience },
+    ): Promise<RecordDocRevision[] | null>
+    upsertDoc(
+      input: Tenant & {
+        scope: string
+        subject: string | null
+        slug: string
+        title: string
+        body: string
+        delivery?: 'inject' | 'demand'
+        projectName?: string | null
+        reason: string
+        author: string
+        sessionId?: string | null
+        forceInject?: string
+        op?: RecordDocRevision['op']
+        at?: string
+        id?: string
+        revisionId?: string
+        expectedRevision?: string
+        generator?: DocGenerator
+      },
+    ): Promise<{ id: string; revisionId: string; writeWarnings?: string[] }>
+    reorderDocs(input: Tenant & RecordDocOrderInput): Promise<{ orderedIds: string[] }>
+    importDoc(input: Tenant & RecordDocImportInput): Promise<{ id: string; revisionIds: string[] }>
+    importCanon(input: Tenant & RecordCanonImportInput): Promise<RecordCanonImportResult>
+    deleteDoc(
+      input: Tenant & z.infer<typeof docWriteContextSchema> & { id: string },
+    ): Promise<{ id: string; revisionId: string }>
+    consumeDoc(
+      input: Parameters<RecordApiDeps['deleteDoc']>[0],
+    ): Promise<{ id: string; revisionId: string; alreadyConsumed: boolean }>
+    restoreDoc(
+      input: Tenant & {
+        id: string
+        revisionId: string
+        reason: string
+        author: string
+        sessionId?: string | null
+        expectedRevision?: string
+      },
+    ): Promise<{ id: string; revisionId: string }>
+    renameDocSubject(
+      input: Tenant & { from: string; to: string; count: number },
+    ): Promise<{ docs: number; revisions: number }>
+    countDocs(input: Tenant): Promise<{ docs: number; revisions: number }>
+    upsertScore(
+      input: Tenant &
+        Omit<VerdictInput, 'scoredBy'> & {
+          id: string
+          scoredBy: string
+        },
+    ): Promise<void>
+    voidRun(input: Tenant & { id: string; reason: string }): Promise<void>
+    unvoidRun(input: Tenant & { id: string; note: string }): Promise<void>
+    listScores(
+      input: Tenant & {
+        updatedSince?: string
+        limit: number
+        cursor: RecordCursor | null
+      },
+    ): Promise<RecordScore[]>
+    countScores(input: Tenant): Promise<{ scores: number; voids: number }>
+    upsertSnapshot(
+      input: Tenant & { kind: SnapshotKind; machineId: string; payload: unknown },
+    ): Promise<{ takenAt: string }>
+    listSnapshots(input: Tenant): Promise<RecordSnapshot[]>
+    listConfigEntries(input: Tenant & { environment?: string }): Promise<ConfigEntry[]>
+    getConfigEntry(
+      input: Tenant & { key: string; environment: string; scope: ConfigScope },
+    ): Promise<ConfigEntry | null>
+    putConfigEntry(
+      input: Tenant & {
+        key: string
+        environment: string
+        scope: ConfigScope
+        value: string
+        expectedRowVersion: number | null
+      },
+    ): Promise<ConfigEntry>
+    deleteConfigEntry(
+      input: Tenant & {
+        key: string
+        environment: string
+        scope: ConfigScope
+        expectedRowVersion: number
+      },
+    ): Promise<void>
+    listConfigSecrets(input: Tenant & { environment?: string }): Promise<ConfigSecretMetadata[]>
+    getConfigSecret(
+      input: Tenant & { key: string; environment: string; scope: ConfigScope },
+    ): Promise<ConfigSecret | null>
+    putConfigSecret(
+      input: Tenant & {
+        key: string
+        environment: string
+        scope: ConfigScope
+        dekId: string
+        envelope: Uint8Array
+        expectedRowVersion: number | null
+      },
+    ): Promise<ConfigSecretMetadata>
+    deleteConfigSecret(
+      input: Tenant & {
+        key: string
+        environment: string
+        scope: ConfigScope
+        expectedRowVersion: number
+      },
+    ): Promise<void>
+    currentDataKey(input: Tenant & { recipientKeyId: string }): Promise<DataKey | null>
+    listDataKeys(input: Tenant): Promise<DataKey[]>
+    getDataKey(input: Tenant & { dekId: string; recipientKeyId: string }): Promise<DataKey | null>
+    createDataKey(
+      input: Tenant & { dekId: string; version: number; wraps: ConfigWrapInput[] },
+    ): Promise<{ id: string; version: number }>
+    addDataKeyWraps(input: Tenant & { dekId: string; wraps: ConfigWrapInput[] }): Promise<void>
+    retireDataKey(input: Tenant & { dekId: string }): Promise<void>
+    deleteDataKeyWraps(input: Tenant & { recipientKeyId: string }): Promise<void>
+    listMachineKeys(input: Tenant): Promise<MachineKey[]>
+    registerMachineKey(
+      input: Tenant & { keyId: string; publicKey: Uint8Array; label: string },
+    ): Promise<MachineKey>
+    revokeMachineKey(input: Tenant & { keyId: string }): Promise<void>
+  } & RecordBoardDeps
 
 const limitSchema = z.coerce.number().int().min(1).max(100).default(20)
 const filterSchema = z.string().min(1).optional()
@@ -328,6 +330,7 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
   app.get('/v1/whoami', (context) => {
     return context.json(context.get('identity'))
   })
+  registerRecordMachineRoutes(app, deps)
   registerSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {

@@ -2,6 +2,7 @@
 /** Batches local outbox rows for the hosted API and applies authoritative per-row results. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
 import {
   parseRecordSpaceMemberships,
@@ -504,24 +505,27 @@ async function sendSyncBatch(input: {
   readOnlyDeferred: Map<string, number>
   held: Map<string, HeldRecordSyncRows>
   now: () => string
-}): Promise<{ pushed: number; failed: number }> {
+}): Promise<{ pushed: number; failed: number; machineNameRefusal?: string }> {
   let response: RecordSyncResponse
   try {
     response = await input.client.sync!(input.batch.request)
   } catch (error) {
     syncRouteError(error)
   }
-  return applyRecordSyncBatchResults({
-    local: input.local,
-    batch: input.batch.request.rows,
-    localRows: input.batch.localRows,
-    dependencies: input.batch.dependencies,
-    response,
-    attempted: input.attempted,
-    readOnlyDeferred: input.readOnlyDeferred,
-    held: input.held,
-    now: input.now,
-  })
+  return {
+    ...applyRecordSyncBatchResults({
+      local: input.local,
+      batch: input.batch.request.rows,
+      localRows: input.batch.localRows,
+      dependencies: input.batch.dependencies,
+      response,
+      attempted: input.attempted,
+      readOnlyDeferred: input.readOnlyDeferred,
+      held: input.held,
+      now: input.now,
+    }),
+    ...(response.machineNameRefusal ? { machineNameRefusal: response.machineNameRefusal } : {}),
+  }
 }
 
 async function ensureActiveSpaceBuiltIns(
@@ -542,6 +546,7 @@ function completedSyncResult(input: {
   quarantinedParentHolds: QuarantinedParentHoldAccumulator
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
+  machineNameRefusal?: string
 }): RecordSyncResult {
   return {
     pushed: input.pushed,
@@ -550,6 +555,7 @@ function completedSyncResult(input: {
     configured: true,
     quarantined: quarantinedOutboxRows(input.local),
     blocked: input.blocked,
+    ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
     ...(input.held.size ? { held: [...input.held.values()] } : {}),
     ...quarantinedParentHoldResult(input.quarantinedParentHolds),
     ...(input.readOnlyDeferred.size
@@ -562,6 +568,22 @@ function completedSyncResult(input: {
       : {}),
     ...(input.backfill ? { backfill: input.backfill } : {}),
   }
+}
+
+function cacheFirstSyncedMachineNames(
+  options: RecordSyncOptions,
+  identity: { shortName?: string; displayName?: string },
+  refusal?: string,
+): void {
+  if (
+    options.identity ||
+    refusal ||
+    storedMachineNames() ||
+    !identity.shortName ||
+    !identity.displayName
+  )
+    return
+  writeMachineNames({ shortName: identity.shortName, displayName: identity.displayName })
 }
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
@@ -603,6 +625,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const attempted = new Set<number>()
   const candidates = preparePendingRows(writableLocal)
   let sentBatch = false
+  let machineNameRefusal: string | undefined
   for (;;) {
     const batch = nextBatch({
       local: writableLocal,
@@ -629,8 +652,10 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     sentBatch = true
     pushed += applied.pushed
     failed += applied.failed
+    machineNameRefusal ??= applied.machineNameRefusal
     if (!batch.request.rows.length) break
   }
+  cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
   if (!options.client) await pullRecordCache(writableLocal)
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
@@ -642,5 +667,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     quarantinedParentHolds,
     readOnlyDeferred,
     backfill,
+    machineNameRefusal,
   })
 }
