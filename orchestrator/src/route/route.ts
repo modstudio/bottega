@@ -762,6 +762,9 @@ function admittedCandidates(
   const excluded = candidates
     .filter((candidate) => !candidate.eligible)
     .map((candidate) => `${candidate.agent}: ${candidate.why}`)
+  const undeclaredAgents = candidates
+    .filter((candidate) => candidate.declared !== null && !candidate.declared.includes(jobName))
+    .map((candidate) => candidate.agent)
   if (!eligible.length) {
     const capacityBlocked = candidates.filter(
       (candidate) =>
@@ -774,7 +777,14 @@ function admittedCandidates(
         `waiting for capacity: ${capacityBlocked.map(capacityRefusal).join('; ')}`,
         capacityCounts(capacityBlocked),
       )
-    throw new RoutingRefusalError(noEligibleAgentRefusal(jobName, job(jobName).needs, excluded))
+    throw new RoutingRefusalError(
+      noEligibleAgentRefusal({
+        jobName,
+        capabilities: job(jobName).needs,
+        excluded,
+        undeclaredAgents,
+      }),
+    )
   }
   const constrained = eligible.filter(
     (candidate) =>

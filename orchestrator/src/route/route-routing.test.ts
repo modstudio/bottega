@@ -18,6 +18,7 @@ import { PROMPT_SIZE_BOUNDARY, promptSizeBucket } from './prompt-size-bucket.ts'
 import { candidates, EVIDENCE_WINDOW, evidenceFor, pick, scoreboard } from './route.ts'
 import { meteredRouteEligibility } from './route-metered-policy.ts'
 import { MIN_SAMPLE } from './route-selection.ts'
+import { RoutingRefusalError } from './routing-refusal.ts'
 import { trainingDataEligibility } from './training-data-eligibility.ts'
 
 beforeEach(() => seedNeutralCodexQuotaReading())
@@ -414,6 +415,74 @@ test('only a named ACP agent declared for fix is eligible for fix', () => {
   }
 })
 
+test('an enabled ACP agent declared for diagnose is routed when no CLI agent is eligible', () => {
+  const name = 'codex'
+  const rows = db()
+    .query('SELECT name,enabled,disabled_reason,jobs,transport,probed_at FROM agent ORDER BY name')
+    .all() as {
+    name: string
+    enabled: number
+    disabled_reason: string | null
+    jobs: string | null
+    transport: string
+    probed_at: string | null
+  }[]
+  try {
+    db()
+      .query("UPDATE agent SET enabled=0,disabled_reason='disabled for ACP diagnose routing test'")
+      .run()
+    db()
+      .query(
+        "UPDATE agent SET enabled=1,disabled_reason=NULL,jobs=?,transport='acp',probed_at=? WHERE name=?",
+      )
+      .run(JSON.stringify(['diagnose']), new Date().toISOString(), name)
+    refreshAgents()
+
+    expect(pick('diagnose')).toMatchObject({ agent: name })
+  } finally {
+    const restore = db().query(
+      'UPDATE agent SET enabled=?,disabled_reason=?,jobs=?,transport=?,probed_at=? WHERE name=?',
+    )
+    for (const row of rows) {
+      restore.run(
+        row.enabled,
+        row.disabled_reason,
+        row.jobs,
+        row.transport,
+        row.probed_at,
+        row.name,
+      )
+    }
+    refreshAgents()
+  }
+})
+
+test('a routing refusal remedies agents that do not declare the requested job', () => {
+  const rows = db().query('SELECT name,jobs FROM agent ORDER BY name').all() as {
+    name: string
+    jobs: string | null
+  }[]
+  try {
+    db().query('UPDATE agent SET jobs=?').run(JSON.stringify([]))
+    refreshAgents()
+
+    let refusal: unknown
+    try {
+      pick('diagnose')
+    } catch (error) {
+      refusal = error
+    }
+    expect(refusal).toBeInstanceOf(RoutingRefusalError)
+    expect((refusal as Error).message).toContain(
+      `${PLATFORM_SLUG} agent set <agent> --jobs <current jobs and diagnose, comma-separated>, then ${PLATFORM_SLUG} agent probe <agent> if its last probe did not cover diagnose`,
+    )
+  } finally {
+    const restore = db().query('UPDATE agent SET jobs=? WHERE name=?')
+    for (const row of rows) restore.run(row.jobs, row.name)
+    refreshAgents()
+  }
+})
+
 test('the registration probe gates inline and repository jobs', () => {
   const original = db()
     .query("SELECT caps, probed_at, probe_result FROM agent WHERE name = 'codex'")
@@ -556,7 +625,7 @@ test('a no-agent refusal lists every exclusion in routing order with its remedy'
     expect(message).toContain(`run ${PLATFORM_SLUG} agent probe codex`)
     expect(message).toContain('disabled for routing refusal test')
     expect(message).toContain(
-      `remedy: register and probe an agent with ${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe, or switch implement work to the harness with ${PLATFORM_SLUG} machine config set --machine delegation.implement harness`,
+      `remedy: register and probe an agent with ${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe; or switch repository-writing jobs to the harness with ${PLATFORM_SLUG} machine config set --machine delegation.implement harness`,
     )
   } finally {
     const restore = db().query(

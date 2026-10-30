@@ -220,7 +220,7 @@ describe('ACP transport selection', () => {
     expect(() => resolveTransportName('grpc')).toThrow('unknown transport')
   })
 
-  test('the pilot allow-list is the read-only jobs, mcp-query among them', () => {
+  test('the pilot allow-list is the read-only jobs, mcp-query and diagnose among them', () => {
     expect(isAcpPilotJob('understand')).toBe(true)
     expect(isAcpPilotJob('file-question')).toBe(true)
     expect(isAcpPilotJob('canon-lookup')).toBe(true)
@@ -228,7 +228,7 @@ describe('ACP transport selection', () => {
     expect(isAcpPilotJob('summarize')).toBe(true)
     expect(isAcpPilotJob('mcp-query')).toBe(true)
     expect(isAcpPilotJob('implement')).toBe(false)
-    expect(isAcpPilotJob('diagnose')).toBe(false)
+    expect(isAcpPilotJob('diagnose')).toBe(true)
   })
 
   test('writing jobs require an explicitly named ACP agent', () => {

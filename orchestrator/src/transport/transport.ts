@@ -21,6 +21,7 @@ export const ACP_PILOT_TASK = 'DEV-352'
 /** Jobs eligible for automatic ACP routing. */
 const ACP_PILOT_JOBS = [
   'understand',
+  'diagnose',
   'file-question',
   'canon-lookup',
   'verify-claim',
