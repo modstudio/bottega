@@ -13,6 +13,7 @@ const reader: ReaderTreeObservation = {
   readOnly: true,
   dirty: false,
   dirtyDetail: 'clean',
+  shared: true,
 }
 
 test('reader tree health reports dirty sharing and duplicate confined clones', () => {

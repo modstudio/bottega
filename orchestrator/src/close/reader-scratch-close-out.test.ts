@@ -2,8 +2,9 @@ import { afterEach, expect, mock, test } from 'bun:test'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { addRun } from '../../test/fixtures/store.ts'
-import { db } from '../database/db.ts'
+import { db, nowIso } from '../database/db.ts'
 import { git } from '../git/git-environment.ts'
+import { recordCreatedWorktreeClaims } from '../resources/resource-claims.ts'
 import { runArtifactsDir } from '../run/run-artifacts.ts'
 import { closeOutRun } from './close-out.ts'
 import {
@@ -18,6 +19,18 @@ test('dirty shared reader close-out archives only changed paths and names every 
   const fixture = closeOutFixture()
   const sharer = addRun({ agent: 'claude', job: 'review-lens', status: 'failed' })
   try {
+    recordCreatedWorktreeClaims(db(), {
+      rootRunId: fixture.id,
+      runId: fixture.id,
+      projectId: null,
+      owned: true,
+      path: fixture.worktree,
+      head: git(['rev-parse', 'HEAD'], fixture.worktree),
+      sharedReader: true,
+      mintedBranch: null,
+      label: fixture.id,
+      claimedAt: nowIso(),
+    })
     db()
       .query('UPDATE run SET worktree=?,cwd=? WHERE record_id=?')
       .run(fixture.worktree, fixture.worktree, sharer)

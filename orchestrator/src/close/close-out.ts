@@ -19,6 +19,7 @@ import {
   worktreeLeaseName,
 } from '../project/project-lock.ts'
 import {
+  isSharedReaderWorktreeClaim,
   type ResourceClaimState,
   recordRetainedRefClaim,
   sandboxDirectoryRelease,
@@ -430,6 +431,13 @@ function presentTreeOwnershipResult(input: {
   })
 }
 
+function sharedReaderArchiveIdentity(
+  treePath: string,
+): { path: string; sharerRunIds: string[] } | null {
+  if (!isSharedReaderWorktreeClaim(db(), treePath)) return null
+  return { path: treePath, sharerRunIds: recordedWorktreeSharerRunIds(db(), treePath) }
+}
+
 function releasedCloseOut(
   rootRecordId: string,
   treePath: string,
@@ -701,10 +709,7 @@ function attemptCloseOutRun(
               repoRoot,
               baseCommit: readerBaseCommit,
               dryRun: false,
-              shared: (() => {
-                const sharerRunIds = recordedWorktreeSharerRunIds(db(), treePath)
-                return sharerRunIds.length > 1 ? { path: treePath, sharerRunIds } : null
-              })(),
+              shared: sharedReaderArchiveIdentity(treePath),
             })
             if (!scratch.proceed) return scratch.result
             // The coordinator proves its own identity before descendants are signaled.

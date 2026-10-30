@@ -63,11 +63,12 @@ function createReadOnlyWorktreeAt(
   record?: RecordWorktree,
   provision: WorktreeProvision = [],
   provisionTimeoutMs?: number,
+  sharedReader = false,
 ): Worktree {
   mkdirSync(dirname(path), { recursive: true })
   if (existsSync(path))
     throw new Error(`worktree ${path} already exists; run ${runId} would overwrite it`)
-  const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const }
+  const worktree = { path, branch: '', base, repoRoot, source: 'clone' as const, sharedReader }
   try {
     const landingBranch = projectAt(repoRoot)?.settings.trunk?.trim() || null
     const remoteTrackingRefs = landingRemoteTrackingRefs(
@@ -132,6 +133,7 @@ export function resolveSharedReadOnlyWorktree(input: {
           input.record,
           input.provision,
           input.provisionTimeoutMs,
+          true,
         ),
         sharedReader: true,
       },

@@ -7,6 +7,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { realpathOrSpelled } from '../git/checkout-identity.ts'
 import { gitResult } from '../git/git-environment.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
+import { isSharedReaderWorktreeClaim } from '../resources/resource-claims.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
@@ -22,6 +23,7 @@ export type ReaderTreeObservation = {
   readOnly: boolean
   dirty: boolean | null
   dirtyDetail: string | null
+  shared: boolean
 }
 
 export function readerTreeHealthConditions(
@@ -30,7 +32,7 @@ export function readerTreeHealthConditions(
   const conditions: MonitorCondition[] = []
   const byPath = Map.groupBy(observations, (row) => row.worktree)
   for (const [path, rows] of byPath) {
-    if (new Set(rows.map((row) => row.runId)).size < 2) continue
+    if (!rows.some((row) => row.shared)) continue
     const dirty = rows.find((row) => row.dirty === true)
     if (!dirty) continue
     conditions.push({
@@ -98,6 +100,7 @@ export function observeReaderTreeConditions(database: Database): MonitorConditio
       readOnly: isReadOnlyRepositoryJob(row.job),
       dirty: dirty?.dirty ?? null,
       dirtyDetail: dirty?.detail ?? null,
+      shared: isSharedReaderWorktreeClaim(database, row.worktree),
     }
   })
   return readerTreeHealthConditions(observations)

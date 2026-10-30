@@ -18,6 +18,7 @@ export const monitorModules: MonitorModule[] = [
     '../git/checkout-identity.ts',
     '../git/git-environment.ts',
     '../jobs/jobs.ts',
+    '../resources/resource-claims.ts',
     '../worktree/worktree-attribution.ts',
     './monitor-types.ts',
   ]),

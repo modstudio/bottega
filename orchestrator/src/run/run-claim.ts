@@ -616,7 +616,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
       case 'create': {
         // A job that reads the repository must have a worktree, so a repository
         // it cannot be cut from is a hard failure.
-        const tool = worktreeTool
         const repoRoot = requiredRepositoryRoot(callerCwd)
         const toolLifecycle = resumeCreationLifecycle({
           hasCreate: Boolean(worktreeTool?.create),
@@ -624,7 +623,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
           hasRecipePath: Boolean(worktreeTool?.recipePath),
         })
         const resumeCreation = resumeCreationOptions(resumePlan, toolLifecycle)
-        const creationTool = resumeCreationTool(resumeCreation.useCreateTool, tool)
+        const creationTool = resumeCreationTool(resumeCreation.useCreateTool, worktreeTool)
         const recordWorktree = (created: Worktree) => {
           const retryValidation = retryRootTreeValidation({
             kind: opts.resume?.kind ?? null,
@@ -668,6 +667,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
               owned: true,
               path: created.path,
               head: created.base,
+              sharedReader: created.sharedReader === true,
               mintedBranch: created.mintedBranch ?? null,
               label: String(claim.id),
               claimedAt: nowIso(),
