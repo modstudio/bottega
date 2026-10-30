@@ -43,7 +43,6 @@
         "ops/bin/*.sh!",
         "cli/bottega.ts!",
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
-        "scripts/record-jsonb-string-backfill.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
         "scripts/affected-tests.ts!",
