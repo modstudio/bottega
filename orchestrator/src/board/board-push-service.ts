@@ -16,7 +16,14 @@ import {
 } from './board-hosted-cache.ts'
 import { resolveBoardDeliveryIdentifier } from './board-message-identifier.ts'
 import { requireRealSession } from './board-policy.ts'
-import { boardPushDecision, deferredReplySuccessorWarning } from './board-push-policy.ts'
+import {
+  boardPushDecision,
+  deferredReplySuccessorWarning,
+  isWithdrawalDeliveryId,
+  withdrawalDeliveryId,
+  withdrawalDeliveryText,
+  withdrawalPending,
+} from './board-push-policy.ts'
 import {
   type BoardDeliveryPoint,
   noteBoardReachRecordingFailure,
@@ -65,6 +72,113 @@ const receiptAt = (database: Database, table: string, id: string | number, sessi
     delivered_at: string | null
     acknowledged_at: string | null
   } | null) ?? { delivered_at: null, acknowledged_at: null }
+
+type PendingWithdrawal = BoardDelivery & {
+  messageRecordId: string
+  source: 'local' | 'hosted'
+}
+
+function withdrawalWasDelivered(database: Database, session: string, messageId: string): boolean {
+  return Boolean(
+    database
+      .query(
+        `SELECT 1 FROM board_withdrawal_delivery
+         WHERE reader_session=? AND message_record_id=? LIMIT 1`,
+      )
+      .get(session, messageId),
+  )
+}
+
+function withdrawalDelivery(input: {
+  id: string
+  title: string
+  withdrawnAt: string
+  messageRecordId: string
+  source: 'local' | 'hosted'
+}): PendingWithdrawal {
+  return {
+    id: withdrawalDeliveryId(input.id),
+    text: withdrawalDeliveryText(input),
+    requiresAcknowledgement: false,
+    createdAt: input.withdrawnAt,
+    deliveredAt: null,
+    purpose: 'information',
+    messageRecordId: input.messageRecordId,
+    source: input.source,
+  }
+}
+
+function pendingWithdrawals(session: string, database: Database): PendingWithdrawal[] {
+  const local = messageRows(database).flatMap((row) => {
+    const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
+    if (
+      !withdrawalPending({
+        isRoot: row.thread_root_record_id === null,
+        withdrawnReason: row.withdrawn_reason,
+        withdrawnAt: row.withdrawn_at,
+        deliveredAt,
+        authorSession: row.author_session,
+        readerSession: session,
+        alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
+      })
+    )
+      return []
+    return [
+      withdrawalDelivery({
+        id: String(row.number),
+        title: row.title ?? '',
+        withdrawnAt: row.withdrawn_at!,
+        messageRecordId: row.record_id,
+        source: 'local',
+      }),
+    ]
+  })
+  const hosted = cachedRows(database).flatMap(({ message }) => {
+    const deliveredAt = receiptAt(
+      database,
+      'hosted_board_receipt_cache',
+      message.id,
+      session,
+    ).delivered_at
+    if (
+      !withdrawalPending({
+        isRoot: message.threadRootId === null,
+        withdrawnReason: 'author',
+        withdrawnAt: message.withdrawnAt,
+        deliveredAt,
+        authorSession: message.authorSession,
+        readerSession: session,
+        alreadyDelivered: withdrawalWasDelivered(database, session, message.id),
+      })
+    )
+      return []
+    return [
+      withdrawalDelivery({
+        id: message.id,
+        title: message.title ?? '',
+        withdrawnAt: message.withdrawnAt!,
+        messageRecordId: message.id,
+        source: 'hosted',
+      }),
+    ]
+  })
+  return [...local, ...hosted]
+}
+
+function stampPendingWithdrawals(
+  database: Database,
+  session: string,
+  requestedIds: Set<string>,
+  deliveredAt: string,
+): void {
+  const stamp = database.query(
+    `INSERT OR IGNORE INTO board_withdrawal_delivery
+     (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
+  )
+  for (const row of pendingWithdrawals(session, database))
+    if (requestedIds.has(row.id))
+      stamp.run(newRecordId(), session, row.messageRecordId, row.source, deliveredAt)
+}
 
 function localPendingAcknowledgements(
   session: string,
@@ -215,17 +329,27 @@ export async function pendingBoardDelivery(input: DeliveryInput) {
     ...localPendingAcknowledgements(input.session, beganAt, clock, database),
     ...hostedPendingAcknowledgements(input.session, beganAt, clock, database),
   ]
+  const withdrawals = pendingWithdrawals(input.session, database)
+  const withdrawalDeliveries: BoardDelivery[] = withdrawals.map((item) => ({
+    id: item.id,
+    text: item.text,
+    requiresAcknowledgement: item.requiresAcknowledgement,
+    createdAt: item.createdAt,
+    deliveredAt: item.deliveredAt,
+    purpose: item.purpose,
+  }))
   const recentlyInjected = new Set(input.recentlyInjectedIds ?? [])
   const candidates = input.includeAcknowledgementReminders
     ? [
         ...unread,
+        ...withdrawalDeliveries,
         ...pendingAcknowledgements.filter(
           (pending) =>
             !unread.some((message) => message.id === pending.id) &&
             !(pending.deliveredAt && recentlyInjected.has(pending.id)),
         ),
       ]
-    : unread
+    : [...unread, ...withdrawalDeliveries]
   const selected = boundedBoardDelivery(
     input.excludeAcknowledgementRequired
       ? candidates.filter((message) => !message.requiresAcknowledgement)
@@ -262,7 +386,9 @@ export async function markBoardDeliveryDelivered(input: {
   if (input.deliveryPoint && !input.emissionId)
     throw new Error('board delivery measurement requires an emission identity')
   const messages = messageRows(database)
+  const withdrawalIds = new Set(input.ids.filter(isWithdrawalDeliveryId))
   const resolved = input.ids.flatMap((id) => {
+    if (isWithdrawalDeliveryId(id)) return []
     const identifier = resolveBoardDeliveryIdentifier(database, id)
     return identifier ? [identifier] : []
   })
@@ -313,6 +439,7 @@ export async function markBoardDeliveryDelivered(input: {
       }
     }
   writeTransaction(() => {
+    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt)
     const localStamp = database.query(
       `INSERT INTO board_receipt
        (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)

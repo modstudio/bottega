@@ -254,7 +254,9 @@ function retireCandidate(
         .run(at, candidate.recordId)
     else
       database
-        .query('UPDATE board_message SET withdrawn_at=? WHERE record_id=? AND withdrawn_at IS NULL')
+        .query(
+          "UPDATE board_message SET withdrawn_at=?,withdrawn_reason='adopted' WHERE record_id=? AND withdrawn_at IS NULL",
+        )
         .run(at, candidate.recordId)
   }, database)
 }
