@@ -360,12 +360,12 @@ test('hosted withdrawal resolution stays within the gate budget for a large sign
     ackRequired: false,
     ackDeadline: null,
   })
-  for (let index = 0; index < 400; index++) {
+  for (let index = 0; index < 1140; index++) {
     const message = root(index)
     putMessage.run(message.id, message.kind, null, message.revision, JSON.stringify(message))
   }
   const withdrawnAt = new Date(clock).toISOString()
-  const pendingRoot = root(400)
+  const pendingRoot = root(1140)
   const withdrawn = {
     ...pendingRoot,
     title: 'Target: HOLD',
