@@ -33,7 +33,7 @@ class HeartbeatGuardRunIdentityTest(unittest.TestCase):
                 CREATE TABLE board_message (
                   record_id TEXT PRIMARY KEY, number INTEGER, kind TEXT, purpose TEXT,
                   author_session TEXT, title TEXT, expires_at TEXT, withdrawn_at TEXT,
-                  thread_root_record_id TEXT
+                  thread_root_record_id TEXT, created_at TEXT
                 );
                 CREATE TABLE board_receipt (
                   message_record_id TEXT, reader_session TEXT, delivered_at TEXT
@@ -47,10 +47,11 @@ class HeartbeatGuardRunIdentityTest(unittest.TestCase):
                 """
             )
             connection.execute(
-                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     "request-1", 12, "notice", "request", "session",
                     "Need a ruling", "2099-01-15T09:00:00.000Z", None, None,
+                    "2026-10-30T00:00:00.000Z",
                 ),
             )
             connection.commit()

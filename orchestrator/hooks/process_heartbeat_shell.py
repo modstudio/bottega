@@ -153,7 +153,7 @@ class HeartbeatShellProcessTest(GuardedChildTest):
                 CREATE TABLE board_message (
                   record_id TEXT PRIMARY KEY, number INTEGER, kind TEXT, purpose TEXT,
                   author_session TEXT, title TEXT, expires_at TEXT, withdrawn_at TEXT,
-                  thread_root_record_id TEXT
+                  thread_root_record_id TEXT, created_at TEXT
                 );
                 CREATE TABLE board_receipt (
                   message_record_id TEXT, reader_session TEXT, delivered_at TEXT
@@ -167,10 +167,11 @@ class HeartbeatShellProcessTest(GuardedChildTest):
                 """
             )
             connection.execute(
-                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     "root-1", 12, "notice", "request", "fixture-session",
                     "Need a ruling", "2099-01-15T09:00:00.000Z", None, None,
+                    "2026-10-30T00:00:00.000Z",
                 ),
             )
             connection.commit()
@@ -208,10 +209,10 @@ esac
 
             connection = sqlite3.connect(store)
             connection.execute(
-                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     "reply-1", 13, "reply", None, "answering-session",
-                    None, None, None, "root-1",
+                    None, None, None, "root-1", "2027-01-15T08:00:00.000Z",
                 ),
             )
             connection.execute(
