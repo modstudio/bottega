@@ -107,7 +107,9 @@ describe('job contracts are visible before submission', () => {
       'call it once with `affected: true` after your own focused tests',
     )
     expect(WORKER_PREAMBLE).toContain('tests you add or change')
-    expect(WORKER_PREAMBLE).toContain('A test run outside `run_tests` is neither observed nor counted')
+    expect(WORKER_PREAMBLE).toContain(
+      'A test run outside `run_tests` is neither observed nor counted',
+    )
     expect(WORKER_PREAMBLE).toContain('When the `run_check` tool is available')
     expect(WORKER_PREAMBLE).toContain(
       'call it again while its reply says the check is still running',

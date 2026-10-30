@@ -15,7 +15,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: false, passed: null, claimDisagrees: true })
+    ).toEqual({ ran: false, passed: null, claimDisagrees: null })
   })
 
   test('an executed passing focused run establishes the claimed outcome', () => {
@@ -111,7 +111,19 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: false,
       }),
-    ).toEqual({ ran: null, passed: null, claimDisagrees: false })
+    ).toEqual({ ran: null, passed: null, claimDisagrees: null })
+  })
+
+  test('a refused path makes an otherwise passing observation unverified', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [{ passed: true, paths: ['passing.test.ts'] }],
+        gate: { checks: [], latestFinishedExecutionId: null },
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
+        refusedPaths: ['unmatched.test.ts'],
+      }),
+    ).toEqual({ ran: true, passed: null, claimDisagrees: null })
   })
 
   test('reads only started focused executions and unit-test checks from the run gate', () => {

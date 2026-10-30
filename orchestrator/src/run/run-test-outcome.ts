@@ -30,6 +30,7 @@ export function deriveObservedTestOutcome(input: {
   gate: GateTestObservations
   claim: TestOutcomeClaim
   focusedRunnerRegistered: boolean
+  refusedPaths?: readonly string[]
 }): ObservedTestOutcome {
   const latestFocused = new Map<string, FocusedTestExecutionObservation>()
   for (const execution of input.focused) {
@@ -44,7 +45,11 @@ export function deriveObservedTestOutcome(input: {
     return { ran: null, passed: null, claimDisagrees: null }
   }
   const ran = executions.length > 0
-  const passed = ran ? executions.every((execution) => execution.passed) : null
+  const passed = input.refusedPaths?.length
+    ? null
+    : ran
+      ? executions.every((execution) => execution.passed)
+      : null
   const claimedObservation = input.claim?.ran === true || input.claim?.passed != null
   const claimDisagrees =
     claimedObservation && (!ran || passed === null)
@@ -70,6 +75,16 @@ function focusedTestObservations(runId: string): FocusedTestExecutionObservation
       return []
     return [{ passed: event.exitCode === 0 && !event.timedOut, paths: event.paths }]
   })
+}
+
+function focusedTestRefusedPaths(runId: string): string[] {
+  return readEventLog(runEventsPath(runId)).flatMap((event): string[] =>
+    event.type === 'focused_test_refusal' &&
+    Array.isArray(event.paths) &&
+    event.paths.every((path): path is string => typeof path === 'string')
+      ? event.paths
+      : [],
+  )
 }
 
 function gateTestObservations(database: Database, runId: string): GateTestObservations {
@@ -115,5 +130,6 @@ export function observedTestOutcome(
     gate,
     claim,
     focusedRunnerRegistered: hasFocusedTestRunner(settings.focusedTests),
+    refusedPaths: focusedTestRefusedPaths(runId),
   })
 }

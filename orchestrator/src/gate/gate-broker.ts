@@ -105,7 +105,10 @@ function claimPendingGate(runId: string): PendingGate | null {
   })
 }
 
-function gatePlan(runId: string, purpose: 'gate' | 'worker-check'): {
+function gatePlan(
+  runId: string,
+  purpose: 'gate' | 'worker-check',
+): {
   command: string
   worktree: string
   baseCommit: string

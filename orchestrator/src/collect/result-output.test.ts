@@ -11,4 +11,7 @@ test('shows an unavailable runner as unobserved and non-disagreeing', () => {
   expect(observedTestsLine({ ran: null, passed: null, claimDisagrees: 0 })).toBe(
     'tests observed: not observed; tests_claim_disagrees: false',
   )
+  expect(observedTestsLine({ ran: null, passed: null, claimDisagrees: null })).toBe(
+    'tests observed: unverified; tests_claim_disagrees: unverified',
+  )
 })

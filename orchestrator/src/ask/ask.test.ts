@@ -340,7 +340,12 @@ describe('the live ask channel always answers', () => {
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
-      .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ workerCheck: 'bun run check' })) as {
+      .get(
+        'gate-wait-fixture',
+        '/fixture',
+        'bun',
+        JSON.stringify({ workerCheck: 'bun run check' }),
+      ) as {
       id: number
     }
     db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
@@ -475,7 +480,12 @@ describe('the live ask channel always answers', () => {
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
-      .get('gate-abort-fixture', '/fixture', 'bun', JSON.stringify({ workerCheck: 'bun run check' })) as {
+      .get(
+        'gate-abort-fixture',
+        '/fixture',
+        'bun',
+        JSON.stringify({ workerCheck: 'bun run check' }),
+      ) as {
       id: number
     }
     db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)

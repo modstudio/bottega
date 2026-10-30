@@ -49,6 +49,11 @@ type FocusedTestRunLogEvent = {
   logName: string
   logPath: string
 }
+type FocusedTestRefusalRunLogEvent = {
+  ts: string
+  type: 'focused_test_refusal'
+  paths: string[]
+}
 
 type GateLogRunLogEvent = { ts: string; type: 'gate_log'; logPath: string }
 type AskExpectedRunLogEvent = {
@@ -62,6 +67,7 @@ export type ArtifactPathEvent = FocusedTestRunLogEvent | GateLogRunLogEvent
 
 export type RunLogEvent =
   | ArtifactPathEvent
+  | FocusedTestRefusalRunLogEvent
   | { ts: string; type: 'text'; text: string }
   | { ts: string; type: 'warning'; text: string }
   | {
@@ -126,6 +132,7 @@ type PeekEventSummary =
       elapsedMs: number
       logName: string
     }
+  | { type: 'focused_test_refusal'; paths: string[] }
   | { type: 'gate_log' }
 
 export type PeekSummary = {
@@ -690,6 +697,9 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
       elapsedMs: event.elapsedMs,
       logName: event.logName,
     }
+  }
+  if (event.type === 'focused_test_refusal') {
+    return { type: 'focused_test_refusal', paths: event.paths }
   }
   if (event.type === 'gate_log') return { type: 'gate_log' }
   return { type: 'ask_initialized' }

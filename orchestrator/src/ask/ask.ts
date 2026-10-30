@@ -201,6 +201,9 @@ function authenticatedJobNeeds(runId: string, token: string) {
 function checkToolAvailable(runId: string, token: string): boolean {
   return checkEligibility(runId, token).eligible
 }
+function focusedTestToolAvailable(runId: string, token: string): boolean {
+  return Boolean(authenticatedJobNeeds(runId, token)?.writesRepo)
+}
 function gateResultToolAvailable(runId: string, token: string): boolean {
   const needs = authenticatedJobNeeds(runId, token)
   return Boolean(needs?.readsRepo && !needs.writesRepo)
@@ -229,7 +232,8 @@ function latestGateExecution(runId: string): GateExecutionSelection | null {
   return db()
     .query(
       `SELECT record_id,number,requested_at,finished_at FROM gate_execution
-        WHERE run_record_id=? ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
+        WHERE run_record_id=? AND purpose='worker-check'
+        ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
     )
     .get(runId) as GateExecutionSelection | null
 }
@@ -666,6 +670,8 @@ export function createAskMcpServer(
       dependencies: dependencies.gate,
       text,
     })
+  }
+  if (focusedTestToolAvailable(runId, token)) {
     registerFocusedTestTool({ registerTool, runId, token, text })
   }
 

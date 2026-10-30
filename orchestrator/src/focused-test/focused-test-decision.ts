@@ -10,11 +10,16 @@ const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
 
 /** A registered command: fixed executable and argv prefix. */
 type FocusedTestCommand = { command: string; args: string[] }
-export type FocusedTestRunner = FocusedTestCommand
+export type FocusedTestRunner = FocusedTestCommand & {
+  affected?: FocusedTestSelector
+  patterns?: string[]
+}
 /** The command that prints this project's affected test paths for one base commit. */
 export type FocusedTestSelector = FocusedTestCommand
 /** The `focusedTests` object a project's settings declare. */
-export type FocusedTestDeclaration = FocusedTestCommand & { affected?: FocusedTestSelector }
+export type FocusedTestDeclaration =
+  | (FocusedTestCommand & { affected?: FocusedTestSelector })
+  | { runners: FocusedTestRunner[] }
 
 type FocusedTestCommandValidation = {
   command: FocusedTestCommand | null
@@ -22,6 +27,7 @@ type FocusedTestCommandValidation = {
 }
 export type FocusedTestDeclarationValidation = {
   runner: FocusedTestRunner | null
+  runners: FocusedTestRunner[]
   selector: FocusedTestSelector | null
   problems: string[]
 }
@@ -186,43 +192,122 @@ function validateFocusedTestCommand(
 
 /** The runner and selector parts of one `focusedTests` value, validated independently. */
 function focusedTestDeclarationParts(value: unknown): {
-  runner: FocusedTestCommandValidation
+  runners: FocusedTestRunner[]
+  runnerProblems: string[]
   selector: FocusedTestCommandValidation
 } {
   if (value === undefined || value === null) {
     return {
-      runner: { command: null, problems: [] },
+      runners: [],
+      runnerProblems: [],
       selector: { command: null, problems: [] },
     }
   }
   if (typeof value !== 'object' || Array.isArray(value)) {
     const shape = ['focusedTests must be an object']
     return {
-      runner: { command: null, problems: shape },
+      runners: [],
+      runnerProblems: shape,
       selector: { command: null, problems: shape },
     }
   }
   const candidate = value as Record<string, unknown>
+  if (candidate.runners !== undefined) {
+    if (!Array.isArray(candidate.runners) || candidate.runners.length === 0) {
+      return {
+        runners: [],
+        runnerProblems: ['focusedTests.runners must be a non-empty array'],
+        selector: { command: null, problems: [] },
+      }
+    }
+    const declaredRunners = candidate.runners
+    const runners: FocusedTestRunner[] = []
+    const problems: string[] = []
+    const claimedPatterns = new Set<string>()
+    declaredRunners.forEach((entry, index) => {
+      const location = `focusedTests.runners[${index}]`
+      const command = validateFocusedTestCommand(entry, location)
+      problems.push(...command.problems)
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return
+      const declared = entry as Record<string, unknown>
+      const affected = validateFocusedTestCommand(declared.affected, `${location}.affected`)
+      problems.push(...affected.problems)
+      let patterns: string[] | undefined
+      if (declared.patterns !== undefined) {
+        if (
+          !Array.isArray(declared.patterns) ||
+          declared.patterns.length === 0 ||
+          declared.patterns.some((pattern) => typeof pattern !== 'string' || !pattern.trim())
+        ) {
+          problems.push(`${location}.patterns must be a non-empty array of non-empty strings`)
+        } else {
+          patterns = declared.patterns.map((pattern) => String(pattern).trim())
+          for (const pattern of patterns) {
+            if (claimedPatterns.has(pattern)) {
+              problems.push(
+                `focusedTests path pattern ${JSON.stringify(pattern)} is claimed by two runners`,
+              )
+            }
+            claimedPatterns.add(pattern)
+            try {
+              new Bun.Glob(pattern)
+            } catch {
+              problems.push(
+                `${location}.patterns contains invalid pattern ${JSON.stringify(pattern)}`,
+              )
+            }
+          }
+        }
+      } else if (declaredRunners.length > 1) {
+        problems.push(
+          `${location}.patterns is required when focusedTests declares multiple runners`,
+        )
+      }
+      if (command.command && !affected.problems.length) {
+        runners.push({
+          ...command.command,
+          ...(affected.command ? { affected: affected.command } : {}),
+          ...(patterns ? { patterns } : {}),
+        })
+      }
+    })
+    return {
+      runners: problems.length ? [] : runners,
+      runnerProblems: problems,
+      selector: { command: null, problems: [] },
+    }
+  }
+  const legacyRunner = validateFocusedTestCommand(
+    { command: candidate.command, args: candidate.args },
+    'focusedTests',
+  )
+  const legacySelector = validateFocusedTestCommand(candidate.affected, 'focusedTests.affected')
   return {
-    runner: validateFocusedTestCommand(
-      { command: candidate.command, args: candidate.args },
-      'focusedTests',
-    ),
-    selector: validateFocusedTestCommand(candidate.affected, 'focusedTests.affected'),
+    runners: legacyRunner.command
+      ? [
+          {
+            ...legacyRunner.command,
+            ...(legacySelector.command ? { affected: legacySelector.command } : {}),
+          },
+        ]
+      : [],
+    runnerProblems: legacyRunner.problems,
+    selector: legacySelector,
   }
 }
 
 export function validateFocusedTestDeclaration(value: unknown): FocusedTestDeclarationValidation {
   const parts = focusedTestDeclarationParts(value)
   return {
-    runner: parts.runner.command,
+    runner: parts.runners[0] ?? null,
+    runners: parts.runners,
     selector: parts.selector.command,
-    problems: [...new Set([...parts.runner.problems, ...parts.selector.problems])],
+    problems: [...new Set([...parts.runnerProblems, ...parts.selector.problems])],
   }
 }
 
 export function hasFocusedTestRunner(value: unknown): boolean {
-  return validateFocusedTestDeclaration(value).runner !== null
+  return validateFocusedTestDeclaration(value).runners.length > 0
 }
 
 /**
@@ -234,6 +319,7 @@ export function hasFocusedTestRunner(value: unknown): boolean {
  */
 export function declaredFocusedTestCommands(settings: string | null): {
   runner: FocusedTestRunner | null
+  runners: FocusedTestRunner[]
   selector: FocusedTestSelector | null
   selectorProblem: string | null
 } {
@@ -241,14 +327,79 @@ export function declaredFocusedTestCommands(settings: string | null): {
   try {
     parsed = JSON.parse(settings ?? '{}') as { focusedTests?: unknown } | null
   } catch {
-    return { runner: null, selector: null, selectorProblem: null }
+    return { runner: null, runners: [], selector: null, selectorProblem: null }
   }
   const parts = focusedTestDeclarationParts(parsed?.focusedTests)
   return {
-    runner: parts.runner.problems.length ? null : parts.runner.command,
-    selector: parts.selector.problems.length ? null : parts.selector.command,
-    selectorProblem: parts.selector.problems.join('; ') || null,
+    runner: parts.runnerProblems.length ? null : (parts.runners[0] ?? null),
+    runners: parts.runnerProblems.length ? [] : parts.runners,
+    selector: parts.selector.problems.length
+      ? null
+      : parts.runners.length === 1
+        ? (parts.runners[0]?.affected ?? parts.selector.command)
+        : parts.runners.every((runner) => runner.affected)
+          ? (parts.runners[0]?.affected ?? null)
+          : null,
+    selectorProblem:
+      [
+        ...parts.selector.problems,
+        ...(parts.runners.length > 1 && parts.runners.some((runner) => !runner.affected)
+          ? ['every focusedTests.runners entry must declare affected for an affected run']
+          : []),
+      ].join('; ') || null,
   }
+}
+
+export type FocusedTestRunnerGroup = { runner: FocusedTestRunner; paths: string[] }
+export type FocusedTestRunnerSplit =
+  | { kind: 'groups'; groups: FocusedTestRunnerGroup[] }
+  | { kind: 'refuse'; paths: string[]; message: string }
+  | { kind: 'invalid-register'; message: string }
+
+/** Route every selected path to exactly one declared runner. */
+export function splitFocusedTestPaths(
+  runners: readonly FocusedTestRunner[],
+  paths: readonly string[],
+): FocusedTestRunnerSplit {
+  const groups = runners.map((runner) => ({ runner, paths: [] as string[] }))
+  const refused: string[] = []
+  const ambiguous: string[] = []
+  for (const path of paths) {
+    const matches = runners
+      .map((runner, index) => ({ runner, index }))
+      .filter(({ runner }) =>
+        runner.patterns
+          ? runner.patterns.some((pattern) => new Bun.Glob(pattern).match(path))
+          : true,
+      )
+    if (matches.length > 1) {
+      ambiguous.push(path)
+      continue
+    }
+    if (matches.length === 0) {
+      refused.push(path)
+      continue
+    }
+    groups[matches[0]!.index]!.paths.push(path)
+  }
+  if (ambiguous.length) {
+    return {
+      kind: 'invalid-register',
+      message:
+        `focusedTests is invalid: paths ${formatFocusedTestPaths(ambiguous)} match two runners; ` +
+        'make focusedTests.runners patterns disjoint',
+    }
+  }
+  if (refused.length) {
+    return {
+      kind: 'refuse',
+      paths: refused,
+      message:
+        `focused tests refused paths ${formatFocusedTestPaths(refused)}; ` +
+        'each path must match exactly one runner declared in focusedTests.runners',
+    }
+  }
+  return { kind: 'groups', groups: groups.filter((group) => group.paths.length > 0) }
 }
 
 export function parseFocusedTestRequest(value: unknown): FocusedTestRequest {

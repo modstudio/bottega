@@ -39,7 +39,7 @@ test('worker gate input follows the declared git view without hiding tracked cha
   expect(decideWorkerGateInput('committed', true)).toEqual({
     kind: 'refused',
     reason:
-      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+      'worker check refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_check again',
   })
   expect(decideWorkerGateInput('staged', true)).toEqual({ kind: 'synthetic-index' })
 })
@@ -209,16 +209,16 @@ test('broker execution finalizes normal and cancelled runs without losing lifecy
 })
 
 describe('worker gate eligibility', () => {
-  test('requires an authenticated writer with a registered gate', () => {
+  test('requires an authenticated writer with a registered worker check', () => {
     expect(
       decideGateEligibility({ authenticated: true, writer: true, gate: ' scripts/gate ' }),
     ).toEqual({ eligible: true, gate: 'scripts/gate' })
     expect(
       decideGateEligibility({ authenticated: true, writer: false, gate: 'scripts/gate' }),
-    ).toEqual({ eligible: false, message: 'run_gate is available only to a writing worker run.' })
+    ).toEqual({ eligible: false, message: 'run_check is available only to a writing worker run.' })
     expect(decideGateEligibility({ authenticated: true, writer: true, gate: null })).toEqual({
       eligible: false,
-      message: "This run's project has no registered gate, so nothing was run.",
+      message: "This run's project has no registered workerCheck, so nothing was run.",
     })
   })
 })
@@ -230,7 +230,7 @@ test('worker gate requests join, return an undelivered result, or start', () => 
   })
   expect(join).toEqual({ action: 'join', executionRecordId: 'gate-7', executionNumber: 7 })
   expect(formatGateRequestDecision(join)).toBe(
-    'Gate execution 7 was already running; this call waited for the same execution.',
+    'Check execution 7 was already running; this call waited for the same execution.',
   )
   const late = decideGateRequest({
     execution: { recordId: 'gate-8', number: 8, finished: true },
@@ -238,7 +238,7 @@ test('worker gate requests join, return an undelivered result, or start', () => 
   })
   expect(late).toEqual({ action: 'return', executionRecordId: 'gate-8', executionNumber: 8 })
   expect(formatGateRequestDecision(late)).toBe(
-    'Gate execution 8 finished after an earlier run_gate call stopped waiting; returning that result.',
+    'Check execution 8 finished after an earlier run_check call stopped waiting; returning that result.',
   )
   expect(
     decideGateRequest({
@@ -261,8 +261,8 @@ test('worker gate wait is bounded below the harness and gate command ceilings', 
   ).toEqual({
     wait: false,
     message:
-      `The gate is still running after ${RUN_GATE_WAIT_MS}ms. ` +
-      'Call run_gate again to wait for this same execution. ' +
+      `The check is still running after ${RUN_GATE_WAIT_MS}ms. ` +
+      'Call run_check again to wait for this same execution. ' +
       'Do not report done before you have its result.',
   })
   expect(

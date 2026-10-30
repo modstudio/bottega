@@ -103,7 +103,7 @@ export function decideWorkerGateInput(
   return {
     kind: 'refused',
     reason:
-      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+      'worker check refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_check again',
   }
 }
 
@@ -261,7 +261,7 @@ export function decideGateRequest(input: {
 /** Present how a repeated call reached an existing execution. */
 export function formatGateRequestDecision(decision: GateRequestDecision): string | null {
   if (decision.action === 'join') {
-    return `Gate execution ${decision.executionNumber} was already running; this call waited for the same execution.`
+    return `Check execution ${decision.executionNumber} was already running; this call waited for the same execution.`
   }
   if (decision.action === 'return') {
     return `Check execution ${decision.executionNumber} finished after an earlier run_check call stopped waiting; returning that result.`

@@ -38,6 +38,7 @@ import {
   type FocusedTestSelectorOutcome,
   focusedTestInvocation,
   parseFocusedTestRequest,
+  splitFocusedTestPaths,
 } from './focused-test-decision.ts'
 import {
   ensureFocusedTestDirectory,
@@ -88,11 +89,12 @@ function focusedTestPlan(runId: string) {
   const settings = JSON.parse(row.settings ?? '{}') as {
     mainStack?: { consumers?: MainStackConsumer[]; requiredServices?: string[] }
   }
-  const { runner, selector, selectorProblem } = declaredFocusedTestCommands(row.settings)
-  if (!runner) throw new Error(`run ${runId}'s project has no registered focused test runner`)
+  const { runner, runners, selectorProblem } = declaredFocusedTestCommands(row.settings)
+  if (!runner || !runners.length)
+    throw new Error(`run ${runId}'s project has no registered focused test runner`)
   return {
     runner,
-    selector,
+    runners,
     selectorProblem,
     baseCommit: row.base_commit,
     worktree: row.worktree,
@@ -376,22 +378,34 @@ async function selectFocusedTestPaths(input: {
   if (input.plan.selectorProblem) {
     return affected({ kind: 'ill-declared', problem: input.plan.selectorProblem })
   }
-  if (!input.plan.selector) return affected({ kind: 'not-declared' })
+  if (input.plan.runners.some((runner) => !runner.affected))
+    return affected({ kind: 'not-declared' })
   if (!input.plan.baseCommit) return affected({ kind: 'no-base' })
-  const outcome = decideFocusedTestSelectorOutcome({
-    cancelled: input.state.cancelled,
-    outcome: await runFocusedTestSelector({
-      selector: input.plan.selector,
-      baseCommit: input.plan.baseCommit,
-      worktree: input.plan.worktree,
-      environment: input.environment,
-      confinement: input.confinement,
-      state: input.state,
-      record: input.record,
-      stopChild: input.stopChild,
-    }),
-  })
-  return affected(outcome)
+  const selected: string[] = []
+  for (const runner of input.plan.runners) {
+    const outcome = decideFocusedTestSelectorOutcome({
+      cancelled: input.state.cancelled,
+      outcome: await runFocusedTestSelector({
+        selector: runner.affected!,
+        baseCommit: input.plan.baseCommit,
+        worktree: input.plan.worktree,
+        environment: input.environment,
+        confinement: input.confinement,
+        state: input.state,
+        record: input.record,
+        stopChild: input.stopChild,
+      }),
+    })
+    if (outcome.kind !== 'printed') return affected(outcome)
+    const parsed = decideFocusedTestSelection({
+      affected: true,
+      requestedPaths: [],
+      selector: outcome,
+    })
+    if (parsed.kind === 'refuse') return parsed
+    if (parsed.kind === 'run') selected.push(...parsed.paths)
+  }
+  return affected({ kind: 'printed', stdout: [...new Set(selected)].join('\n') })
 }
 
 /**
@@ -407,31 +421,67 @@ async function runFocusedTestSelection(input: {
   record: (chunk: Buffer | string) => void
   stopChild: () => Promise<void>
   progressPath: string
-}): Promise<string[]> {
+}): Promise<{
+  executions: Array<{ paths: string[]; started: boolean; exitCode: number; timedOut: boolean }>
+  refusedPaths: string[]
+}> {
   removeFocusedTestFile(input.progressPath)
   const selection = await selectFocusedTestPaths(input)
   if (selection.kind !== 'run') {
     input.record(`\n${selectionMessage(selection)}\n`)
     if (selection.kind === 'none') input.state.exitCode = 0
-    return input.request.paths
+    return { executions: [], refusedPaths: [] }
   }
   const refusal = unusableSelectedPath({ selection, worktree: input.plan.worktree })
   if (refusal) {
     input.record(`\n${selectionMessage(refusal)}\n`)
-    return input.request.paths
+    return { executions: [], refusedPaths: [] }
   }
   if (selection.note) input.record(`\n${selection.note}\n`)
   validateFocusedTestRunPaths(selection.paths, input.plan.worktree)
-  await runFocusedTestProcess({
-    invocation: focusedTestInvocation(input.plan.runner, selection.paths, input.plan.worktree),
-    worktree: input.plan.worktree,
-    environment: input.environment,
-    confinement: input.confinement,
-    state: input.state,
-    record: input.record,
-    stopChild: input.stopChild,
-  })
-  return selection.paths
+  const split = splitFocusedTestPaths(input.plan.runners, selection.paths)
+  if (split.kind === 'invalid-register') {
+    input.record(`\nfocused tests refused: ${split.message}\n`)
+    return { executions: [], refusedPaths: [] }
+  }
+  if (split.kind === 'refuse') {
+    input.record(`\n${split.message}\n`)
+    return { executions: [], refusedPaths: split.paths }
+  }
+  const executions: Array<{
+    paths: string[]
+    started: boolean
+    exitCode: number
+    timedOut: boolean
+  }> = []
+  let aggregateExit = 0
+  let aggregateTimedOut = false
+  for (const group of split.groups) {
+    input.state.started = false
+    input.state.timedOut = false
+    input.state.exitCode = -1
+    await runFocusedTestProcess({
+      invocation: focusedTestInvocation(group.runner, group.paths, input.plan.worktree),
+      worktree: input.plan.worktree,
+      environment: input.environment,
+      confinement: input.confinement,
+      state: input.state,
+      record: input.record,
+      stopChild: input.stopChild,
+    })
+    executions.push({
+      paths: group.paths,
+      started: input.state.started,
+      exitCode: input.state.exitCode,
+      timedOut: input.state.timedOut,
+    })
+    if (input.state.exitCode !== 0) aggregateExit = input.state.exitCode
+    aggregateTimedOut ||= input.state.timedOut
+  }
+  input.state.exitCode = aggregateExit
+  input.state.timedOut = aggregateTimedOut
+  input.state.started = executions.some((execution) => execution.started)
+  return { executions, refusedPaths: [] }
 }
 
 function focusedTestWaitCallbacks(input: { runId: string; progressPath: string }) {
@@ -450,6 +500,39 @@ type FocusedTestStartInput = {
   registerActive: (terminate: () => Promise<void>) => () => void
   onStart: (() => void) | undefined
   onFinish: (() => void) | undefined
+}
+type FocusedTestExecutionEvent = {
+  paths: string[]
+  started: boolean
+  exitCode: number
+  timedOut: boolean
+}
+
+function recordFocusedTestEvents(input: {
+  runId: string
+  executions: readonly FocusedTestExecutionEvent[]
+  refusedPaths: readonly string[]
+  elapsedMs: number
+  logName: string
+  logPath: string
+}): void {
+  for (const execution of input.executions) {
+    appendRunEvent(input.runId, {
+      ts: nowIso(),
+      type: 'focused_test',
+      ...execution,
+      elapsedMs: input.elapsedMs,
+      logName: input.logName,
+      logPath: input.logPath,
+    })
+  }
+  if (input.refusedPaths.length) {
+    appendRunEvent(input.runId, {
+      ts: nowIso(),
+      type: 'focused_test_refusal',
+      paths: [...input.refusedPaths],
+    })
+  }
 }
 
 function registerFocusedTestExecution(
@@ -512,12 +595,13 @@ function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
       writeSync(fd, bytes)
       outputTail = boundedFocusedTestOutputTail(outputTail + bytes.toString())
     }
-    let eventPaths = input.request.paths
+    let executions: FocusedTestExecutionEvent[] = []
+    let refusedPaths: string[] = []
     try {
       const plan = focusedTestPlan(input.runId)
       ensureFocusedTestMainStack(plan, input.environment)
       const progressPath = join(input.scratchDir, focusedTestProgressFile(input.request.id))
-      eventPaths = await withGateSlot(
+      const selected = await withGateSlot(
         () =>
           runFocusedTestSelection({
             plan,
@@ -534,6 +618,8 @@ function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
           ...focusedTestWaitCallbacks({ runId: input.runId, progressPath }),
         },
       )
+      executions = selected.executions
+      refusedPaths = selected.refusedPaths
     } catch (error) {
       if (error instanceof HostSlotWaitAborted && state.cancelled)
         record(`\n${FOCUSED_TEST_CLOSE_REASON}\n`)
@@ -550,13 +636,10 @@ function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
       outputTail,
     }
     writeResult(input.scratchDir, input.request.id, result)
-    appendRunEvent(input.runId, {
-      ts: nowIso(),
-      type: 'focused_test',
-      paths: eventPaths,
-      started: state.started,
-      exitCode: state.exitCode,
-      timedOut: state.timedOut,
+    recordFocusedTestEvents({
+      runId: input.runId,
+      executions,
+      refusedPaths,
       elapsedMs,
       logName,
       logPath,
