@@ -65,9 +65,9 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
                 CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,
                   delivered_at TEXT,acknowledged_at TEXT);
-                CREATE TABLE board_withdrawal_delivery(reader_session TEXT,
-                  message_record_id TEXT,source TEXT,delivered_at TEXT,
-                  PRIMARY KEY(reader_session,message_record_id));
+                CREATE TABLE board_withdrawal_delivery(record_id TEXT PRIMARY KEY,
+                  reader_session TEXT,message_record_id TEXT,source TEXT,
+                  delivered_at TEXT,UNIQUE(reader_session,message_record_id));
                 CREATE TABLE schema_meta(key TEXT PRIMARY KEY,value TEXT);
                 INSERT INTO schema_meta VALUES
                   ('board_hosted_refresh_at','2026-10-30T12:00:00.000Z');
@@ -85,8 +85,9 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                 candidates, _ = board_interrupt.cheap_state("reader", 300)
                 self.assertIn("withdrawn:7", candidates)
                 connection.execute(
-                    "INSERT INTO board_withdrawal_delivery VALUES (?,?,?,?)",
+                    "INSERT INTO board_withdrawal_delivery VALUES (?,?,?,?,?)",
                     (
+                        "delivery-id",
                         "reader",
                         "message-id",
                         "local",

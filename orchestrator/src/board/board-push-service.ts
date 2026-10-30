@@ -168,11 +168,12 @@ function stampPendingWithdrawals(
   deliveredAt: string,
 ): void {
   const stamp = database.query(
-    `INSERT INTO board_withdrawal_delivery
-     (reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?)`,
+    `INSERT OR IGNORE INTO board_withdrawal_delivery
+     (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
   )
   for (const row of pendingWithdrawals(session, database))
-    if (requestedIds.has(row.id)) stamp.run(session, row.messageRecordId, row.source, deliveredAt)
+    if (requestedIds.has(row.id))
+      stamp.run(newRecordId(), session, row.messageRecordId, row.source, deliveredAt)
 }
 
 function localPendingAcknowledgements(
