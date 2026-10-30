@@ -40,6 +40,7 @@ import { namesSeenAt, probeMcpServer, storedMcpProbe } from '../mcp/mcp-probe.ts
 import type { OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver } from '../process-resource-sampler.ts'
 import { projectAt, projectByName, stackAt } from '../project/projects.ts'
+import { machineId } from '../record/machine-identity.ts'
 import { startedByUserIdForRun } from '../record/record-attribution.ts'
 import { recordSandboxDirectoryClaim } from '../resources/resource-claims.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
@@ -122,7 +123,8 @@ import {
   recordRunStartupFailure,
 } from './run-startup-failure.ts'
 import { admitNewRunReference } from './run-task-reference.ts'
-import { finishRun, type TerminalInput } from './run-terminal.ts'
+import type { TerminalInput } from './run-terminal.ts'
+import { finishRunWithFallback } from './run-terminal-fallback.ts'
 import { resolveRunBound } from './run-timeout.ts'
 import type { RunResult } from './run-types.ts'
 import * as workerHome from './run-worker-home.ts'
@@ -555,6 +557,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     mcpConnection: claimedMcpConnection,
     usingMcp: claimedUsingMcp,
   } = claimedRun
+  const localMachineId = machineId()
   runMigration.enableRunSchemaReload(claim.id)
   outPath = claimedOutputPath
   const initialBoard = await board(claimedBoundPrompt, promptPath, claim.id, resume.isFirstTurn)
@@ -956,65 +959,73 @@ export async function run(opts: RunOptions): Promise<RunResult> {
             confinementEvent,
             preConfinement,
             artifactsPersisted,
-          } = await finishRun({
-            timer,
-            checkpointTimer,
-            resourceObserver,
-            proc,
-            askLoopback,
-            claim,
-            writesJob,
-            worktree,
-            launchKey,
-            failureKind,
-            billingHoldDetail,
-            endpointKey: endpoint.key,
-            scratchDir,
-            gitConfigEnvironment,
-            ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
-            opts,
-            watchedCheckouts,
-            confinementFailures,
-            frozenBefore,
-            callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
-            removeIsolatedCwd,
-            changes,
-            provisionedMcpConfig,
-            started,
-            retargetDiagnostic,
-            error,
-            contract,
-            status,
-            contractObjects,
-            vendorTerminatedStream,
-            acceptedQuestions,
-            requestedJob,
-            checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
-            output,
-            confinementEvent,
-            parsedReply: resolvedDialect.parse(output).reply as TerminalInput['parsedReply'],
-            runProjectName,
-            mcpConnection,
-            mcpMode,
-            declaredDeliverables,
-            mcpSetupHeader,
-            outPath,
-            preConfinement,
-            callerCwd,
-            promptPath,
-            exitCode,
-            vendorTokens,
-            callUsage,
-            costUsd,
-            vendorUsage,
-            quotaReadings,
-            effectiveModel,
-            resolvedSession,
-            name,
-            artifactsPersisted,
-            mcpRuling,
-            workerEvents,
-          }))
+          } = await finishRunWithFallback(
+            () => ({
+              timer,
+              checkpointTimer,
+              resourceObserver,
+              proc,
+              askLoopback,
+              claim,
+              machineId: localMachineId,
+              writesJob,
+              worktree,
+              launchKey,
+              failureKind,
+              billingHoldDetail,
+              endpointKey: endpoint.key,
+              scratchDir,
+              gitConfigEnvironment,
+              ...acpWriter.lifecycleFacts(writingAcp, checkpointContainment, brokerNeedsNetwork),
+              opts,
+              watchedCheckouts,
+              confinementFailures,
+              frozenBefore,
+              callerRemoval: runConfinement.callerRemovalAtRunEnd(db(), callerCheckout, started),
+              removeIsolatedCwd,
+              changes,
+              provisionedMcpConfig,
+              started,
+              retargetDiagnostic,
+              error,
+              contract,
+              status,
+              contractObjects,
+              vendorTerminatedStream,
+              acceptedQuestions,
+              requestedJob,
+              checkReviewedCommit: checksReviewedCommit(Boolean(requestedJob.findings), repoJob),
+              output,
+              confinementEvent,
+              parsedReply: resolvedDialect.parse(output).reply as TerminalInput['parsedReply'],
+              runProjectName,
+              mcpConnection,
+              mcpMode,
+              declaredDeliverables,
+              mcpSetupHeader,
+              outPath,
+              preConfinement,
+              callerCwd,
+              promptPath,
+              exitCode,
+              vendorTokens,
+              callUsage,
+              costUsd,
+              vendorUsage,
+              quotaReadings,
+              effectiveModel,
+              resolvedSession,
+              name,
+              artifactsPersisted,
+              mcpRuling,
+              workerEvents,
+            }),
+            {
+              runId: claim.id,
+              started,
+              machineId: localMachineId,
+            },
+          ))
         } finally {
           runLease?.release()
         }

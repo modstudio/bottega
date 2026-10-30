@@ -8,13 +8,13 @@ import { enqueueRunRecord } from './run-outbox.ts'
 import {
   artifactPersistenceOutcome,
   checkpointTerminalWork,
-  finalizeTerminalChain,
   questionsToInsert,
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
   writeTerminalOperationalState,
 } from './run-terminal.ts'
+import { finalizeTerminalChain } from './run-terminal-chain.ts'
 
 test('a billing terminal outcome durably disables the agent with its operator remedy', () => {
   const runId = addRun({ agent: 'grok', job: 'implement' })

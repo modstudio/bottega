@@ -27,7 +27,6 @@ import {
   billingHoldForFailure,
   type classify,
   type EffectiveBillingKey,
-  FAILS_OVER,
 } from '../failure/failure.ts'
 import { terminateProcessGroup } from '../idle-kill.ts'
 import { isReaderJob, type Job } from '../jobs/jobs.ts'
@@ -36,7 +35,6 @@ import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
 import { finalizeWorkerReply, type OutcomeStatus } from '../outcome.ts'
 import type { RunResourceObserver, RunResourceUsage } from '../process-resource-sampler.ts'
 import { projectByName, projects } from '../project/projects.ts'
-import { machineId } from '../record/machine-identity.ts'
 import { teardownTerminalRunResources } from '../resources/resource-ownership.ts'
 import { cleanReviewEvidence } from '../review/review.ts'
 import { resetSandbox } from '../sandbox/sandbox.ts'
@@ -51,11 +49,6 @@ import {
   latestCheckpoint,
 } from './checkpoint.ts'
 import {
-  closeRunChainQuestions,
-  QUESTION_CLOSE_CHAIN_TERMINAL,
-  retireRunChainQuestionDeliveries,
-} from './question-close.ts'
-import {
   persistRunArtifacts,
   persistTerminalSnapshot,
   runArtifactsDir,
@@ -64,6 +57,7 @@ import {
   terminalRunArtifactPaths,
 } from './run-artifacts.ts'
 import type { RunCallUsage } from './run-call-usage.ts'
+import { markTerminalRecorded } from './run-finish-error.ts'
 import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
@@ -82,6 +76,7 @@ import {
 const TERMINAL_STATUS_SQL = 'SELECT status, failure_kind FROM run WHERE record_id=?'
 
 import { type BlockerRow, blockersToRecord } from './run-terminal-blockers.ts'
+import { finalizeTerminalChain } from './run-terminal-chain.ts'
 import { terminalTurnChanged } from './run-terminal-change.ts'
 import { applyConfinementPrecedence, applyVendorTermination } from './run-terminal-precedence.ts'
 import {
@@ -132,50 +127,6 @@ function writeOperationalState(
     input.billingHoldDetail,
     input.endpointKey,
   )
-}
-
-function closeTerminalQuestions(
-  database: Database,
-  rootId: string,
-  status: string,
-  failureKind: ReturnType<typeof classify> | null,
-): void {
-  if (status === 'asking' || status === 'running') return
-  if (failureKind && FAILS_OVER.includes(failureKind)) return
-  closeRunChainQuestions(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
-}
-
-export function finalizeTerminalChain(
-  database: Database,
-  input: {
-    runId: string
-    parentRunId: string | null
-    status: string
-    failureKind: ReturnType<typeof classify> | null
-    error: string | null
-    record: [machineId: string, finishedAt: string]
-  },
-): void {
-  const rootId = input.parentRunId ?? input.runId
-  if (input.parentRunId !== null && input.status === 'asking') {
-    database
-      .query(
-        `UPDATE run SET status='asking', error=?, failure_kind=NULL
-        WHERE record_id=? AND parent_run_record_id IS NULL AND status NOT IN ('stopped', 'stale')`,
-      )
-      .run(input.error, input.parentRunId)
-  }
-  closeTerminalQuestions(database, rootId, input.status, input.failureKind)
-  if (input.parentRunId !== null) {
-    rollUpRootAndEnqueue(database, input.parentRunId, null, ...input.record)
-  }
-  if (
-    input.status !== 'asking' &&
-    input.status !== 'running' &&
-    !(input.failureKind && FAILS_OVER.includes(input.failureKind))
-  ) {
-    retireRunChainQuestionDeliveries(database, rootId, QUESTION_CLOSE_CHAIN_TERMINAL)
-  }
 }
 
 type TerminalMcpRuling = {
@@ -235,6 +186,7 @@ export type TerminalInput = {
   proc: { pid?: number | null; kill(sig?: number | string): void } | null
   askLoopback: AskLoopback | null
   claim: { id: string; number: number }
+  machineId: string
   writesJob: boolean
   worktree: Worktree | null
   launchKey: string | null
@@ -591,6 +543,97 @@ function terminalConfinementSnapshots(input: TerminalInput) {
   return { after, before: input.frozenBefore, failures: input.confinementFailures }
 }
 
+type RecordedFinishInput = Pick<
+  TerminalResult,
+  | 'status'
+  | 'error'
+  | 'failureKind'
+  | 'changes'
+  | 'output'
+  | 'acceptedQuestions'
+  | 'confinementEvent'
+  | 'preConfinement'
+  | 'artifactsPersisted'
+> & {
+  runId: string
+  recordedFailureKind: string | null
+  name: string
+  started: number
+  confinementFailures: FreezeFailure[]
+  callerCwd: string
+  readerReply: ReaderReply | null
+  worktree: Worktree | null
+  opts: TerminalOptions
+  machineId: string
+}
+
+function persistRecordedArtifacts(input: RecordedFinishInput) {
+  try {
+    persistTerminalArtifacts(input.runId, input.readerReply, input.worktree, input.changes)
+    return input
+  } catch (artifactError) {
+    const persistenceError = `artifact persistence failed for ${runArtifactsDir(input.runId)}: ${String((artifactError as Error)?.message ?? artifactError)}`
+    const outcome = artifactPersistenceOutcome({
+      status: input.status,
+      error: input.error,
+      failureKind: input.failureKind,
+      persistenceError,
+    })
+    recordArtifactPersistenceFailure(db(), {
+      runId: input.runId,
+      parentRunId: claimIdentity(input.opts.resume).parent_run_record_id,
+      error: outcome.error,
+      machineId: input.machineId,
+      finishedAt: nowIso(),
+    })
+    teardownTerminalRunResources(db(), input.runId)
+    console.error(`orch: ${outcome.error}`)
+    return { ...input, ...outcome, artifactsPersisted: false }
+  }
+}
+
+function completeRecordedRun(input: RecordedFinishInput): TerminalResult {
+  try {
+    teardownTerminalRunResources(db(), input.runId)
+    if (input.recordedFailureKind === 'quota' || input.recordedFailureKind === 'timeout') {
+      tryWriteContention({
+        resourceKind: 'vendor',
+        resourceKey: input.name,
+        eventKind: input.recordedFailureKind === 'quota' ? 'refusal' : 'timeout',
+        durationMs: Date.now() - input.started,
+        cause: input.error,
+        runId: input.runId,
+      })
+    } else if (
+      input.recordedFailureKind === 'escaped' ||
+      input.recordedFailureKind === 'confinement_unverified'
+    ) {
+      tryWriteContention({
+        resourceKind: 'main_checkout',
+        resourceKey:
+          input.confinementEvent?.checkout ?? input.confinementFailures[0]?.path ?? input.callerCwd,
+        eventKind: 'invalidation',
+        cause: input.error,
+        runId: input.runId,
+      })
+    }
+    const finished = persistRecordedArtifacts(input)
+    return {
+      status: finished.status,
+      error: finished.error,
+      failureKind: finished.failureKind,
+      changes: finished.changes,
+      output: finished.output,
+      acceptedQuestions: finished.acceptedQuestions,
+      confinementEvent: finished.confinementEvent,
+      preConfinement: finished.preConfinement,
+      artifactsPersisted: finished.artifactsPersisted,
+    }
+  } catch (postTerminalError) {
+    throw markTerminalRecorded(postTerminalError)
+  }
+}
+
 export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   let {
     timer,
@@ -873,7 +916,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   }
   persistTerminalSnapshot(claim.id, terminalSnapshot)
   const provenanceSilent = reviewHidesGap(parsedReview, input, provenanceWrongProjectTool)
-  const localMachineId = machineId()
+  const localMachineId = input.machineId
   const writeTerminalRow = () =>
     writeTransaction(() => {
       const finishedAt = nowIso()
@@ -1022,61 +1065,25 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
   if (!recorded) {
     throw new Error(`run ${claim.id} disappeared before terminalisation`)
   }
-  teardownTerminalRunResources(db(), claim.id)
-  if (recorded.failure_kind === 'quota' || recorded.failure_kind === 'timeout') {
-    tryWriteContention({
-      resourceKind: 'vendor',
-      resourceKey: name,
-      eventKind: recorded.failure_kind === 'quota' ? 'refusal' : 'timeout',
-      durationMs: Date.now() - started,
-      cause: error,
-      runId: claim.id,
-    })
-  } else if (
-    recorded?.failure_kind === 'escaped' ||
-    recorded?.failure_kind === 'confinement_unverified'
-  ) {
-    const event = confinementEvent
-    tryWriteContention({
-      resourceKind: 'main_checkout',
-      resourceKey: event?.checkout ?? confinement.failures[0]?.path ?? callerCwd,
-      eventKind: 'invalidation',
-      cause: error,
-      runId: claim.id,
-    })
-  }
-
-  try {
-    persistTerminalArtifacts(claim.id, readerReply, worktree, changes)
-  } catch (e) {
-    artifactsPersisted = false
-    const persistenceError = `artifact persistence failed for ${runArtifactsDir(claim.id)}: ${String((e as Error)?.message ?? e)}`
-    ;({ status, error, failureKind } = artifactPersistenceOutcome({
-      status,
-      error,
-      failureKind,
-      persistenceError,
-    }))
-    recordArtifactPersistenceFailure(db(), {
-      runId: claim.id,
-      parentRunId: claimIdentity(opts.resume).parent_run_record_id,
-      error,
-      machineId: localMachineId,
-      finishedAt: nowIso(),
-    })
-    teardownTerminalRunResources(db(), claim.id)
-    console.error(`orch: ${error}`)
-  }
-
-  return {
-    status,
+  return completeRecordedRun({
+    runId: claim.id,
+    recordedFailureKind: recorded.failure_kind,
+    name,
+    started,
     error,
-    failureKind,
+    confinementEvent,
+    confinementFailures: confinement.failures,
+    callerCwd,
+    readerReply,
+    worktree,
     changes,
+    status,
+    failureKind,
+    opts,
+    machineId: localMachineId,
     output,
     acceptedQuestions,
-    confinementEvent,
     preConfinement,
     artifactsPersisted,
-  }
+  })
 }

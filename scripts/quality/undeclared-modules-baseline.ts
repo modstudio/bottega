@@ -447,7 +447,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/route/routing-backtest.ts',
   'orchestrator/src/route/routing-commands.ts',
   'orchestrator/src/run/checkpoint.ts',
-  'orchestrator/src/run/exec.ts',
   'orchestrator/src/run/migration-in-flight-runs.ts',
   'orchestrator/src/run/question-identifier.ts',
   'orchestrator/src/run/run-acp-writer.ts',
