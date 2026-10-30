@@ -102,6 +102,12 @@ test('refuses a failed rehearsal status', () => {
 })
 
 test('parses the pull request from a merge-group ref', () => {
+  expect(
+    mergeGroupPullRequest(
+      'refs/heads/gh-readonly-queue/main/pr-1584-f9dd03b6f1eac7d583faf7ace175c1b435c51db3',
+    ),
+  ).toBe(1584)
   expect(mergeGroupPullRequest('gh-readonly-queue/main/pr-1573-deadbeef')).toBe(1573)
   expect(mergeGroupPullRequest('main')).toBeNull()
+  expect(mergeGroupPullRequest('refs/heads/main')).toBeNull()
 })

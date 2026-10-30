@@ -17,7 +17,7 @@ export type RecordRehearsalDecision =
 const remedy = 'run bun scripts/record-rehearse.ts'
 
 export function mergeGroupPullRequest(headRef: string): number | null {
-  const match = /^gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f]+$/.exec(headRef)
+  const match = /^(?:refs\/heads\/)?gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f]+$/.exec(headRef)
   return match?.[1] ? Number(match[1]) : null
 }
 
