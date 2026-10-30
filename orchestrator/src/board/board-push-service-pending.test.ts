@@ -3,6 +3,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import type { HostedBoardMessage } from '../record/record-board-contract.ts'
+import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
 import { boardAcknowledge, boardStatus } from './board-operations.ts'
 import { WITHDRAWAL_SUPERSESSION_GRACE_MS } from './board-push-policy.ts'
@@ -304,6 +306,97 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
     (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
       .delivery,
   ).toEqual([])
+})
+
+test('hosted withdrawal resolution stays within the gate budget for a large signed-in cache', async () => {
+  const clock = Date.parse('2026-10-30T12:00:00.000Z')
+  const reader = 'large-cache-withdrawal-reader'
+  const userId = newRecordId()
+  const database = db()
+  database
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(reader, new Date(clock - 2_000).toISOString(), new Date(clock).toISOString())
+  database
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
+  const putMessage = database.query(
+    'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+  )
+  const root = (index: number): HostedBoardMessage => ({
+    id: newRecordId(),
+    kind: 'notice',
+    purpose: 'information',
+    threadRootId: null,
+    title: `Unrelated ${index}: HOLD`,
+    body: 'This live root is not addressed to the withdrawal reader.',
+    audience: `session:other-reader-${index}`,
+    origin: {
+      kind: 'architect',
+      session: `bulk-author-${index}`,
+      harness: 'claude-code',
+      project: PLATFORM_SLUG,
+      projectStored: true,
+      runId: null,
+    },
+    senderTags: [],
+    createdAt: new Date(clock - 1_000).toISOString(),
+    expiresAt: new Date(clock + 60_000).toISOString(),
+    withdrawnAt: null,
+    state: 'live',
+    acceptedReplyId: null,
+    acceptedBy: null,
+    acceptedAt: null,
+    noteId: null,
+    notePendingError: null,
+    revision: '1',
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    claimId: null,
+    authorUserId: userId,
+    authorSession: `bulk-author-${index}`,
+    ackRequired: false,
+    ackDeadline: null,
+  })
+  for (let index = 0; index < 1140; index++) {
+    const message = root(index)
+    putMessage.run(message.id, message.kind, null, message.revision, JSON.stringify(message))
+  }
+  const withdrawnAt = new Date(clock).toISOString()
+  const pendingRoot = root(1140)
+  const withdrawn = {
+    ...pendingRoot,
+    title: 'Target: HOLD',
+    audience: `session:${reader}`,
+    authorSession: 'target-author',
+    origin: {
+      ...pendingRoot.origin,
+      session: 'target-author',
+    },
+    withdrawnAt,
+    state: 'withdrawn',
+    revision: '2',
+  } satisfies HostedBoardMessage
+  putMessage.run(withdrawn.id, withdrawn.kind, null, withdrawn.revision, JSON.stringify(withdrawn))
+  database
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,1,?,NULL,0)`,
+    )
+    .run(newRecordId(), withdrawn.id, reader, new Date(clock - 500).toISOString())
+
+  expect(
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: clock + WITHDRAWAL_SUPERSESSION_GRACE_MS,
+      })
+    ).delivery.map((item) => item.id),
+  ).toEqual([`withdrawn:${withdrawn.id}`])
 })
 
 test('pending acknowledgement resolution combines local and hosted cache and excludes acknowledged or unaddressed notices', async () => {

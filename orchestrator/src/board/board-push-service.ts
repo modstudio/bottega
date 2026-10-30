@@ -122,8 +122,8 @@ function pendingWithdrawals(
     createdAt: row.created_at,
   })
   const localRoots = localRows
-    .filter((row) => row.thread_root_record_id === null && addressed(row, session, clock, database))
-    .map(localSupersessionFact)
+    .filter((row) => row.thread_root_record_id === null)
+    .map((row) => ({ row, fact: localSupersessionFact(row) }))
   const local = localRows.flatMap((row) => {
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
     if (
@@ -136,10 +136,13 @@ function pendingWithdrawals(
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
         now: clock,
-      }) ||
-      withdrawalSuperseded(localSupersessionFact(row), localRoots)
+      })
     )
       return []
+    const matchingRoots = localRoots.filter((root) =>
+      withdrawalSuperseded(localSupersessionFact(row), [root.fact]),
+    )
+    if (matchingRoots.some((root) => addressed(root.row, session, clock, database))) return []
     return [
       withdrawalDelivery({
         id: String(row.number),
@@ -157,12 +160,8 @@ function pendingWithdrawals(
     createdAt: message.createdAt,
   })
   const hostedRoots = hostedRows
-    .filter(
-      (row) =>
-        row.message.threadRootId === null &&
-        cachedMessageAddressesReader(row, session, clock, database),
-    )
-    .map(hostedSupersessionFact)
+    .filter((row) => row.message.threadRootId === null)
+    .map((row) => ({ row, fact: hostedSupersessionFact(row) }))
   const hosted = hostedRows.flatMap((row) => {
     const { message } = row
     const deliveredAt = receiptAt(
@@ -181,8 +180,14 @@ function pendingWithdrawals(
         readerSession: session,
         alreadyDelivered: withdrawalWasDelivered(database, session, message.id),
         now: clock,
-      }) ||
-      withdrawalSuperseded(hostedSupersessionFact(row), hostedRoots)
+      })
+    )
+      return []
+    const matchingRoots = hostedRoots.filter((root) =>
+      withdrawalSuperseded(hostedSupersessionFact(row), [root.fact]),
+    )
+    if (
+      matchingRoots.some((root) => cachedMessageAddressesReader(root.row, session, clock, database))
     )
       return []
     return [
