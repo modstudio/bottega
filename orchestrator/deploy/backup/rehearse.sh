@@ -81,33 +81,24 @@ psql --username postgres --dbname postgres --set ON_ERROR_STOP=1 --quiet \
   failure 'could not enable the local record owner login'
 export BOTTEGA_RECORD_MIGRATE_URL="postgres://record_owner:${password}@127.0.0.1:5432/record_rehearsal"
 
-applied_count="$(bun --eval '
-  import { appliedRecordMigrationCount } from "./orchestrator/src/postgres/postgres-migrate.ts";
-  process.stdout.write(String(await appliedRecordMigrationCount(process.env.BOTTEGA_RECORD_MIGRATE_URL!)));
-')" || failure 'could not read the restored drizzle journal'
-total_count="$(bun --eval '
-  import { recordMigrationCount } from "./orchestrator/src/postgres/postgres-migrate.ts";
-  process.stdout.write(String(recordMigrationCount()));
-')" || failure 'could not count record migrations'
-pending_count="$((total_count - applied_count))"
-if [ "$pending_count" -lt 0 ]; then
-  failure "restored journal has $applied_count entries but the tree has only $total_count migrations"
+pending_names="$(bun scripts/record-migration-set.ts --pending)" ||
+  failure 'could not read pending record migrations from the restored drizzle journal'
+if [ -n "$pending_names" ]; then
+  pending_count="$(printf '%s\n' "$pending_names" | wc -l | tr -d ' ')"
+else
+  pending_count=0
 fi
 echo "REHEARSAL PENDING $pending_count"
 echo "REHEARSAL RESTORE $restore_ms"
 
 migrate_start="$(milliseconds)"
 set +e
-migrate_error="$(APPLIED_MIGRATION_COUNT="$applied_count" bun --eval '
-  import { readdirSync, readFileSync } from "node:fs";
+migrate_error="$(PENDING_MIGRATIONS="$pending_names" bun --eval '
+  import { readFileSync } from "node:fs";
   import { join } from "node:path";
   import { migratePostgres } from "./orchestrator/src/postgres/postgres-migrate.ts";
   const folder = join(process.cwd(), "shared", "record", "migrations");
-  const pending = readdirSync(folder, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-    .slice(Number(process.env.APPLIED_MIGRATION_COUNT));
+  const pending = process.env.PENDING_MIGRATIONS?.split("\n").filter(Boolean) ?? [];
   try {
     await migratePostgres();
   } catch (error) {

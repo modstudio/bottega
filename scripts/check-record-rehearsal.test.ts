@@ -1,12 +1,22 @@
 import { expect, test } from 'bun:test'
 import { decideRecordRehearsal, mergeGroupPullRequest } from './check-record-rehearsal.ts'
+import {
+  RECORD_REHEARSAL_STATUS_CONTEXT,
+  recordRehearsalDescription,
+} from './record-rehearsal-status.ts'
 
 const hash = 'a'.repeat(64)
 const status = (
   state: string,
-  description = `migration-set ${hash}; restore 1; migrate 2; dump key`,
+  description = recordRehearsalDescription.format({
+    hash,
+    pending: 1,
+    restoreMs: 1,
+    migrateMs: 2,
+    dump: 'key',
+  }),
 ) => ({
-  context: 'record-rehearsal',
+  context: RECORD_REHEARSAL_STATUS_CONTEXT,
   state,
   description,
 })
@@ -44,10 +54,42 @@ test('refuses a migration-set hash mismatch', () => {
     migrationChanged: true,
     migrationSetHash: hash,
     statuses: [
-      status('success', `migration-set ${'b'.repeat(64)}; restore 1; migrate 2; dump key`),
+      status(
+        'success',
+        recordRehearsalDescription.format({
+          hash: 'b'.repeat(64),
+          pending: 1,
+          restoreMs: 1,
+          migrateMs: 2,
+          dump: 'key',
+        }),
+      ),
     ],
   })
   expect(decision).toEqual({ pass: false, message: expect.stringContaining('hash differs') })
+})
+
+test('refuses a rehearsal that applied no migration', () => {
+  const decision = decideRecordRehearsal({
+    migrationChanged: true,
+    migrationSetHash: hash,
+    statuses: [
+      status(
+        'success',
+        recordRehearsalDescription.format({
+          hash,
+          pending: 0,
+          restoreMs: 1,
+          migrateMs: 2,
+          dump: 'key',
+        }),
+      ),
+    ],
+  })
+  expect(decision).toEqual({
+    pass: false,
+    message: expect.stringContaining('no pending migration'),
+  })
 })
 
 test('refuses a failed rehearsal status', () => {

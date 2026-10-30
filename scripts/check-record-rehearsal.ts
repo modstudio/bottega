@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { recordMigrationSetHashFrom } from './record-migration-set.ts'
+import {
+  RECORD_REHEARSAL_STATUS_CONTEXT,
+  recordRehearsalDescription,
+} from './record-rehearsal-status.ts'
 
 export type CommitStatus = { context: string; state: string; description: string | null }
 
@@ -24,7 +28,9 @@ export function decideRecordRehearsal(input: {
 }): RecordRehearsalDecision {
   if (!input.migrationChanged)
     return { pass: true, message: 'record rehearsal: no migration change' }
-  const status = input.statuses.find((candidate) => candidate.context === 'record-rehearsal')
+  const status = input.statuses.find(
+    (candidate) => candidate.context === RECORD_REHEARSAL_STATUS_CONTEXT,
+  )
   if (!status) return { pass: false, message: `record rehearsal status is missing; ${remedy}` }
   if (status.state !== 'success') {
     return {
@@ -32,13 +38,17 @@ export function decideRecordRehearsal(input: {
       message: `record rehearsal status is ${status.state}, not success; ${remedy}`,
     }
   }
-  const actualHash = /(?:^|;)\s*migration-set\s+([0-9a-f]{64})(?:;|$)/.exec(
-    status.description ?? '',
-  )?.[1]
-  if (actualHash !== input.migrationSetHash) {
+  const description = recordRehearsalDescription.parse(status.description ?? '')
+  if (description?.hash !== input.migrationSetHash) {
     return {
       pass: false,
       message: `record rehearsal migration-set hash differs from the checked-out tree; a migration may have landed on trunk, so ${remedy} again`,
+    }
+  }
+  if (description.pending < 1) {
+    return {
+      pass: false,
+      message: `record rehearsal applied no pending migration; ${remedy}`,
     }
   }
   return { pass: true, message: `record rehearsal: migration-set ${input.migrationSetHash} passed` }

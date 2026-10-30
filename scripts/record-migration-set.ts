@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { SQL } from 'bun'
+import { pendingRecordMigrationNames } from '../orchestrator/src/postgres/postgres-migrate.ts'
 
 export type RecordMigration = { name: string; sql: Uint8Array }
 
@@ -36,6 +38,17 @@ export function recordMigrationSetHashFrom(folder: string): string {
 }
 
 if (import.meta.main) {
-  const root = fileURLToPath(new URL('..', import.meta.url))
-  console.log(recordMigrationSetHashFrom(join(root, 'shared', 'record', 'migrations')))
+  if (process.argv.includes('--pending')) {
+    const url = process.env.BOTTEGA_RECORD_MIGRATE_URL
+    if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to read pending migrations')
+    const sql = new SQL(url)
+    try {
+      process.stdout.write((await pendingRecordMigrationNames(sql)).join('\n'))
+    } finally {
+      await sql.close()
+    }
+  } else {
+    const root = fileURLToPath(new URL('..', import.meta.url))
+    console.log(recordMigrationSetHashFrom(join(root, 'shared', 'record', 'migrations')))
+  }
 }

@@ -1,5 +1,9 @@
 #!/usr/bin/env bun
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import {
+  RECORD_REHEARSAL_STATUS_CONTEXT,
+  recordRehearsalDescription,
+} from './record-rehearsal-status.ts'
 
 const REHEARSAL_APP = `${PLATFORM_SLUG}-record-backup`
 const REHEARSAL_VM_SIZE = 'shared-cpu-1x'
@@ -74,11 +78,19 @@ export function rehearsalStatus(
   const passed =
     exitCode === 0 &&
     Boolean(lines.hash?.match(/^[0-9a-f]{64}$/)) &&
+    Number.isInteger(lines.pending) &&
+    lines.pending > 0 &&
     lines.dump.length > 0 &&
     Number.isFinite(lines.restoreMs) &&
     Number.isFinite(lines.migrateMs)
   const description = passed
-    ? `migration-set ${lines.hash}; restore ${lines.restoreMs}; migrate ${lines.migrateMs}; dump ${lines.dump}`
+    ? recordRehearsalDescription.format({
+        hash: lines.hash!,
+        pending: lines.pending,
+        restoreMs: lines.restoreMs,
+        migrateMs: lines.migrateMs,
+        dump: lines.dump,
+      })
     : `REHEARSAL FAIL ${lines.failure ?? `machine exit ${exitCode ?? 'unknown'} without a valid PASS`}`
   return {
     state: passed ? 'success' : 'failure',
@@ -146,7 +158,7 @@ async function postStatus(
     '--method',
     'POST',
     '--raw-field',
-    `context=record-rehearsal`,
+    `context=${RECORD_REHEARSAL_STATUS_CONTEXT}`,
     '--raw-field',
     `state=${status.state}`,
     '--raw-field',
@@ -155,7 +167,7 @@ async function postStatus(
   checked(await runner(argv), argv)
 }
 
-function runMachineArgv(): string[] {
+function runMachineArgv(machineName: string): string[] {
   return [
     'flyctl',
     'machine',
@@ -167,11 +179,45 @@ function runMachineArgv(): string[] {
     REHEARSAL_APP,
     '--restart',
     'no',
+    '--name',
+    machineName,
     '--vm-size',
     REHEARSAL_VM_SIZE,
     '--vm-memory',
     REHEARSAL_VM_MEMORY_MB,
   ]
+}
+
+async function cleanupMachine(
+  runner: RehearsalCommandRunner,
+  machineName: string,
+  knownMachineId: string | null,
+  flyEnv: Record<string, string>,
+): Promise<Error | undefined> {
+  let machineId = knownMachineId
+  if (!machineId) {
+    const listArgv = ['flyctl', 'machine', 'list', '--app', REHEARSAL_APP, '--json']
+    const listed = await runner(listArgv, { env: flyEnv })
+    if (listed.exitCode !== 0) {
+      return new Error(
+        `record rehearsal cleanup could not find ${machineName}: ${listed.stderr.trim() || listed.stdout.trim()}`,
+      )
+    }
+    try {
+      const machines = JSON.parse(listed.stdout) as Array<{ id?: unknown; name?: unknown }>
+      const machine = machines.find((candidate) => candidate.name === machineName)
+      if (typeof machine?.id === 'string') machineId = machine.id
+    } catch {
+      return new Error(`record rehearsal cleanup could not parse machine list for ${machineName}`)
+    }
+  }
+  if (!machineId) return undefined
+  const destroyArgv = ['flyctl', 'machine', 'destroy', machineId, '--app', REHEARSAL_APP, '--force']
+  const destroyed = await runner(destroyArgv, { env: flyEnv })
+  if (destroyed.exitCode === 0) return undefined
+  return new Error(
+    `record rehearsal cleanup failed for ${machineName} (${machineId}): ${destroyed.stderr.trim() || destroyed.stdout.trim()}`,
+  )
 }
 
 export async function runRecordRehearsal(input: {
@@ -185,20 +231,24 @@ export async function runRecordRehearsal(input: {
   }
   const headArgv = ['git', 'rev-parse', 'HEAD']
   const sha = checked(await input.runner(headArgv), headArgv)
+  const machineName = `record-rehearsal-${sha.slice(0, 8)}-${Date.now()}`
   const flyEnv = { FLY_API_TOKEN: input.token }
   let statusPosted = false
   let machineId: string | null = null
   let result: RehearsalLines | undefined
   let failure: unknown
   try {
-    const runArgv = runMachineArgv()
+    const runArgv = runMachineArgv(machineName)
     const runResult = await input.runner(runArgv, {
       env: flyEnv,
       timeoutMs: REHEARSAL_WAIT_TIMEOUT_MS,
     })
     machineId = launchedMachineId(`${runResult.stdout}\n${runResult.stderr}`)
     checked(runResult, runArgv)
-    if (!machineId) throw new Error('flyctl machine run did not report the launched Machine ID')
+    if (!machineId)
+      throw new Error(
+        `flyctl machine run did not report the launched Machine ID for ${machineName}`,
+      )
     const waitArgv = [
       'flyctl',
       'machine',
@@ -226,30 +276,17 @@ export async function runRecordRehearsal(input: {
     result = lines
   } catch (error) {
     if (!statusPosted) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = `machine ${machineName}: ${error instanceof Error ? error.message : String(error)}`
       await postStatus(input.runner, sha, {
         state: 'failure',
         description: `REHEARSAL FAIL ${message}`.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
       })
     }
-    failure = error
+    failure = new Error(
+      `machine ${machineName}: ${error instanceof Error ? error.message : String(error)}`,
+    )
   } finally {
-    if (machineId) {
-      const destroyArgv = [
-        'flyctl',
-        'machine',
-        'destroy',
-        machineId,
-        '--app',
-        REHEARSAL_APP,
-        '--force',
-      ]
-      const destroyed = await input.runner(destroyArgv, { env: flyEnv })
-      if (destroyed.exitCode !== 0)
-        failure = new Error(
-          `record rehearsal cleanup failed: ${destroyed.stderr.trim() || destroyed.stdout.trim()}`,
-        )
-    }
+    failure = (await cleanupMachine(input.runner, machineName, machineId, flyEnv)) ?? failure
   }
   if (failure) throw failure
   if (!result) throw new Error('record rehearsal finished without a result')
