@@ -1,13 +1,15 @@
 // concern: claim-time reader tree sharing adapter
 /** Gives claim and sandbox selection one ruling from their already-resolved facts. */
 
-import { nowIso } from '../database/db.ts'
+import { nowIso, sessionId } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
+import { withWorktreeCreateLock, withWorktreeLease } from '../project/project-lock.ts'
 import { projectAt } from '../project/projects.ts'
 import { isReadonlySandboxCandidate } from '../sandbox/sandbox.ts'
 import { appendProvisioningPhases } from '../worktree/provisioning-measurement.ts'
 import { readerTreeSharing } from '../worktree/reader-tree-sharing.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
+import { sharedReviewWorktreePath } from '../worktree/worktree-readonly.ts'
 
 type ClaimSharingInput = {
   name: string
@@ -58,4 +60,21 @@ export function readerTreeSharingOptions(
     sharedReviewCommit: sharing === 'shared' ? input.reviewTarget!.commit : undefined,
     recordSharedFallback: (reason) => recordSharedReaderFallback(runId, reason),
   }
+}
+
+/** Take the shared-tree lease before the project creation lock and run one creation step. */
+export function withReaderCreationLocks<T>(
+  input: ClaimSharingInput,
+  runId: string,
+  repoRoot: string,
+  action: (options: ReturnType<typeof readerTreeSharingOptions>) => T,
+): T {
+  const options = readerTreeSharingOptions(input, runId)
+  if (!options.sharedReviewCommit) return withWorktreeCreateLock(repoRoot, () => action(options))
+  return withWorktreeLease(
+    repoRoot,
+    sharedReviewWorktreePath(repoRoot, options.sharedReviewCommit),
+    { session: sessionId(), what: `attach shared reader ${runId}` },
+    () => withWorktreeCreateLock(repoRoot, () => action(options)),
+  )
 }

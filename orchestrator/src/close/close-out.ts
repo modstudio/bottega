@@ -437,6 +437,11 @@ function sharedReaderArchiveIdentity(treePath: string): SharedReaderArchiveIdent
   return { sharerRunIds: recordedWorktreeSharerRunIds(db(), treePath) }
 }
 
+/** Whether the archive step already moved this whole checkout away. */
+function readerArchiveMovedTree(archive: { shared: unknown } | null): boolean {
+  return archive !== null && archive.shared === null
+}
+
 function releasedCloseOut(
   rootRecordId: string,
   treePath: string,
@@ -756,7 +761,7 @@ function attemptCloseOutRun(
               true,
               extractionRunId(row),
               false,
-              treeAbsent || (scratch.archive !== null && scratch.archive.shared === null),
+              treeAbsent || readerArchiveMovedTree(scratch.archive),
               release.path !== null,
             )
             if (retainedBranch && branchSnapshot) {

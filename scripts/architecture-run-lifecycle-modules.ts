@@ -64,11 +64,13 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/reader-tree-sharing-claim.ts', [
     '../database/db.ts',
     '../events.ts',
+    '../project/project-lock.ts',
     '../project/projects.ts',
     '../sandbox/sandbox.ts',
     '../worktree/provisioning-measurement.ts',
     '../worktree/reader-tree-sharing.ts',
     '../worktree/worktree-preflight.ts',
+    '../worktree/worktree-readonly.ts',
   ]),
   module('orchestrator/src/run/run-claim-transaction.ts', ['../database/db.ts']),
   module('orchestrator/src/run/run-retry-claim.ts', [
@@ -178,7 +180,6 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-caller.ts',
     '../worktree/worktree-mcp.ts',
     '../worktree/worktree-preflight.ts',
-    '../worktree/worktree-readonly.ts',
     '../worktree/worktree-remove.ts',
     '../worktree/worktree-types.ts',
     '../run-owned-paths.ts',

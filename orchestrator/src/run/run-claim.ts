@@ -57,12 +57,11 @@ import {
   type prepareWorkerMcpConfig,
 } from '../worktree/worktree-mcp.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
-import { sharedReviewWorktreePath } from '../worktree/worktree-readonly.ts'
 import { removeFor } from '../worktree/worktree-remove.ts'
 import type { Worktree } from '../worktree/worktree-types.ts'
 import { assertBranchHasNoAliveOwner } from './branch-owner-guard.ts'
 import { closeRunChainQuestions, QUESTION_CLOSE_ATTEMPT_FAILED_OVER } from './question-close.ts'
-import { readerTreeSharingOptions } from './reader-tree-sharing-claim.ts'
+import { withReaderCreationLocks } from './reader-tree-sharing-claim.ts'
 import { resumeCreationOptions } from './resume-tree.ts'
 import {
   noRepoIsolatePath,
@@ -703,17 +702,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
             }),
           )
         const callerProject = projectAt(callerCwd)
-        const sharingOptions = readerTreeSharingOptions(input, claim.id)
-        const withCreationLocks = <T>(action: () => T): T =>
-          sharingOptions.sharedReviewCommit
-            ? withWorktreeLease(
-                repoRoot,
-                sharedReviewWorktreePath(repoRoot, sharingOptions.sharedReviewCommit),
-                { session: sessionId(), what: `attach shared reader ${claim.id}` },
-                () => withWorktreeCreateLock(repoRoot, action),
-              )
-            : withWorktreeCreateLock(repoRoot, action)
-        worktree = withCreationLocks(() => {
+        worktree = withReaderCreationLocks(input, claim.id, repoRoot, (sharingOptions) => {
           assertBranchHasNoAliveOwner({
             branch: existingBranch,
             conversationRootId: resumePlan?.rootId ?? claim.id,

@@ -273,6 +273,43 @@ function removeIgnoredArchivePaths(destination: string): string | null {
   return null
 }
 
+/** Extract changed paths and preserve a detached committed head before shared-tree removal. */
+function archiveSharedReaderScratch(input: {
+  runId: string
+  treePath: string
+  planned: ReaderCloneArchivePlan
+}): ({ ok: true } & ReaderCloneArchiveRelease) | { ok: false; detail: string } {
+  const extracted = extractWorktree(input.treePath, input.runId)
+  if (!extracted.ok) return { ok: false, detail: extracted.detail }
+  let headBundle: string | undefined
+  if (!input.planned.facts.atBase || !input.planned.facts.noUniqueCommits) {
+    headBundle = join(extracted.dest, 'head.bundle')
+    const bundled = gitResult(
+      ['bundle', 'create', headBundle, `${input.planned.baseCommit}..HEAD`],
+      input.treePath,
+    )
+    if (!bundled.ok)
+      return {
+        ok: false,
+        detail: `shared reader committed-work archive failed: ${bundled.stderr}`,
+      }
+  }
+  const pointer = join(runArtifactsDir(input.runId), 'reader-clone-archive.json')
+  writeArchivePointer({
+    pointer,
+    destination: extracted.dest,
+    planned: input.planned,
+    ignoredRemoved: true,
+    sharedPath: input.treePath,
+    headBundle,
+  })
+  return {
+    ok: true,
+    path: extracted.dest,
+    ignoredRemovalFailure: null,
+  }
+}
+
 function archiveReaderScratchForRelease(input: {
   runId: string
   treePath: string
@@ -280,37 +317,12 @@ function archiveReaderScratchForRelease(input: {
   planned: ReaderCloneArchivePlan | null
 }): ({ ok: true } & ReaderCloneArchiveRelease) | { ok: false; detail: string } {
   if (!input.planned) return { ok: true, path: null, ignoredRemovalFailure: null }
-  if (input.planned.shared) {
-    const extracted = extractWorktree(input.treePath, input.runId)
-    if (!extracted.ok) return { ok: false, detail: extracted.detail }
-    let headBundle: string | undefined
-    if (!input.planned.facts.atBase || !input.planned.facts.noUniqueCommits) {
-      headBundle = join(extracted.dest, 'head.bundle')
-      const bundled = gitResult(
-        ['bundle', 'create', headBundle, `${input.planned.baseCommit}..HEAD`],
-        input.treePath,
-      )
-      if (!bundled.ok)
-        return {
-          ok: false,
-          detail: `shared reader committed-work archive failed: ${bundled.stderr}`,
-        }
-    }
-    const pointer = join(runArtifactsDir(input.runId), 'reader-clone-archive.json')
-    writeArchivePointer({
-      pointer,
-      destination: extracted.dest,
+  if (input.planned.shared)
+    return archiveSharedReaderScratch({
+      runId: input.runId,
+      treePath: input.treePath,
       planned: input.planned,
-      ignoredRemoved: true,
-      sharedPath: input.treePath,
-      headBundle,
     })
-    return {
-      ok: true,
-      path: extracted.dest,
-      ignoredRemovalFailure: null,
-    }
-  }
   writeConveniencePatch(input.runId, input.treePath)
   const destination = archiveDestination(input.runId)
   const artifacts = runArtifactsDir(input.runId)
