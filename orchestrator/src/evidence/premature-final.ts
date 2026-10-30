@@ -19,7 +19,7 @@ export type PrematureFinalFacts = {
   reportsRun: boolean
   questionsAsked: boolean
   replyShape: PrematureFinalReplyShape
-  readerDelivered: boolean
+  deliveredContents: readonly string[]
   measuredFiles: readonly string[] | null
   textFields: readonly string[]
 }
@@ -41,8 +41,11 @@ function hasEvidence(facts: PrematureFinalFacts): boolean {
 
 /** Refuse a terminal reply that contains only an opening progress narration. */
 export function decidePrematureFinal(facts: PrematureFinalFacts): PrematureFinalRefusal | null {
+  const readerReplyEmpty =
+    facts.deliveredContents.length === 0 ||
+    facts.deliveredContents.every((content) => OPENING_PROGRESS_VOCABULARY.test(content))
   const emptyReply =
-    (facts.replyShape === 'reader' && !facts.readerDelivered) ||
+    (facts.replyShape === 'reader' && readerReplyEmpty) ||
     facts.replyShape === 'review' ||
     (facts.replyShape === 'done-writer' &&
       Array.isArray(facts.measuredFiles) &&

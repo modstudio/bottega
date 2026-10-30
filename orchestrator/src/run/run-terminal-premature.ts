@@ -30,6 +30,10 @@ export function terminalPrematureFinalRefusal(input: {
   } else if (input.contract) {
     replyShape = 'done-writer'
   }
+  const deliveredContents =
+    readerReply?.deliverables
+      .filter((item) => item.status === 'delivered')
+      .map((item) => item.content) ?? []
 
   return decidePrematureFinal({
     exitCode: input.exitCode,
@@ -49,7 +53,7 @@ export function terminalPrematureFinalRefusal(input: {
     reportsRun: Boolean(input.contract?.tests?.ran),
     questionsAsked: input.acceptedQuestionCount > 0,
     replyShape,
-    readerDelivered: Boolean(readerReply?.deliverables.some((item) => item.status === 'delivered')),
+    deliveredContents,
     measuredFiles: input.measuredFiles,
     textFields: [
       ...(readerReply?.deliverables.map((item) => item.content) ?? []),
