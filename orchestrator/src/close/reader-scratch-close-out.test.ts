@@ -64,6 +64,41 @@ test('reader close-out archives a dirty initialized submodule', () => {
   }
 })
 
+test('reader close-out archives a clean clone with a repository in a tracked directory', () => {
+  const fixture = closeOutFixture({ trackedDirectory: true })
+  try {
+    const nested = join(fixture.worktree, 'tracked-directory')
+    git(['init', '--initial-branch=main'], nested)
+
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const archive = archivedClonePath(result.detail)
+
+    expect(result.outcome).toBe('released')
+    expect(existsSync(fixture.worktree)).toBe(false)
+    expect(existsSync(join(archive, 'tracked-directory', '.git'))).toBe(true)
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
+test('reader close-out archives an untracked non-ignored nested repository', () => {
+  const fixture = closeOutFixture()
+  try {
+    const nested = join(fixture.worktree, 'untracked-repository')
+    mkdirSync(nested, { recursive: true })
+    git(['init', '--initial-branch=main'], nested)
+
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const archive = archivedClonePath(result.detail)
+
+    expect(result.outcome).toBe('released')
+    expect(existsSync(fixture.worktree)).toBe(false)
+    expect(existsSync(join(archive, 'untracked-repository', '.git'))).toBe(true)
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
 test('reader close-out removes ignored paths from an archived dirty clone', () => {
   const fixture = closeOutFixture()
   try {

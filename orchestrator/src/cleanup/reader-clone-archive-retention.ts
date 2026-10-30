@@ -2,6 +2,7 @@
 import { type Dirent, existsSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
+  parseReaderCloneArchiveStamp,
   type ReaderCloneArchive,
   readerCloneArchivePruneDecision,
 } from '../close/reader-scratch-release.ts'
@@ -17,13 +18,6 @@ export function readerCloneArchiveDirectory(runsDirectory = RUNS_DIR): string {
 }
 
 type ArchivedDirectory = { path: string; archivedMs: number | null }
-
-function archiveTimestamp(path: string): number | null {
-  const match = path.match(/-(\d{4}-\d{2}-\d{2}T)(\d{2})(\d{2})(\d{2})(\d{3})Z$/)
-  if (!match) return null
-  const archivedMs = Date.parse(`${match[1]}${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`)
-  return Number.isNaN(archivedMs) ? null : archivedMs
-}
 
 function archivedDirectories(
   root: string,
@@ -42,7 +36,7 @@ function archivedDirectories(
     // Stray directories sit one level below a marked project container. Every
     // unmarked directory retains the original whole-reader-clone layout.
     if (!existsSync(join(path, STRAY_WORKTREE_ARCHIVE_PROJECT_MARKER)))
-      return [{ path, archivedMs: archiveTimestamp(path) }]
+      return [{ path, archivedMs: parseReaderCloneArchiveStamp(path) }]
     let projectEntries: Dirent[]
     try {
       projectEntries = readdirSync(path, { withFileTypes: true })
@@ -54,7 +48,7 @@ function archivedDirectories(
       .filter((child) => child.isDirectory())
       .map((child) => {
         const childPath = join(path, child.name)
-        return { path: childPath, archivedMs: archiveTimestamp(childPath) }
+        return { path: childPath, archivedMs: parseReaderCloneArchiveStamp(childPath) }
       })
   })
 }

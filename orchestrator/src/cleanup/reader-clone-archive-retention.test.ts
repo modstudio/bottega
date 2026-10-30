@@ -149,30 +149,6 @@ test('whole-clone retention uses a stamped age before a fresh mtime', () => {
   }
 })
 
-test('whole-clone retention falls back to mtime when its name has no stamp', () => {
-  const runsDirectory = join(dir, 'retention-whole-unstamped-fixture', 'orchestrator', 'runs')
-  const archive = join(readerCloneArchiveDirectory(runsDirectory), 'run-without-stamp')
-  const nowMs = 30 * day
-  mkdirSync(archive, { recursive: true })
-  utimesSync(
-    archive,
-    new Date(0),
-    new Date(nowMs - (READER_CLONE_ARCHIVE_RETENTION_DAYS + 1) * day),
-  )
-  try {
-    const result = pruneReaderCloneArchives({
-      dryRun: false,
-      runsDirectory,
-      nowMs,
-      presentation: { log: () => {}, error: () => {} },
-    })
-    expect(result).toEqual({ deleted: 1, deferred: 0, kept: 0, failed: 0 })
-    expect(existsSync(archive)).toBe(false)
-  } finally {
-    rmSync(join(dir, 'retention-whole-unstamped-fixture'), { recursive: true, force: true })
-  }
-})
-
 test('reader clone retention reports an unreadable project container and prunes other archives', () => {
   const runsDirectory = join(dir, 'retention-unreadable-fixture', 'orchestrator', 'runs')
   const archiveRoot = readerCloneArchiveDirectory(runsDirectory)

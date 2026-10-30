@@ -10,12 +10,15 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 import { gitResult } from '../git/git-environment.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
 import { dryRunReleaseResult, reconstructibilityHold } from './absent-tree-close-out.ts'
-import { readerCloneReleaseDecision } from './reader-scratch-release.ts'
+import {
+  formatReaderCloneArchiveStamp,
+  readerCloneReleaseDecision,
+} from './reader-scratch-release.ts'
 
 type ReaderCloneDisposableFacts = {
   clean: boolean
@@ -34,16 +37,19 @@ type ScratchCloseOutResult = {
   outcome: 'held' | 'released' | 'absent'
   detail: string
 }
+type ReaderCloneArchiveRelease = {
+  path: string | null
+  ignoredRemovalFailure: string | null
+}
 
 /** Extraction evidence belongs to the turn whose tree is being removed. */
 export function extractionRunId(row: { record_id: string }): string {
   return row.record_id
 }
 
-function looksLikeBareRepository(treePath: string, directory: string): boolean {
+function looksLikeBareRepository(directory: string): boolean {
   return Boolean(
-    relative(treePath, directory) &&
-      existsSync(join(directory, 'HEAD')) &&
+    existsSync(join(directory, 'HEAD')) &&
       existsSync(join(directory, 'objects')) &&
       existsSync(join(directory, 'refs')),
   )
@@ -53,6 +59,17 @@ function repositoryStorageAbsent(treePath: string): boolean {
   if (existsSync(join(treePath, '.git', 'modules'))) return false
   const index = gitResult(['ls-files', '--stage'], treePath)
   if (!index.ok || index.stdout.split('\n').some((line) => line.startsWith('160000 '))) return false
+  const tracked = gitResult(['ls-files', '-z'], treePath)
+  if (!tracked.ok) return false
+  const trackedDirectories = new Set(
+    tracked.stdout
+      .split('\0')
+      .filter(Boolean)
+      .map((path) => dirname(path))
+      .filter((directory) => directory !== '.'),
+  )
+  if ([...trackedDirectories].some((directory) => existsSync(join(treePath, directory, '.git'))))
+    return false
   const untracked = gitResult(
     ['ls-files', '--others', '--exclude-standard', '--directory', '-z'],
     treePath,
@@ -61,8 +78,7 @@ function repositoryStorageAbsent(treePath: string): boolean {
   for (const path of untracked.stdout.split('\0').filter(Boolean)) {
     if (!path.endsWith('/')) continue
     const directory = join(treePath, path)
-    if (existsSync(join(directory, '.git')) || looksLikeBareRepository(treePath, directory))
-      return false
+    if (existsSync(join(directory, '.git')) || looksLikeBareRepository(directory)) return false
   }
   return true
 }
@@ -178,8 +194,12 @@ function readerScratchDryRunResult(
 }
 
 function archiveDestination(runId: string, now = new Date()): string {
-  const timestamp = now.toISOString().replaceAll(':', '').replaceAll('.', '')
-  return join(dirname(RUNS_DIR), 'archive', 'reader-clones', `${runId}-${timestamp}`)
+  return join(
+    dirname(RUNS_DIR),
+    'archive',
+    'reader-clones',
+    `${runId}-${formatReaderCloneArchiveStamp(now)}`,
+  )
 }
 
 function writeConveniencePatch(runId: string, treePath: string): void {
@@ -240,9 +260,7 @@ function archiveReaderScratchForRelease(input: {
   treePath: string
   terminal: boolean
   planned: ReaderCloneArchivePlan | null
-}):
-  | { ok: true; path: string | null; ignoredRemovalFailure: string | null }
-  | { ok: false; detail: string } {
+}): ({ ok: true } & ReaderCloneArchiveRelease) | { ok: false; detail: string } {
   if (!input.planned) return { ok: true, path: null, ignoredRemovalFailure: null }
   writeConveniencePatch(input.runId, input.treePath)
   const destination = archiveDestination(input.runId)
@@ -322,7 +340,7 @@ export function prepareReaderScratchRelease(input: {
   dryRun: boolean
   treeAbsent: boolean
 }):
-  | { proceed: true; path: string | null; ignoredRemovalFailure: string | null }
+  | ({ proceed: true } & ReaderCloneArchiveRelease)
   | { proceed: false; result: ScratchCloseOutResult } {
   if (input.dryRun)
     return {
@@ -354,7 +372,7 @@ export function prepareReaderScratchRelease(input: {
 
 export function readerScratchReleaseDetail(
   detail: string,
-  release: { path: string | null; ignoredRemovalFailure: string | null },
+  release: ReaderCloneArchiveRelease,
 ): string {
   const archived = release.path
     ? `${detail}; whole reader clone archived at ${release.path}`

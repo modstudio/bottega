@@ -25,7 +25,9 @@ export function commit(cwd: string, message: string): void {
   )
 }
 
-export function closeOutFixture(options: { submodule?: boolean; carryBase?: boolean } = {}) {
+export function closeOutFixture(
+  options: { submodule?: boolean; carryBase?: boolean; trackedDirectory?: boolean } = {},
+) {
   const id = addRun({ agent: 'codex', job: 'review-lens', status: 'ok' })
   const project = `reader-nested-close-out-${id}`
   const fixtureRoot = realpathSync(dir)
@@ -35,6 +37,10 @@ export function closeOutFixture(options: { submodule?: boolean; carryBase?: bool
   mkdirSync(repo, { recursive: true })
   git(['init', '--initial-branch=main'], repo)
   writeFileSync(join(repo, 'tracked.txt'), 'committed\n')
+  if (options.trackedDirectory) {
+    mkdirSync(join(repo, 'tracked-directory'), { recursive: true })
+    writeFileSync(join(repo, 'tracked-directory', 'tracked.txt'), 'committed nested\n')
+  }
   if (options.submodule) {
     mkdirSync(nestedSource, { recursive: true })
     git(['init', '--initial-branch=main'], nestedSource)
