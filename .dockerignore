@@ -9,6 +9,7 @@
 !orchestrator/tsconfig.json
 !orchestrator/src/
 !orchestrator/deploy/backup/
+!scripts/record-migration-set.ts
 !hub/package.json
 !hub/tsconfig.json
 !hub/src/

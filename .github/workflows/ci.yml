@@ -290,9 +290,34 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=root
 
+  record-rehearsal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      statuses: read
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        with:
+          bun-version: 1.4.3
+      - name: Require a rehearsal for record migration changes
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bun scripts/check-record-rehearsal.ts
+      - name: Pass outside the merge guard
+        if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
+        run: echo 'record rehearsal: no merge guard event'
+
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root]
+    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
