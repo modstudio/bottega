@@ -593,7 +593,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
   const identity = {
     ...requestedIdentity,
-    name: defaultShortName(hostname()),
+    name: requestedIdentity.name ?? defaultShortName(hostname()),
   }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
   const backfill = options.backfill

@@ -35,6 +35,9 @@ const CLAIM_HOLDER_ID = '01990000-0000-7000-8000-000000001896'
 const CLAIM_REQUESTER_ID = '01990000-0000-7000-8000-000000001897'
 const CLAIM_ID = '01990000-0000-7000-8000-000000001898'
 const CLAIM_RUN_ID = '01990000-0000-7000-8000-000000001899'
+const FOREIGN_USER_ID = '01990000-0000-7000-8000-000000001900'
+const FOREIGN_MACHINE_ID = '01990000-0000-7000-8000-000000001901'
+const FOREIGN_RUN_ID = '01990000-0000-7000-8000-000000001902'
 const STAMP = '2026-10-26T06:00:00.000Z'
 
 function runPayload(id: string, taskId: string | null) {
@@ -235,6 +238,68 @@ realPostgres('hosted machine name claims', () => {
       await admin`DELETE FROM membership WHERE id=${CLAIM_MEMBERSHIP_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${CLAIM_SPACE_ID}::uuid`
       await admin`DELETE FROM "user" WHERE id=${CLAIM_USER_ID}::uuid`
+      await Promise.all([actor.close(), admin.close()])
+    }
+  })
+
+  test('a machine owned by another user aborts sync without writing rows', async () => {
+    const admin = new SQL(adminUrl!)
+    const actor = new SQL(actorUrl!)
+    try {
+      await admin`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${CLAIM_SPACE_ID}::uuid,'Machine ownership proof','machine-ownership-proof',now())`
+      await admin`INSERT INTO "user" (id,email,name,created_at)
+        VALUES (${CLAIM_USER_ID}::uuid,'machine-owner-requester@example.test','Machine Owner Requester',now()),
+          (${FOREIGN_USER_ID}::uuid,'machine-owner-foreign@example.test','Machine Owner Foreign',now())`
+      await admin`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${CLAIM_MEMBERSHIP_ID}::uuid,${CLAIM_SPACE_ID}::uuid,${CLAIM_USER_ID}::uuid,
+          'member','write',now())`
+      await admin`INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+        VALUES (${CLAIM_PROJECT_ID}::uuid,${CLAIM_SPACE_ID}::uuid,'machine-ownership-proof',ARRAY['DEV'],now())`
+      await admin`INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+        VALUES (${FOREIGN_MACHINE_ID}::uuid,${FOREIGN_USER_ID}::uuid,'Foreign machine',
+          ${STAMP}::timestamptz,${STAMP}::timestamptz)`
+
+      const run = runPayload(FOREIGN_RUN_ID, null)
+      Object.assign(run, {
+        spaceId: CLAIM_SPACE_ID,
+        projectId: CLAIM_PROJECT_ID,
+        projectName: 'machine-ownership-proof',
+        machineId: FOREIGN_MACHINE_ID,
+        taskKey: null,
+      })
+      const sync = syncHostedRecord({
+        url: actorUrl!,
+        postgres: actor,
+        identity: {
+          user: { id: CLAIM_USER_ID },
+          activeSpaceId: CLAIM_SPACE_ID,
+          personalSpaceId: CLAIM_SPACE_ID,
+          memberships: [
+            { space_id: CLAIM_SPACE_ID, slug: 'machine-ownership-proof', permission: 'write' },
+          ],
+        },
+        request: {
+          machine: { id: FOREIGN_MACHINE_ID, name: 'requester-default', seenAt: STAMP },
+          rows: [{ id: 1, kind: 'run', payload: JSON.stringify(run), spaceHint: null }],
+        },
+      })
+
+      await expect(sync).rejects.toThrow(
+        `machine ${FOREIGN_MACHINE_ID} is registered to another user`,
+      )
+      const [effects] = await admin<{ runs: number }[]>`
+        SELECT count(*)::int AS runs FROM run WHERE id=${FOREIGN_RUN_ID}::uuid`
+      expect(effects).toEqual({ runs: 0 })
+    } finally {
+      await admin`DELETE FROM run WHERE id=${FOREIGN_RUN_ID}::uuid`
+      await admin`DELETE FROM machine WHERE id=${FOREIGN_MACHINE_ID}::uuid`
+      await admin`DELETE FROM project WHERE id=${CLAIM_PROJECT_ID}::uuid`
+      await admin`DELETE FROM hub_change WHERE space_id=${CLAIM_SPACE_ID}::uuid`
+      await admin`DELETE FROM hub_change_head WHERE space_id=${CLAIM_SPACE_ID}::uuid`
+      await admin`DELETE FROM membership WHERE id=${CLAIM_MEMBERSHIP_ID}::uuid`
+      await admin`DELETE FROM space WHERE id=${CLAIM_SPACE_ID}::uuid`
+      await admin`DELETE FROM "user" WHERE id IN (${CLAIM_USER_ID}::uuid,${FOREIGN_USER_ID}::uuid)`
       await Promise.all([actor.close(), admin.close()])
     }
   })

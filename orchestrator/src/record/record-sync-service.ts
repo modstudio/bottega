@@ -46,7 +46,7 @@ import type {
   RecordSyncRowResult,
 } from './record-sync-contract.ts'
 import {
-  RecordSyncRequestRefusal,
+  MachineNameRefusal,
   recordSyncAuthorizationDecision,
   recordSyncReferenceRefusal as referenceRefusal,
 } from './record-sync-decision.ts'
@@ -941,7 +941,7 @@ export async function syncHostedRecord(input: {
         spaceId: activeSpaceId,
       })
     } catch (error) {
-      if (error instanceof RecordSyncRequestRefusal) machineNameRefusal = error.message
+      if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
       else throw error
     }
     const results: RecordSyncRowResult[] = []

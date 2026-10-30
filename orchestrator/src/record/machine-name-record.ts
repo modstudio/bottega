@@ -8,6 +8,7 @@ import { decideMachineNameClaim, displayNameRefusal, shortNameRefusal } from './
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordPrincipal } from './record-sync-contract.ts'
 import {
+  MachineNameRefusal,
   RecordSyncRequestRefusal,
   recordSyncMachineOwnershipDecision,
 } from './record-sync-decision.ts'
@@ -42,7 +43,7 @@ async function claimInSpace(
     input.machineId,
     input.shortName,
   )
-  if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
+  if (decision.status === 'refused') throw new MachineNameRefusal(decision.reason)
   if (decision.status === 'claim') {
     const inserted = await tx`
       INSERT INTO machine_name_claim (id,space_id,short_name,machine_id,claimed_at)
@@ -66,7 +67,7 @@ async function claimInSpace(
         input.machineId,
         input.shortName,
       )
-      if (raced.status === 'refused') throw new RecordSyncRequestRefusal(raced.reason)
+      if (raced.status === 'refused') throw new MachineNameRefusal(raced.reason)
     }
   }
 }
