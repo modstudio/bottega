@@ -155,6 +155,9 @@ export const ROOT_TEST_FILES = [
   'scripts/identity-inventory.test.ts',
   'scripts/check-outbox-payload-contracts.test.ts',
   'scripts/record-migration-bounds.test.ts',
+  'scripts/record-migration-set.test.ts',
+  'scripts/check-record-rehearsal.test.ts',
+  'scripts/record-rehearse.test.ts',
   'scripts/postgres-migration-rls.test.ts',
   'scripts/check-test-placement.test.ts',
   'scripts/check-test-reach.test.ts',
@@ -238,6 +241,7 @@ export const CI_ONLY_SUITES = [
  */
 export const CI_ONLY_JOBS = [
   'postgres',
+  'record-rehearsal',
   'hub-ui-stories',
   'hub-web-smoke',
   ...CI_ONLY_SUITES.map((suite) => suite.job),

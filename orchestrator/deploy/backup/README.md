@@ -69,6 +69,16 @@ orchestrator/deploy/backup/restore-check.sh
 
 The check creates the `record_owner`, `record_actor`, `record_auth`, and `record_reader` roles before restoring. It verifies table and constraint inventory, prints row counts for `run`, `run_score`, `doc`, `doc_revision`, and `project`, and always removes the container.
 
+## Rehearse pending migrations
+
+Ask the operator to seal an app-scoped Fly deploy token as `BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN`. Run the rehearsal from a clean, committed tree without exposing the token to the ambient shell:
+
+```sh
+bottega machine config secret run --name BOTTEGA_RECORD_REHEARSAL_FLY_TOKEN -- bun scripts/record-rehearse.ts
+```
+
+The driver builds and starts an ephemeral Machine in `bottega-record-backup`, restores the newest `record/` object into that Machine's local PostgreSQL 18 server, applies the tree's pending migrations, records the result as the `record-rehearsal` GitHub commit status, and destroys the Machine. The in-machine script prints the dump key, pending migration count, total restore and migration times, and a final `REHEARSAL PASS` migration-set hash or `REHEARSAL FAIL` message.
+
 ## Restore the hosted record
 
 1. Stop every writer, including the record API and direct CLI syncs. Preserve the current database and role credentials until the replacement has been validated.

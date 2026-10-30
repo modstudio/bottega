@@ -1,10 +1,11 @@
 // concern: postgres-migrate
 
-import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { readMigrationFiles } from 'drizzle-orm/migrator'
+import { getMigrationsToRun } from 'drizzle-orm/migrator.utils'
 
 const POSTGRES_MIGRATIONS_FOLDER = join(
   import.meta.dir,
@@ -31,9 +32,36 @@ export function migrationSessionSettings(): Array<[name: string, value: string]>
 }
 
 export function recordMigrationCount(folder = POSTGRES_MIGRATIONS_FOLDER): number {
-  return readdirSync(folder, { withFileTypes: true }).filter(
-    (entry) => entry.isDirectory() && existsSync(join(folder, entry.name, 'migration.sql')),
-  ).length
+  return readMigrationFiles({ migrationsFolder: folder }).length
+}
+
+type MigrationJournalConnection = {
+  unsafe: <T>(query: string) => Promise<T[]>
+}
+
+export async function pendingRecordMigrationNames(
+  connection: MigrationJournalConnection,
+  folder = POSTGRES_MIGRATIONS_FOLDER,
+): Promise<string[]> {
+  const localMigrations = readMigrationFiles({ migrationsFolder: folder })
+  const present = await connection.unsafe<{ present: boolean }>(`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema='drizzle' AND table_name='__drizzle_migrations'
+    ) AS present
+  `)
+  const journal = present[0]?.present
+    ? await connection.unsafe<{ name: string | null }>(
+        'SELECT name FROM drizzle.__drizzle_migrations',
+      )
+    : []
+  const dbMigrations = journal.map((entry, id) => ({
+    id,
+    hash: '',
+    created_at: '',
+    name: entry.name,
+  }))
+  return getMigrationsToRun({ localMigrations, dbMigrations }).map((migration) => migration.name)
 }
 
 export async function probeRecord(url: string): Promise<void> {

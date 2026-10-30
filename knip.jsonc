@@ -44,6 +44,8 @@
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
         "scripts/check-*.ts!",
+        "scripts/record-migration-set.ts!",
+        "scripts/record-rehearse.ts!",
         "scripts/affected-tests.ts!",
         "scripts/audit-hot-store-statements.ts!",
         "scripts/test-focused.ts!",
