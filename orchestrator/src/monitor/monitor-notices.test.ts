@@ -163,7 +163,7 @@ test('notice claim is read-only and hosted refresh is an explicit write step', a
   expect(changesCalls).toBe(1)
 })
 
-test('notice claim succeeds while another connection holds the store writer', async () => {
+test('notice claim survives a busy hosted-pressure store claim', async () => {
   const session = 'monitor-reader-during-writer'
   db()
     .query(

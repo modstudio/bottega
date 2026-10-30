@@ -14,13 +14,13 @@ import {
   type HostedPressureState,
 } from './hosted-pressure-decision.ts'
 
-export const HOSTED_METRICS_QUERY_BUDGET_MS = 3_000
+const HOSTED_METRICS_QUERY_BUDGET_MS = 3_000
 export const HOSTED_METRICS_INTERVAL_MS = 5 * 60_000
 export const HOSTED_METRICS_ORG = PLATFORM_SLUG
-export const HOSTED_RECORD_APP = `${PLATFORM_SLUG}-record`
-export const HOSTED_API_APP = `${PLATFORM_SLUG}-api`
-export const HOSTED_METRICS_WINDOW = '5m'
-export const HOSTED_FLY_METRICS_TOKEN = 'BOTTEGA_FLY_METRICS_TOKEN'
+const HOSTED_RECORD_APP = `${PLATFORM_SLUG}-record`
+const HOSTED_API_APP = `${PLATFORM_SLUG}-api`
+const HOSTED_METRICS_WINDOW = '5m'
+const HOSTED_FLY_METRICS_TOKEN = 'BOTTEGA_FLY_METRICS_TOKEN'
 
 export const HOSTED_METRICS_QUERIES = {
   steal: `sum(rate(fly_instance_cpu{app="${HOSTED_RECORD_APP}",mode="steal"}[${HOSTED_METRICS_WINDOW}])) / sum(rate(fly_instance_cpu{app="${HOSTED_RECORD_APP}"}[${HOSTED_METRICS_WINDOW}]))`,
@@ -138,11 +138,12 @@ function cachedDecision(row: CacheRow): HostedPressureDecision {
 
 function claimTransaction<T>(database: Database, failFast: boolean | undefined, fn: () => T): T {
   if (!failFast) return writeTransaction(fn, database)
+  const busyTimeout = database.query('PRAGMA busy_timeout').values()[0]?.[0]
   database.exec('PRAGMA busy_timeout = 0')
   try {
     return writeTransaction(fn, database)
   } finally {
-    database.exec('PRAGMA busy_timeout = 15000')
+    database.exec(`PRAGMA busy_timeout = ${busyTimeout}`)
   }
 }
 
@@ -166,11 +167,11 @@ export async function checkHostedPressureCached(
     previous = parseState(cached?.state ?? null)
     database
       .query(
-        `INSERT INTO hosted_pressure_cache(record_id,singleton,checked_at,state,onset_at,below_since,last_sample,last_error)
-       VALUES(?,1,?,?,?,?,NULL,NULL)
+        `INSERT INTO hosted_pressure_cache(record_id,singleton,checked_at,state,last_sample,last_error)
+       VALUES(?,1,?,?,NULL,NULL)
        ON CONFLICT(singleton) DO UPDATE SET checked_at=excluded.checked_at`,
       )
-      .run(newRecordId(), at, JSON.stringify(previous), previous.onsetAt, previous.belowSince)
+      .run(newRecordId(), at, JSON.stringify(previous))
     claimed = true
   })
   if (!claimed) return cachedDecision(cached!)
@@ -187,17 +188,10 @@ export async function checkHostedPressureCached(
     database
       .query(
         `UPDATE hosted_pressure_cache
-          SET state=?,onset_at=?,below_since=?,last_sample=?,last_error=?
+          SET state=?,last_sample=?,last_error=?
         WHERE singleton=1 AND checked_at=?`,
       )
-      .run(
-        JSON.stringify(decision.state),
-        decision.state.onsetAt,
-        decision.state.belowSince,
-        JSON.stringify(observation),
-        failure,
-        at,
-      )
+      .run(JSON.stringify(decision.state), JSON.stringify(observation), failure, at)
   })
   return decision
 }

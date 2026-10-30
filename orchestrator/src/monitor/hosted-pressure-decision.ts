@@ -47,10 +47,11 @@ const action = 'feature lanes hold new dispatch; read-only work continues'
 function observationError(
   observation: HostedPressureObservation,
   detail: string,
+  series?: 'steal' | 'api-p95',
 ): MonitorCondition {
   return {
     kind: 'observation-error',
-    subject: `hosted-metrics:${observation.kind === 'failed' ? observation.query : 'sample'}`,
+    subject: `hosted-metrics:${observation.kind === 'failed' ? observation.query : (series ?? 'sample')}`,
     since: observation.at,
     ageMs: 0,
     detail,
@@ -60,21 +61,73 @@ function observationError(
 
 function pressureCondition(
   state: HostedPressureState,
-  sample: HostedPressureSample,
+  observation: HostedPressureSample | Extract<HostedPressureObservation, { kind: 'failed' }>,
 ): MonitorCondition {
   const value = (item: Value) => (item === 'absent' ? 'absent' : String(item))
+  const latest =
+    observation.kind === 'sample'
+      ? `latest steal=${value(observation.stealFraction)}, ` +
+        `throttle=${value(observation.throttleFraction)}, balance=${value(observation.balance)}, ` +
+        `api-p95=${value(observation.apiP95Seconds)}s`
+      : `latest observation failed at ${observation.query}`
   return {
     kind: 'hosted-pressure',
     subject: 'hosted-record',
     since: state.onsetAt,
-    ageMs: state.onsetAt ? Math.max(0, Date.parse(sample.at) - Date.parse(state.onsetAt)) : null,
+    ageMs: state.onsetAt
+      ? Math.max(0, Date.parse(observation.at) - Date.parse(state.onsetAt))
+      : null,
     severity: 'attention',
-    detail:
-      `breached ${state.breachedMeasures.join(', ')}; latest steal=${value(sample.stealFraction)}, ` +
-      `throttle=${value(sample.throttleFraction)}, balance=${value(sample.balance)}, ` +
-      `api-p95=${value(sample.apiP95Seconds)}s; onset ${state.onsetAt}`,
+    detail: `breached ${state.breachedMeasures.join(', ')}; ${latest}; onset ${state.onsetAt}`,
     action,
   }
+}
+
+function failedDecision(
+  previous: HostedPressureState,
+  observation: Extract<HostedPressureObservation, { kind: 'failed' }>,
+): HostedPressureDecision {
+  const error = observationError(
+    observation,
+    `hosted metrics query ${observation.query} failed: ${observation.error}`,
+  )
+  return {
+    state: previous,
+    conditions:
+      previous.status === 'pressure' ? [pressureCondition(previous, observation), error] : [error],
+  }
+}
+
+function sampleErrors(observation: HostedPressureSample): MonitorCondition[] {
+  const errors: MonitorCondition[] = []
+  if (observation.stealFraction === 'absent') {
+    errors.push(
+      observationError(observation, 'hosted metrics query steal returned no series', 'steal'),
+    )
+  }
+  if (observation.apiP95Seconds === 'absent') {
+    errors.push(
+      observationError(observation, 'hosted metrics query api-p95 returned no series', 'api-p95'),
+    )
+  }
+  return errors
+}
+
+function breachedMeasures(observation: HostedPressureSample): HostedMeasure[] {
+  const breached: HostedMeasure[] = []
+  if (observation.stealFraction !== 'absent' && observation.stealFraction >= HOSTED_STEAL_THRESHOLD)
+    breached.push('steal')
+  if (
+    observation.throttleFraction !== 'absent' &&
+    observation.throttleFraction > HOSTED_THROTTLE_THRESHOLD
+  )
+    breached.push('throttle')
+  if (
+    observation.apiP95Seconds !== 'absent' &&
+    observation.apiP95Seconds >= HOSTED_API_P95_THRESHOLD_SECONDS
+  )
+    breached.push('api-p95')
+  return breached
 }
 
 /** Advance one pressure episode; failed observations never advance its clear window. */
@@ -98,39 +151,9 @@ export function decideHostedPressure(
       ],
     }
   }
-  if (observation.kind === 'failed') {
-    return {
-      state: previous,
-      conditions: [
-        observationError(
-          observation,
-          `hosted metrics query ${observation.query} failed: ${observation.error}`,
-        ),
-      ],
-    }
-  }
-  if (observation.stealFraction === 'absent') {
-    return {
-      state: previous,
-      conditions: [observationError(observation, 'hosted metrics query steal returned no series')],
-    }
-  }
-  if (observation.apiP95Seconds === 'absent') {
-    return {
-      state: previous,
-      conditions: [
-        observationError(observation, 'hosted metrics query api-p95 returned no series'),
-      ],
-    }
-  }
-  const breached: HostedMeasure[] = []
-  if (observation.stealFraction >= HOSTED_STEAL_THRESHOLD) breached.push('steal')
-  if (
-    observation.throttleFraction !== 'absent' &&
-    observation.throttleFraction > HOSTED_THROTTLE_THRESHOLD
-  )
-    breached.push('throttle')
-  if (observation.apiP95Seconds >= HOSTED_API_P95_THRESHOLD_SECONDS) breached.push('api-p95')
+  if (observation.kind === 'failed') return failedDecision(previous, observation)
+  const errors = sampleErrors(observation)
+  const breached = breachedMeasures(observation)
   if (breached.length > 0) {
     const state: HostedPressureState = {
       status: 'pressure',
@@ -138,7 +161,16 @@ export function decideHostedPressure(
       belowSince: null,
       breachedMeasures: [...new Set([...previous.breachedMeasures, ...breached])],
     }
-    return { state, conditions: [pressureCondition(state, observation)] }
+    return { state, conditions: [pressureCondition(state, observation), ...errors] }
+  }
+  if (errors.length > 0) {
+    return {
+      state: previous,
+      conditions:
+        previous.status === 'pressure'
+          ? [pressureCondition(previous, observation), ...errors]
+          : errors,
+    }
   }
   if (previous.status === 'clear') return { state: CLEAR_HOSTED_PRESSURE_STATE, conditions: [] }
   const belowSince = previous.belowSince ?? observation.at

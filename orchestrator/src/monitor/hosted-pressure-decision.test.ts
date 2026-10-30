@@ -85,14 +85,69 @@ describe('hosted pressure decision', () => {
         sample({ throttleFraction: 'absent', balance: 'absent' }),
       ).conditions,
     ).toEqual([])
-    for (const missing of [
-      { stealFraction: 'absent' as const },
-      { apiP95Seconds: 'absent' as const },
-    ]) {
-      expect(
-        decideHostedPressure(CLEAR_HOSTED_PRESSURE_STATE, sample(missing)).conditions[0]?.kind,
-      ).toBe('observation-error')
+    for (const [series, missing] of [
+      ['steal', { stealFraction: 'absent' as const }],
+      ['api-p95', { apiP95Seconds: 'absent' as const }],
+    ] as const) {
+      expect(decideHostedPressure(CLEAR_HOSTED_PRESSURE_STATE, sample(missing)).conditions).toEqual(
+        [
+          expect.objectContaining({
+            kind: 'observation-error',
+            subject: `hosted-metrics:${series}`,
+          }),
+        ],
+      )
     }
+  })
+
+  test('a present breach starts pressure beside an absent-series error', () => {
+    const result = decideHostedPressure(
+      CLEAR_HOSTED_PRESSURE_STATE,
+      sample({ stealFraction: 0.9, apiP95Seconds: 'absent' }),
+    )
+    expect(result.state).toMatchObject({ status: 'pressure', breachedMeasures: ['steal'] })
+    expect(result.conditions).toEqual([
+      expect.objectContaining({ kind: 'hosted-pressure' }),
+      expect.objectContaining({
+        kind: 'observation-error',
+        subject: 'hosted-metrics:api-p95',
+      }),
+    ])
+  })
+
+  test('a failed query during an episode keeps pressure beside the error', () => {
+    const pressured = decideHostedPressure(
+      CLEAR_HOSTED_PRESSURE_STATE,
+      sample({ stealFraction: 0.3 }),
+    ).state
+    const result = decideHostedPressure(pressured, {
+      kind: 'failed',
+      query: 'api-p95',
+      error: 'offline',
+      at: new Date(start + 60_000).toISOString(),
+    })
+    expect(result.state).toEqual(pressured)
+    expect(result.conditions.map(({ kind }) => kind)).toEqual([
+      'hosted-pressure',
+      'observation-error',
+    ])
+  })
+
+  test('an absent required series does not complete an episode clear window', () => {
+    const pressured = decideHostedPressure(
+      CLEAR_HOSTED_PRESSURE_STATE,
+      sample({ stealFraction: 0.3 }),
+    ).state
+    const clearing = decideHostedPressure(pressured, sample({}, start + 60_000)).state
+    const result = decideHostedPressure(
+      clearing,
+      sample({ apiP95Seconds: 'absent' }, start + 60_000 + HOSTED_PRESSURE_CLEAR_MS),
+    )
+    expect(result.state).toEqual(clearing)
+    expect(result.conditions.map(({ kind }) => kind)).toEqual([
+      'hosted-pressure',
+      'observation-error',
+    ])
   })
 
   test('unconfigured metrics give the configured informational remedy', () => {

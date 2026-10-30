@@ -1,42 +1,20 @@
 import { expect, test } from 'bun:test'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import {
   checkHostedPressureCached,
-  HOSTED_API_APP,
-  HOSTED_FLY_METRICS_TOKEN,
   HOSTED_METRICS_INTERVAL_MS,
   HOSTED_METRICS_ORG,
   HOSTED_METRICS_QUERIES,
-  HOSTED_METRICS_QUERY_BUDGET_MS,
-  HOSTED_METRICS_WINDOW,
-  HOSTED_RECORD_APP,
 } from './monitor-hosted-pressure.ts'
 
 const base = Date.parse('2026-10-30T12:00:00.000Z')
 
-test('exports the ruled Fly metric names and budget', () => {
-  expect({
-    org: HOSTED_METRICS_ORG,
-    record: HOSTED_RECORD_APP,
-    api: HOSTED_API_APP,
-    window: HOSTED_METRICS_WINDOW,
-    token: HOSTED_FLY_METRICS_TOKEN,
-    budget: HOSTED_METRICS_QUERY_BUDGET_MS,
-  }).toEqual({
-    org: PLATFORM_SLUG,
-    record: `${PLATFORM_SLUG}-record`,
-    api: `${PLATFORM_SLUG}-api`,
-    window: '5m',
-    token: 'BOTTEGA_FLY_METRICS_TOKEN',
-    budget: 3_000,
-  })
-})
-
 test('the machine cache runs one four-query observation per interval', async () => {
   let calls = 0
-  const fetcher = (async () => {
+  const paths: string[] = []
+  const fetcher = (async (input: RequestInfo | URL) => {
     calls++
+    paths.push(new URL(String(input)).pathname)
     return Response.json({ status: 'success', data: { result: [{ value: [base, '0'] }] } })
   }) as unknown as typeof fetch
   const dependencies = {
@@ -52,6 +30,7 @@ test('the machine cache runs one four-query observation per interval', async () 
     clock: base + HOSTED_METRICS_INTERVAL_MS,
   })
   expect(calls).toBe(Object.keys(HOSTED_METRICS_QUERIES).length * 2)
+  expect(new Set(paths)).toEqual(new Set([`/prometheus/${HOSTED_METRICS_ORG}/api/v1/query`]))
 })
 
 test('authorization accepts both bare and already-prefixed Fly tokens', async () => {
@@ -72,6 +51,23 @@ test('authorization accepts both bare and already-prefixed Fly tokens', async ()
     })
   }
   expect(new Set(authorizations)).toEqual(new Set(['FlyV1 bare-token', 'FlyV1 prefixed-token']))
+})
+
+test('a fail-fast store claim restores the connection busy timeout', async () => {
+  const database = db()
+  database.exec('PRAGMA busy_timeout = 4321')
+  await checkHostedPressureCached({
+    database,
+    clock: base,
+    fetch: (async () =>
+      Response.json({
+        status: 'success',
+        data: { result: [{ value: [base, '0'] }] },
+      })) as unknown as typeof fetch,
+    resolveToken: async () => ({ BOTTEGA_FLY_METRICS_TOKEN: 'token' }),
+    failFastStoreClaim: true,
+  })
+  expect(database.query('PRAGMA busy_timeout').get()).toEqual({ timeout: 4321 })
 })
 
 test('a failed query is stored and returned as an observation error', async () => {

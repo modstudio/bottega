@@ -73,6 +73,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'write-probe cleanup interpolates a table name restricted to the numeric probe prefix',
   ),
   ...exempt(
+    'orchestrator/src/monitor/monitor-hosted-pressure.ts',
+    ['73d0a0a91537afc7'],
+    'hosted-pressure claim restores the numeric busy_timeout captured from the same connection',
+  ),
+  ...exempt(
     'orchestrator/src/database/workflow-uuid-migration-preflight.ts',
     [
       '745f7343b84fd5a4',
