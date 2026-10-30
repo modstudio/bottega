@@ -232,7 +232,7 @@ const docSpecs: readonly Spec[] = [
   ],
   [
     'consume [slug]',
-    "mark a resume brief consumed and hand its author's runs to the consuming session",
+    "mark a resume brief consumed and hand its author's owed runs to the consuming session",
     [...address, ...revision, ...json],
   ],
   ['rm [slug]', 'remove a document', [...address, o('--cwd <value>'), ...revision, ...json]],
