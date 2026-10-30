@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { hostname, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
@@ -9,6 +9,7 @@ import {
   storedMachineNames,
 } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { defaultShortName } from './machine-name.ts'
 import { RecordApiRequestError } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
 import { RECORD_SYNC_BATCH_SIZE } from './record-sync-contract.ts'
@@ -50,7 +51,11 @@ const whoami = async () => ({
 const options = (local: Database) => ({
   local,
   now: () => STAMP,
-  identity: { id: MACHINE_ID, name: 'test-machine' },
+  identity: {
+    id: MACHINE_ID,
+    shortName: 'requested-short',
+    displayName: 'Requested display',
+  },
 })
 
 test('sync sends an empty batch to register and refresh its machine', async () => {
@@ -67,7 +72,13 @@ test('sync sends an empty batch to register and refresh its machine', async () =
   expect(await syncRecord({ ...options(local), client })).toMatchObject({ pushed: 0, pending: 0 })
   expect(requests).toEqual([
     {
-      machine: { id: MACHINE_ID, name: 'test-machine', seenAt: STAMP },
+      machine: {
+        id: MACHINE_ID,
+        shortName: 'requested-short',
+        displayName: 'Requested display',
+        name: defaultShortName(hostname()),
+        seenAt: STAMP,
+      },
       rows: [],
     },
   ])

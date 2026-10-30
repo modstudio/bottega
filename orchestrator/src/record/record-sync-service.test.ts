@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { hostname } from 'node:os'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { defaultShortName } from './machine-name.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { syncHostedRecord } from './record-sync-service.ts'
 
@@ -201,7 +199,7 @@ realPostgres('hosted machine name claims', () => {
         request: {
           machine: {
             id: CLAIM_REQUESTER_ID,
-            name: 'Requested display',
+            name: 'requesting-client-default',
             shortName: 'held-name',
             displayName: 'Requested display',
             seenAt: STAMP,
@@ -218,7 +216,7 @@ realPostgres('hosted machine name claims', () => {
         { name: string; short_name: string | null; display_name: string | null }[]
       >`SELECT name,short_name,display_name FROM machine WHERE id=${CLAIM_REQUESTER_ID}::uuid`
       expect(machine).toEqual({
-        name: defaultShortName(hostname()),
+        name: 'requesting-client-default',
         short_name: null,
         display_name: null,
       })

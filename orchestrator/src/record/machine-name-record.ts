@@ -1,16 +1,10 @@
 // concern: machine-name-record
 /** Atomically claims and updates hosted machine names. Must not know CLI presentation. */
 
-import { hostname } from 'node:os'
 import { SQL } from 'bun'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
-import {
-  decideMachineNameClaim,
-  defaultShortName,
-  displayNameRefusal,
-  shortNameRefusal,
-} from './machine-name.ts'
+import { decideMachineNameClaim, displayNameRefusal, shortNameRefusal } from './machine-name.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import type { RecordPrincipal } from './record-sync-contract.ts'
 import {
@@ -86,7 +80,7 @@ export async function upsertHostedMachine(
   const shortName = identity.shortName ?? identity.name
   const displayName = identity.displayName ?? identity.name
   if (!shortName || !displayName) throw new Error('machine sync requires short and display names')
-  const initialName = defaultShortName(hostname())
+  const initialName = identity.name ?? displayName
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const owned = await tx`

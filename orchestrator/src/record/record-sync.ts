@@ -1,6 +1,7 @@
 // concern: record-sync
 /** Batches local outbox rows for the hosted API and applies authoritative per-row results. */
 import type { Database } from 'bun:sqlite'
+import { hostname } from 'node:os'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { storedMachineNames, writeMachineNames } from '../../../shared/machine-config.ts'
 import { resolveRecordApiUrl } from '../../../shared/record-api-url.ts'
@@ -17,6 +18,7 @@ import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
 import { machineId, machineNames } from './machine-identity.ts'
+import { defaultShortName } from './machine-name.ts'
 import {
   deferOutboxRow,
   outboxParentIdentityKey,
@@ -591,7 +593,7 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
   const requestedIdentity = options.identity ?? { id: machineId(), ...machineNames() }
   const identity = {
     ...requestedIdentity,
-    name: requestedIdentity.displayName ?? requestedIdentity.name ?? machineNames().displayName,
+    name: defaultShortName(hostname()),
   }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
   const backfill = options.backfill
