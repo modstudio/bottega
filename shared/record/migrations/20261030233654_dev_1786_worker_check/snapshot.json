@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "d50cd3cb-76ff-42b5-81a3-e83c6e20c798",
+  "id": "cfd3c3e3-8eaa-47be-996b-0f2c77bf4c42",
   "prevIds": [
-    "be753751-f49a-4194-9b68-bd8961f47f70"
+    "9e57e0ea-f4d2-43af-9a94-63ac00915a9d"
   ],
   "ddl": [
     {
@@ -2998,6 +2998,32 @@
       "generated": null,
       "identity": null,
       "name": "provisioning_host_load",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "host_admission_first",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "run"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "host_admission",
       "entityType": "columns",
       "schema": "public",
       "table": "run"
