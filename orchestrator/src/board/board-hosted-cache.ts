@@ -745,15 +745,6 @@ function messageAddressed(
   return messageAddressesReader(row, context)
 }
 
-export function cachedMessageAddressesReader(
-  row: { message: HostedBoardMessage; tags: BoardTag[] },
-  reader: string,
-  clock: number,
-  database: Database,
-): boolean {
-  return messageAddressesReader(row, loadClaimContext(database, reader, true, clock, row))
-}
-
 export function cachedMessageAddressed(
   row: { message: HostedBoardMessage; tags: BoardTag[] },
   reader: string,
