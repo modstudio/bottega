@@ -74,10 +74,7 @@ test('session hold is idempotent and releases the open row with its reason', () 
 
 test('session hold releases a reaped local message by its record id without hosted adoption', () => {
   const id = addMessage()
-  sessionHold(
-    { on: id },
-    { env, at: '2026-10-30T02:30:00.000Z', recordId: () => newRecordId() },
-  )
+  sessionHold({ on: id }, { env, at: '2026-10-30T02:30:00.000Z', recordId: () => newRecordId() })
   db().query('DELETE FROM board_message WHERE record_id=?').run(id)
 
   expect(
