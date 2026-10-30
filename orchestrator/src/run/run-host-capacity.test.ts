@@ -160,6 +160,47 @@ describe('run host capacity', () => {
     expect(slept).toBe(false)
   })
 
+  test('sequential siblings reserve capacity from the admitting decision', async () => {
+    const now = Date.parse('2026-10-30T12:00:00.000Z')
+    const runIds = Array.from({ length: 3 }, () => repositoryRun())
+    const sample = () => ({ ...loaded(), loadavg: 1, cpuBusy: 1, ncpu: 2 })
+
+    for (const [index, runId] of runIds.entries()) {
+      const result = await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        env: {},
+        platform: 'linux',
+        now: () => now,
+        measure: sample,
+        sleep: async () => {
+          db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+        },
+      })
+      if (index === 0) expect(result).toBeNull()
+      else expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
+    }
+
+    const rows = db()
+      .query<{ host_admission_first: string; host_admission: string | null }, [string]>(
+        `SELECT host_admission_first,host_admission FROM run
+          WHERE record_id IN (SELECT value FROM json_each(?)) ORDER BY number`,
+      )
+      .all(JSON.stringify(runIds))
+    expect(JSON.parse(rows[0]!.host_admission)).toMatchObject({
+      decision: 'admit',
+      sample: { recentAdmissions: 0 },
+    })
+    for (const row of rows.slice(1)) {
+      expect(JSON.parse(row.host_admission_first)).toMatchObject({
+        decision: 'hold',
+        heldOn: ['load'],
+        sample: { recentAdmissions: 1 },
+      })
+      expect(row.host_admission).toBeNull()
+    }
+  })
+
   test('an unregistered checkout is repository work for admission', async () => {
     repositoryRun(null)
     const runId = repositoryRun(null)

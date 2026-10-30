@@ -87,11 +87,18 @@ export const monitorModules: MonitorModule[] = [
     '../host-load-sample.ts',
     '../review/review-vocabulary.ts',
     '../run/run-host-capacity.ts',
+    './host-admission-summary.ts',
   ]),
   module('orchestrator/src/monitor/monitor-result.ts', [
     '../database/db.ts',
     '../run/run-host-capacity.ts',
+    './host-admission-summary.ts',
     './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/host-admission-summary.ts', [
+    'bun:sqlite',
+    '../gate-load.ts',
+    '../run/run-host-capacity.ts',
   ]),
   module('orchestrator/src/monitor/monitor-issue-filing.ts', [
     'bun:sqlite',
