@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { createMemoryRecordApiClient } from '../../test/fixtures/record-api.ts'
-import { db } from '../database/db.ts'
+import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import type { HostedBoardMessage } from '../record/record-board-contract.ts'
 import { BOARD_CACHE_OWNER_KEY } from './board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from './board-mode.ts'
@@ -78,14 +78,31 @@ test('only the final delivered local replacement reports its withdrawal', async 
         clock: clock + 2 + WITHDRAWAL_SUPERSESSION_GRACE_MS,
       })
     ).delivery.map((item) => item.id),
-  ).toEqual([String(replacement.number)])
+  ).toEqual([`withdrawn:${notice.number}`, String(replacement.number)])
   db()
     .query(
       `INSERT INTO board_receipt
        (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
        VALUES (?,?,?,?,?)`,
     )
-    .run(newRecordId(), replacement.recordId, reader, 1, new Date(clock + 4).toISOString())
+    .run(newRecordId(), replacement.recordId, reader, 0, new Date(clock + 4).toISOString())
+  for (const lastSeen of [
+    pendingClockFor(clock + 4),
+    pendingClockFor(clock + 4) - SESSION_LIVE_MS - 1,
+  ]) {
+    db()
+      .query('UPDATE presence SET last_seen=? WHERE session_id=?')
+      .run(new Date(lastSeen).toISOString(), reader)
+    expect(
+      (
+        await pendingBoardDelivery({
+          session: reader,
+          budgetMs: 0,
+          clock: pendingClockFor(clock + 4),
+        })
+      ).delivery.map((item) => item.id),
+    ).toEqual([])
+  }
   const replacementWithdrawnAt = new Date(clock + 5).toISOString()
   withdrawNotice(replacement.recordId, {}, clock + 5)
 
@@ -131,6 +148,76 @@ test('only the final delivered local replacement reports its withdrawal', async 
     (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
       .delivery,
   ).toEqual([])
+})
+
+const pendingClockFor = (withdrawnAt: number): number =>
+  withdrawnAt + WITHDRAWAL_SUPERSESSION_GRACE_MS
+
+test('acknowledgement stamps the local withdrawal that was emitted before supersession', async () => {
+  const clock = Date.parse('2026-10-30T10:45:00.000Z')
+  const reader = 'withdrawal-ack-race-reader'
+  const notice = postNotice(
+    {
+      audience: `session:${reader}`,
+      title: 'Deploy gate: HOLD',
+      body: 'Pause for this request.',
+      purpose: 'request',
+    },
+    {},
+    clock,
+  )
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), notice.recordId, reader, 1, new Date(clock + 1).toISOString())
+  withdrawNotice(notice.recordId, {}, clock + 2)
+  const pendingClock = pendingClockFor(clock + 2)
+  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
+  expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${notice.number}`])
+
+  const replacement = postNotice(
+    {
+      audience: `session:${reader}`,
+      title: 'Deploy gate: HOLD',
+      body: 'This later root supersedes the withdrawal.',
+      purpose: 'request',
+    },
+    {},
+    clock + 3,
+  )
+  db()
+    .query(
+      "UPDATE board_message SET author_kind='architect',author_session=? WHERE record_id IN (?,?)",
+    )
+    .run('deploy-gate-author', notice.recordId, replacement.recordId)
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,audience_at_posting,delivered_at)
+       VALUES (?,?,?,?,?)`,
+    )
+    .run(newRecordId(), replacement.recordId, reader, 1, new Date(clock + 4).toISOString())
+
+  await markBoardDeliveryDelivered({
+    session: reader,
+    ids: pending.delivery.map((item) => item.id),
+    clock: pendingClock + 1,
+  })
+  expect(
+    db()
+      .query(
+        'SELECT source FROM board_withdrawal_delivery WHERE reader_session=? AND message_record_id=?',
+      )
+      .get(reader, notice.recordId),
+  ).toEqual({ source: 'local' })
+  expect(
+    (
+      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 })
+    ).delivery.map((item) => item.id),
+  ).not.toContain(`withdrawn:${notice.number}`)
 })
 
 test('an adoption-retired local notice does not report an author withdrawal', async () => {
@@ -268,7 +355,7 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
     (
       await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: originalPendingClock })
     ).delivery.map((item) => item.id),
-  ).toEqual([replacement.id])
+  ).toEqual([`withdrawn:${message.id}`, replacement.id])
   db()
     .query(
       `INSERT INTO hosted_board_receipt_cache
@@ -276,6 +363,20 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
        VALUES (?,?,?,1,?,NULL,0)`,
     )
     .run(newRecordId(), replacement.id, reader, new Date(clock + 3).toISOString())
+  for (const lastSeen of [originalPendingClock, originalPendingClock - SESSION_LIVE_MS - 1]) {
+    db()
+      .query('UPDATE presence SET last_seen=? WHERE session_id=?')
+      .run(new Date(lastSeen).toISOString(), reader)
+    expect(
+      (
+        await pendingBoardDelivery({
+          session: reader,
+          budgetMs: 0,
+          clock: originalPendingClock,
+        })
+      ).delivery.map((item) => item.id),
+    ).toEqual([])
+  }
   const replacementWithdrawnAt = new Date(clock + 4).toISOString()
   replacement.withdrawnAt = replacementWithdrawnAt
   replacement.state = 'withdrawn'

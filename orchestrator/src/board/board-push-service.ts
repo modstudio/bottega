@@ -9,7 +9,6 @@ import {
   BOARD_RECEIPT_WRITE_BUDGET_MS,
   cachedAudienceAtPosting,
   cachedMessageAddressed,
-  cachedMessageAddressesReader,
   cachedRows,
   claimCachedHostedForPush,
   refreshHostedBoard,
@@ -91,6 +90,52 @@ function withdrawalWasDelivered(database: Database, session: string, messageId: 
   )
 }
 
+function receiptProvesReach(
+  database: Database,
+  table: 'board_receipt' | 'hosted_board_receipt_cache',
+  messageId: string,
+  session: string,
+): boolean {
+  return Boolean(
+    database
+      .query(
+        table === 'board_receipt'
+          ? `SELECT 1 FROM board_receipt
+             WHERE message_record_id=? AND reader_session=?
+               AND (audience_at_posting=1 OR delivered_at IS NOT NULL) LIMIT 1`
+          : `SELECT 1 FROM hosted_board_receipt_cache
+             WHERE message_id=? AND reader_session=?
+               AND (audience_at_posting=1 OR delivered_at IS NOT NULL) LIMIT 1`,
+      )
+      .get(messageId, session),
+  )
+}
+
+const localReceiptProvesReach = (database: Database, messageId: string, session: string) =>
+  receiptProvesReach(database, 'board_receipt', messageId, session)
+
+const hostedReceiptProvesReach = (database: Database, messageId: string, session: string) =>
+  receiptProvesReach(database, 'hosted_board_receipt_cache', messageId, session)
+
+const supersessionFact = (
+  authorSession: string | null,
+  title: string | null,
+  createdAt: string,
+) => ({
+  authorSession,
+  title: title ?? '',
+  createdAt,
+})
+
+function localSupersessionRoots(rows: ReturnType<typeof messageRows>) {
+  return rows
+    .filter((row) => row.thread_root_record_id === null)
+    .map((row) => ({
+      row,
+      fact: supersessionFact(row.author_session, row.title, row.created_at),
+    }))
+}
+
 function withdrawalDelivery(input: {
   id: string
   title: string
@@ -116,14 +161,7 @@ function pendingWithdrawals(
   database: Database,
 ): PendingWithdrawal[] {
   const localRows = messageRows(database)
-  const localSupersessionFact = (row: (typeof localRows)[number]) => ({
-    authorSession: row.author_session,
-    title: row.title ?? '',
-    createdAt: row.created_at,
-  })
-  const localRoots = localRows
-    .filter((row) => row.thread_root_record_id === null)
-    .map((row) => ({ row, fact: localSupersessionFact(row) }))
+  const localRoots = localSupersessionRoots(localRows)
   const local = localRows.flatMap((row) => {
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
     if (
@@ -139,10 +177,15 @@ function pendingWithdrawals(
       })
     )
       return []
-    const matchingRoots = localRoots.filter((root) =>
-      withdrawalSuperseded(localSupersessionFact(row), [root.fact]),
+    if (
+      localRoots.some(
+        (root) =>
+          withdrawalSuperseded(supersessionFact(row.author_session, row.title, row.created_at), [
+            root.fact,
+          ]) && localReceiptProvesReach(database, root.row.record_id, session),
+      )
     )
-    if (matchingRoots.some((root) => addressed(root.row, session, clock, database))) return []
+      return []
     return [
       withdrawalDelivery({
         id: String(row.number),
@@ -154,14 +197,12 @@ function pendingWithdrawals(
     ]
   })
   const hostedRows = cachedRows(database)
-  const hostedSupersessionFact = ({ message }: (typeof hostedRows)[number]) => ({
-    authorSession: message.authorSession,
-    title: message.title ?? '',
-    createdAt: message.createdAt,
-  })
   const hostedRoots = hostedRows
     .filter((row) => row.message.threadRootId === null)
-    .map((row) => ({ row, fact: hostedSupersessionFact(row) }))
+    .map((row) => ({
+      row,
+      fact: supersessionFact(row.message.authorSession, row.message.title, row.message.createdAt),
+    }))
   const hosted = hostedRows.flatMap((row) => {
     const { message } = row
     const deliveredAt = receiptAt(
@@ -183,11 +224,14 @@ function pendingWithdrawals(
       })
     )
       return []
-    const matchingRoots = hostedRoots.filter((root) =>
-      withdrawalSuperseded(hostedSupersessionFact(row), [root.fact]),
-    )
     if (
-      matchingRoots.some((root) => cachedMessageAddressesReader(root.row, session, clock, database))
+      hostedRoots.some(
+        (root) =>
+          withdrawalSuperseded(
+            supersessionFact(message.authorSession, message.title, message.createdAt),
+            [root.fact],
+          ) && hostedReceiptProvesReach(database, root.row.message.id, session),
+      )
     )
       return []
     return [
@@ -208,15 +252,38 @@ function stampPendingWithdrawals(
   session: string,
   requestedIds: Set<string>,
   deliveredAt: string,
-  clock: number,
 ): void {
+  if (requestedIds.size === 0) return
   const stamp = database.query(
     `INSERT OR IGNORE INTO board_withdrawal_delivery
      (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
   )
-  for (const row of pendingWithdrawals(session, clock, database))
-    if (requestedIds.has(row.id))
-      stamp.run(newRecordId(), session, row.messageRecordId, row.source, deliveredAt)
+  let hostedRows: ReturnType<typeof cachedRows> | null = null
+  for (const requestedId of requestedIds) {
+    const identifier = requestedId.slice('withdrawn:'.length)
+    const number = /^[0-9]+$/.test(identifier) ? Number(identifier) : null
+    const localNumber =
+      number !== null && Number.isSafeInteger(number) && number > 0 ? number : null
+    const local = database
+      .query<{ record_id: string }, [number | null, string]>(
+        `SELECT record_id FROM board_message
+         WHERE thread_root_record_id IS NULL AND withdrawn_at IS NOT NULL
+           AND (number=? OR record_id=?)`,
+      )
+      .get(localNumber, identifier.toLowerCase())
+    if (local) {
+      stamp.run(newRecordId(), session, local.record_id, 'local', deliveredAt)
+      continue
+    }
+    hostedRows ??= cachedRows(database)
+    const hosted = hostedRows.find(
+      ({ message }) =>
+        message.id === identifier.toLowerCase() &&
+        message.threadRootId === null &&
+        message.withdrawnAt !== null,
+    )
+    if (hosted) stamp.run(newRecordId(), session, hosted.message.id, 'hosted', deliveredAt)
+  }
 }
 
 function localPendingAcknowledgements(
@@ -478,7 +545,7 @@ export async function markBoardDeliveryDelivered(input: {
       }
     }
   writeTransaction(() => {
-    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt, clock)
+    stampPendingWithdrawals(database, input.session, withdrawalIds, deliveredAt)
     const localStamp = database.query(
       `INSERT INTO board_receipt
        (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
