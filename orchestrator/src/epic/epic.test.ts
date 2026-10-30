@@ -350,14 +350,14 @@ describe('epic scoreboard', () => {
       )
       .run(run)
     const previous = process.env.TZ
+    const previousResolvedZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     process.env.TZ = 'America/New_York'
     try {
       const report = epicScoreboard('DEV-TZ-PARENT', [{ key: 'DEV-TZ' }], db())
       expect(report.children[0]!.idleMinutes).toBe(1)
       expect(report.total.idleMinutes).toBe(1)
     } finally {
-      if (previous === undefined) delete process.env.TZ
-      else process.env.TZ = previous
+      process.env.TZ = previous ?? previousResolvedZone
     }
   })
 

@@ -134,6 +134,7 @@ describe('localDay', () => {
     // Pin a zone behind UTC so the local and UTC days differ: 22:00 local on
     // 2026-10-22 is 02:00Z on 2026-10-23.
     const previous = process.env.TZ
+    const previousResolvedZone = Intl.DateTimeFormat().resolvedOptions().timeZone
     process.env.TZ = 'America/New_York'
     try {
       const evening = new Date(2026, 9, 22, 22, 0, 0)
@@ -141,8 +142,7 @@ describe('localDay', () => {
       expect(localDay(evening)).toBe('2026-10-22')
       expect(localDay(new Date(2026, 0, 5, 0, 30, 0))).toBe('2026-01-05')
     } finally {
-      if (previous === undefined) delete process.env.TZ
-      else process.env.TZ = previous
+      process.env.TZ = previous ?? previousResolvedZone
     }
   })
 })
