@@ -1410,6 +1410,14 @@
       "tag": "0185_run_host_admission",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 186,
+      "version": "6",
+      "when": 1793577600051,
+      "tag": "0186_run_host_admission_index",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

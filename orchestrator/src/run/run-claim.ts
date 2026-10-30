@@ -69,6 +69,7 @@ import {
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
+import { admitFreshRepositoryRun } from './run-claim-host-capacity.ts'
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
@@ -596,6 +597,12 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
    */
   let cwd = callerCwd
   try {
+    await admitFreshRepositoryRun({
+      database: db(),
+      runId: claim.id,
+      repoJob,
+      existingChain: opts.resume !== undefined,
+    })
     switch (claimTreePlan.mode) {
       case 'attach':
         worktree = attachedTree!

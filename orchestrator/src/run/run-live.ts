@@ -60,7 +60,7 @@ import {
 import { createCheckpointSchedule } from './checkpoint-schedule.ts'
 import { prepareLaterRunBoardPrompt } from './run-board-prompt.ts'
 import { foldRunCallUsage, type RunCallUsage } from './run-call-usage.ts'
-import { startRunAfterHostCapacity, waitForRunHostCapacity } from './run-host-capacity.ts'
+import { startRunAfterHostCapacity, waitForLiveRunHostCapacity } from './run-host-capacity.ts'
 import { type IdleKillState, idleSnapshotObserver, performIdleKill } from './run-idle-kill.ts'
 import { childEnv, errorTail, live, liveCheckpoints } from './run-process.ts'
 import { collectReplySource, replyContract } from './run-reply-source.ts'
@@ -260,13 +260,12 @@ async function startAfterHostCapacity(input: {
   const runId = input.claim.id
   const result = await startRunAfterHostCapacity({
     wait: () =>
-      input.repoJob
-        ? waitForRunHostCapacity({
-            database: db(),
-            runId,
-            existingChain: input.opts.resume !== undefined,
-          })
-        : Promise.resolve(null),
+      waitForLiveRunHostCapacity({
+        database: db(),
+        runId,
+        repoJob: input.repoJob,
+        existingChain: input.opts.resume !== undefined,
+      }),
     isRunning: () =>
       (
         db().query('SELECT status FROM run WHERE record_id=?').get(runId) as {

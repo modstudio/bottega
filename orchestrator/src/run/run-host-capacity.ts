@@ -58,11 +58,12 @@ type RunHostCapacityWaiter = {
 }
 
 export const RUN_HOST_CAPACITY_WAITERS_SQL = `SELECT record_id, host_wait_since FROM run
-        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
+        WHERE status='running' AND host_wait_since IS NOT NULL
         ORDER BY host_wait_since ASC, record_id ASC`
 
 export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT record_id, agent, agent_start_time, host_wait_since FROM run
-        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`
+        WHERE status='running' AND host_wait_since IS NULL AND record_id<>? AND
+              (worktree IS NOT NULL OR host_admission IS NOT NULL)`
 
 export const RUN_HOST_RESERVATIONS_SQL = `SELECT record_id, agent, agent_start_time, host_admission FROM run
         WHERE status='running' AND record_id<>? AND
@@ -132,10 +133,7 @@ function runningRepositoryFacts(
     }
   }
   return {
-    running: new Set([
-      ...rows.filter((row) => row.host_wait_since === null).map((row) => row.record_id),
-      ...reservations.map((row) => row.record_id),
-    ]).size,
+    running: rows.length,
     recentReservedCores: recentRows.reduce(
       (total, row) => total + reservedCores(samplesByAgent.get(row.agent) ?? []),
       0,
@@ -272,10 +270,17 @@ function decideAndRecordAdmission(input: {
     input.database
       .query(
         `UPDATE run SET host_admission_first=COALESCE(host_admission_first,?),
-                        host_admission=CASE WHEN ? THEN ? ELSE host_admission END
+                        host_admission=CASE WHEN ? THEN ? ELSE host_admission END,
+                        host_wait_since=CASE WHEN ? THEN NULL ELSE host_wait_since END
           WHERE record_id=?`,
       )
-      .run(JSON.stringify(record), decision.admit ? 1 : 0, JSON.stringify(record), input.runId)
+      .run(
+        JSON.stringify(record),
+        decision.admit ? 1 : 0,
+        JSON.stringify(record),
+        decision.admit ? 1 : 0,
+        input.runId,
+      )
     return { decision, load: input.load, reservedCores: repositories.recentReservedCores }
   }, input.database)
 }
@@ -516,6 +521,26 @@ export async function waitForRunHostCapacity(input: {
     measure: input.measure ?? measureHostLoad,
     existingChain: input.existingChain ?? false,
   })
+}
+
+export async function waitForLiveRunHostCapacity(input: {
+  database: Database
+  runId: string
+  repoJob: boolean
+  existingChain: boolean
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  now?: () => number
+  sleep?: (ms: number) => Promise<void>
+  random?: () => number
+  measure?: typeof measureHostLoad
+}): Promise<RunHostCapacityWait | null> {
+  if (!input.repoJob) return null
+  const admitted = input.database
+    .query('SELECT host_admission FROM run WHERE record_id=?')
+    .get(input.runId) as { host_admission: string | null } | null
+  if (admitted?.host_admission != null) return null
+  return waitForRunHostCapacity(input)
 }
 
 /** Keep the final status check adjacent to the spawn it guards. */
