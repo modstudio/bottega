@@ -146,6 +146,7 @@ realPostgres('hosted run task references', () => {
       await admin`DELETE FROM hub_task WHERE id IN (${TASK_ID}::uuid)`
       await admin`DELETE FROM hub_task WHERE id=${OTHER_SPACE_TASK_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
+      await admin`DELETE FROM machine_name_claim WHERE machine_id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM hub_change WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
       await admin`DELETE FROM hub_change_head WHERE space_id IN (${SPACE_ID}::uuid,${OTHER_SPACE_ID}::uuid)`
@@ -426,6 +427,7 @@ realPostgres('hosted jsonb sync values', () => {
       await admin`DELETE FROM landing_override WHERE id=${JSONB_OVERRIDE_ID}::uuid`
       await admin`DELETE FROM run WHERE id=${JSONB_RUN_ID}::uuid`
       await admin`DELETE FROM project WHERE id=${JSONB_PROJECT_ID}::uuid`
+      await admin`DELETE FROM machine_name_claim WHERE machine_id=${JSONB_MACHINE_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${JSONB_MACHINE_ID}::uuid`
       await admin`DELETE FROM hub_change WHERE space_id=${JSONB_SPACE_ID}::uuid`
       await admin`DELETE FROM hub_change_head WHERE space_id=${JSONB_SPACE_ID}::uuid`
