@@ -248,7 +248,6 @@ async function claimLinks(
     probe: Boolean(input.opts.probe),
   })
 }
-
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -299,7 +298,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     : null
   const recordId = claimRecordId(opts.reserveId)
   const { promptPath, outputPath } = prepareFiles(runsDir, recordId, claimedPrompt, originalPrompt)
-  // Beside the prompt it wraps; detach() may already have named that prompt path.
   /**
    * The return contract is written to disk: codex's `--output-schema` wants a
    * path and grok's `--json-schema`

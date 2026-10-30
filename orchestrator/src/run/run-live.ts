@@ -506,6 +506,7 @@ function codexTransportMcpScope(scope: CodexMcpScope | null) {
   }
 }
 
+// Runs the claimed worker and completes its recorded outcome.
 export async function runLive(input: LiveInput): Promise<LiveResult> {
   let {
     repoJob,
@@ -704,7 +705,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       db().query('UPDATE run SET model=? WHERE record_id=?').run(effectiveModel, claim.id)
     // The vendor pid stays the worker's while output and questions are finalized;
     // testing it then would mark a still-finalizing run stale.
-    //
     // Recorded HERE, before the wait, not after it. Written afterwards it is
     // always the pid of a process that has already exited.
     // Idle is silence of the VENDOR, not of orchestrator's own setup. last_event_at
