@@ -13,7 +13,13 @@ modes:
       - refresh
       - discover
       - research
+      - prior-art
       - design
+      - step: design-signoff
+        when:
+          step: design
+          outcome:
+            - schema-or-names
       - decompose
       - signoff
       - write
@@ -27,11 +33,21 @@ modes:
       - reproduce
       - research
       - recurrence
+      - step: prior-art
+        when:
+          step: recurrence
+          outcome:
+            - original-fix-wrong
       - step: design
         when:
           step: recurrence
           outcome:
             - original-fix-wrong
+      - step: design-signoff
+        when:
+          step: design
+          outcome:
+            - schema-or-names
       - decompose
       - signoff
       - write
