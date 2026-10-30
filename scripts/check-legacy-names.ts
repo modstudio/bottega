@@ -149,6 +149,8 @@ function isExempt(path: string): boolean {
     path === 'orchestrator/src/setup/setup-mcp-config.ts' ||
     path === 'orchestrator/src/setup/setup-mcp-config-migration.ts' ||
     path === 'orchestrator/src/setup/setup-mcp-config-migration.test.ts' ||
+    path === 'orchestrator/src/session-losses/session-losses.ts' ||
+    path === 'orchestrator/src/session-losses/session-losses.test.ts' ||
     path.startsWith('orchestrator/migrations/') ||
     path.startsWith('shared/record/migrations/') ||
     path.startsWith('hub/migrations/') ||

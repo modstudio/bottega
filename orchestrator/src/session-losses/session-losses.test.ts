@@ -192,8 +192,8 @@ describe('run loss', () => {
   })
 
   test.each([
-    [['orch', 'result', '9559'].join(' '), 9559],
-    [['orch', 'judge', '9558'].join(' '), 9558],
+    ['orch result 9559', 9559],
+    ['orch judge 9558', 9558],
   ])('%s collects run %i', (command, number) => {
     const report = measureSessionLosses(
       'session',
@@ -242,7 +242,7 @@ describe('run loss', () => {
       [
         assistant(0, 'before'),
         boundary(2),
-        tool(3, 'after', 'Bash', { command: ['orch', 'result', '95590'].join(' ') }),
+        tool(3, 'after', 'Bash', { command: 'orch result 95590' }),
       ],
       {
         ...emptyFacts(),

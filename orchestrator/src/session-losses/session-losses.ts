@@ -1,7 +1,7 @@
 // concern: session-losses
 /** Pure compaction-loss policy over transcript rows and lifecycle facts. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { MCP_TOOL_PREFIX, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { PLATFORM_COMMAND_WORDS } from '../../../shared/command-spellings.ts'
 import { BOARD_CLAIM_TOOL_NAMES } from '../mcp/mcp-board-claim-tools.ts'
 import { type ClaudeUsage, claudeUsage } from '../metric/transcript-reader.ts'
@@ -185,7 +185,7 @@ function toolText(row: TranscriptRow): string {
 }
 
 const structuredRunFields = ['run', 'run_id', 'runId', 'runs'] as const
-const olderMcpToolPrefix = ['mcp', 'orch', ''].join('__')
+const olderMcpToolPrefix = 'mcp__orch__'
 
 function valueNamesRun(value: unknown, run: RunLifecycle): boolean {
   return (
@@ -199,7 +199,7 @@ export function structuredToolNamesRun(
   tool: { name: string; input: unknown },
   run: RunLifecycle,
 ): boolean {
-  if (!(tool.name.startsWith('mcp__bottega__') || tool.name.startsWith(olderMcpToolPrefix)))
+  if (!(tool.name.startsWith(MCP_TOOL_PREFIX) || tool.name.startsWith(olderMcpToolPrefix)))
     return false
   if (!tool.input || typeof tool.input !== 'object' || Array.isArray(tool.input)) return false
   const input = tool.input as ObjectRow
