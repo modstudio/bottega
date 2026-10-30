@@ -134,7 +134,21 @@ export type MachineConfigKey = keyof typeof MACHINE_CONFIG
 type MachineConfigValue<Key extends MachineConfigKey> =
   (typeof MACHINE_CONFIG)[Key]['type'] extends 'integer' ? number : string
 
-const warnedLegacyVariables = new Set<string>()
+const warnedMachineConfigMessages = new Set<string>()
+
+function warnUnknownMachineKey(
+  path: string,
+  key: string,
+  warn: (message: string) => void,
+  warned: Set<string>,
+): void {
+  const warningKey = `unknown:${path}:${key}`
+  if (warned.has(warningKey)) return
+  warned.add(warningKey)
+  warn(
+    `machine config ${path}: ignoring unknown key ${key}; a newer ${PLATFORM_SLUG} may have written it`,
+  )
+}
 
 export function isMachineConfigKey(key: string): key is MachineConfigKey {
   return Object.hasOwn(MACHINE_CONFIG, key)
@@ -205,6 +219,8 @@ function validatedChildTable(
   child: unknown,
   key: string,
   path: string,
+  warn: (message: string) => void,
+  warned: Set<string>,
 ): Record<string, unknown> | null {
   const entry = table[key]
   if (entry) {
@@ -217,7 +233,8 @@ function validatedChildTable(
     return null
   }
   if (!known.some((candidate) => candidate.startsWith(`${key}.`))) {
-    throw new Error(`refusing machine config ${path}: unknown key ${key}`)
+    warnUnknownMachineKey(path, key, warn, warned)
+    return null
   }
   if (typeof child !== 'object' || child === null || Array.isArray(child)) {
     throw new Error(`refusing machine config ${path}: key ${key} must be a table`)
@@ -264,13 +281,21 @@ function validatePermissionsTable(
   return true
 }
 
-function validateProjectTable(child: unknown, prefix: string, key: string, path: string): boolean {
+function validateProjectTable(
+  child: unknown,
+  prefix: string,
+  key: string,
+  path: string,
+  warn: (message: string) => void,
+  warned: Set<string>,
+): boolean {
   if (prefix !== 'projects' || key === 'projects.clone_root') return false
   if (typeof child !== 'object' || child === null || Array.isArray(child))
     throw new Error(`refusing machine config ${path}: key ${key} must be a table`)
   const project = child as Record<string, unknown>
-  if (Object.keys(project).some((projectKey) => projectKey !== 'autonomy'))
-    throw new Error(`refusing machine config ${path}: unknown key ${key}`)
+  for (const projectKey of Object.keys(project)) {
+    if (projectKey !== 'autonomy') warnUnknownMachineKey(path, `${key}.${projectKey}`, warn, warned)
+  }
   if (
     project.autonomy !== undefined &&
     (typeof project.autonomy !== 'object' ||
@@ -285,6 +310,8 @@ function validateFile(
   table: Record<string, MachineConfigEntry>,
   parsed: unknown,
   path: string,
+  warn: (message: string) => void = (message) => process.stderr.write(`${message}\n`),
+  warned: Set<string> = warnedMachineConfigMessages,
 ): void {
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error(`refusing machine config ${path}: expected a TOML table`)
@@ -296,10 +323,10 @@ function validateFile(
       if (
         validateAutonomyTable(name, child, prefix, path) ||
         validatePermissionsTable(name, child, prefix, path) ||
-        validateProjectTable(child, prefix, key, path)
+        validateProjectTable(child, prefix, key, path, warn, warned)
       )
         continue
-      const childTable = validatedChildTable(table, known, child, key, path)
+      const childTable = validatedChildTable(table, known, child, key, path, warn, warned)
       if (childTable) visit(childTable, key)
     }
   }
@@ -336,7 +363,7 @@ export function resolveMachineValue<
   value: Table[Key]['type'] extends 'integer' ? number : string
   source: MachineValueSource
 } {
-  validateFile(table, parsed, path)
+  validateFile(table, parsed, path, warn, warned)
   const entry = table[key]
   if (!entry) throw new Error(`refusing machine config ${path}: unknown key ${key}`)
 
@@ -697,7 +724,7 @@ export function readMachineValue<Key extends MachineConfigKey>(
     key,
     path,
     (message) => process.stderr.write(`${message}\n`),
-    warnedLegacyVariables,
+    warnedMachineConfigMessages,
   ).value
 }
 
@@ -714,7 +741,7 @@ export function readMachineValueWithSource<Key extends MachineConfigKey>(
     key,
     path,
     (message) => process.stderr.write(`${message}\n`),
-    warnedLegacyVariables,
+    warnedMachineConfigMessages,
   )
 }
 

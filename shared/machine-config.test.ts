@@ -130,18 +130,33 @@ describe('machine config resolution', () => {
     expect(warnings).toEqual(['BOTTEGA_LOCAL_MODEL is deprecated; use BOTTEGA_MODEL_HOST_MODEL'])
   })
 
-  test('refuses an unknown file key with its key and path', () => {
-    expect(() =>
-      resolveMachineValue(
-        MACHINE_CONFIG,
-        {},
-        { hub: { prot: 9000 } },
-        'hub.port',
-        path,
-        silent,
-        freshWarnings(),
-      ),
-    ).toThrow(`refusing machine config ${path}: unknown key hub.prot`)
+  test('ignores unknown file keys and warns once per path and key', () => {
+    const warnings: string[] = []
+    const warned = new Set<string>()
+    const parsed = {
+      future_generation: 7,
+      machine: { future_name: 'workstation' },
+      projects: { atlas: { future_mode: 'managed' } },
+      hub: { port: 9000 },
+    }
+    for (let index = 0; index < 2; index++) {
+      expect(
+        resolveMachineValue(
+          MACHINE_CONFIG,
+          {},
+          parsed,
+          'hub.port',
+          path,
+          (message) => warnings.push(message),
+          warned,
+        ),
+      ).toEqual({ value: 9000, source: { kind: 'machine-file' } })
+    }
+    expect(warnings).toEqual([
+      `machine config ${path}: ignoring unknown key future_generation; a newer ${PLATFORM_SLUG} may have written it`,
+      `machine config ${path}: ignoring unknown key machine.future_name; a newer ${PLATFORM_SLUG} may have written it`,
+      `machine config ${path}: ignoring unknown key projects.atlas.future_mode; a newer ${PLATFORM_SLUG} may have written it`,
+    ])
   })
 
   test('refuses a file value with the wrong type', () => {
@@ -209,6 +224,31 @@ describe('machine config resolution', () => {
       mkdirSync(config)
       writeFileSync(join(config, 'machine.toml'), '[hub]\nport = 9000\n')
       expect(readMachineValue('hub.port', env)).toBe(9000)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test('setting a declared value preserves unknown keys and their values', () => {
+    const root = mkdtempSync(join(tmpdir(), 'machine-config-future-'))
+    try {
+      const config = join(root, 'config')
+      const env = { HOME: root, [CONFIG_HOME_ENV]: config }
+      mkdirSync(config)
+      const file = join(config, 'machine.toml')
+      writeFileSync(
+        file,
+        'future_generation = 7\n[machine]\nfuture_name = "workstation"\n[projects.atlas]\nfuture_mode = "managed"\n[hub]\nport = 9000\n',
+      )
+
+      setMachineValue('hub.port', '9100', env)
+
+      expect(Bun.TOML.parse(readFileSync(file, 'utf8'))).toEqual({
+        future_generation: 7,
+        machine: { future_name: 'workstation' },
+        projects: { atlas: { future_mode: 'managed' } },
+        hub: { port: 9100 },
+      })
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
