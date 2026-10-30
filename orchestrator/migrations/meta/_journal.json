@@ -1417,7 +1417,7 @@
       "when": 1793577600051,
       "tag": "0186_run_host_admission_index",
       "breakpoints": true,
-      "compatibility": "additive"
+      "compatibility": "fenced"
     }
   ]
 }
