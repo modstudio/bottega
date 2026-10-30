@@ -95,6 +95,51 @@ test('last shared reader archives committed and uncommitted changes after the cr
   }
 })
 
+test('last shared reader archives a unique commit on a non-HEAD branch', () => {
+  const fixture = closeOutFixture()
+  try {
+    const base = git(['rev-parse', 'HEAD'], fixture.worktree)
+    recordCreatedWorktreeClaims(db(), {
+      rootRunId: fixture.id,
+      runId: fixture.id,
+      projectId: null,
+      owned: true,
+      path: fixture.worktree,
+      head: base,
+      sharedReader: true,
+      mintedBranch: null,
+      label: fixture.id,
+      claimedAt: nowIso(),
+    })
+    git(['switch', '-c', 'reader-escape'], fixture.worktree)
+    writeFileSync(join(fixture.worktree, 'side-branch.txt'), 'committed on side branch\n')
+    git(['add', 'side-branch.txt'], fixture.worktree)
+    git(
+      [
+        '-c',
+        'user.name=Orch Test',
+        '-c',
+        'user.email=orch@example.invalid',
+        'commit',
+        '-m',
+        'side branch escape',
+      ],
+      fixture.worktree,
+    )
+    const escapedCommit = git(['rev-parse', 'HEAD'], fixture.worktree)
+    git(['checkout', '--detach', base], fixture.worktree)
+
+    const result = closeOutRun(fixture.id, { intent: 'terminal' })
+    const archive = archivedClonePath(result.detail)
+    const bundle = join(archive, 'head.bundle')
+    expect(result.outcome).toBe('released')
+    git(['bundle', 'verify', bundle], fixture.repo)
+    expect(git(['bundle', 'list-heads', bundle], fixture.repo)).toContain(escapedCommit)
+  } finally {
+    cleanFixture(fixture.repo, fixture.nestedSource)
+  }
+})
+
 test('reader close-out releases a clean clone without nested repositories', () => {
   const fixture = closeOutFixture()
   try {

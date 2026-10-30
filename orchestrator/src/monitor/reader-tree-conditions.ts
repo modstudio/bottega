@@ -16,6 +16,8 @@ import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import type { MonitorCondition } from './monitor-types.ts'
 
+const READER_TREE_LEASE_TIMEOUT_MS = 50
+
 export type ReaderTreeObservation = {
   runId: string
   project: string
@@ -70,7 +72,10 @@ export function readerTreeHealthConditions(
   return conditions
 }
 
-export function observeReaderTreeConditions(database: Database): MonitorCondition[] {
+export function observeReaderTreeConditions(database: Database): {
+  conditions: MonitorCondition[]
+  errors: string[]
+} {
   const readOnlyJobs = Object.values(JOBS)
     .filter((candidate) => isReadOnlyRepositoryJob(candidate.name))
     .map((candidate) => candidate.name)
@@ -132,21 +137,31 @@ export function observeReaderTreeConditions(database: Database): MonitorConditio
     }
   })
   const rowByPath = Map.groupBy(rows, (row) => realpathOrSpelled(row.worktree))
+  const errors: string[] = []
   for (const [path, pathObservations] of Map.groupBy(observations, (row) => row.worktree)) {
     if (!pathObservations.some((row) => row.shared) || pathObservations.some((row) => row.live))
       continue
     const repoRoot = rowByPath.get(path)?.find((row) => row.repo_root)?.repo_root
     if (!repoRoot || !existsSync(path)) continue
-    const dirty = withWorktreeLease(
-      repoRoot,
-      path,
-      { session: null, what: 'observe released shared reader tree' },
-      () => worktreeDirty(path),
-    )
+    let dirty: ReturnType<typeof worktreeDirty>
+    try {
+      dirty = withWorktreeLease(
+        repoRoot,
+        path,
+        { session: null, what: 'observe released shared reader tree' },
+        () => worktreeDirty(path),
+        READER_TREE_LEASE_TIMEOUT_MS,
+      )
+    } catch (cause) {
+      errors.push(
+        `shared reader tree ${path} dirty observation: ${String((cause as Error).message ?? cause)}`,
+      )
+      continue
+    }
     for (const observation of pathObservations) {
       observation.dirty = dirty.dirty
       observation.dirtyDetail = dirty.detail
     }
   }
-  return readerTreeHealthConditions(observations)
+  return { conditions: readerTreeHealthConditions(observations), errors }
 }

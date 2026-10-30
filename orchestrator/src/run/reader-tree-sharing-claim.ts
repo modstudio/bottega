@@ -8,6 +8,7 @@ import { projectAt } from '../project/projects.ts'
 import { isReadonlySandboxCandidate } from '../sandbox/sandbox.ts'
 import { appendProvisioningPhases } from '../worktree/provisioning-measurement.ts'
 import { readerTreeSharing } from '../worktree/reader-tree-sharing.ts'
+import { readOnlyWorktreeSource } from '../worktree/worktree.ts'
 import { toolFor } from '../worktree/worktree-preflight.ts'
 import { sharedReviewWorktreePath } from '../worktree/worktree-readonly.ts'
 
@@ -32,7 +33,7 @@ function readerTreeSharingForClaim(input: ClaimSharingInput): 'shared' | 'own' {
     mcpRequested: Boolean(input.mcpRequest),
     sandboxOverride: process.env.BOTTEGA_SANDBOX,
     projectRegistered: projectAt(input.callerCwd) !== null,
-    readonlyRecipeDeclared: Boolean(toolFor(input.callerCwd)?.readonly_create),
+    readonlyRecipeDeclared: readOnlyWorktreeSource(toolFor(input.callerCwd)) === 'readonly_recipe',
   })
 }
 

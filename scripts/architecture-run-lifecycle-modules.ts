@@ -69,6 +69,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../sandbox/sandbox.ts',
     '../worktree/provisioning-measurement.ts',
     '../worktree/reader-tree-sharing.ts',
+    '../worktree/worktree.ts',
     '../worktree/worktree-preflight.ts',
     '../worktree/worktree-readonly.ts',
   ]),

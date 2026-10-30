@@ -636,14 +636,17 @@ function terminalCloseOutDetail(run: {
 
 function appendRunConditions(
   conditions: MonitorCondition[],
+  errors: string[],
   database: Database,
   clock: number,
 ): void {
+  const readerTrees = observeReaderTreeConditions(database)
   conditions.push(
     ...staleRunConditions(database, clock),
     ...runTokenJumpConditions(database, clock),
-    ...observeReaderTreeConditions(database),
+    ...readerTrees.conditions,
   )
+  errors.push(...readerTrees.errors)
 }
 
 export async function monitor(
@@ -773,7 +776,7 @@ export async function monitor(
     })
   }
 
-  appendRunConditions(conditions, database, clock)
+  appendRunConditions(conditions, errors, database, clock)
   conditions.push(...terminalProcessAliveConditions(clock))
   appendOrphanProcessObservations(conditions, errors, clock)
 

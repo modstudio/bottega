@@ -32,6 +32,7 @@ type ReaderCloneArchivePlan = {
   facts: ReaderCloneDisposableFacts
   shared: SharedReaderArchiveIdentity | null
   baseCommit: string
+  sourceRefExclusions: string[] | null
 }
 type ReaderCloneCloseOutPlan =
   | { action: 'ordinary' | 'remove' }
@@ -86,13 +87,20 @@ function repositoryStorageAbsent(treePath: string): boolean {
   return true
 }
 
-function noUniqueReachableCommit(treePath: string, repoRoot: string, baseCommit: string): boolean {
+function sourceRefExclusions(repoRoot: string): string[] | null {
   const sourceRefs = gitResult(['for-each-ref', '--format=%(objectname)'], repoRoot)
-  if (!sourceRefs.ok) return false
-  const exclusions = sourceRefs.stdout
+  if (!sourceRefs.ok) return null
+  return sourceRefs.stdout
     .split('\n')
     .filter(Boolean)
     .map((oid) => `^${oid}`)
+}
+
+function noUniqueReachableCommit(
+  treePath: string,
+  baseCommit: string,
+  exclusions: readonly string[],
+): boolean {
   const result = gitResult(['rev-list', '--all', `^${baseCommit}`, ...exclusions], treePath)
   return result.ok && result.stdout.trim() === ''
 }
@@ -101,19 +109,24 @@ function readerCloneDisposableFacts(input: {
   treePath: string
   repoRoot: string
   baseCommit: string
-}): ReaderCloneDisposableFacts {
+}): { facts: ReaderCloneDisposableFacts; sourceRefExclusions: string[] | null } {
   const status = gitResult(
     ['status', '--porcelain', '--untracked-files=all', '--ignore-submodules=none'],
     input.treePath,
   )
   const head = gitResult(['rev-parse', 'HEAD'], input.treePath)
+  const exclusions = sourceRefExclusions(input.repoRoot)
   return {
-    clean: status.ok && status.stdout === '',
-    atBase: Boolean(input.baseCommit) && head.ok && head.stdout.trim() === input.baseCommit,
-    noUniqueCommits:
-      Boolean(input.baseCommit) &&
-      noUniqueReachableCommit(input.treePath, input.repoRoot, input.baseCommit),
-    noNestedStorage: repositoryStorageAbsent(input.treePath),
+    facts: {
+      clean: status.ok && status.stdout === '',
+      atBase: Boolean(input.baseCommit) && head.ok && head.stdout.trim() === input.baseCommit,
+      noUniqueCommits:
+        Boolean(input.baseCommit) &&
+        exclusions !== null &&
+        noUniqueReachableCommit(input.treePath, input.baseCommit, exclusions),
+      noNestedStorage: repositoryStorageAbsent(input.treePath),
+    },
+    sourceRefExclusions: exclusions,
   }
 }
 
@@ -129,11 +142,12 @@ function readerScratchCloseOutPlan(input: {
   const readOnlyJob = isReadOnlyRepositoryJob(input.job)
   if (!input.terminal) return { action: 'hold', detail: 'conversation is not terminal' }
   if (!readOnlyJob || input.treeAbsent) return { action: 'ordinary' }
-  const facts = readerCloneDisposableFacts({
+  const disposable = readerCloneDisposableFacts({
     treePath: input.treePath,
     repoRoot: input.repoRoot,
     baseCommit: input.baseCommit,
   })
+  const facts = disposable.facts
   const provablyDisposable = Boolean(
     facts.clean && facts.atBase && facts.noUniqueCommits && facts.noNestedStorage,
   )
@@ -148,7 +162,12 @@ function readerScratchCloseOutPlan(input: {
   if (decision === 'archive-then-release')
     return {
       action: 'archive',
-      plan: { facts, shared: input.shared, baseCommit: input.baseCommit },
+      plan: {
+        facts,
+        shared: input.shared,
+        baseCommit: input.baseCommit,
+        sourceRefExclusions: disposable.sourceRefExclusions,
+      },
     }
   if (decision === 'remove') return { action: 'remove' }
   return { action: 'ordinary' }
@@ -232,6 +251,7 @@ function writeArchivePointer(input: {
   ignoredRemoved: boolean
   sharedPath?: string
   headBundle?: string
+  head?: string
 }): void {
   writeFileSync(
     input.pointer,
@@ -242,6 +262,7 @@ function writeArchivePointer(input: {
         ...input.planned.facts,
         ignoredRemoved: input.ignoredRemoved,
         ...(input.headBundle ? { headBundle: input.headBundle } : {}),
+        ...(input.head ? { head: input.head } : {}),
         ...(input.planned.shared
           ? {
               sharedPath: input.sharedPath,
@@ -273,19 +294,30 @@ function removeIgnoredArchivePaths(destination: string): string | null {
   return null
 }
 
-/** Extract changed paths and preserve a detached committed head before shared-tree removal. */
+/** Extract changed paths and preserve unique refs before shared-tree removal. */
 function archiveSharedReaderScratch(input: {
   runId: string
   treePath: string
   planned: ReaderCloneArchivePlan
 }): ({ ok: true } & ReaderCloneArchiveRelease) | { ok: false; detail: string } {
+  const sourceRefExclusions = input.planned.sourceRefExclusions
+  if (!input.planned.facts.noUniqueCommits && !sourceRefExclusions)
+    return { ok: false, detail: 'shared reader source refs could not be archived safely' }
+  const archiveExclusions = sourceRefExclusions ?? []
   const extracted = extractWorktree(input.treePath, input.runId)
   if (!extracted.ok) return { ok: false, detail: extracted.detail }
   let headBundle: string | undefined
-  if (!input.planned.facts.atBase || !input.planned.facts.noUniqueCommits) {
+  if (!input.planned.facts.noUniqueCommits) {
     headBundle = join(extracted.dest, 'head.bundle')
     const bundled = gitResult(
-      ['bundle', 'create', headBundle, `${input.planned.baseCommit}..HEAD`],
+      [
+        'bundle',
+        'create',
+        headBundle,
+        '--all',
+        `^${input.planned.baseCommit}`,
+        ...archiveExclusions,
+      ],
       input.treePath,
     )
     if (!bundled.ok)
@@ -294,6 +326,12 @@ function archiveSharedReaderScratch(input: {
         detail: `shared reader committed-work archive failed: ${bundled.stderr}`,
       }
   }
+  const head =
+    !input.planned.facts.atBase && input.planned.facts.noUniqueCommits
+      ? gitResult(['rev-parse', 'HEAD'], input.treePath)
+      : null
+  if (head && !head.ok)
+    return { ok: false, detail: `shared reader HEAD archive failed: ${head.stderr}` }
   const pointer = join(runArtifactsDir(input.runId), 'reader-clone-archive.json')
   writeArchivePointer({
     pointer,
@@ -302,6 +340,7 @@ function archiveSharedReaderScratch(input: {
     ignoredRemoved: true,
     sharedPath: input.treePath,
     headBundle,
+    head: head?.stdout.trim(),
   })
   return {
     ok: true,
