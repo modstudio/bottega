@@ -3,18 +3,21 @@
 import { recordRunFinishFailure } from './run-startup-failure.ts'
 import { finishRun, type TerminalInput, type TerminalResult } from './run-terminal.ts'
 
-export async function finishRunWithFallback(input: TerminalInput): Promise<TerminalResult> {
+export async function finishRunWithFallback(
+  build: () => TerminalInput,
+  fallback: { runId: string; started: number; machineId: string },
+): Promise<TerminalResult> {
   try {
-    return await finishRun(input)
+    return await finishRun(build())
   } catch (error) {
     recordRunFinishFailure({
-      runId: input.claim.id,
+      runId: fallback.runId,
       error,
-      started: input.started,
-      machineId: input.machineId,
+      started: fallback.started,
+      machineId: fallback.machineId,
     })
     throw Object.assign(new Error(String((error as Error)?.message ?? error), { cause: error }), {
-      runId: input.claim.id,
+      runId: fallback.runId,
       runFinishFailed: true,
     })
   }

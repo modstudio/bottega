@@ -99,7 +99,7 @@ type FinishFacts = {
   confinement: HarnessConfinementSnapshot
 }
 
-function harnessTerminalInput(facts: FinishFacts): TerminalInput {
+function harnessTerminalInput(facts: FinishFacts, localMachineId: string): TerminalInput {
   const { acceptedQuestions, decision, error, outPath, owned, requestedJob, scratchDir } = facts
   const refused = facts.workerReply?.status === 'refused'
   return {
@@ -110,7 +110,7 @@ function harnessTerminalInput(facts: FinishFacts): TerminalInput {
     proc: null,
     askLoopback: null,
     claim: { id: owned.record_id, number: owned.number },
-    machineId: machineId(),
+    machineId: localMachineId,
     writesJob: Boolean(requestedJob.needs.writesRepo),
     worktree: facts.worktree,
     launchKey: owned.launch_key,
@@ -215,6 +215,7 @@ function closeHarnessRun(facts: FinishFacts, terminal: TerminalResult) {
 }
 
 export async function finishHarnessRun(id: string) {
+  const localMachineId = machineId()
   const row = db().query('SELECT * FROM run WHERE record_id=?').get(id) as HarnessRow | null
   const refusal = finishRefusal(row, sessionId(), id)
   if (refusal) throw new Error(refusal)
@@ -303,7 +304,14 @@ export async function finishHarnessRun(id: string) {
       const currentRefusal = finishRefusal(current, sessionId(), id)
       if (currentRefusal) throw new Error(currentRefusal)
       writeFileSync(facts.outPath, decision.output)
-      return closeHarnessRun(facts, await finishRunWithFallback(harnessTerminalInput(facts)))
+      return closeHarnessRun(
+        facts,
+        await finishRunWithFallback(() => harnessTerminalInput(facts, localMachineId), {
+          runId: complete.record_id,
+          started: facts.started,
+          machineId: localMachineId,
+        }),
+      )
     },
   )
 }

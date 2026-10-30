@@ -120,11 +120,13 @@ export async function main(argv: string[]): Promise<number> {
     /**
      * A failure BEFORE the agent ran is the orchestrator's, not the agent's.
      *
-     * `run()` records its own outcome for anything that happens once it is
-     * running, so reaching here means the run never really started — a broken
-     * import, an unreadable prompt file, a malformed spec. `harness` is the kind
-     * this codebase already reserves for "orchestrator was wrong", and like `unreachable`
-     * and `interrupted` it is never counted as evidence about an agent.
+     * An unmarked throw means the run never really started — a broken import,
+     * an unreadable prompt file, a malformed spec — so recordStartupFailure
+     * records it. A runFinishFailed-marked throw means the terminal fallback
+     * already recorded the outcome, so this catch only prints the finish failure.
+     * `harness` is the kind this codebase already reserves for "orchestrator was
+     * wrong", and like `unreachable` and `interrupted` it is never counted as
+     * evidence about an agent.
      */
     if (!runFinishFailed) await recordStartupFailure(id, message)
     console.error(
