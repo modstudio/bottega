@@ -333,6 +333,8 @@ realPostgres('hosted jsonb sync values', () => {
         reviewProvenance: { review: 'accepted' },
         provisioningPhases: [{ phase: 'create' }],
         provisioningHostLoad: { gates: 1 },
+        hostAdmissionFirst: { decision: 'hold' },
+        hostAdmission: { decision: 'admit' },
         provisioningEntryRoots: ['/worktree'],
         withheldFields: ['secret'],
       })
@@ -400,6 +402,8 @@ realPostgres('hosted jsonb sync values', () => {
           jsonb_typeof(review_provenance) AS review_provenance,
           jsonb_typeof(provisioning_phases) AS provisioning_phases,
           jsonb_typeof(provisioning_host_load) AS provisioning_host_load,
+          jsonb_typeof(host_admission_first) AS host_admission_first,
+          jsonb_typeof(host_admission) AS host_admission,
           jsonb_typeof(provisioning_entry_roots) AS provisioning_entry_roots,
           jsonb_typeof(withheld_fields) AS withheld_fields
         FROM run WHERE id=${JSONB_RUN_ID}::uuid`
@@ -410,6 +414,8 @@ realPostgres('hosted jsonb sync values', () => {
         review_provenance: 'object',
         provisioning_phases: 'array',
         provisioning_host_load: 'object',
+        host_admission_first: 'object',
+        host_admission: 'object',
         provisioning_entry_roots: 'array',
         withheld_fields: 'array',
       })

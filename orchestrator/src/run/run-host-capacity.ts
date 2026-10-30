@@ -2,7 +2,7 @@
 /** Knows the repository-run host wait adapter. Must not know transports or routing. */
 
 import type { Database } from 'bun:sqlite'
-import { nowIso, tryWriteContention } from '../database/db.ts'
+import { nowIso, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { activeMigrationDrain } from '../database/migration-drain-state.ts'
 import {
   CAPACITY_SAMPLE_MIN_WINDOW_MS,
@@ -10,6 +10,7 @@ import {
   HOST_LOAD_RESERVATION_MS,
   type HostCapacityDecision,
   type HostHoldCondition,
+  type HostLoad,
   measureHostLoad,
   type RecordedHostLoad,
   recordedHostLoad,
@@ -57,11 +58,17 @@ type RunHostCapacityWaiter = {
 }
 
 export const RUN_HOST_CAPACITY_WAITERS_SQL = `SELECT record_id, host_wait_since FROM run
-        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NOT NULL
+        WHERE status='running' AND host_wait_since IS NOT NULL
         ORDER BY host_wait_since ASC, record_id ASC`
 
-export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT agent, agent_start_time FROM run
-        WHERE status='running' AND worktree IS NOT NULL AND host_wait_since IS NULL AND record_id<>?`
+export const RUNNING_REPOSITORY_FACTS_SQL = `SELECT record_id FROM run
+        WHERE status='running' AND host_wait_since IS NULL AND record_id<>? AND
+              (worktree IS NOT NULL OR host_admission IS NOT NULL)`
+
+const RUN_HOST_RESERVATIONS_SQL = `SELECT record_id, agent, agent_start_time, host_admission FROM run
+        WHERE status='running' AND record_id<>? AND
+              (host_admission IS NOT NULL OR
+               (worktree IS NOT NULL AND host_wait_since IS NULL AND agent_start_time IS NOT NULL))`
 
 export const RUN_HOST_RESERVATION_SAMPLES_SQL = `SELECT agent, started_at, latency_ms, agent_start_time, resource_cpu_ms
         FROM run
@@ -82,12 +89,16 @@ function runningRepositoryFacts(
   now: number,
   samplesByAgent: Map<string, number[]>,
 ): RunningRepositoryFacts {
-  const rows = database.query(RUNNING_REPOSITORY_FACTS_SQL).all(runId) as {
+  const rows = database.query(RUNNING_REPOSITORY_FACTS_SQL).all(runId) as { record_id: string }[]
+  const reservations = database.query(RUN_HOST_RESERVATIONS_SQL).all(runId) as {
+    record_id: string
     agent: string
     agent_start_time: string | null
+    host_admission: string | null
   }[]
-  const recentRows = rows.filter((row) => {
-    const admittedAt = Date.parse(row.agent_start_time ?? '')
+  const recentRows = reservations.filter((row) => {
+    const admission = row.host_admission ? (JSON.parse(row.host_admission) as { at: string }) : null
+    const admittedAt = Date.parse(admission?.at ?? row.agent_start_time ?? '')
     return Number.isFinite(admittedAt) && now - admittedAt < HOST_LOAD_RESERVATION_MS
   })
   const agents = [...new Set(recentRows.map((row) => row.agent))]
@@ -139,9 +150,8 @@ function capacityDecision(input: {
   runId: string
   at: number
   started: number
-  env: NodeJS.ProcessEnv
   platform: NodeJS.Platform
-  measure: typeof measureHostLoad
+  load: HostLoad
   samplesByAgent: Map<string, number[]>
 }) {
   const repositories = runningRepositoryFacts(
@@ -150,13 +160,14 @@ function capacityDecision(input: {
     input.at,
     input.samplesByAgent,
   )
-  const load = input.measure(input.env, process.pid, input.platform, input.at)
+  const load = input.load
+  const recentAdmissions = load.recentAdmissions + repositories.recentReservedCores
   const decision = decideHostCapacityAdmission({
     heldWork: repositories.running,
     loadavg: load.loadavg,
     cpuBusy: load.cpuBusy,
     ncpu: load.ncpu,
-    recentAdmissions: load.recentAdmissions + repositories.recentReservedCores,
+    recentAdmissions,
     freeMem: load.freeMem,
     pressure: load.pressure,
     swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
@@ -166,7 +177,96 @@ function capacityDecision(input: {
     maxWaitMs: RUN_HOST_WAIT_MAX_MS,
     hasOlderWaiter: repositories.hasOlderWaiter,
   })
-  return { decision, load, reservedCores: repositories.recentReservedCores }
+  return {
+    decision,
+    load,
+    reservedCores: repositories.recentReservedCores,
+    admissionFacts: { heldWork: repositories.running, recentAdmissions },
+  }
+}
+
+export type RunHostAdmission = {
+  at: string
+  decision: 'admit' | 'hold'
+  heldOn: HostHoldCondition[]
+  boundReached: boolean
+  waitedMs: number
+  sample: {
+    loadavg: number
+    cpuBusy: number | null
+    ncpu: number
+    recentAdmissions: number
+    heldWork: number
+    pressure: HostLoad['pressure']
+    swapUsed: number
+    swapTotal: number
+    swapGrowthBytesPerSec: number | null
+    freeMem: number
+  }
+}
+
+function admissionRecord(
+  at: number,
+  started: number,
+  decision: HostCapacityDecision,
+  load: HostLoad,
+  facts: { heldWork: number; recentAdmissions: number },
+): RunHostAdmission {
+  return {
+    at: new Date(at).toISOString(),
+    decision: decision.admit ? 'admit' : 'hold',
+    heldOn: decision.heldOn,
+    boundReached: decision.boundReached,
+    waitedMs: at - started,
+    sample: {
+      loadavg: load.loadavg,
+      cpuBusy: load.cpuBusy,
+      ncpu: load.ncpu,
+      recentAdmissions: facts.recentAdmissions,
+      heldWork: facts.heldWork,
+      pressure: load.pressure,
+      swapUsed: load.swapUsed,
+      swapTotal: load.swapTotal,
+      swapGrowthBytesPerSec: load.swapGrowthBytesPerSec,
+      freeMem: load.freeMem,
+    },
+  }
+}
+
+function decideAndRecordAdmission(input: {
+  database: Database
+  runId: string
+  at: number
+  started: number
+  platform: NodeJS.Platform
+  load: HostLoad
+  samplesByAgent: Map<string, number[]>
+}) {
+  return writeTransaction(() => {
+    const result = capacityDecision(input)
+    const record = admissionRecord(
+      input.at,
+      input.started,
+      result.decision,
+      result.load,
+      result.admissionFacts,
+    )
+    input.database
+      .query(
+        `UPDATE run SET host_admission_first=COALESCE(host_admission_first,?),
+                        host_admission=CASE WHEN ? THEN ? ELSE host_admission END,
+                        host_wait_since=CASE WHEN ? THEN NULL ELSE host_wait_since END
+          WHERE record_id=?`,
+      )
+      .run(
+        JSON.stringify(record),
+        result.decision.admit ? 1 : 0,
+        JSON.stringify(record),
+        result.decision.admit ? 1 : 0,
+        input.runId,
+      )
+    return result
+  }, input.database)
 }
 
 export type RunHostCapacityQueue = {
@@ -195,9 +295,13 @@ export function runHostCapacityQueue(
     runId: head.record_id,
     at: now,
     started: Number.isFinite(started) ? started : now,
-    env: deps.env ?? process.env,
     platform: deps.platform ?? process.platform,
-    measure: deps.measure ?? measureHostLoad,
+    load: (deps.measure ?? measureHostLoad)(
+      deps.env ?? process.env,
+      process.pid,
+      deps.platform ?? process.platform,
+      now,
+    ),
     samplesByAgent: new Map(),
   })
   return { waiting: waiters.length, oldestWaitMs, heldOn: decision.decision.heldOn }
@@ -331,10 +435,14 @@ async function runHostWaitLoop(input: RunHostWaitLoop): Promise<RunHostCapacityW
       heldOn.add('migration')
       return finish(at, 'stopped')
     }
-    const { decision, load, reservedCores } = capacityDecision({
-      ...input,
+    const measuredLoad = input.measure(input.env, process.pid, input.platform, at)
+    const { decision, load, reservedCores } = decideAndRecordAdmission({
+      database: input.database,
+      runId: input.runId,
       at,
       started,
+      platform: input.platform,
+      load: measuredLoad,
       samplesByAgent,
     })
     const decisionUsesResample = nextDecisionUsesResample
@@ -397,6 +505,26 @@ export async function waitForRunHostCapacity(input: {
     measure: input.measure ?? measureHostLoad,
     existingChain: input.existingChain ?? false,
   })
+}
+
+export async function waitForLiveRunHostCapacity(input: {
+  database: Database
+  runId: string
+  repoJob: boolean
+  existingChain: boolean
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
+  now?: () => number
+  sleep?: (ms: number) => Promise<void>
+  random?: () => number
+  measure?: typeof measureHostLoad
+}): Promise<RunHostCapacityWait | null> {
+  if (!input.repoJob) return null
+  const admitted = input.database
+    .query('SELECT host_admission FROM run WHERE record_id=?')
+    .get(input.runId) as { host_admission: string | null } | null
+  if (admitted?.host_admission != null) return null
+  return waitForRunHostCapacity(input)
 }
 
 /** Keep the final status check adjacent to the spawn it guards. */

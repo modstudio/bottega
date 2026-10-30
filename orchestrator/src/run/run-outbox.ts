@@ -165,6 +165,8 @@ export function buildRunRecordPayload(
     provisioningEntriesLimited:
       row.provisioning_entries_limited == null ? null : Boolean(row.provisioning_entries_limited),
     provisioningHostLoad: json(row.provisioning_host_load),
+    hostAdmissionFirst: json(row.host_admission_first),
+    hostAdmission: json(row.host_admission),
     provisioningOutcome: row.provisioning_outcome,
     provisioningEntryRoots: json(row.provisioning_entry_roots),
     createdAt: row.started_at,

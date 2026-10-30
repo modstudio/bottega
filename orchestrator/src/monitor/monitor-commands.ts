@@ -70,6 +70,13 @@ export function formatHostPressureLine(report: MonitorHostPressure): string {
   return `host: top process trees ${trees}; sampled memory pressure ${report.memoryPressure ?? 'unknown'}; sampler average ${report.averageObservationElapsedMs?.toFixed(1) ?? 'unknown'}ms wall, ${report.averageObservationCpuMs?.toFixed(1) ?? 'unknown'}ms CPU`
 }
 
+export function formatHostAdmissionsLine(report: MonitorResult['hostAdmissions']): string {
+  const loadavg = report.highestLoadavg?.toFixed(2) ?? 'none'
+  const cpuBusy = report.highestCpuBusy?.toFixed(2) ?? 'none'
+  const pressures = report.pressures.join(',') || 'none'
+  return `host admissions (${report.windowMs}ms): ${report.admitted} admitted (${report.held} after a hold); admitting peak load ${loadavg}, CPU ${cpuBusy}; pressure ${pressures}`
+}
+
 type Options = {
   ackNotices?: string
   notices: boolean
@@ -281,6 +288,7 @@ async function runMonitor(options: Options, presentation: Presentation): Promise
     const failing = failingCanonEvalSlugs(),
       lines = [
         formatHostLoadLine(result.hostLoad, result.runHostCapacity),
+        formatHostAdmissionsLine(result.hostAdmissions),
         formatHostPressureLine(result.hostPressure),
         `canon: ${result.canon.findings} stale references in ${result.canon.docs} docs`,
       ]

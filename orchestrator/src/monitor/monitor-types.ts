@@ -4,6 +4,7 @@
 import type { HostLoadSample } from '../host-load-sample.ts'
 import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import type { RunHostCapacityQueue } from '../run/run-host-capacity.ts'
+import type { HostAdmissionSummary } from './host-admission-summary.ts'
 
 export type MonitorHostLoad = HostLoadSample
 export type MonitorHostPressure = {
@@ -99,6 +100,7 @@ export type MonitorResult = {
   hostLoad: MonitorHostLoad
   hostPressure: MonitorHostPressure
   runHostCapacity: RunHostCapacityQueue
+  hostAdmissions: HostAdmissionSummary
 }
 
 export type MonitorNotice = Omit<MonitorCondition, 'detail' | 'action'> & {

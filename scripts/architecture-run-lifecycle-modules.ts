@@ -187,6 +187,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-claim-plan.ts',
     './run-claim-mcp.ts',
     './run-claim-inheritance.ts',
+    './run-claim-host-capacity.ts',
     './reader-tree-sharing-claim.ts',
     './run-resume-kind.ts',
     './run-resume-options.ts',
@@ -209,6 +210,12 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-mcp.ts',
     './run-artifacts.ts',
     './run-worker-home.ts',
+  ]),
+  module('orchestrator/src/run/run-claim-host-capacity.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../events.ts',
+    './run-host-capacity.ts',
   ]),
   module('orchestrator/src/run/run-claim-plan.ts', [
     './resume-tree.ts',
@@ -311,6 +318,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../process-resource-sampler.ts',
     '../project/project-lock.ts',
     './run-process.ts',
+    './run-claim-host-capacity.ts',
     './run-host-capacity.ts',
     './run-board-prompt.ts',
     './run-reply-source.ts',

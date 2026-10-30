@@ -84,6 +84,8 @@ export function runRecordValues(
     provisioningEntriesLimited:
       row.provisioningEntriesLimited == null ? null : Boolean(row.provisioningEntriesLimited),
     provisioningHostLoad: row.provisioningHostLoad,
+    hostAdmissionFirst: row.hostAdmissionFirst,
+    hostAdmission: row.hostAdmission,
     provisioningOutcome: nullableString(row.provisioningOutcome),
     provisioningEntryRoots: row.provisioningEntryRoots,
     withheldFields: row.withheldFields,

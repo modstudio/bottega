@@ -69,6 +69,7 @@ import {
   writeDispatchState,
   writeGeneratedSchema,
 } from './run-artifacts.ts'
+import { admitFreshRepositoryRun, type HostCapacityWaitDeps } from './run-claim-host-capacity.ts'
 import { inheritedRunFacts } from './run-claim-inheritance.ts'
 import { executeClaimedMcpPlan } from './run-claim-mcp.ts'
 import {
@@ -185,6 +186,7 @@ export type ClaimInput = {
   replySchemaName: string
   carriedQuestionIds: string[]
   endpointKeySource: 'agent' | 'project'
+  admitDeps?: HostCapacityWaitDeps
   precomputedLinks?: { taskRecordId: string | null; projectRecordId: string | null } | null
   assertDispatchAllowed(): void
   recordDispatchRefusal?(cause: unknown): void
@@ -247,7 +249,6 @@ async function claimLinks(
     probe: Boolean(input.opts.probe),
   })
 }
-
 export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   let {
     opts,
@@ -298,7 +299,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     : null
   const recordId = claimRecordId(opts.reserveId)
   const { promptPath, outputPath } = prepareFiles(runsDir, recordId, claimedPrompt, originalPrompt)
-  // Beside the prompt it wraps; detach() may already have named that prompt path.
   /**
    * The return contract is written to disk: codex's `--output-schema` wants a
    * path and grok's `--json-schema`
@@ -335,7 +335,6 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
   const attributedKey = attributedLaunchKey({ writesJob, key: opts.key, cwd: callerCwd })
   const launchKey = inheritedLaunch?.launch_key ?? attributedKey
   const links = await claimLinks(input, launchKey, launchCwd, inheritedLaunch)
-  const taskRecordId = links.taskRecordId
   runProjectId = links.projectRecordId
   const launchBase = inheritedLaunch?.launch_base ?? opts.launchBase ?? opts.base ?? null
   const noFailover = inheritedLaunch ? !!inheritedLaunch.no_failover : !!opts.noFailover
@@ -414,7 +413,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         launchCwd,
         launchSeed,
         launchKey,
-        taskRecordId,
+        links.taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
@@ -461,7 +460,7 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
         launchCwd,
         launchSeed,
         launchKey,
-        taskRecordId,
+        links.taskRecordId,
         launchBase,
         noFailover ? 1 : 0,
         ...explicitRunFlags(opts),
@@ -584,18 +583,13 @@ export async function claimRun(input: ClaimInput): Promise<ClaimResult> {
     taskBranchAttachment = false
   let grokMcpEnvironment: Record<string, string> = {}
   const runtimeDirExisted = existsSync(runtimeDir)
-  /**
-   * Cutting the worktree can FAIL, and the row already exists by now.
-   *
-   * A directory that is not a git repository, or a worktree path already taken,
-   * throws here — and this used to happen outside the try/finally below, so the
-   * row stayed `running` for ever with no process behind it until the stale
-   * sweep guessed at it half an hour later. The rule three lines into this
-   * function is that a run always writes its own terminal state; that has to
-   * hold for the setup as much as for the agent.
-   */
+  /** Cutting the worktree after the row exists throws for a non-repository or a
+   * taken worktree path. This used to happen outside the try/finally below, so
+   * its row stayed `running` with no process until the stale sweep guessed at it.
+   * A run must write its own terminal state for setup as well as for the agent. */
   let cwd = callerCwd
   try {
+    await admitFreshRepositoryRun(db(), claim.id, repoJob, !!opts.resume, input.admitDeps)
     switch (claimTreePlan.mode) {
       case 'attach':
         worktree = attachedTree!

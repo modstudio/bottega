@@ -48,6 +48,8 @@ test('terminal payload maps every hosted run column and no execution-state colum
         resource_peak_rss_bytes: 67_890,
         resource_samples: 4,
         resource_source: 'sampled',
+        host_admission_first: '{"decision":"hold"}',
+        host_admission: '{"decision":"admit"}',
       },
       '01990000-0000-7000-8000-000000000099',
       '2026-09-15T01:01:00.000Z',
@@ -69,6 +71,8 @@ test('terminal payload maps every hosted run column and no execution-state colum
     resourcePeakRssBytes: 67_890,
     resourceSamples: 4,
     resourceSource: 'sampled',
+    hostAdmissionFirst: { decision: 'hold' },
+    hostAdmission: { decision: 'admit' },
   })
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')

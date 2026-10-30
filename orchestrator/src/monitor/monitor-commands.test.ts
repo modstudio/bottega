@@ -12,7 +12,7 @@ import { BOARD_CACHE_OWNER_KEY } from '../board/board-hosted-cache.ts'
 import { BOARD_HOSTED_ADOPTED_KEY } from '../board/board-mode.ts'
 import { postNotice } from '../board/board-service.ts'
 import { db } from '../database/db.ts'
-import { formatHostLoadLine, monitorCommand } from './monitor-commands.ts'
+import { formatHostAdmissionsLine, formatHostLoadLine, monitorCommand } from './monitor-commands.ts'
 import type { MonitorHostLoad } from './monitor-types.ts'
 
 const hostLoad: MonitorHostLoad = {
@@ -45,6 +45,21 @@ test('the host line names how many waiters sit behind the head', () => {
   ).toContain(
     '3 run(s) waiting for host capacity, oldest 1000ms, held on load+memory; 2 queued behind',
   )
+})
+
+test('the host admission line reports the recent decision summary', () => {
+  const line = formatHostAdmissionsLine({
+    windowMs: 3_600_000,
+    admitted: 4,
+    held: 2,
+    highestLoadavg: 7.5,
+    highestCpuBusy: 6.25,
+    pressures: ['normal', 'warning'],
+  })
+  expect(line).toContain('3600000ms')
+  expect(line).toContain('4 admitted (2 after a hold)')
+  expect(line).toContain('peak load 7.50, CPU 6.25')
+  expect(line).toContain('pressure normal,warning')
 })
 
 test('notice command maps skip-board-refresh to hosted refresh behavior', async () => {

@@ -160,6 +160,84 @@ describe('run host capacity', () => {
     expect(slept).toBe(false)
   })
 
+  test('sequential siblings reserve capacity from the admitting decision', async () => {
+    const now = Date.parse('2026-10-30T12:00:00.000Z')
+    const runIds = Array.from({ length: 3 }, () => repositoryRun())
+    const sample = () => ({ ...loaded(), loadavg: 1, cpuBusy: 1, ncpu: 2 })
+
+    for (const [index, runId] of runIds.entries()) {
+      const result = await waitForRunHostCapacity({
+        database: db(),
+        runId,
+        env: {},
+        platform: 'linux',
+        now: () => now,
+        measure: sample,
+        sleep: async () => {
+          db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(runId)
+        },
+      })
+      if (index === 0) expect(result).toBeNull()
+      else expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
+    }
+
+    const rows = db()
+      .query<{ host_admission_first: string; host_admission: string | null }, [string]>(
+        `SELECT host_admission_first,host_admission FROM run
+          WHERE record_id IN (SELECT value FROM json_each(?)) ORDER BY number`,
+      )
+      .all(JSON.stringify(runIds))
+    expect(JSON.parse(rows[0]!.host_admission!)).toMatchObject({
+      decision: 'admit',
+      sample: { recentAdmissions: 0 },
+    })
+    for (const row of rows.slice(1)) {
+      expect(JSON.parse(row.host_admission_first)).toMatchObject({
+        decision: 'hold',
+        heldOn: ['load'],
+        sample: { recentAdmissions: 1 },
+      })
+      expect(row.host_admission).toBeNull()
+    }
+  })
+
+  test('an admitted sibling still building its tree is held work for the next decision', async () => {
+    const now = Date.parse('2026-10-30T12:00:00.000Z')
+    const admitted = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: '/repo' })
+    await waitForRunHostCapacity({
+      database: db(),
+      runId: admitted,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: loaded,
+    })
+    const sibling = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: '/repo' })
+
+    const result = await waitForRunHostCapacity({
+      database: db(),
+      runId: sibling,
+      env: {},
+      platform: 'linux',
+      now: () => now,
+      measure: loaded,
+      sleep: async () => {
+        db().query("UPDATE run SET status='stopped' WHERE record_id=?").run(sibling)
+      },
+    })
+
+    expect(result).toMatchObject({ outcome: 'stopped', heldOn: ['load'] })
+    const first = db()
+      .query<{ host_admission_first: string }, [string]>(
+        'SELECT host_admission_first FROM run WHERE record_id=?',
+      )
+      .get(sibling)!
+    expect(JSON.parse(first.host_admission_first)).toMatchObject({
+      decision: 'hold',
+      sample: { heldWork: 1 },
+    })
+  })
+
   test('an unregistered checkout is repository work for admission', async () => {
     repositoryRun(null)
     const runId = repositoryRun(null)
@@ -611,6 +689,21 @@ describe('run host capacity', () => {
         measure: loaded,
       }),
     ).toEqual({ waiting: 0, oldestWaitMs: 0, heldOn: [] })
+  })
+
+  test('the queue summary includes a waiter whose tree is not built yet', () => {
+    repositoryRun()
+    const runId = addRun({ agent: 'codex', job: 'implement', status: 'running', repo: '/repo' })
+    db()
+      .query('UPDATE run SET host_wait_since=? WHERE record_id=?')
+      .run('2026-01-01T00:00:00.000Z', runId)
+    expect(
+      runHostCapacityQueue(db(), Date.parse('2026-01-01T00:01:00.000Z'), {
+        env: {},
+        platform: 'linux',
+        measure: loaded,
+      }),
+    ).toEqual({ waiting: 1, oldestWaitMs: 60_000, heldOn: ['load'] })
   })
 
   test('the queue summary uses the oldest waiter and the head hold reason', () => {

@@ -3,6 +3,7 @@
 
 import { db } from '../database/db.ts'
 import { runHostCapacityQueue } from '../run/run-host-capacity.ts'
+import { hostAdmissionSummary } from './host-admission-summary.ts'
 import type {
   MonitorCondition,
   MonitorHostLoad,
@@ -34,5 +35,6 @@ export function finishMonitorResult(
     runHostCapacity: runHostCapacityQueue(db(), Date.parse(finishedAt), {
       measure: () => hostLoad,
     }),
+    hostAdmissions: hostAdmissionSummary(db(), Date.parse(finishedAt)),
   }
 }

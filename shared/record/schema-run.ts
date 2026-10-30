@@ -107,6 +107,8 @@ export const run = pgTable.withRLS(
     provisioningEntries: bigint('provisioning_entries', { mode: 'bigint' }),
     provisioningEntriesLimited: boolean('provisioning_entries_limited'),
     provisioningHostLoad: jsonb('provisioning_host_load'),
+    hostAdmissionFirst: jsonb('host_admission_first'),
+    hostAdmission: jsonb('host_admission'),
     provisioningOutcome: text('provisioning_outcome'),
     provisioningEntryRoots: jsonb('provisioning_entry_roots'),
     withheldFields: jsonb('withheld_fields'),
