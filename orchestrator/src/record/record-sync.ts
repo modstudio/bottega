@@ -15,7 +15,7 @@ import { backfillRunRecords } from '../run/run-outbox.ts'
 import { backfillScoreRecords } from '../score/score-outbox.ts'
 import { rememberHostedRecord } from './install-binding-write.ts'
 import { backfillLandingEvidenceRecords } from './landing-outbox.ts'
-import { machineId, machineName } from './machine-identity.ts'
+import { machineId, machineNames } from './machine-identity.ts'
 import {
   deferOutboxRow,
   outboxParentIdentityKey,
@@ -421,7 +421,7 @@ function nextBatch(input: {
   local: Database
   candidates: Set<PreparedOutboxRow>
   attempted: Set<number>
-  identity: { id: string; name: string }
+  identity: { id: string; shortName?: string; displayName?: string; name?: string }
   now: () => string
   memberships: ReturnType<typeof parseRecordSpaceMemberships>
   blocked: BlockedOutboxRow[]
@@ -566,7 +566,7 @@ function completedSyncResult(input: {
 
 export async function syncRecord(options: RecordSyncOptions = {}): Promise<RecordSyncResult> {
   const configured = Boolean(resolveRecordApiUrl(process.env) || options.client)
-  const identity = options.identity ?? { id: machineId(), name: machineName() }
+  const identity = options.identity ?? { id: machineId(), ...machineNames() }
   const local = options.local ?? (configured || options.backfill ? db() : undefined)
   const backfill = options.backfill
     ? {

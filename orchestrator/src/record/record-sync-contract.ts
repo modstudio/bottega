@@ -17,7 +17,13 @@ export type RecordSyncRequestRow = {
 }
 
 export type RecordSyncRequest = {
-  machine: { id: string; name: string; seenAt: string }
+  machine: {
+    id: string
+    shortName?: string
+    displayName?: string
+    name?: string
+    seenAt: string
+  }
   rows: RecordSyncRequestRow[]
 }
 

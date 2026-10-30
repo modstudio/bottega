@@ -1,0 +1,1 @@
+ALTER TABLE "machine_name_claim" FORCE ROW LEVEL SECURITY;

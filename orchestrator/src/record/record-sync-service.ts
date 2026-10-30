@@ -4,6 +4,7 @@ import { SQL } from 'bun'
 import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { decideMachineNameClaim } from '../../../shared/machine-name.ts'
 import { hostedTaskIdForReference } from '../../../shared/record/hosted-task-id.ts'
 import {
   contention as contentionRecord,
@@ -142,16 +143,20 @@ async function assertEvidenceReferencesOwned(input: {
 async function upsertMachine(
   postgres: SQL,
   seenAt: string,
-  identity: { id: string; name: string },
+  identity: { id: string; shortName?: string; displayName?: string; name?: string },
   principal: RecordPrincipal,
 ): Promise<void> {
+  const shortName = identity.shortName ?? identity.name
+  const displayName = identity.displayName ?? identity.name
+  if (!shortName || !displayName) throw new Error('machine sync requires short and display names')
   await postgres.begin(async (tx) => {
     await bindPrincipal(tx, principal)
     const owned = await tx`
-      INSERT INTO machine (id,user_id,name,registered_at,last_seen)
-      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${identity.name},${seenAt}::timestamptz,
-        ${seenAt}::timestamptz)
-      ON CONFLICT (id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen
+      INSERT INTO machine (id,user_id,name,registered_at,last_seen,short_name,display_name)
+      VALUES (${identity.id}::uuid,${principal.userId}::uuid,${displayName},${seenAt}::timestamptz,
+        ${seenAt}::timestamptz,${shortName},${displayName})
+      ON CONFLICT (id) DO UPDATE SET name=excluded.name,last_seen=excluded.last_seen,
+        short_name=excluded.short_name,display_name=excluded.display_name
       WHERE machine.user_id=excluded.user_id
       RETURNING user_id
     `
@@ -165,6 +170,44 @@ async function upsertMachine(
       if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
       throw new Error(`machine ownership changed while registering ${identity.id}`)
     }
+    const rows = await tx`
+      SELECT c.machine_id,c.short_name,m.retired_at
+      FROM machine_name_claim c JOIN machine m ON m.id=c.machine_id
+      WHERE c.space_id=${principal.spaceId}::uuid
+    `
+    let decision = decideMachineNameClaim(
+      rows.map((row) => ({
+        machineId: String(row.machine_id),
+        shortName: String(row.short_name),
+        retired: row.retired_at != null,
+      })),
+      identity.id,
+      shortName,
+    )
+    if (decision.status === 'claim') {
+      const inserted = await tx`
+        INSERT INTO machine_name_claim (space_id,short_name,machine_id,claimed_at)
+        VALUES (${principal.spaceId}::uuid,${shortName},${identity.id}::uuid,${seenAt}::timestamptz)
+        ON CONFLICT (space_id,short_name) DO NOTHING RETURNING machine_id
+      `
+      if (inserted.length === 0) {
+        const holder = await tx`
+          SELECT c.machine_id,c.short_name,m.retired_at
+          FROM machine_name_claim c JOIN machine m ON m.id=c.machine_id
+          WHERE c.space_id=${principal.spaceId}::uuid AND c.short_name=${shortName}
+        `
+        decision = decideMachineNameClaim(
+          holder.map((row) => ({
+            machineId: String(row.machine_id),
+            shortName: String(row.short_name),
+            retired: row.retired_at != null,
+          })),
+          identity.id,
+          shortName,
+        )
+      }
+    }
+    if (decision.status === 'refused') throw new RecordSyncRequestRefusal(decision.reason)
   })
 }
 
