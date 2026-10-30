@@ -1378,6 +1378,14 @@
       "tag": "0181_contention_host_load",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 182,
+      "version": "6",
+      "when": 1793577600047,
+      "tag": "0182_session_board_hold",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

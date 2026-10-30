@@ -8,6 +8,7 @@ architect session lifecycle
 - [bottega session adopt](#bottega-session-adopt)
 - [bottega session close-out](#bottega-session-close-out)
 - [bottega session help](#bottega-session-help)
+- [bottega session hold](#bottega-session-hold)
 - [bottega session losses](#bottega-session-losses)
 
 ## bottega session
@@ -21,6 +22,7 @@ architect session lifecycle
 - [bottega session adopt](./session.md#bottega-session-adopt)
 - [bottega session close-out](./session.md#bottega-session-close-out)
 - [bottega session help](./session.md#bottega-session-help)
+- [bottega session hold](./session.md#bottega-session-hold)
 - [bottega session losses](./session.md#bottega-session-losses)
 
 ## bottega session adopt
@@ -60,6 +62,22 @@ release and verify everything one session owns
 **Synopsis:** `bottega session help [command]`
 
 display help for command
+
+### Related
+
+- [bottega session](./session.md#bottega-session)
+
+## bottega session hold
+
+**Synopsis:** `bottega session hold [--on <id>] [--release <id>] [--reason <text>]`
+
+keep the heartbeat waiting for a board message to change
+
+### Options
+
+- `--on <id>`: hold for this board message
+- `--release <id>`: release the hold on this board message
+- `--reason <text>`: record why the hold was released
 
 ### Related
 

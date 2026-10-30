@@ -10,8 +10,8 @@
 #
 #   BLOCKED  question_is_answerable_now accepts a question; the session must act
 #   STALLED  a worker is silent and using no CPU; stop and re-dispatch or wait
-#   WAITING  runs, landings, or authored requests still live, or a workflow ruling was parked here
-#   CLEAR    no runs, landings, open requests, questions, or stalls -> exits SILENTLY
+#   WAITING  runs, landings, authored requests, or board holds still live, or a workflow ruling was parked here
+#   CLEAR    no runs, landings, open requests, board holds, questions, or stalls -> exits SILENTLY
 #
 # heartbeat-decision.py exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while this
 # hook should keep watching and HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR.
@@ -27,7 +27,7 @@
 # the poll can be frequent precisely because only transitions are expensive.
 #
 # The state key is the inbox identity set, plus sorted run ids with each run's
-# liveness class, sorted landing ids, and authored open-request ids. A run changing
+# liveness class, sorted landing ids, authored open-request ids, and board-hold ids. A run changing
 # liveness class is a state change even when the ids are unchanged. Elapsed time
 # never enters the key.
 #
@@ -347,23 +347,27 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     requests_observed=$'STATE\t0\t\t'
     requests_rc=0
     requests_parse_rc=0
+    holds_observed=$'STATE\t0\t\t'
+    holds_parse_rc=0
   else
     request_rows=$(python3 "$ROOT/hooks/heartbeat-board-observation.py" \
       "$DB_PATH" "$SID" 2>/dev/null); requests_rc=$?
     requests_observed=$(printf '%s' "$request_rows" | \
       python3 "$ROOT/hooks/heartbeat-decision.py" requests "$SID" 2>/dev/null); requests_parse_rc=$?
+    holds_observed=$(printf '%s' "$request_rows" | \
+      python3 "$ROOT/hooks/heartbeat-decision.py" holds 2>/dev/null); holds_parse_rc=$?
   fi
 
   if [ "$inbox_rc" -ne 0 ] || [ "$runs_rc" -ne 0 ] || \
      [ "$inbox_parse_rc" -ne 0 ] || [ "$runs_parse_rc" -ne 0 ] || \
      [ "$completion_rc" -ne 0 ] || [ "$completion_parse_rc" -ne 0 ] || \
      [ "$landings_parse_rc" -ne 0 ] || [ "$requests_rc" -ne 0 ] || \
-     [ "$requests_parse_rc" -ne 0 ]; then
+     [ "$requests_parse_rc" -ne 0 ] || [ "$holds_parse_rc" -ne 0 ]; then
     key="degraded"
     since_emit=$((since_emit + 1))
     if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
       prev_key="$key"; since_emit=0
-      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
+      echo "[$(date +%H:%M:%S)] DEGRADED - bottega observation failed (inbox rc=$inbox_rc parse=$inbox_parse_rc, runs rc=$runs_rc parse=$runs_parse_rc, completion rc=$completion_rc parse=$completion_parse_rc, landings parse=$landings_parse_rc, requests rc=$requests_rc parse=$requests_parse_rc, holds parse=$holds_parse_rc). State unknown; NOT concluding clear. Inspect bottega diagnostics directly."
       report_store_write_lock
     fi
     sleep "$INTERVAL"; continue
@@ -391,6 +395,23 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   request_n=${request_state%%$'\t'*}; request_rest=${request_state#*$'\t'}
   request_detail=${request_rest%%$'\t'*}; request_ids=${request_rest#*$'\t'}
   request_n=${request_n:-0}
+  hold_state=${holds_observed%%$'\n'*}
+  hold_state=${hold_state#*$'\t'}
+  hold_n=${hold_state%%$'\t'*}; hold_rest=${hold_state#*$'\t'}
+  hold_detail=${hold_rest%%$'\t'*}; hold_ids=${hold_rest#*$'\t'}
+  hold_n=${hold_n:-0}
+
+  hold_release_failed=0
+  while IFS=$'\t' read -r record message_id held_title release_reason superseding_id; do
+    [ "$record" = "RELEASE" ] || continue
+    if [ -n "$superseding_id" ]; then
+      echo "HOLD RELEASED $message_id \"$held_title\": $release_reason ($superseding_id)"
+    else
+      echo "HOLD RELEASED $message_id \"$held_title\": $release_reason"
+    fi
+    CLAUDE_CODE_SESSION_ID="$SID" "$BOTTEGA" session hold --release "$message_id" \
+      --reason "$release_reason" >/dev/null 2>&1 || hold_release_failed=1
+  done <<< "$holds_observed"
 
   while IFS=$'\t' read -r record record_id terminal_id id outcome job agent failure_kind latency failover_note; do
     [ "$record" = "EVENT" ] || continue
@@ -424,7 +445,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
   fi
   previous_live_roots="$live_roots"
 
-  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids|$request_n|$request_ids"
+  key="$inbox_ids|$n|$ids|$landing_n|$landing_ids|$request_n|$request_ids|$hold_n|$hold_ids"
   since_emit=$((since_emit + 1))
   direct_stalled_subjects=""
   combined_detail="$detail"
@@ -438,6 +459,7 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     HEARTBEAT_STALLED="$stalled_n" HEARTBEAT_STALLED_DETAIL="$stalled_detail" \
     HEARTBEAT_WAITING_DETAIL="$combined_detail" \
     HEARTBEAT_OPEN_REQUESTS="$request_n" HEARTBEAT_OPEN_REQUEST_DETAIL="$request_detail" \
+    HEARTBEAT_OPEN_HOLDS="$hold_n" HEARTBEAT_OPEN_HOLD_DETAIL="$hold_detail" \
       python3 "$ROOT/hooks/heartbeat-decision.py" tick 2>"$decision_err")
   decision_rc=$?
   if [ "$decision_rc" -eq "$HEARTBEAT_CLEAR_EXIT_STATUS" ]; then
@@ -451,6 +473,10 @@ print("STATE", len(live), " | ".join(live), ",".join(ids), sep="\t")
     echo "[$(date +%H:%M:%S)] DEGRADED - heartbeat decision step failed with status $decision_rc: $decision_reason; continuing to watch."
   fi
   rm -f "$decision_err"
+  if [ "$hold_release_failed" -eq 1 ]; then
+    should_exit=0
+    echo "[$(date +%H:%M:%S)] DEGRADED - a resolved board hold could not be recorded; continuing to watch."
+  fi
   if [ "$key" != "$prev_key" ] || [ "$since_emit" -ge "$KEEPALIVE_TICKS" ]; then
     prev_key="$key"; since_emit=0
     [ -z "$decision_output" ] || printf '%s\n' "$decision_output"

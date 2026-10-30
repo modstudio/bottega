@@ -17,7 +17,7 @@ def _safe_title(value: object, contains_secret_shaped) -> str:
 def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -> dict:
     """Return plain authored-root and reply rows from local and hosted caches."""
     if not os.path.exists(path):
-        return {"roots": [], "replies": []}
+        return {"roots": [], "replies": [], "holds": []}
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
     try:
         local_receipts = {
@@ -29,10 +29,11 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
         }
         roots, replies = [], []
         for row in connection.execute(
-            "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,thread_root_record_id "
+            "SELECT record_id,number,kind,purpose,author_session,title,expires_at,withdrawn_at,"
+            "thread_root_record_id,created_at "
             "FROM board_message"
         ):
-            record_id, number, kind, purpose, author, title, expires, withdrawn, root_id = row
+            record_id, number, kind, purpose, author, title, expires, withdrawn, root_id, created = row
             if root_id is None:
                 roots.append(
                     {
@@ -41,8 +42,10 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                         "kind": kind,
                         "purpose": purpose,
                         "author_session": author,
+                        "title": _safe_title(title, contains_secret_shaped),
                         "expires_at": expires,
                         "withdrawn_at": withdrawn,
+                        "created_at": created,
                     }
                 )
             else:
@@ -51,6 +54,7 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                         "root_id": root_id,
                         "author_session": author,
                         "delivered_at": local_receipts.get(record_id),
+                        "created_at": created,
                     }
                 )
         hosted_receipts = {
@@ -75,8 +79,10 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                         "kind": kind,
                         "purpose": message.get("purpose"),
                         "author_session": author,
+                        "title": _safe_title(message.get('title'), contains_secret_shaped),
                         "expires_at": message.get("expiresAt"),
                         "withdrawn_at": message.get("withdrawnAt"),
+                        "created_at": message.get("createdAt"),
                     }
                 )
             else:
@@ -85,9 +91,32 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                         "root_id": root_id,
                         "author_session": author,
                         "delivered_at": hosted_receipts.get(message_id),
+                        "created_at": message.get("createdAt"),
                     }
                 )
-        return {"roots": roots, "replies": replies}
+        has_hold_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_board_hold'"
+        ).fetchone()
+        holds = (
+            [
+                {
+                    "message_id": row[0],
+                    "session_id": session_id,
+                    "created_at": row[1],
+                    "title": next(
+                        (root["title"] for root in roots if root["id"] == row[0]), ""
+                    ),
+                }
+                for row in connection.execute(
+                    "SELECT message_record_id,created_at FROM session_board_hold "
+                    "WHERE session_id=? AND released_at IS NULL ORDER BY created_at,record_id",
+                    (session_id,),
+                )
+            ]
+            if has_hold_table
+            else []
+        )
+        return {"roots": roots, "replies": replies, "holds": holds}
     finally:
         connection.close()
 

@@ -104,6 +104,28 @@ test('full notices label information, request, and standing purposes distinctly'
   ])
 })
 
+test('request notices explain the heartbeat hold and information notices do not', () => {
+  const render = (purpose: 'information' | 'request') =>
+    renderBoardNotice({
+      id: 'notice-id',
+      purpose,
+      authorKind: 'operator',
+      authorSession: null,
+      authorHarness: null,
+      authorProject: null,
+      title: 'Load gate: busy',
+      body: 'body',
+      expiresAt: '2026-10-31T00:00:00.000Z',
+      ackRequired: false,
+      tags: [],
+    })
+  const instruction =
+    `If you pause work for this notice, run ${PLATFORM_SLUG} session hold --on notice-id ` +
+    'so your heartbeat wakes you when it changes.'
+  expect(render('request')).toContain(instruction)
+  expect(render('information')).not.toContain(instruction)
+})
+
 test('delivery leaves a later message that fits alone whole for the next batch', () => {
   const messages = [
     {
