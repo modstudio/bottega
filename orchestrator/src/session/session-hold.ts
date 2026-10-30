@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { resolveBoardMessageIdentifier } from '../board/board-message-identifier.ts'
 import { db, nowIso, writableDb, writeTransaction } from '../database/db.ts'
 
 type SessionHold = {
@@ -77,8 +78,13 @@ export function sessionHold(
     throw new Error('--release <id> requires --reason <text>')
   if (!input.on && !input.release) return { action: 'listed', holds: holds(database, session) }
 
-  const messageRecordId = (input.on ?? input.release)!.trim()
-  if (!messageRecordId) throw new Error('board message id must not be empty')
+  const messageIdentifier = (input.on ?? input.release)!.trim()
+  if (!messageIdentifier) throw new Error('board message id must not be empty')
+  const messageRecordId = resolveBoardMessageIdentifier(
+    database,
+    messageIdentifier,
+    options.env ?? process.env,
+  ).recordId
   if (input.on) {
     if (!messageExists(database, messageRecordId))
       throw new Error(

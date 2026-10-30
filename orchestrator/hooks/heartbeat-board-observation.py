@@ -94,21 +94,28 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                         "created_at": message.get("createdAt"),
                     }
                 )
-        holds = [
-            {
-                "message_id": row[0],
-                "session_id": session_id,
-                "created_at": row[1],
-                "title": next(
-                    (root["title"] for root in roots if root["id"] == row[0]), ""
-                ),
-            }
-            for row in connection.execute(
-                "SELECT message_record_id,created_at FROM session_board_hold "
-                "WHERE session_id=? AND released_at IS NULL ORDER BY created_at,record_id",
-                (session_id,),
-            )
-        ]
+        has_hold_table = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='session_board_hold'"
+        ).fetchone()
+        holds = (
+            [
+                {
+                    "message_id": row[0],
+                    "session_id": session_id,
+                    "created_at": row[1],
+                    "title": next(
+                        (root["title"] for root in roots if root["id"] == row[0]), ""
+                    ),
+                }
+                for row in connection.execute(
+                    "SELECT message_record_id,created_at FROM session_board_hold "
+                    "WHERE session_id=? AND released_at IS NULL ORDER BY created_at,record_id",
+                    (session_id,),
+                )
+            ]
+            if has_hold_table
+            else []
+        )
         return {"roots": roots, "replies": replies, "holds": holds}
     finally:
         connection.close()

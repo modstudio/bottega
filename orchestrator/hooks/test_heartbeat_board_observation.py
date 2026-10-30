@@ -99,6 +99,48 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         self.reply("delivered-reply", "answering-session", "2027-01-15T08:00:00.000Z")
         self.assertEqual(self.open(), [])
 
+    def test_withdrawn_held_notice_projects_and_releases(self):
+        connection = sqlite3.connect(self.store.name)
+        connection.execute(
+            "INSERT INTO session_board_hold VALUES (?,?,?,?,?,?)",
+            (
+                "hold-1", "asking-session", "root-1",
+                "2026-10-30T01:00:00.000Z", None, None,
+            ),
+        )
+        connection.execute(
+            "UPDATE board_message SET withdrawn_at=? WHERE record_id='root-1'",
+            ("2026-10-30T02:00:00.000Z",),
+        )
+        connection.commit()
+        connection.close()
+
+        projected = self.observe()
+        self.assertEqual(
+            projected["holds"],
+            [{
+                "message_id": "root-1", "session_id": "asking-session",
+                "created_at": "2026-10-30T01:00:00.000Z", "title": "Need a ruling",
+            }],
+        )
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            projected["roots"], projected["replies"], projected["holds"], 1_800_000_000
+        )
+        self.assertEqual(open_holds, [])
+        self.assertEqual(releases[0].reason, "withdrawn")
+
+    def test_store_without_hold_table_still_projects_roots_and_replies(self):
+        connection = sqlite3.connect(self.store.name)
+        connection.execute("DROP TABLE session_board_hold")
+        connection.commit()
+        connection.close()
+        self.reply("delivered-reply", "answering-session", "2027-01-15T08:00:00.000Z")
+
+        projected = self.observe()
+        self.assertEqual([root["id"] for root in projected["roots"]], ["root-1"])
+        self.assertEqual([reply["root_id"] for reply in projected["replies"]], ["root-1"])
+        self.assertEqual(projected["holds"], [])
+
     def test_secret_shaped_title_is_withheld(self):
         connection = sqlite3.connect(self.store.name)
         connection.execute("UPDATE board_message SET title=? WHERE record_id='root-1'", ("token=abc",))

@@ -102,6 +102,12 @@ class HeartbeatDecisionTest(unittest.TestCase):
         )
         self.assertEqual(open_holds, [])
         self.assertEqual(releases[0].reason, "replied")
+    def test_hold_absent_from_observed_roots_releases(self):
+        open_holds, releases = heartbeat_decision.resolve_board_holds(
+            [], [], [self.hold()], self.now,
+        )
+        self.assertEqual(open_holds, [])
+        self.assertEqual(releases[0].reason, "no longer on the board")
     now = heartbeat_decision._timestamp("2026-10-30T03:00:00.000Z")
     @staticmethod
     def root(**overrides):

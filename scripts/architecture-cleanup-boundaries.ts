@@ -46,6 +46,7 @@ export const cleanupBoundarySpecs = [
       'bun:sqlite',
       '../../../shared/brand.ts',
       '../../../shared/record-id.ts',
+      '../board/board-message-identifier.ts',
       '../database/db.ts',
     ],
     typeOnlyAllowed: [],

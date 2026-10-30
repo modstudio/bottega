@@ -138,7 +138,11 @@ def resolve_board_holds(
         message_id = hold.get("message_id")
         root = roots_by_id.get(message_id)
         if root is None:
-            unresolved.append(hold)
+            released.append(
+                HoldResolution(
+                    str(message_id), str(hold.get("title") or ""), "no longer on the board", None
+                )
+            )
             continue
         title = str(root.get("title") or "")
         reason = None
