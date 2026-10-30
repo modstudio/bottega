@@ -13,7 +13,7 @@ import {
   type HostedBoardChanges,
   type HostedBoardMessage,
 } from '../record/record-board-contract.ts'
-import { withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
+import { BUDGET_SPENT, withinHostedBoardRefreshBudget } from './board-hosted-refresh-budget.ts'
 import { hostedBoardVerificationNoticeDecision } from './board-hosted-verification-policy.ts'
 import { boardMode } from './board-mode.ts'
 import {
@@ -317,7 +317,7 @@ function refreshFailure(
 ): HostedBoardRefresh {
   const reason = error instanceof Error ? error.message : String(error)
   recordRefresh(database, now(), `failed: ${reason}`)
-  if (reason === 'hosted board refresh budget spent') {
+  if (reason === BUDGET_SPENT) {
     return { status: 'incomplete', applied }
   }
   return { status: 'failed', applied, reason }

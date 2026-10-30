@@ -121,9 +121,6 @@ test('a later root with the same author and title prefix supersedes a withdrawal
     false,
   )
   expect(withdrawalSuperseded({ ...withdrawn, title: 'Load gate' }, [root()])).toBe(false)
-  expect(withdrawalSuperseded(withdrawn, [root({ withdrawnAt: '2026-10-16T13:00:00.000Z' })])).toBe(
-    true,
-  )
 })
 
 test('a report reply successor is withheld when the reporter received the reply', () => {

@@ -1,7 +1,7 @@
 // concern: hosted-board-refresh-budget
 /** Runs one hosted-board refresh operation within its remaining budget. */
 
-const BUDGET_SPENT = 'hosted board refresh budget spent'
+export const BUDGET_SPENT = 'hosted board refresh budget spent'
 
 export async function withinHostedBoardRefreshBudget<T>(
   operation: (signal: AbortSignal) => Promise<T>,
