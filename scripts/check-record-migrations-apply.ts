@@ -19,6 +19,7 @@ import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
+import { prepareRecordMigrationProof } from './record-migration-session.ts'
 import {
   proofRunOwnerRequired,
   runOwnerBackfill,
@@ -1004,6 +1005,7 @@ async function main(): Promise<void> {
     }
     try {
       await database.transaction(async (transaction) => {
+        await prepareRecordMigrationProof(transaction, migrations)
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
         await proofManagedCanonProjects(transaction)
         await proofProjectRelationsStayWithinOneSpace(transaction)
