@@ -156,6 +156,7 @@ export const ROOT_TEST_FILES = [
   'scripts/postgres-migration-rls.test.ts',
   'scripts/check-test-placement.test.ts',
   'scripts/check-test-reach.test.ts',
+  'scripts/record-jsonb-string-backfill.test.ts',
   'orchestrator/src/ratchet/biome-adapter.test.ts',
   'orchestrator/src/ratchet/ratchet-plan.test.ts',
   'scripts/check-file-ceiling.test.ts',
