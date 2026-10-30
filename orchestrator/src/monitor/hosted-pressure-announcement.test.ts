@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { HostedBoardOverviewEntry } from '../record/record-board-contract.ts'
 import {
   decideHostedPressureAnnouncement,
+  HOSTED_PRESSURE_CLEARED_TITLE,
   HOSTED_PRESSURE_CLEARED_TTL_MS,
   HOSTED_PRESSURE_NOTICE_TTL_MS,
 } from './hosted-pressure-announcement.ts'
@@ -59,7 +60,7 @@ describe('hosted pressure announcement decision', () => {
       [
         notice('one', 'Hosted pressure: steal=0.2'),
         notice('two', 'Hosted pressure: api-p95=3s'),
-        notice('cleared', 'Hosted pressure: cleared'),
+        notice('cleared', HOSTED_PRESSURE_CLEARED_TITLE),
       ],
     ]) {
       const actions = decideHostedPressureAnnouncement(
@@ -77,7 +78,7 @@ describe('hosted pressure announcement decision', () => {
       expect(actions.at(-1)).toEqual({
         kind: 'post',
         notice: {
-          title: 'Hosted pressure: cleared',
+          title: HOSTED_PRESSURE_CLEARED_TITLE,
           body: `Hosted pressure that began at ${onset} cleared at 2026-10-30T12:20:00.000Z.`,
           expiresMs: HOSTED_PRESSURE_CLEARED_TTL_MS,
         },

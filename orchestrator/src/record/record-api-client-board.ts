@@ -10,8 +10,6 @@ import type {
   HostedBoardSessionInput,
 } from './record-board-contract.ts'
 
-export { classifyBoardStreamResponse } from './record-api-client-board-stream.ts'
-
 type BoardRootClient = {
   listBoardMessages(
     query?: HostedBoardOverviewFilters,
