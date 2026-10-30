@@ -21,3 +21,10 @@ test('an empty external lane names agent setup and the shared harness remedy', (
     `${PLATFORM_SLUG} machine config set --machine delegation.review harness`,
   )
 })
+
+test('a read-only undeclared job names declaration and read-only harness remedies', () => {
+  const refusal = noEligibleAgentRefusal('diagnose', {}, ['codex: not declared for diagnose'])
+
+  expect(refusal).toContain(`${PLATFORM_SLUG} agent set <agent> --jobs diagnose`)
+  expect(refusal).toContain('switch read-only jobs (all jobs that do not write the repository)')
+})

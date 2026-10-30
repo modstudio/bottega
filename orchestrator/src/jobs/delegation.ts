@@ -51,9 +51,17 @@ export function noEligibleAgentRefusal(
   const headline = `no eligible agent for job "${jobName}"`
   const jobClass = delegationClass(capabilities)
   const detail = excluded.length ? `\n${excluded.join('\n')}` : ''
-  return (
-    `${headline}${detail}\nremedy: register and probe an agent with ` +
-    `${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe, or switch ${jobClass} work ` +
-    `to the harness with ${delegationRemedy(jobClass, 'harness')}`
+  const remedies = []
+  if (excluded.some((line) => line.endsWith(`not declared for ${jobName}`))) {
+    remedies.push(
+      `declare a probed agent with ${PLATFORM_SLUG} agent set <agent> --jobs ${jobName}`,
+    )
+  }
+  remedies.push(
+    `register and probe an agent with ${PLATFORM_SLUG} agent add and ${PLATFORM_SLUG} agent probe`,
+    jobClass === 'review'
+      ? `switch read-only jobs (all jobs that do not write the repository) to the harness with ${delegationRemedy(jobClass, 'harness')}`
+      : `switch repository-writing jobs to the harness with ${delegationRemedy(jobClass, 'harness')}`,
   )
+  return `${headline}${detail}\nremedy: ${remedies.join('; or ')}`
 }
