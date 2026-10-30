@@ -12,6 +12,16 @@ import { acknowledgeNotice, postNotice, withdrawNotice } from './board-service.t
 test('only the final delivered local replacement reports its withdrawal', async () => {
   const clock = Date.parse('2026-10-30T10:00:00.000Z')
   const reader = 'local-withdrawal-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(
+      reader,
+      new Date(clock).toISOString(),
+      new Date(clock + WITHDRAWAL_SUPERSESSION_GRACE_MS).toISOString(),
+    )
   const notice = postNotice(
     {
       audience: `session:${reader}`,
@@ -32,7 +42,7 @@ test('only the final delivered local replacement reports its withdrawal', async 
   withdrawNotice(notice.recordId, {}, clock + 2)
   const replacement = postNotice(
     {
-      audience: `session:${reader}`,
+      audience: 'session:different-local-reader',
       title: 'Load gate: HOLD',
       body: 'This later root replaces the withdrawn notice.',
       purpose: 'request',
@@ -53,8 +63,21 @@ test('only the final delivered local replacement reports its withdrawal', async 
         budgetMs: 0,
         clock: clock + 2 + WITHDRAWAL_SUPERSESSION_GRACE_MS,
       })
-    ).delivery,
-  ).toEqual([])
+    ).delivery.map((item) => item.id),
+  ).toEqual([`withdrawn:${notice.number}`])
+  db().query('UPDATE board_message SET audience=? WHERE record_id=?').run(
+    `session:${reader}`,
+    replacement.recordId,
+  )
+  expect(
+    (
+      await pendingBoardDelivery({
+        session: reader,
+        budgetMs: 0,
+        clock: clock + 2 + WITHDRAWAL_SUPERSESSION_GRACE_MS,
+      })
+    ).delivery.map((item) => item.id),
+  ).toEqual([String(replacement.number)])
   db()
     .query(
       `INSERT INTO board_receipt
@@ -147,6 +170,16 @@ test('an adoption-retired local notice does not report an author withdrawal', as
 test('only the final delivered hosted replacement reports its withdrawal', async () => {
   const clock = Date.parse('2026-10-30T11:00:00.000Z')
   const reader = 'hosted-withdrawal-reader'
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,first_seen,last_seen)
+       VALUES (?,'claude-code','architect','test','push-project',(SELECT record_id FROM project WHERE name='push-project'),'/tmp',NULL,?,?)`,
+    )
+    .run(
+      reader,
+      new Date(clock).toISOString(),
+      new Date(clock + WITHDRAWAL_SUPERSESSION_GRACE_MS).toISOString(),
+    )
   const userId = newRecordId()
   const messageId = newRecordId()
   const deliveredAt = new Date(clock).toISOString()
@@ -207,10 +240,12 @@ test('only the final delivered hosted replacement reports its withdrawal', async
   const replacement = {
     ...message,
     id: newRecordId(),
+    audience: 'session:different-hosted-reader',
     createdAt: new Date(clock + 2).toISOString(),
     withdrawnAt: null as string | null,
     state: 'live',
     revision: '1',
+    expiresAt: new Date(clock + 10 * 60_000).toISOString(),
   }
   db()
     .query(
@@ -218,9 +253,21 @@ test('only the final delivered hosted replacement reports its withdrawal', async
     )
     .run(replacement.id, replacement.kind, null, replacement.revision, JSON.stringify(replacement))
 
+  const originalPendingClock = clock + 1 + WITHDRAWAL_SUPERSESSION_GRACE_MS
   expect(
-    (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: clock + 3 })).delivery,
-  ).toEqual([])
+    (
+      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: originalPendingClock })
+    ).delivery.map((item) => item.id),
+  ).toEqual([`withdrawn:${message.id}`])
+  replacement.audience = `session:${reader}`
+  db()
+    .query('UPDATE hosted_board_message_cache SET payload=? WHERE id=?')
+    .run(JSON.stringify(replacement), replacement.id)
+  expect(
+    (
+      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: originalPendingClock })
+    ).delivery.map((item) => item.id),
+  ).toEqual([replacement.id])
   db()
     .query(
       `INSERT INTO hosted_board_receipt_cache

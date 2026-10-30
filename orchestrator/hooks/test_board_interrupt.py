@@ -76,10 +76,10 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                   author_session TEXT,thread_root_record_id TEXT,withdrawn_reason TEXT,
                   title TEXT,created_at TEXT);
                 CREATE TABLE board_receipt(message_record_id TEXT,reader_session TEXT,
-                  delivered_at TEXT,acknowledged_at TEXT);
+                  delivered_at TEXT,acknowledged_at TEXT,audience_at_posting INTEGER);
                 CREATE TABLE hosted_board_message_cache(id TEXT,kind TEXT,payload TEXT);
                 CREATE TABLE hosted_board_receipt_cache(message_id TEXT,reader_session TEXT,
-                  delivered_at TEXT,acknowledged_at TEXT);
+                  delivered_at TEXT,acknowledged_at TEXT,audience_at_posting INTEGER);
                 CREATE TABLE board_withdrawal_delivery(record_id TEXT PRIMARY KEY,
                   reader_session TEXT,message_record_id TEXT,source TEXT,
                   delivered_at TEXT,UNIQUE(reader_session,message_record_id));
@@ -91,7 +91,18 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                    '2026-10-31T12:00:00.000Z','author',NULL,'author',
                    'Load gate: HOLD',datetime('now','-10 minutes'));
                 INSERT INTO board_receipt VALUES
-                  ('message-id','reader',datetime('now','-5 minutes'),NULL);
+                  ('message-id','reader',datetime('now','-5 minutes'),NULL,1);
+                INSERT INTO hosted_board_message_cache VALUES
+                  ('hosted-withdrawn','notice',json_object(
+                    'threadRootId',NULL,
+                    'withdrawnAt',datetime('now','-4 minutes'),
+                    'authorSession','hosted-author',
+                    'title','Hosted gate: HOLD',
+                    'createdAt',datetime('now','-10 minutes'),
+                    'expiresAt',datetime('now','+1 day'),
+                    'ackRequired',0));
+                INSERT INTO hosted_board_receipt_cache VALUES
+                  ('hosted-withdrawn','reader',datetime('now','-5 minutes'),NULL,1);
                 """
             )
             connection.commit()
@@ -106,6 +117,7 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                     connection.commit()
                     candidates, _ = board_interrupt.cheap_state("reader", 300)
                     self.assertIn("withdrawn:7", candidates)
+                    self.assertIn("withdrawn:hosted-withdrawn", candidates)
                     connection.execute(
                         "INSERT INTO board_message VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         (
@@ -124,7 +136,36 @@ class BoardInterruptPresenceTest(unittest.TestCase):
                     )
                     connection.commit()
                     candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertIn("withdrawn:7", candidates)
+                    connection.execute(
+                        "INSERT INTO board_receipt VALUES (?,?,?,?,?)",
+                        ("replacement-id", "reader", None, None, 1),
+                    )
+                    connection.commit()
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
                     self.assertNotIn("withdrawn:7", candidates)
+                    connection.execute(
+                        "INSERT INTO hosted_board_message_cache VALUES (?,?,json_object("
+                        "'threadRootId',NULL,'withdrawnAt',NULL,'authorSession',?,"
+                        "'title',?,'createdAt',datetime('now'),'expiresAt',"
+                        "datetime('now','+1 day'),'ackRequired',0))",
+                        (
+                            "hosted-replacement",
+                            "notice",
+                            "hosted-author",
+                            "Hosted gate: HOLD",
+                        ),
+                    )
+                    connection.commit()
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertIn("withdrawn:hosted-withdrawn", candidates)
+                    connection.execute(
+                        "INSERT INTO hosted_board_receipt_cache VALUES (?,?,?,?,?)",
+                        ("hosted-replacement", "reader", None, None, 1),
+                    )
+                    connection.commit()
+                    candidates, _ = board_interrupt.cheap_state("reader", 300)
+                    self.assertNotIn("withdrawn:hosted-withdrawn", candidates)
                     connection.execute(
                         "INSERT INTO board_withdrawal_delivery VALUES (?,?,?,?,?)",
                         (

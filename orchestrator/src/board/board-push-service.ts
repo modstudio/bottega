@@ -115,13 +115,17 @@ function pendingWithdrawals(
   database: Database,
 ): PendingWithdrawal[] {
   const localRows = messageRows(database)
+  const localSupersessionFact = (row: (typeof localRows)[number]) => ({
+    authorSession: row.author_session,
+    title: row.title ?? '',
+    createdAt: row.created_at,
+  })
   const localRoots = localRows
-    .filter((row) => row.thread_root_record_id === null)
-    .map((row) => ({
-      authorSession: row.author_session,
-      title: row.title ?? '',
-      createdAt: row.created_at,
-    }))
+    .filter(
+      (row) =>
+        row.thread_root_record_id === null && addressed(row, session, clock, database),
+    )
+    .map(localSupersessionFact)
   const local = localRows.flatMap((row) => {
     const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
     if (
@@ -135,14 +139,7 @@ function pendingWithdrawals(
         alreadyDelivered: withdrawalWasDelivered(database, session, row.record_id),
         now: clock,
       }) ||
-      withdrawalSuperseded(
-        {
-          authorSession: row.author_session,
-          title: row.title ?? '',
-          createdAt: row.created_at,
-        },
-        localRoots,
-      )
+      withdrawalSuperseded(localSupersessionFact(row), localRoots)
     )
       return []
     return [
@@ -156,14 +153,20 @@ function pendingWithdrawals(
     ]
   })
   const hostedRows = cachedRows(database)
+  const hostedSupersessionFact = ({ message }: (typeof hostedRows)[number]) => ({
+    authorSession: message.authorSession,
+    title: message.title ?? '',
+    createdAt: message.createdAt,
+  })
   const hostedRoots = hostedRows
-    .filter(({ message }) => message.threadRootId === null)
-    .map(({ message }) => ({
-      authorSession: message.authorSession,
-      title: message.title ?? '',
-      createdAt: message.createdAt,
-    }))
-  const hosted = hostedRows.flatMap(({ message }) => {
+    .filter(
+      (row) =>
+        row.message.threadRootId === null &&
+        cachedMessageAddressed(row, session, clock, database),
+    )
+    .map(hostedSupersessionFact)
+  const hosted = hostedRows.flatMap((row) => {
+    const { message } = row
     const deliveredAt = receiptAt(
       database,
       'hosted_board_receipt_cache',
@@ -181,14 +184,7 @@ function pendingWithdrawals(
         alreadyDelivered: withdrawalWasDelivered(database, session, message.id),
         now: clock,
       }) ||
-      withdrawalSuperseded(
-        {
-          authorSession: message.authorSession,
-          title: message.title ?? '',
-          createdAt: message.createdAt,
-        },
-        hostedRoots,
-      )
+      withdrawalSuperseded(hostedSupersessionFact(row), hostedRoots)
     )
       return []
     return [
