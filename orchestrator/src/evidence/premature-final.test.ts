@@ -18,7 +18,7 @@ function facts(overrides: Partial<PrematureFinalFacts> = {}): PrematureFinalFact
     reportsRun: false,
     questionsAsked: false,
     replyShape: 'reader',
-    readerDelivered: false,
+    deliveredContents: [],
     measuredFiles: null,
     textFields: [readerOpening],
     ...overrides,
@@ -33,6 +33,41 @@ describe('premature final decision', () => {
         'premature final: the agent ended its turn with opening narration and no work ' +
         `(I'll start by reading the full prompt, the review schema, and the MCP tool definitions.…)`,
     })
+  })
+
+  test('classifies a reader reply whose delivered content is only opening narration', () => {
+    const opening =
+      'Starting diagnosis of DEV-1878: reading the full prompt, task, reply schema, and gate result.'
+    expect(
+      decidePrematureFinal(facts({ deliveredContents: [opening], textFields: [opening] })),
+    ).not.toBeNull()
+  })
+
+  test('allows a reader reply with opening narration when a tool event was recorded', () => {
+    const opening =
+      'Starting diagnosis of DEV-1878: reading the full prompt, task, reply schema, and gate result.'
+    expect(
+      decidePrematureFinal(
+        facts({
+          deliveredContents: [opening],
+          textFields: [opening],
+          toolEventRecorded: true,
+        }),
+      ),
+    ).toBeNull()
+  })
+
+  test('allows a reader reply with opening narration and a substantive deliverable', () => {
+    const opening =
+      'Starting diagnosis of DEV-1878: reading the full prompt, task, reply schema, and gate result.'
+    expect(
+      decidePrematureFinal(
+        facts({
+          deliveredContents: [opening, 'The gate failed because the reply omitted its findings.'],
+          textFields: [opening, 'The gate failed because the reply omitted its findings.'],
+        }),
+      ),
+    ).toBeNull()
   })
 
   test('classifies review-lens run 16613 with a placeholder finding and no provenance', () => {
