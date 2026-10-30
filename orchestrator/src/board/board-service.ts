@@ -239,6 +239,8 @@ function render(message: MessageRow, worker = false, database = db()) {
         rootTitle: root.title,
         body: message.body,
       }),
+      replyRecordId: message.record_id,
+      threadTitle: root.title,
       purpose: 'information' as const,
     }
   }
@@ -399,6 +401,8 @@ export function claimNotices(
   expiresAt: string | null
   purpose: BoardPurpose
   reportReplySuccessor?: boolean
+  replyRecordId?: string
+  threadTitle?: string
 }[] {
   const reader = boardReader(env)
   const rows = messageRows(database).filter(
@@ -432,6 +436,7 @@ export function claimPushNotices(
   notices: ReturnType<typeof claimNotices>
   withheldOlderCount: number
   deferredReplySuccessorCount: number
+  deferredReplySuccessors: ReturnType<typeof selectPushNotices>['deferredReplySuccessors']
   warning: string | null
 } {
   const reader = boardReader(env)
@@ -452,6 +457,7 @@ export function claimPushNotices(
     notices,
     withheldOlderCount: selected.withheldOlderCount,
     deferredReplySuccessorCount: selected.deferredReplySuccessorCount,
+    deferredReplySuccessors: selected.deferredReplySuccessors,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

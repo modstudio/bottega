@@ -36,6 +36,9 @@ export type BoardDelivery = {
 
 export type BoardDeliveryMoment = 'session-start' | 'running'
 
+export const boardPendingCommand = (session: string): string =>
+  `${PLATFORM_SLUG} board pending --session ${session}`
+
 export function boardDeliveryForm(
   purpose: BoardPurpose | undefined,
   moment: BoardDeliveryMoment,

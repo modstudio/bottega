@@ -57,6 +57,8 @@ export type HostedCacheNotice = {
   expiresAt: string | null
   purpose: import('../../../shared/board-purpose.ts').BoardPurpose
   reportReplySuccessor?: boolean
+  replyRecordId?: string
+  threadTitle?: string
 }
 
 type RefreshInput = {
@@ -889,6 +891,12 @@ function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheN
         createdAt: message.createdAt,
         expiresAt: message.expiresAt,
         purpose: message.purpose ?? 'information',
+        ...(message.kind === 'reply'
+          ? {
+              replyRecordId: message.id,
+              threadTitle: context.messagesById.get(message.threadRootId ?? '')?.title ?? '',
+            }
+          : {}),
       }
       return message.kind === 'reply' && hostedReplySuccessorPush(message, context)
         ? { ...notice, reportReplySuccessor: true }
@@ -906,6 +914,7 @@ export function claimCachedHostedForPush(
   notices: HostedCacheNotice[]
   withheldOlderCount: number
   deferredReplySuccessorCount: number
+  deferredReplySuccessors: ReturnType<typeof selectPushNotices>['deferredReplySuccessors']
   warning: string | null
 } {
   const context = loadClaimContext(database, reader, all, clock)
@@ -925,6 +934,7 @@ export function claimCachedHostedForPush(
     notices,
     withheldOlderCount: selected.withheldOlderCount,
     deferredReplySuccessorCount: selected.deferredReplySuccessorCount,
+    deferredReplySuccessors: selected.deferredReplySuccessors,
     warning:
       reader !== OPERATOR_READER && beganAt === null ? missingReaderStartWarning(reader) : null,
   }

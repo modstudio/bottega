@@ -1,10 +1,13 @@
 import { expect, test } from 'bun:test'
 import { resolve } from 'node:path'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, SESSION_LIVE_MS } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import {
   boardPushDecision,
+  DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT,
+  deferredReplySuccessorWarning,
   reportReplySuccessorDecision,
   selectPushNotices,
 } from './board-push-policy.ts'
@@ -132,12 +135,49 @@ test('a read-only delivery defers a reply successor instead of claiming it', () 
     createdAt: postedAt,
     expiresAt: null,
     reportReplySuccessor: true,
+    replyRecordId: 'reply-record-id',
+    threadTitle: 'Report thread',
   }
   expect(selectPushNotices('2026-10-16T12:00:00.000Z', [successor], clock, false)).toEqual({
     notices: [],
     withheldOlderCount: 0,
     deferredReplySuccessorCount: 1,
+    deferredReplySuccessors: [{ replyRecordId: 'reply-record-id', threadTitle: 'Report thread' }],
   })
+})
+
+test('deferred reply warning names two held replies and the writable delivery command', () => {
+  expect(
+    deferredReplySuccessorWarning(
+      [
+        { threadTitle: 'First report', replyRecordId: 'reply-1' },
+        { threadTitle: 'Second report', replyRecordId: 'reply-2' },
+      ],
+      `${PLATFORM_SLUG} board pending --session successor-session`,
+    ),
+  ).toBe(
+    `Deferred report replies: "First report" (reply reply-1), "Second report" (reply reply-2). Each is held, not lost. The next board delivery that can claim it delivers it. Run ${PLATFORM_SLUG} board pending --session successor-session to deliver it now.`,
+  )
+})
+
+test('deferred reply warning bounds named replies and counts the remainder', () => {
+  const replies = Array.from({ length: DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT + 2 }, (_, index) => ({
+    threadTitle: `Report ${index + 1}`,
+    replyRecordId: `reply-${index + 1}`,
+  }))
+  const warning = deferredReplySuccessorWarning(
+    replies,
+    `${PLATFORM_SLUG} board pending --session successor-session`,
+  )
+  expect(warning).toContain(`"Report ${DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT}"`)
+  expect(warning).not.toContain(`"Report ${DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT + 1}"`)
+  expect(warning).toContain('and 2 more')
+})
+
+test('deferred reply warning is absent when no replies were deferred', () => {
+  expect(
+    deferredReplySuccessorWarning([], `${PLATFORM_SLUG} board pending --session successor-session`),
+  ).toBeNull()
 })
 
 function ensurePostingProject() {
