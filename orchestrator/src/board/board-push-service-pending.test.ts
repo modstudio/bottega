@@ -59,6 +59,11 @@ test('only the final delivered local replacement reports its withdrawal', async 
     .run('load-gate-author', notice.recordId, replacement.recordId)
 
   expect(
+    db()
+      .query('SELECT 1 FROM board_receipt WHERE message_record_id=? AND reader_session=?')
+      .get(replacement.recordId, reader),
+  ).toBeNull()
+  expect(
     (
       await pendingBoardDelivery({
         session: reader,
@@ -343,6 +348,11 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
 
   const originalPendingClock = clock + 1 + WITHDRAWAL_SUPERSESSION_GRACE_MS
   expect(
+    db()
+      .query('SELECT 1 FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?')
+      .get(replacement.id, reader),
+  ).toBeNull()
+  expect(
     (
       await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: originalPendingClock })
     ).delivery.map((item) => item.id),
@@ -407,6 +417,106 @@ test('a withdrawn addressed hosted replacement still supersedes the prior withdr
     (await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 }))
       .delivery,
   ).toEqual([])
+})
+
+test('acknowledgement stamps the hosted withdrawal that was emitted before supersession', async () => {
+  const clock = Date.parse('2026-10-30T11:30:00.000Z')
+  const reader = 'hosted-withdrawal-ack-race-reader'
+  const userId = newRecordId()
+  db()
+    .query('INSERT INTO schema_meta(key,value) VALUES (?,?),(?,?)')
+    .run(BOARD_CACHE_OWNER_KEY, userId, 'board_hosted_signed_in_user', userId)
+  const notice: HostedBoardMessage = {
+    id: newRecordId(),
+    kind: 'notice',
+    purpose: 'request',
+    threadRootId: null,
+    title: 'Deploy gate: HOLD',
+    body: 'Pause for this hosted request.',
+    audience: `session:${reader}`,
+    origin: {
+      kind: 'architect',
+      session: 'hosted-deploy-gate-author',
+      harness: 'claude-code',
+      project: PLATFORM_SLUG,
+      projectStored: true,
+      runId: null,
+    },
+    senderTags: [],
+    createdAt: new Date(clock).toISOString(),
+    expiresAt: new Date(clock + 10 * 60_000).toISOString(),
+    withdrawnAt: new Date(clock + 2).toISOString(),
+    state: 'withdrawn',
+    acceptedReplyId: null,
+    acceptedBy: null,
+    acceptedAt: null,
+    noteId: null,
+    notePendingError: null,
+    revision: '2',
+    scopeProjectIds: [],
+    recipientUserIds: [],
+    claimId: null,
+    authorUserId: userId,
+    authorSession: 'hosted-deploy-gate-author',
+    ackRequired: false,
+    ackDeadline: null,
+  }
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(notice.id, notice.kind, null, notice.revision, JSON.stringify(notice))
+  db()
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,1,?,NULL,0)`,
+    )
+    .run(newRecordId(), notice.id, reader, new Date(clock + 1).toISOString())
+
+  const pendingClock = pendingClockFor(clock + 2)
+  const pending = await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock })
+  expect(pending.delivery.map((item) => item.id)).toEqual([`withdrawn:${notice.id}`])
+
+  const replacement: HostedBoardMessage = {
+    ...notice,
+    id: newRecordId(),
+    body: 'This later hosted root supersedes the withdrawal.',
+    createdAt: new Date(clock + 3).toISOString(),
+    withdrawnAt: null,
+    state: 'live',
+    revision: '1',
+  }
+  db()
+    .query(
+      'INSERT INTO hosted_board_message_cache(id,kind,thread_root_id,revision,payload) VALUES (?,?,?,?,?)',
+    )
+    .run(replacement.id, replacement.kind, null, replacement.revision, JSON.stringify(replacement))
+  db()
+    .query(
+      `INSERT INTO hosted_board_receipt_cache
+       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,1,?,NULL,0)`,
+    )
+    .run(newRecordId(), replacement.id, reader, new Date(clock + 4).toISOString())
+
+  await markBoardDeliveryDelivered({
+    session: reader,
+    ids: pending.delivery.map((item) => item.id),
+    clock: pendingClock + 1,
+  })
+  expect(
+    db()
+      .query(
+        'SELECT source FROM board_withdrawal_delivery WHERE reader_session=? AND message_record_id=?',
+      )
+      .get(reader, notice.id),
+  ).toEqual({ source: 'hosted' })
+  expect(
+    (
+      await pendingBoardDelivery({ session: reader, budgetMs: 0, clock: pendingClock + 2 })
+    ).delivery.map((item) => item.id),
+  ).not.toContain(`withdrawn:${notice.id}`)
 })
 
 test('hosted withdrawal resolution stays within the gate budget for a large signed-in cache', async () => {

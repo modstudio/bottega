@@ -14,8 +14,11 @@ const WITHDRAWAL_DELIVERY_PREFIX = 'withdrawn:'
 
 export const withdrawalDeliveryId = (id: string): string => `${WITHDRAWAL_DELIVERY_PREFIX}${id}`
 
+export const parseWithdrawalDeliveryId = (id: string): string | null =>
+  id.startsWith(WITHDRAWAL_DELIVERY_PREFIX) ? id.slice(WITHDRAWAL_DELIVERY_PREFIX.length) : null
+
 export const isWithdrawalDeliveryId = (id: string): boolean =>
-  id.startsWith(WITHDRAWAL_DELIVERY_PREFIX)
+  parseWithdrawalDeliveryId(id) !== null
 
 const titlePrefix = (title: string): string => title.split(':', 1)[0]!.trim()
 

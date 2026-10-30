@@ -20,6 +20,7 @@ import {
   boardPushDecision,
   deferredReplySuccessorWarning,
   isWithdrawalDeliveryId,
+  parseWithdrawalDeliveryId,
   withdrawalDeliveryId,
   withdrawalDeliveryText,
   withdrawalPending,
@@ -62,17 +63,43 @@ type DeliveryInput = {
 
 export { deliveryWarning }
 
-const receiptAt = (database: Database, table: string, id: string | number, session: string) =>
-  (database
+type ReceiptSource = 'local' | 'hosted'
+
+type ReceiptRow = {
+  delivered_at: string | null
+  acknowledged_at: string | null
+  proves_reach: number
+}
+
+const receiptRow = (
+  database: Database,
+  source: ReceiptSource,
+  id: string | number,
+  session: string,
+): ReceiptRow | null =>
+  database
     .query(
-      table === 'board_receipt'
-        ? 'SELECT delivered_at,acknowledged_at FROM board_receipt WHERE message_record_id=? AND reader_session=?'
-        : 'SELECT delivered_at,acknowledged_at FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?',
+      source === 'local'
+        ? `SELECT delivered_at,acknowledged_at,
+                  (audience_at_posting=1 OR delivered_at IS NOT NULL) AS proves_reach
+           FROM board_receipt WHERE message_record_id=? AND reader_session=?`
+        : `SELECT delivered_at,acknowledged_at,
+                  (audience_at_posting=1 OR delivered_at IS NOT NULL) AS proves_reach
+           FROM hosted_board_receipt_cache WHERE message_id=? AND reader_session=?`,
     )
-    .get(id, session) as {
-    delivered_at: string | null
-    acknowledged_at: string | null
-  } | null) ?? { delivered_at: null, acknowledged_at: null }
+    .get(id, session) as ReceiptRow | null
+
+const receiptAt = (
+  database: Database,
+  source: ReceiptSource,
+  id: string | number,
+  session: string,
+) =>
+  receiptRow(database, source, id, session) ?? {
+    delivered_at: null,
+    acknowledged_at: null,
+    proves_reach: 0,
+  }
 
 type PendingWithdrawal = BoardDelivery & {
   messageRecordId: string
@@ -92,30 +119,12 @@ function withdrawalWasDelivered(database: Database, session: string, messageId: 
 
 function receiptProvesReach(
   database: Database,
-  table: 'board_receipt' | 'hosted_board_receipt_cache',
+  source: ReceiptSource,
   messageId: string,
   session: string,
 ): boolean {
-  return Boolean(
-    database
-      .query(
-        table === 'board_receipt'
-          ? `SELECT 1 FROM board_receipt
-             WHERE message_record_id=? AND reader_session=?
-               AND (audience_at_posting=1 OR delivered_at IS NOT NULL) LIMIT 1`
-          : `SELECT 1 FROM hosted_board_receipt_cache
-             WHERE message_id=? AND reader_session=?
-               AND (audience_at_posting=1 OR delivered_at IS NOT NULL) LIMIT 1`,
-      )
-      .get(messageId, session),
-  )
+  return receiptRow(database, source, messageId, session)?.proves_reach === 1
 }
-
-const localReceiptProvesReach = (database: Database, messageId: string, session: string) =>
-  receiptProvesReach(database, 'board_receipt', messageId, session)
-
-const hostedReceiptProvesReach = (database: Database, messageId: string, session: string) =>
-  receiptProvesReach(database, 'hosted_board_receipt_cache', messageId, session)
 
 const supersessionFact = (
   authorSession: string | null,
@@ -163,7 +172,7 @@ function pendingWithdrawals(
   const localRows = messageRows(database)
   const localRoots = localSupersessionRoots(localRows)
   const local = localRows.flatMap((row) => {
-    const deliveredAt = receiptAt(database, 'board_receipt', row.record_id, session).delivered_at
+    const deliveredAt = receiptAt(database, 'local', row.record_id, session).delivered_at
     if (
       !withdrawalPending({
         isRoot: row.thread_root_record_id === null,
@@ -182,7 +191,7 @@ function pendingWithdrawals(
         (root) =>
           withdrawalSuperseded(supersessionFact(row.author_session, row.title, row.created_at), [
             root.fact,
-          ]) && localReceiptProvesReach(database, root.row.record_id, session),
+          ]) && receiptProvesReach(database, 'local', root.row.record_id, session),
       )
     )
       return []
@@ -205,12 +214,7 @@ function pendingWithdrawals(
     }))
   const hosted = hostedRows.flatMap((row) => {
     const { message } = row
-    const deliveredAt = receiptAt(
-      database,
-      'hosted_board_receipt_cache',
-      message.id,
-      session,
-    ).delivered_at
+    const deliveredAt = receiptAt(database, 'hosted', message.id, session).delivered_at
     if (
       !withdrawalPending({
         isRoot: message.threadRootId === null,
@@ -230,7 +234,7 @@ function pendingWithdrawals(
           withdrawalSuperseded(
             supersessionFact(message.authorSession, message.title, message.createdAt),
             [root.fact],
-          ) && hostedReceiptProvesReach(database, root.row.message.id, session),
+          ) && receiptProvesReach(database, 'hosted', root.row.message.id, session),
       )
     )
       return []
@@ -258,31 +262,29 @@ function stampPendingWithdrawals(
     `INSERT OR IGNORE INTO board_withdrawal_delivery
      (record_id,reader_session,message_record_id,source,delivered_at) VALUES (?,?,?,?,?)`,
   )
-  let hostedRows: ReturnType<typeof cachedRows> | null = null
+  const localRows = messageRows(database)
+  const hostedRows = cachedRows(database)
   for (const requestedId of requestedIds) {
-    const identifier = requestedId.slice('withdrawn:'.length)
-    const number = /^[0-9]+$/.test(identifier) ? Number(identifier) : null
-    const localNumber =
-      number !== null && Number.isSafeInteger(number) && number > 0 ? number : null
-    const local = database
-      .query<{ record_id: string }, [number | null, string]>(
-        `SELECT record_id FROM board_message
-         WHERE thread_root_record_id IS NULL AND withdrawn_at IS NOT NULL
-           AND (number=? OR record_id=?)`,
-      )
-      .get(localNumber, identifier.toLowerCase())
-    if (local) {
-      stamp.run(newRecordId(), session, local.record_id, 'local', deliveredAt)
-      continue
-    }
-    hostedRows ??= cachedRows(database)
-    const hosted = hostedRows.find(
-      ({ message }) =>
-        message.id === identifier.toLowerCase() &&
-        message.threadRootId === null &&
-        message.withdrawnAt !== null,
-    )
-    if (hosted) stamp.run(newRecordId(), session, hosted.message.id, 'hosted', deliveredAt)
+    const identifier = parseWithdrawalDeliveryId(requestedId)
+    if (identifier === null) continue
+    const resolved = resolveBoardDeliveryIdentifier(database, identifier)
+    if (resolved === null) continue
+    const isWithdrawnRoot =
+      resolved.source === 'local'
+        ? localRows.some(
+            (row) =>
+              row.record_id === resolved.recordId &&
+              row.thread_root_record_id === null &&
+              row.withdrawn_at !== null,
+          )
+        : hostedRows.some(
+            ({ message }) =>
+              message.id === resolved.recordId &&
+              message.threadRootId === null &&
+              message.withdrawnAt !== null,
+          )
+    if (isWithdrawnRoot)
+      stamp.run(newRecordId(), session, resolved.recordId, resolved.source, deliveredAt)
   }
 }
 
@@ -294,7 +296,7 @@ function localPendingAcknowledgements(
 ): BoardDelivery[] {
   const candidates = messageRows(database)
     .filter((row) => {
-      const receipt = receiptAt(database, 'board_receipt', row.record_id, session)
+      const receipt = receiptAt(database, 'local', row.record_id, session)
       return (
         row.kind === 'notice' &&
         row.ack_required === 1 &&
@@ -313,7 +315,7 @@ function localPendingAcknowledgements(
       requiresAcknowledgement: true,
       createdAt: row.created_at,
       expiresAt: row.expires_at,
-      deliveredAt: receiptAt(database, 'board_receipt', row.record_id, session).delivered_at,
+      deliveredAt: receiptAt(database, 'local', row.record_id, session).delivered_at,
       purpose: row.purpose ?? 'information',
       text: renderPendingAcknowledgement({
         id: String(row.number),
@@ -321,7 +323,7 @@ function localPendingAcknowledgements(
         title: row.title ?? '',
         body: row.body,
         deadline: row.ack_deadline ?? '',
-        deliveredAt: receiptAt(database, 'board_receipt', row.record_id, session).delivered_at,
+        deliveredAt: receiptAt(database, 'local', row.record_id, session).delivered_at,
         purpose: row.purpose ?? 'information',
       }),
     }))
@@ -347,7 +349,7 @@ function hostedPendingAcknowledgements(
 ): BoardDelivery[] {
   const candidates = cachedRows(database)
     .filter(({ message, tags }) => {
-      const receipt = receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
+      const receipt = receiptAt(database, 'hosted', message.id, session)
       return (
         message.kind === 'notice' &&
         message.ackRequired &&
@@ -365,8 +367,7 @@ function hostedPendingAcknowledgements(
       requiresAcknowledgement: true,
       createdAt: message.createdAt,
       expiresAt: message.expiresAt ?? message.createdAt,
-      deliveredAt: receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
-        .delivered_at,
+      deliveredAt: receiptAt(database, 'hosted', message.id, session).delivered_at,
       purpose: message.purpose ?? 'information',
       text: renderPendingAcknowledgement({
         id: message.id,
@@ -374,8 +375,7 @@ function hostedPendingAcknowledgements(
         title: message.title ?? '',
         body: message.body,
         deadline: message.ackDeadline ?? '',
-        deliveredAt: receiptAt(database, 'hosted_board_receipt_cache', message.id, session)
-          .delivered_at,
+        deliveredAt: receiptAt(database, 'hosted', message.id, session).delivered_at,
         purpose: message.purpose ?? 'information',
       }),
     }))

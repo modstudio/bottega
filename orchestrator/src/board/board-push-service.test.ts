@@ -416,7 +416,7 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
     ],
     [
       'later_receipt.message_record_id=later.record_id',
-      'localReceiptProvesReach(database, root.row.record_id, session)',
+      "receiptProvesReach(database, 'local', root.row.record_id, session)",
     ],
     [
       "json_extract(later.payload,'$.authorSession')",
@@ -432,7 +432,7 @@ test('the hook SQL remains a deliberately broad prefilter of the TypeScript owne
     ],
     [
       'later_receipt.message_id=later.id',
-      'hostedReceiptProvesReach(database, root.row.message.id, session)',
+      "receiptProvesReach(database, 'hosted', root.row.message.id, session)",
     ],
     ['later_receipt.audience_at_posting=1', 'audience_at_posting=1 OR delivered_at IS NOT NULL'],
   ] as const) {

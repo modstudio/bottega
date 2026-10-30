@@ -9,6 +9,7 @@ import {
   DEFERRED_REPLY_SUCCESSOR_NAMED_LIMIT,
   deferredReplySuccessorWarning,
   isWithdrawalDeliveryId,
+  parseWithdrawalDeliveryId,
   reportReplySuccessorDecision,
   selectPushNotices,
   WITHDRAWAL_SUPERSESSION_GRACE_MS,
@@ -87,6 +88,8 @@ test('a withdrawal is pending only after an earlier delivery to another session'
 
 test('withdrawal delivery owns its id and text format', () => {
   expect(withdrawalDeliveryId('7')).toBe('withdrawn:7')
+  expect(parseWithdrawalDeliveryId('withdrawn:7')).toBe('7')
+  expect(parseWithdrawalDeliveryId('7')).toBeNull()
   expect(isWithdrawalDeliveryId('withdrawn:7')).toBe(true)
   expect(isWithdrawalDeliveryId('7')).toBe(false)
   expect(
