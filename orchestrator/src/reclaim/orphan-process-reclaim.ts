@@ -15,7 +15,9 @@ import {
   currentOrphanProcesses,
   type OrphanProcess,
   type ProcessFact,
+  processTableSnapshot,
 } from '../resources/process-inventory.ts'
+import { ancestorChain } from '../resources/session-process-anchoring.ts'
 
 const ORPHAN_PROCESS_AUTO_RECLAIM_MIN_AGE_MS = 60_000
 const RECLAIM_GRACE_MS = 5_000
@@ -336,10 +338,14 @@ export type RemovedTreeProcessDecision =
 export function removedTreeProcessDecisions(
   candidates: readonly OwnedOrphanProcess[],
   liveWorktrees: ReadonlySet<string>,
+  ownAncestry: ReadonlySet<number>,
   identity: (orphan: OwnedOrphanProcess) => PidRecordIdentity,
 ): RemovedTreeProcessDecision[] {
   const identities = candidates.map(identity)
-  const gone = identities.map((value) => value === 'dead' || value === 'reused')
+  const gone = identities.map(
+    (value, index) =>
+      value === 'dead' || value === 'reused' || ownAncestry.has(candidates[index]!.pid),
+  )
   const candidateByPid = new Map(candidates.map((orphan, index) => [orphan.pid, index]))
 
   const handledAsRoot = (index: number): boolean => {
@@ -384,7 +390,14 @@ export function reclaimRemovedTreeProcesses(
   const liveWorktrees = liveRunWorktrees()
   const orphans = orphansWithOwnershipEvidence(inventory.orphans)
   const candidates = orphans.filter((orphan) => removed.has(resolve(orphan.missingTree)))
-  const decisions = removedTreeProcessDecisions(candidates, liveWorktrees, (orphan) =>
+  const processTable = processTableSnapshot()
+  const ownAncestry = new Set([
+    process.pid,
+    ...(processTable.error || processTable.facts.length === 0
+      ? []
+      : ancestorChain(process.pid, processTable.facts)),
+  ])
+  const decisions = removedTreeProcessDecisions(candidates, liveWorktrees, ownAncestry, (orphan) =>
     pidRecordIdentity(orphan.pid, orphan.startTime),
   )
   for (const decision of decisions) {

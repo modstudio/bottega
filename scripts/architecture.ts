@@ -543,6 +543,7 @@ export const modules: ArchitectureModule[] = [
     '../database/db.ts',
     '../project/projects.ts',
     '../resources/process-inventory.ts',
+    '../resources/session-process-anchoring.ts',
   ]),
   ...runLifecycleModules,
   module('orchestrator/src/review/review-calibration.ts', [

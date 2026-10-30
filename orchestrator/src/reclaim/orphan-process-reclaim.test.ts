@@ -103,7 +103,7 @@ test('removed-tree decisions omit dead and reused roots after reading every iden
   const candidates = [orphan({ pid: 40 }), orphan({ pid: 41 })]
   const reads: number[] = []
   expect(
-    removedTreeProcessDecisions(candidates, new Set(), (candidate) => {
+    removedTreeProcessDecisions(candidates, new Set(), new Set(), (candidate) => {
       reads.push(candidate.pid)
       return candidate.pid === 40 ? 'dead' : 'reused'
     }),
@@ -115,7 +115,7 @@ test('removed-tree decisions keep live and unknown roots with the unchanged reas
   const live = orphan({ pid: 40, match: 'argument', command: 'live-command' })
   const unknown = orphan({ pid: 41, match: 'argument', command: 'unknown-command' })
   expect(
-    removedTreeProcessDecisions([live, unknown], new Set(), (candidate) =>
+    removedTreeProcessDecisions([live, unknown], new Set(), new Set(), (candidate) =>
       candidate.pid === 40 ? 'live' : 'unknown',
     ),
   ).toEqual([
@@ -133,14 +133,34 @@ test('removed-tree decisions keep live and unknown roots with the unchanged reas
 })
 
 test('removed-tree decisions do not reclaim an eligible root that is dead', () => {
-  expect(removedTreeProcessDecisions([orphan()], new Set(), () => 'dead')).toEqual([])
+  expect(removedTreeProcessDecisions([orphan()], new Set(), new Set(), () => 'dead')).toEqual([])
+})
+
+test('removed-tree decisions omit a live candidate in the current process ancestry', () => {
+  expect(removedTreeProcessDecisions([orphan()], new Set(), new Set([42]), () => 'live')).toEqual(
+    [],
+  )
+})
+
+test('a child of an own-ancestry candidate is handled as a root', () => {
+  const parent = orphan({ pid: 40 })
+  const child = orphan({ pid: 41, ppid: 40, match: 'argument' })
+  expect(
+    removedTreeProcessDecisions([parent, child], new Set(), new Set([40]), () => 'live'),
+  ).toEqual([
+    {
+      action: 'keep',
+      orphan: child,
+      reason: 'argument-only match requires manual reclaim',
+    },
+  ])
 })
 
 test('a child of a dead candidate is handled as a root', () => {
   const parent = orphan({ pid: 40 })
   const child = orphan({ pid: 41, ppid: 40, match: 'argument' })
   expect(
-    removedTreeProcessDecisions([parent, child], new Set(), (candidate) =>
+    removedTreeProcessDecisions([parent, child], new Set(), new Set(), (candidate) =>
       candidate.pid === 40 ? 'dead' : 'live',
     ),
   ).toEqual([
@@ -155,7 +175,7 @@ test('a child of a dead candidate is handled as a root', () => {
 test('a child of a live candidate is handled through its parent', () => {
   const parent = orphan({ pid: 40 })
   const child = orphan({ pid: 41, ppid: 40, match: 'argument' })
-  expect(removedTreeProcessDecisions([parent, child], new Set(), () => 'live')).toEqual([
+  expect(removedTreeProcessDecisions([parent, child], new Set(), new Set(), () => 'live')).toEqual([
     { action: 'reclaim', orphan: parent },
   ])
 })
@@ -163,7 +183,7 @@ test('a child of a live candidate is handled through its parent', () => {
 test('a candidate parent cycle still has one handled root', () => {
   const first = orphan({ pid: 40, ppid: 41 })
   const second = orphan({ pid: 41, ppid: 40 })
-  expect(removedTreeProcessDecisions([first, second], new Set(), () => 'live')).toEqual([
+  expect(removedTreeProcessDecisions([first, second], new Set(), new Set(), () => 'live')).toEqual([
     { action: 'reclaim', orphan: first },
   ])
 })
