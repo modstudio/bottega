@@ -122,13 +122,14 @@ export function latestCompletedReview(
 }
 
 function recordedReviewedTip(repo: string, to: string, review: CompletedReview): string | null {
+  let recorded: string | null = null
   for (const runId of review.runIds) {
     const commit = git(repo, ['rev-parse', '--verify', `${pinRef(runId)}^{commit}`])
-    if (commit.ok && git(repo, ['merge-base', '--is-ancestor', commit.out, to]).ok) {
-      return commit.out
-    }
+    if (!commit.ok) continue
+    recorded ??= commit.out
+    if (git(repo, ['merge-base', '--is-ancestor', commit.out, to]).ok) return commit.out
   }
-  return null
+  return recorded
 }
 
 function matchingReviewedTip(
@@ -164,14 +165,16 @@ function matchingReviewedTip(
 export function fixFilesFromPatches(
   reviewed: PerPathPatch[],
   current: PerPathPatch[],
+  trunkChangedPaths: readonly string[] = [],
 ): ReviewTierFile[] {
   const reviewedByPath = new Map(reviewed.map((file) => [file.path, file]))
   const currentByPath = new Map(current.map((file) => [file.path, file]))
+  const overlapped = new Set(trunkChangedPaths)
   const paths = new Set([...reviewedByPath.keys(), ...currentByPath.keys()])
   return [...paths].sort().flatMap((path) => {
     const before = reviewedByPath.get(path)
     const after = currentByPath.get(path)
-    if (before?.patchId === after?.patchId) return []
+    if (before?.patchId === after?.patchId && !overlapped.has(path)) return []
     const source = after ?? before
     return source ? [{ path, insertions: source.insertions, deletions: source.deletions }] : []
   })
@@ -249,11 +252,11 @@ function changePatches(
   return { mergeBase: mergeBase.out, patches }
 }
 
-function trunkRenames(
+function trunkChange(
   repo: string,
   reviewedBase: string,
   currentBase: string,
-): Map<string, string> {
+): { changedPaths: string[]; renames: Map<string, string> } {
   const result = git(repo, [
     'diff',
     '--name-status',
@@ -264,16 +267,21 @@ function trunkRenames(
   if (!result.ok) throw new Error(result.err)
   const fields = result.out.split('\0').filter(Boolean)
   const renames = new Map<string, string>()
+  const changedPaths: string[] = []
   for (let index = 0; index < fields.length; ) {
     const status = fields[index++]!
     const path = fields[index++]
     if (!path) throw new Error('git diff --name-status omitted a changed path')
-    if (!status.startsWith('R')) continue
-    const renamedPath = fields[index++]
-    if (!renamedPath) throw new Error('git diff --name-status omitted a renamed path')
-    renames.set(path, renamedPath)
+    if (status.startsWith('R')) {
+      const renamedPath = fields[index++]
+      if (!renamedPath) throw new Error('git diff --name-status omitted a renamed path')
+      renames.set(path, renamedPath)
+      changedPaths.push(renamedPath)
+    } else {
+      changedPaths.push(path)
+    }
   }
-  return renames
+  return { changedPaths, renames }
 }
 
 function branchFixFiles(
@@ -284,9 +292,12 @@ function branchFixFiles(
 ): ReviewTierFile[] {
   const reviewed = changePatches(repo, reviewedTip, trunkRef)
   const current = changePatches(repo, currentTip, trunkRef)
+  const rebased = !git(repo, ['merge-base', '--is-ancestor', reviewedTip, currentTip]).ok
+  const trunk = trunkChange(repo, reviewed.mergeBase, current.mergeBase)
   return fixFilesFromPatches(
-    mapPatchPaths(reviewed.patches, trunkRenames(repo, reviewed.mergeBase, current.mergeBase)),
+    mapPatchPaths(reviewed.patches, trunk.renames),
     current.patches,
+    rebased ? trunk.changedPaths : [],
   )
 }
 

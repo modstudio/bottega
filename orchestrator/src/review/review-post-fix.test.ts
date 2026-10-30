@@ -393,8 +393,7 @@ test('identifies an ancestor commit first and falls back to patch identity after
       project: 'fixture',
       branch: rebasedBranch,
     })
-    expect(rebasedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
-    git(repo, 'update-ref', pinRef(rebasedRunId), rebasedReviewed)
+    expect(rebasedFacts).toMatchObject({ reviewedTip: originalReviewed, fixFiles: [] })
     database.query('UPDATE run SET review_ref=? WHERE record_id=?').run(rebasedBranch, rebasedRunId)
     mkdirSync(join(repo, 'critical'))
     writeFileSync(join(repo, 'critical/fix.ts'), 'export const fixed = true\n')
@@ -409,7 +408,7 @@ test('identifies an ancestor commit first and falls back to patch identity after
       project: 'fixture',
       branch: rebasedBranch,
     })
-    expect(fixedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
+    expect(fixedFacts).toMatchObject({ reviewedTip: originalReviewed })
     expect(
       postFixReviewDecision({
         facts: fixedFacts,
@@ -424,7 +423,7 @@ test('identifies an ancestor commit first and falls back to patch identity after
       }),
     ).toMatchObject({
       kind: 're-lens',
-      reviewedTip: rebasedReviewed,
+      reviewedTip: originalReviewed,
       tierThreePaths: ['critical/fix.ts'],
     })
   } finally {
