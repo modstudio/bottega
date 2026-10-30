@@ -21,7 +21,7 @@ function addMessage(): string {
   return id
 }
 
-test('session hold refuses a resolved reply id with the thread-root check', () => {
+test('session hold names a resolved reply id in its thread-root refusal', () => {
   const rootId = addMessage()
   const id = newRecordId()
   db()
@@ -34,7 +34,9 @@ test('session hold refuses a resolved reply id with the thread-root check', () =
         '2026-10-30T00:30:00.000Z',NULL,?)`,
     )
     .run(id, rootId)
-  expect(() => sessionHold({ on: id }, { env })).toThrow(`${PLATFORM_SLUG} board thread ${id}`)
+  expect(() => sessionHold({ on: id }, { env })).toThrow(
+    `board message ${id} is a reply, not a thread root; hold its thread root (see ${PLATFORM_SLUG} board thread ${id})`,
+  )
 })
 
 test('session hold is idempotent and releases the open row with its reason', () => {

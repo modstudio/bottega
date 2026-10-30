@@ -50,7 +50,8 @@ export const cleanupBoundarySpecs = [
       '../database/db.ts',
     ],
     typeOnlyAllowed: [],
-    reason: 'Keep session board holds local to their store-backed service.',
+    reason:
+      'The session hold service resolves board identifiers through the shared resolver and keeps holds in its local store.',
   },
   {
     name: 'resume-brief-handoff-boundary',

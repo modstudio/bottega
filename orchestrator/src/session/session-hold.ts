@@ -42,22 +42,32 @@ function holds(database: Database, session: string): SessionHold[] {
     }))
 }
 
-function messageExists(database: Database, id: string): boolean {
+function messageKind(database: Database, id: string): 'root' | 'reply' | 'missing' {
   const local = database
-    .query<{ found: number }, [string]>(
-      `SELECT 1 found FROM board_message
-       WHERE record_id=? AND thread_root_record_id IS NULL LIMIT 1`,
+    .query<{ thread_root_record_id: string | null }, [string]>(
+      `SELECT thread_root_record_id FROM board_message WHERE record_id=? LIMIT 1`,
     )
     .get(id)
-  if (local) return true
-  return Boolean(
-    database
-      .query<{ found: number }, [string]>(
-        `SELECT 1 found FROM hosted_board_message_cache
-         WHERE id=? AND thread_root_id IS NULL LIMIT 1`,
-      )
-      .get(id),
-  )
+  if (local) return local.thread_root_record_id === null ? 'root' : 'reply'
+  const hosted = database
+    .query<{ thread_root_id: string | null }, [string]>(
+      `SELECT thread_root_id FROM hosted_board_message_cache WHERE id=? LIMIT 1`,
+    )
+    .get(id)
+  if (hosted) return hosted.thread_root_id === null ? 'root' : 'reply'
+  return 'missing'
+}
+
+function assertThreadRoot(database: Database, id: string): void {
+  const kind = messageKind(database, id)
+  if (kind === 'reply')
+    throw new Error(
+      `board message ${id} is a reply, not a thread root; hold its thread root (see ${PLATFORM_SLUG} board thread ${id})`,
+    )
+  if (kind === 'missing')
+    throw new Error(
+      `board message ${id} was not found; check it with ${PLATFORM_SLUG} board thread ${id}`,
+    )
 }
 
 export function sessionHold(
@@ -80,17 +90,16 @@ export function sessionHold(
 
   const messageIdentifier = (input.on ?? input.release)!.trim()
   if (!messageIdentifier) throw new Error('board message id must not be empty')
+  // Release skips the board-mode check because a hold row already stores a record id.
+  const validateHosted = input.release === undefined
   const messageRecordId = resolveBoardMessageIdentifier(
     database,
     messageIdentifier,
     options.env ?? process.env,
-    input.release === undefined,
+    validateHosted,
   ).recordId
   if (input.on) {
-    if (!messageExists(database, messageRecordId))
-      throw new Error(
-        `board message ${messageRecordId} was not found; check it with ${PLATFORM_SLUG} board thread ${messageRecordId}`,
-      )
+    assertThreadRoot(database, messageRecordId)
     return writeTransaction(() => {
       const existing = holds(database, session).find(
         (hold) => hold.messageRecordId === messageRecordId,
