@@ -24,7 +24,6 @@ import {
 } from '../agent/model-host.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
-import type { FocusedTestDeclaration } from '../focused-test/focused-test-decision.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
@@ -101,6 +100,10 @@ const EXPECTED_AFFECTED_SELECTOR = {
   args: ['run', AFFECTED_TEST_SCRIPT],
 }
 const UNREGISTERED_RUNNER = '<runner command>'
+/** The focused-test declaration as doctor reads it; the typecheck keeps `FocusedTestDeclaration` assignable through doctor.test.ts and the register call. */
+type ProjectFocusedTests =
+  | { command: string; args: string[]; affected?: unknown }
+  | { runners: unknown[] }
 
 /** Compare a registered worker check only when the project declares the standard script. */
 export function workerCheckDoctorFinding(input: {
@@ -121,7 +124,7 @@ export function workerCheckDoctorFinding(input: {
 /** Compare a registered affected-test selector only when the project declares the marker script. */
 export function affectedSelectorDoctorFinding(input: {
   project: string
-  focusedTests: FocusedTestDeclaration | undefined
+  focusedTests: ProjectFocusedTests | undefined
   scripts: Readonly<Record<string, unknown>> | undefined
 }): string | null {
   if (typeof input.scripts?.[AFFECTED_TEST_SCRIPT] !== 'string') return null
@@ -165,7 +168,7 @@ function projectRegisterQuestions<
   Project extends {
     name: string
     path: string
-    settings: { workerCheck?: string; focusedTests?: FocusedTestDeclaration }
+    settings: { workerCheck?: string; focusedTests?: ProjectFocusedTests }
   },
 >(projects: readonly Project[], branchProblems: (project: Project) => readonly string[]): string[] {
   return projects.flatMap((project) => {
