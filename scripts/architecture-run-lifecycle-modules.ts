@@ -114,6 +114,14 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-resume-kind.ts',
   ]),
   module('orchestrator/src/run/run-artifact-limits.ts', []),
+  module('orchestrator/src/run/question-display.ts', ['node:path', '../../../shared/brand.ts']),
+  module('orchestrator/src/run/question-display-probe.ts', [
+    'node:fs',
+    'node:path',
+    '../artifact-paths.ts',
+    '../database/database-location.ts',
+    './question-display.ts',
+  ]),
   module('orchestrator/src/run/run-artifact-retention.ts', [
     '../events.ts',
     './run-artifact-limits.ts',

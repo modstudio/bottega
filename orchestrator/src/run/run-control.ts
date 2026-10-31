@@ -32,6 +32,7 @@ import {
   continuationTreeCwd,
   requireContinuationTree,
 } from './continuation-tree-service.ts'
+import { displayRunQuestion } from './question-display-probe.ts'
 import { questionOpenSql } from './question-open.ts'
 import {
   continuationBranchAvailability,
@@ -241,7 +242,7 @@ export async function follow(
       if (row.status === 'asking') {
         const open = db()
           .query(
-            `SELECT q.question FROM question q JOIN run r ON r.record_id = q.run_record_id
+            `SELECT q.run_record_id,q.question FROM question q JOIN run r ON r.record_id = q.run_record_id
             WHERE (r.record_id = ? OR r.parent_run_record_id = ?) AND ${questionOpenSql('q')}
             ORDER BY q.number`,
           )
@@ -249,13 +250,14 @@ export async function follow(
             row.parent_run_record_id ?? chain.finalId,
             row.parent_run_record_id ?? chain.finalId,
           ) as {
+          run_record_id: string
           question: string
         }[]
         console.error(
           `\n— run ${row.record_id} · ${row.agent} · stopped to ask` +
             (row.latency_ms ? ` after ${presentation.dur(row.latency_ms)}` : '') +
             '\n' +
-            open.map((q) => `  · ${q.question}`).join('\n') +
+            open.map((q) => `  · ${displayRunQuestion(q.run_record_id, q.question)}`).join('\n') +
             `\n\n  ${outcome.line}` +
             `\n  ${PLATFORM_SLUG} question inbox              the questions in full` +
             `\n  ${PLATFORM_SLUG} question answer ${row.parent_run_record_id ?? chain.finalId} ...   rule, and it resumes where it stopped` +

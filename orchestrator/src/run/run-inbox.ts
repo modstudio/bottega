@@ -7,6 +7,8 @@ import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
+import { runQuestionGroupFooter } from './question-display.ts'
+import { displayRunQuestion } from './question-display-probe.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -261,7 +263,7 @@ export async function queryInbox(
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
           can_answer: isLive(q) && inboxSessionCanAnswer(q.session_id, sid),
-          question: q.question,
+          question: displayRunQuestion(q.run_record_id, q.question),
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
           recommendation: q.recommendation,
           why: q.why,
@@ -403,12 +405,14 @@ async function presentJsonInbox(
 function runGroupFooter(
   question: { run_record_id: string; root_id: string },
   nextQuestion: { run_record_id: string } | undefined,
+  questionNumbers: number[],
 ): string[] {
   if (nextQuestion?.run_record_id === question.run_record_id) return []
-  return [
-    `\nrule on them:  ${PLATFORM_SLUG} question answer ${question.root_id} "<ruling>"    (one per question, in order)` +
-      `\n               ${PLATFORM_SLUG} question answer ${question.root_id} --q<id> "<ruling>"`,
-  ]
+  return [`\n${runQuestionGroupFooter(question.root_id, questionNumbers)}`]
+}
+
+function presentLines(lines: string[], log: RunInboxPresentation['log']): void {
+  for (const line of lines) log(line)
 }
 
 export async function runInboxCommand(
@@ -508,10 +512,7 @@ export async function runInboxCommand(
   const terminal = rows.filter((q) => !active.includes(q))
   const answerable = active.filter((q) => canAnswer(q.session_id))
   const visible = active.filter((q) => !canAnswer(q.session_id))
-
-  presentHeader(header).forEach((line) => {
-    log(line)
-  })
+  presentLines(presentHeader(header), log)
 
   const queriedRecoverable = db()
     .query(
@@ -546,15 +547,17 @@ export async function runInboxCommand(
     return
   }
   presentWorkflowQuestions(workflowRows, log)
-  let lastRun = ''
+  const group = { run: '', questionNumbers: [] as number[] }
   for (const [index, q] of answerable.entries()) {
-    if (q.run_record_id !== lastRun) {
+    if (q.run_record_id !== group.run) {
       log(
         `\nrun ${q.run_number} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`,
       )
-      lastRun = q.run_record_id
+      group.run = q.run_record_id
+      group.questionNumbers = []
     }
-    log(`  [q${q.number}] ${q.question}`)
+    group.questionNumbers.push(q.number)
+    log(`  [q${q.number}] ${displayRunQuestion(q.run_record_id, q.question)}`)
     if (q.why) log(`        why: ${q.why}`)
     const opts = q.options ? (JSON.parse(q.options) as string[]) : []
     for (const o of opts) log(`        - ${o}`)
@@ -562,9 +565,7 @@ export async function runInboxCommand(
     if (q.session_id === null) {
       log('        unowned — any session may rule, and the answering identity is recorded')
     }
-    runGroupFooter(q, answerable[index + 1]).forEach((line) => {
-      log(line)
-    })
+    presentLines(runGroupFooter(q, answerable[index + 1], group.questionNumbers), log)
   }
   for (const r of recoverable) {
     const stranded = chainHasPendingDelivery(r.record_id)
@@ -597,7 +598,7 @@ export async function runInboxCommand(
           `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
           `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )
-      log(`        ${q.question}`)
+      log(`        ${displayRunQuestion(q.run_record_id, q.question)}`)
       if (q.why) log(`        why: ${q.why}`)
       const opts = q.options ? (JSON.parse(q.options) as string[]) : []
       for (const o of opts) log(`        - ${o}`)
@@ -611,7 +612,7 @@ export async function runInboxCommand(
       `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
         `${status} (terminal)`,
     )
-    log(`  [q${q.number}] ${q.question}`)
+    log(`  [q${q.number}] ${displayRunQuestion(q.run_record_id, q.question)}`)
     presentOverturn(q, log)
     presentFiled(q, log)
   }

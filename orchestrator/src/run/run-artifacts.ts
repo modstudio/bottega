@@ -23,6 +23,7 @@ import {
 import { dirname, join, relative } from 'node:path'
 import {
   runArtifactsDir as artifactDirectory,
+  DROPPED_ARTIFACTS_MANIFEST,
   isPathAtOrBelow,
   namedArtifactPlan,
   runSandboxDir as sandboxDirectory,
@@ -543,7 +544,9 @@ function collectArtifactCandidates(input: ArtifactCollectionInput): {
   const listed = new Map<string, ListedArtifact>()
   if (existsSync(input.artifacts)) {
     for (const name of readdirSync(input.artifacts)) {
-      if (name !== 'dropped.json') listArtifacts(join(input.artifacts, name), name, listed)
+      if (name !== DROPPED_ARTIFACTS_MANIFEST) {
+        listArtifacts(join(input.artifacts, name), name, listed)
+      }
     }
   }
   if (existsSync(input.scratch)) {
@@ -582,7 +585,7 @@ function publishRetainedArtifacts(input: {
       if (kept === 'worktree.diff' && input.diff) writeFileSync(destination, input.diff)
       else copyFileSync(entry.source, destination)
     }
-    writeFileSync(join(stage, 'dropped.json'), JSON.stringify(plan.dropped, null, 2))
+    writeFileSync(join(stage, DROPPED_ARTIFACTS_MANIFEST), JSON.stringify(plan.dropped, null, 2))
     rmSync(input.artifacts, { recursive: true, force: true })
     renameSync(stage, input.artifacts)
     rmSync(input.scratch, { recursive: true, force: true })
