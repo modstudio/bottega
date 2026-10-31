@@ -24,6 +24,7 @@ import {
 } from '../agent/model-host.ts'
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
+import type { FocusedTestDeclaration } from '../focused-test/focused-test-decision.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
@@ -99,9 +100,7 @@ const EXPECTED_AFFECTED_SELECTOR = {
   command: 'bun',
   args: ['run', AFFECTED_TEST_SCRIPT],
 }
-type ProjectFocusedTests =
-  | { command: string; args: string[]; affected?: unknown }
-  | { runners: unknown[] }
+const UNREGISTERED_RUNNER = '<runner command>'
 
 /** Compare a registered worker check only when the project declares the standard script. */
 export function workerCheckDoctorFinding(input: {
@@ -122,16 +121,26 @@ export function workerCheckDoctorFinding(input: {
 /** Compare a registered affected-test selector only when the project declares the marker script. */
 export function affectedSelectorDoctorFinding(input: {
   project: string
-  focusedTests: ProjectFocusedTests | undefined
+  focusedTests: FocusedTestDeclaration | undefined
   scripts: Readonly<Record<string, unknown>> | undefined
 }): string | null {
   if (typeof input.scripts?.[AFFECTED_TEST_SCRIPT] !== 'string') return null
   if (input.focusedTests && 'runners' in input.focusedTests) return null
   const registered = input.focusedTests?.affected
   if (Bun.deepEquals(registered, EXPECTED_AFFECTED_SELECTOR)) return null
-  return (
+  const differs =
     `${input.project}: registered focusedTests.affected ${registered === undefined ? '(unset)' : JSON.stringify(registered)} ` +
-    `differs from package script ${JSON.stringify(`bun run ${AFFECTED_TEST_SCRIPT}`)}; ` +
+    `differs from package script ${JSON.stringify(`bun run ${AFFECTED_TEST_SCRIPT}`)}; `
+  if (!input.focusedTests) {
+    // A selector alone fails focused-test validation, so the repair registers the runner with it.
+    return (
+      differs +
+      `no focused-test runner is registered, so set one with it: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
+      `'${JSON.stringify({ focusedTests: { command: UNREGISTERED_RUNNER, args: [], affected: EXPECTED_AFFECTED_SELECTOR } })}'`
+    )
+  }
+  return (
+    differs +
     `set it with: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
     `'${JSON.stringify({ focusedTests: { affected: EXPECTED_AFFECTED_SELECTOR } })}'`
   )
@@ -156,7 +165,7 @@ function projectRegisterQuestions<
   Project extends {
     name: string
     path: string
-    settings: { workerCheck?: string; focusedTests?: ProjectFocusedTests }
+    settings: { workerCheck?: string; focusedTests?: FocusedTestDeclaration }
   },
 >(projects: readonly Project[], branchProblems: (project: Project) => readonly string[]): string[] {
   return projects.flatMap((project) => {

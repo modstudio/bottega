@@ -358,6 +358,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../database/db.ts',
       '../resources/docker-resources.ts',
       '../evidence/evidence-query.ts',
+      '../focused-test/focused-test-decision.ts',
       '../jobs/jobs.ts',
       '../mcp/mcp-credential-literal.ts',
       '../mcp/mcp-probe.ts',
