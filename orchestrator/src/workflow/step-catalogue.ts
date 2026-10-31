@@ -768,13 +768,13 @@ function cataloguePromotionReferenceErrors(
   definition: StepCatalogueDefinition,
   currentSequences: readonly CatalogueSequence[],
   rows: { slug: string; definition: string }[],
-): string[] {
+): { errors: string[]; workflowSlugs: string[] } {
   const available = new Set(definition.steps.map((step) => step.slug))
   const proposedSequences = definition.sequences ?? []
-  return rows.flatMap((row) => {
+  const references = rows.flatMap((row) => {
     const workflow = JSON.parse(row.definition) as ProductionWorkflowDefinition
     if (workflow.steps) return [] // Legacy inline versions remain valid history and self-contained.
-    return (workflow.modes ?? []).flatMap((mode) => [
+    const errors = (workflow.modes ?? []).flatMap((mode) => [
       ...catalogueModePromotionErrors(
         row.slug,
         mode,
@@ -788,7 +788,23 @@ function cataloguePromotionReferenceErrors(
         definition.steps,
       ),
     ])
+    return errors.length ? [{ slug: row.slug, errors }] : []
   })
+  return {
+    errors: references.flatMap(({ errors }) => errors),
+    workflowSlugs: references.map(({ slug }) => slug),
+  }
+}
+
+export class CatalogueProductionReferenceRefusal extends Error {
+  readonly workflowSlugs: string[]
+
+  constructor(workflowSlugs: string[], errors: string[]) {
+    super(
+      `step catalogue changes references used by production workflows:\n${errors.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
+    )
+    this.workflowSlugs = workflowSlugs
+  }
 }
 
 export function promoteStepCatalogue(
@@ -857,10 +873,8 @@ function cataloguePromotionPreflight(
     ? workflowsAfterReplacement(currentWorkflowRows, replacement.slug, replacement.definition)
     : currentWorkflowRows
   const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
-  if (missing.length)
-    throw new Error(
-      `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
-    )
+  if (missing.errors.length)
+    throw new CatalogueProductionReferenceRefusal(missing.workflowSlugs, missing.errors)
   const workflows = rows.map((row) => ({
     slug: row.slug,
     definition: JSON.parse(row.definition) as WorkflowDefinition,

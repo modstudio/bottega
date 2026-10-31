@@ -3,13 +3,36 @@ import type { StepCatalogueDefinition } from './step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
-type WorkflowTreePromotion =
+export type WorkflowTreePromotion =
   | { kind: 'catalogue'; n: number }
   | { kind: 'workflow'; slug: string; n: number }
 type WorkflowTreeDivergence = { kind: 'catalogue' } | { kind: 'workflow'; slug: string }
 export type WorkflowTreePromotionPlan = {
   promotions: WorkflowTreePromotion[]
   divergent: WorkflowTreeDivergence[]
+}
+
+export function workflowTreePromotionRemedyLines(
+  referencingWorkflowSlugs: string[],
+  promotions: WorkflowTreePromotion[],
+): string[] {
+  const workflowPromotions = new Map(
+    promotions.flatMap((item) => (item.kind === 'workflow' ? [[item.slug, item.n] as const] : [])),
+  )
+  const referencing = [...new Set(referencingWorkflowSlugs)].sort((left, right) =>
+    left.localeCompare(right),
+  )
+  const blocked = referencing.filter((slug) => !workflowPromotions.has(slug))
+  if (blocked.length)
+    return blocked.map(
+      (slug) =>
+        `workflow ${slug} still references the removed catalogue step; no promotion order clears it`,
+    )
+  return [
+    'clear in order:',
+    ...referencing.map((slug) => `workflow promote ${slug} ${workflowPromotions.get(slug)!}`),
+    'workflow promote-tree',
+  ]
 }
 
 const bySlug = <T extends { slug: string }>(items: T[]): T[] =>
