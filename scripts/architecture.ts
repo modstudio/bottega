@@ -228,9 +228,12 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/close/close-out-in-flight.ts', [
     'node:fs',
+    '../../../shared/brand.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
+    '../jobs/jobs.ts',
     '../landing-tree/landing-tree.ts',
+    '../run/synthetic-lifecycle-job.ts',
     './close-out-report.ts',
   ]),
   module('orchestrator/src/close/reader-scratch-close-out.ts', [

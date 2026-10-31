@@ -1,12 +1,12 @@
 // concern: close-out report
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { HookTreeHold } from '../hook-tree/hook-tree.ts'
-import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
+import type { HeldTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import type { KeepTreeHoldDecision } from '../worktree/keep-tree-hold.ts'
 
 type ConversationHoldReport = {
   reason?: string
-  hold?: LandingTreeHoldKind
+  hold?: HeldTreeHoldKind
   inFlightRef?: string | null
   suppressBlock?: boolean
 }
@@ -27,7 +27,7 @@ export type CloseOutReportResult = {
   outcome: string
   reportOutcome?: string
   detail: string
-  hold?: LandingTreeHoldKind
+  hold?: HeldTreeHoldKind
   inFlightRef?: string | null
   suppressBlock?: boolean
 }
@@ -48,7 +48,7 @@ export type HeldConversationCloseOutResult = Omit<
 export type HeldTreeJson = {
   runId: string
   worktree: string
-  hold: LandingTreeHoldKind
+  hold: HeldTreeHoldKind
   inFlightRef: string | null
   suppressBlock: boolean
 }

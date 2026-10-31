@@ -7,7 +7,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { db } from '../database/db.ts'
-import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
+import type { HeldTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import { upsertProject } from '../project/projects.ts'
 import { annotateHeldLandingInFlight, lookupOpenPr } from './close-out-in-flight.ts'
 
@@ -50,13 +50,18 @@ function heldResult(
   runId: string,
   worktree: string,
   detail: string,
-  hold: LandingTreeHoldKind = 'landing-progress',
+  hold: HeldTreeHoldKind = 'landing-progress',
 ) {
   return { runId, worktree, outcome: 'held' as const, detail, hold }
 }
 
-function ordinaryRunHolding(): { id: string; tree: string; project: string; branch: string } {
-  const id = addRun({ agent: 'codex', job: 'implement', session: 'owner' })
+function ordinaryRunHolding(job = 'implement'): {
+  id: string
+  tree: string
+  project: string
+  branch: string
+} {
+  const id = addRun({ agent: 'codex', job, session: 'owner' })
   const project = `in-flight-run-${id}`
   const branch = `DEV-1752-${id}`
   const tree = mkdtempSync(join(tmpdir(), 'close-out-run-'))
@@ -178,7 +183,10 @@ describe('close-out in-flight hold annotation', () => {
       heldResult(id, tree, 'landing tree held by session owner: landing is in flight'),
     )
 
-    expect(annotated.detail).toBe('landing tree held by session owner: landing is in flight')
+    expect(annotated.detail).toBe(
+      `landing tree held by session owner: landing is in flight; ` +
+        `cleared by: ${PLATFORM_SLUG} tree remove ${tree}`,
+    )
     expect(annotated.inFlightRef).toBeNull()
     expect(annotated.suppressBlock).toBe(false)
   })
@@ -204,7 +212,8 @@ describe('close-out in-flight hold annotation', () => {
     )
 
     expect(annotated.detail).toBe(
-      `landing tree held by session owner: tree is dirty; in flight (cursor ${cursorId} merge-pr)`,
+      `landing tree held by session owner: tree is dirty; in flight (cursor ${cursorId} merge-pr); ` +
+        `cleared by: ${PLATFORM_SLUG} tree remove ${tree}`,
     )
     expect(annotated.inFlightRef).toBe(`cursor ${cursorId} merge-pr`)
     expect(annotated.suppressBlock).toBe(false)
@@ -284,7 +293,8 @@ describe('close-out in-flight hold annotation', () => {
       expect(annotated.inFlightRef).toBe(`cursor ${cursorId} merge-pr`)
       expect(annotated.detail).toBe(
         `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>; ` +
-          `in flight (cursor ${cursorId} merge-pr)`,
+          `in flight (cursor ${cursorId} merge-pr); ` +
+          `cleared by: ${PLATFORM_SLUG} run discard ${id}`,
       )
     } finally {
       rmSync(tree, { recursive: true, force: true })
@@ -318,8 +328,113 @@ describe('close-out in-flight hold annotation', () => {
 
       expect(annotated.suppressBlock).toBe(false)
       expect(annotated.inFlightRef).toBeNull()
+      expect(annotated.detail).toEndWith(`cleared by: ${PLATFORM_SLUG} run discard ${id}`)
     } finally {
       rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('a held reader clone names its close-out lease holder and does not block', () => {
+    const { id, tree } = ordinaryRunHolding('review-lens')
+    try {
+      const run = db().query('SELECT number FROM run WHERE record_id=?').get(id) as {
+        number: number
+      }
+      const annotated = annotateHeldLandingInFlight(
+        heldResult(
+          id,
+          tree,
+          `close-out lease for run ${id} is already held; close-out skipped`,
+          'close-out-lease',
+        ),
+      )
+
+      expect(annotated).toMatchObject({
+        inFlightRef: `run ${run.number} (review-lens) holds it; clears when it finishes`,
+        suppressBlock: true,
+      })
+      expect(annotated.detail).toStartWith(
+        `in flight (run ${run.number} (review-lens) holds it; clears when it finishes); `,
+      )
+    } finally {
+      rmSync(tree, { recursive: true, force: true })
+    }
+  })
+
+  test('every held-tree reason that can block Stop carries a takeable remedy', () => {
+    const landing = ordinaryRunHolding('landing-tree')
+    const ordinary = ordinaryRunHolding()
+    const reader = ordinaryRunHolding('review-lens')
+    mockGitAndGh({ statusOutput: ' M held-work.txt\n', headCommit: 'sha-head' })
+    try {
+      const readerNumber = (
+        db().query('SELECT number FROM run WHERE record_id=?').get(reader.id) as { number: number }
+      ).number
+      const rows = [
+        {
+          reason: 'landing progress without a current cursor',
+          expected: 'in-flight',
+          result: annotateHeldLandingInFlight(
+            heldResult(landing.id, landing.tree, 'landing is in flight', 'landing-progress'),
+          ),
+          ref: '#88',
+        },
+        {
+          reason: 'unique work',
+          expected: 'blocking',
+          result: annotateHeldLandingInFlight(
+            heldResult(landing.id, landing.tree, 'tree is dirty', 'unique-work'),
+          ),
+        },
+        {
+          reason: 'other close-out safety hold',
+          expected: 'blocking',
+          result: annotateHeldLandingInFlight(
+            heldResult(ordinary.id, ordinary.tree, 'ownership could not be established', 'other'),
+          ),
+        },
+        {
+          reason: 'writer close-out lease',
+          expected: 'blocking',
+          result: annotateHeldLandingInFlight(
+            heldResult(ordinary.id, ordinary.tree, 'close-out skipped', 'close-out-lease'),
+          ),
+        },
+        {
+          reason: 'shared reader close-out lease',
+          expected: 'in-flight',
+          result: annotateHeldLandingInFlight(
+            heldResult(reader.id, reader.tree, 'close-out skipped', 'close-out-lease'),
+          ),
+          ref: `run ${readerNumber} (review-lens) holds it; clears when it finishes`,
+        },
+        {
+          reason: 'hook tree owner',
+          expected: 'in-flight',
+          result: annotateHeldLandingInFlight({
+            ...heldResult(ordinary.id, ordinary.tree, 'hook tree', 'other'),
+            inFlightRef: 'hook tree, kept by its owner',
+            suppressBlock: true,
+          }),
+          ref: 'hook tree, kept by its owner',
+        },
+      ] as const
+
+      for (const row of rows) {
+        if (row.expected === 'in-flight') {
+          expect(row.result.suppressBlock, row.reason).toBe(true)
+          expect(row.result.inFlightRef, row.reason).toBe(row.ref)
+        } else {
+          expect(row.result.suppressBlock, row.reason).toBe(false)
+          expect(row.result.detail, row.reason).toMatch(
+            /cleared by: bottega (?:run discard|tree remove) /,
+          )
+        }
+      }
+    } finally {
+      rmSync(landing.tree, { recursive: true, force: true })
+      rmSync(ordinary.tree, { recursive: true, force: true })
+      rmSync(reader.tree, { recursive: true, force: true })
     }
   })
 })

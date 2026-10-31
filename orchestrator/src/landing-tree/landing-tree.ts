@@ -109,6 +109,7 @@ export function landingTreeCommandBase(trunk: string | undefined): string {
 }
 
 export type LandingTreeHoldKind = 'landing-progress' | 'unique-work' | 'other'
+export type HeldTreeHoldKind = LandingTreeHoldKind | 'close-out-lease'
 
 export type LandingTreeReleaseDecision =
   | { action: 'release' }
@@ -253,6 +254,24 @@ export function pullRequestLookupNeeded(hold: LandingTreeHoldKind, treeClean: bo
 }
 
 type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
+
+export type HeldTreeLiveHolderFacts = {
+  hold: HeldTreeHoldKind
+  readerClone: boolean
+  liveHolder: { number: number; job: string } | null
+  uniqueWork: boolean
+}
+
+/** A reader clone whose close-out owner is still finishing clears without session action. */
+export function heldTreeLiveHolderInFlight(
+  facts: HeldTreeLiveHolderFacts,
+): HeldTreeInFlight | null {
+  if (facts.hold !== 'close-out-lease' || !facts.readerClone || !facts.liveHolder) return null
+  return {
+    ref: `run ${facts.liveHolder.number} (${facts.liveHolder.job}) holds it; clears when it finishes`,
+    suppressBlock: !facts.uniqueWork,
+  }
+}
 
 /** Whether a claiming ship-task cursor still has its own landing steps ahead of it. */
 function shipTaskCursorIsInFlight(

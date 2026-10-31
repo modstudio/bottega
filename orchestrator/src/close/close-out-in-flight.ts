@@ -1,15 +1,19 @@
 // concern: close-out in-flight annotation
-/** Gathers cursor and open-PR facts so a held close-out report can carry in-flight landing. */
+/** Gathers holder, cursor, and open-PR facts so a held close-out report can carry in-flight work. */
 
 import { existsSync } from 'node:fs'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { gitResult } from '../git/git-environment.ts'
+import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import {
   type HeldTreeOpenPr,
+  type HeldTreeHoldKind,
   heldTreeInFlight,
-  type LandingTreeHoldKind,
+  heldTreeLiveHolderInFlight,
   pullRequestLookupNeeded,
 } from '../landing-tree/landing-tree.ts'
+import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import {
   annotateHeldTreeDetail,
   type CloseOutReportResult,
@@ -19,6 +23,8 @@ import {
 const OPEN_PR_TIMEOUT_MS = 3000
 
 type RunLandingFacts = {
+  number: number
+  job: string
   repo: string | null
   branch: string | null
   sessionId: string | null
@@ -34,14 +40,22 @@ type CursorRow = {
 
 function lookupRun(runId: string): RunLandingFacts | null {
   const row = db()
-    .query('SELECT repo, branch, session_id FROM run WHERE record_id=?')
+    .query('SELECT number,job,repo,branch,session_id FROM run WHERE record_id=?')
     .get(runId) as {
+    number: number
+    job: string
     repo: string | null
     branch: string | null
     session_id: string | null
   } | null
   if (!row) return null
-  return { repo: row.repo, branch: row.branch, sessionId: row.session_id }
+  return {
+    number: row.number,
+    job: row.job,
+    repo: row.repo,
+    branch: row.branch,
+    sessionId: row.session_id,
+  }
 }
 
 function cursorArg(args: string, key: 'branch' | 'worktree'): string | null {
@@ -156,7 +170,15 @@ function lookupCursor(run: RunLandingFacts, treePath: string): CursorRow | null 
   return lookupShipTaskCursor(run.sessionId, run.repo, run.branch, treePath)
 }
 
-function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTreeHoldKind) {
+function inFlightForHold(worktree: string, run: RunLandingFacts, hold: HeldTreeHoldKind) {
+  const liveHolder = heldTreeLiveHolderInFlight({
+    hold,
+    readerClone: isReadOnlyRepositoryJob(run.job),
+    liveHolder: { number: run.number, job: run.job },
+    uniqueWork: !isReadOnlyRepositoryJob(run.job),
+  })
+  if (liveHolder) return liveHolder
+  if (hold === 'close-out-lease') return null
   const base = {
     treePath: worktree,
     project: run.repo,
@@ -188,15 +210,25 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, hold: LandingTr
   })
 }
 
+function heldTreeRemedy(run: RunLandingFacts, result: CloseOutReportResult): string {
+  return run.job === HOOK_TREE_JOB || run.job === LANDING_TREE_JOB
+    ? `${PLATFORM_SLUG} tree remove ${result.worktree}`
+    : `${PLATFORM_SLUG} run discard ${result.runId}`
+}
+
 export function annotateHeldLandingInFlight(result: CloseOutReportResult): CloseOutReportResult {
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
   if (hasHeldInFlightAnnotation(result)) return result
   const run = lookupRun(result.runId)
   if (!run) return result
   const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other')
+  let detail = annotateHeldTreeDetail(result.detail, inFlight)
+  if (!inFlight?.suppressBlock && !detail.includes('cleared by:')) {
+    detail = `${detail}; cleared by: ${heldTreeRemedy(run, result)}`
+  }
   return {
     ...result,
-    detail: annotateHeldTreeDetail(result.detail, inFlight),
+    detail,
     inFlightRef: inFlight?.ref ?? null,
     suppressBlock: inFlight?.suppressBlock ?? false,
   }

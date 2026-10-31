@@ -9,6 +9,7 @@ type CloseOutLeaseRefusal = {
   worktree: string | null
   outcome: 'held'
   detail: string
+  hold: 'close-out-lease'
 }
 
 /** Run an action under its close-out lease, or name the owner that kept it out. */
@@ -41,6 +42,7 @@ export function withCloseOutLease<T>(
       worktree: row.worktree,
       outcome: 'held',
       detail: `close-out lease for run ${runId} is already held; close-out skipped`,
+      hold: 'close-out-lease',
     }
   }
 }
