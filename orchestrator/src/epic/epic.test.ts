@@ -1,11 +1,18 @@
 import { describe, expect, spyOn, test } from 'bun:test'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { addRun } from '../../test/fixtures/store.ts'
+import {
+  addProject,
+  git,
+  gitRepository,
+  removeGitRepository,
+} from '../../test/fixtures/offline-branch-landing.ts'
+import { addRun, dir } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { reapStale } from '../run/run-liveness.ts'
 import { subscriptionCostFacts } from '../run/run-subscription-cost-store.ts'
-import { epicChildren, epicScoreboard } from './epic.ts'
+import { epicChildren, epicScoreboard, renderEpicHuman } from './epic.ts'
 
 const intervalOrigin = Date.parse('2026-09-08T10:00:00.000Z')
 function timedRun(key: string, startOffsetMs: number, latency: number): string {
@@ -28,6 +35,57 @@ const intervalScore = (...keys: string[]) =>
   )
 
 describe('epic scoreboard', () => {
+  test('renders with live repositories while naming only live missing project directories', () => {
+    const repository = gitRepository('epic-projects')
+    const liveMissing = join(dir, 'live-missing-project')
+    const retiredMissing = join(dir, 'retired-missing-project')
+    try {
+      const unrelatedCommit = git(repository, 'rev-parse', 'HEAD')
+      git(repository, 'commit', '--allow-empty', '-m', 'DEV-CHILD landed work')
+      const childCommit = git(repository, 'rev-parse', 'HEAD')
+      const projectRecordId = addProject('live-repository', repository)
+      const attributedRun = addRun({
+        agent: 'codex',
+        job: 'implement',
+        projectRecordId,
+        headCommit: childCommit,
+      })
+      const unattributedRun = addRun({
+        agent: 'codex',
+        job: 'implement',
+        projectRecordId,
+        headCommit: unrelatedCommit,
+      })
+      db()
+        .query(`UPDATE run SET launch_key=NULL,branch='topic/no-key' WHERE record_id IN (?,?)`)
+        .run(attributedRun, unattributedRun)
+      db()
+        .query(
+          `INSERT INTO project (record_id,name,path,settings)
+           VALUES (?, 'live-missing', ?, '{}')`,
+        )
+        .run(newRecordId(), liveMissing)
+      db()
+        .query(
+          `INSERT INTO project (record_id,name,path,settings,retired_at)
+           VALUES (?, 'retired-missing', ?, '{}', '2026-10-01T00:00:00.000Z')`,
+        )
+        .run(newRecordId(), retiredMissing)
+
+      const report = epicScoreboard('DEV-PARENT', [{ key: 'DEV-CHILD' }], db())
+      const rendered = renderEpicHuman(report)
+
+      expect(rendered).toContain('EPIC DEV-PARENT')
+      expect(rendered).toContain(`skipped live-missing: ${liveMissing} does not exist`)
+      expect(rendered).not.toContain('retired-missing')
+      expect(report.skippedProjects).toEqual([{ name: 'live-missing', path: liveMissing }])
+      expect(report.children[0]?.runs.total).toBe(1)
+      expect(report.total.runs.total).toBe(1)
+    } finally {
+      removeGitRepository(repository)
+    }
+  })
+
   test('computes every recorded metric once for human and JSON views', () => {
     // Offset-less SQLite ISO text is UTC, not the machine's local timezone.
     const first = addRun({

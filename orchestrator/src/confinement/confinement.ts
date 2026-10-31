@@ -15,7 +15,7 @@ import {
   checkoutPathsOverlap,
   checkoutPathsSame,
 } from '../git/checkout-identity.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 
 const UNTRUSTED_INDEX_WINDOW_MS = 1000
 const UNTRUSTED_RETRY_WAIT_MS = 1100
@@ -89,15 +89,13 @@ function checkoutIsMissing(path: string): boolean {
 }
 
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string; stderr: string } {
-  const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
+  const p = gitResult(args, cwd, {
     env: { ...targetGitEnvironment(cwd), GIT_OPTIONAL_LOCKS: '0' },
-    stdout: 'pipe',
-    stderr: 'pipe',
   })
   return {
-    ok: p.exitCode === 0,
-    stdout: p.stdout.toString(),
-    stderr: p.stderr.toString(),
+    ok: p.ok,
+    stdout: p.stdout,
+    stderr: p.stderr,
   }
 }
 

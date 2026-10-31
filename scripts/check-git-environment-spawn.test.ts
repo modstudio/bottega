@@ -1,0 +1,63 @@
+import { describe, expect, test } from 'bun:test'
+import {
+  gitEnvironmentViolations,
+  gitSpawns,
+  rawGitSpawnViolations,
+} from './check-git-environment-spawn.ts'
+
+describe('git spawn check', () => {
+  test('counts production and fixture git spawns and excludes only tests and the named helpers', () => {
+    const source = `const result = Bun.${'spawnSync'}(['git', 'status'], { env })`
+    const findings = gitSpawns({
+      'orchestrator/src/example.ts': source,
+      'hub/src/example.ts': `\n${source}`,
+      'shared/example.test.ts': source,
+      'shared/fixtures/example.ts': source,
+      'shared/test-git-repository.ts': source,
+      'orchestrator/src/git/git-environment.ts': source,
+      'shared/git.ts': source,
+    })
+    expect(
+      rawGitSpawnViolations(findings, { files: {} })
+        .map((violation) => violation.slice(0, violation.indexOf(': ')))
+        .sort(),
+    ).toEqual([
+      'hub/src/example.ts:2',
+      'orchestrator/src/example.ts:1',
+      'shared/fixtures/example.ts:1',
+    ])
+  })
+
+  test('keeps the scrubbed-environment rule scoped to orchestrator and shared', () => {
+    const findings = gitSpawns({
+      'hub/src/missing.ts': `Bun.${'spawn'}(['git', 'status'])`,
+      'orchestrator/src/raw.ts': `Bun.${'spawnSync'}(['git'], { env: process.env })`,
+      'shared/missing.ts': `Bun.${'spawn'}(['git', 'status'])`,
+      'shared/scrubbed.ts': `Bun.${'spawn'}(['git'], { env })`,
+    })
+    expect(gitEnvironmentViolations(findings)).toEqual([
+      'orchestrator/src/raw.ts:1: production git spawn must supply a scrubbed environment',
+      'shared/missing.ts:1: production git spawn must supply a scrubbed environment',
+    ])
+  })
+
+  test('refuses growth at its line with the guarded-helper remedy', () => {
+    const findings = gitSpawns({
+      'orchestrator/src/example.ts': [
+        `Bun.${'spawn'}(['git', 'status'])`,
+        `Bun.${'spawnSync'}(['git', 'log'])`,
+      ].join('\n'),
+    })
+    expect(
+      rawGitSpawnViolations(findings, { files: { 'orchestrator/src/example.ts': 1 } }),
+    ).toEqual([
+      'orchestrator/src/example.ts:2: raw git spawn is not guarded; use the guarded helpers in orchestrator/src/git/git-environment.ts, or gitAt in shared/git.ts',
+    ])
+  })
+
+  test('requires a lowered baseline after a raw spawn is removed', () => {
+    expect(rawGitSpawnViolations([], { files: { 'shared/change-view.ts': 1 } })).toEqual([
+      'shared/change-view.ts: raw git spawn baseline may only shrink; lower its count from 1 to 0',
+    ])
+  })
+})

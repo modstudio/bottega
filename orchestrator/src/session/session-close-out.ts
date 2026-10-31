@@ -13,7 +13,7 @@ import { closeOutRun } from '../close/close-out.ts'
 import { annotateHeldLandingInFlight } from '../close/close-out-in-flight.ts'
 import { type HeldTreeJson, heldTreeFromError, heldTreeJson } from '../close/close-out-report.ts'
 import { sessionId as callingSessionId, db, writableDb } from '../database/db.ts'
-import { repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
+import { gitResult, repoRootOf, targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt, projectByName, resolvedWorktreeTool } from '../project/projects.ts'
 import { currentOrphanProcesses } from '../resources/process-inventory.ts'
 import { refGuardDirectory } from '../resources/ref-guard.ts'
@@ -190,16 +190,8 @@ function observeOwnedBranch(
   const branch: SessionOwnedBranch = { ...item, state: row.state }
   if (row.state !== 'unlanded' && row.state !== 'unknown') return { branch, evidence: null }
   const project = projectByName(item.project)
-  const lastActivity = project
-    ? Bun.spawnSync(['git', 'show', '-s', '--format=%cI', row.tip], {
-        cwd: project.path,
-        env: targetGitEnvironment(project.path),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-        .stdout.toString()
-        .trim() || null
-    : null
+  const activity = project ? gitResult(['show', '-s', '--format=%cI', row.tip], project.path) : null
+  const lastActivity = activity?.ok ? activity.stdout.trim() || null : null
   return {
     branch,
     evidence: {

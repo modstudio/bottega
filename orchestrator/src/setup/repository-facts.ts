@@ -2,7 +2,7 @@
 /** Detects repository facts. Must not know the project register, setup policy, or CLI grammar. */
 import { readdirSync, realpathSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { sniffStack } from '../project/projects.ts'
 import { detectRepositoryToolchain } from './repository-toolchain.ts'
 import type { ToolchainFacts } from './setup-toolchain.ts'
@@ -30,16 +30,11 @@ export type RepositoryFactsReport = {
 const GIT_TIMEOUT_MS = 3_000
 
 function git(path: string, args: string[]): RepositoryGitCapture {
-  const child = Bun.spawnSync(['git', '-C', path, ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'ignore',
-    timeout: GIT_TIMEOUT_MS,
-  })
+  const child = gitAt(path, args, { timeoutMs: GIT_TIMEOUT_MS })
   return {
-    exitCode: child.exitCode,
-    stdout: child.stdout.toString().trim(),
-    timedOut: child.exitedDueToTimeout === true,
+    exitCode: child.code,
+    stdout: child.stdout.trim(),
+    timedOut: child.timedOut,
   }
 }
 

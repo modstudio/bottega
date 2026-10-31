@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { cwdMissing, gitResult } from '../git/git-environment.ts'
 import { type ReviewRole, reviewCountsAsRound } from '../review/review-role.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness-policy.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
@@ -53,6 +53,7 @@ export type EpicScoreboard = {
   }
   children: EpicTaskScore[]
   total: EpicTaskScore
+  skippedProjects: { name: string; path: string }[]
   notRecorded: NotRecorded[]
 }
 
@@ -241,7 +242,7 @@ export function epicScoreboard(
   const childByKey = new Map(children.map((child) => [child.key.toUpperCase(), child]))
   const { runs, landings, reviews } = epicEvidence(database)
   const subscriptionCost = epicCostContext(database, options)
-  const subjects = commitSubjects(database)
+  const { subjects, skippedProjects } = commitSubjects(database)
   const subjectKey = (projectId: string | null, commit: string | null) =>
     keyInBranch(projectId && commit ? (subjects.get(projectId)?.get(commit) ?? null) : null, keys)
   const runKey = (
@@ -253,13 +254,12 @@ export function epicScoreboard(
   }
   const landingKey = (row: LandingRow) =>
     keyInBranch(row.branch, keys) ?? subjectKey(row.project_record_id, row.tip)
-  const reviewKey = (row: ReviewRow) => runKey(row)
 
   const rows = children.map((child): EpicTaskScore => {
     const key = child.key.toUpperCase()
     const taskRuns = runs.filter((row) => runKey(row) === key)
     const taskLandings = landings.filter((row) => landingKey(row) === key)
-    const taskReviews = reviews.filter((row) => reviewKey(row) === key)
+    const taskReviews = reviews.filter((row) => runKey(row) === key)
     const byJob: Record<string, number> = {}
     for (const run of taskRuns) byJob[run.job] = (byJob[run.job] ?? 0) + 1
     const timing = durationMetrics(taskRuns, clock)
@@ -335,6 +335,7 @@ export function epicScoreboard(
     },
     children: rows,
     total,
+    skippedProjects,
     notRecorded: [
       {
         metric: 'architect commits on run branches',
@@ -395,30 +396,34 @@ function durationMetrics(runs: RunRow[], clock: number): DurationMetrics {
   }
 }
 
-function commitSubjects(database: Database): Map<string, Map<string, string>> {
+function commitSubjects(database: Database): {
+  subjects: Map<string, Map<string, string>>
+  skippedProjects: { name: string; path: string }[]
+} {
   const projects = database
-    .query('SELECT record_id,path FROM project ORDER BY record_id')
+    .query('SELECT record_id,name,path FROM project WHERE retired_at IS NULL ORDER BY record_id')
     .all() as {
     record_id: string
+    name: string
     path: string
   }[]
-  const result = new Map<string, Map<string, string>>()
+  const subjects = new Map<string, Map<string, string>>()
+  const skippedProjects: { name: string; path: string }[] = []
   for (const project of projects) {
-    const git = Bun.spawnSync(['git', 'log', '--all', '--format=%H%x09%s'], {
-      cwd: project.path,
-      stdout: 'pipe',
-      stderr: 'pipe',
-      env: targetGitEnvironment(project.path),
-    })
-    if (git.exitCode !== 0) continue
+    if (cwdMissing(project.path)) {
+      skippedProjects.push({ name: project.name, path: project.path })
+      continue
+    }
+    const git = gitResult(['log', '--all', '--format=%H%x09%s'], project.path)
+    if (!git.ok) continue
     const rows = new Map<string, string>()
-    for (const line of git.stdout.toString().split('\n')) {
+    for (const line of git.stdout.split('\n')) {
       const tab = line.indexOf('\t')
       if (tab > 0) rows.set(line.slice(0, tab), line.slice(tab + 1))
     }
-    result.set(project.record_id, rows)
+    subjects.set(project.record_id, rows)
   }
-  return result
+  return { subjects, skippedProjects }
 }
 
 function totalRow(rows: EpicTaskScore[], timing: DurationMetrics): EpicTaskScore {
@@ -534,6 +539,9 @@ export function renderEpicHuman(report: EpicScoreboard): string {
   const jobWidth = Math.max(11, ...rows.map((row) => jobs(row).length))
   const lines = [
     `EPIC ${report.epicKey}`,
+    ...report.skippedProjects.map(
+      (project) => `skipped ${project.name}: ${project.path} does not exist`,
+    ),
     `TASK         ${'RUNS BY JOB'.padEnd(jobWidth)} AGENT   OCCUP   SPAN    MEAN     P95 GHOST      TOKENS          COST  LENS FIX  LAND A/L/R  REV R/C/O  STR IDLE CONT/DRIFT`,
   ]
   for (const row of rows)
