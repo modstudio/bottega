@@ -37,7 +37,7 @@ function addReview(
     severity?: string
     triagedSeverity?: string | null
   }>,
-  options: { patchId?: string; pathSet?: string[]; headCommit?: string | null } = {},
+  options: { patchId?: string | null; pathSet?: string[] | null; headCommit?: string | null } = {},
 ): void {
   const reviewRecordId = newRecordId()
   const run = database
@@ -60,8 +60,8 @@ function addReview(
     .run(
       reviewId,
       reviewRecordId,
-      options.patchId ?? 'current-patch',
-      JSON.stringify(options.pathSet ?? ['one.ts']),
+      options.patchId === undefined ? 'current-patch' : options.patchId,
+      options.pathSet === null ? null : JSON.stringify(options.pathSet ?? ['one.ts']),
     )
   const reviewLens = database
     .query<{ record_id: string }, [string, string, string]>(
@@ -142,7 +142,7 @@ test('refuses a round with no accepted or modified findings', () => {
 test('refuses when the branch review lineage has no rounds and names its remedy', () => {
   const database = fixture()
   expect(() => continuationFindings(database, group, 'message')).toThrow(
-    'the review lineage for branch DEV-1258 has no review rounds\n' +
+    'the review lineage for branch DEV-1258 has no measured review rounds\n' +
       'cleared by: run and judge the review lenses for the current change',
   )
 })
@@ -186,34 +186,75 @@ test('delivers the latest lineage round after the branch change group moves', ()
     headCommit: '1234567890abcdef',
   })
 
-  const selected = continuationFindings(database, group, undefined)
-  expect(selected).toContain('1. Finding 40/1')
-
-  const rendered = renderContinuationFindings(
-    [
-      {
-        reviewNumber: 40,
-        ordinal: 1,
-        lens: 'correctness',
-        reviewerSeverity: 'medium',
-        triagedSeverity: null,
-        disposition: 'accepted',
-        location: 'correctness.ts:1',
-        evidence: 'correctness evidence 1',
-        proposedCorrection: 'correctness correction 1',
-      },
-    ],
-    undefined,
-    {
-      reviewedSha: '1234567890abcdef',
-      commitLines: ['7654321 Architect fix', 'abcdef0 Follow-up'],
-    },
-  )
-
-  expect(rendered).toContain(
+  const resolved = continuationFindings(database, group, undefined, () => ({
+    reviewedSha: '1234567890abcdef',
+    commitLines: ['7654321 Architect fix', 'abcdef0 Follow-up'],
+    omittedOlder: false,
+  }))
+  expect(resolved).toContain(
     'REVIEW FINDINGS\n\nThese findings were reviewed at 1234567. The branch has moved since by:\n' +
       '7654321 Architect fix\nabcdef0 Follow-up\n\n1. Finding 40/1',
   )
+  expect(continuationFindings(database, group, undefined)).toContain(
+    'REVIEW FINDINGS\n\nThe reviewed commit is unknown.',
+  )
+})
+
+test('delivers the newest complete round, not an older one matching the current change', () => {
+  const database = fixture()
+  addReview(database, 43, 'correctness', [{ ordinal: 1, disposition: 'accepted' }])
+  addReview(database, 44, 'safety', [{ ordinal: 2, disposition: 'accepted' }], {
+    patchId: 'newer-patch',
+  })
+
+  const rendered = continuationFindings(database, group, undefined)
+  expect(rendered).toContain('1. Finding 44/2')
+  expect(rendered).not.toContain('Finding 43/1')
+})
+
+test('a newest review with no change measurement is not a round to deliver', () => {
+  const database = fixture()
+  addReview(database, 45, 'correctness', [{ ordinal: 1, disposition: 'accepted' }])
+  addReview(database, 46, 'safety', [{ ordinal: 2, disposition: 'accepted' }], {
+    patchId: null,
+    pathSet: null,
+  })
+
+  const rendered = continuationFindings(database, group, undefined)
+  expect(rendered).toContain('1. Finding 45/1')
+  expect(rendered).not.toContain('Finding 46/2')
+  expect(rendered).not.toContain('reviewed at')
+})
+
+test.each([
+  [
+    'commits since could not be read',
+    { reviewedSha: '1234567890abcdef', commitLines: null, omittedOlder: false },
+    'These findings were reviewed at 1234567. The commits since it could not be read.',
+  ],
+  [
+    'reviewed sha is still the tip',
+    { reviewedSha: '1234567890abcdef', commitLines: [], omittedOlder: false },
+    'These findings were reviewed at 1234567. That is still the branch tip, but the change under review differs from the one reviewed.',
+  ],
+  [
+    'older commits were left out',
+    { reviewedSha: '1234567890abcdef', commitLines: ['7654321 Fix'], omittedOlder: true },
+    'The branch has moved since by:\n7654321 Fix\n(older commits not listed)',
+  ],
+] as const)('the moved-branch notice says so when the %s', (_name, staleness, expected) => {
+  const finding: ContinuationFinding = {
+    reviewNumber: 1,
+    ordinal: 1,
+    lens: 'correctness',
+    reviewerSeverity: 'high',
+    triagedSeverity: null,
+    disposition: 'accepted',
+    location: 'one.ts:1',
+    evidence: 'evidence',
+    proposedCorrection: 'correction',
+  }
+  expect(renderContinuationFindings([finding], undefined, staleness)).toContain(expected)
 })
 
 test('a matching current group preserves the previous rendered text exactly', () => {

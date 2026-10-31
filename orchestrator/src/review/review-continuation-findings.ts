@@ -2,11 +2,12 @@
 /** Selects and renders triaged review findings for a writing continuation. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { gitContext } from '../git/git-environment.ts'
+import { gitContext, gitResult } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import {
   type ChangeGroup,
   measureChangeGroup,
+  reviewInRound,
   reviewRoundTriageComplete,
   reviewsForTriage,
   serializePathSet,
@@ -25,9 +26,23 @@ export type ContinuationFinding = {
   proposedCorrection: string
 }
 
+/** Most commits the moved-branch paragraph lists before saying older ones were left out. */
+export const STALE_COMMIT_LIST_LIMIT = 20
+
+/**
+ * What changed since the delivered round was reviewed. `commitLines` is null when the
+ * commits since the reviewed sha could not be read.
+ */
 export type ContinuationFindingsStaleness = {
   reviewedSha: string | null
-  commitLines: readonly string[]
+  commitLines: readonly string[] | null
+  omittedOlder: boolean
+}
+
+const UNKNOWN_STALENESS: ContinuationFindingsStaleness = {
+  reviewedSha: null,
+  commitLines: null,
+  omittedOlder: false,
 }
 
 type SelectedContinuationRound = {
@@ -40,20 +55,18 @@ function selectContinuationReviewRound(
   branchReviews: readonly TriageReviewRow[],
   group: ChangeGroup,
 ): SelectedContinuationRound {
-  const newest = branchReviews[0]
-  if (!newest) {
+  // A review that recorded no change measurement has no round identity to deliver.
+  const newest = branchReviews.find((review) => review.patchId && review.pathSet)
+  if (!newest?.patchId || !newest.pathSet) {
     throw new Error(
-      `the review lineage for branch ${group.branch} has no review rounds\n` +
+      `the review lineage for branch ${group.branch} has no measured review rounds\n` +
         'cleared by: run and judge the review lenses for the current change',
     )
   }
-  const reviews = branchReviews.filter(
-    (review) => review.patchId === newest.patchId && review.pathSet === newest.pathSet,
-  )
+  const { patchId, pathSet } = newest
   return {
-    reviews,
-    matchesCurrentGroup:
-      newest.patchId === group.patchId && newest.pathSet === serializePathSet(group.pathSet),
+    reviews: branchReviews.filter((review) => reviewInRound(review, patchId, pathSet)),
+    matchesCurrentGroup: reviewInRound(newest, group.patchId, serializePathSet(group.pathSet)),
   }
 }
 
@@ -159,11 +172,7 @@ export function renderContinuationFindings(
       `   Proposed correction: ${finding.proposedCorrection}${modified}`
     )
   })
-  const stalenessParagraph = staleness
-    ? staleness.reviewedSha && staleness.commitLines.length
-      ? `These findings were reviewed at ${staleness.reviewedSha.slice(0, 7)}. The branch has moved since by:\n${staleness.commitLines.join('\n')}\n\n`
-      : 'The reviewed commit is unknown. The branch has moved since that review.\n\n'
-    : ''
+  const stalenessParagraph = staleness ? `${stalenessNotice(staleness)}\n\n` : ''
   return (
     `REVIEW FINDINGS\n\n${stalenessParagraph}${items.join('\n\n')}\n\n` +
     (architectMessage === undefined ? '' : `ARCHITECT MESSAGE\n\n${architectMessage}\n\n`) +
@@ -172,21 +181,35 @@ export function renderContinuationFindings(
   )
 }
 
-/** Query and render a measured review round. */
+/** The paragraph telling a worker its findings predate the branch's current change. */
+function stalenessNotice(staleness: ContinuationFindingsStaleness): string {
+  if (!staleness.reviewedSha) {
+    return 'The reviewed commit is unknown. The change under review has moved since that review.'
+  }
+  const reviewed = `These findings were reviewed at ${staleness.reviewedSha.slice(0, 7)}.`
+  if (!staleness.commitLines) return `${reviewed} The commits since it could not be read.`
+  if (!staleness.commitLines.length) {
+    return `${reviewed} That is still the branch tip, but the change under review differs from the one reviewed.`
+  }
+  const omitted = staleness.omittedOlder ? '\n(older commits not listed)' : ''
+  return `${reviewed} The branch has moved since by:\n${staleness.commitLines.join('\n')}${omitted}`
+}
+
+/**
+ * Select the newest measured round once and render it. `resolveStaleness` describes what
+ * changed since that round; it is consulted only when the round is not the current change.
+ */
 export function continuationFindings(
   database: Database,
   group: ChangeGroup,
   architectMessage: string | undefined,
-  staleness?: ContinuationFindingsStaleness,
+  resolveStaleness?: (reviews: readonly TriageReviewRow[]) => ContinuationFindingsStaleness,
 ): string {
-  const selected = selectedFindings(database, group)
-  return renderContinuationFindings(
-    selected.findings,
-    architectMessage,
-    selected.round.matchesCurrentGroup
-      ? undefined
-      : (staleness ?? { reviewedSha: null, commitLines: [] }),
-  )
+  const { findings, round } = selectedFindings(database, group)
+  const staleness = round.matchesCurrentGroup
+    ? undefined
+    : (resolveStaleness?.(round.reviews) ?? UNKNOWN_STALENESS)
+  return renderContinuationFindings(findings, architectMessage, staleness)
 }
 
 function reviewedHeadCommit(
@@ -228,20 +251,31 @@ export function continuationFindingsForRun(
   if (!tip) throw new Error(`cannot resolve the current tip of branch ${branch}`)
   const measured = measureChangeGroup(project.path, project, branch, tip)
   if (!measured) throw new Error(`could not measure the current change group for branch ${branch}`)
-  const selected = selectContinuationReviewRound(
-    reviewsForTriage(database, measured.group).branchReviews,
-    measured.group,
+  return continuationFindings(database, measured.group, architectMessage, (reviews) =>
+    commitsSinceReview(project.path, reviewedHeadCommit(database, reviews), tip),
   )
-  let staleness: ContinuationFindingsStaleness | undefined
-  if (!selected.matchesCurrentGroup) {
-    const reviewedSha = reviewedHeadCommit(database, selected.reviews)
-    const log = reviewedSha
-      ? gitContext(project.path, 'log', '--format=%h %s', `${reviewedSha}..${tip}`)
-      : null
-    staleness = {
-      reviewedSha: log ? reviewedSha : null,
-      commitLines: log ? log.split('\n') : [],
-    }
+}
+
+function commitsSinceReview(
+  cwd: string,
+  reviewedSha: string | null,
+  tip: string,
+): ContinuationFindingsStaleness {
+  if (!reviewedSha) return UNKNOWN_STALENESS
+  const log = gitResult(
+    [
+      'log',
+      `--max-count=${STALE_COMMIT_LIST_LIMIT + 1}`,
+      '--format=%h %s',
+      `${reviewedSha}..${tip}`,
+    ],
+    cwd,
+  )
+  if (!log.ok) return { reviewedSha, commitLines: null, omittedOlder: false }
+  const lines = log.stdout.split('\n').filter(Boolean)
+  return {
+    reviewedSha,
+    commitLines: lines.slice(0, STALE_COMMIT_LIST_LIMIT),
+    omittedOlder: lines.length > STALE_COMMIT_LIST_LIMIT,
   }
-  return continuationFindings(database, measured.group, architectMessage, staleness)
 }
