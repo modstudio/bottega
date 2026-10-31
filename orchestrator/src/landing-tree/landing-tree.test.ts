@@ -112,7 +112,7 @@ describe('landing-tree decisions', () => {
       landingTreeHoldDecision(
         {
           job: LANDING_TREE_JOB,
-          repo: 'bottega',
+          repo: 'example',
           treeExists: true,
           branch: 'DEV-1037-orch-1',
           runId: '1',
@@ -133,7 +133,7 @@ describe('landing-tree decisions', () => {
       landingTreeHoldDecision(
         {
           job: LANDING_TREE_JOB,
-          repo: 'bottega',
+          repo: 'example',
           treeExists: true,
           branch: 'DEV-1037-orch-1',
           runId: '1',
@@ -146,7 +146,7 @@ describe('landing-tree decisions', () => {
       until: null,
       reason:
         `landing tree holds unique work; land it, or dispose it with ` +
-        `${PLATFORM_SLUG} tree branch dispose bottega:DEV-1037-orch-1 ` +
+        `${PLATFORM_SLUG} tree branch dispose example:DEV-1037-orch-1 ` +
         '--reason <abandoned|superseded|throwaway> --note "<why>"',
       hold: 'unique-work',
     })
@@ -158,7 +158,7 @@ describe('landing-tree decisions', () => {
       landingTreeHoldDecision(
         {
           job: 'implement',
-          repo: 'bottega',
+          repo: 'example',
           treeExists: true,
           branch: 'DEV-1037-orch-1',
           runId: '1',
