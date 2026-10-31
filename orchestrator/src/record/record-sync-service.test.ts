@@ -130,7 +130,7 @@ async function pushQuestion(client: SQL, id: number, payload: Record<string, unk
       ],
     },
     request: {
-      machine: { id: QUESTION_MACHINE_ID, name: 'question-revision-proof', seenAt: STAMP },
+      machine: { id: QUESTION_MACHINE_ID, name: 'question-proof', seenAt: STAMP },
       rows: [{ id, kind: 'question', payload: JSON.stringify(payload), spaceHint: null }],
     },
   })
@@ -152,7 +152,7 @@ async function withQuestionFixture(
     await admin`INSERT INTO project (id,space_id,name,key_prefixes,created_at)
       VALUES (${QUESTION_PROJECT_ID}::uuid,${QUESTION_SPACE_ID}::uuid,'question-revision-proof',ARRAY['DEV'],now())`
     await admin`INSERT INTO machine (id,user_id,name,registered_at,last_seen)
-      VALUES (${QUESTION_MACHINE_ID}::uuid,${QUESTION_USER_ID}::uuid,'question-revision-proof',
+      VALUES (${QUESTION_MACHINE_ID}::uuid,${QUESTION_USER_ID}::uuid,'question-proof',
         ${STAMP}::timestamptz,${STAMP}::timestamptz)`
     await admin`INSERT INTO question
       (id,number,space_id,project_id,machine_id,revision,asked_at,question,withheld_fields,created_at,updated_at)
