@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import * as ts from 'typescript'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const SOURCE_ROOTS = ['scripts', 'orchestrator/src', 'shared', 'hub/src', 'cli']
+const SOURCE_ROOTS = ['scripts', 'orchestrator/src', 'shared', 'hub', 'cli', 'retrieval']
 const EXCLUDED_HELPER = 'shared/git-path-list.ts'
 const BASELINE_PATH = resolve(ROOT, 'scripts/quality/git-path-list.json')
 const PATH_LIST_ARGUMENTS = new Set('--name-only,--name-status,ls-files,diff-tree'.split(','))
@@ -24,7 +24,9 @@ function sourceFiles(): string[] {
     if (!existsSync(directory)) return
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const absolute = join(directory, entry.name)
-      if (entry.isDirectory()) collect(absolute)
+      if (entry.isDirectory()) {
+        if (entry.name !== 'node_modules') collect(absolute)
+      }
       else if (entry.isFile()) files.push(relative(ROOT, absolute))
     }
   }

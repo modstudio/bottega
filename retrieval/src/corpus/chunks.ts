@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { relative, resolve } from 'node:path'
 import { Glob } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   type RetrievalDocSearchOutput,
   RetrievalDocSearchOutputSchema,
@@ -269,7 +270,7 @@ export async function loadDocCorpus(repositoryRoot: string): Promise<Chunk[]> {
 
 export async function loadCodeCorpus(repositoryRoot: string): Promise<Chunk[]> {
   const root = resolve(repositoryRoot)
-  const child = Bun.spawn(['git', '-C', root, 'ls-files', '-z'], {
+  const child = Bun.spawn(['git', '-C', root, ...nulPathListArgs(['ls-files'])], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
@@ -281,7 +282,7 @@ export async function loadCodeCorpus(repositoryRoot: string): Promise<Chunk[]> {
   if (exitCode !== 0) {
     throw new Error(`tracked code corpus listing failed: ${stderr.trim() || `exit ${exitCode}`}`)
   }
-  const files = stdout.split('\0').filter(Boolean).filter(isCodeCorpusPath).sort()
+  const files = splitNulPaths(stdout).filter(isCodeCorpusPath).sort()
   const chunks: Chunk[] = []
   for (const path of files) {
     const absolute = resolve(root, path)
