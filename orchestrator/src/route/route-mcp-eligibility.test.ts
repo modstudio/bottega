@@ -11,6 +11,7 @@ import { writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import {
   PROJECT_MCP_WRITER_TOOLS_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
+  PROJECT_MCP_RELATIVE_WRITER_REASON,
   requiredProjectMcpWriterIneligibility,
 } from '../sandbox/project-mcp-scope.ts'
 import { mcpCandidateIneligibility, pick } from './route.ts'
@@ -157,6 +158,27 @@ test.each(AGENT_CASES)(
     }
   },
 )
+
+test('a required credentialed project-relative writer server is ineligible for routing', () => {
+  const why = requiredProjectMcpWriterIneligibility(
+    'starship',
+    'require',
+    true,
+    {
+      name: 'starship',
+      command: 'scripts/mcp/starship',
+      env: { TOKEN: 'fixture-token' },
+    },
+    {
+      name: 'starship',
+      path: '/project',
+      settings: { mcp: { writer_tools: { starship: ['update-task'] } } },
+    },
+    { kind: 'proxy' },
+  )
+
+  expect(why).toContain(PROJECT_MCP_RELATIVE_WRITER_REASON)
+})
 
 test('a starship-shaped required writer server refuses routing before dispatch', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-starship-route-'))

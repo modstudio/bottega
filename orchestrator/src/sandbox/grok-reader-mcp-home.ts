@@ -7,7 +7,7 @@ import { parse as parseToml, stringify as stringifyToml } from '@decimalturn/tom
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   grokReaderMcpServerTable,
-  type GrokMcpServerEntry,
+  type ProjectMcpServerEntry,
   READER_PLATFORM_MCP_SERVERS,
 } from './mcp-reader-scope.ts'
 import { grokSandboxConfig, type RunSandbox } from './sandbox.ts'
@@ -16,7 +16,7 @@ import { grokSandboxConfig, type RunSandbox } from './sandbox.ts'
 export function scopeGrokReaderMcpHome(
   runDir: string,
   sandbox: RunSandbox,
-  servers: Record<string, GrokMcpServerEntry>,
+  servers: Record<string, ProjectMcpServerEntry>,
 ): { configPath: string; platformServers: string[] } {
   const target = join(runDir, 'config.toml')
   const parsed = parseToml(readFileSync(target, 'utf8')) as Record<string, unknown>

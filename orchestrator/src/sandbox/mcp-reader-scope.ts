@@ -18,8 +18,8 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
-/** One project server shape the Grok run-home renderer accepts. */
-export type GrokMcpServerEntry =
+/** One project server shape a harness renderer accepts. */
+export type ProjectMcpServerEntry =
   | ReaderProxyServer
   | { command: string; args: string[]; cwd: string }
   | { url: string }
@@ -74,7 +74,7 @@ export const READER_PLATFORM_MCP_SERVERS = [MCP_SERVER_NAME, WORKER_MCP_SERVER_N
 /** Build the only MCP table a Grok reader's run home may expose. */
 export function grokReaderMcpServerTable(
   userServers: Record<string, unknown> | undefined,
-  proxies: Record<string, GrokMcpServerEntry>,
+  proxies: Record<string, ProjectMcpServerEntry>,
 ): Record<string, unknown> {
   return {
     ...(userServers?.[MCP_SERVER_NAME] ? { [MCP_SERVER_NAME]: userServers[MCP_SERVER_NAME] } : {}),

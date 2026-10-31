@@ -8,7 +8,6 @@ import type { Agent } from '../agent/agents.ts'
 import { upsertProject } from '../project/projects.ts'
 import { PROJECT_RELATIVE_NO_TREE_REASON } from '../sandbox/mcp-reader-scope.ts'
 import {
-  PROJECT_MCP_ACP_WRITER_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   type ProjectMcpSelection,
@@ -17,6 +16,7 @@ import {
 } from '../sandbox/project-mcp-scope.ts'
 import { acpProjectMcpServers } from '../transport/transport-acp-mcp.ts'
 import {
+  PROJECT_MCP_ACP_WRITER_ADVICE,
   projectSelectionForLaunch,
   withheldScopeLine,
   workerMcpLaunchScope,

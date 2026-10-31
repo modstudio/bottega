@@ -7,7 +7,6 @@ import {
 } from './mcp-reader-scope.ts'
 import {
   mergeMcpSetupHeader,
-  PROJECT_MCP_ACP_WRITER_ADVICE,
   PROJECT_MCP_RELATIVE_WRITER_ADVICE,
   PROJECT_MCP_RELATIVE_WRITER_REASON,
   PROJECT_MCP_WRITER_TOOLS_ADVICE,
@@ -43,7 +42,8 @@ const CONFIG: Record<string, McpServerConfig> = {
 }
 const PROJECT = { name: 'starship', path: '/project', settings: {} }
 const PROXY = { kind: 'proxy' } as const
-const ACP = { kind: 'withhold', advice: PROJECT_MCP_ACP_WRITER_ADVICE } as const
+const ACP_ADVICE = 'ACP test decision withholds this server'
+const ACP = { kind: 'withhold', advice: ACP_ADVICE } as const
 
 test('a writing run attaches every project server except the withheld ones', () => {
   const selection = selectProjectMcpServers('writer', CONFIG, PROJECT, '/project', true, PROXY)
@@ -81,7 +81,7 @@ test('a credentialed writer server uses a credential-free proxy only with declar
   const acp = selectProjectMcpServers('writer', CONFIG, project, '/project', true, ACP)
   expect(acp?.servers.secretHeader).toBeUndefined()
   expect(acp?.withheld.find(({ name }) => name === 'secretHeader')?.advice).toBe(
-    PROJECT_MCP_ACP_WRITER_ADVICE,
+    ACP_ADVICE,
   )
   expect(JSON.stringify(acp)).not.toContain('literal-secret')
 })

@@ -5,7 +5,6 @@ import { type McpServerConfig, mcpConfigAllowlist, readMcpConfig } from '../mcp/
 import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
-  PROJECT_MCP_ACP_WRITER_ADVICE,
   type ProjectMcpSelection,
   type WriterProxyDecision,
   projectMcpWithheldLine,
@@ -16,6 +15,9 @@ import { grokReaderServersForRun, projectMcpServerName } from './run-worker-home
 
 const PROJECT_MCP_UNSUPPORTED_WRITER_ADVICE =
   'only codex and grok CLI writers receive proxied project servers; use one of those launches or declare the server without inline credentials'
+
+export const PROJECT_MCP_ACP_WRITER_ADVICE =
+  'ACP writers do not receive proxied project servers yet'
 
 /** Resolve harness and transport facts into the sandbox's writer-proxy decision. */
 export function writerProxyRoute(harness: string, transport: string): WriterProxyDecision {
@@ -154,7 +156,7 @@ export function workerMcpLaunchScope(input: {
         input.cwd,
         input.hasProjectTree,
       ) ??
-      (harness === 'grok' && input.transport === 'cli' && input.writesJob
+      (writerProxy.kind === 'proxy' && harness === 'grok' && input.writesJob
         ? (projectSelection?.servers ?? null)
         : null),
     projectSelection,

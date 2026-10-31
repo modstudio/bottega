@@ -14,7 +14,7 @@ import { inspectGrokReaderMcp } from '../sandbox/grok-reader-mcp-inspect.ts'
 import {
   mcpConfigReadForRun,
   projectReaderProxyServersForRun,
-  type GrokMcpServerEntry,
+  type ProjectMcpServerEntry,
   type ReaderProxyServer,
 } from '../sandbox/mcp-reader-scope.ts'
 import {
@@ -101,7 +101,7 @@ export function projectMcpServerName(
 /** The MCP scope one launch got: the harness selections and the project selection. */
 export type WorkerMcpLaunch = {
   codex: CodexMcpScope | null
-  grok: Record<string, GrokMcpServerEntry> | null
+  grok: Record<string, ProjectMcpServerEntry> | null
   projectSelection: ProjectMcpSelection | null
 }
 
@@ -233,7 +233,7 @@ function applyGrokReaderMcpScope(
   harness: string,
   runDir: string,
   sandbox: RunSandbox,
-  servers: Record<string, GrokMcpServerEntry> | null,
+  servers: Record<string, ProjectMcpServerEntry> | null,
 ) {
   if (harness !== 'grok' || !servers) return null
   return {
