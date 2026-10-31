@@ -15,14 +15,17 @@ export function migrationFailure(
   pendingMigrations: string[],
   readMigrationSql: (name: string) => string,
 ): string {
-  const candidate = isObject(error) ? error : undefined
-  const cause = candidate && isObject(candidate.cause) ? candidate.cause : undefined
-  const query =
-    typeof candidate?.query === 'string'
-      ? candidate.query
-      : typeof cause?.query === 'string'
-        ? cause.query
-        : '<unknown>'
+  const chain: ErrorDetails[] = []
+  const seen = new Set<object>()
+  let current = isObject(error) ? error : undefined
+  while (current && !seen.has(current)) {
+    chain.push(current)
+    seen.add(current)
+    current = isObject(current.cause) ? current.cause : undefined
+  }
+
+  const queryEntry = chain.find((entry) => typeof entry.query === 'string')
+  const query = typeof queryEntry?.query === 'string' ? queryEntry.query : '<unknown>'
   const migration =
     pendingMigrations.find(
       (name) => query !== '<unknown>' && readMigrationSql(name).includes(query),
@@ -31,11 +34,9 @@ export function migrationFailure(
 
   let message = String(error)
   let code: string | undefined
-  let current = candidate
-  while (current) {
-    if (typeof current.message === 'string' && current.message.trim()) message = current.message
-    if (typeof current.code === 'string') code = current.code
-    current = isObject(current.cause) ? current.cause : undefined
+  for (const entry of chain) {
+    if (typeof entry.message === 'string' && entry.message.trim()) message = entry.message
+    if (typeof entry.code === 'string') code = entry.code
   }
 
   return `migration ${migration} statement ${oneLine(query)}: ${oneLine(message)}${

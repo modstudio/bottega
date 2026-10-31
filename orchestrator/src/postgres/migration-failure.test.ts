@@ -27,3 +27,17 @@ test('reports a plain error message', () => {
     'migration <unknown> statement <unknown>: migration connection closed',
   )
 })
+
+test('finds the query and migration through a deeper cause chain', () => {
+  const query = 'ALTER TABLE records VALIDATE CONSTRAINT records_check;'
+  const postgresError = Object.assign(new Error('violates check'), { code: '23514', query })
+  const error = new Error('Failed query', { cause: new Error('middle', { cause: postgresError }) })
+  const migrations = new Map([
+    ['unrelated', 'SELECT 1;'],
+    ['matched', `BEGIN;\n${query}\nCOMMIT;`],
+  ])
+
+  expect(migrationFailure(error, [...migrations.keys()], (name) => migrations.get(name)!)).toBe(
+    `migration matched statement ${query}: violates check (code 23514)`,
+  )
+})
