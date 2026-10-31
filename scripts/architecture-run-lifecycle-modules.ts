@@ -360,6 +360,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../transport/transport.ts',
     './checkpoint-schedule.ts',
     './checkpoint.ts',
+    './run-idle-kill.ts',
     './tool-call-burst.ts',
   ]),
   module('orchestrator/src/run/run-idle-kill.ts', [
