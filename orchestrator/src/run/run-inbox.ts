@@ -1,21 +1,14 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
 
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
-import {
-  type QuestionScratchLocation,
-  referencedQuestionScratchPaths,
-  renderRunQuestionText,
-  runQuestionGroupFooter,
-} from './question-display.ts'
+import { runQuestionGroupFooter } from './question-display.ts'
+import { displayRunQuestion } from './question-display-probe.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -204,20 +197,6 @@ function scopedProjectFilter(
   project: ReturnType<typeof projectAt>,
 ): ReturnType<typeof projectAt> | undefined {
   return scoped ? project : undefined
-}
-
-export function displayRunQuestion(runRecordId: string, text: string): string {
-  const runDirectory = join(resolveRunsDirectory(process.env), runRecordId)
-  const locations = new Map<string, QuestionScratchLocation>()
-  for (const relativePath of referencedQuestionScratchPaths(text, runDirectory)) {
-    const scratchPath = join(runDirectory, 'scratch', relativePath)
-    const artifactPath = join(runDirectory, 'artifacts', relativePath)
-    locations.set(
-      relativePath,
-      existsSync(scratchPath) ? 'scratch' : existsSync(artifactPath) ? 'artifacts' : 'gone',
-    )
-  }
-  return renderRunQuestionText(text, runDirectory, locations)
 }
 
 export async function queryInbox(
@@ -426,13 +405,14 @@ async function presentJsonInbox(
 function runGroupFooter(
   question: { run_record_id: string; root_id: string },
   nextQuestion: { run_record_id: string } | undefined,
-  group: Array<{ run_record_id: string; number: number }>,
+  questionNumbers: number[],
 ): string[] {
   if (nextQuestion?.run_record_id === question.run_record_id) return []
-  const numbers = group
-    .filter((candidate) => candidate.run_record_id === question.run_record_id)
-    .map((candidate) => candidate.number)
-  return [`\n${runQuestionGroupFooter(question.root_id, numbers)}`]
+  return [`\n${runQuestionGroupFooter(question.root_id, questionNumbers)}`]
+}
+
+function presentLines(lines: string[], log: RunInboxPresentation['log']): void {
+  for (const line of lines) log(line)
 }
 
 export async function runInboxCommand(
@@ -532,10 +512,7 @@ export async function runInboxCommand(
   const terminal = rows.filter((q) => !active.includes(q))
   const answerable = active.filter((q) => canAnswer(q.session_id))
   const visible = active.filter((q) => !canAnswer(q.session_id))
-
-  presentHeader(header).forEach((line) => {
-    log(line)
-  })
+  presentLines(presentHeader(header), log)
 
   const queriedRecoverable = db()
     .query(
@@ -570,14 +547,16 @@ export async function runInboxCommand(
     return
   }
   presentWorkflowQuestions(workflowRows, log)
-  let lastRun = ''
+  const group = { run: '', questionNumbers: [] as number[] }
   for (const [index, q] of answerable.entries()) {
-    if (q.run_record_id !== lastRun) {
+    if (q.run_record_id !== group.run) {
       log(
         `\nrun ${q.run_number} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`,
       )
-      lastRun = q.run_record_id
+      group.run = q.run_record_id
+      group.questionNumbers = []
     }
+    group.questionNumbers.push(q.number)
     log(`  [q${q.number}] ${displayRunQuestion(q.run_record_id, q.question)}`)
     if (q.why) log(`        why: ${q.why}`)
     const opts = q.options ? (JSON.parse(q.options) as string[]) : []
@@ -586,9 +565,7 @@ export async function runInboxCommand(
     if (q.session_id === null) {
       log('        unowned — any session may rule, and the answering identity is recorded')
     }
-    runGroupFooter(q, answerable[index + 1], answerable).forEach((line) => {
-      log(line)
-    })
+    presentLines(runGroupFooter(q, answerable[index + 1], group.questionNumbers), log)
   }
   for (const r of recoverable) {
     const stranded = chainHasPendingDelivery(r.record_id)

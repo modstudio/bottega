@@ -1,10 +1,16 @@
 // concern: question-display
-/** This is the only renderer of run-question text for display. */
+/** Run-question text reaches displays only through renderRunQuestionText or displayRunQuestion. */
 
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
-export type QuestionScratchLocation = 'scratch' | 'artifacts' | 'gone'
+export type QuestionScratchLocation = 'scratch' | 'artifacts' | 'gone' | 'unknown'
+
+export type QuestionDisplayPaths = {
+  scratch: string
+  artifacts: string
+  droppedManifest: string
+}
 
 const PATH_SEGMENT = '[A-Za-z0-9._-]*[A-Za-z0-9_-]'
 const RELATIVE_PATH = `${PATH_SEGMENT}(?:/${PATH_SEGMENT})*`
@@ -13,9 +19,9 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function referencePattern(runDirectory: string): RegExp {
+function referencePattern(scratchDirectory: string): RegExp {
   return new RegExp(
-    `(?:${escapeRegExp(join(runDirectory, 'scratch'))}|\\$BOTTEGA_SCRATCH)/(${RELATIVE_PATH})`,
+    `(?:${escapeRegExp(scratchDirectory)}|\\$BOTTEGA_SCRATCH)/(${RELATIVE_PATH})`,
     'g',
   )
 }
@@ -24,9 +30,9 @@ function isScratchRelative(path: string): boolean {
   return path.split('/').every((part) => part !== '.' && part !== '..')
 }
 
-export function referencedQuestionScratchPaths(text: string, runDirectory: string): string[] {
+export function referencedQuestionScratchPaths(text: string, scratchDirectory: string): string[] {
   const paths = new Set<string>()
-  for (const match of text.matchAll(referencePattern(runDirectory))) {
+  for (const match of text.matchAll(referencePattern(scratchDirectory))) {
     const path = match[1]
     if (path && isScratchRelative(path)) paths.add(path)
   }
@@ -35,17 +41,19 @@ export function referencedQuestionScratchPaths(text: string, runDirectory: strin
 
 export function renderRunQuestionText(
   text: string,
-  runDirectory: string,
+  paths: QuestionDisplayPaths,
   locations: ReadonlyMap<string, QuestionScratchLocation>,
 ): string {
-  return text.replace(referencePattern(runDirectory), (reference, relativePath: string) => {
+  return text.replace(referencePattern(paths.scratch), (reference, relativePath: string) => {
     const location = locations.get(relativePath)
-    if (!location || location === 'scratch') return reference
-    if (location === 'artifacts') return join(runDirectory, 'artifacts', relativePath)
-    return (
-      `${reference} (not retained at turn end; see ` +
-      `${join(runDirectory, 'artifacts', 'dropped.json')})`
-    )
+    if (!location || location === 'unknown') return reference
+    if (location === 'scratch') {
+      return reference.startsWith('$BOTTEGA_SCRATCH/')
+        ? join(paths.scratch, relativePath)
+        : reference
+    }
+    if (location === 'artifacts') return join(paths.artifacts, relativePath)
+    return `${reference} (not retained at turn end; see ${paths.droppedManifest})`
   })
 }
 

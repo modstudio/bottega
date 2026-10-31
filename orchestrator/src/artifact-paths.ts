@@ -6,6 +6,8 @@
 import { basename, join, relative } from 'node:path'
 import { runScratchDir as ownedRunScratchDir, runOwnedPaths } from './run-owned-paths.ts'
 
+export const DROPPED_ARTIFACTS_MANIFEST = 'dropped.json'
+
 export function runScratchDir(id: string, runsDir: string): string {
   return ownedRunScratchDir(id, runsDir)
 }

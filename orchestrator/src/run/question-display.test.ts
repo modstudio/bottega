@@ -8,6 +8,11 @@ import {
 } from './question-display.ts'
 
 const RUN_DIRECTORY = '/state/orchestrator/runs/run-this'
+const DISPLAY_PATHS = {
+  scratch: `${RUN_DIRECTORY}/scratch`,
+  artifacts: `${RUN_DIRECTORY}/artifacts`,
+  droppedManifest: `${RUN_DIRECTORY}/artifacts/dropped.json`,
+}
 const ANSWER_COMMAND = `${PLATFORM_SLUG} question answer root-id`
 
 type DisplayCase =
@@ -40,8 +45,14 @@ describe('run-question display', () => {
         '--q7 "<ruling>" --q9 "<ruling>" --q12 "<ruling>"',
     },
     {
-      name: 'live scratch reference stays unchanged',
+      name: 'absolute live scratch reference stays unchanged',
       text: `Read ${RUN_DIRECTORY}/scratch/report.json now`,
+      locations: [['report.json', 'scratch']],
+      expected: `Read ${RUN_DIRECTORY}/scratch/report.json now`,
+    },
+    {
+      name: 'environment live scratch reference resolves to the absolute scratch path',
+      text: 'Read $BOTTEGA_SCRATCH/report.json now',
       locations: [['report.json', 'scratch']],
       expected: `Read ${RUN_DIRECTORY}/scratch/report.json now`,
     },
@@ -66,6 +77,18 @@ describe('run-question display', () => {
       expected: `Read ${RUN_DIRECTORY}/artifacts/report.json now`,
     },
     {
+      name: 'unknown absolute scratch reference stays unchanged',
+      text: `Read ${RUN_DIRECTORY}/scratch/report.json now`,
+      locations: [['report.json', 'unknown']],
+      expected: `Read ${RUN_DIRECTORY}/scratch/report.json now`,
+    },
+    {
+      name: 'unknown environment scratch reference stays unchanged',
+      text: 'Read $BOTTEGA_SCRATCH/report.json now',
+      locations: [['report.json', 'unknown']],
+      expected: 'Read $BOTTEGA_SCRATCH/report.json now',
+    },
+    {
       name: 'another run scratch reference stays unchanged',
       text: 'Read /state/orchestrator/runs/run-other/scratch/report.json now',
       expected: 'Read /state/orchestrator/runs/run-other/scratch/report.json now',
@@ -88,10 +111,12 @@ describe('run-question display', () => {
       return
     }
     if ('list' in entry) {
-      expect(referencedQuestionScratchPaths(entry.list, RUN_DIRECTORY)).toEqual(entry.expected)
+      expect(referencedQuestionScratchPaths(entry.list, DISPLAY_PATHS.scratch)).toEqual(
+        entry.expected,
+      )
       return
     }
-    expect(renderRunQuestionText(entry.text, RUN_DIRECTORY, new Map(entry.locations ?? []))).toBe(
+    expect(renderRunQuestionText(entry.text, DISPLAY_PATHS, new Map(entry.locations ?? []))).toBe(
       entry.expected,
     )
   })
