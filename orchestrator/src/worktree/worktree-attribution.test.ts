@@ -5,10 +5,13 @@ import {
   type TreeOwnershipInput,
   treeOwnership,
 } from './worktree-attribution.ts'
+import { readOnlyWorktreePath, sharedReviewWorktreePath } from './worktree-readonly.ts'
 
 describe('isUnmarkedBorrowedReaderClone', () => {
+  const runId = '01990000-0000-7000-8000-000000001960'
+  const commit = '0123456789abcdef0123456789abcdef01234567'
   const reader = {
-    path: '/projects/alpha/.claude/worktrees/orch-42',
+    path: readOnlyWorktreePath('/projects/alpha', runId),
     repoRoot: '/projects/alpha',
     borrowedSource: '/projects/alpha',
   }
@@ -16,12 +19,18 @@ describe('isUnmarkedBorrowedReaderClone', () => {
   test('accepts only a conventional direct child borrowing from this project', () => {
     expect(isUnmarkedBorrowedReaderClone(reader)).toBeTrue()
     expect(
+      isUnmarkedBorrowedReaderClone({
+        ...reader,
+        path: sharedReviewWorktreePath('/projects/alpha', commit),
+      }),
+    ).toBeTrue()
+    expect(
       isUnmarkedBorrowedReaderClone({ ...reader, path: '/projects/alpha/.claude/worktrees/other' }),
     ).toBeFalse()
     expect(
       isUnmarkedBorrowedReaderClone({
         ...reader,
-        path: '/projects/alpha/.claude/worktrees/nested/orch-42',
+        path: `/projects/alpha/.claude/worktrees/nested/orch-${runId}`,
       }),
     ).toBeFalse()
     expect(

@@ -70,13 +70,6 @@ export function resolveWorktreeLifecycle(
   return { form: 'none' }
 }
 
-export function lifecycleForm(
-  worktree: WorktreeDeclaration | null | undefined,
-  defaultConfigExists = false,
-): LifecycleForm {
-  return resolveWorktreeLifecycle(worktree, defaultConfigExists).form
-}
-
 /** Resolve and probe a tracked pointer without reading or parsing the recipe. */
 export function trackedRecipeStatus(
   projectPath: string,

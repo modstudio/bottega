@@ -294,7 +294,9 @@ export function isUnmarkedBorrowedReaderClone(input: {
   borrowedSource: string | null
 }): boolean {
   return (
-    /^orch-\d+$/.test(basename(input.path)) &&
+    /^orch-(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|review-[0-9a-f]{12})$/.test(
+      basename(input.path),
+    ) &&
     dirname(input.path) === join(input.repoRoot, '.claude', 'worktrees') &&
     input.borrowedSource === input.repoRoot
   )

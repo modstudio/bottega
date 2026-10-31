@@ -56,22 +56,10 @@ import {
   resolvePullRequestChange,
   triageRefusal,
 } from './pr-admission.ts'
-import {
-  pullRequestCiIncompleteMessage,
-  pullRequestCiRetryCommand,
-  recordPullRequestCi,
-} from './pr-ci-record.ts'
+import { recordPullRequestCi } from './pr-ci-record.ts'
+import { type PullRequestMergeFacts, recordPostMergeEvidence } from './pr-merge-evidence.ts'
 
-export type PullRequestMergeFacts = {
-  nodeId: string
-  number: number
-  headCommit: string
-  headBranch: string
-  baseBranch: string
-  title: string
-  state: string
-  mergeCommit: string | null
-}
+export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 
 type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
 export type WorkflowPromotionResult =
@@ -128,7 +116,8 @@ export type PullRequestMergeAdapter = {
     method: 'squash' | 'merge' | 'rebase',
     subject: string,
     headCommit: string,
-  ): string
+  ): void
+  mergeCommit(cwd: string, number: number): string
   queueState(cwd: string, nodeId: string): MergeQueueObservation
   enqueue(cwd: string, number: number, headCommit: string): void
   requeue(cwd: string, nodeId: string, headCommit: string): void
@@ -400,6 +389,8 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       ],
       'pull-request merge',
     )
+  },
+  mergeCommit(cwd, number) {
     const value = parsed<{ mergeCommit?: { oid?: unknown } | null }>(
       successful(
         cwd,
@@ -548,7 +539,7 @@ function mergeAdmittedHead(input: {
   cwd: string
   adapter: PullRequestMergeAdapter
   target: string
-}): { mergeCommit: string; requeueOutput?: string } {
+}): { mergeCommit?: string; mergeCommitLookupError?: unknown; requeueOutput?: string } {
   if (input.mergeQueue) {
     return waitForQueuedMerge(
       input.pullRequest,
@@ -558,14 +549,17 @@ function mergeAdmittedHead(input: {
       input.target,
     )
   }
-  return {
-    mergeCommit: input.adapter.merge(
-      input.cwd,
-      input.pullRequest.number,
-      input.mergeMethod,
-      `${input.pullRequest.title} (#${input.pullRequest.number})`,
-      input.pullRequest.headCommit,
-    ),
+  input.adapter.merge(
+    input.cwd,
+    input.pullRequest.number,
+    input.mergeMethod,
+    `${input.pullRequest.title} (#${input.pullRequest.number})`,
+    input.pullRequest.headCommit,
+  )
+  try {
+    return { mergeCommit: input.adapter.mergeCommit(input.cwd, input.pullRequest.number) }
+  } catch (mergeCommitLookupError) {
+    return { mergeCommitLookupError }
   }
 }
 
@@ -838,39 +832,6 @@ function promotionStageOutput(input: {
   }
 }
 
-function recordPostMergeEvidence(input: {
-  adapter: PullRequestMergeAdapter
-  change: PullRequestChange
-  pullRequest: PullRequestMergeFacts
-  database: Database
-  projectName: string
-}): string | undefined {
-  let recordingError: string | undefined
-  try {
-    input.adapter.recordLandings?.(input.change, input.pullRequest, input.database)
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    recordingError = `landing recording failed for ${input.change.branch}: ${detail}`
-  }
-  try {
-    const incomplete = input.adapter.recordCi?.(input.change, input.pullRequest, input.database)
-    if (incomplete) {
-      console.error(incomplete)
-      recordingError ??= incomplete
-    }
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    const incomplete = pullRequestCiIncompleteMessage(
-      input.pullRequest.number,
-      detail,
-      pullRequestCiRetryCommand(input.pullRequest.number, input.projectName),
-    )
-    console.error(incomplete)
-    recordingError ??= incomplete
-  }
-  return recordingError
-}
-
 function refuseUnlessAdmitted(decision: MergeDecision): void {
   if (!decision.admitted) throw new Error(`refusing merge: ${decision.refusal}`)
 }
@@ -932,6 +893,7 @@ function completeMerge(input: {
 }): PullRequestMergeOutcome {
   let pullRequest: PullRequestMergeFacts | undefined
   let mergeCommit: string
+  let mergeCommitLookupError: unknown
   let requeueOutput: string | undefined
   let admittedChange: PullRequestChange
   try {
@@ -949,7 +911,8 @@ function completeMerge(input: {
     } else {
       admittedChange = admitViewedPullRequest(pullRequest, input)
       const merged = mergeAdmittedHead({ ...input, pullRequest })
-      mergeCommit = merged.mergeCommit
+      if (merged.mergeCommit) mergeCommit = merged.mergeCommit
+      else mergeCommitLookupError = merged.mergeCommitLookupError
       requeueOutput = merged.requeueOutput
     }
   } catch (cause) {
@@ -959,6 +922,22 @@ function completeMerge(input: {
       number: pullRequest?.number,
       adapter: input.adapter,
     })
+  }
+  if (mergeCommitLookupError) {
+    recordPostMergeEvidence({
+      adapter: input.adapter,
+      change: admittedChange!,
+      pullRequest: pullRequest!,
+      database: input.database,
+      projectName: input.project.name,
+    })
+    const detail =
+      mergeCommitLookupError instanceof Error
+        ? mergeCommitLookupError.message
+        : String(mergeCommitLookupError)
+    throw new Error(
+      `pull request #${pullRequest!.number} merged, but the merge commit could not be read: ${detail}; retry with: ${PLATFORM_SLUG} pr merge ${input.target}`,
+    )
   }
   return mergedPullRequestOutput({
     adapter: input.adapter,

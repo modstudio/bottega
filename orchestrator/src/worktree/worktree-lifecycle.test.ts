@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
-  lifecycleForm,
   lifecycleReportLines,
   recipeElementSupport,
   resolveWorktreeLifecycle,
@@ -10,15 +9,6 @@ import {
 } from './worktree-lifecycle.ts'
 
 describe('worktree lifecycle declarations are measured without inference', () => {
-  test('each lifecycle form follows its explicit declaration', () => {
-    expect(lifecycleForm({ create: { command: 'make', args: [] } })).toBe('command-templates')
-    expect(lifecycleForm({ remove: 'remove', sweep: 'sweep' })).toBe('none')
-    expect(lifecycleForm({ recipe: {} })).toBe('inline-recipe')
-    expect(lifecycleForm({ recipePath: '.orch/worktree.jsonc' })).toBe('tracked-recipe')
-    expect(lifecycleForm({})).toBe('none')
-    expect(lifecycleForm(undefined)).toBe('none')
-  })
-
   test('the default project config path is composed from the platform slug', () => {
     expect(DEFAULT_PROJECT_CONFIG_PATH).toBe(`${PLATFORM_SLUG}.jsonc`)
   })

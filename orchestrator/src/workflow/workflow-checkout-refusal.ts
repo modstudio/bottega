@@ -80,7 +80,7 @@ export function checkoutOutsideChangeRefusal(
     return (
       `${flag} could not establish whether head_commit belongs to ${identityBranch} because ` +
       `landing commit ${checkout.landingCommit} is not available in ${cwd}; ` +
-      `run \`git pull --ff-only origin ${checkout.landingBranch}\` in that checkout`
+      `run \`${PLATFORM_SLUG} tree refresh ${checkout.checkoutPath}\` and rerun the same command`
     )
   }
   if (checkout.landingCommit && checkout.landingIsHeadOrAncestor === false) {

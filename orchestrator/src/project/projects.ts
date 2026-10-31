@@ -96,6 +96,7 @@ import {
   githubForgeVisibilityLookup,
 } from './project-visibility.ts'
 
+export { resolvedWorktreeTool } from './project-worktree-resolution.ts'
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
@@ -197,26 +198,6 @@ export function absentTreeTeardownPlan(input: {
     (Boolean(input.recipeSnapshot) ||
       (input.worktreeSource === 'recipe' && input.registeredRemoveCommand))
   )
-}
-
-/** Apply the repository-local default without persisting derived config into the register. */
-export function resolvedWorktreeTool(
-  project: Pick<Project, 'path' | 'settings'> | null | undefined,
-  fileExists: (path: string) => boolean = existsSync,
-): WorktreeTool | null {
-  if (!project) return null
-  const declared = project.settings.worktree
-  let resolution = resolveWorktreeLifecycle(declared)
-  if (resolution.form === 'none') {
-    resolution = resolveWorktreeLifecycle(
-      declared,
-      fileExists(resolve(project.path, DEFAULT_PROJECT_CONFIG_PATH)),
-    )
-  }
-  if (resolution.form === 'tracked-recipe' && resolution.source === 'default') {
-    return { ...declared, recipePath: resolution.recipePath }
-  }
-  return declared ?? null
 }
 
 function parse(row: {

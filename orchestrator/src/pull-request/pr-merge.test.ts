@@ -57,6 +57,7 @@ function adapter(
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
     hasCommit?: (cwd: string, headCommit: string) => boolean
     merge?: (method: string, subject: string, headCommit: string) => string
+    mergeCommit?: () => string
     admission?: (
       cwd: string,
       headCommit: string,
@@ -79,6 +80,7 @@ function adapter(
     releaseRequired?: (enabled: boolean) => RequiredReleaseReport
   } = {},
 ): PullRequestMergeAdapter {
+  let mergedCommit = 'merge-commit'
   return {
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
@@ -122,8 +124,10 @@ function adapter(
         }
       : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
-    merge: (_cwd, _number, method, subject, headCommit) =>
-      input.merge?.(method, subject, headCommit) ?? 'merge-commit',
+    merge: (_cwd, _number, method, subject, headCommit) => {
+      mergedCommit = input.merge?.(method, subject, headCommit) ?? 'merge-commit'
+    },
+    mergeCommit: () => input.mergeCommit?.() ?? mergedCommit,
     queueState:
       input.queueState ??
       (() => ({
@@ -226,6 +230,30 @@ test('an already-merged pull request skips admission and resumes post-merge stag
   expect(outcome.exitCode).toBe(0)
   expect(admitted).toBe(false)
   expect(released).toBe(true)
+})
+
+test('a merge-commit lookup failure still records landing and CI evidence', () => {
+  registerProject([])
+  recordPassingGate()
+  const evidence: string[] = []
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        mergeCommit: () => {
+          throw new Error('merge-commit lookup failed: forge unavailable')
+        },
+        recordLandings: () => evidence.push('landing'),
+        recordCi: () => {
+          evidence.push('ci')
+        },
+      }),
+    ),
+  ).toThrow(
+    `pull request #42 merged, but the merge commit could not be read: merge-commit lookup failed: forge unavailable; retry with: ${PLATFORM_SLUG} pr merge 42`,
+  )
+  expect(evidence).toEqual(['landing', 'ci'])
 })
 
 test('a workflow promotion failure is merge residue and a required release failure wins', () => {

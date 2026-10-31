@@ -177,7 +177,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
     'real-review-merge-base',
     'What resolves the merge base for a review target?',
     'orchestrator/src/review/review-target.ts',
-    "return gitContext(cwd, 'merge-base', commit, trunkCommit)",
+    "return gitContext(cwd, 'merge-base', tip, trunkCommit)",
   ),
   codeQuestion(
     'real-continue-tree',
@@ -189,7 +189,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
     'real-project-settings-validation',
     "Where are a project's register settings validated?",
     'orchestrator/src/project/projects.ts',
-    'export function validateProjectSettings(settings: ProjectSettings, projectPath?: string): string[] {',
+    'export function validateProjectSettings(',
   ),
   codeQuestion(
     'real-wait-asking',
@@ -219,7 +219,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   codeQuestion(
     'real-hosted-doc-list',
     'Where are hosted docs listed for a space?',
-    'orchestrator/src/record/record-docs.ts',
+    'orchestrator/src/record/record-doc-read.ts',
     'export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {',
   ),
   codeQuestion(
@@ -267,13 +267,13 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
   codeQuestion(
     'real-review-tier',
     "How is a change's review tier computed from risk and size?",
-    'orchestrator/src/review/review-tier.ts',
-    'return { tier: Math.max(risk, size) as 0 | 1 | 2 | 3, risk, size, reasons }',
+    'orchestrator/src/review/review-tier-classifier.ts',
+    'export function combineReviewTier(input: {',
   ),
   codeQuestion(
     'real-canon-hydration',
     "Where are canon rows written into a worktree's files?",
-    'orchestrator/src/canon/canon-commands.ts',
+    'orchestrator/src/canon/canon-apply.ts',
     'writeFileSync(target, body)',
   ),
   codeQuestion(

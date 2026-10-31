@@ -85,6 +85,7 @@ function adapter(input: {
     recordAdmission: () => null,
     postMergeChange: () => ({ branch: pullRequest.headBranch }) as PullRequestChange,
     merge: () => 'unexpected-direct-merge',
+    mergeCommit: () => 'unexpected-direct-merge-commit',
     queueState: () => {
       const state = input.queueStates.shift()!
       return {
