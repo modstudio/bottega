@@ -377,30 +377,16 @@ async function selectFocusedTestPaths(input: {
     })
   if (input.plan.selectorProblem) {
     return affected(
-      decideAffectedSelection([
-        {
-          runner: input.plan.runners[0]!,
-          outcome: { kind: 'ill-declared', problem: input.plan.selectorProblem },
-        },
-      ]),
+      decideAffectedSelection([{ kind: 'ill-declared', problem: input.plan.selectorProblem }]),
     )
   }
   if (input.plan.runners.some((runner) => !runner.affected)) {
-    return affected(
-      decideAffectedSelection([
-        { runner: input.plan.runners[0]!, outcome: { kind: 'not-declared' } },
-      ]),
-    )
+    return affected(decideAffectedSelection([{ kind: 'not-declared' }]))
   }
   if (!input.plan.baseCommit) {
-    return affected(
-      decideAffectedSelection([{ runner: input.plan.runners[0]!, outcome: { kind: 'no-base' } }]),
-    )
+    return affected(decideAffectedSelection([{ kind: 'no-base' }]))
   }
-  const outcomes: Array<{
-    runner: (typeof input.plan.runners)[number]
-    outcome: FocusedTestSelectorOutcome
-  }> = []
+  const outcomes: FocusedTestSelectorOutcome[] = []
   for (const runner of input.plan.runners) {
     const outcome = decideFocusedTestSelectorOutcome({
       cancelled: input.state.cancelled,
@@ -415,7 +401,7 @@ async function selectFocusedTestPaths(input: {
         stopChild: input.stopChild,
       }),
     })
-    outcomes.push({ runner, outcome })
+    outcomes.push(outcome)
     if (outcome.kind !== 'printed') break
   }
   return affected(decideAffectedSelection(outcomes))
@@ -425,11 +411,45 @@ async function selectFocusedTestPaths(input: {
  * One focused test inside the host slot: select what this request runs, record a refusal or the
  * selection note, then run the runner over the selected paths. Reports the paths the run records.
  */
-type FocusedTestExecutionEvent = {
+export type FocusedTestExecutionEvent = {
   paths: string[]
   started: boolean
   exitCode: number
   timedOut: boolean
+}
+
+export type FocusedTestGroupExecutionDecision = {
+  nextGroupIndex: number | null
+  exitCode: number
+  timedOut: boolean
+  started: boolean
+  stopped: 'cancelled' | 'refused' | 'complete' | null
+}
+
+/** Decide the next runner group and aggregate the executions observed so far. */
+export function decideFocusedTestGroupExecution(input: {
+  groupCount: number
+  executions: readonly FocusedTestExecutionEvent[]
+  cancelled: boolean
+  refusedPaths: readonly string[]
+}): FocusedTestGroupExecutionDecision {
+  const stopped = input.refusedPaths.length
+    ? 'refused'
+    : input.cancelled
+      ? 'cancelled'
+      : input.executions.length >= input.groupCount
+        ? 'complete'
+        : null
+  return {
+    nextGroupIndex: stopped ? null : input.executions.length,
+    exitCode: input.executions.reduce(
+      (exitCode, execution) => (execution.exitCode === 0 ? exitCode : execution.exitCode),
+      0,
+    ),
+    timedOut: input.executions.some((execution) => execution.timedOut),
+    started: input.executions.some((execution) => execution.started),
+    stopped,
+  }
 }
 
 async function runFocusedTestSelection(input: {
@@ -466,22 +486,29 @@ async function runFocusedTestSelection(input: {
   }
   if (split.kind === 'refuse') {
     input.record(`\n${split.message}\n`)
+    decideFocusedTestGroupExecution({
+      groupCount: 0,
+      executions: [],
+      cancelled: input.state.cancelled,
+      refusedPaths: split.paths,
+    })
     return { executions: [], refusedPaths: split.paths }
   }
   const executions: FocusedTestExecutionEvent[] = []
-  let aggregateExit = 0
-  let aggregateTimedOut = false
   let cancellationRecorded = false
   const recordCancellation = () => {
     if (cancellationRecorded) return
     input.record(`\n${FOCUSED_TEST_CLOSE_REASON}\n`)
     cancellationRecorded = true
   }
-  for (const group of split.groups) {
-    if (input.state.cancelled) {
-      recordCancellation()
-      break
-    }
+  let decision = decideFocusedTestGroupExecution({
+    groupCount: split.groups.length,
+    executions,
+    cancelled: input.state.cancelled,
+    refusedPaths: [],
+  })
+  while (decision.nextGroupIndex !== null) {
+    const group = split.groups[decision.nextGroupIndex]!
     input.state.started = false
     input.state.timedOut = false
     input.state.exitCode = -1
@@ -500,18 +527,19 @@ async function runFocusedTestSelection(input: {
       exitCode: input.state.exitCode,
       timedOut: input.state.timedOut,
     })
-    if (input.state.exitCode !== 0) aggregateExit = input.state.exitCode
-    aggregateTimedOut ||= input.state.timedOut
-    if (input.state.cancelled) {
-      recordCancellation()
-      break
-    }
+    decision = decideFocusedTestGroupExecution({
+      groupCount: split.groups.length,
+      executions,
+      cancelled: input.state.cancelled,
+      refusedPaths: [],
+    })
   }
+  if (decision.stopped === 'cancelled') recordCancellation()
   if (!input.state.cancelled) {
-    input.state.exitCode = aggregateExit
-    input.state.timedOut = aggregateTimedOut
+    input.state.exitCode = decision.exitCode
+    input.state.timedOut = decision.timedOut
   }
-  input.state.started = executions.some((execution) => execution.started)
+  input.state.started = decision.started
   return { executions, refusedPaths: [] }
 }
 

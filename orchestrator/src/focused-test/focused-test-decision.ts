@@ -47,8 +47,7 @@ export const FOCUSED_TEST_CLOSE_REASON =
 export function decideFocusedTestEligibility(input: {
   authenticated: boolean
   writer: boolean
-  runner: FocusedTestRunner | null
-  selector: FocusedTestSelector | null
+  runners: readonly FocusedTestRunner[]
   /** The problems a declared `focusedTests.affected` block carries, if it declares any. */
   selectorProblem: string | null
   affected: boolean
@@ -59,7 +58,7 @@ export function decideFocusedTestEligibility(input: {
   if (!input.writer) {
     return { eligible: false, message: 'run_tests is available only to a writing worker run.' }
   }
-  if (!input.runner) {
+  if (!input.runners.length) {
     return {
       eligible: false,
       message: "This run's project has no registered focused test runner, so nothing was run.",
@@ -69,7 +68,7 @@ export function decideFocusedTestEligibility(input: {
     if (input.selectorProblem) {
       return { eligible: false, message: affectedSelectorProblemMessage(input.selectorProblem) }
     }
-    if (!input.selector) {
+    if (!input.runners.every((runner) => runner.affected)) {
       return { eligible: false, message: affectedSelectorRegisterMessage() }
     }
   }
@@ -327,33 +326,23 @@ export function hasFocusedTestRunner(value: unknown): boolean {
 }
 
 /**
- * The commands a project's stored settings declare, read independently: the runner and the optional
- * selector are separate declarations, so a malformed `focusedTests.affected` never costs the runner
- * its registration — it leaves `selector` null and reports why in `selectorProblem`. Settings that
- * cannot be parsed at all register nothing rather than refusing here: absence is what the callers
- * report.
+ * The commands a project's stored settings declare. A malformed `focusedTests.affected` never costs
+ * the runner its registration: it reports why in `selectorProblem`. Settings that cannot be parsed
+ * at all register nothing rather than refusing here; absence is what the callers report.
  */
 export function declaredFocusedTestCommands(settings: string | null): {
   runners: FocusedTestRunner[]
-  selector: FocusedTestSelector | null
   selectorProblem: string | null
 } {
   let parsed: { focusedTests?: unknown } | null
   try {
     parsed = JSON.parse(settings ?? '{}') as { focusedTests?: unknown } | null
   } catch {
-    return { runners: [], selector: null, selectorProblem: null }
+    return { runners: [], selectorProblem: null }
   }
   const parts = focusedTestDeclarationParts(parsed?.focusedTests)
   return {
     runners: parts.runnerProblems.length ? [] : parts.runners,
-    selector: parts.selector.problems.length
-      ? null
-      : parts.runners.length === 1
-        ? (parts.runners[0]?.affected ?? parts.selector.command)
-        : parts.runners.every((runner) => runner.affected)
-          ? (parts.runners[0]?.affected ?? null)
-          : null,
     selectorProblem:
       [
         ...parts.selector.problems,
@@ -561,11 +550,11 @@ export type AffectedSelection =
 
 /** Combine every runner's affected selector result without returning typed paths through stdout. */
 export function decideAffectedSelection(
-  outcomes: readonly { runner: FocusedTestRunner; outcome: FocusedTestSelectorOutcome }[],
+  outcomes: readonly FocusedTestSelectorOutcome[],
 ): AffectedSelection {
   const paths: string[] = []
   const seen = new Set<string>()
-  for (const { outcome } of outcomes) {
+  for (const outcome of outcomes) {
     const selected = decideSelectorTestPaths(outcome)
     if (selected.kind === 'refuse') return selected
     for (const path of selected.paths) {

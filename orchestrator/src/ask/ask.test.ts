@@ -629,7 +629,7 @@ describe('the live ask channel always answers', () => {
       expect(resultText(result)).toBe(
         [
           'Recorded gate result for commit reviewed-commit:',
-          `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+          `This result was recorded by the issue coordinator's gate or by ${PLATFORM_SLUG} gate run for that commit.`,
           `executing run id: ${newerWriter}`,
           'exit code: 0',
           'timed out: false',

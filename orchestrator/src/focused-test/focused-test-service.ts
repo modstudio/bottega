@@ -26,7 +26,6 @@ export function focusedTestEligibility(
     authenticated: authenticatedWorkerRun(runId, token),
     writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
     ...commands,
-    runner: commands.runners[0] ?? null,
     affected,
   })
 }

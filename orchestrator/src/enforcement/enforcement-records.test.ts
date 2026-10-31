@@ -37,6 +37,21 @@ test('category execution rows join checks to their gate by UUID', () => {
        VALUES (?,?, 'file-length-check','file-length',125,0,4)`,
     )
     .run(newRecordId(), gateRecordId)
+  const workerCheckRecordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO gate_execution
+        (record_id,requested_at,finished_at,exit_code,head_commit,cwd,purpose)
+       VALUES (?,'2026-10-12T10:02:00.000Z','2026-10-12T10:03:00.000Z',0,?,?,'worker-check')`,
+    )
+    .run(workerCheckRecordId, 'a'.repeat(40), '/work/project')
+  database
+    .query(
+      `INSERT INTO check_execution
+        (record_id,gate_execution_record_id,check_name,category,wall_ms,exit_code,remaining_count)
+       VALUES (?,?, 'worker-check','file-length',10,0,1)`,
+    )
+    .run(newRecordId(), workerCheckRecordId)
 
   expect(categoryExecutionRows(database)).toEqual([
     {

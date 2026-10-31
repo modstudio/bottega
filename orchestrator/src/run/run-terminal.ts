@@ -62,7 +62,7 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
-import { observedTestOutcome } from './run-test-outcome.ts'
+import { type ObservedTestOutcome, observedTestOutcome } from './run-test-outcome.ts'
 import {
   quotaReadingsColumnValues,
   runUsageColumns,
@@ -176,6 +176,21 @@ function reviewHidesGap(
 
 function nullableBooleanColumn(value: boolean | null | undefined): 1 | 0 | null {
   return value == null ? null : value ? 1 : 0
+}
+
+export function writeObservedTestOutcome(
+  database: Database,
+  runId: string,
+  outcome: ObservedTestOutcome,
+): void {
+  database
+    .query('UPDATE run SET tests_ran=?,tests_passed=?,tests_claim_disagrees=? WHERE record_id=?')
+    .run(
+      nullableBooleanColumn(outcome.ran),
+      nullableBooleanColumn(outcome.passed),
+      nullableBooleanColumn(outcome.claimDisagrees),
+      runId,
+    )
 }
 
 export type TerminalInput = {
@@ -909,7 +924,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     linesAdded: writesJob ? (changes?.insertions ?? null) : null,
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
     testsRan: testOutcome ? nullableBooleanColumn(testOutcome.ran) : null,
-    testsPassed: testOutcome?.passed == null ? null : testOutcome.passed ? 1 : 0,
+    testsPassed: nullableBooleanColumn(testOutcome?.passed),
     testsClaimDisagrees: nullableBooleanColumn(testOutcome?.claimDisagrees),
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
     escalations: writesJob ? acceptedQuestions.length : null,
@@ -973,7 +988,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
         db()
           .query(
             `UPDATE run SET files_changed=?, changed_paths=?, lines_added=?, lines_removed=?,
-                          tests_ran=?, tests_passed=?, tests_claim_disagrees=?, deviations=?, escalations=?
+                          deviations=?, escalations=?
              WHERE record_id=?`,
           )
           .run(
@@ -981,13 +996,11 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
             changes ? JSON.stringify(changes.files) : null,
             changes?.insertions ?? null,
             changes?.deletions ?? null,
-            nullableBooleanColumn(testOutcome!.ran),
-            testOutcome!.passed == null ? null : testOutcome!.passed ? 1 : 0,
-            nullableBooleanColumn(testOutcome!.claimDisagrees),
             contract?.deviations?.length ?? null,
             acceptedQuestions.length,
             claim.id,
           )
+        writeObservedTestOutcome(db(), claim.id, testOutcome!)
       }
 
       /**

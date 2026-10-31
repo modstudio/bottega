@@ -118,7 +118,7 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
   const result = input.result
   return [
     `Recorded gate result for commit ${result.headCommit}:`,
-    `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+    `This result was recorded by the issue coordinator's gate or by ${PLATFORM_SLUG} gate run for that commit.`,
     result.runId === null
       ? `recorded by: ${PLATFORM_SLUG} gate run`
       : `executing run id: ${result.runId}`,

@@ -221,8 +221,13 @@ describe('affected focused test selections', () => {
       decideFocusedTestEligibility({
         authenticated: true,
         writer: true,
-        runner: { command: 'runner', args: [] },
-        selector: selector ? { command: 'selector', args: [] } : null,
+        runners: [
+          {
+            command: 'runner',
+            args: [],
+            ...(selector ? { affected: { command: 'selector', args: [] } } : {}),
+          },
+        ],
         selectorProblem: null,
         affected,
       })
@@ -244,7 +249,6 @@ describe('affected focused test selections', () => {
     })
     expect(declaredFocusedTestCommands(settings)).toEqual({
       runners: [{ command: 'scripts/test-focused.ts', args: [] }],
-      selector: null,
       selectorProblem: 'focusedTests.affected.command must be a non-empty string',
     })
     const commands = declaredFocusedTestCommands(settings)
@@ -253,7 +257,6 @@ describe('affected focused test selections', () => {
         authenticated: true,
         writer: true,
         ...commands,
-        runner: commands.runners[0] ?? null,
         affected: true,
       }),
     ).toEqual({
@@ -265,7 +268,6 @@ describe('affected focused test selections', () => {
         authenticated: true,
         writer: true,
         ...commands,
-        runner: commands.runners[0] ?? null,
         affected: false,
       }),
     ).toEqual({ eligible: true })
@@ -284,7 +286,6 @@ describe('affected focused test selections', () => {
       declaredFocusedTestCommands(JSON.stringify({ focusedTests: { command: 'r', args: [] } })),
     ).toEqual({
       runners: [{ command: 'r', args: [] }],
-      selector: null,
       selectorProblem: null,
     })
   })
@@ -349,19 +350,16 @@ describe('affected focused test selections', () => {
         authenticated: true,
         writer: true,
         ...commands,
-        runner: commands.runners[0] ?? null,
         affected: true,
       }),
     ).toEqual({ eligible: true })
   })
 
   test('unions and deduplicates every runner selector outcome and keeps the first refusal', () => {
-    const bun = { command: 'bun', args: ['test'] }
-    const php = { command: 'phpunit', args: [] }
     expect(
       decideAffectedSelection([
-        { runner: bun, outcome: { kind: 'printed', stdout: 'shared.test.ts\nbun.test.ts\n' } },
-        { runner: php, outcome: { kind: 'printed', stdout: 'shared.test.ts\nphp.test.php\n' } },
+        { kind: 'printed', stdout: 'shared.test.ts\nbun.test.ts\n' },
+        { kind: 'printed', stdout: 'shared.test.ts\nphp.test.php\n' },
       ]),
     ).toEqual({
       kind: 'paths',
@@ -369,16 +367,13 @@ describe('affected focused test selections', () => {
     })
     expect(
       decideAffectedSelection([
-        { runner: bun, outcome: { kind: 'printed', stdout: '../outside.test.ts\n' } },
+        { kind: 'printed', stdout: '../outside.test.ts\n' },
         {
-          runner: php,
-          outcome: {
-            kind: 'failed',
-            exitCode: 2,
-            timedOut: false,
-            overflowed: false,
-            stderrTail: 'later',
-          },
+          kind: 'failed',
+          exitCode: 2,
+          timedOut: false,
+          overflowed: false,
+          stderrTail: 'later',
         },
       ]),
     ).toEqual({ kind: 'refuse', message: expect.stringContaining('parent segment') })
