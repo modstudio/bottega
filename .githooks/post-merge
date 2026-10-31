@@ -8,6 +8,8 @@ common_dir=$(git rev-parse --path-format=absolute --git-common-dir) 2>/dev/null 
 
 main_checkout=${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}
 root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+# A reader clone also passes the git-dir test and names the real main checkout.
+[ "$main_checkout" = "$root" ] || exit 0
 git rev-parse --verify ORIG_HEAD >/dev/null 2>&1 || exit 0
 changed=$(git diff --name-only ORIG_HEAD HEAD 2>/dev/null) || exit 0
 [ -n "$changed" ] || exit 0

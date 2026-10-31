@@ -76,6 +76,12 @@ def run_heartbeat(rows, ack_result=""):
     """Run one tick over `rows` and report the lines it emitted and the ids it acknowledged."""
     with tempfile.TemporaryDirectory() as root:
         checkout = Path(root)
+        subprocess.run(
+            ["git", "init", "--quiet", str(checkout)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
         hooks = checkout / "orchestrator" / "hooks"
         binary = checkout / "bin"
         hooks.mkdir(parents=True)
@@ -115,6 +121,7 @@ esac
             cwd=checkout,
             env={
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FIXTURE_NOTICES": str(notices),
                 "FIXTURE_ACK_LOG": str(ack_log),
