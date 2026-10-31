@@ -94,26 +94,27 @@ function addDirectorySelection(
   groups: Map<string, string[]>,
   path: string,
   absolute: string,
-  reachedTests: string[],
+  tests: string[],
 ): void {
-  const runDirectories = new Set(reachedTests.map(gateRunDirectory))
+  const runDirectories = new Set(tests.map(gateRunDirectory))
   if (runDirectories.has(root) && runDirectories.size > 1) {
-    throw new Error(
-      `test directory ${JSON.stringify(path)} mixes tests the gate runs from the root with tests it runs elsewhere; select files or subdirectories separately`,
-    )
+    for (const testPath of tests) {
+      const runDirectory = gateRunDirectory(testPath)
+      addPath(groups, runDirectory, relative(runDirectory, resolve(root, testPath)))
+    }
+    return
   }
   if (runDirectories.size <= 1) {
-    const fallbackDirectory =
-      packageDirectoriesByDepth.find((candidate) => beneath(candidate, absolute)) ?? root
+    const fallbackDirectory = workspaceRunDirectory(path)
     const runDirectory = [...runDirectories][0] ?? fallbackDirectory
-    if (runDirectory === root && reachedTests.length > 0) {
-      for (const testPath of reachedTests) addPath(groups, root, testPath)
+    if (runDirectory === root && tests.length > 0) {
+      for (const testPath of tests) addPath(groups, root, testPath)
       return
     }
     addPath(groups, runDirectory, relative(runDirectory, absolute) || '.')
     return
   }
-  for (const testPath of reachedTests) {
+  for (const testPath of tests) {
     const runDirectory = gateRunDirectory(testPath)
     if (beneath(absolute, runDirectory)) addPath(groups, runDirectory, '.')
     else addPath(groups, runDirectory, relative(runDirectory, resolve(root, testPath)))

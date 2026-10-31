@@ -1,8 +1,6 @@
 import { expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { parseTestReachExemptions } from './check-test-reach.ts'
 import { groupFocusedTestPaths } from './test-focused.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -94,13 +92,45 @@ test('an unreached test runs from its workspace', () => {
   expect(group!.paths).toEqual(['src/postgres/postgres-import.test.ts'])
 })
 
-test('every test-reach exemption resolves to a focused run directory', () => {
-  const exemptions = parseTestReachExemptions(
-    readFileSync(`${root}/scripts/quality/test-reach-exemptions.json`, 'utf8'),
-  )
-  for (const { file } of exemptions) {
-    expect(() => groupFocusedTestPaths([file]), file).not.toThrow()
-  }
+test('a directory mixing root-run and workspace-run tests expands into both groups', () => {
+  const groups = groupFocusedTestPaths(['orchestrator/src/postgres'])
+  expect(
+    groups.map((group) => ({
+      directory: relative(root, group.directory) || '.',
+      paths: group.paths,
+    })),
+  ).toEqual([
+    {
+      directory: '.',
+      paths: [
+        'orchestrator/src/postgres/migration-failure.test.ts',
+        'orchestrator/src/postgres/postgres-migrate.test.ts',
+      ],
+    },
+    {
+      directory: 'orchestrator',
+      paths: [
+        'src/postgres/postgres-import.test.ts',
+        'src/postgres/postgres-migrate-board-shared-space.test.ts',
+        'src/postgres/postgres-migrate-doc-latest-revision.test.ts',
+        'src/postgres/postgres-migrate-doc-revision-author.test.ts',
+        'src/postgres/postgres-migrate-hosted-project-cleanup.test.ts',
+        'src/postgres/postgres-migrate-hosted-task-ids.test.ts',
+        'src/postgres/postgres-migrate-hub-project-identity.test.ts',
+        'src/postgres/postgres-migrate-jsonb-binding.test.ts',
+        'src/postgres/postgres-migrate-public-role.test.ts',
+        'src/postgres/postgres-migrate-read-only.test.ts',
+        'src/postgres/postgres-migrate-recipients.test.ts',
+        'src/postgres/postgres-migrate-rls.test.ts',
+        'src/postgres/postgres-migrate-schema.test.ts',
+        'src/postgres/postgres-migrate-workflow-generation.test.ts',
+      ],
+    },
+  ])
+  expect(groups[0]!.argv.slice(-2)).toEqual([
+    './orchestrator/src/postgres/migration-failure.test.ts',
+    './orchestrator/src/postgres/postgres-migrate.test.ts',
+  ])
 })
 
 test('refuses missing and escaping path arguments', () => {
