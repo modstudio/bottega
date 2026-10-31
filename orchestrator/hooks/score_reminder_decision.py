@@ -1,7 +1,6 @@
-"""Pure Stop-hook ruling for a held worktree: in-flight landing is information.
+"""Pure Stop-hook decisions for held trees, blocking, and once-per-note information.
 
-Close-out JSON carries hold kind, in-flight ref, and suppressBlock. The hook
-reads those fields and does not re-derive them or parse the human report.
+Unscored runs, pairs, and holds block; notes never do.
 """
 
 from __future__ import annotations
@@ -48,6 +47,45 @@ NOT_EVIDENCE = {
 class HeldTreeDecision(NamedTuple):
     block: bool
     in_flight_line: str | None
+
+
+class StopDecision(NamedTuple):
+    block: bool
+    note_lines: list[str]
+    seen: list[str]
+
+
+def note_project(row: dict) -> str:
+    return row.get("project") or row["label"].split("#", 1)[0]
+
+
+def decide_stop(
+    unscored_runs: int,
+    pairs: int,
+    blocking_holds: int,
+    notes: list[tuple[str, str, str]],
+    seen: set[str] | None,
+) -> StopDecision:
+    unseen = notes if seen is None else [note for note in notes if note[0] not in seen]
+    note_lines = []
+    if unseen:
+        count = len(unseen)
+        note_lines.append(
+            f"{count} note{'s' if count != 1 else ''} filed in this session; "
+            "hand each to its project's architects:"
+        )
+        note_lines.extend(
+            f"  {label}  {text[:80]}  "
+            f"(hand it to architects:{project} with a board request)"
+            for label, text, project in unseen
+        )
+    updated_seen = set() if seen is None else set(seen)
+    updated_seen.update(label for label, _text, _project in unseen)
+    return StopDecision(
+        block=bool(unscored_runs or pairs or blocking_holds),
+        note_lines=note_lines,
+        seen=sorted(updated_seen),
+    )
 
 
 def unscored_remedy(status: str, failure_kind: str | None, agent: str) -> str:

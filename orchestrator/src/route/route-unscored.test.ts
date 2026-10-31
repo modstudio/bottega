@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
@@ -190,15 +189,15 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
       ),
     )
 
-  test('Stop note reminders parse labels and suggest label-addressed commands', () => {
-    const hook = readFileSync(
-      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
-      'utf8',
-    )
+  test("Stop note reminders hand labels to each project's architects without triage commands", () => {
+    const hook = ['../../hooks/score-reminder.py', '../../hooks/score_reminder_decision.py']
+      .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
+      .join('\n')
     expect(hook).toContain('row["label"]')
-    expect(hook).toContain(`${PLATFORM_SLUG} note keep {note_label}`)
-    expect(hook).toContain(`${PLATFORM_SLUG} note drop {note_label}`)
-    expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label} --title "<the point>"`)
+    expect(hook).toContain('architects:{project}')
+    expect(hook).not.toContain('note keep')
+    expect(hook).not.toContain('note drop')
+    expect(hook).not.toContain('note promote')
   })
 
   test("the hook's not-evidence kinds match the canonical set", () => {

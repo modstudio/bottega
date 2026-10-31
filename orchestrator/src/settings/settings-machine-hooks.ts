@@ -136,7 +136,7 @@ const PRODUCT_HOOKS: readonly ProductHookDeclaration[] = [
     timeout: Math.ceil(BOARD_PUSH_SLOW_TIMEOUT_SECONDS + 1),
     boardEnvironment: true,
   },
-  { event: 'Stop', script: 'score-reminder.py' },
+  { event: 'Stop', script: 'score-reminder.py', boardEnvironment: true },
   { event: 'Stop', script: 'heartbeat-guard.py' },
   { event: 'Stop', script: 'workflow-cursor-reminder.py' },
   {

@@ -11,9 +11,12 @@ read the output.
 """
 import json, os, sqlite3, subprocess, sys, time
 
+from board_hook_common import marker_path, read_marker, write_marker
 from score_reminder_decision import (
     WRITING_JOBS,
     decide_held_tree,
+    decide_stop,
+    note_project,
     refusal_score_guidance,
     unscored_remedy,
 )
@@ -257,13 +260,34 @@ def main() -> int:
             note_args,
             capture_output=True, text=True, timeout=min(5, remaining), check=True,
         )
-        notes = [(row["label"], row["text"]) for row in json.loads(result.stdout)]
+        notes = [
+            (row["label"], row["text"], note_project(row))
+            for row in json.loads(result.stdout)
+        ]
     except Exception:
         notes = []
 
-    if not rows and not pairs and not notes and not blocking_holds:
-        if in_flight_lines:
-            print(json.dumps({"systemMessage": "\n".join(in_flight_lines)}))
+    note_marker_path = marker_path("score-reminder-notes", sid)
+    marker = read_marker(note_marker_path) if note_marker_path else None
+    if isinstance(marker, dict):
+        marker_seen = marker.get("seen", [])
+        seen = (
+            set(marker_seen)
+            if isinstance(marker_seen, list)
+            and all(isinstance(label, str) for label in marker_seen)
+            else None
+        )
+    else:
+        seen = None
+    stop = decide_stop(len(rows), len(pairs), len(blocking_holds), notes, seen)
+    if not write_marker(note_marker_path, {"seen": stop.seen}):
+        stop = decide_stop(len(rows), len(pairs), len(blocking_holds), notes, None)
+
+    if not stop.block:
+        con.close()
+        system_lines = [*in_flight_lines, *stop.note_lines]
+        if system_lines:
+            print(json.dumps({"systemMessage": "\n".join(system_lines)}))
         return 0
 
     # A writing job takes a THIRD axis, and printing the two-axis form for one
@@ -339,16 +363,6 @@ def main() -> int:
         for partner, agent, reason in run_pairs:
             lines.append(f"    comparable to run {partner} ({agent}): {reason}")
     con.close()
-    if notes:
-        if lines:
-            lines.append("")
-        lines.append(f"{len(notes)} notes filed; keep, drop or promote with bottega note:")
-        for note_label, note_text in notes:
-            lines.append(
-                f"  {note_label}  {note_text[:80]}\n"
-                f"    bottega note keep {note_label} | bottega note drop {note_label} --reason \"...\" | "
-                f'bottega note promote {note_label} --title "<the point>"'
-            )
     if blocking_holds:
         if lines:
             lines.append("")
@@ -358,6 +372,10 @@ def main() -> int:
         if lines:
             lines.append("")
         lines.extend(in_flight_lines)
+    if stop.note_lines:
+        if lines:
+            lines.append("")
+        lines.extend(stop.note_lines)
     if rows:
         needs_rescore = any(delivery is not None for _, _, _, _, delivery, _, _, _, _, _, _, _, _, _, _ in rows)
         intro = (
@@ -368,8 +386,6 @@ def main() -> int:
         )
     elif pairs:
         intro = f"{len(pairs)} scored pair{'s' if len(pairs) > 1 else ''} await comparison:"
-    elif notes:
-        intro = f"{len(notes)} note{'s' if len(notes) > 1 else ''} filed in this session:"
     else:
         intro = f"{len(blocking_holds)} worktree{'s' if len(blocking_holds) > 1 else ''} must be resolved before this session ends:"
     guidance = ""
