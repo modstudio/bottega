@@ -245,13 +245,8 @@ function matchingStatusEvent(
   return (
     candidates.find((candidate) =>
       isSameStatusEvent(
-        statusEventIdentity(taskRecordId, row.task_key, row.to_status, row.at),
-        statusEventIdentity(
-          candidate.task_record_id,
-          candidate.task_key,
-          candidate.to_status,
-          candidate.at,
-        ),
+        statusEventIdentity(taskRecordId, row.to_status, row.at),
+        statusEventIdentity(candidate.task_record_id, candidate.to_status, candidate.at),
       ),
     ) ?? null
   )

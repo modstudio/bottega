@@ -306,8 +306,8 @@ function statusEventHolderToAdopt(
   if (
     !holder ||
     !isSameStatusEvent(
-      statusEventIdentity(resolvedTaskId, incoming.task_key, incoming.to_status, incoming.at),
-      statusEventIdentity(holder.task_id, holder.task_key, holder.to_status, holder.at),
+      statusEventIdentity(resolvedTaskId, incoming.to_status, incoming.at),
+      statusEventIdentity(holder.task_id, holder.to_status, holder.at),
     )
   )
     return undefined
