@@ -12,7 +12,13 @@ export type WorkflowTemplateContext = {
   argumentNames: ReadonlySet<string>
   project: string
   key?: string
+  onKeylessTrackerAction?: (path: string) => void
 }
+
+export const KEYLESS_TRACKER_ACTION_KEY = '<KEY>'
+
+export const keylessTrackerActionMetadata = (paths: ReadonlySet<string>) =>
+  paths.size ? { keylessTrackerActionPaths: [...paths] } : {}
 
 export function workflowTemplatePlaceholders(template: string): string[] {
   return [...new Set([...template.matchAll(/\{\{([^{}]+)\}\}/g)].map((match) => match[1]!))]
@@ -55,8 +61,12 @@ export function resolveWorkflowTemplate(
       throw new Error(`unresolved workflow placeholder "${path}"${remedy}`)
     }
     if (context && path.startsWith('tracker.actions.') && typeof value === 'string') {
-      const reason = unresolvedTrackerActionPlaceholder(value, context.project, context.key)
+      const keyless = !context.key && value.includes('{key}')
+      const action = keyless ? value.replaceAll('{key}', KEYLESS_TRACKER_ACTION_KEY) : value
+      const reason = unresolvedTrackerActionPlaceholder(action, context.project, context.key)
       if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
+      if (keyless) context.onKeylessTrackerAction?.(path)
+      return action
     }
     return String(value)
   })

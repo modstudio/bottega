@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nowIso } from '../database/db.ts'
+import { refuseUnknownWorkflowArgument } from './workflow-arguments.ts'
 import { workflowCursorReference } from './workflow-cursor-format.ts'
 import type { ArgumentReboundEvent, CursorTrailEntry } from './workflow-cursor-trail.ts'
 import { showPinnedWorkflow } from './workflow-version-selection.ts'
@@ -102,16 +103,13 @@ export function decideCursorArguments(
 }
 
 function rebindableArguments(row: ArgumentCursor, d: Database): Set<string> {
+  const pinned = row.workflow_version_record_id
+    ? showPinnedWorkflow(row.workflow_version_record_id, d)
+    : showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d)
   const current = resolvedProductionWorkflows(row.project, d).find(
     ({ slug }) => slug === row.workflow_slug,
   )
-  const definitions = [
-    (row.workflow_version_record_id
-      ? showPinnedWorkflow(row.workflow_version_record_id, d)
-      : showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d)
-    ).definition,
-    ...(current ? [current.definition] : []),
-  ]
+  const definitions = [pinned.definition, ...(current ? [current.definition] : [])]
   return new Set(
     definitions
       .flatMap((definition) => definition.arguments)
@@ -127,6 +125,15 @@ export function applyCursorArguments(
   composing = false,
 ): Record<string, string> {
   const stored = JSON.parse(row.args) as Record<string, string>
+  const definition = row.workflow_version_record_id
+    ? showPinnedWorkflow(row.workflow_version_record_id, d).definition
+    : showResolvedWorkflow(row.workflow_slug, row.workflow_version, row.project, d).definition
+  refuseUnknownWorkflowArgument(
+    row.workflow_slug,
+    definition,
+    supplied,
+    `workflow next cursor ${row.id}`,
+  )
   const rebindable = rebindableArguments(row, d)
   const decision = decideCursorArguments(stored, supplied, rebindable, composing)
   if (decision.action === 'refuse') {

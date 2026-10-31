@@ -13,9 +13,10 @@ const module = (file: string, allowed: string[]): WorkflowFloorModule => ({
 })
 
 export const workflowFloorModules: WorkflowFloorModule[] = [
+  module('orchestrator/src/workflow/workflow-arguments.ts', ['./workflow-definition.ts']),
   module('orchestrator/src/workflow/workflow-cursor-transition.ts', []),
   module('orchestrator/src/workflow/workflow-cursor-trail.ts', []),
-  module('orchestrator/src/workflow/workflow-cursor-format.ts', []),
+  module('orchestrator/src/workflow/workflow-cursor-format.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-cursor-autonomy.ts', [
     '../../../shared/brand.ts',
     '../../../shared/ship-to.ts',
@@ -26,6 +27,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
+    './workflow-arguments.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-trail.ts',
     './workflow-version-selection.ts',
@@ -36,11 +38,20 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../database/db.ts',
     '../run/question-outbox.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-keyless-close.ts', [
+    'bun:sqlite',
+    './autonomy.ts',
+    './workflow-cursor-autonomy.ts',
+    './workflow-cursor-format.ts',
+    './workflow-template.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-cursor-selection.ts', [
     'bun:sqlite',
     'node:crypto',
     '../database/db.ts',
     './workflow-cursor-arguments.ts',
+    './workflow-cursor-format.ts',
     './workflow-cursor-trail.ts',
     './workflow-cursor-transition.ts',
     './workflow-task-reference.ts',
@@ -209,6 +220,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor-adoption.ts',
     './workflow-compose-branch.ts',
     './workflow-cursor-format.ts',
+    './workflow-keyless-close.ts',
     './workflow-cursor-selection.ts',
     './workflow-cursor-task-reference.ts',
     './workflow-step-reference.ts',

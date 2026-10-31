@@ -1,9 +1,14 @@
 // concern: workflow cursor public handle text
 /** Keeps public cursor notices and command/tool handle syntax consistent. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export function workflowCursorReference(cursor: number): { cli: string; mcp: string } {
   return { cli: ` --cursor ${cursor}`, mcp: `cursor ${cursor}` }
 }
+
+export const workflowTaskBindingCommand = (row: { id: number; workflow_slug: string }) =>
+  `${PLATFORM_SLUG} workflow next ${row.workflow_slug}${workflowCursorReference(row.id).cli} --task <KEY>`
 
 export function formatCursorOpened(input: {
   cursor: number
