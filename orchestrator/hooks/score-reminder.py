@@ -16,7 +16,6 @@ from score_reminder_decision import (
     WRITING_JOBS,
     decide_held_tree,
     decide_stop,
-    note_project,
     refusal_score_guidance,
     unscored_remedy,
 )
@@ -261,7 +260,7 @@ def main() -> int:
             capture_output=True, text=True, timeout=min(5, remaining), check=True,
         )
         notes = [
-            (row["label"], row["text"], note_project(row))
+            (row["label"], row["text"], row["project"])
             for row in json.loads(result.stdout)
         ]
     except Exception:
