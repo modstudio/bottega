@@ -486,12 +486,6 @@ async function runFocusedTestSelection(input: {
   }
   if (split.kind === 'refuse') {
     input.record(`\n${split.message}\n`)
-    decideFocusedTestGroupExecution({
-      groupCount: 0,
-      executions: [],
-      cancelled: input.state.cancelled,
-      refusedPaths: split.paths,
-    })
     return { executions: [], refusedPaths: split.paths }
   }
   const executions: FocusedTestExecutionEvent[] = []
