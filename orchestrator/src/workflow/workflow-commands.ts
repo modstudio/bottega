@@ -29,6 +29,7 @@ import {
   abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
+  cursorComposition,
   getWorkflowStepWithCursor,
   nextWorkflowStep,
   ruleWorkflow,
@@ -669,18 +670,22 @@ function cursorCommandTarget(
   hasStep = false,
 ): { project: string; workflow: string; step?: string } {
   const project = flagValue(argv, 'project')
-  const first = argv[2]?.startsWith('--') ? undefined : argv[2]
-  const second = argv[3]?.startsWith('--') ? undefined : argv[3]
+  const tail = argv.slice(2)
+  const flagIndex = tail.findIndex((value) => value.startsWith('--'))
+  const positionals = flagIndex < 0 ? tail : tail.slice(0, flagIndex)
+  const [first, second] = positionals
   const suppliedWorkflow = hasStep && !second ? undefined : first
-  const step = hasStep ? (second ?? first) : undefined
+  let step = hasStep ? (second ?? first) : undefined
   if (cursor !== undefined) {
+    const database = db()
     const row = selectWorkflowCursor(
       { project, workflow: suppliedWorkflow },
       cursor,
       context.session,
-      db(),
+      database,
     )!
-    if (hasStep && !step) throw new Error(`${caller} requires a step slug or position`)
+    if (hasStep && (!step || (second === undefined && step === row.workflow_slug)))
+      step = cursorComposition(row, database).steps[row.ordinal]!.slug
     return { project: row.project, workflow: row.workflow_slug, step }
   }
   if (!project) throw new Error('--project is required without --cursor')
