@@ -1,10 +1,46 @@
 import { describe, expect, test } from 'bun:test'
 import { CHECK_LEGS } from './check-plan.ts'
-import { staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
+import { staticCheckPlan, workerBiomeFiles, workerCheckProjection } from './static-check-plan.ts'
 
 const STATIC_CHECKS = staticCheckPlan()
 
 describe('worker static check plan', () => {
+  test('combines committed, working-tree, and untracked paths once in stable order', () => {
+    const files = workerBiomeFiles({
+      nameStatus:
+        'M\0scripts/committed.ts\0M\0scripts/working-tree.ts\0M\0scripts/shared.ts\0D\0scripts/deleted.ts\0R100\0scripts/old.ts\0scripts/renamed.ts\0M\0scripts/naïve.ts\0',
+      untracked: 'scripts/untracked.ts\0scripts/shared.ts\0',
+    })
+
+    expect(files).toEqual([
+      'scripts/committed.ts',
+      'scripts/naïve.ts',
+      'scripts/renamed.ts',
+      'scripts/shared.ts',
+      'scripts/untracked.ts',
+      'scripts/working-tree.ts',
+    ])
+  })
+
+  test('returns no Biome files for empty Git output', () => {
+    expect(workerBiomeFiles({ nameStatus: '', untracked: '' })).toEqual([])
+  })
+
+  test('builds worker Biome argv from the selected files without changed mode', () => {
+    const files = ['scripts/committed.ts', 'scripts/untracked.ts']
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS)
+
+    const argv = projection.biome.workerArgv!({ root: '/repo/', files })
+
+    expect(argv).toEqual([
+      '/repo/node_modules/.bin/biome',
+      'ci',
+      '--no-errors-on-unmatched',
+      ...files,
+    ])
+    expect(argv).not.toContain('--changed')
+  })
+
   test('gives every omission a non-empty reason', () => {
     expect(STATIC_CHECKS.length).toBeGreaterThan(0)
     for (const check of STATIC_CHECKS) {

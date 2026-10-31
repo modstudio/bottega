@@ -6,6 +6,7 @@ import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { projectAt } from '../orchestrator/src/project/projects.ts'
 import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
+import { changeViewPlan } from '../shared/change-view.ts'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
@@ -36,7 +37,12 @@ import {
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
-import { BIOME_CHECK_NAME, staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
+import {
+  BIOME_CHECK_NAME,
+  staticCheckPlan,
+  workerBiomeFiles,
+  workerCheckProjection,
+} from './static-check-plan.ts'
 
 type Command = { cwd: string; argv: string[]; category?: string }
 type Leg = {
@@ -292,10 +298,10 @@ async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
   }
 }
 
-function qualityBaseArgument() {
+function qualityBase() {
   const base = resolveLandingBase(root, 'quality ratchet')
   collectCpu(describeCommand(base.command), base.cpuTime)
-  return `--base=${base.commit}`
+  return { argument: `--base=${base.commit}`, commit: base.commit }
 }
 
 async function pump(
@@ -433,14 +439,23 @@ function printFailedLegTails(results: LegResult[]) {
 const lockfilePath = join(root, 'bun.lock')
 const nodeModulesPath = join(root, 'node_modules')
 
-function gitOutput(cwd: string, argv: string[]): Buffer | null {
+function gitOutput(cwd: string, argv: string[]): Buffer | null
+function gitOutput(cwd: string, argv: string[], failure: 'throw'): string
+function gitOutput(cwd: string, argv: string[], failure: 'null' | 'throw' = 'null') {
   const result = Bun.spawnSync(['git', '--no-optional-locks', ...argv], {
     cwd,
     env: inspectionGitEnv(),
     stdout: 'pipe',
-    stderr: 'ignore',
+    stderr: 'pipe',
   })
-  return result.exitCode === 0 && result.stdout.length ? result.stdout : null
+  collectCpu(describeCommand(['git', '--no-optional-locks', ...argv]), result.resourceUsage.cpuTime)
+  if (result.exitCode !== 0) {
+    if (failure === 'null') return null
+    const detail = result.stderr.toString().trim()
+    throw new Error(`git ${argv.join(' ')} failed${detail ? `: ${detail}` : ''}`)
+  }
+  if (failure === 'throw') return result.stdout.toString()
+  return result.stdout.length ? result.stdout : null
 }
 
 function registeredLandingBranch(mainCheckout: string): string | null {
@@ -551,9 +566,12 @@ const selected = new Set(selectedCheckLegs(checkArguments))
 const workerProjection =
   checkArguments.mode === 'worker' ? workerCheckProjection(STATIC_CHECKS, legs) : null
 let workerQualityBase: string | undefined
+let workerBaseCommit: string | undefined
 if (workerProjection) {
   try {
-    workerQualityBase = qualityBaseArgument()
+    const base = qualityBase()
+    workerQualityBase = base.argument
+    workerBaseCommit = base.commit
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
@@ -561,16 +579,37 @@ if (workerProjection) {
 }
 let workerBiomeStep: GateStepResult | null = null
 if (workerProjection) {
-  const workerBiomeArgv = workerProjection.biome.workerArgv!({
-    root,
-    qualityBase: workerQualityBase!,
-  })
-  const workerBiomeResult = await inherit(workerBiomeArgv, root)
-  workerBiomeStep = {
-    name: workerProjection.biome.name,
-    ...(workerBiomeResult.exitCode !== 0
-      ? await biomeErrorDetails(workerBiomeArgv, workerBiomeResult)
-      : workerBiomeResult),
+  let files: string[]
+  try {
+    const plan = changeViewPlan(workerBaseCommit!, 'worktree')
+    files = workerBiomeFiles({
+      nameStatus: gitOutput(root, plan.nameStatus, 'throw'),
+      untracked: gitOutput(root, plan.untracked!, 'throw'),
+    })
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+  if (files.length === 0) {
+    console.log(`Biome: skipped because no file changed since the base ${workerBaseCommit}`)
+    workerBiomeStep = {
+      name: workerProjection.biome.name,
+      exitCode: 0,
+      detail: [],
+      omittedDetailLines: 0,
+    }
+  } else {
+    const workerBiomeArgv = workerProjection.biome.workerArgv!({
+      root,
+      files,
+    })
+    const workerBiomeResult = await inherit(workerBiomeArgv, root)
+    workerBiomeStep = {
+      name: workerProjection.biome.name,
+      ...(workerBiomeResult.exitCode !== 0
+        ? await biomeErrorDetails(workerBiomeArgv, workerBiomeResult)
+        : workerBiomeResult),
+    }
   }
 }
 const results = await Promise.all(
@@ -602,7 +641,7 @@ if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
 if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
   let qualityMode: string
   try {
-    qualityMode = workerQualityBase ?? qualityBaseArgument()
+    qualityMode = workerQualityBase ?? qualityBase().argument
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)

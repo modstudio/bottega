@@ -1,3 +1,5 @@
+import { parseNameStatus, untrackedChanges } from '../shared/change-view.ts'
+
 type WorkerDecision = { run: true } | { run: false; reason: string }
 const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'
 export const BIOME_CHECK_NAME = 'Biome'
@@ -8,11 +10,21 @@ export type StaticCheckDeclaration = {
   category?: string
   reportsRemaining?: boolean
   worker: WorkerDecision
-  workerArgv?: (input: { root: string; qualityBase: string }) => string[]
+  workerArgv?: (input: { root: string; files: readonly string[] }) => string[]
 }
 
 const run = { run: true } as const
 const omit = (reason: string): WorkerDecision => ({ run: false, reason })
+
+/** Select present paths from a NUL-separated worktree change view, once and in stable order. */
+export function workerBiomeFiles(input: { nameStatus: string; untracked: string }): string[] {
+  const tracked = parseNameStatus(input.nameStatus)
+    .filter((entry) => entry.status !== 'D')
+    .map((entry) => entry.path)
+  const untracked = untrackedChanges(input.untracked, new Map()).entries.map((entry) => entry.path)
+  return [...new Set([...tracked, ...untracked])].sort()
+}
+
 const script = (
   name: string,
   worker: WorkerDecision,
@@ -39,12 +51,11 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     name: BIOME_CHECK_NAME,
     argv: ({ root }) => [`${root}node_modules/.bin/biome`, 'ci', '.'],
     worker: run,
-    workerArgv: ({ root }) => [
+    workerArgv: ({ root, files }) => [
       `${root}node_modules/.bin/biome`,
       'ci',
-      '--changed',
-      '--since=origin/main',
       '--no-errors-on-unmatched',
+      ...files,
     ],
   },
   {
