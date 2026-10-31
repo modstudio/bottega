@@ -6,7 +6,7 @@ import {
 } from './check-git-environment-spawn.ts'
 
 describe('git spawn check', () => {
-  test('finds direct git spawns in production files and excludes raw-count fixtures and helpers', () => {
+  test('counts production and fixture git spawns and excludes only tests and the named helpers', () => {
     const source = `const result = Bun.${'spawnSync'}(['git', 'status'], { env })`
     const findings = gitSpawns({
       'orchestrator/src/example.ts': source,
@@ -18,10 +18,14 @@ describe('git spawn check', () => {
       'shared/git.ts': source,
     })
     expect(
-      findings
-        .filter((finding) => finding.countsTowardBaseline)
-        .map(({ file, line }) => `${file}:${line}`),
-    ).toEqual(['hub/src/example.ts:2', 'orchestrator/src/example.ts:1'])
+      rawGitSpawnViolations(findings, { files: {} })
+        .map((violation) => violation.slice(0, violation.indexOf(': ')))
+        .sort(),
+    ).toEqual([
+      'hub/src/example.ts:2',
+      'orchestrator/src/example.ts:1',
+      'shared/fixtures/example.ts:1',
+    ])
   })
 
   test('keeps the scrubbed-environment rule scoped to orchestrator and shared', () => {
@@ -45,10 +49,7 @@ describe('git spawn check', () => {
       ].join('\n'),
     })
     expect(
-      rawGitSpawnViolations(
-        findings.filter((finding) => finding.countsTowardBaseline),
-        { files: { 'orchestrator/src/example.ts': 1 } },
-      ),
+      rawGitSpawnViolations(findings, { files: { 'orchestrator/src/example.ts': 1 } }),
     ).toEqual([
       'orchestrator/src/example.ts:2: raw git spawn is not guarded; use the guarded helpers in orchestrator/src/git/git-environment.ts, or gitAt in shared/git.ts',
     ])

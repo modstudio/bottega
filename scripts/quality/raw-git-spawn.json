@@ -43,6 +43,7 @@
     "orchestrator/src/run/run-diff.ts": 9,
     "orchestrator/src/run/shared-git-config.ts": 1,
     "orchestrator/src/session/session-close-out.ts": 2,
+    "orchestrator/src/workflow/workflow-store.fixture.ts": 1,
     "orchestrator/src/worktree/worktree-readonly.ts": 1,
     "shared/change-view.ts": 1
   }

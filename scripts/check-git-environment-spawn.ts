@@ -27,8 +27,6 @@ function productionTypeScript(path: string): boolean {
 function countedRawSpawn(path: string): boolean {
   return (
     productionTypeScript(path) &&
-    !path.endsWith('.fixture.ts') &&
-    !path.split('/').includes('fixtures') &&
     !EXCLUDED_HELPERS.has(path) &&
     !EXCLUDED_TEST_INFRASTRUCTURE.has(path)
   )
@@ -105,6 +103,7 @@ export function rawGitSpawnViolations(
 ): string[] {
   const byFile = new Map<string, GitSpawn[]>()
   for (const finding of findings) {
+    if (!finding.countsTowardBaseline) continue
     const rows = byFile.get(finding.file) ?? []
     rows.push(finding)
     byFile.set(finding.file, rows)
@@ -146,14 +145,15 @@ function checkGitSpawns(
   reporter: Pick<Console, 'error' | 'log'> = console,
 ): boolean {
   const findings = gitSpawns(files)
-  const rawFindings = findings.filter((finding) => finding.countsTowardBaseline)
   const violations = [
     ...gitEnvironmentViolations(findings),
-    ...rawGitSpawnViolations(rawFindings, baseline),
+    ...rawGitSpawnViolations(findings, baseline),
   ]
   for (const violation of violations) reporter.error(violation)
   if (violations.length) return false
-  reporter.log(`check-git-environment-spawn: ok (${rawFindings.length} frozen raw spawns)`)
+  reporter.log(
+    `check-git-environment-spawn: ok (${findings.filter((finding) => finding.countsTowardBaseline).length} frozen raw spawns)`,
+  )
   return true
 }
 
