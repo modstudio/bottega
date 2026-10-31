@@ -1,4 +1,12 @@
 export class CheckFailure extends Error {}
+export class MigrationFailure extends CheckFailure {}
+
+export type RecordMigrationPhase =
+  | 'reading migrations'
+  | 'starting PGlite'
+  | 'provisioning PGlite'
+  | 'replaying migrations'
+  | 'closing PGlite'
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
@@ -18,8 +26,12 @@ function isPgliteModuleResolutionFailure(error: unknown): boolean {
   )
 }
 
-export function phaseFailure(phase: string, error: unknown, rerun: string): CheckFailure {
-  if (error instanceof CheckFailure) return error
+export function phaseFailure(
+  phase: RecordMigrationPhase,
+  error: unknown,
+  rerun: string,
+): CheckFailure {
+  if (error instanceof MigrationFailure) return error
 
   const message = errorMessage(error)
   if (phase === 'starting PGlite' || isPgliteModuleResolutionFailure(error)) {

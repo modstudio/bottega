@@ -29,7 +29,12 @@ import {
   proofJsonbStringChecksValidate,
   seedJsonbStringChecksValidate,
 } from './record-jsonb-string-check-proof.ts'
-import { CheckFailure, errorMessage, phaseFailure } from './record-migration-failure.ts'
+import {
+  CheckFailure,
+  errorMessage,
+  MigrationFailure,
+  phaseFailure,
+} from './record-migration-failure.ts'
 import { prepareRecordMigrationProof } from './record-migration-session.ts'
 import {
   proofRunOwnerRequired,
@@ -153,7 +158,7 @@ function migrationFailure(
   statement: string,
   error: unknown,
 ): CheckFailure {
-  return new CheckFailure(
+  return new MigrationFailure(
     `shared/record/migrations/${migration.name}/migration.sql failed at ${JSON.stringify(firstLine(statement))}: ${errorMessage(error)}. Fix that migration (never edit a generated one; regenerate it or add a custom one per .agents/contexts/orchestrator-record.md), then rerun ${rerun}.`,
   )
 }
