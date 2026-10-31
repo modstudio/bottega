@@ -136,27 +136,26 @@ export function dispatchLaunchCwdDecision(input: {
 }
 
 export function callerCheckoutDecision(input: {
-  recordedLaunchCwd: string
-  explicitCwd: string | null
+  checkoutCwd: string
+  callerChoseCheckout: boolean
   repoRoot: string | null
   registeredProjectPath: string | null
   linkedWorktree: boolean
   borrowedCheckout: boolean
 }): CallerCheckoutDecision {
-  const callerCwd = input.explicitCwd ?? input.recordedLaunchCwd
   if (
-    input.explicitCwd !== null ||
+    input.callerChoseCheckout ||
     input.repoRoot === null ||
     input.registeredProjectPath === null ||
     (!input.linkedWorktree && !input.borrowedCheckout)
   ) {
-    return { callerCwd, launchCwd: input.recordedLaunchCwd, notice: null }
+    return { callerCwd: input.checkoutCwd, launchCwd: input.checkoutCwd, notice: null }
   }
   return {
     callerCwd: input.registeredProjectPath,
-    launchCwd: input.recordedLaunchCwd,
+    launchCwd: input.checkoutCwd,
     notice:
-      `! dispatched from project tree ${input.recordedLaunchCwd}; caller checkout is ` +
+      `! dispatched from project tree ${input.checkoutCwd}; caller checkout is ` +
       `${input.registeredProjectPath} (pass --cwd to choose a tree)`,
   }
 }
@@ -177,13 +176,10 @@ export function resolveCallerCheckoutDecision(
     cwdProject: input.cwdProject,
   })
   if (!('checkoutCwd' in selection)) throw new Error(selection.refusal)
-  const checkoutCwd = selection.checkoutCwd
-  const decidedCwdIsExplicit = input.explicitCwd !== null || input.namedProject !== null
-  const facts = checkoutFactsAt(checkoutCwd)
   return callerCheckoutDecision({
-    recordedLaunchCwd: checkoutCwd,
-    explicitCwd: decidedCwdIsExplicit ? checkoutCwd : null,
-    ...facts,
+    checkoutCwd: selection.checkoutCwd,
+    callerChoseCheckout: input.explicitCwd !== null || input.namedProject !== null,
+    ...checkoutFactsAt(selection.checkoutCwd),
   })
 }
 

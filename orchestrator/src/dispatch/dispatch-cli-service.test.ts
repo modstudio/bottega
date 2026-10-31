@@ -275,8 +275,8 @@ describe('caller checkout resolution', () => {
   test('shell-cwd mutation: implicit linked worktree resolves to the registered project and warns', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/project/.claude/worktrees/DEV-780',
-        explicitCwd: null,
+        checkoutCwd: '/project/.claude/worktrees/DEV-780',
+        callerChoseCheckout: false,
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: true,
@@ -293,8 +293,8 @@ describe('caller checkout resolution', () => {
   test('explicit-cwd mutation: an explicitly selected linked worktree remains selected', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/elsewhere',
-        explicitCwd: '/project/.claude/worktrees/DEV-780',
+        checkoutCwd: '/project/.claude/worktrees/DEV-780',
+        callerChoseCheckout: true,
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: true,
@@ -302,7 +302,7 @@ describe('caller checkout resolution', () => {
       }),
     ).toEqual({
       callerCwd: '/project/.claude/worktrees/DEV-780',
-      launchCwd: '/elsewhere',
+      launchCwd: '/project/.claude/worktrees/DEV-780',
       notice: null,
     })
   })
@@ -310,8 +310,8 @@ describe('caller checkout resolution', () => {
   test('registration mutation: an implicit cwd in an unregistered repository is unchanged', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/unregistered',
-        explicitCwd: null,
+        checkoutCwd: '/unregistered',
+        callerChoseCheckout: false,
         repoRoot: '/unregistered',
         registeredProjectPath: null,
         linkedWorktree: false,
@@ -327,8 +327,8 @@ describe('caller checkout resolution', () => {
   test('an implicit borrowed clone resolves to the registered project', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/project/.claude/worktrees/orch-832',
-        explicitCwd: null,
+        checkoutCwd: '/project/.claude/worktrees/orch-832',
+        callerChoseCheckout: false,
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: false,
