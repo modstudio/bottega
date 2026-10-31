@@ -203,10 +203,10 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   process.env.CLAUDE_CODE_SESSION_ID = 'owner-session'
   const d = new Database(':memory:')
   applyMigrations(d)
-  const cwd = resolve(import.meta.dir, '../../..')
+  const cwd = import.meta.dir
   d.query(
     'INSERT INTO project (record_id,name,path,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?)',
-  ).run('fixture', cwd, '{}')
+  ).run('fixture', resolve(import.meta.dir, '../../..'), '{}')
   d.query(
     `INSERT INTO run
       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,repo,project_record_id,branch,session_id)
@@ -226,7 +226,7 @@ test('a tip unreachable from the checked-out branch is refused without a review 
       d,
       runGit,
       undefined,
-      () => 'unreachable-tip',
+      (checkout) => (checkout === cwd ? 'unreachable-tip' : `resolved in ${checkout}`),
     ),
   ).toThrow(
     `could not reconcile branch DEV-1068-work with tip unreachable-tip; run ${PLATFORM_SLUG} review read from the worktree that has the branch containing that commit checked out (${PLATFORM_SLUG} tree open <run> opens one)`,

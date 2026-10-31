@@ -87,7 +87,7 @@ export function recordArchitectRead(
   if (!branch)
     throw new Error(`${PLATFORM_SLUG} review read requires a checked-out branch, not detached HEAD`)
   const caller = requireBranchRunOwner(database, project.name, branch, sessionId())
-  const tip = resolveCommit(project.path, input.sha ?? 'HEAD')
+  const tip = resolveCommit(input.cwd, input.sha ?? 'HEAD')
   try {
     runGit(input.cwd, ['merge-base', '--is-ancestor', tip, 'HEAD'])
   } catch {

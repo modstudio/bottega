@@ -38,7 +38,7 @@ export function passingGateForCommit(
     throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
   const argument = commit.trim()
   if (!argument) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
-  const resolved = resolveCommit(project.path, argument)
+  const resolved = resolveCommit(cwd, argument)
   const candidates = d
     .query<GateCandidate, [string]>(
       `SELECT g.record_id recordId,g.number,r.project_record_id AS projectId,g.cwd
