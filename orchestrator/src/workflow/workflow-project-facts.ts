@@ -18,8 +18,16 @@ export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
   needs.filter(
     (source): source is InjectionSource =>
-      source !== 'reference' && source !== 'ship-to' && source !== 'workflow-text',
+      source !== 'before-pull-request' &&
+      source !== 'reference' &&
+      source !== 'ship-to' &&
+      source !== 'workflow-text',
   )
+
+function beforePullRequestFact(project: WorkflowFactProject, needs: readonly WorkflowFactSource[]) {
+  if (!needs.includes('before-pull-request')) return {}
+  return { beforePullRequest: project.settings.release?.beforePullRequest ?? [] }
+}
 
 function referenceFact(project: WorkflowFactProject, needs: readonly WorkflowFactSource[]) {
   if (!needs.includes('reference') || !project.settings.reference) return {}
@@ -131,6 +139,7 @@ export function resolveWorkflowProjectFacts(
     resolved,
     facts: {
       ...projectFacts,
+      ...beforePullRequestFact(project, needs),
       ...referenceFact(project, needs),
       ...shipToFact(project, needs, needsCloseState, args, autonomy, projectFacts),
     },

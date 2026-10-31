@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
 import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
+import { parseWorkflowTree } from './workflow-tree.ts'
 
 const autonomy: WorkflowAutonomyResolution = {
   steps: {},
@@ -24,6 +25,55 @@ describe('workflow project facts', () => {
     )
 
     expect(facts).toEqual({ reference })
+  })
+
+  test('a step needing before-pull-request receives the declared entries', () => {
+    const beforePullRequest = [
+      {
+        whenChanged: ['shared/record/migrations/**'],
+        run: 'bun scripts/rehearse.ts',
+        secrets: ['REHEARSAL_TOKEN'],
+      },
+    ]
+    const step = parseWorkflowTree([
+      {
+        path: '.agents/workflow-steps/synthetic.md',
+        body: `---
+title: Synthetic
+floor: []
+job: null
+autonomy: ask
+needs:
+  - before-pull-request
+---
+Synthetic body.
+`,
+      },
+    ]).steps[0]!
+    const declared = resolveWorkflowProjectFacts(
+      {
+        name: 'fixture',
+        stack: 'bun',
+        settings: {
+          trunk: 'main',
+          release: { rungs: [], mergeMethod: 'squash', requiredChecks: [], beforePullRequest },
+        },
+      },
+      step.needs,
+      false,
+      {},
+      autonomy,
+    ).facts
+    const absent = resolveWorkflowProjectFacts(
+      { name: 'fixture', stack: 'bun', settings: {} },
+      step.needs,
+      false,
+      {},
+      autonomy,
+    ).facts
+
+    expect(declared).toEqual({ beforePullRequest })
+    expect(absent).toEqual({ beforePullRequest: [] })
   })
 
   test.each([

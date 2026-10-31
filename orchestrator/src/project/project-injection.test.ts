@@ -374,6 +374,28 @@ describe('project workflow injection', () => {
     ])
   })
 
+  test('refuses a before-pull-request entry without changed-path globs', () => {
+    expect(
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            beforePullRequest: [{ whenChanged: [], run: 'bun scripts/rehearse.ts' }],
+          },
+        },
+        'strict',
+      ),
+    ).toEqual([expect.stringContaining('release.beforePullRequest.0.whenChanged: Too small')])
+  })
+
+  test('refuses a before-pull-request entry with an empty secret name', () => {
+    const entry = { whenChanged: ['migrations/**'], run: 'bun rehearse.ts', secrets: [' '] }
+    const settings = { release: { ...release, beforePullRequest: [entry] } }
+    expect(validateProjectSettings(settings, 'strict')).toEqual([
+      expect.stringContaining('release.beforePullRequest.0.secrets.0: Too small'),
+    ])
+  })
+
   test('refuses repeated rung names and a non-boolean on-demand marker', () => {
     expect(
       validateProjectSettings(

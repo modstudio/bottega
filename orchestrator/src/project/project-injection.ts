@@ -85,6 +85,15 @@ const releaseSchema = (mode: SettingsObjectMode) =>
       }),
     mergeMethod: z.enum(['squash', 'merge', 'rebase']),
     requiredChecks: z.array(z.string()),
+    beforePullRequest: z
+      .array(
+        objectIn(mode)({
+          whenChanged: z.array(z.string().trim().min(1)).min(1),
+          run: z.string(),
+          secrets: z.array(z.string().trim().min(1)).optional(),
+        }),
+      )
+      .optional(),
     mergeQueue: z.boolean().optional(),
     observationWindowHours: z.number().int().positive().optional(),
   })
@@ -461,6 +470,7 @@ const injectionSources = [
 export type InjectionSource = (typeof injectionSources)[number]
 export const workflowFactSources = [
   ...injectionSources,
+  'before-pull-request',
   'reference',
   'ship-to',
   'workflow-text',

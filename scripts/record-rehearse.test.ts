@@ -1,10 +1,11 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import {
   launchedMachineId,
   machineExitCode,
   parseRehearsalLines,
   type RehearsalCommandRunner,
   rehearsalStatus,
+  rerunFailedRecordRehearsal,
   runRecordRehearsal,
 } from './record-rehearse.ts'
 
@@ -103,11 +104,13 @@ test('finds a named machine and destroys it when launch output has no id', async
 })
 
 test('classifies a failed machine and bounds the GitHub description', () => {
-  const lines = parseRehearsalLines(`REHEARSAL FAIL ${'x'.repeat(200)}`)
+  const failure = 'x'.repeat(200)
+  const lines = parseRehearsalLines(`REHEARSAL FAIL ${failure}`)
   const status = rehearsalStatus(lines, 1)
   expect(status.state).toBe('failure')
   expect(status.description).toStartWith('REHEARSAL FAIL ')
   expect(status.description.length).toBe(140)
+  expect(status.failure).toBe(`REHEARSAL FAIL ${failure}`)
 })
 
 test('refuses a pass that applied no pending migration', () => {
@@ -117,6 +120,7 @@ test('refuses a pass that applied no pending migration', () => {
   expect(rehearsalStatus(lines, 0)).toEqual({
     state: 'failure',
     description: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
+    failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
   })
 })
 
@@ -157,6 +161,129 @@ test('runs, posts success and destroys the machine through the injected runner',
     ),
   ).toBe(true)
   expect(calls.at(-1)?.slice(0, 3)).toEqual(['flyctl', 'machine', 'destroy'])
+})
+
+test('posts a bounded failure description and throws the whole rehearsal failure', async () => {
+  const failure = `migration long_name statement ${'x'.repeat(200)}: postgres rejected it`
+  const calls: string[][] = []
+  const runner: RehearsalCommandRunner = async (argv) => {
+    calls.push([...argv])
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[1] === 'machine' && argv[2] === 'run')
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    if (argv[0] === 'flyctl' && argv[1] === 'logs')
+      return { exitCode: 0, stdout: `REHEARSAL FAIL ${failure}\n`, stderr: '' }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({ events: [{ request: { exit_event: { exit_code: 1 } } }] }),
+    }),
+  ).rejects.toThrow(`REHEARSAL FAIL ${failure}`)
+
+  const postedDescription = calls
+    .find((argv) => argv.includes('state=failure'))
+    ?.find((argument) => argument.startsWith('description='))
+    ?.slice('description='.length)
+  expect(postedDescription?.length).toBe(140)
+  expect(postedDescription).toBe(`REHEARSAL FAIL ${failure}`.slice(0, 140))
+})
+
+test('reruns only the unsuccessful record-rehearsal job on an open pull request', async () => {
+  const log = spyOn(console, 'log').mockImplementation(() => {})
+  try {
+    for (const conclusion of ['failure', 'cancelled', 'timed_out']) {
+      const calls: string[][] = []
+      const runner: RehearsalCommandRunner = async (argv) => {
+        calls.push([...argv])
+        if (argv.includes('repos/{owner}/{repo}/pulls?state=open&per_page=100')) {
+          return { exitCode: 0, stdout: '1931\n', stderr: '' }
+        }
+        if (argv.includes('repos/{owner}/{repo}/commits/deadbeef/check-runs')) {
+          return {
+            exitCode: 0,
+            stdout: `7788\t${conclusion}\thttps://github.com/example/repo/actions/runs/5566/job/7788\n`,
+            stderr: '',
+          }
+        }
+        return { exitCode: 0, stdout: 'rerun requested\n', stderr: '' }
+      }
+
+      await rerunFailedRecordRehearsal(runner, 'deadbeef')
+
+      expect(calls.filter((argv) => argv.slice(0, 3).join(' ') === 'gh run rerun')).toEqual([
+        ['gh', 'run', 'rerun', '5566', '--job', '7788'],
+      ])
+      expect(calls.flat()).not.toContain('--failed')
+      expect(log).toHaveBeenCalledWith(expect.stringContaining(`after ${conclusion}`))
+    }
+  } finally {
+    log.mockRestore()
+  }
+})
+
+test('does not rerun a successful record-rehearsal job', async () => {
+  const calls: string[][] = []
+  const runner: RehearsalCommandRunner = async (argv) => {
+    calls.push([...argv])
+    if (argv.includes('repos/{owner}/{repo}/pulls?state=open&per_page=100'))
+      return { exitCode: 0, stdout: '1931\n', stderr: '' }
+    if (argv.includes('repos/{owner}/{repo}/commits/deadbeef/check-runs')) {
+      return {
+        exitCode: 0,
+        stdout: '7788\tsuccess\thttps://github.com/example/repo/actions/runs/5566/job/7788\n',
+        stderr: '',
+      }
+    }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await rerunFailedRecordRehearsal(runner, 'deadbeef')
+
+  expect(calls.some((argv) => argv.slice(0, 3).join(' ') === 'gh run rerun')).toBe(false)
+})
+
+test('keeps a passed rehearsal when the rerun request fails', async () => {
+  const error = spyOn(console, 'error').mockImplementation(() => {})
+  const runner: RehearsalCommandRunner = async (argv) => {
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[1] === 'machine' && argv[2] === 'run')
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    if (argv[0] === 'flyctl' && argv[1] === 'logs')
+      return { exitCode: 0, stdout: passOutput, stderr: '' }
+    if (argv.includes('repos/{owner}/{repo}/pulls?state=open&per_page=100'))
+      return { exitCode: 0, stdout: '1931\n', stderr: '' }
+    if (argv.includes('repos/{owner}/{repo}/commits/deadbeef/check-runs')) {
+      return {
+        exitCode: 0,
+        stdout: '7788\tfailure\thttps://github.com/example/repo/actions/runs/5566/job/7788\n',
+        stderr: '',
+      }
+    }
+    if (argv.slice(0, 3).join(' ') === 'gh run rerun')
+      return { exitCode: 1, stdout: '', stderr: 'permission denied' }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  try {
+    await expect(
+      runRecordRehearsal({
+        token: 'sealed-token',
+        runner,
+        machineDetails: async () => ({ events: [{ request: { exit_event: { exit_code: 0 } } }] }),
+      }),
+    ).resolves.toMatchObject({ hash, pending: 1 })
+    expect(error).toHaveBeenCalledWith(
+      'record rehearsal passed; rerun request failed: gh run rerun 5566 --job 7788 failed: permission denied; rerun it with gh run rerun 5566 --job 7788',
+    )
+  } finally {
+    error.mockRestore()
+  }
 })
 
 test('refuses a dirty tree before starting a machine', async () => {
