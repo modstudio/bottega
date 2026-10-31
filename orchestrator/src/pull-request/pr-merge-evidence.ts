@@ -2,6 +2,7 @@
 /** Records evidence that remains valid once the forge has accepted a merge. */
 
 import type { Database } from 'bun:sqlite'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { PullRequestChange } from './pr-admission.ts'
 import { pullRequestCiIncompleteMessage, pullRequestCiRetryCommand } from './pr-ci-record.ts'
 
@@ -60,4 +61,15 @@ export function recordPostMergeEvidence(input: {
     recordingError ??= incomplete
   }
   return recordingError
+}
+
+/** Record durable evidence before reporting a merge whose commit lookup failed. */
+export function refuseMergedWithoutCommit(
+  input: Parameters<typeof recordPostMergeEvidence>[0] & { cause: unknown; target: string },
+): never {
+  recordPostMergeEvidence(input)
+  const detail = input.cause instanceof Error ? input.cause.message : String(input.cause)
+  throw new Error(
+    `pull request #${input.pullRequest.number} merged, but the merge commit could not be read: ${detail}; retry with: ${PLATFORM_SLUG} pr merge ${input.target}`,
+  )
 }

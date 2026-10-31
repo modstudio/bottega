@@ -96,7 +96,7 @@ import {
   githubForgeVisibilityLookup,
 } from './project-visibility.ts'
 
-export { resolvedWorktreeTool } from './project-worktree-resolution.ts'
+export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-resolution.ts'
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {

@@ -26,7 +26,6 @@ import {
   type SettingsPatchEffect,
   settingsPatchEffect,
 } from './project-settings-patch.ts'
-import { projectLifecycleForm } from './project-worktree-resolution.ts'
 import {
   assertProjectRename,
   assertRegisterBranches,
@@ -35,6 +34,7 @@ import {
   type Project,
   type ProjectSettings,
   projectByName,
+  projectLifecycleForm,
   projectRowByName,
   projects,
   pushProjects,

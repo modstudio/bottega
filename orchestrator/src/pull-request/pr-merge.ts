@@ -57,7 +57,11 @@ import {
   triageRefusal,
 } from './pr-admission.ts'
 import { recordPullRequestCi } from './pr-ci-record.ts'
-import { type PullRequestMergeFacts, recordPostMergeEvidence } from './pr-merge-evidence.ts'
+import {
+  type PullRequestMergeFacts,
+  recordPostMergeEvidence,
+  refuseMergedWithoutCommit,
+} from './pr-merge-evidence.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 
@@ -892,8 +896,9 @@ function completeMerge(input: {
   releaseRequired: boolean
 }): PullRequestMergeOutcome {
   let pullRequest: PullRequestMergeFacts | undefined
-  let mergeCommit: string
+  let mergeCommit = ''
   let mergeCommitLookupError: unknown
+  let mergeCommitLookupFailed = false
   let requeueOutput: string | undefined
   let admittedChange: PullRequestChange
   try {
@@ -912,7 +917,10 @@ function completeMerge(input: {
       admittedChange = admitViewedPullRequest(pullRequest, input)
       const merged = mergeAdmittedHead({ ...input, pullRequest })
       if (merged.mergeCommit) mergeCommit = merged.mergeCommit
-      else mergeCommitLookupError = merged.mergeCommitLookupError
+      else {
+        mergeCommitLookupFailed = true
+        mergeCommitLookupError = merged.mergeCommitLookupError
+      }
       requeueOutput = merged.requeueOutput
     }
   } catch (cause) {
@@ -923,21 +931,16 @@ function completeMerge(input: {
       adapter: input.adapter,
     })
   }
-  if (mergeCommitLookupError) {
-    recordPostMergeEvidence({
+  if (mergeCommitLookupFailed) {
+    refuseMergedWithoutCommit({
       adapter: input.adapter,
       change: admittedChange!,
       pullRequest: pullRequest!,
       database: input.database,
       projectName: input.project.name,
+      cause: mergeCommitLookupError,
+      target: input.target,
     })
-    const detail =
-      mergeCommitLookupError instanceof Error
-        ? mergeCommitLookupError.message
-        : String(mergeCommitLookupError)
-    throw new Error(
-      `pull request #${pullRequest!.number} merged, but the merge commit could not be read: ${detail}; retry with: ${PLATFORM_SLUG} pr merge ${input.target}`,
-    )
   }
   return mergedPullRequestOutput({
     adapter: input.adapter,
