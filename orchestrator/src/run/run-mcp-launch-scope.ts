@@ -14,7 +14,7 @@ import {
 import { codexMcpMode } from './run-mcp-mode.ts'
 import { grokReaderServersForRun, projectMcpServerName } from './run-worker-home.ts'
 
-export const PROJECT_MCP_UNSUPPORTED_WRITER_ADVICE =
+const PROJECT_MCP_UNSUPPORTED_WRITER_ADVICE =
   'only codex and grok CLI writers receive proxied project servers; use one of those launches or declare the server without inline credentials'
 
 /** Resolve harness and transport facts into the sandbox's writer-proxy decision. */
