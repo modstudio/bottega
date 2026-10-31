@@ -263,7 +263,7 @@ function git(repo: string, ...args: string[]): string {
   return result.stdout.toString().trim()
 }
 
-test('identifies an ancestor commit first and falls back to patch identity after a rebase', () => {
+test('prefers a recorded pre-rebase pin and uses identity when the pin is absent', () => {
   const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-key-'))
   const database = migratedTestDatabase()
   try {
@@ -393,8 +393,19 @@ test('identifies an ancestor commit first and falls back to patch identity after
       project: 'fixture',
       branch: rebasedBranch,
     })
-    expect(rebasedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
-    git(repo, 'update-ref', pinRef(rebasedRunId), rebasedReviewed)
+    expect(rebasedFacts).toMatchObject({ reviewedTip: originalReviewed, fixFiles: [] })
+    git(repo, 'update-ref', '-d', pinRef(rebasedRunId))
+    expect(
+      gatherPostFixReviewFacts({
+        database,
+        repo,
+        to: rebasedReviewed,
+        trunkRef: 'main',
+        project: 'fixture',
+        branch: rebasedBranch,
+      }),
+    ).toMatchObject({ reviewedTip: rebasedReviewed, fixFiles: [] })
+    git(repo, 'update-ref', pinRef(rebasedRunId), originalReviewed)
     database.query('UPDATE run SET review_ref=? WHERE record_id=?').run(rebasedBranch, rebasedRunId)
     mkdirSync(join(repo, 'critical'))
     writeFileSync(join(repo, 'critical/fix.ts'), 'export const fixed = true\n')
@@ -409,7 +420,7 @@ test('identifies an ancestor commit first and falls back to patch identity after
       project: 'fixture',
       branch: rebasedBranch,
     })
-    expect(fixedFacts).toMatchObject({ reviewedTip: rebasedReviewed })
+    expect(fixedFacts).toMatchObject({ reviewedTip: originalReviewed })
     expect(
       postFixReviewDecision({
         facts: fixedFacts,
@@ -424,9 +435,203 @@ test('identifies an ancestor commit first and falls back to patch identity after
       }),
     ).toMatchObject({
       kind: 're-lens',
-      reviewedTip: rebasedReviewed,
+      reviewedTip: originalReviewed,
       tierThreePaths: ['critical/fix.ts'],
     })
+  } finally {
+    database.close()
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+function recordCompletedReview(input: {
+  database: ReturnType<typeof migratedTestDatabase>
+  projectRecordId: string
+  repo: string
+  branch: string
+  reviewed: string
+  paths: string[]
+}): string {
+  const base = git(input.repo, 'merge-base', 'main', input.reviewed)
+  const identity = measureChangeIdentity(input.repo, base, input.reviewed)
+  if (!identity) throw new Error('reviewed change has no identity')
+  const runId = newRecordId()
+  const reviewRecordId = newRecordId()
+  input.database
+    .query(
+      `INSERT INTO run
+         (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,
+          repo,project_record_id,branch,launch_key,base_commit,input_tree,head_commit)
+       VALUES (?,1,'2026-10-22','codex','review-lens','sha',1,'head','ok',
+          'fixture',?,?, 'AB-3097',?,?,?)`,
+    )
+    .run(runId, input.projectRecordId, input.branch, base, input.reviewed, input.reviewed)
+  input.database
+    .query(
+      `INSERT INTO review (record_id,number,recorded_at,completed_at,tier,patch_id,path_set)
+       VALUES (?,1,'2026-10-22T00:00:00Z','2026-10-22T01:00:00Z',3,?,?)`,
+    )
+    .run(reviewRecordId, identity.patchId, serializePathSet(identity.paths))
+  input.database
+    .query(
+      `INSERT INTO review_lens
+         (record_id,review_record_id,run_record_id,lens,agent,standards_read,files_covered,
+          commands_run,could_not_verify)
+       VALUES (?,?,?,'correctness','codex','[]',?,'[]','[]')`,
+    )
+    .run(newRecordId(), reviewRecordId, runId, JSON.stringify(input.paths))
+  git(input.repo, 'update-ref', pinRef(runId), input.reviewed)
+  return runId
+}
+
+test('re-lenses an unchanged branch patch that overlaps cleanly rebased trunk work', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-overlap-'))
+  const database = migratedTestDatabase()
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
+    git(repo, 'config', 'user.name', 'Fixture')
+    mkdirSync(join(repo, 'critical'))
+    writeFileSync(
+      join(repo, 'critical/shared.ts'),
+      'export const first = 1\nconst two = 2\nconst three = 3\nconst four = 4\nconst five = 5\nexport const last = 1\n',
+    )
+    git(repo, 'add', 'critical/shared.ts')
+    git(repo, 'commit', '-m', 'base')
+    const branch = `orch/${crypto.randomUUID()}`
+    git(repo, 'checkout', '-b', branch)
+    writeFileSync(
+      join(repo, 'critical/shared.ts'),
+      'export const first = 1\nconst two = 2\nconst three = 3\nconst four = 4\nconst five = 5\nexport const branch = true\nexport const last = 1\n',
+    )
+    git(repo, 'add', 'critical/shared.ts')
+    git(repo, 'commit', '-m', 'reviewed branch change')
+    const reviewed = git(repo, 'rev-parse', 'HEAD')
+    const projectRecordId = newRecordId()
+    database
+      .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture',?,'{}')")
+      .run(projectRecordId, repo)
+    recordCompletedReview({
+      database,
+      projectRecordId,
+      repo,
+      branch,
+      reviewed,
+      paths: ['critical/shared.ts'],
+    })
+    git(repo, 'checkout', 'main')
+    writeFileSync(
+      join(repo, 'critical/shared.ts'),
+      'export const first = 2\nconst two = 2\nconst three = 3\nconst four = 4\nconst five = 5\nexport const last = 1\n',
+    )
+    git(repo, 'add', 'critical/shared.ts')
+    git(repo, 'commit', '-m', 'advance trunk on shared path')
+    git(repo, 'checkout', branch)
+    git(repo, 'rebase', 'main')
+    const rebased = git(repo, 'rev-parse', 'HEAD')
+    const facts = gatherPostFixReviewFacts({
+      database,
+      repo,
+      to: rebased,
+      trunkRef: 'main',
+      project: 'fixture',
+      branch,
+    })
+
+    expect(facts).toMatchObject({
+      reviewedTip: reviewed,
+      fixFiles: [{ path: 'critical/shared.ts' }],
+    })
+    expect(
+      postFixReviewDecision({
+        facts,
+        tier: 3,
+        review: {
+          lenses: [],
+          risk: {
+            paths: [{ pattern: '^critical/', tier: 3, reason: 'critical surface' }],
+            unlisted: 2,
+          },
+        },
+      }),
+    ).toMatchObject({
+      kind: 're-lens',
+      fixPaths: ['critical/shared.ts'],
+      tierThreePaths: ['critical/shared.ts'],
+    })
+  } finally {
+    database.close()
+    rmSync(repo, { recursive: true, force: true })
+  }
+})
+
+test('a changed rebase identity keeps the recorded pin through a later rename', () => {
+  const repo = mkdtempSync(join(tmpdir(), 'orch-review-post-fix-pin-'))
+  const database = migratedTestDatabase()
+  try {
+    git(repo, 'init', '-b', 'main')
+    git(repo, 'config', 'user.email', 'fixture@example.com')
+    git(repo, 'config', 'user.name', 'Fixture')
+    mkdirSync(join(repo, 'migrations'))
+    writeFileSync(join(repo, 'migrations/old.sql'), 'base\n')
+    git(repo, 'add', 'migrations/old.sql')
+    git(repo, 'commit', '-m', 'base')
+    const branch = `orch/${crypto.randomUUID()}`
+    git(repo, 'checkout', '-b', branch)
+    writeFileSync(join(repo, 'migrations/old.sql'), 'branch reviewed\n')
+    git(repo, 'add', 'migrations/old.sql')
+    git(repo, 'commit', '-m', 'reviewed migration')
+    const reviewed = git(repo, 'rev-parse', 'HEAD')
+    const projectRecordId = newRecordId()
+    database
+      .query("INSERT INTO project (record_id,name,path,settings) VALUES (?,'fixture',?,'{}')")
+      .run(projectRecordId, repo)
+    recordCompletedReview({
+      database,
+      projectRecordId,
+      repo,
+      branch,
+      reviewed,
+      paths: ['migrations/old.sql'],
+    })
+    git(repo, 'checkout', 'main')
+    writeFileSync(join(repo, 'migrations/old.sql'), 'trunk advanced\n')
+    git(repo, 'add', 'migrations/old.sql')
+    git(repo, 'commit', '-m', 'conflicting trunk change')
+    git(repo, 'checkout', branch)
+    const rebase = spawnFixtureGitSync(['rebase', 'main'], { cwd: repo })
+    expect(rebase.exitCode).not.toBe(0)
+    writeFileSync(join(repo, 'migrations/old.sql'), 'resolved branch identity\n')
+    git(repo, 'add', 'migrations/old.sql')
+    git(repo, '-c', 'core.editor=true', 'rebase', '--continue')
+    git(repo, 'mv', 'migrations/old.sql', 'migrations/new.sql')
+    writeFileSync(join(repo, 'migrations/new.sql'), 'renamed and changed\n')
+    git(repo, 'add', 'migrations/new.sql')
+    git(repo, 'commit', '-m', 'rename and change migration')
+    const current = git(repo, 'rev-parse', 'HEAD')
+    const facts = gatherPostFixReviewFacts({
+      database,
+      repo,
+      to: current,
+      trunkRef: 'main',
+      project: 'fixture',
+      branch,
+    })
+
+    expect(facts).toMatchObject({ reviewedTip: reviewed })
+    expect(
+      postFixReviewDecision({
+        facts,
+        tier: 3,
+        review: {
+          lenses: [],
+          risk: {
+            paths: [{ pattern: '^migrations/', tier: 3, reason: 'migration surface' }],
+            unlisted: 2,
+          },
+        },
+      }),
+    ).toMatchObject({ kind: 're-lens', reviewedTip: reviewed })
   } finally {
     database.close()
     rmSync(repo, { recursive: true, force: true })
