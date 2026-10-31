@@ -1,6 +1,8 @@
 // concern: workflow checkout evidence diagnostics
 /** Classifies checkout provenance and names an outside-change remedy. */
 
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+
 export type CheckoutResolution = {
   project: string | null
   branch: string | null
@@ -78,8 +80,16 @@ export function checkoutOutsideChangeRefusal(
       `run \`git pull --ff-only origin ${checkout.landingBranch}\` in that checkout`
     )
   }
+  if (checkout.landingCommit && checkout.landingIsHeadOrAncestor === false) {
+    return (
+      `${flag} checkout ${checkout.checkoutPath} at its head does not yet contain landing ` +
+      `${checkout.landingCommit} on ${checkout.landingBranch}; run ` +
+      `\`${PLATFORM_SLUG} tree refresh ${checkout.checkoutPath}\`, then rerun the same command`
+    )
+  }
   return (
     `${flag} head_commit does not belong to ${identityBranch} or its recorded landing; ` +
-    `use evidence recorded from that change's checkout`
+    `use evidence recorded from that change's checkout by rerunning with ` +
+    `\`${PLATFORM_SLUG} workflow exec --cwd <a checkout of ${identityBranch}> -- <command>\``
   )
 }

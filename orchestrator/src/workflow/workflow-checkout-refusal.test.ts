@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   checkoutOutsideChangeRefusal,
   classifyCheckoutEvidence,
@@ -70,6 +71,41 @@ test('an unavailable landing commit names the condition and pull remedy', () => 
     'landing commit dd3e2d8050120bf3d676f86257d0c92c0c5bff41 is not available in /fixture/main',
   )
   expect(refusal).toContain('git pull --ff-only origin main')
+})
+
+test('every outside-change refusal path names a runnable remedy command', () => {
+  const base = {
+    project: 'fixture',
+    branch: 'main',
+    checkoutPath: '/fixture/main',
+    headIsTipOrAncestor: false,
+    landingBranch: 'main',
+  }
+  const landingCommit = 'dd3e2d8050120bf3d676f86257d0c92c0c5bff41'
+  const refusals = [
+    checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
+      ...base,
+      landingCommit,
+      landingIsHeadOrAncestor: undefined,
+    }),
+    checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
+      ...base,
+      landingCommit,
+      landingIsHeadOrAncestor: false,
+    }),
+    checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
+      ...base,
+      landingCommit: null,
+      landingIsHeadOrAncestor: false,
+    }),
+  ]
+
+  for (const refusal of refusals) {
+    const command = refusal.match(/`([^`]+)`/)?.[1]
+    expect(command?.startsWith(`${PLATFORM_SLUG} `) || command?.startsWith('git ')).toBe(true)
+  }
+  expect(refusals[1]).toContain(`${PLATFORM_SLUG} tree refresh ${base.checkoutPath}`)
+  expect(refusals[1]).toContain(landingCommit)
 })
 
 test('an existing recorded cwd answers checkout questions', () => {

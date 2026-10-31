@@ -108,7 +108,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/trackers.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-checkout-refusal.ts', []),
+  module('orchestrator/src/workflow/workflow-checkout-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-checkout-landing.ts', [
     'bun:sqlite',
     '../branch/merged-pull-request.ts',
