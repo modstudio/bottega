@@ -1,7 +1,9 @@
 // concern: workflow floor evidence
 /** Resolves a user-facing probe number or UUID once, at the edge. */
 
+import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 
 type ProbeDatabase = {
   query(sql: string): unknown
@@ -18,31 +20,43 @@ export type ParsedProbeArtifact = {
   identifier: ParsedProbeIdentifier
 }
 
-const ACCEPTED_PROBE_IDENTIFIERS = 'a positive decimal probe number or a full probe UUID'
+const ACCEPTED_PROBE_IDENTIFIERS =
+  'a positive decimal probe number, name/number, or a full probe UUID'
 
-function parseProbeIdentifier(input: string | number): ParsedProbeIdentifier {
-  const given = String(input)
+function parseProbeIdentifier(
+  input: string | number,
+  names: MachineIdentifierNames | null = storedMachineNames(),
+): ParsedProbeIdentifier {
+  const original = String(input)
+  const given = stripMachineLabel(original, names)
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (Number.isSafeInteger(number) && number > 0) return { kind: 'number', number }
   }
   if (hasRecordIdShape(given)) return { kind: 'record-id', recordId: given.toLowerCase() }
   throw new Error(
-    `invalid probe identifier ${JSON.stringify(given)}: expected ${ACCEPTED_PROBE_IDENTIFIERS}`,
+    `invalid probe identifier ${JSON.stringify(original)}: expected ${ACCEPTED_PROBE_IDENTIFIERS}`,
   )
 }
 
-export function parseProbeArtifact(artifact: string): ParsedProbeArtifact | undefined {
+export function parseProbeArtifact(
+  artifact: string,
+  names: MachineIdentifierNames | null = storedMachineNames(),
+): ParsedProbeArtifact | undefined {
   const parsed = /^(probe|exec):(.+)$/i.exec(artifact.trim())
   if (!parsed) return undefined
   return {
     kind: parsed[1]!.toLowerCase() as ParsedProbeArtifact['kind'],
-    identifier: parseProbeIdentifier(parsed[2]!),
+    identifier: parseProbeIdentifier(parsed[2]!, names),
   }
 }
 
-export function resolveProbeIdentifier(database: ProbeDatabase, input: string | number): string {
-  const parsed = parseProbeIdentifier(input)
+export function resolveProbeIdentifier(
+  database: ProbeDatabase,
+  input: string | number,
+  names: MachineIdentifierNames | null = storedMachineNames(),
+): string {
+  const parsed = parseProbeIdentifier(input, names)
   if (parsed.kind === 'number') {
     const query = database.query('SELECT record_id FROM probe WHERE number=?') as ProbeRecordIdQuery
     const row = query.get(parsed.number)

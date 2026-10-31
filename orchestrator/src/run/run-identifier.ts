@@ -2,11 +2,8 @@
 /** Resolves a user-facing run number or UUID to the run UUID. */
 
 import type { Database } from 'bun:sqlite'
-import {
-  ACCEPTED_RUN_IDENTIFIERS,
-  classifyRunIdentifier,
-  parseRunIdentifier,
-} from './run-identifier-grammar.ts'
+import { ACCEPTED_RUN_IDENTIFIERS } from './run-identifier-grammar.ts'
+import { classifyRunIdentifier, parseRunIdentifier } from './run-identifier-names.ts'
 
 export { classifyRunIdentifier, parseRunIdentifier }
 

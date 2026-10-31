@@ -54,6 +54,7 @@ export const settingsModules: SettingsModule[] = [
     '../../../shared/ship-to.ts',
     '../../../shared/trust-list.ts',
     '../record/machine-name-command.ts',
+    '../record/machine-name.ts',
   ]),
   module('orchestrator/src/commands/config.ts', [
     '../../../shared/brand.ts',

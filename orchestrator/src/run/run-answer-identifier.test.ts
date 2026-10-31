@@ -27,6 +27,13 @@ const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question
 })
 
 describe('answer identifier parse', () => {
+  test('composes machine labels with question grammar', () => {
+    const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
+    expect(parseAnswerIdentifier('mine/q42', names)).toEqual({
+      kind: 'question-number',
+      number: 42,
+    })
+  })
   test('owns q-prefix grammar and accepts the run identifier forms', () => {
     const recordId = newRecordId()
     expect(parseAnswerIdentifier('q42')).toEqual({ kind: 'question-number', number: 42 })

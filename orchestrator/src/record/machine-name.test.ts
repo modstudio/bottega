@@ -1,11 +1,28 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
+  decideMachineLabel,
   decideMachineNameClaim,
   defaultShortName,
   displayNameRefusal,
   shortNameRefusal,
 } from './machine-name.ts'
+
+test('decides current, former, foreign, absent, and malformed machine labels', () => {
+  const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
+  expect(decideMachineLabel('mine/42', names)).toEqual({ kind: 'bare', remainder: '42' })
+  expect(decideMachineLabel('old-mine/q7', names)).toEqual({ kind: 'bare', remainder: 'q7' })
+  expect(decideMachineLabel('other/123', names)).toEqual({
+    kind: 'refused',
+    reason:
+      "`other/123` names a row on machine `other`; this command acts only on this machine's (`mine`) rows",
+  })
+  expect(decideMachineLabel('mine/42', null)).toEqual({
+    kind: 'refused',
+    reason: expect.stringContaining('record space switch --short-name'),
+  })
+  expect(decideMachineLabel('Bad/42', names)).toEqual({ kind: 'not-label' })
+})
 
 test('validates machine names in both directions', () => {
   expect(shortNameRefusal('office-2')).toBeNull()

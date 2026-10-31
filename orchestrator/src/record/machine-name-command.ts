@@ -1,14 +1,13 @@
 // concern: machine-name-command
 /** Applies machine rename and retirement after command-edge validation. */
 
-import type { StoredMachineNames } from '../../../shared/machine-config.ts'
 import { writeMachineNames } from '../../../shared/machine-config.ts'
 import { machineId, machineNames } from './machine-identity.ts'
-import { displayNameRefusal, shortNameRefusal } from './machine-name.ts'
+import { displayNameRefusal, type MachineNamePair, shortNameRefusal } from './machine-name.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
 
-export async function claimCurrentMachineNames(names: StoredMachineNames): Promise<void> {
+export async function claimCurrentMachineNames(names: MachineNamePair): Promise<void> {
   const result = await syncRecord({ identity: { id: machineId(), ...names } })
   if (result.machineNameRefusal) throw new Error(result.machineNameRefusal)
   writeMachineNames(names)

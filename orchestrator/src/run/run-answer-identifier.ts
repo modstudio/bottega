@@ -2,8 +2,10 @@
 /** Resolves the identifier accepted by `question answer` without delivering a ruling. */
 
 import type { Database } from 'bun:sqlite'
+import { storedMachineNames } from '../../../shared/machine-config.ts'
+import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 import { questionOpenSql } from './question-open.ts'
-import { classifyRunIdentifier } from './run-identifier.ts'
+import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
 
 export type ParsedAnswerIdentifier =
   | { kind: 'question-number'; number: number }
@@ -51,19 +53,23 @@ function explicitQuestionRemedy(questionNumbers: number[]): string {
   return `answer ${questionNumbers.length === 1 ? 'it' : 'them'} explicitly with ${references}`
 }
 
-export function parseAnswerIdentifier(input: string | number): ParsedAnswerIdentifier {
-  const given = String(input)
+export function parseAnswerIdentifier(
+  input: string | number,
+  names: MachineIdentifierNames | null = storedMachineNames(),
+): ParsedAnswerIdentifier {
+  const original = String(input)
+  const given = stripMachineLabel(original, names)
   const question = given.match(/^q([0-9]+)$/)
   if (question) {
     const number = Number(question[1])
     if (Number.isSafeInteger(number) && number > 0) return { kind: 'question-number', number }
   }
-  const runIdentifier = classifyRunIdentifier(input)
+  const runIdentifier = classifyBareRunIdentifier(given)
   if (runIdentifier?.kind === 'number') return { kind: 'run-number', number: runIdentifier.number }
   if (runIdentifier?.kind === 'record-id')
     return { kind: 'record-id', recordId: runIdentifier.recordId }
   throw new Error(
-    `invalid answer identifier ${JSON.stringify(given)}: expected q followed by a positive decimal question number, a positive decimal run number, or a full run or question UUID`,
+    `invalid answer identifier ${JSON.stringify(original)}: expected q followed by a positive decimal question number, name/q followed by a positive decimal question number, a positive decimal run number, name/number, or a full run or question UUID`,
   )
 }
 

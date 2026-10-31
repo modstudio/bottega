@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +11,7 @@ import {
   listMachineEntries,
   MACHINE_CONFIG,
   machineId,
+  parseFormerShortNames,
   readDelegationSettings,
   readMachinePermissions,
   readMachineValue,
@@ -18,13 +19,56 @@ import {
   setMachineAutonomy,
   setMachineValue,
   storedMachineId,
+  storedMachineNames,
+  writeMachineNames,
 } from './machine-config.ts'
 
 const path = '/config/platform/machine.toml'
 const silent = () => {}
 const freshWarnings = () => new Set<string>()
 
+describe('stored machine names', () => {
+  let configRoot: string
+  let previousConfigRoot: string | undefined
+
+  beforeEach(() => {
+    previousConfigRoot = process.env[CONFIG_HOME_ENV]
+    configRoot = mkdtempSync(join(tmpdir(), 'machine-names-'))
+    process.env[CONFIG_HOME_ENV] = configRoot
+  })
+
+  afterEach(() => {
+    if (previousConfigRoot === undefined) delete process.env[CONFIG_HOME_ENV]
+    else process.env[CONFIG_HOME_ENV] = previousConfigRoot
+    rmSync(configRoot, { recursive: true, force: true })
+  })
+
+  test('writes and reads former names across renames without current names or duplicates', () => {
+    const id = '01990000-0000-7000-8000-000000001242'
+    setMachineValue('machine.id', id)
+    writeMachineNames({ shortName: 'machine-a', displayName: 'Machine A' })
+    writeMachineNames({ shortName: 'machine-b', displayName: 'Machine B' })
+    expect(storedMachineNames()).toEqual({
+      shortName: 'machine-b',
+      displayName: 'Machine B',
+      formerShortNames: ['machine-a'],
+    })
+    expect(storedMachineId()).toBe(id)
+
+    writeMachineNames({ shortName: 'machine-a', displayName: 'Machine A' })
+    expect(storedMachineNames()).toEqual({
+      shortName: 'machine-a',
+      displayName: 'Machine A',
+      formerShortNames: ['machine-b'],
+    })
+    expect(storedMachineId()).toBe(id)
+  })
+})
+
 describe('machine config resolution', () => {
+  test('former machine name parsing removes duplicate tokens', () => {
+    expect(parseFormerShortNames('old,older,old')).toEqual(['old', 'older'])
+  })
   test('machine identity lookup does not create config and carry-over is stable', () => {
     const root = mkdtempSync(join(tmpdir(), 'machine-id-'))
     try {
