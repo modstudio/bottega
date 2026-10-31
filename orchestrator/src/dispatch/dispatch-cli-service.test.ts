@@ -165,7 +165,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: '/projects/project/.claude/worktrees/DEV-1227',
         namedProject: null,
         cwdProject: { name: 'project', path: '/projects/project' },
-        shellProject: { name: 'project', path: '/projects/project' },
       },
       (cwd) => {
         checked.push(cwd)
@@ -189,7 +188,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: null,
         namedProject: { name: 'starship', path: '/projects/starship' },
         cwdProject: null,
-        shellProject: { name: 'atlas', path: '/projects/atlas' },
       },
       (cwd) => {
         checked.push(cwd)
@@ -217,7 +215,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: '/projects/starship/.claude/worktrees/STAR-42',
         namedProject: { name: 'starship', path: '/projects/starship' },
         cwdProject: { name: 'starship', path: '/projects/starship' },
-        shellProject: { name: 'atlas', path: '/projects/atlas' },
       },
       () => ({
         repoRoot: '/projects/starship',
@@ -241,7 +238,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: '/projects/starship',
         namedProject: null,
         cwdProject: { name: 'starship', path: '/projects/starship' },
-        shellProject: { name: 'atlas', path: '/projects/atlas' },
       },
       () => ({
         repoRoot: '/projects/starship',
@@ -265,7 +261,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: null,
         namedProject: null,
         cwdProject: null,
-        shellProject: { name: 'project', path: '/projects/project' },
       },
       () => mainCheckoutFacts,
     )

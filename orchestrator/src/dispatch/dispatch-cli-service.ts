@@ -167,7 +167,6 @@ export function resolveCallerCheckoutDecision(
     explicitCwd: string | null
     namedProject: { name: string; path: string } | null
     cwdProject: { name: string; path: string } | null
-    shellProject: { name: string; path: string } | null
   },
   checkoutFactsAt: (cwd: string) => ReturnType<typeof callerCheckoutFacts>,
 ): CallerCheckoutDecision {
@@ -200,7 +199,6 @@ function resolveCallerCheckout(
       explicitCwd: explicitCwd !== undefined ? selectedCwd : null,
       namedProject: explicitRepo ? projectByName(explicitRepo) : null,
       cwdProject: explicitCwd ? projectAt(selectedCwd) : null,
-      shellProject: projectAt(shellCwd),
     },
     callerCheckoutFacts,
   )
