@@ -5,13 +5,11 @@ SET options = jsonb_build_array(options)
 WHERE jsonb_typeof(options) = 'string'
   AND options #>> '{}' = '[withheld: secret-shaped content]';--> statement-breakpoint
 ALTER TABLE question FORCE ROW LEVEL SECURITY;--> statement-breakpoint
--- run.outside_worktree_writes stays NOT VALID because 81 historical rows are top-level jsonb strings holding JSON text whose decoded form contains \u0000, which jsonb cannot store, so they cannot be repaired into structured values.
+-- The checks that stay NOT VALID, and why, are declared in NEVER_VALIDATED_JSONB_CHECKS in scripts/check-record-jsonb-string-checks.ts.
 ALTER TABLE "branch_disposal" VALIDATE CONSTRAINT "branch_disposal_withheld_fields_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "contention" VALIDATE CONSTRAINT "contention_host_load_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "contention" VALIDATE CONSTRAINT "contention_withheld_fields_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "doc" VALIDATE CONSTRAINT "doc_source_files_not_json_string_check";--> statement-breakpoint
-ALTER TABLE "doc_revision" VALIDATE CONSTRAINT "doc_revision_related_subject_ids_not_json_string_check";--> statement-breakpoint
-ALTER TABLE "doc_revision" VALIDATE CONSTRAINT "doc_revision_source_files_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "landing" VALIDATE CONSTRAINT "landing_path_set_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "landing" VALIDATE CONSTRAINT "landing_steps_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "landing" VALIDATE CONSTRAINT "landing_withheld_fields_not_json_string_check";--> statement-breakpoint

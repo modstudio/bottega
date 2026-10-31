@@ -6,6 +6,31 @@ import ts from 'typescript'
 
 export type JsonbColumn = { table: string; column: string }
 
+export const NEVER_VALIDATED_JSONB_CHECKS: readonly {
+  table: string
+  column: string
+  reason: string
+}[] = [
+  {
+    table: 'run',
+    column: 'outside_worktree_writes',
+    reason:
+      '81 historical rows are top-level strings whose decoded JSON contains \\u0000, which jsonb cannot store',
+  },
+  {
+    table: 'doc_revision',
+    column: 'source_files',
+    reason:
+      'historical non-array strings left by the dev_1303 repair; the 2026-10-31 record rehearsal failed its VALIDATE and the row count was not established',
+  },
+  {
+    table: 'doc_revision',
+    column: 'related_subject_ids',
+    reason:
+      'historical non-array strings left by the dev_1303 repair; the 2026-10-31 record rehearsal failed its VALIDATE and the row count was not established',
+  },
+]
+
 function callNamed(expression: ts.Expression, name: string): ts.CallExpression | undefined {
   let current = expression
   while (ts.isCallExpression(current) || ts.isPropertyAccessExpression(current)) {
@@ -84,6 +109,46 @@ export function missingJsonbStringChecks(
     .sort()
 }
 
+function columnKey(column: JsonbColumn): string {
+  return `${column.table}.${column.column}`
+}
+
+function hasValidation(migrationSql: string, column: JsonbColumn): boolean {
+  const name = jsonbStringCheckName(column)
+  return migrationSql.includes(`ALTER TABLE "${column.table}" VALIDATE CONSTRAINT "${name}"`)
+}
+
+export function jsonbStringValidationFailures(
+  schemas: readonly { file: string; source: string }[],
+  migrationSql: string,
+  neverValidated: readonly { table: string; column: string }[] = NEVER_VALIDATED_JSONB_CHECKS,
+): string[] {
+  const columns = schemas.flatMap(({ file, source }) => jsonbColumns(source, file))
+  const hosted = new Set(columns.map(columnKey))
+  const excluded = new Set(neverValidated.map(columnKey))
+  const failures = neverValidated
+    .filter((column) => !hosted.has(columnKey(column)))
+    .map(
+      (column) =>
+        `${columnKey(column)}: NEVER_VALIDATED_JSONB_CHECKS entry is not a hosted jsonb column`,
+    )
+
+  for (const column of columns) {
+    const key = columnKey(column)
+    const validated = hasValidation(migrationSql, column)
+    if (excluded.has(key) && validated) {
+      failures.push(
+        `${key}: NEVER_VALIDATED_JSONB_CHECKS columns must not have a VALIDATE statement`,
+      )
+    } else if (!excluded.has(key) && !validated) {
+      failures.push(
+        `${key}: hosted jsonb columns not in NEVER_VALIDATED_JSONB_CHECKS require a VALIDATE statement`,
+      )
+    }
+  }
+  return failures.sort()
+}
+
 function run(): number {
   const root = fileURLToPath(new URL('..', import.meta.url))
   const record = join(root, 'shared', 'record')
@@ -102,14 +167,21 @@ function run(): number {
     .map((file) => readFileSync(file, 'utf8'))
     .join('\n')
   const missing = missingJsonbStringChecks(schemas, migrationSql)
-  if (missing.length === 0) {
+  const validationFailures = jsonbStringValidationFailures(schemas, migrationSql)
+  if (missing.length === 0 && validationFailures.length === 0) {
     console.log(`record jsonb string checks: ${columns.length} columns guarded`)
     return 0
   }
-  console.error(
-    'record jsonb string checks: every hosted jsonb column needs its named NOT VALID string-refusing CHECK',
-  )
-  for (const column of missing) console.error(`- ${column}`)
+  if (missing.length > 0) {
+    console.error(
+      'record jsonb string checks: every hosted jsonb column needs its named NOT VALID string-refusing CHECK',
+    )
+    for (const column of missing) console.error(`- ${column}`)
+  }
+  if (validationFailures.length > 0) {
+    console.error('record jsonb string checks: VALIDATE statements violate the validation policy')
+    for (const failure of validationFailures) console.error(`- ${failure}`)
+  }
   return 1
 }
 
