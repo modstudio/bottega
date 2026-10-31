@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { blockedByRetiredParentRows, quarantinedParentHolds } from '../record/outbox-dependency.ts'
+import { OUTBOX_ERROR_CAUSE_SEPARATOR } from '../record/outbox-failure.ts'
 import { heldOutboxKinds } from '../record/outbox-held.ts'
 import {
   HOSTED_API_RELEASE_COMMAND,
@@ -10,6 +11,19 @@ import {
 } from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
 import type { AddressedMonitorCondition } from './monitor-types.ts'
+
+export const QUARANTINE_ERROR_SUMMARY_CHARS = 256
+
+export function quarantineErrorSummary(error: string): string {
+  const separatorIndex = error.lastIndexOf(OUTBOX_ERROR_CAUSE_SEPARATOR)
+  const summary =
+    separatorIndex === -1
+      ? (error.split('\n', 1)[0] ?? '')
+      : error.slice(separatorIndex + OUTBOX_ERROR_CAUSE_SEPARATOR.length)
+  return summary.length <= QUARANTINE_ERROR_SUMMARY_CHARS
+    ? summary
+    : `${summary.slice(0, QUARANTINE_ERROR_SUMMARY_CHARS - 1)}…`
+}
 
 function quarantinedParentRemedy(id: number): string {
   return `retry it with ${PLATFORM_SLUG} record outbox retry orch:${id}, or retire it with ${PLATFORM_SLUG} record outbox retire orch:${id} --reason <text>`
@@ -21,8 +35,8 @@ export function outboxQuarantineConditions(database: Database): AddressedMonitor
     subject: `outbox:${row.id}`,
     since: row.quarantinedAt,
     ageMs: null,
-    detail: `${row.kind} outbox row ${row.id} is quarantined: ${row.error}`,
-    action: `run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with an audited reason`,
+    detail: `${row.kind} outbox row ${row.id} is quarantined: ${quarantineErrorSummary(row.error)}`,
+    action: `run ${PLATFORM_SLUG} record outbox retry orch:${row.id}, or retire it with an audited reason; ${PLATFORM_SLUG} record outbox shows the full error and payload`,
     ownerSession: null,
   }))
 }

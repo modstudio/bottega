@@ -82,14 +82,15 @@ import { finishMonitorResult as finish } from './monitor-result.ts'
 import { observeRetrievalPins } from './monitor-retrieval-pins.ts'
 import { runTokenJumpConditions } from './monitor-run-token-jump.ts'
 import { strayWorktreeConditions } from './monitor-stray-worktrees.ts'
-import type {
-  AddressedMonitorCondition,
-  HumanMonitorCondition,
-  MonitorCondition,
-  MonitorHistoryRow,
-  MonitorNoticeKind,
-  MonitorResult,
-  UnaddressedMonitorCondition,
+import {
+  type AddressedMonitorCondition,
+  boundedConditionDetail,
+  type HumanMonitorCondition,
+  type MonitorCondition,
+  type MonitorHistoryRow,
+  type MonitorNoticeKind,
+  type MonitorResult,
+  type UnaddressedMonitorCondition,
 } from './monitor-types.ts'
 import { observedOrphanComposeConditions } from './orphan-compose-observation.ts'
 import {
@@ -489,7 +490,7 @@ export function formatMonitorPass(heading: string, conditions: HumanMonitorCondi
     const sev = condition.severity ? `  ${condition.severity}` : ''
     const owner = condition.ownerSession ? `  owner ${condition.ownerSession}` : ''
     lines.push(
-      `  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}\n    ${condition.detail}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`,
+      `  ${condition.kind}${sev}  ${condition.subject}  ${old}${owner}\n    ${boundedConditionDetail(condition.detail)}\n    ${condition.action}${condition.issueKey ? `; ${condition.issueKey}` : ''}`,
     )
   }
   return lines

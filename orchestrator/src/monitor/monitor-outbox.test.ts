@@ -9,7 +9,31 @@ import {
   outboxQuarantineConditions,
   outboxQuarantinedParentConditions,
   outboxRetiredParentConditions,
+  QUARANTINE_ERROR_SUMMARY_CHARS,
+  quarantineErrorSummary,
 } from './monitor-outbox.ts'
+
+test('summarizes a multi-link outbox error with its deepest cause', () => {
+  const deepestCause =
+    '[42501] new row violates row-level security policy (USING expression) for table "run"'
+  const error = `Failed query: INSERT INTO run (${Array.from({ length: 80 }, (_, index) => `column_${index}`).join(', ')})\nparams: ${'private-value,'.repeat(80)}\ncaused by: intermediate adapter error\ncaused by: ${deepestCause}`
+
+  expect(quarantineErrorSummary(error)).toBe(deepestCause)
+})
+
+test('leaves a short plain outbox error unchanged', () => {
+  const error = "delivery 'none' takes no review grades; remove the review grade fields"
+
+  expect(quarantineErrorSummary(error)).toBe(error)
+})
+
+test('bounds the first line of a multi-line plain outbox error', () => {
+  const firstLine = 'x'.repeat(QUARANTINE_ERROR_SUMMARY_CHARS + 20)
+
+  expect(quarantineErrorSummary(`${firstLine}\nparams: private-value`)).toBe(
+    `${'x'.repeat(QUARANTINE_ERROR_SUMMARY_CHARS - 1)}…`,
+  )
+})
 
 test('a quarantined outbox row is a clearing monitor condition', () => {
   const database = migratedTestDatabase()
@@ -26,6 +50,29 @@ test('a quarantined outbox row is a clearing monitor condition', () => {
       detail: expect.stringContaining('verdict refused'),
     }),
   ])
+  database.close()
+})
+
+test('a quarantined outbox condition excludes the stored SQL head', () => {
+  const database = migratedTestDatabase()
+  database
+    .query(
+      `INSERT INTO outbox (record_id,id,kind,row_id,payload,created_at) VALUES (?,9,'run','record-9','{}','2026-09-28T00:00:00.000Z')`,
+    )
+    .run(newRecordId())
+  quarantineOutboxRow(
+    database,
+    9,
+    '{}',
+    'Failed query: INSERT INTO run (payload) VALUES (?)\nparams: private-value\ncaused by: [42501] new row violates row-level security policy (USING expression) for table "run"',
+    '2026-09-28T00:01:00.000Z',
+  )
+
+  const [condition] = outboxQuarantineConditions(database)
+  expect(condition?.detail).toBe(
+    'run outbox row 9 is quarantined: [42501] new row violates row-level security policy (USING expression) for table "run"',
+  )
+  expect(condition?.detail).not.toContain('Failed query')
   database.close()
 })
 
