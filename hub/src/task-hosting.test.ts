@@ -812,6 +812,7 @@ describe('hosted-only task safety', () => {
       deleted_at: null,
       next_document_number: 1,
     }
+    const parentId = '01990000-0000-7000-8000-000000000200'
     applyHostedTaskChanges({
       tasks: [
         {
@@ -820,11 +821,28 @@ describe('hosted-only task safety', () => {
           key: 'DEV-992',
           title: 'child first',
           parent_key: 'DEV-991',
-          parent_id: '01990000-0000-7000-8000-000000000200',
+          parent_id: parentId,
         },
+      ],
+      comments: [],
+      documents: [],
+      statusEvents: [],
+      cursor: at,
+    })
+
+    expect(
+      db()
+        .query<{ parent_record_id: string | null }, []>(
+          "SELECT parent_record_id FROM task WHERE key='DEV-992'",
+        )
+        .get()?.parent_record_id,
+    ).toBeNull()
+
+    applyHostedTaskChanges({
+      tasks: [
         {
           ...common,
-          id: '01990000-0000-7000-8000-000000000200',
+          id: parentId,
           key: 'DEV-991',
           title: 'parent second',
           parent_key: null,
@@ -838,10 +856,10 @@ describe('hosted-only task safety', () => {
 
     expect(
       db()
-        .query<{ parent_record_id: string }, []>(
+        .query<{ parent_record_id: string | null }, []>(
           "SELECT parent_record_id FROM task WHERE key='DEV-992'",
         )
         .get()?.parent_record_id,
-    ).toBe('01990000-0000-7000-8000-000000000200')
+    ).toBe(parentId)
   })
 })

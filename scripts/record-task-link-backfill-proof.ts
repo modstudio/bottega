@@ -2,7 +2,7 @@ import type { Transaction } from '@electric-sql/pglite'
 import { CheckFailure } from './record-migration-failure.ts'
 
 export const taskLinkBackfill = '20261026112733_dev_1773_task_link_backfill'
-export const taskChildUuidMigration = '20261031212958_dev_1958_task_child_uuid'
+export const taskChildUuidMigration = '20261031214922_dev_1958_task_child_uuid'
 
 const ids = {
   machine: '01990000-0000-7000-8000-000000001783',
@@ -217,6 +217,15 @@ export async function proofTaskChildUuidMigration(
     WHERE id IN ('${childIds.child}','${childIds.triggerChild}')
     ORDER BY kind,id
   `)
+  const indexes = await transaction.query<{ indexname: string }>(`
+    SELECT indexname FROM pg_indexes
+    WHERE schemaname = 'public'
+      AND indexname IN (
+        'hub_task_comment_unlinked_task_key_idx',
+        'hub_task_document_unlinked_task_key_idx'
+      )
+    ORDER BY indexname
+  `)
   await transaction.exec(`
     ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
     ALTER TABLE hub_task_comment FORCE ROW LEVEL SECURITY;
@@ -236,6 +245,15 @@ export async function proofTaskChildUuidMigration(
   if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
     throw new CheckFailure(
       `DEV-1958 task-child UUID migration produced ${JSON.stringify(result.rows)}`,
+    )
+  }
+  const expectedIndexes = [
+    { indexname: 'hub_task_comment_unlinked_task_key_idx' },
+    { indexname: 'hub_task_document_unlinked_task_key_idx' },
+  ]
+  if (JSON.stringify(indexes.rows) !== JSON.stringify(expectedIndexes)) {
+    throw new CheckFailure(
+      `DEV-1958 task-child UUID migration indexes were ${JSON.stringify(indexes.rows)}`,
     )
   }
 }

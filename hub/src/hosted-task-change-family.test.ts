@@ -329,6 +329,36 @@ test('a later page applies upserts and advances the cursor in one transaction', 
   expect(report?.upsertsNoop).toBe(0)
 })
 
+test('a pulled task with an unlinked parent is cached and advances the cursor', async () => {
+  storeChangeCursor('space-one', '12')
+  const { fetch } = routeFetch({
+    changes: () =>
+      changePage({
+        next: 15,
+        changes: [
+          {
+            sequence: 15,
+            table: 'hub_task',
+            id: taskId,
+            op: 'upsert',
+            row: hostedTask({ parent_key: 'DEV-1239', parent_id: null }),
+          },
+        ],
+      }),
+  })
+
+  await pull(fetch)
+
+  expect(cursor('space-one')).toBe('15')
+  expect(
+    db()
+      .query<{ parent_record_id: string | null }, [string]>(
+        `SELECT parent_record_id FROM task WHERE record_id=?`,
+      )
+      .get(taskId),
+  ).toEqual({ parent_record_id: null })
+})
+
 test('a later page preserves pending fields and advances past a pending document delete', async () => {
   storeChangeCursor('space-one', '12')
   seedTask()

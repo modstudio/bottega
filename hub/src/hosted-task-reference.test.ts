@@ -27,30 +27,35 @@ describe('hosted task references', () => {
         idColumn: 'task_id',
         keyColumn: 'task_key',
         onTaskDelete: 'soft-delete-child',
+        keyFallback: false,
       },
       {
         table: 'hub_task_document',
         idColumn: 'task_id',
         keyColumn: 'task_key',
         onTaskDelete: 'soft-delete-child',
+        keyFallback: false,
       },
       {
         table: 'hub_task_status_event',
         idColumn: 'task_id',
         keyColumn: 'task_key',
         onTaskDelete: 'soft-delete-child',
+        keyFallback: false,
       },
       {
         table: 'hub_task',
         idColumn: 'parent_id',
         keyColumn: 'parent_key',
         onTaskDelete: 'clear-incoming',
+        keyFallback: false,
       },
       {
         table: 'hub_note',
         idColumn: 'promoted_task_id',
         keyColumn: 'promoted_task',
         onTaskDelete: 'clear-incoming',
+        keyFallback: true,
       },
     ])
     expect(

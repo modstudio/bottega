@@ -13,6 +13,7 @@ import {
   hostedChangeRowProject,
   isHostedTaskChangeTable,
   isHostedTaskChildTable,
+  reconcileParentRecordIds,
 } from './task-cache.ts'
 import {
   type HostedSpaceChange,
@@ -147,6 +148,7 @@ export function createHostedTaskChangeFamily(
     apply: (conn, table, row) =>
       applyHostedChangeUpsert(conn, table as HostedTaskChangeTable, row as never),
     delete: (conn, table, id) => deleteHostedChangeRow(conn, table as HostedTaskChangeTable, id),
+    finish: reconcileParentRecordIds,
     reportAbsentParentSkips: true,
     failureLabel: 'hosted task change',
   }

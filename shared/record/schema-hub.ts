@@ -187,6 +187,9 @@ export const hubTaskComment = pgTable.withRLS(
   (table) => [
     unique('hub_task_comment_space_id_unique').on(table.spaceId, table.id),
     index('hub_task_comment_task_id_idx').on(table.taskId),
+    index('hub_task_comment_unlinked_task_key_idx')
+      .on(table.spaceId, table.taskKey)
+      .where(sql`${table.taskId} IS NULL`),
     ...tenantPolicies('hub_task_comment', table.spaceId),
   ],
 )
@@ -212,6 +215,9 @@ export const hubTaskDocument = pgTable.withRLS(
   (table) => [
     unique('hub_task_document_space_id_unique').on(table.spaceId, table.id),
     index('hub_task_document_task_id_idx').on(table.taskId),
+    index('hub_task_document_unlinked_task_key_idx')
+      .on(table.spaceId, table.taskKey)
+      .where(sql`${table.taskId} IS NULL`),
     uniqueIndex('hub_task_document_task_number_unique').on(table.taskId, table.number),
     check(
       'hub_task_document_live_number_check',

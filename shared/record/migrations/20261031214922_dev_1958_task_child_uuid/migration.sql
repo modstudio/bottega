@@ -128,6 +128,33 @@ SET parent_id = matches.parent_id
 FROM matches
 WHERE child.id = matches.id;
 --> statement-breakpoint
+DO $$
+DECLARE
+  unmatched_comment bigint;
+  unmatched_document bigint;
+  unmatched_status_event bigint;
+  unmatched_parent bigint;
+BEGIN
+  SELECT count(*) INTO unmatched_comment
+  FROM hub_task_comment
+  WHERE deleted_at IS NULL AND task_id IS NULL;
+
+  SELECT count(*) INTO unmatched_document
+  FROM hub_task_document
+  WHERE deleted_at IS NULL AND task_id IS NULL;
+
+  SELECT count(*) INTO unmatched_status_event
+  FROM hub_task_status_event
+  WHERE deleted_at IS NULL AND task_id IS NULL;
+
+  SELECT count(*) INTO unmatched_parent
+  FROM hub_task
+  WHERE deleted_at IS NULL AND parent_key IS NOT NULL AND parent_id IS NULL;
+
+  RAISE NOTICE 'DEV-1958 unmatched hosted task-child links: comment=%, document=%, status_event=%, parent=%',
+    unmatched_comment, unmatched_document, unmatched_status_event, unmatched_parent;
+END $$;
+--> statement-breakpoint
 ALTER TABLE "hub_task" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE "hub_task_comment" FORCE ROW LEVEL SECURITY;

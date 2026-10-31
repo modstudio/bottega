@@ -6,30 +6,35 @@ export const hostedTaskRelationships = [
     idColumn: 'task_id',
     keyColumn: 'task_key',
     onTaskDelete: 'soft-delete-child',
+    keyFallback: false,
   },
   {
     table: 'hub_task_document',
     idColumn: 'task_id',
     keyColumn: 'task_key',
     onTaskDelete: 'soft-delete-child',
+    keyFallback: false,
   },
   {
     table: 'hub_task_status_event',
     idColumn: 'task_id',
     keyColumn: 'task_key',
     onTaskDelete: 'soft-delete-child',
+    keyFallback: false,
   },
   {
     table: 'hub_task',
     idColumn: 'parent_id',
     keyColumn: 'parent_key',
     onTaskDelete: 'clear-incoming',
+    keyFallback: false,
   },
   {
     table: 'hub_note',
     idColumn: 'promoted_task_id',
     keyColumn: 'promoted_task',
     onTaskDelete: 'clear-incoming',
+    keyFallback: true,
   },
 ] as const
 
@@ -58,7 +63,7 @@ export function hostedTaskJoinCondition(
   task = 't',
 ) {
   const relationship = hostedTaskRelationship(table)
-  if (table !== 'hub_note') return `${task}.id=${child}.${relationship.idColumn}`
+  if (!relationship.keyFallback) return `${task}.id=${child}.${relationship.idColumn}`
   return (
     `(${child}.${relationship.idColumn} IS NOT NULL AND ${task}.id=${child}.${relationship.idColumn}) OR (` +
     `${child}.${relationship.idColumn} IS NULL AND ${task}.space_id=${child}.space_id AND ` +
@@ -110,12 +115,11 @@ export async function repairHostedTaskReferences(
   if (!labelUpdate) return
   for (const relationship of hostedTaskRelationships) {
     const excludeTask = relationship.table === 'hub_task' ? tx`AND id<>${taskId}::uuid` : tx``
-    const referenceMatch =
-      relationship.table === 'hub_note'
-        ? tx`(${tx.unsafe(relationship.idColumn)}=${taskId}::uuid OR
+    const referenceMatch = relationship.keyFallback
+      ? tx`(${tx.unsafe(relationship.idColumn)}=${taskId}::uuid OR
           (${tx.unsafe(relationship.idColumn)} IS NULL AND
            ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.previousKey}))`
-        : tx`${tx.unsafe(relationship.idColumn)}=${taskId}::uuid`
+      : tx`${tx.unsafe(relationship.idColumn)}=${taskId}::uuid`
     await tx`UPDATE ${tx.unsafe(relationship.table)}
       SET ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.nextKey},
         ${tx.unsafe(relationship.idColumn)}=${taskId}::uuid,
