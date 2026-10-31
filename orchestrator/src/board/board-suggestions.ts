@@ -1,9 +1,9 @@
 // concern: board-suggestions
 import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
+import { projectByName } from '../project/projects.ts'
 import {
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
@@ -13,6 +13,7 @@ import {
 } from './board-policy.ts'
 import { boardActor, type PostNoticeInput, postNoticeInTransaction } from './board-service.ts'
 import { type BoardTag, type SenderBoardTags, senderBoardTags, senderTagKey } from './board-tags.ts'
+import { boardTextSecretRefusal } from './board-text-secret.ts'
 
 type Environment = Record<string, string | undefined>
 export type SuggestBoardPostInput = SenderBoardTags & { title: string; body: string }
@@ -28,7 +29,7 @@ type SuggestionRow = {
   withdrawn_at: string | null
 }
 
-function validateText(input: SuggestBoardPostInput): void {
+function validateText(input: SuggestBoardPostInput, checkout?: string | null): void {
   if (!input.title.trim() || !input.body.trim())
     throw new Error('board suggestion title and body are required; provide both fields')
   if (input.title.length > BOARD_TITLE_MAX_CHARS)
@@ -37,12 +38,17 @@ function validateText(input: SuggestBoardPostInput): void {
     )
   if (input.body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board suggestion body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (
-    [input.title, input.body, input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board suggestion contains secret-shaped text; remove the credential and retry')
+  for (const text of [
+    input.title,
+    input.body,
+    input.task,
+    ...(input.paths ?? []),
+    ...(input.topics ?? []),
+  ]) {
+    if (text === undefined) continue
+    const refusal = boardTextSecretRefusal('board suggestion', text, checkout)
+    if (refusal) throw new Error(refusal)
+  }
 }
 
 function rootRun(runId: string) {
@@ -64,10 +70,10 @@ export function suggestBoardPost(
   input: SuggestBoardPostInput,
   clock = Date.now(),
 ): { recordId: string; number: number; dropped: boolean } {
-  validateText(input)
-  const senderTags = senderBoardTags(input)
   const run = rootRun(runId)
   if (!run) throw new Error(`run ${runId} does not exist; put the suggestion in the final reply`)
+  validateText(input, run.repo ? projectByName(run.repo)?.path : null)
+  const senderTags = senderBoardTags(input)
   if (!run.session_id)
     throw new Error(
       `run ${run.record_id} has no owning architect session; put the suggestion in the final reply instead`,

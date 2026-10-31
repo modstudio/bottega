@@ -11,7 +11,6 @@ import {
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { MISSING_PROJECT_ID_REMEDY } from '../../../shared/record-project-identity.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   type Audience,
   acknowledgementRefusal,
@@ -26,6 +25,7 @@ import {
   standingPostingRefusal,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
+import { boardTextSecretRefusal } from '../board/board-text-secret.ts'
 import {
   type BoardTag,
   inferredBoardTags,
@@ -637,18 +637,14 @@ function replyBodyRefusal(body: string): string | null {
   if (!body.trim()) return 'board reply body is required; provide body'
   if (body.length > BOARD_BODY_MAX_CHARS)
     return `board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
-  if (containsSecretShaped(body))
-    return 'board reply contains secret-shaped text; remove the credential and retry'
-  return null
+  return boardTextSecretRefusal('board reply', body)
 }
 
 export function hostedBoardFilingFailRefusal(error: string): string | null {
   if (!error.trim()) return 'filing failure error is required'
   if (error.length > BOARD_BODY_MAX_CHARS)
     return `board filing failure exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`
-  if (containsSecretShaped(error))
-    return 'board filing failure contains secret-shaped text; remove the credential and retry'
-  return null
+  return boardTextSecretRefusal('board filing failure', error)
 }
 
 function liveRoot(row: Record<string, unknown>, clock: number): boolean {

@@ -1,7 +1,7 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { classifyCaller } from '../caller-classification.ts'
+import { boardTextSecretRefusal } from './board-text-secret.ts'
 
 export const BOARD_POST_RATE_LIMIT = 10
 export const BOARD_POST_RATE_WINDOW_MS = 10 * 60 * 1000
@@ -223,15 +223,18 @@ export function postDecision(input: {
   return input.recentPosts >= BOARD_POST_RATE_LIMIT ? 'rate-limited' : 'post'
 }
 
-export function validatePostNoticeInput(input: {
-  title: string
-  body: string
-  task?: string
-  paths?: string[]
-  topics?: string[]
-  ackRequired?: boolean
-  deadlineMs?: number
-}): void {
+export function validatePostNoticeInput(
+  input: {
+    title: string
+    body: string
+    task?: string
+    paths?: string[]
+    topics?: string[]
+    ackRequired?: boolean
+    deadlineMs?: number
+  },
+  checkout?: string | null,
+): void {
   const lineBreak = /[\r\n\u2028\u2029]/
   const headerFields: Array<[string, string | undefined]> = [
     ['title', input.title],
@@ -246,14 +249,15 @@ export function validatePostNoticeInput(input: {
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
   if (input.body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
-    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
-  if (
-    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
+  for (const text of [input.title, input.body]) {
+    const refusal = boardTextSecretRefusal('board notice', text, checkout)
+    if (refusal) throw new Error(refusal)
+  }
+  for (const text of [input.task, ...(input.paths ?? []), ...(input.topics ?? [])]) {
+    if (text === undefined) continue
+    const refusal = boardTextSecretRefusal('board notice tag', text, checkout)
+    if (refusal) throw new Error(refusal)
+  }
   if (!input.title.trim() || !input.body.trim())
     throw new Error('board notice title and body are required')
   if (input.deadlineMs !== undefined && !input.ackRequired)

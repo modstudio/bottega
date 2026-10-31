@@ -2,7 +2,6 @@ import { extendedBoardThreadExpiry } from '../../../shared/board-duration.ts'
 import { replyAudienceValue } from '../../../shared/board-reply-audience-options.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
 import { projectAt } from '../project/projects.ts'
@@ -45,6 +44,7 @@ import {
   noteFilingLeaseDecision,
   replyRefusal,
 } from './board-thread-policy.ts'
+import { boardTextSecretRefusal } from './board-text-secret.ts'
 
 type Environment = Record<string, string | undefined>
 
@@ -163,12 +163,12 @@ function extendThreadExpiry(
     .run(expiresAt, root.record_id)
 }
 
-function validateReplyBody(body: string): void {
+function validateReplyBody(body: string, checkout?: string | null): void {
   if (!body.trim()) throw new Error('board reply body is required; provide --body')
   if (body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(body))
-    throw new Error('board reply contains secret-shaped text; remove the credential and retry')
+  const refusal = boardTextSecretRefusal('board reply', body, checkout)
+  if (refusal) throw new Error(refusal)
 }
 
 export function replyToThread(
@@ -179,7 +179,7 @@ export function replyToThread(
   cwd = process.cwd(),
   audience: ReplyAudienceOption | null = null,
 ): ReplyResult {
-  validateReplyBody(body)
+  validateReplyBody(body, projectAt(cwd)?.path)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()

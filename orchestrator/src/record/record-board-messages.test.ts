@@ -14,7 +14,7 @@ test('filing-fail error is bounded and refused when secret-shaped without echoin
   const secret = 'password=supersecretvalue'
   const secretRefusal = hostedBoardFilingFailRefusal(secret)
   expect(secretRefusal).toBe(
-    'board filing failure contains secret-shaped text; remove the credential and retry',
+    'board filing failure contains secret-shaped text (assignment); remove the credential and retry',
   )
   expect(secretRefusal).not.toContain(secret)
 })

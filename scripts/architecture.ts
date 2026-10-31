@@ -863,6 +863,17 @@ export function architectureRules() {
       to: { path: `^(${concerns.roots.join('|')})/` },
     },
     {
+      name: 'board-secret-shaped-detector-is-centralized',
+      severity: 'error',
+      comment:
+        'Board-authored text must use the commit-aware board predicate rather than the raw secret-shaped detector.',
+      from: {
+        path: '^(?:orchestrator/src/board/|orchestrator/src/record/record-board-messages\\.ts$)',
+        pathNot: exactArchitecturePath('orchestrator/src/board/board-text-secret.ts'),
+      },
+      to: { path: exactArchitecturePath('shared/secret-shaped.ts') },
+    },
+    {
       name: 'hub-web-imports-only-router-type',
       severity: 'error',
       comment: hubWebRouterException.reason,

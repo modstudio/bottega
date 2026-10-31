@@ -569,7 +569,7 @@ export function insertRootMessage(
   cwd: string,
   database: ReturnType<typeof writableDb>,
 ): PostNoticeResult {
-  validatePostNoticeInput(input)
+  validatePostNoticeInput(input, projectAt(cwd)?.path)
   const actor = boardActor(env)
   const postingMachine = hostname()
   const { audience, expression: audienceExpression } = resolvePostAudience(
