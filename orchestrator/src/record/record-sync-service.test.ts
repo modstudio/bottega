@@ -290,6 +290,26 @@ realPostgres('hosted question revisions', () => {
       expect(question).toEqual({ number: 7, revision: 2, question: 'Equal revision question' })
     })
   })
+
+  test('a newer revision without a number preserves the hosted number', async () => {
+    await withQuestionFixture(async (admin, actor) => {
+      await admin`UPDATE question SET number=7 WHERE id=${QUESTION_ID}::uuid`
+      const payload = questionPayload()
+      payload.revision = 3
+      payload.question = 'Newest question'
+      Reflect.deleteProperty(payload, 'number')
+
+      expect(await pushQuestion(actor, 1, payload)).toEqual({
+        results: [{ id: 1, status: 'synced' }],
+      })
+
+      const [question] = await admin<
+        { number: number | null; revision: number; question: string }[]
+      >`
+        SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
+      expect(question).toEqual({ number: 7, revision: 3, question: 'Newest question' })
+    })
+  })
 })
 
 realPostgres('hosted machine name claims', () => {
