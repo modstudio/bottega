@@ -189,14 +189,17 @@ export function measureChangeGroup(
   }
 }
 
+/** A review belongs to a round when it measured that exact patch and path set. */
+export function reviewInRound(review: TriageReviewRow, patchId: string, pathSet: string): boolean {
+  return review.patchId === patchId && review.pathSet === pathSet
+}
+
 function reviewsForChangeGroup(
   branchReviews: readonly TriageReviewRow[],
   group: ChangeGroup,
 ): TriageReviewRow[] {
   const pathSet = serializePathSet(group.pathSet)
-  return branchReviews.filter(
-    (review) => review.patchId === group.patchId && review.pathSet === pathSet,
-  )
+  return branchReviews.filter((review) => reviewInRound(review, group.patchId, pathSet))
 }
 
 export function reviewsForTriage(

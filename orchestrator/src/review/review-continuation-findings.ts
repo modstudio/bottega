@@ -2,13 +2,16 @@
 /** Selects and renders triaged review findings for a writing continuation. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { gitContext } from '../git/git-environment.ts'
+import { gitContext, gitResult } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
 import {
   type ChangeGroup,
   measureChangeGroup,
+  reviewInRound,
   reviewRoundTriageComplete,
   reviewsForTriage,
+  serializePathSet,
+  type TriageReviewRow,
 } from './review-group.ts'
 
 export type ContinuationFinding = {
@@ -23,15 +26,60 @@ export type ContinuationFinding = {
   proposedCorrection: string
 }
 
-function selectedFindings(database: Database, group: ChangeGroup): ContinuationFinding[] {
-  const round = reviewsForTriage(database, group).reviews
-  if (!round.length) {
+/** Most commits the moved-branch paragraph lists before saying older ones were left out. */
+const STALE_COMMIT_LIST_LIMIT = 20
+
+/**
+ * What changed since the delivered round was reviewed. `commitLines` is null when the
+ * commits since the reviewed sha could not be read.
+ */
+export type ContinuationFindingsStaleness = {
+  reviewedSha: string | null
+  commitLines: readonly string[] | null
+  omittedOlder: boolean
+}
+
+const UNKNOWN_STALENESS: ContinuationFindingsStaleness = {
+  reviewedSha: null,
+  commitLines: null,
+  omittedOlder: false,
+}
+
+type SelectedContinuationRound = {
+  reviews: TriageReviewRow[]
+  matchesCurrentGroup: boolean
+}
+
+/** Choose the newest review round on the branch lineage, independent of today's patch. */
+function selectContinuationReviewRound(
+  branchReviews: readonly TriageReviewRow[],
+  group: ChangeGroup,
+): SelectedContinuationRound {
+  // A review that recorded no change measurement has no round identity to deliver.
+  const newest = branchReviews.find((review) => review.patchId && review.pathSet)
+  if (!newest?.patchId || !newest.pathSet) {
     throw new Error(
-      `no reviews match the current change group for branch ${group.branch}\n` +
+      `the review lineage for branch ${group.branch} has no measured review rounds\n` +
         'cleared by: run and judge the review lenses for the current change',
     )
   }
-  const incomplete = round.filter((review) => !reviewRoundTriageComplete(review))
+  const { patchId, pathSet } = newest
+  return {
+    reviews: branchReviews.filter((review) => reviewInRound(review, patchId, pathSet)),
+    matchesCurrentGroup: reviewInRound(newest, group.patchId, serializePathSet(group.pathSet)),
+  }
+}
+
+function selectedFindings(
+  database: Database,
+  group: ChangeGroup,
+): { findings: ContinuationFinding[]; round: SelectedContinuationRound } {
+  const round = selectContinuationReviewRound(
+    reviewsForTriage(database, group).branchReviews,
+    group,
+  )
+  const reviews = round.reviews
+  const incomplete = reviews.filter((review) => !reviewRoundTriageComplete(review))
   if (incomplete.length) {
     const details = incomplete.map((review) => {
       const ordinals = review.findings
@@ -47,7 +95,7 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
     )
   }
 
-  const reviewIds = round.map(({ reviewRecordId }) => reviewRecordId)
+  const reviewIds = reviews.map(({ reviewRecordId }) => reviewRecordId)
   const placeholders = reviewIds.map(() => '?').join(',')
   const rows = database
     .query<
@@ -80,23 +128,27 @@ function selectedFindings(database: Database, group: ChangeGroup): ContinuationF
         'continue without --findings',
     )
   }
-  return rows.map((row) => ({
-    reviewNumber: row.review_number,
-    ordinal: row.ordinal,
-    lens: row.lens,
-    reviewerSeverity: row.severity,
-    triagedSeverity: row.triaged_severity,
-    disposition: row.disposition,
-    location: row.location,
-    evidence: row.evidence,
-    proposedCorrection: row.proposed_correction,
-  }))
+  return {
+    round,
+    findings: rows.map((row) => ({
+      reviewNumber: row.review_number,
+      ordinal: row.ordinal,
+      lens: row.lens,
+      reviewerSeverity: row.severity,
+      triagedSeverity: row.triaged_severity,
+      disposition: row.disposition,
+      location: row.location,
+      evidence: row.evidence,
+      proposedCorrection: row.proposed_correction,
+    })),
+  }
 }
 
 /** Pure presentation decision shared by normal and checkpoint continuation paths. */
 export function renderContinuationFindings(
   findings: readonly ContinuationFinding[],
   architectMessage: string | undefined,
+  staleness?: ContinuationFindingsStaleness,
 ): string {
   if (findings.some(({ disposition }) => disposition === 'modified') && !architectMessage) {
     throw new Error(
@@ -120,21 +172,61 @@ export function renderContinuationFindings(
       `   Proposed correction: ${finding.proposedCorrection}${modified}`
     )
   })
+  const stalenessParagraph = staleness ? `${stalenessNotice(staleness)}\n\n` : ''
   return (
-    `REVIEW FINDINGS\n\n${items.join('\n\n')}\n\n` +
+    `REVIEW FINDINGS\n\n${stalenessParagraph}${items.join('\n\n')}\n\n` +
     (architectMessage === undefined ? '' : `ARCHITECT MESSAGE\n\n${architectMessage}\n\n`) +
     'Apply each item and nothing else, and in the summary answer each item by its number as ' +
     'applied, or not applied and why.'
   )
 }
 
-/** Query and render a measured review round. */
+/** The paragraph telling a worker its findings predate the branch's current change. */
+function stalenessNotice(staleness: ContinuationFindingsStaleness): string {
+  if (!staleness.reviewedSha) {
+    return 'The reviewed commit is unknown. The change under review has moved since that review.'
+  }
+  const reviewed = `These findings were reviewed at ${staleness.reviewedSha.slice(0, 7)}.`
+  if (!staleness.commitLines) return `${reviewed} The commits since it could not be read.`
+  if (!staleness.commitLines.length) {
+    return `${reviewed} That is still the branch tip, but the change under review differs from the one reviewed.`
+  }
+  const omitted = staleness.omittedOlder ? '\n(older commits not listed)' : ''
+  return `${reviewed} The branch has moved since by:\n${staleness.commitLines.join('\n')}${omitted}`
+}
+
+/**
+ * Select the newest measured round once and render it. `resolveStaleness` describes what
+ * changed since that round; it is consulted only when the round is not the current change.
+ */
 export function continuationFindings(
   database: Database,
   group: ChangeGroup,
   architectMessage: string | undefined,
+  resolveStaleness?: (reviews: readonly TriageReviewRow[]) => ContinuationFindingsStaleness,
 ): string {
-  return renderContinuationFindings(selectedFindings(database, group), architectMessage)
+  const { findings, round } = selectedFindings(database, group)
+  const staleness = round.matchesCurrentGroup
+    ? undefined
+    : (resolveStaleness?.(round.reviews) ?? UNKNOWN_STALENESS)
+  return renderContinuationFindings(findings, architectMessage, staleness)
+}
+
+function reviewedHeadCommit(
+  database: Database,
+  reviews: readonly TriageReviewRow[],
+): string | null {
+  const reviewIds = reviews.map(({ reviewRecordId }) => reviewRecordId)
+  const placeholders = reviewIds.map(() => '?').join(',')
+  return (
+    database
+      .query<{ head_commit: string }, string[]>(
+        `SELECT run.head_commit FROM review_lens rl JOIN run ON run.record_id=rl.run_record_id
+          WHERE rl.review_record_id IN (${placeholders}) AND run.head_commit IS NOT NULL
+          ORDER BY run.number DESC LIMIT 1`,
+      )
+      .get(...reviewIds)?.head_commit ?? null
+  )
 }
 
 /** Resolve a run's current branch review round and render it for continuation. */
@@ -159,5 +251,31 @@ export function continuationFindingsForRun(
   if (!tip) throw new Error(`cannot resolve the current tip of branch ${branch}`)
   const measured = measureChangeGroup(project.path, project, branch, tip)
   if (!measured) throw new Error(`could not measure the current change group for branch ${branch}`)
-  return continuationFindings(database, measured.group, architectMessage)
+  return continuationFindings(database, measured.group, architectMessage, (reviews) =>
+    commitsSinceReview(project.path, reviewedHeadCommit(database, reviews), tip),
+  )
+}
+
+function commitsSinceReview(
+  cwd: string,
+  reviewedSha: string | null,
+  tip: string,
+): ContinuationFindingsStaleness {
+  if (!reviewedSha) return UNKNOWN_STALENESS
+  const log = gitResult(
+    [
+      'log',
+      `--max-count=${STALE_COMMIT_LIST_LIMIT + 1}`,
+      '--format=%h %s',
+      `${reviewedSha}..${tip}`,
+    ],
+    cwd,
+  )
+  if (!log.ok) return { reviewedSha, commitLines: null, omittedOlder: false }
+  const lines = log.stdout.split('\n').filter(Boolean)
+  return {
+    reviewedSha,
+    commitLines: lines.slice(0, STALE_COMMIT_LIST_LIMIT),
+    omittedOlder: lines.length > STALE_COMMIT_LIST_LIMIT,
+  }
 }
