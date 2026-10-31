@@ -65,6 +65,10 @@ export const runModuleSpecs = [
     ],
   },
   {
+    file: 'orchestrator/src/run/run-identifier-names.ts',
+    allowed: ['../../../shared/machine-config.ts', './run-identifier-grammar.ts'],
+  },
+  {
     file: 'orchestrator/src/run/question-number.ts',
     allowed: ['bun:sqlite', '../database/entity-number.ts'],
   },

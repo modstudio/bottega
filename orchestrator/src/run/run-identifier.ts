@@ -2,21 +2,10 @@
 /** Resolves a user-facing run number or UUID to the run UUID. */
 
 import type { Database } from 'bun:sqlite'
-import { storedMachineNames } from '../../../shared/machine-config.ts'
-import {
-  ACCEPTED_RUN_IDENTIFIERS,
-  classifyRunIdentifier as classifyGrammar,
-  parseRunIdentifier as parseGrammar,
-} from './run-identifier-grammar.ts'
+import { ACCEPTED_RUN_IDENTIFIERS } from './run-identifier-grammar.ts'
+import { classifyRunIdentifier, parseRunIdentifier } from './run-identifier-names.ts'
 
-const names = () => {
-  const stored = storedMachineNames()
-  return stored
-    ? { shortName: stored.shortName, formerShortNames: stored.formerShortNames ?? [] }
-    : null
-}
-export const classifyRunIdentifier = (input: string | number) => classifyGrammar(input, names())
-export const parseRunIdentifier = (input: string | number) => parseGrammar(input, names())
+export { classifyRunIdentifier, parseRunIdentifier }
 
 export function resolveRunIdentifier(database: Database, input: string | number): string {
   const parsed = parseRunIdentifier(input)

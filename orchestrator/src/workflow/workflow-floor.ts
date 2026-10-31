@@ -3,7 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { classifyRunIdentifier } from '../run/run-identifier.ts'
+import { classifyRunIdentifier } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 import {
   commandExitBindingRefusal,
