@@ -109,9 +109,7 @@ test('inserts a finished dirty-tree gate without attributing it to HEAD', async 
     cwd: repositoryPath,
     output_artifact: null,
   })
-  expect(
-    passingGateForCommit(headCommit, repositoryPath, d, () => headCommit).gateNumber,
-  ).toBeNull()
+  expect(passingGateForCommit(headCommit, repositoryPath, d).gateNumber).toBeNull()
   expect(d.query('SELECT COUNT(*) count FROM check_execution').get()).toEqual({ count: 0 })
 })
 

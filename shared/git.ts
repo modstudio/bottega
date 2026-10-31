@@ -95,30 +95,6 @@ export function inspectionGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.
 
 type GitResult = { code: number; stdout: string; timedOut: boolean }
 
-export type CommitResolutionFacts = {
-  revParse: { code: number; stdout: string }
-  candidates?: readonly string[]
-}
-
-/** Decide a caller-supplied commit argument from facts gathered by the git adapter. */
-export function decideCommitResolution(
-  argument: string,
-  checkout: string,
-  facts: CommitResolutionFacts,
-): { commit: string } | { refusal: string } {
-  const commit = facts.revParse.code === 0 ? facts.revParse.stdout.trim() : ''
-  if (commit) return { commit }
-  const candidates = (facts.candidates ?? []).map((candidate) => candidate.trim()).filter(Boolean)
-  if (candidates.length >= 2) {
-    return {
-      refusal: `${argument} is ambiguous in ${checkout}; candidate commits: ${candidates.join(', ')}`,
-    }
-  }
-  return {
-    refusal: `${argument} does not resolve to a commit in ${checkout}; run \`git fetch\` in that checkout, or pass the full hash`,
-  }
-}
-
 export function gitAt(
   path: string,
   args: string[],
@@ -144,20 +120,6 @@ export function gitAt(
   } catch {
     return { code: 128, stdout: '', timedOut: false }
   }
-}
-
-/** Resolve a caller-supplied ref to the full commit recorded by evidence stores. */
-export function resolveCommitAt(checkout: string, argument: string): string {
-  const revParse = gitAt(checkout, ['rev-parse', '--verify', `${argument}^{commit}`])
-  const candidates =
-    revParse.code !== 0 && /^[0-9a-fA-F]{4,}$/.test(argument)
-      ? gitAt(checkout, ['rev-parse', `--disambiguate=${argument}`])
-          .stdout.split(/\r?\n/)
-          .filter(Boolean)
-      : undefined
-  const decision = decideCommitResolution(argument, checkout, { revParse, candidates })
-  if ('refusal' in decision) throw new Error(decision.refusal)
-  return decision.commit
 }
 
 /**

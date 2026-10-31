@@ -18,7 +18,7 @@ import { doCommand, pickPreviewCommand } from '../dispatch/dispatch-cli-service.
 import { enforcementCommand } from '../enforcement/enforcement-commands.ts'
 import { epicCommand } from '../epic/epic-commands.ts'
 import { pendingCommand } from '../evidence/pending-commands.ts'
-import { formatPassingGate, passingGateForCommit } from '../gate/gate-passed.ts'
+import { formatPassingGate, passingGateForArgument } from '../gate/gate-passed.ts'
 import { architectGateProcessExitCode, runArchitectGate } from '../gate/gate-run.ts'
 import { spawnsCommand } from '../health/spawn-commands.ts'
 import {
@@ -650,7 +650,7 @@ export function register(program: Command, dependencies: LogicDependencies = {})
     .description('exit zero when this project has a passing gate recorded for the exact commit')
     .allowExcessArguments(false)
     .action((commit) => {
-      const result = passingGateForCommit(commit)
+      const result = passingGateForArgument(commit)
       log(formatPassingGate(result))
       presentation.setExitCode(result.gateNumber === null ? 1 : 0)
     })

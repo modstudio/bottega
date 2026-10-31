@@ -3,8 +3,8 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { resolveCommitAt } from '../../../shared/git.ts'
 import { db } from '../database/db.ts'
+import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectAt } from '../project/projects.ts'
 
 type GateCandidate = {
@@ -31,14 +31,12 @@ export function passingGateForCommit(
   commit: string,
   cwd = process.cwd(),
   d: Database = db(),
-  resolveCommit: (checkout: string, argument: string) => string = resolveCommitAt,
 ): { project: string; commit: string; gateNumber: number | null } {
   const project = projectAt(cwd, d)
   if (!project)
     throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
-  const argument = commit.trim()
-  if (!argument) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
-  const resolved = resolveCommit(cwd, argument)
+  const normalized = commit.trim()
+  if (!normalized) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
   const candidates = d
     .query<GateCandidate, [string]>(
       `SELECT g.record_id recordId,g.number,r.project_record_id AS projectId,g.cwd
@@ -46,16 +44,27 @@ export function passingGateForCommit(
         WHERE g.head_commit=? AND g.purpose='gate' AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
         ORDER BY g.finished_at DESC,g.record_id DESC`,
     )
-    .all(resolved)
+    .all(normalized)
   return {
     project: project.name,
-    commit: resolved,
+    commit: normalized,
     gateNumber: selectPassingGateNumber(
       candidates,
       project.recordId,
       (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
     ),
   }
+}
+
+export function passingGateForArgument(
+  argument: string,
+  cwd = process.cwd(),
+  d: Database = db(),
+  resolveCommit: (checkout: string, argument: string) => string = resolveCommitArgument,
+): ReturnType<typeof passingGateForCommit> {
+  const normalized = argument.trim()
+  if (!normalized) return passingGateForCommit(normalized, cwd, d)
+  return passingGateForCommit(resolveCommit(cwd, normalized), cwd, d)
 }
 
 export function formatPassingGate(result: ReturnType<typeof passingGateForCommit>): string {

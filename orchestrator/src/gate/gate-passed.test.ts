@@ -3,7 +3,12 @@ import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from '../database/migrations.ts'
-import { formatPassingGate, passingGateForCommit, selectPassingGateNumber } from './gate-passed.ts'
+import {
+  formatPassingGate,
+  passingGateForArgument,
+  passingGateForCommit,
+  selectPassingGateNumber,
+} from './gate-passed.ts'
 
 const repositoryPath = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -27,7 +32,7 @@ test('the hook result is one line for either outcome', () => {
   )
 })
 
-test('the lookup and answer use the resolved full commit', () => {
+test('a caller argument resolves before the exact gate lookup', () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
   applyMigrations(d)
@@ -35,14 +40,29 @@ test('the lookup and answer use the resolved full commit', () => {
     'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
   ).run('fixture', repositoryPath, 'bun', '{}')
   const full = 'a'.repeat(40)
+  const gate = d
+    .query(
+      `INSERT INTO gate_execution
+        (record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
+       VALUES ('${newRecordId()}','2026-10-31','2026-10-31',0,0,100,'passed',?,?)
+       RETURNING record_id`,
+    )
+    .get(full, repositoryPath) as { record_id: string }
+  const gateNumber = d
+    .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
+    .get(gate.record_id)!.number
   const seen: [string, string][] = []
-  const result = passingGateForCommit('aaaa', repositoryPath, d, (checkout, argument) => {
+  const result = passingGateForArgument('aaaa', repositoryPath, d, (checkout, argument) => {
     seen.push([checkout, argument])
     return full
   })
   expect(seen).toEqual([[repositoryPath, 'aaaa']])
-  expect(result.commit).toBe(full)
-  expect(formatPassingGate(result)).toBe(`no passing gate recorded for fixture commit ${full}`)
+  expect(result).toEqual({ project: 'fixture', commit: full, gateNumber })
+  expect(passingGateForCommit('aaaa', repositoryPath, d)).toEqual({
+    project: 'fixture',
+    commit: 'aaaa',
+    gateNumber: null,
+  })
 })
 
 test('a timed-out zero-exit gate is not a passing gate', () => {
@@ -61,15 +81,14 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
     )
     .get(commit, repositoryPath) as { record_id: string; number: number }
 
-  const resolveCommit = () => commit
-  expect(passingGateForCommit(commit, repositoryPath, d, resolveCommit).gateNumber).toBeNull()
+  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBeNull()
 
   d.query('UPDATE gate_execution SET timed_out=0 WHERE record_id=?').run(gate.record_id)
   const number = d
     .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
     .get(gate.record_id)!.number
-  expect(passingGateForCommit(commit, repositoryPath, d, resolveCommit).gateNumber).toBe(number)
+  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBe(number)
 
   d.query("UPDATE gate_execution SET purpose='worker-check' WHERE record_id=?").run(gate.record_id)
-  expect(passingGateForCommit(commit, repositoryPath, d, resolveCommit).gateNumber).toBeNull()
+  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBeNull()
 })
