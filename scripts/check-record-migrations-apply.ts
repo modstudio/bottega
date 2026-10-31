@@ -19,6 +19,11 @@ import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
+import {
+  jsonbStringChecksValidate,
+  proofJsonbStringChecksValidate,
+  seedJsonbStringChecksValidate,
+} from './record-jsonb-string-check-proof.ts'
 import { prepareRecordMigrationProof } from './record-migration-session.ts'
 import {
   proofRunOwnerRequired,
@@ -928,6 +933,8 @@ async function applyAndProveMigration(
     await proofBoardThreadAuthorBackfill(transaction)
   if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
   await proofIdentityMigration(transaction, migration.name)
+  if (migration.name === jsonbStringChecksValidate)
+    await proofJsonbStringChecksValidate(transaction, PLATFORM_SPACE_ID)
   await applyHostedProjectCleanupProof(transaction, migration)
 }
 
@@ -948,6 +955,11 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
       userId: platformOperatorId,
     })
   if (name === runOwnerBackfill) await seedRunOwnerBackfill(transaction, PLATFORM_SPACE_ID)
+  if (name === jsonbStringChecksValidate)
+    await seedJsonbStringChecksValidate(transaction, {
+      spaceId: PLATFORM_SPACE_ID,
+      userId: platformOperatorId,
+    })
   await seedHostedProjectCleanupProof(transaction, name)
 }
 
