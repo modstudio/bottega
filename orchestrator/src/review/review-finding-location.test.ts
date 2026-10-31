@@ -15,6 +15,11 @@ describe('review finding repository paths', () => {
     ['`scripts/static-check-plan.ts:10,12-16`', 'scripts/static-check-plan.ts'],
     ['scripts/static-check-plan.ts:10,38-53 (in foo)', 'scripts/static-check-plan.ts'],
     ['/scripts/static-check-plan.ts:10,12-16', null],
+    ['orchestrator/src/x.ts', 'orchestrator/src/x.ts'],
+    ['orchestrator/src/x.ts:766-771 (deployFromLine), rendered by ...', 'orchestrator/src/x.ts'],
+    ['orchestrator/src/x.ts:303 and :361', 'orchestrator/src/x.ts'],
+    ['`orchestrator/src/x.ts:3`', 'orchestrator/src/x.ts'],
+    ['the reviewed implementation has no matching file', null],
   ])('extracts %s', (location, expected) => {
     expect(reviewFindingRepositoryPath(location)).toBe(expected)
   })
