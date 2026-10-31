@@ -51,6 +51,7 @@ export const worktreeModules: WorktreeModule[] = [
     './worktree-caller.ts',
   ]),
   module('orchestrator/src/worktree/worktree-caller.ts', [
+    '../../../shared/git-path-list.ts',
     '../project/projects.ts',
     '../git/git-environment.ts',
     './worktree-types.ts',
@@ -105,6 +106,7 @@ export const worktreeModules: WorktreeModule[] = [
   ]),
   module('orchestrator/src/worktree/worktree-remove.ts', [
     '../../../shared/brand.ts',
+    '../../../shared/git-path-list.ts',
     '../branch/branch-ref-guard.ts',
     '../database/db.ts',
     '../project/projects.ts',

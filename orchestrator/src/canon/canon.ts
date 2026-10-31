@@ -6,6 +6,7 @@ import { $ } from 'bun'
 import { CONCERNS, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { CANON_REFERENCE_EXEMPTIONS, canonReferencePath } from '../../../shared/canon-references.ts'
 import { docScopeHasProjectSubject } from '../../../shared/docs.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { isCliCommand } from '../cli/args.ts'
 import { db, nowIso, storeWritesRefused, writeTransaction } from '../database/db.ts'
@@ -471,14 +472,14 @@ function tracked(root: string): Set<string> | null {
   if (!existsSync(root)) return null
   const cached = trackedCache.get(root)
   if (cached) return cached
-  const p = Bun.spawnSync(['git', 'ls-files', '-z'], {
+  const p = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
     cwd: root,
     env: targetGitEnvironment(root),
     stdout: 'pipe',
     stderr: 'pipe',
   })
   if (p.exitCode !== 0) return null
-  const result = new Set(p.stdout.toString().split('\0').filter(Boolean))
+  const result = new Set(splitNulPaths(p.stdout.toString()))
   trackedCache.set(root, result)
   return result
 }

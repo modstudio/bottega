@@ -17,6 +17,7 @@ export const retrievalModules: RetrievalModule[] = [
     'node:path',
     'bun',
     '../../../shared/brand.ts',
+    '../../../shared/git-path-list.ts',
     '../../../shared/orch-contract.ts',
     '../../../shared/self-spawn.ts',
   ]),

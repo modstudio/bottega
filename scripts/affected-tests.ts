@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { dependencyCruiserConfig } from './architecture.ts'
 import { ARCHITECTURE_CRUISE_ENTRIES } from './architecture-cruise.ts'
 
@@ -64,14 +65,14 @@ function gitLines(args: readonly string[]): string[] {
   if (result.exitCode !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${stderr || `exit ${result.exitCode}`}`)
   }
-  return result.stdout.toString().split('\n')
+  return splitNulPaths(result.stdout.toString())
 }
 
 /** The tests that reach what changed since `baseCommit`, in this worktree. */
 async function selectAffectedTests(baseCommit: string): Promise<string[]> {
   const seeds = seedPaths([
-    ...gitLines(['diff', '--name-only', baseCommit]),
-    ...gitLines(['ls-files', '--others', '--exclude-standard']),
+    ...gitLines(nulPathListArgs(['diff', '--name-only', baseCommit])),
+    ...gitLines(nulPathListArgs(['ls-files', '--others', '--exclude-standard'])),
   ])
   if (!seeds.length) return []
   const { cruise } = await import('dependency-cruiser')

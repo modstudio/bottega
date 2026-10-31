@@ -4,6 +4,7 @@
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { MAIN_CHECKOUT_MIGRATION_JOURNAL_SOURCES } from '../database/migration-journal-sources.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
@@ -178,7 +179,7 @@ function countCommits(range: string, cwd: string): number {
 }
 
 function pathsFromGit(value: string): string[] {
-  return value ? value.split('\n') : []
+  return splitNulPaths(value)
 }
 
 function fastForwardTree(
@@ -202,19 +203,22 @@ function fastForwardTree(
   if (decision.action === 'fast-forward') {
     beforeFastForward?.(remoteCommit)
     const incomingAddedPaths = pathsFromGit(
-      git(['diff', '--name-only', '--diff-filter=A', 'HEAD', remoteCommit], treeRoot),
+      git(
+        nulPathListArgs(['diff', '--name-only', '--diff-filter=A', 'HEAD', remoteCommit]),
+        treeRoot,
+      ),
     )
     const ignoredPaths = incomingAddedPaths.length
       ? pathsFromGit(
           git(
-            [
+            nulPathListArgs([
               'ls-files',
               '--others',
               '--ignored',
               '--exclude-standard',
               '--',
               ...incomingAddedPaths,
-            ],
+            ]),
             treeRoot,
           ),
         )
@@ -222,7 +226,13 @@ function fastForwardTree(
     const untrackedPaths = incomingAddedPaths.length
       ? pathsFromGit(
           git(
-            ['ls-files', '--others', '--exclude-standard', '--', ...incomingAddedPaths],
+            nulPathListArgs([
+              'ls-files',
+              '--others',
+              '--exclude-standard',
+              '--',
+              ...incomingAddedPaths,
+            ]),
             treeRoot,
           ),
         )

@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readlinkSync } from 'node:fs'
 import { posix, resolve } from 'node:path'
 import { inspectionGitEnv } from '../../../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   type CanonFile,
   type CanonLintInput,
@@ -50,14 +51,11 @@ export function canonGitRoot(cwd: string): string {
 }
 
 function trackedEntries(root: string): { mode: string; path: string }[] {
-  return git(root, ['ls-files', '-s', '-z'])
-    .split('\0')
-    .filter(Boolean)
-    .map((entry) => {
-      const match = entry.match(/^(\d+) [0-9a-f]+ \d+\t([\s\S]+)$/)
-      if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(entry)}`)
-      return { mode: match[1]!, path: match[2]! }
-    })
+  return splitNulPaths(git(root, nulPathListArgs(['ls-files', '-s']))).map((entry) => {
+    const match = entry.match(/^(\d+) [0-9a-f]+ \d+\t([\s\S]+)$/)
+    if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(entry)}`)
+    return { mode: match[1]!, path: match[2]! }
+  })
 }
 
 function refEntries(root: string, ref: string): { mode: string; object: string; path: string }[] {

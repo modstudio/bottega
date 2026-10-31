@@ -1,5 +1,6 @@
 // concern: review-pins
 import type { Database } from 'bun:sqlite'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db, writableDb } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'
 import type { CoverageGitRunner, ReviewChangeRange, RunRow } from './review-types.ts'
@@ -53,7 +54,7 @@ export function measureChangeIdentity(
   from: string,
   to: string,
 ): { patchId: string; paths: string[]; message: string } | null {
-  const paths = git(repo, ['diff', '--name-only', `${from}..${to}`])
+  const paths = git(repo, nulPathListArgs(['diff', '--name-only', `${from}..${to}`]))
   const message = git(repo, ['log', '--format=%B', `${from}..${to}`])
   if (!paths.ok) return null
   let patchId: string
@@ -64,7 +65,7 @@ export function measureChangeIdentity(
   }
   return {
     patchId,
-    paths: paths.out ? paths.out.split('\n').sort() : [],
+    paths: splitNulPaths(paths.out).sort(),
     message: message.ok ? message.out : '',
   }
 }

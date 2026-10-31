@@ -2,6 +2,7 @@ import type { Database } from 'bun:sqlite'
 import { createHash } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   type AttributionKind,
   AttributionKindSchema,
@@ -122,9 +123,9 @@ function porcelainPaths(status: string): string[] {
 }
 
 function untrackedPathHash(cwd: string): string | null {
-  const listed = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])
+  const listed = git(cwd, nulPathListArgs(['ls-files', '--others', '--exclude-standard']))
   if (!listed.ok) return null
-  const paths = listed.stdout.split('\0').filter(Boolean).sort()
+  const paths = splitNulPaths(listed.stdout).sort()
   return createHash('sha256').update(paths.join('\0')).digest('hex')
 }
 

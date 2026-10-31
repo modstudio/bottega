@@ -149,9 +149,9 @@ test('a branch cut ahead of the local trunk never diffs below its recorded base'
         // this run's tree was cut from.
         return args.includes('--is-ancestor') ? null : 'caller-trunk-tip'
       }
-      const since = args.at(-1)
+      const since = args.find((arg) => arg === 'run-base' || arg === 'caller-trunk-tip')
       if (args.includes('--name-only'))
-        return since === 'run-base' ? 'work.txt' : 'landed.txt\nwork.txt'
+        return since === 'run-base' ? 'work.txt\0' : 'landed.txt\0work.txt\0'
       if (args.includes('--numstat'))
         return since === 'run-base' ? '1\t0\twork.txt' : '1\t0\tlanded.txt\n1\t0\twork.txt'
       return ''

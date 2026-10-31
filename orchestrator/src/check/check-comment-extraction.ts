@@ -11,6 +11,7 @@ import {
   resolveInstallFile,
 } from '../../../shared/embedded-assets.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { installationIdentity } from '../../../shared/install-root.ts'
 import { resolveStateRoot, type StateEnvironment } from '../../../shared/state-directory.ts'
 import {
@@ -268,7 +269,7 @@ export function commentFindingsInSources(
 }
 
 function trackedSources(root: string): SourceFile[] {
-  const result = Bun.spawnSync(['git', 'ls-files', '-z', '--', ...SOURCE_GLOBS], {
+  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])], {
     cwd: root,
     env: inspectionGitEnv(),
     stdout: 'pipe',
@@ -277,19 +278,15 @@ function trackedSources(root: string): SourceFile[] {
   if (result.exitCode !== 0) {
     throw new Error(`could not list tracked source files: ${result.stderr.toString().trim()}`)
   }
-  return result.stdout
-    .toString()
-    .split('\0')
-    .filter(Boolean)
-    .flatMap((file) => {
-      try {
-        return [{ file, source: readFileSync(resolve(root, file), 'utf8') }]
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-        const detail = error instanceof Error ? error.message : String(error)
-        throw new Error(`could not read tracked source file ${file}: ${detail}`)
-      }
-    })
+  return splitNulPaths(result.stdout.toString()).flatMap((file) => {
+    try {
+      return [{ file, source: readFileSync(resolve(root, file), 'utf8') }]
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(`could not read tracked source file ${file}: ${detail}`)
+    }
+  })
 }
 
 export function trackedCommentFindings(root: string, rules: CommentRules): CommentFinding[] {

@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import {
   assertBranchRefDecisionMayBeDeleted,
   observeBranchRef,
@@ -172,7 +173,7 @@ export function changesInIndex(
   const since = mergeBaseBelowBase ? w.base : (mergeBase ?? w.base)
   // Raw: this is a patch, and `git apply` counts its bytes.
   const diff = runRaw(['diff', '--cached', since])
-  const names = runOk(['diff', '--cached', '--name-only', since]) ?? ''
+  const names = runOk(nulPathListArgs(['diff', '--cached', '--name-only', since])) ?? ''
   const stat = runOk(['diff', '--cached', '--numstat', since]) ?? ''
 
   let insertions = 0
@@ -187,7 +188,7 @@ export function changesInIndex(
   }
   return {
     diff,
-    files: names ? names.split('\n').filter(Boolean) : [],
+    files: splitNulPaths(names),
     insertions,
     deletions,
     since,

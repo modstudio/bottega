@@ -2,6 +2,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { recordMigrationSetHashFrom } from './record-migration-set.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
@@ -127,9 +128,9 @@ if (import.meta.main) {
     const baseSha = event.pull_request?.base?.sha ?? event.merge_group?.base_sha
     if (!baseSha)
       throw new Error('GitHub event does not carry a pull request or merge-group base sha')
-    const changed = command(['git', 'diff', '--name-only', `${baseSha}...HEAD`])
-      .split('\n')
-      .some((path) => path.startsWith('shared/record/migrations/'))
+    const changed = splitNulPaths(
+      command(['git', ...nulPathListArgs(['diff', '--name-only', `${baseSha}...HEAD`])]),
+    ).some((path) => path.startsWith('shared/record/migrations/'))
     let currentHeadStatuses: CommitStatus[] = []
     let priorStatuses: CommitStatus[] = []
     if (changed) {

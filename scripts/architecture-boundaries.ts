@@ -99,12 +99,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep canon budget policy independent of every adapter and store.',
   ),
   boundary(
-    'canon-files-boundary',
-    'orchestrator/src/canon/canon-files.ts',
-    ['node:fs', 'node:path', '../../../shared/git.ts', './canon-lint.ts', './codex-project-doc.ts'],
-    'Keep canon file collection independent of stores, commands, runs, routing, transports, and worktrees.',
-  ),
-  boundary(
     'canon-hydrate-boundary',
     'orchestrator/src/canon/canon-hydrate.ts',
     ['node:path', './canon-lint.ts', './codex-project-doc.ts', './user-canon-home.ts'],
@@ -454,7 +448,14 @@ export const importBoundaries: ImportBoundary[] = [
   boundary(
     'git-environment-boundary',
     'orchestrator/src/git/git-environment.ts',
-    ['node:crypto', 'node:fs', 'node:os', 'node:path', '../../../shared/git.ts'],
+    [
+      'node:crypto',
+      'node:fs',
+      'node:os',
+      'node:path',
+      '../../../shared/git.ts',
+      '../../../shared/git-path-list.ts',
+    ],
     'Keep hermetic git observation independent of lifecycle and policy concerns.',
   ),
   boundary(

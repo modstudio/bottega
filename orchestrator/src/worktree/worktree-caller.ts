@@ -1,6 +1,7 @@
 // concern: worktree-caller
 import { cpSync, mkdirSync, realpathSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, gitBytes, gitInput, gitOk } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import type { Worktree } from './worktree-types.ts'
@@ -135,17 +136,15 @@ export function carryWorkingState(cwd: string, worktree: Worktree): CarriedWorki
   assertCallerAncestry(cwd, worktree)
 
   const patch = gitBytes(['diff', '--binary', '--full-index', worktree.base, '--'], cwd)
-  const tracked = gitBytes(['diff', '--name-only', '-z', worktree.base, '--'], cwd)
-    .toString()
-    .split('\0')
-    .filter(Boolean)
+  const tracked = splitNulPaths(
+    gitBytes(nulPathListArgs(['diff', '--name-only', worktree.base, '--']), cwd).toString(),
+  )
   if (patch.byteLength)
     gitInput(['apply', '--binary', '--whitespace=nowarn', '-'], worktree.path, patch)
 
-  const untracked = gitBytes(['ls-files', '--others', '--exclude-standard', '-z'], cwd)
-    .toString()
-    .split('\0')
-    .filter(Boolean)
+  const untracked = splitNulPaths(
+    gitBytes(nulPathListArgs(['ls-files', '--others', '--exclude-standard']), cwd).toString(),
+  )
   const otherWorktrees = otherWorktreePaths(
     gitOk(['worktree', 'list', '--porcelain'], cwd) ?? '',
     cwd,

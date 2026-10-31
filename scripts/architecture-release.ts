@@ -26,6 +26,7 @@ export const releaseModules = [
     file: 'orchestrator/src/release/release-required.ts',
     allowed: [
       'shared/brand.ts',
+      'shared/git-path-list.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/projects.ts',
       'orchestrator/src/review/review-declared-globs.ts',

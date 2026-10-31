@@ -29,6 +29,7 @@ import {
 } from '../orchestrator/src/gate/gate-facts.ts'
 import { type Project, projectAt } from '../orchestrator/src/project/projects.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -82,11 +83,14 @@ export function readCanonGateFactsInput(
 }
 
 export function branchChangedPaths(checkout: string, base: string): string[] {
-  const diff = run(['git', 'diff', '--no-renames', '--name-only', '-z', base, 'HEAD'], checkout)
+  const diff = run(
+    ['git', ...nulPathListArgs(['diff', '--no-renames', '--name-only', base, 'HEAD'])],
+    checkout,
+  )
   if (diff.exitCode !== 0) {
     refuse(`cannot read branch changes from merge-base ${base}: ${diff.stderr}`)
   }
-  return diff.stdout.split('\0').filter(Boolean)
+  return splitNulPaths(diff.stdout)
 }
 
 export function branchHydrationPaths(paths: Iterable<string>): string[] {
