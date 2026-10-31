@@ -61,6 +61,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           live: z.string().trim().min(1).optional(),
           onDemand: z.boolean().optional(),
           requiredWhenChanged: z.array(z.string().trim().min(1)).optional(),
+          releasesWhenChanged: z.array(z.string().trim().min(1)).optional(),
         }),
       )
       .superRefine((rungs, context) => {
@@ -473,6 +474,7 @@ export const workflowFactSources = [
   'before-pull-request',
   'reference',
   'ship-to',
+  'merged-change',
   'workflow-text',
 ] as const
 export type WorkflowFactSource = (typeof workflowFactSources)[number]

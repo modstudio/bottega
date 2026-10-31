@@ -12,6 +12,7 @@ needs:
   - release
   - tracker
   - ship-to
+  - merged-change
 ---
 This run's close action is `{{shipTo.closeAction}}`.
 

@@ -28,6 +28,7 @@ import { cursorAutonomyOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
+  mergedChangeSources,
   resolveWorkflowProjectFacts,
   stepNeedsCloseState,
   workflowCompositionFactExtras,
@@ -818,7 +819,9 @@ export function composeWorkflow(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
-  const allNeeds = selected.flatMap((step) => step.needs)
+  const allNeeds = selected
+    .flatMap((step) => step.needs)
+    .filter((source) => source !== 'merged-change')
   const { resolved, facts } = resolveWorkflowProjectFacts(
     project,
     allNeeds,
@@ -826,6 +829,7 @@ export function composeWorkflow(
     args,
     effectiveAutonomy,
     workflowCompositionFactExtras,
+    mergedChangeSources(d),
   )
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   return {
@@ -942,6 +946,8 @@ export function getWorkflowStep(
     stepNeedsCloseState(step.needs),
     args,
     effectiveAutonomy,
+    [],
+    mergedChangeSources(d),
   )
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   const keylessTrackerActionPaths = new Set<string>()

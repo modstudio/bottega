@@ -1,7 +1,10 @@
 // concern: workflows
 /** Resolves the registered project facts requested by workflow steps. */
 
+import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { latestBranchLanding } from '../branch/task-key-pull-request.ts'
+import { db } from '../database/db.ts'
 import {
   composeIndexSources,
   type InjectionSource,
@@ -10,10 +13,28 @@ import {
   type WorkflowFactSource,
 } from '../project/project-injection.ts'
 import type { Project } from '../project/projects.ts'
+import { projectByName } from '../project/projects.ts'
+import { changedPaths } from '../release/release-required.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
-import { decideShipToReach, shipToRungNames } from './ship-to-reach.ts'
+import { decideShipToReach, shipToRungs } from './ship-to-reach.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
+
+export type MergedChangeSources = {
+  landing(project: string, branch: string): { mergeCommit: string | null } | null
+  changedPaths(project: string, mergeCommit: string): readonly string[]
+}
+
+export function mergedChangeSources(database: Database = db()): MergedChangeSources {
+  return {
+    landing: (project, branch) => latestBranchLanding(project, branch, database),
+    changedPaths(project, mergeCommit) {
+      const registered = projectByName(project, database)
+      if (!registered) throw new Error(`unknown project "${project}"`)
+      return changedPaths(registered, mergeCommit)
+    },
+  }
+}
 
 const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
   needs.filter(
@@ -21,6 +42,7 @@ const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionS
       source !== 'before-pull-request' &&
       source !== 'reference' &&
       source !== 'ship-to' &&
+      source !== 'merged-change' &&
       source !== 'workflow-text',
   )
 
@@ -81,6 +103,7 @@ function shipToFact(
   args: Record<string, string>,
   autonomy: WorkflowAutonomyResolution,
   projectFacts: Record<string, unknown>,
+  sources: MergedChangeSources,
 ) {
   if (!needs.includes('ship-to')) return {}
   if (!autonomy.shipTo) {
@@ -100,7 +123,36 @@ function shipToFact(
     throw new Error(
       `ship-to depth "${depthRung.name}" names a rung released on demand with ${PLATFORM_SLUG} release run ${project.name} --rung ${depthRung.name} and cannot be a ship-to depth`,
     )
-  const decision = decideShipToReach(autonomy.shipTo.value, shipToRungNames(rungs), args.depth)
+  const reachableRungs = shipToRungs(rungs)
+  const initialDecision = decideShipToReach(autonomy.shipTo.value, reachableRungs, args.depth)
+  if (!initialDecision.allowed) throw new Error(initialDecision.refusal)
+  const needsMergedChange =
+    needs.includes('merged-change') &&
+    initialDecision.reach.some((name) =>
+      reachableRungs.some(
+        (rung) => rung.name === name && rung.releasesWhenChanged !== undefined,
+      ),
+    )
+  let merge: { changedPaths: readonly string[] } | undefined
+  if (needsMergedChange) {
+    const branch = args.branch!
+    const landing = sources.landing(project.name, branch)
+    if (!landing)
+      throw new Error(
+        `cannot establish the merged commit of ${branch}: no landing is recorded; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
+      )
+    if (!landing.mergeCommit)
+      throw new Error(
+        `cannot establish the merged commit of ${branch}: its landing record has no merge commit; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
+      )
+    merge = { changedPaths: sources.changedPaths(project.name, landing.mergeCommit) }
+  }
+  const decision = decideShipToReach(
+    autonomy.shipTo.value,
+    reachableRungs,
+    args.depth,
+    merge,
+  )
   if (!decision.allowed) throw new Error(decision.refusal)
   const tracker = needsCloseState ? (projectFacts.tracker as CloseTrackerFact) : undefined
   return {
@@ -110,8 +162,11 @@ function shipToFact(
       mayMerge: decision.mayMerge ? 'yes' : 'no',
       reach: decision.reach,
       remaining: decision.remaining,
+      skipped: decision.skipped,
       reachText: decision.reach.join(', ') || 'none',
       remainingText: decision.remaining.join(', ') || 'none',
+      skippedText:
+        decision.skipped.map(({ name, reason }) => `${name} (${reason})`).join('; ') || 'none',
       ...closeShipToFact(project.name, decision.remaining.length, decision.mayMerge, tracker),
     },
   }
@@ -128,6 +183,7 @@ export function resolveWorkflowProjectFacts(
   args: Record<string, string>,
   autonomy: WorkflowAutonomyResolution,
   extras: readonly InjectionSource[] = [],
+  sources: MergedChangeSources = mergedChangeSources(),
 ) {
   const { resolved, facts: projectFacts } = resolveDeclaredFacts(
     project,
@@ -141,7 +197,7 @@ export function resolveWorkflowProjectFacts(
       ...projectFacts,
       ...beforePullRequestFact(project, needs),
       ...referenceFact(project, needs),
-      ...shipToFact(project, needs, needsCloseState, args, autonomy, projectFacts),
+      ...shipToFact(project, needs, needsCloseState, args, autonomy, projectFacts, sources),
     },
   }
 }

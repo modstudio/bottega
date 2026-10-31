@@ -183,4 +183,41 @@ Synthetic body.
       closeState: 'done',
     })
   })
+
+  test('merged-change refuses when no branch landing is recorded', () => {
+    expect(() =>
+      resolveWorkflowProjectFacts(
+        {
+          name: 'fixture',
+          stack: 'bun',
+          settings: {
+            release: {
+              rungs: [
+                {
+                  name: 'production',
+                  branch: 'production',
+                  releasesWhenChanged: ['src/**'],
+                },
+              ],
+              mergeMethod: 'squash',
+              requiredChecks: [],
+            },
+          },
+        },
+        ['release', 'ship-to', 'merged-change'],
+        false,
+        { branch: 'DEV-1917-change' },
+        { ...autonomy, shipTo: { value: 'production', scope: 'test' } },
+        [],
+        {
+          landing: () => null,
+          changedPaths: () => {
+            throw new Error('changed paths must not be read without a landing')
+          },
+        },
+      ),
+    ).toThrow(
+      'cannot establish the merged commit of DEV-1917-change: no landing is recorded; cleared by: bottega tree branch landed DEV-1917-change --pr <number>',
+    )
+  })
 })

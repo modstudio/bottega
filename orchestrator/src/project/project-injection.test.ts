@@ -374,6 +374,22 @@ describe('project workflow injection', () => {
     ])
   })
 
+  test('release artifact globs are non-empty and do not require a live probe', () => {
+    const rung = { ...release.rungs[0]!, live: undefined }
+    expect(
+      validateProjectSettings(
+        { release: { ...release, rungs: [{ ...rung, releasesWhenChanged: ['src/**'] }] } },
+        'strict',
+      ),
+    ).toEqual([])
+    expect(
+      validateProjectSettings(
+        { release: { ...release, rungs: [{ ...rung, releasesWhenChanged: [' '] }] } },
+        'strict',
+      ),
+    ).toEqual([expect.stringContaining('release.rungs.0.releasesWhenChanged.0: Too small')])
+  })
+
   test('refuses a before-pull-request entry without changed-path globs', () => {
     expect(
       validateProjectSettings(

@@ -356,8 +356,10 @@ describe('ship-to workflow composition', () => {
       mayMerge: 'yes',
       reach: [],
       remaining: [],
+      skipped: [],
       reachText: 'none',
       remainingText: 'none',
+      skippedText: 'none',
     })
   })
 
