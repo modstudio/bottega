@@ -110,7 +110,13 @@ describe('landing-tree decisions', () => {
   test('keeps a clean existing landing tree without holding close-out', () => {
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
+        {
+          job: LANDING_TREE_JOB,
+          repo: 'bottega',
+          treeExists: true,
+          branch: 'DEV-1037-orch-1',
+          runId: '1',
+        },
         true,
         { held: false as const },
       ),
@@ -125,14 +131,23 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: false as const }
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
+        {
+          job: LANDING_TREE_JOB,
+          repo: 'bottega',
+          treeExists: true,
+          branch: 'DEV-1037-orch-1',
+          runId: '1',
+        },
         false,
         ordinary,
       ),
     ).toEqual({
       held: true,
       until: null,
-      reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      reason:
+        `landing tree holds unique work; land it, or dispose it with ` +
+        `${PLATFORM_SLUG} tree branch dispose bottega:DEV-1037-orch-1 ` +
+        '--reason <abandoned|superseded|throwaway> --note "<why>"',
       hold: 'unique-work',
     })
   })
@@ -141,7 +156,13 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: true as const, until: null, reason: 'ordinary hold' }
     expect(
       landingTreeHoldDecision(
-        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
+        {
+          job: 'implement',
+          repo: 'bottega',
+          treeExists: true,
+          branch: 'DEV-1037-orch-1',
+          runId: '1',
+        },
         true,
         ordinary,
       ),
@@ -466,7 +487,6 @@ describe('held reader-clone live holder', () => {
         hold: 'close-out-lease',
         readerClone: true,
         liveHolder: { number: 24567, job: 'review-lens' },
-        uniqueWork: false,
       }),
     ).toEqual({
       ref: 'run 24567 (review-lens) holds it; clears when it finishes',
@@ -476,7 +496,6 @@ describe('held reader-clone live holder', () => {
 
   test.each([
     ['another hold', { hold: 'other' as const }],
-    ['a writing tree', { readerClone: false }],
     ['no live holder', { liveHolder: null }],
   ])('%s is not the shared-clone in-flight case', (_name, override) => {
     expect(
@@ -484,22 +503,20 @@ describe('held reader-clone live holder', () => {
         hold: 'close-out-lease',
         readerClone: true,
         liveHolder: { number: 24567, job: 'review-lens' },
-        uniqueWork: false,
         ...override,
       }),
     ).toBeNull()
   })
 
-  test('a contradictory unique-work fact keeps the holder blocking', () => {
+  test('a writer lease holder is named and keeps blocking', () => {
     expect(
       heldTreeLiveHolderInFlight({
         hold: 'close-out-lease',
-        readerClone: true,
-        liveHolder: { number: 24567, job: 'review-lens' },
-        uniqueWork: true,
+        readerClone: false,
+        liveHolder: { number: 24567, job: 'implement' },
       }),
     ).toEqual({
-      ref: 'run 24567 (review-lens) holds it; clears when it finishes',
+      ref: 'run 24567 (implement) holds it; clears when it finishes',
       suppressBlock: false,
     })
   })

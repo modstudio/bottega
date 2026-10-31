@@ -3,7 +3,10 @@
 import { existsSync } from 'node:fs'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
-import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
+import {
+  type LandingTreeHoldKind,
+  landingTreeUniqueWorkRemedy,
+} from '../landing-tree/landing-tree.ts'
 import { observeLandingTreeRelease } from '../landing-tree/release-observation.ts'
 import { projectAt } from '../project/projects.ts'
 import { LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
@@ -47,12 +50,17 @@ export function landingTreeReleaseHold(input: {
         .get(project, input.branch),
   )
   const decision = observeLandingTreeRelease({ ...input, treeExists, landingInFlight })
+  const branchDisposal =
+    project && input.branch ? landingTreeUniqueWorkRemedy(project, input.branch) : null
   return decision.action === 'keep'
     ? {
         runId: input.runId,
         worktree: input.worktree,
         outcome: 'held',
-        detail: decision.reason,
+        detail: (decision.hold === 'unique-work' && branchDisposal
+          ? `${decision.reason}; land it, or dispose it with ${branchDisposal}`
+          : decision.reason
+        ).replaceAll('<path>', input.worktree),
         hold: decision.hold,
       }
     : null

@@ -30,6 +30,7 @@ export type CloseOutReportResult = {
   hold?: HeldTreeHoldKind
   inFlightRef?: string | null
   suppressBlock?: boolean
+  leaseHolder?: { runId: string; number: number; job: string }
 }
 
 export type CloseOutResult = Omit<CloseOutReportResult, 'outcome' | 'reportOutcome'> & {
@@ -67,10 +68,10 @@ export function heldConversationCloseOutResult(
     runId,
     worktree,
     outcome: 'held',
-    detail:
-      hold.until === null
-        ? hold.reason
-        : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`,
+    detail: (hold.until === null
+      ? hold.reason
+      : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`
+    ).replaceAll('<path>', worktree),
     hold: hold.hold,
     inFlightRef: hold.inFlightRef,
     suppressBlock: hold.suppressBlock,

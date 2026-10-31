@@ -561,7 +561,10 @@ test('landing-tree sweep rechecks cleanliness under the close-out lock', () => {
 
     expect(result).toMatchObject({
       outcome: 'held',
-      detail: 'landing tree held by session owner: tree is dirty: hanged.ts',
+      detail:
+        'landing tree held by session owner: tree is dirty: hanged.ts; ' +
+        `land it, or dispose it with ${PLATFORM_SLUG} tree branch dispose close-out-${fixture.id}:DEV-647-orch-${fixture.id} ` +
+        '--reason <abandoned|superseded|throwaway> --note "<why>"',
     })
     expect(existsSync(fixture.tree)).toBe(true)
   } finally {
@@ -574,6 +577,35 @@ test('a sweep close-out runs its work under the close-out lease', () => {
   const held = withCloseOutLease(runId, false, () => heldRunCloseOutLeaseIds().includes(runId))
   expect(held).toBe(true)
   expect(heldRunCloseOutLeaseIds()).not.toContain(runId)
+})
+
+test('a refused turn close-out lease carries the contested turn identity beside its root', () => {
+  const rootId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+  const turnId = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'ok',
+    parent: rootId,
+    turn: 2,
+  })
+  db().query('UPDATE run SET worktree=? WHERE record_id=?').run('/held-turn-tree', rootId)
+  const turn = db().query('SELECT number FROM run WHERE record_id=?').get(turnId) as {
+    number: number
+  }
+
+  withRunCloseOutLease(
+    turnId,
+    () => {},
+    () => {
+      expect(withCloseOutLease(turnId, false, () => true)).toMatchObject({
+        runId: rootId,
+        worktree: '/held-turn-tree',
+        outcome: 'held',
+        hold: 'close-out-lease',
+        leaseHolder: { runId: turnId, number: turn.number, job: 'implement' },
+      })
+    },
+  )
 })
 
 test('the coordinator still closes out under the close-out lease it already holds', () => {

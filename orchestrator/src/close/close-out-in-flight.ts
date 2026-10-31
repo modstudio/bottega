@@ -2,18 +2,16 @@
 /** Gathers holder, cursor, and open-PR facts so a held close-out report can carry in-flight work. */
 
 import { existsSync } from 'node:fs'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
 import { gitResult } from '../git/git-environment.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import {
-  type HeldTreeOpenPr,
   type HeldTreeHoldKind,
+  type HeldTreeOpenPr,
   heldTreeInFlight,
   heldTreeLiveHolderInFlight,
   pullRequestLookupNeeded,
 } from '../landing-tree/landing-tree.ts'
-import { HOOK_TREE_JOB, LANDING_TREE_JOB } from '../run/synthetic-lifecycle-job.ts'
 import {
   annotateHeldTreeDetail,
   type CloseOutReportResult,
@@ -170,14 +168,18 @@ function lookupCursor(run: RunLandingFacts, treePath: string): CursorRow | null 
   return lookupShipTaskCursor(run.sessionId, run.repo, run.branch, treePath)
 }
 
-function inFlightForHold(worktree: string, run: RunLandingFacts, hold: HeldTreeHoldKind) {
-  const liveHolder = heldTreeLiveHolderInFlight({
+function inFlightForHold(
+  worktree: string,
+  run: RunLandingFacts,
+  hold: HeldTreeHoldKind,
+  liveHolder: { number: number; job: string } | null,
+) {
+  const holderInFlight = heldTreeLiveHolderInFlight({
     hold,
     readerClone: isReadOnlyRepositoryJob(run.job),
-    liveHolder: { number: run.number, job: run.job },
-    uniqueWork: !isReadOnlyRepositoryJob(run.job),
+    liveHolder,
   })
-  if (liveHolder) return liveHolder
+  if (holderInFlight) return holderInFlight
   if (hold === 'close-out-lease') return null
   const base = {
     treePath: worktree,
@@ -210,22 +212,16 @@ function inFlightForHold(worktree: string, run: RunLandingFacts, hold: HeldTreeH
   })
 }
 
-function heldTreeRemedy(run: RunLandingFacts, result: CloseOutReportResult): string {
-  return run.job === HOOK_TREE_JOB || run.job === LANDING_TREE_JOB
-    ? `${PLATFORM_SLUG} tree remove ${result.worktree}`
-    : `${PLATFORM_SLUG} run discard ${result.runId}`
-}
-
 export function annotateHeldLandingInFlight(result: CloseOutReportResult): CloseOutReportResult {
   if ((result.reportOutcome ?? result.outcome) !== 'held' || !result.worktree) return result
   if (hasHeldInFlightAnnotation(result)) return result
   const run = lookupRun(result.runId)
   if (!run) return result
-  const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other')
-  let detail = annotateHeldTreeDetail(result.detail, inFlight)
-  if (!inFlight?.suppressBlock && !detail.includes('cleared by:')) {
-    detail = `${detail}; cleared by: ${heldTreeRemedy(run, result)}`
-  }
+  const holder =
+    result.leaseHolder ??
+    (result.hold === 'close-out-lease' ? { number: run.number, job: run.job } : null)
+  const inFlight = inFlightForHold(result.worktree, run, result.hold ?? 'other', holder)
+  const detail = annotateHeldTreeDetail(result.detail, inFlight)
   return {
     ...result,
     detail,
