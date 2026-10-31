@@ -91,7 +91,8 @@ export function doctorAcpStatus(gap: string | null): string {
   return gap ? `informational — ${gap}` : 'ready'
 }
 
-const EXPECTED_WORKER_CHECK = 'bun run check:worker'
+const WORKER_CHECK_SCRIPT = 'check:worker'
+const EXPECTED_WORKER_CHECK = `bun run ${WORKER_CHECK_SCRIPT}`
 
 /** Compare a registered worker check only when the project declares the standard script. */
 export function workerCheckDoctorFinding(input: {
@@ -99,7 +100,7 @@ export function workerCheckDoctorFinding(input: {
   workerCheck: string | undefined
   scripts: Readonly<Record<string, unknown>> | undefined
 }): string | null {
-  if (typeof input.scripts?.['check:worker'] !== 'string') return null
+  if (typeof input.scripts?.[WORKER_CHECK_SCRIPT] !== 'string') return null
   if (input.workerCheck === EXPECTED_WORKER_CHECK) return null
   return (
     `${input.project}: registered workerCheck ${JSON.stringify(input.workerCheck ?? '(unset)')} ` +
@@ -701,5 +702,4 @@ export async function doctorCommand(
       log(`  ${j.padEnd(15)} -> none (${(e as Error).message})`)
     }
   }
-  return
 }

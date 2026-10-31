@@ -18,6 +18,8 @@
     "shared/record-session.ts": ["exports"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],
+    // scripts/check.ts consumes these exports; knip does not trace that import.
+    "scripts/static-check-plan.ts": ["exports"],
     // rehearse.sh's eval imports the export.
     "orchestrator/src/postgres/migration-failure.ts": ["exports"],
     // Cloudflare loads this default export through wrangler.toml rather than an import.
@@ -45,6 +47,7 @@
         "cli/bottega.ts!",
         "scripts/{build-binary,build-release-artifacts,publish-release,read-hosted-migrate-url,smoke-binary,smoke-release}.ts!",
         "scripts/check.ts!",
+        "scripts/static-check-plan.ts!",
         "scripts/check-*.ts!",
         "scripts/record-migration-set.ts!",
         "scripts/record-rehearse.ts!",

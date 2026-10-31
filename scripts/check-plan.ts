@@ -1,7 +1,5 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 
-export { staticCheckPlan } from './static-check-plan.ts'
-
 export const CHECK_LEGS = [
   {
     name: 'cli',
@@ -82,10 +80,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: {
-      run: false,
-      reason: 'the separate data package is outside the three worker typechecks',
-    },
+    worker: { run: false, reason: 'slow: 5.1s CPU in the gate' },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -97,7 +92,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'slow: measured over the worker budget' },
+    worker: { run: false, reason: 'slow: 22.8s CPU in the gate' },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
       { argv: ['bun', 'run', 'build'], unitTests: false },
@@ -112,7 +107,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'the deployed site is outside the three worker typechecks' },
+    worker: { run: true },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -124,7 +119,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'retrieval is outside the three worker typechecks' },
+    worker: { run: true },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -162,7 +157,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-docker-workspaces.test.ts',
   'scripts/check-dependency-audit.test.ts',
   'scripts/check-runtime.test.ts',
-  'scripts/check-static-plan.test.ts',
+  'scripts/static-check-plan.test.ts',
   'scripts/check-ci-workflow.test.ts',
   'scripts/check-storybook.test.ts',
   'scripts/check-outcome.test.ts',

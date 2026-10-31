@@ -7,13 +7,11 @@ export type StaticCheckDeclaration = {
   category?: string
   reportsRemaining?: boolean
   worker: WorkerDecision
-  workerArgv?: (root: string) => string[]
+  workerArgv?: (input: { root: string; qualityBase: string }) => string[]
 }
 
 const run = { run: true } as const
 const omit = (reason: string): WorkerDecision => ({ run: false, reason })
-const broadInventory = (subject: string) =>
-  omit(`repository-wide ${subject} inventory is not change-scoped`)
 const script = (
   name: string,
   worker: WorkerDecision,
@@ -40,7 +38,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     name: 'Biome',
     argv: ({ root }) => [`${root}node_modules/.bin/biome`, 'ci', '.'],
     worker: run,
-    workerArgv: (root) => [
+    workerArgv: ({ root }) => [
       `${root}node_modules/.bin/biome`,
       'ci',
       '--changed',
@@ -51,7 +49,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   {
     name: 'project checks',
     argv: ({ root }) => ['bun', `${root}orchestrator/scripts/check-projects.ts`],
-    worker: omit("inspects the machine's project register rather than the worker change"),
+    worker: omit("reads the machine's project register; slow: 4.1s CPU in the gate"),
   },
   {
     name: 'orchestrator identity inventory',
@@ -60,12 +58,12 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
       `${root}scripts/check-identity-inventory.ts`,
       qualityBase,
     ],
-    worker: broadInventory('identity'),
+    worker: run,
   },
   {
     name: 'SQL literal schema',
     argv: ({ root }) => ['bun', `${root}scripts/check-sql-literal-schema.ts`],
-    worker: broadInventory('SQL literal'),
+    worker: run,
   },
   {
     name: 'hosted SQL schema',
@@ -76,46 +74,40 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     'scripts/check-machine-state.ts',
     omit('inspects machine-state paths outside the worker tree'),
   ),
-  script('scripts/check-cascade-preservation.ts', broadInventory('foreign-key cascade')),
+  script('scripts/check-cascade-preservation.ts', omit('slow: 3.2s CPU in the gate')),
   script('scripts/check-postgres-migrations.ts', omit('needs a database')),
-  script('scripts/check-postgres-array-bindings.ts', broadInventory('Postgres array binding')),
-  script('scripts/check-record-jsonb-string-checks.ts', broadInventory('record JSONB constraint')),
-  script('scripts/check-outbox-payload-contracts.ts', broadInventory('outbox payload')),
+  script('scripts/check-postgres-array-bindings.ts', run),
+  script('scripts/check-record-jsonb-string-checks.ts', run),
+  script('scripts/check-outbox-payload-contracts.ts', run),
   script('scripts/check-record-migrations-apply.ts', omit('needs a database')),
-  script(
-    'scripts/check-bun-serve-timeout.ts',
-    omit('exercises the Bun server runtime rather than changed files'),
-  ),
-  script(
-    'scripts/check-hosted-hub-server-boundary.ts',
-    broadInventory('hosted hub server boundary'),
-  ),
-  script(HOSTED_REFUSAL_TEXT_CHECK, broadInventory('hosted refusal text')),
-  script('scripts/check-docker-workspaces.ts', omit('needs Docker workspace inspection')),
-  script('scripts/check-hub-packages.ts', broadInventory('hub package boundary')),
-  script('scripts/check-hub-ui-styles.ts', broadInventory('hub UI style')),
-  script('scripts/check-storybook.ts', omit('needs the Storybook build surface')),
+  script('scripts/check-bun-serve-timeout.ts', run),
+  script('scripts/check-hosted-hub-server-boundary.ts', run),
+  script(HOSTED_REFUSAL_TEXT_CHECK, run),
+  script('scripts/check-docker-workspaces.ts', run),
+  script('scripts/check-hub-packages.ts', run),
+  script('scripts/check-hub-ui-styles.ts', run),
+  script('scripts/check-storybook.ts', run),
   script('scripts/check-architecture.ts', run, { extra: (qualityBase) => [qualityBase] }),
-  script('scripts/check-review-boundary.ts', broadInventory('review boundary')),
-  script('scripts/check-outcome-boundary.ts', broadInventory('outcome boundary')),
-  script('scripts/check-contract-boundary.ts', broadInventory('contract boundary')),
-  script('scripts/check-evidence-boundary.ts', broadInventory('evidence boundary')),
-  script('scripts/check-git-environment-spawn.ts', broadInventory('Git environment spawn')),
-  script('scripts/check-self-spawn.ts', broadInventory('self-spawn')),
-  script('scripts/check-source-root.ts', broadInventory('source-root')),
-  script('scripts/check-launchd-templates.ts', omit('validates machine launchd templates')),
+  script('scripts/check-review-boundary.ts', run),
+  script('scripts/check-outcome-boundary.ts', run),
+  script('scripts/check-contract-boundary.ts', run),
+  script('scripts/check-evidence-boundary.ts', run),
+  script('scripts/check-git-environment-spawn.ts', run),
+  script('scripts/check-self-spawn.ts', run),
+  script('scripts/check-source-root.ts', run),
+  script(
+    'scripts/check-launchd-templates.ts',
+    omit('reads machine configuration outside the worker tree'),
+  ),
   script(
     'scripts/check-hook-binary.ts',
     omit('validates installed hook binaries outside the worker tree'),
   ),
-  script('scripts/check-gitleaks.ts', omit('needs the repository secret-scanning toolchain')),
-  script('scripts/check-write-transaction-site.ts', broadInventory('write-transaction call-site')),
-  script(
-    'scripts/check-branch-ref-mutation-site.ts',
-    broadInventory('branch-ref mutation call-site'),
-  ),
-  script('scripts/check-command-descriptions.ts', broadInventory('command description')),
-  script('scripts/reference.ts', broadInventory('command reference')),
+  script('scripts/check-gitleaks.ts', omit('needs the installed gitleaks binary')),
+  script('scripts/check-write-transaction-site.ts', run),
+  script('scripts/check-branch-ref-mutation-site.ts', run),
+  script('scripts/check-command-descriptions.ts', run),
+  script('scripts/reference.ts', run),
   script('scripts/check-file-ceiling.ts', run, {
     category: 'file-length',
     reportsRemaining: true,
@@ -147,14 +139,14 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
       '--reporter=json',
       '{files}',
     ],
-    worker: omit('the worker runs the narrower file and cognitive ratchets'),
+    worker: run,
   },
-  script('scripts/check-test-fixtures.ts', broadInventory('test fixture')),
+  script('scripts/check-test-fixtures.ts', run),
   script('scripts/check-test-placement.ts', run),
-  script('scripts/check-test-reach.ts', broadInventory('test reach'), {
+  script('scripts/check-test-reach.ts', run, {
     extra: (qualityBase) => [qualityBase],
   }),
-  script('scripts/check-test-spawns.ts', broadInventory('test process-spawn')),
+  script('scripts/check-test-spawns.ts', run),
   script('scripts/check-dead-code.ts', run, {
     extra: (qualityBase) => [qualityBase],
     category: 'unused-exports',
@@ -162,19 +154,22 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   }),
   script('scripts/check-brand.ts', run),
   script('scripts/check-legacy-names.ts', run),
-  script('scripts/check-doc-editor-rich-style.ts', broadInventory('document-editor style')),
-  script('scripts/check-harness-mirror.ts', omit('compares the external harness mirror')),
+  script('scripts/check-doc-editor-rich-style.ts', run),
+  script('scripts/check-harness-mirror.ts', run),
   script('scripts/check-canon-drift.ts', omit('compares tree canon with the machine doc store')),
   script(
     'scripts/check-workflow-drift.ts',
     omit('compares tree workflows with the machine doc store'),
   ),
-  script('scripts/check-workflow-tree.ts', broadInventory('workflow tree')),
-  script('scripts/check-ci-workflow.ts', broadInventory('CI workflow')),
-  script('scripts/generate-recipe-schema.ts', broadInventory('recipe schema'), {
+  script('scripts/check-workflow-tree.ts', run),
+  script('scripts/check-ci-workflow.ts', run),
+  script('scripts/generate-recipe-schema.ts', run, {
     extra: () => ['--check'],
   }),
-  script('orchestrator/scripts/check-pack-budget.ts', omit('compiles machine-backed canon packs')),
+  script(
+    'orchestrator/scripts/check-pack-budget.ts',
+    omit('compiles packs from the machine doc store; slow: 7.5s CPU in the gate'),
+  ),
   script('orchestrator/scripts/check-canon-lint.ts', run),
   script('scripts/quality/check-test-substance.ts', run, {
     extra: (qualityBase) => [qualityBase],
@@ -186,5 +181,49 @@ export function staticCheckPlan(): readonly StaticCheckDeclaration[] {
   return STATIC_CHECKS
 }
 
-// The declaration is also consumed here so its test seam is a production-used export.
-if (staticCheckPlan().length === 0) throw new Error('the static check plan must not be empty')
+type WorkerLegDeclaration = {
+  name: string
+  typecheck: unknown
+  worker: WorkerDecision
+}
+
+export type WorkerOmission = { name: string; reason: string }
+
+/** Project the shared gate declaration into the worker's commands and complete omission report. */
+export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
+  staticChecks: readonly StaticCheckDeclaration[],
+  legs: readonly TLeg[],
+): {
+  biome: StaticCheckDeclaration
+  typecheckLegs: TLeg[]
+  staticChecks: StaticCheckDeclaration[]
+  omitted: WorkerOmission[]
+} {
+  const biomeCandidates = staticChecks.filter((check) => check.workerArgv !== undefined)
+  if (biomeCandidates.length !== 1) {
+    throw new Error('the worker check must declare exactly one worker-specific Biome command')
+  }
+  const biome = biomeCandidates[0]!
+  const typecheckLegs = legs.filter((leg) => leg.typecheck !== null && leg.worker.run)
+  const workerStaticChecks = staticChecks.filter((check) => check !== biome && check.worker.run)
+  const omitted: WorkerOmission[] = [
+    {
+      name: 'test suites',
+      reason: 'worker check runs no test suites; bun run check runs them',
+    },
+    ...legs.flatMap((leg) =>
+      leg.typecheck !== null && leg.worker.run
+        ? []
+        : [
+            {
+              name: `${leg.name} typecheck`,
+              reason: leg.worker.run ? 'has no typecheck command' : leg.worker.reason,
+            },
+          ],
+    ),
+    ...staticChecks.flatMap((check) =>
+      check.worker.run ? [] : [{ name: check.name, reason: check.worker.reason }],
+    ),
+  ]
+  return { biome, typecheckLegs, staticChecks: workerStaticChecks, omitted }
+}

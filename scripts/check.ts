@@ -12,7 +12,7 @@ import {
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv, mainCheckoutOf } from '../shared/git'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
-import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS, staticCheckPlan } from './check-plan.ts'
+import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
@@ -30,6 +30,7 @@ import {
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
+import { staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
 
 type Command = { cwd: string; argv: string[]; category?: string }
 type Leg = {
@@ -427,30 +428,41 @@ const rootTests = [
 ]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
-const workerBiome = STATIC_CHECKS[0]
-if (workerBiome?.name !== 'Biome') throw new Error('Biome must remain the first static check')
-if (!workerBiome.workerArgv) throw new Error('Biome must declare its worker command')
-const workerBiomeStep =
-  checkArguments.mode === 'worker'
-    ? {
-        name: workerBiome.name,
-        exitCode: await inherit(workerBiome.workerArgv(root), root),
-      }
-    : null
+const workerProjection =
+  checkArguments.mode === 'worker' ? workerCheckProjection(STATIC_CHECKS, legs) : null
+let workerQualityBase: string | undefined
+if (workerProjection) {
+  try {
+    workerQualityBase = qualityBaseArgument()
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exit(1)
+  }
+}
+const workerBiomeStep = workerProjection
+  ? {
+      name: workerProjection.biome.name,
+      exitCode: await inherit(
+        workerProjection.biome.workerArgv!({ root, qualityBase: workerQualityBase! }),
+        root,
+      ),
+    }
+  : null
 const results = await Promise.all(
-  legs
-    .filter((leg) => selected.has(leg.name) && (checkArguments.mode !== 'worker' || leg.worker.run))
-    .map((leg) =>
-      runLeg({
-        name: leg.name,
-        commands:
-          checkArguments.mode === 'static' || checkArguments.mode === 'worker'
-            ? leg.typecheck
-              ? [leg.typecheck]
-              : []
-            : leg.suite,
-      }),
-    ),
+  (workerProjection
+    ? workerProjection.typecheckLegs
+    : legs.filter((leg) => selected.has(leg.name))
+  ).map((leg) =>
+    runLeg({
+      name: leg.name,
+      commands:
+        checkArguments.mode === 'static' || checkArguments.mode === 'worker'
+          ? leg.typecheck
+            ? [leg.typecheck]
+            : []
+          : leg.suite,
+    }),
+  ),
 )
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...(workerBiomeStep ? [workerBiomeStep] : []), ...results]
@@ -464,7 +476,7 @@ if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
 if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
   let qualityMode: string
   try {
-    qualityMode = qualityBaseArgument()
+    qualityMode = workerQualityBase ?? qualityBaseArgument()
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
@@ -477,13 +489,11 @@ if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
     const plan = STATIC_OMIT_GROUPS[group]
     console.log(`omitting ${group} static checks (${plan.checks.join(', ')}): ${plan.reason}`)
   }
-  for (const [index, check] of staticChecks.entries()) {
-    const declaration = STATIC_CHECKS[index]!
-    const selectedForMode =
-      checkArguments.mode === 'worker'
-        ? declaration.name !== 'Biome' && declaration.worker.run
-        : !omittedChecks.has(check.name)
-    if (selectedForMode) gateSteps.push(await recordGateStep(check))
+  const selectedStaticChecks = workerProjection
+    ? workerProjection.staticChecks.map((check) => materializeStaticCheck(check, qualityMode))
+    : staticChecks.filter((check) => !omittedChecks.has(check.name))
+  for (const check of selectedStaticChecks) {
+    gateSteps.push(await recordGateStep(check))
   }
 }
 
@@ -528,19 +538,11 @@ if (gate.failures.length > 0) {
   console.error('gate failures:')
   for (const name of gate.failures) console.error(name)
 }
-if (checkArguments.mode === 'worker') {
-  const omitted = [
-    ...legs.flatMap((leg) =>
-      leg.typecheck && !leg.worker.run
-        ? [{ name: `${leg.name} typecheck`, reason: leg.worker.reason }]
-        : [],
-    ),
-    ...STATIC_CHECKS.flatMap((check) =>
-      check.worker.run ? [] : [{ name: check.name, reason: check.worker.reason }],
-    ),
-  ]
-  console.log(`worker check omitted ${omitted.length} steps; bun run check runs them all`)
-  for (const check of omitted) {
+if (workerProjection) {
+  console.log(
+    `worker check omitted ${workerProjection.omitted.length} steps; bun run check runs them all`,
+  )
+  for (const check of workerProjection.omitted) {
     console.log(`not run by worker check: ${check.name} (${check.reason})`)
   }
 }
