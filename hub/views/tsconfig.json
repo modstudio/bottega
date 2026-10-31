@@ -11,5 +11,5 @@
       "react-dom/*": ["./node_modules/@types/react-dom/*"]
     }
   },
-  "include": ["src", ".storybook", "vitest.config.ts"]
+  "include": ["src", ".storybook/*.ts", ".storybook/*.tsx", "vitest.config.ts"]
 }

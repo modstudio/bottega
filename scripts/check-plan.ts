@@ -165,7 +165,7 @@ export const CHECK_LEGS = [
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck:scripts'],
     typecheckConfigs: ['scripts/tsconfig.json'],
-    worker: { run: true },
+    worker: { run: false, reason: 'slow: 11.9s CPU in the gate' },
     suite: [],
   },
 ] as const
@@ -202,6 +202,7 @@ export const ROOT_TEST_FILES = [
   'scripts/postgres-migration-rls.test.ts',
   'scripts/check-test-placement.test.ts',
   'scripts/check-test-reach.test.ts',
+  'scripts/check-typecheck-reach.test.ts',
   'orchestrator/src/postgres/postgres-migrate.test.ts',
   'orchestrator/src/postgres/migration-failure.test.ts',
   'orchestrator/src/ratchet/biome-adapter.test.ts',

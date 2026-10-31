@@ -273,6 +273,21 @@ jobs:
           CI: "1"
         run: $SUITE_COMMAND --only=shared
 
+  scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - name: Install
+        run: bun install --silent
+      - name: Typecheck
+        env:
+          CI: "1"
+        run: $SUITE_COMMAND --only=scripts
+
   root:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -317,7 +332,7 @@ jobs:
 
   ci:
     if: always()
-    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, root, record-rehearsal]
+    needs: [secrets, static, cli, orchestrator, orchestrator-hooks, orchestrator-hooks-process, postgres, hub, hub-data, hub-ui-stories, hub-web, hub-web-smoke, hub-deploy-site, retrieval, shared, scripts, root, record-rehearsal]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:

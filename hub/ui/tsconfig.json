@@ -5,5 +5,5 @@
     "jsx": "react-jsx",
     "noUnusedParameters": true
   },
-  "include": ["src", ".storybook", "vitest.config.ts"]
+  "include": ["src", ".storybook/*.ts", ".storybook/*.tsx", "vitest.config.ts"]
 }
