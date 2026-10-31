@@ -836,7 +836,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
-    await settleToolBurst(claim.id, a.harness, toolBurst)
+    await settleToolBurst(claim.id, toolBurst)
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.

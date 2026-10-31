@@ -170,8 +170,8 @@ test('settled killed and observed bursts both reach agent stats', async () => {
   const killed = trip('goose')
   const observed = trip('codex', 1)
 
-  await settleToolBurst(killedRun, 'goose', killed)
-  await settleToolBurst(observedRun, 'codex', observed)
+  await settleToolBurst(killedRun, killed)
+  await settleToolBurst(observedRun, observed)
 
   expect(scoreboard('craft').find((row) => row.agent === 'grok')?.toolBursts).toEqual({
     runs: 1,

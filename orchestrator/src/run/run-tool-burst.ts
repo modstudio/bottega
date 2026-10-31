@@ -130,11 +130,7 @@ export function recordToolBurstObservation(runId: string, burst: ToolCallBurst):
 }
 
 /** Wait for a burst kill to finish, then record a tripped burst. */
-export async function settleToolBurst(
-  runId: string,
-  harness: string | undefined,
-  state: ToolBurstState,
-): Promise<void> {
+export async function settleToolBurst(runId: string, state: ToolBurstState): Promise<void> {
   if (state.termination) await state.termination
   recordToolBurstObservation(runId, state.burst)
 }
