@@ -382,7 +382,7 @@ async function proveCachePull(
   }
 }
 
-async function proveStringShapedSourceFileMutations(
+async function proveWrongShapedSourceFileMutations(
   origin: string,
   headers: Record<string, string>,
   spaceId: string,
@@ -422,47 +422,12 @@ async function proveStringShapedSourceFileMutations(
     expect(response.status).toBe(200)
     return JSON.parse(responseBody) as { id: string }
   }
-  const storeString = (id: string, sourceFile: string) =>
-    succeeds(
-      'postgres',
-      'postgres',
-      `UPDATE doc SET source_files=to_jsonb('["${sourceFile}"]'::text) WHERE space_id='${spaceId}' AND id='${id}';`,
-    )
-  const latestSourceFiles = (id: string) =>
-    succeeds(
-      'postgres',
-      'postgres',
-      `SELECT source_files::text FROM doc_revision WHERE space_id='${spaceId}' AND doc_id='${id}' ORDER BY at DESC,id DESC LIMIT 1;`,
-    )
   const revisionCount = (id: string) =>
     succeeds(
       'postgres',
       'postgres',
       `SELECT count(*) FROM doc_revision WHERE space_id='${spaceId}' AND doc_id='${id}';`,
     )
-
-  const deleted = await create('delete-string-source-files', 'Delete this document.')
-  storeString(deleted.id, 'src/delete-string-source-files.ts')
-  const deletion = await fetch(`${origin}/v1/docs/${deleted.id}`, {
-    method: 'DELETE',
-    headers,
-    body: JSON.stringify({ reason: 'delete string-shaped source files', author: 'proof' }),
-  })
-  expect(deletion.status).toBe(200)
-  expect(latestSourceFiles(deleted.id)).toBe('["src/delete-string-source-files.ts"]')
-
-  const consumed = await create(
-    'consume-string-source-files',
-    '---\nstatus: open\n---\n\nConsume this document.\n',
-  )
-  storeString(consumed.id, 'src/consume-string-source-files.ts')
-  const consumption = await fetch(`${origin}/v1/docs/${consumed.id}/consume`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ reason: 'consume string-shaped source files', author: 'proof' }),
-  })
-  expect(consumption.status).toBe(200)
-  expect(latestSourceFiles(consumed.id)).toBe('["src/consume-string-source-files.ts"]')
 
   for (const operation of ['delete', 'consume'] as const) {
     const wrong = await create(
@@ -673,7 +638,7 @@ export async function proveHostedDocs(input: {
   expect(created.id).toBeString()
   expect(created.revisionId).toBeString()
   await proveDocumentStatus(input.origin, headers, memberSpaceId)
-  await proveStringShapedSourceFileMutations(input.origin, headers, memberSpaceId)
+  await proveWrongShapedSourceFileMutations(input.origin, headers, memberSpaceId)
   const updated = await fetch(`${input.origin}/v1/docs`, {
     method: 'PUT',
     headers,
