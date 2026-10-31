@@ -217,7 +217,7 @@ Synthetic body.
         },
       ),
     ).toThrow(
-      'cannot establish the merged commit of DEV-1917-change: no landing is recorded; cleared by: bottega tree branch landed DEV-1917-change --pr <number>',
+      `cannot establish the merged commit of DEV-1917-change: no landing is recorded; cleared by: ${PLATFORM_SLUG} tree branch landed DEV-1917-change --pr <number>`,
     )
   })
 })

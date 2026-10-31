@@ -96,6 +96,29 @@ function closeShipToFact(
   }
 }
 
+function mergedChangeFor(
+  project: WorkflowFactProject,
+  branch: string | undefined,
+  needed: boolean,
+  sources: MergedChangeSources,
+): { changedPaths: readonly string[] } | undefined {
+  if (!needed) return undefined
+  if (!branch)
+    throw new Error(
+      'cannot establish the merged change: this step needs the branch argument; cleared by: passing --arg branch=<branch> to the workflow',
+    )
+  const landing = sources.landing(project.name, branch)
+  if (!landing)
+    throw new Error(
+      `cannot establish the merged commit of ${branch}: no landing is recorded; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
+    )
+  if (!landing.mergeCommit)
+    throw new Error(
+      `cannot establish the merged commit of ${branch}: its landing record has no merge commit; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
+    )
+  return { changedPaths: sources.changedPaths(project.name, landing.mergeCommit) }
+}
+
 function shipToFact(
   project: WorkflowFactProject,
   needs: readonly WorkflowFactSource[],
@@ -129,30 +152,10 @@ function shipToFact(
   const needsMergedChange =
     needs.includes('merged-change') &&
     initialDecision.reach.some((name) =>
-      reachableRungs.some(
-        (rung) => rung.name === name && rung.releasesWhenChanged !== undefined,
-      ),
+      reachableRungs.some((rung) => rung.name === name && rung.releasesWhenChanged !== undefined),
     )
-  let merge: { changedPaths: readonly string[] } | undefined
-  if (needsMergedChange) {
-    const branch = args.branch!
-    const landing = sources.landing(project.name, branch)
-    if (!landing)
-      throw new Error(
-        `cannot establish the merged commit of ${branch}: no landing is recorded; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
-      )
-    if (!landing.mergeCommit)
-      throw new Error(
-        `cannot establish the merged commit of ${branch}: its landing record has no merge commit; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
-      )
-    merge = { changedPaths: sources.changedPaths(project.name, landing.mergeCommit) }
-  }
-  const decision = decideShipToReach(
-    autonomy.shipTo.value,
-    reachableRungs,
-    args.depth,
-    merge,
-  )
+  const merge = mergedChangeFor(project, args.branch, needsMergedChange, sources)
+  const decision = decideShipToReach(autonomy.shipTo.value, reachableRungs, args.depth, merge)
   if (!decision.allowed) throw new Error(decision.refusal)
   const tracker = needsCloseState ? (projectFacts.tracker as CloseTrackerFact) : undefined
   return {

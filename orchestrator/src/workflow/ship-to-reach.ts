@@ -17,9 +17,7 @@ export type ShipToReachDecision =
     }
   | { allowed: false; refusal: string }
 
-export function shipToRungs(
-  rungs: readonly (ShipToRung & { onDemand?: boolean })[],
-): ShipToRung[] {
+export function shipToRungs(rungs: readonly (ShipToRung & { onDemand?: boolean })[]): ShipToRung[] {
   return rungs
     .filter(({ onDemand }) => !onDemand)
     .map(({ name, releasesWhenChanged }) => ({ name, releasesWhenChanged }))

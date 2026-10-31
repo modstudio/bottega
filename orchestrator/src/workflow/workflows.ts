@@ -46,6 +46,7 @@ import {
   isSequenceReference,
   workflowConditionErrors,
   workflowModeStepError,
+  workflowStepSuccessor,
 } from './workflow-step-sequences.ts'
 import {
   keylessTrackerActionMetadata,
@@ -959,25 +960,12 @@ export function getWorkflowStep(
       onKeylessTrackerAction: (path) => keylessTrackerActionPaths.add(path),
     })
   const templates = resolveWorkflowStepTemplates(step, resolve)
-  const successor = ({ steps }: { steps: ReturnType<typeof expandWorkflowModeSteps> }) => {
-    const index = steps.findIndex((entry) => entry.slug === stepSlug)
-    if (index === steps.length - 1) return null
-    const nextEntry = steps[index + 1]!
-    const next = catalogue.definition.steps.find((item) => item.slug === nextEntry.slug)!
-    return {
-      n: index + 2,
-      slug: next.slug,
-      title: next.title,
-      ...(nextEntry.when ? { when: nextEntry.when } : {}),
-    }
-  }
-  const successorModes = selectedMode ? [selectedMode] : containingModes
-  const successors = successorModes.map(successor)
-  const next = selectedMode
-    ? successors[0]
-    : successors.every((candidate) => JSON.stringify(candidate) === JSON.stringify(successors[0]))
-      ? successors[0]
-      : undefined
+  const next = workflowStepSuccessor(
+    stepSlug,
+    catalogue.definition.steps,
+    selectedMode,
+    containingModes,
+  )
   return {
     ...step,
     floor: templates.floor,

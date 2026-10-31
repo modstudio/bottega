@@ -339,55 +339,32 @@ describe('project workflow injection', () => {
     ).toBe(true)
   })
 
-  test('validates a rung live command as a non-empty string', () => {
-    expect(
-      validateProjectSettings(
-        {
-          release: { ...release, rungs: [{ ...release.rungs[0]!, live: ' ' }] },
-        },
-        'strict',
-      ),
-    ).toEqual([expect.stringContaining('release.rungs.0.live: Too small')])
-  })
-
-  test('requires a live probe when a rung declares required changed paths', () => {
-    expect(
-      validateProjectSettings(
-        {
-          release: {
-            ...release,
-            rungs: [
-              {
-                ...release.rungs[0]!,
-                live: undefined,
-                requiredWhenChanged: ['shared/record/migrations/**'],
-              },
-            ],
-          },
-        },
-        'strict',
-      ),
-    ).toEqual([
-      expect.stringContaining(
-        'release rung "production" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged',
-      ),
-    ])
-  })
-
-  test('release artifact globs are non-empty and do not require a live probe', () => {
-    const rung = { ...release.rungs[0]!, live: undefined }
-    expect(
-      validateProjectSettings(
-        { release: { ...release, rungs: [{ ...rung, releasesWhenChanged: ['src/**'] }] } },
-        'strict',
-      ),
-    ).toEqual([])
-    expect(
-      validateProjectSettings(
-        { release: { ...release, rungs: [{ ...rung, releasesWhenChanged: [' '] }] } },
-        'strict',
-      ),
-    ).toEqual([expect.stringContaining('release.rungs.0.releasesWhenChanged.0: Too small')])
+  test.each([
+    [
+      { ...release.rungs[0]!, live: ' ' },
+      [expect.stringContaining('release.rungs.0.live: Too small')],
+    ],
+    [
+      {
+        ...release.rungs[0]!,
+        live: undefined,
+        requiredWhenChanged: ['shared/record/migrations/**'],
+      },
+      [
+        expect.stringContaining(
+          'release rung "production" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged',
+        ),
+      ],
+    ],
+    [{ ...release.rungs[0]!, live: undefined, releasesWhenChanged: ['src/**'] }, []],
+    [
+      { ...release.rungs[0]!, live: undefined, releasesWhenChanged: [' '] },
+      [expect.stringContaining('release.rungs.0.releasesWhenChanged.0: Too small')],
+    ],
+  ])('validates release rung schema %#', (rung, expected) => {
+    expect(validateProjectSettings({ release: { ...release, rungs: [rung] } }, 'strict')).toEqual(
+      expected,
+    )
   })
 
   test('refuses a before-pull-request entry without changed-path globs', () => {
