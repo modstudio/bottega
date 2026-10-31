@@ -71,7 +71,7 @@ const exactLegacyPaths = [
 ]
 
 function gitPaths(root: string, argv: string[], tracked: boolean): MachineStatePath[] {
-  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', ...argv]), {
+  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', ...argv])], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',

@@ -84,7 +84,7 @@ export function readCanonGateFactsInput(
 
 export function branchChangedPaths(checkout: string, base: string): string[] {
   const diff = run(
-    nulPathListArgs(['git', 'diff', '--no-renames', '--name-only', base, 'HEAD']),
+    ['git', ...nulPathListArgs(['diff', '--no-renames', '--name-only', base, 'HEAD'])],
     checkout,
   )
   if (diff.exitCode !== 0) {

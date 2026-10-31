@@ -36,7 +36,7 @@ export function slugLinkedBody(body: string, indexName: string): string {
 }
 
 function trackedReferenceFiles(root: string): string[] {
-  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', 'docs/reference/*.md']), {
+  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', 'docs/reference/*.md'])], {
     cwd: root,
     env: scrubbedGitEnv(),
     stdout: 'pipe',

@@ -45,7 +45,7 @@ export function checkTestFiles(files: string[]): TestPlacementFinding[] {
 }
 
 function trackedFiles(root: string): string[] {
-  const listed = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', '--', ...ROOTS]), { cwd: root })
+  const listed = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '--', ...ROOTS])], { cwd: root })
   if (listed.exitCode !== 0) {
     throw new Error(
       `could not list tracked test and module files: ${listed.stderr.toString().trim()}`,

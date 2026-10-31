@@ -128,7 +128,7 @@ export function testReach(input: {
 }
 
 function trackedFiles(): string[] {
-  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files']), {
+  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
     cwd: ROOT,
     stdout: 'pipe',
     stderr: 'pipe',

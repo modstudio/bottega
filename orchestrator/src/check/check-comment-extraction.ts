@@ -269,7 +269,7 @@ export function commentFindingsInSources(
 }
 
 function trackedSources(root: string): SourceFile[] {
-  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', '--', ...SOURCE_GLOBS]), {
+  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '--', ...SOURCE_GLOBS])], {
     cwd: root,
     env: inspectionGitEnv(),
     stdout: 'pipe',

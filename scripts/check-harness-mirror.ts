@@ -18,7 +18,7 @@ export function decideHarnessMirror(entries: HarnessMirrorEntry[]): string[] {
 }
 
 function trackedClaudeEntries(root: string): HarnessMirrorEntry[] {
-  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', '-s', '--', '.claude']), {
+  const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files', '-s', '--', '.claude'])], {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',

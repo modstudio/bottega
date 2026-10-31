@@ -38,7 +38,7 @@ const scans = planGitleaksScans({
 
 if (rangeCommitCount === 0) {
   const untracked = Bun.spawnSync(
-    nulPathListArgs(['git', 'ls-files', '--others', '--exclude-standard']),
+    ['git', ...nulPathListArgs(['ls-files', '--others', '--exclude-standard'])],
     {
       cwd: root,
       stdout: 'pipe',

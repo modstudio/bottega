@@ -214,7 +214,7 @@ function textForLegacyScan(path: string, text: string): string {
 
 function scannedFiles(): string[] {
   const result = Bun.spawnSync(
-    nulPathListArgs(['git', 'ls-files', '--cached', '--others', '--exclude-standard']),
+    ['git', ...nulPathListArgs(['ls-files', '--cached', '--others', '--exclude-standard'])],
     {
       cwd: ROOT,
       stdout: 'pipe',

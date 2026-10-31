@@ -32,6 +32,14 @@ function sourceFiles(): string[] {
   return files.filter(productionTypeScript).sort()
 }
 
+/** Only a file quoting a path-list argument can hold a finding, so the rest skip parsing. */
+function mentionsPathList(source: string): boolean {
+  for (const argument of PATH_LIST_ARGUMENTS) {
+    if (source.includes(`'${argument}'`) || source.includes(`"${argument}"`)) return true
+  }
+  return false
+}
+
 function guardedArray(node: ts.ArrayLiteralExpression): boolean {
   const parent = node.parent
   return (
@@ -48,7 +56,8 @@ export function gitPathListLiterals(files: Readonly<Record<string, string>>): Gi
   for (const [path, source] of Object.entries(files).sort(([left], [right]) =>
     left.localeCompare(right),
   )) {
-    if (!productionTypeScript(path) || path === EXCLUDED_HELPER) continue
+    if (!productionTypeScript(path) || path === EXCLUDED_HELPER || !mentionsPathList(source))
+      continue
     const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
     const visit = (node: ts.Node): void => {
       if (

@@ -185,7 +185,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     return base
   },
   changedPaths: (path) =>
-    splitNulPaths(command(path, nulPathListArgs(['git', 'diff', '--cached', '--name-only']))),
+    splitNulPaths(command(path, ['git', ...nulPathListArgs(['diff', '--cached', '--name-only'])])),
   stage: (path) => {
     command(path, ['git', 'add', '--all'])
   },

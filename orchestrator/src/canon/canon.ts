@@ -472,7 +472,7 @@ function tracked(root: string): Set<string> | null {
   if (!existsSync(root)) return null
   const cached = trackedCache.get(root)
   if (cached) return cached
-  const p = Bun.spawnSync(nulPathListArgs(['git', 'ls-files']), {
+  const p = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
     cwd: root,
     env: targetGitEnvironment(root),
     stdout: 'pipe',

@@ -129,7 +129,7 @@ if (import.meta.main) {
     if (!baseSha)
       throw new Error('GitHub event does not carry a pull request or merge-group base sha')
     const changed = splitNulPaths(
-      command(nulPathListArgs(['git', 'diff', '--name-only', `${baseSha}...HEAD`])),
+      command(['git', ...nulPathListArgs(['diff', '--name-only', `${baseSha}...HEAD`])]),
     ).some((path) => path.startsWith('shared/record/migrations/'))
     let currentHeadStatuses: CommitStatus[] = []
     let priorStatuses: CommitStatus[] = []

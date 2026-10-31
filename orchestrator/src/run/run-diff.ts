@@ -270,7 +270,7 @@ export async function runDiffCommand(
       )
       if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
       const names = splitNulPaths(
-        Bun.spawnSync(nulPathListArgs(['git', 'diff', '--name-only', since, evidenceBranch]), {
+        Bun.spawnSync(['git', ...nulPathListArgs(['diff', '--name-only', since, evidenceBranch])], {
           cwd: repoRoot,
           env: targetGitEnvironment(repoRoot),
           stdout: 'pipe',
