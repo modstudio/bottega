@@ -3,7 +3,6 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { latestBranchLanding } from '../branch/task-key-pull-request.ts'
 import { db } from '../database/db.ts'
 import {
   composeIndexSources,
@@ -16,25 +15,38 @@ import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { changedPaths } from '../release/release-required.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
-import { decideShipToReach, shipToRungs } from './ship-to-reach.ts'
+import { decideShipToReach, shipToReachNeedsMergedChange, shipToRungs } from './ship-to-reach.ts'
+import { checkoutLanding } from './workflow-checkout-landing.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
 
 export type MergedChangeSources = {
-  landing(project: string, branch: string): { mergeCommit: string | null } | null
+  landing(project: WorkflowFactProject, branch: string): string | null
   changedPaths(project: string, mergeCommit: string): readonly string[]
 }
 
 export function mergedChangeSources(database: Database = db()): MergedChangeSources {
   return {
-    landing: (project, branch) => latestBranchLanding(project, branch, database),
+    landing: (project, branch) => checkoutLanding(project.name, branch, database).commit,
     changedPaths(project, mergeCommit) {
       const registered = projectByName(project, database)
       if (!registered) throw new Error(`unknown project "${project}"`)
-      return changedPaths(registered, mergeCommit)
+      try {
+        return changedPaths(registered, mergeCommit)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(
+          `cannot read the files changed by merge ${mergeCommit} in ${project}: ${message}; cleared by: fetching the landing branch in the registered checkout, then fetching this step again`,
+        )
+      }
     },
   }
 }
+
+/** The merged change is established when its step is fetched after merge, never at compose. */
+export const workflowCompositionFactNeeds = (
+  needs: readonly WorkflowFactSource[],
+): WorkflowFactSource[] => needs.filter((source) => source !== 'merged-change')
 
 const projectInjectionNeeds = (needs: readonly WorkflowFactSource[]): InjectionSource[] =>
   needs.filter(
@@ -107,16 +119,12 @@ function mergedChangeFor(
     throw new Error(
       'cannot establish the merged change: this step needs the branch argument; cleared by: passing --arg branch=<branch> to the workflow',
     )
-  const landing = sources.landing(project.name, branch)
-  if (!landing)
+  const mergeCommit = sources.landing(project, branch)
+  if (!mergeCommit)
     throw new Error(
-      `cannot establish the merged commit of ${branch}: no landing is recorded; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
+      `cannot establish the merged commit of ${branch}: no landing is recorded and no merged pull request is known for it; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number> for a run branch, or merging its pull request through ${PLATFORM_SLUG} pr merge`,
     )
-  if (!landing.mergeCommit)
-    throw new Error(
-      `cannot establish the merged commit of ${branch}: its landing record has no merge commit; cleared by: ${PLATFORM_SLUG} tree branch landed ${branch} --pr <number>`,
-    )
-  return { changedPaths: sources.changedPaths(project.name, landing.mergeCommit) }
+  return { changedPaths: sources.changedPaths(project.name, mergeCommit) }
 }
 
 function shipToFact(
@@ -149,11 +157,8 @@ function shipToFact(
   const reachableRungs = shipToRungs(rungs)
   const initialDecision = decideShipToReach(autonomy.shipTo.value, reachableRungs, args.depth)
   if (!initialDecision.allowed) throw new Error(initialDecision.refusal)
-  const needsMergedChange =
-    needs.includes('merged-change') &&
-    initialDecision.reach.some((name) =>
-      reachableRungs.some((rung) => rung.name === name && rung.releasesWhenChanged !== undefined),
-    )
+  const changeGatedReach = shipToReachNeedsMergedChange(reachableRungs, initialDecision.reach)
+  const needsMergedChange = needs.includes('merged-change') && changeGatedReach
   const merge = mergedChangeFor(project, args.branch, needsMergedChange, sources)
   const decision = decideShipToReach(autonomy.shipTo.value, reachableRungs, args.depth, merge)
   if (!decision.allowed) throw new Error(decision.refusal)
@@ -169,7 +174,8 @@ function shipToFact(
       reachText: decision.reach.join(', ') || 'none',
       remainingText: decision.remaining.join(', ') || 'none',
       skippedText:
-        decision.skipped.map(({ name, reason }) => `${name} (${reason})`).join('; ') || 'none',
+        decision.skipped.map(({ name, reason }) => `${name} (${reason})`).join('; ') ||
+        (changeGatedReach && !merge ? 'decided from the merged change at promotion' : 'none'),
       ...closeShipToFact(project.name, decision.remaining.length, decision.mayMerge, tracker),
     },
   }
@@ -185,8 +191,8 @@ export function resolveWorkflowProjectFacts(
   needsCloseState: boolean,
   args: Record<string, string>,
   autonomy: WorkflowAutonomyResolution,
-  extras: readonly InjectionSource[] = [],
-  sources: MergedChangeSources = mergedChangeSources(),
+  extras: readonly InjectionSource[],
+  sources: MergedChangeSources,
 ) {
   const { resolved, facts: projectFacts } = resolveDeclaredFacts(
     project,

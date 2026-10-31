@@ -32,6 +32,7 @@ import {
   resolveWorkflowProjectFacts,
   stepNeedsCloseState,
   workflowCompositionFactExtras,
+  workflowCompositionFactNeeds,
 } from './workflow-project-facts.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
@@ -39,6 +40,7 @@ import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
+  type ExpandedMode,
   expandWorkflowModeSteps,
   expandWorkflowSteps,
   inspectWorkflowSteps,
@@ -820,9 +822,7 @@ export function composeWorkflow(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
-  const allNeeds = selected
-    .flatMap((step) => step.needs)
-    .filter((source) => source !== 'merged-change')
+  const allNeeds = workflowCompositionFactNeeds(selected.flatMap((step) => step.needs))
   const { resolved, facts } = resolveWorkflowProjectFacts(
     project,
     allNeeds,
@@ -881,7 +881,7 @@ function workflowModesForStep(
   selectedModeSlug: string | undefined,
   stepSlug: string,
 ) {
-  const expandedModes = definition.modes.map((mode) => ({
+  const expandedModes: ExpandedMode[] = definition.modes.map((mode) => ({
     mode,
     steps: expandWorkflowModeSteps(mode.steps, sequences ?? []),
   }))

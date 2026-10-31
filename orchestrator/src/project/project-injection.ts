@@ -61,7 +61,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           live: z.string().trim().min(1).optional(),
           onDemand: z.boolean().optional(),
           requiredWhenChanged: z.array(z.string().trim().min(1)).optional(),
-          releasesWhenChanged: z.array(z.string().trim().min(1)).optional(),
+          releasesWhenChanged: z.array(z.string().trim().min(1)).min(1).optional(),
         }),
       )
       .superRefine((rungs, context) => {

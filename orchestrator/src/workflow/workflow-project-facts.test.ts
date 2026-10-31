@@ -3,13 +3,17 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
-import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
+import { type MergedChangeSources, resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
 
 const autonomy: WorkflowAutonomyResolution = {
   steps: {},
   rulings: { value: 'user', scope: 'test' },
   shipTo: { value: 'trunk', scope: 'test' },
+}
+const unusedMergedChangeSources: MergedChangeSources = {
+  landing: () => null,
+  changedPaths: () => [],
 }
 
 describe('workflow project facts', () => {
@@ -24,6 +28,8 @@ describe('workflow project facts', () => {
       false,
       {},
       autonomy,
+      [],
+      unusedMergedChangeSources,
     )
 
     expect(facts).toEqual({ reference })
@@ -54,6 +60,8 @@ describe('workflow project facts', () => {
       false,
       {},
       autonomy,
+      [],
+      unusedMergedChangeSources,
     )
 
     expect(facts).toEqual({ trunk: 'main', beforePullRequest })
@@ -95,6 +103,8 @@ Synthetic body.
       false,
       {},
       autonomy,
+      [],
+      unusedMergedChangeSources,
     ).facts
     const absent = resolveWorkflowProjectFacts(
       { name: 'fixture', stack: 'bun', settings: {} },
@@ -102,6 +112,8 @@ Synthetic body.
       false,
       {},
       autonomy,
+      [],
+      unusedMergedChangeSources,
     ).facts
 
     expect(declared).toEqual({ beforePullRequest })
@@ -125,6 +137,8 @@ Synthetic body.
       true,
       {},
       { ...autonomy, shipTo: { value: 'branch', scope: 'test' } },
+      [],
+      unusedMergedChangeSources,
     )
 
     expect(facts.shipTo).toMatchObject({
@@ -148,6 +162,8 @@ Synthetic body.
       true,
       {},
       autonomy,
+      [],
+      unusedMergedChangeSources,
     )
 
     expect(facts.shipTo).toMatchObject({
@@ -175,6 +191,8 @@ Synthetic body.
       true,
       {},
       autonomy,
+      [],
+      unusedMergedChangeSources,
     )
 
     expect(facts.shipTo).toMatchObject({
@@ -184,8 +202,38 @@ Synthetic body.
     })
   })
 
-  test('merged-change refuses when no branch landing is recorded', () => {
-    expect(() =>
+  test.each([
+    {
+      case: 'skips an unmatched release rung',
+      landing: 'merge-1',
+      changedPaths: ['scripts/verify.ts'],
+      expected: {
+        reach: [],
+        skipped: [
+          {
+            name: 'production',
+            reason:
+              'no release artifact in this change: no changed path matches package.json, src/**',
+          },
+        ],
+        skippedText:
+          'production (no release artifact in this change: no changed path matches package.json, src/**)',
+      },
+    },
+    {
+      case: 'keeps a matched release rung',
+      landing: 'merge-1',
+      changedPaths: ['src/index.ts'],
+      expected: { reach: ['production'], skipped: [], skippedText: 'none' },
+    },
+    {
+      case: 'refuses when the merged commit cannot be established',
+      landing: null,
+      changedPaths: [],
+      refusal: `cannot establish the merged commit of DEV-1917-change: no landing is recorded and no merged pull request is known for it; cleared by: ${PLATFORM_SLUG} tree branch landed DEV-1917-change --pr <number> for a run branch, or merging its pull request through ${PLATFORM_SLUG} pr merge`,
+    },
+  ])('$case', ({ landing, changedPaths, expected, refusal }) => {
+    const resolve = () =>
       resolveWorkflowProjectFacts(
         {
           name: 'fixture',
@@ -196,7 +244,7 @@ Synthetic body.
                 {
                   name: 'production',
                   branch: 'production',
-                  releasesWhenChanged: ['src/**'],
+                  releasesWhenChanged: ['package.json', 'src/**'],
                 },
               ],
               mergeMethod: 'squash',
@@ -210,14 +258,15 @@ Synthetic body.
         { ...autonomy, shipTo: { value: 'production', scope: 'test' } },
         [],
         {
-          landing: () => null,
-          changedPaths: () => {
-            throw new Error('changed paths must not be read without a landing')
+          landing: () => landing,
+          changedPaths: (_project, mergeCommit) => {
+            expect(mergeCommit).toBe('merge-1')
+            return changedPaths
           },
         },
-      ),
-    ).toThrow(
-      `cannot establish the merged commit of DEV-1917-change: no landing is recorded; cleared by: ${PLATFORM_SLUG} tree branch landed DEV-1917-change --pr <number>`,
-    )
+      )
+
+    if (refusal) expect(resolve).toThrow(refusal)
+    else expect(resolve().facts.shipTo).toMatchObject(expected!)
   })
 })

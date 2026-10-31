@@ -109,7 +109,7 @@ export function expandWorkflowSteps(
   return expandWorkflowModeSteps(entries, sequences).map(({ slug }) => slug)
 }
 
-type ExpandedMode = {
+export type ExpandedMode = {
   mode: WorkflowMode
   steps: ExpandedWorkflowStep[]
 }

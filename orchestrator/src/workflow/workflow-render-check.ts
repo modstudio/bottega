@@ -31,7 +31,7 @@ export type WorkflowPlaceholderFailure = {
 }
 
 const renderCheckMergedChangeSources: MergedChangeSources = {
-  landing: () => ({ mergeCommit: 'render-check' }),
+  landing: () => 'render-check',
   changedPaths: () => [],
 }
 

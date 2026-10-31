@@ -23,6 +23,16 @@ export function shipToRungs(rungs: readonly (ShipToRung & { onDemand?: boolean }
     .map(({ name, releasesWhenChanged }) => ({ name, releasesWhenChanged }))
 }
 
+export function shipToReachNeedsMergedChange(
+  rungs: readonly ShipToRung[],
+  reach: readonly string[],
+): boolean {
+  const reached = new Set(reach)
+  return rungs.some(
+    ({ name, releasesWhenChanged }) => reached.has(name) && releasesWhenChanged !== undefined,
+  )
+}
+
 export function decideShipToReach(
   level: ShipToValue,
   rungs: readonly ShipToRung[],

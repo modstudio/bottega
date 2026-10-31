@@ -358,6 +358,10 @@ describe('project workflow injection', () => {
     ],
     [{ ...release.rungs[0]!, live: undefined, releasesWhenChanged: ['src/**'] }, []],
     [
+      { ...release.rungs[0]!, releasesWhenChanged: [] },
+      [expect.stringContaining('release.rungs.0.releasesWhenChanged: Too small')],
+    ],
+    [
       { ...release.rungs[0]!, live: undefined, releasesWhenChanged: [' '] },
       [expect.stringContaining('release.rungs.0.releasesWhenChanged.0: Too small')],
     ],
