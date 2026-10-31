@@ -61,6 +61,24 @@ test('stats reports median call usage for an agent and job cell', () => {
   expect(lines.find((line) => line.includes('codex'))).toMatch(/\s3\s+400\s+900\s/)
 })
 
+test('stats reports observed burst runs and their highest peak per agent', () => {
+  const first = addRun({ agent: 'codex', job: 'craft' })
+  const second = addRun({ agent: 'codex', job: 'file-question' })
+  db()
+    .query('UPDATE run SET tool_burst_observed_peak=?,tool_burst_observed_at=? WHERE record_id=?')
+    .run(64, '2026-10-31T12:00:00.000Z', first)
+  db()
+    .query('UPDATE run SET tool_burst_observed_peak=?,tool_burst_observed_at=? WHERE record_id=?')
+    .run(74, '2026-10-31T12:01:00.000Z', second)
+  const lines: string[] = []
+  statsCommand(
+    { flag: (name) => (name === 'job' ? 'craft' : undefined), has: () => false },
+    { log: (...parts) => lines.push(parts.join(' ')), dur: String },
+  )
+  expect(lines[0]).toContain('burst runs  burst peak')
+  expect(lines.find((line) => line.includes('codex'))).toMatch(/\s2\s+74\s/)
+})
+
 test('stats reports chain cost per accepted result beside the existing cost', () => {
   const accepted = addRun({ agent: 'codex', job: 'craft', startedAt: '2026-10-01T00:00:00Z' })
   const turn = addRun({

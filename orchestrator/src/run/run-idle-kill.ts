@@ -180,12 +180,16 @@ export async function performIdleKill(input: {
       unkillable: true,
       unkillableReason: terminated.reason,
     })
-    input.forceCollect(unkillableIdleKillResult(state.error, input.handle.pid ?? 0))
+    input.forceCollect(unkillableKillResult(state.error, input.handle.pid ?? 0, 'idle'))
   }
 }
 
 /** A collected-as-failed result for a vendor tree that survived SIGKILL. */
-function unkillableIdleKillResult(error: string, pid: number): TransportResult {
+export function unkillableKillResult(
+  error: string,
+  pid: number,
+  failureKind: TransportResult['failureKind'],
+): TransportResult {
   return {
     stdout: '',
     stderr: error,
@@ -202,7 +206,7 @@ function unkillableIdleKillResult(error: string, pid: number): TransportResult {
     pid,
     events: [],
     asking: false,
-    failureKind: 'idle',
+    failureKind,
     status: 'failed',
     questions: [],
   }

@@ -73,6 +73,14 @@ import { collectReplySource, replyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
+  applyToolBurstOutcome,
+  newToolBurstState,
+  settleToolBurst,
+  type ToolBurstState,
+  toolBurstObserver,
+  toolBurstStopsWall,
+} from './run-tool-burst.ts'
+import {
   appendGateExclusionToTimeoutError,
   currentExcludedGateMs,
   decideRunWallDeadline,
@@ -364,8 +372,9 @@ export type LiveResult = {
   idleKilled: boolean
   idleKillError: string | null
   idleUnkillable: boolean
-  idleTreePids: number[]
-  idleTreePgid: number | null
+  terminalTreePids: number[]
+  terminalTreePgid: number | null
+  toolBurstUnkillable: boolean
   exitCode: number
   output: string
   vendorTokens: number | null
@@ -475,10 +484,12 @@ function teeLiveTransport(
   handle: TransportHandle,
   observe: (event: StreamEvent) => void,
   callUsage: { value: RunCallUsage | null },
+  observeBurst: (event: StreamEvent) => void,
 ) {
   return teeTransportEvents(handle.events(), input.claim.id, input.throttleConcurrency, (event) => {
     observe(event)
     callUsage.value = foldRunCallUsage(callUsage.value, event)
+    observeBurst(event)
   })
 }
 
@@ -570,6 +581,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     treePids: [],
     treePgid: null,
   }
+  const toolBurst = newToolBurstState()
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null,
@@ -755,7 +767,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}
-      if (idleKill.killed) return
+      if (idleKill.killed || toolBurstStopsWall(toolBurst)) return
       excludedGateMsAtTimeout = currentExcludedGateMs(
         wallArmedAtMs!,
         accruedGateMs,
@@ -784,17 +796,16 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       })
     }
     rearmWallDeadline()
-    let forceCollect: ((result: TransportResult) => void) | null = null
-    const forcedCollect = new Promise<TransportResult>((resolve) => {
-      forceCollect = resolve
-    })
+    const { promise: forced, resolve: forceCollect } = Promise.withResolvers<TransportResult>()
+    const cancel = () => void t.cancel(handle)
+    const killPath = { handle, cancel, checkpoint: checkpointSchedule, forceCollect }
     resourceObserver = observeRunProcessTree(
       vendorPid,
       vendorStartTime,
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
       idleSnapshotObserver(
         claim.id,
-        () => timedOut || idleKill.killed,
+        () => timedOut || idleKill.killed || toolBurst.killed,
         (samples) =>
           performIdleKill({
             state: idleKill,
@@ -804,29 +815,28 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
             vendorStartedAtMs: vendorStartedAt,
             timedOut,
             samples,
-            handle,
-            cancel: () => void t.cancel(handle),
-            checkpoint: checkpointSchedule,
+            ...killPath,
             checkpointRootId: checkpointRoot(opts.resume, claim.id),
             scratchDir,
             worktreePath: worktree?.path ?? null,
-            forceCollect: (result) => forceCollect?.(result),
           }),
       ),
     )
-    const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage)
+    const throttle = firstThrottleObserver(cancel)
+    const burst = toolBurstObserver({ ...killPath, toolBurst, harness: a.harness, writesJob })
+    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage, burst)
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,
       checkpointMessages.map((message) => message.record_id),
       [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
-    const collected = await Promise.race([handle.collect(), forcedCollect])
+    const collected = await Promise.race([handle.collect(), forced])
     workerEvents = observeCollectedTurn(claim.id, a.harness ?? a.name, collected)
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
+    await settleToolBurst(claim.id, a.harness, toolBurst)
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.
@@ -991,7 +1001,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           gateExclusionNoteSuffix(excludedGateMsAtTimeout),
       )
     }
-    ;({ status, failureKind } = decideOutcome(derived.inputs))
+    const decided = { ...decideOutcome(derived.inputs), error }
+    ;({ status, failureKind, error } = applyToolBurstOutcome(toolBurst, decided))
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row
     // exists and must not be left claiming to run.
@@ -1012,8 +1023,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     idleKilled: idleKill.killed,
     idleKillError: idleKill.error,
     idleUnkillable: idleKill.unkillable,
-    idleTreePids: idleKill.treePids,
-    idleTreePgid: idleKill.treePgid,
+    ...killedTree(idleKill, toolBurst),
     exitCode,
     output,
     ...runUsageResult(vendorTokens, callUsage.value, costUsd, vendorUsage, quotaReadings),
@@ -1033,5 +1043,25 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     askLoopback,
     mcpSetupHeader,
     workerEvents,
+  }
+}
+
+/** The process tree the kill that fired left behind; the idle kill wins when both fired. */
+function killedTree(
+  idleKill: IdleKillState,
+  toolBurst: ToolBurstState,
+): { terminalTreePids: number[]; terminalTreePgid: number | null; toolBurstUnkillable: boolean } {
+  const burst = toolBurst.terminateResult
+  const toolBurstUnkillable = burst?.unkillable ?? false
+  if (idleKill.treePids.length)
+    return {
+      terminalTreePids: idleKill.treePids,
+      terminalTreePgid: idleKill.treePgid,
+      toolBurstUnkillable,
+    }
+  return {
+    terminalTreePids: burst?.pids ?? [],
+    terminalTreePgid: burst?.pgid ?? null,
+    toolBurstUnkillable,
   }
 }

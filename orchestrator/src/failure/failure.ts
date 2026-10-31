@@ -51,6 +51,8 @@ export const FAILURE_KINDS = [
    * is extension by analogy with `--void`.
    */
   'idle',
+  /** More than TOOL_CALL_BURST_LIMIT tool starts landed inside TOOL_CALL_BURST_WINDOW_MS. */
+  'tool_burst',
   /**
    * The vendor exhausted its reply budget or stopped mid-generation before
    * emitting a result, whatever caused it to stop.
@@ -374,7 +376,13 @@ export const NEEDS_HUMAN_TITLE: Record<string, (agent: string) => string> = {
  * serving again stayed out of routing for the rest of the hour, which defeats
  * the point of waking it at all.
  */
-export const COOLS_DOWN: FailureKind[] = ['daily_quota', 'quota', 'auth', 'entitlement']
+export const COOLS_DOWN: FailureKind[] = [
+  'daily_quota',
+  'quota',
+  'auth',
+  'entitlement',
+  'tool_burst',
+]
 
 /** Failures where another vendor should receive the same prompt immediately. */
 export const FAILS_OVER: FailureKind[] = [

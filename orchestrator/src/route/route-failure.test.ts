@@ -334,7 +334,18 @@ describe('failure classification', () => {
     // costs the whole recovery window.
     expect(NEEDS_HUMAN).toContain('unreachable')
     expect(COOLS_DOWN).not.toContain('unreachable')
-    expect(COOLS_DOWN).toEqual(['daily_quota', 'quota', 'auth', 'entitlement'])
+    expect(COOLS_DOWN).toEqual(['daily_quota', 'quota', 'auth', 'entitlement', 'tool_burst'])
+  })
+
+  test('a goose tool burst is agent evidence and cools without automatic failover', () => {
+    expect(COOLS_DOWN).toContain('tool_burst')
+    expect(NOT_EVIDENCE).not.toContain('tool_burst')
+    expect(FAILS_OVER).not.toContain('tool_burst')
+    addRun({ agent: 'grok', job: 'implement', status: 'failed', kind: 'tool_burst' })
+    expect(candidates('implement').find((item) => item.agent === 'grok')).toMatchObject({
+      failures: 1,
+      evidence: 1,
+    })
   })
 
   test('a peer that reset stays a timeout — it answered before it stopped', () => {

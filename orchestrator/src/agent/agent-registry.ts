@@ -13,6 +13,9 @@ import type { OpenRouterRecordedBudget } from './openrouter-key-budget.ts'
 export const HARNESSES = ['codex', 'grok', 'opencode', 'goose', 'claude-code'] as const
 const BACKENDS = ['vllm', 'ollama', 'lmstudio', 'vendor'] as const
 export type Harness = (typeof HARNESSES)[number]
+export function harnessIdentity(value: string | undefined): Harness | null {
+  return HARNESSES.includes(value as Harness) ? (value as Harness) : null
+}
 export type Backend = (typeof BACKENDS)[number]
 export type AgentRow = {
   name: string

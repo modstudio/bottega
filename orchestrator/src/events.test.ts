@@ -9,6 +9,7 @@ import {
   eventsFromVendorLine,
   formatPeek,
   idleLabel,
+  isToolCallStart,
   peekRun,
   recordRunWarning,
   runEventsPath,
@@ -67,6 +68,52 @@ function probeEvents(...lines: string[]): NormalizedEvent[] {
 }
 
 describe('vendor event log', () => {
+  test('a CLI tool_use and tool_result pair contains one tool-call start', () => {
+    const events = eventsFromVendorLine(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'call-1', name: 'read_file', input: { path: 'x' } },
+            {
+              type: 'tool_result',
+              tool_use_id: 'call-1',
+              content: 'done',
+              is_error: false,
+            },
+          ],
+        },
+      }),
+    ).filter((event): event is Extract<NormalizedEvent, { kind: 'tool' }> => event.kind === 'tool')
+    expect(events.filter(isToolCallStart)).toHaveLength(1)
+    expect(events.map((event) => event.toolCallId)).toEqual(['call-1', 'call-1'])
+  })
+
+  test('a Codex item started and completed contains one tool-call start', () => {
+    const started = eventsFromVendorLine(
+      JSON.stringify({
+        type: 'item.started',
+        item: { id: 'item-1', type: 'command_execution', command: 'rg pattern' },
+      }),
+    )
+    const completed = eventsFromVendorLine(
+      JSON.stringify({
+        type: 'item.completed',
+        item: {
+          id: 'item-1',
+          type: 'command_execution',
+          command: 'rg pattern',
+          exit_code: 0,
+        },
+      }),
+    )
+    const events = [...started, ...completed].filter(
+      (event): event is Extract<NormalizedEvent, { kind: 'tool' }> => event.kind === 'tool',
+    )
+    expect(events.filter(isToolCallStart)).toHaveLength(1)
+    expect(events.map((event) => event.toolCallId)).toEqual(['item-1', 'item-1'])
+  })
+
   test('CLI retry lines record one throttled event with routed concurrency', async () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const path = runEventsPath(id)
@@ -136,6 +183,20 @@ describe('vendor event log', () => {
     expect(formatPeek(peek)).toContain(
       'focused test exit 1 42ms tests/one.test.ts (focused-test-request.log)',
     )
+  })
+
+  test('peek names a tool burst observation rather than an ask event', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    appendRunEvent(id, {
+      ts: '2026-10-31T12:00:00.000Z',
+      type: 'tool_burst_observed',
+      count: 64,
+      windowMs: 1000,
+      peakAt: '2026-10-31T12:00:00.000Z',
+    })
+    const peek = peekRun(id)
+    expect(peek.events.at(-1)).toEqual({ type: 'tool_burst_observed', count: 64, windowMs: 1000 })
+    expect(formatPeek(peek)).toContain('tool burst 64 starts in 1000ms')
   })
 
   test('peek preserves and formats ask exposure evidence', () => {
@@ -347,12 +408,14 @@ describe('vendor event log', () => {
     ).toEqual([
       {
         kind: 'tool',
+        phase: 'update',
         title: 'task_list',
         toolKind: 'mcp',
         server: 'starship',
         status: 'completed',
         locations: undefined,
         target: undefined,
+        result: undefined,
       },
     ])
     expect(
@@ -378,6 +441,7 @@ describe('vendor event log', () => {
     expect(events).toEqual([
       {
         kind: 'tool',
+        phase: 'start',
         title: "sed -n '1,200p' probe.txt",
         toolKind: 'execute',
         status: 'in_progress',
@@ -385,6 +449,7 @@ describe('vendor event log', () => {
       },
       {
         kind: 'tool',
+        phase: 'update',
         title: "sed -n '1,200p' probe.txt",
         toolKind: 'execute',
         status: 'completed',

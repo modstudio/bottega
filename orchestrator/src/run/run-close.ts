@@ -91,13 +91,14 @@ export type CloseInput = {
   pickBytes: number
   claim: { id: string; number: number; parentRunRecordId: string | null }
   idleUnkillable: boolean
+  toolBurstUnkillable: boolean
   status: string
   worktree: Worktree | null
   writesJob: boolean
   changes: Changes | null
   artifactsPersisted: boolean
-  idleTreePids: number[]
-  idleTreePgid: number | null
+  terminalTreePids: number[]
+  terminalTreePgid: number | null
   callerCwd: string
   repoJob: boolean
   declaredDeliverables: string[]
@@ -259,6 +260,7 @@ function notifyFailureRequiringHuman(input: {
   name: string
   job: string
   idleUnkillable: boolean
+  toolBurstUnkillable: boolean
   runId: string
   endpointKey: EffectiveBillingKey
   projectName: string | null
@@ -286,6 +288,11 @@ function notifyFailureRequiringHuman(input: {
       `${input.name} idle kill did not terminate`,
       `run ${input.runId} still alive after SIGKILL; needs a human`,
     )
+  if (input.toolBurstUnkillable)
+    notify(
+      `${input.name} tool-burst kill did not terminate`,
+      `run ${input.runId} still alive after SIGKILL; needs a human`,
+    )
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: terminal cleanup and failover share one claimed-run transaction boundary
@@ -296,13 +303,14 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     opts,
     claim,
     idleUnkillable,
+    toolBurstUnkillable,
     status,
     worktree,
     writesJob,
     changes,
     artifactsPersisted,
-    idleTreePids,
-    idleTreePgid,
+    terminalTreePids,
+    terminalTreePgid,
     callerCwd,
     repoJob,
     declaredDeliverables,
@@ -325,6 +333,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     name,
     job: opts.job,
     idleUnkillable,
+    toolBurstUnkillable,
     runId: claim.id,
     endpointKey: input.endpointKey,
     projectName: input.endpointKey.projectName,
@@ -419,7 +428,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
-          reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid, true)
+          reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
         return await run({
           job: opts.job,
           prompt: originalPrompt,
@@ -492,7 +501,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     status !== 'running' &&
     status !== 'stopped'
   ) {
-    reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid, true)
+    reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
   }
 
   if (status === 'failed') {

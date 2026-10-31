@@ -151,6 +151,8 @@ export type NormalizedEvent =
   | { kind: 'session'; sessionId: string }
   | {
       kind: 'tool'
+      phase?: 'start' | 'update'
+      toolCallId?: string
       title: string
       status?: string
       toolKind?: string

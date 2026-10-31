@@ -283,6 +283,8 @@ function toolEvent(update: AcpUpdate): Extract<NormalizedEvent, { kind: 'tool' }
   const fields = toolUpdateFields(update)
   return {
     kind: 'tool',
+    phase: update.sessionUpdate === 'tool_call_update' ? 'update' : 'start',
+    toolCallId: update.toolCallId,
     title: update.title ?? update.sessionUpdate,
     status: update.status,
     toolKind: update.kind,
@@ -629,20 +631,27 @@ function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
   ]
 }
 
-function observeAcpUpdate(
+export function observeAcpUpdate(
   params: unknown,
   updates: unknown[],
   outPath: string,
   sessionId: string | null,
   pushEvent: (event: NormalizedEvent) => void,
   billing: AgentBilling,
+  live = true,
 ): void {
   updates.push(params)
   const folded = normalizeAcpTurn({ sessionId, updates: [params] }, billing)
   if (folded.output) appendFileSync(outPath, folded.output)
   for (const event of folded.events) {
-    if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
+    const liveEvent = liveAcpEvent(live, event)
+    if (liveEvent) pushEvent(liveEvent)
   }
+}
+
+/** session/load replays the transcript as notifications; only those after `prompted` flips, immediately before session/prompt, are live. */
+export function liveAcpEvent(prompted: boolean, event: NormalizedEvent): NormalizedEvent | null {
+  return prompted && event.kind !== 'session' && event.kind !== 'stop' ? event : null
 }
 
 function beginAcpTurn(updates: unknown[], outPath: string): void {
@@ -718,9 +727,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const trace = openAcpTrace(opts, child, bin, agentArgv, profile)
   installAcpChildTrace(trace, child)
   const stderrChunks: Buffer[] = []
-  child.stderr?.on('data', (chunk: Buffer) => {
-    stderrChunks.push(chunk)
-  })
+  child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
   const updates: unknown[] = []
   const liveEvents: NormalizedEvent[] = []
   const permissionEvents: Extract<NormalizedEvent, { kind: 'permission' }>[] = []
@@ -740,8 +747,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     const wait = eventWaiters.shift()
     if (wait) wait(event)
   }
+  const billing = opts.agent.billing
   const observeUpdate = (req: { params: unknown }) =>
-    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent, opts.agent.billing)
+    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent, billing, prompted)
 
   const app = acp
     .client({ name: MCP_SERVER_NAME })

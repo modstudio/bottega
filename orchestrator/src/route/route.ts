@@ -517,6 +517,17 @@ export type Scored = Candidate & {
   costPerAccepted: CostPerAcceptedResult
   costPolicy: ReturnType<typeof resolveRouteCostPolicy>
   belowCostFloor: boolean
+  toolBursts: { runs: number; peak: number | null }
+}
+
+function toolBurstObservations(): Map<string, { runs: number; peak: number | null }> {
+  const rows = db()
+    .query<{ agent: string; runs: number; peak: number | null }, []>(
+      `SELECT agent, count(*) AS runs, max(tool_burst_observed_peak) AS peak
+         FROM run WHERE tool_burst_observed_peak IS NOT NULL GROUP BY agent`,
+    )
+    .all()
+  return new Map(rows.map((row) => [row.agent, { runs: row.runs, peak: row.peak }]))
 }
 
 /** Every job × agent cell, scored exactly the way routing scores it. */
@@ -526,6 +537,7 @@ export function scoreboard(
   lens?: string,
 ): Scored[] {
   const policy = readRouteCostPolicy()
+  const observedBursts = toolBurstObservations()
   return Object.keys(JOBS)
     .filter((j) => !onlyJob || j === onlyJob)
     .flatMap((j) =>
@@ -556,6 +568,7 @@ export function scoreboard(
               costPolicy,
               belowCostFloor: belowCostFloor(c.shrunk, costPolicy.floor, NOISE_BAND),
               costPerAccepted,
+              toolBursts: observedBursts.get(c.agent) ?? { runs: 0, peak: null },
             }))
         })(),
       ),

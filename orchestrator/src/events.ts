@@ -13,6 +13,8 @@ export type StreamEvent =
   | { kind: 'usage'; tokens: number; costUsd: number | null; per: 'call' | 'turn' }
   | {
       kind: 'tool'
+      phase?: 'start' | 'update'
+      toolCallId?: string
       title: string
       status?: string
       toolKind?: string
@@ -31,6 +33,11 @@ export type StreamEvent =
       retryAt: string | null
       httpStatus: 429
     }
+
+/** A tool event is a fresh call unless its producer identifies it as a later update. */
+export function isToolCallStart(event: Extract<StreamEvent, { kind: 'tool' }>): boolean {
+  return event.phase !== 'update'
+}
 
 export type ConfiguredAsk = { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string }
 
@@ -85,6 +92,13 @@ export type RunLogEvent =
       title: string
       input?: string
       locations?: Array<{ path: string }>
+    }
+  | {
+      ts: string
+      type: 'tool_burst_observed'
+      count: number
+      windowMs: number
+      peakAt: string
     }
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number; text?: string }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
@@ -148,6 +162,7 @@ type PeekEventSummary =
     }
   | { type: 'focused_test_refusal'; paths: string[] }
   | { type: 'gate_log' }
+  | { type: 'tool_burst_observed'; count: number; windowMs: number }
 
 export type PeekSummary = {
   id: number
@@ -320,7 +335,7 @@ function observedToolEvents(
     event.locations?.filter((item) => item.path) ??
     (event.target ? [{ path: event.target }] : undefined)
   const events: RunLogEvent[] = []
-  if (event.title || event.toolKind || locations?.length) {
+  if (isToolCallStart(event) && (event.title || event.toolKind || locations?.length)) {
     events.push({
       ts,
       type: 'tool_call',
@@ -432,6 +447,8 @@ function locationsFromUnknown(value: unknown): Array<{ path: string }> | undefin
 }
 
 function toolEvent(opts: {
+  phase?: 'start' | 'update'
+  toolCallId?: string
   title: string
   status?: string
   toolKind?: string
@@ -442,6 +459,18 @@ function toolEvent(opts: {
   locations?: Array<{ path: string }>
 }): Extract<StreamEvent, { kind: 'tool' }> {
   return { kind: 'tool', ...opts }
+}
+
+function toolCallIdentity(value: unknown): { toolCallId?: string } {
+  const toolCallId = stringField(value)
+  return toolCallId ? { toolCallId } : {}
+}
+
+function codexToolIdentity(
+  item: Record<string, unknown>,
+  phase: string,
+): { phase: 'start' | 'update'; toolCallId?: string } {
+  return { phase: phase === 'started' ? 'start' : 'update', ...toolCallIdentity(item.id) }
 }
 
 function assistantText(content: unknown): string {
@@ -471,6 +500,8 @@ function toolUseEvents(content: unknown): StreamEvent[] {
       const locations = locationsFromUnknown(part.input)
       events.push(
         toolEvent({
+          phase: 'start',
+          ...toolCallIdentity(part.id),
           title,
           toolKind: toolKindFromName(title),
           target: locations?.[0]?.path,
@@ -487,6 +518,8 @@ function toolUseEvents(content: unknown): StreamEvent[] {
           : JSON.stringify(part.content ?? '')
     events.push(
       toolEvent({
+        phase: 'update',
+        ...toolCallIdentity(part.tool_use_id),
         title: stringField(part.tool_use_id) ?? 'tool',
         status: part.is_error ? 'failed' : 'completed',
         result: result || undefined,
@@ -526,6 +559,7 @@ function codexRichToolEvent(
   const result = typeof item.result === 'string' ? item.result : undefined
   const outcome = codexToolOutcome(item, phase)
   return toolEvent({
+    ...codexToolIdentity(item, phase),
     title,
     toolKind: itemType === 'file_change' ? 'edit' : itemType === 'web_search' ? 'search' : 'mcp',
     status: outcome.status,
@@ -568,10 +602,19 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
     const output = stringField(item.aggregated_output)
     const locations = locationsFromUnknown(item)
     if (phase === 'started' || phase === 'updated') {
-      return [toolEvent({ title, toolKind: 'execute', status: 'in_progress', locations })]
+      return [
+        toolEvent({
+          ...codexToolIdentity(item, phase),
+          title,
+          toolKind: 'execute',
+          status: 'in_progress',
+          locations,
+        }),
+      ]
     }
     return [
       toolEvent({
+        ...codexToolIdentity(item, phase),
         title,
         toolKind: 'execute',
         status: item.exit_code === 0 || item.exit_code === undefined ? 'completed' : 'failed',
@@ -748,6 +791,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'focused_test' || event.type === 'focused_test_refusal')
     return summarizeFocusedTestEvent(event)
   if (event.type === 'gate_log') return { type: 'gate_log' }
+  if (event.type === 'tool_burst_observed')
+    return { type: 'tool_burst_observed', count: event.count, windowMs: event.windowMs }
   return { type: 'ask_initialized' }
 }
 
@@ -904,6 +949,8 @@ function formatPeekEvent(event: PeekEventSummary): string {
   )
     return formatAskPeekEvent(event)
   if (isArtifactPeekEvent(event)) return formatArtifactPeekEvent(event)
+  if (event.type === 'tool_burst_observed')
+    return `  tool burst ${event.count} starts in ${event.windowMs}ms`
   return '  ask initialized'
 }
 
