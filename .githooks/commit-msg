@@ -4,8 +4,10 @@
 # Refuse a subject with no DEV-<digits> task key (merge/fixup/squash exempt).
 # Both checks always run so one cannot mask the other.
 status=0
+common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+main_checkout=${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}
 
-if ! bottega gate check attribution --message "$1"; then
+if ! "$main_checkout/bin/bottega" gate check attribution --message "$1"; then
   status=1
 fi
 

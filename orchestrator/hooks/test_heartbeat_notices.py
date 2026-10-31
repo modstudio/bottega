@@ -115,6 +115,7 @@ esac
             cwd=checkout,
             env={
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FIXTURE_NOTICES": str(notices),
                 "FIXTURE_ACK_LOG": str(ack_log),

@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
-root=$(git rev-parse --show-toplevel)
+common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
+main_checkout=${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}
 git_dir=$(git rev-parse --git-dir)
 harness_marker="$git_dir/bottega-harness-run"
 if [ -f "$harness_marker" ]; then
@@ -18,13 +19,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     refs/heads/*) ;;
     *) continue ;;
   esac
-  if [ ! -x "$root/bin/bottega" ]; then
-    echo "pre-push: triage check could not run: $root/bin/bottega is missing or not executable; allowing push" >&2
+  if [ ! -x "$main_checkout/bin/bottega" ]; then
+    echo "pre-push: triage check could not run: $main_checkout/bin/bottega is missing or not executable; allowing push" >&2
     continue
   fi
   if ! command -v bun >/dev/null 2>&1; then
     echo "pre-push: triage check could not run: bun is unavailable; allowing push" >&2
     continue
   fi
-  "$root/bin/bottega" pr check --local-ref "$local_ref" --sha "$local_sha" --remote-ref "$remote_ref"
+  "$main_checkout/bin/bottega" pr check --local-ref "$local_ref" --sha "$local_sha" --remote-ref "$remote_ref"
 done

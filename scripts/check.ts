@@ -491,6 +491,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-self-spawn.ts'),
     staticCheck('scripts/check-source-root.ts'),
     staticCheck('scripts/check-launchd-templates.ts'),
+    staticCheck('scripts/check-hook-binary.ts'),
     staticCheck('scripts/check-gitleaks.ts'),
     staticCheck('scripts/check-write-transaction-site.ts'),
     staticCheck('scripts/check-branch-ref-mutation-site.ts'),
