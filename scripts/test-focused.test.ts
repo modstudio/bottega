@@ -14,6 +14,7 @@ test('groups focused paths by nearest package with package-relative arguments', 
     'orchestrator/src/run.test.ts',
     'retrieval/src/search.test.ts',
     'shared/git.test.ts',
+    'cli/routes.test.ts',
   ])
   expect(
     groups.map((group) => ({
@@ -27,8 +28,40 @@ test('groups focused paths by nearest package with package-relative arguments', 
     { directory: 'hub/deploy/site', paths: ['src/site.test.ts'] },
     { directory: 'orchestrator', paths: ['src/run.test.ts'] },
     { directory: 'retrieval', paths: ['src/search.test.ts'] },
-    { directory: '.', paths: ['shared/git.test.ts'] },
+    { directory: '.', paths: ['shared/git.test.ts', 'cli/routes.test.ts'] },
   ])
+})
+
+test('pins focused directories at each gate-directory boundary', () => {
+  const cases = [
+    ['cli/routes.test.ts', '.'],
+    ['hub/ui/src/state/pagination.test.ts', 'hub'],
+    ['hub/site/src/chrome.test.tsx', 'hub/site'],
+    ['orchestrator/src/porting/porting.test.ts', 'orchestrator'],
+    ['shared/state-directory.test.ts', '.'],
+  ] as const
+  for (const [path, expectedDirectory] of cases) {
+    const [group] = groupFocusedTestPaths([path])
+    expect(relative(root, group!.directory) || '.', path).toBe(expectedDirectory)
+  }
+})
+
+test('a root-run file inside a workspace is not ignored by the root group', () => {
+  const [group] = groupFocusedTestPaths(['cli/routes.test.ts'])
+  expect(relative(root, group!.directory) || '.').toBe('.')
+  expect(group!.argv).toContain('./cli/routes.test.ts')
+  expect(group!.argv).not.toContain('cli/**')
+})
+
+test('a directory containing only root-run tests runs from the root', () => {
+  const [group] = groupFocusedTestPaths(['cli'])
+  expect(relative(root, group!.directory) || '.').toBe('.')
+  expect(group!.argv.slice(-3)).toEqual([
+    './cli/dispatch.test.ts',
+    './cli/legacy-calls.test.ts',
+    './cli/routes.test.ts',
+  ])
+  expect(group!.argv).not.toContain('cli/**')
 })
 
 test('runs a package selection through its own test entry point without nested packages', () => {

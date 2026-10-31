@@ -236,6 +236,7 @@ export const ROOT_TEST_FILES = [
   'scripts/quality/test-spawns-decision.test.ts',
   'scripts/affected-tests.test.ts',
   'scripts/test-focused.test.ts',
+  'scripts/test-preload.test.ts',
   'scripts/check-sql-literal-schema.test.ts',
   'scripts/check-hosted-sql-schema.test.ts',
 ] as const
