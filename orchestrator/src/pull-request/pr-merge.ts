@@ -806,7 +806,7 @@ function mergedPullRequestOutput(input: {
   })
 }
 
-function promoteMergedWorkflowDrafts(input: {
+function promotionStageOutput(input: {
   adapter: PullRequestMergeAdapter
   change: PullRequestChange
   pullRequest: PullRequestMergeFacts
@@ -974,7 +974,7 @@ function completeMerge(input: {
       database: input.database,
       projectName: input.project.name,
     }),
-    promotion: promoteMergedWorkflowDrafts({
+    promotion: promotionStageOutput({
       adapter: input.adapter,
       change: admittedChange!,
       pullRequest: pullRequest!,

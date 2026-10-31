@@ -14,6 +14,8 @@ const step = {
 }
 const production: WorkflowTreeStore = { steps: [], sequences: [], workflows: [] }
 
+const otherStep = { ...step, slug: 'other-step', title: 'Other step' }
+
 test('orders the matching catalogue before matching workflows and omits other drafts', () => {
   const tree: WorkflowTreeStore = {
     steps: [step],
@@ -51,5 +53,43 @@ test('reports a tree item that matches neither production nor the newest draft',
   ).toEqual({
     promotions: [],
     divergent: [{ kind: 'workflow', slug: 'drifted' }],
+  })
+})
+
+test('promotes a catalogue whose tree and draft orders differ', () => {
+  expect(
+    planWorkflowTreePromotion({
+      tree: { ...production, steps: [step, otherStep] },
+      production,
+      newestCatalogueDraft: { n: 2, definition: { steps: [otherStep, step] } },
+      newestWorkflowDrafts: new Map(),
+    }),
+  ).toEqual({
+    promotions: [{ kind: 'catalogue', n: 2 }],
+    divergent: [],
+  })
+})
+
+test('does nothing when only the tree and production catalogue orders differ', () => {
+  expect(
+    planWorkflowTreePromotion({
+      tree: { ...production, steps: [step, otherStep] },
+      production: { ...production, steps: [otherStep, step] },
+      newestWorkflowDrafts: new Map(),
+    }),
+  ).toEqual({ promotions: [], divergent: [] })
+})
+
+test('reports a catalogue that matches neither production nor its newest draft', () => {
+  expect(
+    planWorkflowTreePromotion({
+      tree: { ...production, steps: [step] },
+      production,
+      newestCatalogueDraft: { n: 2, definition: { steps: [otherStep] } },
+      newestWorkflowDrafts: new Map(),
+    }),
+  ).toEqual({
+    promotions: [],
+    divergent: [{ kind: 'catalogue' }],
   })
 })

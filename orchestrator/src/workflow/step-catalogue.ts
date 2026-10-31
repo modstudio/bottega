@@ -485,8 +485,11 @@ function validateNeeds(item: Record<string, unknown>, errors: string[]): void {
 
 function requireCatalogue(value: unknown): asserts value is StepCatalogueDefinition {
   const errors = validateStepCatalogue(value)
-  if (errors.length)
-    throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
+  if (errors.length) refuseInvalidCatalogue(errors)
+}
+
+function refuseInvalidCatalogue(errors: string[]): never {
+  throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
 }
 
 export function importableStepCatalogueErrors(value: unknown): {
@@ -503,8 +506,7 @@ export function importableStepCatalogueErrors(value: unknown): {
 
 function requireImportableCatalogue(value: unknown): asserts value is StepCatalogueDefinition {
   const { errors } = importableStepCatalogueErrors(value)
-  if (errors.length)
-    throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
+  if (errors.length) refuseInvalidCatalogue(errors)
 }
 
 const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
@@ -587,7 +589,6 @@ export const setStepCatalogueLocal = (
   author?: string,
   d: Database = writableDb(),
 ) => {
-  requireCatalogue(definition)
   return lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
 }
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
@@ -606,16 +607,15 @@ function catalogueDraft(
   d: Database,
   project?: string,
   onHostedWrite?: (n: number) => void,
-  allowUnknownNeeds = false,
 ) {
-  if (allowUnknownNeeds) requireImportableCatalogue(definition)
-  else requireCatalogue(definition)
   return applyRecordWriteAuthority({
     local: () =>
-      allowUnknownNeeds
+      event === 'import'
         ? importStepCatalogueLocal(definition, reason, author, d)
         : lifecycle.write(CATALOGUE, definition, reason, author, event, d),
     hosted: async () => {
+      if (event === 'import') requireImportableCatalogue(definition)
+      else requireCatalogue(definition)
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await activeSpace(d, project)
       const result = await recordApiClient().draftWorkflow!(
@@ -836,10 +836,7 @@ function cataloguePromotionPreflight(
   replacement?: { slug: string; definition: WorkflowDefinition },
 ): void {
   const validationErrors = validateStepCatalogue(definition)
-  if (validationErrors.length)
-    throw new Error(
-      `invalid step catalogue:\n${validationErrors.map((error) => `- ${error}`).join('\n')}`,
-    )
+  if (validationErrors.length) refuseInvalidCatalogue(validationErrors)
   const current = d
     .query<{ definition: string }, [string | null]>(
       `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_record_id=c.record_id
@@ -894,20 +891,9 @@ export function importStepCatalogue(
   d: Database = writableDb(),
   project?: string,
   onHostedWrite?: (n: number) => void,
-  allowUnknownNeeds = false,
 ) {
   assertCatalogueWriteAllowed('import step catalogue')
-  return catalogueDraft(
-    'import',
-    definition,
-    undefined,
-    reason,
-    author,
-    d,
-    project,
-    onHostedWrite,
-    allowUnknownNeeds,
-  )
+  return catalogueDraft('import', definition, undefined, reason, author, d, project, onHostedWrite)
 }
 
 const importStepCatalogueLocal = (

@@ -12,22 +12,30 @@ export type WorkflowTreePromotionPlan = {
   divergent: WorkflowTreeDivergence[]
 }
 
+const bySlug = <T extends { slug: string }>(items: T[]): T[] =>
+  [...items].sort((left, right) => left.slug.localeCompare(right.slug))
+
+const normalizedCatalogue = (catalogue: StepCatalogueDefinition) => ({
+  steps: bySlug(catalogue.steps),
+  sequences: bySlug(catalogue.sequences ?? []),
+})
+
 export function planWorkflowTreePromotion(input: {
   tree: WorkflowTreeStore
   production: WorkflowTreeStore
   newestCatalogueDraft?: { n: number; definition: StepCatalogueDefinition }
   newestWorkflowDrafts: Map<string, { n: number; definition: WorkflowDefinition }>
 }): WorkflowTreePromotionPlan {
-  const treeCatalogue = { steps: input.tree.steps, sequences: input.tree.sequences }
-  const productionCatalogue = {
+  const treeCatalogue = normalizedCatalogue({
+    steps: input.tree.steps,
+    sequences: input.tree.sequences,
+  })
+  const productionCatalogue = normalizedCatalogue({
     steps: input.production.steps,
     sequences: input.production.sequences,
-  }
+  })
   const catalogue = input.newestCatalogueDraft
-  const draftCatalogue = catalogue && {
-    steps: catalogue.definition.steps,
-    sequences: catalogue.definition.sequences ?? [],
-  }
+  const draftCatalogue = catalogue && normalizedCatalogue(catalogue.definition)
   const promotions: WorkflowTreePromotion[] = []
   const divergent: WorkflowTreeDivergence[] = []
   if (!isDeepStrictEqual(treeCatalogue, productionCatalogue)) {

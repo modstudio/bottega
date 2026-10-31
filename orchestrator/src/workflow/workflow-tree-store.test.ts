@@ -23,6 +23,7 @@ import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import {
   importWorkflowTree,
+  newestDraftWorkflowTree,
   productionWorkflowTree,
   promoteMatchingWorkflowTreeDrafts,
 } from './workflow-tree-store.ts'
@@ -806,6 +807,32 @@ describe('importWorkflowTree', () => {
 })
 
 describe('promoteMatchingWorkflowTreeDrafts', () => {
+  test('promotes an imported added step when parsed tree order differs from draft order', async () => {
+    const d = database()
+    d.exec('DELETE FROM record_install_binding')
+    const tree = structuredClone(productionWorkflowTree({ database: d }))
+    tree.steps.unshift({
+      ...tree.steps[0]!,
+      slug: 'a-probe',
+      title: 'A probe',
+    })
+    const imported = await importWorkflowTree(tree, 'add step fixture', 'test', d)
+    if (imported.catalogue.status !== 'created') throw new Error('catalogue draft was not created')
+
+    const result = await promoteMatchingWorkflowTreeDrafts({
+      tree,
+      reason: 'promote added step',
+      author: 'test',
+      database: d,
+    })
+
+    expect(result).toEqual({
+      promotions: [{ kind: 'catalogue', n: imported.catalogue.n }],
+      divergent: [],
+    })
+    expect(productionStepCatalogue(d).definition.steps.map(({ slug }) => slug)).toContain('a-probe')
+  })
+
   test('promotes matching catalogue and workflow drafts catalogue-first', async () => {
     const d = database()
     d.exec('DELETE FROM record_install_binding')
@@ -887,5 +914,77 @@ describe('promoteMatchingWorkflowTreeDrafts', () => {
     ).rejects.toThrow('invalid injection source "branch-added-source"')
     expect(productionStepCatalogue(d).n).toBe(1)
     expect(showResolvedWorkflow(tree.workflows[0]!.slug, workflow.n, null, d).status).toBe('draft')
+  })
+})
+
+describe('newestDraftWorkflowTree', () => {
+  test('uses newest live drafts, adds draft-only workflows, and falls back to production', () => {
+    const d = database()
+    d.exec('DELETE FROM record_install_binding')
+    const seeded = productionWorkflowTree({ database: d })
+    const productionOnlyDefinition = {
+      ...seeded.workflows[0]!.definition,
+      title: 'Production-only workflow',
+    }
+    const productionOnlyDraft = setWorkflowLocal(
+      'production-only',
+      productionOnlyDefinition,
+      'production-only fixture',
+      'test',
+      d,
+    )
+    promoteWorkflowLocal(
+      'production-only',
+      productionOnlyDraft.n,
+      'production-only fixture',
+      'test',
+      d,
+    )
+    const production = productionWorkflowTree({ database: d })
+    const oldCatalogue = structuredClone(production)
+    oldCatalogue.steps[0]!.body += '\nOld catalogue draft.'
+    setStepCatalogueLocal(
+      { steps: oldCatalogue.steps, sequences: oldCatalogue.sequences },
+      'old catalogue draft',
+      'test',
+      d,
+    )
+    const newestCatalogue = structuredClone(production)
+    newestCatalogue.steps[0]!.body += '\nNewest catalogue draft.'
+    setStepCatalogueLocal(
+      { steps: newestCatalogue.steps, sequences: newestCatalogue.sequences },
+      'newest catalogue draft',
+      'test',
+      d,
+    )
+
+    const draftedSlug = production.workflows[0]!.slug
+    setWorkflowLocal(
+      draftedSlug,
+      { ...production.workflows[0]!.definition, title: 'Old workflow draft' },
+      'old workflow draft',
+      'test',
+      d,
+    )
+    const newestWorkflow = {
+      ...production.workflows[0]!.definition,
+      title: 'Newest workflow draft',
+    }
+    setWorkflowLocal(draftedSlug, newestWorkflow, 'newest workflow draft', 'test', d)
+    const newWorkflow = { ...production.workflows[0]!.definition, title: 'New draft workflow' }
+    setWorkflowLocal('new-draft-workflow', newWorkflow, 'new workflow draft', 'test', d)
+
+    const result = newestDraftWorkflowTree({ database: d })
+
+    expect(result.steps[0]!.body).toEndWith('Newest catalogue draft.')
+    expect(result.workflows.find(({ slug }) => slug === draftedSlug)?.definition).toEqual(
+      newestWorkflow,
+    )
+    expect(result.workflows.find(({ slug }) => slug === 'new-draft-workflow')?.definition).toEqual(
+      newWorkflow,
+    )
+    expect(result.workflows.find(({ slug }) => slug === 'production-only')?.definition).toEqual(
+      productionOnlyDefinition,
+    )
   })
 })

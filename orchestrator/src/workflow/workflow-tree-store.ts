@@ -553,7 +553,6 @@ async function writeHostedImport(
           written.push(`catalogue draft ${n}`)
           pending.shift()
         },
-        plan.warnings.length > 0,
       ).catch((error) => {
         if (hostedN !== undefined)
           throw hostedCacheApplyFailure(error, `catalogue draft ${hostedN}`, written, pending)
