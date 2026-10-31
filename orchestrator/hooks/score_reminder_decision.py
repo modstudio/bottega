@@ -55,10 +55,6 @@ class StopDecision(NamedTuple):
     seen: list[str]
 
 
-def note_project(row: dict) -> str:
-    return row.get("project") or row["label"].split("#", 1)[0]
-
-
 def decide_stop(
     unscored_runs: int,
     pairs: int,
