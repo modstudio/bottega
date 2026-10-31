@@ -37,6 +37,7 @@ function addReview(
     severity?: string
     triagedSeverity?: string | null
   }>,
+  options: { patchId?: string; pathSet?: string[]; headCommit?: string | null } = {},
 ): void {
   const reviewRecordId = newRecordId()
   const run = database
@@ -49,11 +50,19 @@ function addReview(
     )
     .get()!
   database
+    .query('UPDATE run SET head_commit=? WHERE record_id=?')
+    .run(options.headCommit ?? null, run.id)
+  database
     .query(
       `INSERT INTO review (number,record_id,recorded_at,completed_at,patch_id,path_set,tier)
-       VALUES (?,?,'2026-10-12','2026-10-12','current-patch','["one.ts"]',2)`,
+       VALUES (?,?,'2026-10-12','2026-10-12',?,?,2)`,
     )
-    .run(reviewId, reviewRecordId)
+    .run(
+      reviewId,
+      reviewRecordId,
+      options.patchId ?? 'current-patch',
+      JSON.stringify(options.pathSet ?? ['one.ts']),
+    )
   const reviewLens = database
     .query<{ record_id: string }, [string, string, string]>(
       `INSERT INTO review_lens
@@ -130,6 +139,14 @@ test('refuses a round with no accepted or modified findings', () => {
   )
 })
 
+test('refuses when the branch review lineage has no rounds and names its remedy', () => {
+  const database = fixture()
+  expect(() => continuationFindings(database, group, 'message')).toThrow(
+    'the review lineage for branch DEV-1258 has no review rounds\n' +
+      'cleared by: run and judge the review lenses for the current change',
+  )
+})
+
 test('refuses a modified finding without an architect message', () => {
   const finding: ContinuationFinding = {
     reviewNumber: 1,
@@ -160,4 +177,70 @@ test('omits the architect message section when no message was supplied', () => {
     proposedCorrection: 'correction',
   }
   expect(renderContinuationFindings([finding], undefined)).not.toContain('ARCHITECT MESSAGE')
+})
+
+test('delivers the latest lineage round after the branch change group moves', () => {
+  const database = fixture()
+  addReview(database, 40, 'correctness', [{ ordinal: 1, disposition: 'accepted' }], {
+    patchId: 'reviewed-patch',
+    headCommit: '1234567890abcdef',
+  })
+
+  const selected = continuationFindings(database, group, undefined)
+  expect(selected).toContain('1. Finding 40/1')
+
+  const rendered = renderContinuationFindings(
+    [
+      {
+        reviewNumber: 40,
+        ordinal: 1,
+        lens: 'correctness',
+        reviewerSeverity: 'medium',
+        triagedSeverity: null,
+        disposition: 'accepted',
+        location: 'correctness.ts:1',
+        evidence: 'correctness evidence 1',
+        proposedCorrection: 'correctness correction 1',
+      },
+    ],
+    undefined,
+    {
+      reviewedSha: '1234567890abcdef',
+      commitLines: ['7654321 Architect fix', 'abcdef0 Follow-up'],
+    },
+  )
+
+  expect(rendered).toContain(
+    'REVIEW FINDINGS\n\nThese findings were reviewed at 1234567. The branch has moved since by:\n' +
+      '7654321 Architect fix\nabcdef0 Follow-up\n\n1. Finding 40/1',
+  )
+})
+
+test('a matching current group preserves the previous rendered text exactly', () => {
+  const database = fixture()
+  addReview(database, 1, 'correctness', [{ ordinal: 1, disposition: 'accepted' }])
+
+  expect(continuationFindings(database, group, undefined)).toBe(
+    'REVIEW FINDINGS\n\n' +
+      '1. Finding 1/1\n' +
+      '   Lens: correctness\n' +
+      '   Severity: medium (reviewer)\n' +
+      '   Location: correctness.ts:1\n' +
+      '   Evidence: correctness evidence 1\n' +
+      '   Proposed correction: correctness correction 1\n\n' +
+      'Apply each item and nothing else, and in the summary answer each item by its number as ' +
+      'applied, or not applied and why.',
+  )
+})
+
+test('a newer incomplete round refuses instead of falling back to an older complete round', () => {
+  const database = fixture()
+  addReview(database, 41, 'correctness', [{ ordinal: 1, disposition: 'accepted' }], {
+    patchId: 'older-patch',
+  })
+  addReview(database, 42, 'safety', [{ ordinal: 2, disposition: null }])
+
+  expect(() => continuationFindings(database, group, 'message')).toThrow(
+    'review round is not triage-complete:\nreview 42: untriaged finding ordinal(s) 2',
+  )
 })
