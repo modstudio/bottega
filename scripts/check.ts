@@ -218,11 +218,23 @@ async function inherit(argv: string[], cwd = root, observation: ExecutionObserva
     startedAt,
   )
   const readers = [
-    pump(child.stdout, '', detail, false, true, FAILED_STEP_DETAIL_LINES, streamReaders, () => {
-      omittedDetailLines += 1
+    pump(child.stdout, '', detail, {
+      error: false,
+      raw: true,
+      tailLines: FAILED_STEP_DETAIL_LINES,
+      readers: streamReaders,
+      onDrop: () => {
+        omittedDetailLines += 1
+      },
     }),
-    pump(child.stderr, '', detail, true, true, FAILED_STEP_DETAIL_LINES, streamReaders, () => {
-      omittedDetailLines += 1
+    pump(child.stderr, '', detail, {
+      error: true,
+      raw: true,
+      tailLines: FAILED_STEP_DETAIL_LINES,
+      readers: streamReaders,
+      onDrop: () => {
+        omittedDetailLines += 1
+      },
     }),
   ]
   const exitCode = await child.exited
@@ -288,12 +300,15 @@ async function pump(
   stream: ReadableStream<Uint8Array>,
   name: string,
   tail: string[],
-  error: boolean,
-  raw = false,
-  tailLines = 40,
-  readers?: Set<ReadableStreamDefaultReader<Uint8Array>>,
-  onDrop?: () => void,
+  options: {
+    error: boolean
+    raw?: boolean
+    tailLines?: number
+    readers?: Set<ReadableStreamDefaultReader<Uint8Array>>
+    onDrop?: () => void
+  },
 ) {
+  const { error, raw = false, tailLines = 40, readers, onDrop } = options
   const reader = stream.getReader()
   readers?.add(reader)
   const decoder = new TextDecoder()
@@ -359,8 +374,8 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
       startedAt,
     )
     const readers = [
-      pump(child.stdout, leg.name, tail, false),
-      pump(child.stderr, leg.name, tail, true),
+      pump(child.stdout, leg.name, tail, { error: false }),
+      pump(child.stderr, leg.name, tail, { error: true }),
     ]
     const exitCode = await child.exited
     await Promise.all(readers)
@@ -370,7 +385,7 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
 }
 
 async function biomeErrorDetails(
-  fallback: Pick<GateStepResult, 'detail' | 'omittedDetailLines'>,
+  fallback: Pick<GateStepResult, 'detail' | 'omittedDetailLines' | 'note'>,
 ): Promise<Pick<GateStepResult, 'detail' | 'omittedDetailLines' | 'note'>> {
   try {
     const argv = [
@@ -397,7 +412,8 @@ async function biomeErrorDetails(
     return { detail: details, omittedDetailLines: 0 }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    return { ...fallback, note: `Biome error list could not be read: ${reason}` }
+    const reasonNote = `Biome error list could not be read: ${reason}`
+    return { ...fallback, note: [fallback.note, reasonNote].filter(Boolean).join('; ') }
   }
 }
 

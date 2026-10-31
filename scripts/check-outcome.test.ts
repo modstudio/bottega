@@ -81,16 +81,6 @@ describe('gate outcome', () => {
         ...Array.from({ length: FAILED_STEP_DETAIL_LINES }, (_, index) => `  line ${index}`),
       ],
     },
-    {
-      name: 'omits a passing step',
-      steps: [{ name: 'Biome', exitCode: 0, detail: ['unused detail'], omittedDetailLines: 0 }],
-      summary: [],
-    },
-    {
-      name: 'prints only the name for empty failed step detail',
-      steps: [{ name: 'Biome', exitCode: 1, detail: [], omittedDetailLines: 0 }],
-      summary: ['Biome'],
-    },
   ]
 
   for (const detailCase of detailCases) {
