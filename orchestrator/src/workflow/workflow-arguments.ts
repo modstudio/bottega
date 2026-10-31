@@ -26,7 +26,7 @@ export function refuseUnknownWorkflowArgument(
   context = '',
 ): void {
   const declared = definition.arguments.map(({ name }) => name)
-  const unknown = Object.keys(args).find((name) => !declared.includes(name))
+  const unknown = Object.keys(args).find((name) => name !== 'key' && !declared.includes(name))
   if (unknown)
     throw new Error(
       `${context ? `${context}: ` : ''}workflow "${slug}" has no argument "${unknown}"; declared arguments: ${declared.join(', ') || '(none)'}`,

@@ -20,7 +20,11 @@ import { type Project, removeProject, upsertProject } from '../project/projects.
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
-import { promoteWorkflowLocal, setWorkflowLocal } from '../workflow/workflows.ts'
+import {
+  promoteWorkflowLocal,
+  setWorkflowLocal,
+  showResolvedWorkflow,
+} from '../workflow/workflows.ts'
 import { createDocsMcpServer, fileIssueTaskKey } from './mcp.ts'
 
 describe('orch MCP', () => {
@@ -460,6 +464,21 @@ describe('orch MCP', () => {
         tracker: { kind: 'hub', protocol: 'hub' },
       },
     })
+    const current = showResolvedWorkflow('fix-defect').definition
+    const fixture = setWorkflowLocal(
+      'fix-defect',
+      {
+        ...current,
+        arguments: [
+          ...current.arguments,
+          { name: 'branch', required: true, description: 'The working branch.' },
+          { name: 'worktree', required: true, description: 'The working tree.' },
+        ],
+      },
+      'MCP cursor handle fixture',
+      'test',
+    )
+    promoteWorkflowLocal('fix-defect', fixture.n, 'MCP cursor handle fixture', 'test')
     const args = (key: string) => ({ key, branch: `${key}-work`, worktree: `/tmp/${key}` })
     const insert = db().prepare(
       `INSERT INTO workflow_cursor
@@ -473,7 +492,7 @@ describe('orch MCP', () => {
       newRecordId(),
       project,
       'DEV-1082-MCP-A',
-      workflowVersionRecordId(db(), 'fix-defect'),
+      workflowVersionRecordId(db(), 'fix-defect', fixture.n),
       catalogueVersionRecordId(db()),
       JSON.stringify(args('DEV-1082-MCP-A')),
     ) as {
@@ -483,7 +502,7 @@ describe('orch MCP', () => {
       newRecordId(),
       project,
       'DEV-1082-MCP-B',
-      workflowVersionRecordId(db(), 'fix-defect'),
+      workflowVersionRecordId(db(), 'fix-defect', fixture.n),
       catalogueVersionRecordId(db()),
       JSON.stringify(args('DEV-1082-MCP-B')),
     ) as {

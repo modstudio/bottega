@@ -65,7 +65,7 @@ test('every plan-task step renders on a keyless cursor in every mode', () => {
   }
 })
 
-test('a keyless step using KEY binds before it advances', () => {
+test('a workflow without a key argument adopts --task and renders and closes its next step', () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
   const catalogue = setStepCatalogueLocal(
@@ -105,7 +105,7 @@ test('a keyless step using KEY binds before it advances', () => {
     {
       title: 'Keyless binding',
       description: 'Binds a created task.',
-      arguments: [{ name: 'key', required: false, description: 'Task key.' }],
+      arguments: [],
       modes: [
         {
           slug: 'default',
@@ -178,6 +178,20 @@ test('a keyless step using KEY binds before it advances', () => {
   )
   expect(advanced).toContain('DEV-822')
   expect(advanced).not.toContain(`task show ${KEYLESS_TRACKER_ACTION_KEY}`)
+  expect(
+    nextWorkflowStep(
+      'keyless-binding',
+      'fixture',
+      'default',
+      {},
+      'read the bound task',
+      context,
+      d,
+      { task: 'DEV-822' },
+      testPorts,
+      cursor,
+    ),
+  ).toContain('is finished')
 })
 
 test('a prose KEY marker without a key-bound tracker action closes keylessly', () => {
