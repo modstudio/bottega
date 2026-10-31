@@ -7,15 +7,20 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { ceilingRulingGuidance } from '../pull-request/override-decision.ts'
+import { resolvePullRequestChange, triageDecision } from '../pull-request/pr-admission.ts'
+import { ceilingTriageFacts } from '../pull-request/triage-decision.ts'
+import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import {
   calibrationReviewCommand,
   completeReviewCommand,
   coverageAuditReviewCommand,
   listReviewCommand,
   pinsReviewCommand,
+  printReviewTier,
   recordReviewCommand,
+  reviewTierCommandOutput,
   showReviewCommand,
-  tierReviewCommand,
   triageReviewCommand,
   yieldReviewCommand,
 } from '../review/review-commands.ts'
@@ -69,6 +74,38 @@ function confinementReportCommand(flags: CliFlags): void {
 
 const reviewPresentation = {
   log,
+}
+
+function unresolvedCeilingGuidance(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause)
+  return (
+    'the review round ceiling is reached; ruling eligibility could not be established: ' +
+    `"${message}"; \`${PLATFORM_SLUG} pr create\` is the authority`
+  )
+}
+
+function tierCeilingGuidance(input: ReturnType<typeof reviewTierCommandOutput>): string | null {
+  const reviewBudget = input.output.review_budget
+  if (!reviewBudget.atCeiling) return null
+  try {
+    const database = db()
+    const change = resolvePullRequestChange(input.cwd, 'HEAD', database, undefined, input.branch)
+    return ceilingRulingGuidance({
+      reviewBudget,
+      triage: ceilingTriageFacts(triageDecision(change, database)),
+      commandName: PLATFORM_SLUG,
+    })
+  } catch (cause) {
+    return unresolvedCeilingGuidance(cause)
+  }
+}
+
+function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPresentation): void {
+  const value = argv[2]
+  if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
+  const result = reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
+  const json = flags.has('json')
+  printReviewTier(result.output, json, json ? null : tierCeilingGuidance(result), log)
 }
 
 function reviewArgv(command: Command): string[] {
@@ -156,7 +193,7 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .argument('[target]', 'branch, run id, or from..to range')
     .option('--cwd <value>', 'resolve the target from this project checkout')
     .option('--json', 'write the classification as JSON')
-    .action((_target, _options, command) => run(command, tierReviewCommand))
+    .action((_target, _options, command) => run(command, tierReviewCliCommand))
 
   review
     .command('coverage-audit')

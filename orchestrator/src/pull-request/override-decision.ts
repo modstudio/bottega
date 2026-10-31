@@ -23,6 +23,14 @@ type TriageOverrideInput = {
   overrideOption?: string
 }
 
+type CeilingRulingGuidanceInput = {
+  reviewBudget: NonNullable<TriageOverrideInput['reviewBudget']>
+  triage?: CeilingTriageFacts
+  commandName: string
+}
+
+const CEILING_GUIDANCE_REASON = 'remaining findings cannot cause harm'
+
 function decideCeilingRuling(input: TriageOverrideInput, reason: string): TriageOverrideDecision {
   if (!reason) return { kind: 'refuse', reason: '--ceiling-ruling requires a non-empty reason' }
   if (!input.triage) {
@@ -116,4 +124,30 @@ export function decideTriageOverride(input: TriageOverrideInput): TriageOverride
     }
   }
   return { kind: 'accept', reason, attribution: 'operator', missingLenses: [] }
+}
+
+/** Describe ceiling-ruling eligibility using the same decision that guards admission. */
+export function ceilingRulingGuidance(input: CeilingRulingGuidanceInput): string | null {
+  if (!input.reviewBudget.atCeiling) return null
+  const decision = decideTriageOverride({
+    ceilingRuling: CEILING_GUIDANCE_REASON,
+    fromOperator: false,
+    commandName: input.commandName,
+    reviewBudget: input.reviewBudget,
+    triage: input.triage,
+  })
+  if (decision.kind === 'accept') {
+    return (
+      'the review round ceiling is reached; the architect rules under ' +
+      '`.agents/rules/20-build-and-buy.md` “Review rounds are a funnel”. Read the fix with ' +
+      `\`${input.commandName} review read\` and, when no remaining finding can cause harm, record ` +
+      `the ruling with \`${input.commandName} pr create ... --ceiling-ruling "<reason>"\``
+    )
+  }
+  if (input.triage?.complete) {
+    return `the review round ceiling is reached; triage is complete, and ${input.commandName} pr create needs no ruling`
+  }
+  const reason =
+    decision.kind === 'refuse' ? decision.reason : 'ceiling ruling eligibility was not decided'
+  return `the review round ceiling is reached; a ceiling ruling is not available yet: ${reason}`
 }

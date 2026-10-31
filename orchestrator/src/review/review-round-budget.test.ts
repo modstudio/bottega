@@ -1,39 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync } from 'node:fs'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun, score } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import {
   reviewBudgetForBranch,
   reviewBudgetReport,
-  reviewCeilingGuidance,
   reviewRoundBudgetDecision,
 } from './review-round-budget.ts'
 
 describe('review round budget decision', () => {
-  test('the ceiling wording directs the architect to the canon ruling command', () => {
-    const decision = reviewRoundBudgetDecision({
-      tier: 3,
-      roundsUsed: 3,
-      currentChangeCounted: false,
-    })
-    const guidance = reviewCeilingGuidance(decision)!
-    expect(guidance).toContain('--ceiling-ruling')
-    const canonPath = guidance.match(/`([^`]+\.md)`/)?.[1]
-    expect(canonPath).toBeDefined()
-    expect(existsSync(new URL(`../../../${canonPath}`, import.meta.url))).toBe(true)
-    expect(
-      reviewCeilingGuidance(
-        reviewRoundBudgetDecision({ tier: 3, roundsUsed: 2, currentChangeCounted: false }),
-      ),
-    ).toBeNull()
-    expect(
-      reviewCeilingGuidance(
-        reviewRoundBudgetDecision({ tier: 3, roundsUsed: 3, currentChangeCounted: true }),
-      ),
-    ).toContain('--ceiling-ruling')
-  })
-
   test.each([
     ['under the ceiling', 3, 1, false, false],
     ['current change already counted', 1, 1, true, false],

@@ -134,7 +134,7 @@ export function resolvePullRequestChange(
   }
 }
 
-function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
+export function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   const reviews = reviewsForAdmission(database, change.group)
   const lineage = reviewLineage(database, change.project.name, change.branch)
   const grouped = new Map<string, TriageReviewRow[]>()

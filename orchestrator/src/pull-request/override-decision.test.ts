@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { decideTriageOverride } from './override-decision.ts'
+import { ceilingRulingGuidance, decideTriageOverride } from './override-decision.ts'
 
 const triage = (
   values: Partial<NonNullable<Parameters<typeof decideTriageOverride>[0]['triage']>> = {},
@@ -110,4 +110,46 @@ test('override flag combinations are decided without process or storage', () => 
     kind: 'refuse',
     reason: '--override-triage and --ceiling-ruling cannot be combined',
   })
+})
+
+test('ceiling guidance names only a ceiling ruling that admission accepts', () => {
+  const cases = [
+    ['missing lenses', triage()],
+    ['architect read required', triage({ missingLenses: [], architectReadRequired: true })],
+    ['complete', triage({ complete: true, missingLenses: [] })],
+    ['unfinished reviews', triage({ unfinishedReviewNumbers: [4] })],
+    ['undisposed findings', triage({ undisposedFindings: [{ reviewNumber: 3, ordinal: 2 }] })],
+    ['non-lens gap', triage({ hasNonLensGap: true, nonLensGaps: ['no complete review round'] })],
+    ['no missing lenses', triage({ missingLenses: [] })],
+  ] as const
+
+  for (const atCeiling of [false, true]) {
+    for (const [name, facts] of cases) {
+      const reviewBudget = {
+        atCeiling,
+        roundsUsed: atCeiling ? 3 : 2,
+        ceiling: 3,
+      }
+      const decision = decideTriageOverride({
+        ceilingRuling: 'remaining findings cannot cause harm',
+        fromOperator: false,
+        commandName,
+        reviewBudget,
+        triage: facts,
+      })
+      const guidance = ceilingRulingGuidance({ reviewBudget, triage: facts, commandName })
+      expect(
+        guidance?.includes('--ceiling-ruling') ?? false,
+        `${name}, atCeiling=${atCeiling}`,
+      ).toBe(decision.kind === 'accept')
+    }
+  }
+
+  expect(
+    ceilingRulingGuidance({
+      reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
+      triage: triage({ complete: true, missingLenses: [] }),
+      commandName,
+    }),
+  ).toContain(`${commandName} pr create needs no ruling`)
 })
