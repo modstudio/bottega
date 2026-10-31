@@ -133,7 +133,7 @@ export const CHECK_LEGS = [
 ] as const
 
 export const ROOT_TEST_FILES = [
-  'scripts/git-hook-binary.test.ts',
+  'scripts/check-git-hook-binary.test.ts',
   'scripts/architecture-cruise.test.ts',
   'scripts/architecture-hub-data.test.ts',
   'scripts/architecture-ui-layers.test.ts',
