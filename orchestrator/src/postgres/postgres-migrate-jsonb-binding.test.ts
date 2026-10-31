@@ -282,8 +282,10 @@ realPostgres('hosted jsonb string-refusal check', () => {
             refusal = error
           }
           await tx`ROLLBACK TO SAVEPOINT jsonb_string_write`
-          expect(refusal).toMatchObject({
-            code: '23514',
+          // Bun's PostgresError carries SQLSTATE in errno, not code.
+          const { errno, constraint } = refusal as { errno?: unknown; constraint?: unknown }
+          expect({ errno: String(errno), constraint }).toEqual({
+            errno: '23514',
             constraint: 'run_changed_paths_not_json_string_check',
           })
 
