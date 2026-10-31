@@ -18,6 +18,12 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
+/** One project server shape the Grok run-home renderer accepts. */
+export type GrokMcpServerEntry =
+  | ReaderProxyServer
+  | { command: string; args: string[]; cwd: string }
+  | { url: string }
+
 /** Build credential-free proxy launches for already-selected server names. */
 export function projectProxyServers(
   names: readonly string[],
@@ -54,7 +60,12 @@ export function withholdProjectRelativeStdioServer(
   server: { command?: string; url?: string },
   hasProjectTree: boolean,
 ): boolean {
-  if (hasProjectTree || server.url || !server.command) return false
+  return !hasProjectTree && isProjectRelativeStdioServer(server)
+}
+
+/** Whether a stdio launch resolves a relative path beneath its launch cwd. */
+export function isProjectRelativeStdioServer(server: { command?: string; url?: string }): boolean {
+  if (server.url || !server.command) return false
   return server.command.includes('/') && !isAbsolute(server.command)
 }
 
@@ -63,10 +74,7 @@ export const READER_PLATFORM_MCP_SERVERS = [MCP_SERVER_NAME, WORKER_MCP_SERVER_N
 /** Build the only MCP table a Grok reader's run home may expose. */
 export function grokReaderMcpServerTable(
   userServers: Record<string, unknown> | undefined,
-  proxies: Record<
-    string,
-    ReaderProxyServer | { url: string } | { command: string; args: string[] }
-  >,
+  proxies: Record<string, GrokMcpServerEntry>,
 ): Record<string, unknown> {
   return {
     ...(userServers?.[MCP_SERVER_NAME] ? { [MCP_SERVER_NAME]: userServers[MCP_SERVER_NAME] } : {}),

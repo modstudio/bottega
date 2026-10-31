@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client, InMemoryTransport, type Tool } from '@modelcontextprotocol/client'
+import { Server } from '@modelcontextprotocol/server'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { McpServerConfig } from './mcp-probe.ts'
 import {
@@ -172,6 +173,81 @@ test('writer proxy lists and calls only explicitly registered tools', async () =
   } finally {
     await client.close()
     await proxy.close()
+  }
+})
+
+test('writer command serves only the project writer_tools grant', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'writer-proxy-command-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  const upstreamCalls: string[] = []
+  const upstreamServer = new Server(
+    { name: 'writer-command-upstream', version: '1' },
+    { capabilities: { tools: {} } },
+  )
+  upstreamServer.setRequestHandler('tools/list', async () => ({
+    tools: [
+      { name: 'read-status', inputSchema: { type: 'object' } },
+      { name: 'update-task', inputSchema: { type: 'object' } },
+    ],
+  }))
+  upstreamServer.setRequestHandler('tools/call', async (request) => {
+    upstreamCalls.push(request.params.name)
+    return { content: [{ type: 'text', text: request.params.name }] }
+  })
+  const upstreamClient = new Client({ name: 'writer-command-upstream-client', version: '1' })
+  const [upstreamClientTransport, upstreamServerTransport] = InMemoryTransport.createLinkedPair()
+  await upstreamServer.connect(upstreamServerTransport)
+  await upstreamClient.connect(upstreamClientTransport)
+  try {
+    await readerMcpProxyCommand('writer', 'project', 'tracker', tree, {
+      projectByName: () => ({
+        name: 'project',
+        path: main,
+        settings: {
+          mcp: {
+            reader_tools: { tracker: ['read-status'] },
+            writer_tools: { tracker: ['update-task'] },
+          },
+        },
+      }),
+      retiredProjectByName: () => null,
+      readMcpConfigResult: () => ({
+        ok: true,
+        path: join(main, '.mcp.json'),
+        config: { tracker: { name: 'tracker', command: 'tracker-server' } },
+      }),
+      connectMcpToolClient: async () => ({
+        client: upstreamClient,
+        close: () => upstreamClient.close(),
+      }),
+      serveProxy: async (proxy) => {
+        const client = new Client({ name: 'writer-command-client', version: '1' })
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+        await proxy.server.connect(serverTransport)
+        await client.connect(clientTransport)
+        try {
+          expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['update-task'])
+          expect((await client.callTool({ name: 'read-status', arguments: {} })).isError).toBeTrue()
+          await client.callTool({ name: 'update-task', arguments: {} })
+          expect(upstreamCalls).toEqual(['update-task'])
+        } finally {
+          await client.close()
+          await proxy.close()
+        }
+      },
+      environment: {},
+      error: (line) => {
+        throw new Error(line)
+      },
+      setExitCode: () => {},
+    })
+  } finally {
+    await upstreamServer.close().catch(() => undefined)
+    await upstreamClient.close().catch(() => undefined)
+    rmSync(root, { recursive: true, force: true })
   }
 })
 

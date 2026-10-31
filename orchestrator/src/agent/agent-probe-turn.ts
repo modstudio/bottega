@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
-import { workerMcpLaunchSelection } from '../run/run-mcp-launch-scope.ts'
+import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
 import type {
   AgentTransport,
@@ -158,7 +158,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
             hasProjectTree: true,
             callerCwd: cwd,
             cwd,
-            writerProxy: 'acp',
+            writerProxy: writerProxyRoute(input.agent.harness ?? input.agent.name, 'acp'),
           })
         : null,
       env: environment,

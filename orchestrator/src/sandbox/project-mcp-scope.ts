@@ -13,6 +13,7 @@ import {
 } from '../mcp/mcp-probe.ts'
 import {
   mcpConfigReadForRun,
+  isProjectRelativeStdioServer,
   type ProjectMcpWithheld,
   projectProxyServers,
   projectReaderProxyServers,
@@ -32,6 +33,12 @@ export const PROJECT_MCP_WRITER_TOOLS_ADVICE = `declare mcp.writer_tools.<server
 
 export const PROJECT_MCP_ACP_WRITER_ADVICE =
   'ACP writers do not receive proxied project servers yet'
+
+export const PROJECT_MCP_RELATIVE_WRITER_REASON =
+  "its project-relative command would run a worker-writable path with the project's credentials"
+
+export const PROJECT_MCP_RELATIVE_WRITER_ADVICE =
+  'use a bare command name or an absolute path in .mcp.json'
 
 /** The edit that clears a writer withhold: the tree entry, or the project's named server. */
 export function projectMcpWriterRemedy(project: { name: string; path: string } | null): string {
@@ -56,6 +63,8 @@ function withoutPlatformServers(read: McpConfigReadResult): McpConfigReadResult 
 /** A project server launchable without inline credentials: a command or a url. */
 export type ProjectMcpServer = { command: string; args: string[]; cwd: string } | { url: string }
 
+export type WriterProxyDecision = { kind: 'proxy' } | { kind: 'withhold'; advice: string }
+
 export type ProjectMcpProject = {
   name: string
   path: string
@@ -79,17 +88,22 @@ function projectMcpWriterWithholds(config: McpServerConfig): boolean {
 /** Which project servers attach to one run, and how a harness must reach them. */
 export type ProjectMcpSelection =
   | { kind: 'reader'; servers: Record<string, ReaderProxyServer>; withheld: ProjectMcpWithheld[] }
-  | { kind: 'direct'; servers: Record<string, ProjectMcpServer>; withheld: ProjectMcpWithheld[] }
+  | {
+      kind: 'direct'
+      servers: Record<string, ProjectMcpServer | ReaderProxyServer>
+      withheld: ProjectMcpWithheld[]
+    }
 
 /** Select project MCP launch definitions that are safe to expose without inline credentials. */
 function writerWithheld(
   name: string,
   project: { name: string; path: string } | null,
   advice = PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+  reason = PROJECT_MCP_WRITER_WITHHELD_REASON,
 ): ProjectMcpWithheld {
   return {
     name,
-    reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
+    reason,
     advice,
     remedy: projectMcpWriterRemedy(project),
   }
@@ -101,24 +115,21 @@ type CredentialedWriterRoute =
 
 /** Decide whether one credentialed writer route is proxied or visibly withheld. */
 function decideCredentialedWriterRoute(input: {
-  writerProxy: 'enabled' | 'acp' | 'disabled'
+  writerProxy: WriterProxyDecision
   writerTools: readonly string[]
   projectName: string | null
   server: string
 }): CredentialedWriterRoute {
-  if (input.writerProxy === 'enabled' && input.writerTools.length > 0 && input.projectName) {
+  if (input.writerProxy.kind === 'withhold') {
+    return { kind: 'withheld', advice: input.writerProxy.advice }
+  }
+  if (input.writerTools.length > 0 && input.projectName) {
     return { kind: 'proxy', projectName: input.projectName }
   }
-  if (input.writerProxy === 'acp') {
-    return { kind: 'withheld', advice: PROJECT_MCP_ACP_WRITER_ADVICE }
+  return {
+    kind: 'withheld',
+    advice: PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', input.server),
   }
-  if (input.writerTools.length === 0) {
-    return {
-      kind: 'withheld',
-      advice: PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', input.server),
-    }
-  }
-  return { kind: 'withheld', advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE }
 }
 
 /** Refuse a required writing route when its project server cannot enter the worker scope. */
@@ -128,24 +139,19 @@ export function requiredProjectMcpWriterIneligibility(
   writesRepository: boolean,
   config: McpServerConfig | undefined,
   project: ProjectMcpProject | null,
-  writer?: { harness: string; transport: 'cli' | 'acp' },
+  writerProxy: WriterProxyDecision,
 ): string | null {
   if (mode !== 'require' || !writesRepository || !config || !projectMcpWriterWithholds(config))
     return null
   const registered = project?.settings.mcp?.writer_tools?.[server] ?? []
-  if (
-    writer?.transport === 'cli' &&
-    ['codex', 'grok'].includes(writer.harness) &&
-    registered.length
-  )
-    return null
-  const advice =
-    writer?.transport === 'acp'
-      ? PROJECT_MCP_ACP_WRITER_ADVICE
-      : registered.length === 0
-        ? PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', server)
-        : PROJECT_MCP_WRITER_WITHHELD_ADVICE
-  const withheld = writerWithheld(server, project, advice)
+  const route = decideCredentialedWriterRoute({
+    writerProxy,
+    writerTools: registered,
+    projectName: project?.name ?? null,
+    server,
+  })
+  if (route.kind === 'proxy') return null
+  const withheld = writerWithheld(server, project, route.advice)
   return (
     `required project MCP server '${server}' is withheld from writing workers ` +
     `(${withheld.reason}); ${withheld.advice}; cleared by: ${withheld.remedy}`
@@ -157,16 +163,27 @@ function selectDirectProjectMcpServers(
   allowed: string[] | undefined,
   cwd: string,
   project: ProjectMcpProject | null,
-  writerProxy: 'enabled' | 'acp' | 'disabled',
+  writerProxy: WriterProxyDecision,
 ): Extract<ProjectMcpSelection, { kind: 'direct' }> {
   const projectRead = withoutPlatformServers(read)
   const projectServers = projectRead.ok ? projectRead.config : {}
   const disabled = new Set(disabledProjectMcpServers(Object.keys(projectServers), allowed))
-  const servers: Record<string, ProjectMcpServer> = {}
+  const servers: Record<string, ProjectMcpServer | ReaderProxyServer> = {}
   const withheld: ProjectMcpWithheld[] = []
   for (const [name, entry] of Object.entries(projectServers)) {
     if (disabled.has(name)) continue
     if (projectMcpWriterWithholds(entry)) {
+      if (isProjectRelativeStdioServer(entry)) {
+        withheld.push(
+          writerWithheld(
+            name,
+            project,
+            PROJECT_MCP_RELATIVE_WRITER_ADVICE,
+            PROJECT_MCP_RELATIVE_WRITER_REASON,
+          ),
+        )
+        continue
+      }
       const writerTools = project?.settings.mcp?.writer_tools?.[name] ?? []
       const route = decideCredentialedWriterRoute({
         writerProxy,
@@ -175,7 +192,8 @@ function selectDirectProjectMcpServers(
         server: name,
       })
       if (route.kind === 'proxy') {
-        Object.assign(servers, projectProxyServers([name], 'writer', route.projectName, cwd))
+        const proxy = projectProxyServers([name], 'writer', route.projectName, cwd)[name]
+        if (proxy) servers[name] = proxy
       } else {
         withheld.push(writerWithheld(name, project, route.advice))
       }
@@ -200,7 +218,7 @@ export function selectProjectMcpServers(
   project: ProjectMcpProject | null,
   cwd: string,
   hasProjectTree: boolean,
-  writerProxy: 'enabled' | 'acp' | 'disabled' = 'enabled',
+  writerProxy: WriterProxyDecision,
 ): ProjectMcpSelection | null {
   if (mcp === false) return null
   const read = mcpConfigReadForRun(treeConfig, project, cwd)
@@ -229,11 +247,10 @@ export function projectMcpWithheldLine(
   if (reasons.length === 1) {
     const head = `MCP scope: ${harness} withheld ${names} (${reasons[0]})`
     const uniqueAdvice = [...new Set(withheld.map((entry) => entry.advice ?? ''))]
-    const advice = uniqueAdvice.length === 1 ? uniqueAdvice[0] : ''
-    return advice ? `${head}; ${advice}` : head
+    if (uniqueAdvice.length === 1) return uniqueAdvice[0] ? `${head}; ${uniqueAdvice[0]}` : head
   }
   return `MCP scope: ${harness} withheld ${withheld
-    .map((entry) => `${entry.name} (${entry.reason})`)
+    .map((entry) => `${entry.name} (${entry.reason}${entry.advice ? `; ${entry.advice}` : ''})`)
     .join(', ')}`
 }
 

@@ -70,6 +70,7 @@ test('a project entry named like the worker channel never appears beside it', ()
     { name: 'starship', path: '/project', settings: {} },
     '/project',
     true,
+    { kind: 'withhold', advice: 'ACP test route' },
   )
   const servers = acpMcpServers(opts({ projectMcpSelection: selection }))
   expect(servers.map((entry) => entry.name)).toEqual([WORKER_MCP_SERVER_NAME, 'local'])

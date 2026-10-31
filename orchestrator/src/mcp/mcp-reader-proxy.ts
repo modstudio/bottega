@@ -174,6 +174,7 @@ type ReaderMcpProxyDependencies = {
   readMcpConfigResult(cwd: string): McpConfigReadResult
   connectMcpToolClient: typeof connectMcpToolClient
   resolveMcpHeaders: typeof resolveMcpHeaders
+  serveProxy(proxy: ReaderMcpProxy): void | Promise<void>
   environment: Record<string, string | undefined>
 }
 
@@ -183,6 +184,9 @@ const readerMcpProxyDependencies: ReaderMcpProxyDependencies = {
   readMcpConfigResult,
   connectMcpToolClient,
   resolveMcpHeaders,
+  serveProxy: (proxy) => {
+    serveStdio(() => proxy.server)
+  },
   environment: process.env,
 }
 
@@ -296,7 +300,7 @@ async function serveReaderMcpProxy(
     await connected.close().catch(() => undefined)
     throw new Error(sanitizeProbeError(String((error as Error)?.message ?? error), secrets))
   }
-  serveStdio(() => proxy.server)
+  await dependencies.serveProxy(proxy)
 }
 
 type ReaderMcpProxyCommandDependencies = Partial<ReaderMcpProxyDependencies> & {

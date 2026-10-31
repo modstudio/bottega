@@ -7,6 +7,7 @@ import { seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import type { Agent } from '../agent/agents.ts'
 import type { McpServerConfig } from '../mcp/mcp-probe.ts'
 import { upsertProject } from '../project/projects.ts'
+import { writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import {
   PROJECT_MCP_WRITER_TOOLS_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
@@ -92,10 +93,7 @@ test.each(AGENT_CASES.flatMap((agent) => SERVER_CASES.map((server) => ({ agent, 
           path: '/project',
           settings: {},
         },
-        {
-          harness: agent.harness ?? agent.name,
-          transport: agent.defaultTransport ?? 'cli',
-        },
+        writerProxyRoute(agent.harness ?? agent.name, agent.defaultTransport ?? 'cli'),
       ),
     )
 
@@ -121,11 +119,18 @@ test.each(AGENT_CASES)('$harness remains eligible for a helper-auth reader serve
       undefined,
       undefined,
       undefined,
-      requiredProjectMcpWriterIneligibility('starship', 'require', false, SERVER_CASES[0]!.config, {
-        name: 'starship',
-        path: '/project',
-        settings: {},
-      }),
+      requiredProjectMcpWriterIneligibility(
+        'starship',
+        'require',
+        false,
+        SERVER_CASES[0]!.config,
+        {
+          name: 'starship',
+          path: '/project',
+          settings: {},
+        },
+        writerProxyRoute(agent.harness ?? agent.name, agent.defaultTransport ?? 'cli'),
+      ),
     ),
   ).toBeNull()
 })
@@ -143,10 +148,7 @@ test.each(AGENT_CASES)(
         path: '/project',
         settings: { mcp: { writer_tools: { starship: ['update-task'] } } },
       },
-      {
-        harness: agent.harness ?? agent.name,
-        transport: agent.defaultTransport ?? 'cli',
-      },
+      writerProxyRoute(agent.harness ?? agent.name, agent.defaultTransport ?? 'cli'),
     )
     if (agent.defaultTransport === 'acp') {
       expect(why).toContain('ACP writers do not receive proxied project servers yet')

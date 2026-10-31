@@ -20,6 +20,7 @@ import {
 import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
+import { writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { weigh } from '../score/score.ts'
 import { median } from '../state/statistics.ts'
@@ -366,10 +367,10 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
             Boolean(j.needs.writesRepo),
             requiredMcpConfig,
             requiredMcpProject,
-            {
-              harness: agent.harness ?? agent.name,
-              transport: pinnedTransport ?? agent.defaultTransport ?? 'cli',
-            },
+            writerProxyRoute(
+              agent.harness ?? agent.name,
+              pinnedTransport ?? agent.defaultTransport ?? 'cli',
+            ),
           )
         : null,
     )

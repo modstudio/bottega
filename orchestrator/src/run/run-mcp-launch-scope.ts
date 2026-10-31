@@ -5,12 +5,26 @@ import { type McpServerConfig, mcpConfigAllowlist, readMcpConfig } from '../mcp/
 import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
+  PROJECT_MCP_ACP_WRITER_ADVICE,
   type ProjectMcpSelection,
+  type WriterProxyDecision,
   projectMcpWithheldLine,
   selectProjectMcpServers,
 } from '../sandbox/project-mcp-scope.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
 import { grokReaderServersForRun, projectMcpServerName } from './run-worker-home.ts'
+
+export const PROJECT_MCP_UNSUPPORTED_WRITER_ADVICE =
+  'only codex and grok CLI writers receive proxied project servers; use one of those launches or declare the server without inline credentials'
+
+/** Resolve harness and transport facts into the sandbox's writer-proxy decision. */
+export function writerProxyRoute(harness: string, transport: string): WriterProxyDecision {
+  if (transport === 'cli' && (harness === 'codex' || harness === 'grok')) {
+    return { kind: 'proxy' }
+  }
+  if (transport === 'acp') return { kind: 'withhold', advice: PROJECT_MCP_ACP_WRITER_ADVICE }
+  return { kind: 'withhold', advice: PROJECT_MCP_UNSUPPORTED_WRITER_ADVICE }
+}
 
 /** Decide one launch's project MCP selection from an already-read tree, register and job shape. */
 function launchProjectSelection(
@@ -20,7 +34,7 @@ function launchProjectSelection(
   project: Project | null,
   cwd: string,
   hasProjectTree: boolean,
-  writerProxy: 'enabled' | 'acp' | 'disabled',
+  writerProxy: WriterProxyDecision,
 ): ProjectMcpSelection | null {
   return selectProjectMcpServers(
     codexMcpMode(usingMcp, writesJob),
@@ -42,7 +56,7 @@ function launchSelectionFacts(input: {
   hasProjectTree: boolean
   callerCwd: string
   cwd: string
-  writerProxy: 'enabled' | 'acp' | 'disabled'
+  writerProxy: WriterProxyDecision
 }): {
   config: Record<string, McpServerConfig>
   project: Project | null
@@ -72,9 +86,9 @@ export function workerMcpLaunchSelection(input: {
   hasProjectTree: boolean
   callerCwd: string
   cwd: string
-  writerProxy?: 'enabled' | 'acp' | 'disabled'
+  writerProxy: WriterProxyDecision
 }): ProjectMcpSelection | null {
-  return launchSelectionFacts({ ...input, writerProxy: input.writerProxy ?? 'disabled' }).selection
+  return launchSelectionFacts(input).selection
 }
 
 /**
@@ -118,12 +132,7 @@ export function workerMcpLaunchScope(input: {
   connection: { server: string } | null
 }) {
   const harness = input.agent.harness ?? input.agent.name
-  const writerProxy =
-    input.transport === 'acp'
-      ? 'acp'
-      : harness === 'codex' || harness === 'grok'
-        ? 'enabled'
-        : 'disabled'
+  const writerProxy = writerProxyRoute(harness, input.transport)
   const {
     config,
     project,
