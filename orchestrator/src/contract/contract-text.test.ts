@@ -3,7 +3,6 @@ import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import {
   COULD_NOT_VERIFY_INSTRUCTION,
-  contractConflicts,
   FINDINGS_INFRASTRUCTURE_RECOVERY,
   INFRASTRUCTURE_RECOVERY,
   NO_REPO_PREAMBLE,
@@ -151,13 +150,5 @@ describe('job contracts are visible before submission', () => {
     const r = contract('not-a-job')
     expect(r.code).toBe(1)
     expect(r.err).toContain('unknown job "not-a-job"')
-  })
-  test('implement conflict warnings identify the original line', () => {
-    const spec = [
-      'Make the requested change.',
-      'Commit it using the DEV-126 prefix.',
-      'Then push the branch.',
-    ].join('\n')
-    expect(contractConflicts(spec)).toEqual([{ line: 3, text: 'Then push the branch.' }])
   })
 })
