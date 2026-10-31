@@ -107,6 +107,11 @@ test('a Grok CLI writer receives its credentialed project server through the wri
     args: expect.arrayContaining(['writer', 'grok-writer-proxy-fixture', 'tracker', cwd]),
   })
   expect(JSON.stringify(scope.grok)).not.toContain('literal-secret')
+  expect(scope.credentialLines).toHaveLength(1)
+  expect(scope.credentialLines[0]).toContain('project grok-writer-proxy-fixture MCP server tracker')
+  expect(scope.credentialLines[0]).toContain('env TRACKER_TOKEN')
+  expect(scope.credentialLines[0]).not.toContain('literal-secret')
+  expect(scope.credentialLines[0]).not.toContain('${')
 })
 
 test('the selection-only entry derives the same selection as a full launch scope', () => {

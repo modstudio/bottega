@@ -25,6 +25,8 @@ import {
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
+import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
 import {
   classifiedDockerResources,
   dockerRemovalCommand,
@@ -213,6 +215,16 @@ async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<v
   }
 }
 
+async function reportProjectMcpCredentials(log: DoctorPresentation['log']): Promise<void> {
+  const { projects } = await import('../project/projects.ts')
+  const lines = projects().flatMap((project) =>
+    credentialLinesFromRead(project.name, readMcpConfigResult(project.path)),
+  )
+  if (!lines.length) return
+  log('project MCP credentials')
+  for (const line of lines) log(`  ${line}`)
+}
+
 async function reportAgents(
   presentation: Pick<DoctorPresentation, 'log' | 'candidates'>,
   agentStatus: typeof doctorAgentStatus,
@@ -248,6 +260,7 @@ async function reportAgents(
     if (predatesFileContract(agent)) presentation.log(`  ${fileContractProbeReason(agent.name)}`)
   }
   await reportProjectAgentKeys(presentation.log)
+  await reportProjectMcpCredentials(presentation.log)
 }
 
 function agentOperationalSuffix(

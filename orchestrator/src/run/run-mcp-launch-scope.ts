@@ -1,6 +1,7 @@
 // concern: run-mcp-launch-scope
 /** The MCP servers one worker launch attaches, before any harness renders them. */
 import type { Agent } from '../agent/agents.ts'
+import { literalCredentialFindings, literalCredentialLines } from '../mcp/mcp-credential-literal.ts'
 import { type McpServerConfig, mcpConfigAllowlist, readMcpConfig } from '../mcp/mcp-probe.ts'
 import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
@@ -162,5 +163,9 @@ export function workerMcpLaunchScope(input: {
     projectSelection,
     serverName: projectMcpServerName(input.connection, project),
     allowlist: mcpConfigAllowlist(config),
+    credentialLines:
+      input.usingMcp && project
+        ? literalCredentialLines(project.name, literalCredentialFindings(config))
+        : [],
   }
 }
