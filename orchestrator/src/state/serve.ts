@@ -119,124 +119,12 @@ function reviewsForRun(runId: string): RunDetailReviewLens[] {
   }))
 }
 
-const RUN_DETAIL_ALIAS_REASON = 'The column is published under the stable run-detail field name.'
-const RUN_DETAIL_DISPLAY_DEFERRED_REASON =
-  'Whether this display candidate belongs in run show is deferred to a separate product decision.'
-const RUN_DETAIL_LAUNCH_INTERNAL_REASON =
-  'Launch, process, and transport internals are consumed by lifecycle services rather than run show.'
-const RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON =
-  'Prompt and output accounting supports storage and diagnostics rather than run show.'
-const RUN_DETAIL_PROVENANCE_REASON =
-  'Provenance and evidence bookkeeping is presented through its derived reader-facing fields.'
-const RUN_DETAIL_CLOSE_OUT_REASON =
-  'Retention, teardown, and close-out bookkeeping is presented through lifecycle-specific surfaces.'
-const RUN_DETAIL_USAGE_REASON =
-  'Detailed usage and quota accounting is presented through cost and health surfaces.'
-const RUN_DETAIL_ROUTING_REASON =
-  'Routing and execution-policy metadata is presented through routing and review surfaces.'
-const RUN_DETAIL_SECRET_REASON = 'Authentication material is never published by run show.'
-
-/** Run columns deliberately absent by name from `runDetail`; values may be represented derivatively. */
-export const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
-  number: RUN_DETAIL_ALIAS_REASON,
-  repo: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  prompt_sha: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
-  prompt_bytes: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
-  prompt_head: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
-  label: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  lens: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  exit_code: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  output_bytes: RUN_DETAIL_ARTIFACT_ACCOUNTING_REASON,
-  pid: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  session_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  retry_of_record_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  launch_cwd: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  launch_seed: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  launch_key: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  launch_base: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  no_failover: RUN_DETAIL_ROUTING_REASON,
-  automatic_failover: RUN_DETAIL_ROUTING_REASON,
-  route_reason: RUN_DETAIL_ROUTING_REASON,
-  sandbox: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  branch: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  worktree: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  worktree_source: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  vendor_session: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  base_commit: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  carry_happened: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  carry_base_commit: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  carry_tracked_paths: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  carry_untracked_paths: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  parent_run_record_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  turn: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  files_changed: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  lines_added: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  lines_removed: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  deviations: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  escalations: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  stack: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  model: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  run_token: RUN_DETAIL_SECRET_REASON,
-  outside_worktree_writes: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  agent_pid: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  mcp_trust_granted: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  mcp_trust_path: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  schema_path: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  docs_injected: RUN_DETAIL_PROVENANCE_REASON,
-  transport: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  pre_confinement: RUN_DETAIL_PROVENANCE_REASON,
-  spec_sha: RUN_DETAIL_PROVENANCE_REASON,
-  keep_tree: RUN_DETAIL_CLOSE_OUT_REASON,
-  project_record_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  last_event_at: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  minted_branch: RUN_DETAIL_CLOSE_OUT_REASON,
-  unreconciled: RUN_DETAIL_CLOSE_OUT_REASON,
-  mcp_probe: RUN_DETAIL_PROVENANCE_REASON,
-  confinement: RUN_DETAIL_PROVENANCE_REASON,
-  review_provenance: RUN_DETAIL_PROVENANCE_REASON,
-  provenance_status: RUN_DETAIL_PROVENANCE_REASON,
-  work_preserved: RUN_DETAIL_CLOSE_OUT_REASON,
-  close_out_outcome: RUN_DETAIL_CLOSE_OUT_REASON,
-  close_out_detail: RUN_DETAIL_CLOSE_OUT_REASON,
-  close_out_attempted_at: RUN_DETAIL_CLOSE_OUT_REASON,
-  agent_pgid: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  agent_start_time: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  keep_tree_until: RUN_DETAIL_CLOSE_OUT_REASON,
-  keep_tree_reason: RUN_DETAIL_CLOSE_OUT_REASON,
-  recipe_snapshot: RUN_DETAIL_CLOSE_OUT_REASON,
-  started_by_user_id: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  task_record_id: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  gate_requests_closed: RUN_DETAIL_CLOSE_OUT_REASON,
-  resource_teardown: RUN_DETAIL_CLOSE_OUT_REASON,
-  agent_explicit: RUN_DETAIL_ROUTING_REASON,
-  transport_explicit: RUN_DETAIL_ROUTING_REASON,
-  vendor_input_tokens: RUN_DETAIL_USAGE_REASON,
-  vendor_output_tokens: RUN_DETAIL_USAGE_REASON,
-  host_wait_since: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  continuation_message_sha: RUN_DETAIL_PROVENANCE_REASON,
-  review_role: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  selection_reason: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  executor: RUN_DETAIL_DISPLAY_DEFERRED_REASON,
-  harness_wall_bound_ms: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  model_calls: RUN_DETAIL_USAGE_REASON,
-  peak_call_tokens: RUN_DETAIL_USAGE_REASON,
-  quota_used_percent_start: RUN_DETAIL_USAGE_REASON,
-  quota_used_percent_end: RUN_DETAIL_USAGE_REASON,
-  quota_window_minutes: RUN_DETAIL_USAGE_REASON,
-  quota_resets_at: RUN_DETAIL_USAGE_REASON,
-  endpoint_key_source: RUN_DETAIL_ROUTING_REASON,
-  host_admission_first: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-  host_admission: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
-} as const satisfies Record<string, string>
-
 /** Full detail for one run: the whole prompt and the whole reply, read from disk. */
 export function runDetail(
   id: string,
   receipt = false,
   options: { subscriptionCost?: SubscriptionCostContext } = {},
 ) {
-  // The exported manifest and this projection are one production contract; the schema test audits it.
-  void RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS
   const row = db()
     .query(
       `SELECT r.number AS id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,

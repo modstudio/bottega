@@ -18,7 +18,7 @@ export type GateTestObservations = {
   checks: readonly GateTestExecutionObservation[]
   latestFinishedExecutionId: string | null
 }
-export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null | undefined
+export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null
 
 export type ObservedTestOutcome = {
   ran: boolean | null

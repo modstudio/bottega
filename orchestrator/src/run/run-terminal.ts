@@ -916,8 +916,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     // Never let recording a blocker fail a run that otherwise succeeded.
     console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
   }
-  const testOutcome = writesJob ? observedTestOutcome(db(), claim.id, contract?.tests) : null
-  error = terminalOutcomeNote(status, error, testOutcome)
+  const testObs = writesJob ? observedTestOutcome(db(), claim.id, contract?.tests ?? null) : null
+  error = terminalOutcomeNote(status, error, testObs)
   const terminalSnapshot: TerminalSnapshot = {
     status,
     error,
@@ -936,9 +936,9 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     changedPaths: writesJob && changes ? JSON.stringify(changes.files) : null,
     linesAdded: writesJob ? (changes?.insertions ?? null) : null,
     linesRemoved: writesJob ? (changes?.deletions ?? null) : null,
-    testsRan: testOutcome ? nullableBooleanColumn(testOutcome.ran) : null,
-    testsPassed: nullableBooleanColumn(testOutcome?.passed),
-    testsClaimDisagrees: nullableBooleanColumn(testOutcome?.claimDisagrees),
+    testsRan: testObs ? nullableBooleanColumn(testObs.ran) : null,
+    testsPassed: nullableBooleanColumn(testObs?.passed),
+    testsClaimDisagrees: nullableBooleanColumn(testObs?.claimDisagrees),
     deviations: writesJob ? (contract?.deviations?.length ?? null) : null,
     escalations: writesJob ? acceptedQuestions.length : null,
   }
@@ -1013,7 +1013,7 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
             acceptedQuestions.length,
             claim.id,
           )
-        writeObservedTestOutcome(db(), claim.id, testOutcome!)
+        writeObservedTestOutcome(db(), claim.id, testObs!)
       }
 
       /**

@@ -262,6 +262,40 @@ describe('deriveObservedTestOutcome', () => {
     })
   })
 
+  test('reads an expect-fail declaration from the focused-test event log', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:00.000Z',
+      type: 'focused_test',
+      paths: ['a.test.ts'],
+      started: true,
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 10,
+      logName: 'ordinary.log',
+      logPath: '/scratch/ordinary.log',
+    })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:01.000Z',
+      type: 'focused_test',
+      paths: ['mutation.test.ts'],
+      expect: 'fail',
+      started: true,
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 10,
+      logName: 'mutation.log',
+      logPath: '/scratch/mutation.log',
+    })
+
+    expect(observedTestOutcome(db(), runId, { ran: true, passed: true })).toEqual({
+      ran: true,
+      passed: true,
+      claimDisagrees: false,
+      probesPassed: [['mutation.test.ts']],
+    })
+  })
+
   test('reads a focused test refusal event as an unverified passing observation', () => {
     const runId = addRun({ agent: 'codex', job: 'implement' })
     appendRunEvent(runId, {
