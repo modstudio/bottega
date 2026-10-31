@@ -26,7 +26,14 @@ import {
   type WorkflowModeStep,
   workflowsAfterReplacement,
 } from './workflow-definition.ts'
-import { floorKinds, isFloorKind, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
+import {
+  type FloorKind,
+  flagForFloor,
+  floorGuidance,
+  floorKinds,
+  isFloorKind,
+  mayCloseOnAgentSelfRuling,
+} from './workflow-floor.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
 import { workflowPromotionReport } from './workflow-shared-promotion.ts'
@@ -49,6 +56,70 @@ export type {
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
+
+export type UnsupportedCloseEvidenceFlag = {
+  flag: string
+  acceptingFloors: FloorKind[]
+}
+
+const closeEvidenceFlags = new Set([
+  '--task',
+  '--ruling',
+  '--self-ruling',
+  '--basis',
+  '--gate',
+  '--artifact',
+])
+
+const evidenceFlagsByFloor = new Map(
+  floorKinds.map((floor) => [
+    floor,
+    new Set(`${floorGuidance[floor]} ${flagForFloor(floor)}`.match(/--[a-z][a-z-]*/g) ?? []),
+  ]),
+)
+
+const acceptingFloorsByFlag = new Map<string, FloorKind[]>()
+for (const floor of floorKinds) {
+  for (const flag of evidenceFlagsByFloor.get(floor) ?? []) {
+    const accepting = acceptingFloorsByFlag.get(flag) ?? []
+    accepting.push(floor)
+    acceptingFloorsByFlag.set(flag, accepting)
+  }
+}
+
+function closingSentences(body: string): string[] {
+  return body
+    .split(/\n{2,}/)
+    .flatMap((paragraph) => paragraph.match(/[^.!?]*(?:[.!?](?=\s|$)|$)/g) ?? [])
+    .filter((sentence) =>
+      /\b(?:clos(?:e|ing)|finish(?:ed|es|ing)?|complet(?:e|ed|es|ing))\b/i.test(sentence),
+    )
+}
+
+function closeInstructionFlags(sentence: string): string[] {
+  const instructions = [
+    ...sentence.matchAll(/\bclos(?:e|ing)\b[^.!?]*?\b(?:with|using)\b([^.!?]*)/gi),
+    ...sentence.matchAll(/\bpass\b([^.!?]*)/gi),
+  ]
+  return instructions.flatMap((match) =>
+    (match[1]?.match(/--[a-z][a-z-]*/g) ?? []).filter((flag) => closeEvidenceFlags.has(flag)),
+  )
+}
+
+export function unsupportedCloseEvidenceFlags(
+  declaredFloors: readonly FloorEntry[],
+  body: string,
+): UnsupportedCloseEvidenceFlag[] {
+  const named = new Set(closingSentences(body).flatMap(closeInstructionFlags))
+  const findings: UnsupportedCloseEvidenceFlag[] = []
+  for (const flag of named) {
+    const acceptingFloors = acceptingFloorsByFlag.get(flag)
+    if (!acceptingFloors) continue
+    if (declaredFloors.some((floor) => acceptingFloors.includes(floor as FloorKind))) continue
+    findings.push({ flag, acceptingFloors: [...acceptingFloors] })
+  }
+  return findings.sort((left, right) => left.flag.localeCompare(right.flag))
+}
 
 export function validateStepCatalogue(value: unknown): string[] {
   if (!object(value) || !Array.isArray(value.steps)) return ['steps must be an array']
