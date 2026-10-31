@@ -40,7 +40,7 @@ const LEAVES: Record<OutboxSanitizeKind, readonly SecretLeaf[]> = {
   score: [{ at: 'note', style: 'value' }],
   question: [
     { at: 'question', style: 'value' },
-    { at: 'options', style: 'value' },
+    { at: 'options', style: 'elements' },
     { at: 'recommendation', style: 'value' },
     { at: 'why', style: 'value' },
     { at: 'answer', style: 'value' },

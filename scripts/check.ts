@@ -472,6 +472,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-cascade-preservation.ts'),
     staticCheck('scripts/check-postgres-migrations.ts'),
     staticCheck('scripts/check-postgres-array-bindings.ts'),
+    staticCheck('scripts/check-record-jsonb-string-checks.ts'),
     staticCheck('scripts/check-outbox-payload-contracts.ts'),
     staticCheck('scripts/check-record-migrations-apply.ts'),
     staticCheck('scripts/check-bun-serve-timeout.ts'),
