@@ -550,7 +550,10 @@ export const modules: ArchitectureModule[] = [
     '../resources/process-inventory.ts',
     '../resources/session-process-anchoring.ts',
   ]),
-  module('orchestrator/src/reclaim/reclaim-reader-clone.ts', ['../run/run-status.ts']),
+  module('orchestrator/src/reclaim/reclaim-reader-clone.ts', [
+    '../run/run-status.ts',
+    '../worktree/worktree-attribution.ts',
+  ]),
   module('orchestrator/src/pull-request/pr-merge-required-release.fixture.ts', [
     '../../../shared/record-id.ts',
     '../database/db.ts',

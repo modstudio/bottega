@@ -33,6 +33,7 @@ import {
   markedWorktreeSource,
   ORCH_RUN_MARKER,
   orphanSafety,
+  readerCloneCreator,
   worktreeDirty,
 } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
@@ -212,7 +213,9 @@ function readerCloneCreationRefusal(
   } catch {
     return null
   }
-  const decision = readerCloneReclaimDecision(basename(path), projectRunFacts(project))
+  const creator = readerCloneCreator(basename(path))
+  if (!creator) return null
+  const decision = readerCloneReclaimDecision(creator, projectRunFacts(project))
   return decision.allowed ? null : refuse(decision.reason)
 }
 

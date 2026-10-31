@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { basename } from 'node:path'
 import {
   classifyWorktreeDirty,
   isUnmarkedBorrowedReaderClone,
+  readerCloneCreator,
   type TreeOwnershipInput,
   treeOwnership,
 } from './worktree-attribution.ts'
@@ -15,6 +17,13 @@ describe('isUnmarkedBorrowedReaderClone', () => {
     repoRoot: '/projects/alpha',
     borrowedSource: '/projects/alpha',
   }
+
+  test('names the creator of every basename the reader-clone builders produce', () => {
+    expect(readerCloneCreator(basename(reader.path))).toEqual({ kind: 'run', runId })
+    expect(
+      readerCloneCreator(basename(sharedReviewWorktreePath('/projects/alpha', commit))),
+    ).toEqual({ kind: 'shared-review' })
+  })
 
   test('accepts only a conventional direct child borrowing from this project', () => {
     expect(isUnmarkedBorrowedReaderClone(reader)).toBeTrue()

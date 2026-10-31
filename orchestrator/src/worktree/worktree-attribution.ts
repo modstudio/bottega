@@ -287,6 +287,20 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
   return { removable: true, branch, detail: 'committed work is retained by its branch' }
 }
 
+/** Who creates a reader clone with this basename: its own run, or any run reviewing a commit. */
+export type ReaderCloneCreator = { kind: 'run'; runId: string } | { kind: 'shared-review' }
+
+const RUN_READER_BASENAME =
+  /^orch-([0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/
+const SHARED_REVIEW_BASENAME = /^orch-review-[0-9a-f]{12}$/
+
+/** Parse the basenames the reader-clone path builders produce; anything else is not a reader clone. */
+export function readerCloneCreator(name: string): ReaderCloneCreator | null {
+  const runId = RUN_READER_BASENAME.exec(name)?.[1]
+  if (runId) return { kind: 'run', runId }
+  return SHARED_REVIEW_BASENAME.test(name) ? { kind: 'shared-review' } : null
+}
+
 /** Recognize only the conventional unmarked reader clone location left by an interrupted create. */
 export function isUnmarkedBorrowedReaderClone(input: {
   path: string
@@ -294,9 +308,7 @@ export function isUnmarkedBorrowedReaderClone(input: {
   borrowedSource: string | null
 }): boolean {
   return (
-    /^orch-(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|review-[0-9a-f]{12})$/.test(
-      basename(input.path),
-    ) &&
+    readerCloneCreator(basename(input.path)) !== null &&
     dirname(input.path) === join(input.repoRoot, '.claude', 'worktrees') &&
     input.borrowedSource === input.repoRoot
   )
