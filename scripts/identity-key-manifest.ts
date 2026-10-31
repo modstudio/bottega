@@ -547,8 +547,6 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'natural or encoded reference to an application row', [
     'board_receipt.reader_session',
     'contention.resource_key',
-    'doc_revision.related_subject_ids',
-    'landing_triage_snapshot.review_ids',
     'machine_public_key.key_id',
     'question.filed_ref',
     'secret_dek_wrap.recipient_key_id',
@@ -962,6 +960,10 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'task_identity_migration_repairs.row_id',
     'task_status_event.record_id',
     'task_status_event.task_record_id',
+  ]),
+  ...manifest('hosted', 'owned or referenced UUID', [
+    'doc_revision.related_subject_ids',
+    'landing_triage_snapshot.review_ids',
   ]),
 ]
 
