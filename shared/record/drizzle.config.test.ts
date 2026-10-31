@@ -11,7 +11,9 @@ const outputFiles = readdirSync(outputDirectory, { recursive: true, encoding: 'u
   .map((path) => relative(root, resolve(outputDirectory, path)))
 
 function matchesSome(patterns: string[], path: string): boolean {
-  return patterns.some((pattern) => new Bun.Glob(pattern).match(path))
+  return patterns.some(
+    (pattern) => new Bun.Glob(pattern).match(path) || new Bun.Glob(`${pattern}/**`).match(path),
+  )
 }
 
 test('Biome force-excludes every generated Drizzle record file but not migrations', () => {
@@ -29,6 +31,8 @@ test('Biome force-excludes every generated Drizzle record file but not migration
   for (const path of generatedFiles) {
     expect(matchesSome(forceExclusions, path), path).toBeTrue()
   }
+  const metaJournal = relative(root, resolve(outputDirectory, 'meta/_journal.json'))
+  expect(matchesSome(forceExclusions, metaJournal), metaJournal).toBeTrue()
 
   const migrationFiles = outputFiles.filter((path) => path.endsWith('/migration.sql'))
   expect(
