@@ -1,4 +1,5 @@
 // concern: live tool-call burst decision
+import type { Harness } from '../agent/agent-registry.ts'
 
 export const TOOL_CALL_BURST_WINDOW_MS = 1000
 export const TOOL_CALL_BURST_LIMIT = 40
@@ -7,26 +8,33 @@ export type ToolCallBurst = {
   tripped: boolean
   peakCount: number
   peakAtMs: number | null
+  windowStartsMs: readonly number[]
 }
 
-/** Decide the maximum count in any closed sliding window of tool-call starts. */
-export function decideToolCallBurst(startTimesMs: readonly number[]): ToolCallBurst {
-  const ordered = [...startTimesMs].sort((a, b) => a - b)
-  let left = 0
-  let peakCount = 0
-  let peakAtMs: number | null = null
-  for (let right = 0; right < ordered.length; right++) {
-    while (ordered[right]! - ordered[left]! > TOOL_CALL_BURST_WINDOW_MS) left++
-    const count = right - left + 1
-    if (count > peakCount) {
-      peakCount = count
-      peakAtMs = ordered[right]!
-    }
+export const EMPTY_TOOL_CALL_BURST: ToolCallBurst = {
+  tripped: false,
+  peakCount: 0,
+  peakAtMs: null,
+  windowStartsMs: [],
+}
+
+/** Advance the burst decision with one non-decreasing tool-call start time. */
+export function decideToolCallBurst(prior: ToolCallBurst, startMs: number): ToolCallBurst {
+  const firstLive = prior.windowStartsMs.findIndex(
+    (value) => startMs - value <= TOOL_CALL_BURST_WINDOW_MS,
+  )
+  const retained = firstLive < 0 ? [] : prior.windowStartsMs.slice(firstLive)
+  const windowStartsMs = [...retained, startMs]
+  const peakCount = Math.max(prior.peakCount, windowStartsMs.length)
+  return {
+    tripped: peakCount > TOOL_CALL_BURST_LIMIT,
+    peakCount,
+    peakAtMs: peakCount > prior.peakCount ? startMs : prior.peakAtMs,
+    windowStartsMs,
   }
-  return { tripped: peakCount > TOOL_CALL_BURST_LIMIT, peakCount, peakAtMs }
 }
 
-export function toolCallBurstAction(harness: string): 'kill' | 'observe' {
+export function toolCallBurstAction(harness: Harness | null): 'kill' | 'observe' {
   return harness === 'goose' ? 'kill' : 'observe'
 }
 

@@ -291,6 +291,7 @@ export const runLifecycleModules: ArchitectureModule[] = [
   module('orchestrator/src/run/run-live.ts', [
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
+    '../agent/agent-registry.ts',
     '../agent/agents.ts',
     '../ask/ask.ts',
     '../ask/ask-lifecycle.ts',
@@ -348,11 +349,14 @@ export const runLifecycleModules: ArchitectureModule[] = [
   ]),
   module('orchestrator/src/run/checkpoint-schedule.ts', []),
   module('orchestrator/src/run/checkpoint-sequencer.ts', ['../../../shared/git.ts']),
-  module('orchestrator/src/run/tool-call-burst.ts', []),
+  module('orchestrator/src/run/tool-call-burst.ts', ['../agent/agent-registry.ts']),
   module('orchestrator/src/run/run-tool-burst.ts', [
+    '../agent/agent-registry.ts',
     '../database/db.ts',
     '../events.ts',
+    '../failure/failure.ts',
     '../idle-kill.ts',
+    '../outcome.ts',
     '../transport/transport.ts',
     './checkpoint-schedule.ts',
     './checkpoint.ts',

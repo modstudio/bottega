@@ -644,8 +644,14 @@ export function observeAcpUpdate(
   const folded = normalizeAcpTurn({ sessionId, updates: [params] }, billing)
   if (folded.output) appendFileSync(outPath, folded.output)
   for (const event of folded.events) {
-    if (live && event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
+    const liveEvent = liveAcpEvent(live, event)
+    if (liveEvent) pushEvent(liveEvent)
   }
+}
+
+/** Keep session/load replay outside the live turn that begins when prompting flips true. */
+export function liveAcpEvent(prompted: boolean, event: NormalizedEvent): NormalizedEvent | null {
+  return prompted && event.kind !== 'session' && event.kind !== 'stop' ? event : null
 }
 
 function beginAcpTurn(updates: unknown[], outPath: string): void {

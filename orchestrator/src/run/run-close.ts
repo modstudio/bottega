@@ -91,6 +91,7 @@ export type CloseInput = {
   pickBytes: number
   claim: { id: string; number: number; parentRunRecordId: string | null }
   idleUnkillable: boolean
+  toolBurstUnkillable: boolean
   status: string
   worktree: Worktree | null
   writesJob: boolean
@@ -98,6 +99,8 @@ export type CloseInput = {
   artifactsPersisted: boolean
   idleTreePids: number[]
   idleTreePgid: number | null
+  toolBurstTreePids: number[]
+  toolBurstTreePgid: number | null
   callerCwd: string
   repoJob: boolean
   declaredDeliverables: string[]
@@ -259,6 +262,7 @@ function notifyFailureRequiringHuman(input: {
   name: string
   job: string
   idleUnkillable: boolean
+  toolBurstUnkillable: boolean
   runId: string
   endpointKey: EffectiveBillingKey
   projectName: string | null
@@ -286,6 +290,20 @@ function notifyFailureRequiringHuman(input: {
       `${input.name} idle kill did not terminate`,
       `run ${input.runId} still alive after SIGKILL; needs a human`,
     )
+  if (input.toolBurstUnkillable)
+    notify(
+      `${input.name} tool-burst kill did not terminate`,
+      `run ${input.runId} still alive after SIGKILL; needs a human`,
+    )
+}
+
+function terminalTree(
+  idlePids: number[],
+  idlePgid: number | null,
+  burstPids: number[],
+  burstPgid: number | null,
+): { pids: number[]; pgid: number | null } {
+  return idlePids.length ? { pids: idlePids, pgid: idlePgid } : { pids: burstPids, pgid: burstPgid }
 }
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: terminal cleanup and failover share one claimed-run transaction boundary
@@ -296,6 +314,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     opts,
     claim,
     idleUnkillable,
+    toolBurstUnkillable,
     status,
     worktree,
     writesJob,
@@ -303,6 +322,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     artifactsPersisted,
     idleTreePids,
     idleTreePgid,
+    toolBurstTreePids,
+    toolBurstTreePgid,
     callerCwd,
     repoJob,
     declaredDeliverables,
@@ -325,10 +346,12 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     name,
     job: opts.job,
     idleUnkillable,
+    toolBurstUnkillable,
     runId: claim.id,
     endpointKey: input.endpointKey,
     projectName: input.endpointKey.projectName,
   })
+  const terminal = terminalTree(idleTreePids, idleTreePgid, toolBurstTreePids, toolBurstTreePgid)
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.
     terminateRunProcesses(claim.id, [process.pid])
@@ -419,7 +442,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
-          reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid, true)
+          reclaimTerminalTree(claim.id, worktree, terminal.pids, terminal.pgid, true)
         return await run({
           job: opts.job,
           prompt: originalPrompt,
@@ -492,7 +515,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     status !== 'running' &&
     status !== 'stopped'
   ) {
-    reclaimTerminalTree(claim.id, worktree, idleTreePids, idleTreePgid, true)
+    reclaimTerminalTree(claim.id, worktree, terminal.pids, terminal.pgid, true)
   }
 
   if (status === 'failed') {

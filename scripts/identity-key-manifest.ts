@@ -175,6 +175,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'run.lines_removed',
     'run.tests_ran',
     'run.tests_passed',
+    'run.tool_burst_observed_peak',
     'run.deviations',
     'run.escalations',
     'run.agent_pid',

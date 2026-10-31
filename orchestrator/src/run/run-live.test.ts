@@ -8,11 +8,7 @@ import { decideFailover } from '../route/failover.ts'
 import { candidates, pick } from '../route/route.ts'
 import { isRoutingEvidence } from '../route/routing-evidence-query.ts'
 import { composeCodexThrottleNotice } from '../transport/codex-throttle.ts'
-import {
-  applyToolBurstOutcome,
-  replyFileFallbackError,
-  startAfterHostCapacity,
-} from './run-live.ts'
+import { replyFileFallbackError, startAfterHostCapacity } from './run-live.ts'
 import { firstThrottleObserver } from './run-throttle.ts'
 
 test('a missing reply file leaves a visible final-message fallback notice', () => {
@@ -21,20 +17,6 @@ test('a missing reply file leaves a visible final-message fallback notice', () =
     `reply.json missing at ${path}; used final-message fallback`,
   )
   expect(replyFileFallbackError(path, true, null)).toBeNull()
-})
-
-test('a tripped goose burst records the tool_burst failure through run-live', () => {
-  expect(
-    applyToolBurstOutcome(true, 'tool-call burst: 41 starts', {
-      status: 'ok',
-      failureKind: null,
-      error: null,
-    }),
-  ).toEqual({
-    status: 'failed',
-    failureKind: 'tool_burst',
-    error: 'tool-call burst: 41 starts',
-  })
 })
 
 test('run-live starts an admitted repository run without a second host wait', async () => {

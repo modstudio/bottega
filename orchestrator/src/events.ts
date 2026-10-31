@@ -34,6 +34,11 @@ export type StreamEvent =
       httpStatus: 429
     }
 
+/** A tool event is a fresh call unless its producer identifies it as a later update. */
+export function isToolCallStart(event: Extract<StreamEvent, { kind: 'tool' }>): boolean {
+  return event.phase !== 'update'
+}
+
 export type ConfiguredAsk = { kind: 'command'; argv: string[] } | { kind: 'endpoint'; url: string }
 
 const DEFAULT_IDLE_WARN_MS = 5 * 60_000
@@ -329,7 +334,7 @@ function observedToolEvents(
     event.locations?.filter((item) => item.path) ??
     (event.target ? [{ path: event.target }] : undefined)
   const events: RunLogEvent[] = []
-  if (event.phase !== 'update' && (event.title || event.toolKind || locations?.length)) {
+  if (isToolCallStart(event) && (event.title || event.toolKind || locations?.length)) {
     events.push({
       ts,
       type: 'tool_call',
@@ -441,6 +446,8 @@ function locationsFromUnknown(value: unknown): Array<{ path: string }> | undefin
 }
 
 function toolEvent(opts: {
+  phase?: 'start' | 'update'
+  toolCallId?: string
   title: string
   status?: string
   toolKind?: string
@@ -451,6 +458,18 @@ function toolEvent(opts: {
   locations?: Array<{ path: string }>
 }): Extract<StreamEvent, { kind: 'tool' }> {
   return { kind: 'tool', ...opts }
+}
+
+function toolCallIdentity(value: unknown): { toolCallId?: string } {
+  const toolCallId = stringField(value)
+  return toolCallId ? { toolCallId } : {}
+}
+
+function codexToolIdentity(
+  item: Record<string, unknown>,
+  phase: string,
+): { phase: 'start' | 'update'; toolCallId?: string } {
+  return { phase: phase === 'started' ? 'start' : 'update', ...toolCallIdentity(item.id) }
 }
 
 function assistantText(content: unknown): string {
@@ -480,6 +499,8 @@ function toolUseEvents(content: unknown): StreamEvent[] {
       const locations = locationsFromUnknown(part.input)
       events.push(
         toolEvent({
+          phase: 'start',
+          ...toolCallIdentity(part.id),
           title,
           toolKind: toolKindFromName(title),
           target: locations?.[0]?.path,
@@ -496,6 +517,8 @@ function toolUseEvents(content: unknown): StreamEvent[] {
           : JSON.stringify(part.content ?? '')
     events.push(
       toolEvent({
+        phase: 'update',
+        ...toolCallIdentity(part.tool_use_id),
         title: stringField(part.tool_use_id) ?? 'tool',
         status: part.is_error ? 'failed' : 'completed',
         result: result || undefined,
@@ -535,6 +558,7 @@ function codexRichToolEvent(
   const result = typeof item.result === 'string' ? item.result : undefined
   const outcome = codexToolOutcome(item, phase)
   return toolEvent({
+    ...codexToolIdentity(item, phase),
     title,
     toolKind: itemType === 'file_change' ? 'edit' : itemType === 'web_search' ? 'search' : 'mcp',
     status: outcome.status,
@@ -577,10 +601,19 @@ function eventsFromCodexItem(item: Record<string, unknown>, phase: string): Stre
     const output = stringField(item.aggregated_output)
     const locations = locationsFromUnknown(item)
     if (phase === 'started' || phase === 'updated') {
-      return [toolEvent({ title, toolKind: 'execute', status: 'in_progress', locations })]
+      return [
+        toolEvent({
+          ...codexToolIdentity(item, phase),
+          title,
+          toolKind: 'execute',
+          status: 'in_progress',
+          locations,
+        }),
+      ]
     }
     return [
       toolEvent({
+        ...codexToolIdentity(item, phase),
         title,
         toolKind: 'execute',
         status: item.exit_code === 0 || item.exit_code === undefined ? 'completed' : 'failed',

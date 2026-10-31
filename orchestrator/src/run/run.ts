@@ -811,6 +811,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let idleUnkillable = false
   let idleTreePids: number[] = []
   let idleTreePgid: number | null = null
+  let toolBurstUnkillable = false
+  let toolBurstTreePids: number[] = []
+  let toolBurstTreePgid: number | null = null
   let exitCode = -1
   let output = '',
     vendorTokens: number | null = null,
@@ -880,6 +883,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           idleUnkillable,
           idleTreePids,
           idleTreePgid,
+          toolBurstUnkillable,
+          toolBurstTreePids,
+          toolBurstTreePgid,
           exitCode,
           output,
           vendorTokens,
@@ -1046,6 +1052,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         pickBytes,
         claim,
         idleUnkillable,
+        toolBurstUnkillable,
         status,
         worktree,
         writesJob,
@@ -1053,6 +1060,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         artifactsPersisted,
         idleTreePids,
         idleTreePgid,
+        toolBurstTreePids,
+        toolBurstTreePgid,
         callerCwd,
         repoJob,
         declaredDeliverables,
