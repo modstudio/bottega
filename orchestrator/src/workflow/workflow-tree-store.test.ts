@@ -506,6 +506,43 @@ describe('importWorkflowTree', () => {
     ).toBe(before.count)
   })
 
+  test('an untouched stale catalogue reversion refuses the import without writing a draft', async () => {
+    const d = database()
+    const staleTree = renderedTree(d)
+    const currentTree = structuredClone(staleTree)
+    const lens = currentTree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
+    lens.body = lens.body.replace(/\n---\n[\s\S]*\n$/, '\n---\nCurrent production body.\n')
+
+    const imported = await importWorkflowTree(
+      parseWorkflowTree(currentTree),
+      'update production fixture',
+      'test',
+      d,
+    )
+    expect(imported.catalogue).toEqual({ status: 'created', n: 2 })
+    promoteStepCatalogueLocal(2, 'update production fixture', 'test', d)
+    const before = (
+      d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number }
+    ).count
+
+    expect(() =>
+      importWorkflowTree(
+        parseWorkflowTree(staleTree),
+        'stale tree import',
+        'worker',
+        d,
+        undefined,
+        new Set(),
+      ),
+    ).toThrow(
+      'refusing stale workflow tree reversion:\n- step blast-radius: tree matches production version 1; current production version is 2',
+    )
+    expect(
+      (d.query('SELECT COUNT(*) count FROM step_catalogue_version').get() as { count: number })
+        .count,
+    ).toBe(before)
+  })
+
   test('a new flow may reference a new step from the same tree import', async () => {
     const d = database()
     const productionCatalogue = productionStepCatalogue(d)

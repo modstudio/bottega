@@ -1,12 +1,11 @@
 import type { Database } from 'bun:sqlite'
 import { fileURLToPath } from 'node:url'
 import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
-import { projectAt } from '../orchestrator/src/project/projects.ts'
 import { planWorkflowHydration } from '../orchestrator/src/workflow/workflow-tree.ts'
 import { collectWorkflowTree } from '../orchestrator/src/workflow/workflow-tree-files.ts'
 import { productionWorkflowTree } from '../orchestrator/src/workflow/workflow-tree-store.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { branchChangedPaths } from './check-canon-drift.ts'
+import { branchChangedPaths, registeredProjectAt } from './check-canon-drift.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -27,11 +26,8 @@ export function workflowDriftPartition(
 }
 
 function workflowDriftInput(checkout: string, database: Database): WorkflowDriftInput {
-  const project = projectAt(checkout, database)
-  if (!project) throw new Error(`cannot find the checkout ${checkout} in the project register`)
-  const landingBranch = project.settings.trunk?.trim()
-  if (!landingBranch)
-    throw new Error(`registered project ${project.name} has no landing branch in settings.trunk`)
+  const project = registeredProjectAt(checkout, database)
+  const landingBranch = project.settings.trunk!.trim()
   const plan = planWorkflowHydration({
     store: productionWorkflowTree({ database, project: project.name }),
     tree: collectWorkflowTree(checkout),

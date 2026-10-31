@@ -46,15 +46,20 @@ function refuse(condition: string, namedRemedy = remedy): never {
   throw new Error(`${condition}\nremedy: ${namedRemedy}`)
 }
 
-export function readCanonGateInput(
-  checkout: string,
-  database: Database,
-): { project: Project; rows: ReturnType<typeof storedRepositoryCanonRows> } {
+export function registeredProjectAt(checkout: string, database: Database): Project {
   const project = projectAt(checkout, database)
   if (!project) refuse(`cannot find the checkout ${checkout} in the project register`)
   if (!project.settings.trunk?.trim()) {
     refuse(`registered project ${project.name} has no landing branch in settings.trunk`)
   }
+  return project
+}
+
+export function readCanonGateInput(
+  checkout: string,
+  database: Database,
+): { project: Project; rows: ReturnType<typeof storedRepositoryCanonRows> } {
+  const project = registeredProjectAt(checkout, database)
   return { project, rows: storedRepositoryCanonRows(project.name, database) }
 }
 

@@ -14,7 +14,12 @@ import {
   validateStepCatalogue,
 } from './step-catalogue.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
-import type { WorkflowTreeStore } from './workflow-tree.ts'
+import {
+  treePath,
+  WORKFLOW_TREE_FOLDERS,
+  type WorkflowTreeFolder,
+  type WorkflowTreeStore,
+} from './workflow-tree.ts'
 import {
   importWorkflow,
   productionWorkflows,
@@ -41,8 +46,14 @@ export type WorkflowTreeReversion = {
   productionVersion: number
 }
 
+const TREE_FOLDER_BY_KIND: Record<WorkflowTreeReversion['kind'], WorkflowTreeFolder> = {
+  sequence: WORKFLOW_TREE_FOLDERS[0],
+  step: WORKFLOW_TREE_FOLDERS[1],
+  workflow: WORKFLOW_TREE_FOLDERS[2],
+}
+
 const pathFor = (kind: WorkflowTreeReversion['kind'], slug: string) =>
-  `.agents/${kind === 'workflow' ? 'workflows' : `workflow-${kind}s`}/${slug}.md`
+  treePath(TREE_FOLDER_BY_KIND[kind], slug)
 
 function matchingReversions(
   kind: WorkflowTreeReversion['kind'],

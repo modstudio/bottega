@@ -27,7 +27,7 @@ export function matchWorkflowTreePath(
   return mirror ? { folder: mirror[1] as WorkflowTreeFolder, slug: mirror[2]! } : null
 }
 
-function treePath(folder: WorkflowTreeFolder, slug: string): string {
+export function treePath(folder: WorkflowTreeFolder, slug: string): string {
   return `${WORKFLOW_TREE_ROOT}/${folder}/${slug}.md`
 }
 
