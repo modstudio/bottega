@@ -26,8 +26,7 @@ function sourceFiles(): string[] {
       const absolute = join(directory, entry.name)
       if (entry.isDirectory()) {
         if (entry.name !== 'node_modules') collect(absolute)
-      }
-      else if (entry.isFile()) files.push(relative(ROOT, absolute))
+      } else if (entry.isFile()) files.push(relative(ROOT, absolute))
     }
   }
   for (const directory of SOURCE_ROOTS) collect(resolve(ROOT, directory))
