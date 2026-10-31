@@ -16,7 +16,10 @@ import { grokSandboxConfig, type RunSandbox } from './sandbox.ts'
 export function scopeGrokReaderMcpHome(
   runDir: string,
   sandbox: RunSandbox,
-  servers: Record<string, ReaderProxyServer>,
+  servers: Record<
+    string,
+    ReaderProxyServer | { url: string } | { command: string; args: string[] }
+  >,
 ): { configPath: string; platformServers: string[] } {
   const target = join(runDir, 'config.toml')
   const parsed = parseToml(readFileSync(target, 'utf8')) as Record<string, unknown>

@@ -158,6 +158,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
             hasProjectTree: true,
             callerCwd: cwd,
             cwd,
+            writerProxy: 'acp',
           })
         : null,
       env: environment,

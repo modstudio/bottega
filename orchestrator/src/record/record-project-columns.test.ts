@@ -115,10 +115,11 @@ describe('hostedProjectColumns', () => {
     })
   })
 
-  test('round trips probe and reader MCP settings through separate hosted columns', () => {
+  test('round trips probe, reader, and writer MCP settings through separate hosted columns', () => {
     const mcp = {
       probe_tool: 'ping',
       reader_tools: { starship: ['get-task', 'list-tasks'], hosted: ['search'] },
+      writer_tools: { starship: ['update-task'] },
     }
     const columns = hostedProjectColumns({ mcp }, 'round-trip')
     expect(columns.mcpProbeTool).toBe('ping')
@@ -126,16 +127,19 @@ describe('hostedProjectColumns', () => {
       starship: ['get-task', 'list-tasks'],
       hosted: ['search'],
     })
+    expect(columns.mcpWriterTools).toEqual({ starship: ['update-task'] })
     expect({
       probe_tool: columns.mcpProbeTool,
       reader_tools: columns.mcpReaderTools,
+      writer_tools: columns.mcpWriterTools,
     }).toEqual(mcp)
   })
 
-  test('absent MCP settings keep both hosted columns null', () => {
+  test('absent MCP settings keep all hosted columns null', () => {
     const columns = hostedProjectColumns({}, 'absent')
     expect(columns.mcpProbeTool).toBeNull()
     expect(columns.mcpReaderTools).toBeNull()
+    expect(columns.mcpWriterTools).toBeNull()
   })
 
   test('maps hosted columns back to local project settings', () => {
@@ -144,7 +148,11 @@ describe('hostedProjectColumns', () => {
         trunk: 'main',
         managedContext: true,
         requireCleanMain: false,
-        mcp: { probe_tool: 'ping', reader_tools: { orch: ['list'] } },
+        mcp: {
+          probe_tool: 'ping',
+          reader_tools: { orch: ['list'] },
+          writer_tools: { orch: ['update'] },
+        },
       },
       'round-trip',
     )
@@ -152,7 +160,11 @@ describe('hostedProjectColumns', () => {
       trunk: 'main',
       managedContext: true,
       requireCleanMain: false,
-      mcp: { probe_tool: 'ping', reader_tools: { orch: ['list'] } },
+      mcp: {
+        probe_tool: 'ping',
+        reader_tools: { orch: ['list'] },
+        writer_tools: { orch: ['update'] },
+      },
     })
   })
 })

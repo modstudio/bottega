@@ -18,6 +18,24 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
+/** Build credential-free proxy launches for already-selected server names. */
+export function projectProxyServers(
+  names: readonly string[],
+  policy: 'reader' | 'writer',
+  projectName: string,
+  cwd: string,
+): Record<string, ReaderProxyServer> {
+  const argv = bottegaEntryArgv('mcp-reader-proxy')
+  const command = argv[0]!
+  const baseArgs = argv.slice(1)
+  return Object.fromEntries(
+    names.map((server) => [
+      server,
+      { command, args: [...baseArgs, policy, projectName, server, cwd] },
+    ]),
+  )
+}
+
 export type ProjectMcpWithheld = {
   name: string
   reason: string
@@ -45,7 +63,10 @@ export const READER_PLATFORM_MCP_SERVERS = [MCP_SERVER_NAME, WORKER_MCP_SERVER_N
 /** Build the only MCP table a Grok reader's run home may expose. */
 export function grokReaderMcpServerTable(
   userServers: Record<string, unknown> | undefined,
-  proxies: Record<string, ReaderProxyServer>,
+  proxies: Record<
+    string,
+    ReaderProxyServer | { url: string } | { command: string; args: string[] }
+  >,
 ): Record<string, unknown> {
   return {
     ...(userServers?.[MCP_SERVER_NAME] ? { [MCP_SERVER_NAME]: userServers[MCP_SERVER_NAME] } : {}),
@@ -134,13 +155,8 @@ export function projectReaderProxyServers(
       kept.push(name)
     }
   }
-  const argv = bottegaEntryArgv('mcp-reader-proxy')
-  const command = argv[0]!
-  const baseArgs = argv.slice(1)
   return {
-    servers: Object.fromEntries(
-      kept.map((server) => [server, { command, args: [...baseArgs, project.name, server, cwd] }]),
-    ),
+    servers: projectProxyServers(kept, 'reader', project.name, cwd),
     withheld,
   }
 }

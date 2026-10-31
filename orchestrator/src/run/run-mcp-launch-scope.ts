@@ -20,6 +20,7 @@ function launchProjectSelection(
   project: Project | null,
   cwd: string,
   hasProjectTree: boolean,
+  writerProxy: 'enabled' | 'acp' | 'disabled',
 ): ProjectMcpSelection | null {
   return selectProjectMcpServers(
     codexMcpMode(usingMcp, writesJob),
@@ -27,6 +28,7 @@ function launchProjectSelection(
     project,
     cwd,
     hasProjectTree,
+    writerProxy,
   )
 }
 
@@ -40,6 +42,7 @@ function launchSelectionFacts(input: {
   hasProjectTree: boolean
   callerCwd: string
   cwd: string
+  writerProxy: 'enabled' | 'acp' | 'disabled'
 }): {
   config: Record<string, McpServerConfig>
   project: Project | null
@@ -57,6 +60,7 @@ function launchSelectionFacts(input: {
       project,
       input.cwd,
       input.hasProjectTree,
+      input.writerProxy,
     ),
   }
 }
@@ -68,8 +72,9 @@ export function workerMcpLaunchSelection(input: {
   hasProjectTree: boolean
   callerCwd: string
   cwd: string
+  writerProxy?: 'enabled' | 'acp' | 'disabled'
 }): ProjectMcpSelection | null {
-  return launchSelectionFacts(input).selection
+  return launchSelectionFacts({ ...input, writerProxy: input.writerProxy ?? 'disabled' }).selection
 }
 
 /**
@@ -112,19 +117,37 @@ export function workerMcpLaunchScope(input: {
   cwd: string
   connection: { server: string } | null
 }) {
-  const { config, project, selection: projectSelection } = launchSelectionFacts(input)
+  const harness = input.agent.harness ?? input.agent.name
+  const writerProxy =
+    input.transport === 'acp'
+      ? 'acp'
+      : harness === 'codex' || harness === 'grok'
+        ? 'enabled'
+        : 'disabled'
+  const {
+    config,
+    project,
+    selection: projectSelection,
+  } = launchSelectionFacts({
+    ...input,
+    writerProxy,
+  })
   return {
     config,
     codex: codexProjectServersFromSelection(projectSelection, input.agent.name, input.transport),
-    grok: grokReaderServersForRun(
-      input.agent,
-      input.usingMcp,
-      input.writesJob,
-      config,
-      project,
-      input.cwd,
-      input.hasProjectTree,
-    ),
+    grok:
+      grokReaderServersForRun(
+        input.agent,
+        input.usingMcp,
+        input.writesJob,
+        config,
+        project,
+        input.cwd,
+        input.hasProjectTree,
+      ) ??
+      (harness === 'grok' && input.transport === 'cli' && input.writesJob
+        ? (projectSelection?.servers ?? null)
+        : null),
     projectSelection,
     serverName: projectMcpServerName(input.connection, project),
     allowlist: mcpConfigAllowlist(config),

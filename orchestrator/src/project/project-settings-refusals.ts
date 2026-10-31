@@ -166,20 +166,22 @@ export function reviewLensProblems(
   return problems
 }
 
-function readerToolServerProblems(server: string, names: unknown): string[] {
+function mcpToolServerProblems(
+  key: 'reader_tools' | 'writer_tools',
+  server: string,
+  names: unknown,
+): string[] {
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(server)) {
-    return [`mcp.reader_tools server name ${JSON.stringify(server)} must be a plain non-empty name`]
+    return [`mcp.${key} server name ${JSON.stringify(server)} must be a plain non-empty name`]
   }
-  if (!Array.isArray(names)) return [`mcp.reader_tools.${server} must be a list of tool names`]
+  if (!Array.isArray(names)) return [`mcp.${key}.${server} must be a list of tool names`]
   const problems: string[] = []
   const seen = new Set<string>()
   for (const name of names) {
     if (typeof name !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name)) {
-      problems.push(`mcp.reader_tools.${server} must contain plain non-empty tool names`)
+      problems.push(`mcp.${key}.${server} must contain plain non-empty tool names`)
     } else if (seen.has(name)) {
-      problems.push(
-        `mcp.reader_tools.${server} contains duplicate tool name ${JSON.stringify(name)}`,
-      )
+      problems.push(`mcp.${key}.${server} contains duplicate tool name ${JSON.stringify(name)}`)
     }
     if (typeof name === 'string') seen.add(name)
   }
@@ -193,13 +195,16 @@ export function mcpSettingsProblems(mcp: ProjectSettings['mcp']): string[] {
   if (mcp.probe_tool !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(mcp.probe_tool)) {
     problems.push('mcp.probe_tool must be a plain non-empty tool name')
   }
-  if (!('reader_tools' in mcp)) return problems
-  const readerTools = mcp.reader_tools
-  if (!readerTools || typeof readerTools !== 'object' || Array.isArray(readerTools)) {
-    return [...problems, 'mcp.reader_tools must be a map from server names to tool-name lists']
+  for (const key of ['reader_tools', 'writer_tools'] as const) {
+    if (!(key in mcp)) continue
+    const tools = mcp[key]
+    if (!tools || typeof tools !== 'object' || Array.isArray(tools)) {
+      problems.push(`mcp.${key} must be a map from server names to tool-name lists`)
+      continue
+    }
+    for (const [server, names] of Object.entries(tools))
+      problems.push(...mcpToolServerProblems(key, server, names))
   }
-  for (const [server, names] of Object.entries(readerTools))
-    problems.push(...readerToolServerProblems(server, names))
   return problems
 }
 

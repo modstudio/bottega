@@ -160,7 +160,10 @@ describe('projects are data, not code', () => {
     expect(
       validateProjectSettings(
         {
-          mcp: { reader_tools: { starship: ['get-task', 'search_tasks'], absent: [] } },
+          mcp: {
+            reader_tools: { starship: ['get-task', 'search_tasks'], absent: [] },
+            writer_tools: { starship: ['update-task'] },
+          },
         },
         'strict',
       ),
@@ -171,6 +174,12 @@ describe('projects are data, not code', () => {
         'strict',
       ),
     ).toContain('mcp.reader_tools must be a map from server names to tool-name lists')
+    expect(
+      validateProjectSettings(
+        { mcp: { writer_tools: [] } } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ).join('\n'),
+    ).toContain('mcp.writer_tools must be a map from server names to tool-name lists')
     expect(
       validateProjectSettings({ mcp: { reader_tools: { server: [''] } } }, 'strict').join('\n'),
     ).toContain('plain non-empty tool names')

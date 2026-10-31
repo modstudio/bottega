@@ -25,7 +25,12 @@ import {
   resolveMcpServerLaunchFromRead,
   sanitizeProbeError,
 } from './mcp-probe.ts'
-import { type ReaderToolDecision, readerMayCallTool } from './mcp-reader-policy.ts'
+import {
+  type ProjectToolPolicy,
+  type ReaderToolDecision,
+  readerMayCallTool,
+  writerMayCallTool,
+} from './mcp-reader-policy.ts'
 import { connectMcpToolClient, type McpToolListLaunch } from './mcp-tool-list.ts'
 
 const MCP_PROXY_LIST_TIMEOUT_MS = 8_000
@@ -86,29 +91,36 @@ export type ReaderMcpProxy = {
 async function permittedTools(
   upstream: ReaderMcpUpstream,
   facts: Omit<ReaderToolDecision, 'name' | 'readOnlyHint'>,
+  policy: ProjectToolPolicy,
 ): Promise<Tool[]> {
   const tools: Tool[] = []
   let cursor: string | undefined
   do {
     const page = await upstream.listTools(cursor)
     tools.push(
-      ...page.tools.filter((tool) =>
-        readerMayCallTool({
+      ...page.tools.filter((tool) => {
+        const decision = {
           ...facts,
           name: tool.name,
           readOnlyHint: tool.annotations?.readOnlyHint,
-        }),
-      ),
+        }
+        return policy === 'reader' ? readerMayCallTool(decision) : writerMayCallTool(decision)
+      }),
     )
     cursor = page.nextCursor
   } while (cursor)
   return tools
 }
 
-function refusedToolCall(name: string): CallToolResult {
+function refusedToolCall(name: string, policy: ProjectToolPolicy): CallToolResult {
   return {
     isError: true,
-    content: [{ type: 'text', text: `Reading job may not call tool ${JSON.stringify(name)}.` }],
+    content: [
+      {
+        type: 'text',
+        text: `${policy === 'reader' ? 'Reading' : 'Writing'} job may not call tool ${JSON.stringify(name)}.`,
+      },
+    ],
   }
 }
 
@@ -116,8 +128,9 @@ function refusedToolCall(name: string): CallToolResult {
 export async function createReaderMcpProxy(
   upstream: ReaderMcpUpstream,
   facts: Omit<ReaderToolDecision, 'name' | 'readOnlyHint'>,
+  policy: ProjectToolPolicy = 'reader',
 ): Promise<ReaderMcpProxy> {
-  const tools = await permittedTools(upstream, facts)
+  const tools = await permittedTools(upstream, facts, policy)
   const permitted = new Set(tools.map((tool) => tool.name))
   const server = new Server(
     { name: 'orch-mcp-reader-proxy', version: '0.1.0' },
@@ -126,7 +139,7 @@ export async function createReaderMcpProxy(
   server.setRequestHandler('tools/list', async () => ({ tools }))
   server.setRequestHandler('tools/call', async (request) => {
     const { name, arguments: args } = request.params
-    if (!permitted.has(name)) return refusedToolCall(name)
+    if (!permitted.has(name)) return refusedToolCall(name, policy)
     return upstream.callTool(name, args ?? {})
   })
   return {
@@ -222,6 +235,7 @@ function resolvedUpstream(
 
 /** Resolve credentials in-process, connect upstream, then serve only the filtered tool surface. */
 async function serveReaderMcpProxy(
+  policy: ProjectToolPolicy,
   projectName: string,
   serverName: string,
   runTree: string,
@@ -264,14 +278,20 @@ async function serveReaderMcpProxy(
   } catch (error) {
     throw new Error(sanitizeProbeError(String((error as Error)?.message ?? error), secrets))
   }
-  const registeredTools = project.settings.mcp?.reader_tools?.[serverName] ?? []
+  const registeredTools =
+    project.settings.mcp?.[policy === 'reader' ? 'reader_tools' : 'writer_tools']?.[serverName] ??
+    []
   let proxy: ReaderMcpProxy
   try {
-    proxy = await createReaderMcpProxy(clientUpstream(connected), {
-      server: serverName,
-      projectServer: project.settings.mcpServer ?? project.name,
-      registeredTools,
-    })
+    proxy = await createReaderMcpProxy(
+      clientUpstream(connected),
+      {
+        server: serverName,
+        projectServer: project.settings.mcpServer ?? project.name,
+        registeredTools,
+      },
+      policy,
+    )
   } catch (error) {
     await connected.close().catch(() => undefined)
     throw new Error(sanitizeProbeError(String((error as Error)?.message ?? error), secrets))
@@ -286,6 +306,7 @@ type ReaderMcpProxyCommandDependencies = Partial<ReaderMcpProxyDependencies> & {
 
 /** Thin command boundary: one credential-sanitized line and a failing exit status. */
 export async function readerMcpProxyCommand(
+  policyInput: string,
   project: string,
   server: string,
   runTree: string,
@@ -294,11 +315,17 @@ export async function readerMcpProxyCommand(
   const dependencies = { ...readerMcpProxyDependencies, ...overrides }
   const writeError = overrides.error ?? ((line: string) => console.error(line))
   const setExitCode = overrides.setExitCode ?? ((code: number) => (process.exitCode = code))
+  const policy: ProjectToolPolicy | null =
+    policyInput === 'reader' || policyInput === 'writer' ? policyInput : null
   try {
-    await serveReaderMcpProxy(project, server, runTree, dependencies)
+    if (!policy)
+      throw new Error(
+        `policy must be "reader" or "writer", received ${JSON.stringify(policyInput)}`,
+      )
+    await serveReaderMcpProxy(policy, project, server, runTree, dependencies)
   } catch (error) {
     writeError(
-      `MCP reader proxy for ${server} could not start: ${String((error as Error)?.message ?? error).replaceAll(/\s+/g, ' ')}`,
+      `MCP ${policyInput} proxy for ${server} could not start: ${String((error as Error)?.message ?? error).replaceAll(/\s+/g, ' ')}`,
     )
     setExitCode(1)
   }

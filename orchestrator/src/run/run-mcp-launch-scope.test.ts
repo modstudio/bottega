@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Agent } from '../agent/agents.ts'
 import { PROJECT_RELATIVE_NO_TREE_REASON } from '../sandbox/mcp-reader-scope.ts'
 import {
+  PROJECT_MCP_ACP_WRITER_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   type ProjectMcpSelection,
@@ -77,7 +78,7 @@ test('inline credentials are withheld from the selection rather than rendered', 
       {
         name: 'secret',
         reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
-        advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+        advice: PROJECT_MCP_ACP_WRITER_ADVICE,
         remedy: projectMcpWriterRemedy(null),
       },
     ],

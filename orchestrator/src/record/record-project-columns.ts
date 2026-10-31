@@ -46,6 +46,7 @@ export type HostedProjectColumns = {
   secretPaths: string[] | null
   mcpProbeTool: string | null
   mcpReaderTools: JsonObject | null
+  mcpWriterTools: JsonObject | null
   docs: JsonObject | null
   reference: JsonObject | null
   signals: JsonObject | null
@@ -132,7 +133,9 @@ function optionalStringArray(
 function mcpProbeTool(settings: JsonObject, project: string): string | null {
   if (settings.mcp === undefined || settings.mcp === null) return null
   const mcp = object(settings.mcp, `project ${project} settings.mcp`)
-  const unknown = Object.keys(mcp).filter((key) => key !== 'probe_tool' && key !== 'reader_tools')
+  const unknown = Object.keys(mcp).filter(
+    (key) => key !== 'probe_tool' && key !== 'reader_tools' && key !== 'writer_tools',
+  )
   if (unknown.length) {
     throw new Error(
       `project ${project} has unmapped settings.mcp keys: ${unknown.sort().join(', ')}`,
@@ -145,6 +148,12 @@ function mcpReaderTools(settings: JsonObject, project: string): JsonObject | nul
   if (settings.mcp === undefined || settings.mcp === null) return null
   const mcp = object(settings.mcp, `project ${project} settings.mcp`)
   return document(mcp.reader_tools, `project ${project} settings.mcp.reader_tools`)
+}
+
+function mcpWriterTools(settings: JsonObject, project: string): JsonObject | null {
+  if (settings.mcp === undefined || settings.mcp === null) return null
+  const mcp = object(settings.mcp, `project ${project} settings.mcp`)
+  return document(mcp.writer_tools, `project ${project} settings.mcp.writer_tools`)
 }
 
 function document(value: unknown, location: string): JsonObject | null {
@@ -219,6 +228,7 @@ export function hostedProjectColumns(
     [PROJECT_SETTING_COLUMNS.secretPaths]: optionalStringArray(settings, 'secretPaths', project),
     [PROJECT_SETTING_COLUMNS.mcp]: mcpProbeTool(settings, project),
     mcpReaderTools: mcpReaderTools(settings, project),
+    mcpWriterTools: mcpWriterTools(settings, project),
     [PROJECT_SETTING_COLUMNS.docs]: settingDocument(settings, 'docs', project),
     [PROJECT_SETTING_COLUMNS.reference]: settingDocument(settings, 'reference', project),
     [PROJECT_SETTING_COLUMNS.signals]: settingDocument(settings, 'signals', project),
@@ -251,10 +261,12 @@ export function hostedProjectSettings(columns: HostedProjectColumns): ProjectSet
   }
   const probeTool = columns.mcpProbeTool
   const readerTools = columns.mcpReaderTools
-  if (probeTool !== null || readerTools !== null) {
+  const writerTools = columns.mcpWriterTools
+  if (probeTool !== null || readerTools !== null || writerTools !== null) {
     settings.mcp = {
       ...(probeTool === null ? {} : { probe_tool: probeTool }),
       ...(readerTools === null ? {} : { reader_tools: readerTools }),
+      ...(writerTools === null ? {} : { writer_tools: writerTools }),
     }
   }
   return settings as ProjectSettings

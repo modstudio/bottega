@@ -58,7 +58,8 @@ function hostedSettingDiffs(requested: ProjectSettings, hosted: ProjectSettings)
       if (key === 'mcp') {
         return (
           stable(hostedColumns.mcpProbeTool) !== stable(requestedColumns.mcpProbeTool) ||
-          stable(hostedColumns.mcpReaderTools) !== stable(requestedColumns.mcpReaderTools)
+          stable(hostedColumns.mcpReaderTools) !== stable(requestedColumns.mcpReaderTools) ||
+          stable(hostedColumns.mcpWriterTools) !== stable(requestedColumns.mcpWriterTools)
         )
       }
       return stable(hostedColumns[column]) !== stable(requestedColumns[column])

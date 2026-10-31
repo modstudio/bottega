@@ -352,15 +352,6 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     highStakesLens,
   })
   const runningByAgent = runningRunsByAgent()
-  const writerMcpIneligibility = requiredMcp
-    ? requiredProjectMcpWriterIneligibility(
-        requiredMcp.server,
-        requiredMcp.mode,
-        Boolean(j.needs.writesRepo),
-        requiredMcpConfig,
-        requiredMcpProject,
-      )
-    : null
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
       agent,
@@ -368,7 +359,19 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       mcpListing?.listedTools,
       pinnedTransport,
       transportPinSource,
-      writerMcpIneligibility,
+      requiredMcp
+        ? requiredProjectMcpWriterIneligibility(
+            requiredMcp.server,
+            requiredMcp.mode,
+            Boolean(j.needs.writesRepo),
+            requiredMcpConfig,
+            requiredMcpProject,
+            {
+              harness: agent.harness ?? agent.name,
+              transport: pinnedTransport ?? agent.defaultTransport ?? 'cli',
+            },
+          )
+        : null,
     )
   const policyEligibility = (agent: Agent) =>
     routePolicyEligibility(

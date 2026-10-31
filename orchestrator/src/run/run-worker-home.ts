@@ -22,7 +22,7 @@ import {
   RequiredMcpProbeRefusalError,
   requiredMcpProbeDecision,
 } from '../sandbox/project-mcp-preflight.ts'
-import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
+import type { ProjectMcpSelection, ProjectMcpServer } from '../sandbox/project-mcp-scope.ts'
 import {
   prepareProjectGrokMcpScope,
   prepareSandboxHome,
@@ -100,7 +100,7 @@ export function projectMcpServerName(
 /** The MCP scope one launch got: the harness selections and the project selection. */
 export type WorkerMcpLaunch = {
   codex: CodexMcpScope | null
-  grok: Record<string, ReaderProxyServer> | null
+  grok: Record<string, ReaderProxyServer | ProjectMcpServer> | null
   projectSelection: ProjectMcpSelection | null
 }
 
@@ -232,7 +232,7 @@ function applyGrokReaderMcpScope(
   harness: string,
   runDir: string,
   sandbox: RunSandbox,
-  servers: Record<string, ReaderProxyServer> | null,
+  servers: Record<string, ReaderProxyServer | ProjectMcpServer> | null,
 ) {
   if (harness !== 'grok' || !servers) return null
   return {
