@@ -530,6 +530,7 @@ if (checkArguments.mode === 'static') {
     staticCheck('scripts/check-doc-editor-rich-style.ts'),
     staticCheck('scripts/check-harness-mirror.ts'),
     staticCheck('scripts/check-canon-drift.ts'),
+    staticCheck('scripts/check-workflow-drift.ts'),
     staticCheck('scripts/check-ci-workflow.ts'),
     staticCheck('scripts/generate-recipe-schema.ts', ['--check']),
     staticCheck('orchestrator/scripts/check-pack-budget.ts'),

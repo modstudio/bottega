@@ -170,6 +170,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-cognitive-ceiling.test.ts',
   'scripts/check-harness-mirror.test.ts',
   'scripts/check-canon-drift.test.ts',
+  'scripts/check-workflow-drift.test.ts',
   'scripts/check-postgres-array-bindings.test.ts',
   'scripts/check-self-spawn.test.ts',
   'scripts/check-source-root.test.ts',
@@ -249,8 +250,8 @@ export const CI_ONLY_JOBS = [
 
 export const STATIC_OMIT_GROUPS = {
   'machine-only': {
-    reason: "CI runners do not have this machine's project register and canon store",
-    checks: ['project checks', 'scripts/check-canon-drift.ts'],
+    reason: "CI runners do not have this machine's project register and local stores",
+    checks: ['project checks', 'scripts/check-canon-drift.ts', 'scripts/check-workflow-drift.ts'],
   },
   secrets: {
     reason: 'the CI secrets job runs the same gitleaks scan in its container',
