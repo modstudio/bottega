@@ -86,6 +86,8 @@
         "scripts/check-pack-budget.ts!",
         "scripts/check-projects.ts!",
         "scripts/import-postgres-projects.ts!",
+        // Imported by the inline eval in deploy/backup/rehearse.sh.
+        "src/postgres/migration-failure.ts!",
         "scripts/test-postgres-rls.ts!"
       ],
       "project": ["src/**/*.ts!", "scripts/**/*.ts!", "test/**/*.ts"],
