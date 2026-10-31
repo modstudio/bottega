@@ -10,11 +10,11 @@ test('normalizes MCP server and tool names to Codex code-mode identifiers', () =
   )
 })
 
-test('adds the nested run_tests call only to a Codex-bound worker prompt', () => {
+test('adds the generic nested call and run_tests example only to a Codex-bound worker prompt', () => {
   const preamble = workerPreamble('implement')
-  expect(bindCodexMcpToolInstruction(preamble, 'codex')).toContain(
-    'tools.mcp__bottega_ask__run_tests',
-  )
+  const codex = bindCodexMcpToolInstruction(preamble, 'codex')
+  expect(codex).toContain('tools.mcp__bottega_ask__<tool>(…)')
+  expect(codex).toContain('tools.mcp__bottega_ask__run_tests')
   expect(bindCodexMcpToolInstruction(preamble, 'grok')).not.toContain(
     'tools.mcp__bottega_ask__run_tests',
   )

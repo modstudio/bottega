@@ -1,9 +1,14 @@
-// Tests codex-ask-exposure.ts: observed rollout parsing and newest-rollout selection.
+// Tests codex-ask-exposure.ts: observed rollout parsing, turn slicing, and event construction.
 import { expect, test } from 'bun:test'
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { codexAskExposureFromHome, parseCodexAskExposure } from './codex-ask-exposure.ts'
+import {
+  askExposureEvent,
+  codexAskExposureFromTexts,
+  parseCodexAskExposure,
+} from './codex-ask-exposure.ts'
+import { codexRolloutTextsSince } from './codex-rollout-files.ts'
 
 const meta = JSON.stringify({ type: 'session_meta', payload: { cli_version: '0.166.0' } })
 const tools = (offered: unknown[]) =>
@@ -53,20 +58,48 @@ test('empty and missing rollout input are unknown without a CLI version', () => 
   expect(parseCodexAskExposure(null)).toEqual({ surface: 'unknown', cliVersion: null })
 })
 
-test('home adapter reads the newest rollout without spawning', () => {
+test('turn slice ignores an earlier exposure record but retains the chain CLI version', () => {
   const root = mkdtempSync(join(tmpdir(), 'orch-codex-exposure-'))
   const sessions = join(root, 'sessions', '2026', '10', '31')
+  const rollout = join(sessions, 'rollout-turn.jsonl')
   mkdirSync(sessions, { recursive: true })
-  writeFileSync(
-    join(sessions, 'rollout-new.jsonl'),
-    `${meta}\n${tools([namespace('functions', ['exec'])])}`,
-  )
+  const earlier = `${meta}\n${tools([namespace('functions', ['exec'])])}\n`
+  writeFileSync(rollout, earlier)
   try {
-    expect(codexAskExposureFromHome(root)).toEqual({
-      surface: 'code-mode',
+    const texts = codexRolloutTextsSince(
+      root,
+      new Map([[realpathSync(rollout), Buffer.byteLength(earlier)]]),
+    )
+    expect(codexAskExposureFromTexts(texts.slice, texts.full)).toEqual({
+      surface: 'unknown',
       cliVersion: '0.166.0',
     })
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('turn slice classifies its own additional_tools record after the offset', () => {
+  const earlier = `${meta}\n${tools([namespace('functions', ['wait'])])}\n`
+  const current = tools([namespace('functions', ['exec'])])
+  expect(codexAskExposureFromTexts(current, `${earlier}${current}`)).toEqual({
+    surface: 'code-mode',
+    cliVersion: '0.166.0',
+  })
+})
+
+test('event builder emits Codex exposure with the prescribed note', () => {
+  expect(askExposureEvent('codex', { surface: 'code-mode', cliVersion: '0.166.0' }, 'now')).toEqual(
+    {
+      ts: 'now',
+      type: 'ask_exposure',
+      surface: 'code-mode',
+      cli_version: '0.166.0',
+      note: 'code-mode means exec offered, nested set not enumerated; not proof run_tests was reachable',
+    },
+  )
+  expect(askExposureEvent('codex', { surface: 'top-level', cliVersion: null }, 'now')?.note).toBe(
+    null,
+  )
+  expect(askExposureEvent('claude', { surface: 'code-mode', cliVersion: null }, 'now')).toBeNull()
 })

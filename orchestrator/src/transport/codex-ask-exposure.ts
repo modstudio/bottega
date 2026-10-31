@@ -1,12 +1,11 @@
 // concern: Codex ask-tool exposure observation
 /**
- * Knows the observed Codex rollout tool-list shape and how to read the newest
- * rollout in one run-scoped home. Must not know run lifecycle or persistence.
+ * Knows the observed Codex rollout tool-list shape and constructs its run event.
+ * Must not know launch, collection, or persistence.
  */
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'node:fs'
-import { join, sep } from 'node:path'
 import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import { codexMcpToolIdentifier } from '../contract/codex-mcp-tool.ts'
+import type { RunLogEvent } from '../events.ts'
 
 type CodexAskExposureSurface = 'top-level' | 'code-mode' | 'absent' | 'unknown'
 export type CodexAskExposure = {
@@ -64,34 +63,29 @@ export function parseCodexAskExposure(text: string | null | undefined): CodexAsk
   }
 }
 
-function newestRollout(home: string | undefined): string | null {
-  if (!home) return null
-  const sessions = join(home, 'sessions')
-  if (!existsSync(sessions)) return null
-  try {
-    const root = realpathSync(home)
-    const candidates = [...new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions })]
-      .flatMap((relative) => {
-        const path = join(sessions, relative)
-        const entry = lstatSync(path, { throwIfNoEntry: false })
-        if (!entry?.isFile() || entry.isSymbolicLink()) return []
-        const resolved = realpathSync(path)
-        return resolved.startsWith(root + sep) ? [resolved] : []
-      })
-      .sort((left, right) => statSync(right).mtimeMs - statSync(left).mtimeMs)
-    return candidates[0] ?? null
-  } catch {
-    return null
+/** Classify only this turn's slice, while allowing its stable CLI version to come from the chain. */
+export function codexAskExposureFromTexts(slice: string, full: string): CodexAskExposure {
+  const exposure = parseCodexAskExposure(slice)
+  return {
+    ...exposure,
+    cliVersion: exposure.cliVersion ?? parseCodexAskExposure(full).cliVersion,
   }
 }
 
-/** Read the newest rollout in a run-scoped Codex home; all failures classify as unknown. */
-export function codexAskExposureFromHome(home: string | undefined): CodexAskExposure {
-  const rollout = newestRollout(home)
-  if (!rollout) return parseCodexAskExposure(null)
-  try {
-    return parseCodexAskExposure(readFileSync(rollout, 'utf8'))
-  } catch {
-    return parseCodexAskExposure(null)
+const CODE_MODE_NOTE =
+  'code-mode means exec offered, nested set not enumerated; not proof run_tests was reachable'
+
+export function askExposureEvent(
+  harness: string,
+  exposure: CodexAskExposure | undefined,
+  ts: string,
+): Extract<RunLogEvent, { type: 'ask_exposure' }> | null {
+  if (harness !== 'codex' || !exposure) return null
+  return {
+    ts,
+    type: 'ask_exposure',
+    surface: exposure.surface,
+    cli_version: exposure.cliVersion,
+    note: exposure.surface === 'code-mode' ? CODE_MODE_NOTE : null,
   }
 }

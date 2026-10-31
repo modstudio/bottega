@@ -723,7 +723,14 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'ask_started' || event.type === 'ask_listed')
     return { type: event.type, tools: event.tools }
-  if (event.type === 'ask_exposure') return { ...event }
+  if (event.type === 'ask_exposure') {
+    return {
+      type: event.type,
+      surface: event.surface,
+      cli_version: event.cli_version,
+      note: event.note,
+    }
+  }
   if (event.type === 'focused_test' || event.type === 'focused_test_refusal')
     return summarizeFocusedTestEvent(event)
   if (event.type === 'gate_log') return { type: 'gate_log' }
@@ -865,6 +872,9 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
   if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
+  if (event.type === 'ask_exposure') {
+    return `  ask exposure ${event.surface}${event.cli_version ? ` ${event.cli_version}` : ''}`
+  }
   if (isArtifactPeekEvent(event)) return formatArtifactPeekEvent(event)
   return '  ask initialized'
 }

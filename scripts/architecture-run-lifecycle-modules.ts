@@ -334,11 +334,11 @@ export const runLifecycleModules: ArchitectureModule[] = [
     '../worktree/worktree-types.ts',
   ]),
   module('orchestrator/src/transport/codex-ask-exposure.ts', [
-    'node:fs',
-    'node:path',
     '../../../shared/brand.ts',
     '../contract/codex-mcp-tool.ts',
+    '../events.ts',
   ]),
+  module('orchestrator/src/transport/codex-rollout-files.ts', ['node:fs', 'node:path']),
   module('orchestrator/src/run/run-call-usage.ts', ['../events.ts']),
   module('orchestrator/src/run/run-throttle.ts', [
     '../events.ts',

@@ -138,6 +138,24 @@ describe('vendor event log', () => {
     )
   })
 
+  test('peek preserves and formats ask exposure evidence', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+    appendRunEvent(id, {
+      ts: '2026-10-31T12:00:00.000Z',
+      type: 'ask_exposure',
+      surface: 'code-mode',
+      cli_version: '0.166.0',
+      note: 'code-mode means exec offered, nested set not enumerated; not proof run_tests was reachable',
+    })
+    expect(peekRun(id).events.at(-1)).toEqual({
+      type: 'ask_exposure',
+      surface: 'code-mode',
+      cli_version: '0.166.0',
+      note: 'code-mode means exec offered, nested set not enumerated; not proof run_tests was reachable',
+    })
+    expect(formatPeek(peekRun(id))).toContain('ask exposure code-mode 0.166.0')
+  })
+
   test('non-worker activity appends without moving the activity clock', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     db().query('UPDATE run SET last_event_at=? WHERE record_id=?').run('worker-time', id)

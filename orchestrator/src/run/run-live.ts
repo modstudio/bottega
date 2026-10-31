@@ -43,7 +43,7 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
-import { codexAskExposureFromHome } from '../transport/codex-ask-exposure.ts'
+import { askExposureEvent } from '../transport/codex-ask-exposure.ts'
 import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
 import {
   EMPTY_VENDOR_USAGE,
@@ -817,19 +817,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
-    if ((a.harness ?? a.name) === 'codex') {
-      const exposure = codexAskExposureFromHome(startOpts.env.CODEX_HOME)
-      appendRunEvent(claim.id, {
-        ts: nowIso(),
-        type: 'ask_exposure',
-        surface: exposure.surface,
-        cli_version: exposure.cliVersion,
-        note:
-          exposure.surface === 'code-mode'
-            ? 'code-mode means exec offered, nested set not enumerated; not proof run_tests was reachable'
-            : null,
-      })
-    }
+    const exposureEvent = askExposureEvent(a.harness ?? a.name, collected.askExposure, nowIso())
+    if (exposureEvent) appendRunEvent(claim.id, exposureEvent)
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.

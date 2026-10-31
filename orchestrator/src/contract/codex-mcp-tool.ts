@@ -15,10 +15,11 @@ const RUN_TESTS_PARAGRAPH_START = 'When the `run_tests` tool is available'
 /** Add the code-mode call shape beside the existing test-tool paragraph for Codex only. */
 export function bindCodexMcpToolInstruction(prompt: string, agent: string): string {
   if (agent !== 'codex' || !prompt.includes(RUN_TESTS_PARAGRAPH_START)) return prompt
-  const identifier = codexMcpToolIdentifier(WORKER_MCP_SERVER_NAME, 'run_tests')
+  const prefix = codexMcpToolIdentifier(WORKER_MCP_SERVER_NAME, '')
+  const example = codexMcpToolIdentifier(WORKER_MCP_SERVER_NAME, 'run_tests')
   const sentence =
     `In Codex, the ${WORKER_MCP_SERVER_NAME} tools may not appear as top-level tools. ` +
-    `When \`functions.exec\` is available, call them inside it as \`tools.${identifier}(…)\`, ` +
-    `for example \`tools.${identifier}({...})\`.\n\n`
+    `When \`functions.exec\` is available, call each one inside it as \`tools.${prefix}<tool>(…)\`, ` +
+    `for example \`tools.${example}({...})\`.\n\n`
   return prompt.replace(RUN_TESTS_PARAGRAPH_START, `${sentence}${RUN_TESTS_PARAGRAPH_START}`)
 }
