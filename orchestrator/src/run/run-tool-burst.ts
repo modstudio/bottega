@@ -1,5 +1,5 @@
 // concern: live tool-call burst action
-import type { Harness } from '../agent/agent-registry.ts'
+import { type Harness, harnessIdentity } from '../agent/agent-registry.ts'
 import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent, isToolCallStart, type StreamEvent } from '../events.ts'
 import type { classify } from '../failure/failure.ts'
@@ -81,8 +81,8 @@ export function observeToolBurst(input: {
 }
 
 export function toolBurstObserver(input: {
-  state: ToolBurstState
-  harness: Harness | null
+  toolBurst: ToolBurstState
+  harness: string | undefined
   handle: TransportHandle
   cancel: () => void
   checkpoint: CheckpointSchedule<CheckpointResult | null>
@@ -91,12 +91,12 @@ export function toolBurstObserver(input: {
 }): (event: StreamEvent) => void {
   return (event) =>
     observeToolBurst({
-      state: input.state,
+      state: input.toolBurst,
       event,
-      harness: input.harness,
+      harness: harnessIdentity(input.harness),
       kill: () =>
         performToolBurstKill({
-          state: input.state,
+          state: input.toolBurst,
           handle: input.handle,
           cancel: input.cancel,
           checkpoint: input.checkpoint,
@@ -129,36 +129,30 @@ export function recordToolBurstObservation(runId: string, burst: ToolCallBurst):
   }
 }
 
-export function recordObservedToolBurst(
+/** Wait for a burst kill to finish, then record a burst the harness only observes. */
+export async function settleToolBurst(
   runId: string,
-  harness: Harness | null,
+  harness: string | undefined,
   state: ToolBurstState,
-): void {
-  if (toolCallBurstAction(harness) === 'observe') recordToolBurstObservation(runId, state.burst)
-}
-
-export async function settleToolBurst(state: ToolBurstState): Promise<void> {
+): Promise<void> {
   if (state.termination) await state.termination
+  if (toolCallBurstAction(harnessIdentity(harness)) === 'observe')
+    recordToolBurstObservation(runId, state.burst)
 }
 
 export function applyToolBurstOutcome(
-  killed: boolean,
-  burstError: string | null,
+  state: Pick<ToolBurstState, 'killed' | 'error'>,
   outcome: {
     status: OutcomeStatus
     failureKind: ReturnType<typeof classify> | null
     error: string | null
   },
 ): typeof outcome {
-  return killed ? { status: 'failed', failureKind: 'tool_burst', error: burstError } : outcome
+  return state.killed
+    ? { status: 'failed', failureKind: 'tool_burst', error: state.error }
+    : outcome
 }
 
 export function toolBurstStopsWall(state: ToolBurstState): boolean {
   return state.killed && !state.terminateResult?.unkillable
-}
-
-export function toolBurstTerminationResult(state: ToolBurstState): {
-  toolBurstUnkillable: boolean
-} {
-  return { toolBurstUnkillable: state.terminateResult?.unkillable ?? false }
 }

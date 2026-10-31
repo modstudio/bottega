@@ -61,7 +61,7 @@ test('a goose burst kills once and applies its terminal outcome; codex only obse
       expect(state.killed).toBe(true)
       expect(state.error).toBe(formatToolCallBurstError(state.burst))
       expect(
-        applyToolBurstOutcome(state.killed, state.error, {
+        applyToolBurstOutcome(state, {
           status: 'ok',
           failureKind: null,
           error: null,

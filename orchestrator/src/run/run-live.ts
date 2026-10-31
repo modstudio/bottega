@@ -6,7 +6,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { projectCodeGitEnv } from '../../../shared/git.ts'
-import { harnessIdentity } from '../agent/agent-registry.ts'
 import type { Agent } from '../agent/agents.ts'
 import { type AskLoopback, startAskLoopback } from '../ask/ask.ts'
 import { recordAskExpected } from '../ask/ask-lifecycle.ts'
@@ -76,12 +75,10 @@ import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
   applyToolBurstOutcome,
   newToolBurstState,
-  recordObservedToolBurst,
   settleToolBurst,
   type ToolBurstState,
   toolBurstObserver,
   toolBurstStopsWall,
-  toolBurstTerminationResult,
 } from './run-tool-burst.ts'
 import {
   appendGateExclusionToTimeoutError,
@@ -799,10 +796,9 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       })
     }
     rearmWallDeadline()
-    let forceCollect: (result: TransportResult) => void = () => {}
-    const forcedCollect = new Promise<TransportResult>((resolve) => {
-      forceCollect = resolve
-    })
+    const { promise: forced, resolve: forceCollect } = Promise.withResolvers<TransportResult>()
+    const cancel = () => void t.cancel(handle)
+    const killPath = { handle, cancel, checkpoint: checkpointSchedule, forceCollect }
     resourceObserver = observeRunProcessTree(
       vendorPid,
       vendorStartTime,
@@ -819,40 +815,28 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
             vendorStartedAtMs: vendorStartedAt,
             timedOut,
             samples,
-            handle,
-            cancel: () => void t.cancel(handle),
-            checkpoint: checkpointSchedule,
+            ...killPath,
             checkpointRootId: checkpointRoot(opts.resume, claim.id),
             scratchDir,
             worktreePath: worktree?.path ?? null,
-            forceCollect,
           }),
       ),
     )
-    const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const observeBurst = toolBurstObserver({
-      state: toolBurst,
-      harness: harnessIdentity(a.harness),
-      handle,
-      cancel: () => void t.cancel(handle),
-      checkpoint: checkpointSchedule,
-      writesJob,
-      forceCollect,
-    })
-    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage, observeBurst)
+    const throttle = firstThrottleObserver(cancel)
+    const burst = toolBurstObserver({ ...killPath, toolBurst, harness: a.harness, writesJob })
+    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage, burst)
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,
       checkpointMessages.map((message) => message.record_id),
       [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
-    const collected = await Promise.race([handle.collect(), forcedCollect])
-    await settleToolBurst(toolBurst)
+    const collected = await Promise.race([handle.collect(), forced])
     workerEvents = observeCollectedTurn(claim.id, a.harness ?? a.name, collected)
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
-    recordObservedToolBurst(claim.id, harnessIdentity(a.harness), toolBurst)
+    await settleToolBurst(claim.id, a.harness, toolBurst)
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.
@@ -1017,12 +1001,8 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
           gateExclusionNoteSuffix(excludedGateMsAtTimeout),
       )
     }
-    ;({ status, failureKind } = decideOutcome(derived.inputs))
-    ;({ status, failureKind, error } = applyToolBurstOutcome(toolBurst.killed, toolBurst.error, {
-      status,
-      failureKind,
-      error,
-    }))
+    const decided = { ...decideOutcome(derived.inputs), error }
+    ;({ status, failureKind, error } = applyToolBurstOutcome(toolBurst, decided))
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row
     // exists and must not be left claiming to run.
@@ -1044,7 +1024,6 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     idleKillError: idleKill.error,
     idleUnkillable: idleKill.unkillable,
     ...killedTree(idleKill, toolBurst),
-    ...toolBurstTerminationResult(toolBurst),
     exitCode,
     output,
     ...runUsageResult(vendorTokens, callUsage.value, costUsd, vendorUsage, quotaReadings),
@@ -1071,11 +1050,18 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
 function killedTree(
   idleKill: IdleKillState,
   toolBurst: ToolBurstState,
-): { terminalTreePids: number[]; terminalTreePgid: number | null } {
+): { terminalTreePids: number[]; terminalTreePgid: number | null; toolBurstUnkillable: boolean } {
+  const burst = toolBurst.terminateResult
+  const toolBurstUnkillable = burst?.unkillable ?? false
   if (idleKill.treePids.length)
-    return { terminalTreePids: idleKill.treePids, terminalTreePgid: idleKill.treePgid }
+    return {
+      terminalTreePids: idleKill.treePids,
+      terminalTreePgid: idleKill.treePgid,
+      toolBurstUnkillable,
+    }
   return {
-    terminalTreePids: toolBurst.terminateResult?.pids ?? [],
-    terminalTreePgid: toolBurst.terminateResult?.pgid ?? null,
+    terminalTreePids: burst?.pids ?? [],
+    terminalTreePgid: burst?.pgid ?? null,
+    toolBurstUnkillable,
   }
 }

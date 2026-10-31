@@ -649,7 +649,7 @@ export function observeAcpUpdate(
   }
 }
 
-/** Keep session/load replay outside the live turn that begins when prompting flips true. */
+/** session/load replays the transcript as notifications; only those after `prompted` flips, immediately before session/prompt, are live. */
 export function liveAcpEvent(prompted: boolean, event: NormalizedEvent): NormalizedEvent | null {
   return prompted && event.kind !== 'session' && event.kind !== 'stop' ? event : null
 }
@@ -727,9 +727,7 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
   const trace = openAcpTrace(opts, child, bin, agentArgv, profile)
   installAcpChildTrace(trace, child)
   const stderrChunks: Buffer[] = []
-  child.stderr?.on('data', (chunk: Buffer) => {
-    stderrChunks.push(chunk)
-  })
+  child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk))
   const updates: unknown[] = []
   const liveEvents: NormalizedEvent[] = []
   const permissionEvents: Extract<NormalizedEvent, { kind: 'permission' }>[] = []
@@ -749,19 +747,9 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     const wait = eventWaiters.shift()
     if (wait) wait(event)
   }
-  // session/load reports the loaded transcript through the same notifications as
-  // a live turn. `prompted` flips immediately before session/prompt is sent, so
-  // notifications before it are replay and cannot enter the live event stream.
+  const billing = opts.agent.billing
   const observeUpdate = (req: { params: unknown }) =>
-    observeAcpUpdate(
-      req.params,
-      updates,
-      opts.outPath,
-      sessionId,
-      pushEvent,
-      opts.agent.billing,
-      prompted,
-    )
+    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent, billing, prompted)
 
   const app = acp
     .client({ name: MCP_SERVER_NAME })
