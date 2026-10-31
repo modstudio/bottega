@@ -111,7 +111,7 @@ export function categoryExecutionRows(database: Database = db()): CategoryExecut
               g.finished_at finishedAt,g.record_id gateRecordId,g.exit_code gateExitCode,
               g.head_commit headCommit,g.cwd
          FROM check_execution c JOIN gate_execution g ON g.record_id=c.gate_execution_record_id
-        WHERE c.category IS NOT NULL AND g.finished_at IS NOT NULL
+        WHERE c.category IS NOT NULL AND g.purpose='gate' AND g.finished_at IS NOT NULL
         ORDER BY g.finished_at,g.record_id`,
     )
     .all() as CategoryExecutionRow[]

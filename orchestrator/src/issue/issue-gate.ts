@@ -1,5 +1,5 @@
 // concern: filed-issue gate verification
-/** Runs the completed fix tree through the same host-side broker as worker run_gate. */
+/** Runs the completed fix tree's full gate through the same host-side broker as the worker's run_check. */
 
 import { db } from '../database/db.ts'
 import { type GateBroker, startGateBroker } from '../gate/gate-broker.ts'

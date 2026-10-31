@@ -188,7 +188,7 @@ test(`formatRecordedGateResult names ${PLATFORM_SLUG} gate run when the row has 
   expect(formatted).toBe(
     [
       'Recorded gate result for commit abc:',
-      `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+      `This result was recorded by the issue coordinator's gate or by ${PLATFORM_SLUG} gate run for that commit.`,
       `recorded by: ${PLATFORM_SLUG} gate run`,
       'exit code: 0',
       'timed out: false',

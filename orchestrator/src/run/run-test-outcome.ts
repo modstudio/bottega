@@ -22,7 +22,7 @@ export type TestOutcomeClaim = { ran?: boolean; passed?: boolean | null } | null
 export type ObservedTestOutcome = {
   ran: boolean | null
   passed: boolean | null
-  claimDisagrees: boolean
+  claimDisagrees: boolean | null
 }
 
 export function deriveObservedTestOutcome(input: {
@@ -30,6 +30,7 @@ export function deriveObservedTestOutcome(input: {
   gate: GateTestObservations
   claim: TestOutcomeClaim
   focusedRunnerRegistered: boolean
+  refusedPaths?: readonly string[]
 }): ObservedTestOutcome {
   const latestFocused = new Map<string, FocusedTestExecutionObservation>()
   for (const execution of input.focused) {
@@ -41,15 +42,23 @@ export function deriveObservedTestOutcome(input: {
   )
   const executions = [...latestFocused.values(), ...latestGateExecutions]
   if (executions.length === 0 && !input.focusedRunnerRegistered) {
-    return { ran: null, passed: null, claimDisagrees: false }
+    return { ran: null, passed: null, claimDisagrees: null }
   }
   const ran = executions.length > 0
-  const passed = ran ? executions.every((execution) => execution.passed) : null
-  const claimDisagrees = Boolean(
-    input.claim &&
-      ((input.claim.ran != null && input.claim.ran !== ran) ||
-        (input.claim.passed != null && input.claim.passed !== passed)),
-  )
+  const passed = input.refusedPaths?.length
+    ? null
+    : ran
+      ? executions.every((execution) => execution.passed)
+      : null
+  const claimedObservation = input.claim?.ran === true || input.claim?.passed != null
+  const claimDisagrees =
+    claimedObservation && (!ran || passed === null)
+      ? null
+      : Boolean(
+          input.claim &&
+            ((input.claim.ran != null && input.claim.ran !== ran) ||
+              (input.claim.passed != null && input.claim.passed !== passed)),
+        )
   return { ran, passed, claimDisagrees }
 }
 
@@ -66,6 +75,16 @@ function focusedTestObservations(runId: string): FocusedTestExecutionObservation
       return []
     return [{ passed: event.exitCode === 0 && !event.timedOut, paths: event.paths }]
   })
+}
+
+function focusedTestRefusedPaths(runId: string): string[] {
+  return readEventLog(runEventsPath(runId)).flatMap((event): string[] =>
+    event.type === 'focused_test_refusal' &&
+    Array.isArray(event.paths) &&
+    event.paths.every((path): path is string => typeof path === 'string')
+      ? event.paths
+      : [],
+  )
 }
 
 function gateTestObservations(database: Database, runId: string): GateTestObservations {
@@ -111,5 +130,6 @@ export function observedTestOutcome(
     gate,
     claim,
     focusedRunnerRegistered: hasFocusedTestRunner(settings.focusedTests),
+    refusedPaths: focusedTestRefusedPaths(runId),
   })
 }

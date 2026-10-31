@@ -12,9 +12,26 @@ import {
   recordArtifactPersistenceFailure,
   recordTerminalReviewEvidence,
   shouldCheckpointAtTerminal,
+  writeObservedTestOutcome,
   writeTerminalOperationalState,
 } from './run-terminal.ts'
 import { finalizeTerminalChain } from './run-terminal-chain.ts'
+
+test('an unverified observed test outcome stores claim disagreement as null', () => {
+  const runId = addRun({ agent: 'codex', job: 'implement' })
+
+  writeObservedTestOutcome(db(), runId, {
+    ran: true,
+    passed: null,
+    claimDisagrees: null,
+  })
+
+  expect(
+    db()
+      .query('SELECT tests_ran,tests_passed,tests_claim_disagrees FROM run WHERE record_id=?')
+      .get(runId),
+  ).toEqual({ tests_ran: 1, tests_passed: null, tests_claim_disagrees: null })
+})
 
 test('a billing terminal outcome durably disables the agent with its operator remedy', () => {
   const runId = addRun({ agent: 'grok', job: 'implement' })

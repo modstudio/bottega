@@ -115,14 +115,14 @@ export async function upsertHostedProjectRow(
   const rows = await tx`
     INSERT INTO project (
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context, agent_keys,
-      visibility, landing_branch, production_branch, gate, gate_input, focused_tests, require_clean_main, color,
+      visibility, landing_branch, production_branch, gate, worker_check, gate_input, focused_tests, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
       mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
       ${bindJsonb(tx, columns.agentKeys)},
-      ${columns.visibility}, ${columns.landingBranch}, ${columns.productionBranch}, ${columns.gate}, ${columns.gateInput},
+      ${columns.visibility}, ${columns.landingBranch}, ${columns.productionBranch}, ${columns.gate}, ${columns.workerCheck}, ${columns.gateInput},
       ${bindJsonb(tx, columns.focusedTests)},
       ${columns.requireCleanMain}, ${columns.color}, ${columns.colorDark}, ${columns.envPrefix},
       ${columns.mcpServer}, ${postgresTextArray(tx, columns.workerMcpServers)},
@@ -153,6 +153,7 @@ export async function upsertHostedProjectRow(
       landing_branch = EXCLUDED.landing_branch,
       production_branch = EXCLUDED.production_branch,
       gate = EXCLUDED.gate,
+      worker_check = EXCLUDED.worker_check,
       gate_input = EXCLUDED.gate_input,
       focused_tests = EXCLUDED.focused_tests,
       require_clean_main = EXCLUDED.require_clean_main,
@@ -195,6 +196,7 @@ export async function listRecordProjects(
         landingBranch: row.landing_branch == null ? null : String(row.landing_branch),
         productionBranch: row.production_branch == null ? null : String(row.production_branch),
         gate: row.gate == null ? null : String(row.gate),
+        workerCheck: row.worker_check == null ? null : String(row.worker_check),
         gateInput: row.gate_input == null ? null : String(row.gate_input),
         focusedTests: row.focused_tests as HostedProjectColumns['focusedTests'],
         requireCleanMain: row.require_clean_main !== false,

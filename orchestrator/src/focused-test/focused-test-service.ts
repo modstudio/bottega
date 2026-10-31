@@ -21,10 +21,11 @@ export function focusedTestEligibility(
        LEFT JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as { job: string; settings: string | null } | null
+  const commands = declaredFocusedTestCommands(row?.settings ?? null)
   return decideFocusedTestEligibility({
     authenticated: authenticatedWorkerRun(runId, token),
     writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
-    ...declaredFocusedTestCommands(row?.settings ?? null),
+    ...commands,
     affected,
   })
 }

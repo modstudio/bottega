@@ -146,6 +146,16 @@ describe('projects are data, not code', () => {
     ])
   })
 
+  test('workerCheck is a non-empty command string when declared', () => {
+    expect(validateProjectSettings({ workerCheck: 'bun run lint' }, 'strict')).toEqual([])
+    expect(
+      validateProjectSettings(
+        { workerCheck: '   ' } as unknown as Parameters<typeof validateProjectSettings>[0],
+        'strict',
+      ),
+    ).toContain('workerCheck must be a non-empty string')
+  })
+
   test('reader MCP tool maps are strict, named, and duplicate-free', () => {
     expect(
       validateProjectSettings(

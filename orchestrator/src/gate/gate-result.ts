@@ -94,7 +94,7 @@ export function recordedGateResult(runId: string): {
       `SELECT g.record_id,r.project_record_id,g.head_commit,g.run_record_id,g.exit_code,g.timed_out,g.elapsed_ms,
               g.finished_at,g.output_tail,g.cwd
        FROM gate_execution g LEFT JOIN run r ON r.record_id=g.run_record_id
-       WHERE g.finished_at IS NOT NULL`,
+       WHERE g.purpose='gate' AND g.finished_at IS NOT NULL`,
     )
     .all() as GateExecutionRow[]
   const cwdProjectIds = architectProjectIdsByCwd(rows)
@@ -112,13 +112,13 @@ export function formatRecordedGateResult(input: ReturnType<typeof recordedGateRe
     const commit = input.headCommit ? ` for commit ${input.headCommit}` : ''
     return (
       `No finished gate result is recorded${commit}. ` +
-      "The writer's gate and the pre-merge local gate are the proof."
+      'The landing gate recorded for this commit and the pre-merge local gate are the proof.'
     )
   }
   const result = input.result
   return [
     `Recorded gate result for commit ${result.headCommit}:`,
-    `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+    `This result was recorded by the issue coordinator's gate or by ${PLATFORM_SLUG} gate run for that commit.`,
     result.runId === null
       ? `recorded by: ${PLATFORM_SLUG} gate run`
       : `executing run id: ${result.runId}`,

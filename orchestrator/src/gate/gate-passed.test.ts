@@ -50,4 +50,7 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
     .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
     .get(gate.record_id)!.number
   expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBe(number)
+
+  d.query("UPDATE gate_execution SET purpose='worker-check' WHERE record_id=?").run(gate.record_id)
+  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBeNull()
 })

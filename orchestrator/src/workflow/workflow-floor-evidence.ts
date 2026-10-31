@@ -16,7 +16,7 @@ import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
 import { resolveDocReference } from '../doc/doc-reference-read.ts'
-import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { landingGatePurposeRefusal, resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { projectByName } from '../project/projects.ts'
 import {
   reviewRoundTriageComplete,
@@ -410,10 +410,10 @@ function gatherGate(
     >(
       `SELECT record_id,number,finished_at,exit_code,run_record_id,cwd,head_commit
          FROM gate_execution
-        WHERE record_id=?`,
+        WHERE record_id=? AND purpose='gate'`,
     )
     .get(recordId)
-  if (!row) throw new Error(`--gate ${recordId} does not exist`)
+  if (!row) throw new Error(landingGatePurposeRefusal(recordId, d, `${PLATFORM_SLUG} gate run`))
   const flag = `--gate ${row.number}`
   let project: string | null
   if (row.run_record_id !== null) {

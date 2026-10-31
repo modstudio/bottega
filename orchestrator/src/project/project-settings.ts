@@ -186,6 +186,8 @@ export type ProjectSettings = {
   productionBranch?: string
   /** The project's complete landing gate, run from the branch worktree. */
   gate?: string
+  /** Cheap static checks a writing worker runs before reporting done. */
+  workerCheck?: string
   /** Git state consumed by the gate. Absent keeps existing registrations compatible. */
   gateInput?: GateInput
   /** Fixed executable and argv prefix for writer-requested project-relative test paths. */

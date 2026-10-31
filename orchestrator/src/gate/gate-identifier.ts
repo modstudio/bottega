@@ -41,3 +41,21 @@ export function resolveGateIdentifier(database: Database, input: string | number
     `no gate has UUID ${JSON.stringify(String(input))}; pass ${ACCEPTED_GATE_IDENTIFIERS}`,
   )
 }
+
+/** Re-read an execution omitted by a purpose-filtered landing-gate lookup. */
+export function landingGatePurposeRefusal(
+  recordId: string,
+  database: Database,
+  landingCommand: string,
+): string {
+  const row = database
+    .query<{ number: number; purpose: string }, [string]>(
+      'SELECT number,purpose FROM gate_execution WHERE record_id=?',
+    )
+    .get(recordId)
+  if (!row) return `--gate ${recordId} does not exist`
+  return (
+    `--gate ${row.number} is a ${row.purpose} execution, not a landing gate; ` +
+    `pass the gate recorded by the landing step (${landingCommand})`
+  )
+}

@@ -103,7 +103,7 @@ export function decideWorkerGateInput(
   return {
     kind: 'refused',
     reason:
-      'worker gate refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_gate again',
+      'worker check refused: this project declares gateInput committed and the worker tree has uncommitted tracked changes; commit your change, then call run_check again',
   }
 }
 
@@ -207,29 +207,26 @@ export function decideGateExecutionFinalization(input: {
   }
 }
 
-export type GateEligibility =
-  | { eligible: true; gate: string }
-  | { eligible: false; message: string }
+export type WorkerCheckEligibility = { eligible: true } | { eligible: false; message: string }
 
-export function decideGateEligibility(input: {
+export function decideWorkerCheckEligibility(input: {
   authenticated: boolean
   writer: boolean
-  gate: string | null
-}): GateEligibility {
+  workerCheck: string | null
+}): WorkerCheckEligibility {
   if (!input.authenticated) {
     return { eligible: false, message: 'This process is not a recognized orchestrator worker.' }
   }
   if (!input.writer) {
-    return { eligible: false, message: 'run_gate is available only to a writing worker run.' }
+    return { eligible: false, message: 'run_check is available only to a writing worker run.' }
   }
-  const gate = input.gate?.trim()
-  if (!gate) {
+  if (!input.workerCheck?.trim()) {
     return {
       eligible: false,
-      message: "This run's project has no registered gate, so nothing was run.",
+      message: "This run's project has no registered workerCheck, so nothing was run.",
     }
   }
-  return { eligible: true, gate }
+  return { eligible: true }
 }
 
 export type GateRequestDecision =
@@ -261,10 +258,10 @@ export function decideGateRequest(input: {
 /** Present how a repeated call reached an existing execution. */
 export function formatGateRequestDecision(decision: GateRequestDecision): string | null {
   if (decision.action === 'join') {
-    return `Gate execution ${decision.executionNumber} was already running; this call waited for the same execution.`
+    return `Check execution ${decision.executionNumber} was already running; this call waited for the same execution.`
   }
   if (decision.action === 'return') {
-    return `Gate execution ${decision.executionNumber} finished after an earlier run_gate call stopped waiting; returning that result.`
+    return `Check execution ${decision.executionNumber} finished after an earlier run_check call stopped waiting; returning that result.`
   }
   return null
 }
@@ -280,8 +277,8 @@ export function decideGateWait(input: {
   return {
     wait: false,
     message:
-      `The gate is still running after ${input.executionElapsedMs}ms. ` +
-      'Call run_gate again to wait for this same execution. ' +
+      `The check is still running after ${input.executionElapsedMs}ms. ` +
+      'Call run_check again to wait for this same execution. ' +
       'Do not report done before you have its result.',
   }
 }

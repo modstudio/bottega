@@ -19,10 +19,10 @@ export function registerFocusedTestTool(input: {
     'run_tests',
     {
       description:
-        "Run this project's registered focused test runner with project-relative paths. " +
-        'The executable and argv prefix are fixed by orch; paths are appended as distinct argv values. ' +
+        "Run this project's registered focused test runners with project-relative paths. " +
+        'Each path goes only to the runner whose registered patterns accept it. ' +
         'Set affected to also run the tests of every module that imports what this run changed, ' +
-        "which the project's registered focusedTests.affected command selects.",
+        "which the project's registered focusedTests affected commands select.",
       inputSchema: z.object({
         paths: z.array(z.string()).optional(),
         affected: z.boolean().optional(),

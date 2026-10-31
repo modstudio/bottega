@@ -52,9 +52,9 @@ import { appendRunEvent } from '../events.ts'
 import { registerFocusedTestTool } from '../focused-test/focused-test-tool.ts'
 import {
   decideGateCancellation,
-  decideGateEligibility,
   decideGateRequest,
   decideGateWait,
+  decideWorkerCheckEligibility,
   formatGateRequestDecision,
   formatGateResult,
   RUN_GATE_WAIT_MS,
@@ -169,24 +169,24 @@ const POLL_MS = 1_000
 
 export type AskResult = { answered: true; answer: string } | { answered: false; reason: string }
 
-function gateEligibility(runId: string, token: string) {
+function checkEligibility(runId: string, token: string) {
   const row = db()
     .query(
       `SELECT r.job,p.settings FROM run r
        LEFT JOIN project p ON p.record_id=r.project_record_id WHERE r.record_id=?`,
     )
     .get(runId) as { job: string; settings: string | null } | null
-  let gate: string | null = null
+  let workerCheck: string | null = null
   try {
-    const settings = JSON.parse(row?.settings ?? '{}') as { gate?: unknown }
-    gate = typeof settings.gate === 'string' ? settings.gate : null
+    const settings = JSON.parse(row?.settings ?? '{}') as { workerCheck?: unknown }
+    workerCheck = typeof settings.workerCheck === 'string' ? settings.workerCheck : null
   } catch {
-    gate = null
+    workerCheck = null
   }
-  return decideGateEligibility({
+  return decideWorkerCheckEligibility({
     authenticated: authenticatedWorkerRun(runId, token),
     writer: Boolean(row && JOBS[row.job]?.needs.writesRepo),
-    gate,
+    workerCheck,
   })
 }
 
@@ -198,7 +198,10 @@ function authenticatedJobNeeds(runId: string, token: string) {
   return row ? JOBS[row.job]?.needs : null
 }
 
-function gateToolAvailable(runId: string, token: string): boolean {
+function checkToolAvailable(runId: string, token: string): boolean {
+  return checkEligibility(runId, token).eligible
+}
+function focusedTestToolAvailable(runId: string, token: string): boolean {
   return Boolean(authenticatedJobNeeds(runId, token)?.writesRepo)
 }
 function gateResultToolAvailable(runId: string, token: string): boolean {
@@ -229,7 +232,8 @@ function latestGateExecution(runId: string): GateExecutionSelection | null {
   return db()
     .query(
       `SELECT record_id,number,requested_at,finished_at FROM gate_execution
-        WHERE run_record_id=? ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
+        WHERE run_record_id=? AND purpose='worker-check'
+        ORDER BY requested_at DESC,record_id DESC LIMIT 1`,
     )
     .get(runId) as GateExecutionSelection | null
 }
@@ -273,7 +277,7 @@ function selectGateExecutionOnce(
         introduction: formatGateRequestDecision(decision),
       }
     }
-    const inserted = requestGateExecution(runId)
+    const inserted = requestGateExecution(runId, 'worker-check')
     const requestedAt = inserted.requestedAt
     return {
       recordId: inserted.recordId,
@@ -333,7 +337,7 @@ async function waitForGateExecution(
   const waitStartedAt = dependencies.now()
   // A caller that disappears without sending cancellation can still consume a later result.
   for (;;) {
-    if (signal.aborted) return 'The gate wait stopped because the run_gate call was cancelled.'
+    if (signal.aborted) return 'The check wait stopped because the run_check call was cancelled.'
     const row = db()
       .query(
         `SELECT g.exit_code,g.timed_out,g.elapsed_ms,g.output_tail,g.output_artifact,
@@ -516,7 +520,7 @@ function workerNoteRun(runId: string): WorkerNoteRun {
   }
 }
 
-function registerRunGateTool(input: {
+function registerRunCheckTool(input: {
   registerTool: McpServer['registerTool']
   runId: string
   token: string
@@ -531,16 +535,16 @@ function registerRunGateTool(input: {
   }
 }): void {
   input.registerTool(
-    'run_gate',
+    'run_check',
     {
       description:
-        "Run this project's registered gate in the run worktree through the supervising orchestrator. " +
+        "Run this project's cheap worker check in the run worktree through the supervising orchestrator. " +
         'The command, directory, and environment are fixed by orchestrator and take no worker input.',
       inputSchema: z.object({}),
     },
     async (_arguments, context) => {
       try {
-        const eligibility = gateEligibility(input.runId, input.token)
+        const eligibility = checkEligibility(input.runId, input.token)
         if (!eligibility.eligible) return input.text(eligibility.message)
         return input.text(
           await requestGate(
@@ -551,10 +555,22 @@ function registerRunGateTool(input: {
           ),
         )
       } catch (error) {
-        return input.text(`The registered gate could not be run (${String(error)}).`, true)
+        return input.text(`The registered worker check could not be run (${String(error)}).`, true)
       }
     },
   )
+}
+
+function registerWorkerExecutionTools(input: Parameters<typeof registerRunCheckTool>[0]): void {
+  if (checkToolAvailable(input.runId, input.token)) registerRunCheckTool(input)
+  if (focusedTestToolAvailable(input.runId, input.token)) {
+    registerFocusedTestTool({
+      registerTool: input.registerTool,
+      runId: input.runId,
+      token: input.token,
+      text: input.text,
+    })
+  }
 }
 
 function askServerState(runId: string, dependencies: AskServerDependencies) {
@@ -657,17 +673,14 @@ export function createAskMcpServer(
   )
 
   // Readers and inline jobs do not receive an execution surface.
-  if (gateToolAvailable(runId, token)) {
-    registerRunGateTool({
-      registerTool,
-      runId,
-      token,
-      pendingResults: pendingGateResults,
-      dependencies: dependencies.gate,
-      text,
-    })
-    registerFocusedTestTool({ registerTool, runId, token, text })
-  }
+  registerWorkerExecutionTools({
+    registerTool,
+    runId,
+    token,
+    pendingResults: pendingGateResults,
+    dependencies: dependencies.gate,
+    text,
+  })
 
   if (gateResultToolAvailable(runId, token)) {
     registerTool(

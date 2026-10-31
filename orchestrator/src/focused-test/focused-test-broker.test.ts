@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test'
 import type { SandboxRuntimeConfig } from '../sandbox/sandbox.ts'
-import { focusedTestBrokerLaunchArgv } from './focused-test-broker.ts'
+import {
+  decideFocusedTestGroupExecution,
+  focusedTestBrokerLaunchArgv,
+} from './focused-test-broker.ts'
 
 test('a writing ACP focused-test broker launches with the run writer profile unchanged', async () => {
   const writer: SandboxRuntimeConfig = {
@@ -31,4 +34,52 @@ test('a writing ACP focused-test broker launches with the run writer profile unc
   ).toEqual(['srt', 'bun', 'test', 'one.test.ts'])
   expect(profiles).toEqual([writer])
   expect(profiles[0]!.network).toBe(writer.network)
+})
+
+test('focused test groups aggregate results and stop before cancelled or refused work', () => {
+  const first = { paths: ['one.test.ts'], started: true, exitCode: 0, timedOut: false }
+  const second = { paths: ['two.test.ts'], started: true, exitCode: 2, timedOut: true }
+
+  expect(
+    decideFocusedTestGroupExecution({
+      groupCount: 2,
+      executions: [first, second],
+      cancelled: false,
+      refusedPaths: [],
+    }),
+  ).toEqual({
+    nextGroupIndex: null,
+    exitCode: 2,
+    timedOut: true,
+    started: true,
+    stopped: 'complete',
+  })
+  expect(
+    decideFocusedTestGroupExecution({
+      groupCount: 2,
+      executions: [first],
+      cancelled: true,
+      refusedPaths: [],
+    }),
+  ).toEqual({
+    nextGroupIndex: null,
+    exitCode: 0,
+    timedOut: false,
+    started: true,
+    stopped: 'cancelled',
+  })
+  expect(
+    decideFocusedTestGroupExecution({
+      groupCount: 2,
+      executions: [],
+      cancelled: false,
+      refusedPaths: ['unmatched.test.ts'],
+    }),
+  ).toEqual({
+    nextGroupIndex: null,
+    exitCode: 0,
+    timedOut: false,
+    started: false,
+    stopped: 'refused',
+  })
 })

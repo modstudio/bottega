@@ -49,6 +49,11 @@ type FocusedTestRunLogEvent = {
   logName: string
   logPath: string
 }
+type FocusedTestRefusalRunLogEvent = {
+  ts: string
+  type: 'focused_test_refusal'
+  paths: string[]
+}
 
 type GateLogRunLogEvent = { ts: string; type: 'gate_log'; logPath: string }
 type AskExpectedRunLogEvent = {
@@ -62,6 +67,7 @@ export type ArtifactPathEvent = FocusedTestRunLogEvent | GateLogRunLogEvent
 
 export type RunLogEvent =
   | ArtifactPathEvent
+  | FocusedTestRefusalRunLogEvent
   | { ts: string; type: 'text'; text: string }
   | { ts: string; type: 'warning'; text: string }
   | {
@@ -126,6 +132,7 @@ type PeekEventSummary =
       elapsedMs: number
       logName: string
     }
+  | { type: 'focused_test_refusal'; paths: string[] }
   | { type: 'gate_log' }
 
 export type PeekSummary = {
@@ -651,6 +658,23 @@ function summarizeOperationalEvent(
   }
 }
 
+function summarizeFocusedTestEvent(
+  event: Extract<RunLogEvent, { type: 'focused_test' | 'focused_test_refusal' }>,
+): PeekEventSummary {
+  if (event.type === 'focused_test_refusal') {
+    return { type: 'focused_test_refusal', paths: event.paths }
+  }
+  return {
+    type: 'focused_test',
+    paths: event.paths,
+    started: event.started,
+    exitCode: event.exitCode,
+    timedOut: event.timedOut,
+    elapsedMs: event.elapsedMs,
+    logName: event.logName,
+  }
+}
+
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'warning')
@@ -680,17 +704,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'ask_started' || event.type === 'ask_listed')
     return { type: event.type, tools: event.tools }
-  if (event.type === 'focused_test') {
-    return {
-      type: 'focused_test',
-      paths: event.paths,
-      started: event.started,
-      exitCode: event.exitCode,
-      timedOut: event.timedOut,
-      elapsedMs: event.elapsedMs,
-      logName: event.logName,
-    }
-  }
+  if (event.type === 'focused_test' || event.type === 'focused_test_refusal')
+    return summarizeFocusedTestEvent(event)
   if (event.type === 'gate_log') return { type: 'gate_log' }
   return { type: 'ask_initialized' }
 }

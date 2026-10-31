@@ -267,7 +267,7 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('writers receive run_gate and run_tests while readers receive only the recorded gate result', async () => {
+  test('writers receive run_check only with workerCheck and readers receive only gate_result', async () => {
     const writer = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const reader = addRun({ agent: 'codex', job: 'review-lens', status: 'running' })
     const writerConnection = await askClient(writer)
@@ -279,7 +279,7 @@ describe('the live ask channel always answers', () => {
       expect(readerTools.tools.find((tool) => tool.name === 'note')).toBeDefined()
       expect(writerTools.tools.find((tool) => tool.name === 'suggest_board_post')).toBeDefined()
       expect(readerTools.tools.find((tool) => tool.name === 'suggest_board_post')).toBeDefined()
-      expect(writerTools.tools.find((tool) => tool.name === 'run_gate')).toBeDefined()
+      expect(writerTools.tools.find((tool) => tool.name === 'run_check')).toBeUndefined()
       const runTests = writerTools.tools.find((tool) => tool.name === 'run_tests')
       expect(runTests).toBeDefined()
       expect(runTests?.inputSchema).toMatchObject({
@@ -290,7 +290,7 @@ describe('the live ask channel always answers', () => {
         },
       })
       expect(writerTools.tools.find((tool) => tool.name === 'gate_result')).toBeUndefined()
-      expect(readerTools.tools.find((tool) => tool.name === 'run_gate')).toBeUndefined()
+      expect(readerTools.tools.find((tool) => tool.name === 'run_check')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'run_tests')).toBeUndefined()
       expect(readerTools.tools.find((tool) => tool.name === 'gate_result')).toBeDefined()
       expect(
@@ -303,11 +303,6 @@ describe('the live ask channel always answers', () => {
         ].sort(),
       ).toEqual(['check_orchestrator_messages', 'gate_result'])
 
-      const result = await writerConnection.client.callTool({ name: 'run_gate', arguments: {} })
-      expect(result.isError).toBeUndefined()
-      expect(resultText(result)).toBe(
-        "This run's project has no registered gate, so nothing was run.",
-      )
       const focusedResult = await writerConnection.client.callTool({
         name: 'run_tests',
         arguments: { paths: ['tests/example.test.ts'] },
@@ -322,7 +317,7 @@ describe('the live ask channel always answers', () => {
       })
       expect(readerResult.isError).toBeUndefined()
       expect(resultText(readerResult)).toBe(
-        "No finished gate result is recorded. The writer's gate and the pre-merge local gate are the proof.",
+        'No finished gate result is recorded. The landing gate recorded for this commit and the pre-merge local gate are the proof.',
       )
       expect(
         (
@@ -339,13 +334,18 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('run_gate returns at its bound, then rejoins the same execution for its result', async () => {
+  test('run_check returns at its bound, then rejoins the same execution for its result', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
-      .get('gate-wait-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
+      .get(
+        'gate-wait-fixture',
+        '/fixture',
+        'bun',
+        JSON.stringify({ workerCheck: 'bun run check' }),
+      ) as {
       id: number
     }
     db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
@@ -384,15 +384,15 @@ describe('the live ask channel always answers', () => {
       },
     })
     try {
-      const first = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      const first = await connection.client.callTool({ name: 'run_check', arguments: {} })
       expect(first.isError).toBeUndefined()
-      expect(resultText(first)).toContain('The gate is still running after')
+      expect(resultText(first)).toContain('The check is still running after')
       expect(resultText(first)).toContain('ms.')
-      expect(resultText(first)).toContain('Call run_gate again to wait for this same execution')
+      expect(resultText(first)).toContain('Call run_check again to wait for this same execution')
       expect(resultText(first)).toContain('waiting 2ms for host capacity')
       expect(resultText(first)).toContain('held_on=load')
 
-      const second = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      const second = await connection.client.callTool({ name: 'run_check', arguments: {} })
       expect(second.isError).toBeUndefined()
       expect(resultText(second)).toContain('Gate exit code: 0')
       expect(resultText(second)).toContain('passed')
@@ -403,12 +403,15 @@ describe('the live ask channel always answers', () => {
           }
         ).n,
       ).toBe(1)
+      expect(
+        db().query('SELECT purpose FROM gate_execution WHERE run_record_id=?').get(run),
+      ).toEqual({ purpose: 'worker-check' })
     } finally {
       await connection.close()
     }
   })
 
-  test('run_gate reports no evidence paths when an occupied log prevented log creation', async () => {
+  test('run_check reports no evidence paths when an occupied log prevented log creation', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
       .query(
@@ -419,7 +422,7 @@ describe('the live ask channel always answers', () => {
         'gate-occupied-log-fixture',
         '/fixture',
         'bun',
-        JSON.stringify({ gate: 'bun run check' }),
+        JSON.stringify({ workerCheck: 'bun run check' }),
       ) as {
       id: number
     }
@@ -452,7 +455,7 @@ describe('the live ask channel always answers', () => {
       },
     })
     try {
-      const result = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      const result = await connection.client.callTool({ name: 'run_check', arguments: {} })
       expect(result.isError).toBeUndefined()
       const output = resultText(result)
       expect(output).toContain('No gate log was created.')
@@ -471,13 +474,18 @@ describe('the live ask channel always answers', () => {
     }
   })
 
-  test('an aborted run_gate call leaves its result pending for the next call', async () => {
+  test('an aborted run_check call leaves its result pending for the next call', async () => {
     const run = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     const project = db()
       .query(
         `INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?) RETURNING record_id AS id`,
       )
-      .get('gate-abort-fixture', '/fixture', 'bun', JSON.stringify({ gate: 'bun run check' })) as {
+      .get(
+        'gate-abort-fixture',
+        '/fixture',
+        'bun',
+        JSON.stringify({ workerCheck: 'bun run check' }),
+      ) as {
       id: number
     }
     db().query('UPDATE run SET project_record_id=? WHERE record_id=?').run(project.id, run)
@@ -508,13 +516,13 @@ describe('the live ask channel always answers', () => {
     try {
       await expect(
         connection.client.callTool(
-          { name: 'run_gate', arguments: {} },
+          { name: 'run_check', arguments: {} },
           { signal: controller.signal },
         ),
       ).rejects.toThrow()
       await Bun.sleep(10)
 
-      const second = await connection.client.callTool({ name: 'run_gate', arguments: {} })
+      const second = await connection.client.callTool({ name: 'run_check', arguments: {} })
       expect(second.isError).toBeUndefined()
       expect(resultText(second)).toContain('Gate exit code: 0')
       expect(resultText(second)).toContain('passed after abort')
@@ -597,6 +605,22 @@ describe('the live ask channel always answers', () => {
         'wrong commit',
         'other-commit',
       )
+    db()
+      .query(
+        `INSERT INTO gate_execution
+          (record_id,run_record_id,requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,purpose)
+         VALUES ('${newRecordId()}',?,?,?,?,?,?,?,?,'worker-check')`,
+      )
+      .run(
+        newerWriter,
+        '2026-10-01T13:00:00.000Z',
+        '2026-10-01T13:01:00.000Z',
+        1,
+        0,
+        63_000,
+        'newer worker check failure',
+        'reviewed-commit',
+      )
 
     const connection = await askClient(reader)
     try {
@@ -605,7 +629,7 @@ describe('the live ask channel always answers', () => {
       expect(resultText(result)).toBe(
         [
           'Recorded gate result for commit reviewed-commit:',
-          `This result was recorded by the project's writer gate or by ${PLATFORM_SLUG} gate run for that commit.`,
+          `This result was recorded by the issue coordinator's gate or by ${PLATFORM_SLUG} gate run for that commit.`,
           `executing run id: ${newerWriter}`,
           'exit code: 0',
           'timed out: false',
