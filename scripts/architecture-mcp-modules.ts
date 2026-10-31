@@ -80,6 +80,10 @@ export const mcpModules: McpModule[] = [
     './mcp-command.ts',
   ]),
   module('orchestrator/src/mcp/mcp-headers-helper.ts', ['../secret-shaped-output.ts']),
+  module('orchestrator/src/mcp/mcp-credential-literal.ts', [
+    '../../../shared/brand.ts',
+    './mcp-probe.ts',
+  ]),
   module('orchestrator/src/mcp/mcp-reader-proxy.ts', [
     '../../../shared/brand.ts',
     '../../../shared/state-directory.ts',

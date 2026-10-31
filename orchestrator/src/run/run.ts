@@ -653,6 +653,10 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       mcpSetupHeader,
       withheldScopeLine(transportName, workerHarnessName(a), mcpLaunch.projectSelection),
     )
+    mcpSetupHeader = mcpLaunch.credentialLines.reduce<string | null>(
+      (header, line) => mergeMcpSetupHeader(header, line),
+      mcpSetupHeader,
+    )
     const sandboxRouteReason = sandboxSelection.reason
       ? `${reason}; ${sandboxReasonPrefix(sandboxSelection.sandbox)}: ${sandboxSelection.reason}`
       : reason

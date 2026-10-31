@@ -36,6 +36,7 @@ export const runModuleSpecs = [
     file: 'orchestrator/src/run/run-mcp-launch-scope.ts',
     allowed: [
       '../agent/agents.ts',
+      '../mcp/mcp-credential-literal.ts',
       '../mcp/mcp-probe.ts',
       '../project/projects.ts',
       '../sandbox/codex-mcp-scope.ts',

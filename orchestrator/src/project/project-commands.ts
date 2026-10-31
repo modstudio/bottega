@@ -8,6 +8,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, tryWriteContention, writeTransaction } from '../database/db.ts'
 import { listLenses, selectProjectProfile } from '../lens/lenses.ts'
+import { literalCredentialFindings, literalCredentialLines } from '../mcp/mcp-credential-literal.ts'
+import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
 import { effectiveProjectSpace, rememberProjectSpace } from '../project-space.ts'
 import {
   pullRecordCataloguesForSpace,
@@ -59,6 +61,13 @@ const enabledLensIds = (spaceId: string | null): string[] =>
   listLenses(db(), spaceId)
     .filter((lens) => lens.enabled)
     .map((lens) => lens.id)
+
+function projectMcpCredentialLines(project: Project): string[] {
+  const result = readMcpConfigResult(project.path)
+  return result.ok
+    ? literalCredentialLines(project.name, literalCredentialFindings(result.config))
+    : []
+}
 
 function listedProjectJson(project: Project) {
   const { recordId, retiredAt, ...rest } = project
@@ -278,6 +287,9 @@ async function addProjectCommand(
   }
   for (const w of worktreeWarnings(projectByName(name)!)) {
     presentation.log(`${' '.repeat(14)} ! ${w}`)
+  }
+  for (const line of projectMcpCredentialLines(project)) {
+    presentation.log(`${' '.repeat(14)} ! ${line}`)
   }
 }
 
@@ -652,6 +664,9 @@ async function setProjectCommand(
   printSettingsEffect(persistedSettingsEffect(settingsBefore, persistedProject), presentation)
   for (const warning of worktreeWarnings(persistedProject)) {
     presentation.log(`${' '.repeat(14)} ! ${warning}`)
+  }
+  for (const line of projectMcpCredentialLines(persistedProject)) {
+    presentation.log(`${' '.repeat(14)} ! ${line}`)
   }
 }
 
