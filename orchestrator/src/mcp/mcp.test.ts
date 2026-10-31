@@ -464,7 +464,7 @@ describe('orch MCP', () => {
         tracker: { kind: 'hub', protocol: 'hub' },
       },
     })
-    const current = showResolvedWorkflow('fix-defect').definition
+    const current = showResolvedWorkflow('fix-defect', undefined, project).definition
     const fixture = setWorkflowLocal(
       'fix-defect',
       {
