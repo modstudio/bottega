@@ -1,4 +1,5 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+export { staticCheckPlan } from './static-check-plan.ts'
 
 export const CHECK_LEGS = [
   {
@@ -10,6 +11,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: true },
     suite: [],
   },
   {
@@ -25,6 +27,7 @@ export const CHECK_LEGS = [
       'reachPattern' in exclusion ? [exclusion.reachPattern] : [],
     ),
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: true },
     suite: [{ argv: ['bun', 'run', 'test:gate'], unitTests: true }],
   },
   {
@@ -36,6 +39,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: null,
+    worker: { run: false, reason: 'has no typecheck command' },
     suite: [
       {
         argv: [
@@ -61,6 +65,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: ['hub/data'],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: true },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
       { argv: ['bun', 'run', '--cwd', 'site', 'test'], unitTests: true },
@@ -76,6 +81,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: false, reason: 'the worker subset excludes hub data typechecking' },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -87,6 +93,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: false, reason: 'the worker subset excludes the web app typecheck' },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
       { argv: ['bun', 'run', 'build'], unitTests: false },
@@ -101,6 +108,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: false, reason: 'the worker subset excludes the deployed site typecheck' },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -112,6 +120,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
+    worker: { run: false, reason: 'the worker subset excludes retrieval typechecking' },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -123,6 +132,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: null,
+    worker: { run: false, reason: 'has no typecheck command' },
     suite: [
       {
         argv: ['bun', 'test', './shared'],
@@ -148,6 +158,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-docker-workspaces.test.ts',
   'scripts/check-dependency-audit.test.ts',
   'scripts/check-runtime.test.ts',
+  'scripts/check-static-plan.test.ts',
   'scripts/check-ci-workflow.test.ts',
   'scripts/check-storybook.test.ts',
   'scripts/check-outcome.test.ts',
@@ -264,4 +275,3 @@ export const STATIC_OMIT_GROUPS = {
   },
 } as const
 
-export const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'

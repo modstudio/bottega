@@ -79,19 +79,21 @@ type CheckLegName = (typeof CHECK_LEGS)[number]['name']
 type StaticOmitGroup = keyof typeof STATIC_OMIT_GROUPS
 type CheckOnly = CheckLegName | 'root'
 export type CheckArguments = {
-  mode: 'static' | 'suite'
+  mode: 'static' | 'suite' | 'worker'
   only?: CheckOnly
   shard?: CheckShard
   omit: StaticOmitGroup[]
 }
 type ParsedArgument =
   | { kind: 'suite' }
+  | { kind: 'worker' }
   | { kind: 'only'; value: CheckOnly }
   | { kind: 'shard'; value: CheckShard }
   | { kind: 'omit'; value: StaticOmitGroup }
 
 function parseArgument(argument: string): ParsedArgument {
   if (argument === '--suite') return { kind: 'suite' }
+  if (argument === '--worker') return { kind: 'worker' }
   if (argument.startsWith('--only=')) {
     const value = argument.slice('--only='.length)
     if (value !== 'root' && !CHECK_LEG_NAMES.includes(value as CheckLegName)) {
@@ -132,6 +134,10 @@ export function parseCheckArguments(argv: readonly string[]): CheckArguments {
     parsed.filter((argument) => argument.kind === 'suite'),
     '--suite',
   )
+  const worker = singleValue(
+    parsed.filter((argument) => argument.kind === 'worker'),
+    '--worker',
+  )
   const only = singleValue(
     parsed.filter((argument) => argument.kind === 'only').map((argument) => argument.value),
     '--only',
@@ -143,13 +149,15 @@ export function parseCheckArguments(argv: readonly string[]): CheckArguments {
   const omit = parsed
     .filter((argument) => argument.kind === 'omit')
     .map((argument) => argument.value)
+  if (suite && worker) throw new Error('--suite and --worker are mutually exclusive')
   if (!suite && (only || shard)) throw new Error('--only and --shard require --suite')
-  if (suite && omit.length > 0) throw new Error('--omit applies only to the static check')
+  if ((suite || worker) && omit.length > 0)
+    throw new Error('--omit applies only to the static check')
   if (shard && only && only !== 'orchestrator') {
     throw new Error('--shard applies only to the orchestrator suite')
   }
   return {
-    mode: suite ? 'suite' : 'static',
+    mode: suite ? 'suite' : worker ? 'worker' : 'static',
     ...(only ? { only } : {}),
     ...(shard ? { shard } : {}),
     omit,

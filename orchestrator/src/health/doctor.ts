@@ -1,7 +1,7 @@
 // concern: doctor
 /** Knows machine and register diagnosis. Must not know transports, routing, run control, the CLI, or reviews by value. */
 
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { doctorAgentStatus } from '../agent/agent-auth.ts'
@@ -89,6 +89,39 @@ export function canonEvalDoctorDecision(input: {
 /** ACP is optional because built-in Codex writing jobs use the CLI transport. */
 export function doctorAcpStatus(gap: string | null): string {
   return gap ? `informational — ${gap}` : 'ready'
+}
+
+const EXPECTED_WORKER_CHECK = 'bun run check:worker'
+
+/** Compare a registered worker check only when the project declares the standard script. */
+export function workerCheckDoctorFinding(input: {
+  project: string
+  workerCheck: string | undefined
+  scripts: Readonly<Record<string, unknown>> | undefined
+}): string | null {
+  if (typeof input.scripts?.['check:worker'] !== 'string') return null
+  if (input.workerCheck === EXPECTED_WORKER_CHECK) return null
+  return (
+    `${input.project}: registered workerCheck ${JSON.stringify(input.workerCheck ?? '(unset)')} ` +
+    `differs from package script ${JSON.stringify(EXPECTED_WORKER_CHECK)}; ` +
+    `set it with: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
+    `'${JSON.stringify({ workerCheck: EXPECTED_WORKER_CHECK })}'`
+  )
+}
+
+function projectPackageScripts(path: string): Record<string, unknown> | undefined {
+  try {
+    const manifest = JSON.parse(readFileSync(`${path}/package.json`, 'utf8')) as {
+      scripts?: unknown
+    }
+    return manifest.scripts &&
+      typeof manifest.scripts === 'object' &&
+      !Array.isArray(manifest.scripts)
+      ? (manifest.scripts as Record<string, unknown>)
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | undefined) {
@@ -582,7 +615,14 @@ export async function doctorCommand(
     for (const line of hookFlags) log(`  ${line}`)
   }
   const registerQuestions = repositoryProjects.flatMap((project) =>
-    registerBranchCheck(project).problems.map((problem) => `${project.name}: ${problem}`),
+    [
+      ...registerBranchCheck(project).problems.map((problem) => `${project.name}: ${problem}`),
+      workerCheckDoctorFinding({
+        project: project.name,
+        workerCheck: project.settings.workerCheck,
+        scripts: projectPackageScripts(project.path),
+      }),
+    ].filter((problem): problem is string => problem !== null),
   )
   if (registerQuestions.length) {
     log('\nregister questions (not run failures):')

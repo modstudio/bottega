@@ -150,6 +150,14 @@ describe('check mode arguments', () => {
     expect(runsRootSuiteTests(parseCheckArguments(['--suite', '--only=root']))).toBe(true)
   })
 
+  test('selects worker mode without suite arguments', () => {
+    expect(parseCheckArguments(['--worker'])).toEqual({ mode: 'worker', omit: [] })
+    expect(() => parseCheckArguments(['--worker', '--suite'])).toThrow('mutually exclusive')
+    expect(() => parseCheckArguments(['--worker', '--omit=secrets'])).toThrow(
+      'only to the static check',
+    )
+  })
+
   test('refuses arguments that could silently omit a leg or use a malformed shard', () => {
     expect(() => parseCheckArguments(['--only=hub'])).toThrow('require --suite')
     expect(() => parseCheckArguments(['--suite', '--only=unknown'])).toThrow('expected one of')

@@ -12,12 +12,7 @@ import {
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv, mainCheckoutOf } from '../shared/git'
 import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
-import {
-  CHECK_LEGS,
-  HOSTED_REFUSAL_TEXT_CHECK,
-  ROOT_TEST_FILES,
-  STATIC_OMIT_GROUPS,
-} from './check-plan.ts'
+import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS, staticCheckPlan } from './check-plan.ts'
 import {
   attributeCommandCpu,
   type CheckArguments,
@@ -40,6 +35,7 @@ type Command = { cwd: string; argv: string[]; category?: string }
 type Leg = {
   name: (typeof CHECK_LEGS)[number]['name']
   typecheck: Command | null
+  worker: (typeof CHECK_LEGS)[number]['worker']
   suite: Command[]
 }
 type RunnableLeg = { name: string; commands: Command[] }
@@ -48,6 +44,7 @@ type StaticCheck = { name: string; argv: string[]; category?: string; reportPath
 type ExecutionObservation = Pick<StaticCheck, 'category' | 'reportPath'> & { check?: string }
 
 const root = fileURLToPath(new URL('..', import.meta.url))
+const STATIC_CHECKS = staticCheckPlan()
 const checkArguments: CheckArguments = (() => {
   try {
     return parseCheckArguments(Bun.argv.slice(2))
@@ -188,6 +185,7 @@ function track(
 const legs: Leg[] = CHECK_LEGS.map((leg) => ({
   name: leg.name,
   typecheck: leg.typecheck ? { cwd: `${root}${leg.directory}`, argv: [...leg.typecheck] } : null,
+  worker: leg.worker,
   suite: leg.suite.map(({ argv, unitTests }) => ({
     cwd: `${root}${leg.directory}`,
     ...(unitTests ? { category: UNIT_TEST_CHECK_CATEGORY } : {}),
@@ -211,20 +209,21 @@ async function inherit(argv: string[], cwd = root, observation: ExecutionObserva
   return child.exited
 }
 
-function staticCheck(
-  name: string,
-  extra: string[] = [],
-  category?: string,
-  reportsRemaining = false,
+function materializeStaticCheck(
+  declaration: (typeof STATIC_CHECKS)[number],
+  qualityBase: string,
 ): StaticCheck {
   const reportPath =
-    reportsRemaining && reportDirectory
+    declaration.reportsRemaining && reportDirectory
       ? join(reportDirectory, `${crypto.randomUUID()}.json`)
       : undefined
   return {
-    name,
-    argv: ['bun', `${root}${name}`, ...extra, ...(reportPath ? [`--report=${reportPath}`] : [])],
-    category,
+    name: declaration.name,
+    argv: [
+      ...declaration.argv({ root, qualityBase }),
+      ...(reportPath ? [`--report=${reportPath}`] : []),
+    ],
+    category: declaration.category,
     reportPath,
   }
 }
@@ -428,19 +427,33 @@ const rootTests = [
 ]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
+const workerBiome = STATIC_CHECKS[0]
+if (workerBiome?.name !== 'Biome') throw new Error('Biome must remain the first static check')
+if (!workerBiome.workerArgv) throw new Error('Biome must declare its worker command')
+const workerBiomeStep =
+  checkArguments.mode === 'worker'
+    ? {
+        name: workerBiome.name,
+        exitCode: await inherit(workerBiome.workerArgv(root), root),
+      }
+    : null
 const results = await Promise.all(
   legs
-    .filter((leg) => selected.has(leg.name))
+    .filter((leg) => selected.has(leg.name) && (checkArguments.mode !== 'worker' || leg.worker.run))
     .map((leg) =>
       runLeg({
         name: leg.name,
         commands:
-          checkArguments.mode === 'static' ? (leg.typecheck ? [leg.typecheck] : []) : leg.suite,
+          checkArguments.mode === 'static' || checkArguments.mode === 'worker'
+            ? leg.typecheck
+              ? [leg.typecheck]
+              : []
+            : leg.suite,
       }),
     ),
 )
 printFailedLegTails(results)
-const gateSteps: GateStepResult[] = [...results]
+const gateSteps: GateStepResult[] = [...(workerBiomeStep ? [workerBiomeStep] : []), ...results]
 if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
   gateSteps.push({
     name: 'root tests',
@@ -448,11 +461,7 @@ if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
   })
 }
 
-if (checkArguments.mode === 'static') {
-  gateSteps.push({
-    name: 'Biome',
-    exitCode: await inherit([`${root}node_modules/.bin/biome`, 'ci', '.']),
-  })
+if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
   let qualityMode: string
   try {
     qualityMode = qualityBaseArgument()
@@ -460,86 +469,7 @@ if (checkArguments.mode === 'static') {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
-  const staticChecks: StaticCheck[] = [
-    { name: 'project checks', argv: ['bun', `${root}orchestrator/scripts/check-projects.ts`] },
-    {
-      name: 'orchestrator identity inventory',
-      argv: ['bun', `${root}scripts/check-identity-inventory.ts`, qualityMode],
-    },
-    { name: 'SQL literal schema', argv: ['bun', `${root}scripts/check-sql-literal-schema.ts`] },
-    { name: 'hosted SQL schema', argv: ['bun', `${root}scripts/check-hosted-sql-schema.ts`] },
-    staticCheck('scripts/check-machine-state.ts'),
-    staticCheck('scripts/check-cascade-preservation.ts'),
-    staticCheck('scripts/check-postgres-migrations.ts'),
-    staticCheck('scripts/check-postgres-array-bindings.ts'),
-    staticCheck('scripts/check-record-jsonb-string-checks.ts'),
-    staticCheck('scripts/check-outbox-payload-contracts.ts'),
-    staticCheck('scripts/check-record-migrations-apply.ts'),
-    staticCheck('scripts/check-bun-serve-timeout.ts'),
-    staticCheck('scripts/check-hosted-hub-server-boundary.ts'),
-    staticCheck(HOSTED_REFUSAL_TEXT_CHECK),
-    staticCheck('scripts/check-docker-workspaces.ts'),
-    staticCheck('scripts/check-hub-packages.ts'),
-    staticCheck('scripts/check-hub-ui-styles.ts'),
-    staticCheck('scripts/check-storybook.ts'),
-    staticCheck('scripts/check-architecture.ts', [qualityMode]),
-    staticCheck('scripts/check-review-boundary.ts'),
-    staticCheck('scripts/check-outcome-boundary.ts'),
-    staticCheck('scripts/check-contract-boundary.ts'),
-    staticCheck('scripts/check-evidence-boundary.ts'),
-    staticCheck('scripts/check-git-environment-spawn.ts'),
-    staticCheck('scripts/check-self-spawn.ts'),
-    staticCheck('scripts/check-source-root.ts'),
-    staticCheck('scripts/check-launchd-templates.ts'),
-    staticCheck('scripts/check-hook-binary.ts'),
-    staticCheck('scripts/check-gitleaks.ts'),
-    staticCheck('scripts/check-write-transaction-site.ts'),
-    staticCheck('scripts/check-branch-ref-mutation-site.ts'),
-    staticCheck('scripts/check-command-descriptions.ts'),
-    staticCheck('scripts/reference.ts'),
-    staticCheck('scripts/check-file-ceiling.ts', [], 'file-length', true),
-    staticCheck('scripts/check-cognitive-ceiling.ts', [qualityMode], 'cognitive-complexity', true),
-    {
-      name: 'function length and naming ratchet',
-      argv: [
-        'bun',
-        `${root}orchestrator/src/cli/orch.ts`,
-        'ratchet',
-        '--format',
-        'biome',
-        qualityMode,
-        '--support',
-        'biome.jsonc',
-        '--support',
-        'hub/web/lint',
-        '--',
-        `${root}node_modules/.bin/biome`,
-        'lint',
-        '--vcs-use-ignore-file=false',
-        '--only=complexity/noExcessiveLinesPerFunction',
-        '--only=style/useNamingConvention',
-        '--reporter=json',
-        '{files}',
-      ],
-    },
-    staticCheck('scripts/check-test-fixtures.ts'),
-    staticCheck('scripts/check-test-placement.ts'),
-    staticCheck('scripts/check-test-reach.ts', [qualityMode]),
-    staticCheck('scripts/check-test-spawns.ts'),
-    staticCheck('scripts/check-dead-code.ts', [qualityMode], 'unused-exports', true),
-    staticCheck('scripts/check-brand.ts'),
-    staticCheck('scripts/check-legacy-names.ts'),
-    staticCheck('scripts/check-doc-editor-rich-style.ts'),
-    staticCheck('scripts/check-harness-mirror.ts'),
-    staticCheck('scripts/check-canon-drift.ts'),
-    staticCheck('scripts/check-workflow-drift.ts'),
-    staticCheck('scripts/check-workflow-tree.ts'),
-    staticCheck('scripts/check-ci-workflow.ts'),
-    staticCheck('scripts/generate-recipe-schema.ts', ['--check']),
-    staticCheck('orchestrator/scripts/check-pack-budget.ts'),
-    staticCheck('orchestrator/scripts/check-canon-lint.ts'),
-    staticCheck('scripts/quality/check-test-substance.ts', [qualityMode], 'test-substance'),
-  ]
+  const staticChecks = STATIC_CHECKS.map((check) => materializeStaticCheck(check, qualityMode))
   const omittedChecks = new Set(
     checkArguments.omit.flatMap((group) => STATIC_OMIT_GROUPS[group].checks),
   )
@@ -547,8 +477,13 @@ if (checkArguments.mode === 'static') {
     const plan = STATIC_OMIT_GROUPS[group]
     console.log(`omitting ${group} static checks (${plan.checks.join(', ')}): ${plan.reason}`)
   }
-  for (const check of staticChecks) {
-    if (!omittedChecks.has(check.name)) gateSteps.push(await recordGateStep(check))
+  for (const [index, check] of staticChecks.entries()) {
+    const declaration = STATIC_CHECKS[index]!
+    const selectedForMode =
+      checkArguments.mode === 'worker'
+        ? declaration.name !== 'Biome' && declaration.worker.run
+        : !omittedChecks.has(check.name)
+    if (selectedForMode) gateSteps.push(await recordGateStep(check))
   }
 }
 
@@ -592,5 +527,14 @@ const gate = decideGateOutcome(gateSteps)
 if (gate.failures.length > 0) {
   console.error('gate failures:')
   for (const name of gate.failures) console.error(name)
+}
+if (checkArguments.mode === 'worker') {
+  const omitted = STATIC_CHECKS.flatMap((check) =>
+    check.worker.run ? [] : [{ name: check.name, reason: check.worker.reason }],
+  )
+  console.log(`worker check omitted ${omitted.length} steps; bun run check runs them all`)
+  for (const check of omitted) {
+    console.log(`not run by worker check: ${check.name} (${check.reason})`)
+  }
 }
 if (cpuBudgetVerdict === 'over-fatal' || gate.exitCode !== 0) process.exit(1)
