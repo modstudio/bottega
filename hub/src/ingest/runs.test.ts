@@ -13,13 +13,48 @@ import {
 import { db, writeTransaction } from '../db.ts'
 import { loadOutboxChange } from '../outbox-row.ts'
 import { runRef } from '../run-ref.ts'
-import { chainVendorTokens, executionSpans } from './runs.ts'
+import { chainVendorTokens, executionSpans, RUN_INGEST_BATCH_SIZE } from './runs.ts'
 
 beforeAll(resetFixtureStore)
 
 const ref = (id: number) => `orch:${fixtureRecordId(id)}`
 const turnRef = (root: number, turn: number) => `${ref(root)}:turn:${fixtureRecordId(turn)}`
 describe('run ingest', () => {
+  test('more than one run batch uses multiple transactions and stores the single-pass result', async () => {
+    const runs = Array.from({ length: RUN_INGEST_BATCH_SIZE + 1 }, (_, index) =>
+      runFixture({ id: 20_000 + index, latency_ms: 1_000, status: 'ok' }),
+    )
+    const stdout = runs.map((run) => JSON.stringify(run)).join('\n')
+    resetFixtureStore()
+    let batchedTransactions = 0
+    const batched = await ingestStdout(stdout, '[]', {
+      transaction: (fn) => {
+        batchedTransactions++
+        return writeTransaction(fn)
+      },
+    })
+    const stored = db()
+      .query(`SELECT source,ref,start_at,end_at,task_key,project,open FROM interval ORDER BY ref`)
+      .all()
+
+    resetFixtureStore()
+    let singleTransactions = 0
+    const single = await ingestStdout(stdout, '[]', {
+      batchSize: Number.POSITIVE_INFINITY,
+      transaction: (fn) => {
+        singleTransactions++
+        return writeTransaction(fn)
+      },
+    })
+    const singleStored = db()
+      .query(`SELECT source,ref,start_at,end_at,task_key,project,open FROM interval ORDER BY ref`)
+      .all()
+
+    expect({ batched, stored }).toEqual({ batched: single, stored: singleStored })
+    expect(batchedTransactions).toBe(3)
+    expect(singleTransactions).toBe(2)
+  })
+
   test('the interval writer and UUID ref parser round-trip root and turn identities', async () => {
     const taskRecordId = fixtureRecordId(118)
     writeTransaction((conn) =>

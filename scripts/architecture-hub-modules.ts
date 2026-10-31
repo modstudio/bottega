@@ -57,6 +57,11 @@ export const hubModuleSpecs = [
   { file: 'hub/src/outbox-fast-cycle.ts', allowed: [] },
   { file: 'hub/src/write-hold.ts', allowed: [] },
   {
+    file: 'hub/src/hosted-local-apply.ts',
+    allowed: ['../../shared/database-lock-refusal.ts'],
+  },
+  { file: 'hub/src/ingest/batches.ts', allowed: ['bun:sqlite'] },
+  {
     file: 'hub/src/hosted-route-identity.ts',
     allowed: [
       '../../shared/record-remedies.ts',
@@ -134,6 +139,7 @@ export const hubModuleSpecs = [
       'node:crypto',
       '../../shared/record/schema.ts',
       './db.ts',
+      './hosted-local-apply.ts',
       './offline-task-edits.ts',
       './task-client.ts',
       './task-document-label.ts',
@@ -281,6 +287,7 @@ export const hubModuleSpecs = [
     allowed: [
       'bun:sqlite',
       './db.ts',
+      './hosted-local-apply.ts',
       './hosted-tasks.ts',
       './note-client.ts',
       './projects.ts',

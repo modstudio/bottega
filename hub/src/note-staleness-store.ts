@@ -1,5 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from './db.ts'
+import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { confirmCount } from './hosted-tasks.ts'
 import { hostedReapNotes, type NoteClientOptions } from './note-client.ts'
 import type { RegisteredProject } from './projects.ts'
@@ -131,17 +132,26 @@ export async function applyHostedStaleness(
         },
         { ...hosted, recordSpace: spaceId },
       )
-      writeTransaction((conn) => {
-        const appliedIds = new Set([
-          ...response.staleIds,
-          ...response.annotatedIds,
-          ...response.restoredIds,
-        ])
-        for (const change of [...stale, ...annotated, ...restored])
-          if (appliedIds.has(change.recordId)) applyChange(conn, change, at)
-        for (const id of response.deletedIds)
-          conn.query('DELETE FROM note WHERE record_id=?').run(id)
-      })
+      const appliedChanges =
+        response.staleIds.length +
+        response.annotatedIds.length +
+        response.restoredIds.length +
+        response.deletedIds.length
+      applyHostedWriteLocally(
+        `${appliedChanges} note changes were reaped in hosted space ${spaceId}; their local copies will arrive on the next record pull`,
+        () =>
+          writeTransaction((conn) => {
+            const appliedIds = new Set([
+              ...response.staleIds,
+              ...response.annotatedIds,
+              ...response.restoredIds,
+            ])
+            for (const change of [...stale, ...annotated, ...restored])
+              if (appliedIds.has(change.recordId)) applyChange(conn, change, at)
+            for (const id of response.deletedIds)
+              conn.query('DELETE FROM note WHERE record_id=?').run(id)
+          }),
+      )
       totals.marked += response.marked
       totals.annotated += response.annotated
       totals.restored += response.restored

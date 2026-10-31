@@ -13,9 +13,12 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
+import { chunks, type IngestTransaction } from './batches.ts'
 import { upsertGitTasks } from './git-task-cache.ts'
 
 export type { FileKind } from '../../../shared/file-kind.ts'
+
+export const GIT_INGEST_BATCH_SIZE = 50
 
 /**
  * What kind of file a change touched.
@@ -145,7 +148,10 @@ function scanGit(since: string) {
  * project that has no local credentials at all — should not make its work
  * vanish from the view entirely.
  */
-export async function ingestGit(since: string): Promise<{ days: number; tasks: number }> {
+export async function ingestGit(
+  since: string,
+  options: { transaction?: IngestTransaction; batchSize?: number } = {},
+): Promise<{ days: number; tasks: number }> {
   const machine = storedMachineId()
   if (!machine)
     throw new Error(
@@ -153,9 +159,33 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
     )
   const { days, tasks, commits } = scanGit(since)
   const at = nowIso()
-  writeTransaction((conn) => {
-    const dayStmt = conn.query(
-      `INSERT INTO day (record_id, machine_id, day, tasks, commits, files,
+  writeGitIngestBatches(
+    { days, tasks, commits },
+    machine,
+    at,
+    options.transaction,
+    options.batchSize,
+  )
+  return { days: days.size, tasks: tasks.size }
+}
+
+type GitScan = ReturnType<typeof scanGit>
+export function writeGitIngestBatches(
+  scan: GitScan,
+  machine: string,
+  at: string,
+  transaction: IngestTransaction = writeTransaction,
+  batchSize = GIT_INGEST_BATCH_SIZE,
+): void {
+  const operations = [
+    ...scan.commits.map((commit) => ({ kind: 'commit' as const, commit })),
+    ...[...scan.days].map(([day, activity]) => ({ kind: 'day' as const, day, activity })),
+  ]
+  const batches = chunks(operations, batchSize)
+  for (const [index, batch] of batches.entries())
+    transaction((conn) => {
+      const dayStmt = conn.query(
+        `INSERT INTO day (record_id, machine_id, day, tasks, commits, files,
                       lines_product, lines_test, lines_docs, lines_config, lines_generated,
                       collected_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
@@ -167,33 +197,37 @@ export async function ingestGit(since: string): Promise<{ days: number; tasks: n
        lines_product=excluded.lines_product, lines_test=excluded.lines_test,
        lines_docs=excluded.lines_docs, lines_config=excluded.lines_config,
        lines_generated=excluded.lines_generated, collected_at=excluded.collected_at`,
-    )
-
-    // Seed Git-only tasks before resolving the commit's task UUID. Never downgrade a
-    // tracker's row to a git-derived one. The cache adapter also queues only inserts
-    // and meaningful changes in this transaction.
-    upsertGitTasks(conn, tasks.values(), at)
-    for (const c of commits) writeCommitKey(conn, c)
-    for (const [day, a] of days) {
-      dayStmt.run(
-        newRecordId(),
-        machine,
-        day,
-        a.tasks.size,
-        a.commits,
-        a.files.size,
-        a.lines.product,
-        a.lines.test,
-        a.lines.docs,
-        a.lines.config,
-        a.lines.generated,
-        at,
       )
-    }
-    conn
-      .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
-                ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-      .run(JSON.stringify(at))
-  })
-  return { days: days.size, tasks: tasks.size }
+
+      // Seed Git-only tasks before resolving the commit's task UUID. Never downgrade a
+      // tracker's row to a git-derived one. The cache adapter also queues only inserts
+      // and meaningful changes in this transaction.
+      if (index === 0) upsertGitTasks(conn, scan.tasks.values(), at)
+      for (const operation of batch) {
+        if (operation.kind === 'commit') {
+          writeCommitKey(conn, operation.commit)
+          continue
+        }
+        const { day, activity: a } = operation
+        dayStmt.run(
+          newRecordId(),
+          machine,
+          day,
+          a.tasks.size,
+          a.commits,
+          a.files.size,
+          a.lines.product,
+          a.lines.test,
+          a.lines.docs,
+          a.lines.config,
+          a.lines.generated,
+          at,
+        )
+      }
+      if (index === batches.length - 1)
+        conn
+          .query(`INSERT INTO setting (key, value) VALUES ('collect.git.at', ?)
+                  ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(JSON.stringify(at))
+    })
 }
