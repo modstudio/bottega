@@ -115,16 +115,14 @@ export async function repairHostedTaskReferences(
   if (!labelUpdate) return
   for (const relationship of hostedTaskRelationships) {
     const excludeTask = relationship.table === 'hub_task' ? tx`AND id<>${taskId}::uuid` : tx``
-    const referenceMatch = relationship.keyFallback
-      ? tx`(${tx.unsafe(relationship.idColumn)}=${taskId}::uuid OR
-          (${tx.unsafe(relationship.idColumn)} IS NULL AND
-           ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.previousKey}))`
-      : tx`${tx.unsafe(relationship.idColumn)}=${taskId}::uuid`
+    // Linking an unlinked row by its previous key resolves the label once, at write time.
     await tx`UPDATE ${tx.unsafe(relationship.table)}
       SET ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.nextKey},
         ${tx.unsafe(relationship.idColumn)}=${taskId}::uuid,
         updated_at=GREATEST(updated_at,${updatedAt}::timestamptz)
       WHERE space_id=${spaceId}::uuid ${excludeTask}
-        AND ${referenceMatch}`
+        AND (${tx.unsafe(relationship.idColumn)}=${taskId}::uuid OR
+          (${tx.unsafe(relationship.idColumn)} IS NULL AND
+           ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.previousKey}))`
   }
 }
