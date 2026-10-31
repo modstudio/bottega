@@ -217,6 +217,7 @@ async function promoteCatalogueTreeDraft(
       refusal.workflowSlugs,
       decision.promotions,
       refusal.otherErrorCount,
+      PLATFORM_SLUG,
     )
     const message = cause instanceof Error ? cause.message : String(cause)
     throw new Error(`${message}\n${remedy.map((line) => `- ${line}`).join('\n')}`, { cause })

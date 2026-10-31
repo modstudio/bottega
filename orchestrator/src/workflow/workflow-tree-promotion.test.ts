@@ -100,7 +100,12 @@ test('reports a catalogue that matches neither production nor its newest draft',
 
 test('reports when no workflow draft promotion can clear a catalogue reference', () => {
   expect(
-    workflowTreePromotionRemedyLines(['still-linked'], [{ kind: 'catalogue', n: 2 }], 0),
+    workflowTreePromotionRemedyLines(
+      ['still-linked'],
+      [{ kind: 'catalogue', n: 2 }],
+      0,
+      PLATFORM_SLUG,
+    ),
   ).toEqual([
     'workflow still-linked still references the removed catalogue step; no promotion order clears it',
   ])
@@ -116,6 +121,7 @@ test('reports that promotion order does not clear other catalogue reference erro
         { kind: 'workflow', slug: 'other-error', n: 4 },
       ],
       1,
+      PLATFORM_SLUG,
     ),
   ).toEqual([
     'clear in order:',

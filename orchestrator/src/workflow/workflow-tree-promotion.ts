@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from 'node:util'
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StepCatalogueDefinition } from './step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import type { WorkflowDefinition } from './workflows.ts'
@@ -17,6 +16,7 @@ export function workflowTreePromotionRemedyLines(
   referencingWorkflowSlugs: string[],
   promotions: WorkflowTreePromotion[],
   otherErrorCount: number,
+  platformSlug: string,
 ): string[] {
   const workflowPromotions = new Map(
     promotions.flatMap((item) => (item.kind === 'workflow' ? [[item.slug, item.n] as const] : [])),
@@ -42,9 +42,9 @@ export function workflowTreePromotionRemedyLines(
   return [
     'clear in order:',
     ...referencing.map(
-      (slug) => `${PLATFORM_SLUG} workflow promote ${slug} ${workflowPromotions.get(slug)!}`,
+      (slug) => `${platformSlug} workflow promote ${slug} ${workflowPromotions.get(slug)!}`,
     ),
-    `${PLATFORM_SLUG} workflow promote-tree`,
+    `${platformSlug} workflow promote-tree`,
     ...otherErrors,
   ]
 }
