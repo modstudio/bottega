@@ -1,7 +1,6 @@
-"""Pure Stop-hook ruling for a held worktree: in-flight landing is information.
+"""Pure Stop-hook decisions for held trees, blocking, and once-per-note information.
 
-Close-out JSON carries hold kind, in-flight ref, and suppressBlock. The hook
-reads those fields and does not re-derive them or parse the human report.
+Unscored runs, pairs, and holds block; notes never do.
 """
 
 from __future__ import annotations
@@ -54,6 +53,10 @@ class StopDecision(NamedTuple):
     block: bool
     note_lines: list[str]
     seen: list[str]
+
+
+def note_project(row: dict) -> str:
+    return row.get("project") or row["label"].split("#", 1)[0]
 
 
 def decide_stop(

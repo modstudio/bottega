@@ -12,6 +12,7 @@ SPEC.loader.exec_module(score_reminder_decision)
 
 decide_held_tree = score_reminder_decision.decide_held_tree
 decide_stop = score_reminder_decision.decide_stop
+note_project = score_reminder_decision.note_project
 refusal_score_guidance = score_reminder_decision.refusal_score_guidance
 unscored_remedy = score_reminder_decision.unscored_remedy
 WRITING_JOBS = score_reminder_decision.WRITING_JOBS
@@ -66,6 +67,12 @@ class StopDecisionTest(unittest.TestCase):
         ("workshop#12", "first note", "workshop"),
         ("starship#34", "second note", "starship"),
     ]
+
+    def test_note_project_falls_back_to_label_prefix(self):
+        self.assertEqual(
+            note_project({"label": "starship#34", "text": "second note"}),
+            "starship",
+        )
 
     def test_notes_only_are_informational_and_marked_seen(self):
         decision = decide_stop(0, 0, 0, self.NOTES, set())
