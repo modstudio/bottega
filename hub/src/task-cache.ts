@@ -19,25 +19,25 @@ type HostedChangeRow =
 
 type HostedTaskChild = Exclude<HostedChangeRow, HostedChanges['tasks'][number]>
 
-export function childTaskRecordId(conn: Database, row: { task_id?: string | null }) {
-  if (!row.task_id) return null
+function cachedTaskRecordId(conn: Database, recordId: string | null | undefined) {
+  if (!recordId) return null
   return (
     conn
       .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
-      .get(row.task_id)?.record_id ?? null
+      .get(recordId)?.record_id ?? null
   )
+}
+
+export function childTaskRecordId(conn: Database, row: { task_id?: string | null }) {
+  return cachedTaskRecordId(conn, row.task_id)
 }
 
 export function parentTaskRecordId(
   conn: Database,
   row: { parent_id?: string | null; parent_key: string | null; project: string },
 ) {
-  if (row.parent_id) {
-    const parent = conn
-      .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
-      .get(row.parent_id)
-    if (parent) return parent.record_id
-  }
+  const parent = cachedTaskRecordId(conn, row.parent_id)
+  if (parent) return parent
   return row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
 }
 
