@@ -3,9 +3,9 @@ import { recordSpaceMembership } from './record-space-membership.ts'
 
 const SPACE_ID = '0199abcd-efab-7abc-8def-0123456789ab'
 const OTHER_ID = '0199abcd-efab-7abc-8def-0123456789ac'
-const membership = { spaceId: SPACE_ID, slug: 'ordinary' }
-const shadow = { spaceId: OTHER_ID, slug: SPACE_ID }
-const unrelated = { spaceId: 'space-c', slug: 'unrelated' }
+const membership = { spaceId: SPACE_ID, slug: 'ordinary', permission: 'write' }
+const shadow = { spaceId: OTHER_ID, slug: SPACE_ID, permission: 'write' }
+const unrelated = { spaceId: 'space-c', slug: 'unrelated', permission: 'write' }
 
 describe('record space membership', () => {
   test('binds an id named in upper case', () => {
@@ -19,8 +19,8 @@ describe('record space membership', () => {
   test.each([
     [shadow, unrelated],
     [unrelated, shadow],
-  ])('does not bind an unknown id-shaped value by slug in either order', (...memberships) => {
-    expect(recordSpaceMembership(SPACE_ID, memberships)).toBeUndefined()
+  ])('does not bind an unknown id-shaped value by slug in either order', (first, second) => {
+    expect(recordSpaceMembership(SPACE_ID, [first, second])).toBeUndefined()
   })
 
   test('matches a membership id that is not record-id-shaped', () => {
@@ -32,9 +32,9 @@ describe('record space membership', () => {
   })
 
   test.each([
-    [unrelated, { spaceId: 'space-d', slug: 'space-c' }],
-    [{ spaceId: 'space-d', slug: 'space-c' }, unrelated],
-  ])('prefers an id over an equal slug in either order', (...memberships) => {
-    expect(recordSpaceMembership('space-c', memberships)).toEqual(unrelated)
+    [unrelated, { spaceId: 'space-d', slug: 'space-c', permission: 'read' }],
+    [{ spaceId: 'space-d', slug: 'space-c', permission: 'read' }, unrelated],
+  ])('prefers an id over an equal slug in either order', (first, second) => {
+    expect(recordSpaceMembership('space-c', [first, second])).toEqual(unrelated)
   })
 })

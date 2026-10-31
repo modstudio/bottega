@@ -17,6 +17,7 @@ import {
   readDistributionManifest,
   resolveInstallationPaths,
   resolveInstallRoot,
+  type DistributionManifest,
 } from './install-root.ts'
 
 const scratchRoots: string[] = []
@@ -113,7 +114,7 @@ describe('installation identity', () => {
     version: '1.2.3',
     built: '2026-09-18T12:34:56.000Z',
     commit: 'abcdef1234567890',
-  }
+  } satisfies DistributionManifest
 
   test('an installed root with a valid manifest is authorized', () => {
     const root = scratch()

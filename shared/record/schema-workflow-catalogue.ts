@@ -2,6 +2,7 @@
 /** Knows the hosted workflow catalogue shapes. Must not know local caches or synchronization. */
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   check,
   foreignKey,
   index,
@@ -18,12 +19,8 @@ import { spaceIdentity, tenantPolicies } from './schema.ts'
 const identity = () => uuid('id').primaryKey()
 const recordedAt = (name: string) => timestamp(name, { withTimezone: true }).notNull()
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
-const sameSpaceIdentity = <
-  T extends { spaceId: ReturnType<typeof spaceIdentity>; id: ReturnType<typeof identity> },
->(
-  name: string,
-  table: T,
-) => unique(name).on(table.spaceId, table.id)
+const sameSpaceIdentity = (name: string, table: { spaceId: AnyPgColumn; id: AnyPgColumn }) =>
+  unique(name).on(table.spaceId, table.id)
 
 export const workflow = pgTable.withRLS(
   'workflow',

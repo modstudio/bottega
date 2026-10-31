@@ -88,7 +88,7 @@ describe('secret values', () => {
 
     for (let index = 0; index < envelope.length; index += 1) {
       const changed = envelope.slice()
-      changed[index] ^= 1
+      changed[index] = changed[index]! ^ 1
       expect(() => openValue({ envelope: changed, dek, valueContext })).toThrow(SecretEnvelopeError)
     }
   })
