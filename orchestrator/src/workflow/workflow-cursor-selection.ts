@@ -4,6 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { randomUUID } from 'node:crypto'
 import { db, sessionId } from '../database/db.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
 import { hasClosedStep } from './workflow-cursor-trail.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
@@ -86,9 +87,14 @@ export type SelectableCursorRow = {
   autonomy: string | null
 }
 
-const mismatch = (cursor: number, name: string, supplied: string, stored: string): never => {
+const mismatch = (
+  row: Pick<SelectableCursorRow, 'id' | 'workflow_slug'>,
+  name: string,
+  supplied: string,
+  stored: string,
+): never => {
   throw new Error(
-    `cursor ${cursor} ${name} mismatch: supplied "${supplied}", cursor has "${stored}"`,
+    `cursor ${row.id} ${name} mismatch: supplied "${supplied}", cursor has "${stored}"${name === 'key' && stored === 'unassigned' ? `; bind it with: ${workflowTaskBindingCommand(row)}` : ''}`,
   )
 }
 
@@ -107,13 +113,13 @@ function validateIdentity(
   identity: WorkflowCursorSelector,
 ): SelectableCursorRow {
   if (identity.project && identity.project !== row.project)
-    mismatch(row.id, 'project', identity.project, row.project)
+    mismatch(row, 'project', identity.project, row.project)
   if (identity.workflow && identity.workflow !== row.workflow_slug)
-    mismatch(row.id, 'workflow', identity.workflow, row.workflow_slug)
+    mismatch(row, 'workflow', identity.workflow, row.workflow_slug)
   if (identity.mode && identity.mode !== row.mode_slug)
-    mismatch(row.id, 'mode', identity.mode, row.mode_slug)
+    mismatch(row, 'mode', identity.mode, row.mode_slug)
   if (identity.key && identity.key !== row.workflow_key)
-    mismatch(row.id, 'key', identity.key, row.workflow_key || 'unassigned')
+    mismatch(row, 'key', identity.key, row.workflow_key || 'unassigned')
   return row
 }
 

@@ -3,6 +3,9 @@
 import type { Database } from 'bun:sqlite'
 import { nowIso } from '../database/db.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
+import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
+import { workflowTaskBindingCommand } from './workflow-cursor-format.ts'
+import { getWorkflowStep } from './workflows.ts'
 
 type AdoptionCursor = {
   id: number
@@ -13,6 +16,46 @@ type AdoptionCursor = {
   workflow_key: string
   task_record_id: string | null
   args: string
+}
+
+type KeylessCloseCursor = AdoptionCursor & {
+  ordinal: number
+  step_slug: string
+  workflow_version: number
+  workflow_version_record_id: string
+  catalogue_version: number
+  catalogue_version_record_id: string
+  autonomy: string | null
+}
+
+type LiveCursorAutonomy = NonNullable<Parameters<typeof cursorAutonomy>[1]>
+
+function refuseKeylessStepClose(
+  row: KeylessCloseCursor,
+  suppliedTask: string | undefined,
+  d: Database,
+  live?: LiveCursorAutonomy,
+): void {
+  if (row.workflow_key || suppliedTask?.trim()) return
+  const step = getWorkflowStep(
+    row.workflow_slug,
+    row.project,
+    row.step_slug,
+    JSON.parse(row.args),
+    d,
+    {
+      mode: row.mode_slug,
+      version: row.workflow_version,
+      versionRecordId: row.workflow_version_record_id,
+      catalogueVersion: row.catalogue_version,
+      catalogueVersionRecordId: row.catalogue_version_record_id,
+    },
+    cursorAutonomy(row, live),
+  )
+  if (step.body.includes('<KEY>'))
+    throw new Error(
+      `step ${row.ordinal + 1} ${step.slug} used <KEY>; close it with: ${workflowTaskBindingCommand(row)}`,
+    )
 }
 
 export function vacateRetiredWorkflowKeySlot(
@@ -58,11 +101,13 @@ function assignWorkflowTaskKey(
 }
 
 export function adoptWorkflowTask(
-  row: AdoptionCursor,
+  row: KeylessCloseCursor,
   suppliedTask: string | undefined,
   taskRecordId: string | null | undefined,
   d: Database,
+  live?: LiveCursorAutonomy,
 ): void {
+  refuseKeylessStepClose(row, suppliedTask, d, live)
   const key = suppliedTask?.trim()
   if (!key) return
   if (row.workflow_key) {

@@ -23,6 +23,7 @@ import {
   sharedStepCataloguePromotionPorts,
 } from './step-catalogue.ts'
 import { type VersionEvent, versionedLifecycle } from './versioned-lifecycle.ts'
+import { missingWorkflowArguments, refuseUnknownWorkflowArgument } from './workflow-arguments.ts'
 import { cursorAutonomyOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
@@ -766,22 +767,6 @@ export function workflowModeStepLists(
   }))
 }
 
-function missingWorkflowArguments(
-  definition: WorkflowDefinition,
-  modes: WorkflowMode[],
-  args: Record<string, string>,
-): { name: string; description: string }[] {
-  const required = new Set([
-    ...definition.arguments
-      .filter((argument) => argument.required)
-      .map((argument) => argument.name),
-    ...modes.flatMap((mode) => mode.requires ?? []),
-  ])
-  return definition.arguments
-    .filter((argument) => required.has(argument.name) && !args[argument.name]?.trim())
-    .map(({ name, description }) => ({ name, description }))
-}
-
 function workflowProject(projectName: string, d: Database) {
   const row = d
     .query('SELECT name,stack,settings FROM project WHERE name=? AND retired_at IS NULL')
@@ -805,6 +790,7 @@ export function composeWorkflow(
     ),
     definition = row.definition,
     catalogue = selectCatalogueVersion(selection, d, spaceId)
+  refuseUnknownWorkflowArgument(slug, definition, args)
   const mode = resolveWorkflowMode(definition, modeSlug)
   const needs: WorkflowNeeds = {}
   if (modeSlug && !mode) throw new Error(`workflow "${slug}" has no mode "${modeSlug}"`)

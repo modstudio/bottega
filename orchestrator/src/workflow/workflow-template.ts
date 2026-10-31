@@ -55,8 +55,10 @@ export function resolveWorkflowTemplate(
       throw new Error(`unresolved workflow placeholder "${path}"${remedy}`)
     }
     if (context && path.startsWith('tracker.actions.') && typeof value === 'string') {
-      const reason = unresolvedTrackerActionPlaceholder(value, context.project, context.key)
+      const action = context.key ? value : value.replaceAll('{key}', '<KEY>')
+      const reason = unresolvedTrackerActionPlaceholder(action, context.project, context.key)
       if (reason) throw new Error(`unresolved workflow placeholder "${path}": ${reason}`)
+      return action
     }
     return String(value)
   })
