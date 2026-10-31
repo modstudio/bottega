@@ -170,6 +170,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-cognitive-ceiling.test.ts',
   'scripts/check-harness-mirror.test.ts',
   'scripts/check-canon-drift.test.ts',
+  'scripts/check-workflow-drift.test.ts',
   'scripts/check-postgres-array-bindings.test.ts',
   'scripts/check-self-spawn.test.ts',
   'scripts/check-source-root.test.ts',
