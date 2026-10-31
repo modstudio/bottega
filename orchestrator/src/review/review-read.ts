@@ -6,6 +6,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import { callerIdentity, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
+import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveReviewCommandCwd } from './review-command-cwd.ts'
@@ -16,6 +17,8 @@ import { enqueueReviewRead } from './review-outbox.ts'
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
 type Git = (cwd: string, args: string[]) => string
+type ResolveCommit = (checkout: string, argument: string) => string
+type ReviewReadDeps = { runGit: Git; resolveCommit: ResolveCommit }
 
 const git: Git = (cwd, args) => {
   const result = Bun.spawnSync(['git', ...args], {
@@ -29,6 +32,8 @@ const git: Git = (cwd, args) => {
   }
   return result.stdout.toString().trim()
 }
+
+const defaultDeps: ReviewReadDeps = { runGit: git, resolveCommit: resolveCommitArgument }
 
 export function latestArchitectRead(database: Database, project: string, branch: string) {
   const lineage = reviewLineage(database, project, branch)
@@ -65,8 +70,8 @@ export function requireBranchRunOwner(
 export function recordArchitectRead(
   input: { cwd: string; sha?: string; note: string },
   suppliedDatabase?: Database,
-  runGit: Git = git,
   recordedAt = nowIso(),
+  deps: ReviewReadDeps = defaultDeps,
 ): string {
   if (process.env.BOTTEGA_DEPTH !== undefined) {
     throw new Error(
@@ -80,13 +85,13 @@ export function recordArchitectRead(
   const database = suppliedDatabase ?? writableDb()
   const project = projectAt(input.cwd, database)
   if (!project) throw new Error(`cannot resolve a project for ${input.cwd}`)
-  const branch = runGit(input.cwd, ['branch', '--show-current'])
+  const branch = deps.runGit(input.cwd, ['branch', '--show-current'])
   if (!branch)
     throw new Error(`${PLATFORM_SLUG} review read requires a checked-out branch, not detached HEAD`)
   const caller = requireBranchRunOwner(database, project.name, branch, sessionId())
-  const tip = runGit(input.cwd, ['rev-parse', '--verify', `${input.sha ?? 'HEAD'}^{commit}`])
+  const tip = deps.resolveCommit(input.cwd, input.sha ?? 'HEAD')
   try {
-    runGit(input.cwd, ['merge-base', '--is-ancestor', tip, 'HEAD'])
+    deps.runGit(input.cwd, ['merge-base', '--is-ancestor', tip, 'HEAD'])
   } catch {
     throw new Error(
       `${PLATFORM_SLUG} review read could not reconcile branch ${branch} with tip ${tip}; run ${PLATFORM_SLUG} review read from the worktree that has the branch containing that commit checked out (${PLATFORM_SLUG} tree open <run> opens one)`,

@@ -92,6 +92,7 @@ export const gateModules: GateModule[] = [
     '../../../shared/brand.ts',
     'bun:sqlite',
     '../database/db.ts',
+    '../git/commit-resolution.ts',
     '../project/projects.ts',
   ]),
   module('orchestrator/src/gate/gate-result.ts', [

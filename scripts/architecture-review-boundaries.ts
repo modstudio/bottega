@@ -477,6 +477,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../../../shared/secret-shaped.ts',
       '../caller-classification.ts',
       '../database/db.ts',
+      '../git/commit-resolution.ts',
       '../git/git-environment.ts',
       '../project/projects.ts',
       './review-command-cwd.ts',

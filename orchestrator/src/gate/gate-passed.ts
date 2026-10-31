@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db } from '../database/db.ts'
+import { resolveCommitArgument } from '../git/commit-resolution.ts'
 import { projectAt } from '../project/projects.ts'
 
 type GateCandidate = {
@@ -53,6 +54,17 @@ export function passingGateForCommit(
       (gateCwd) => projectAt(gateCwd, d)?.recordId ?? null,
     ),
   }
+}
+
+export function passingGateForArgument(
+  argument: string,
+  cwd = process.cwd(),
+  d: Database = db(),
+  resolveCommit: (checkout: string, argument: string) => string = resolveCommitArgument,
+): ReturnType<typeof passingGateForCommit> {
+  const normalized = argument.trim()
+  if (!normalized) return passingGateForCommit(normalized, cwd, d)
+  return passingGateForCommit(resolveCommit(cwd, normalized), cwd, d)
 }
 
 export function formatPassingGate(result: ReturnType<typeof passingGateForCommit>): string {

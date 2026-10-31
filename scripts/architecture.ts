@@ -184,6 +184,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/orch-contract.ts',
     '../project/projects.ts',
   ]),
+  module('orchestrator/src/git/commit-resolution.ts', ['./git-environment.ts']),
   module('orchestrator/src/run/question-open.ts', []),
   module('orchestrator/src/run/question-close.ts', [
     '../../../shared/brand.ts',
@@ -588,6 +589,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/secret-shaped.ts',
     '../caller-classification.ts',
     '../database/db.ts',
+    '../git/commit-resolution.ts',
     '../git/git-environment.ts',
     '../project/projects.ts',
     './review-command-cwd.ts',
