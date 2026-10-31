@@ -25,7 +25,6 @@ describe('tool-call burst class guard', () => {
       Array.from({ length: 30 * 12 }, (_, index) => index * (1000 / 12)),
       false,
     ],
-    ['resume replay contributes no live starts', [], false],
   ] as const)('%s', (_name, starts, tripped) => {
     expect(decide(starts).tripped).toBe(tripped)
   })

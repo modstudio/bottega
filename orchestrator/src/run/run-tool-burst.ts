@@ -5,13 +5,10 @@ import { appendRunEvent, isToolCallStart, type StreamEvent } from '../events.ts'
 import type { classify } from '../failure/failure.ts'
 import { type TerminateResult, terminateProcessGroup } from '../idle-kill.ts'
 import type { OutcomeStatus } from '../outcome.ts'
-import {
-  EMPTY_VENDOR_USAGE,
-  type TransportHandle,
-  type TransportResult,
-} from '../transport/transport.ts'
+import type { TransportHandle, TransportResult } from '../transport/transport.ts'
 import type { CheckpointResult } from './checkpoint.ts'
 import type { CheckpointSchedule } from './checkpoint-schedule.ts'
+import { unkillableKillResult } from './run-idle-kill.ts'
 import {
   decideToolCallBurst,
   EMPTY_TOOL_CALL_BURST,
@@ -57,33 +54,9 @@ export async function performToolBurstKill(input: {
   input.state.terminateResult = terminated
   if (terminated.unkillable) {
     input.state.error = `${input.state.error}; ${terminated.reason}`
-    input.forceCollect(unkillableToolBurstResult(input.state.error, input.handle.pid ?? 0))
+    input.forceCollect(unkillableKillResult(input.state.error, input.handle.pid ?? 0, 'tool_burst'))
   }
   if (input.writesJob) input.checkpoint.request('limit')
-}
-
-/** A collected-as-failed result for a tool-burst tree that survived SIGKILL. */
-function unkillableToolBurstResult(error: string, pid: number): TransportResult {
-  return {
-    stdout: '',
-    stderr: error,
-    raw: '',
-    parsed: null,
-    output: '',
-    tokens: null,
-    costUsd: null,
-    vendorUsage: EMPTY_VENDOR_USAGE,
-    sessionId: null,
-    stopReason: 'timeout',
-    error,
-    exitCode: -1,
-    pid,
-    events: [],
-    asking: false,
-    failureKind: 'tool_burst',
-    status: 'failed',
-    questions: [],
-  }
 }
 
 export function observeToolBurst(input: {

@@ -82,6 +82,7 @@ describe('tool_call_update folds into its tool_call', () => {
     const tools = result.events.filter((event) => event.kind === 'tool')
     expect(tools).toHaveLength(1)
     expect(tools[0]).toMatchObject({
+      phase: 'start',
       status: 'completed',
       toolKind: 'read',
       target: '/tmp/probe/probe.txt',
@@ -115,7 +116,9 @@ describe('tool_call_update folds into its tool_call', () => {
         },
       ],
     })
-    expect(result.events.filter((event) => event.kind === 'tool')).toHaveLength(2)
+    expect(
+      result.events.filter((event) => event.kind === 'tool').map((event) => event.phase),
+    ).toEqual(['start', 'update'])
     expect(registrationProbeReadsRepo(result.events, result.output)).toBe(false)
   })
 })
