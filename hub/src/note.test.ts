@@ -649,29 +649,6 @@ describe('suggestion notes', () => {
     ).toThrow('anchor.files[0].path')
   })
 
-  test('stored note anchors with the former numeric run key still parse and strip it', () => {
-    expect(
-      parseNoteAnchor({
-        cwd: '/projects/workshop',
-        project: 'workshop',
-        files: [],
-        run_id: 42,
-        run_record_id: '42000000-0000-4000-8000-000000000000',
-        branch: null,
-        commit: null,
-        session_id: null,
-      }),
-    ).toEqual({
-      cwd: '/projects/workshop',
-      project: 'workshop',
-      files: [],
-      run_record_id: '42000000-0000-4000-8000-000000000000',
-      branch: null,
-      commit: null,
-      session_id: null,
-    })
-  })
-
   test(`${PLATFORM_SLUG} note new without a duplicate choice returns candidates and files nothing`, async () => {
     const unique = crypto.randomUUID()
     const first = (

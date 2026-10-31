@@ -75,8 +75,12 @@ test('worker note anchors contain only run and injected file facts', () => {
 
 test('worker note refusals show their stored cause without leaking secret-shaped detail', () => {
   expect(workerNoteRefusalMessage('filing-refused', 'schema mismatch')).toContain('schema mismatch')
-  expect(workerNoteRefusalMessage('anchor-refused', 'unsafe anchor')).toContain('unsafe anchor')
-  expect(workerNoteRefusalMessage('supervisor-closed', 'run stopped')).toContain('run stopped')
+  expect(workerNoteRefusalMessage('anchor-refused', 'unsafe anchor')).toContain(
+    'the file anchor was refused by the host',
+  )
+  expect(workerNoteRefusalMessage('supervisor-closed', 'run stopped')).toContain(
+    'the supervising run ended before filing completed',
+  )
   expect(workerNoteRefusalMessage('filing-refused', 'token=hidden')).toContain('detail withheld')
   expect(workerNoteRefusalMessage('filing-refused', null)).toContain('without recording a cause')
 })

@@ -1,8 +1,12 @@
 import { expect, test } from 'bun:test'
+import { newRecordId } from '../../../shared/record-id.ts'
+import { addRun } from '../../test/fixtures/store.ts'
+import { db } from '../database/db.ts'
 import {
   WORKER_NOTE_SILENCE_WINDOW_MS,
   type WorkerNoteSilenceFacts,
   workerNoteSilenceCondition,
+  workerNoteSilenceConditions,
 } from './worker-note-silence-conditions.ts'
 
 const clock = new Date('2026-10-31T20:00:00.000Z').getTime()
@@ -51,4 +55,38 @@ test('refusals outside the observation window are ignored', () => {
       clock,
     ),
   ).toBeNull()
+})
+
+test('worker note silence reader observes only requests inside the window', () => {
+  const database = db()
+  const runId = addRun({ agent: 'codex', job: 'implement' })
+  const insideWindow = new Date(clock - 60_000).toISOString()
+  const outsideWindow = new Date(clock - WORKER_NOTE_SILENCE_WINDOW_MS - 1).toISOString()
+  const insertRefusal = database.query(
+    `INSERT INTO worker_note_request
+       (record_id,run_record_id,text,requested_at,finished_at,status,refusal_class,detail)
+     VALUES (?,?,?, ?,?,'refused','anchor-refused','anchor schema mismatch')`,
+  )
+
+  insertRefusal.run(newRecordId(), runId, 'inside refusal', insideWindow, insideWindow)
+  expect(workerNoteSilenceConditions(database, clock)).toEqual([
+    expect.objectContaining({
+      kind: 'worker-note-silence',
+      subject: 'worker-note-request',
+      detail: expect.stringContaining('anchor-refused: anchor schema mismatch'),
+    }),
+  ])
+
+  database
+    .query(
+      `INSERT INTO worker_note_request
+         (record_id,run_record_id,text,requested_at,finished_at,status,note_label)
+       VALUES (?,?,?, ?,?,'filed','workshop#1')`,
+    )
+    .run(newRecordId(), runId, 'inside filing', insideWindow, insideWindow)
+  expect(workerNoteSilenceConditions(database, clock)).toEqual([])
+
+  database.query(`DELETE FROM worker_note_request WHERE run_record_id=?`).run(runId)
+  insertRefusal.run(newRecordId(), runId, 'old refusal', outsideWindow, outsideWindow)
+  expect(workerNoteSilenceConditions(database, clock)).toEqual([])
 })

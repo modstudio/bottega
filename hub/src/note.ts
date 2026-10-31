@@ -48,10 +48,8 @@ export type NoteAnchor = NoteAnchorWire
 
 export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
 
-const noteAnchorSchema = noteAnchorWireSchema
-
 export function parseNoteAnchor(value: unknown): NoteAnchor {
-  return noteAnchorSchema.parse(value)
+  return noteAnchorWireSchema.parse(value)
 }
 
 export function confineExplicitNoteAnchor(
