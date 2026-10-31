@@ -391,6 +391,19 @@ export type LiveResult = {
   workerEvents: StreamEvent[]
 }
 
+function observeCollectedTurn(
+  runId: string,
+  harness: string,
+  collected: TransportResult,
+): StreamEvent[] {
+  const event = askExposureEvent(harness, collected.askExposure, nowIso())
+  if (event) appendRunEvent(runId, event)
+  return collected.events.filter(
+    (item): item is StreamEvent =>
+      item.kind === 'text' || item.kind === 'usage' || item.kind === 'tool',
+  )
+}
+
 function vendorProcessSample(pid: number | null): ProcessSample | undefined {
   return pid && pid > 1 ? sampleProcesses().find((row) => row.pid === pid) : undefined
 }
@@ -810,15 +823,10 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
     const collected = await Promise.race([handle.collect(), forcedCollect])
-    workerEvents = collected.events.filter(
-      (event): event is StreamEvent =>
-        event.kind === 'text' || event.kind === 'usage' || event.kind === 'tool',
-    )
+    workerEvents = observeCollectedTurn(claim.id, a.harness ?? a.name, collected)
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
-    const exposureEvent = askExposureEvent(a.harness ?? a.name, collected.askExposure, nowIso())
-    if (exposureEvent) appendRunEvent(claim.id, exposureEvent)
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.

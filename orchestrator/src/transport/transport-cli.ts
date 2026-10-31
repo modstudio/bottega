@@ -6,8 +6,8 @@ import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
-import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
+import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
 import { codexRolloutTextsSince, confinedCodexRollouts } from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
@@ -38,6 +38,19 @@ function cliUsage(estimatedCostUsd: number | null) {
       ? EMPTY_VENDOR_USAGE
       : { ...EMPTY_VENDOR_USAGE, estimatedCostUsd, costSource: 'estimated' }
   return { costUsd: null, vendorUsage }
+}
+
+function codexRolloutEvidence(
+  codex: boolean,
+  home: string | undefined,
+  offsets: Map<string, number>,
+) {
+  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined }
+  const texts = codexRolloutTextsSince(home, offsets)
+  return {
+    quotaReadings: parseCodexQuotaReadings(texts.slice),
+    askExposure: codexAskExposureFromTexts(texts.slice, texts.full),
+  }
 }
 
 function eventForBilling(billing: AgentBilling, event: NormalizedEvent): NormalizedEvent {
@@ -213,15 +226,11 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
-        const rolloutTexts = codex
-          ? codexRolloutTextsSince(codexHome, rolloutOffsets)
-          : { slice: '', full: '' }
-        const quotaReadings = codex
-          ? parseCodexQuotaReadings(rolloutTexts.slice)
-          : EMPTY_QUOTA_READINGS
-        const askExposure = codex
-          ? codexAskExposureFromTexts(rolloutTexts.slice, rolloutTexts.full)
-          : undefined
+        const { quotaReadings, askExposure } = codexRolloutEvidence(
+          codex,
+          codexHome,
+          rolloutOffsets,
+        )
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({

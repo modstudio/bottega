@@ -694,6 +694,31 @@ function summarizeFocusedTestEvent(
   }
 }
 
+function summarizeAskEvent(
+  event: Extract<
+    RunLogEvent,
+    { type: 'ask_expected' | 'ask_started' | 'ask_listed' | 'ask_exposure' }
+  >,
+): PeekEventSummary {
+  if (event.type === 'ask_expected') {
+    return {
+      type: 'ask_expected',
+      transport: event.transport,
+      ...(event.command ? { command: event.command } : {}),
+      ...(event.endpoint ? { endpoint: event.endpoint } : {}),
+    }
+  }
+  if (event.type === 'ask_started' || event.type === 'ask_listed') {
+    return { type: event.type, tools: event.tools }
+  }
+  return {
+    type: event.type,
+    surface: event.surface,
+    cli_version: event.cli_version,
+    note: event.note,
+  }
+}
+
 function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'text') return { type: 'text', text: event.text.slice(0, PEEK_TEXT_CHARS) }
   if (event.type === 'warning')
@@ -713,24 +738,13 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'usage') return { type: 'usage', tokens: event.tokens }
   if (event.type === 'throttled' || event.type === 'capacity_wait')
     return summarizeOperationalEvent(event)
-  if (event.type === 'ask_expected') {
-    return {
-      type: 'ask_expected',
-      transport: event.transport,
-      ...(event.command ? { command: event.command } : {}),
-      ...(event.endpoint ? { endpoint: event.endpoint } : {}),
-    }
-  }
-  if (event.type === 'ask_started' || event.type === 'ask_listed')
-    return { type: event.type, tools: event.tools }
-  if (event.type === 'ask_exposure') {
-    return {
-      type: event.type,
-      surface: event.surface,
-      cli_version: event.cli_version,
-      note: event.note,
-    }
-  }
+  if (
+    event.type === 'ask_expected' ||
+    event.type === 'ask_started' ||
+    event.type === 'ask_listed' ||
+    event.type === 'ask_exposure'
+  )
+    return summarizeAskEvent(event)
   if (event.type === 'focused_test' || event.type === 'focused_test_refusal')
     return summarizeFocusedTestEvent(event)
   if (event.type === 'gate_log') return { type: 'gate_log' }
@@ -854,6 +868,21 @@ function formatOperationalPeekEvent(event: OperationalPeekEvent): string {
   return `  ${detail} (codex concurrency ${event.concurrency})`
 }
 
+function formatAskPeekEvent(
+  event: Extract<
+    PeekEventSummary,
+    { type: 'ask_expected' | 'ask_started' | 'ask_listed' | 'ask_exposure' }
+  >,
+): string {
+  if (event.type === 'ask_expected') {
+    return `  ask expected ${event.transport} ${event.command?.join(' ') ?? event.endpoint ?? ''}`
+  }
+  if (event.type === 'ask_exposure') {
+    return `  ask exposure ${event.surface}${event.cli_version ? ` ${event.cli_version}` : ''}`
+  }
+  return `  ask ${event.type === 'ask_started' ? 'started' : 'listed'} ${event.tools.join(',')}`
+}
+
 function formatPeekEvent(event: PeekEventSummary): string {
   if ('text' in event) return `  ${event.type} ${event.text}`
   if (event.type === 'note') {
@@ -867,14 +896,13 @@ function formatPeekEvent(event: PeekEventSummary): string {
   }
   if (event.type === 'usage' || event.type === 'throttled' || event.type === 'capacity_wait')
     return formatOperationalPeekEvent(event)
-  if (event.type === 'ask_expected') {
-    return `  ask expected ${event.transport} ${event.command?.join(' ') ?? event.endpoint ?? ''}`
-  }
-  if (event.type === 'ask_started') return `  ask started ${event.tools.join(',')}`
-  if (event.type === 'ask_listed') return `  ask listed ${event.tools.join(',')}`
-  if (event.type === 'ask_exposure') {
-    return `  ask exposure ${event.surface}${event.cli_version ? ` ${event.cli_version}` : ''}`
-  }
+  if (
+    event.type === 'ask_expected' ||
+    event.type === 'ask_started' ||
+    event.type === 'ask_listed' ||
+    event.type === 'ask_exposure'
+  )
+    return formatAskPeekEvent(event)
   if (isArtifactPeekEvent(event)) return formatArtifactPeekEvent(event)
   return '  ask initialized'
 }
