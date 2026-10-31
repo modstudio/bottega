@@ -393,7 +393,7 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
   }
   if (rows.length) {
     log(
-      'job / prompt bucket            agent        runs  judged    raw  shrunk  policy                   median    vendor tokens  calls  peak call  tokens/run      cost  $/accepted',
+      'job / prompt bucket            agent        runs  judged    raw  shrunk  policy                   median    vendor tokens  calls  peak call  tokens/run  burst runs  burst peak      cost  $/accepted',
     )
     for (const r of rows) {
       const score = r.score === null ? '—' : `${(r.score * 100).toFixed(0)}%`
@@ -412,6 +412,7 @@ export function statsCommand(flags: RoutingFlags, presentation: RoutingPresentat
           ` ${score.padStart(6)} ${shrunk.padStart(7)} ${policy.padEnd(24)} ${dur(r.latencyMs).padStart(8)} ${r.tokens.toLocaleString().padStart(17)}` +
           ` ${metric(r.usage.modelCalls).padStart(6)} ${metric(r.usage.peakCallTokens).padStart(10)}` +
           ` ${metric(r.usage.tokensPerRun).padStart(11)}` +
+          ` ${String(r.toolBursts.runs).padStart(11)} ${metric(r.toolBursts.peak).padStart(11)}` +
           ` ${cost.padStart(9)} ${costPerAccepted.padStart(11)}`,
       )
     }

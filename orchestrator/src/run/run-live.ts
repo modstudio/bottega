@@ -73,6 +73,12 @@ import { collectReplySource, replyContract } from './run-reply-source.ts'
 import { checkpointRoot, resumeFacts } from './run-resume-kind.ts'
 import { firstThrottleObserver, throttleReplyError } from './run-throttle.ts'
 import {
+  newToolBurstState,
+  observeToolBurst,
+  performToolBurstKill,
+  recordToolBurstObservation,
+} from './run-tool-burst.ts'
+import {
   appendGateExclusionToTimeoutError,
   currentExcludedGateMs,
   decideRunWallDeadline,
@@ -86,6 +92,7 @@ import {
   startWorkerExecutionBrokers,
   type WorkerExecutionBrokers,
 } from './run-worker-brokers.ts'
+import { toolCallBurstAction } from './tool-call-burst.ts'
 
 function readReplyFile(path: string): string | null {
   return existsSync(path) ? readFileSync(path, 'utf8') : null
@@ -391,6 +398,18 @@ export type LiveResult = {
   workerEvents: StreamEvent[]
 }
 
+export function applyToolBurstOutcome(
+  killed: boolean,
+  burstError: string | null,
+  outcome: {
+    status: OutcomeStatus
+    failureKind: ReturnType<typeof classify> | null
+    error: string | null
+  },
+): typeof outcome {
+  return killed ? { status: 'failed', failureKind: 'tool_burst', error: burstError } : outcome
+}
+
 function observeCollectedTurn(
   runId: string,
   harness: string,
@@ -475,10 +494,12 @@ function teeLiveTransport(
   handle: TransportHandle,
   observe: (event: StreamEvent) => void,
   callUsage: { value: RunCallUsage | null },
+  observeBurst: (event: StreamEvent) => void,
 ) {
   return teeTransportEvents(handle.events(), input.claim.id, input.throttleConcurrency, (event) => {
     observe(event)
     callUsage.value = foldRunCallUsage(callUsage.value, event)
+    observeBurst(event)
   })
 }
 
@@ -570,6 +591,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     treePids: [],
     treePgid: null,
   }
+  const toolBurst = newToolBurstState()
   let exitCode = -1
   let output = ''
   let vendorTokens: number | null = null,
@@ -755,7 +777,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     wallArmedAtMs = Date.now()
     const expireWall = () => {
       rearmWallDeadline = () => {}
-      if (idleKill.killed) return
+      if (idleKill.killed || toolBurst.killed) return
       excludedGateMsAtTimeout = currentExcludedGateMs(
         wallArmedAtMs!,
         accruedGateMs,
@@ -794,7 +816,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       idlePollMs(jobIdleKillMs(opts.job, process.env, boundMs)),
       idleSnapshotObserver(
         claim.id,
-        () => timedOut || idleKill.killed,
+        () => timedOut || idleKill.killed || toolBurst.killed,
         (samples) =>
           performIdleKill({
             state: idleKill,
@@ -815,7 +837,24 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       ),
     )
     const throttle = firstThrottleObserver(() => void t.cancel(handle))
-    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage)
+    const toolStarts: number[] = []
+    const seenToolCallIds = new Set<string>()
+    const teeing = teeLiveTransport(input, handle, throttle.observe, callUsage, (event) =>
+      observeToolBurst({
+        state: toolBurst,
+        event,
+        harness: a.harness ?? a.name,
+        starts: toolStarts,
+        seenToolCallIds,
+        kill: () =>
+          performToolBurstKill({
+            handle,
+            cancel: () => void t.cancel(handle),
+            checkpoint: checkpointSchedule,
+            writesJob,
+          }),
+      }),
+    )
     await t.prompt(handle, prompt)
     await recordInitialDeliveries(
       claim.id,
@@ -823,10 +862,14 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
     const collected = await Promise.race([handle.collect(), forcedCollect])
+    if (toolBurst.termination) await toolBurst.termination
     workerEvents = observeCollectedTurn(claim.id, a.harness ?? a.name, collected)
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
+    if (toolCallBurstAction(a.harness ?? a.name) === 'observe') {
+      recordToolBurstObservation(claim.id, toolBurst.burst)
+    }
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.
@@ -992,6 +1035,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       )
     }
     ;({ status, failureKind } = decideOutcome(derived.inputs))
+    ;({ status, failureKind, error } = applyToolBurstOutcome(toolBurst.killed, toolBurst.error, {
+      status,
+      failureKind,
+      error,
+    }))
   } catch (e) {
     // Spawn refused, a pipe broke, the output file could not be written. The row
     // exists and must not be left claiming to run.

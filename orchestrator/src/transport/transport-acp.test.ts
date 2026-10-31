@@ -56,6 +56,7 @@ import {
   grokEffectiveModel,
   grokSessionMeta,
   normalizeAcpTurn,
+  observeAcpUpdate,
   persistAcpUpdates,
   resolveAcpEditLocations,
 } from './transport-acp.ts'
@@ -968,6 +969,44 @@ describe('strict schema matching used on the ACP path', () => {
 })
 
 describe('tool_call_update folds into its tool_call', () => {
+  test('session/load replay before prompting publishes no live tool starts', () => {
+    const published: unknown[] = []
+    const updates: unknown[] = []
+    for (let index = 0; index < 240; index++) {
+      observeAcpUpdate(
+        {
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: `replay-${index}`,
+            title: 'replayed call',
+          },
+        },
+        updates,
+        '/dev/null',
+        'loaded-session',
+        (event) => published.push(event),
+        'unknown',
+        false,
+      )
+      observeAcpUpdate(
+        {
+          update: {
+            sessionUpdate: 'tool_call_update',
+            toolCallId: `replay-${index}`,
+            status: 'completed',
+          },
+        },
+        updates,
+        '/dev/null',
+        'loaded-session',
+        (event) => published.push(event),
+        'unknown',
+        false,
+      )
+    }
+    expect(published).toEqual([])
+  })
+
   test('a goose-shaped read (call with target, update with only the status) satisfies the readsRepo probe gate', async () => {
     const { registrationProbeReadsRepo } = await import('../agent/agent-probe.ts')
     const result = normalizeAcpTurn({
@@ -1018,7 +1057,7 @@ describe('tool_call_update folds into its tool_call', () => {
     expect(registrationProbeReadsRepo(result.events, result.output)).toBe(true)
   })
 
-  test('an update naming no known call stays its own event, and an unrelated tool plus a hallucinated output without the sentinel still fails the gate', async () => {
+  test('an update naming no known call stays an update event, and an unrelated tool plus a hallucinated output without the sentinel still fails the gate', async () => {
     const { registrationProbeReadsRepo } = await import('../agent/agent-probe.ts')
     const result = normalizeAcpTurn({
       sessionId: 's',

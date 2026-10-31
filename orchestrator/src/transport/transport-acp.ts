@@ -283,6 +283,8 @@ function toolEvent(update: AcpUpdate): Extract<NormalizedEvent, { kind: 'tool' }
   const fields = toolUpdateFields(update)
   return {
     kind: 'tool',
+    phase: update.sessionUpdate === 'tool_call_update' ? 'update' : 'start',
+    toolCallId: update.toolCallId,
     title: update.title ?? update.sessionUpdate,
     status: update.status,
     toolKind: update.kind,
@@ -629,19 +631,20 @@ function acpWorkerChannel(opts: TransportStartOpts): acp.McpServer[] {
   ]
 }
 
-function observeAcpUpdate(
+export function observeAcpUpdate(
   params: unknown,
   updates: unknown[],
   outPath: string,
   sessionId: string | null,
   pushEvent: (event: NormalizedEvent) => void,
   billing: AgentBilling,
+  live = true,
 ): void {
   updates.push(params)
   const folded = normalizeAcpTurn({ sessionId, updates: [params] }, billing)
   if (folded.output) appendFileSync(outPath, folded.output)
   for (const event of folded.events) {
-    if (event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
+    if (live && event.kind !== 'session' && event.kind !== 'stop') pushEvent(event)
   }
 }
 
@@ -740,8 +743,19 @@ async function openAcp(opts: TransportStartOpts): Promise<TransportHandle> {
     const wait = eventWaiters.shift()
     if (wait) wait(event)
   }
+  // session/load reports the loaded transcript through the same notifications as
+  // a live turn. `prompted` flips immediately before session/prompt is sent, so
+  // notifications before it are replay and cannot enter the live event stream.
   const observeUpdate = (req: { params: unknown }) =>
-    observeAcpUpdate(req.params, updates, opts.outPath, sessionId, pushEvent, opts.agent.billing)
+    observeAcpUpdate(
+      req.params,
+      updates,
+      opts.outPath,
+      sessionId,
+      pushEvent,
+      opts.agent.billing,
+      prompted,
+    )
 
   const app = acp
     .client({ name: MCP_SERVER_NAME })

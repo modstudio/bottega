@@ -13,6 +13,8 @@ export type StreamEvent =
   | { kind: 'usage'; tokens: number; costUsd: number | null; per: 'call' | 'turn' }
   | {
       kind: 'tool'
+      phase?: 'start' | 'update'
+      toolCallId?: string
       title: string
       status?: string
       toolKind?: string
@@ -85,6 +87,13 @@ export type RunLogEvent =
       title: string
       input?: string
       locations?: Array<{ path: string }>
+    }
+  | {
+      ts: string
+      type: 'tool_burst_observed'
+      count: number
+      windowMs: number
+      peakAt: string
     }
   | { ts: string; type: 'tool_result'; status?: string; bytes?: number; text?: string }
   | { ts: string; type: 'usage'; tokens: number; costUsd?: number | null }
@@ -320,7 +329,7 @@ function observedToolEvents(
     event.locations?.filter((item) => item.path) ??
     (event.target ? [{ path: event.target }] : undefined)
   const events: RunLogEvent[] = []
-  if (event.title || event.toolKind || locations?.length) {
+  if (event.phase !== 'update' && (event.title || event.toolKind || locations?.length)) {
     events.push({
       ts,
       type: 'tool_call',
