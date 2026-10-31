@@ -562,7 +562,9 @@ export async function runInboxCommand(
     if (q.session_id === null) {
       log('        unowned — any session may rule, and the answering identity is recorded')
     }
-    runGroupFooter(q, answerable[index + 1]).forEach((line) => log(line))
+    runGroupFooter(q, answerable[index + 1]).forEach((line) => {
+      log(line)
+    })
   }
   for (const r of recoverable) {
     const stranded = chainHasPendingDelivery(r.record_id)
