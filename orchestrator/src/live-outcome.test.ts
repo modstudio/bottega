@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { resolveReplyDialect } from './contract/contract.ts'
 import { COOLS_DOWN, FAILS_OVER, NOT_EVIDENCE } from './failure/failure.ts'
+import { job } from './jobs/jobs.ts'
 import {
   composeCompletedReplyEndedError,
   deriveLiveOutcome,
@@ -7,6 +9,8 @@ import {
   type LiveOutcomeFacts,
 } from './live-outcome.ts'
 import { decideOutcome } from './outcome.ts'
+import { decideFailover } from './route/failover.ts'
+import { collectReplySource, type ReplyContract } from './run/run-reply-source.ts'
 import { composeCodexThrottleNotice } from './transport/codex-throttle.ts'
 
 const base: LiveOutcomeFacts = {
@@ -153,9 +157,237 @@ describe('live outcome derivation', () => {
       }),
     ).toEqual({
       status: 'failed',
-      failureKind: 'other',
+      failureKind: 'contract',
       error: `${stderr}\n${replyNotice.trimEnd()}`,
     })
+  })
+})
+
+const readerReply = JSON.stringify({
+  deliverables: [],
+  narrative: 'The requested survey is complete.',
+  files_written: null,
+})
+const textReply = JSON.stringify({ answer: 'The requested answer is complete.' })
+const customSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['count'],
+  properties: { count: { type: 'number' } },
+} as const
+const customReply = JSON.stringify({ count: 2 })
+
+function composedFallbackDecision(input: {
+  contract: ReplyContract
+  fallbackText: string
+  dialect: ReturnType<typeof resolveReplyDialect>
+  schema: unknown
+  writesJob?: boolean
+  facts?: Partial<LiveOutcomeFacts>
+}) {
+  const source = collectReplySource({
+    replyFileText: null,
+    fallbackText: input.fallbackText,
+    contract: input.contract,
+    dialect: input.dialect,
+    schema: input.schema,
+  })
+  const parsed = input.writesJob ? input.dialect.parse(source.output).reply : null
+  const derived = deriveLiveOutcome({
+    ...base,
+    writesJob: input.writesJob ?? false,
+    contractStatus:
+      parsed && typeof parsed === 'object' && 'status' in parsed
+        ? ((parsed as { status: 'done' | 'asking' | 'refused' }).status ?? null)
+        : null,
+    output: source.output,
+    replyFilePresent: source.replyFilePresent,
+    replyFileError: source.replyFileError,
+    ...input.facts,
+  })
+  const result = decideOutcome(derived.inputs)
+  const failover = decideFailover({
+    status: result.status,
+    failureKind: result.failureKind,
+    failoverKinds: FAILS_OVER,
+    noFailover: false,
+    chainRoot: null,
+    writesJob: false,
+    changes: { files: [] },
+    worktree: '(none — read-only job)',
+    attemptCount: 1,
+    maxAttempts: 3,
+    agentsTried: ['worker'],
+    originalPromptAvailable: true,
+  })
+  return { ...result, error: derived.error, failover: failover.kind }
+}
+
+describe('final-message fallback contract composition', () => {
+  const readerDialect = resolveReplyDialect(job('understand'))
+  const textDialect = resolveReplyDialect(job('summarize'))
+  const writerDialect = resolveReplyDialect(job('implement'))
+  test.each([
+    {
+      name: 'none contract rejects a prose preamble',
+      contract: 'none' as const,
+      fallbackText: "I'll start by reading the task definitions and current implementation.",
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      expected: {
+        status: 'failed',
+        failureKind: 'contract',
+        error:
+          "reply.json missing; final message reply did not match the worker contract:\nI'll start by reading the task definitions and current implementation.",
+        failover: 'select',
+      },
+    },
+    {
+      name: 'none contract accepts a reader reply',
+      contract: 'none' as const,
+      fallbackText: readerReply,
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
+    },
+    {
+      name: 'text contract rejects a prose preamble',
+      contract: 'text' as const,
+      fallbackText:
+        "I'll start by reading the task.\nRan into this error trying to compact: Server error: Upstream error from Inception",
+      dialect: textDialect,
+      schema: textDialect.schema,
+      expected: {
+        status: 'failed',
+        failureKind: 'contract',
+        error:
+          "reply.json missing; final message reply did not match the worker contract:\nI'll start by reading the task.\nRan into this error trying to compact: Server error: Upstream error from Inception",
+        failover: 'select',
+      },
+    },
+    {
+      name: 'text contract accepts its answer object',
+      contract: 'text' as const,
+      fallbackText: textReply,
+      dialect: textDialect,
+      schema: textDialect.schema,
+      expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
+    },
+    {
+      name: 'custom contract rejects a prose preamble',
+      contract: 'custom' as const,
+      fallbackText: 'I will count the requested records next.',
+      dialect: textDialect,
+      schema: customSchema,
+      expected: {
+        status: 'failed',
+        failureKind: 'contract',
+        error:
+          'reply.json missing; final message reply did not match the worker contract:\nI will count the requested records next.',
+        failover: 'select',
+      },
+    },
+    {
+      name: 'custom contract accepts its schema instance',
+      contract: 'custom' as const,
+      fallbackText: customReply,
+      dialect: textDialect,
+      schema: customSchema,
+      expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
+    },
+    {
+      name: 'goose provider error keeps its provider classification',
+      contract: 'none' as const,
+      fallbackText:
+        'Ran into this error: Request failed: Bad request (400): Provider returned error.\n\n' +
+        'Please retry if you think this is a transient or recoverable error.',
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      expected: {
+        status: 'failed',
+        failureKind: 'provider_error',
+        error:
+          'Ran into this error: Request failed: Bad request (400): Provider returned error.\n\nPlease retry if you think this is a transient or recoverable error.',
+        failover: 'select',
+      },
+    },
+    {
+      name: 'writer with no reply is a contract failure',
+      contract: 'none' as const,
+      fallbackText: '',
+      dialect: writerDialect,
+      schema: writerDialect.schema,
+      writesJob: true,
+      expected: {
+        status: 'failed',
+        failureKind: 'contract',
+        error: 'reply.json missing; final message reply did not match the worker contract:',
+        failover: 'select',
+      },
+    },
+    {
+      name: 'reply error outranks a missing-file contract mismatch',
+      contract: 'none' as const,
+      fallbackText: "I'll start by reading the task.",
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      facts: { replyError: composeCodexThrottleNotice({ attempt: 1, max: 5 }) },
+      expected: {
+        status: 'failed',
+        failureKind: 'quota',
+        error: composeCodexThrottleNotice({ attempt: 1, max: 5 }),
+        failover: 'select',
+      },
+    },
+    {
+      name: 'timeout error outranks a missing-file contract mismatch',
+      contract: 'none' as const,
+      fallbackText: "I'll start by reading the task.",
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      writesJob: true,
+      facts: { timedOut: true, exitCode: 143 },
+      expected: {
+        status: 'failed',
+        failureKind: 'timeout',
+        error: 'no reply within 45m; worker was killed',
+        failover: 'none',
+      },
+    },
+    {
+      name: 'output ceiling error outranks a missing-file contract mismatch',
+      contract: 'none' as const,
+      fallbackText: "I'll start by reading the task.",
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      facts: { outputCeilingReached: true },
+      expected: {
+        status: 'failed',
+        failureKind: 'truncated',
+        error: 'response truncated at output ceiling (max_tokens)',
+        failover: 'none',
+      },
+    },
+    {
+      name: 'asking outranks a missing-file contract mismatch',
+      contract: 'none' as const,
+      fallbackText: "I'll start by reading the task.",
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      facts: { collectedAsking: true },
+      expected: { status: 'asking', failureKind: null, error: null, failover: 'none' },
+    },
+    {
+      name: 'timed-out completed reply outranks a missing-file contract mismatch',
+      contract: 'none' as const,
+      fallbackText: "I'll start by reading the task.",
+      dialect: readerDialect,
+      schema: readerDialect.schema,
+      facts: { timedOut: true, exitCode: 143 },
+      expected: { status: 'ok', failureKind: null, error: null, failover: 'none' },
+    },
+  ])('$name', ({ expected, ...input }) => {
+    expect(composedFallbackDecision(input)).toEqual(expected)
   })
 })
 

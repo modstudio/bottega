@@ -61,6 +61,14 @@ describe('outcome decision', () => {
       },
       { status: 'failed', failureKind: null },
     ],
+    [
+      'a classified missing writer contract keeps its failure kind',
+      {
+        missingRequiredContract: true,
+        missingContractFailureKind: 'quota',
+      },
+      { status: 'failed', failureKind: 'quota' },
+    ],
   ] as const)('%s', (_name, facts, expected) => {
     expect(decideOutcome({ ...base, ...facts })).toEqual(expected)
   })

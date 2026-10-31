@@ -88,11 +88,12 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'a nonmatching text fallback keeps prose and rewrites',
+      name: 'a nonmatching text fallback reports the missing file and rewrites',
       facts: { ...baseFacts, contract: 'text' },
       expected: {
         output: 'transport result',
-        replyFileError: null,
+        replyFileError:
+          'reply.json missing; final message reply did not match the worker contract:\ntransport result',
         replyFilePresent: false,
         replyFileValue: null,
         rewriteOutputFile: true,
@@ -107,7 +108,8 @@ describe('reply source ruling', () => {
       },
       expected: {
         output: '{"count":"two"}',
-        replyFileError: 'reply did not match the worker contract:\n{"count":"two"}',
+        replyFileError:
+          'reply.json missing; final message reply did not match the worker contract:\n{"count":"two"}',
         replyFilePresent: false,
         replyFileValue: null,
         rewriteOutputFile: false,
@@ -129,11 +131,12 @@ describe('reply source ruling', () => {
       },
     },
     {
-      name: 'no contract leaves the fallback untouched and does not rewrite',
+      name: 'a nonmatching dialect fallback reports the missing file without rewriting',
       facts: baseFacts,
       expected: {
         output: 'transport result',
-        replyFileError: null,
+        replyFileError:
+          'reply.json missing; final message reply did not match the worker contract:\ntransport result',
         replyFilePresent: false,
         replyFileValue: null,
         rewriteOutputFile: false,

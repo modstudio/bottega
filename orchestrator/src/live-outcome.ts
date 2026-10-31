@@ -1,7 +1,7 @@
 // concern: live-outcome
 import { containsSecretShaped } from '../../shared/secret-shaped.ts'
 import { classify, FAILS_OVER, type FailureKind, isNonAnswer } from './failure/failure.ts'
-import type { OutcomeInputs } from './outcome.ts'
+import { decideOutcomeRule, type OutcomeInputs, type OutcomeRule } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
 import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
 
@@ -90,7 +90,7 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   )
   const missingContractFailureKind = FAILS_OVER.includes(classifiedMissingContract)
     ? classifiedMissingContract
-    : 'other'
+    : 'contract'
   const defaultError = errorTail(
     facts.stderr.trim() || facts.stdout.trim() || `exit ${facts.exitCode}, empty output`,
   )
@@ -229,44 +229,33 @@ function deriveError(facts: LiveOutcomeFacts, calculated: CalculatedOutcome): st
       stderr: facts.stderr,
     })
   }
-  const rules: Array<[boolean, () => string | null]> = [
-    [facts.idleKilled && inputs.completedReply, () => null],
-    [facts.idleKilled && (facts.collectedAsking || facts.acceptedQuestions), () => null],
-    [facts.idleKilled, () => errorTail(facts.idleKillError ?? 'idle-killed with no CPU')],
-    [
-      inputs.acpVendorStop,
-      () => errorTail(facts.transportError ?? stopErrorMessage(facts.transportStopReason!)),
-    ],
-    [Boolean(facts.replyFileError), () => errorTail(facts.replyFileError!)],
-    [facts.collectedAsking || facts.acceptedQuestions, () => null],
-    [
-      facts.outputCeilingReached,
-      () => `response truncated at output ceiling (${facts.outputCeilingStopReason})`,
-    ],
-    [facts.timedOut && inputs.completedReplyAtTimeout, () => null],
-    [
-      facts.timedOut,
-      () => `no reply within ${Math.round(facts.boundMs / 60_000)}m; ${facts.agentName} was killed`,
-    ],
-    [Boolean(facts.replyError), () => errorTail(facts.replyError!)],
-    [inputs.nonAnswer, () => errorTail(facts.output)],
-    [facts.contractStatus === 'refused', () => null],
-    [facts.exitCode !== 0 && facts.contractStatus === 'done', completedReplyEndedError],
-    [
-      inputs.missingRequiredContract,
-      () =>
-        FAILS_OVER.includes(calculated.classifiedMissingContract)
-          ? errorTail(calculated.missingContractTerminal)
-          : errorTail(`reply did not match the worker contract:\n${facts.output}`),
-    ],
-  ]
-  const matched = rules.find(([applies]) => applies)
-  const error = matched
-    ? matched[1]()
-    : facts.exitCode === 0 && facts.output
-      ? null
-      : calculated.defaultError
-  if (matched?.[1] === completedReplyEndedError) return error
+  const rule = decideOutcomeRule(inputs)
+  const messages: Record<OutcomeRule, () => string | null> = {
+    'idle-completed': () => null,
+    'idle-asking': () => null,
+    idle: () => errorTail(facts.idleKillError ?? 'idle-killed with no CPU'),
+    'acp-vendor-stop': () =>
+      errorTail(facts.transportError ?? stopErrorMessage(facts.transportStopReason!)),
+    'reply-file-mismatch': () => errorTail(facts.replyFileError!),
+    asking: () => null,
+    truncated: () => `response truncated at output ceiling (${facts.outputCeilingStopReason})`,
+    'timeout-completed': () => null,
+    timeout: () =>
+      `no reply within ${Math.round(facts.boundMs / 60_000)}m; ${facts.agentName} was killed`,
+    'reply-error': () => errorTail(facts.replyError!),
+    'non-answer': () => errorTail(facts.output),
+    'missing-reply-contract': () => errorTail(facts.replyFileError!),
+    'contract-asking': () => null,
+    refused: () => null,
+    'completed-then-ended': completedReplyEndedError,
+    'missing-writer-contract': () =>
+      FAILS_OVER.includes(calculated.classifiedMissingContract)
+        ? errorTail(calculated.missingContractTerminal)
+        : errorTail(`reply did not match the worker contract:\n${facts.output}`),
+    default: () => (facts.exitCode === 0 && facts.output ? null : calculated.defaultError),
+  }
+  const error = messages[rule]()
+  if (rule === 'completed-then-ended') return error
   return withVendorStderrTail(facts, error)
 }
 
