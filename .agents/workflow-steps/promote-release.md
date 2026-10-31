@@ -10,8 +10,9 @@ needs:
   - release
   - ship-to
   - tracker
+  - merged-change
 ---
-The operator's ship-to level bounds this step. `facts.shipTo.reach` lists the release rungs this run may promote, in order: {{shipTo.reachText}}. Promote no other rung and run no other deploy. This step's own autonomy never widens that list.
+The operator's ship-to level bounds this step. `facts.shipTo.reach` lists the release rungs this run may promote, in order: {{shipTo.reachText}}. Rungs in `facts.shipTo.skipped` carry no release artifact in this change ({{shipTo.skippedText}}); run nothing for them, and name each with its reason in the task comment. Promote no other rung and run no other deploy. This step's own autonomy never widens that list.
 
 When the list is empty there is nothing to promote: record that ship to is `{{shipTo.level}}` and which rungs remain ({{shipTo.remainingText}}) with `{{tracker.actions.comment}}`. When that action is `bottega workflow attach`, save the note to a file, run `bottega workflow attach --cursor <cursor> --file <path>`, and close this step with the printed `attached-text:<id>` reference. Otherwise write the note as a tracker comment and close on that task evidence. A command exit is not evidence on this path.
 

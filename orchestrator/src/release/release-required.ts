@@ -49,24 +49,7 @@ export type RequiredReleaseRunner = {
 }
 
 const requiredReleaseRunner: RequiredReleaseRunner = {
-  changedPaths(project, mergeCommit) {
-    const trunk = project.settings.trunk
-    if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
-    git(
-      ['fetch', 'origin', trunk],
-      project.path,
-      targetGitEnvironment(project.path),
-      ' during landing-branch fetch',
-    )
-    return git(
-      ['diff', '--name-only', `${mergeCommit}^1`, mergeCommit],
-      project.path,
-      targetGitEnvironment(project.path),
-      ' during merge first-parent diff',
-    )
-      .split('\n')
-      .filter(Boolean)
-  },
+  changedPaths,
   prepareMain(project) {
     const trunk = project.settings.trunk
     if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
@@ -104,6 +87,25 @@ const requiredReleaseRunner: RequiredReleaseRunner = {
   release(project, rung) {
     return releaseProject(project.name, rung, undefined, undefined)
   },
+}
+
+export function changedPaths(project: Project, mergeCommit: string): string[] {
+  const trunk = project.settings.trunk
+  if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
+  git(
+    ['fetch', 'origin', trunk],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during landing-branch fetch',
+  )
+  return git(
+    ['diff', '--name-only', `${mergeCommit}^1`, mergeCommit],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during merge first-parent diff',
+  )
+    .split('\n')
+    .filter(Boolean)
 }
 
 function failure(rung: string, detail: string): RequiredRungRelease {

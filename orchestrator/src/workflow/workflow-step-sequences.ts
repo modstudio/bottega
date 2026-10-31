@@ -2,7 +2,11 @@
 /** Owns named workflow-step sequences and their flat expansion. */
 
 import type { CatalogueSequence, CatalogueStep } from './step-catalogue-definition.ts'
-import type { WorkflowModeStep, WorkflowStepCondition } from './workflow-definition.ts'
+import type {
+  WorkflowMode,
+  WorkflowModeStep,
+  WorkflowStepCondition,
+} from './workflow-definition.ts'
 
 export type ExpandedWorkflowStep = { slug: string; when?: WorkflowStepCondition }
 export type WorkflowStepInspection = {
@@ -103,6 +107,38 @@ export function expandWorkflowSteps(
   sequences: readonly CatalogueSequence[],
 ): string[] {
   return expandWorkflowModeSteps(entries, sequences).map(({ slug }) => slug)
+}
+
+export type ExpandedMode = {
+  mode: WorkflowMode
+  steps: ExpandedWorkflowStep[]
+}
+
+export function workflowStepSuccessor(
+  stepSlug: string,
+  catalogueSteps: readonly CatalogueStep[],
+  selectedMode: ExpandedMode | undefined,
+  containingModes: readonly ExpandedMode[],
+) {
+  const successor = ({ steps }: ExpandedMode) => {
+    const index = steps.findIndex((entry) => entry.slug === stepSlug)
+    if (index === steps.length - 1) return null
+    const nextEntry = steps[index + 1]!
+    const next = catalogueSteps.find((item) => item.slug === nextEntry.slug)!
+    return {
+      n: index + 2,
+      slug: next.slug,
+      title: next.title,
+      ...(nextEntry.when ? { when: nextEntry.when } : {}),
+    }
+  }
+  const successors = (selectedMode ? [selectedMode] : containingModes).map(successor)
+  if (selectedMode) return successors[0]
+  return successors.every(
+    (candidate) => JSON.stringify(candidate) === JSON.stringify(successors[0]),
+  )
+    ? successors[0]
+    : undefined
 }
 
 export function inspectWorkflowSteps(

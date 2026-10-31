@@ -28,9 +28,11 @@ import { cursorAutonomyOutput } from './workflow-autonomy-output.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from './workflow-built-ins.ts'
 import type { WorkflowDefinition, WorkflowMode, WorkflowModeStep } from './workflow-definition.ts'
 import {
+  mergedChangeSources,
   resolveWorkflowProjectFacts,
   stepNeedsCloseState,
   workflowCompositionFactExtras,
+  workflowCompositionFactNeeds,
 } from './workflow-project-facts.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import { checkWorkflowRendering, renderCheckRefusal } from './workflow-render-check.ts'
@@ -38,6 +40,7 @@ import { workflowPromotionReport } from './workflow-shared-promotion.ts'
 import { promoteSharedWorkflow } from './workflow-shared-promotion-store.ts'
 import type { WorkflowModeStepList } from './workflow-step-reference.ts'
 import {
+  type ExpandedMode,
   expandWorkflowModeSteps,
   expandWorkflowSteps,
   inspectWorkflowSteps,
@@ -45,6 +48,7 @@ import {
   isSequenceReference,
   workflowConditionErrors,
   workflowModeStepError,
+  workflowStepSuccessor,
 } from './workflow-step-sequences.ts'
 import {
   keylessTrackerActionMetadata,
@@ -818,7 +822,7 @@ export function composeWorkflow(
       [builtInAutonomyScope(definition.defaultPreset)],
       slug,
     )
-  const allNeeds = selected.flatMap((step) => step.needs)
+  const allNeeds = workflowCompositionFactNeeds(selected.flatMap((step) => step.needs))
   const { resolved, facts } = resolveWorkflowProjectFacts(
     project,
     allNeeds,
@@ -826,6 +830,7 @@ export function composeWorkflow(
     args,
     effectiveAutonomy,
     workflowCompositionFactExtras,
+    mergedChangeSources(d),
   )
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   return {
@@ -876,7 +881,7 @@ function workflowModesForStep(
   selectedModeSlug: string | undefined,
   stepSlug: string,
 ) {
-  const expandedModes = definition.modes.map((mode) => ({
+  const expandedModes: ExpandedMode[] = definition.modes.map((mode) => ({
     mode,
     steps: expandWorkflowModeSteps(mode.steps, sequences ?? []),
   }))
@@ -942,6 +947,8 @@ export function getWorkflowStep(
     stepNeedsCloseState(step.needs),
     args,
     effectiveAutonomy,
+    [],
+    mergedChangeSources(d),
   )
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
   const keylessTrackerActionPaths = new Set<string>()
@@ -953,25 +960,12 @@ export function getWorkflowStep(
       onKeylessTrackerAction: (path) => keylessTrackerActionPaths.add(path),
     })
   const templates = resolveWorkflowStepTemplates(step, resolve)
-  const successor = ({ steps }: { steps: ReturnType<typeof expandWorkflowModeSteps> }) => {
-    const index = steps.findIndex((entry) => entry.slug === stepSlug)
-    if (index === steps.length - 1) return null
-    const nextEntry = steps[index + 1]!
-    const next = catalogue.definition.steps.find((item) => item.slug === nextEntry.slug)!
-    return {
-      n: index + 2,
-      slug: next.slug,
-      title: next.title,
-      ...(nextEntry.when ? { when: nextEntry.when } : {}),
-    }
-  }
-  const successorModes = selectedMode ? [selectedMode] : containingModes
-  const successors = successorModes.map(successor)
-  const next = selectedMode
-    ? successors[0]
-    : successors.every((candidate) => JSON.stringify(candidate) === JSON.stringify(successors[0]))
-      ? successors[0]
-      : undefined
+  const next = workflowStepSuccessor(
+    stepSlug,
+    catalogue.definition.steps,
+    selectedMode,
+    containingModes,
+  )
   return {
     ...step,
     floor: templates.floor,
