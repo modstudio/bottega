@@ -129,15 +129,14 @@ export function recordToolBurstObservation(runId: string, burst: ToolCallBurst):
   }
 }
 
-/** Wait for a burst kill to finish, then record a burst the harness only observes. */
+/** Wait for a burst kill to finish, then record a tripped burst. */
 export async function settleToolBurst(
   runId: string,
   harness: string | undefined,
   state: ToolBurstState,
 ): Promise<void> {
   if (state.termination) await state.termination
-  if (toolCallBurstAction(harnessIdentity(harness)) === 'observe')
-    recordToolBurstObservation(runId, state.burst)
+  recordToolBurstObservation(runId, state.burst)
 }
 
 export function applyToolBurstOutcome(
