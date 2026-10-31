@@ -1,4 +1,5 @@
 import type { Transaction } from '@electric-sql/pglite'
+import { CheckFailure } from './record-migration-failure.ts'
 
 export const runOwnerBackfill = '20261026134135_dev_1774_run_owner_backfill'
 export const runOwnerRequired = '20261026134142_dev_1774_run_owner_required'
@@ -46,20 +47,20 @@ export async function proofRunOwnerRequired(transaction: Transaction): Promise<v
     { id: ownedRunId, started_by_user_id: existingOwnerId },
   ]
   if (JSON.stringify(owners.rows) !== JSON.stringify(expected)) {
-    throw new Error(`DEV-1774 run owner backfill produced ${JSON.stringify(owners.rows)}`)
+    throw new CheckFailure(`DEV-1774 run owner backfill produced ${JSON.stringify(owners.rows)}`)
   }
   const column = await transaction.query<{ is_nullable: string }>(`
     SELECT is_nullable FROM information_schema.columns
     WHERE table_schema='public' AND table_name='run' AND column_name='started_by_user_id'
   `)
   if (column.rows[0]?.is_nullable !== 'NO') {
-    throw new Error('DEV-1774 run started_by_user_id remains nullable')
+    throw new CheckFailure('DEV-1774 run started_by_user_id remains nullable')
   }
   const force = await transaction.query<{ relforcerowsecurity: boolean }>(`
     SELECT relforcerowsecurity FROM pg_class
     WHERE relnamespace='public'::regnamespace AND relname='run'
   `)
   if (force.rows[0]?.relforcerowsecurity !== true) {
-    throw new Error('DEV-1774 run FORCE ROW LEVEL SECURITY was not restored')
+    throw new CheckFailure('DEV-1774 run FORCE ROW LEVEL SECURITY was not restored')
   }
 }

@@ -29,6 +29,7 @@ import {
   proofJsonbStringChecksValidate,
   seedJsonbStringChecksValidate,
 } from './record-jsonb-string-check-proof.ts'
+import { CheckFailure, errorMessage, phaseFailure } from './record-migration-failure.ts'
 import { prepareRecordMigrationProof } from './record-migration-session.ts'
 import {
   proofRunOwnerRequired,
@@ -138,24 +139,12 @@ function catalogueFixture(
 const sameSpaceCatalogue = catalogueFixture(100, sameSpaceSourceProjectId, sameSpaceTargetProjectId)
 const otherSpaceCatalogue = catalogueFixture(200, otherSpaceProjectId, otherSpaceTargetProjectId)
 
-class CheckFailure extends Error {}
-
 function firstLine(sql: string): string {
   return (
     sql
       .split('\n')
       .map((line) => line.trim())
       .find(Boolean) ?? '<empty chunk>'
-  )
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function phaseFailure(phase: string, error: unknown): CheckFailure {
-  return new CheckFailure(
-    `${phase} failed: ${errorMessage(error)}. Check that @electric-sql/pglite is installed (bun install) and the migrations folder is readable, then rerun ${rerun}.`,
   )
 }
 
@@ -918,18 +907,18 @@ async function main(): Promise<void> {
     try {
       migrations = readMigrationFiles({ migrationsFolder })
     } catch (error) {
-      throw phaseFailure('reading migrations', error)
+      throw phaseFailure('reading migrations', error, rerun)
     }
     try {
       database = new PGlite()
       await database.waitReady
     } catch (error) {
-      throw phaseFailure('starting PGlite', error)
+      throw phaseFailure('starting PGlite', error, rerun)
     }
     try {
       await provisionRecordDatabase(database)
     } catch (error) {
-      throw phaseFailure('provisioning PGlite', error)
+      throw phaseFailure('provisioning PGlite', error, rerun)
     }
     try {
       await database.transaction(async (transaction) => {
@@ -942,7 +931,7 @@ async function main(): Promise<void> {
       })
       await proofBoardNotifications(database)
     } catch (error) {
-      throw error instanceof CheckFailure ? error : phaseFailure('replaying migrations', error)
+      throw phaseFailure('replaying migrations', error, rerun)
     }
     applied = migrations.length
   } catch (error) {
@@ -952,7 +941,7 @@ async function main(): Promise<void> {
       try {
         await database.close()
       } catch (error) {
-        failure ??= phaseFailure('closing PGlite', error)
+        failure ??= phaseFailure('closing PGlite', error, rerun)
       }
     }
   }

@@ -1,6 +1,7 @@
 import type { Transaction } from '@electric-sql/pglite'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
 import { PLATFORM_SPACE_ID } from '../shared/record/schema.ts'
+import { CheckFailure } from './record-migration-failure.ts'
 
 const cleanupMigration = '20261019214243_dev_1214_hosted_project_cleanup'
 const id = (suffix: number) => `01990000-0000-7000-8000-${String(suffix).padStart(12, '0')}`
@@ -125,7 +126,7 @@ async function proveRows(transaction: Transaction): Promise<void> {
     ) invalid
   `)
   if (result.rows[0]?.failures !== 0)
-    throw new Error(
+    throw new CheckFailure(
       `DEV-1214 hosted project cleanup left ${result.rows[0]?.failures} invalid proof rows`,
     )
   await transaction.exec(`

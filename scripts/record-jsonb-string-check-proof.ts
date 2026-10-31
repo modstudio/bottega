@@ -4,6 +4,7 @@ import {
   dev1303InvalidDocId,
   dev1303InvalidDocRevisionId,
 } from './record-doc-jsonb-repair-proof.ts'
+import { CheckFailure } from './record-migration-failure.ts'
 
 export const jsonbStringChecksValidate = '20261031055501_dev_1893_jsonb_string_checks_validate'
 
@@ -55,6 +56,6 @@ export async function proofJsonbStringChecksValidate(
   await transaction.exec(`SELECT set_config('app.space_id', '', true);`)
   const expected = [{ options: [WITHHELD_SECRET_SHAPED], relforcerowsecurity: true }]
   if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
-    throw new Error(`DEV-1893 jsonb string repair produced ${JSON.stringify(result.rows)}`)
+    throw new CheckFailure(`DEV-1893 jsonb string repair produced ${JSON.stringify(result.rows)}`)
   }
 }

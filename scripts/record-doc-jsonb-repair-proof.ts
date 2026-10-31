@@ -1,4 +1,5 @@
 import type { Transaction } from '@electric-sql/pglite'
+import { CheckFailure } from './record-migration-failure.ts'
 
 export const docJsonbArrayRepair = '20261013190000_dev_1303_doc_jsonb_array_repair'
 export const dev1303InvalidDocId = '01990000-0000-7000-8000-000000000027'
@@ -82,7 +83,7 @@ export async function proofDocJsonbArrayRepair(
     },
   ]
   if (JSON.stringify(docs.rows) !== JSON.stringify(expectedDocs))
-    throw new Error(`DEV-1303 document repair produced ${JSON.stringify(docs.rows)}`)
+    throw new CheckFailure(`DEV-1303 document repair produced ${JSON.stringify(docs.rows)}`)
   const expectedRevisions = [
     { doc_id: jsonbStringDocId, related_type: 'array', source_type: 'array' },
     { doc_id: jsonbArrayDocId, related_type: 'array', source_type: 'array' },
@@ -93,7 +94,7 @@ export async function proofDocJsonbArrayRepair(
     },
   ]
   if (JSON.stringify(revisions.rows) !== JSON.stringify(expectedRevisions))
-    throw new Error(`DEV-1303 revision repair produced ${JSON.stringify(revisions.rows)}`)
+    throw new CheckFailure(`DEV-1303 revision repair produced ${JSON.stringify(revisions.rows)}`)
   const forced = await transaction.query<{ relname: string }>(`
     SELECT relname FROM pg_class
     WHERE relnamespace='public'::regnamespace
@@ -101,7 +102,7 @@ export async function proofDocJsonbArrayRepair(
     ORDER BY relname
   `)
   if (JSON.stringify(forced.rows.map((row) => row.relname)) !== '["doc","doc_revision"]')
-    throw new Error('DEV-1303 document repair did not restore forced row-level security')
+    throw new CheckFailure('DEV-1303 document repair did not restore forced row-level security')
   await transaction.exec(`
     SELECT set_config('app.space_id', '', true);
     SELECT set_config('app.user_id', '', true);

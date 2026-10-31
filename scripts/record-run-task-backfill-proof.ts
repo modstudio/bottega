@@ -1,4 +1,5 @@
 import type { Transaction } from '@electric-sql/pglite'
+import { CheckFailure } from './record-migration-failure.ts'
 
 export const runTaskReferenceBackfill = '20261026064434_dev_1771_run_task_backfill'
 
@@ -57,6 +58,6 @@ export async function proofRunTaskReferenceBackfill(transaction: Transaction): P
     { id: unmatchedRunId, task_id: null },
   ]
   if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
-    throw new Error(`DEV-1771 run task_id backfill produced ${JSON.stringify(result.rows)}`)
+    throw new CheckFailure(`DEV-1771 run task_id backfill produced ${JSON.stringify(result.rows)}`)
   }
 }
