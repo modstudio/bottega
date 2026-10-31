@@ -261,6 +261,7 @@ export const hubModuleSpecs = [
     file: 'hub/src/task-import.ts',
     allowed: [
       'node:fs',
+      '../../shared/git.ts',
       '../../shared/install-root.ts',
       './attribute.ts',
       './db.ts',
@@ -307,7 +308,12 @@ export const hubModuleSpecs = [
   },
   {
     file: 'hub/src/service-revision.ts',
-    allowed: ['../../shared/install-root.ts', '../../shared/process-identity.ts', './db.ts'],
+    allowed: [
+      '../../shared/git.ts',
+      '../../shared/install-root.ts',
+      '../../shared/process-identity.ts',
+      './db.ts',
+    ],
   },
   {
     file: 'hub/src/serve-lifecycle.ts',

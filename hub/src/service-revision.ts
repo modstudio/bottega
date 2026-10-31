@@ -2,6 +2,7 @@
 /** Identity and revision policy for long-running processes in the hub concern. */
 
 import { installRoot } from '../../shared/install-root.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import {
   type PidRecordIdentity,
   pidRecordIdentity,
@@ -92,6 +93,7 @@ function readInstallHead(): RevisionRead {
   try {
     const result = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
       cwd: installRoot(),
+      env: inspectionGitEnv(),
       stdout: 'pipe',
       stderr: 'pipe',
     })

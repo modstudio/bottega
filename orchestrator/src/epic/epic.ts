@@ -3,7 +3,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { engagedMs } from '../../../shared/interval.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db } from '../database/db.ts'
-import { gitResult } from '../git/git-environment.ts'
+import { cwdMissing, gitResult } from '../git/git-environment.ts'
 import { type ReviewRole, reviewCountsAsRound } from '../review/review-role.ts'
 import { STALE_AFTER_MS } from '../run/run-liveness-policy.ts'
 import { type SubscriptionCostContext, withReportedCost } from '../run/run-subscription-cost.ts'
@@ -410,13 +410,12 @@ function commitSubjects(database: Database): {
   const subjects = new Map<string, Map<string, string>>()
   const skippedProjects: { name: string; path: string }[] = []
   for (const project of projects) {
-    const git = gitResult(['log', '--all', '--format=%H%x09%s'], project.path)
-    if (!git.ok) {
-      if (git.stderr === `${project.path} does not exist`) {
-        skippedProjects.push({ name: project.name, path: project.path })
-      }
+    if (cwdMissing(project.path)) {
+      skippedProjects.push({ name: project.name, path: project.path })
       continue
     }
+    const git = gitResult(['log', '--all', '--format=%H%x09%s'], project.path)
+    if (!git.ok) continue
     const rows = new Map<string, string>()
     for (const line of git.stdout.split('\n')) {
       const tab = line.indexOf('\t')

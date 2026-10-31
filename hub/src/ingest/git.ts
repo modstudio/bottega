@@ -8,6 +8,7 @@
  */
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { categorizeFile, type FileKind } from '../../../shared/file-kind.ts'
+import { inspectionGitEnv } from '../../../shared/git.ts'
 import { storedMachineId } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
@@ -93,7 +94,7 @@ function scanGit(since: string) {
         '--numstat',
         '--pretty=format:%x00%cs%x09%cI%x09%H%x09%s',
       ],
-      { stdout: 'pipe', stderr: 'ignore' },
+      { env: inspectionGitEnv(), stdout: 'pipe', stderr: 'ignore' },
     )
     let day: string | null = null
     for (const line of new TextDecoder().decode(proc.stdout).split('\n')) {

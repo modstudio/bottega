@@ -4,6 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import {
   addProject,
+  git,
   gitRepository,
   removeGitRepository,
 } from '../../test/fixtures/offline-branch-landing.ts'
@@ -39,7 +40,25 @@ describe('epic scoreboard', () => {
     const liveMissing = join(dir, 'live-missing-project')
     const retiredMissing = join(dir, 'retired-missing-project')
     try {
-      addProject('live-repository', repository)
+      const unrelatedCommit = git(repository, 'rev-parse', 'HEAD')
+      git(repository, 'commit', '--allow-empty', '-m', 'DEV-CHILD landed work')
+      const childCommit = git(repository, 'rev-parse', 'HEAD')
+      const projectRecordId = addProject('live-repository', repository)
+      const attributedRun = addRun({
+        agent: 'codex',
+        job: 'implement',
+        projectRecordId,
+        headCommit: childCommit,
+      })
+      const unattributedRun = addRun({
+        agent: 'codex',
+        job: 'implement',
+        projectRecordId,
+        headCommit: unrelatedCommit,
+      })
+      db()
+        .query(`UPDATE run SET launch_key=NULL,branch='topic/no-key' WHERE record_id IN (?,?)`)
+        .run(attributedRun, unattributedRun)
       db()
         .query(
           `INSERT INTO project (record_id,name,path,settings)
@@ -60,6 +79,8 @@ describe('epic scoreboard', () => {
       expect(rendered).toContain(`skipped live-missing: ${liveMissing} does not exist`)
       expect(rendered).not.toContain('retired-missing')
       expect(report.skippedProjects).toEqual([{ name: 'live-missing', path: liveMissing }])
+      expect(report.children[0]?.runs.total).toBe(1)
+      expect(report.total.runs.total).toBe(1)
     } finally {
       removeGitRepository(repository)
     }

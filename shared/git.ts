@@ -93,10 +93,14 @@ export function inspectionGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.
   return env
 }
 
-type GitResult = { code: number; stdout: string }
+type GitResult = { code: number; stdout: string; timedOut: boolean }
 
-export function gitAt(path: string, args: string[]): GitResult {
-  if (!existsSync(path)) return { code: 128, stdout: '' }
+export function gitAt(
+  path: string,
+  args: string[],
+  options: { timeoutMs?: number } = {},
+): GitResult {
+  if (!existsSync(path)) return { code: 128, stdout: '', timedOut: false }
   try {
     const env = inspectionGitEnv()
     delete env.LANGUAGE
@@ -106,10 +110,15 @@ export function gitAt(path: string, args: string[]): GitResult {
       env,
       stdout: 'pipe',
       stderr: 'pipe',
+      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
     })
-    return { code: result.exitCode ?? 128, stdout: result.stdout?.toString() ?? '' }
+    return {
+      code: result.exitCode ?? 128,
+      stdout: result.stdout?.toString() ?? '',
+      timedOut: result.exitedDueToTimeout === true,
+    }
   } catch {
-    return { code: 128, stdout: '' }
+    return { code: 128, stdout: '', timedOut: false }
   }
 }
 

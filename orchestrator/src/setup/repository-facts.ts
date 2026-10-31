@@ -27,12 +27,14 @@ export type RepositoryFactsReport = {
   notices: RepositoryFactsNotice[]
 }
 
+const GIT_TIMEOUT_MS = 3_000
+
 function git(path: string, args: string[]): RepositoryGitCapture {
-  const child = gitAt(path, args)
+  const child = gitAt(path, args, { timeoutMs: GIT_TIMEOUT_MS })
   return {
     exitCode: child.code,
     stdout: child.stdout.trim(),
-    timedOut: false,
+    timedOut: child.timedOut,
   }
 }
 

@@ -165,16 +165,24 @@ function gitResult(
   options: { env?: NodeJS.ProcessEnv } = {},
 ): { ok: boolean; stdout: string; stderr: string } {
   if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
-  const p = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: options.env ?? targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return {
-    ok: p.exitCode === 0,
-    stdout: p.stdout.toString(),
-    stderr: p.stderr.toString().trim() || (p.exitCode === 0 ? '' : `exit ${p.exitCode}`),
+  try {
+    const p = Bun.spawnSync(['git', ...args], {
+      cwd,
+      env: options.env ?? targetGitEnvironment(cwd),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    })
+    return {
+      ok: p.exitCode === 0,
+      stdout: p.stdout.toString(),
+      stderr: p.stderr.toString().trim() || (p.exitCode === 0 ? '' : `exit ${p.exitCode}`),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      stdout: '',
+      stderr: error instanceof Error ? error.message : String(error),
+    }
   }
 }
 

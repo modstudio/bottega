@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { assetPath } from '../../shared/install-root.ts'
+import { inspectionGitEnv } from '../../shared/git.ts'
 import { projectOf, writeCommitKey } from './attribute.ts'
 import { writeTransaction } from './db.ts'
 import { projects } from './projects.ts'
@@ -18,6 +19,7 @@ export async function importTasks(file: string): Promise<number> {
     shas: string[]
   }[]
   const log = Bun.spawnSync(['git', '-C', checkout, 'log', '--all', '--format=%H%x09%cI'], {
+    env: inspectionGitEnv(),
     stdout: 'pipe',
     stderr: 'ignore',
   })
