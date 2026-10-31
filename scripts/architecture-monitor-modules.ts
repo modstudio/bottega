@@ -200,6 +200,7 @@ export const monitorModules: MonitorModule[] = [
     './database-connection-conditions.ts',
     './orphan-inventory-conditions.ts',
     './storage-report.ts',
+    './worker-note-silence-conditions.ts',
   ]),
   module('orchestrator/src/monitor/storage-report.ts', [
     'node:fs',
@@ -235,6 +236,12 @@ export const monitorModules: MonitorModule[] = [
     '../../../shared/brand.ts',
     '../../../shared/secret-shaped.ts',
     '../recipe/database-connection.ts',
+    './monitor-types.ts',
+  ]),
+  module('orchestrator/src/monitor/worker-note-silence-conditions.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    '../../../shared/secret-shaped.ts',
     './monitor-types.ts',
   ]),
   module('orchestrator/src/monitor/release-live-conditions.ts', [

@@ -1,6 +1,7 @@
 // concern: worker note request lifecycle
 /** DB-backed handoff from a sandbox ask server to the host run supervisor. */
 import { newRecordId } from '../../../shared/record-id.ts'
+import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import type { WorkerNoteFiledResult, WorkerNoteInput, WorkerNoteRun } from './worker-note.ts'
 
@@ -46,12 +47,20 @@ export function workerNoteTransition(
       }
 }
 
-function workerNoteRefusalMessage(refusalClass: string | null): string {
-  if (refusalClass === 'anchor-refused')
-    return 'The note was not filed (the file anchor was refused by the host).'
-  if (refusalClass === 'supervisor-closed')
-    return 'The note was not filed (the supervising run ended before filing completed).'
-  return 'The note was not filed (the host note service refused the request).'
+export function workerNoteRefusalMessage(
+  refusalClass: string | null,
+  detail: string | null,
+): string {
+  const cause = detail?.trim()
+  const sentence =
+    refusalClass === 'anchor-refused'
+      ? 'The note was not filed (the file anchor was refused by the host).'
+      : refusalClass === 'supervisor-closed'
+        ? 'The note was not filed (the supervising run ended before filing completed).'
+        : cause
+          ? 'The note was not filed (the host note service refused the request).'
+          : 'The note was not filed (the host note service refused the request without recording a cause).'
+  return cause ? `${sentence} ${withholdSecretShapedDetail(cause)}` : sentence
 }
 
 export async function requestWorkerNote(
@@ -102,7 +111,8 @@ export async function requestWorkerNote(
         ...(row.detail ? { anchorDropped: row.detail } : {}),
       }
     }
-    if (row.status === 'refused') throw new Error(workerNoteRefusalMessage(row.refusal_class))
+    if (row.status === 'refused')
+      throw new Error(workerNoteRefusalMessage(row.refusal_class, row.detail))
     await Bun.sleep(WORKER_NOTE_POLL_MS)
   }
   throw new Error('The note was not filed (the host did not respond within the bounded wait).')

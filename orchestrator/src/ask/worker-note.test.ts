@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { linkSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { noteAnchorWireSchema } from '../../../shared/note-anchor.ts'
 import {
   deriveWorkerNoteAnchor,
   fileFact,
@@ -11,7 +12,7 @@ import {
   WORKER_NOTE_MAX_LENGTH,
   workerNoteFileRefusal,
 } from './worker-note.ts'
-import { workerNoteTransition } from './worker-note-request.ts'
+import { workerNoteRefusalMessage, workerNoteTransition } from './worker-note-request.ts'
 
 describe('worker note edge validation', () => {
   test('accepts one bounded line and a relative path:line anchor', () => {
@@ -48,21 +49,20 @@ describe('worker note edge validation', () => {
 })
 
 test('worker note anchors contain only run and injected file facts', () => {
-  expect(
-    deriveWorkerNoteAnchor(
-      {
-        id: 42,
-        recordId: '42000000-0000-4000-8000-000000000000',
-        project: 'workshop',
-        projectPath: '/projects/workshop',
-        tree: '/runs/42/tree',
-        branch: 'DEV-1029-worker',
-        sessionId: 'session-42',
-        headCommit: 'abc123',
-      },
-      { path: 'src/file.ts', line: 7, content: 'const defect = true' },
-    ),
-  ).toEqual({
+  const anchor = deriveWorkerNoteAnchor(
+    {
+      id: 42,
+      recordId: '42000000-0000-4000-8000-000000000000',
+      project: 'workshop',
+      projectPath: '/projects/workshop',
+      tree: '/runs/42/tree',
+      branch: 'DEV-1029-worker',
+      sessionId: 'session-42',
+      headCommit: 'abc123',
+    },
+    { path: 'src/file.ts', line: 7, content: 'const defect = true' },
+  )
+  expect(noteAnchorWireSchema.parse(anchor)).toEqual({
     cwd: '/projects/workshop',
     project: 'workshop',
     files: [{ path: '/projects/workshop/src/file.ts', line: 7, content: 'const defect = true' }],
@@ -71,6 +71,18 @@ test('worker note anchors contain only run and injected file facts', () => {
     commit: 'abc123',
     session_id: 'session-42',
   })
+})
+
+test('worker note refusals show their stored cause without leaking secret-shaped detail', () => {
+  expect(workerNoteRefusalMessage('filing-refused', 'schema mismatch')).toContain('schema mismatch')
+  expect(workerNoteRefusalMessage('anchor-refused', 'unsafe anchor')).toContain(
+    'the file anchor was refused by the host',
+  )
+  expect(workerNoteRefusalMessage('supervisor-closed', 'run stopped')).toContain(
+    'the supervising run ended before filing completed',
+  )
+  expect(workerNoteRefusalMessage('filing-refused', 'token=hidden')).toContain('detail withheld')
+  expect(workerNoteRefusalMessage('filing-refused', null)).toContain('without recording a cause')
 })
 
 test('worker note file anchors require the same line in the main checkout', () => {
