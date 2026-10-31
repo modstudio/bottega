@@ -9,7 +9,7 @@ import { defaultBoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
-import { projectAt, projectRowByName } from '../project/projects.ts'
+import { projectAt, projectByName, projectRowByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -25,6 +25,7 @@ import type {
 } from '../record/record-board-contract.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import {
+  type AnswerNoteFiler,
   acceptedAnswerNoteText,
   fileAcceptedAnswerNote,
   resolveAcceptedAnswerNoteLabel,
@@ -70,7 +71,12 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
-import { type IsKnownCommit, prepareBoardText } from './board-text-secret.ts'
+import {
+  boardTextCheckout,
+  type IsKnownCommit,
+  prepareBoardNoticeText,
+  prepareBoardText,
+} from './board-text-preparation.ts'
 import { boardThreadState } from './board-thread-policy.ts'
 import {
   acceptAnswer,
@@ -87,6 +93,7 @@ type Context = {
   cwd?: string
   client?: RecordApiClient
   isKnownCommit?: IsKnownCommit
+  answerNoteFiler?: AnswerNoteFiler
 }
 
 export type BoardPostResult = {
@@ -185,26 +192,23 @@ function context(input: Context = {}) {
     cwd: input.cwd ?? process.cwd(),
     client: input.client,
     isKnownCommit: input.isKnownCommit,
+    answerNoteFiler: input.answerNoteFiler ?? fileAcceptedAnswerNote,
   }
 }
 
-function boardTextCheckout(cwd: string): string | null {
-  return projectAt(cwd) ? cwd : null
+function ownBoardTextCheckout(cwd: string): string | null {
+  const callerProject = projectAt(cwd)
+  const targetProject = callerProject ? projectByName(callerProject.name) : null
+  return boardTextCheckout({
+    callerCwd: cwd,
+    callerProject: callerProject?.name ?? null,
+    targetProject: targetProject?.name ?? null,
+    targetProjectPath: targetProject?.path ?? null,
+  })
 }
 
 function preparePostText(input: PostNoticeInput, c: ReturnType<typeof context>): PostNoticeInput {
-  const prepareNotice = (text: string) =>
-    prepareBoardText('notice', text, boardTextCheckout(c.cwd), c.isKnownCommit)
-  const prepareTag = (text: string) =>
-    prepareBoardText('tag', text, boardTextCheckout(c.cwd), c.isKnownCommit)
-  return {
-    ...input,
-    title: prepareNotice(input.title),
-    body: prepareNotice(input.body),
-    task: input.task === undefined ? undefined : prepareTag(input.task),
-    paths: input.paths?.map(prepareTag),
-    topics: input.topics?.map(prepareTag),
-  }
+  return prepareBoardNoticeText(input, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
 }
 
 function hostedClient(c: ReturnType<typeof context>): RecordApiClient {
@@ -529,7 +533,7 @@ export async function boardReply(
   audience: ReplyAudienceOption | null = null,
 ) {
   const c = context(inputContext)
-  body = prepareBoardText('reply', body, boardTextCheckout(c.cwd), c.isKnownCommit)
+  body = prepareBoardText(body, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') {
     const parsed = resolved.recordId
@@ -601,7 +605,7 @@ async function fileHostedNote(
   const reply = thread.replies.find((row) => row.id === thread.root.acceptedReplyId)
   if (!reply) throw new Error(`board question ${questionId} accepted reply is unavailable`)
   try {
-    const filed = await fileAcceptedAnswerNote(
+    const filed = await c.answerNoteFiler(
       {
         text: acceptedAnswerNoteText({
           title: thread.root.title ?? '',
@@ -627,12 +631,7 @@ async function fileHostedNote(
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    const preparedDetail = prepareBoardText(
-      'filing-failure',
-      detail,
-      boardTextCheckout(c.cwd),
-      c.isKnownCommit,
-    )
+    const preparedDetail = prepareBoardText(detail, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
     await client.failBoardFilingLease(questionId, {
       error: preparedDetail,
       authorSession: boardActor(c.env).session,
@@ -649,7 +648,7 @@ async function fileHostedNote(
 export async function boardAccept(questionId: string, replyId: string, inputContext?: Context) {
   const c = context(inputContext)
   const prepareFailure = (detail: string) =>
-    prepareBoardText('filing-failure', detail, boardTextCheckout(c.cwd), c.isKnownCommit)
+    prepareBoardText(detail, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
   const question = resolveBoardMessageIdentifier(db(), questionId, c.env)
   const reply = resolveBoardMessageIdentifier(db(), replyId, c.env)
   if (reply.source !== question.source)
@@ -661,7 +660,7 @@ export async function boardAccept(questionId: string, replyId: string, inputCont
       c.env,
       c.clock,
       c.cwd,
-      undefined,
+      c.answerNoteFiler,
       prepareFailure,
     )
     return {
@@ -680,14 +679,14 @@ export async function boardAccept(questionId: string, replyId: string, inputCont
 export async function boardFileNote(questionId: string, inputContext?: Context) {
   const c = context(inputContext)
   const prepareFailure = (detail: string) =>
-    prepareBoardText('filing-failure', detail, boardTextCheckout(c.cwd), c.isKnownCommit)
+    prepareBoardText(detail, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
   const question = resolveBoardMessageIdentifier(db(), questionId, c.env)
   if (question.source === 'local') {
     const result = await fileAnswerNote(
       question.recordId,
       c.env,
       c.cwd,
-      undefined,
+      c.answerNoteFiler,
       c.clock,
       prepareFailure,
     )
@@ -778,11 +777,15 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
   const c = context(inputContext)
   const project = claimProject(input.project, c.env, c.cwd)
   const callerProject = projectAt(c.cwd)
-  const checkout = callerProject?.name === project ? c.cwd : projectRowByName(project)?.path
-  const prepareNote = (text: string) =>
-    prepareBoardText('claim-note', text, checkout, c.isKnownCommit)
-  const prepareResource = (text: string) =>
-    prepareBoardText('claim-resource', text, checkout, c.isKnownCommit)
+  const targetProject = projectByName(project)
+  const checkout = boardTextCheckout({
+    callerCwd: c.cwd,
+    callerProject: callerProject?.name ?? null,
+    targetProject: targetProject?.name ?? null,
+    targetProjectPath: targetProject?.path ?? null,
+  })
+  const prepareNote = (text: string) => prepareBoardText(text, checkout, c.isKnownCommit)
+  const prepareResource = (text: string) => prepareBoardText(text, checkout, c.isKnownCommit)
   input = {
     ...input,
     subject: input.subject.startsWith('resource:')
@@ -801,7 +804,7 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
   const row = await hostedClient(c).takeBoardClaim({
     id: newRecordId(),
     project,
-    projectId: projectRowByName(project)!.recordId,
+    projectId: targetProject!.recordId,
     subject: input.subject,
     durationMs: input.durationMs ?? BOARD_CLAIM_DEFAULT_MS,
     runId: hostedClaimRunId(input.runId, c.env),

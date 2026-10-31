@@ -1,7 +1,7 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { classifyCaller } from '../caller-classification.ts'
-import { boardTextSecretRefusal } from './board-text-secret.ts'
+import { boardTextsSecretRefusal } from './board-text-secret.ts'
 
 export const BOARD_POST_RATE_LIMIT = 10
 export const BOARD_POST_RATE_WINDOW_MS = 10 * 60 * 1000
@@ -223,15 +223,6 @@ export function postDecision(input: {
   return input.recentPosts >= BOARD_POST_RATE_LIMIT ? 'rate-limited' : 'post'
 }
 
-function boardTextRefusal(leadingWords: string, texts: Array<string | undefined>): string | null {
-  for (const text of texts) {
-    if (text === undefined) continue
-    const refusal = boardTextSecretRefusal(leadingWords, text)
-    if (refusal) return refusal
-  }
-  return null
-}
-
 export function validatePostNoticeInput(input: {
   title: string
   body: string
@@ -255,9 +246,9 @@ export function validatePostNoticeInput(input: {
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
   if (input.body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  const textRefusal = boardTextRefusal('board notice', [input.title, input.body])
+  const textRefusal = boardTextsSecretRefusal('board notice', [input.title, input.body])
   if (textRefusal) throw new Error(textRefusal)
-  const tagRefusal = boardTextRefusal('board notice tag', [
+  const tagRefusal = boardTextsSecretRefusal('board notice tag', [
     input.task,
     ...(input.paths ?? []),
     ...(input.topics ?? []),

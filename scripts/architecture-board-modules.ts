@@ -146,6 +146,7 @@ export const boardModules: BoardModule[] = [
     './board-store.ts',
     './board-thread-policy.ts',
     './board-thread-service.ts',
+    './board-text-preparation.ts',
     './board-text-secret.ts',
   ]),
   module('orchestrator/src/board/board-claim-policy.ts', [
@@ -159,10 +160,8 @@ export const boardModules: BoardModule[] = [
     '../caller-classification.ts',
     './board-text-secret.ts',
   ]),
-  module('orchestrator/src/board/board-text-secret.ts', [
-    '../../../shared/secret-shaped.ts',
-    '../git/commit-resolution.ts',
-  ]),
+  module('orchestrator/src/board/board-text-secret.ts', ['../../../shared/secret-shaped.ts']),
+  module('orchestrator/src/board/board-text-preparation.ts', ['../git/commit-resolution.ts']),
   module('orchestrator/src/board/board-tags.ts', ['node:path']),
   module('orchestrator/src/board/board-routing.ts', ['./board-tags.ts']),
   module('orchestrator/src/board/board-context.ts', [
@@ -259,6 +258,7 @@ export const boardModules: BoardModule[] = [
     './board-policy.ts',
     './board-service.ts',
     './board-tags.ts',
+    './board-text-preparation.ts',
     './board-text-secret.ts',
   ]),
   module('orchestrator/src/board/board-commands.ts', [
