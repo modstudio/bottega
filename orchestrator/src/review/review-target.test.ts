@@ -76,6 +76,22 @@ describe('review target', () => {
     })
   })
 
+  test('a review range names the accepted forms instead of a fetch remedy', () => {
+    expect(
+      reviewTargetRef({
+        reviewRef: '9c2b4223e..9cb4aa5eb',
+        branch: '9c2b4223e..9cb4aa5eb',
+        localBranchExists: false,
+        remoteBranchExists: false,
+        commitExists: false,
+      }),
+    ).toEqual({
+      kind: 'refuse',
+      message:
+        'cannot resolve --review 9c2b4223e..9cb4aa5eb: a commit range is not a review target; cleared by: pass a branch, run id or single revision',
+    })
+  })
+
   test('refuses a ref whose commit is its trunk merge base', () => {
     expect(
       emptyReviewRefusal('1234567890abcdef', '1234567890abcdef', 'mistaken-base', 'main'),
