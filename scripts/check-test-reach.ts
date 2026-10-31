@@ -172,7 +172,7 @@ export function testReach(input: {
   }
 }
 
-function trackedFiles(): string[] {
+export function trackedFiles(): string[] {
   const result = Bun.spawnSync(['git', ...nulPathListArgs(['ls-files'])], {
     cwd: ROOT,
     stdout: 'pipe',

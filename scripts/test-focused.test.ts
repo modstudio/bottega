@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { parseTestReachExemptions } from './check-test-reach.ts'
 import { groupFocusedTestPaths } from './test-focused.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -84,6 +86,21 @@ test('a selection inside a package whose test script embeds a path still narrows
   const [group] = groupFocusedTestPaths(['orchestrator/src/run/run.test.ts'])
   expect(relative(root, group!.directory)).toBe('orchestrator')
   expect(group!.argv).toEqual(['bun', 'test', 'src/run/run.test.ts'])
+})
+
+test('an unreached test runs from its workspace', () => {
+  const [group] = groupFocusedTestPaths(['orchestrator/src/postgres/postgres-import.test.ts'])
+  expect(relative(root, group!.directory)).toBe('orchestrator')
+  expect(group!.paths).toEqual(['src/postgres/postgres-import.test.ts'])
+})
+
+test('every test-reach exemption resolves to a focused run directory', () => {
+  const exemptions = parseTestReachExemptions(
+    readFileSync(`${root}/scripts/quality/test-reach-exemptions.json`, 'utf8'),
+  )
+  for (const { file } of exemptions) {
+    expect(() => groupFocusedTestPaths([file]), file).not.toThrow()
+  }
 })
 
 test('refuses missing and escaping path arguments', () => {
