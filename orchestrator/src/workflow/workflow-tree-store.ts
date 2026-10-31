@@ -6,9 +6,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
-  CatalogueProductionReferenceRefusal,
   type CatalogueSequence,
   type CatalogueStep,
+  catalogueProductionReferenceRefusal,
   importableStepCatalogueErrors,
   importStepCatalogue,
   promoteStepCatalogue,
@@ -211,10 +211,12 @@ async function promoteCatalogueTreeDraft(
         input.project ?? undefined,
       )
   } catch (cause) {
-    if (!(cause instanceof CatalogueProductionReferenceRefusal)) throw cause
-    const remedy = workflowTreePromotionRemedyLines(cause.workflowSlugs, decision.promotions)
+    const refusal = catalogueProductionReferenceRefusal(cause)
+    if (!refusal) throw cause
+    const remedy = workflowTreePromotionRemedyLines(refusal.workflowSlugs, decision.promotions)
+    const message = cause instanceof Error ? cause.message : String(cause)
     throw new Error(
-      `${cause.message}\n${remedy.map((line) => `- ${line.startsWith('workflow promote') ? `${PLATFORM_SLUG} ${line}` : line}`).join('\n')}`,
+      `${message}\n${remedy.map((line) => `- ${line.startsWith('workflow promote') ? `${PLATFORM_SLUG} ${line}` : line}`).join('\n')}`,
       { cause },
     )
   }

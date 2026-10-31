@@ -807,6 +807,19 @@ export class CatalogueProductionReferenceRefusal extends Error {
   }
 }
 
+export function catalogueProductionReferenceRefusal(
+  error: unknown,
+): CatalogueProductionReferenceRefusal | null {
+  const seen = new Set<unknown>()
+  let current = error
+  while (current instanceof Error && !seen.has(current)) {
+    if (current instanceof CatalogueProductionReferenceRefusal) return current
+    seen.add(current)
+    current = current.cause
+  }
+  return null
+}
+
 export function promoteStepCatalogue(
   n: number,
   reason: string | undefined,

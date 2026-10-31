@@ -239,7 +239,7 @@ async function applySharedCataloguePromotion(
       ports.preflight(JSON.parse(sourceTarget.definition), spaceId, replacement)
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error)
-      throw sharedPromotionRefusal('shared step catalogue', target, reason)
+      throw sharedPromotionRefusal('shared step catalogue', target, reason, error)
     }
   }
   return promoteSharedWorkflowSpaces({
