@@ -233,9 +233,7 @@ function validateKeyManifests(
   ] as const
   for (let left = 0; left < kinds.length; left++) {
     for (let right = left + 1; right < kinds.length; right++) {
-      const overlap = [...kinds[left]![1].keys()].filter((column) =>
-        kinds[right]![1].has(column),
-      )
+      const overlap = [...kinds[left]![1].keys()].filter((column) => kinds[right]![1].has(column))
       if (overlap.length)
         throw new Error(
           `${store} ${kinds[left]![0]}/${kinds[right]![0]} manifests overlap: ${overlap.join(', ')}`,

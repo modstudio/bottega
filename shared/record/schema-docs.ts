@@ -58,11 +58,7 @@ const ownerPolicies = (table: string, owner: AnyPgColumn) => [
   }),
 ]
 
-const subjectRule = (
-  scope: AnyPgColumn,
-  subject: AnyPgColumn,
-  owner: AnyPgColumn,
-) => sql`(
+const subjectRule = (scope: AnyPgColumn, subject: AnyPgColumn, owner: AnyPgColumn) => sql`(
   (${owner} IS NOT NULL AND ${scope} IN ('canon','settings') AND ${subject} IS NULL) OR
   (${owner} IS NULL AND (
   (${scope} IN ('machine','global') AND ${subject} IS NULL) OR

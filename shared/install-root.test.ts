@@ -8,6 +8,7 @@ import {
   assetPath,
   checkoutHeadCommit,
   DIST_MANIFEST,
+  type DistributionManifest,
   INSTALL_HOME_ENV,
   installationBuildId,
   installationVersionText,
@@ -17,7 +18,6 @@ import {
   readDistributionManifest,
   resolveInstallationPaths,
   resolveInstallRoot,
-  type DistributionManifest,
 } from './install-root.ts'
 
 const scratchRoots: string[] = []
