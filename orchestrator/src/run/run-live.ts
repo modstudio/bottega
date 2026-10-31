@@ -1004,11 +1004,11 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     const decided = { ...decideOutcome(derived.inputs), error }
     ;({ status, failureKind, error } = applyToolBurstOutcome(toolBurst, decided))
   } catch (e) {
-    // Spawn refused, a pipe broke, the output file could not be written. The row
-    // exists and must not be left claiming to run.
+    // Spawn refused, a pipe broke or output was unwritable: the row must not claim to run.
     status = 'failed'
     error = errorTail(proc ? String((e as Error)?.stack ?? e) : String((e as Error)?.message ?? e))
     failureKind = proc ? 'other' : 'harness'
+    await settleToolBurst(claim.id, toolBurst)
   }
   rearmWallDeadline = () => {}
   timer = clearRunTimer(timer)

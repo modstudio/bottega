@@ -28,7 +28,7 @@ No CLI here reports remaining quota, so exhaustion is caught on the failure (`FA
 
 A job may declare an idle limit; a run silent and idle past it is killed, fails over, and is not evidence.
 
-A goose run that starts more than `TOOL_CALL_BURST_LIMIT` tool calls within `TOOL_CALL_BURST_WINDOW_MS` is killed as `tool_burst`, which cools the agent and counts as evidence. Other harnesses only record the burst, shown in `bottega agent stats` (`orchestrator/src/run/tool-call-burst.ts:toolCallBurstAction`). Session replay before the prompt is never counted (`orchestrator/src/transport/transport-acp.ts:liveAcpEvent`).
+A goose run that starts more than `TOOL_CALL_BURST_LIMIT` tool calls within `TOOL_CALL_BURST_WINDOW_MS` is killed as `tool_burst`, which cools the agent and counts as evidence. Other harnesses record the burst without killing. Every tripped burst, killed or not, is shown in `bottega agent stats` (`orchestrator/src/run/tool-call-burst.ts:toolCallBurstAction`). Session replay before the prompt is never counted (`orchestrator/src/transport/transport-acp.ts:liveAcpEvent`).
 
 **An uninterrupted streak of `PROVIDER_ERROR_STREAK` provider errors cools the agent the same way**, and a successful probe ends the streak. **A billing failure on an agent-paid key holds every agent on that key** (`orchestrator/src/route/billing-key-hold.ts:decideBillingKeyHolds`) in routing and in failover, until a successful answer on any of them clears it. Recency is completion order, never launch order: a long run that finishes last is the latest.
 
