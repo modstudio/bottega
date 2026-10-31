@@ -96,24 +96,16 @@ set +e
 migrate_error="$(PENDING_MIGRATIONS="$pending_names" bun --eval '
   import { readFileSync } from "node:fs";
   import { join } from "node:path";
+  import { migrationFailure } from "./orchestrator/src/postgres/migration-failure.ts";
   import { migratePostgres } from "./orchestrator/src/postgres/postgres-migrate.ts";
   const folder = join(process.cwd(), "shared", "record", "migrations");
   const pending = process.env.PENDING_MIGRATIONS?.split("\n").filter(Boolean) ?? [];
   try {
     await migratePostgres();
   } catch (error) {
-    const candidate = error && typeof error === "object" ? error : {};
-    const cause = "cause" in candidate && candidate.cause && typeof candidate.cause === "object"
-      ? candidate.cause : {};
-    const query = "query" in candidate && typeof candidate.query === "string"
-      ? candidate.query
-      : "query" in cause && typeof cause.query === "string" ? cause.query : "<unknown>";
-    const migration = pending.find((name) =>
-      query !== "<unknown>" && readFileSync(join(folder, name, "migration.sql"), "utf8").includes(query)
-    ) ?? (pending.join(",") || "<unknown>");
-    const message = error instanceof Error ? error.message : String(error);
-    const oneLine = (value) => value.replaceAll(/\s+/g, " ").trim();
-    console.error(`migration ${migration} statement ${oneLine(query)}: ${oneLine(message)}`);
+    console.error(migrationFailure(error, pending, (name) =>
+      readFileSync(join(folder, name, "migration.sql"), "utf8")
+    ));
     process.exit(1);
   }
 ' 2>&1)"
