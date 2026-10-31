@@ -198,11 +198,10 @@ export function ceilingGuidanceForTier(input: {
   tip: string
   branch: string
   reviewBudget: Pick<ReviewRoundBudgetDecision, 'atCeiling' | 'roundsUsed' | 'ceiling'>
-  database?: Database
 }): string | null {
   if (!input.reviewBudget.atCeiling) return null
   try {
-    const database = input.database ?? db()
+    const database = db()
     const change = resolvePullRequestChange(input.cwd, input.tip, database, undefined, input.branch)
     return ceilingRulingGuidance({
       reviewBudget: input.reviewBudget,
