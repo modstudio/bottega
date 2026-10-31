@@ -72,10 +72,9 @@ export function launchedMachineId(output: string): string | null {
 export function rehearsalStatus(
   lines: RehearsalLines,
   exitCode: number | null,
-): {
-  state: 'success' | 'failure'
-  description: string
-} {
+):
+  | { state: 'success'; description: string }
+  | { state: 'failure'; description: string; failure: string } {
   const passed =
     exitCode === 0 &&
     Boolean(lines.hash?.match(/^[0-9a-f]{64}$/)) &&
@@ -93,9 +92,16 @@ export function rehearsalStatus(
         dump: lines.dump,
       })
     : `REHEARSAL FAIL ${lines.failure ?? `machine exit ${exitCode ?? 'unknown'} without a valid PASS`}`
+  if (passed) {
+    return {
+      state: 'success',
+      description: description.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
+    }
+  }
   return {
-    state: passed ? 'success' : 'failure',
+    state: 'failure',
     description: description.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
+    failure: description,
   }
 }
 
@@ -366,7 +372,7 @@ export async function runRecordRehearsal(input: {
     const status = rehearsalStatus(lines, machineExitCode(details))
     await postStatus(input.runner, sha, status)
     statusPosted = true
-    if (status.state === 'failure') throw new Error(status.description)
+    if (status.state === 'failure') throw new Error(status.failure)
     try {
       await rerunFailedRecordRehearsal(input.runner, sha)
     } catch (rerunError) {

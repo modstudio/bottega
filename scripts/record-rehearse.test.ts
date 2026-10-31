@@ -104,11 +104,13 @@ test('finds a named machine and destroys it when launch output has no id', async
 })
 
 test('classifies a failed machine and bounds the GitHub description', () => {
-  const lines = parseRehearsalLines(`REHEARSAL FAIL ${'x'.repeat(200)}`)
+  const failure = 'x'.repeat(200)
+  const lines = parseRehearsalLines(`REHEARSAL FAIL ${failure}`)
   const status = rehearsalStatus(lines, 1)
   expect(status.state).toBe('failure')
   expect(status.description).toStartWith('REHEARSAL FAIL ')
   expect(status.description.length).toBe(140)
+  expect(status.failure).toBe(`REHEARSAL FAIL ${failure}`)
 })
 
 test('refuses a pass that applied no pending migration', () => {
@@ -118,6 +120,7 @@ test('refuses a pass that applied no pending migration', () => {
   expect(rehearsalStatus(lines, 0)).toEqual({
     state: 'failure',
     description: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
+    failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
   })
 })
 
@@ -158,6 +161,36 @@ test('runs, posts success and destroys the machine through the injected runner',
     ),
   ).toBe(true)
   expect(calls.at(-1)?.slice(0, 3)).toEqual(['flyctl', 'machine', 'destroy'])
+})
+
+test('posts a bounded failure description and throws the whole rehearsal failure', async () => {
+  const failure = `migration long_name statement ${'x'.repeat(200)}: postgres rejected it`
+  const calls: string[][] = []
+  const runner: RehearsalCommandRunner = async (argv) => {
+    calls.push([...argv])
+    const git = gitResult(argv)
+    if (git) return git
+    if (argv[0] === 'flyctl' && argv[1] === 'machine' && argv[2] === 'run')
+      return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
+    if (argv[0] === 'flyctl' && argv[1] === 'logs')
+      return { exitCode: 0, stdout: `REHEARSAL FAIL ${failure}\n`, stderr: '' }
+    return { exitCode: 0, stdout: '', stderr: '' }
+  }
+
+  await expect(
+    runRecordRehearsal({
+      token: 'sealed-token',
+      runner,
+      machineDetails: async () => ({ events: [{ request: { exit_event: { exit_code: 1 } } }] }),
+    }),
+  ).rejects.toThrow(`REHEARSAL FAIL ${failure}`)
+
+  const postedDescription = calls
+    .find((argv) => argv.includes('state=failure'))
+    ?.find((argument) => argument.startsWith('description='))
+    ?.slice('description='.length)
+  expect(postedDescription?.length).toBe(140)
+  expect(postedDescription).toBe(`REHEARSAL FAIL ${failure}`.slice(0, 140))
 })
 
 test('reruns only the unsuccessful record-rehearsal job on an open pull request', async () => {
