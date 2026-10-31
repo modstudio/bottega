@@ -340,8 +340,9 @@ function measureCapacityRates(
   platform: NodeJS.Platform,
   now: number,
   swap: { used: number; total: number } | null,
+  cpuReadings: ReturnType<typeof cpus>,
 ): { cpuBusy: number | null; swapGrowthBytesPerSec: number | null } {
-  const cpuTimes = cpus().map(({ times }) => times)
+  const cpuTimes = cpuReadings.map(({ times }) => times)
   const currentCpu: CapacitySample = {
     at: now,
     cpuTimes,
@@ -379,15 +380,17 @@ export function measureHostLoad(
   selfPid = process.pid,
   platform: NodeJS.Platform = process.platform,
   now = Date.now(),
+  dependencies: { readCpus?: typeof cpus } = {},
 ): HostLoad {
   const leases = liveLeases(gatePidDir(env), selfPid)
   const swap = readSwap(platform)
-  const rates = measureCapacityRates(platform, now, swap)
+  const cpuReadings = (dependencies.readCpus ?? cpus)()
+  const rates = measureCapacityRates(platform, now, swap, cpuReadings)
   return {
     gates: leases.length,
     loadavg: loadavg()[0] ?? 0,
     cpuBusy: rates.cpuBusy,
-    ncpu: Math.max(1, cpus().length),
+    ncpu: Math.max(1, cpuReadings.length),
     freeMem: freemem(),
     pressure: readMemoryPressure(platform),
     swapUsed: swap?.used ?? 0,

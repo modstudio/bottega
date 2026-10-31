@@ -46,6 +46,7 @@ test('the outer CLI classifies every informational invocation without consulting
   expect(isStoreFreeInvocation(['record', 'use', 'https://api.example.test'])).toBeTrue()
   expect(isStoreFreeInvocation(['setup'])).toBeTrue()
   expect(isStoreFreeInvocation(['release', 'check', 'v0.2.0'])).toBeTrue()
+  expect(isStoreFreeInvocation(['load', 'sample'])).toBeTrue()
   expect(
     isStoreFreeInvocation(['machine', 'config', 'get', 'delegation.review', '--json']),
   ).toBeTrue()

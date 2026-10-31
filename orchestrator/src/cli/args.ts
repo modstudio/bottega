@@ -472,6 +472,7 @@ export const CLI_COMMANDS = new Set([
   'jobs',
   'lens',
   'link-tasks',
+  'load',
   'mcp',
   'metric',
   'migrate',

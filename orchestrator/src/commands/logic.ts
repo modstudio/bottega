@@ -60,6 +60,7 @@ import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-dec
 import { registerDatabaseCommands } from './database.ts'
 import { ORCH_DO_OPTIONS } from './do-options.ts'
 import { efficiencyCommand, provisioningAliasOptions } from './efficiency-command.ts'
+import { registerHostLoadCommands } from './host-load.ts'
 import { registerLensCommands } from './lens.ts'
 import { collect, log, productArgv, rawArgv, write, writeStdout } from './support.ts'
 import { registerWorkflowCommands } from './workflow.ts'
@@ -254,6 +255,7 @@ function registerEfficiencyCommands(program: Command): void {
 
 function registerMachineAttentionCommands(program: Command): void {
   registerEfficiencyCommands(program)
+  registerHostLoadCommands(program)
   program
     .command('rename')
     .description('change this machine name')
