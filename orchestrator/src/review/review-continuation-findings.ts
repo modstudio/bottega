@@ -27,7 +27,7 @@ export type ContinuationFinding = {
 }
 
 /** Most commits the moved-branch paragraph lists before saying older ones were left out. */
-export const STALE_COMMIT_LIST_LIMIT = 20
+const STALE_COMMIT_LIST_LIMIT = 20
 
 /**
  * What changed since the delivered round was reviewed. `commitLines` is null when the
