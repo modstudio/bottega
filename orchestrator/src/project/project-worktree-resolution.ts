@@ -2,37 +2,19 @@
 /** Resolves declared project lifecycle settings with the repository-local default. */
 
 import { existsSync } from 'node:fs'
-import { resolve } from 'node:path'
 import {
-  DEFAULT_PROJECT_CONFIG_PATH,
   type LifecycleForm,
-  type LifecycleResolution,
-  resolveWorktreeLifecycle,
+  resolvedProjectWorktreeLifecycle,
 } from '../worktree/worktree-lifecycle.ts'
 import type { StoredProjectSettings, WorktreeTool } from './project-settings.ts'
 
 type WorktreeProject = { path: string; settings: StoredProjectSettings }
 
-/** Apply the repository-local default without persisting derived config into the register. */
-function resolvedProjectWorktreeLifecycle(
-  project: WorktreeProject,
-  fileExists: (path: string) => boolean = existsSync,
-): LifecycleResolution {
-  const declared = project.settings.worktree
-  const resolution = resolveWorktreeLifecycle(declared)
-  return resolution.form === 'none'
-    ? resolveWorktreeLifecycle(
-        declared,
-        fileExists(resolve(project.path, DEFAULT_PROJECT_CONFIG_PATH)),
-      )
-    : resolution
-}
-
 export function projectLifecycleForm(
   project: WorktreeProject,
   fileExists: (path: string) => boolean = existsSync,
 ): LifecycleForm {
-  return resolvedProjectWorktreeLifecycle(project, fileExists).form
+  return resolvedProjectWorktreeLifecycle(project.settings.worktree, project.path, fileExists).form
 }
 
 export function resolvedWorktreeTool(
@@ -41,7 +23,7 @@ export function resolvedWorktreeTool(
 ): WorktreeTool | null {
   if (!project) return null
   const declared = project.settings.worktree
-  const resolution = resolvedProjectWorktreeLifecycle(project, fileExists)
+  const resolution = resolvedProjectWorktreeLifecycle(declared, project.path, fileExists)
   if (resolution.form === 'tracked-recipe' && resolution.source === 'default') {
     return { ...declared, recipePath: resolution.recipePath }
   }

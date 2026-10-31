@@ -30,6 +30,12 @@ describe('isUnmarkedBorrowedReaderClone', () => {
     expect(
       isUnmarkedBorrowedReaderClone({
         ...reader,
+        path: '/projects/alpha/.claude/worktrees/orch-42',
+      }),
+    ).toBeFalse()
+    expect(
+      isUnmarkedBorrowedReaderClone({
+        ...reader,
         path: `/projects/alpha/.claude/worktrees/nested/orch-${runId}`,
       }),
     ).toBeFalse()

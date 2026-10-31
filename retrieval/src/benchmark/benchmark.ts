@@ -71,20 +71,28 @@ async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise
       }
     }
     const paths = [...new Set(queries.map((query) => query.provenance.path))]
-    const sources = await Promise.all(
+    const loaded = await Promise.all(
       paths.map(async (path) => {
         try {
           return { path, body: await readFile(resolve(repositoryRoot, path), 'utf8') }
-        } catch {
-          return null
+        } catch (cause) {
+          return { path, cause }
         }
       }),
     )
-    const stale = checkCodePins(
-      queries,
-      sources.filter((source) => source !== null),
-    ).find((pin) => !pin.current)
+    const sources = loaded.filter(
+      (source): source is { path: string; body: string } => 'body' in source,
+    )
+    const stale = checkCodePins(queries, sources).find((pin) => !pin.current)
     if (stale) {
+      const unreadable = loaded.find((source) => source.path === stale.path && 'cause' in source)
+      if (unreadable && 'cause' in unreadable) {
+        const detail =
+          unreadable.cause instanceof Error ? unreadable.cause.message : String(unreadable.cause)
+        throw new Error(
+          `${stale.queryId} provenance path ${stale.path} could not be read: ${detail}`,
+        )
+      }
       throw new Error(`${stale.queryId} provenance excerpt is absent from ${stale.path}`)
     }
   }
