@@ -158,15 +158,15 @@ test('run reviewProvenance withholds a nested string leaf in place', () => {
   })
 })
 
-test('question withholds options as a unit and audit reasons as audit_reason', () => {
+test('question withholds secret-shaped option elements and keeps the options array', () => {
   const sanitized = sanitizeOutboxPayload('question', {
     question: SAFE,
     options: [SAFE, SECRET],
     audits: [{ reason: SECRET }, { reason: SAFE }],
   })
-  expect(sanitized.options).toBe(WITHHELD_SECRET_SHAPED)
+  expect(sanitized.options).toEqual([SAFE, WITHHELD_SECRET_SHAPED])
   expect(sanitized.audits).toEqual([{ reason: WITHHELD_SECRET_SHAPED }, { reason: SAFE }])
-  expect(sanitized.withheldFields).toEqual(['options', 'audit_reason'])
+  expect(sanitized.withheldFields).toEqual(['options[1]', 'audit_reason'])
 })
 
 test('a sanitized run row stays eligible for the send-time payload re-check', () => {
