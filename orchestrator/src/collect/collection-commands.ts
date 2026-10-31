@@ -5,6 +5,7 @@ import { formatPeek, peekRun } from '../events.ts'
 import { resolveRecordedRunJob } from '../jobs/jobs.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { reapStale } from '../run/run-liveness.ts'
+import { focusedTestObservations } from '../run/run-test-outcome.ts'
 import { terminalSharedGitConfigForRecordedRun } from '../run/shared-git-config-run.ts'
 import { isSyntheticLifecycleJob } from '../run/synthetic-lifecycle-job.ts'
 import { collectResult, collectWait, resolveFailover, thinOutputWarning } from './collect.ts'
@@ -40,6 +41,7 @@ export function resultCommand(
     (job, branch, mintedBranch) =>
       !isSyntheticLifecycleJob(job) &&
       resolveRecordedRunJob({ job, branch, minted_branch: mintedBranch }).writesRepo,
+    focusedTestObservations,
   )
   const chain = resolveFailover(database, resolveRunIdentifier(database, argv[1] ?? ''))
   const row = database
