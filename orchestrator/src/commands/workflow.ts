@@ -21,6 +21,7 @@ import {
   nextCommand,
   probeCommand,
   promoteCatalogueCommand,
+  promoteTreeCommand,
   promoteWorkflowCommand,
   recordEvidenceCommand,
   renderCheckCommand,
@@ -77,7 +78,7 @@ function workflowRegistration(
     .allowExcessArguments(true)
     .action(() => {
       throw new Error(
-        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+        `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
       )
     })
   return { workflow, workflowPresentation, handlerOptions, output }
@@ -465,6 +466,22 @@ function registerWorkflowTreeCommands({
     .allowExcessArguments(false)
     .action((options) =>
       importCommand(workflowArgv('import', [], options), output(options), {
+        ...handlerOptions,
+        cwd: options.cwd ?? handlerOptions.cwd,
+      }),
+    )
+
+  authorOption(
+    reasonOption(
+      workflow
+        .command('promote-tree')
+        .description('promote newest workflow drafts that match a project workflow tree')
+        .option('--cwd <value>', 'select the project workflow tree'),
+    ),
+  )
+    .allowExcessArguments(false)
+    .action((options) =>
+      promoteTreeCommand(workflowArgv('promote-tree', [], options), workflowPresentation, {
         ...handlerOptions,
         cwd: options.cwd ?? handlerOptions.cwd,
       }),

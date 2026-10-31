@@ -8,10 +8,13 @@ import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
+  importableStepCatalogueErrors,
   importStepCatalogue,
+  promoteStepCatalogue,
+  promoteStepCatalogueLocal,
+  type StepCatalogueDefinition,
   selectedStepCatalogue,
   stepCatalogueLocalLifecycle,
-  validateStepCatalogue,
 } from './step-catalogue.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import {
@@ -21,9 +24,16 @@ import {
   type WorkflowTreeStore,
 } from './workflow-tree.ts'
 import {
+  planWorkflowTreePromotion,
+  type WorkflowTreePromotionPlan,
+} from './workflow-tree-promotion.ts'
+import {
   importWorkflow,
   productionWorkflows,
+  promoteWorkflow,
+  promoteWorkflowLocal,
   validateWorkflowDefinition,
+  type WorkflowDefinition,
   workflowLocalLifecycle,
 } from './workflows.ts'
 
@@ -123,6 +133,109 @@ export function productionWorkflowTree(
   }
 }
 
+export function newestDraftWorkflowTree(
+  input: { database?: Database; project?: string | null } = {},
+): WorkflowTreeStore {
+  const database = input.database ?? db()
+  const spaceId = workflowReadSpaceFor(database, input.project ?? null)
+  const production = productionWorkflowTree({ database, project: input.project ?? null })
+  const { catalogueRow: catalogueDraft, workflowRows: drafts } = newestDraftRows(database, spaceId)
+  const catalogue = catalogueDraft
+    ? (JSON.parse(catalogueDraft.definition) as StepCatalogueDefinition)
+    : { steps: production.steps, sequences: production.sequences }
+  const workflows = new Map(production.workflows.map((item) => [item.slug, item.definition]))
+  for (const row of drafts)
+    workflows.set(row.slug, JSON.parse(row.definition) as WorkflowDefinition)
+  return {
+    steps: catalogue.steps,
+    sequences: catalogue.sequences ?? [],
+    workflows: [...workflows].map(([slug, definition]) => ({ slug, definition })),
+  }
+}
+
+type NewestDraftRow = { n: number; definition: string }
+function newestDraftRows(
+  database: Database,
+  spaceId: string | null,
+): {
+  catalogueRow: NewestDraftRow | null
+  workflowRows: (NewestDraftRow & { slug: string })[]
+} {
+  const catalogueRow = database
+    .query<NewestDraftRow, [string | null]>(
+      `SELECT v.n,v.definition FROM step_catalogue_version v
+       JOIN step_catalogue c ON c.record_id=v.catalogue_record_id
+       WHERE c.slug='shared' AND c.space_id IS ? AND v.status='draft' AND v.superseded_at IS NULL
+       ORDER BY v.n DESC LIMIT 1`,
+    )
+    .get(spaceId)
+  const workflowRows = database
+    .query<NewestDraftRow & { slug: string }, [string | null]>(
+      `SELECT w.slug,v.n,v.definition FROM workflow_version v
+       JOIN workflow w ON w.record_id=v.workflow_record_id
+       WHERE w.space_id IS ? AND v.status='draft' AND v.superseded_at IS NULL
+         AND v.n=(SELECT MAX(v2.n) FROM workflow_version v2
+           WHERE v2.workflow_record_id=v.workflow_record_id AND v2.status='draft' AND v2.superseded_at IS NULL)
+       ORDER BY w.slug`,
+    )
+    .all(spaceId)
+  return { catalogueRow, workflowRows }
+}
+
+export async function promoteMatchingWorkflowTreeDrafts(input: {
+  tree: WorkflowTreeStore
+  reason: string
+  author?: string
+  database?: Database
+  project?: string | null
+}): Promise<WorkflowTreePromotionPlan> {
+  const database = input.database ?? writableDb()
+  const spaceId = workflowReadSpaceFor(database, input.project ?? null)
+  const { catalogueRow, workflowRows } = newestDraftRows(database, spaceId)
+  const decision = planWorkflowTreePromotion({
+    tree: input.tree,
+    production: productionWorkflowTree({ database, project: input.project ?? null }),
+    ...(catalogueRow
+      ? {
+          newestCatalogueDraft: {
+            n: catalogueRow.n,
+            definition: JSON.parse(catalogueRow.definition) as StepCatalogueDefinition,
+          },
+        }
+      : {}),
+    newestWorkflowDrafts: new Map(
+      workflowRows.map((row) => [
+        row.slug,
+        { n: row.n, definition: JSON.parse(row.definition) as WorkflowDefinition },
+      ]),
+    ),
+  })
+  for (const item of decision.promotions) {
+    const local = currentRecordWriteDecision(database) === 'local-authoritative'
+    if (item.kind === 'catalogue') {
+      if (local) promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
+      else
+        await promoteStepCatalogue(
+          item.n,
+          input.reason,
+          input.author,
+          database,
+          input.project ?? undefined,
+        )
+    } else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
+    else
+      await promoteWorkflow(
+        item.slug,
+        item.n,
+        input.reason,
+        input.author,
+        database,
+        input.project ?? undefined,
+      )
+  }
+  return decision
+}
+
 const same = (left: unknown, right: unknown) => isDeepStrictEqual(left, right)
 
 function orderedSteps(imported: CatalogueStep[], production: CatalogueStep[]): CatalogueStep[] {
@@ -161,6 +274,7 @@ function orderedSequences(
 export type WorkflowTreeImportResult = {
   catalogue: DraftOutcome
   workflowOutcomes: (DraftOutcome & { slug: string })[]
+  warnings?: { step: string; source: string }[]
 }
 
 type DraftOutcome = { status: 'created'; n: number } | { status: 'no change' }
@@ -366,6 +480,7 @@ type ImportPlan = {
   catalogueChanged: boolean
   workflowsToWrite: WorkflowTreeStore['workflows']
   noChangeWorkflows: (DraftOutcome & { slug: string })[]
+  warnings: { step: string; source: string }[]
 }
 
 function changedSlugs<T extends { slug: string }>(production: T[], imported: T[]): string[] {
@@ -384,7 +499,7 @@ function planWorkflowTreeImport(
   const steps = orderedSteps(tree.steps, production.steps)
   const sequences = orderedSequences(tree.sequences, production.sequences)
   const catalogue = { steps, sequences }
-  const catalogueErrors = validateStepCatalogue(catalogue)
+  const { errors: catalogueErrors, unknownNeeds } = importableStepCatalogueErrors(catalogue)
   const workflowErrors = new Map(
     tree.workflows.map(({ slug, definition }) => [
       slug,
@@ -421,6 +536,7 @@ function planWorkflowTreeImport(
     noChangeWorkflows: tree.workflows
       .filter(({ slug }) => !toWrite.has(slug))
       .map(({ slug }) => ({ slug, status: 'no change' })),
+    warnings: unknownNeeds.map(({ step, source }) => ({ step, source })),
   }
 }
 
@@ -490,7 +606,11 @@ async function writeHostedImport(
     if (error instanceof HostedCacheApplyFailure) throw error
     throw hostedWriteFailure(error, written, pending)
   }
-  return { catalogue, workflowOutcomes: workflows }
+  return {
+    catalogue,
+    workflowOutcomes: workflows,
+    ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
+  }
 }
 
 function writeLocalImport(
@@ -514,7 +634,11 @@ function writeLocalImport(
         .n,
     })),
   ]
-  return { catalogue, workflowOutcomes: workflows }
+  return {
+    catalogue,
+    workflowOutcomes: workflows,
+    ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
+  }
 }
 
 export function importWorkflowTree(
@@ -544,6 +668,7 @@ export function importWorkflowTree(
       return {
         catalogue: { status: 'no change' as const },
         workflowOutcomes: plan.noChangeWorkflows,
+        ...(plan.warnings.length ? { warnings: plan.warnings } : {}),
       }
     if (currentRecordWriteDecision(database) === 'hosted')
       return writeHostedImport(plan, reason, author, database, project)

@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
+import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
@@ -17,6 +18,7 @@ import {
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
+  type WorkflowPromotionResult,
 } from './pr-merge.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
@@ -69,6 +71,7 @@ function adapter(
     ) => string | null
     postMergeChange?: () => PullRequestChange
     recordLandings?: () => void
+    promoteMergedWorkflowDrafts?: () => string | WorkflowPromotionResult
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
     queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
@@ -102,6 +105,22 @@ function adapter(
           branch: pullRequest.headBranch,
         }) as PullRequestChange),
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
+    ...(input.promoteMergedWorkflowDrafts
+      ? {
+          promoteMergedWorkflowDrafts: () => {
+            try {
+              const result = input.promoteMergedWorkflowDrafts!()
+              return typeof result === 'string' ? { ok: true as const, output: result } : result
+            } catch (cause) {
+              return {
+                ok: false as const,
+                stage: 'promote' as const,
+                detail: cause instanceof Error ? cause.message : String(cause),
+              }
+            }
+          },
+        }
+      : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
@@ -141,7 +160,7 @@ const requiredRelease = (
   ...overrides,
 })
 
-test('required release runs after landing recording and before cleanup and maps failure', () => {
+test('post-merge stages run landings, promotion, required release, then cleanup', () => {
   registerProject([])
   recordPassingGate()
   const calls: string[] = []
@@ -150,6 +169,10 @@ test('required release runs after landing recording and before cleanup and maps 
     cwd,
     adapter({
       recordLandings: () => calls.push('record-landings'),
+      promoteMergedWorkflowDrafts: () => {
+        calls.push('promote-workflows')
+        return 'promoted workflow drafts'
+      },
       releaseRequired: (enabled) => {
         expect(enabled).toBe(true)
         calls.push('release-required')
@@ -175,7 +198,7 @@ test('required release runs after landing recording and before cleanup and maps 
     true,
   )
   expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
-  expect(calls).toEqual(['record-landings', 'release-required', 'cleanup'])
+  expect(calls).toEqual(['record-landings', 'promote-workflows', 'release-required', 'cleanup'])
   expect(outcome.output).toContain('required rung hosted-api: deploy exit 7')
 })
 
@@ -203,6 +226,85 @@ test('an already-merged pull request skips admission and resumes post-merge stag
   expect(outcome.exitCode).toBe(0)
   expect(admitted).toBe(false)
   expect(released).toBe(true)
+})
+
+test('a workflow promotion failure is merge residue and a required release failure wins', () => {
+  registerProject([])
+  recordPassingGate()
+  const failedPromotion = () => {
+    throw new Error('catalogue promotion refused')
+  }
+  const residue = mergePullRequest(
+    '42',
+    cwd,
+    adapter({ promoteMergedWorkflowDrafts: failedPromotion }),
+  )
+  expect(residue.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(residue.output).toContain(
+    'workflow draft promotion failed at promote: catalogue promotion refused',
+  )
+  expect(residue.output).toContain('workflow promote-tree')
+
+  const unreleased = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      promoteMergedWorkflowDrafts: failedPromotion,
+      releaseRequired: () =>
+        requiredRelease({
+          satisfied: false,
+          releases: [
+            {
+              rung: 'hosted-api',
+              deployExit: 7,
+              outputTail: 'not live',
+              satisfied: false,
+              deployed: true,
+            },
+          ],
+        }),
+    }),
+    undefined,
+    true,
+  )
+  expect(unreleased.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+})
+
+test.each([
+  [
+    'fetch' as const,
+    `git -C ${cwd} fetch origin, then git -C ${cwd} merge --ff-only merge-commit, then`,
+  ],
+  [
+    'branch-check' as const,
+    `put checkout ${cwd} on trunk main, then git -C ${cwd} merge --ff-only merge-commit, then`,
+  ],
+  ['fast-forward' as const, `git -C ${cwd} merge --ff-only merge-commit, then`],
+])('a %s workflow promotion failure names its stage remedy', (stage, remedy) => {
+  registerProject([])
+  recordPassingGate()
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      view: () => ({ ...pullRequest, state: 'MERGED', mergeCommit: 'merge-commit' }),
+      postMergeChange: () =>
+        ({
+          project: projectByName('merge-fixture')!,
+          branch: pullRequest.headBranch,
+        }) as PullRequestChange,
+      promoteMergedWorkflowDrafts: () => ({
+        ok: false,
+        stage,
+        detail: `${stage} fixture failed`,
+      }),
+    }),
+  )
+
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(`workflow draft promotion failed at ${stage}`)
+  expect(outcome.output).toContain(remedy)
+  expect(outcome.output).toContain('workflow promote-tree')
 })
 
 const cleanupReport = (
@@ -430,6 +532,11 @@ test('a landing-record failure preserves branches by skipping cleanup', () => {
       recordLandings: () => {
         throw new Error('local refs unavailable')
       },
+      promoteMergedWorkflowDrafts: () => ({
+        ok: false,
+        stage: 'promote',
+        detail: 'catalogue promotion refused',
+      }),
       shipCleanup: () => {
         cleaned = true
         return cleanupReport()
@@ -441,6 +548,10 @@ test('a landing-record failure preserves branches by skipping cleanup', () => {
   expect(output.output).toContain(
     `${PLATFORM_SLUG} tree branch landed ${pullRequest.headBranch} --pr 42`,
   )
+  expect(output.output).toContain(
+    'workflow draft promotion failed at promote: catalogue promotion refused',
+  )
+  expect(output.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
   expect(cleaned).toBe(false)
 })
 

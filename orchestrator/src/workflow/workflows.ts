@@ -546,6 +546,7 @@ export function promoteWorkflow(
   reasonValue: string | undefined,
   authorValue?: string,
   d: Database = writableDb(),
+  project?: string,
 ) {
   assertWorkflowWriteAllowed('promote workflow')
   return applyRecordWriteAuthority({
@@ -555,7 +556,7 @@ export function promoteWorkflow(
     },
     hosted: async () => {
       if (!reasonValue?.trim()) throw new Error('reason is required')
-      const spaceId = await hostedSpace(d)
+      const spaceId = await hostedSpace(d, project)
       const target = selectedWorkflow(slug, n, d, spaceId)
       if (target.status === 'retired')
         throw new Error(`workflow "${slug}" version ${n} is not a draft`)

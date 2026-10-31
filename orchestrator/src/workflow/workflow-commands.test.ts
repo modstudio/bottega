@@ -17,6 +17,7 @@ import {
   installHostedWorkflowTreeFixture as installHostedWorkflowTree,
   workflowCommandOutcomePresentation as outcomePresentation,
   workflowCommandPresentation as presentation,
+  runPromoteTreeCommandFixture as promoteTree,
   publishCursorWorkflowFixture as publishCursorWorkflow,
   publishStaleLocalWorkflowFixture as publishStaleLocalWorkflow,
   workflowRecordedArtifact as recordedArtifact,
@@ -44,7 +45,7 @@ test('workflow preserves the unknown-verb refusal and exit status', async () => 
     error.mockRestore()
   }
   expect(errors).toEqual([
-    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
   ])
 })
 
@@ -415,32 +416,35 @@ test('workflow tree project refusal is only required for a configured record wit
   )
 })
 
-test('workflow hydrate and import refuse an unowned directory when a record is configured', async () => {
+test('workflow tree commands name their own refusal for an unowned configured directory', async () => {
   const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   try {
-    await expect(
-      workflowCommand(
-        ['workflow', 'hydrate', '--check', '--cwd', repositoryRoot],
-        presentation([]),
-      ),
-    ).rejects.toThrow(
-      `refusing workflow hydrate in ${repositoryRoot}: no registered project owns this directory\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
-    await expect(
-      workflowCommand(
-        ['workflow', 'import', '--cwd', repositoryRoot, '--reason', 'unowned tree'],
-        presentation([]),
-      ),
-    ).rejects.toThrow(
-      `refusing workflow import in ${repositoryRoot}: no registered project owns this directory\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
+    for (const [verb, extra] of [
+      ['hydrate', ['--check']],
+      ['import', ['--reason', 'unowned tree']],
+      ['promote-tree', ['--reason', 'unowned tree']],
+    ] as const)
+      await expect(
+        workflowCommand(['workflow', verb, ...extra, '--cwd', repositoryRoot], presentation([])),
+      ).rejects.toThrow(
+        `refusing workflow ${verb} in ${repositoryRoot}: no registered project owns this directory\n` +
+          "cleared by: run from a registered project's worktree, or pass --cwd for one",
+      )
   } finally {
     if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
   }
+})
+
+test('workflow promote-tree reports when the tree already matches production', async () => {
+  expect((await promoteTree('unchanged tree')).lines).toEqual(['nothing needed promotion'])
+})
+
+test('workflow promote-tree refuses a workflow divergent from production and its newest draft', async () => {
+  expect((await promoteTree('divergent tree', true)).error?.message).toMatch(
+    /workflow hosted matched neither production nor the newest draft; clear with: .* workflow import .* then .* workflow promote-tree/,
+  )
 })
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {

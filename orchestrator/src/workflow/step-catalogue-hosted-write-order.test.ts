@@ -5,6 +5,7 @@ import {
   installRecordApiClient,
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
+import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import {
   productionStepCatalogue,
@@ -20,6 +21,135 @@ const whoami = async () => ({
   activeSpaceId: SPACE,
   personalSpaceId: SPACE,
   memberships: [],
+})
+
+test('hosted catalogue promotion selects the project space instead of the active space', async () => {
+  const local = db()
+  const project = 'catalogue-promotion-project'
+  const projectSpace = '01990000-0000-7000-8000-000000000224'
+  const ownerId = newRecordId()
+  const versionId = newRecordId()
+  const definition = productionStepCatalogue(local).definition
+  rememberProjectSpace(local, project, projectSpace)
+  local.exec(
+    "INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-31') ON CONFLICT DO NOTHING",
+  )
+  applyWorkflowCatalogueRow(local, 'step_catalogue', {
+    id: ownerId,
+    spaceId: projectSpace,
+    slug: 'shared',
+    createdAt: at,
+    updatedAt: at,
+  })
+  applyWorkflowCatalogueRow(local, 'step_catalogue_version', {
+    id: versionId,
+    spaceId: projectSpace,
+    ownerId,
+    n: 1,
+    status: 'draft',
+    definition: JSON.stringify(definition),
+    author: 'test',
+    reason: 'fixture',
+    createdAt: at,
+    promotedAt: null,
+    retiredAt: null,
+    updatedAt: at,
+  })
+
+  const destinations: string[] = []
+  process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
+  installRecordApiClient({
+    ...createMemoryRecordApiClient(),
+    whoami: async () => ({
+      ...(await whoami()),
+      memberships: [
+        {
+          space_id: projectSpace,
+          name: 'Project space',
+          slug: 'project-space',
+          role: 'owner',
+          permission: 'write',
+        },
+      ],
+    }),
+    async listWorkflowCatalogue(table, _query, destination) {
+      if (!destination?.destinationSpaceId) throw new Error('test expected a destination space')
+      destinations.push(destination.destinationSpaceId)
+      if (table === 'step_catalogue')
+        return {
+          items: [
+            {
+              id: ownerId,
+              spaceId: projectSpace,
+              slug: 'shared',
+              generation: 1,
+              createdAt: at,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      if (table === 'step_catalogue_version')
+        return {
+          items: [
+            {
+              id: versionId,
+              spaceId: projectSpace,
+              ownerId,
+              n: 1,
+              status: 'draft',
+              definition: JSON.stringify(definition),
+              author: 'test',
+              reason: 'fixture',
+              createdAt: at,
+              promotedAt: null,
+              retiredAt: null,
+              updatedAt: at,
+            },
+          ],
+          nextCursor: null,
+        }
+      return { items: [], nextCursor: null }
+    },
+    async promoteWorkflow(input, destination) {
+      if (!destination?.destinationSpaceId) throw new Error('test expected a destination space')
+      destinations.push(destination.destinationSpaceId)
+      return {
+        identity: {
+          id: ownerId,
+          spaceId: projectSpace,
+          slug: 'shared',
+          generation: 1,
+          createdAt: at,
+          updatedAt: at,
+        },
+        versions: [
+          {
+            id: versionId,
+            spaceId: projectSpace,
+            ownerId,
+            n: input.n,
+            status: 'production',
+            definition: JSON.stringify(definition),
+            author: 'test',
+            reason: 'fixture',
+            createdAt: at,
+            promotedAt: at,
+            retiredAt: null,
+            updatedAt: at,
+          },
+        ],
+        events: [],
+      }
+    },
+  })
+
+  expect(await promoteStepCatalogue(1, 'promote', 'test', local, project)).toMatchObject({
+    version: 1,
+    changedSpaces: [projectSpace],
+  })
+  expect(destinations).not.toContain(SPACE)
+  expect(new Set(destinations)).toEqual(new Set([projectSpace]))
 })
 
 afterEach(() => {

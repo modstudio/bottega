@@ -173,6 +173,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-harness-mirror.test.ts',
   'scripts/check-canon-drift.test.ts',
   'scripts/check-workflow-drift.test.ts',
+  'scripts/check-workflow-tree.test.ts',
   'scripts/check-postgres-array-bindings.test.ts',
   'scripts/check-record-jsonb-string-checks.test.ts',
   'scripts/check-self-spawn.test.ts',

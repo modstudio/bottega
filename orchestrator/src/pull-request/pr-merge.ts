@@ -5,6 +5,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
@@ -22,6 +23,7 @@ import {
   shipCleanup,
 } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
+import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
 import {
   decideMergeAdmission,
@@ -71,6 +73,11 @@ export type PullRequestMergeFacts = {
   mergeCommit: string | null
 }
 
+type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
+export type WorkflowPromotionResult =
+  | { ok: true; output: string }
+  | { ok: false; stage: WorkflowPromotionStage; detail: string }
+
 export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
   view(cwd: string, target: string): PullRequestMergeFacts
@@ -104,6 +111,12 @@ export type PullRequestMergeAdapter = {
     pullRequest: PullRequestMergeFacts,
     database: Database,
   ): void
+  promoteMergedWorkflowDrafts?(
+    change: PullRequestChange,
+    pullRequest: PullRequestMergeFacts,
+    mergeCommit: string,
+    reason: string,
+  ): WorkflowPromotionResult
   recordCi?(
     change: PullRequestChange,
     pullRequest: PullRequestMergeFacts,
@@ -303,6 +316,65 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       number: pullRequest.number,
     })
   },
+  promoteMergedWorkflowDrafts(change, _pullRequest, mergeCommit, reason) {
+    if (!mergedChangeNeedsWorkflowPromotion(change.group.pathSet))
+      return {
+        ok: true,
+        output: 'workflow draft promotion skipped: merged change touched no workflow tree path',
+      }
+    const attempt = (
+      stage: WorkflowPromotionStage,
+      action: () => string,
+    ): { value: string } | { failure: WorkflowPromotionResult } => {
+      try {
+        return { value: action() }
+      } catch (cause) {
+        return {
+          failure: {
+            ok: false,
+            stage,
+            detail: cause instanceof Error ? cause.message : String(cause),
+          },
+        }
+      }
+    }
+    const fetched = attempt('fetch', () =>
+      successful(change.project.path, ['git', 'fetch', 'origin'], 'workflow promotion fetch'),
+    )
+    if ('failure' in fetched) return fetched.failure
+    const branch = attempt('branch-check', () =>
+      successful(
+        change.project.path,
+        ['git', 'branch', '--show-current'],
+        'workflow promotion branch check',
+      ).trim(),
+    )
+    if ('failure' in branch) return branch.failure
+    const trunk = change.project.settings.trunk
+    if (branch.value !== trunk)
+      return {
+        ok: false,
+        stage: 'branch-check',
+        detail: `main checkout ${change.project.path} is on branch ${branch.value || '<detached>'}, expected trunk ${trunk}`,
+      }
+    const fastForwarded = attempt('fast-forward', () =>
+      successful(
+        change.project.path,
+        ['git', 'merge', '--ff-only', mergeCommit],
+        'workflow promotion fast-forward',
+      ),
+    )
+    if ('failure' in fastForwarded) return fastForwarded.failure
+    const binary = join(change.project.path, 'bin', PLATFORM_SLUG)
+    const promoted = attempt('promote', () =>
+      successful(
+        change.project.path,
+        [binary, 'workflow', 'promote-tree', '--cwd', change.project.path, '--reason', reason],
+        'workflow draft promotion',
+      ),
+    )
+    return 'failure' in promoted ? promoted.failure : { ok: true, output: promoted.value }
+  },
   recordCi(change, pullRequest, database) {
     const result = recordPullRequestCi({
       project: change.project,
@@ -363,6 +435,10 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   shipCleanup(project, branch, _prNumber, database) {
     return shipCleanup(branch, { project, confirmedLanded: true, database })
   },
+}
+
+function mergedChangeNeedsWorkflowPromotion(paths: readonly string[]): boolean {
+  return paths.some((path) => matchWorkflowTreePath(path) !== null)
 }
 
 function collectMergeProof(
@@ -671,6 +747,7 @@ function mergedPullRequestOutput(input: {
   prNumber: number
   mergeCommit: string
   recordingError?: string
+  promotion: { output: string; error?: string }
   requeueOutput?: string
   requiredRelease: RequiredReleaseReport
   target: string
@@ -680,10 +757,11 @@ function mergedPullRequestOutput(input: {
     output: input.requeueOutput ? `${outcome.output}\n${input.requeueOutput}` : outcome.output,
   })
   if (input.recordingError) {
+    const promotionOutput = input.promotion.output ? `\n${input.promotion.output}` : ''
     return withRequeueOutput({
       output:
         `pull request #${input.prNumber} merged as ${input.mergeCommit}\n` +
-        `${input.recordingError}; recover landing evidence with: ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr ${input.prNumber}; cleanup was not run`,
+        `${input.recordingError}; recover landing evidence with: ${PLATFORM_SLUG} tree branch landed ${input.branch} --pr ${input.prNumber}; cleanup was not run${promotionOutput}`,
       exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
     })
   }
@@ -692,12 +770,16 @@ function mergedPullRequestOutput(input: {
     input.target,
     input.project,
   )
-  const outputParts = [input.mergeCommit, releaseOutput].filter(Boolean)
-  let cleanupExitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE = 0
+  const outputParts = [input.mergeCommit, input.promotion.output, releaseOutput].filter(Boolean)
+  let cleanupExitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE = input.promotion.error
+    ? MERGED_WITH_RESIDUE_EXIT_CODE
+    : 0
   if (!input.adapter.shipCleanup) {
     return withRequeueOutput({
       output: outputParts.join('\n'),
-      exitCode: input.requiredRelease.satisfied ? 0 : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+      exitCode: input.requiredRelease.satisfied
+        ? cleanupExitCode
+        : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
     })
   }
   try {
@@ -708,7 +790,7 @@ function mergedPullRequestOutput(input: {
       input.database,
     )
     outputParts.push(formatShipCleanup(report))
-    cleanupExitCode = report.verdict.clean ? 0 : MERGED_WITH_RESIDUE_EXIT_CODE
+    if (!report.verdict.clean) cleanupExitCode = MERGED_WITH_RESIDUE_EXIT_CODE
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     outputParts.push(
@@ -722,6 +804,38 @@ function mergedPullRequestOutput(input: {
       ? cleanupExitCode
       : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
   })
+}
+
+function promotionStageOutput(input: {
+  adapter: PullRequestMergeAdapter
+  change: PullRequestChange
+  pullRequest: PullRequestMergeFacts
+  mergeCommit: string
+}): { output: string; error?: string } {
+  if (!input.adapter.promoteMergedWorkflowDrafts) return { output: '' }
+  const checkout = input.change.project?.path ?? '<main-checkout>'
+  const trunk = input.change.project?.settings.trunk ?? '<trunk>'
+  const reason = `merged PR #${input.pullRequest.number} (${input.mergeCommit})`
+  const result = input.adapter.promoteMergedWorkflowDrafts(
+    input.change,
+    input.pullRequest,
+    input.mergeCommit,
+    reason,
+  )
+  if (result.ok) return { output: result.output }
+  const promotion = `${PLATFORM_SLUG} workflow promote-tree --cwd ${checkout} --reason "${reason}"`
+  const command =
+    result.stage === 'fetch'
+      ? `git -C ${checkout} fetch origin, then git -C ${checkout} merge --ff-only ${input.mergeCommit}, then ${promotion}`
+      : result.stage === 'branch-check'
+        ? `put checkout ${checkout} on trunk ${trunk}, then git -C ${checkout} merge --ff-only ${input.mergeCommit}, then ${promotion}`
+        : result.stage === 'fast-forward'
+          ? `git -C ${checkout} merge --ff-only ${input.mergeCommit}, then ${promotion}`
+          : promotion
+  return {
+    output: `workflow draft promotion failed at ${result.stage}: ${result.detail}; clear with: ${command}`,
+    error: result.detail,
+  }
 }
 
 function recordPostMergeEvidence(input: {
@@ -859,6 +973,12 @@ function completeMerge(input: {
       pullRequest: pullRequest!,
       database: input.database,
       projectName: input.project.name,
+    }),
+    promotion: promotionStageOutput({
+      adapter: input.adapter,
+      change: admittedChange!,
+      pullRequest: pullRequest!,
+      mergeCommit,
     }),
     requeueOutput,
     requiredRelease: input.adapter.releaseRequired(

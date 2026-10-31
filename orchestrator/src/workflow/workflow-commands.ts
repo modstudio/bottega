@@ -73,7 +73,11 @@ import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-ref
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
+import {
+  importWorkflowTree,
+  productionWorkflowTree,
+  promoteMatchingWorkflowTreeDrafts,
+} from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -758,7 +762,7 @@ export function catalogueVersionsCommand(
 }
 
 export function workflowProjectRefusal(input: {
-  command: 'hydrate' | 'import'
+  command: 'hydrate' | 'import' | 'promote-tree'
   root: string
   project: string | null
   recordConfigured: boolean
@@ -771,7 +775,7 @@ export function workflowProjectRefusal(input: {
 }
 
 function workflowCommandProject(
-  command: 'hydrate' | 'import',
+  command: 'hydrate' | 'import' | 'promote-tree',
   options: WorkflowCommandOptions,
 ): { root: string; project: Project | null } {
   const resolved = resolve(options.cwd ?? process.cwd())
@@ -843,6 +847,40 @@ export async function importCommand(
     changedPaths,
   )
   print(result, [...(skipped ? [skipped] : []), ...workflowImportLines(result)].join('\n'))
+}
+
+export async function promoteTreeCommand(
+  argv: string[],
+  presentation: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const { root, project } = workflowCommandProject('promote-tree', options)
+  const reason = flagValue(argv, 'reason')
+  if (!reason?.trim()) throw new Error('workflow promote-tree: reason is required')
+  const plan = await promoteMatchingWorkflowTreeDrafts({
+    tree: parseWorkflowTree(collectWorkflowTree(root)),
+    reason,
+    author: flagValue(argv, 'author'),
+    project: project?.name ?? null,
+  })
+  if (!plan.promotions.length && !plan.divergent.length) {
+    presentation.log('nothing needed promotion')
+    return
+  }
+  for (const item of plan.promotions)
+    presentation.log(
+      item.kind === 'catalogue'
+        ? `promoted catalogue draft ${item.n}`
+        : `promoted workflow ${item.slug} draft ${item.n}`,
+    )
+  if (plan.divergent.length) {
+    const items = plan.divergent.map((item) =>
+      item.kind === 'catalogue' ? 'catalogue' : `workflow ${item.slug}`,
+    )
+    throw new Error(
+      `workflow promote-tree refused: tree ${items.join(', ')} matched neither production nor the newest draft; clear with: ${PLATFORM_SLUG} workflow import --cwd ${root}, then ${PLATFORM_SLUG} workflow promote-tree --cwd ${root} --reason "${reason.trim()}"`,
+    )
+  }
 }
 
 function workflowArgs(argv: string[]): Record<string, string> {
