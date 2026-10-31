@@ -57,19 +57,14 @@ const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/
 const object = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-export type UnsupportedCloseEvidenceFlag = {
+type UnsupportedCloseEvidenceFlag = {
   flag: string
   acceptingFloors: FloorKind[]
 }
 
-const closeEvidenceFlags = new Set([
-  '--task',
-  '--ruling',
-  '--self-ruling',
-  '--basis',
-  '--gate',
-  '--artifact',
-])
+export type CloseInstructionDecision =
+  | { judged: false }
+  | { judged: true; findings: UnsupportedCloseEvidenceFlag[] }
 
 const evidenceFlagsByFloor = new Map(
   floorKinds.map((floor) => [
@@ -97,21 +92,15 @@ function closingSentences(body: string): string[] {
 }
 
 function closeInstructionFlags(sentence: string): string[] {
-  const instructions = [
-    ...sentence.matchAll(/\bclos(?:e|ing)\b[^.!?]*?\b(?:with|using)\b([^.!?]*)/gi),
-    ...sentence.matchAll(/\bpass\b([^.!?]*)/gi),
-  ]
-  return instructions.flatMap((match) =>
-    (match[1]?.match(/--[a-z][a-z-]*/g) ?? []).filter((flag) => closeEvidenceFlags.has(flag)),
-  )
+  return (sentence.match(/--[a-z][a-z-]*/g) ?? []).filter((flag) => acceptingFloorsByFlag.has(flag))
 }
 
 export function unsupportedCloseEvidenceFlags(
   declaredFloors: readonly FloorEntry[],
   body: string,
-): UnsupportedCloseEvidenceFlag[] {
+): CloseInstructionDecision {
   // A templated floor resolves only at composition, so the authored text cannot be judged here.
-  if (declaredFloors.some((floor) => !isFloorKind(floor))) return []
+  if (declaredFloors.some((floor) => !isFloorKind(floor))) return { judged: false }
   const named = new Set(closingSentences(body).flatMap(closeInstructionFlags))
   const findings: UnsupportedCloseEvidenceFlag[] = []
   for (const flag of named) {
@@ -120,7 +109,10 @@ export function unsupportedCloseEvidenceFlags(
     if (declaredFloors.some((floor) => acceptingFloors.includes(floor as FloorKind))) continue
     findings.push({ flag, acceptingFloors: [...acceptingFloors] })
   }
-  return findings.sort((left, right) => left.flag.localeCompare(right.flag))
+  return {
+    judged: true,
+    findings: findings.sort((left, right) => left.flag.localeCompare(right.flag)),
+  }
 }
 
 export function validateStepCatalogue(value: unknown): string[] {

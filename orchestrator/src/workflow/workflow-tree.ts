@@ -201,7 +201,8 @@ function parsedCatalogueStep(
     needs: frontMatter.needs as CatalogueStep['needs'],
     body,
   }
-  for (const finding of unsupportedCloseEvidenceFlags(step.floor, step.body)) {
+  const closeInstructionDecision = unsupportedCloseEvidenceFlags(step.floor, step.body)
+  for (const finding of closeInstructionDecision.judged ? closeInstructionDecision.findings : []) {
     throw new Error(
       `${file.path}: close instruction names ${finding.flag}, which none of its declared floors accept; ` +
         `${finding.flag} is accepted by ${finding.acceptingFloors.join(', ')}; ` +
