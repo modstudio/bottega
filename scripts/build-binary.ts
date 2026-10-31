@@ -89,7 +89,7 @@ function targetParts(target: BinaryTarget): {
   arch: string
 } {
   const [os, arch] = target.split('-')
-  return { platform: os === 'darwin' ? 'darwin' : 'linux', arch }
+  return { platform: os === 'darwin' ? 'darwin' : 'linux', arch: arch! }
 }
 
 export function assertTargetHost(target: BinaryTarget, hostPlatform: NodeJS.Platform): void {

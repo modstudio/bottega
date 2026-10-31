@@ -111,7 +111,7 @@ function runtimeSyncedSourceRefusals(): string[] {
   ].sort()
 }
 
-const stubRequest = async () => ({})
+const stubRequest = async <T>() => new Promise<T>(() => {})
 const stubFetch = async () =>
   new Response('{}', { headers: { 'content-type': 'application/json' } })
 const methodInventory = () => [

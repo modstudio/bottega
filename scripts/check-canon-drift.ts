@@ -32,6 +32,7 @@ import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const remedy = `edit canon in the store with ${PLATFORM_SLUG} doc set, then run ${PLATFORM_SLUG} doc canon hydrate in the worktree and commit`
+type CanonRow = { slug: string; body: string; subject?: string | null }
 
 function run(argv: string[], cwd: string): { exitCode: number; stdout: string; stderr: string } {
   const result = Bun.spawnSync(argv, { cwd, stdout: 'pipe', stderr: 'pipe' })
@@ -102,7 +103,7 @@ export function branchHydrationPaths(paths: Iterable<string>): string[] {
 export function canonBranchFindings(input: {
   checkout: string
   base: string
-  rows: ReturnType<typeof storedRepositoryCanonRows>
+  rows: CanonRow[]
 }): HydrationDrift[] {
   const changed = branchHydrationPaths(branchChangedPaths(input.checkout, input.base))
   if (changed.length === 0) return []
@@ -123,7 +124,7 @@ export function canonEmptyStoreDriftRefusal(input: {
 
 function canonDriftFromInput(
   checkout: string,
-  input: ReturnType<typeof readCanonGateInput> | ReturnType<typeof readCanonGateFactsInput>,
+  input: { project: Project; rows: CanonRow[] },
 ): HydrationDrift[] {
   const { project, rows } = input
   let base: string

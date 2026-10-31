@@ -33,10 +33,10 @@ test('groups focused paths by nearest package with package-relative arguments', 
 
 test('runs a package selection through its own test entry point without nested packages', () => {
   const [group] = groupFocusedTestPaths(['hub/src'])
-  expect(relative(root, group.directory)).toBe('hub')
-  expect(group.paths).toEqual(['src'])
-  expect(group.argv.slice(0, 2)).toEqual(['bun', 'test'])
-  expect(group.argv).toContain('data/**')
+  expect(relative(root, group!.directory)).toBe('hub')
+  expect(group!.paths).toEqual(['src'])
+  expect(group!.argv.slice(0, 2)).toEqual(['bun', 'test'])
+  expect(group!.argv).toContain('data/**')
 
   const directoryGroups = groupFocusedTestPaths(['hub'])
   expect(directoryGroups.map((candidate) => relative(root, candidate.directory))).toContain(
@@ -49,8 +49,8 @@ test('runs a package selection through its own test entry point without nested p
 
 test('a selection inside a package whose test script embeds a path still narrows to the selection', () => {
   const [group] = groupFocusedTestPaths(['orchestrator/src/run/run.test.ts'])
-  expect(relative(root, group.directory)).toBe('orchestrator')
-  expect(group.argv).toEqual(['bun', 'test', 'src/run/run.test.ts'])
+  expect(relative(root, group!.directory)).toBe('orchestrator')
+  expect(group!.argv).toEqual(['bun', 'test', 'src/run/run.test.ts'])
 })
 
 test('refuses missing and escaping path arguments', () => {

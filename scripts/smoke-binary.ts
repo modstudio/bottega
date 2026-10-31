@@ -30,7 +30,7 @@ let mcpState: string | undefined
 let recordApiEnabled = false
 
 function smokeEnvironment(stateHome: string): Record<string, string | undefined> {
-  const env = {
+  const env: Record<string, string | undefined> = {
     ...process.env,
     XDG_CONFIG_HOME: join(stateHome, 'config'),
     ...(securityBin

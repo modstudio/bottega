@@ -65,7 +65,7 @@ function valuesBody(definition: string, table: string): string {
     new RegExp(`INSERT\\s+INTO\\s+${table}\\s*\\([^;]+?\\)\\s*VALUES([\\s\\S]*?);`, 'i'),
   )
   if (!match?.[1]) failure(`project move function ${table} VALUES declaration is missing`)
-  return match[1]
+  return match![1]!
 }
 
 function sqlString(value: string): string {
@@ -197,7 +197,7 @@ export async function proofProjectSpaceOwnershipDeclaration(
     `)
   ).rows[0]?.definition
   if (!definition) failure('project move function is missing')
-  assertProjectSpaceFunctionDeclaration(definition)
+  assertProjectSpaceFunctionDeclaration(definition!)
   console.log(
     `record project-space ownership gate: ${spaceTables.length} tables in ${(performance.now() - started).toFixed(1)}ms`,
   )

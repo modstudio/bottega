@@ -116,7 +116,7 @@ async function realCommandRunner(
   argv: readonly string[],
   options: { env?: Record<string, string>; timeoutMs?: number } = {},
 ): Promise<CommandResult> {
-  const child = Bun.spawn(argv, {
+  const child = Bun.spawn([...argv], {
     stdout: 'pipe',
     stderr: 'pipe',
     env: { ...process.env, ...options.env },

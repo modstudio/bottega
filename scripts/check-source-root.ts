@@ -112,13 +112,13 @@ function isLocalSourceRootInitializer(node: ts.Expression | undefined): boolean 
   ) {
     return false
   }
-  const url = node.arguments[0]
+  const url = node.arguments[0]!
   return (
     ts.isNewExpression(url) &&
     ts.isIdentifier(url.expression) &&
     url.expression.text === 'URL' &&
     url.arguments?.length === 2 &&
-    isImportMetaUrl(url.arguments[1]!)
+    isImportMetaUrl(url.arguments![1]!)
   )
 }
 
@@ -149,12 +149,22 @@ type Binding =
 type Scope = ts.SourceFile | ts.Block | ts.FunctionLikeDeclaration
 
 function isScope(node: ts.Node): node is Scope {
-  return ts.isSourceFile(node) || ts.isBlock(node) || ts.isFunctionLike(node)
+  return (
+    ts.isSourceFile(node) ||
+    ts.isBlock(node) ||
+    ts.isFunctionDeclaration(node) ||
+    ts.isMethodDeclaration(node) ||
+    ts.isGetAccessorDeclaration(node) ||
+    ts.isSetAccessorDeclaration(node) ||
+    ts.isConstructorDeclaration(node) ||
+    ts.isFunctionExpression(node) ||
+    ts.isArrowFunction(node)
+  )
 }
 
 function declarationScope(node: Binding): Scope | undefined {
   if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node)) return node.getSourceFile()
-  if (ts.isParameter(node)) return ts.isFunctionLike(node.parent) ? node.parent : undefined
+  if (ts.isParameter(node)) return isScope(node.parent) ? node.parent : undefined
   let current: ts.Node | undefined = node.parent
   while (current) {
     if (isScope(current)) return current

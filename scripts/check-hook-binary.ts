@@ -67,7 +67,7 @@ function main(): void {
             join(orchestratorHooksDirectory, entry.name),
             'utf8',
           ).split('\n', 1)[0]
-          return shellShebangs.has(firstLine)
+          return shellShebangs.has(firstLine!)
         })
         .map((entry) => `orchestrator/hooks/${entry.name}`),
     )

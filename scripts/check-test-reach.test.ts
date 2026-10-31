@@ -112,7 +112,7 @@ test('the hub data package is reached only by its own package leg', () => {
   const hub = CHECK_LEGS.find((leg) => leg.name === 'hub')!
   const data = CHECK_LEGS.find((leg) => leg.name === 'hub/data')!
   expect(hub.excludedTestDirectories).toContain('hub/data')
-  expect(hub.suite.some(({ argv }) => argv.includes('data'))).toBe(false)
+  expect(hub.suite.some(({ argv }) => (argv as readonly string[]).includes('data'))).toBe(false)
   expect(data).toMatchObject({
     directory: 'hub/data',
     ciJob: 'hub-data',

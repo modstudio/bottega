@@ -23,11 +23,11 @@ const utilRule = hubUtilArchitectureRules()[0]
 const siteRule = hubSiteArchitectureRules((target) => `node_modules/${target}`)[0]
 
 function utilImportIsAllowed(target: string) {
-  return utilRule.to.pathNot.some((pattern) => new RegExp(pattern).test(target))
+  return utilRule!.to.pathNot.some((pattern) => new RegExp(pattern).test(target))
 }
 
 function siteImportIsAllowed(target: string) {
-  return siteRule.to.pathNot.some((pattern) => new RegExp(pattern).test(target))
+  return siteRule!.to.pathNot.some((pattern) => new RegExp(pattern).test(target))
 }
 
 test('hub site imports only React, its own modules, and shared modules', () => {

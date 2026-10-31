@@ -22,7 +22,7 @@ function commandPattern(name: string, verbs: readonly string[]): RegExp {
   return new RegExp(`\\b${name}\\s+(?:${alternatives})(?![\\w-])`, 'g')
 }
 
-const hubVerbs = PLATFORM_COMMAND_WORDS.map((spelling) => spelling.split(' ')[0])
+const hubVerbs = PLATFORM_COMMAND_WORDS.map((spelling) => spelling.split(' ')[0]!)
 
 const LEGACY_NAME_REGISTRY = {
   'orch-command': { blocking: true, detectors: [/\borch\s+[a-z][a-z0-9-]*(?![\w-])/g] },

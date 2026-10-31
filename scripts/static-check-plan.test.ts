@@ -50,7 +50,7 @@ describe('worker static check plan', () => {
 
   test('includes the checks that protect worker changes from known silent failures', () => {
     const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS)
-    const run = new Set([
+    const run = new Set<string>([
       projection.biome.name,
       ...projection.staticChecks.map((check) => check.name),
     ])
@@ -69,7 +69,7 @@ describe('worker static check plan', () => {
       expect(run.has(name), `${name} must run in worker mode`).toBe(true)
     }
 
-    const typecheckLegs = new Set(projection.typecheckLegs.map((leg) => leg.name))
+    const typecheckLegs = new Set<string>(projection.typecheckLegs.map((leg) => leg.name))
     for (const name of ['cli', 'orchestrator', 'hub']) {
       expect(typecheckLegs.has(name), `${name} typecheck must run in worker mode`).toBe(true)
     }

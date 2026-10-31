@@ -110,7 +110,7 @@ test('classifies a failed machine and bounds the GitHub description', () => {
   expect(status.state).toBe('failure')
   expect(status.description).toStartWith('REHEARSAL FAIL ')
   expect(status.description.length).toBe(140)
-  expect(status.failure).toBe(`REHEARSAL FAIL ${failure}`)
+  expect(status.state === 'failure' ? status.failure : undefined).toBe(`REHEARSAL FAIL ${failure}`)
 })
 
 test('refuses a pass that applied no pending migration', () => {
