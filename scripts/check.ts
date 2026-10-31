@@ -36,7 +36,7 @@ import {
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
-import { staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
+import { BIOME_CHECK_NAME, staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
 
 type Command = { cwd: string; argv: string[]; category?: string }
 type Leg = {
@@ -286,7 +286,9 @@ async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
   })
   return {
     name: check.name,
-    ...result,
+    ...(result.exitCode !== 0 && check.name === BIOME_CHECK_NAME
+      ? await biomeErrorDetails(check.argv, result)
+      : result),
   }
 }
 
@@ -385,16 +387,18 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
 }
 
 async function biomeErrorDetails(
-  fallback: Pick<GateStepResult, 'detail' | 'omittedDetailLines' | 'note'>,
-): Promise<Pick<GateStepResult, 'detail' | 'omittedDetailLines' | 'note'>> {
+  failedArgv: readonly string[],
+  fallback: Pick<GateStepResult, 'exitCode' | 'detail' | 'omittedDetailLines' | 'note'>,
+): Promise<Pick<GateStepResult, 'exitCode' | 'detail' | 'omittedDetailLines' | 'note'>> {
   try {
+    const ciIndex = failedArgv.indexOf('ci')
+    if (ciIndex === -1) throw new Error('Biome command has no ci subcommand')
     const argv = [
-      `${root}node_modules/.bin/biome`,
-      'ci',
+      ...failedArgv.slice(0, ciIndex + 1),
       '--reporter=json',
       '--diagnostic-level=error',
       '--max-diagnostics=none',
-      '.',
+      ...failedArgv.slice(ciIndex + 1),
     ]
     const startedAt = performance.now()
     const child = track(
@@ -409,7 +413,7 @@ async function biomeErrorDetails(
     }
     const details = biomeFindings(Bun.stripANSI(output)).map(findingLine)
     if (details.length === 0) throw new Error('Biome JSON pass returned no diagnostics')
-    return { detail: details, omittedDetailLines: 0 }
+    return { exitCode: fallback.exitCode, detail: details, omittedDetailLines: 0 }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     const reasonNote = `Biome error list could not be read: ${reason}`
@@ -555,15 +559,20 @@ if (workerProjection) {
     process.exit(1)
   }
 }
-const workerBiomeStep = workerProjection
-  ? {
-      name: workerProjection.biome.name,
-      exitCode: await inherit(
-        workerProjection.biome.workerArgv!({ root, qualityBase: workerQualityBase! }),
-        root,
-      ),
-    }
-  : null
+let workerBiomeStep: GateStepResult | null = null
+if (workerProjection) {
+  const workerBiomeArgv = workerProjection.biome.workerArgv!({
+    root,
+    qualityBase: workerQualityBase!,
+  })
+  const workerBiomeResult = await inherit(workerBiomeArgv, root)
+  workerBiomeStep = {
+    name: workerProjection.biome.name,
+    ...(workerBiomeResult.exitCode !== 0
+      ? await biomeErrorDetails(workerBiomeArgv, workerBiomeResult)
+      : workerBiomeResult),
+  }
+}
 const results = await Promise.all(
   (workerProjection
     ? workerProjection.typecheckLegs
