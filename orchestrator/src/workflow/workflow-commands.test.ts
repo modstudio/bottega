@@ -17,6 +17,7 @@ import {
   installHostedWorkflowTreeFixture as installHostedWorkflowTree,
   workflowCommandOutcomePresentation as outcomePresentation,
   workflowCommandPresentation as presentation,
+  runPromoteTreeCommandFixture as promoteTree,
   publishCursorWorkflowFixture as publishCursorWorkflow,
   publishStaleLocalWorkflowFixture as publishStaleLocalWorkflow,
   workflowRecordedArtifact as recordedArtifact,
@@ -434,6 +435,16 @@ test('workflow tree commands name their own refusal for an unowned configured di
     if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl
   }
+})
+
+test('workflow promote-tree reports when the tree already matches production', async () => {
+  expect((await promoteTree('unchanged tree')).lines).toEqual(['nothing needed promotion'])
+})
+
+test('workflow promote-tree refuses a workflow divergent from production and its newest draft', async () => {
+  expect((await promoteTree('divergent tree', true)).error?.message).toMatch(
+    /workflow hosted matched neither production nor the newest draft; clear with: .* workflow import .* then .* workflow promote-tree/,
+  )
 })
 
 test('mode-less step command resolves autonomy from the fetched catalogue step', async () => {

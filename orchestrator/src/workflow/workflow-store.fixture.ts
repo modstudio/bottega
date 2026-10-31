@@ -16,7 +16,11 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import type { WorkflowCommandOptions, WorkflowPresentation } from './workflow-commands.ts'
+import {
+  promoteTreeCommand,
+  type WorkflowCommandOptions,
+  type WorkflowPresentation,
+} from './workflow-commands.ts'
 import { parseWorkflowTree } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
 import { promoteWorkflowLocal, setWorkflowLocal, type WorkflowDefinition } from './workflows.ts'
@@ -117,6 +121,64 @@ export function hostedWorkflowRepositoryFixture(label: string) {
     mainCheckout,
     worktree,
     dispose: () => rmSync(root, { recursive: true, force: true }),
+  }
+}
+
+function promoteTreeCommandFixture(label: string, divergent = false) {
+  const fixture = hostedWorkflowRepositoryFixture(label)
+  const spaceId = newRecordId()
+  registerWorkflowProject(label, fixture.mainCheckout)
+  installHostedWorkflowTreeFixture(label, spaceId, fixture.worktree)
+  if (divergent) {
+    const local = db()
+    const workflow = local
+      .query("SELECT record_id FROM workflow WHERE space_id = ? AND slug = 'hosted'")
+      .get(spaceId) as { record_id: string }
+    applyWorkflowCatalogueRow(local, 'workflow_version', {
+      id: newRecordId(),
+      spaceId,
+      ownerId: workflow.record_id,
+      n: 2,
+      status: 'draft',
+      definition: JSON.stringify({
+        title: 'Newest draft fixture',
+        description: 'Newest draft fixture.',
+        arguments: [],
+        modes: [],
+      }),
+      author: 'test',
+      reason: 'divergent draft fixture',
+      createdAt: '2026-10-31T12:00:00.000Z',
+      promotedAt: null,
+      retiredAt: null,
+    })
+    writeFileSync(
+      join(fixture.worktree, '.agents', 'workflows', 'hosted.md'),
+      '---\ntitle: Divergent tree fixture\narguments: []\nmodes: []\n---\nDivergent tree fixture.\n',
+    )
+  }
+  return fixture
+}
+
+export async function runPromoteTreeCommandFixture(label: string, divergent = false) {
+  const fixture = promoteTreeCommandFixture(label, divergent)
+  const lines: string[] = []
+  try {
+    try {
+      await promoteTreeCommand(
+        ['--reason', `promote ${label}`],
+        workflowCommandPresentation(lines),
+        {
+          cwd: fixture.worktree,
+        },
+      )
+      return { lines, error: null }
+    } catch (error) {
+      if (!divergent) throw error
+      return { lines, error: error as Error }
+    }
+  } finally {
+    fixture.dispose()
   }
 }
 
