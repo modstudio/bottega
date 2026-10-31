@@ -157,7 +157,7 @@ describe('caller checkout resolution', () => {
     borrowedCheckout: false,
   }
 
-  test('same-project-recording mutation: --cwd alone keeps the shell cwd as launch cwd', () => {
+  test('same-project-recording mutation: --cwd alone records the --cwd worktree as launch cwd', () => {
     const checked: string[] = []
     const decision = resolveCallerCheckoutDecision(
       {
@@ -176,7 +176,7 @@ describe('caller checkout resolution', () => {
     expect(checked).toEqual(['/projects/project/.claude/worktrees/DEV-1227'])
     expect(decision).toEqual({
       callerCwd: '/projects/project/.claude/worktrees/DEV-1227',
-      launchCwd: '/projects/project',
+      launchCwd: '/projects/project/.claude/worktrees/DEV-1227',
       notice: null,
     })
   })
@@ -210,7 +210,7 @@ describe('caller checkout resolution', () => {
     })
   })
 
-  test('durable-recording mutation: --repo with its worktree records the registered path', () => {
+  test('durable-recording mutation: --repo with its worktree records the --cwd worktree', () => {
     const decision = resolveCallerCheckoutDecision(
       {
         shellCwd: '/projects/atlas',
@@ -229,6 +229,30 @@ describe('caller checkout resolution', () => {
 
     expect(decision).toEqual({
       callerCwd: '/projects/starship/.claude/worktrees/STAR-42',
+      launchCwd: '/projects/starship/.claude/worktrees/STAR-42',
+      notice: null,
+    })
+  })
+
+  test('reported shape: --cwd from another project worktree records the selected main checkout', () => {
+    const decision = resolveCallerCheckoutDecision(
+      {
+        shellCwd: '/projects/atlas/.claude/worktrees/ATLAS-42',
+        explicitCwd: '/projects/starship',
+        namedProject: null,
+        cwdProject: { name: 'starship', path: '/projects/starship' },
+        shellProject: { name: 'atlas', path: '/projects/atlas' },
+      },
+      () => ({
+        repoRoot: '/projects/starship',
+        registeredProjectPath: '/projects/starship',
+        linkedWorktree: false,
+        borrowedCheckout: false,
+      }),
+    )
+
+    expect(decision).toEqual({
+      callerCwd: '/projects/starship',
       launchCwd: '/projects/starship',
       notice: null,
     })

@@ -135,16 +135,6 @@ export function dispatchLaunchCwdDecision(input: {
   }
 }
 
-function recordedLaunchCwdDecision(input: {
-  shellCwd: string
-  shellProject: { name: string } | null
-  checkoutCwd: string
-  checkoutProject: { name: string; path: string } | null
-}): string {
-  if (input.shellProject?.name === input.checkoutProject?.name) return input.shellCwd
-  return input.checkoutProject?.path ?? input.shellCwd
-}
-
 export function callerCheckoutDecision(input: {
   recordedLaunchCwd: string
   explicitCwd: string | null
@@ -190,17 +180,9 @@ export function resolveCallerCheckoutDecision(
   if (!('checkoutCwd' in selection)) throw new Error(selection.refusal)
   const checkoutCwd = selection.checkoutCwd
   const decidedCwdIsExplicit = input.explicitCwd !== null || input.namedProject !== null
-  const checkoutProject = input.explicitCwd
-    ? input.cwdProject
-    : (input.namedProject ?? input.shellProject)
   const facts = checkoutFactsAt(checkoutCwd)
   return callerCheckoutDecision({
-    recordedLaunchCwd: recordedLaunchCwdDecision({
-      shellCwd: input.shellCwd,
-      shellProject: input.shellProject,
-      checkoutCwd,
-      checkoutProject,
-    }),
+    recordedLaunchCwd: checkoutCwd,
     explicitCwd: decidedCwdIsExplicit ? checkoutCwd : null,
     ...facts,
   })
