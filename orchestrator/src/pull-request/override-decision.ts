@@ -30,6 +30,7 @@ type CeilingRulingGuidanceInput = {
 }
 
 const CEILING_GUIDANCE_REASON = 'remaining findings cannot cause harm'
+export const REVIEW_CEILING_REACHED = 'the review round ceiling is reached'
 
 function decideCeilingRuling(input: TriageOverrideInput, reason: string): TriageOverrideDecision {
   if (!reason) return { kind: 'refuse', reason: '--ceiling-ruling requires a non-empty reason' }
@@ -138,16 +139,16 @@ export function ceilingRulingGuidance(input: CeilingRulingGuidanceInput): string
   })
   if (decision.kind === 'accept') {
     return (
-      'the review round ceiling is reached; the architect rules under ' +
+      `${REVIEW_CEILING_REACHED}; the architect rules under ` +
       '`.agents/rules/20-build-and-buy.md` “Review rounds are a funnel”. Read the fix with ' +
       `\`${input.commandName} review read\` and, when no remaining finding can cause harm, record ` +
       `the ruling with \`${input.commandName} pr create ... --ceiling-ruling "<reason>"\``
     )
   }
   if (input.triage?.complete) {
-    return `the review round ceiling is reached; triage is complete, and ${input.commandName} pr create needs no ruling`
+    return `${REVIEW_CEILING_REACHED}; triage is complete, and ${input.commandName} pr create needs no ruling`
   }
   const reason =
     decision.kind === 'refuse' ? decision.reason : 'ceiling ruling eligibility was not decided'
-  return `the review round ceiling is reached; a ceiling ruling is not available yet: ${reason}`
+  return `${REVIEW_CEILING_REACHED}; a ceiling ruling is not available yet: ${reason}`
 }

@@ -32,7 +32,12 @@ import {
   type AdmissionOverride,
   decideAdmission,
 } from './admission-decision.ts'
-import { decideTriageOverride, type TriageOverrideAttribution } from './override-decision.ts'
+import {
+  ceilingRulingGuidance,
+  decideTriageOverride,
+  REVIEW_CEILING_REACHED,
+  type TriageOverrideAttribution,
+} from './override-decision.ts'
 import { decidePrePush, destinationBranch } from './pre-push-decision.ts'
 import {
   ceilingTriageFacts,
@@ -134,7 +139,7 @@ export function resolvePullRequestChange(
   }
 }
 
-export function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
+function triageDecision(change: PullRequestChange, database: Database): TriageDecision {
   const reviews = reviewsForAdmission(database, change.group)
   const lineage = reviewLineage(database, change.project.name, change.branch)
   const grouped = new Map<string, TriageReviewRow[]>()
@@ -185,6 +190,32 @@ export function triageDecision(change: PullRequestChange, database: Database): T
         sessionId: row.session_id,
       })),
   })
+}
+
+/** Resolve admission facts and describe ceiling-ruling eligibility for review tier. */
+export function ceilingGuidanceForTier(input: {
+  cwd: string
+  tip: string
+  branch: string
+  reviewBudget: Pick<ReviewRoundBudgetDecision, 'atCeiling' | 'roundsUsed' | 'ceiling'>
+  database?: Database
+}): string | null {
+  if (!input.reviewBudget.atCeiling) return null
+  try {
+    const database = input.database ?? db()
+    const change = resolvePullRequestChange(input.cwd, input.tip, database, undefined, input.branch)
+    return ceilingRulingGuidance({
+      reviewBudget: input.reviewBudget,
+      triage: ceilingTriageFacts(triageDecision(change, database)),
+      commandName: PLATFORM_SLUG,
+    })
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause)
+    return (
+      `${REVIEW_CEILING_REACHED}; ruling eligibility could not be established: ` +
+      `"${message}"; \`${PLATFORM_SLUG} pr create\` is the authority`
+    )
+  }
 }
 
 function overridesForChange(change: PullRequestChange, database: Database): AdmissionOverride[] {
