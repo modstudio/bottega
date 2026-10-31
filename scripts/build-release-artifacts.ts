@@ -12,8 +12,8 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { BINARY_TARGETS, buildBinary } from './build-binary.ts'
-import { releaseVersion, run } from './build-release.ts'
 import { RELEASE_BUN_VERSION, requireReleaseBun } from './release-config.ts'
+import { releaseVersion, run } from './release-support.ts'
 
 const repositoryRoot = resolve(import.meta.dir, '..')
 

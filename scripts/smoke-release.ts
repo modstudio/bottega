@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { parseBinaryTarget } from './build-binary.ts'
-import { run } from './build-release.ts'
 import {
   artifactName,
   buildReleaseArtifact,
@@ -13,6 +12,7 @@ import {
 } from './build-release-artifacts.ts'
 import { FAKE_HARNESS_SCRIPT } from './fake-harness.ts'
 import { RELEASE_BUN_VERSION } from './release-config.ts'
+import { run } from './release-support.ts'
 
 const version = '0.1.0'
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-release-smoke-`))

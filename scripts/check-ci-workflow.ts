@@ -25,6 +25,31 @@ function workflowJob(source: string, name: string): string {
   return lines.slice(start, end < 0 ? undefined : end).join('\n')
 }
 
+function workflowRunCommands(job: string): string[] {
+  const lines = job.split('\n')
+  const commands: string[] = []
+  for (let index = 0; index < lines.length; index += 1) {
+    const run = /^(?<indent>\s*)run:\s*(?<value>.*)$/.exec(lines[index]!)
+    if (!run) continue
+    const value = run.groups!.value!
+    if (value !== '' && !/^[>|]/.test(value)) {
+      commands.push(value)
+      continue
+    }
+    const indent = run.groups!.indent!.length
+    const block: string[] = []
+    while (index + 1 < lines.length) {
+      const next = lines[index + 1]!
+      const nextIndent = next.match(/^\s*/)?.[0].length ?? 0
+      if (next.trim() !== '' && nextIndent <= indent) break
+      block.push(next)
+      index += 1
+    }
+    commands.push(block.join('\n'))
+  }
+  return commands
+}
+
 function aggregateNeeds(source: string): string[] {
   const job = workflowJob(source, 'ci')
   const inline = job.match(/^ {4}needs:\s*\[([^\]]*)\]\s*$/m)
@@ -150,6 +175,14 @@ export function checkCiWorkflow(source: string): void {
 /** Pins every Bun the release workflow sets up to the version the artifact build requires. */
 export function checkReleaseWorkflow(source: string): void {
   checkBunVersions(source, 'release workflow')
+  for (const command of workflowRunCommands(workflowJob(source, 'release'))) {
+    const directRelease = /\bgh\s+release\s+(upload|create)\b/.exec(command)
+    if (directRelease) {
+      throw new Error(
+        `release job steps must publish every asset through "bun run release:publish", which writes and verifies SHA256SUMS; found "gh release ${directRelease[1]}"`,
+      )
+    }
+  }
 }
 
 if (import.meta.main) {

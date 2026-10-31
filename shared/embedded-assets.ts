@@ -230,7 +230,7 @@ export function registerEmbeddedAssets(value: EmbeddedAssets | null): void {
   embedded = value
 }
 
-/** Read an install-root asset from the binary, or from disk in a source/tarball run. */
+/** Read an install-root asset from the binary, or from a checkout or on-disk distribution root. */
 export function readInstallAsset(relativePath: string, diskPath: string): string {
   if (embedded === null) return readFileSync(diskPath, 'utf8')
   const value = embedded.assets[relativePath]
