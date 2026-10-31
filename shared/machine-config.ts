@@ -864,6 +864,11 @@ export function storedMachineId(env: ConfigEnvironment = process.env): string | 
   return id
 }
 
+/** Read the stored short name independently of the optional display name. */
+export function storedMachineShortName(env: ConfigEnvironment = process.env): string | null {
+  return readMachineValue('machine.short_name', env) || null
+}
+
 export type StoredMachineNames = {
   shortName: string
   displayName: string

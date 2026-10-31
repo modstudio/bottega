@@ -13,6 +13,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { Copy } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { runDisplayLabel } from '@/routes/-run-label'
 import { WaitingBadge } from '@/routes/-waiting-badge'
 import type { RunDetailReviewLens } from '../../../../shared/review-presentation.ts'
 
@@ -56,7 +57,7 @@ type Verdict = {
 
 function presentedRun(data: unknown, hosted: boolean, id: string): [RunDetail | undefined, string] {
   const run = data as RunDetail | undefined
-  return [run, hosted ? (run?.machineLabel ?? id) : id]
+  return [run, hosted ? runDisplayLabel(run?.machineLabel, id) : id]
 }
 
 export const Route = createFileRoute('/runs/$id')({ component: RunDetailRoute })

@@ -1,9 +1,11 @@
 // concern: record-snapshots
 /** Owns tenant-bound latest orchestrator snapshots. Must not know HTTP or local commands. */
 import { SQL } from 'bun'
+import type { MachineRef } from '../../../shared/machine-label.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordMachine } from './record-machine.ts'
 
 export const SNAPSHOT_KINDS = ['state', 'blockers', 'health', 'jobs', 'agents'] as const
 export type SnapshotKind = (typeof SNAPSHOT_KINDS)[number]
@@ -13,7 +15,7 @@ export type RecordSnapshot = {
   id: string
   kind: SnapshotKind
   machineId: string
-  machine: { id: string; shortName: string | null; displayName: string | null }
+  machine: MachineRef
   payload: unknown
   takenAt: string
 }
@@ -63,11 +65,7 @@ export async function listRecordSnapshots(input: Tenant): Promise<RecordSnapshot
       id: String(row.id),
       kind: String(row.kind) as SnapshotKind,
       machineId: String(row.machine_id),
-      machine: {
-        id: String(row.machine_id),
-        shortName: row.machine_short_name == null ? null : String(row.machine_short_name),
-        displayName: row.machine_display_name == null ? null : String(row.machine_display_name),
-      },
+      machine: recordMachine(row),
       payload: row.payload,
       takenAt: new Date(String(row.taken_at)).toISOString(),
     }))

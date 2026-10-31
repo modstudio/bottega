@@ -39,6 +39,25 @@ test('a cross-machine run label parses back to the same name and number', () => 
   )
 })
 
+test('cross-machine labels for an unnamed machine are recognized and refused', () => {
+  const machine = {
+    id: '01a0ab05-0000-7000-8000-000000000001',
+    shortName: null,
+  }
+  const names = { shortName: 'mine', formerShortNames: [] }
+  for (const [kind, number, remainder] of [
+    ['run', 123, '123'],
+    ['question', 7, 'q7'],
+  ] as const) {
+    const label = crossMachineLabel(kind, number, machine)
+    expect(label).toBe(`01a0ab05/${remainder}`)
+    expect(decideMachineLabel(label, names)).toEqual({
+      kind: 'refused',
+      reason: `\`${label}\` names a row on an unnamed machine with id prefix \`01a0ab05\`; this command acts only on this machine's (\`mine\`) rows`,
+    })
+  }
+})
+
 test('validates machine names in both directions', () => {
   expect(shortNameRefusal('office-2')).toBeNull()
   expect(shortNameRefusal('2office')).toContain('starting with a letter')

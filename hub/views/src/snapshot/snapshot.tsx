@@ -2,12 +2,13 @@ import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import type { MachineRef } from '../../../../shared/machine-label.ts'
 import { snapshotStyles } from './snapshot.styles.ts'
 
-type Machine = {
+export type Machine = {
   id: string
   takenAt: string
-  machine: { id: string; shortName: string | null; displayName: string | null }
+  machine: MachineRef
 }
 
 function asOf(value: string) {

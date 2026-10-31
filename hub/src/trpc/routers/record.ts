@@ -10,6 +10,7 @@ import {
   normalizeDocSourceFiles,
   normalizeDocSummary,
 } from '../../../../shared/docs.ts'
+import type { MachineRef } from '../../../../shared/machine-label.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
@@ -157,7 +158,7 @@ const subscriptionScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('projects'), projectIds: z.array(uuid).min(1) }).strict(),
 ])
 
-function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
+function optionalSnapshot<T extends { machineId: string; takenAt: string; machine: MachineRef }>(
   items: T[],
   ignored: string[],
   kind: string,

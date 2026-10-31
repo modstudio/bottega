@@ -338,6 +338,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
       '../failure/failure.ts',
       '../hook-tree/hook-tree.ts',
       './record-cursor.ts',
+      './record-machine.ts',
       './review-presentation.ts',
     ],
     'Enforce the record-runs concern boundary; the window counters share the local definitions of evidence and the hook-tree job.',
@@ -347,11 +348,19 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'orchestrator/src/record/record-snapshots.ts',
     [
       'bun',
+      '../../../shared/machine-label.ts',
       '../../../shared/record/jsonb-sql.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/record/tenant.ts',
+      './record-machine.ts',
     ],
     'Enforce the hosted snapshot service concern boundary.',
+  ),
+  boundary(
+    'record-machine-boundary',
+    'orchestrator/src/record/record-machine.ts',
+    ['../../../shared/machine-label.ts'],
+    'Keep hosted machine row coercion shared by record readers and independent of SQL.',
   ),
   boundary(
     'record-board-contract-boundary',

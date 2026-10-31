@@ -1,5 +1,9 @@
 export const hubModuleSpecs = [
   {
+    file: 'hub/src/machine-identity.ts',
+    allowed: ['../../shared/machine-config.ts'],
+  },
+  {
     file: 'hub/src/hosted-route-config.ts',
     allowed: ['bun'],
   },

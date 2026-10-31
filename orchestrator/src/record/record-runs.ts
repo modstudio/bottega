@@ -1,12 +1,13 @@
 // concern: record-runs
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
-import { crossMachineLabel } from '../../../shared/machine-label.ts'
+import { crossMachineLabel, type MachineRef } from '../../../shared/machine-label.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
 import { HOOK_TREE_JOB } from '../hook-tree/hook-tree.ts'
 import type { RecordCursor } from './record-cursor.ts'
+import { recordMachine } from './record-machine.ts'
 import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'
 
 type RecordScore = {
@@ -22,7 +23,7 @@ type RecordScore = {
 export type RecordRun = {
   id: string
   number: number | null
-  machine: { id: string; shortName: string | null; displayName: string | null }
+  machine: MachineRef
   machineLabel: string | null
   spaceId: string
   spaceName: string
@@ -101,11 +102,7 @@ function runMachineLabel(number: number | null, machine: RecordRun['machine']): 
 }
 export function runRow(row: Record<string, unknown>): RecordRun {
   const number = numeric(row.number)
-  const machine = {
-    id: String(row.machine_id),
-    shortName: row.machine_short_name == null ? null : String(row.machine_short_name),
-    displayName: row.machine_display_name == null ? null : String(row.machine_display_name),
-  }
+  const machine = recordMachine(row)
   return {
     id: String(row.id),
     number,

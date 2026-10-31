@@ -23,12 +23,19 @@ export function decideMachineLabel(
   names: MachineIdentifierNames | null,
 ): MachineLabelDecision {
   const match = /^([^/]+)\/(.+)$/.exec(input)
-  if (!match || shortNameRefusal(match[1]!)) return { kind: 'not-label' }
+  if (!match) return { kind: 'not-label' }
   const name = match[1]!
+  const unnamedMachinePrefix = /^[0-9a-f]{8}$/.test(name) && shortNameRefusal(name) !== null
+  if (shortNameRefusal(name) && !unnamedMachinePrefix) return { kind: 'not-label' }
   if (!names)
     return {
       kind: 'refused',
       reason: `this machine has no short name because it has not joined a space; a bare number or UUID works meanwhile; set the name by joining a space with \`${PLATFORM_SLUG} record space switch --short-name <name>\``,
+    }
+  if (unnamedMachinePrefix)
+    return {
+      kind: 'refused',
+      reason: `\`${input}\` names a row on an unnamed machine with id prefix \`${name}\`; this command acts only on this machine's (\`${names.shortName}\`) rows`,
     }
   if (name === names.shortName || names.formerShortNames.includes(name))
     return { kind: 'bare', remainder: match[2]! }

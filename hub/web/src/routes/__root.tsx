@@ -239,7 +239,7 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     retry: false,
   })
   const machineNames = useQuery({
-    ...trpc.catalog.machineNames.queryOptions(),
+    ...trpc.operator.machineNames.queryOptions(),
     enabled: !hosted,
   })
   const waiting = useQuery({
