@@ -1,11 +1,23 @@
 import { describe, expect, test } from 'bun:test'
-import { type ChangeFacts, type Finding, introducedFindings, ratchetDecision } from './ratchet'
+import {
+  type ChangeFacts,
+  type Finding,
+  findingLine,
+  introducedFindings,
+  ratchetDecision,
+} from './ratchet'
 
 const finding = (line: number, message = 'test reaches 0 expect() calls'): Finding => ({
   file: 'example.test.ts',
   line,
   rule: 'test-reaches-expect',
   message,
+})
+
+test('a finding at line zero omits the nonexistent line number', () => {
+  expect(findingLine(finding(0))).toBe(
+    'example.test.ts test-reaches-expect test reaches 0 expect() calls',
+  )
 })
 
 describe('quality finding ratchet', () => {

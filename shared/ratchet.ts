@@ -7,6 +7,11 @@ export type Finding = {
   measure?: number
 }
 
+export function findingLine(finding: Finding): string {
+  const location = finding.line === 0 ? finding.file : `${finding.file}:${finding.line}`
+  return `${location} ${finding.rule} ${finding.message}`
+}
+
 export type LineRange = { start: number; end: number }
 
 export type ChangeFacts = {

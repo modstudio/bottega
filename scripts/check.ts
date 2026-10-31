@@ -12,7 +12,12 @@ import {
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv, mainCheckoutOf } from '../shared/git'
-import { biomeFindingDetails, decideGateOutcome, type GateStepResult } from './check-outcome.ts'
+import { findingLine } from '../shared/ratchet.ts'
+import {
+  decideGateOutcome,
+  FAILED_STEP_DETAIL_LINES,
+  type GateStepResult,
+} from './check-outcome.ts'
 import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
@@ -57,7 +62,7 @@ const checkArguments: CheckArguments = (() => {
 })()
 const checkStartedAt = performance.now()
 const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
-const FAILED_STEP_TAIL_LINES = 20
+const STEP_OUTPUT_DRAIN_TIMEOUT_MS = 2_000
 const executionFile = process.env[CHECK_EXECUTION_FILE_ENV]
 const reportDirectory = executionFile ? mkdtempSync(join(tmpdir(), 'check-reports-')) : undefined
 
@@ -204,6 +209,8 @@ const legs: Leg[] = CHECK_LEGS.map((leg) => ({
 async function inherit(argv: string[], cwd = root, observation: ExecutionObservation = {}) {
   const startedAt = performance.now()
   const detail: string[] = []
+  let omittedDetailLines = 0
+  const streamReaders = new Set<ReadableStreamDefaultReader<Uint8Array>>()
   const child = track(
     Bun.spawn(argv, { cwd, stdout: 'pipe', stderr: 'pipe' }),
     describeCommand(argv, cwd),
@@ -211,12 +218,33 @@ async function inherit(argv: string[], cwd = root, observation: ExecutionObserva
     startedAt,
   )
   const readers = [
-    pump(child.stdout, '', detail, false, true, FAILED_STEP_TAIL_LINES),
-    pump(child.stderr, '', detail, true, true, FAILED_STEP_TAIL_LINES),
+    pump(child.stdout, '', detail, false, true, FAILED_STEP_DETAIL_LINES, streamReaders, () => {
+      omittedDetailLines += 1
+    }),
+    pump(child.stderr, '', detail, true, true, FAILED_STEP_DETAIL_LINES, streamReaders, () => {
+      omittedDetailLines += 1
+    }),
   ]
   const exitCode = await child.exited
-  await Promise.all(readers)
-  return { exitCode, detail }
+  let drainTimer: ReturnType<typeof setTimeout>
+  const drained = await Promise.race([
+    Promise.all(readers).then(() => true),
+    new Promise<false>((resolve) => {
+      drainTimer = setTimeout(() => resolve(false), STEP_OUTPUT_DRAIN_TIMEOUT_MS)
+    }),
+  ])
+  clearTimeout(drainTimer!)
+  if (!drained) {
+    for (const reader of streamReaders) void reader.cancel().catch(() => {})
+  }
+  return {
+    exitCode,
+    detail,
+    omittedDetailLines,
+    ...(drained
+      ? {}
+      : { note: 'output stayed open after the step exited; a descendant process still holds it' }),
+  }
 }
 
 function materializeStaticCheck(
@@ -263,8 +291,11 @@ async function pump(
   error: boolean,
   raw = false,
   tailLines = 40,
+  readers?: Set<ReadableStreamDefaultReader<Uint8Array>>,
+  onDrop?: () => void,
 ) {
   const reader = stream.getReader()
+  readers?.add(reader)
   const decoder = new TextDecoder()
   let pending = ''
   for (;;) {
@@ -276,11 +307,12 @@ async function pump(
     pending = lines.pop()!
     for (const line of lines) {
       observeGateWait(name, line)
-      recordPumpedLine(name, line, tail, error, raw, tailLines)
+      recordPumpedLine(name, line, tail, error, raw, tailLines, onDrop)
     }
   }
   pending += decoder.decode()
-  if (pending) recordPumpedLine(name, pending, tail, error, raw, tailLines)
+  if (pending) recordPumpedLine(name, pending, tail, error, raw, tailLines, onDrop)
+  readers?.delete(reader)
 }
 
 function writeRawChunk(chunk: Uint8Array, error: boolean) {
@@ -302,6 +334,7 @@ function recordPumpedLine(
   error: boolean,
   raw: boolean,
   tailLines: number,
+  onDrop?: () => void,
 ) {
   const prefixed = name ? `[${name}] ${line}` : line
   if (!raw) {
@@ -309,7 +342,10 @@ function recordPumpedLine(
     else console.log(prefixed)
   }
   tail.push(prefixed)
-  if (tail.length > tailLines) tail.shift()
+  if (tail.length > tailLines) {
+    tail.shift()
+    onDrop?.()
+  }
 }
 
 async function runLeg(leg: RunnableLeg): Promise<LegResult> {
@@ -328,12 +364,14 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
     ]
     const exitCode = await child.exited
     await Promise.all(readers)
-    if (exitCode !== 0) return { name: leg.name, exitCode, detail: [], tail }
+    if (exitCode !== 0) return { name: leg.name, exitCode, detail: [], omittedDetailLines: 0, tail }
   }
-  return { name: leg.name, exitCode: 0, detail: [], tail }
+  return { name: leg.name, exitCode: 0, detail: [], omittedDetailLines: 0, tail }
 }
 
-async function biomeErrorDetails(fallback: readonly string[]): Promise<string[]> {
+async function biomeErrorDetails(
+  fallback: Pick<GateStepResult, 'detail' | 'omittedDetailLines'>,
+): Promise<Pick<GateStepResult, 'detail' | 'omittedDetailLines' | 'note'>> {
   try {
     const argv = [
       `${root}node_modules/.bin/biome`,
@@ -354,12 +392,12 @@ async function biomeErrorDetails(fallback: readonly string[]): Promise<string[]>
     if (exitCode !== 0 && exitCode !== 1) {
       throw new Error(`Biome JSON pass exited ${exitCode}`)
     }
-    const details = biomeFindingDetails(biomeFindings(Bun.stripANSI(output)))
+    const details = biomeFindings(Bun.stripANSI(output)).map(findingLine)
     if (details.length === 0) throw new Error('Biome JSON pass returned no diagnostics')
-    return details
+    return { detail: details, omittedDetailLines: 0 }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
-    return [...fallback, `Biome error list could not be read: ${reason}`]
+    return { ...fallback, note: `Biome error list could not be read: ${reason}` }
   }
 }
 

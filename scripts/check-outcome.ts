@@ -1,23 +1,28 @@
-import type { Finding } from '../shared/ratchet.ts'
+export const FAILED_STEP_DETAIL_LINES = 20
 
-export const FAILED_STEP_SUMMARY_LINES = 20
-
-// Which gate steps failed, in the order they ran, and the exit code that reports them.
-export type GateStepResult = { name: string; exitCode: number; detail: readonly string[] }
-
-export function biomeFindingDetails(findings: readonly Finding[]): string[] {
-  return findings.map(
-    (finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`,
-  )
+// Which gate steps failed, the exit code, and the summary that names each failure.
+export type GateStepResult = {
+  name: string
+  exitCode: number
+  detail: readonly string[]
+  omittedDetailLines: number
+  note?: string
 }
 
 function failedStepSummary(step: GateStepResult): string[] {
-  if (step.detail.length <= FAILED_STEP_SUMMARY_LINES) {
-    return [step.name, ...step.detail.map((line) => `  ${line}`)]
-  }
-  const visibleDetailCount = FAILED_STEP_SUMMARY_LINES - 1
-  return [
+  const heading = [
     step.name,
+    ...(step.note ? [`  ${step.note}`] : []),
+    ...(step.omittedDetailLines > 0
+      ? [`  … ${step.omittedDetailLines} earlier lines omitted`]
+      : []),
+  ]
+  if (step.detail.length <= FAILED_STEP_DETAIL_LINES) {
+    return [...heading, ...step.detail.map((line) => `  ${line}`)]
+  }
+  const visibleDetailCount = FAILED_STEP_DETAIL_LINES - 1
+  return [
+    ...heading,
     ...step.detail.slice(0, visibleDetailCount).map((line) => `  ${line}`),
     `  … ${step.detail.length - visibleDetailCount} more`,
   ]
