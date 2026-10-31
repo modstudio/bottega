@@ -1,12 +1,21 @@
 // concern: run-inbox
 /** Knows asking-run and ruling inbox. Must not know run control, transports, routing, the CLI, or worktrees. */
 
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
 import { voidedSql } from '../evidence/evidence-query.ts'
 import { projectAt } from '../project/projects.ts'
 import { resolveProjectAutonomy } from '../workflow/autonomy-scopes.ts'
 import { workflowCursorReference } from '../workflow/workflow-cursor-format.ts'
+import {
+  type QuestionScratchLocation,
+  referencedQuestionScratchPaths,
+  renderRunQuestionText,
+  runQuestionGroupFooter,
+} from './question-display.ts'
 import { questionOpenSql } from './question-open.ts'
 import { rulingStatus } from './question-vocabulary.ts'
 import { answerRunLivenessRefusal } from './run-answer-liveness.ts'
@@ -197,6 +206,20 @@ function scopedProjectFilter(
   return scoped ? project : undefined
 }
 
+export function displayRunQuestion(runRecordId: string, text: string): string {
+  const runDirectory = join(resolveRunsDirectory(process.env), runRecordId)
+  const locations = new Map<string, QuestionScratchLocation>()
+  for (const relativePath of referencedQuestionScratchPaths(text, runDirectory)) {
+    const scratchPath = join(runDirectory, 'scratch', relativePath)
+    const artifactPath = join(runDirectory, 'artifacts', relativePath)
+    locations.set(
+      relativePath,
+      existsSync(scratchPath) ? 'scratch' : existsSync(artifactPath) ? 'artifacts' : 'gone',
+    )
+  }
+  return renderRunQuestionText(text, runDirectory, locations)
+}
+
 export async function queryInbox(
   input: InboxQuery,
 ): Promise<{ questions: Array<InboxQuestion | WorkflowInboxQuestion> }> {
@@ -261,7 +284,7 @@ export async function queryInbox(
           session_live: q.session_recent ? true : null,
           session_liveness: q.session_recent ? 'live' : 'unknown',
           can_answer: isLive(q) && inboxSessionCanAnswer(q.session_id, sid),
-          question: q.question,
+          question: displayRunQuestion(q.run_record_id, q.question),
           options: q.options ? (JSON.parse(q.options) as string[]) : [],
           recommendation: q.recommendation,
           why: q.why,
@@ -403,12 +426,13 @@ async function presentJsonInbox(
 function runGroupFooter(
   question: { run_record_id: string; root_id: string },
   nextQuestion: { run_record_id: string } | undefined,
+  group: Array<{ run_record_id: string; number: number }>,
 ): string[] {
   if (nextQuestion?.run_record_id === question.run_record_id) return []
-  return [
-    `\nrule on them:  ${PLATFORM_SLUG} question answer ${question.root_id} "<ruling>"    (one per question, in order)` +
-      `\n               ${PLATFORM_SLUG} question answer ${question.root_id} --q<id> "<ruling>"`,
-  ]
+  const numbers = group
+    .filter((candidate) => candidate.run_record_id === question.run_record_id)
+    .map((candidate) => candidate.number)
+  return [`\n${runQuestionGroupFooter(question.root_id, numbers)}`]
 }
 
 export async function runInboxCommand(
@@ -554,7 +578,7 @@ export async function runInboxCommand(
       )
       lastRun = q.run_record_id
     }
-    log(`  [q${q.number}] ${q.question}`)
+    log(`  [q${q.number}] ${displayRunQuestion(q.run_record_id, q.question)}`)
     if (q.why) log(`        why: ${q.why}`)
     const opts = q.options ? (JSON.parse(q.options) as string[]) : []
     for (const o of opts) log(`        - ${o}`)
@@ -562,7 +586,7 @@ export async function runInboxCommand(
     if (q.session_id === null) {
       log('        unowned — any session may rule, and the answering identity is recorded')
     }
-    runGroupFooter(q, answerable[index + 1]).forEach((line) => {
+    runGroupFooter(q, answerable[index + 1], answerable).forEach((line) => {
       log(line)
     })
   }
@@ -597,7 +621,7 @@ export async function runInboxCommand(
           `${q.repo ? ` · ${q.repo}` : ''} · owner ${q.session_id ?? 'unknown'} · ` +
           `liveness ${liveness} · waiting ${dur(Date.now() - Date.parse(q.asked_at))}`,
       )
-      log(`        ${q.question}`)
+      log(`        ${displayRunQuestion(q.run_record_id, q.question)}`)
       if (q.why) log(`        why: ${q.why}`)
       const opts = q.options ? (JSON.parse(q.options) as string[]) : []
       for (const o of opts) log(`        - ${o}`)
@@ -611,7 +635,7 @@ export async function runInboxCommand(
       `\nrun ${q.root_id} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ` +
         `${status} (terminal)`,
     )
-    log(`  [q${q.number}] ${q.question}`)
+    log(`  [q${q.number}] ${displayRunQuestion(q.run_record_id, q.question)}`)
     presentOverturn(q, log)
     presentFiled(q, log)
   }
