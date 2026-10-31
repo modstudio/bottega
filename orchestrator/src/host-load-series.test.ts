@@ -1,18 +1,17 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { boundedJsonLinePath } from '../../shared/bounded-json-lines-log.ts'
 import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
 import { dir as suiteDir } from '../test/fixtures/store.ts'
 import { trackedTestResidue } from '../test/residue.ts'
-import { db } from './database/db.ts'
 import { type HostLoad, measureHostLoad } from './gate-load.ts'
 import {
-  appendHostLoadSample,
+  HOST_LOAD_LOG_NAME,
   HOST_LOAD_WAIT_MIN_MS,
-  type HostLoadSample,
-  hostLoadCommand,
-  readHostLoadSamplesSince,
-  sampleHostLoad,
+  type HostLoadSeriesSample,
+  readHostLoadSeriesSince,
+  recordHostLoadSeriesSample,
   summarizeHostLoadWindow,
 } from './host-load-series.ts'
 
@@ -25,7 +24,7 @@ beforeEach(() => {
   env = { ...process.env, [STATE_HOME_ENV]: state }
 })
 
-const sample = (over: Partial<HostLoadSample> = {}): HostLoadSample => ({
+const sample = (over: Partial<HostLoadSeriesSample> = {}): HostLoadSeriesSample => ({
   at: '2026-10-30T17:00:00.000Z',
   cpuBusy: 2,
   swapUsed: 1_000,
@@ -61,7 +60,7 @@ describe('host load sampler', () => {
       [cpu(100, 0), cpu(50, 50)],
     ]
     let now = 0
-    const result = await sampleHostLoad({
+    const result = await recordHostLoadSeriesSample({
       env,
       measure: () => {
         now += 1_000
@@ -83,16 +82,27 @@ describe('host load sampler', () => {
       swapUsed: 2_000,
       loadavg1: 1.5,
     })
-    expect(readHostLoadSamplesSince('2026-10-30T17:00:00.000Z', env)).toEqual([result])
-    expect(readFileSync(join(state, 'orchestrator', 'host-load.jsonl'), 'utf8')).toBe(
+    expect(readHostLoadSeriesSince('2026-10-30T17:00:00.000Z', env)).toEqual([result])
+    expect(readFileSync(boundedJsonLinePath(HOST_LOAD_LOG_NAME, env), 'utf8')).toBe(
       `${JSON.stringify(result)}\n`,
     )
   })
 
   test('refuses a second reading without a CPU delta', async () => {
     await expect(
-      sampleHostLoad({ env, measure: () => load(null), sleep: async () => {} }),
+      recordHostLoadSeriesSample({ env, measure: () => load(null), sleep: async () => {} }),
     ).rejects.toThrow('produced no delta')
+  })
+
+  test('refuses when the state root cannot be a directory', async () => {
+    writeFileSync(state, 'not a directory')
+    await expect(
+      recordHostLoadSeriesSample({
+        env,
+        measure: () => load(1),
+        sleep: async () => {},
+      }),
+    ).rejects.toThrow(`make the state directory writable: ${join(state, 'orchestrator')}`)
   })
 })
 
@@ -136,20 +146,7 @@ describe('host load window', () => {
     })
   })
 
-  test('an empty sample window is a refusal, never a zero report', async () => {
+  test('an empty sample window is never a zero report', () => {
     expect(summarizeHostLoadWindow([], [0.5], [])).toBeNull()
-    await expect(
-      hostLoadCommand(
-        db(),
-        { json: true },
-        { env, now: () => Date.parse('2026-10-30T17:30:00.000Z'), write: async () => {} },
-      ),
-    ).rejects.toThrow('machine load sample')
   })
-})
-
-test('bounded host load entries retain their exact fields', () => {
-  const value = sample()
-  appendHostLoadSample(value, env)
-  expect(readHostLoadSamplesSince('2026-10-30T16:59:00.000Z', env)).toEqual([value])
 })

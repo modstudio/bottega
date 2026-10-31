@@ -2,7 +2,11 @@
 /** Derives windowed host pressure and wait cost from recorded plain observations. */
 
 import type { Database } from 'bun:sqlite'
-import { type ContentionWait, loadContentionWaits } from '../database/contention.ts'
+import {
+  type ContentionWait,
+  isHostCapacityWait,
+  loadContentionWaits,
+} from '../database/contention.ts'
 import { nearestRankPercentile } from '../state/statistics.ts'
 import type { PressureSample } from './host-pressure-decision.ts'
 import { loadHostPressureSamples } from './host-pressure-service.ts'
@@ -15,7 +19,7 @@ const inWindow = (at: number, window: HostPressureWindow) =>
   at >= Date.parse(window.start) && at < Date.parse(window.end)
 
 const contentionLabel = (row: HostPressureContention) =>
-  row.resourceKind === 'cpu' && row.resourceKey === 'host-capacity'
+  isHostCapacityWait(row)
     ? 'host-capacity (runs and gates)'
     : `${row.resourceKind}/${row.resourceKey}`
 
