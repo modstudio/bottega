@@ -374,6 +374,20 @@ describe('project workflow injection', () => {
     ])
   })
 
+  test('refuses a before-pull-request entry without changed-path globs', () => {
+    expect(
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            beforePullRequest: [{ whenChanged: [], run: 'bun scripts/rehearse.ts' }],
+          },
+        },
+        'strict',
+      ),
+    ).toEqual([expect.stringContaining('release.beforePullRequest.0.whenChanged: Too small')])
+  })
+
   test('refuses repeated rung names and a non-boolean on-demand marker', () => {
     expect(
       validateProjectSettings(

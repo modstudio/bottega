@@ -23,7 +23,12 @@ const status = (
 
 test('passes when no record migration changed', () => {
   expect(
-    decideRecordRehearsal({ migrationChanged: false, migrationSetHash: hash, statuses: [] }),
+    decideRecordRehearsal({
+      migrationChanged: false,
+      migrationSetHash: hash,
+      currentHeadStatuses: [],
+      earlierHeadStatuses: [],
+    }),
   ).toEqual({
     pass: true,
     message: 'record rehearsal: no migration change',
@@ -35,14 +40,20 @@ test('passes a matching successful rehearsal', () => {
     decideRecordRehearsal({
       migrationChanged: true,
       migrationSetHash: hash,
-      statuses: [status('success')],
+      currentHeadStatuses: [status('success')],
+      earlierHeadStatuses: [],
     }).pass,
   ).toBe(true)
 })
 
 test('refuses a missing rehearsal status', () => {
   expect(
-    decideRecordRehearsal({ migrationChanged: true, migrationSetHash: hash, statuses: [] }),
+    decideRecordRehearsal({
+      migrationChanged: true,
+      migrationSetHash: hash,
+      currentHeadStatuses: [],
+      earlierHeadStatuses: [],
+    }),
   ).toEqual({
     pass: false,
     message: expect.stringContaining('status is missing'),
@@ -53,7 +64,7 @@ test('refuses a migration-set hash mismatch', () => {
   const decision = decideRecordRehearsal({
     migrationChanged: true,
     migrationSetHash: hash,
-    statuses: [
+    currentHeadStatuses: [
       status(
         'success',
         recordRehearsalDescription.format({
@@ -65,6 +76,7 @@ test('refuses a migration-set hash mismatch', () => {
         }),
       ),
     ],
+    earlierHeadStatuses: [],
   })
   expect(decision).toEqual({ pass: false, message: expect.stringContaining('hash differs') })
 })
@@ -73,7 +85,7 @@ test('refuses a rehearsal that applied no migration', () => {
   const decision = decideRecordRehearsal({
     migrationChanged: true,
     migrationSetHash: hash,
-    statuses: [
+    currentHeadStatuses: [
       status(
         'success',
         recordRehearsalDescription.format({
@@ -85,6 +97,7 @@ test('refuses a rehearsal that applied no migration', () => {
         }),
       ),
     ],
+    earlierHeadStatuses: [],
   })
   expect(decision).toEqual({
     pass: false,
@@ -96,9 +109,32 @@ test('refuses a failed rehearsal status', () => {
   const decision = decideRecordRehearsal({
     migrationChanged: true,
     migrationSetHash: hash,
-    statuses: [status('failure')],
+    currentHeadStatuses: [status('failure')],
+    earlierHeadStatuses: [],
   })
   expect(decision).toEqual({ pass: false, message: expect.stringContaining('failure') })
+})
+
+test('passes an earlier head rehearsal with the checked-out migration-set hash', () => {
+  expect(
+    decideRecordRehearsal({
+      migrationChanged: true,
+      migrationSetHash: hash,
+      currentHeadStatuses: [],
+      earlierHeadStatuses: [status('success')],
+    }).pass,
+  ).toBe(true)
+})
+
+test('passes an earlier matching success despite a current-head failure', () => {
+  expect(
+    decideRecordRehearsal({
+      migrationChanged: true,
+      migrationSetHash: hash,
+      currentHeadStatuses: [status('failure')],
+      earlierHeadStatuses: [status('success')],
+    }).pass,
+  ).toBe(true)
 })
 
 test('parses the pull request from a merge-group ref', () => {

@@ -5,6 +5,7 @@ import {
   parseRehearsalLines,
   type RehearsalCommandRunner,
   rehearsalStatus,
+  rerunFailedRecordRehearsal,
   runRecordRehearsal,
 } from './record-rehearse.ts'
 
@@ -157,6 +158,31 @@ test('runs, posts success and destroys the machine through the injected runner',
     ),
   ).toBe(true)
   expect(calls.at(-1)?.slice(0, 3)).toEqual(['flyctl', 'machine', 'destroy'])
+})
+
+test('reruns only the failed record-rehearsal job on an open pull request', async () => {
+  const calls: string[][] = []
+  const runner: RehearsalCommandRunner = async (argv) => {
+    calls.push([...argv])
+    if (argv.includes('repos/{owner}/{repo}/pulls?state=open&per_page=100')) {
+      return { exitCode: 0, stdout: '1931\n', stderr: '' }
+    }
+    if (argv.includes('repos/{owner}/{repo}/commits/deadbeef/check-runs')) {
+      return {
+        exitCode: 0,
+        stdout: '7788\tfailure\thttps://github.com/example/repo/actions/runs/5566/job/7788\n',
+        stderr: '',
+      }
+    }
+    return { exitCode: 0, stdout: 'rerun requested\n', stderr: '' }
+  }
+
+  await rerunFailedRecordRehearsal(runner, 'deadbeef')
+
+  expect(calls.filter((argv) => argv.slice(0, 3).join(' ') === 'gh run rerun')).toEqual([
+    ['gh', 'run', 'rerun', '5566', '--job', '7788'],
+  ])
+  expect(calls.flat()).not.toContain('--failed')
 })
 
 test('refuses a dirty tree before starting a machine', async () => {

@@ -168,6 +168,45 @@ async function postStatus(
   checked(await runner(argv), argv)
 }
 
+export async function rerunFailedRecordRehearsal(
+  runner: RehearsalCommandRunner,
+  sha: string,
+): Promise<void> {
+  const pullArgv = [
+    'gh',
+    'api',
+    '--paginate',
+    'repos/{owner}/{repo}/pulls?state=open&per_page=100',
+    '--jq',
+    `.[] | select(.head.sha == "${sha}") | .number`,
+  ]
+  const pullRequest = checked(await runner(pullArgv), pullArgv)
+    .split('\n')
+    .find(Boolean)
+  if (!pullRequest) return
+  const checksArgv = [
+    'gh',
+    'api',
+    '--paginate',
+    `repos/{owner}/{repo}/commits/${sha}/check-runs`,
+    '--jq',
+    `.check_runs[] | select(.name == "${RECORD_REHEARSAL_STATUS_CONTEXT}") | [.id, .conclusion, .details_url] | @tsv`,
+  ]
+  const latest = checked(await runner(checksArgv), checksArgv)
+    .split('\n')
+    .find(Boolean)
+  if (!latest) return
+  const [jobId, conclusion, detailsUrl] = latest.split('\t')
+  const runId = /\/actions\/runs\/(\d+)\/job\//.exec(detailsUrl ?? '')?.[1]
+  if (conclusion !== 'failure' || !jobId || !runId) return
+  const rerunArgv = ['gh', 'run', 'rerun', runId, '--job', jobId]
+  const outcome = checked(await runner(rerunArgv), rerunArgv)
+  console.log(
+    outcome ||
+      `record rehearsal rerun requested for pull request ${pullRequest}, run ${runId}, job ${jobId}`,
+  )
+}
+
 function runMachineArgv(machineName: string): string[] {
   return [
     'flyctl',
@@ -328,6 +367,7 @@ export async function runRecordRehearsal(input: {
     await postStatus(input.runner, sha, status)
     statusPosted = true
     if (status.state === 'failure') throw new Error(status.description)
+    await rerunFailedRecordRehearsal(input.runner, sha)
     result = lines
   } catch (error) {
     failure = await rehearsalFailure(input.runner, sha, machineName, error, statusPosted)
