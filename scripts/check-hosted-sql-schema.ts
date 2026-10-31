@@ -39,7 +39,7 @@ const HOSTED_SQL_EXEMPTIONS: readonly HostedSqlExemption[] = [
   },
   {
     file: 'hub/src/hosted-task-reference.ts',
-    fingerprint: 'e1f448bef767bc42',
+    fingerprint: '89307770ec585024',
     reason:
       'task reference repair interpolates a table and columns from the closed relationship catalogue',
   },
