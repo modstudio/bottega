@@ -25,7 +25,7 @@ type KeylessCloseCursor = {
   autonomy: string | null
 }
 
-export function shouldRefuseKeylessStepClose(
+function shouldRefuseKeylessStepClose(
   keylessTrackerActionPaths: readonly string[],
   suppliedTask: string | undefined,
 ): boolean {
