@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { type BinaryEntries, dispatchBinary } from './dispatch.ts'
+import { type BinaryEntries, dispatchBinary, helpRequested, routeHelp } from './dispatch.ts'
+import { ROUTES } from './routes.ts'
 
 function entries(calls: string[]): BinaryEntries {
   const call = (owner: string) => async (argv: string[]) => {
@@ -185,4 +186,72 @@ test('composites fail fast except for doctor and never start collect watch', asy
   expect(await dispatchBinary(['record', 'sync'], dispatch, () => '')).toBe(7)
   expect(calls).toEqual(['orchestrator: sync'])
   expect(await dispatchBinary(['record', 'sync', '--watch'], entries([]), () => '')).toBe(2)
+})
+
+test.each(
+  ROUTES.filter(
+    (route) =>
+      !route.hidden &&
+      (route.owner === 'local' || route.owner === 'outbox' || route.owner === 'composite'),
+  ),
+)('$command prints help for its hand-parsed route', async (route) => {
+  const calls: string[] = []
+  const output: string[] = []
+  const originalLog = console.log
+  const originalError = console.error
+  console.log = (value) => output.push(String(value))
+  console.error = (value) => output.push(String(value))
+  try {
+    expect(await dispatchBinary([...route.command, '--help'], entries(calls), () => '')).toBe(0)
+  } finally {
+    console.log = originalLog
+    console.error = originalError
+  }
+  expect(
+    output.some((line) =>
+      /unknown composite option|must include their owner|working form:/i.test(line),
+    ),
+  ).toBe(false)
+  if (route.owner === 'outbox') {
+    expect(calls.some((call) => call.split(' ').includes('--help'))).toBe(true)
+  }
+})
+
+test.each([
+  {
+    command: ['machine', 'doctor'],
+    help: `usage: ${PLATFORM_SLUG} machine doctor [options]
+
+inspect orchestrator and hub health
+
+Parts:
+  orchestrator doctor: --wake
+  hub health`,
+  },
+  {
+    command: ['machine', 'legacy-calls'],
+    help: `usage: ${PLATFORM_SLUG} machine legacy-calls [options]
+
+report legacy orchestrator and hub invocations
+
+Options:
+  --since <timestamp>  include calls at or after this ISO timestamp
+  --json               print the report as JSON`,
+  },
+])('builds declared help for $command', ({ command, help }) => {
+  const route = ROUTES.find(
+    (candidate) =>
+      candidate.command.length === command.length &&
+      candidate.command.every((word, index) => word === command[index]),
+  )
+  expect(route).toBeDefined()
+  expect(routeHelp(route!)).toBe(help)
+})
+
+test.each([
+  [['argument', '--help'], true],
+  [['-h'], true],
+  [['--json'], false],
+] as const)('detects declared help flags in %p', (rest, expected) => {
+  expect(helpRequested(rest)).toBe(expected)
 })
