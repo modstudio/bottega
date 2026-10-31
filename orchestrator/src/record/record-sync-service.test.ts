@@ -38,6 +38,12 @@ const CLAIM_RUN_ID = '01990000-0000-7000-8000-000000001899'
 const FOREIGN_USER_ID = '01990000-0000-7000-8000-000000001900'
 const FOREIGN_MACHINE_ID = '01990000-0000-7000-8000-000000001901'
 const FOREIGN_RUN_ID = '01990000-0000-7000-8000-000000001902'
+const QUESTION_SPACE_ID = '01990000-0000-7000-8000-000000001903'
+const QUESTION_USER_ID = '01990000-0000-7000-8000-000000001904'
+const QUESTION_MEMBERSHIP_ID = '01990000-0000-7000-8000-000000001905'
+const QUESTION_PROJECT_ID = '01990000-0000-7000-8000-000000001906'
+const QUESTION_MACHINE_ID = '01990000-0000-7000-8000-000000001907'
+const QUESTION_ID = '01990000-0000-7000-8000-000000001908'
 const STAMP = '2026-10-26T06:00:00.000Z'
 
 function runPayload(id: string, taskId: string | null) {
@@ -66,6 +72,28 @@ function runPayload(id: string, taskId: string | null) {
     noFailover: false,
     automaticFailover: false,
     workPreserved: false,
+    createdAt: STAMP,
+    updatedAt: STAMP,
+  })
+}
+
+function questionPayload() {
+  const payload = Object.fromEntries(
+    OUTBOX_PAYLOAD_CONTRACTS.question.columns.map((column) => [column, null]),
+  )
+  return Object.assign(payload, {
+    id: QUESTION_ID,
+    number: 7,
+    spaceId: QUESTION_SPACE_ID,
+    projectId: QUESTION_PROJECT_ID,
+    projectName: 'question-revision-proof',
+    machineId: QUESTION_MACHINE_ID,
+    localId: 7,
+    revision: 1,
+    askedAt: STAMP,
+    question: 'Older question',
+    withheldFields: [],
+    audits: [],
     createdAt: STAMP,
     updatedAt: STAMP,
   })
@@ -154,6 +182,80 @@ realPostgres('hosted run task references', () => {
       await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${OTHER_SPACE_ID}::uuid`
       await admin`DELETE FROM "user" WHERE id=${USER_ID}::uuid`
+      await Promise.all([actor.close(), admin.close()])
+    }
+  })
+})
+
+realPostgres('hosted question revisions', () => {
+  test('a lower revision carrying a number does not change a newer unnumbered row', async () => {
+    const admin = new SQL(adminUrl!)
+    const actor = new SQL(actorUrl!)
+    try {
+      await admin`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${QUESTION_SPACE_ID}::uuid,'Question revision proof','question-revision-proof',now())`
+      await admin`INSERT INTO "user" (id,email,name,created_at)
+        VALUES (${QUESTION_USER_ID}::uuid,'question-revision-proof@example.test','Question Revision Proof',now())`
+      await admin`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${QUESTION_MEMBERSHIP_ID}::uuid,${QUESTION_SPACE_ID}::uuid,${QUESTION_USER_ID}::uuid,
+          'member','write',now())`
+      await admin`INSERT INTO project (id,space_id,name,key_prefixes,created_at)
+        VALUES (${QUESTION_PROJECT_ID}::uuid,${QUESTION_SPACE_ID}::uuid,'question-revision-proof',ARRAY['DEV'],now())`
+      await admin`INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+        VALUES (${QUESTION_MACHINE_ID}::uuid,${QUESTION_USER_ID}::uuid,'question-revision-proof',
+          ${STAMP}::timestamptz,${STAMP}::timestamptz)`
+      await admin`INSERT INTO question
+        (id,number,space_id,project_id,machine_id,revision,asked_at,question,withheld_fields,created_at,updated_at)
+        VALUES (${QUESTION_ID}::uuid,NULL,${QUESTION_SPACE_ID}::uuid,${QUESTION_PROJECT_ID}::uuid,
+          ${QUESTION_MACHINE_ID}::uuid,2,${STAMP}::timestamptz,'Newer question','[]'::jsonb,
+          ${STAMP}::timestamptz,${STAMP}::timestamptz)`
+
+      expect(
+        await syncHostedRecord({
+          url: actorUrl!,
+          postgres: actor,
+          identity: {
+            user: { id: QUESTION_USER_ID },
+            activeSpaceId: QUESTION_SPACE_ID,
+            personalSpaceId: QUESTION_SPACE_ID,
+            memberships: [
+              {
+                space_id: QUESTION_SPACE_ID,
+                slug: 'question-revision-proof',
+                permission: 'write',
+              },
+            ],
+          },
+          request: {
+            machine: { id: QUESTION_MACHINE_ID, name: 'question-revision-proof', seenAt: STAMP },
+            rows: [
+              {
+                id: 1,
+                kind: 'question',
+                payload: JSON.stringify(questionPayload()),
+                spaceHint: null,
+              },
+            ],
+          },
+        }),
+      ).toEqual({ results: [{ id: 1, status: 'synced' }] })
+
+      const [question] = await admin<
+        { number: number | null; revision: number; question: string }[]
+      >`
+        SELECT number,revision,question FROM question WHERE id=${QUESTION_ID}::uuid`
+      expect(question).toEqual({ number: null, revision: 2, question: 'Newer question' })
+    } finally {
+      await admin`DELETE FROM question_mutation_audit WHERE question_id=${QUESTION_ID}::uuid`
+      await admin`DELETE FROM question WHERE id=${QUESTION_ID}::uuid`
+      await admin`DELETE FROM project WHERE id=${QUESTION_PROJECT_ID}::uuid`
+      await admin`DELETE FROM machine_name_claim WHERE machine_id=${QUESTION_MACHINE_ID}::uuid`
+      await admin`DELETE FROM machine WHERE id=${QUESTION_MACHINE_ID}::uuid`
+      await admin`DELETE FROM hub_change WHERE space_id=${QUESTION_SPACE_ID}::uuid`
+      await admin`DELETE FROM hub_change_head WHERE space_id=${QUESTION_SPACE_ID}::uuid`
+      await admin`DELETE FROM membership WHERE id=${QUESTION_MEMBERSHIP_ID}::uuid`
+      await admin`DELETE FROM space WHERE id=${QUESTION_SPACE_ID}::uuid`
+      await admin`DELETE FROM "user" WHERE id=${QUESTION_USER_ID}::uuid`
       await Promise.all([actor.close(), admin.close()])
     }
   })

@@ -567,6 +567,7 @@ const recordKinds = {
         const incomingQuestionFillsNumber = and(
           drizzleSql`${questionRecord.number} IS NULL`,
           drizzleSql`excluded.number IS NOT NULL`,
+          drizzleSql`excluded.revision = ${questionRecord.revision}`,
         )
         const written = await drizzle({ client: tx })
           .insert(questionRecord)

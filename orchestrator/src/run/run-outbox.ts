@@ -21,6 +21,7 @@ type LocalRun = Record<string, unknown> & {
 export type RunRecordBackfillResult = {
   enqueued: number
   refreshedLinks: number
+  refreshedNumbers: number
   refreshedRoots: number
   skippedLive: number
 }
@@ -243,6 +244,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
     .all(HOOK_TREE_JOB, LANDING_TREE_JOB)
   let enqueued = 0
   let refreshedLinks = 0
+  let refreshedNumbers = 0
   let refreshedRoots = 0
   for (const row of eligible) {
     if (row.latest_payload === null) {
@@ -271,7 +273,7 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
       ? (chainTerminationAtForRoot(database, row.record_id) ?? row.finished_at)
       : row.finished_at
     enqueueRunRecord(database, row.record_id, machineId, finishedAt)
-    if (refreshNumber) enqueued++
+    if (refreshNumber) refreshedNumbers++
     else if (refreshLinks) refreshedLinks++
     else refreshedRoots++
   }
@@ -279,5 +281,5 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
   const skippedLive = database
     .query<{ count: number }, []>(`SELECT count(*) AS count FROM run WHERE status='running'`)
     .get()!.count
-  return { enqueued, refreshedLinks, refreshedRoots, skippedLive }
+  return { enqueued, refreshedLinks, refreshedNumbers, refreshedRoots, skippedLive }
 }

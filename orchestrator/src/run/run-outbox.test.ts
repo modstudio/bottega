@@ -149,6 +149,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 4,
     refreshedLinks: 0,
+    refreshedNumbers: 0,
     refreshedRoots: 0,
     skippedLive: 1,
   })
@@ -179,6 +180,7 @@ test('backfill resolves chains, enqueues finished turns once, and skips running 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
     refreshedLinks: 0,
+    refreshedNumbers: 0,
     refreshedRoots: 0,
     skippedLive: 1,
   })
@@ -203,6 +205,7 @@ test('backfill leaves hook-tree rows local', () => {
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
     enqueued: 0,
     refreshedLinks: 0,
+    refreshedNumbers: 0,
     refreshedRoots: 0,
     skippedLive: 0,
   })
@@ -244,6 +247,7 @@ test('backfill refreshes only roots whose latest run payload disagrees', () => {
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
     refreshedLinks: 0,
+    refreshedNumbers: 0,
     refreshedRoots: 1,
     skippedLive: 0,
   })
@@ -297,12 +301,14 @@ test('backfill refreshes stale links for roots and turns only once', () => {
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
     refreshedLinks: 2,
+    refreshedNumbers: 0,
     refreshedRoots: 0,
     skippedLive: 0,
   })
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
     refreshedLinks: 0,
+    refreshedNumbers: 0,
     refreshedRoots: 0,
     skippedLive: 0,
   })
@@ -337,8 +343,9 @@ test('backfill rebuilds a run payload that predates its display number', () => {
     .run(newRecordId(), recordId)
 
   expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
-    enqueued: 1,
+    enqueued: 0,
     refreshedLinks: 0,
+    refreshedNumbers: 1,
     refreshedRoots: 0,
     skippedLive: 0,
   })
@@ -393,6 +400,7 @@ test('backfill timestamps a refreshed root from its outcome-producing turn', () 
   expect(backfillRunRecords(database, machine)).toEqual({
     enqueued: 0,
     refreshedLinks: 0,
+    refreshedNumbers: 0,
     refreshedRoots: 1,
     skippedLive: 0,
   })
