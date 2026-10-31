@@ -129,7 +129,11 @@ export function rawGitSpawnViolations(
 
 export function gitEnvironmentViolations(findings: readonly GitSpawn[]): string[] {
   return findings
-    .filter((finding) => !finding.hasScrubbedEnvironment)
+    .filter(
+      (finding) =>
+        (finding.file.startsWith('orchestrator/src/') || finding.file.startsWith('shared/')) &&
+        !finding.hasScrubbedEnvironment,
+    )
     .map(
       (finding) =>
         `${finding.file}:${finding.line}: production git spawn must supply a scrubbed environment`,

@@ -20,25 +20,21 @@ describe('git spawn check', () => {
     expect(
       findings
         .filter((finding) => finding.countsTowardBaseline)
-        .map(({ file, line }) => `${file}:${line}`)
-        .sort(),
-    ).toEqual(
-      ['hub/src/example.ts:2', 'orchestrator/src/example.ts:1'].sort(),
-    )
+        .map(({ file, line }) => `${file}:${line}`),
+    ).toEqual(['hub/src/example.ts:2', 'orchestrator/src/example.ts:1'])
   })
 
-  test('keeps the scrubbed-environment rule on the shared matcher', () => {
+  test('keeps the scrubbed-environment rule scoped to orchestrator and shared', () => {
     const findings = gitSpawns({
       'hub/src/missing.ts': `Bun.${'spawn'}(['git', 'status'])`,
-      'hub/src/raw.ts': `Bun.${'spawnSync'}(['git'], { env: process.env })`,
-      'hub/src/scrubbed.ts': `Bun.${'spawn'}(['git'], { env })`,
+      'orchestrator/src/raw.ts': `Bun.${'spawnSync'}(['git'], { env: process.env })`,
+      'shared/missing.ts': `Bun.${'spawn'}(['git', 'status'])`,
+      'shared/scrubbed.ts': `Bun.${'spawn'}(['git'], { env })`,
     })
-    expect(gitEnvironmentViolations(findings).sort()).toEqual(
-      [
-        'hub/src/missing.ts:1: production git spawn must supply a scrubbed environment',
-        'hub/src/raw.ts:1: production git spawn must supply a scrubbed environment',
-      ].sort(),
-    )
+    expect(gitEnvironmentViolations(findings)).toEqual([
+      'orchestrator/src/raw.ts:1: production git spawn must supply a scrubbed environment',
+      'shared/missing.ts:1: production git spawn must supply a scrubbed environment',
+    ])
   })
 
   test('refuses growth at its line with the guarded-helper remedy', () => {

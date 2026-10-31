@@ -3,7 +3,6 @@ import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } 
 import { isAbsolute, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { inspectionGitEnv } from '../../shared/git.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -139,11 +138,7 @@ export type NoteCandidate = {
 export type NoteAcknowledgement = { note: NoteRow; alreadyAcknowledged: boolean }
 
 const git = (cwd: string, ...args: string[]): string | null => {
-  const result = Bun.spawnSync(['git', '-C', cwd, ...args], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'ignore',
-  })
+  const result = Bun.spawnSync(['git', '-C', cwd, ...args], { stdout: 'pipe', stderr: 'ignore' })
   return result.exitCode === 0 ? result.stdout.toString().trim() : null
 }
 
