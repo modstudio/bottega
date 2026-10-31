@@ -72,7 +72,10 @@ type MachineKey = {
 type ConfigIdentity = { user: { id: string }; activeSpaceId: string | null }
 
 export type ConfigClient = ReturnType<typeof createConfigClient>
-type Transport = typeof fetch
+type Transport = (
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+) => ReturnType<typeof fetch>
 
 function createConfigClient(
   baseUrl: string,

@@ -16,7 +16,7 @@ type Binding =
   | ts.ParameterDeclaration
   | ts.ImportSpecifier
   | ts.NamespaceImport
-type Scope = ts.SourceFile | ts.Block | ts.FunctionLikeDeclaration
+type Scope = ts.SourceFile | ts.Block | ts.SignatureDeclaration
 
 function isScope(node: ts.Node): node is Scope {
   return ts.isSourceFile(node) || ts.isBlock(node) || ts.isFunctionLike(node)

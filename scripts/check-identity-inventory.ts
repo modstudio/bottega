@@ -111,7 +111,8 @@ function runtimeSyncedSourceRefusals(): string[] {
   ].sort()
 }
 
-const stubRequest = async () => ({})
+// These client methods are only enumerated and never called, so the stub value is never read.
+const stubRequest = async <T>() => ({}) as T
 const stubFetch = async () =>
   new Response('{}', { headers: { 'content-type': 'application/json' } })
 const methodInventory = () => [

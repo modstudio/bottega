@@ -112,13 +112,13 @@ function isLocalSourceRootInitializer(node: ts.Expression | undefined): boolean 
   ) {
     return false
   }
-  const url = node.arguments[0]
+  const url = node.arguments[0]!
   return (
     ts.isNewExpression(url) &&
     ts.isIdentifier(url.expression) &&
     url.expression.text === 'URL' &&
     url.arguments?.length === 2 &&
-    isImportMetaUrl(url.arguments[1]!)
+    isImportMetaUrl(url.arguments![1]!)
   )
 }
 
@@ -146,7 +146,7 @@ type Binding =
   | ts.ParameterDeclaration
   | ts.ImportSpecifier
   | ts.NamespaceImport
-type Scope = ts.SourceFile | ts.Block | ts.FunctionLikeDeclaration
+type Scope = ts.SourceFile | ts.Block | ts.SignatureDeclaration
 
 function isScope(node: ts.Node): node is Scope {
   return ts.isSourceFile(node) || ts.isBlock(node) || ts.isFunctionLike(node)

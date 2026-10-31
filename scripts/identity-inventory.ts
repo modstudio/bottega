@@ -233,10 +233,10 @@ function validateKeyManifests(
   ] as const
   for (let left = 0; left < kinds.length; left++) {
     for (let right = left + 1; right < kinds.length; right++) {
-      const overlap = [...kinds[left][1].keys()].filter((column) => kinds[right][1].has(column))
+      const overlap = [...kinds[left]![1].keys()].filter((column) => kinds[right]![1].has(column))
       if (overlap.length)
         throw new Error(
-          `${store} ${kinds[left][0]}/${kinds[right][0]} manifests overlap: ${overlap.join(', ')}`,
+          `${store} ${kinds[left]![0]}/${kinds[right]![0]} manifests overlap: ${overlap.join(', ')}`,
         )
     }
   }
@@ -575,7 +575,7 @@ export async function hostedKeyTables(): Promise<KeyTable[]> {
     ? drizzleConfig.schema
     : [drizzleConfig.schema]
   const modules = await Promise.all(
-    configured.map((path) => import(pathToFileURL(resolve(import.meta.dir, '..', path)).href)),
+    configured.map((path) => import(pathToFileURL(resolve(import.meta.dir, '..', path!)).href)),
   )
   return hostedKeyTablesFromModules(modules)
 }

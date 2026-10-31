@@ -22,6 +22,8 @@
     "check": "bun scripts/check.ts",
     "check:worker": "bun scripts/check.ts --worker",
     "check:suite": "bun scripts/check.ts --suite",
+    "typecheck:scripts": "tsc --noEmit -p scripts/tsconfig.json",
+    "typecheck:shared": "tsc --noEmit -p shared/tsconfig.json",
     "test:focused": "bun scripts/test-focused.ts",
     "audit:hot-store": "bun scripts/audit-hot-store-statements.ts",
     "release:binary": "bun scripts/build-binary.ts",

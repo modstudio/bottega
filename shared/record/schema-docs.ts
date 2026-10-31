@@ -2,6 +2,7 @@
 /** Knows the hosted operator-document record shape. Must not know local cache or synchronization. */
 import { sql } from 'drizzle-orm'
 import {
+  type AnyPgColumn,
   boolean,
   check,
   customType,
@@ -33,7 +34,7 @@ const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull(
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull()
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' })
 const currentUser = sql`nullif(current_setting('app.user_id', true), '')::uuid`
-const ownerPolicies = (table: string, owner: ReturnType<typeof uuid>) => [
+const ownerPolicies = (table: string, owner: AnyPgColumn) => [
   pgPolicy(`${table}_owner_select`, {
     as: 'restrictive',
     for: 'select',
@@ -57,11 +58,7 @@ const ownerPolicies = (table: string, owner: ReturnType<typeof uuid>) => [
   }),
 ]
 
-const subjectRule = (
-  scope: ReturnType<typeof text>,
-  subject: ReturnType<typeof text>,
-  owner: ReturnType<typeof uuid>,
-) => sql`(
+const subjectRule = (scope: AnyPgColumn, subject: AnyPgColumn, owner: AnyPgColumn) => sql`(
   (${owner} IS NOT NULL AND ${scope} IN ('canon','settings') AND ${subject} IS NULL) OR
   (${owner} IS NULL AND (
   (${scope} IN ('machine','global') AND ${subject} IS NULL) OR
@@ -69,7 +66,7 @@ const subjectRule = (
   ${scope} IN ('canon','settings')
   ))
 )`
-const slugRule = (scope: ReturnType<typeof text>, slug: ReturnType<typeof text>) => sql`(
+const slugRule = (scope: AnyPgColumn, slug: AnyPgColumn) => sql`(
   (${scope} = 'canon' AND length(${slug}) > 0 AND ${slug} NOT LIKE '/%' AND ${slug} NOT LIKE '%..%') OR
   (${scope} <> 'canon' AND length(${slug}) <= 64 AND ${slug} ~ '^[a-z0-9][a-z0-9-]*$')
 )`

@@ -9,7 +9,7 @@ import { CI_ONLY_SUITES } from './check-plan.ts'
 import { RELEASE_BUN_VERSION } from './release-config.ts'
 
 const postgresServiceContainer = `BOTTEGA_TEST_POSTGRES_CONTAINER: \${{ job.services.postgres.id }}`
-const processSuite = CI_ONLY_SUITES[0]
+const processSuite = CI_ONLY_SUITES[0]!
 
 test('refuses a workflow with a missing or extra job', () => {
   const workflow = `jobs:\n${expectedWorkflowJobNames()

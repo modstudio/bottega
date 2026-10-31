@@ -124,7 +124,7 @@ export function expectedWorkflowJobNames(): string[] {
   return [
     'secrets',
     'static',
-    ...CHECK_LEGS.map((leg) => leg.ciJob),
+    ...CHECK_LEGS.flatMap((leg) => (leg.ciJob === null ? [] : [leg.ciJob])),
     ...CI_ONLY_JOBS,
     'root',
     'ci',

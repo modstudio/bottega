@@ -80,7 +80,8 @@ async function selectAffectedTests(baseCommit: string): Promise<string[]> {
     outputType: 'json',
     reaches: { path: affectedSeedPattern(seeds) },
   })
-  const result = JSON.parse(output) as { modules?: unknown }
+  // outputType 'json' makes dependency-cruiser return the serialized report.
+  const result = JSON.parse(output as string) as { modules?: unknown }
   if (!Array.isArray(result.modules)) {
     throw new Error('dependency-cruiser returned no modules array')
   }

@@ -12,6 +12,7 @@ import {
 } from '../orchestrator/src/canon/canon-empty-store-refusal.ts'
 import { collectCanonTreeAtRef, isHydrationPath } from '../orchestrator/src/canon/canon-files.ts'
 import {
+  type AddressedCanonRow,
   emptyStoreHydrationRefusal,
   type HydrationDrift,
   hydrationDrift,
@@ -102,7 +103,7 @@ export function branchHydrationPaths(paths: Iterable<string>): string[] {
 export function canonBranchFindings(input: {
   checkout: string
   base: string
-  rows: ReturnType<typeof storedRepositoryCanonRows>
+  rows: AddressedCanonRow[]
 }): HydrationDrift[] {
   const changed = branchHydrationPaths(branchChangedPaths(input.checkout, input.base))
   if (changed.length === 0) return []
@@ -123,7 +124,7 @@ export function canonEmptyStoreDriftRefusal(input: {
 
 function canonDriftFromInput(
   checkout: string,
-  input: ReturnType<typeof readCanonGateInput> | ReturnType<typeof readCanonGateFactsInput>,
+  input: { project: Project; rows: AddressedCanonRow[] },
 ): HydrationDrift[] {
   const { project, rows } = input
   let base: string

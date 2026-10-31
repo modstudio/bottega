@@ -36,7 +36,7 @@ function verifySha256Sums(outputDirectory: string, expectedNames: string[]): voi
   for (const line of readFileSync(sumsPath, 'utf8').trimEnd().split('\n')) {
     const match = /^([0-9a-f]{64}) {2}([^/]+)$/.exec(line)
     if (!match) throw new Error(`invalid SHA256SUMS line: ${JSON.stringify(line)}`)
-    entries.set(match[2], match[1])
+    entries.set(match[2]!, match[1]!)
   }
   for (const name of expectedNames) {
     const expected = entries.get(name)

@@ -56,6 +56,13 @@ type LegResult = GateStepResult & { tail: string[] }
 type StaticCheck = { name: string; argv: string[]; category?: string; reportPath?: string }
 type ExecutionObservation = Pick<StaticCheck, 'category' | 'reportPath'> & { check?: string }
 
+function pipedOutput(
+  stream: Bun.Subprocess['stdout'],
+): ReadableStream<Uint8Array<ArrayBufferLike>> {
+  // Every caller creates its subprocess with this output channel set to 'pipe'.
+  return stream as ReadableStream<Uint8Array<ArrayBufferLike>>
+}
+
 const root = fileURLToPath(new URL('..', import.meta.url))
 const STATIC_CHECKS = staticCheckPlan()
 const checkArguments: CheckArguments = (() => {
@@ -224,7 +231,7 @@ async function inherit(argv: string[], cwd = root, observation: ExecutionObserva
     startedAt,
   )
   const readers = [
-    pump(child.stdout, '', detail, {
+    pump(pipedOutput(child.stdout), '', detail, {
       error: false,
       raw: true,
       tailLines: FAILED_STEP_DETAIL_LINES,
@@ -233,7 +240,7 @@ async function inherit(argv: string[], cwd = root, observation: ExecutionObserva
         omittedDetailLines += 1
       },
     }),
-    pump(child.stderr, '', detail, {
+    pump(pipedOutput(child.stderr), '', detail, {
       error: true,
       raw: true,
       tailLines: FAILED_STEP_DETAIL_LINES,
@@ -382,8 +389,8 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
       startedAt,
     )
     const readers = [
-      pump(child.stdout, leg.name, tail, { error: false }),
-      pump(child.stderr, leg.name, tail, { error: true }),
+      pump(pipedOutput(child.stdout), leg.name, tail, { error: false }),
+      pump(pipedOutput(child.stderr), leg.name, tail, { error: true }),
     ]
     const exitCode = await child.exited
     await Promise.all(readers)
@@ -413,7 +420,10 @@ async function biomeErrorDetails(
       {},
       startedAt,
     )
-    const [exitCode, output] = await Promise.all([child.exited, new Response(child.stdout).text()])
+    const [exitCode, output] = await Promise.all([
+      child.exited,
+      new Response(pipedOutput(child.stdout)).text(),
+    ])
     if (exitCode !== 0 && exitCode !== 1) {
       throw new Error(`Biome JSON pass exited ${exitCode}`)
     }
@@ -647,7 +657,7 @@ if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
     process.exit(1)
   }
   const staticChecks = STATIC_CHECKS.map((check) => materializeStaticCheck(check, qualityMode))
-  const omittedChecks = new Set(
+  const omittedChecks = new Set<string>(
     checkArguments.omit.flatMap((group) => STATIC_OMIT_GROUPS[group].checks),
   )
   for (const group of checkArguments.omit) {
@@ -664,7 +674,7 @@ if (checkArguments.mode === 'static' || checkArguments.mode === 'worker') {
 
 if (reportDirectory) rmSync(reportDirectory, { recursive: true, force: true })
 
-clearTimeout(runtimeDeadline)
+clearTimeout(runtimeDeadline!)
 const summary = printSummary()
 if (!summary) throw new Error('check summary printed before budget checks')
 const { elapsedMs, cpuMs } = summary

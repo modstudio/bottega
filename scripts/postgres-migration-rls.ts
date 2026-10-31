@@ -170,9 +170,9 @@ function appendRestorationFindings(state: AnalysisState): void {
 function migrationEvents(sql: string): MigrationEvent[] {
   return [...maskCommentsAndStrings(sql).matchAll(migrationEvent)].map((match) => {
     if (match[1]) return { kind: 'force', table: tableName(match[1]), forced: !match[2] }
-    if (match[3]) return { kind: 'dml', operation: 'UPDATE', table: tableName(match[4]) }
-    if (match[5]) return { kind: 'dml', operation: 'INSERT', table: tableName(match[6]) }
-    if (match[7]) return { kind: 'dml', operation: 'DELETE', table: tableName(match[8]) }
+    if (match[3]) return { kind: 'dml', operation: 'UPDATE', table: tableName(match[4]!) }
+    if (match[5]) return { kind: 'dml', operation: 'INSERT', table: tableName(match[6]!) }
+    if (match[7]) return { kind: 'dml', operation: 'DELETE', table: tableName(match[8]!) }
     return { kind: 'dynamic', operation: 'EXECUTE' }
   })
 }

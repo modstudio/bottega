@@ -135,9 +135,9 @@ const expectedExports = Object.fromEntries(
   [...exportSources.entries()]
     .map(([subpath, sources]) => [
       subpath,
-      `./src/${sources[0].slice(`${HUB_UI_ROOT}/src/`.length)}`,
+      `./src/${sources[0]!.slice(`${HUB_UI_ROOT}/src/`.length)}`,
     ])
-    .sort(([left], [right]) => left.localeCompare(right)),
+    .sort(([left], [right]) => left!.localeCompare(right!)),
 )
 const actualExports = uiPackage.exports ?? {}
 for (const [subpath, source] of Object.entries(expectedExports)) {
@@ -179,9 +179,9 @@ const expectedViewExports = Object.fromEntries(
   [...viewExportSources.entries()]
     .map(([subpath, sources]) => [
       subpath,
-      `./src/${sources[0].slice(`${HUB_VIEWS_ROOT}/src/`.length)}`,
+      `./src/${sources[0]!.slice(`${HUB_VIEWS_ROOT}/src/`.length)}`,
     ])
-    .sort(([left], [right]) => left.localeCompare(right)),
+    .sort(([left], [right]) => left!.localeCompare(right!)),
 )
 const actualViewExports = viewsPackage.exports ?? {}
 for (const [subpath, source] of Object.entries(expectedViewExports)) {
@@ -211,7 +211,7 @@ const expectedDataExports = Object.fromEntries(
       const normalized = path.split(sep).join('/')
       return [exportSubpath(normalized), `./src/${normalized}`]
     })
-    .sort(([left], [right]) => left.localeCompare(right)),
+    .sort(([left], [right]) => left!.localeCompare(right!)),
 )
 for (const [subpath, source] of Object.entries(expectedDataExports)) {
   if (dataPackage.exports?.[subpath] !== source) {
@@ -238,7 +238,7 @@ const expectedUtilExports = Object.fromEntries(
       const normalized = path.split(sep).join('/')
       return [exportSubpath(normalized), `./src/${normalized}`]
     })
-    .sort(([left], [right]) => left.localeCompare(right)),
+    .sort(([left], [right]) => left!.localeCompare(right!)),
 )
 for (const [subpath, source] of Object.entries(expectedUtilExports)) {
   if (utilPackage.exports?.[subpath] !== source) {
@@ -266,7 +266,7 @@ const expectedSiteExports = Object.fromEntries(
       const normalized = path.split(sep).join('/')
       return [exportSubpath(normalized), `./src/${normalized}`]
     })
-    .sort(([left], [right]) => left.localeCompare(right)),
+    .sort(([left], [right]) => left!.localeCompare(right!)),
 )
 for (const [subpath, source] of Object.entries(expectedSiteExports)) {
   if (sitePackage.exports?.[subpath] !== source) {

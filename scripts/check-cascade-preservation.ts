@@ -409,7 +409,7 @@ function mentions(expression: string, column: string): boolean {
 
 function stringLiterals(expression: string): string[] {
   return [...expression.matchAll(/'((?:''|[^'])*)'/g)].map((match) =>
-    match[1].replaceAll("''", "'"),
+    match[1]!.replaceAll("''", "'"),
   )
 }
 
@@ -503,14 +503,14 @@ function constrainedValues(
         (combination) => {
           const attempt = new Map(values)
           involved.forEach((column, index) => {
-            attempt.set(column.name, combination[index])
+            attempt.set(column.name, combination[index]!)
           })
           return satisfies(database, check, columns, attempt)
         },
       )
       if (!solution) throw new Error(`could not satisfy CHECK (${check.trim()}) mechanically`)
       involved.forEach((column, index) => {
-        values.set(column.name, solution[index])
+        values.set(column.name, solution[index]!)
       })
       changed = true
     }
@@ -524,13 +524,13 @@ function constrainedValues(
   ).find((combination) => {
     const attempt = new Map(values)
     involved.forEach((column, index) => {
-      attempt.set(column.name, combination[index])
+      attempt.set(column.name, combination[index]!)
     })
     return checks.every((check) => satisfies(database, check, columns, attempt))
   })
   if (!solution) throw new Error('CHECK constraints could not be satisfied together')
   involved.forEach((column, index) => {
-    values.set(column.name, solution[index])
+    values.set(column.name, solution[index]!)
   })
   return values
 }

@@ -208,9 +208,10 @@ export function analyzeComponentStyleCalls(
     if (ts.isCallExpression(node) && styleIdentifiers.has(rootIdentifier(node.expression) ?? ''))
       for (const argument of node.arguments) inspectArgument(argument)
     if (ts.isJsxAttribute(node) && node.name.getText(source) === 'className') {
-      const expression = ts.isJsxExpression(node.initializer)
-        ? node.initializer.expression
-        : undefined
+      const expression =
+        node.initializer && ts.isJsxExpression(node.initializer)
+          ? node.initializer.expression
+          : undefined
       const identifier =
         expression && ts.isCallExpression(expression) ? rootIdentifier(expression) : undefined
       if (!identifier || !styleIdentifiers.has(identifier))
@@ -321,6 +322,7 @@ function interactiveOpening(node: ts.JsxOpeningLikeElement, source: ts.SourceFil
     return (
       name === 'onKeyDown' ||
       (name === 'role' &&
+        attribute.initializer !== undefined &&
         ts.isStringLiteral(attribute.initializer) &&
         interactiveRoles.has(attribute.initializer.text))
     )

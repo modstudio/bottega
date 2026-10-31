@@ -147,6 +147,10 @@ async function stopServer(server: ReturnType<typeof Bun.spawn>): Promise<void> {
 let browser: Browser | undefined
 let server: ReturnType<typeof Bun.spawn> | undefined
 let serverOutput: Promise<[string, string]> | undefined
+const pipedOutput = (stream: Bun.Subprocess['stdout']): ReadableStream<Uint8Array> => {
+  // The dashboard subprocess configures both output channels as pipes.
+  return stream as ReadableStream<Uint8Array>
+}
 try {
   if (!existsSync(distribution)) {
     throw new Error(`dashboard smoke requires the built bundle at ${dirname(distribution)}`)
@@ -162,8 +166,8 @@ try {
     stderr: 'pipe',
   })
   serverOutput = Promise.all([
-    new Response(server.stdout).text(),
-    new Response(server.stderr).text(),
+    new Response(pipedOutput(server.stdout)).text(),
+    new Response(pipedOutput(server.stderr)).text(),
   ])
   await waitForServer(origin, server.exited)
 

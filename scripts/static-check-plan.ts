@@ -158,6 +158,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-test-reach.ts', run, {
     extra: (qualityBase) => [qualityBase],
   }),
+  script('scripts/check-typecheck-reach.ts', run),
   script('scripts/check-test-spawns.ts', run),
   script('scripts/check-dead-code.ts', run, {
     extra: (qualityBase) => [qualityBase],

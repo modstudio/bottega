@@ -7,6 +7,7 @@ import {
   type TransportResult,
   type TransportStartOpts,
 } from '../src/transport/transport.ts'
+import { EMPTY_VENDOR_USAGE } from '../src/transport/vendor-usage.ts'
 
 export type ScriptedTransportEvent =
   | { kind: 'started'; pid?: number | null; session?: string | null }
@@ -59,6 +60,7 @@ export function scriptedTransportSequence(
   const transport: AgentTransport = {
     name: 'cli',
     canInjectMidTurn: false,
+    configuredAsk: () => null,
     async start(opts) {
       options.push(opts)
       inspectStart?.(opts)
@@ -128,6 +130,7 @@ const result = (state: {
   output: state.output,
   tokens: null,
   costUsd: null,
+  vendorUsage: EMPTY_VENDOR_USAGE,
   sessionId: state.session,
   stopReason: state.stopReason,
   error: state.error,
@@ -284,6 +287,7 @@ export function scriptedTransport(script: ScriptedTransportEvent[]): ScriptedTra
   const transport: AgentTransport = {
     name: 'cli',
     canInjectMidTurn: false,
+    configuredAsk: () => null,
     async start(opts) {
       prompts.push(opts.prompt)
       return handleFor(opts)

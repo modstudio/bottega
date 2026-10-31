@@ -18,7 +18,9 @@ describe('fixture', () => {
     const sessionMarker = 'on'
     expect(sessionMarker).toBe('on')
   })
-  test('genuine: calls helpers without assertions', () => doesNothing())
+  test('genuine: calls helpers without assertions', () => {
+    doesNothing()
+  })
   test('is trivial', () => expect(true).toBe(true))
   test.only('is focused', () => expect(subject).toBe(expected))
   test.skip('is disabled', () => expect(subject).toBe(expected))

@@ -106,14 +106,14 @@ const rulesByName = new Map(config.forbidden.map((rule) => [rule.name, rule]))
 
 function appliesToOriginalPath(ruleName: string) {
   const from = rulesByName.get(ruleName)?.from
-  if (!from || !new RegExp(from.path).test(original)) return false
+  if (!from || !new RegExp(from.path!).test(original!)) return false
   const pathNot = from.pathNot ? (Array.isArray(from.pathNot) ? from.pathNot : [from.pathNot]) : []
-  return !pathNot.some((pattern) => new RegExp(pattern).test(original))
+  return !pathNot.some((pattern) => new RegExp(pattern!).test(original!))
 }
 
 const findings = result.summary.violations.filter(({ from, rule }) => {
   if (rule.severity !== 'error') return false
-  if (from === target && !appliesToOriginalPath(rule.name)) return false
+  if (from === target && !appliesToOriginalPath(rule.name!)) return false
   return true
 })
 

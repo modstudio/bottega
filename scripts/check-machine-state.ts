@@ -19,7 +19,7 @@ export type MachineStateFinding = {
 const runsPath = `orchestrator/${FROZEN_STATE_NAMES.runsDirectory}`
 const orchestratorDatabase = `orchestrator/${FROZEN_STATE_NAMES.orchestratorDatabase}`
 const hubDatabase = `hub/${FROZEN_STATE_NAMES.hubDatabase}`
-const rootDatabases = new Set([
+const rootDatabases = new Set<string>([
   FROZEN_STATE_NAMES.orchestratorDatabase,
   FROZEN_STATE_NAMES.hubDatabase,
 ])

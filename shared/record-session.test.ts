@@ -32,14 +32,15 @@ describe('record session keychain', () => {
 
   test('writes the token through stdin rather than argv', () => {
     const token = 'fixture-secret-token'
-    let observed: { argv: string[]; stdin?: Uint8Array } | null = null
+    const observations: { argv: string[]; stdin?: Uint8Array }[] = []
     writeRecordSessionToken(token, (argv, stdin) => {
       if (argv[1] === 'add-generic-password') {
-        observed = { argv, stdin }
+        observations.push({ argv, stdin })
         return result(0)
       }
       return result(0, `${token}\n`)
     })
+    const observed = observations[0]
     expect(observed?.argv).toEqual([
       'security',
       'add-generic-password',

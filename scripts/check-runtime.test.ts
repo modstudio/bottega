@@ -134,6 +134,7 @@ describe('check mode arguments', () => {
       'hub/deploy/site',
       'retrieval',
       'shared',
+      'scripts',
     ])
   })
 
