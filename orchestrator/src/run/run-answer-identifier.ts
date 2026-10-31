@@ -3,13 +3,9 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
-import {
-  decideMachineLabel,
-  type MachineIdentifierNames,
-  MachineLabelRefusal,
-} from '../record/machine-name.ts'
+import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 import { questionOpenSql } from './question-open.ts'
-import { classifyRunIdentifier } from './run-identifier-grammar.ts'
+import { classifyBareRunIdentifier } from './run-identifier-grammar.ts'
 
 export type ParsedAnswerIdentifier =
   | { kind: 'question-number'; number: number }
@@ -62,15 +58,13 @@ export function parseAnswerIdentifier(
   names: MachineIdentifierNames | null = storedMachineNames(),
 ): ParsedAnswerIdentifier {
   const original = String(input)
-  const label = decideMachineLabel(original, names)
-  if (label.kind === 'refused') throw new MachineLabelRefusal(label.reason)
-  const given = label.kind === 'bare' ? label.remainder : original
+  const given = stripMachineLabel(original, names)
   const question = given.match(/^q([0-9]+)$/)
   if (question) {
     const number = Number(question[1])
     if (Number.isSafeInteger(number) && number > 0) return { kind: 'question-number', number }
   }
-  const runIdentifier = classifyRunIdentifier(given, names)
+  const runIdentifier = classifyBareRunIdentifier(given)
   if (runIdentifier?.kind === 'number') return { kind: 'run-number', number: runIdentifier.number }
   if (runIdentifier?.kind === 'record-id')
     return { kind: 'record-id', recordId: runIdentifier.recordId }

@@ -19,7 +19,7 @@ test('decides current, former, foreign, absent, and malformed machine labels', (
   })
   expect(decideMachineLabel('mine/42', null)).toEqual({
     kind: 'refused',
-    reason: expect.stringContaining('this machine has no short name'),
+    reason: expect.stringContaining('record space switch --short-name'),
   })
   expect(decideMachineLabel('Bad/42', names)).toEqual({ kind: 'not-label' })
 })

@@ -231,7 +231,10 @@ export const recordModules: RecordModule[] = [
     './record-sync-decision.ts',
   ]),
   module('orchestrator/src/record/record-api-machine.ts', ['hono', 'zod', './record-auth.ts']),
-  module('orchestrator/src/record/machine-name.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/record/machine-name.ts', [
+    '../../../shared/brand.ts',
+    '../../../shared/machine-config.ts',
+  ]),
   module('orchestrator/src/record/machine-name-record.ts', [
     'bun',
     '../../../shared/record-space-membership.ts',
@@ -557,8 +560,8 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/record-space-membership.ts',
-    '../../../shared/machine-config.ts',
     './machine-name-command.ts',
+    './machine-name.ts',
     './record-api-client.ts',
     './record-auth.ts',
     './record-session.ts',

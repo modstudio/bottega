@@ -1,4 +1,5 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { StoredMachineNames } from '../../../shared/machine-config.ts'
 
 const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
 const DISPLAY_NAME_RULE = '1-60 characters'
@@ -7,10 +8,8 @@ export function shortNameRefusal(value: string): string | null {
   return /^[a-z][a-z0-9-]{1,19}$/.test(value) ? null : `short name must be ${SHORT_NAME_RULE}`
 }
 
-export type MachineIdentifierNames = {
-  shortName: string
-  formerShortNames: readonly string[]
-}
+export type MachineIdentifierNames = Pick<StoredMachineNames, 'shortName' | 'formerShortNames'>
+export type MachineNamePair = Pick<StoredMachineNames, 'shortName' | 'displayName'>
 
 export type MachineLabelDecision =
   | { kind: 'bare'; remainder: string }
@@ -37,6 +36,12 @@ export function decideMachineLabel(
     kind: 'refused',
     reason: `\`${input}\` names a row on machine \`${name}\`; this command acts only on this machine's (\`${names.shortName}\`) rows`,
   }
+}
+
+export function stripMachineLabel(input: string, names: MachineIdentifierNames | null): string {
+  const label = decideMachineLabel(input, names)
+  if (label.kind === 'refused') throw new MachineLabelRefusal(label.reason)
+  return label.kind === 'bare' ? label.remainder : input
 }
 
 export function displayNameRefusal(value: string): string | null {

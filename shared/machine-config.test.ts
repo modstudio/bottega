@@ -8,7 +8,6 @@ import {
   deleteMachineValue,
   editMachinePermission,
   editMachinePermissionTable,
-  formerShortNamesAfterRename,
   listMachineEntries,
   MACHINE_CONFIG,
   machineId,
@@ -45,6 +44,8 @@ describe('stored machine names', () => {
   })
 
   test('writes and reads former names across renames without current names or duplicates', () => {
+    const id = '01990000-0000-7000-8000-000000001242'
+    setMachineValue('machine.id', id)
     writeMachineNames({ shortName: 'machine-a', displayName: 'Machine A' })
     writeMachineNames({ shortName: 'machine-b', displayName: 'Machine B' })
     expect(storedMachineNames()).toEqual({
@@ -52,6 +53,7 @@ describe('stored machine names', () => {
       displayName: 'Machine B',
       formerShortNames: ['machine-a'],
     })
+    expect(storedMachineId()).toBe(id)
 
     writeMachineNames({ shortName: 'machine-a', displayName: 'Machine A' })
     expect(storedMachineNames()).toEqual({
@@ -59,17 +61,13 @@ describe('stored machine names', () => {
       displayName: 'Machine A',
       formerShortNames: ['machine-b'],
     })
+    expect(storedMachineId()).toBe(id)
   })
 })
 
 describe('machine config resolution', () => {
-  test('former machine names append on rename without duplicates or the current name', () => {
+  test('former machine name parsing removes duplicate tokens', () => {
     expect(parseFormerShortNames('old,older,old')).toEqual(['old', 'older'])
-    expect(formerShortNamesAfterRename(['old', 'mine'], 'mine', 'new-name')).toEqual([
-      'old',
-      'mine',
-    ])
-    expect(formerShortNamesAfterRename(['old', 'mine'], 'mine', 'old')).toEqual(['mine'])
   })
   test('machine identity lookup does not create config and carry-over is stable', () => {
     const root = mkdtempSync(join(tmpdir(), 'machine-id-'))

@@ -3,11 +3,7 @@
 
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import {
-  decideMachineLabel,
-  type MachineIdentifierNames,
-  MachineLabelRefusal,
-} from '../record/machine-name.ts'
+import { type MachineIdentifierNames, stripMachineLabel } from '../record/machine-name.ts'
 
 type ProbeDatabase = {
   query(sql: string): unknown
@@ -32,9 +28,7 @@ function parseProbeIdentifier(
   names: MachineIdentifierNames | null = storedMachineNames(),
 ): ParsedProbeIdentifier {
   const original = String(input)
-  const label = decideMachineLabel(original, names)
-  if (label.kind === 'refused') throw new MachineLabelRefusal(label.reason)
-  const given = label.kind === 'bare' ? label.remainder : original
+  const given = stripMachineLabel(original, names)
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (Number.isSafeInteger(number) && number > 0) return { kind: 'number', number }

@@ -20,7 +20,6 @@ import {
   hostedIdentity,
   openHostedSecret,
 } from '../../../shared/hosted-secret-opening.ts'
-import type { StoredMachineNames } from '../../../shared/machine-config.ts'
 import {
   type ConfigHome,
   configHomes,
@@ -67,6 +66,7 @@ import {
   type TrustList,
   unpinTrustedMachine,
 } from '../../../shared/trust-list.ts'
+import type { MachineNamePair } from '../record/machine-name.ts'
 import { claimCurrentMachineNames } from '../record/machine-name-command.ts'
 import { LEGACY_ENVIRONMENT_SECRET_NAMES } from '../setup/environment-name-migration.ts'
 
@@ -188,7 +188,7 @@ export async function machineInit(
   label = hostname(),
   client = configClient(),
   env: ConfigEnvironment = process.env,
-  names?: Pick<StoredMachineNames, 'shortName' | 'displayName'>,
+  names?: MachineNamePair,
 ): Promise<string> {
   const pinned = readHostedConfigIdentity(env)
   const current = await client.whoami()
