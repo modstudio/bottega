@@ -7,15 +7,18 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { clearConfinement } from '../confinement/confinement-ruling.ts'
 import { db } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
+import { ceilingGuidanceForTier } from '../pull-request/pr-admission.ts'
+import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import {
   calibrationReviewCommand,
   completeReviewCommand,
   coverageAuditReviewCommand,
   listReviewCommand,
   pinsReviewCommand,
+  printReviewTier,
   recordReviewCommand,
+  reviewTierCommandOutput,
   showReviewCommand,
-  tierReviewCommand,
   triageReviewCommand,
   yieldReviewCommand,
 } from '../review/review-commands.ts'
@@ -69,6 +72,22 @@ function confinementReportCommand(flags: CliFlags): void {
 
 const reviewPresentation = {
   log,
+}
+
+function tierReviewCliCommand(argv: string[], flags: CliFlags, { log }: ReviewPresentation): void {
+  const value = argv[2]
+  if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
+  const result = reviewTierCommandOutput(value, resolveReviewCommandCwd(flags.flag('cwd')))
+  const json = flags.has('json')
+  const ceilingGuidance = json
+    ? null
+    : ceilingGuidanceForTier({
+        cwd: result.cwd,
+        tip: result.tip,
+        branch: result.branch,
+        reviewBudget: result.output.review_budget,
+      })
+  printReviewTier(result.output, json, ceilingGuidance, log)
 }
 
 function reviewArgv(command: Command): string[] {
@@ -156,7 +175,7 @@ function registerReviewQueries(review: Command, run: ReviewRunner): void {
     .argument('[target]', 'branch, run id, or from..to range')
     .option('--cwd <value>', 'resolve the target from this project checkout')
     .option('--json', 'write the classification as JSON')
-    .action((_target, _options, command) => run(command, tierReviewCommand))
+    .action((_target, _options, command) => run(command, tierReviewCliCommand))
 
   review
     .command('coverage-audit')

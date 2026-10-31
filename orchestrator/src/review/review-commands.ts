@@ -14,12 +14,10 @@ import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifi
 import { getReview, listReviews, parseReviewOutput, recordReviews } from './review.ts'
 import { reviewCalibration, reviewCalibrationFleet } from './review-calibration.ts'
 import { reviewCaptureRefusal } from './review-capture-refusal.ts'
-import { resolveReviewCommandCwd } from './review-command-cwd.ts'
 import { coverageAudit } from './review-coverage.ts'
 import { REVIEW_WINDOW } from './review-evidence-sql.ts'
 import { resolveReviewIdentifier } from './review-identifier.ts'
 import { reviewPins } from './review-pins.ts'
-import { reviewCeilingGuidance } from './review-round-budget.ts'
 import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
 import { resolveReviewBase } from './review-target.ts'
 import { parseTierRange, resolveTierRange, type TierRangeEndpoint } from './review-tier.ts'
@@ -196,8 +194,13 @@ function resolveTierTarget(
   }
 }
 
-function reviewTierOutput(value: string, cwd: string) {
-  const { repo, from, to, branch, project } = resolveTierTarget(value, cwd)
+function reviewTierOutputForTarget({
+  repo,
+  from,
+  to,
+  branch,
+  project,
+}: ReturnType<typeof resolveTierTarget>) {
   const { output, postFix, reviewPlan, reviewBudget, creditedByArchitectRead } =
     budgetedReviewPlanForResolvedChange({
       database: db(),
@@ -233,7 +236,7 @@ function reviewTierOutput(value: string, cwd: string) {
 }
 
 function printReviewRoundStatus(
-  output: ReturnType<typeof reviewTierOutput>,
+  output: ReturnType<typeof reviewTierOutputForTarget>,
   log: (...values: unknown[]) => void,
 ): void {
   if (output.post_fix.kind === 'comparison-failed') {
@@ -268,10 +271,10 @@ function printReviewRoundStatus(
 }
 
 function printCeilingArchitectCredit(
-  output: ReturnType<typeof reviewTierOutput>,
+  output: ReturnType<typeof reviewTierOutputForTarget>,
+  guidance: string | null,
   log: (...values: unknown[]) => void,
 ): boolean {
-  const guidance = reviewCeilingGuidance(output.review_budget)
   if (!guidance) return false
   log(guidance)
   if (output.post_fix.kind === 're-lens') {
@@ -295,9 +298,10 @@ function printCeilingArchitectCredit(
   return true
 }
 
-function printReviewTier(
-  output: ReturnType<typeof reviewTierOutput>,
+export function printReviewTier(
+  output: ReturnType<typeof reviewTierOutputForTarget>,
   json: boolean,
+  ceilingGuidance: string | null,
   log: (...values: unknown[]) => void,
 ): void {
   if (json) {
@@ -317,7 +321,10 @@ function printReviewTier(
   } else {
     log(`rounds ${output.review_budget.roundsUsed}/${output.review_budget.ceiling}`)
   }
-  if (!printCeilingArchitectCredit(output, log) || output.review_budget.currentChangeCounted) {
+  if (
+    !printCeilingArchitectCredit(output, ceilingGuidance, log) ||
+    output.review_budget.currentChangeCounted
+  ) {
     printReviewRoundStatus(output, log)
   }
   for (const lens of output.lens_profiles) {
@@ -437,18 +444,14 @@ export async function yieldReviewCommand(
   }
 }
 
-export function tierReviewCommand(
-  argv: string[],
-  flags: ReviewFlags,
-  { log }: ReviewPresentation,
-): void {
-  const value = argv[2]
-  if (!value) throw new Error(`${PLATFORM_SLUG} review tier <branch|run-id|from..to> [--json]`)
-  printReviewTier(
-    reviewTierOutput(value, resolveReviewCommandCwd(flags.flag('cwd'))),
-    flags.has('json'),
-    log,
-  )
+export function reviewTierCommandOutput(value: string, cwd: string) {
+  const target = resolveTierTarget(value, cwd)
+  return {
+    cwd: target.project.path,
+    branch: target.branch,
+    tip: target.to,
+    output: reviewTierOutputForTarget(target),
+  }
 }
 
 export function coverageAuditReviewCommand(flags: ReviewFlags, { log }: ReviewPresentation): void {
