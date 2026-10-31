@@ -1,4 +1,5 @@
 import type { Transaction } from '@electric-sql/pglite'
+import { CheckFailure } from './record-migration-failure.ts'
 
 export const taskLinkBackfill = '20261026112733_dev_1773_task_link_backfill'
 
@@ -105,6 +106,6 @@ export async function proofTaskLinkBackfill(
     { kind: 'run', id: ids.run, task_id: ids.task },
   ]
   if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
-    throw new Error(`DEV-1773 task-link backfill produced ${JSON.stringify(result.rows)}`)
+    throw new CheckFailure(`DEV-1773 task-link backfill produced ${JSON.stringify(result.rows)}`)
   }
 }
