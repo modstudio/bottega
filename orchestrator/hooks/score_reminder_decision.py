@@ -50,6 +50,35 @@ class HeldTreeDecision(NamedTuple):
     in_flight_line: str | None
 
 
+class StopDecision(NamedTuple):
+    block: bool
+    note_lines: list[str]
+    seen: list[str]
+
+
+def decide_stop(
+    blocking: bool,
+    notes: list[tuple[str, str]],
+    seen: set[str] | None,
+) -> StopDecision:
+    unseen = notes if seen is None else [note for note in notes if note[0] not in seen]
+    note_lines = []
+    if unseen:
+        count = len(unseen)
+        note_lines.append(
+            f"{count} note{'s' if count != 1 else ''} filed in this session; "
+            "system-health triages them:"
+        )
+        note_lines.extend(
+            f"  {label}  {text[:80]}  "
+            "(hand it to system-health with a board request to architects:bottega)"
+            for label, text in unseen
+        )
+    updated_seen = set() if seen is None else set(seen)
+    updated_seen.update(label for label, _text in unseen)
+    return StopDecision(block=blocking, note_lines=note_lines, seen=sorted(updated_seen))
+
+
 def unscored_remedy(status: str, failure_kind: str | None, agent: str) -> str:
     if status == "ok":
         return "axes"

@@ -190,15 +190,14 @@ describe('the Stop hook and orchestrator agree on what is unscored', () => {
       ),
     )
 
-  test('Stop note reminders parse labels and suggest label-addressed commands', () => {
-    const hook = readFileSync(
-      fileURLToPath(new URL('../../hooks/score-reminder.py', import.meta.url)),
-      'utf8',
-    )
+  test('Stop note reminders hand labels to system-health without triage commands', () => {
+    const hook = ['../../hooks/score-reminder.py', '../../hooks/score_reminder_decision.py']
+      .map((path) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8'))
+      .join('\n')
     expect(hook).toContain('row["label"]')
-    expect(hook).toContain(`${PLATFORM_SLUG} note keep {note_label}`)
-    expect(hook).toContain(`${PLATFORM_SLUG} note drop {note_label}`)
-    expect(hook).toContain(`${PLATFORM_SLUG} note promote {note_label} --title "<the point>"`)
+    expect(hook).toContain(`architects:${PLATFORM_SLUG}`)
+    expect(hook).not.toContain('note keep')
+    expect(hook).not.toContain('note drop')
   })
 
   test("the hook's not-evidence kinds match the canonical set", () => {

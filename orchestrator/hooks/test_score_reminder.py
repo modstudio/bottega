@@ -11,6 +11,7 @@ score_reminder_decision = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(score_reminder_decision)
 
 decide_held_tree = score_reminder_decision.decide_held_tree
+decide_stop = score_reminder_decision.decide_stop
 refusal_score_guidance = score_reminder_decision.refusal_score_guidance
 unscored_remedy = score_reminder_decision.unscored_remedy
 WRITING_JOBS = score_reminder_decision.WRITING_JOBS
@@ -58,6 +59,47 @@ class HeldTreeDecisionTest(unittest.TestCase):
             kept.in_flight_line,
             f"in flight: {hook_tree['worktree']} ({hook_tree['inFlightRef']})",
         )
+
+
+class StopDecisionTest(unittest.TestCase):
+    NOTES = [("#12", "first note"), ("#34", "second note")]
+
+    def test_notes_only_are_informational_and_marked_seen(self):
+        decision = decide_stop(False, self.NOTES, set())
+        self.assertFalse(decision.block)
+        self.assertEqual(len(decision.note_lines), 3)
+        self.assertEqual(
+            decision.note_lines[0],
+            "2 notes filed in this session; system-health triages them:",
+        )
+        self.assertIn("#12  first note", decision.note_lines[1])
+        self.assertIn("#34  second note", decision.note_lines[2])
+        self.assertEqual(decision.seen, ["#12", "#34"])
+
+    def test_notes_only_already_seen_do_not_repeat(self):
+        decision = decide_stop(False, self.NOTES, {"#12", "#34"})
+        self.assertFalse(decision.block)
+        self.assertEqual(decision.note_lines, [])
+
+    def test_blocking_without_notes_blocks(self):
+        self.assertTrue(decide_stop(True, [], set()).block)
+
+    def test_blocking_with_unseen_note_includes_the_note(self):
+        decision = decide_stop(True, [self.NOTES[0]], set())
+        self.assertTrue(decision.block)
+        self.assertIn("#12  first note", decision.note_lines[1])
+
+    def test_unknown_seen_state_prints_every_note(self):
+        decision = decide_stop(False, self.NOTES, None)
+        self.assertEqual(len(decision.note_lines), 3)
+        self.assertEqual(decision.seen, ["#12", "#34"])
+
+    def test_note_lines_offer_no_triage_commands(self):
+        decision = decide_stop(False, self.NOTES, set())
+        for line in decision.note_lines:
+            self.assertNotIn("note keep", line)
+            self.assertNotIn("note drop", line)
+            self.assertNotIn("note promote", line)
 
 
 class RefusalScoreGuidanceTest(unittest.TestCase):
