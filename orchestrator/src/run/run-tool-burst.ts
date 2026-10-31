@@ -73,7 +73,7 @@ export function observeToolBurst(input: {
     input.state.seenToolCallIds.add(input.event.toolCallId)
   }
   input.state.burst = decideToolCallBurst(input.state.burst, input.nowMs ?? Date.now())
-  if (!input.state.burst.tripped || input.state.killed) return
+  if (!input.state.burst.tripped) return
   if (toolCallBurstAction(input.harness) !== 'kill') return
   input.state.killed = true
   input.state.error = formatToolCallBurstError(input.state.burst)
@@ -159,12 +159,6 @@ export function toolBurstStopsWall(state: ToolBurstState): boolean {
 
 export function toolBurstTerminationResult(state: ToolBurstState): {
   toolBurstUnkillable: boolean
-  toolBurstTreePids: number[]
-  toolBurstTreePgid: number | null
 } {
-  return {
-    toolBurstUnkillable: state.terminateResult?.unkillable ?? false,
-    toolBurstTreePids: state.terminateResult?.pids ?? [],
-    toolBurstTreePgid: state.terminateResult?.pgid ?? null,
-  }
+  return { toolBurstUnkillable: state.terminateResult?.unkillable ?? false }
 }

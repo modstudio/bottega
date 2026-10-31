@@ -97,10 +97,8 @@ export type CloseInput = {
   writesJob: boolean
   changes: Changes | null
   artifactsPersisted: boolean
-  idleTreePids: number[]
-  idleTreePgid: number | null
-  toolBurstTreePids: number[]
-  toolBurstTreePgid: number | null
+  terminalTreePids: number[]
+  terminalTreePgid: number | null
   callerCwd: string
   repoJob: boolean
   declaredDeliverables: string[]
@@ -297,15 +295,6 @@ function notifyFailureRequiringHuman(input: {
     )
 }
 
-function terminalTree(
-  idlePids: number[],
-  idlePgid: number | null,
-  burstPids: number[],
-  burstPgid: number | null,
-): { pids: number[]; pgid: number | null } {
-  return idlePids.length ? { pids: idlePids, pgid: idlePgid } : { pids: burstPids, pgid: burstPgid }
-}
-
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: terminal cleanup and failover share one claimed-run transaction boundary
 export async function closeRun(input: CloseInput): Promise<RunResult> {
   const {
@@ -320,10 +309,8 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     writesJob,
     changes,
     artifactsPersisted,
-    idleTreePids,
-    idleTreePgid,
-    toolBurstTreePids,
-    toolBurstTreePgid,
+    terminalTreePids,
+    terminalTreePgid,
     callerCwd,
     repoJob,
     declaredDeliverables,
@@ -351,7 +338,6 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     endpointKey: input.endpointKey,
     projectName: input.endpointKey.projectName,
   })
-  const terminal = terminalTree(idleTreePids, idleTreePgid, toolBurstTreePids, toolBurstTreePgid)
   if (status === 'failed' && failureKind && FAILS_OVER.includes(failureKind)) {
     // Exclude this coordinator while terminating the vendor so it can route the successor.
     terminateRunProcesses(claim.id, [process.pid])
@@ -442,7 +428,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
         // this completed attempt before returning into it, otherwise this
         // frame never reaches the ordinary terminal reclaim below.
         if (artifactsPersisted && worktree && reclaimsTreeByDefault(opts.job))
-          reclaimTerminalTree(claim.id, worktree, terminal.pids, terminal.pgid, true)
+          reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
         return await run({
           job: opts.job,
           prompt: originalPrompt,
@@ -515,7 +501,7 @@ export async function closeRun(input: CloseInput): Promise<RunResult> {
     status !== 'running' &&
     status !== 'stopped'
   ) {
-    reclaimTerminalTree(claim.id, worktree, terminal.pids, terminal.pgid, true)
+    reclaimTerminalTree(claim.id, worktree, terminalTreePids, terminalTreePgid, true)
   }
 
   if (status === 'failed') {

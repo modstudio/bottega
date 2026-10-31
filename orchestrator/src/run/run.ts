@@ -809,11 +809,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   let checkpointTimer: ReturnType<typeof setInterval> | null = null
   let resourceObserver: RunResourceObserver | null = null
   let idleUnkillable = false
-  let idleTreePids: number[] = []
-  let idleTreePgid: number | null = null
+  let terminalTreePids: number[] = []
+  let terminalTreePgid: number | null = null
   let toolBurstUnkillable = false
-  let toolBurstTreePids: number[] = []
-  let toolBurstTreePgid: number | null = null
   let exitCode = -1
   let output = '',
     vendorTokens: number | null = null,
@@ -881,11 +879,9 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           checkpointTimer,
           resourceObserver,
           idleUnkillable,
-          idleTreePids,
-          idleTreePgid,
+          terminalTreePids,
+          terminalTreePgid,
           toolBurstUnkillable,
-          toolBurstTreePids,
-          toolBurstTreePgid,
           exitCode,
           output,
           vendorTokens,
@@ -1058,10 +1054,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
         writesJob,
         changes,
         artifactsPersisted,
-        idleTreePids,
-        idleTreePgid,
-        toolBurstTreePids,
-        toolBurstTreePgid,
+        terminalTreePids,
+        terminalTreePgid,
         callerCwd,
         repoJob,
         declaredDeliverables,

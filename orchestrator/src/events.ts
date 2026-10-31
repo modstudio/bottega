@@ -162,6 +162,7 @@ type PeekEventSummary =
     }
   | { type: 'focused_test_refusal'; paths: string[] }
   | { type: 'gate_log' }
+  | { type: 'tool_burst_observed'; count: number; windowMs: number }
 
 export type PeekSummary = {
   id: number
@@ -790,6 +791,8 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   if (event.type === 'focused_test' || event.type === 'focused_test_refusal')
     return summarizeFocusedTestEvent(event)
   if (event.type === 'gate_log') return { type: 'gate_log' }
+  if (event.type === 'tool_burst_observed')
+    return { type: 'tool_burst_observed', count: event.count, windowMs: event.windowMs }
   return { type: 'ask_initialized' }
 }
 
@@ -946,6 +949,8 @@ function formatPeekEvent(event: PeekEventSummary): string {
   )
     return formatAskPeekEvent(event)
   if (isArtifactPeekEvent(event)) return formatArtifactPeekEvent(event)
+  if (event.type === 'tool_burst_observed')
+    return `  tool burst ${event.count} starts in ${event.windowMs}ms`
   return '  ask initialized'
 }
 

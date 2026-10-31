@@ -78,6 +78,7 @@ import {
   newToolBurstState,
   recordObservedToolBurst,
   settleToolBurst,
+  type ToolBurstState,
   toolBurstObserver,
   toolBurstStopsWall,
   toolBurstTerminationResult,
@@ -374,11 +375,9 @@ export type LiveResult = {
   idleKilled: boolean
   idleKillError: string | null
   idleUnkillable: boolean
-  idleTreePids: number[]
-  idleTreePgid: number | null
+  terminalTreePids: number[]
+  terminalTreePgid: number | null
   toolBurstUnkillable: boolean
-  toolBurstTreePids: number[]
-  toolBurstTreePgid: number | null
   exitCode: number
   output: string
   vendorTokens: number | null
@@ -1044,8 +1043,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     idleKilled: idleKill.killed,
     idleKillError: idleKill.error,
     idleUnkillable: idleKill.unkillable,
-    idleTreePids: idleKill.treePids,
-    idleTreePgid: idleKill.treePgid,
+    ...killedTree(idleKill, toolBurst),
     ...toolBurstTerminationResult(toolBurst),
     exitCode,
     output,
@@ -1066,5 +1064,18 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     askLoopback,
     mcpSetupHeader,
     workerEvents,
+  }
+}
+
+/** The process tree the kill that fired left behind; the idle kill wins when both fired. */
+function killedTree(
+  idleKill: IdleKillState,
+  toolBurst: ToolBurstState,
+): { terminalTreePids: number[]; terminalTreePgid: number | null } {
+  if (idleKill.treePids.length)
+    return { terminalTreePids: idleKill.treePids, terminalTreePgid: idleKill.treePgid }
+  return {
+    terminalTreePids: toolBurst.terminateResult?.pids ?? [],
+    terminalTreePgid: toolBurst.terminateResult?.pgid ?? null,
   }
 }

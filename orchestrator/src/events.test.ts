@@ -185,6 +185,20 @@ describe('vendor event log', () => {
     )
   })
 
+  test('peek names a tool burst observation rather than an ask event', () => {
+    const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    appendRunEvent(id, {
+      ts: '2026-10-31T12:00:00.000Z',
+      type: 'tool_burst_observed',
+      count: 64,
+      windowMs: 1000,
+      peakAt: '2026-10-31T12:00:00.000Z',
+    })
+    const peek = peekRun(id)
+    expect(peek.events.at(-1)).toEqual({ type: 'tool_burst_observed', count: 64, windowMs: 1000 })
+    expect(formatPeek(peek)).toContain('tool burst 64 starts in 1000ms')
+  })
+
   test('peek preserves and formats ask exposure evidence', () => {
     const id = addRun({ agent: 'codex', job: 'implement', status: 'running' })
     appendRunEvent(id, {
