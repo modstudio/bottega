@@ -20,7 +20,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     *) continue ;;
   esac
   if [ ! -x "$main_checkout/bin/bottega" ]; then
-    echo "pre-push: triage check could not run: '"$main_checkout/bin/bottega"' is missing or not executable; allowing push" >&2
+    echo "pre-push: triage check could not run: $main_checkout/bin/bottega is missing or not executable; allowing push" >&2
     continue
   fi
   if ! command -v bun >/dev/null 2>&1; then

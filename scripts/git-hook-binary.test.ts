@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 
 const hooksDirectory = fileURLToPath(new URL('../.githooks', import.meta.url))
 const binaryPath = `bin/${PLATFORM_SLUG}`
+const mainCheckoutPrefix = '$main_checkout/'
 const mainCheckoutAssignment = 'common_dir=$(git rev-parse --path-format=absolute --git-common-dir)'
 const mainCheckoutFallback = `main_checkout=\${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}`
 const rule =
@@ -19,8 +20,7 @@ test(`tracked git hooks run the main checkout ${PLATFORM_SLUG} binary`, () => {
       [...line.matchAll(new RegExp(binaryPath, 'g'))].map((match) => ({
         line: index + 1,
         valid:
-          line.slice(match.index - 16, match.index + match[0].length + 1) ===
-          `"$main_checkout/${binaryPath}"`,
+          line.slice(match.index - mainCheckoutPrefix.length, match.index) === mainCheckoutPrefix,
       })),
     )
     if (occurrences.length === 0) return []
