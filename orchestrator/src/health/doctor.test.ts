@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
-import { canonEvalDoctorDecision, doctorAcpStatus, workerCheckDoctorFinding } from './doctor.ts'
+import {
+  affectedSelectorDoctorFinding,
+  canonEvalDoctorDecision,
+  doctorAcpStatus,
+  workerCheckDoctorFinding,
+} from './doctor.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
 
@@ -92,6 +97,60 @@ describe('project worker check diagnosis', () => {
         project: 'fixture',
         workerCheck: 'bun run old-worker-check',
         scripts: { check: 'bun scripts/check.ts' },
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('project affected-test selector diagnosis', () => {
+  test('reports nothing without the package script marker', () => {
+    expect(
+      affectedSelectorDoctorFinding({
+        project: 'fixture',
+        focusedTests: undefined,
+        scripts: { test: 'bun test' },
+      }),
+    ).toBeNull()
+  })
+
+  test('reports an unset selector with the exact repair', () => {
+    expect(
+      affectedSelectorDoctorFinding({
+        project: 'fixture',
+        focusedTests: { command: 'bun', args: ['test'] },
+        scripts: { 'test:affected': 'scripts/affected-tests.ts' },
+      }),
+    ).toBe(
+      `fixture: registered focusedTests.affected (unset) differs from package script "bun run test:affected"; set it with: ${PLATFORM_SLUG} project set fixture --settings '{"focusedTests":{"affected":{"command":"bun","args":["run","test:affected"]}}}'`,
+    )
+  })
+
+  test('reports a different registered selector', () => {
+    expect(
+      affectedSelectorDoctorFinding({
+        project: 'fixture',
+        focusedTests: {
+          command: 'bun',
+          args: ['test'],
+          affected: { command: 'scripts/old-affected-tests.ts', args: [] },
+        },
+        scripts: { 'test:affected': 'scripts/affected-tests.ts' },
+      }),
+    ).toContain(
+      'registered focusedTests.affected {"command":"scripts/old-affected-tests.ts","args":[]}',
+    )
+  })
+
+  test('reports nothing for the canonical selector', () => {
+    expect(
+      affectedSelectorDoctorFinding({
+        project: 'fixture',
+        focusedTests: {
+          command: 'bun',
+          args: ['test'],
+          affected: { command: 'bun', args: ['run', 'test:affected'] },
+        },
+        scripts: { 'test:affected': 'scripts/affected-tests.ts' },
       }),
     ).toBeNull()
   })
