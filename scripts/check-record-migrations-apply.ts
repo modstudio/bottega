@@ -20,6 +20,8 @@ import {
   seedHostedProjectCleanupProof,
 } from './record-hosted-project-cleanup-proof.ts'
 import {
+  dev1303InvalidDocId,
+  dev1303InvalidDocRevisionId,
   jsonbStringChecksValidate,
   proofJsonbStringChecksValidate,
   seedJsonbStringChecksValidate,
@@ -70,7 +72,7 @@ const boardBackfillReplyAuthorId = '01990000-0000-7000-8000-000000000023'
 const boardBackfillQuestionId = '01990000-0000-7000-8000-000000000027'
 const jsonbStringDocId = '01990000-0000-7000-8000-000000000025'
 const jsonbArrayDocId = '01990000-0000-7000-8000-000000000026'
-const jsonbInvalidDocId = '01990000-0000-7000-8000-000000000027'
+const jsonbInvalidDocId = dev1303InvalidDocId
 const hubProjectMatchId = '01990000-0000-7000-8000-000000000050'
 const hubProjectMatchTaskId = '01990000-0000-7000-8000-000000000051'
 const hubProjectUnmatchedTaskId = '01990000-0000-7000-8000-000000000052'
@@ -425,7 +427,7 @@ async function seedDocJsonbArrayRepair(transaction: Transaction): Promise<void> 
     VALUES
       ('01990000-0000-7000-8000-000000000028','${PLATFORM_SPACE_ID}','${jsonbStringDocId}','global',NULL,'jsonb-string','create','String','body','demand',ARRAY['technical'],to_jsonb('["01990000-0000-7000-8000-000000000029"]'::text),to_jsonb('["src/string.ts"]'::text),'proof','repair string','2026-10-13T12:00:00Z'),
       ('01990000-0000-7000-8000-000000000030','${PLATFORM_SPACE_ID}','${jsonbArrayDocId}','global',NULL,'jsonb-array','create','Array','body','demand',ARRAY['technical'],'[]'::jsonb,'["src/array.ts"]'::jsonb,'proof','leave array','2026-10-13T12:00:00Z'),
-      ('01990000-0000-7000-8000-000000000031','${PLATFORM_SPACE_ID}','${jsonbInvalidDocId}','global',NULL,'jsonb-invalid','create','Invalid','body','demand',ARRAY['technical'],to_jsonb('not an array'::text),to_jsonb('not an array'::text),'proof','leave invalid','2026-10-13T12:00:00Z');
+      ('${dev1303InvalidDocRevisionId}','${PLATFORM_SPACE_ID}','${jsonbInvalidDocId}','global',NULL,'jsonb-invalid','create','Invalid','body','demand',ARRAY['technical'],to_jsonb('not an array'::text),to_jsonb('not an array'::text),'proof','leave invalid','2026-10-13T12:00:00Z');
     SELECT set_config('app.space_id', '', true);
     SELECT set_config('app.user_id', '', true);
   `)

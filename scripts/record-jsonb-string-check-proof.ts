@@ -5,8 +5,8 @@ export const jsonbStringChecksValidate = '20261031055501_dev_1893_jsonb_string_c
 
 const questionId = '01990000-0000-7000-8000-000000000189'
 const machineId = '01990000-0000-7000-8000-000000000188'
-const invalidDocId = '01990000-0000-7000-8000-000000000027'
-const invalidDocRevisionId = '01990000-0000-7000-8000-000000000031'
+export const dev1303InvalidDocId = '01990000-0000-7000-8000-000000000027'
+export const dev1303InvalidDocRevisionId = '01990000-0000-7000-8000-000000000031'
 
 export async function seedJsonbStringChecksValidate(
   transaction: Transaction,
@@ -16,8 +16,8 @@ export async function seedJsonbStringChecksValidate(
     SELECT set_config('app.space_id', '${input.spaceId}', true);
     SELECT set_config('app.user_id', '${input.userId}', true);
     -- Remove the dev_1303 replay fixture rows seeded by seedDocJsonbArrayRepair in scripts/check-record-migrations-apply.ts: jsonbInvalidDocId and its doc_revision deliberately retain a top-level string, so the doc and doc_revision VALIDATEs would otherwise fail. The hosted record has no such rows per DEV-1893's read-only count, and the record rehearsal proves this on a real restore.
-    DELETE FROM doc_revision WHERE id = '${invalidDocRevisionId}';
-    DELETE FROM doc WHERE id = '${invalidDocId}';
+    DELETE FROM doc_revision WHERE id = '${dev1303InvalidDocRevisionId}';
+    DELETE FROM doc WHERE id = '${dev1303InvalidDocId}';
     ALTER TABLE question NO FORCE ROW LEVEL SECURITY;
     ALTER TABLE question DROP CONSTRAINT question_options_not_json_string_check;
     INSERT INTO machine (id,user_id,name,registered_at,last_seen)
