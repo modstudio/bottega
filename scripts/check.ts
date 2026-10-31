@@ -529,9 +529,16 @@ if (gate.failures.length > 0) {
   for (const name of gate.failures) console.error(name)
 }
 if (checkArguments.mode === 'worker') {
-  const omitted = STATIC_CHECKS.flatMap((check) =>
-    check.worker.run ? [] : [{ name: check.name, reason: check.worker.reason }],
-  )
+  const omitted = [
+    ...legs.flatMap((leg) =>
+      leg.typecheck && !leg.worker.run
+        ? [{ name: `${leg.name} typecheck`, reason: leg.worker.reason }]
+        : [],
+    ),
+    ...STATIC_CHECKS.flatMap((check) =>
+      check.worker.run ? [] : [{ name: check.name, reason: check.worker.reason }],
+    ),
+  ]
   console.log(`worker check omitted ${omitted.length} steps; bun run check runs them all`)
   for (const check of omitted) {
     console.log(`not run by worker check: ${check.name} (${check.reason})`)

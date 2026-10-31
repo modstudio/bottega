@@ -1,4 +1,5 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
+
 export { staticCheckPlan } from './static-check-plan.ts'
 
 export const CHECK_LEGS = [
@@ -81,7 +82,10 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'the worker subset excludes hub data typechecking' },
+    worker: {
+      run: false,
+      reason: 'the separate data package is outside the three worker typechecks',
+    },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -93,7 +97,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'the worker subset excludes the web app typecheck' },
+    worker: { run: false, reason: 'slow: measured over the worker budget' },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
       { argv: ['bun', 'run', 'build'], unitTests: false },
@@ -108,7 +112,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'the worker subset excludes the deployed site typecheck' },
+    worker: { run: false, reason: 'the deployed site is outside the three worker typechecks' },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -120,7 +124,7 @@ export const CHECK_LEGS = [
     excludedTestDirectories: [],
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
-    worker: { run: false, reason: 'the worker subset excludes retrieval typechecking' },
+    worker: { run: false, reason: 'retrieval is outside the three worker typechecks' },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -274,4 +278,3 @@ export const STATIC_OMIT_GROUPS = {
     checks: ['scripts/check-gitleaks.ts'],
   },
 } as const
-

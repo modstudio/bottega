@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { staticCheckPlan } from './check-plan.ts'
+import { CHECK_LEGS, staticCheckPlan } from './check-plan.ts'
 
 const STATIC_CHECKS = staticCheckPlan()
 
@@ -30,5 +30,10 @@ describe('worker static check plan', () => {
         'scripts/quality/check-test-substance.ts',
       ]),
     )
+    expect(CHECK_LEGS.filter((leg) => leg.worker.run).map((leg) => leg.name)).toEqual([
+      'cli',
+      'orchestrator',
+      'hub',
+    ])
   })
 })

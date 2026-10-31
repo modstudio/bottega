@@ -124,6 +124,21 @@ function projectPackageScripts(path: string): Record<string, unknown> | undefine
   }
 }
 
+function projectRegisterQuestions<
+  Project extends { name: string; path: string; settings: { workerCheck?: string } },
+>(projects: readonly Project[], branchProblems: (project: Project) => readonly string[]): string[] {
+  return projects.flatMap((project) =>
+    [
+      ...branchProblems(project).map((problem) => `${project.name}: ${problem}`),
+      workerCheckDoctorFinding({
+        project: project.name,
+        workerCheck: project.settings.workerCheck,
+        scripts: projectPackageScripts(project.path),
+      }),
+    ].filter((problem): problem is string => problem !== null),
+  )
+}
+
 function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | undefined) {
   const registration = registeredLocalAgent(agentRows(), baseUrl)
   const contextTokens = registration ? registeredContextTokens(registration) : null
@@ -614,15 +629,9 @@ export async function doctorCommand(
     log('\ncommit hooks skipped in worker trees; landing gate must declare the checks:')
     for (const line of hookFlags) log(`  ${line}`)
   }
-  const registerQuestions = repositoryProjects.flatMap((project) =>
-    [
-      ...registerBranchCheck(project).problems.map((problem) => `${project.name}: ${problem}`),
-      workerCheckDoctorFinding({
-        project: project.name,
-        workerCheck: project.settings.workerCheck,
-        scripts: projectPackageScripts(project.path),
-      }),
-    ].filter((problem): problem is string => problem !== null),
+  const registerQuestions = projectRegisterQuestions(
+    repositoryProjects,
+    (project) => registerBranchCheck(project).problems,
   )
   if (registerQuestions.length) {
     log('\nregister questions (not run failures):')
