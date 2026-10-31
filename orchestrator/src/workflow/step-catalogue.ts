@@ -110,6 +110,8 @@ export function unsupportedCloseEvidenceFlags(
   declaredFloors: readonly FloorEntry[],
   body: string,
 ): UnsupportedCloseEvidenceFlag[] {
+  // A templated floor resolves only at composition, so the authored text cannot be judged here.
+  if (declaredFloors.some((floor) => !isFloorKind(floor))) return []
   const named = new Set(closingSentences(body).flatMap(closeInstructionFlags))
   const findings: UnsupportedCloseEvidenceFlag[] = []
   for (const flag of named) {

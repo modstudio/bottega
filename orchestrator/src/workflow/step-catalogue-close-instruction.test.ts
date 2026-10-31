@@ -34,6 +34,12 @@ const decisionCases: Array<{
     expected: [{ flag: '--ruling', acceptingFloors: ['ruling'] }],
   },
   {
+    name: 'a templated floor resolves at composition, so its text is not judged',
+    floors: ['{{tracker.waitingReview.floor}}'],
+    body: 'Close this step with `--task <KEY>`.',
+    expected: [],
+  },
+  {
     name: 'a flag in a command that does not close the step',
     floors: ['recorded-artifact'],
     body: `Run \`${PLATFORM_SLUG} pr merge --release-required\` after review. Record the result.`,
