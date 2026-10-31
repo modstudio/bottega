@@ -78,11 +78,12 @@ export function conversationKeepTreeHold(
 ): ConversationKeepTreeHold {
   const rows = database
     .query(
-      `SELECT job,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
+      `SELECT job,repo,keep_tree,keep_tree_until,keep_tree_reason,started_at,worktree,branch FROM run
        WHERE record_id=? OR parent_run_record_id=? ORDER BY number`,
     )
     .all(rootId, rootId) as {
     job: string
+    repo: string | null
     keep_tree: number
     keep_tree_until: string | null
     keep_tree_reason: string | null
@@ -101,7 +102,7 @@ export function conversationKeepTreeHold(
     })
     if (decision.held) {
       return landingTreeHoldDecision(
-        { job: row.job, treeExists, branch: row.branch, runId: rootId },
+        { job: row.job, repo: row.repo, treeExists, branch: row.branch, runId: rootId },
         !row.worktree || !existsSync(row.worktree) || !worktreeDirty(row.worktree).dirty,
         hookTreeHoldDecision(
           { job: row.job, treeExists },
@@ -117,6 +118,7 @@ export function conversationKeepTreeHold(
   return landingTreeHoldDecision(
     {
       job: landingRows[0]?.job ?? '',
+      repo: landingRows[0]?.repo ?? null,
       treeExists,
       branch: landingRows[0]?.branch ?? null,
       runId: rootId,

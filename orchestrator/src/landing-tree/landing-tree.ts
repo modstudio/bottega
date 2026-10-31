@@ -109,6 +109,7 @@ export function landingTreeCommandBase(trunk: string | undefined): string {
 }
 
 export type LandingTreeHoldKind = 'landing-progress' | 'unique-work' | 'other'
+export type HeldTreeHoldKind = LandingTreeHoldKind | 'close-out-lease'
 
 export type LandingTreeReleaseDecision =
   | { action: 'release' }
@@ -116,6 +117,14 @@ export type LandingTreeReleaseDecision =
 
 function keep(reason: string, hold: LandingTreeHoldKind): LandingTreeReleaseDecision {
   return { action: 'keep', reason, hold }
+}
+
+/** The ruling command that safely archives unique branch work before disposal. */
+export function landingTreeUniqueWorkRemedy(project: string, branch: string): string {
+  return (
+    `${PLATFORM_SLUG} tree branch dispose ${project}:${branch} ` +
+    '--reason <abandoned|superseded|throwaway> --note "<why>"'
+  )
 }
 
 /** Release an absent terminal landing tree, or a present tree when its release policy permits. */
@@ -162,7 +171,13 @@ export function landingTreeReleaseDecision(
 }
 
 export function landingTreeHoldDecision<T>(
-  row: { job: string; treeExists: boolean; branch: string | null; runId: string },
+  row: {
+    job: string
+    repo: string | null
+    treeExists: boolean
+    branch: string | null
+    runId: string
+  },
   clean: boolean,
   ordinary: T,
 ):
@@ -171,10 +186,15 @@ export function landingTreeHoldDecision<T>(
   | { held: false; kept: true; reason: string } {
   if (row.job !== LANDING_TREE_JOB || !row.treeExists) return ordinary
   if (!clean) {
+    const remedy =
+      row.repo && row.branch
+        ? landingTreeUniqueWorkRemedy(row.repo, row.branch)
+        : `${PLATFORM_SLUG} tree branch dispose <project>:<branch> ` +
+          '--reason <abandoned|superseded|throwaway> --note "<why>"'
     return {
       held: true,
       until: null,
-      reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      reason: `landing tree holds unique work; land it, or dispose it with ` + remedy,
       hold: 'unique-work' as const,
     }
   }
@@ -253,6 +273,23 @@ export function pullRequestLookupNeeded(hold: LandingTreeHoldKind, treeClean: bo
 }
 
 type HeldTreeInFlight = { ref: string; suppressBlock: boolean }
+
+export type HeldTreeLiveHolderFacts = {
+  hold: HeldTreeHoldKind
+  readerClone: boolean
+  liveHolder: { number: number; job: string } | null
+}
+
+/** A close-out lease holder clears by finishing; only a disposable reader clone stops blocking. */
+export function heldTreeLiveHolderInFlight(
+  facts: HeldTreeLiveHolderFacts,
+): HeldTreeInFlight | null {
+  if (facts.hold !== 'close-out-lease' || !facts.liveHolder) return null
+  return {
+    ref: `run ${facts.liveHolder.number} (${facts.liveHolder.job}) holds it; clears when it finishes`,
+    suppressBlock: facts.readerClone,
+  }
+}
 
 /** Whether a claiming ship-task cursor still has its own landing steps ahead of it. */
 function shipTaskCursorIsInFlight(

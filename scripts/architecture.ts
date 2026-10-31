@@ -230,6 +230,7 @@ export const modules: ArchitectureModule[] = [
     'node:fs',
     '../database/db.ts',
     '../git/git-environment.ts',
+    '../jobs/jobs.ts',
     '../landing-tree/landing-tree.ts',
     './close-out-report.ts',
   ]),

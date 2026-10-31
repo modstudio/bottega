@@ -4,6 +4,7 @@ import {
   type HeldTreeInFlightFacts,
   type HeldTreeWorkFacts,
   heldTreeInFlight,
+  heldTreeLiveHolderInFlight,
   heldTreeWorkIsUnique,
   LANDING_TREE_JOB,
   landingTreeCommandBase,
@@ -109,7 +110,13 @@ describe('landing-tree decisions', () => {
   test('keeps a clean existing landing tree without holding close-out', () => {
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
+        {
+          job: LANDING_TREE_JOB,
+          repo: 'example',
+          treeExists: true,
+          branch: 'DEV-1037-orch-1',
+          runId: '1',
+        },
         true,
         { held: false as const },
       ),
@@ -124,14 +131,23 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: false as const }
     expect(
       landingTreeHoldDecision(
-        { job: LANDING_TREE_JOB, treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
+        {
+          job: LANDING_TREE_JOB,
+          repo: 'example',
+          treeExists: true,
+          branch: 'DEV-1037-orch-1',
+          runId: '1',
+        },
         false,
         ordinary,
       ),
     ).toEqual({
       held: true,
       until: null,
-      reason: `landing tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+      reason:
+        `landing tree holds unique work; land it, or dispose it with ` +
+        `${PLATFORM_SLUG} tree branch dispose example:DEV-1037-orch-1 ` +
+        '--reason <abandoned|superseded|throwaway> --note "<why>"',
       hold: 'unique-work',
     })
   })
@@ -140,7 +156,13 @@ describe('landing-tree decisions', () => {
     const ordinary = { held: true as const, until: null, reason: 'ordinary hold' }
     expect(
       landingTreeHoldDecision(
-        { job: 'implement', treeExists: true, branch: 'DEV-1037-orch-1', runId: '1' },
+        {
+          job: 'implement',
+          repo: 'example',
+          treeExists: true,
+          branch: 'DEV-1037-orch-1',
+          runId: '1',
+        },
         true,
         ordinary,
       ),
@@ -455,5 +477,47 @@ describe('held-tree in-flight landing', () => {
 
   test('finish-ship-cleanup without a PR is not in flight', () => {
     expect(heldTreeInFlight(facts({ cursor: cursor({ step: 'finish-ship-cleanup' }) }))).toBeNull()
+  })
+})
+
+describe('held reader-clone live holder', () => {
+  test('a close-out lease holder clears a disposable reader clone without blocking', () => {
+    expect(
+      heldTreeLiveHolderInFlight({
+        hold: 'close-out-lease',
+        readerClone: true,
+        liveHolder: { number: 24567, job: 'review-lens' },
+      }),
+    ).toEqual({
+      ref: 'run 24567 (review-lens) holds it; clears when it finishes',
+      suppressBlock: true,
+    })
+  })
+
+  test.each([
+    ['another hold', { hold: 'other' as const }],
+    ['no live holder', { liveHolder: null }],
+  ])('%s is not the shared-clone in-flight case', (_name, override) => {
+    expect(
+      heldTreeLiveHolderInFlight({
+        hold: 'close-out-lease',
+        readerClone: true,
+        liveHolder: { number: 24567, job: 'review-lens' },
+        ...override,
+      }),
+    ).toBeNull()
+  })
+
+  test('a writer lease holder is named and keeps blocking', () => {
+    expect(
+      heldTreeLiveHolderInFlight({
+        hold: 'close-out-lease',
+        readerClone: false,
+        liveHolder: { number: 24567, job: 'implement' },
+      }),
+    ).toEqual({
+      ref: 'run 24567 (implement) holds it; clears when it finishes',
+      suppressBlock: false,
+    })
   })
 })

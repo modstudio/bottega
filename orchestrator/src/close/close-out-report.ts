@@ -1,12 +1,12 @@
 // concern: close-out report
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { HookTreeHold } from '../hook-tree/hook-tree.ts'
-import type { LandingTreeHoldKind } from '../landing-tree/landing-tree.ts'
+import type { HeldTreeHoldKind } from '../landing-tree/landing-tree.ts'
 import type { KeepTreeHoldDecision } from '../worktree/keep-tree-hold.ts'
 
 type ConversationHoldReport = {
   reason?: string
-  hold?: LandingTreeHoldKind
+  hold?: HeldTreeHoldKind
   inFlightRef?: string | null
   suppressBlock?: boolean
 }
@@ -27,9 +27,10 @@ export type CloseOutReportResult = {
   outcome: string
   reportOutcome?: string
   detail: string
-  hold?: LandingTreeHoldKind
+  hold?: HeldTreeHoldKind
   inFlightRef?: string | null
   suppressBlock?: boolean
+  leaseHolder?: { runId: string; number: number; job: string }
 }
 
 export type CloseOutResult = Omit<CloseOutReportResult, 'outcome' | 'reportOutcome'> & {
@@ -48,7 +49,7 @@ export type HeldConversationCloseOutResult = Omit<
 export type HeldTreeJson = {
   runId: string
   worktree: string
-  hold: LandingTreeHoldKind
+  hold: HeldTreeHoldKind
   inFlightRef: string | null
   suppressBlock: boolean
 }
@@ -67,10 +68,10 @@ export function heldConversationCloseOutResult(
     runId,
     worktree,
     outcome: 'held',
-    detail:
-      hold.until === null
-        ? hold.reason
-        : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`,
+    detail: (hold.until === null
+      ? hold.reason
+      : `held by ${hold.reason} until ${hold.until}; clear with ${PLATFORM_SLUG} run discard ${runId}`
+    ).replaceAll('<path>', worktree),
     hold: hold.hold,
     inFlightRef: hold.inFlightRef,
     suppressBlock: hold.suppressBlock,

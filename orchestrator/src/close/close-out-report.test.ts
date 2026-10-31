@@ -3,13 +3,25 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { HeldTreeJson } from './close-out-report.ts'
-import { closeOutJson, heldTreeJson } from './close-out-report.ts'
+import { closeOutJson, heldConversationCloseOutResult, heldTreeJson } from './close-out-report.ts'
 
 const rows = JSON.parse(
   readFileSync(fileURLToPath(new URL('./held-tree-json.fixture.json', import.meta.url)), 'utf8'),
 ) as HeldTreeJson[]
 
 describe('close-out held-tree JSON shape', () => {
+  test('producer remedies name the actual held tree path', () => {
+    expect(
+      heldConversationCloseOutResult('run-id', '/tmp/held-tree', {
+        held: true,
+        until: null,
+        reason: `hook tree; remove with ${PLATFORM_SLUG} tree remove <path>`,
+        inFlightRef: 'hook tree, kept by its owner',
+        suppressBlock: true,
+      }).detail,
+    ).toBe(`hook tree; remove with ${PLATFORM_SLUG} tree remove /tmp/held-tree`)
+  })
+
   test('heldTreeJson writes the Stop-hook fixture shape', () => {
     const inFlight = rows[0]!
     const uniqueWork = rows[1]!
