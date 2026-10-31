@@ -7,6 +7,7 @@ import {
   deadCodeCacheKey,
   deadCodeChangeFacts,
   deadCodeRatchetFinding,
+  missingLiteralProductionEntries,
   normalizeKnipReport,
   parseCachedFindings,
   productionSourcesAnalyzed,
@@ -112,6 +113,21 @@ describe('dead-code ratchet', () => {
       ]),
     ).toBeFalse()
     expect(productionSourcesAnalyzed([])).toBeTrue()
+  })
+
+  test('finds literal production entries absent from the analyzed graph and ignores globs', () => {
+    expect(
+      missingLiteralProductionEntries(
+        ['scripts/check.ts!', 'scripts/reference.ts!', 'scripts/check-*.ts!', '!scripts/test.ts'],
+        new Set(['scripts/reference.ts']),
+      ),
+    ).toEqual(['scripts/check.ts'])
+    expect(
+      missingLiteralProductionEntries(
+        ['scripts/check.ts!', 'scripts/reference.ts!'],
+        new Set(['scripts/check.ts', 'scripts/reference.ts']),
+      ),
+    ).toEqual([])
   })
 
   test('production dead code wins over an unneeded export finding', () => {

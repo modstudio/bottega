@@ -26,6 +26,7 @@ import {
   deadCodeCacheKey,
   deadCodeChangeFacts,
   deadCodeRatchetFinding,
+  missingLiteralProductionEntries,
   normalizeKnipReport,
   parseCachedFindings,
   productionSourcesAnalyzed,
@@ -81,6 +82,7 @@ function passes(root: string) {
 }
 
 type PassResult = { findings: DeadCodeFinding[]; elapsedMs: number }
+type ProductionConfig = { workspaces?: { '.'?: { entry?: unknown } } }
 
 function runPass(root: string, pass: ReturnType<typeof passes>[number]): PassResult {
   const startedAt = performance.now()
@@ -121,10 +123,76 @@ function assertProductionSourcesAnalyzed(findings: DeadCodeFinding[]) {
   }
 }
 
-function collectFindings(root: string) {
-  const results = passes(root).map((pass) => runPass(root, pass))
-  const [production, defaultMode] = results
+function rootProductionEntries(root: string): string[] {
+  const config = Bun.JSONC.parse(
+    readFileSync(join(root, 'knip.production.jsonc'), 'utf8'),
+  ) as ProductionConfig
+  const entries = config.workspaces?.['.']?.entry
+  if (!Array.isArray(entries) || !entries.every((entry) => typeof entry === 'string')) {
+    throw new Error('knip.production.jsonc root workspace must declare string entries')
+  }
+  return entries
+}
+
+function tracedRootEntryFiles(root: string, entries: readonly string[]) {
+  const startedAt = performance.now()
+  const result = Bun.spawnSync(
+    [
+      join(root, 'node_modules/.bin/knip'),
+      '--production',
+      '--config',
+      join(root, 'knip.production.jsonc'),
+      '--trace',
+      '--debug',
+      '--no-progress',
+      '--no-exit-code',
+    ],
+    { cwd: root, stdout: 'pipe', stderr: 'pipe', timeout: KNIP_TIMEOUT_MS },
+  )
+  const elapsedMs = performance.now() - startedAt
+  if (result.signalCode) {
+    throw new Error(`knip production graph trace timed out after ${KNIP_TIMEOUT_MS}ms`)
+  }
+  if (result.exitCode !== 0) {
+    const detail = result.stderr.toString().trim() || result.stdout.toString().trim()
+    throw new Error(`knip production graph trace failed${detail ? `: ${detail}` : ''}`)
+  }
+  const output = `${result.stdout.toString()}\n${result.stderr.toString()}`
+  const literalEntries = entries
+    .filter((entry) => entry.endsWith('!') && !entry.startsWith('!'))
+    .map((entry) => entry.slice(0, -1))
+  return {
+    elapsedMs,
+    files: new Set(
+      literalEntries.filter((file) =>
+        /\.[cm]?[jt]sx?$/.test(file)
+          ? output.includes(`${file}:`)
+          : output.includes(`'${join(root, file)}'`),
+      ),
+    ),
+  }
+}
+
+function assertProductionEntriesTraced(root: string) {
+  const entries = rootProductionEntries(root)
+  const trace = tracedRootEntryFiles(root, entries)
+  const missing = missingLiteralProductionEntries(entries, trace.files)
+  if (missing.length > 0) {
+    throw new Error(
+      `knip production graph omitted configured entries: ${missing.join(', ')}; ` +
+        'use knip --debug to find the plugin or pattern shadowing them, then disable the plugin ' +
+        'in knip.production.jsonc or fix the entry',
+    )
+  }
+  return trace.elapsedMs
+}
+
+function collectFindings(root: string, verifyProductionEntries = false) {
+  const [productionPass, defaultPass] = passes(root)
+  const production = runPass(root, productionPass)
   assertProductionSourcesAnalyzed(production!.findings)
+  const productionGraphMs = verifyProductionEntries ? assertProductionEntriesTraced(root) : 0
+  const defaultMode = runPass(root, defaultPass)
   const dependencyFindings = defaultMode!.findings.filter((finding) =>
     DEPENDENCY_ISSUES.includes(finding.issueType as (typeof DEPENDENCY_ISSUES)[number]),
   )
@@ -135,6 +203,7 @@ function collectFindings(root: string) {
       ...unneededExportFindings(production!.findings, defaultMode!.findings),
     ],
     productionMs: production!.elapsedMs,
+    productionGraphMs,
     defaultMs: defaultMode!.elapsedMs,
   }
 }
@@ -303,7 +372,7 @@ function describeFinding(finding: DeadCodeFinding) {
 }
 
 async function checkDeadCode(base: string, reportPath?: string) {
-  const current = collectFindings(ROOT)
+  const current = collectFindings(ROOT, true)
   console.log(`dead code: ${current.findings.length} findings remain`)
   reportRemaining(reportPath, current.findings.length)
   const commit = resolvedCommit(base)
@@ -337,7 +406,7 @@ async function checkDeadCode(base: string, reportPath?: string) {
   }
   if (refused.length) return false
   console.log(
-    `check-dead-code: ok (production ${current.productionMs.toFixed(0)}ms, default ${current.defaultMs.toFixed(0)}ms)`,
+    `check-dead-code: ok (production ${current.productionMs.toFixed(0)}ms, production graph ${current.productionGraphMs.toFixed(0)}ms, default ${current.defaultMs.toFixed(0)}ms)`,
   )
   return true
 }
