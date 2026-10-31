@@ -7,6 +7,7 @@
       "!!**/node_modules",
       "!!hub/web/src/routeTree.gen.ts",
       "!!**/migrations/meta",
+      "!!**/migrations/*/snapshot.json",
       "!!**/dist",
       "!!orchestrator/runs"
     ]
