@@ -605,7 +605,7 @@ describe('suggestion notes', () => {
       cwd: '/fixtures/repos/workshop',
       project: 'workshop',
       files: [],
-      run_id: null,
+      run_record_id: null,
       branch: null,
       commit: null,
       session_id: null,
@@ -618,7 +618,7 @@ describe('suggestion notes', () => {
       cwd: '/projects/workshop',
       project: 'workshop',
       files: [{ path: '/projects/workshop/src/file.ts', line: 2, content: 'worker content' }],
-      run_id: 42,
+      run_record_id: '42000000-0000-4000-8000-000000000000',
       branch: null,
       commit: 'abc',
       session_id: 'session-42',
@@ -649,6 +649,29 @@ describe('suggestion notes', () => {
     ).toThrow('anchor.files[0].path')
   })
 
+  test('stored note anchors with the former numeric run key still parse and strip it', () => {
+    expect(
+      parseNoteAnchor({
+        cwd: '/projects/workshop',
+        project: 'workshop',
+        files: [],
+        run_id: 42,
+        run_record_id: '42000000-0000-4000-8000-000000000000',
+        branch: null,
+        commit: null,
+        session_id: null,
+      }),
+    ).toEqual({
+      cwd: '/projects/workshop',
+      project: 'workshop',
+      files: [],
+      run_record_id: '42000000-0000-4000-8000-000000000000',
+      branch: null,
+      commit: null,
+      session_id: null,
+    })
+  })
+
   test(`${PLATFORM_SLUG} note new without a duplicate choice returns candidates and files nothing`, async () => {
     const unique = crypto.randomUUID()
     const first = (
@@ -672,13 +695,11 @@ describe('suggestion notes', () => {
     writeFileSync(file, 'first\nanchored line\n')
     const anchor = deriveNoteAnchor(`inspect ${file}:2`, '/fixtures/repos/workshop', {
       BOTTEGA_RUN_ID: '42000000-0000-4000-8000-000000000000',
-      BOTTEGA_RUN_NUMBER: '42',
       CLAUDE_CODE_SESSION_ID: 'session-42',
     } as NodeJS.ProcessEnv)
     expect(anchor).toMatchObject({
       project: 'workshop',
       cwd: '/fixtures/repos/workshop',
-      run_id: 42,
       run_record_id: '42000000-0000-4000-8000-000000000000',
       session_id: 'session-42',
     })
@@ -849,7 +870,7 @@ describe('suggestion notes', () => {
       cwd: '/fixtures/repos/workshop',
       project: 'workshop',
       files: [],
-      run_id: null,
+      run_record_id: null,
       branch: null,
       commit: null,
       session_id: null,
@@ -858,7 +879,6 @@ describe('suggestion notes', () => {
       { ...base, files: [{ path: file, line: 1, content: 'old' }] },
       {
         ...base,
-        run_id: 999,
         run_record_id: '99999999-9999-4999-8999-999999999999',
       },
       { ...base, branch: 'deleted-branch' },
@@ -897,7 +917,7 @@ describe('suggestion notes', () => {
     const byId = new Map(result.reasons.map((row) => [row.recordId, row.reason]))
     expect(ids.map((id) => byId.get(id))).toEqual([
       `${file}:1 no longer has its anchored content`,
-      'run 999 aged out',
+      'run 99999999-9999-4999-8999-999999999999 aged out',
       'branch deleted-branch was deleted',
       undefined,
     ])
@@ -906,7 +926,10 @@ describe('suggestion notes', () => {
         stale_at: null,
         stale_reason: `${file}:1 no longer has its anchored content`,
       }),
-      expect.objectContaining({ stale_at: null, stale_reason: 'run 999 aged out' }),
+      expect.objectContaining({
+        stale_at: null,
+        stale_reason: 'run 99999999-9999-4999-8999-999999999999 aged out',
+      }),
       expect.objectContaining({
         stale_at: null,
         stale_reason: 'branch deleted-branch was deleted',

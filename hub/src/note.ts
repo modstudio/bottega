@@ -1,8 +1,9 @@
 import type { Database } from 'bun:sqlite'
 import { closeSync, fstatSync, openSync, readFileSync, readSync, realpathSync } from 'node:fs'
 import { isAbsolute, relative, resolve } from 'node:path'
-import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
+import type { NoteAnchorWire } from '../../shared/note-anchor.ts'
+import { noteAnchorWireSchema } from '../../shared/note-anchor.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
@@ -20,7 +21,7 @@ import { applyHostedNote } from './note-cache.ts'
 import { hostedCreateNote, hostedPromoteNote, type NoteClientOptions } from './note-client.ts'
 import { formatNoteLabel, parseNoteLabel } from './note-label.ts'
 import { noteDestinationOptions } from './note-project-space.ts'
-import { type NotePromotionAnchor, notePromotionBody } from './note-promotion-body.ts'
+import { notePromotionBody } from './note-promotion-body.ts'
 import { evaluateNoteStaleness, type StalenessAnchorObservation } from './note-staleness.ts'
 import {
   applyHostedStaleness,
@@ -43,32 +44,11 @@ import {
 import { applyHostedTask, applyHostedTaskComment } from './task-cache.ts'
 import { taskCreationDestination } from './tracker-new.ts'
 
-export type NoteAnchor = NotePromotionAnchor & {
-  id?: string
-  project: string
-  files: { path: string; line: number; content: string }[]
-  run_record_id?: string | null
-}
+export type NoteAnchor = NoteAnchorWire
 
 export const NOTE_ANCHOR_MAX_FILE_BYTES = 1_000_000
 
-const noteAnchorSchema: z.ZodType<NoteAnchor> = z.object({
-  id: z.string().uuid().optional(),
-  cwd: z.string(),
-  project: z.string(),
-  files: z.array(
-    z.object({
-      path: z.string(),
-      line: z.number(),
-      content: z.string(),
-    }),
-  ),
-  run_id: z.number().nullable(),
-  run_record_id: z.string().uuid().nullable().optional(),
-  branch: z.string().nullable(),
-  commit: z.string().nullable(),
-  session_id: z.string().nullable(),
-})
+const noteAnchorSchema = noteAnchorWireSchema
 
 export function parseNoteAnchor(value: unknown): NoteAnchor {
   return noteAnchorSchema.parse(value)
@@ -282,13 +262,11 @@ export function deriveNoteAnchor(text: string, cwd = process.cwd(), env = proces
   const projectPath = projects().find((candidate) => candidate.name === project)?.path ?? cwd
   const files = deriveNoteFileAnchors(text, projectPath)
   const runRecordId = env.BOTTEGA_RUN_ID
-  const runNumber = Number(env.BOTTEGA_RUN_NUMBER)
   return {
     id: newRecordId(),
     cwd,
     project,
     files,
-    run_id: Number.isSafeInteger(runNumber) && runNumber > 0 ? runNumber : null,
     run_record_id: runRecordId && hasRecordIdShape(runRecordId) ? runRecordId.toLowerCase() : null,
     branch: git(cwd, 'branch', '--show-current') || null,
     commit: git(cwd, 'rev-parse', 'HEAD') || null,
@@ -861,7 +839,7 @@ function observeStalenessAnchor(
     files,
     run: anchor.run_record_id
       ? {
-          label: anchor.run_id ?? anchor.run_record_id,
+          label: anchor.run_record_id,
           exists: existingRuns.has(anchor.run_record_id),
         }
       : null,

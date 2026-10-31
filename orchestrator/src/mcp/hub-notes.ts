@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import type { NoteAnchorWire } from '../../../shared/note-anchor.ts'
 import { type BottegaEntry, bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { strictlyAuthenticatedWorkerRun } from '../ask/worker-auth.ts'
 import { db } from '../database/db.ts'
@@ -20,15 +21,7 @@ const noteRowsSchema = z.array(
 
 export type HubNote = z.infer<typeof noteRowsSchema>[number]
 
-export type FiledNoteAnchor = {
-  cwd: string
-  project: string
-  files: { path: string; line: number; content: string }[]
-  run_record_id: string | null
-  branch: string | null
-  commit: string | null
-  session_id: string | null
-}
+export type FiledNoteAnchor = NoteAnchorWire
 
 async function spawnOutput(entry: BottegaEntry, args: string[], cwd: string): Promise<string> {
   const child = Bun.spawn([...bottegaEntryArgv(entry), ...args], {

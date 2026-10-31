@@ -103,6 +103,7 @@ import { observeRatchetedRuleRefills } from './ratcheted-rule-conditions.ts'
 import { observeReaderTreeConditions } from './reader-tree-conditions.ts'
 import { observeProjectReleaseLive } from './release-live-observation.ts'
 import { diskPressureObservation } from './storage-report.ts'
+import { workerNoteSilenceConditions } from './worker-note-silence-conditions.ts'
 
 const TERMINAL_CLOSE_OUT_NOTICE_KINDS = {
   held: 'terminal-close-out-held',
@@ -645,6 +646,7 @@ function appendRunConditions(
   conditions.push(
     ...staleRunConditions(database, clock),
     ...runTokenJumpConditions(database, clock),
+    ...workerNoteSilenceConditions(database, clock),
     ...readerTrees.conditions,
   )
   errors.push(...readerTrees.errors)
