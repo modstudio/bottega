@@ -8,6 +8,14 @@ type SetupModuleSpec = {
 
 export const setupModuleSpecs: readonly SetupModuleSpec[] = [
   {
+    name: 'launchd-owners-boundary',
+    file: 'orchestrator/src/setup/launchd-owners.ts',
+    allowed: ['node:fs/promises', 'node:path'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep launchd installer ownership independent of environment migration and health reporting.',
+  },
+  {
     name: 'setup-service-boundary',
     file: 'orchestrator/src/setup/setup-service.ts',
     allowed: [
@@ -49,6 +57,7 @@ export const setupModuleSpecs: readonly SetupModuleSpec[] = [
       '../../../shared/config-directory.ts',
       '../../../shared/config-client.ts',
       './environment-name-migration.ts',
+      './launchd-owners.ts',
       './setup-state-file.ts',
       '../config/config-service.ts',
     ],

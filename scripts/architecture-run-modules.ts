@@ -9,7 +9,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/health/launch-agent-doctor.ts',
-    allowed: ['../../../shared/launch-agent-skip.ts', '../setup/setup-environment.ts'],
+    allowed: ['../../../shared/launch-agent-skip.ts', '../setup/launchd-owners.ts'],
   },
   {
     file: 'orchestrator/src/run/run-subscription-cost.ts',

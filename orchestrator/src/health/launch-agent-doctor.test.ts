@@ -18,20 +18,29 @@ describe('launch agent doctor decision', () => {
       decideLaunchAgentDoctor({
         owners,
         skipReasons,
-        loadedLabels: new Set(['com.user.loaded']),
+        loadObservation: { kind: 'available', loadedLabels: new Set(['com.user.loaded']) },
       }),
     ).toEqual({
       skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
       findings: [{ label: 'com.user.unloaded', command: 'ops/install.sh' }],
-      launchctlUnavailable: false,
+      launchctlUnavailable: null,
     })
   })
 
-  test('reports the check unavailable without treating unloaded agents as findings', () => {
-    expect(decideLaunchAgentDoctor({ owners, skipReasons, loadedLabels: null })).toEqual({
-      skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
-      findings: [],
-      launchctlUnavailable: true,
-    })
-  })
+  test.each([['launchctl missing' as const], ['gui domain unreachable' as const]])(
+    'reports %s without treating unloaded agents as findings',
+    (reason) => {
+      expect(
+        decideLaunchAgentDoctor({
+          owners,
+          skipReasons,
+          loadObservation: { kind: 'unavailable', reason },
+        }),
+      ).toEqual({
+        skipped: [{ label: 'com.user.skipped', reason: 'configuration is absent' }],
+        findings: [],
+        launchctlUnavailable: reason,
+      })
+    },
+  )
 })

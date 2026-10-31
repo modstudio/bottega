@@ -22,7 +22,6 @@ import {
   environmentFilesDecision,
   environmentMigrationMessage,
   environmentSettingsDecision,
-  installedPlistOwners,
   migrateOperatorEnvironment,
   prepareStateFileMigration,
   restoreOperatorEnvironmentBackup,
@@ -368,25 +367,6 @@ test('detects an old environment name in an installed plist without matching pro
     ),
   ).toEqual(['HUB_HOSTED_URL'])
   expect(staleInstalledPlistEnvironmentNames('HUB_FOO is owned elsewhere')).toEqual([])
-})
-
-test('derives an installer for every current launchd template', () => {
-  const root = join(import.meta.dir, '../../..')
-  const templates = ['hub', 'ops'].flatMap((concern) =>
-    readdirSync(join(root, concern, 'launchd'))
-      .filter((name) => name.endsWith('.plist.template'))
-      .map((name) => {
-        const path = join(root, concern, 'launchd', name)
-        return { path, text: readFileSync(path, 'utf8') }
-      }),
-  )
-  const owners = installedPlistOwners(templates)
-  expect(owners).toHaveLength(templates.length)
-  expect(
-    owners.every(({ command }) =>
-      ['hub/bin/install-launchd.sh', 'ops/install.sh'].includes(command),
-    ),
-  ).toBe(true)
 })
 
 test('the file adapter preserves restrictive modes on the replacement and backup', async () => {
