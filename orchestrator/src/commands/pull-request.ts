@@ -88,9 +88,16 @@ export function register(program: Command): void {
   pr.command('merge <number-or-url>')
     .description('merge a pull request only when its head commit is proven')
     .option('--cwd <tree>', 'verify and merge from this worktree')
+    .option('--release-required', 'release every rung required by the merged paths')
     .allowExcessArguments(false)
     .action((target: string, options) => {
-      const outcome = mergePullRequest(target, resolveReviewCommandCwd(options.cwd))
+      const outcome = mergePullRequest(
+        target,
+        resolveReviewCommandCwd(options.cwd),
+        undefined,
+        undefined,
+        Boolean(options.releaseRequired),
+      )
       log(outcome.output)
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     })

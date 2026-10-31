@@ -11,6 +11,10 @@ import {
 import { log } from './support.ts'
 
 function writeReleaseResult(result: ReleaseResult): void {
+  if (result.alreadyLive) {
+    log(`${result.project}/${result.rung}: already live at ${result.deployed}`)
+    return
+  }
   if (result.outputTail) log(result.outputTail)
   log(
     `${result.project}/${result.rung}: deployed ${result.deployed}, deploy exit ${result.exitCode}, ledger ${result.id}`,
@@ -33,14 +37,21 @@ export function register(program: Command): void {
     .option('--rung <name>', 'release rung to run')
     .option('--rollback <reason>', 'reason for deploying the prior live commit')
     .option('--behind-trunk <reason>', 'reason for deploying a branch behind the project trunk')
+    .option('--redeploy <reason>', 'deploy again even when this commit is already live')
     .option('--json', 'write the release result as JSON')
     .allowExcessArguments(false)
     .action((project, options) => {
       if (!project)
         throw new Error(
-          `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"]`,
+          `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
         )
-      const result = releaseProject(project, options.rung, options.rollback, options.behindTrunk)
+      const result = releaseProject(
+        project,
+        options.rung,
+        options.rollback,
+        options.behindTrunk,
+        options.redeploy,
+      )
       if (options.json) log(JSON.stringify(result))
       else writeReleaseResult(result)
       if (result.exitCode !== 0) process.exitCode = result.exitCode

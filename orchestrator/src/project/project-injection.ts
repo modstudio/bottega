@@ -60,11 +60,19 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           deploy: z.string().optional(),
           live: z.string().trim().min(1).optional(),
           onDemand: z.boolean().optional(),
+          requiredWhenChanged: z.array(z.string().trim().min(1)).optional(),
         }),
       )
       .superRefine((rungs, context) => {
         const seen = new Set<string>()
         for (const [index, rung] of rungs.entries()) {
+          if (rung.requiredWhenChanged !== undefined && rung.live === undefined) {
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'requiredWhenChanged'],
+              message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
+            })
+          }
           if (seen.has(rung.name)) {
             context.addIssue({
               code: 'custom',

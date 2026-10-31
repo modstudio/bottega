@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
@@ -203,14 +204,39 @@ describe('release text policy', () => {
     ))
 
   test('refuses secret-shaped release reasons with the flag name', () => {
-    expect(releaseReasonDecision('rollback', true)).toEqual({
+    expect(releaseReasonDecision('rollback', 'credential', true)).toEqual({
       ok: false,
       message: expect.stringContaining('restate the reason without the credential'),
     })
-    expect(releaseReasonDecision('behind-trunk', true)).toEqual({
+    expect(releaseReasonDecision('behind-trunk', 'credential', true)).toEqual({
       ok: false,
       message: expect.stringContaining('behind-trunk reason'),
     })
+  })
+
+  test('refuses an empty redeploy reason', () => {
+    expect(releaseReasonDecision('redeploy', ' ', false)).toEqual({
+      ok: false,
+      message: expect.stringContaining('redeploy reason must be non-empty'),
+    })
+  })
+})
+
+describe('already-live release decision', () => {
+  test.each([
+    ['newest equals head', 'head', undefined, undefined, true],
+    ['an older row equals head but newest differs', 'newer', undefined, undefined, false],
+    ['redeploy was requested', 'head', 'repair deploy', undefined, false],
+    ['rollback was requested', 'head', undefined, 'deliberate rollback', false],
+  ] as const)('%s', (_label, newestLive, redeployReason, rollbackReason, expected) => {
+    expect(
+      alreadyLiveReleaseDecision({
+        newestLive,
+        candidate: 'head',
+        redeployReason,
+        rollbackReason,
+      }),
+    ).toBe(expected)
   })
 })
 

@@ -12,6 +12,11 @@ import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
 import {
+  formatRequiredReleaseReport,
+  type RequiredReleaseReport,
+  releaseRequiredRungs,
+} from '../release/release-required.ts'
+import {
   formatShipCleanup,
   type ShipCleanupReport,
   shipCleanup,
@@ -63,6 +68,7 @@ export type PullRequestMergeFacts = {
   baseBranch: string
   title: string
   state: string
+  mergeCommit: string | null
 }
 
 export type PullRequestMergeAdapter = {
@@ -87,6 +93,12 @@ export type PullRequestMergeAdapter = {
     prNumber: number,
     database: Database,
   ): string | null
+  postMergeChange(
+    cwd: string,
+    headCommit: string,
+    headBranch: string,
+    database: Database,
+  ): PullRequestChange
   recordLandings?(
     change: PullRequestChange,
     pullRequest: PullRequestMergeFacts,
@@ -116,6 +128,12 @@ export type PullRequestMergeAdapter = {
   ): FailedMergeGroupRun | null
   now(): number
   wait(milliseconds: number): void
+  releaseRequired(
+    project: Project,
+    mergeCommit: string,
+    target: string,
+    enabled: boolean,
+  ): RequiredReleaseReport
   shipCleanup?(
     project: string,
     branch: string,
@@ -125,9 +143,10 @@ export type PullRequestMergeAdapter = {
 }
 
 export const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+export const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
 export type PullRequestMergeOutcome = {
   output: string
-  exitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE
+  exitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE | typeof MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE
 }
 
 type ProcessResult = { exitCode: number; stdout: string; stderr: string }
@@ -177,6 +196,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       baseRefName?: unknown
       title?: unknown
       state?: unknown
+      mergeCommit?: { oid?: unknown } | null
     }>(
       successful(
         cwd,
@@ -186,7 +206,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
           'view',
           target,
           '--json',
-          'id,number,headRefOid,headRefName,baseRefName,title,state',
+          'id,number,headRefOid,headRefName,baseRefName,title,state,mergeCommit',
         ],
         'pull-request lookup',
       ),
@@ -211,6 +231,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       baseBranch: value.baseRefName,
       title: value.title,
       state: value.state,
+      mergeCommit: typeof value.mergeCommit?.oid === 'string' ? value.mergeCommit.oid : null,
     }
   },
   checks(cwd, number) {
@@ -270,6 +291,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   },
   recordAdmission(change, decision, prNumber, database) {
     return recordMergeAdmission(change, decision, prNumber, database)
+  },
+  postMergeChange(cwd, headCommit, headBranch, database) {
+    return resolvePullRequestChange(cwd, headCommit, database, undefined, headBranch)
   },
   recordLandings(change, pullRequest) {
     recordMergeBranchLandings({
@@ -332,6 +356,9 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   now: Date.now,
   wait(milliseconds) {
     Bun.sleepSync(milliseconds)
+  },
+  releaseRequired(project, mergeCommit, _target, enabled) {
+    return releaseRequiredRungs({ project, mergeCommit, releaseRequired: enabled })
   },
   shipCleanup(project, branch, _prNumber, database) {
     return shipCleanup(branch, { project, confirmedLanded: true, database })
@@ -645,6 +672,8 @@ function mergedPullRequestOutput(input: {
   mergeCommit: string
   recordingError?: string
   requeueOutput?: string
+  requiredRelease: RequiredReleaseReport
+  target: string
 }): PullRequestMergeOutcome {
   const withRequeueOutput = (outcome: PullRequestMergeOutcome): PullRequestMergeOutcome => ({
     ...outcome,
@@ -658,8 +687,18 @@ function mergedPullRequestOutput(input: {
       exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
     })
   }
+  const releaseOutput = formatRequiredReleaseReport(
+    input.requiredRelease,
+    input.target,
+    input.project,
+  )
+  const outputParts = [input.mergeCommit, releaseOutput].filter(Boolean)
+  let cleanupExitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE = 0
   if (!input.adapter.shipCleanup) {
-    return withRequeueOutput({ output: input.mergeCommit, exitCode: 0 })
+    return withRequeueOutput({
+      output: outputParts.join('\n'),
+      exitCode: input.requiredRelease.satisfied ? 0 : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+    })
   }
   try {
     const report = input.adapter.shipCleanup(
@@ -668,19 +707,21 @@ function mergedPullRequestOutput(input: {
       input.prNumber,
       input.database,
     )
-    return withRequeueOutput({
-      output: `${input.mergeCommit}\n${formatShipCleanup(report)}`,
-      exitCode: report.verdict.clean ? 0 : MERGED_WITH_RESIDUE_EXIT_CODE,
-    })
+    outputParts.push(formatShipCleanup(report))
+    cleanupExitCode = report.verdict.clean ? 0 : MERGED_WITH_RESIDUE_EXIT_CODE
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
-    return withRequeueOutput({
-      output:
-        `${input.mergeCommit}\nship cleanup failed for ${input.branch}: ${detail}; ` +
-        `retry: ${PLATFORM_SLUG} tree ship-cleanup ${input.branch}`,
-      exitCode: MERGED_WITH_RESIDUE_EXIT_CODE,
-    })
+    outputParts.push(
+      `ship cleanup failed for ${input.branch}: ${detail}; retry: ${PLATFORM_SLUG} tree ship-cleanup ${input.branch}`,
+    )
+    cleanupExitCode = MERGED_WITH_RESIDUE_EXIT_CODE
   }
+  return withRequeueOutput({
+    output: outputParts.join('\n'),
+    exitCode: input.requiredRelease.satisfied
+      ? cleanupExitCode
+      : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  })
 }
 
 function recordPostMergeEvidence(input: {
@@ -773,6 +814,7 @@ function completeMerge(input: {
   requiredChecks: readonly string[]
   mergeQueue: boolean
   mergeMethod: 'squash' | 'merge' | 'rebase'
+  releaseRequired: boolean
 }): PullRequestMergeOutcome {
   let pullRequest: PullRequestMergeFacts | undefined
   let mergeCommit: string
@@ -780,10 +822,22 @@ function completeMerge(input: {
   let admittedChange: PullRequestChange
   try {
     pullRequest = input.adapter.view(input.cwd, input.target)
-    admittedChange = admitViewedPullRequest(pullRequest, input)
-    const merged = mergeAdmittedHead({ ...input, pullRequest })
-    mergeCommit = merged.mergeCommit
-    requeueOutput = merged.requeueOutput
+    if (pullRequest.state === 'MERGED') {
+      if (!pullRequest.mergeCommit)
+        throw new Error('merged pull request lookup returned no merge commit')
+      mergeCommit = pullRequest.mergeCommit
+      admittedChange = input.adapter.postMergeChange(
+        input.cwd,
+        pullRequest.headCommit,
+        pullRequest.headBranch,
+        input.database,
+      )
+    } else {
+      admittedChange = admitViewedPullRequest(pullRequest, input)
+      const merged = mergeAdmittedHead({ ...input, pullRequest })
+      mergeCommit = merged.mergeCommit
+      requeueOutput = merged.requeueOutput
+    }
   } catch (cause) {
     refuseUncaughtMergeError(cause, {
       cwd: input.cwd,
@@ -807,6 +861,13 @@ function completeMerge(input: {
       projectName: input.project.name,
     }),
     requeueOutput,
+    requiredRelease: input.adapter.releaseRequired(
+      input.project,
+      mergeCommit,
+      input.target,
+      input.releaseRequired,
+    ),
+    target: input.target,
   })
 }
 
@@ -815,6 +876,7 @@ export function mergePullRequest(
   cwd = process.cwd(),
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
   injectedDatabase?: Database,
+  releaseRequired = false,
 ): PullRequestMergeOutcome {
   enableSchemaReload()
   const database = injectedDatabase ?? writableDb()
@@ -841,5 +903,6 @@ export function mergePullRequest(
     requiredChecks: release.requiredChecks,
     mergeQueue: release.mergeQueue ?? false,
     mergeMethod: release.mergeMethod,
+    releaseRequired,
   })
 }

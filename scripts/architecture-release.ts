@@ -23,6 +23,17 @@ export const releaseModules = [
     ],
   },
   {
+    file: 'orchestrator/src/release/release-required.ts',
+    allowed: [
+      'shared/brand.ts',
+      'orchestrator/src/git/git-environment.ts',
+      'orchestrator/src/project/projects.ts',
+      'orchestrator/src/review/review-declared-globs.ts',
+      'orchestrator/src/release/release-service.ts',
+    ],
+    typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
+  },
+  {
     file: 'orchestrator/src/release/release-ledger.ts',
     allowed: [
       'shared/brand.ts',

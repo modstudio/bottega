@@ -43,13 +43,20 @@ export function releaseCapturedText(text: string, secretShaped: boolean): string
 }
 
 export function releaseReasonDecision(
-  field: 'rollback' | 'behind-trunk',
+  field: 'rollback' | 'behind-trunk' | 'redeploy',
+  reason: string | undefined,
   secretShaped: boolean,
 ): Decision {
   if (secretShaped) {
     return {
       ok: false,
       message: `${field} reason contains secret-shaped text; restate the reason without the credential, then retry`,
+    }
+  }
+  if (field === 'redeploy' && reason !== undefined && !reason.trim()) {
+    return {
+      ok: false,
+      message: 'redeploy reason must be non-empty; pass --redeploy "<reason>"',
     }
   }
   return { ok: true }
@@ -173,6 +180,20 @@ export function forwardReleaseDecision(facts: {
     ok: false,
     message: `release would move backward from ${facts.live} to ${facts.candidate}; retry with --rollback "<reason>" for a deliberate rollback`,
   }
+}
+
+/** Skip only when this candidate is the rung's newest confirmed-live release. */
+export function alreadyLiveReleaseDecision(facts: {
+  newestLive: string | null
+  candidate: string
+  redeployReason?: string
+  rollbackReason?: string
+}): boolean {
+  return (
+    facts.newestLive === facts.candidate &&
+    facts.redeployReason === undefined &&
+    facts.rollbackReason === undefined
+  )
 }
 
 export function releaseLockDecision(

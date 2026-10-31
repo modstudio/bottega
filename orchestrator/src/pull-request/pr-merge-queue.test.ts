@@ -27,6 +27,7 @@ const pullRequest: PullRequestMergeFacts = {
   baseBranch: 'main',
   title: 'Queue this pull request',
   state: 'OPEN',
+  mergeCommit: null,
 }
 
 function registerProject(requiredChecks: string[]): void {
@@ -82,6 +83,7 @@ function adapter(input: {
       },
     }),
     recordAdmission: () => null,
+    postMergeChange: () => ({ branch: pullRequest.headBranch }) as PullRequestChange,
     merge: () => 'unexpected-direct-merge',
     queueState: () => {
       const state = input.queueStates.shift()!
@@ -105,6 +107,7 @@ function adapter(input: {
       },
     now: input.now ?? Date.now,
     wait: (milliseconds) => input.wait?.(milliseconds),
+    releaseRequired: () => ({ required: [], releases: [], satisfied: true }),
   }
 }
 
