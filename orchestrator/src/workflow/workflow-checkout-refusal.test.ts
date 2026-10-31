@@ -57,7 +57,7 @@ test('checkout evidence refuses an unrelated head with no landing commit', () =>
   ).toBe('outside-change')
 })
 
-test('an unavailable landing commit names the condition and pull remedy', () => {
+test('an unavailable landing commit names the condition and guarded refresh remedy', () => {
   const refusal = checkoutOutsideChangeRefusal('--gate 3042', 'DEV-1535-work', '/fixture/main', {
     project: 'fixture',
     branch: 'main',
@@ -70,7 +70,8 @@ test('an unavailable landing commit names the condition and pull remedy', () => 
   expect(refusal).toContain(
     'landing commit dd3e2d8050120bf3d676f86257d0c92c0c5bff41 is not available in /fixture/main',
   )
-  expect(refusal).toContain('git pull --ff-only origin main')
+  expect(refusal).toContain(`${PLATFORM_SLUG} tree refresh /fixture/main`)
+  expect(refusal).toContain('rerun the same command')
 })
 
 test('every outside-change refusal path names a runnable remedy command', () => {

@@ -15,7 +15,6 @@ import {
   pullRecordCataloguesForSpace,
   RecordCataloguePullError,
 } from '../record/record-cache-catalogues.ts'
-import { lifecycleForm } from '../worktree/worktree-lifecycle.ts'
 import { migrateCreate } from '../worktree/worktree-template.ts'
 import { projectAddDecision } from './project-add-record.ts'
 import { hostedProjectDestination, refuseHostedProjectSpaceChange } from './project-hosted-write.ts'
@@ -35,6 +34,7 @@ import {
   type Project,
   type ProjectSettings,
   projectByName,
+  projectLifecycleForm,
   projectRowByName,
   projects,
   pushProjects,
@@ -70,7 +70,7 @@ function listedProjectJson(project: Project) {
     record_id: recordId,
     repository: isProjectRepository(project),
     ...(retiredAt ? { retired_at: retiredAt } : {}),
-    lifecycle_form: lifecycleForm(project.settings.worktree),
+    lifecycle_form: projectLifecycleForm(project),
     problems: validateProjectSettings(project.settings, 'strip', project.path),
     commit_hooks_skipped: true,
     gate: typeof project.settings.gate === 'string' ? project.settings.gate : null,

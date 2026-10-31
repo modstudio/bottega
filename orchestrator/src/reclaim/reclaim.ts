@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { assertBranchRefMayBeDeleted, restoreBranch } from '../branch/branch-ref-guard.ts'
@@ -13,7 +13,7 @@ import {
 } from '../branch/branches.ts'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { gitResult } from '../git/git-environment.ts'
+import { borrowedCheckoutOf, gitResult } from '../git/git-environment.ts'
 import {
   withCleanupLock,
   withWorktreeCreateLock,
@@ -29,11 +29,15 @@ import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
 import {
+  isUnmarkedBorrowedReaderClone,
   markedWorktreeSource,
+  ORCH_RUN_MARKER,
   orphanSafety,
+  readerCloneCreator,
   worktreeDirty,
 } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
+import { type ReaderCloneRunFact, readerCloneReclaimDecision } from './reclaim-reader-clone.ts'
 import { reclaimDirtyTreeRefusal } from './reclaim-worktree-dirty.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }
@@ -181,6 +185,55 @@ function sharedWorktreeRefusal(path: string, runId: string): ReclaimResult | nul
   )
 }
 
+function projectRunFacts(project: { recordId: string; name: string }): ReaderCloneRunFact[] {
+  return db()
+    .query(
+      `SELECT record_id recordId, status FROM run
+        WHERE project_record_id=? OR (project_record_id IS NULL AND repo=?)
+        ORDER BY record_id`,
+    )
+    .all(project.recordId, project.name) as ReaderCloneRunFact[]
+}
+
+function readerCloneCreationRefusal(
+  path: string,
+  project: { recordId: string; name: string; path: string },
+): ReclaimResult | null {
+  if (!existsSync(path) || existsSync(join(path, ORCH_RUN_MARKER))) return null
+  try {
+    const borrowedSource = borrowedCheckoutOf(path)
+    if (
+      !isUnmarkedBorrowedReaderClone({
+        path,
+        repoRoot: realpathSync(project.path),
+        borrowedSource: borrowedSource ? realpathSync(borrowedSource) : null,
+      })
+    )
+      return null
+  } catch {
+    return null
+  }
+  const creator = readerCloneCreator(basename(path))
+  if (!creator) return null
+  const decision = readerCloneReclaimDecision(creator, projectRunFacts(project))
+  return decision.allowed ? null : refuse(decision.reason)
+}
+
+function recordedWorktreeRefusal(rows: ReclaimRun[], clock: number): ReclaimResult | null {
+  const owners = proveRunOwners(rows, false)
+  if (owners) return owners
+  const held = rows.find(
+    (row) =>
+      keepTreeHold({
+        keepTree: row.keep_tree,
+        keepTreeUntil: row.keep_tree_until,
+        startedAt: row.started_at,
+        now: new Date(clock).toISOString(),
+      }).held,
+  )
+  return held ? refuse(`run ${held.record_id} records keep_tree; its worktree is protected`) : null
+}
+
 function existingTreeGitRefusal(
   path: string,
   repoRoot: string,
@@ -226,22 +279,11 @@ function proveWorktree(path: string, clock: number, allowDirty = false): Worktre
     }
   }
   if (rows.length) {
-    const owners = proveRunOwners(rows, false)
-    if (owners) return { result: owners }
-    for (const lockedRow of rows) {
-      if (
-        keepTreeHold({
-          keepTree: lockedRow.keep_tree,
-          keepTreeUntil: lockedRow.keep_tree_until,
-          startedAt: lockedRow.started_at,
-          now: new Date(clock).toISOString(),
-        }).held
-      )
-        return {
-          result: refuse(`run ${lockedRow.record_id} records keep_tree; its worktree is protected`),
-        }
-    }
+    const recordedRefusal = recordedWorktreeRefusal(rows, clock)
+    if (recordedRefusal) return { result: recordedRefusal }
   }
+  const creatingReaderRefusal = readerCloneCreationRefusal(path, project)
+  if (creatingReaderRefusal) return { result: creatingReaderRefusal }
   const gitRefusal = existingTreeGitRefusal(path, project.path, allowDirty)
   if (gitRefusal) return { result: gitRefusal }
   const recipeRefusal = snapshotlessTrackedRecipeRefusal({

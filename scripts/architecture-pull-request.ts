@@ -1,5 +1,9 @@
 export const pullRequestModuleSpecs = [
   {
+    file: 'orchestrator/src/pull-request/pr-merge-evidence.ts',
+    allowed: ['bun:sqlite', '../../../shared/brand.ts', './pr-admission.ts', './pr-ci-record.ts'],
+  },
+  {
     file: 'orchestrator/src/pull-request/triage-decision.ts',
     allowed: [
       '../review/review-applicability.ts',

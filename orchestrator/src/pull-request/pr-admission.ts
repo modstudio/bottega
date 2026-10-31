@@ -47,6 +47,8 @@ import {
   type TriageReviewGroup,
 } from './triage-decision.ts'
 
+export const REVIEW_READ_VERB = `${PLATFORM_SLUG} review read`
+
 type Git = (cwd: string, args: string[]) => string
 
 export type PullRequestChange = {
@@ -321,7 +323,7 @@ export function triageRefusal(
       ? `review ${decision.earlierReviewNumber} can be credited only after an architect reads this exact tip`
       : `tier ${change.tier} requires an architect read of this exact tip`
     lines.push(
-      `architect-read path failed: ${credit}; cleared by: ${PLATFORM_SLUG} review read --sha ${change.tip} --note "<what was read and why it lands>"`,
+      `architect-read path failed: ${credit}; cleared by: ${REVIEW_READ_VERB} --sha ${change.tip} --note "<what was read and why it lands>"`,
     )
   } else if (decision.finalTierRaised) {
     lines.push(

@@ -21,6 +21,7 @@ import {
   tokenize,
 } from '../services/endpoints.ts'
 import { cosineTopK } from '../vector-ranking.ts'
+import { checkCodePins } from './code-pins.ts'
 import { checkDocPins } from './doc-pins.ts'
 import { keywordRanking } from './keyword.ts'
 import { type Ranking, rankOfFirstLabel, scoreRankings } from './metrics.ts'
@@ -68,12 +69,31 @@ async function validateQueries(repositoryRoot: string, chunks: Chunk[]): Promise
           throw new Error(`${query.id} code label is absent from the corpus: ${goldPath}`)
         }
       }
-      const source = await readFile(resolve(repositoryRoot, query.provenance.path), 'utf8')
-      const plainSource = source.replace(/[`*_]/g, '').replace(/\s+/g, ' ')
-      const excerpt = query.provenance.excerpt.replace(/\s+/g, ' ')
-      if (!plainSource.includes(excerpt)) {
-        throw new Error(`${query.id} provenance excerpt is absent from ${query.provenance.path}`)
+    }
+    const paths = [...new Set(queries.map((query) => query.provenance.path))]
+    const loaded = await Promise.all(
+      paths.map(async (path) => {
+        try {
+          return { path, body: await readFile(resolve(repositoryRoot, path), 'utf8') }
+        } catch (cause) {
+          return { path, cause }
+        }
+      }),
+    )
+    const sources = loaded.filter(
+      (source): source is { path: string; body: string } => 'body' in source,
+    )
+    const stale = checkCodePins(queries, sources).find((pin) => !pin.current)
+    if (stale) {
+      const unreadable = loaded.find((source) => source.path === stale.path && 'cause' in source)
+      if (unreadable && 'cause' in unreadable) {
+        const detail =
+          unreadable.cause instanceof Error ? unreadable.cause.message : String(unreadable.cause)
+        throw new Error(
+          `${stale.queryId} provenance path ${stale.path} could not be read: ${detail}`,
+        )
       }
+      throw new Error(`${stale.queryId} provenance excerpt is absent from ${stale.path}`)
     }
   }
   await validateCodeSet('code', CODE_QUERIES)

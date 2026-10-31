@@ -2,7 +2,6 @@ import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
 import { projectByName } from '../project/projects.ts'
@@ -20,6 +19,7 @@ import {
   type PullRequestMergeFacts,
   type WorkflowPromotionResult,
 } from './pr-merge.ts'
+import { recordPassingMergeGate, requiredRelease } from './pr-merge-required-release.fixture.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -39,6 +39,8 @@ function registerProject(requiredChecks: string[], mergeQueue = false): void {
     )
 }
 
+const recordPassingGate = () => recordPassingMergeGate(pullRequest.headCommit, cwd)
+
 const pullRequest: PullRequestMergeFacts = {
   nodeId: 'PR_node_id',
   number: 42,
@@ -57,6 +59,7 @@ function adapter(
     landingState?: () => { remoteLandingTip: string; mergeBase: string }
     hasCommit?: (cwd: string, headCommit: string) => boolean
     merge?: (method: string, subject: string, headCommit: string) => string
+    mergeCommit?: () => string
     admission?: (
       cwd: string,
       headCommit: string,
@@ -79,6 +82,7 @@ function adapter(
     releaseRequired?: (enabled: boolean) => RequiredReleaseReport
   } = {},
 ): PullRequestMergeAdapter {
+  let mergedCommit = 'merge-commit'
   return {
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
@@ -122,8 +126,10 @@ function adapter(
         }
       : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
-    merge: (_cwd, _number, method, subject, headCommit) =>
-      input.merge?.(method, subject, headCommit) ?? 'merge-commit',
+    merge: (_cwd, _number, method, subject, headCommit) => {
+      mergedCommit = input.merge?.(method, subject, headCommit) ?? 'merge-commit'
+    },
+    mergeCommit: () => input.mergeCommit?.() ?? mergedCommit,
     queueState:
       input.queueState ??
       (() => ({
@@ -142,23 +148,6 @@ function adapter(
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
   }
 }
-
-const requiredRelease = (
-  overrides: Partial<RequiredReleaseReport> = {},
-): RequiredReleaseReport => ({
-  required: ['hosted-api'],
-  releases: [
-    {
-      rung: 'hosted-api',
-      deployExit: 0,
-      outputTail: 'pending 0',
-      satisfied: true,
-      deployed: true,
-    },
-  ],
-  satisfied: true,
-  ...overrides,
-})
 
 test('post-merge stages run landings, promotion, required release, then cleanup', () => {
   registerProject([])
@@ -226,6 +215,37 @@ test('an already-merged pull request skips admission and resumes post-merge stag
   expect(outcome.exitCode).toBe(0)
   expect(admitted).toBe(false)
   expect(released).toBe(true)
+})
+
+test('a merged pull request records evidence before refusing a failed merge-commit lookup', () => {
+  registerProject([])
+  recordPassingGate()
+  const evidence: string[] = []
+  let releaseReached = false
+  expect(() =>
+    mergePullRequest(
+      '42',
+      cwd,
+      adapter({
+        mergeCommit: () => {
+          throw new Error('merge-commit lookup failed: forge unavailable')
+        },
+        recordLandings: () => evidence.push('landing'),
+        recordCi: () => {
+          evidence.push('ci')
+          return undefined
+        },
+        releaseRequired: () => {
+          releaseReached = true
+          throw new Error('release must not run without a merge commit')
+        },
+      }),
+    ),
+  ).toThrow(
+    `pull request #42 merged, but the merge commit could not be read: merge-commit lookup failed: forge unavailable; retry with: ${PLATFORM_SLUG} pr merge 42`,
+  )
+  expect(evidence).toEqual(['landing', 'ci'])
+  expect(releaseReached).toBeFalse()
 })
 
 test('a workflow promotion failure is merge residue and a required release failure wins', () => {
@@ -326,16 +346,6 @@ const cleanupReport = (
     errors: overrides.errors ?? [],
   }),
 })
-
-function recordPassingGate(): void {
-  db()
-    .query(
-      `INSERT INTO gate_execution
-        (record_id, requested_at,finished_at,exit_code,timed_out,elapsed_ms,output_tail,head_commit,cwd)
-       VALUES ('${newRecordId()}', '2026-10-09','2026-10-09',0,0,100,'passed',?,?)`,
-    )
-    .run(pullRequest.headCommit, cwd)
-}
 
 test('an injected forge adapter merges all-passing checks with the method, subject, and proven head', () => {
   registerProject(['test'])

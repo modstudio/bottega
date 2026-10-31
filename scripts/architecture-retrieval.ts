@@ -71,6 +71,7 @@ export const retrievalModules: RetrievalModule[] = [
   ]),
   module('retrieval/src/benchmark/metrics.ts', ['../corpus/chunks.ts']),
   module('retrieval/src/benchmark/queries.ts', ['../../../shared/brand.ts']),
+  module('retrieval/src/benchmark/code-pins.ts', ['./queries.ts']),
   module('retrieval/src/benchmark/doc-pins.ts', ['../corpus/chunks.ts', './queries.ts']),
   module('retrieval/src/benchmark/keyword.ts', ['../corpus/chunks.ts']),
   module('retrieval/src/benchmark/benchmark.ts', [
@@ -85,6 +86,7 @@ export const retrievalModules: RetrievalModule[] = [
     '../vector-ranking.ts',
     './keyword.ts',
     './metrics.ts',
+    './code-pins.ts',
     './doc-pins.ts',
     './queries.ts',
   ]),

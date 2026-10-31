@@ -46,7 +46,7 @@ import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifi
 import { autonomySettingsForStorage } from '../workflow/autonomy.ts'
 import {
   DEFAULT_PROJECT_CONFIG_PATH,
-  resolveWorktreeLifecycle,
+  resolvedProjectWorktreeLifecycle,
 } from '../worktree/worktree-lifecycle.ts'
 import { validateReadonlyProvision } from '../worktree/worktree-provision.ts'
 import {
@@ -96,6 +96,7 @@ import {
   githubForgeVisibilityLookup,
 } from './project-visibility.ts'
 
+export { projectLifecycleForm, resolvedWorktreeTool } from './project-worktree-resolution.ts'
 export type { MainStackConsumer, ProjectSettings, WorktreeTool }
 
 export type Project = {
@@ -197,26 +198,6 @@ export function absentTreeTeardownPlan(input: {
     (Boolean(input.recipeSnapshot) ||
       (input.worktreeSource === 'recipe' && input.registeredRemoveCommand))
   )
-}
-
-/** Apply the repository-local default without persisting derived config into the register. */
-export function resolvedWorktreeTool(
-  project: Pick<Project, 'path' | 'settings'> | null | undefined,
-  fileExists: (path: string) => boolean = existsSync,
-): WorktreeTool | null {
-  if (!project) return null
-  const declared = project.settings.worktree
-  let resolution = resolveWorktreeLifecycle(declared)
-  if (resolution.form === 'none') {
-    resolution = resolveWorktreeLifecycle(
-      declared,
-      fileExists(resolve(project.path, DEFAULT_PROJECT_CONFIG_PATH)),
-    )
-  }
-  if (resolution.form === 'tracked-recipe' && resolution.source === 'default') {
-    return { ...declared, recipePath: resolution.recipePath }
-  }
-  return declared ?? null
 }
 
 function parse(row: {
@@ -646,13 +627,7 @@ function trackedRecipeProblems(worktree: WorktreeTool | undefined, projectPath?:
     problems.push('recipe path rule: worktree.recipePath must be a string')
     return problems
   }
-  let resolution = resolveWorktreeLifecycle(worktree)
-  if (resolution.form === 'none' && projectPath) {
-    resolution = resolveWorktreeLifecycle(
-      worktree,
-      existsSync(resolve(projectPath, DEFAULT_PROJECT_CONFIG_PATH)),
-    )
-  }
+  const resolution = resolvedProjectWorktreeLifecycle(worktree, projectPath, existsSync)
   if (resolution.form === 'tracked-recipe') {
     const pointerProblems = recipePointerErrors(resolution.recipePath).map(
       (problem) => `worktree.recipePath: ${problem}`,
@@ -1066,10 +1041,7 @@ export function sniffStack(path: string): string | null {
 export function worktreeWarnings(p: Project): string[] {
   const w = p.settings.worktree
   if (!w) return []
-  const resolved = resolveWorktreeLifecycle(
-    w,
-    existsSync(resolve(p.path, DEFAULT_PROJECT_CONFIG_PATH)),
-  )
+  const resolved = resolvedProjectWorktreeLifecycle(w, p.path, existsSync)
   const out: string[] = []
   if (w.create && !w.remove) {
     out.push('has a create command but no remove: orchestrator cannot tear down what it makes')

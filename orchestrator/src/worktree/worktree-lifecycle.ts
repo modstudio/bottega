@@ -70,11 +70,19 @@ export function resolveWorktreeLifecycle(
   return { form: 'none' }
 }
 
-export function lifecycleForm(
+/** Resolve declarations, probing the repository-local default only when none are declared. */
+export function resolvedProjectWorktreeLifecycle(
   worktree: WorktreeDeclaration | null | undefined,
-  defaultConfigExists = false,
-): LifecycleForm {
-  return resolveWorktreeLifecycle(worktree, defaultConfigExists).form
+  projectPath: string | undefined,
+  fileExists: (path: string) => boolean,
+): LifecycleResolution {
+  const declared = resolveWorktreeLifecycle(worktree)
+  return declared.form === 'none' && projectPath
+    ? resolveWorktreeLifecycle(
+        worktree,
+        fileExists(resolve(projectPath, DEFAULT_PROJECT_CONFIG_PATH)),
+      )
+    : declared
 }
 
 /** Resolve and probe a tracked pointer without reading or parsing the recipe. */
@@ -83,11 +91,7 @@ export function trackedRecipeStatus(
   worktree: WorktreeDeclaration | null | undefined,
   fileExists: (path: string) => boolean,
 ): TrackedRecipeStatus | null {
-  const defaultPath = resolve(projectPath, DEFAULT_PROJECT_CONFIG_PATH)
-  let resolution = resolveWorktreeLifecycle(worktree)
-  if (resolution.form === 'none') {
-    resolution = resolveWorktreeLifecycle(worktree, fileExists(defaultPath))
-  }
+  const resolution = resolvedProjectWorktreeLifecycle(worktree, projectPath, fileExists)
   if (resolution.form !== 'tracked-recipe') return null
   const pointer = resolution.recipePath.trim()
   const path = resolve(projectPath, pointer)
@@ -186,15 +190,9 @@ export function lifecycleReportLines(
     recipePath: string,
   ) => LoadTrackedRecipeResult = loadTrackedRecipe,
 ): string[] {
-  const resolutions = projects.map((project) => {
-    const declared = resolveWorktreeLifecycle(project.worktree)
-    return declared.form === 'none'
-      ? resolveWorktreeLifecycle(
-          project.worktree,
-          fileExists(resolve(project.path, DEFAULT_PROJECT_CONFIG_PATH)),
-        )
-      : declared
-  })
+  const resolutions = projects.map((project) =>
+    resolvedProjectWorktreeLifecycle(project.worktree, project.path, fileExists),
+  )
   const forms = resolutions.map((resolution) => resolution.form)
   const lines = projects.map((project, index) =>
     projectLifecycleLine(project, resolutions[index]!, fileExists, loadRecipe),
