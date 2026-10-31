@@ -73,6 +73,10 @@ export type ContentionWait = {
   durationMs: number | null
 }
 
+export function isHostCapacityWait(wait: ContentionWait): boolean {
+  return wait.resourceKind === 'cpu' && wait.resourceKey === 'host-capacity'
+}
+
 const emptyContention = (): ContentionSummary => ({
   resources: RESOURCE_KINDS.map((kind) => ({
     kind,

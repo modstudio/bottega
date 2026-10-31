@@ -113,6 +113,15 @@ test('machine rename and retire remedies resolve to their owner entries', () => 
   })
 })
 
+test('machine load routes the reader and sampler to their owner entry', () => {
+  expect(resolveRoute(['machine', 'load', '--json'])).toMatchObject({
+    route: { owner: 'orch', argv: ['load'] },
+  })
+  expect(resolveRoute(['machine', 'load', 'sample'])).toMatchObject({
+    route: { owner: 'orch', argv: ['load'] },
+  })
+})
+
 test('every public route through the agent owner declares a supported verb', () => {
   for (const route of ROUTES) {
     if (route.owner !== 'orch' || route.argv?.[0] !== 'agent') continue

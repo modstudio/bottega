@@ -244,6 +244,7 @@ export const ROUTES = (
       'health',
       'blockers',
       'monitor',
+      'load',
       'storage',
       'provisioning',
       'efficiency',

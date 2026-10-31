@@ -10,30 +10,39 @@ type BoundedLogOptions = {
   name: string
 }
 
+export function boundedJsonLinePath(name: string, env: StateEnvironment = process.env): string {
+  return join(resolveStateRoot(env), `${name}.jsonl`)
+}
+
 function logPaths(name: string, env: StateEnvironment): { current: string; previous: string } {
-  const root = resolveStateRoot(env)
+  const current = boundedJsonLinePath(name, env)
   return {
-    current: join(root, `${name}.jsonl`),
-    previous: join(root, `${name}.previous.jsonl`),
+    current,
+    previous: join(dirname(current), `${name.split('/').at(-1)}.previous.jsonl`),
   }
+}
+
+/** Append one JSON value, rotating when the byte bound is crossed. */
+export function writeBoundedJsonLine(value: unknown, options: BoundedLogOptions): void {
+  const paths = logPaths(options.name, options.env ?? process.env)
+  const line = `${JSON.stringify(value)}\n`
+  mkdirSync(dirname(paths.current), { recursive: true })
+  let currentBytes = 0
+  try {
+    currentBytes = statSync(paths.current).size
+  } catch {
+    // An absent current file starts at zero; append below reports every other failure.
+  }
+  if (currentBytes > 0 && currentBytes + Buffer.byteLength(line) > options.maxBytes) {
+    renameSync(paths.current, paths.previous)
+  }
+  appendFileSync(paths.current, line, 'utf8')
 }
 
 /** Append one JSON value best-effort, rotating when the byte bound is crossed. */
 export function appendBoundedJsonLine(value: unknown, options: BoundedLogOptions): void {
   try {
-    const paths = logPaths(options.name, options.env ?? process.env)
-    const line = `${JSON.stringify(value)}\n`
-    mkdirSync(dirname(paths.current), { recursive: true })
-    let currentBytes = 0
-    try {
-      currentBytes = statSync(paths.current).size
-    } catch {
-      // An absent current file starts at zero; append below reports every other failure.
-    }
-    if (currentBytes > 0 && currentBytes + Buffer.byteLength(line) > options.maxBytes) {
-      renameSync(paths.current, paths.previous)
-    }
-    appendFileSync(paths.current, line, 'utf8')
+    writeBoundedJsonLine(value, options)
   } catch {
     // Measurement must never replace the operation it observes.
   }

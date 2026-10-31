@@ -148,6 +148,8 @@ export const PLATFORM_COMMAND_WORDS = [
   'machine gate-facts',
   'machine health',
   'machine legacy-calls',
+  'machine load',
+  'machine load sample',
   'machine migrate',
   'machine monitor',
   'machine provisioning',

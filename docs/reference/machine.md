@@ -29,6 +29,8 @@ upkeep of this machine
 - [bottega machine gate-facts](#bottega-machine-gate-facts)
 - [bottega machine health](#bottega-machine-health)
 - [bottega machine legacy-calls](#bottega-machine-legacy-calls)
+- [bottega machine load](#bottega-machine-load)
+- [bottega machine load sample](#bottega-machine-load-sample)
 - [bottega machine migrate](#bottega-machine-migrate)
 - [bottega machine monitor](#bottega-machine-monitor)
 - [bottega machine provisioning](#bottega-machine-provisioning)
@@ -89,6 +91,7 @@ upkeep of this machine
 - [bottega machine gate-facts](./machine.md#bottega-machine-gate-facts)
 - [bottega machine health](./machine.md#bottega-machine-health)
 - [bottega machine legacy-calls](./machine.md#bottega-machine-legacy-calls)
+- [bottega machine load](./machine.md#bottega-machine-load)
 - [bottega machine migrate](./machine.md#bottega-machine-migrate)
 - [bottega machine monitor](./machine.md#bottega-machine-monitor)
 - [bottega machine provisioning](./machine.md#bottega-machine-provisioning)
@@ -435,6 +438,33 @@ report legacy orchestrator and hub invocations
 ### Related
 
 - [bottega machine](./machine.md#bottega-machine)
+
+## bottega machine load
+
+**Synopsis:** `bottega machine load [--since <value>] [--quantiles <list>] [--json]`
+
+sample or report machine host load
+
+### Options
+
+- `--since <value>`: report samples since an ISO time or duration (default: 30m)
+- `--quantiles <list>`: comma-separated CPU busy quantiles
+- `--json`: write the host-load report as JSON
+
+### Related
+
+- [bottega machine](./machine.md#bottega-machine)
+- [bottega machine load sample](./machine.md#bottega-machine-load-sample)
+
+## bottega machine load sample
+
+**Synopsis:** `bottega machine load sample`
+
+append one machine host-load sample
+
+### Related
+
+- [bottega machine load](./machine.md#bottega-machine-load)
 
 ## bottega machine migrate
 
