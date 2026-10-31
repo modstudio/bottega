@@ -125,6 +125,96 @@ class GuardedChildTest(unittest.TestCase):
 class HeartbeatShellProcessTest(GuardedChildTest):
     """Cases that drive the heartbeat shell and the children it starts."""
 
+    def test_linked_worktree_heartbeat_uses_main_checkout_binary_without_override(self):
+        with tempfile.TemporaryDirectory() as root:
+            fixture = Path(root)
+            checkout = fixture / "main"
+            worktree = fixture / "worktree"
+            checkout.mkdir()
+
+            for argv in (
+                ["git", "init", "--quiet", str(checkout)],
+                ["git", "-C", str(checkout), "config", "user.email", "fixture@example.com"],
+                ["git", "-C", str(checkout), "config", "user.name", "Fixture"],
+            ):
+                self.run_helper("the fixture repository setup", argv, check=True)
+            (checkout / "seed").write_text("fixture\n", encoding="utf-8")
+            self.run_helper(
+                "the fixture repository setup",
+                ["git", "-C", str(checkout), "add", "seed"],
+                check=True,
+            )
+            self.run_helper(
+                "the fixture repository setup",
+                ["git", "-C", str(checkout), "commit", "--quiet", "-m", "fixture"],
+                check=True,
+            )
+            self.run_helper(
+                "the linked worktree setup",
+                [
+                    "git", "-C", str(checkout), "worktree", "add", "--quiet",
+                    "-b", "fixture-worktree", str(worktree),
+                ],
+                check=True,
+            )
+
+            hooks = worktree / "orchestrator" / "hooks"
+            hooks.mkdir(parents=True)
+            for name in (
+                "heartbeat-decision.py",
+                "heartbeat-board-observation.py",
+                "heartbeat-run-observation.py",
+                "inbox_question_decision.py",
+                "notice_transport.py",
+                "orch-heartbeat.sh",
+            ):
+                shutil.copy2(PATH.with_name(name), hooks / name)
+
+            main_record = fixture / "main-binary-calls"
+            worktree_record = fixture / "worktree-binary-calls"
+            fake_binary = '''#!/bin/sh
+printf '%s\n' "$*" >>"${BINARY_RECORD}"
+case "$*" in
+  "board presence") exit 0 ;;
+  "question inbox --all --active --json") printf '[]\\n' ;;
+  "run list --live --json") exit 0 ;;
+  "machine monitor --notices --json"|"machine monitor --notices --json --skip-board-refresh") printf '[]\\n' ;;
+  *) exit 0 ;;
+esac
+'''
+            for binary_root, record_variable in (
+                (checkout, "MAIN_BINARY_RECORD"),
+                (worktree, "WORKTREE_BINARY_RECORD"),
+            ):
+                binary = binary_root / "bin" / "bottega"
+                binary.parent.mkdir()
+                binary.write_text(
+                    fake_binary.replace("BINARY_RECORD", record_variable),
+                    encoding="utf-8",
+                )
+                binary.chmod(0o755)
+
+            child_env = {
+                **os.environ,
+                "MAIN_BINARY_RECORD": str(main_record),
+                "WORKTREE_BINARY_RECORD": str(worktree_record),
+                "BOTTEGA_ORCHESTRATOR_DB": str(fixture / "absent.db"),
+            }
+            child_env.pop("BOTTEGA_MAIN_CHECKOUT", None)
+            completed = self.run_shell(
+                "the linked-worktree heartbeat tick",
+                ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
+                cwd=worktree,
+                env=child_env,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            self.assertTrue(main_record.exists(), completed.stderr)
+            self.assertIn("board presence", main_record.read_text(encoding="utf-8"))
+            self.assertFalse(worktree_record.exists())
+
     def test_shell_keeps_open_request_waiting_until_external_reply_is_delivered(self):
         with tempfile.TemporaryDirectory() as root:
             checkout = Path(root)
