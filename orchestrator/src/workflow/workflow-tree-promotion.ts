@@ -3,16 +3,21 @@ import type { StepCatalogueDefinition } from './step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
-export type WorkflowTreePromotion =
+type WorkflowTreePromotion =
   | { kind: 'catalogue'; n: number }
   | { kind: 'workflow'; slug: string; n: number }
+type WorkflowTreeDivergence = { kind: 'catalogue' } | { kind: 'workflow'; slug: string }
+export type WorkflowTreePromotionPlan = {
+  promotions: WorkflowTreePromotion[]
+  divergent: WorkflowTreeDivergence[]
+}
 
 export function planWorkflowTreePromotion(input: {
   tree: WorkflowTreeStore
   production: WorkflowTreeStore
   newestCatalogueDraft?: { n: number; definition: StepCatalogueDefinition }
   newestWorkflowDrafts: Map<string, { n: number; definition: WorkflowDefinition }>
-}): WorkflowTreePromotion[] {
+}): WorkflowTreePromotionPlan {
   const treeCatalogue = { steps: input.tree.steps, sequences: input.tree.sequences }
   const productionCatalogue = {
     steps: input.production.steps,
@@ -23,18 +28,35 @@ export function planWorkflowTreePromotion(input: {
     steps: catalogue.definition.steps,
     sequences: catalogue.definition.sequences ?? [],
   }
-  const workflows = input.tree.workflows.flatMap(({ slug, definition }) => {
+  const promotions: WorkflowTreePromotion[] = []
+  const divergent: WorkflowTreeDivergence[] = []
+  if (!isDeepStrictEqual(treeCatalogue, productionCatalogue)) {
+    if (catalogue && isDeepStrictEqual(treeCatalogue, draftCatalogue))
+      promotions.push({ kind: 'catalogue', n: catalogue.n })
+    else divergent.push({ kind: 'catalogue' })
+  }
+  for (const { slug, definition } of input.tree.workflows) {
+    const production = input.production.workflows.find((item) => item.slug === slug)?.definition
+    if (isDeepStrictEqual(definition, production)) continue
     const draft = input.newestWorkflowDrafts.get(slug)
-    return draft && isDeepStrictEqual(definition, draft.definition)
-      ? [{ kind: 'workflow' as const, slug, n: draft.n }]
-      : []
-  })
-  return [
-    ...(catalogue &&
-    isDeepStrictEqual(treeCatalogue, draftCatalogue) &&
-    !isDeepStrictEqual(treeCatalogue, productionCatalogue)
-      ? [{ kind: 'catalogue' as const, n: catalogue.n }]
-      : []),
-    ...workflows.sort((left, right) => left.slug.localeCompare(right.slug)),
-  ]
+    if (draft && isDeepStrictEqual(definition, draft.definition))
+      promotions.push({ kind: 'workflow', slug, n: draft.n })
+    else divergent.push({ kind: 'workflow', slug })
+  }
+  return {
+    promotions: [
+      ...promotions.filter(({ kind }) => kind === 'catalogue'),
+      ...promotions
+        .filter(
+          (item): item is Extract<WorkflowTreePromotion, { kind: 'workflow' }> =>
+            item.kind === 'workflow',
+        )
+        .sort((left, right) => left.slug.localeCompare(right.slug)),
+    ],
+    divergent: divergent.sort((left, right) =>
+      (left.kind === 'catalogue' ? '' : left.slug).localeCompare(
+        right.kind === 'catalogue' ? '' : right.slug,
+      ),
+    ),
+  }
 }

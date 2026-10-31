@@ -17,6 +17,7 @@ import {
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
+  type WorkflowPromotionResult,
 } from './pr-merge.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
@@ -69,7 +70,7 @@ function adapter(
     ) => string | null
     postMergeChange?: () => PullRequestChange
     recordLandings?: () => void
-    promoteMergedWorkflowDrafts?: () => string
+    promoteMergedWorkflowDrafts?: () => string | WorkflowPromotionResult
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
     queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
@@ -104,7 +105,20 @@ function adapter(
         }) as PullRequestChange),
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
     ...(input.promoteMergedWorkflowDrafts
-      ? { promoteMergedWorkflowDrafts: input.promoteMergedWorkflowDrafts }
+      ? {
+          promoteMergedWorkflowDrafts: () => {
+            try {
+              const result = input.promoteMergedWorkflowDrafts!()
+              return typeof result === 'string' ? { ok: true as const, output: result } : result
+            } catch (cause) {
+              return {
+                ok: false as const,
+                stage: 'promote' as const,
+                detail: cause instanceof Error ? cause.message : String(cause),
+              }
+            }
+          },
+        }
       : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
@@ -225,7 +239,9 @@ test('a workflow promotion failure is merge residue and a required release failu
     adapter({ promoteMergedWorkflowDrafts: failedPromotion }),
   )
   expect(residue.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
-  expect(residue.output).toContain('workflow draft promotion failed: catalogue promotion refused')
+  expect(residue.output).toContain(
+    'workflow draft promotion failed at promote: catalogue promotion refused',
+  )
   expect(residue.output).toContain('workflow promote-tree')
 
   const unreleased = mergePullRequest(
@@ -478,6 +494,11 @@ test('a landing-record failure preserves branches by skipping cleanup', () => {
       recordLandings: () => {
         throw new Error('local refs unavailable')
       },
+      promoteMergedWorkflowDrafts: () => ({
+        ok: false,
+        stage: 'promote',
+        detail: 'catalogue promotion refused',
+      }),
       shipCleanup: () => {
         cleaned = true
         return cleanupReport()
@@ -489,6 +510,10 @@ test('a landing-record failure preserves branches by skipping cleanup', () => {
   expect(output.output).toContain(
     `${PLATFORM_SLUG} tree branch landed ${pullRequest.headBranch} --pr 42`,
   )
+  expect(output.output).toContain(
+    'workflow draft promotion failed at promote: catalogue promotion refused',
+  )
+  expect(output.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
   expect(cleaned).toBe(false)
 })
 

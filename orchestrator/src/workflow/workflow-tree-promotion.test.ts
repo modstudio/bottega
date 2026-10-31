@@ -30,8 +30,26 @@ test('orders the matching catalogue before matching workflows and omits other dr
         ['other', { n: 4, definition: { ...workflow, title: 'Other' } }],
       ]),
     }),
-  ).toEqual([
-    { kind: 'catalogue', n: 2 },
-    { kind: 'workflow', slug: 'match', n: 3 },
-  ])
+  ).toEqual({
+    promotions: [
+      { kind: 'catalogue', n: 2 },
+      { kind: 'workflow', slug: 'match', n: 3 },
+    ],
+    divergent: [],
+  })
+})
+
+test('reports a tree item that matches neither production nor the newest draft', () => {
+  expect(
+    planWorkflowTreePromotion({
+      tree: { ...production, workflows: [{ slug: 'drifted', definition: workflow }] },
+      production,
+      newestWorkflowDrafts: new Map([
+        ['drifted', { n: 2, definition: { ...workflow, title: 'Draft' } }],
+      ]),
+    }),
+  ).toEqual({
+    promotions: [],
+    divergent: [{ kind: 'workflow', slug: 'drifted' }],
+  })
 })

@@ -56,6 +56,17 @@ function assertWorkerStoreWriteAllowed<T>(
   if (refusal) throw new Error(refusal)
 }
 
+function validateWrite<T>(
+  config: VersionedStoreConfig<T>,
+  kind: VersionEvent,
+  definition: unknown,
+  d: Database,
+  validate: VersionedStoreConfig<T>['validate'] = config.validate,
+): void {
+  assertWorkerStoreWriteAllowed(config, kind)
+  validate(definition, d)
+}
+
 function ownerId<T>(
   config: VersionedStoreConfig<T>,
   slug: string,
@@ -161,9 +172,9 @@ export function versionedLifecycle<T>(config: VersionedStoreConfig<T>) {
     authorValue: string | undefined,
     kind: Extract<VersionEvent, 'set' | 'fork' | 'import'>,
     d: Database,
+    validate: VersionedStoreConfig<T>['validate'] = config.validate,
   ) => {
-    assertWorkerStoreWriteAllowed(config, kind)
-    config.validate(definition, d)
+    validateWrite(config, kind, definition, d, validate)
     const why = required(reasonValue, 'reason'),
       by = author(authorValue),
       at = nowIso()

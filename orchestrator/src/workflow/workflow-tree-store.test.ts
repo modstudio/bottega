@@ -13,18 +13,25 @@ import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixtu
 import {
   productionStepCatalogue,
   promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
   showStepCatalogue,
+  stepCatalogueLocalLifecycle,
 } from './step-catalogue.ts'
 import { decideCloseFloors } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { collectWorkflowTree } from './workflow-tree-files.ts'
-import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
+import {
+  importWorkflowTree,
+  productionWorkflowTree,
+  promoteMatchingWorkflowTreeDrafts,
+} from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   getWorkflowStep,
   productionWorkflows,
   promoteWorkflowLocal,
+  setWorkflowLocal,
   showResolvedWorkflow,
 } from './workflows.ts'
 
@@ -795,5 +802,90 @@ describe('importWorkflowTree', () => {
         'retry the same import; completed drafts are detected as no change',
       ].join('\n'),
     )
+  })
+})
+
+describe('promoteMatchingWorkflowTreeDrafts', () => {
+  test('promotes matching catalogue and workflow drafts catalogue-first', async () => {
+    const d = database()
+    d.exec('DELETE FROM record_install_binding')
+    const tree = structuredClone(productionWorkflowTree({ database: d }))
+    tree.steps[0]!.body += '\nCatalogue draft.'
+    tree.workflows[0]!.definition.title += ' draft'
+    const catalogue = setStepCatalogueLocal(
+      { steps: tree.steps, sequences: tree.sequences },
+      'matching catalogue fixture',
+      'test',
+      d,
+    )
+    const workflow = setWorkflowLocal(
+      tree.workflows[0]!.slug,
+      tree.workflows[0]!.definition,
+      'matching workflow fixture',
+      'test',
+      d,
+    )
+
+    const result = await promoteMatchingWorkflowTreeDrafts({
+      tree,
+      reason: 'promote matching tree',
+      author: 'test',
+      database: d,
+    })
+
+    expect(result).toEqual({
+      promotions: [
+        { kind: 'catalogue', n: catalogue.n },
+        { kind: 'workflow', slug: tree.workflows[0]!.slug, n: workflow.n },
+      ],
+      divergent: [],
+    })
+    expect(productionStepCatalogue(d).n).toBe(catalogue.n)
+    expect(showResolvedWorkflow(tree.workflows[0]!.slug, undefined, null, d).n).toBe(workflow.n)
+  })
+
+  test('promotes nothing when the tree already matches production', async () => {
+    const d = database()
+    d.exec('DELETE FROM record_install_binding')
+    expect(
+      await promoteMatchingWorkflowTreeDrafts({
+        tree: productionWorkflowTree({ database: d }),
+        reason: 'nothing matching',
+        author: 'test',
+        database: d,
+      }),
+    ).toEqual({ promotions: [], divergent: [] })
+  })
+
+  test('refuses an unknown catalogue source before promoting a matching workflow', async () => {
+    const d = database()
+    d.exec('DELETE FROM record_install_binding')
+    const tree = structuredClone(productionWorkflowTree({ database: d }))
+    tree.steps[0]!.needs = ['branch-added-source'] as never
+    tree.workflows[0]!.definition.title += ' draft'
+    stepCatalogueLocalLifecycle.import(
+      { steps: tree.steps, sequences: tree.sequences },
+      'unknown source fixture',
+      'test',
+      d,
+    )
+    const workflow = setWorkflowLocal(
+      tree.workflows[0]!.slug,
+      tree.workflows[0]!.definition,
+      'matching workflow fixture',
+      'test',
+      d,
+    )
+
+    await expect(
+      promoteMatchingWorkflowTreeDrafts({
+        tree,
+        reason: 'refuse unknown source',
+        author: 'test',
+        database: d,
+      }),
+    ).rejects.toThrow('invalid injection source "branch-added-source"')
+    expect(productionStepCatalogue(d).n).toBe(1)
+    expect(showResolvedWorkflow(tree.workflows[0]!.slug, workflow.n, null, d).status).toBe('draft')
   })
 })

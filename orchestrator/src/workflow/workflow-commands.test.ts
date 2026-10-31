@@ -415,28 +415,21 @@ test('workflow tree project refusal is only required for a configured record wit
   )
 })
 
-test('workflow hydrate and import refuse an unowned directory when a record is configured', async () => {
+test('workflow tree commands name their own refusal for an unowned configured directory', async () => {
   const priorRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
   process.env.BOTTEGA_RECORD_API_URL = 'https://record.example.test'
   try {
-    await expect(
-      workflowCommand(
-        ['workflow', 'hydrate', '--check', '--cwd', repositoryRoot],
-        presentation([]),
-      ),
-    ).rejects.toThrow(
-      `refusing workflow hydrate in ${repositoryRoot}: no registered project owns this directory\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
-    await expect(
-      workflowCommand(
-        ['workflow', 'import', '--cwd', repositoryRoot, '--reason', 'unowned tree'],
-        presentation([]),
-      ),
-    ).rejects.toThrow(
-      `refusing workflow import in ${repositoryRoot}: no registered project owns this directory\n` +
-        "cleared by: run from a registered project's worktree, or pass --cwd for one",
-    )
+    for (const [verb, extra] of [
+      ['hydrate', ['--check']],
+      ['import', ['--reason', 'unowned tree']],
+      ['promote-tree', ['--reason', 'unowned tree']],
+    ] as const)
+      await expect(
+        workflowCommand(['workflow', verb, ...extra, '--cwd', repositoryRoot], presentation([])),
+      ).rejects.toThrow(
+        `refusing workflow ${verb} in ${repositoryRoot}: no registered project owns this directory\n` +
+          "cleared by: run from a registered project's worktree, or pass --cwd for one",
+      )
   } finally {
     if (priorRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
     else process.env.BOTTEGA_RECORD_API_URL = priorRecordApiUrl

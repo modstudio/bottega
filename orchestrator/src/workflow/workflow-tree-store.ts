@@ -8,14 +8,13 @@ import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
+  importableStepCatalogueErrors,
   importStepCatalogue,
-  importStepCatalogueWithUnknownNeedsLocal,
   promoteStepCatalogue,
+  promoteStepCatalogueLocal,
   type StepCatalogueDefinition,
   selectedStepCatalogue,
   stepCatalogueLocalLifecycle,
-  unknownWorkflowFactNeeds,
-  validateStepCatalogue,
 } from './step-catalogue.ts'
 import { workflowReadSpaceFor } from './workflow-read-space.ts'
 import {
@@ -24,11 +23,15 @@ import {
   type WorkflowTreeFolder,
   type WorkflowTreeStore,
 } from './workflow-tree.ts'
-import { planWorkflowTreePromotion, type WorkflowTreePromotion } from './workflow-tree-promotion.ts'
+import {
+  planWorkflowTreePromotion,
+  type WorkflowTreePromotionPlan,
+} from './workflow-tree-promotion.ts'
 import {
   importWorkflow,
   productionWorkflows,
   promoteWorkflow,
+  promoteWorkflowLocal,
   validateWorkflowDefinition,
   type WorkflowDefinition,
   workflowLocalLifecycle,
@@ -136,27 +139,10 @@ export function newestDraftWorkflowTree(
   const database = input.database ?? db()
   const spaceId = workflowReadSpaceFor(database, input.project ?? null)
   const production = productionWorkflowTree({ database, project: input.project ?? null })
-  const catalogueDraft = database
-    .query<{ definition: string }, [string | null]>(
-      `SELECT v.definition FROM step_catalogue_version v
-       JOIN step_catalogue c ON c.record_id=v.catalogue_record_id
-       WHERE c.slug='shared' AND c.space_id IS ? AND v.status='draft' AND v.superseded_at IS NULL
-       ORDER BY v.n DESC LIMIT 1`,
-    )
-    .get(spaceId)
+  const { catalogueRow: catalogueDraft, workflowRows: drafts } = newestDraftRows(database, spaceId)
   const catalogue = catalogueDraft
     ? (JSON.parse(catalogueDraft.definition) as StepCatalogueDefinition)
     : { steps: production.steps, sequences: production.sequences }
-  const drafts = database
-    .query<{ slug: string; definition: string }, [string | null]>(
-      `SELECT w.slug,v.definition FROM workflow_version v
-       JOIN workflow w ON w.record_id=v.workflow_record_id
-       WHERE w.space_id IS ? AND v.status='draft' AND v.superseded_at IS NULL
-         AND v.n=(SELECT MAX(v2.n) FROM workflow_version v2
-           WHERE v2.workflow_record_id=v.workflow_record_id AND v2.status='draft' AND v2.superseded_at IS NULL)
-       ORDER BY w.slug`,
-    )
-    .all(spaceId)
   const workflows = new Map(production.workflows.map((item) => [item.slug, item.definition]))
   for (const row of drafts)
     workflows.set(row.slug, JSON.parse(row.definition) as WorkflowDefinition)
@@ -167,17 +153,16 @@ export function newestDraftWorkflowTree(
   }
 }
 
-export async function promoteMatchingWorkflowTreeDrafts(input: {
-  tree: WorkflowTreeStore
-  reason: string
-  author?: string
-  database?: Database
-  project?: string | null
-}): Promise<WorkflowTreePromotion[]> {
-  const database = input.database ?? writableDb()
-  const spaceId = workflowReadSpaceFor(database, input.project ?? null)
+type NewestDraftRow = { n: number; definition: string }
+function newestDraftRows(
+  database: Database,
+  spaceId: string | null,
+): {
+  catalogueRow: NewestDraftRow | null
+  workflowRows: (NewestDraftRow & { slug: string })[]
+} {
   const catalogueRow = database
-    .query<{ n: number; definition: string }, [string | null]>(
+    .query<NewestDraftRow, [string | null]>(
       `SELECT v.n,v.definition FROM step_catalogue_version v
        JOIN step_catalogue c ON c.record_id=v.catalogue_record_id
        WHERE c.slug='shared' AND c.space_id IS ? AND v.status='draft' AND v.superseded_at IS NULL
@@ -185,15 +170,29 @@ export async function promoteMatchingWorkflowTreeDrafts(input: {
     )
     .get(spaceId)
   const workflowRows = database
-    .query<{ slug: string; n: number; definition: string }, [string | null]>(
+    .query<NewestDraftRow & { slug: string }, [string | null]>(
       `SELECT w.slug,v.n,v.definition FROM workflow_version v
        JOIN workflow w ON w.record_id=v.workflow_record_id
        WHERE w.space_id IS ? AND v.status='draft' AND v.superseded_at IS NULL
          AND v.n=(SELECT MAX(v2.n) FROM workflow_version v2
-           WHERE v2.workflow_record_id=v.workflow_record_id AND v2.status='draft' AND v2.superseded_at IS NULL)`,
+           WHERE v2.workflow_record_id=v.workflow_record_id AND v2.status='draft' AND v2.superseded_at IS NULL)
+       ORDER BY w.slug`,
     )
     .all(spaceId)
-  const plan = planWorkflowTreePromotion({
+  return { catalogueRow, workflowRows }
+}
+
+export async function promoteMatchingWorkflowTreeDrafts(input: {
+  tree: WorkflowTreeStore
+  reason: string
+  author?: string
+  database?: Database
+  project?: string | null
+}): Promise<WorkflowTreePromotionPlan> {
+  const database = input.database ?? writableDb()
+  const spaceId = workflowReadSpaceFor(database, input.project ?? null)
+  const { catalogueRow, workflowRows } = newestDraftRows(database, spaceId)
+  const decision = planWorkflowTreePromotion({
     tree: input.tree,
     production: productionWorkflowTree({ database, project: input.project ?? null }),
     ...(catalogueRow
@@ -211,12 +210,15 @@ export async function promoteMatchingWorkflowTreeDrafts(input: {
       ]),
     ),
   })
-  for (const item of plan) {
-    if (item.kind === 'catalogue')
-      await promoteStepCatalogue(item.n, input.reason, input.author, database)
+  for (const item of decision.promotions) {
+    const local = currentRecordWriteDecision(database) === 'local-authoritative'
+    if (item.kind === 'catalogue') {
+      if (local) promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
+      else await promoteStepCatalogue(item.n, input.reason, input.author, database)
+    } else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
     else await promoteWorkflow(item.slug, item.n, input.reason, input.author, database)
   }
-  return plan
+  return decision
 }
 
 const same = (left: unknown, right: unknown) => isDeepStrictEqual(left, right)
@@ -482,11 +484,7 @@ function planWorkflowTreeImport(
   const steps = orderedSteps(tree.steps, production.steps)
   const sequences = orderedSequences(tree.sequences, production.sequences)
   const catalogue = { steps, sequences }
-  const unknownNeeds = unknownWorkflowFactNeeds(catalogue)
-  const ignoredErrors = new Set(unknownNeeds.map(({ error }) => error))
-  const catalogueErrors = validateStepCatalogue(catalogue).filter(
-    (error) => !ignoredErrors.has(error),
-  )
+  const { errors: catalogueErrors, unknownNeeds } = importableStepCatalogueErrors(catalogue)
   const workflowErrors = new Map(
     tree.workflows.map(({ slug, definition }) => [
       slug,
@@ -610,10 +608,7 @@ function writeLocalImport(
   const catalogue: DraftOutcome = plan.catalogueChanged
     ? {
         status: 'created',
-        n: (plan.warnings.length
-          ? importStepCatalogueWithUnknownNeedsLocal(plan.catalogue, reason, author, database)
-          : stepCatalogueLocalLifecycle.import(plan.catalogue, reason, author, database)
-        ).n,
+        n: stepCatalogueLocalLifecycle.import(plan.catalogue, reason, author, database).n,
       }
     : { status: 'no change' }
   const workflows = [

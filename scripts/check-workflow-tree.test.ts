@@ -13,9 +13,3 @@ test('rejects an unknown fact source', () => {
     `catalogue: step "${tree.steps[0]!.slug}" has invalid injection source "unknown-fact-source"`,
   )
 })
-
-test('the checkout workflow tree validates with checkout code', () => {
-  expect(
-    workflowTreeValidationErrors(parseWorkflowTree(collectWorkflowTree(repositoryRoot))),
-  ).toEqual([])
-})

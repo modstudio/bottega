@@ -489,9 +489,20 @@ function requireCatalogue(value: unknown): asserts value is StepCatalogueDefinit
     throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
 }
 
+export function importableStepCatalogueErrors(value: unknown): {
+  errors: string[]
+  unknownNeeds: ReturnType<typeof unknownWorkflowFactNeeds>
+} {
+  const unknownNeeds = unknownWorkflowFactNeeds(value)
+  const ignored = new Set(unknownNeeds.map(({ error }) => error))
+  return {
+    errors: validateStepCatalogue(value).filter((error) => !ignored.has(error)),
+    unknownNeeds,
+  }
+}
+
 function requireImportableCatalogue(value: unknown): asserts value is StepCatalogueDefinition {
-  const ignored = new Set(unknownWorkflowFactNeeds(value).map(({ error }) => error))
-  const errors = validateStepCatalogue(value).filter((error) => !ignored.has(error))
+  const { errors } = importableStepCatalogueErrors(value)
   if (errors.length)
     throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
 }
@@ -503,7 +514,7 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
   eventTable: 'step_catalogue_event',
   foreignKey: 'catalogue_record_id',
   validate(value) {
-    requireImportableCatalogue(value)
+    requireCatalogue(value)
   },
 })
 const CATALOGUE = 'shared'
@@ -600,10 +611,11 @@ function catalogueDraft(
   if (allowUnknownNeeds) requireImportableCatalogue(definition)
   else requireCatalogue(definition)
   return applyRecordWriteAuthority({
-    local: () => lifecycle.write(CATALOGUE, definition, reason, author, event, d),
+    local: () =>
+      allowUnknownNeeds
+        ? importStepCatalogueLocal(definition, reason, author, d)
+        : lifecycle.write(CATALOGUE, definition, reason, author, event, d),
     hosted: async () => {
-      if (allowUnknownNeeds) requireImportableCatalogue(definition)
-      else requireCatalogue(definition)
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await activeSpace(d, project)
       const result = await recordApiClient().draftWorkflow!(
@@ -903,14 +915,7 @@ const importStepCatalogueLocal = (
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
-
-export const importStepCatalogueWithUnknownNeedsLocal = (
-  definition: unknown,
-  reason: string | undefined,
-  author?: string,
-  d: Database = writableDb(),
-) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
+) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d, requireImportableCatalogue)
 
 export const stepCatalogueLocalLifecycle = {
   set: setStepCatalogueLocal,
