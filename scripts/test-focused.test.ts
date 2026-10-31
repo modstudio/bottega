@@ -86,6 +86,53 @@ test('a selection inside a package whose test script embeds a path still narrows
   expect(group!.argv).toEqual(['bun', 'test', 'src/run/run.test.ts'])
 })
 
+test('an unreached test runs from its workspace', () => {
+  const [group] = groupFocusedTestPaths(['orchestrator/src/postgres/postgres-import.test.ts'])
+  expect(relative(root, group!.directory)).toBe('orchestrator')
+  expect(group!.paths).toEqual(['src/postgres/postgres-import.test.ts'])
+})
+
+test('a directory mixing root-run and workspace-run tests expands into both groups', () => {
+  const groups = groupFocusedTestPaths(['orchestrator/src/postgres'])
+  expect(
+    groups.map((group) => ({
+      directory: relative(root, group.directory) || '.',
+      paths: group.paths,
+    })),
+  ).toEqual([
+    {
+      directory: '.',
+      paths: [
+        'orchestrator/src/postgres/migration-failure.test.ts',
+        'orchestrator/src/postgres/postgres-migrate.test.ts',
+      ],
+    },
+    {
+      directory: 'orchestrator',
+      paths: [
+        'src/postgres/postgres-import.test.ts',
+        'src/postgres/postgres-migrate-board-shared-space.test.ts',
+        'src/postgres/postgres-migrate-doc-latest-revision.test.ts',
+        'src/postgres/postgres-migrate-doc-revision-author.test.ts',
+        'src/postgres/postgres-migrate-hosted-project-cleanup.test.ts',
+        'src/postgres/postgres-migrate-hosted-task-ids.test.ts',
+        'src/postgres/postgres-migrate-hub-project-identity.test.ts',
+        'src/postgres/postgres-migrate-jsonb-binding.test.ts',
+        'src/postgres/postgres-migrate-public-role.test.ts',
+        'src/postgres/postgres-migrate-read-only.test.ts',
+        'src/postgres/postgres-migrate-recipients.test.ts',
+        'src/postgres/postgres-migrate-rls.test.ts',
+        'src/postgres/postgres-migrate-schema.test.ts',
+        'src/postgres/postgres-migrate-workflow-generation.test.ts',
+      ],
+    },
+  ])
+  expect(groups[0]!.argv.slice(-2)).toEqual([
+    './orchestrator/src/postgres/migration-failure.test.ts',
+    './orchestrator/src/postgres/postgres-migrate.test.ts',
+  ])
+})
+
 test('refuses missing and escaping path arguments', () => {
   expect(() => groupFocusedTestPaths([])).toThrow('at least one')
   expect(() => groupFocusedTestPaths(['../outside.test.ts'])).toThrow('outside the project')

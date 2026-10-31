@@ -35,31 +35,40 @@ function beneath(directory: string, candidate: string) {
   return offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
 }
 
-/** Prefer the file's workspace when the gate names it; otherwise use the reaching leg. */
+function workspaceRunDirectory(path: string): string {
+  return (
+    packageDirectoriesByDepth.find((directory) => beneath(directory, resolve(root, path))) ?? root
+  )
+}
+
+function gateReaches(path: string): boolean {
+  return (
+    (ROOT_TEST_FILES as readonly string[]).includes(path) ||
+    CHECK_LEGS.some((leg) => testLegReaches(path, leg))
+  )
+}
+
+/** Use the file's workspace when no gate leg reaches it or when the gate names that workspace. */
 function gateRunDirectory(path: string): string {
+  const workspaceDirectory = workspaceRunDirectory(path)
+  if (!gateReaches(path)) return workspaceDirectory
   const directories = gateTestDirectories(path, ROOT_TEST_FILES, CHECK_LEGS)
-  const workspace = packageDirectoriesByDepth
-    .map((directory) => relative(root, directory) || '.')
-    .find((directory) => path === directory || path.startsWith(`${directory}/`))
+  const workspace = relative(root, workspaceDirectory) || '.'
   const selected = workspace && directories.includes(workspace) ? workspace : directories[0]!
   return resolve(root, selected)
 }
 
-function reachedTypeScriptTestsUnder(directory: string): string[] {
+function typeScriptTestsUnder(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true })
     .flatMap((entry) => {
       const absolute = resolve(directory, entry.name)
       if (entry.isDirectory()) {
         return ['node_modules', '.git', '.claude'].includes(entry.name)
           ? []
-          : reachedTypeScriptTestsUnder(absolute)
+          : typeScriptTestsUnder(absolute)
       }
       if (!entry.isFile() || !/\.test\.tsx?$/.test(entry.name)) return []
-      const path = relative(root, absolute)
-      return (ROOT_TEST_FILES as readonly string[]).includes(path) ||
-        CHECK_LEGS.some((leg) => testLegReaches(path, leg))
-        ? [path]
-        : []
+      return [relative(root, absolute)]
     })
     .sort()
 }
@@ -85,26 +94,27 @@ function addDirectorySelection(
   groups: Map<string, string[]>,
   path: string,
   absolute: string,
-  reachedTests: string[],
+  tests: string[],
 ): void {
-  const runDirectories = new Set(reachedTests.map(gateRunDirectory))
+  const runDirectories = new Set(tests.map(gateRunDirectory))
   if (runDirectories.has(root) && runDirectories.size > 1) {
-    throw new Error(
-      `test directory ${JSON.stringify(path)} mixes tests the gate runs from the root with tests it runs elsewhere; select files or subdirectories separately`,
-    )
+    for (const testPath of tests) {
+      const runDirectory = gateRunDirectory(testPath)
+      addPath(groups, runDirectory, relative(runDirectory, resolve(root, testPath)))
+    }
+    return
   }
   if (runDirectories.size <= 1) {
-    const fallbackDirectory =
-      packageDirectoriesByDepth.find((candidate) => beneath(candidate, absolute)) ?? root
+    const fallbackDirectory = workspaceRunDirectory(path)
     const runDirectory = [...runDirectories][0] ?? fallbackDirectory
-    if (runDirectory === root && reachedTests.length > 0) {
-      for (const testPath of reachedTests) addPath(groups, root, testPath)
+    if (runDirectory === root && tests.length > 0) {
+      for (const testPath of tests) addPath(groups, root, testPath)
       return
     }
     addPath(groups, runDirectory, relative(runDirectory, absolute) || '.')
     return
   }
-  for (const testPath of reachedTests) {
+  for (const testPath of tests) {
     const runDirectory = gateRunDirectory(testPath)
     if (beneath(absolute, runDirectory)) addPath(groups, runDirectory, '.')
     else addPath(groups, runDirectory, relative(runDirectory, resolve(root, testPath)))
@@ -120,7 +130,7 @@ function addSelection(groups: Map<string, string[]>, path: string) {
     addPath(groups, runDirectory, relative(runDirectory, absolute))
     return
   }
-  addDirectorySelection(groups, path, absolute, reachedTypeScriptTestsUnder(absolute))
+  addDirectorySelection(groups, path, absolute, typeScriptTestsUnder(absolute))
 }
 
 function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup {
@@ -128,9 +138,7 @@ function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup 
     candidate.directory !== directory &&
     beneath(directory, candidate.directory) &&
     !paths.some((path) => beneath(candidate.directory, resolve(directory, path))) &&
-    !reachedTypeScriptTestsUnder(candidate.directory).some(
-      (path) => gateRunDirectory(path) === directory,
-    )
+    !typeScriptTestsUnder(candidate.directory).some((path) => gateRunDirectory(path) === directory)
       ? ['--path-ignore-patterns', `${relative(directory, candidate.directory)}/**`]
       : [],
   )
