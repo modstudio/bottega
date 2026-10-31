@@ -353,8 +353,7 @@ test('a hosted removed production step names the workflow draft promotion before
   for (const version of catalogueVersions)
     applyWorkflowCatalogueRow(d, 'step_catalogue_version', version)
   applyWorkflowCatalogueRow(d, 'workflow', workflow)
-  for (const version of workflowVersions)
-    applyWorkflowCatalogueRow(d, 'workflow_version', version)
+  for (const version of workflowVersions) applyWorkflowCatalogueRow(d, 'workflow_version', version)
   rememberProjectSpace(d, project, projectSpace)
   d.exec("INSERT INTO record_install_binding(id,bound_at) VALUES (1,'2026-10-31')")
 
@@ -410,7 +409,5 @@ test('a hosted removed production step names the workflow draft promotion before
   if (!(refusal instanceof Error)) throw new Error('expected hosted catalogue promotion refusal')
   expect(refusal.message).toContain(`space ${projectSpace}`)
   expect(refusal.message).toContain(workflowRemedy)
-  expect(refusal.message.indexOf(workflowRemedy)).toBeLessThan(
-    refusal.message.indexOf(treeRemedy),
-  )
+  expect(refusal.message.indexOf(workflowRemedy)).toBeLessThan(refusal.message.indexOf(treeRemedy))
 })
