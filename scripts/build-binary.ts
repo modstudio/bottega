@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { commentParserAssets } from '../orchestrator/src/check/check-comment-parser-assets.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
@@ -116,12 +117,21 @@ export async function buildBinary(
     const commit = await run(['git', 'rev-parse', 'HEAD'])
     const built = await run(['git', 'show', '-s', '--format=%cI', 'HEAD'])
     const manifest = distributionManifest(version, built, commit)
+    const commentParserPaths = commentParserAssets(target).map(({ packagePath }) => packagePath)
+    for (const path of commentParserPaths) {
+      const source = join(repositoryRoot, path)
+      if (!existsSync(source)) throw new Error(`required comment parser is missing: ${source}`)
+    }
     const assets = join(generatedDirectory, 'embedded-assets.ts')
     writeFileSync(
       assets,
       generatedAssetModule(
         [...(await migrationAssetPaths()), REF_GUARD_RUNTIME_ASSET.packagePath],
-        [...(await webAssetPaths()), ...sandboxRuntimePayloadPaths(platform, arch)],
+        [
+          ...(await webAssetPaths()),
+          ...sandboxRuntimePayloadPaths(platform, arch),
+          ...commentParserPaths,
+        ],
         manifest,
       ),
     )

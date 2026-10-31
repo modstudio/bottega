@@ -11,6 +11,7 @@ export const cliConcernEntries = [
 ] as const
 
 export const cliModules = [
+  { file: 'orchestrator/src/check/check-comment-parser-assets.ts', allowed: [] },
   {
     file: `cli/${PLATFORM_SLUG}.ts`,
     allowed: [

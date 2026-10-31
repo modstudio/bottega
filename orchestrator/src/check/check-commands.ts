@@ -2,6 +2,7 @@ import { readFileSync, realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel } from '../../../shared/git.ts'
+import { installationIdentity } from '../../../shared/install-root.ts'
 import { flagValue } from '../cli/args.ts'
 import { GATE_FACTS_ENV, parseGateFacts, projectAtGateFacts } from '../gate/gate-facts.ts'
 import { type Project, projectAt, projectByName } from '../project/projects.ts'
@@ -220,9 +221,12 @@ async function commentsCommand(argv: string[], presentation: Presentation): Prom
     ;({ trackedCommentFindings } = await import('./check-comment-extraction.ts'))
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `could not load the comment extraction adapter: ${detail}; run bun install in the checkout and retry`,
-    )
+    const identity = installationIdentity(import.meta.dir, process.env)
+    const remedy =
+      identity.kind === 'checkout'
+        ? 'run bun install in the checkout and retry'
+        : `the installed release cannot load the requested comment-language parser for ${process.platform}/${process.arch}; update to a release that carries it`
+    throw new Error(`could not load the comment extraction adapter: ${detail}; ${remedy}`)
   }
   const findings = trackedCommentFindings(root, commentRules(project, report))
   for (const finding of findings) presentation.log(formatCommentFinding(finding))

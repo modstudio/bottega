@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnFixtureGitSync } from '../../test/fixtures/spawn.ts'
-import { trackedCommentFindings } from './check-comment-extraction.ts'
+import { commentFindingsInSources, trackedCommentFindings } from './check-comment-extraction.ts'
 
 const fixtureRoots: string[] = []
 
@@ -17,6 +17,54 @@ function git(root: string, ...argv: string[]): void {
 }
 
 describe('tracked comment extraction', () => {
+  test('built-in TypeScript parsing does not register a dynamic language', () => {
+    const findings = commentFindingsInSources(
+      [{ file: 'fixture.ts', source: '// DEV-12\n' }],
+      { taskKeyPrefixes: ['DEV'] },
+      {
+        registerLanguages() {
+          throw new Error('dynamic registration must not run')
+        },
+      },
+    )
+
+    expect(findings.map(({ match }) => match)).toEqual(['DEV-12'])
+  })
+
+  test('a distribution parser failure names the language and platform without bun install', () => {
+    expect(() =>
+      commentFindingsInSources(
+        [{ file: 'fixture.py', source: '# DEV-12\n' }],
+        { taskKeyPrefixes: ['DEV'] },
+        {
+          registerLanguages() {
+            throw new Error('fixture parser failure')
+          },
+          installKind: () => 'distribution',
+          platform: 'linux',
+          arch: 'arm64',
+        },
+      ),
+    ).toThrow('python comment parser for linux/arm64 from the distribution install')
+    try {
+      commentFindingsInSources(
+        [{ file: 'fixture.py', source: '# DEV-12\n' }],
+        { taskKeyPrefixes: ['DEV'] },
+        {
+          registerLanguages() {
+            throw new Error('fixture parser failure')
+          },
+          installKind: () => 'distribution',
+          platform: 'linux',
+          arch: 'arm64',
+        },
+      )
+    } catch (error) {
+      expect(String(error)).not.toContain('bun install')
+      expect(String(error)).toContain('update to a release that does')
+    }
+  })
+
   test('skips an unstaged deletion and judges the remaining tracked files', () => {
     const root = mkdtempSync(join(tmpdir(), 'comment-extraction-'))
     fixtureRoots.push(root)

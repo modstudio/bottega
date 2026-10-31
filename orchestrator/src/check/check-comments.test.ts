@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { commentsInSource } from './check-comment-extraction.ts'
+import { commentFindingsInSources, commentsInSource } from './check-comment-extraction.ts'
 import {
   type CommentSource,
   commentFindings,
@@ -82,29 +82,22 @@ describe('comment hygiene decisions', () => {
 
 describe('ast-grep comment extraction', () => {
   const fixtures = [
-    ['TypeScript', 'fixture.ts', 'const text = "DEV-12"\n// DEV-12', '// DEV-12'],
-    ['TSX', 'fixture.tsx', 'const node = <div>{"DEV-12"}</div>\n{/* DEV-12 */}', '/* DEV-12 */'],
-    ['JavaScript', 'fixture.js', 'const text = "DEV-12"\n/* DEV-12 */', '/* DEV-12 */'],
-    ['PHP', 'fixture.php', '<?php $text = "DEV-12";\n# DEV-12', '# DEV-12'],
-    ['shell', 'fixture.sh', 'text="DEV-12"\n# DEV-12', '# DEV-12'],
-    ['Python', 'fixture.py', 'text = "DEV-12"\n# DEV-12', '# DEV-12'],
+    ['TypeScript', 'fixture.ts', 'const text = "DEV-12"\n// DEV-12'],
+    ['TSX', 'fixture.tsx', 'const node = <div>{"DEV-12"}</div>\n{/* DEV-12 */}'],
+    ['JavaScript', 'fixture.js', 'const text = "DEV-12"\n/* DEV-12 */'],
+    ['PHP', 'fixture.php', '<?php $text = "DEV-12";\n# DEV-12'],
+    ['shell', 'fixture.sh', 'text="DEV-12"\n# DEV-12'],
+    ['Python', 'fixture.py', 'text = "DEV-12"\n# DEV-12'],
   ] as const
 
-  for (const [language, file, source, expected] of fixtures) {
-    test(`extracts ${language} comments without string literals`, () => {
-      const comments = commentsInSource(file, source)
+  test('extracts comments in every supported language without string literals', () => {
+    const findings = commentFindingsInSources(
+      fixtures.map(([, file, source]) => ({ file, source })),
+      { taskKeyPrefixes: ['DEV'], historyPhrases: ['used to'] },
+    )
 
-      expect(comments.map((value) => value.text)).toEqual([expected])
-      expect(
-        comments.flatMap((value) =>
-          commentFindings(value, {
-            taskKeyPrefixes: ['DEV'],
-            historyPhrases: ['used to'],
-          }),
-        ),
-      ).toHaveLength(1)
-    })
-  }
+    expect(findings.map(({ file }) => file)).toEqual(fixtures.map(([, file]) => file))
+  })
 
   test('a string containing a history phrase is not a comment', () => {
     const comments = commentsInSource('fixture.ts', 'const text = "this used to work"')
