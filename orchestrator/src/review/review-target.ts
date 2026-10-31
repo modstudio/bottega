@@ -79,6 +79,14 @@ export function reviewTargetRef(input: {
     return { kind: 'branch', ref: `refs/remotes/origin/${input.branch}` }
   }
   if (input.commitExists) return { kind: 'commit', ref: input.branch }
+  if (input.reviewRef.includes('..')) {
+    return {
+      kind: 'refuse',
+      message:
+        `cannot resolve --review ${input.reviewRef}: a commit range is not a review target; ` +
+        'cleared by: pass a branch, run id or single revision',
+    }
+  }
   return {
     kind: 'refuse',
     message:
