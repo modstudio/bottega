@@ -1,13 +1,14 @@
-import { existsSync, lstatSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { constants as osConstants } from 'node:os'
-import { join, sep } from 'node:path'
 import { execa } from 'execa'
 import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import { eventsFromVendorLine } from '../events.ts'
 import { DEFAULT_IDLE_GRACE_MS, terminateProcessGroup } from '../idle-kill.ts'
 import { lowerRunChildPriority } from '../run/run-child-priority.ts'
 import { sandboxLaunchArgv } from '../sandbox/sandbox.ts'
+import { codexAskExposureFromTexts } from './codex-ask-exposure.ts'
 import { harnessCollectsQuotaReadings, parseCodexQuotaReadings } from './codex-quota.ts'
+import { codexRolloutTextsSince, confinedCodexRollouts } from './codex-rollout-files.ts'
 import { classifyCodexThrottle } from './codex-throttle.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import {
@@ -37,6 +38,19 @@ function cliUsage(estimatedCostUsd: number | null) {
       ? EMPTY_VENDOR_USAGE
       : { ...EMPTY_VENDOR_USAGE, estimatedCostUsd, costSource: 'estimated' }
   return { costUsd: null, vendorUsage }
+}
+
+function codexRolloutEvidence(
+  codex: boolean,
+  home: string | undefined,
+  offsets: Map<string, number>,
+) {
+  if (!codex) return { quotaReadings: EMPTY_QUOTA_READINGS, askExposure: undefined }
+  const texts = codexRolloutTextsSince(home, offsets)
+  return {
+    quotaReadings: parseCodexQuotaReadings(texts.slice),
+    askExposure: codexAskExposureFromTexts(texts.slice, texts.full),
+  }
 }
 
 function eventForBilling(billing: AgentBilling, event: NormalizedEvent): NormalizedEvent {
@@ -212,9 +226,11 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
         const replyError = reply?.error ?? null
         const tokens = reply?.tokens ?? parseVendorTokens(stderr) ?? parseVendorTokens(stdout)
         const usage = usageForBilling(opts.agent.billing, cliUsage(reply?.costUsd ?? null))
-        const quotaReadings = codex
-          ? codexQuotaReadingsSince(codexHome, rolloutOffsets)
-          : EMPTY_QUOTA_READINGS
+        const { quotaReadings, askExposure } = codexRolloutEvidence(
+          codex,
+          codexHome,
+          rolloutOffsets,
+        )
         const sessionId =
           opts.session ??
           opts.agent.readSession?.({
@@ -267,6 +283,7 @@ async function spawnCli(opts: TransportStartOpts): Promise<TransportHandle> {
           tokens,
           ...usage,
           quotaReadings,
+          askExposure,
           sessionId,
           stopReason,
           error: replyError,
@@ -328,39 +345,6 @@ function codexRolloutOffsets(home: string | undefined): Map<string, number> {
     }
   }
   return offsets
-}
-
-function confinedCodexRollouts(home: string | undefined): string[] {
-  if (!home) return []
-  const sessions = join(home, 'sessions')
-  if (!existsSync(sessions)) return []
-  try {
-    const root = realpathSync(home)
-    return [...new Bun.Glob('**/rollout-*.jsonl').scanSync({ cwd: sessions })]
-      .sort()
-      .flatMap((relative) => {
-        const path = join(sessions, relative)
-        const entry = lstatSync(path, { throwIfNoEntry: false })
-        if (!entry || entry.isSymbolicLink()) return []
-        const resolved = realpathSync(path)
-        return resolved.startsWith(root + sep) ? [resolved] : []
-      })
-  } catch {
-    return []
-  }
-}
-
-export function codexQuotaReadingsSince(home: string | undefined, offsets: Map<string, number>) {
-  const chunks: string[] = []
-  for (const path of confinedCodexRollouts(home)) {
-    try {
-      const text = readFileSync(path, 'utf8')
-      chunks.push(text.slice(offsets.get(path) ?? 0))
-    } catch {
-      // Rollout observation is best-effort and never changes the run outcome.
-    }
-  }
-  return parseCodexQuotaReadings(chunks.join('\n'))
 }
 
 export function configuredCliAsk(

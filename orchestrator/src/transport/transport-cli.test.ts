@@ -3,9 +3,10 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { dir } from '../../test/fixtures/store.ts'
+import { parseCodexQuotaReadings } from './codex-quota.ts'
+import { codexRolloutTextsSince } from './codex-rollout-files.ts'
 import { EMPTY_QUOTA_READINGS } from './quota-readings.ts'
 import { type TransportAgent, transportFor } from './transport.ts'
-import { codexQuotaReadingsSince } from './transport-cli.ts'
 
 async function resultLineUsage(billing: TransportAgent['billing']) {
   const resultLine = JSON.stringify({
@@ -110,7 +111,7 @@ test('Codex quota observation reads only the turn-appended part of a nested roll
   writeFileSync(rollout, `${earlierTurn}${tokenCountLine(12)}\n${tokenCountLine(15)}\n`)
   try {
     const offsets = new Map([[realpathSync(rollout), Buffer.byteLength(earlierTurn)]])
-    expect(codexQuotaReadingsSince(codexHome, offsets)).toEqual({
+    expect(parseCodexQuotaReadings(codexRolloutTextsSince(codexHome, offsets).slice)).toEqual({
       quotaUsedPercentStart: 12,
       quotaUsedPercentEnd: 15,
       quotaWindowMinutes: 10_080,
@@ -141,7 +142,9 @@ test('Codex quota observation does not read a symlinked rollout', () => {
   )
   symlinkSync(outside, join(sessions, 'rollout-linked.jsonl'))
   try {
-    expect(codexQuotaReadingsSince(codexHome, new Map())).toEqual(EMPTY_QUOTA_READINGS)
+    expect(parseCodexQuotaReadings(codexRolloutTextsSince(codexHome, new Map()).slice)).toEqual(
+      EMPTY_QUOTA_READINGS,
+    )
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

@@ -12,6 +12,7 @@ import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import type { AskLoopback } from '../ask/ask.ts'
 import { compilePack, recordPack } from '../canon/canon.ts'
 import type { ConfinementEvent, FreezeFailure } from '../confinement/confinement.ts'
+import { bindCodexMcpToolInstruction } from '../contract/codex-mcp-tool.ts'
 import {
   NO_REPO_PREAMBLE,
   type realQuestions,
@@ -417,6 +418,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
+  prompt = bindCodexMcpToolInstruction(prompt, workerHarnessName(a))
   const codexSandbox = decideCodexSandbox()
   const boundMs = resolveRunBound(requestedJob, a, timeoutMinutes, opts.reserveId)
   if (transportName === 'acp') {

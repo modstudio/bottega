@@ -19,7 +19,12 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { recordRunWarning, type StreamEvent, teeTransportEvents } from '../events.ts'
+import {
+  appendRunEvent,
+  recordRunWarning,
+  type StreamEvent,
+  teeTransportEvents,
+} from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import { idlePollMs, terminateProcessGroup } from '../idle-kill.ts'
@@ -38,6 +43,7 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
+import { askExposureEvent } from '../transport/codex-ask-exposure.ts'
 import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
 import {
   EMPTY_VENDOR_USAGE,
@@ -383,6 +389,19 @@ export type LiveResult = {
   askLoopback: AskLoopback | null
   mcpSetupHeader: string | null
   workerEvents: StreamEvent[]
+}
+
+function observeCollectedTurn(
+  runId: string,
+  harness: string,
+  collected: TransportResult,
+): StreamEvent[] {
+  const event = askExposureEvent(harness, collected.askExposure, nowIso())
+  if (event) appendRunEvent(runId, event)
+  return collected.events.filter(
+    (item): item is StreamEvent =>
+      item.kind === 'text' || item.kind === 'usage' || item.kind === 'tool',
+  )
 }
 
 function vendorProcessSample(pid: number | null): ProcessSample | undefined {
@@ -804,10 +823,7 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
       [...initialBoardNoticeIds, ...boardDelivery.notices.map((notice) => notice.id)],
     )
     const collected = await Promise.race([handle.collect(), forcedCollect])
-    workerEvents = collected.events.filter(
-      (event): event is StreamEvent =>
-        event.kind === 'text' || event.kind === 'usage' || event.kind === 'tool',
-    )
+    workerEvents = observeCollectedTurn(claim.id, a.harness ?? a.name, collected)
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
