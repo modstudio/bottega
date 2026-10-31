@@ -82,6 +82,11 @@ function run(): number {
   const schemas = readdirSync(record)
     .filter((file) => /^schema(?:-[^.]+)?\.ts$/.test(file))
     .map((file) => ({ file, source: readFileSync(join(record, file), 'utf8') }))
+  const columns = schemas.flatMap(({ file, source }) => jsonbColumns(source, file))
+  if (columns.length === 0) {
+    console.error(`record jsonb string checks: no jsonb columns discovered in ${record}`)
+    return 1
+  }
   const migrations = join(record, 'migrations')
   const migrationSql = readdirSync(migrations, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
@@ -90,9 +95,7 @@ function run(): number {
     .join('\n')
   const missing = missingJsonbStringChecks(schemas, migrationSql)
   if (missing.length === 0) {
-    console.log(
-      `record jsonb string checks: ${schemas.flatMap(({ file, source }) => jsonbColumns(source, file)).length} columns guarded`,
-    )
+    console.log(`record jsonb string checks: ${columns.length} columns guarded`)
     return 0
   }
   console.error(

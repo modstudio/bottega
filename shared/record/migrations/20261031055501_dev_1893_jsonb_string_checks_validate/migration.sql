@@ -1,9 +1,11 @@
 ALTER TABLE question NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 UPDATE question
 SET options = jsonb_build_array(options)
-WHERE jsonb_typeof(options) = 'string';--> statement-breakpoint
+-- Any other string remains in place so question.options validation fails loudly instead of wrapping unknown content.
+WHERE jsonb_typeof(options) = 'string'
+  AND options #>> '{}' = '[withheld: secret-shaped content]';--> statement-breakpoint
 ALTER TABLE question FORCE ROW LEVEL SECURITY;--> statement-breakpoint
--- run.outside_worktree_writes stays NOT VALID because 81 historical rows contain \u0000 text that jsonb cannot store.
+-- run.outside_worktree_writes stays NOT VALID because 81 historical rows are top-level jsonb strings holding JSON text whose decoded form contains \u0000, which jsonb cannot store, so they cannot be repaired into structured values.
 ALTER TABLE "branch_disposal" VALIDATE CONSTRAINT "branch_disposal_withheld_fields_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "contention" VALIDATE CONSTRAINT "contention_host_load_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "contention" VALIDATE CONSTRAINT "contention_withheld_fields_not_json_string_check";--> statement-breakpoint
