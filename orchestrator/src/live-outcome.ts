@@ -90,7 +90,7 @@ function calculateOutcome(facts: LiveOutcomeFacts): CalculatedOutcome {
   )
   const missingContractFailureKind = FAILS_OVER.includes(classifiedMissingContract)
     ? classifiedMissingContract
-    : 'other'
+    : 'contract'
   const defaultError = errorTail(
     facts.stderr.trim() || facts.stdout.trim() || `exit ${facts.exitCode}, empty output`,
   )

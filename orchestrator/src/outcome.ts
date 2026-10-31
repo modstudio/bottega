@@ -238,44 +238,97 @@ export type OutcomeInputs<FailureKind extends string = string> = {
   defaultFailureKind: FailureKind
 }
 
+type OutcomeDecision<FailureKind extends string> = {
+  status: OutcomeStatus
+  failureKind: FailureKind | 'idle' | 'contract' | 'other' | 'truncated' | 'timeout' | null
+}
+
+function decideStopOutcome<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeDecision<FailureKind> | null {
+  if (inputs.idleKilled && inputs.completedReply) {
+    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
+  }
+  if (inputs.idleKilled && (inputs.collectedAsking || inputs.acceptedQuestions)) {
+    return { status: 'asking', failureKind: null }
+  }
+  if (inputs.idleKilled) return { status: 'failed', failureKind: 'idle' }
+  if (inputs.acpVendorStop) {
+    return { status: 'failed', failureKind: inputs.acpFailureKind }
+  }
+  return null
+}
+
+function decideReplyCollectionOutcome<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeDecision<FailureKind> | null {
+  if (inputs.replyFileError && inputs.replyFilePresent) {
+    return { status: 'failed', failureKind: 'contract' }
+  }
+  if (inputs.collectedAsking || inputs.acceptedQuestions) {
+    return { status: 'asking', failureKind: null }
+  }
+  return null
+}
+
+function decideLimitOutcome<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeDecision<FailureKind> | null {
+  if (inputs.outputCeilingReached) return { status: 'failed', failureKind: 'truncated' }
+  if (inputs.timedOut && inputs.completedReplyAtTimeout) {
+    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
+  }
+  if (inputs.timedOut) return { status: 'failed', failureKind: 'timeout' }
+  return null
+}
+
+function decideContractOutcome<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeDecision<FailureKind> | null {
+  if (inputs.replyError) {
+    return { status: 'failed', failureKind: inputs.replyErrorFailureKind }
+  }
+  if (
+    inputs.exitCode === 0 &&
+    inputs.nonAnswer &&
+    (!inputs.replyFileError || inputs.outputPresent)
+  ) {
+    return { status: 'failed', failureKind: inputs.nonAnswerFailureKind }
+  }
+  if (inputs.replyFileError) return { status: 'failed', failureKind: 'contract' }
+  if (inputs.contractStatus === 'asking') {
+    return { status: 'failed', failureKind: 'contract' }
+  }
+  if (inputs.contractStatus === 'refused') {
+    return { status: inputs.exitCode === 0 ? 'ok' : 'failed', failureKind: null }
+  }
+  if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') {
+    return { status: 'failed', failureKind: inputs.completedContractFailureKind }
+  }
+  if (inputs.missingRequiredContract) {
+    return {
+      status: 'failed',
+      failureKind:
+        inputs.missingContractFailureKind === 'other'
+          ? 'contract'
+          : inputs.missingContractFailureKind,
+    }
+  }
+  return null
+}
+
 /** Decide the provisional terminal outcome from facts gathered by the caller. */
 export function decideOutcome<FailureKind extends string>(
   inputs: OutcomeInputs<FailureKind>,
-): {
-  status: OutcomeStatus
-  failureKind: FailureKind | 'idle' | 'contract' | 'other' | 'truncated' | 'timeout' | null
-} {
-  if (inputs.idleKilled && inputs.completedReply) {
-    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
-  } else if (inputs.idleKilled && (inputs.collectedAsking || inputs.acceptedQuestions)) {
-    return { status: 'asking', failureKind: null }
-  } else if (inputs.idleKilled) {
-    return { status: 'failed', failureKind: 'idle' }
-  } else if (inputs.acpVendorStop) {
-    return { status: 'failed', failureKind: inputs.acpFailureKind }
-  } else if (inputs.replyFileError) {
-    return { status: 'failed', failureKind: inputs.replyFilePresent ? 'contract' : 'other' }
-  } else if (inputs.collectedAsking || inputs.acceptedQuestions) {
-    return { status: 'asking', failureKind: null }
-  } else if (inputs.outputCeilingReached) {
-    return { status: 'failed', failureKind: 'truncated' }
-  } else if (inputs.timedOut && inputs.completedReplyAtTimeout) {
-    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
-  } else if (inputs.timedOut) {
-    return { status: 'failed', failureKind: 'timeout' }
-  } else if (inputs.replyError) {
-    return { status: 'failed', failureKind: inputs.replyErrorFailureKind }
-  } else if (inputs.exitCode === 0 && inputs.nonAnswer) {
-    return { status: 'failed', failureKind: inputs.nonAnswerFailureKind }
-  } else if (inputs.contractStatus === 'asking') {
-    return { status: 'failed', failureKind: 'contract' }
-  } else if (inputs.contractStatus === 'refused') {
-    return { status: inputs.exitCode === 0 ? 'ok' : 'failed', failureKind: null }
-  } else if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') {
-    return { status: 'failed', failureKind: inputs.completedContractFailureKind }
-  } else if (inputs.missingRequiredContract) {
-    return { status: 'failed', failureKind: inputs.missingContractFailureKind }
-  }
+): OutcomeDecision<FailureKind> {
+  const stopped = decideStopOutcome(inputs)
+  if (stopped) return stopped
+  const replyCollection = decideReplyCollectionOutcome(inputs)
+  if (replyCollection) return replyCollection
+  const limited = decideLimitOutcome(inputs)
+  if (limited) return limited
+  const contract = decideContractOutcome(inputs)
+  if (contract) return contract
 
   const status = inputs.exitCode === 0 && inputs.outputPresent ? 'ok' : 'failed'
   return { status, failureKind: status === 'failed' ? inputs.defaultFailureKind : null }

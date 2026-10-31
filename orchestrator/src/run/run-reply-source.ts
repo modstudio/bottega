@@ -59,10 +59,9 @@ export function decideReplySource(facts: ReplySourceFacts): ReplySourceRuling {
       : facts.fallback.text
   return {
     output,
-    replyFileError:
-      facts.contract === 'custom' && !facts.fallback.matches
-        ? schemaMismatchError(facts.fallback.text)
-        : null,
+    replyFileError: !facts.fallback.matches
+      ? `${REPLY_FILE_NAME} missing; final message ${schemaMismatchError(facts.fallback.text)}`
+      : null,
     replyFilePresent: false,
     replyFileValue: null,
     rewriteOutputFile: facts.contract === 'text',
@@ -92,7 +91,13 @@ function parseReplyFile(
   }
 }
 
-function matchesFallback(contract: ReplyContract, text: string, schema: unknown): boolean {
+function matchesFallback(
+  contract: ReplyContract,
+  text: string,
+  dialect: ReplyDialect,
+  schema: unknown,
+): boolean {
+  if (contract === 'none') return dialect.parse(text).reply !== null
   let value: unknown
   try {
     value = JSON.parse(text)
@@ -129,7 +134,7 @@ export function collectReplySource(input: {
     contract: input.contract,
     fallback: {
       text: input.fallbackText,
-      matches: matchesFallback(input.contract, input.fallbackText, input.schema),
+      matches: matchesFallback(input.contract, input.fallbackText, input.dialect, input.schema),
     },
   })
 }
