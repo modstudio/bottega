@@ -25,7 +25,7 @@ import {
 import { DATABASE_RESOLUTION, DB_PATH, databaseOpenMode, db } from '../database/db.ts'
 import { runTotals } from '../evidence/evidence-query.ts'
 import { JOBS } from '../jobs/jobs.ts'
-import { literalCredentialFindings, literalCredentialLines } from '../mcp/mcp-credential-literal.ts'
+import { credentialLinesFromRead } from '../mcp/mcp-credential-literal.ts'
 import { readMcpConfigResult } from '../mcp/mcp-probe.ts'
 import {
   classifiedDockerResources,
@@ -217,12 +217,9 @@ async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<v
 
 async function reportProjectMcpCredentials(log: DoctorPresentation['log']): Promise<void> {
   const { projects } = await import('../project/projects.ts')
-  const lines = projects().flatMap((project) => {
-    const result = readMcpConfigResult(project.path)
-    return result.ok
-      ? literalCredentialLines(project.name, literalCredentialFindings(result.config))
-      : []
-  })
+  const lines = projects().flatMap((project) =>
+    credentialLinesFromRead(project.name, readMcpConfigResult(project.path)),
+  )
   if (!lines.length) return
   log('project MCP credentials')
   for (const line of lines) log(`  ${line}`)

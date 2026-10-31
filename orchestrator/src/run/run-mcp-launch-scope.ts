@@ -163,8 +163,9 @@ export function workerMcpLaunchScope(input: {
     projectSelection,
     serverName: projectMcpServerName(input.connection, project),
     allowlist: mcpConfigAllowlist(config),
-    credentialLines: project
-      ? literalCredentialLines(project.name, literalCredentialFindings(config))
-      : [],
+    credentialLines:
+      input.usingMcp && project
+        ? literalCredentialLines(project.name, literalCredentialFindings(config))
+        : [],
   }
 }

@@ -2,7 +2,7 @@
 /** Identifies credential values that a project MCP declaration stores literally. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import type { McpServerConfig } from './mcp-probe.ts'
+import type { McpConfigReadResult, McpServerConfig } from './mcp-probe.ts'
 
 export const MCP_CREDENTIAL_KEY_PATTERN = /AUTH|TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL|COOKIE/i
 
@@ -46,11 +46,19 @@ export function literalCredentialLines(
   project: string,
   findings: McpCredentialFinding[],
 ): string[] {
-  const remedy =
-    `store the value with ${PLATFORM_SLUG} machine config secret set, then serve it from a ` +
-    `headersHelper`
-  return findings.map(
-    ({ server, key, where }) =>
-      `project ${project} MCP server ${server} holds a literal credential in ${where} ${key}; ${remedy}`,
-  )
+  return findings.map(({ server, key, where }) => {
+    const remedy =
+      where === 'header'
+        ? `store the value with ${PLATFORM_SLUG} machine config secret set, then serve it from a headersHelper`
+        : `store the value with ${PLATFORM_SLUG} machine config secret set, then launch the server's command through ${PLATFORM_SLUG} machine config secret run --name ${key} -- <command>`
+    return `project ${project} MCP server ${server} holds a literal credential in ${where} ${key}; ${remedy}`
+  })
+}
+
+export function credentialLinesFromRead(project: string, read: McpConfigReadResult): string[] {
+  if (read.ok) return literalCredentialLines(project, literalCredentialFindings(read.config))
+  if (read.reason === 'missing') return []
+  return [
+    `project ${project} .mcp.json at ${read.path} could not be scanned for literal credentials (${read.reason}); fix the file so the check can run`,
+  ]
 }
