@@ -143,14 +143,18 @@ export const runFixture = (overrides: Record<string, unknown> = {}): OrchRun => 
   return fixture as unknown as OrchRun
 }
 
-export async function ingestStdout(stdout: string, rulings = '[]') {
+export async function ingestStdout(
+  stdout: string,
+  rulings = '[]',
+  options: Parameters<typeof ingestRuns>[1] = {},
+) {
   const spawn = spyOn(Bun, 'spawn').mockImplementation(((args: string[]) => ({
     stdout: new Blob([args.includes('ruling') ? rulings : stdout]),
     stderr: new Blob(['']),
     exited: Promise.resolve(0),
   })) as unknown as typeof Bun.spawn)
   try {
-    return await ingestRuns('2026-09-01T00:00:00.000Z')
+    return await ingestRuns('2026-09-01T00:00:00.000Z', options)
   } finally {
     spawn.mockRestore()
   }

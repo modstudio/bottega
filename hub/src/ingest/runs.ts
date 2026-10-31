@@ -12,6 +12,8 @@ import { decideCollectorReplace, type ExistingIntervalRow } from './interval-rep
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
 
+export const RUN_INGEST_BATCH_SIZE = 50
+
 /**
  * Delegated agent runs, as intervals.
  *
@@ -379,24 +381,15 @@ function ingestOneRun(
 
 function ingestRunRows(
   conn: Database,
-  runs: readonly OrchRun[],
-  workflowQuestions: readonly RulingListRow[],
+  runs: readonly { run: OrchRun; attribution: OrchAttribution }[],
   now: number,
-  snapshot: string,
 ): { rows: number; skipped: number; skippedUnlinked?: number } {
   const writer = orchIntervalWriter(conn)
   const replaceQuestions = questionReplacer(conn)
-  upsertWorkflowQuestions(conn, workflowQuestions)
   let rows = 0
   let skipped = 0
   let skippedUnlinked = 0
-  const registered = projects()
-  for (const run of runs) {
-    const attributed = attributeRun(run)
-    const attribution = {
-      ...attributed,
-      project: intervalOwningProject(attributed.project, attributed.key, registered),
-    }
+  for (const { run, attribution } of runs) {
     replaceQuestions(run, attribution.key)
     // A probe is a smoke test — "reply with ok" — that did no work on
     // anything, so it is not engaged time on any task. A question on it is
@@ -417,15 +410,47 @@ function ingestRunRows(
     skipped += result.skipped
     skippedUnlinked += result.skippedUnlinked ?? 0
   }
-  conn
-    .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
-    .run(JSON.stringify(snapshot))
+  return { rows, skipped, ...(skippedUnlinked ? { skippedUnlinked } : {}) }
+}
+
+type RunTransaction = <T>(fn: (conn: Database) => T) => T
+
+function writeRunIngestBatches(
+  runs: readonly { run: OrchRun; attribution: OrchAttribution }[],
+  workflowQuestions: readonly RulingListRow[],
+  now: number,
+  snapshot: string,
+  transaction: RunTransaction = writeTransaction,
+  batchSize = RUN_INGEST_BATCH_SIZE,
+): { rows: number; skipped: number; skippedUnlinked?: number } {
+  transaction((conn) => upsertWorkflowQuestions(conn, workflowQuestions))
+  let rows = 0
+  let skipped = 0
+  let skippedUnlinked = 0
+  const batches = Array.from(
+    { length: Math.max(1, Math.ceil(runs.length / batchSize)) },
+    (_, index) => runs.slice(index * batchSize, (index + 1) * batchSize),
+  )
+  for (const [index, batch] of batches.entries()) {
+    const result = transaction((conn) => {
+      const ingested = ingestRunRows(conn, batch, now)
+      if (index === batches.length - 1)
+        conn
+          .query(`INSERT INTO setting (key, value) VALUES ('collect.runs.at', ?)
+                    ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+          .run(JSON.stringify(snapshot))
+      return ingested
+    })
+    rows += result.rows
+    skipped += result.skipped
+    skippedUnlinked += result.skippedUnlinked ?? 0
+  }
   return { rows, skipped, ...(skippedUnlinked ? { skippedUnlinked } : {}) }
 }
 
 export async function ingestRuns(
   since: string,
+  options: { transaction?: RunTransaction; batchSize?: number } = {},
 ): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
   refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is
@@ -433,5 +458,23 @@ export async function ingestRuns(
   const snapshot = nowIso()
   const [runs, workflowQuestions] = await Promise.all([readRuns(since), readWorkflowRulings(since)])
   const now = Date.now()
-  return writeTransaction((conn) => ingestRunRows(conn, runs, workflowQuestions, now, snapshot))
+  const registered = projects()
+  const attributed = runs.map((run) => {
+    const attribution = attributeRun(run)
+    return {
+      run,
+      attribution: {
+        ...attribution,
+        project: intervalOwningProject(attribution.project, attribution.key, registered),
+      },
+    }
+  })
+  return writeRunIngestBatches(
+    attributed,
+    workflowQuestions,
+    now,
+    snapshot,
+    options.transaction,
+    options.batchSize,
+  )
 }

@@ -6,7 +6,7 @@ import { db, nowIso, writeTransaction } from './db.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { drainHostedEditOutbox } from './offline-task-edits.ts'
+import { applyHostedWriteLocally, drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -377,6 +377,30 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   persistInstallBinding(conn)
 }
 
+function taskRowFromHosted(row: HostedTask): TaskRow {
+  return {
+    record_id: row.id,
+    external_id: null,
+    key: row.key,
+    project: row.project,
+    project_record_id: row.projectId ?? null,
+    title: row.title,
+    status: row.status,
+    status_category: row.status_category,
+    parent_key: row.parent_key,
+    parent_record_id: row.parent_id ?? null,
+    body: row.body,
+    assignee: row.assignee,
+    opened_at: row.opened_at,
+    closed_at: row.closed_at,
+    updated_at: row.updated_at,
+    source: row.source,
+    first_seen: row.first_seen,
+    last_seen: row.last_seen,
+    next_document_number: row.next_document_number,
+  }
+}
+
 function writeLocalComment(
   conn: Database,
   task: Pick<TaskRow, 'key' | 'record_id'>,
@@ -506,20 +530,23 @@ export async function createTask(
     hostedOptionsForProject(input.project, options.hosted),
   )
   const commentAt = nowIso()
-  writeTransaction((conn) => {
-    cacheTask(conn, hosted)
-    if (options.allowDuplicateReason)
-      writeLocalComment(
-        conn,
-        { key: hosted.key, record_id: hosted.id },
-        options.allowDuplicateReason,
-        commentAt,
-        true,
-        options.attribution ?? UNATTRIBUTED,
-      )
-  })
-  if (options.allowDuplicateReason) await drainHostedEditOutbox(commentAt, options.hosted)
-  return showTask(hosted.key, { recordId: hosted.id }).task
+  const applied = applyHostedWriteLocally(hosted.key, 'created', () =>
+    writeTransaction((conn) => {
+      cacheTask(conn, hosted)
+      if (options.allowDuplicateReason)
+        writeLocalComment(
+          conn,
+          { key: hosted.key, record_id: hosted.id },
+          options.allowDuplicateReason,
+          commentAt,
+          true,
+          options.attribution ?? UNATTRIBUTED,
+        )
+    }),
+  )
+  if (applied && options.allowDuplicateReason)
+    await drainHostedEditOutbox(commentAt, options.hosted)
+  return applied ? showTask(hosted.key, { recordId: hosted.id }).task : taskRowFromHosted(hosted)
 }
 
 export function listTasks(

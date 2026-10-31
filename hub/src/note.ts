@@ -27,7 +27,7 @@ import {
   type StalenessChange,
   type StalenessResult,
 } from './note-staleness-store.ts'
-import { drainHostedEditOutbox } from './offline-task-edits.ts'
+import { applyHostedWriteLocally, drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -147,6 +147,23 @@ function decode(row: Omit<NoteRow, 'anchors' | 'label'> & { anchors: string }): 
     label: formatNoteLabel(row.project, row.number),
     anchors: JSON.parse(row.anchors) as NoteAnchor[],
   }
+}
+
+function noteRowFromHosted(row: Awaited<ReturnType<typeof hostedCreateNote>>): NoteRow {
+  return decode({
+    record_id: row.id,
+    number: row.number,
+    project: row.project,
+    text: row.text,
+    area: row.area,
+    anchors: row.anchors,
+    sightings: row.sightings,
+    created_at: row.created_at,
+    last_seen_at: row.last_seen_at,
+    stale_at: row.stale_at,
+    stale_reason: row.stale_reason,
+    promoted_task: row.promoted_task,
+  })
 }
 
 function registeredProject(name: string): RegisteredProject {
@@ -621,8 +638,12 @@ export async function createNote(
     },
     hostedOptions,
   )
-  writeTransaction((conn) => applyHostedNote(conn, hosted))
-  return { note: getNote(hosted.id), candidates }
+  const applied = applyHostedWriteLocally(
+    formatNoteLabel(hosted.project, hosted.number),
+    'created',
+    () => writeTransaction((conn) => applyHostedNote(conn, hosted)),
+  )
+  return { note: applied ? getNote(hosted.id) : noteRowFromHosted(hosted), candidates }
 }
 
 /** The refusal every creating promotion carries, so no surface can create a task titled by a note. */
@@ -724,12 +745,15 @@ export async function promoteNote(
   const hostedOptions = await noteDestinationOptions(note.project, options.hosted)
   const promoteInput = { task: options.existingTaskKey, title: creating ? title : undefined }
   const hosted = await hostedPromoteNote(note.record_id, promoteInput, hostedOptions)
-  writeTransaction((conn) => {
-    if (hosted.task) applyHostedTask(conn, hosted.task)
-    if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
-    applyHostedNote(conn, hosted.note)
-  })
-  return getNote(note.record_id)
+  const reference = hosted.task?.key ?? formatNoteLabel(hosted.note.project, hosted.note.number)
+  const applied = applyHostedWriteLocally(reference, 'updated', () =>
+    writeTransaction((conn) => {
+      if (hosted.task) applyHostedTask(conn, hosted.task)
+      if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
+      applyHostedNote(conn, hosted.note)
+    }),
+  )
+  return applied ? getNote(note.record_id) : noteRowFromHosted(hosted.note)
 }
 
 export function promotionTaskInput(note: NoteRow, title: string) {

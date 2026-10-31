@@ -283,6 +283,7 @@ export const hubModuleSpecs = [
       './db.ts',
       './hosted-tasks.ts',
       './note-client.ts',
+      './offline-task-edits.ts',
       './projects.ts',
       './task-client.ts',
       './task-project-space.ts',

@@ -3,6 +3,7 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
 import {
+  applyHostedWriteLocally,
   drainHostedEditOutbox,
   queueHostedDocumentDelete,
   queueHostedDocumentUpsert,
@@ -98,8 +99,110 @@ export function getTaskDocument(value: string, scope: TaskScope = {}): TaskDocum
   return withDocumentLabel(document)
 }
 
+type CreateDocumentInput = { task: string; title: string; body?: string; role?: string }
+
+function createLocalTaskDocument(task: DocumentTask, input: CreateDocumentInput): TaskDocument {
+  const at = nowIso()
+  const recordId = newRecordId()
+  const version = documentVersion()
+  return writeTransaction((conn) => {
+    const row = conn
+      .query<DocumentTask, [string]>(`SELECT * FROM task WHERE record_id = ?`)
+      .get(task.record_id)
+    if (!row) throw new Error(`no task record ${task.record_id}`)
+    if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
+    const number = row.next_document_number
+    conn
+      .query(`UPDATE task SET next_document_number = ? WHERE record_id = ?`)
+      .run(number + 1, row.record_id)
+    const role = documentRole(input.role)
+    conn
+      .query(
+        `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        recordId,
+        row.key,
+        row.record_id,
+        number,
+        role,
+        input.title,
+        input.body ?? '',
+        version,
+        at,
+        at,
+      )
+    return withDocumentLabel({
+      id: recordId,
+      number,
+      task_key: row.key,
+      task_record_id: row.record_id,
+      role,
+      title: input.title,
+      body: input.body ?? '',
+      version,
+      created_at: at,
+      updated_at: at,
+    })
+  })
+}
+
+async function createHostedTaskDocument(
+  task: DocumentTask,
+  input: CreateDocumentInput,
+  hostedOptions?: HostedTaskWriteOptions,
+): Promise<TaskDocument> {
+  const version = documentVersion()
+  const hosted = await hostedCreateDocument(
+    task.key,
+    { title: input.title, body: input.body ?? '', role: documentRole(input.role), version },
+    hostedTaskWriteOptions(task.project, hostedOptions),
+  )
+  if (hosted.number === null)
+    throw new Error(`hosted task document ${hosted.id} for task ${task.key} has no number`)
+  const hostedNumber = hosted.number
+  const document = withDocumentLabel({
+    id: hosted.id,
+    number: hostedNumber,
+    task_key: task.key,
+    task_record_id: task.record_id,
+    role: documentRole(input.role),
+    title: input.title,
+    body: input.body ?? '',
+    version: hosted.version,
+    created_at: hosted.created_at,
+    updated_at: hosted.updated_at,
+  })
+  const applied = applyHostedWriteLocally(document.label, 'created', () =>
+    writeTransaction((conn) => {
+      conn
+        .query(
+          `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          hosted.id,
+          task.key,
+          task.record_id,
+          hostedNumber,
+          documentRole(input.role),
+          input.title,
+          input.body ?? '',
+          hosted.version,
+          hosted.created_at,
+          hosted.updated_at,
+        )
+      conn
+        .query(`UPDATE task SET next_document_number=MAX(next_document_number,?) WHERE record_id=?`)
+        .run(hostedNumber + 1, task.record_id)
+    }),
+  )
+  return applied ? getTaskDocument(hosted.id) : document
+}
+
 export async function createTaskDocument(
-  input: { task: string; title: string; body?: string; role?: string },
+  input: CreateDocumentInput,
   scope: TaskScope,
   options: { hosted?: HostedTaskWriteOptions } = {},
 ): Promise<TaskDocument> {
@@ -107,84 +210,9 @@ export async function createTaskDocument(
   const task = taskByRecordId<DocumentTask>(taskRecordId(upper, scope))
   if (task.source !== 'local') throw new Error(`task ${upper} is not local`)
   const mode = taskWriteMode(task.project, options.hosted)
-  if (mode === 'local-authoritative') {
-    const at = nowIso()
-    const recordId = newRecordId()
-    const version = documentVersion()
-    return writeTransaction((conn) => {
-      const row = conn
-        .query<DocumentTask, [string]>(`SELECT * FROM task WHERE record_id = ?`)
-        .get(task.record_id)
-      if (!row) throw new Error(`no task record ${task.record_id}`)
-      if (row.source !== 'local') throw new Error(`task ${row.key} is not local`)
-      const number = row.next_document_number
-      conn
-        .query(`UPDATE task SET next_document_number = ? WHERE record_id = ?`)
-        .run(number + 1, row.record_id)
-      const role = documentRole(input.role)
-      conn
-        .query(
-          `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          recordId,
-          row.key,
-          row.record_id,
-          number,
-          role,
-          input.title,
-          input.body ?? '',
-          version,
-          at,
-          at,
-        )
-      return withDocumentLabel({
-        id: recordId,
-        number,
-        task_key: row.key,
-        task_record_id: row.record_id,
-        role,
-        title: input.title,
-        body: input.body ?? '',
-        version,
-        created_at: at,
-        updated_at: at,
-      })
-    })
-  }
-  const version = documentVersion()
-  const hosted = await hostedCreateDocument(
-    task.key,
-    { title: input.title, body: input.body ?? '', role: documentRole(input.role), version },
-    hostedTaskWriteOptions(task.project, options.hosted),
-  )
-  if (hosted.number === null)
-    throw new Error(`hosted task document ${hosted.id} for task ${task.key} has no number`)
-  const hostedNumber = hosted.number
-  writeTransaction((conn) => {
-    conn
-      .query(
-        `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        hosted.id,
-        task.key,
-        task.record_id,
-        hostedNumber,
-        documentRole(input.role),
-        input.title,
-        input.body ?? '',
-        hosted.version,
-        hosted.created_at,
-        hosted.updated_at,
-      )
-    conn
-      .query(`UPDATE task SET next_document_number=MAX(next_document_number,?) WHERE record_id=?`)
-      .run(hostedNumber + 1, task.record_id)
-  })
-  return getTaskDocument(hosted.id)
+  return mode === 'local-authoritative'
+    ? createLocalTaskDocument(task, input)
+    : createHostedTaskDocument(task, input, options.hosted)
 }
 
 export async function updateTaskDocument(

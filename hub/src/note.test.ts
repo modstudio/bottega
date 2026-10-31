@@ -1,4 +1,5 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
+import { Database } from 'bun:sqlite'
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -261,6 +262,47 @@ describe('suggestion notes', () => {
     expect(spaces).toEqual(['space-gamma', 'space-gamma'])
   })
 
+  test('a hosted-first create reports its reference when the local cache is locked', async () => {
+    const holder = new Database(process.env.BOTTEGA_HUB_DB!, { readwrite: true, create: false })
+    db().exec('PRAGMA busy_timeout = 1')
+    holder.exec('BEGIN IMMEDIATE')
+    const messages: string[] = []
+    const error = spyOn(console, 'error').mockImplementation((message) =>
+      messages.push(String(message)),
+    )
+    let creates = 0
+    const lockingHosted = {
+      ...hosted,
+      fetch: async (input: string, init?: RequestInit) => {
+        if (new URL(input).pathname === '/v1/notes' && init?.method === 'POST') creates++
+        return hosted.fetch(input, init)
+      },
+    }
+    try {
+      const created = await createNote(
+        {
+          text: `Hosted while locked ${crypto.randomUUID()}`,
+          cwd: '/fixtures/repos/workshop',
+          forceNew: true,
+        },
+        { hosted: lockingHosted },
+      )
+      expect(created.note.label).toMatch(/^workshop#\d+$/)
+      expect(messages).toEqual([
+        `${created.note.label} was created in the hosted record; its local copy will arrive on the next record pull`,
+      ])
+      expect(
+        db().query(`SELECT 1 FROM note WHERE record_id=?`).get(created.note.record_id),
+      ).toBeNull()
+      expect(creates).toBe(1)
+    } finally {
+      error.mockRestore()
+      if (holder.inTransaction) holder.exec('ROLLBACK')
+      holder.close()
+      db().exec('PRAGMA busy_timeout = 15000')
+    }
+  })
+
   describe('local-authoritative note writes', () => {
     const previousHostedUrl = process.env.BOTTEGA_HOSTED_URL
     beforeAll(() => {
@@ -296,6 +338,31 @@ describe('suggestion notes', () => {
       ).note
       expect(created.number).toBe(1)
       expect(beta.number).toBe(1)
+    })
+
+    test('a lock refusal before a local create writes nothing', async () => {
+      const holder = new Database(process.env.BOTTEGA_HUB_DB!, { readwrite: true, create: false })
+      db().exec('PRAGMA busy_timeout = 1')
+      holder.exec('BEGIN IMMEDIATE')
+      const before = db()
+        .query<{ count: number }, []>('SELECT count(*) count FROM note')
+        .get()!.count
+      try {
+        await expect(
+          createNote({
+            text: `Local while locked ${crypto.randomUUID()}`,
+            cwd: '/fixtures/repos/workshop',
+            forceNew: true,
+          }),
+        ).rejects.toThrow('database is locked')
+        expect(
+          db().query<{ count: number }, []>('SELECT count(*) count FROM note').get()!.count,
+        ).toBe(before)
+      } finally {
+        if (holder.inTransaction) holder.exec('ROLLBACK')
+        holder.close()
+        db().exec('PRAGMA busy_timeout = 15000')
+      }
     })
 
     test('deleting the highest note does not reuse its project number', async () => {
