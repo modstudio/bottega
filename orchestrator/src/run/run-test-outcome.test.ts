@@ -4,7 +4,11 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
-import { deriveObservedTestOutcome, observedTestOutcome } from './run-test-outcome.ts'
+import {
+  deriveObservedTestOutcome,
+  observedTestOutcome,
+  outcomeNoteWithPassedProbes,
+} from './run-test-outcome.ts'
 
 describe('deriveObservedTestOutcome', () => {
   test('nothing-run focus and a passing gate that skipped unit tests do not support the claim', () => {
@@ -15,7 +19,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: false, passed: null, claimDisagrees: null })
+    ).toEqual({ ran: false, passed: null, claimDisagrees: null, probesPassed: [] })
   })
 
   test('an executed passing focused run establishes the claimed outcome', () => {
@@ -26,7 +30,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: true, passed: true, claimDisagrees: false })
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false, probesPassed: [] })
   })
 
   test('an observed failed execution contradicts a passing claim', () => {
@@ -37,7 +41,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: true, passed: false, claimDisagrees: true })
+    ).toEqual({ ran: true, passed: false, claimDisagrees: true, probesPassed: [] })
   })
 
   test('a passing rerun replaces a failed result for the same path set', () => {
@@ -51,7 +55,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: true, passed: true, claimDisagrees: false })
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false, probesPassed: [] })
   })
 
   test('a failing rerun replaces a passing result for the same path set', () => {
@@ -65,7 +69,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: null,
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: true, passed: false, claimDisagrees: false })
+    ).toEqual({ ran: true, passed: false, claimDisagrees: false, probesPassed: [] })
   })
 
   test('a passing different path set does not replace an earlier failed path set', () => {
@@ -79,7 +83,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: null,
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: true, passed: false, claimDisagrees: false })
+    ).toEqual({ ran: true, passed: false, claimDisagrees: false, probesPassed: [] })
   })
 
   test('only unit-test checks from the latest finished gate count', () => {
@@ -96,7 +100,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: true,
       }),
-    ).toEqual({ ran: true, passed: true, claimDisagrees: false })
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false, probesPassed: [] })
   })
 
   test('no tool calls records that no tests ran', () => {
@@ -111,6 +115,7 @@ describe('deriveObservedTestOutcome', () => {
       ran: false,
       passed: null,
       claimDisagrees: false,
+      probesPassed: [],
     })
   })
 
@@ -122,7 +127,7 @@ describe('deriveObservedTestOutcome', () => {
         claim: { ran: true, passed: true },
         focusedRunnerRegistered: false,
       }),
-    ).toEqual({ ran: null, passed: null, claimDisagrees: null })
+    ).toEqual({ ran: null, passed: null, claimDisagrees: null, probesPassed: [] })
   })
 
   test('a refused path makes an otherwise passing observation unverified', () => {
@@ -134,7 +139,74 @@ describe('deriveObservedTestOutcome', () => {
         focusedRunnerRegistered: true,
         refusedPaths: ['unmatched.test.ts'],
       }),
-    ).toEqual({ ran: true, passed: null, claimDisagrees: null })
+    ).toEqual({ ran: true, passed: null, claimDisagrees: null, probesPassed: [] })
+  })
+
+  test('a declared failing probe does not replace the final passing suite on the same paths', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [
+          { passed: false, paths: ['subject.test.ts'], expect: 'fail' },
+          { passed: true, paths: ['subject.test.ts'] },
+        ],
+        gate: { checks: [], latestFinishedExecutionId: null },
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: true, passed: true, claimDisagrees: false, probesPassed: [] })
+  })
+
+  test('a declared passing probe is a finding while ordinary calls decide the outcome', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [
+          { passed: true, paths: ['mutation.test.ts'], expect: 'fail' },
+          { passed: false, paths: ['suite.test.ts'] },
+        ],
+        gate: { checks: [], latestFinishedExecutionId: null },
+        claim: { ran: true, passed: false },
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({
+      ran: true,
+      passed: false,
+      claimDisagrees: false,
+      probesPassed: [['mutation.test.ts']],
+    })
+  })
+
+  test('only declared failing probes leave the test outcome not observed', () => {
+    expect(
+      deriveObservedTestOutcome({
+        focused: [
+          { passed: false, paths: ['one.test.ts'], expect: 'fail' },
+          { passed: false, paths: ['two.test.ts'], expect: 'fail' },
+        ],
+        gate: { checks: [], latestFinishedExecutionId: null },
+        claim: { ran: true, passed: true },
+        focusedRunnerRegistered: true,
+      }),
+    ).toEqual({ ran: false, passed: null, claimDisagrees: null, probesPassed: [] })
+  })
+
+  test('passed-probe notes append to successful outcomes and never replace failures', () => {
+    expect(
+      outcomeNoteWithPassedProbes({
+        status: 'ok',
+        error: 'existing note',
+        probesPassed: [['one.test.ts'], ['two.test.ts', 'three.test.ts']],
+      }),
+    ).toBe(
+      'existing note; declared expect-fail run_tests probe passed for one.test.ts: the mutation did not bite; ' +
+        'declared expect-fail run_tests probe passed for two.test.ts, three.test.ts: the mutation did not bite',
+    )
+    expect(
+      outcomeNoteWithPassedProbes({
+        status: 'failed',
+        error: 'failure owns this error',
+        probesPassed: [['one.test.ts']],
+      }),
+    ).toBe('failure owns this error')
   })
 
   test('reads only started focused executions and unit-test checks from the run gate', () => {
@@ -186,6 +258,41 @@ describe('deriveObservedTestOutcome', () => {
       ran: true,
       passed: false,
       claimDisagrees: false,
+      probesPassed: [],
+    })
+  })
+
+  test('reads an expect-fail declaration from the focused-test event log', () => {
+    const runId = addRun({ agent: 'codex', job: 'implement' })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:00.000Z',
+      type: 'focused_test',
+      paths: ['a.test.ts'],
+      started: true,
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 10,
+      logName: 'ordinary.log',
+      logPath: '/scratch/ordinary.log',
+    })
+    appendRunEvent(runId, {
+      ts: '2026-10-21T00:00:01.000Z',
+      type: 'focused_test',
+      paths: ['mutation.test.ts'],
+      expect: 'fail',
+      started: true,
+      exitCode: 0,
+      timedOut: false,
+      elapsedMs: 10,
+      logName: 'mutation.log',
+      logPath: '/scratch/mutation.log',
+    })
+
+    expect(observedTestOutcome(db(), runId, { ran: true, passed: true })).toEqual({
+      ran: true,
+      passed: true,
+      claimDisagrees: false,
+      probesPassed: [['mutation.test.ts']],
     })
   })
 
@@ -212,6 +319,7 @@ describe('deriveObservedTestOutcome', () => {
       ran: true,
       passed: null,
       claimDisagrees: null,
+      probesPassed: [],
     })
   })
 
@@ -255,6 +363,7 @@ describe('deriveObservedTestOutcome', () => {
       ran: true,
       passed: false,
       claimDisagrees: false,
+      probesPassed: [],
     })
   })
 })

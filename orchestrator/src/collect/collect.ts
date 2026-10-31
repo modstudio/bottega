@@ -18,8 +18,10 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
+import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts'
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
+  declaredExpectFailProbeLines,
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
   visibleTranscriptText,
@@ -112,8 +114,9 @@ type AskingResolution =
   | { state: 'recoverable'; rootId: string }
 
 function presentObservedTests(
-  row: Pick<CollectedRunRow, 'tests_ran' | 'tests_passed' | 'tests_claim_disagrees'>,
+  row: Pick<CollectedRunRow, 'record_id' | 'tests_ran' | 'tests_passed' | 'tests_claim_disagrees'>,
   presentation: CollectResultPresentation,
+  declaredProbes: (runRecordId: string) => readonly FocusedTestExecutionObservation[],
 ): void {
   const line = observedTestsLine({
     ran: row.tests_ran,
@@ -121,6 +124,9 @@ function presentObservedTests(
     claimDisagrees: row.tests_claim_disagrees,
   })
   if (line) presentation.error(line)
+  for (const probeLine of declaredExpectFailProbeLines(declaredProbes(row.record_id))) {
+    presentation.error(probeLine)
+  }
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */
@@ -641,6 +647,7 @@ export function collectResult(
   presentation: CollectResultPresentation = consoleCollectResultPresentation,
   writingJob: (job: string, branch: string | null, mintedBranch: string | null) => boolean = () =>
     false,
+  declaredProbes: (runRecordId: string) => readonly FocusedTestExecutionObservation[] = () => [],
 ): void {
   const unknown = argv.slice(2).find((arg) => arg !== '--quiet' && arg !== '--artifacts')
   if (unknown) {
@@ -686,7 +693,7 @@ export function collectResult(
     }
   }
   presentCollectedOutput(row, output, outcome.ok, presentation)
-  presentObservedTests(row, presentation)
+  presentObservedTests(row, presentation, declaredProbes)
   const chainNote = failoverSummary(chain.attempts)
   if (chainNote) presentation.error(`\n— ${chainNote}`)
   if (asking) {

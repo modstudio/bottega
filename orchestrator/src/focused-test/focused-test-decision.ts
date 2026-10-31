@@ -29,7 +29,12 @@ export type FocusedTestDeclarationValidation = {
   runners: FocusedTestRunner[]
   problems: string[]
 }
-export type FocusedTestRequest = { id: string; paths: string[]; affected: boolean }
+export type FocusedTestRequest = {
+  id: string
+  paths: string[]
+  affected: boolean
+  expect?: 'fail'
+}
 export type FocusedTestResult = {
   exitCode: number
   timedOut: boolean
@@ -124,7 +129,10 @@ export function formatFocusedTestRequestDecision(
   if (decision.action === 'join') {
     return (
       `Focused tests for ${formatFocusedTestPaths(decision.execution.paths)} were already running; ` +
-      `this call ignored its requested paths (${formatFocusedTestPaths(requestedPaths)}) and waited for the same execution.`
+      `this call ignored its requested paths (${formatFocusedTestPaths(requestedPaths)}) and waited for the same execution.` +
+      (decision.execution.expect === 'fail'
+        ? " The running execution declares expect: 'fail'."
+        : '')
     )
   }
   if (decision.action === 'return') {
@@ -416,10 +424,14 @@ export function parseFocusedTestRequest(value: unknown): FocusedTestRequest {
   if (request.affected !== undefined && typeof request.affected !== 'boolean') {
     throw new Error('focused test request affected is invalid')
   }
+  if (request.expect !== undefined && request.expect !== 'fail') {
+    throw new Error('focused test request expect is invalid')
+  }
   return {
     id: request.id,
     paths: parseStringArray(request.paths, 'paths'),
     affected: request.affected === true,
+    ...(request.expect === 'fail' ? { expect: 'fail' as const } : {}),
   }
 }
 

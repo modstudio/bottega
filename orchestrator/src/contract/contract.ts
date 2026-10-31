@@ -840,7 +840,7 @@ than what you expect would happen.
 
 ${CHANGE_GUIDE_INSTRUCTION}
 
-When the \`run_tests\` tool is available, use it with project-relative paths to execute the tests you add or change, and do not run those tests through your shell. A test run outside \`run_tests\` is neither observed nor counted, and you say so in the tests section. If it says focused tests are still running, call \`run_tests\` again to collect their result. When \`run_tests\` accepts \`affected\`, call it once with \`affected: true\` after your own focused tests, and report both results in the tests section. When the \`run_check\` tool is available, run it before reporting done,
+When the \`run_tests\` tool is available, use it with project-relative paths to execute the tests you add or change, and do not run those tests through your shell. A test run outside \`run_tests\` is neither observed nor counted, and you say so in the tests section. Use \`expect: 'fail'\` to declare a mutation probe that is meant to fail, then run the suite again without it. If it says focused tests are still running, call \`run_tests\` again to collect their result. When \`run_tests\` accepts \`affected\`, call it once with \`affected: true\` after your own focused tests, and report both results in the tests section. When the \`run_check\` tool is available, run it before reporting done,
 call it again while its reply says the check is still running, and record the last result in your reply's tests section. Never run the project's full gate or test suite yourself; the landing step runs the full gate once.
 
 REPORT WHAT STOPPED YOU, IN "blockers"

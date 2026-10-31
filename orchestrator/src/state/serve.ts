@@ -129,7 +129,8 @@ export function runDetail(
     .query(
       `SELECT r.number AS id, r.record_id, r.agent, r.job, r.cwd, r.latency_ms, r.vendor_tokens, r.status,
             r.failure_kind, r.probe, r.evidence_excluded, r.error, r.input_tree, r.head_commit,
-            r.changed_paths, r.review_ref, r.doc_revisions, r.canon_sha,
+            r.changed_paths, r.tests_ran, r.tests_passed, r.tests_claim_disagrees,
+            r.review_ref, r.doc_revisions, r.canon_sha,
             r.prompt_path, r.output_path, r.mcp, r.mcp_server, r.mcp_connected, r.mcp_error,
             r.branch_kept, r.branch_kept_tip,
             r.provisioning_kind, r.provisioning_ms, r.provisioning_phases,

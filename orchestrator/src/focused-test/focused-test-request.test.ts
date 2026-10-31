@@ -27,11 +27,13 @@ function emittedRequest(scratchDir: string): {
   id: string
   paths: string[]
   affected: boolean
+  expect?: 'fail'
 } {
   return JSON.parse(readFileSync(join(scratchDir, FOCUSED_TEST_REQUEST_FILE), 'utf8')) as {
     id: string
     paths: string[]
     affected: boolean
+    expect?: 'fail'
   }
 }
 
@@ -178,4 +180,30 @@ test('an affected request travels through the same scratch file as its paths', a
   expect(request.paths).toEqual([])
   answerRequest(scratchDir, request)
   expect(await pending).toBe(expectedResult(runId, scratchDir, request))
+})
+
+test('an expect-fail declaration belongs to the execution that starts', async () => {
+  const scratchDir = scratchDirectory()
+  const runId = addRun({ agent: 'codex', job: 'implement', status: 'running' })
+  const signal = new AbortController().signal
+  const first = requestFocusedTests({
+    runId,
+    scratchDir,
+    paths: ['tests/mutation.test.ts'],
+    expect: 'fail',
+    signal,
+  })
+  const request = emittedRequest(scratchDir)
+  expect(request.expect).toBe('fail')
+
+  const joined = requestFocusedTests({
+    runId,
+    scratchDir,
+    paths: ['tests/ignored.test.ts'],
+    signal,
+  })
+  answerRequest(scratchDir, request)
+  await first
+  expect(await joined).toContain("The running execution declares expect: 'fail'.")
+  expect(emittedRequest(scratchDir).expect).toBe('fail')
 })

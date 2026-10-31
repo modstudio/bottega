@@ -557,6 +557,7 @@ type FocusedTestStartInput = {
 function recordFocusedTestEvents(input: {
   runId: string
   executions: readonly FocusedTestExecutionEvent[]
+  expect?: 'fail'
   refusedPaths: readonly string[]
   elapsedMs: number
   logName: string
@@ -570,6 +571,7 @@ function recordFocusedTestEvents(input: {
       elapsedMs: input.elapsedMs,
       logName: input.logName,
       logPath: input.logPath,
+      ...(input.expect === 'fail' ? { expect: input.expect } : {}),
     })
   }
   if (input.refusedPaths.length) {
@@ -685,6 +687,7 @@ function startFocusedTest(input: FocusedTestStartInput): ActiveFocusedTest {
     recordFocusedTestEvents({
       runId: input.runId,
       executions,
+      expect: input.request.expect,
       refusedPaths,
       elapsedMs,
       logName,

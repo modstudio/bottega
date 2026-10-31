@@ -9,6 +9,7 @@ import { hasFocusedTestRunner } from '../focused-test/focused-test-decision.ts'
 type TestExecutionObservation = { passed: boolean }
 export type FocusedTestExecutionObservation = TestExecutionObservation & {
   paths: readonly string[]
+  expect?: 'fail'
 }
 type GateTestExecutionObservation = TestExecutionObservation & {
   gateExecutionId: string
@@ -23,6 +24,7 @@ export type ObservedTestOutcome = {
   ran: boolean | null
   passed: boolean | null
   claimDisagrees: boolean | null
+  probesPassed: readonly (readonly string[])[]
 }
 
 export function deriveObservedTestOutcome(input: {
@@ -32,8 +34,12 @@ export function deriveObservedTestOutcome(input: {
   focusedRunnerRegistered: boolean
   refusedPaths?: readonly string[]
 }): ObservedTestOutcome {
+  const probesPassed = input.focused
+    .filter((execution) => execution.expect === 'fail' && execution.passed)
+    .map((execution) => execution.paths)
   const latestFocused = new Map<string, FocusedTestExecutionObservation>()
   for (const execution of input.focused) {
+    if (execution.expect === 'fail') continue
     const pathSet = JSON.stringify([...new Set(execution.paths)].sort())
     latestFocused.set(pathSet, execution)
   }
@@ -42,7 +48,7 @@ export function deriveObservedTestOutcome(input: {
   )
   const executions = [...latestFocused.values(), ...latestGateExecutions]
   if (executions.length === 0 && !input.focusedRunnerRegistered) {
-    return { ran: null, passed: null, claimDisagrees: null }
+    return { ran: null, passed: null, claimDisagrees: null, probesPassed }
   }
   const ran = executions.length > 0
   const passed = input.refusedPaths?.length
@@ -59,10 +65,10 @@ export function deriveObservedTestOutcome(input: {
             ((input.claim.ran != null && input.claim.ran !== ran) ||
               (input.claim.passed != null && input.claim.passed !== passed)),
         )
-  return { ran, passed, claimDisagrees }
+  return { ran, passed, claimDisagrees, probesPassed }
 }
 
-function focusedTestObservations(runId: string): FocusedTestExecutionObservation[] {
+export function focusedTestObservations(runId: string): FocusedTestExecutionObservation[] {
   return readEventLog(runEventsPath(runId)).flatMap((event): FocusedTestExecutionObservation[] => {
     if (
       event.type !== 'focused_test' ||
@@ -73,8 +79,28 @@ function focusedTestObservations(runId: string): FocusedTestExecutionObservation
       typeof event.timedOut !== 'boolean'
     )
       return []
-    return [{ passed: event.exitCode === 0 && !event.timedOut, paths: event.paths }]
+    return [
+      {
+        passed: event.exitCode === 0 && !event.timedOut,
+        paths: event.paths,
+        ...(event.expect === 'fail' ? { expect: event.expect } : {}),
+      },
+    ]
   })
+}
+
+function probePassedNote(paths: readonly string[]): string {
+  return `declared expect-fail run_tests probe passed for ${paths.join(', ')}: the mutation did not bite`
+}
+
+/** Append successful mutation-probe findings only to a successful run's outcome note. */
+export function outcomeNoteWithPassedProbes(input: {
+  status: string
+  error: string | null
+  probesPassed: readonly (readonly string[])[]
+}): string | null {
+  if (input.status !== 'ok' || input.probesPassed.length === 0) return input.error
+  return [input.error, ...input.probesPassed.map(probePassedNote)].filter(Boolean).join('; ')
 }
 
 function focusedTestRefusedPaths(runId: string): string[] {

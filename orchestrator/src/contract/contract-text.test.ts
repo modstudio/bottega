@@ -110,6 +110,9 @@ describe('job contracts are visible before submission', () => {
     expect(WORKER_PREAMBLE).toContain(
       'A test run outside `run_tests` is neither observed nor counted',
     )
+    expect(WORKER_PREAMBLE).toContain(
+      "Use `expect: 'fail'` to declare a mutation probe that is meant to fail, then run the suite again without it.",
+    )
     expect(WORKER_PREAMBLE).toContain('When the `run_check` tool is available')
     expect(WORKER_PREAMBLE).toContain(
       'call it again while its reply says the check is still running',

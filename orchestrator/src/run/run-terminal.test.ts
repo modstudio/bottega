@@ -24,6 +24,7 @@ test('an unverified observed test outcome stores claim disagreement as null', ()
     ran: true,
     passed: null,
     claimDisagrees: null,
+    probesPassed: [],
   })
 
   expect(
