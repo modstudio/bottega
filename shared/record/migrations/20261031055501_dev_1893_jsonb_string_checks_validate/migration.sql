@@ -17,7 +17,6 @@ ALTER TABLE "landing_override" VALIDATE CONSTRAINT "landing_override_missing_len
 ALTER TABLE "landing_override" VALIDATE CONSTRAINT "landing_override_path_set_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "landing_override" VALIDATE CONSTRAINT "landing_override_withheld_fields_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "landing_triage_snapshot" VALIDATE CONSTRAINT "landing_triage_snapshot_review_ids_not_json_string_check";--> statement-breakpoint
-ALTER TABLE "operator_waiting_email" VALIDATE CONSTRAINT "operator_waiting_email_options_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "orch_snapshot" VALIDATE CONSTRAINT "orch_snapshot_payload_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "project" VALIDATE CONSTRAINT "project_agent_keys_not_json_string_check";--> statement-breakpoint
 ALTER TABLE "project" VALIDATE CONSTRAINT "project_docs_not_json_string_check";--> statement-breakpoint

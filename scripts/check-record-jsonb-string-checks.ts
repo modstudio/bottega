@@ -29,6 +29,12 @@ export const NEVER_VALIDATED_JSONB_CHECKS: readonly {
     reason:
       'historical non-array strings left by the dev_1303 repair; the 2026-10-31 record rehearsal failed its VALIDATE and the row count was not established',
   },
+  {
+    table: 'operator_waiting_email',
+    column: 'options',
+    reason:
+      '5 historical top-level string rows measured by the 2026-10-31 diagnostic record rehearsal',
+  },
 ]
 
 function callNamed(expression: ts.Expression, name: string): ts.CallExpression | undefined {
