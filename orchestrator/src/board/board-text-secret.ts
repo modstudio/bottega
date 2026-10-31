@@ -1,21 +1,29 @@
 // concern: board-text-secret
-/** Secret-shaped board text, with exact known commit hashes removed before detection. */
+/** Client-side commit abbreviation and strict server-side board text refusal. */
 
 import { secretShapedRule } from '../../../shared/secret-shaped.ts'
 import { resolveCommitArgument } from '../git/commit-resolution.ts'
 
 export type IsKnownCommit = (hex: string) => boolean
+export type BoardTextCallSite =
+  | 'reply'
+  | 'notice'
+  | 'tag'
+  | 'suggestion'
+  | 'claim-note'
+  | 'claim-resource'
+  | 'filing-failure'
 
 const FULL_COMMIT_TOKEN = /\b(?:[0-9a-fA-F]{64}|[0-9a-fA-F]{40})\b/g
 
-/** Return the first secret-shaped rule after removing only full hashes known as commits. */
-export function boardTextSecretRule(text: string, isKnownCommit: IsKnownCommit): string | null {
-  const filtered = text.replace(FULL_COMMIT_TOKEN, (token) => (isKnownCommit(token) ? '_' : token))
-  return secretShapedRule(filtered)
+/** Abbreviate only full tokens established as the exact resolved commit. */
+export function abbreviateKnownCommitTokens(text: string, isKnownCommit: IsKnownCommit): string {
+  return text.replace(FULL_COMMIT_TOKEN, (token) =>
+    isKnownCommit(token) ? token.slice(0, 12) : token,
+  )
 }
 
-/** Gather commit-resolution facts from a registered checkout for the pure predicate. */
-export function knownCommitInCheckout(checkout: string | null | undefined): IsKnownCommit {
+function knownCommitInCheckout(checkout: string | null | undefined): IsKnownCommit {
   if (!checkout) return () => false
   return (hex) => {
     try {
@@ -26,16 +34,23 @@ export function knownCommitInCheckout(checkout: string | null | undefined): IsKn
   }
 }
 
-export function boardTextSecretRefusal(
-  leadingWords: string,
+/** Prepare operator-authored text in the selected caller or registered checkout. */
+export function prepareBoardText(
+  callSite: BoardTextCallSite,
   text: string,
-  checkout?: string | null,
-): string | null {
-  const rule = boardTextSecretRule(text, knownCommitInCheckout(checkout))
+  checkout: string | null | undefined,
+  isKnownCommit = knownCommitInCheckout(checkout),
+): string {
+  void callSite
+  return checkout ? abbreviateKnownCommitTokens(text, isKnownCommit) : text
+}
+
+export function boardTextSecretRefusal(leadingWords: string, text: string): string | null {
+  const rule = secretShapedRule(text)
   if (rule === null) return null
   const remedy =
     rule === 'hex-run'
-      ? `abbreviate the hash to 12 characters, or fetch the commit into ${checkout ?? '<registered project checkout>'}`
+      ? 'a 32+ hex run looks like a credential; if it is a commit hash, abbreviate it to 12 characters'
       : 'remove the credential and retry'
   return `${leadingWords} contains secret-shaped text (${rule}); ${remedy}`
 }

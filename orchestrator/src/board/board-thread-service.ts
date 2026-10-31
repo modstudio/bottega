@@ -37,6 +37,7 @@ import {
   type PostNoticeInput,
   rowIsLive,
 } from './board-store.ts'
+import { boardTextSecretRefusal } from './board-text-secret.ts'
 import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,
@@ -44,7 +45,6 @@ import {
   noteFilingLeaseDecision,
   replyRefusal,
 } from './board-thread-policy.ts'
-import { boardTextSecretRefusal } from './board-text-secret.ts'
 
 type Environment = Record<string, string | undefined>
 
@@ -163,11 +163,11 @@ function extendThreadExpiry(
     .run(expiresAt, root.record_id)
 }
 
-function validateReplyBody(body: string, checkout?: string | null): void {
+function validateReplyBody(body: string): void {
   if (!body.trim()) throw new Error('board reply body is required; provide --body')
   if (body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board reply body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  const refusal = boardTextSecretRefusal('board reply', body, checkout)
+  const refusal = boardTextSecretRefusal('board reply', body)
   if (refusal) throw new Error(refusal)
 }
 
@@ -179,7 +179,7 @@ export function replyToThread(
   cwd = process.cwd(),
   audience: ReplyAudienceOption | null = null,
 ): ReplyResult {
-  validateReplyBody(body, projectAt(cwd)?.path)
+  validateReplyBody(body)
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
   const database = writableDb()
@@ -381,6 +381,7 @@ async function filePendingNote(
   cwd: string,
   filer: AnswerNoteFiler,
   clock: number,
+  prepareFailure: (detail: string) => string = (detail) => detail,
 ): Promise<{
   noteRecordId: string | null
   noteLabel: string | null
@@ -420,7 +421,7 @@ async function filePendingNote(
       retry: null,
     }
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
+    const detail = prepareFailure(error instanceof Error ? error.message : String(error))
     const database = writableDb()
     writeTransaction(() => {
       database
@@ -447,6 +448,7 @@ export async function acceptAnswer(
   clock = Date.now(),
   cwd = process.cwd(),
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
+  prepareFailure?: (detail: string) => string,
 ) {
   const actor = boardActor(env)
   const reader = actor.session ?? OPERATOR_READER
@@ -479,7 +481,7 @@ export async function acceptAnswer(
       )
     return { question: message(question.record_id), reply }
   }, database)
-  const note = await filePendingNote(question.record_id, cwd, filer, clock)
+  const note = await filePendingNote(question.record_id, cwd, filer, clock, prepareFailure)
   return { accepted: reply.record_id, questionId: question.record_id, ...note }
 }
 
@@ -489,6 +491,7 @@ export async function fileAnswerNote(
   cwd = process.cwd(),
   filer: AnswerNoteFiler = fileAcceptedAnswerNote,
   clock = Date.now(),
+  prepareFailure?: (detail: string) => string,
 ) {
   const actor = boardActor(env)
   const question = message(questionId)
@@ -500,6 +503,6 @@ export async function fileAnswerNote(
     )
   const refusal = filingLeaseRefusal(question, clock)
   if (refusal) throw new Error(refusal)
-  const note = await filePendingNote(question.record_id, cwd, filer, clock)
+  const note = await filePendingNote(question.record_id, cwd, filer, clock, prepareFailure)
   return { questionId, ...note }
 }

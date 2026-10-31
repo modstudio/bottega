@@ -3,7 +3,7 @@ import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
-import { projectByName } from '../project/projects.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import {
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
@@ -13,7 +13,11 @@ import {
 } from './board-policy.ts'
 import { boardActor, type PostNoticeInput, postNoticeInTransaction } from './board-service.ts'
 import { type BoardTag, type SenderBoardTags, senderBoardTags, senderTagKey } from './board-tags.ts'
-import { boardTextSecretRefusal } from './board-text-secret.ts'
+import {
+  boardTextSecretRefusal,
+  type IsKnownCommit,
+  prepareBoardText,
+} from './board-text-secret.ts'
 
 type Environment = Record<string, string | undefined>
 export type SuggestBoardPostInput = SenderBoardTags & { title: string; body: string }
@@ -29,7 +33,7 @@ type SuggestionRow = {
   withdrawn_at: string | null
 }
 
-function validateText(input: SuggestBoardPostInput, checkout?: string | null): void {
+function validateText(input: SuggestBoardPostInput): void {
   if (!input.title.trim() || !input.body.trim())
     throw new Error('board suggestion title and body are required; provide both fields')
   if (input.title.length > BOARD_TITLE_MAX_CHARS)
@@ -46,7 +50,7 @@ function validateText(input: SuggestBoardPostInput, checkout?: string | null): v
     ...(input.topics ?? []),
   ]) {
     if (text === undefined) continue
-    const refusal = boardTextSecretRefusal('board suggestion', text, checkout)
+    const refusal = boardTextSecretRefusal('board suggestion', text)
     if (refusal) throw new Error(refusal)
   }
 }
@@ -69,10 +73,23 @@ export function suggestBoardPost(
   runId: string,
   input: SuggestBoardPostInput,
   clock = Date.now(),
+  isKnownCommit?: IsKnownCommit,
 ): { recordId: string; number: number; dropped: boolean } {
   const run = rootRun(runId)
   if (!run) throw new Error(`run ${runId} does not exist; put the suggestion in the final reply`)
-  validateText(input, run.repo ? projectByName(run.repo)?.path : null)
+  const checkout = run.repo ? projectByName(run.repo)?.path : null
+  const prepareSuggestion = (text: string) =>
+    prepareBoardText('suggestion', text, checkout, isKnownCommit)
+  const prepareTag = (text: string) => prepareBoardText('tag', text, checkout, isKnownCommit)
+  input = {
+    ...input,
+    title: prepareSuggestion(input.title),
+    body: prepareSuggestion(input.body),
+    task: input.task === undefined ? undefined : prepareTag(input.task),
+    paths: input.paths?.map(prepareTag),
+    topics: input.topics?.map(prepareTag),
+  }
+  validateText(input)
   const senderTags = senderBoardTags(input)
   if (!run.session_id)
     throw new Error(
@@ -193,13 +210,14 @@ export function postBoardSuggestion(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  isKnownCommit?: IsKnownCommit,
 ) {
   const database = writableDb()
   return writeTransaction(() => {
     const row = suggestion(id, database)
     authorizeDisposal(row, env)
     const defaults = senderDefaults(row.record_id, database)
-    const notice: PostNoticeInput = {
+    const rawNotice: PostNoticeInput = {
       audience: input.audience,
       title: input.title ?? row.title,
       body: input.body ?? row.body,
@@ -207,6 +225,19 @@ export function postBoardSuggestion(
       paths: input.paths ?? defaults.paths,
       topics: input.topics ?? defaults.topics,
       suggestingRunId: row.author_run_record_id,
+    }
+    const run = rootRun(row.author_run_record_id)
+    const checkout = projectAt(cwd) ? cwd : run?.repo ? projectByName(run.repo)?.path : null
+    const prepareSuggestion = (text: string) =>
+      prepareBoardText('suggestion', text, checkout, isKnownCommit)
+    const prepareTag = (text: string) => prepareBoardText('tag', text, checkout, isKnownCommit)
+    const notice: PostNoticeInput = {
+      ...rawNotice,
+      title: prepareSuggestion(rawNotice.title),
+      body: prepareSuggestion(rawNotice.body),
+      task: rawNotice.task === undefined ? undefined : prepareTag(rawNotice.task),
+      paths: rawNotice.paths?.map(prepareTag),
+      topics: rawNotice.topics?.map(prepareTag),
     }
     const posted = postNoticeInTransaction(notice, env, clock, cwd, database)
     database

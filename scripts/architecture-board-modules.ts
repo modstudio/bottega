@@ -146,6 +146,7 @@ export const boardModules: BoardModule[] = [
     './board-store.ts',
     './board-thread-policy.ts',
     './board-thread-service.ts',
+    './board-text-secret.ts',
   ]),
   module('orchestrator/src/board/board-claim-policy.ts', [
     './board-policy.ts',

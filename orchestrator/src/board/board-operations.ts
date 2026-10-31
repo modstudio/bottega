@@ -70,6 +70,7 @@ import {
   withdrawNotice,
 } from './board-service.ts'
 import { type BoardOrigin, boardActor, boardOrigin, originText } from './board-store.ts'
+import { type IsKnownCommit, prepareBoardText } from './board-text-secret.ts'
 import { boardThreadState } from './board-thread-policy.ts'
 import {
   acceptAnswer,
@@ -80,7 +81,13 @@ import {
 } from './board-thread-service.ts'
 
 type Environment = Record<string, string | undefined>
-type Context = { env?: Environment; clock?: number; cwd?: string; client?: RecordApiClient }
+type Context = {
+  env?: Environment
+  clock?: number
+  cwd?: string
+  client?: RecordApiClient
+  isKnownCommit?: IsKnownCommit
+}
 
 export type BoardPostResult = {
   recordId: string
@@ -177,6 +184,26 @@ function context(input: Context = {}) {
     clock: input.clock ?? Date.now(),
     cwd: input.cwd ?? process.cwd(),
     client: input.client,
+    isKnownCommit: input.isKnownCommit,
+  }
+}
+
+function boardTextCheckout(cwd: string): string | null {
+  return projectAt(cwd) ? cwd : null
+}
+
+function preparePostText(input: PostNoticeInput, c: ReturnType<typeof context>): PostNoticeInput {
+  const prepareNotice = (text: string) =>
+    prepareBoardText('notice', text, boardTextCheckout(c.cwd), c.isKnownCommit)
+  const prepareTag = (text: string) =>
+    prepareBoardText('tag', text, boardTextCheckout(c.cwd), c.isKnownCommit)
+  return {
+    ...input,
+    title: prepareNotice(input.title),
+    body: prepareNotice(input.body),
+    task: input.task === undefined ? undefined : prepareTag(input.task),
+    paths: input.paths?.map(prepareTag),
+    topics: input.topics?.map(prepareTag),
   }
 }
 
@@ -432,6 +459,7 @@ export function hostedBoardPostInput(
 
 export async function boardPost(input: PostNoticeInput, inputContext?: Context) {
   const c = context(inputContext)
+  input = preparePostText(input, c)
   const actor = boardActor(c.env)
   const audience = parseAudience(input.audience)
   const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
@@ -475,6 +503,7 @@ export async function boardAsk(
   inputContext?: Context,
 ) {
   const c = context(inputContext)
+  input = preparePostText(input, c)
   const audience = parseAudience(input.audience)
   if (boardMode(locality(input.audience), c.env) === 'local') {
     const localRefusal = localBoardAudienceRefusal(audience)
@@ -500,6 +529,7 @@ export async function boardReply(
   audience: ReplyAudienceOption | null = null,
 ) {
   const c = context(inputContext)
+  body = prepareBoardText('reply', body, boardTextCheckout(c.cwd), c.isKnownCommit)
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') {
     const parsed = resolved.recordId
@@ -597,14 +627,20 @@ async function fileHostedNote(
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
+    const preparedDetail = prepareBoardText(
+      'filing-failure',
+      detail,
+      boardTextCheckout(c.cwd),
+      c.isKnownCommit,
+    )
     await client.failBoardFilingLease(questionId, {
-      error: detail,
+      error: preparedDetail,
       authorSession: boardActor(c.env).session,
     })
     return {
       noteRecordId: null,
       noteLabel: null,
-      notePendingError: detail,
+      notePendingError: preparedDetail,
       retry: `${PLATFORM_SLUG} board file-note ${questionId}`,
     }
   }
@@ -612,12 +648,22 @@ async function fileHostedNote(
 
 export async function boardAccept(questionId: string, replyId: string, inputContext?: Context) {
   const c = context(inputContext)
+  const prepareFailure = (detail: string) =>
+    prepareBoardText('filing-failure', detail, boardTextCheckout(c.cwd), c.isKnownCommit)
   const question = resolveBoardMessageIdentifier(db(), questionId, c.env)
   const reply = resolveBoardMessageIdentifier(db(), replyId, c.env)
   if (reply.source !== question.source)
     throw new Error('board question id and board reply id must refer to rows in the same store')
   if (question.source === 'local') {
-    const value = await acceptAnswer(question.recordId, reply.recordId, c.env, c.clock, c.cwd)
+    const value = await acceptAnswer(
+      question.recordId,
+      reply.recordId,
+      c.env,
+      c.clock,
+      c.cwd,
+      undefined,
+      prepareFailure,
+    )
     return {
       ...value,
       accepted: String(value.accepted),
@@ -633,9 +679,18 @@ export async function boardAccept(questionId: string, replyId: string, inputCont
 
 export async function boardFileNote(questionId: string, inputContext?: Context) {
   const c = context(inputContext)
+  const prepareFailure = (detail: string) =>
+    prepareBoardText('filing-failure', detail, boardTextCheckout(c.cwd), c.isKnownCommit)
   const question = resolveBoardMessageIdentifier(db(), questionId, c.env)
   if (question.source === 'local') {
-    const result = await fileAnswerNote(question.recordId, c.env, c.cwd)
+    const result = await fileAnswerNote(
+      question.recordId,
+      c.env,
+      c.cwd,
+      undefined,
+      c.clock,
+      prepareFailure,
+    )
     return { ...result, questionId: question.recordId }
   }
   return {
@@ -721,6 +776,20 @@ function hostedClaimRunId(runId: string | undefined, env: Environment): string |
 
 export async function boardClaimTake(input: TakeClaimInput, inputContext?: Context) {
   const c = context(inputContext)
+  const project = claimProject(input.project, c.env, c.cwd)
+  const callerProject = projectAt(c.cwd)
+  const checkout = callerProject?.name === project ? c.cwd : projectRowByName(project)?.path
+  const prepareNote = (text: string) =>
+    prepareBoardText('claim-note', text, checkout, c.isKnownCommit)
+  const prepareResource = (text: string) =>
+    prepareBoardText('claim-resource', text, checkout, c.isKnownCommit)
+  input = {
+    ...input,
+    subject: input.subject.startsWith('resource:')
+      ? `resource:${prepareResource(input.subject.slice(9))}`
+      : input.subject,
+    note: input.note === undefined ? undefined : prepareNote(input.note),
+  }
   if (boardMode('shared', c.env) === 'local') {
     const result = takeClaim(input, c.env, c.clock, c.cwd)
     return { ...claimResult(result), action: result.action }
@@ -731,8 +800,8 @@ export async function boardClaimTake(input: TakeClaimInput, inputContext?: Conte
     )
   const row = await hostedClient(c).takeBoardClaim({
     id: newRecordId(),
-    project: claimProject(input.project, c.env, c.cwd),
-    projectId: projectRowByName(claimProject(input.project, c.env, c.cwd))!.recordId,
+    project,
+    projectId: projectRowByName(project)!.recordId,
     subject: input.subject,
     durationMs: input.durationMs ?? BOARD_CLAIM_DEFAULT_MS,
     runId: hostedClaimRunId(input.runId, c.env),

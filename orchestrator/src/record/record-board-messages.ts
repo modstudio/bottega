@@ -25,13 +25,13 @@ import {
   standingPostingRefusal,
   validatePostNoticeInput,
 } from '../board/board-policy.ts'
-import { boardTextSecretRefusal } from '../board/board-text-secret.ts'
 import {
   type BoardTag,
   inferredBoardTags,
   senderBoardTags,
   senderTagKey,
 } from '../board/board-tags.ts'
+import { boardTextSecretRefusal } from '../board/board-text-secret.ts'
 import {
   acceptRefusal,
   BOARD_NOTE_FILING_LEASE_MS,

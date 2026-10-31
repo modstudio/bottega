@@ -64,7 +64,7 @@ export const mayReleaseClaim = (actor: ClaimActor, holder: ClaimActor): boolean 
 
 export const mayForceClaim = (actor: ClaimActor): boolean => actor.kind === 'operator'
 
-export function parseClaimSubject(expression: string, checkout?: string | null): ClaimSubject {
+export function parseClaimSubject(expression: string): ClaimSubject {
   if (/[\r\n\u2028\u2029]/.test(expression))
     throw new Error('claim subject contains a line break; remove it and retry')
   const match = /^(task|path|resource):(.*)$/.exec(expression)
@@ -84,16 +84,13 @@ export function parseClaimSubject(expression: string, checkout?: string | null):
       throw new Error(
         `claim resource exceeds ${BOARD_CLAIM_RESOURCE_MAX_CHARS} characters; shorten it`,
       )
-    const refusal = boardTextSecretRefusal('claim resource', value, checkout)
+    const refusal = boardTextSecretRefusal('claim resource', value)
     if (refusal) throw new Error(refusal)
   }
   return { kind, value }
 }
 
-export function claimNote(
-  note: string | undefined,
-  checkout?: string | null,
-): string | null | undefined {
+export function claimNote(note: string | undefined): string | null | undefined {
   if (note === undefined) return undefined
   const value = note.trim()
   if (!value) return null
@@ -101,7 +98,7 @@ export function claimNote(
     throw new Error('claim note contains a line break; remove it and retry')
   if (value.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`claim note exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  const refusal = boardTextSecretRefusal('claim note', value, checkout)
+  const refusal = boardTextSecretRefusal('claim note', value)
   if (refusal) throw new Error(refusal)
   return value
 }

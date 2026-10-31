@@ -359,13 +359,12 @@ export function takeClaim(
 ): TakeClaimResult {
   const actor = claimActor(env)
   if (input.force && !mayForceClaim(actor)) throw new Error('only the operator may use --force')
-  const project = claimProject(input.project, env, cwd)
-  const checkout = projectByName(project)?.path
-  const subject = parseClaimSubject(input.subject, checkout)
-  const note = claimNote(input.note, checkout)
+  const subject = parseClaimSubject(input.subject)
+  const note = claimNote(input.note)
   const duration = input.durationMs ?? BOARD_CLAIM_DEFAULT_MS
   const durationRefusal = claimDurationRefusal(duration)
   if (durationRefusal) throw new Error(durationRefusal)
+  const project = claimProject(input.project, env, cwd)
   const database = writableDb()
   validateRunTie(input.runId, actor, database)
   const outcome = writeTransaction(
