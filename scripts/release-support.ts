@@ -21,16 +21,11 @@ export function distributionManifest(
   return { name: PLATFORM_NAME, version, built, commit }
 }
 
-export async function run(
-  argv: string[],
-  cwd = repositoryRoot,
-  stdinPath?: string,
-): Promise<string> {
+export async function run(argv: string[], cwd = repositoryRoot): Promise<string> {
   const child = Bun.spawn(argv, {
     cwd,
     stdout: 'pipe',
     stderr: 'inherit',
-    ...(stdinPath ? { stdin: Bun.file(stdinPath) } : {}),
   })
   const output = await new Response(child.stdout).text()
   const exitCode = await child.exited
