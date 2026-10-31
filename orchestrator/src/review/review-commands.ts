@@ -447,8 +447,9 @@ export async function yieldReviewCommand(
 export function reviewTierCommandOutput(value: string, cwd: string) {
   const target = resolveTierTarget(value, cwd)
   return {
-    cwd: target.repo,
+    cwd: target.project.path,
     branch: target.branch,
+    tip: target.to,
     output: reviewTierOutputForTarget(target),
   }
 }

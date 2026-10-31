@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { existsSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ceilingRulingGuidance, decideTriageOverride } from './override-decision.ts'
 
@@ -152,4 +153,13 @@ test('ceiling guidance names only a ceiling ruling that admission accepts', () =
       commandName,
     }),
   ).toContain(`${commandName} pr create needs no ruling`)
+
+  const accepting = ceilingRulingGuidance({
+    reviewBudget: { atCeiling: true, roundsUsed: 3, ceiling: 3 },
+    triage: triage(),
+    commandName,
+  })!
+  const canonPath = accepting.match(/`([^`]+\.md)`/)?.[1]
+  expect(canonPath).toBeDefined()
+  expect(existsSync(new URL(`../../../${canonPath}`, import.meta.url))).toBe(true)
 })

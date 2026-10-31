@@ -89,7 +89,7 @@ function tierCeilingGuidance(input: ReturnType<typeof reviewTierCommandOutput>):
   if (!reviewBudget.atCeiling) return null
   try {
     const database = db()
-    const change = resolvePullRequestChange(input.cwd, 'HEAD', database, undefined, input.branch)
+    const change = resolvePullRequestChange(input.cwd, input.tip, database, undefined, input.branch)
     return ceilingRulingGuidance({
       reviewBudget,
       triage: ceilingTriageFacts(triageDecision(change, database)),
