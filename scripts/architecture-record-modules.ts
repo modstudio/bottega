@@ -12,6 +12,8 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/postgres/postgres-migrate.ts', []),
+  module('orchestrator/src/postgres/migration-failure.ts', []),
   module('orchestrator/src/lens/lens-built-ins.ts', []),
   module('orchestrator/src/lens/lens-seeds.ts', [
     'bun:sqlite',
