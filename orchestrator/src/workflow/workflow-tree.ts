@@ -1,6 +1,10 @@
 // concern: workflow-tree
 /** Knows the pure markdown mirror for production workflows. Must not know filesystems, stores, commands, projects, or transports. */
-import type { CatalogueSequence, CatalogueStep } from './step-catalogue.ts'
+import {
+  type CatalogueSequence,
+  type CatalogueStep,
+  unsupportedCloseEvidenceFlags,
+} from './step-catalogue.ts'
 import type { WorkflowDefinition } from './workflows.ts'
 
 export type WorkflowTreeStore = {
@@ -171,6 +175,43 @@ const commandEvidenceFrom = (frontMatter: Record<string, unknown>) =>
     ? {}
     : { commandEvidence: frontMatter.commandEvidence as CatalogueStep['commandEvidence'] }
 
+function parsedCatalogueStep(
+  file: WorkflowTreeFile,
+  slug: string,
+  frontMatter: Record<string, unknown>,
+  body: string,
+): CatalogueStep {
+  const step: CatalogueStep = {
+    slug,
+    title: frontMatter.title as string,
+    stage: frontMatter.stage as CatalogueStep['stage'],
+    floor: frontMatter.floor as CatalogueStep['floor'],
+    ...outcomesFrom(frontMatter),
+    ...rulingOutcomesFrom(frontMatter),
+    ...reenterFrom(frontMatter),
+    ...(frontMatter.deferrable === undefined
+      ? {}
+      : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
+    ...expectedExitCodesFrom(frontMatter),
+    ...expectedStatusFrom(frontMatter),
+    ...stepBooleanOptionsFrom(frontMatter),
+    ...commandEvidenceFrom(frontMatter),
+    job: frontMatter.job as string | null,
+    autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
+    needs: frontMatter.needs as CatalogueStep['needs'],
+    body,
+  }
+  const closeInstructionDecision = unsupportedCloseEvidenceFlags(step.floor, step.body)
+  for (const finding of closeInstructionDecision.judged ? closeInstructionDecision.findings : []) {
+    throw new Error(
+      `${file.path}: close instruction names ${finding.flag}, which none of its declared floors accept; ` +
+        `${finding.flag} is accepted by ${finding.acceptingFloors.join(', ')}; ` +
+        'change the instruction to an accepted flag, or change the floor',
+    )
+  }
+  return step
+}
+
 export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
   const steps: CatalogueStep[] = []
   const sequences: CatalogueSequence[] = []
@@ -187,26 +228,7 @@ export function parseWorkflowTree(tree: WorkflowTreeFile[]): WorkflowTreeStore {
         steps: frontMatter.steps as string[],
       })
     } else if (match.folder === 'workflow-steps') {
-      steps.push({
-        slug: match.slug,
-        title: frontMatter.title as string,
-        stage: frontMatter.stage as CatalogueStep['stage'],
-        floor: frontMatter.floor as CatalogueStep['floor'],
-        ...outcomesFrom(frontMatter),
-        ...rulingOutcomesFrom(frontMatter),
-        ...reenterFrom(frontMatter),
-        ...(frontMatter.deferrable === undefined
-          ? {}
-          : { deferrable: frontMatter.deferrable as CatalogueStep['deferrable'] }),
-        ...expectedExitCodesFrom(frontMatter),
-        ...expectedStatusFrom(frontMatter),
-        ...stepBooleanOptionsFrom(frontMatter),
-        ...commandEvidenceFrom(frontMatter),
-        job: frontMatter.job as string | null,
-        autonomy: frontMatter.autonomy as CatalogueStep['autonomy'],
-        needs: frontMatter.needs as CatalogueStep['needs'],
-        body: parsed.body,
-      })
+      steps.push(parsedCatalogueStep(file, match.slug, frontMatter, parsed.body))
     } else {
       workflows.push({
         slug: match.slug,
