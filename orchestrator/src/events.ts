@@ -48,6 +48,7 @@ type FocusedTestRunLogEvent = {
   elapsedMs: number
   logName: string
   logPath: string
+  expect?: 'fail'
 }
 type FocusedTestRefusalRunLogEvent = {
   ts: string

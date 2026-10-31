@@ -62,7 +62,11 @@ import { rollUpRootAndEnqueue } from './run-liveness.ts'
 import { enqueueRunRecord } from './run-outbox.ts'
 import { errorTail, live, liveCheckpoints } from './run-process.ts'
 import { checkpointRoot, claimIdentity } from './run-resume-kind.ts'
-import { type ObservedTestOutcome, observedTestOutcome } from './run-test-outcome.ts'
+import {
+  type ObservedTestOutcome,
+  observedTestOutcome,
+  outcomeNoteWithPassedProbes,
+} from './run-test-outcome.ts'
 import {
   quotaReadingsColumnValues,
   runUsageColumns,
@@ -191,6 +195,16 @@ export function writeObservedTestOutcome(
       nullableBooleanColumn(outcome.claimDisagrees),
       runId,
     )
+}
+
+function terminalOutcomeNote(
+  status: OutcomeStatus,
+  error: string | null,
+  testOutcome: ObservedTestOutcome | null,
+): string | null {
+  return testOutcome
+    ? outcomeNoteWithPassedProbes({ status, error, probesPassed: testOutcome.probesPassed })
+    : error
 }
 
 export type TerminalInput = {
@@ -902,9 +916,8 @@ export async function finishRun(input: TerminalInput): Promise<TerminalResult> {
     // Never let recording a blocker fail a run that otherwise succeeded.
     console.error(`orch: could not record blockers for run ${claim.id}: ${e}`)
   }
-  const testOutcome = writesJob
-    ? observedTestOutcome(db(), claim.id, contract?.tests ?? null)
-    : null
+  const testOutcome = writesJob ? observedTestOutcome(db(), claim.id, contract?.tests) : null
+  error = terminalOutcomeNote(status, error, testOutcome)
   const terminalSnapshot: TerminalSnapshot = {
     status,
     error,

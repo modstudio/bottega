@@ -22,13 +22,15 @@ export function registerFocusedTestTool(input: {
         "Run this project's registered focused test runners with project-relative paths. " +
         'Each path goes only to the runner whose registered patterns accept it. ' +
         'Set affected to also run the tests of every module that imports what this run changed, ' +
-        "which the project's registered focusedTests affected commands select.",
+        "which the project's registered focusedTests affected commands select. " +
+        "Declare expect: 'fail' on a call that is a mutation probe the spec asked for.",
       inputSchema: z.object({
         paths: z.array(z.string()).optional(),
         affected: z.boolean().optional(),
+        expect: z.enum(['fail']).optional(),
       }),
     },
-    async ({ paths, affected }, context) => {
+    async ({ paths, affected, expect }, context) => {
       try {
         const requestedAffected = affected === true
         const decision = focusedTestEligibility(input.runId, input.token, requestedAffected)
@@ -39,6 +41,7 @@ export function registerFocusedTestTool(input: {
             scratchDir: runScratchDir(input.runId),
             paths: paths ?? [],
             affected: requestedAffected,
+            expect,
             signal: context.mcpReq.signal,
           }),
         )

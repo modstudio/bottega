@@ -18,8 +18,10 @@ import { questionOpenSql } from '../run/question-open.ts'
 import { HARNESS_EXECUTOR } from '../run/run-executor.ts'
 import { classifyRunIdentifier, resolveRunIdentifier } from '../run/run-identifier.ts'
 import type { ObservedDeadRun } from '../run/run-liveness.ts'
+import { focusedTestObservations } from '../run/run-test-outcome.ts'
 import { refusalScoreGuidance } from '../score/refusal-guidance.ts'
 import {
+  declaredExpectFailProbeLines,
   observedTestsLine,
   TRUNCATED_TRANSCRIPT_BYTES,
   visibleTranscriptText,
@@ -112,7 +114,7 @@ type AskingResolution =
   | { state: 'recoverable'; rootId: string }
 
 function presentObservedTests(
-  row: Pick<CollectedRunRow, 'tests_ran' | 'tests_passed' | 'tests_claim_disagrees'>,
+  row: Pick<CollectedRunRow, 'record_id' | 'tests_ran' | 'tests_passed' | 'tests_claim_disagrees'>,
   presentation: CollectResultPresentation,
 ): void {
   const line = observedTestsLine({
@@ -121,6 +123,9 @@ function presentObservedTests(
     claimDisagrees: row.tests_claim_disagrees,
   })
   if (line) presentation.error(line)
+  for (const probeLine of declaredExpectFailProbeLines(focusedTestObservations(row.record_id))) {
+    presentation.error(probeLine)
+  }
 }
 
 /** Resolve what an `asking` status means across the whole conversation. */

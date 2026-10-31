@@ -1,3 +1,5 @@
+import type { FocusedTestExecutionObservation } from '../run/run-test-outcome.ts'
+
 /** Maximum recovered transcript text printed by `bottega run result` for a truncated run. */
 export const TRUNCATED_TRANSCRIPT_BYTES = 32 * 1024
 
@@ -39,4 +41,16 @@ export function observedTestsLine(input: {
     `${input.passed === null ? 'null' : Boolean(input.passed)}}; ` +
     `tests_claim_disagrees: ${disagreement}`
   )
+}
+
+/** Render every declared mutation-probe execution that observed a result. */
+export function declaredExpectFailProbeLines(
+  observations: readonly FocusedTestExecutionObservation[],
+): string[] {
+  return observations
+    .filter((observation) => observation.expect === 'fail')
+    .map(
+      (observation) =>
+        `declared expect-fail probe: ${observation.paths.join(', ')} → ${observation.passed ? 'passed' : 'failed'}`,
+    )
 }

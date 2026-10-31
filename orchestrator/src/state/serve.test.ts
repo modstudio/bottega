@@ -11,7 +11,7 @@ import { db, nowIso } from '../database/db.ts'
 import { appendRunEvent } from '../events.ts'
 import { recordReview } from '../review/review-triage.ts'
 import { runArtifactsDir, runScratchDir } from '../run/run-artifacts.ts'
-import { runDetail, state } from './serve.ts'
+import { RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS, runDetail, state } from './serve.ts'
 
 const trackResidue = trackedTestResidue()
 const runNumber = (recordId: string) =>
@@ -56,6 +56,20 @@ test('live child turns publish their chain root for hub badge matching', () => {
 })
 
 describe('run detail', () => {
+  test('accounts for every run column in the detail projection', () => {
+    const id = addRun({ agent: 'codex', job: 'implement' })
+    const detail = runDetail(id)!
+    const columns = db().query<{ name: string }, []>('PRAGMA table_info(run)').all()
+    const unexplained = columns
+      .map((column) => column.name)
+      .filter(
+        (column) =>
+          !Object.hasOwn(detail, column) &&
+          !Object.hasOwn(RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS, column),
+      )
+    expect(unexplained).toEqual([])
+  })
+
   test('returns a stored writer reply from before change guides', () => {
     const id = addRun({ agent: 'codex', job: 'implement' })
     const outputPath = trackResidue(join(dir, `old-writer-reply-${id}.txt`))

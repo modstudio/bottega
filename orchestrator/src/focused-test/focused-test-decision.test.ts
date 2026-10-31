@@ -12,6 +12,7 @@ import {
   FOCUSED_TEST_MAX_PATHS,
   FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
   focusedTestInvocation,
+  formatFocusedTestRequestDecision,
   hasFocusedTestRunner,
   normalizeAffectedTestPaths,
   normalizeFocusedTestPaths,
@@ -58,6 +59,23 @@ describe('focused test decisions', () => {
         'Focused tests for "tests/one.test.ts" are still running. ' +
         'Call run_tests again to wait for and collect this same execution.',
     })
+  })
+
+  test('a joining call reports the running execution declaration', () => {
+    expect(
+      formatFocusedTestRequestDecision(
+        {
+          action: 'join',
+          execution: {
+            id: 'request-1',
+            paths: ['tests/mutation.test.ts'],
+            affected: false,
+            expect: 'fail',
+          },
+        },
+        ['tests/ignored.test.ts'],
+      ),
+    ).toContain("The running execution declares expect: 'fail'.")
   })
 
   test('requires bounded project-relative non-option paths', () => {
@@ -147,8 +165,14 @@ describe('focused test decisions', () => {
       paths: [],
       affected: true,
     })
+    expect(
+      parseFocusedTestRequest({ id: 'request-1', paths: [], affected: false, expect: 'fail' }),
+    ).toEqual({ id: 'request-1', paths: [], affected: false, expect: 'fail' })
     expect(() => parseFocusedTestRequest({ id: 'request-1', paths: [], affected: 'yes' })).toThrow(
       'affected is invalid',
+    )
+    expect(() => parseFocusedTestRequest({ id: 'request-1', paths: [], expect: 'pass' })).toThrow(
+      'expect is invalid',
     )
     expect(
       parseFocusedTestResult({
