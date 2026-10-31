@@ -60,6 +60,7 @@ test('question payload contains the hosted shape and replaces a pending mutation
   const payload = JSON.parse(rows[0]!.payload) as Record<string, unknown>
   expect(Object.keys(payload).sort()).toEqual(QUESTION_RECORD_PAYLOAD_COLUMNS.toSorted())
   expect(payload).toMatchObject({
+    number: question.number,
     runId: RUN_RECORD_ID,
     workflowTaskId: null,
     localId: question.number,
@@ -223,4 +224,35 @@ test('question backfill enqueues all existing rows once', () => {
   expect(database.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 2,
   })
+})
+
+test('question backfill rebuilds a synced payload that predates its display number', () => {
+  const database = fixture()
+  const question = database
+    .query<{ record_id: string; number: number }, []>(
+      `INSERT INTO question (number,record_id,run_record_id,asked_at,question)
+       VALUES (7,'${newRecordId()}','${RUN_RECORD_ID}','2026-09-25T10:01:00.000Z','Which?')
+       RETURNING record_id,number`,
+    )
+    .get()!
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+       VALUES (?,'question',?,'{"revision":1}',
+               '2026-09-25T10:01:00.000Z','2026-09-25T10:01:00.000Z')`,
+    )
+    .run(newRecordId(), question.record_id)
+
+  expect(backfillQuestionRecords(database)).toEqual({ enqueued: 1 })
+  const latest = database
+    .query<{ payload: string }, [string]>(
+      "SELECT payload FROM outbox WHERE kind='question' AND row_id=? ORDER BY id DESC LIMIT 1",
+    )
+    .get(question.record_id)!
+  expect(JSON.parse(latest.payload)).toMatchObject({
+    number: question.number,
+    localId: question.number,
+  })
+  expect(backfillQuestionRecords(database)).toEqual({ enqueued: 0 })
+  database.close()
 })

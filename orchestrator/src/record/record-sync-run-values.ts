@@ -17,6 +17,7 @@ export function runRecordValues(
 ) {
   return {
     id: String(row.id),
+    number: nullableNumber(row.number),
     spaceId: String(row.spaceId),
     projectId,
     machineId: String(row.machineId),

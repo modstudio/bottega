@@ -57,6 +57,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
   )
   expect(Object.keys(payload).sort()).toEqual([...RUN_RECORD_PAYLOAD_COLUMNS].sort())
   expect(payload).toMatchObject({
+    number: 42,
     localId: 42,
     createdAt: '2026-09-15T01:00:00.000Z',
     finishedAt: '2026-09-15T01:01:00.000Z',
@@ -277,13 +278,20 @@ test('backfill refreshes stale links for roots and turns only once', () => {
   )
   insert.run(rootId, 1, null, 1, projectId)
   insert.run(turnId, 2, rootId, 2, projectId)
-  const oldPayload = JSON.stringify({ projectName: 'project', status: 'ok', failureKind: null })
   const addOutbox = database.query(
     `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
      VALUES (?,'run',?,?, '2026-10-26T12:01:00.000Z')`,
   )
-  addOutbox.run(newRecordId(), rootId, oldPayload)
-  addOutbox.run(newRecordId(), turnId, oldPayload)
+  addOutbox.run(
+    newRecordId(),
+    rootId,
+    JSON.stringify({ number: 1, projectName: 'project', status: 'ok', failureKind: null }),
+  )
+  addOutbox.run(
+    newRecordId(),
+    turnId,
+    JSON.stringify({ number: 2, projectName: 'project', status: 'ok', failureKind: null }),
+  )
   const machine = '01990000-0000-7000-8000-000000000099'
 
   expect(backfillRunRecords(database, machine)).toEqual({
@@ -303,6 +311,43 @@ test('backfill refreshes stale links for roots and turns only once', () => {
       .query<{ count: number }, []>("SELECT count(*) AS count FROM outbox WHERE kind='run'")
       .get()!.count,
   ).toBe(4)
+  database.close()
+})
+
+test('backfill rebuilds a run payload that predates its display number', () => {
+  const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
+  const recordId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+        status,turn,project_record_id)
+       VALUES (?,42,'2026-10-30T12:00:00.000Z','2026-10-30T12:01:00.000Z',
+               'codex','implement','sha',4,'head','ok',1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
+    )
+    .run(recordId)
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at,synced_at)
+       VALUES (?,'run',?,'{"status":"ok","failureKind":null}',
+               '2026-10-30T12:01:00.000Z','2026-10-30T12:01:00.000Z')`,
+    )
+    .run(newRecordId(), recordId)
+
+  expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
+    enqueued: 1,
+    refreshedLinks: 0,
+    refreshedRoots: 0,
+    skippedLive: 0,
+  })
+  const latest = database
+    .query<{ payload: string }, [string]>(
+      "SELECT payload FROM outbox WHERE kind='run' AND row_id=? ORDER BY id DESC LIMIT 1",
+    )
+    .get(recordId)!
+  expect(JSON.parse(latest.payload)).toMatchObject({ number: 42, localId: 42 })
   database.close()
 })
 

@@ -58,6 +58,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
     }))
   const payload = stringifyOutboxPayload('question', {
     id: recordId,
+    number: row.number,
     spaceId: PLATFORM_SPACE_ID,
     runId: row.run_record_id,
     workflowKey: row.workflow_key,
@@ -125,9 +126,11 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
 export function backfillQuestionRecords(database: Database): { enqueued: number } {
   const questions = database
     .query<{ record_id: string }, []>(
-      `SELECT record_id FROM question WHERE NOT EXISTS (
-         SELECT 1 FROM outbox WHERE kind='question' AND row_id=question.record_id
-       ) ORDER BY number`,
+      `SELECT record_id FROM question WHERE COALESCE(json_extract((
+         SELECT payload FROM outbox
+          WHERE kind='question' AND row_id=question.record_id
+          ORDER BY id DESC LIMIT 1
+       ), '$.number'), -1) != question.number ORDER BY number`,
     )
     .all()
   for (const row of questions) enqueueQuestionRecord(database, row.record_id)

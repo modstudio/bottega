@@ -339,6 +339,18 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
 
 const DISPLAY_LABELS: readonly DisplayLabel[] = [
   {
+    store: 'hosted',
+    column: 'question.number',
+    sibling: 'question.id',
+    reason: 'machine-local display label beside the question UUID',
+  },
+  {
+    store: 'hosted',
+    column: 'run.number',
+    sibling: 'run.id',
+    reason: 'machine-local display label beside the run UUID',
+  },
+  {
     store: 'hub',
     column: 'commit_key.task_key',
     sibling: 'commit_key.task_record_id',

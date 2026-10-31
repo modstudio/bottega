@@ -96,6 +96,7 @@ export function buildRunRecordPayload(
 ): Record<string, unknown> {
   return {
     id: row.record_id,
+    number: row.number,
     spaceId: PLATFORM_SPACE_ID,
     projectId: row.project_record_id,
     projectName: row.project_name,
@@ -220,12 +221,13 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
         status: string
         failure_kind: string | null
         latest_payload: string | null
+        number: number
         project_record_id: string | null
         task_record_id: string | null
       },
       [string, string]
     >(
-      `SELECT r.record_id, COALESCE(r.last_event_at, r.started_at) AS finished_at,
+      `SELECT r.record_id, r.number, COALESCE(r.last_event_at, r.started_at) AS finished_at,
               r.parent_run_record_id, r.status, r.failure_kind, latest.payload AS latest_payload,
               r.project_record_id, r.task_record_id
          FROM run r
@@ -262,13 +264,15 @@ export function backfillRunRecords(database: Database, machineId: string): RunRe
     const isRoot = row.parent_run_record_id === null
     const outcomeChanged =
       isRoot && (latest.status !== row.status || latest.failureKind !== row.failure_kind)
-    if (!refreshLinks && !outcomeChanged) continue
+    const refreshNumber = latest.number !== row.number
+    if (!refreshLinks && !outcomeChanged && !refreshNumber) continue
     // A root's record carries its chain's outcome, so it is stamped at the chain's end.
     const finishedAt = isRoot
       ? (chainTerminationAtForRoot(database, row.record_id) ?? row.finished_at)
       : row.finished_at
     enqueueRunRecord(database, row.record_id, machineId, finishedAt)
-    if (refreshLinks) refreshedLinks++
+    if (refreshNumber) enqueued++
+    else if (refreshLinks) refreshedLinks++
     else refreshedRoots++
   }
 

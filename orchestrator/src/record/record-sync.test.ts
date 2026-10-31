@@ -186,6 +186,7 @@ function localScoreOutbox(): Database {
 
 test('sync upserts once and a second pass has no run mutation', async () => {
   const local = localOutbox(1, PLATFORM_SLUG, {
+    number: 42,
     vendorTokens: 101,
     vendorCostUsd: 1.25,
     vendorInputTokens: 102,
@@ -220,6 +221,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
   )!
   const valueFor = (column: string) => runParameters[runColumns.indexOf(column)]
   expect({
+    number: valueFor('number'),
     vendorTokens: valueFor('vendor_tokens'),
     vendorCostUsd: valueFor('vendor_cost_usd'),
     vendorInputTokens: valueFor('vendor_input_tokens'),
@@ -231,6 +233,7 @@ test('sync upserts once and a second pass has no run mutation', async () => {
     resourceSamples: valueFor('resource_samples'),
     resourceSource: valueFor('resource_source'),
   }).toEqual({
+    number: 42,
     vendorTokens: 101n,
     vendorCostUsd: 1.25,
     vendorInputTokens: 102n,
