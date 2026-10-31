@@ -87,7 +87,9 @@ function closingSentences(body: string): string[] {
     .split(/\n{2,}/)
     .flatMap((paragraph) => paragraph.match(/[^.!?]*(?:[.!?](?=\s|$)|$)/g) ?? [])
     .filter((sentence) =>
-      /\b(?:clos(?:e|ing)|finish(?:ed|es|ing)?|complet(?:e|ed|es|ing))\b/i.test(sentence),
+      /\b(?:close|closing|finish|finished|finishes|finishing|complete|completed|completes|completing)\b/i.test(
+        sentence,
+      ),
     )
 }
 
