@@ -6,6 +6,16 @@ import type { MonitorSeverity } from '../review/review-vocabulary.ts'
 import type { RunHostCapacityQueue } from '../run/run-host-capacity.ts'
 import type { HostAdmissionSummary } from './host-admission-summary.ts'
 
+export const MONITOR_DETAIL_CHARS = 512
+
+export function boundToChars(text: string, chars: number): string {
+  return text.length <= chars ? text : `${text.slice(0, chars - 1)}…`
+}
+
+export function boundedConditionDetail(detail: string): string {
+  return boundToChars(detail, MONITOR_DETAIL_CHARS)
+}
+
 export type MonitorHostLoad = HostLoadSample
 export type MonitorHostPressure = {
   available: boolean

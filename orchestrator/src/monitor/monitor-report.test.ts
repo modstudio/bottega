@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
-import { displayConditions, monitorHistory } from './monitor.ts'
+import { displayConditions, formatMonitorPass, monitorHistory } from './monitor.ts'
+import { MONITOR_DETAIL_CHARS } from './monitor-types.ts'
 
 describe('operational monitor reports', () => {
   test('marks historical human output partial when that pass had an observation error', () => {
@@ -81,6 +82,21 @@ describe('operational monitor reports', () => {
         ownerSession: null,
       },
     ])
+  })
+
+  test('bounds every human-rendered condition detail', () => {
+    const rendered = formatMonitorPass('monitor pass', [
+      {
+        kind: 'stale-run',
+        subject: 'run:7',
+        ageMs: 120_000,
+        detail: 'x'.repeat(MONITOR_DETAIL_CHARS + 20),
+        action: 'do the thing',
+        ownerSession: null,
+      },
+    ])
+
+    expect(rendered[1]?.split('\n')[1]).toBe(`    ${'x'.repeat(MONITOR_DETAIL_CHARS - 1)}…`)
   })
 
   test('pipes a complete large monitor history JSON document', async () => {

@@ -34,6 +34,7 @@ export class OutboxRowError extends Error {
 
 const MIGRATION_MISMATCH_STATES = new Set(['42P01', '42703', '42883', '3F000'])
 const SESSION_FAILURE_STATES = new Set(['57P01', '57P02', '57P03', '25006'])
+export const OUTBOX_ERROR_CAUSE_SEPARATOR = '\ncaused by: '
 
 export function classifyOutboxFailure(facts: OutboxFailureFacts): OutboxFailureDisposition {
   if (facts.errorClass === 'migration-mismatch') return 'pass-fatal'
@@ -82,7 +83,7 @@ export function outboxErrorDetail(error: unknown): string {
     const detail = label ? `[${label}] ${message}` : message
     if (!details.includes(detail)) details.push(detail)
   }
-  return details.join('\ncaused by: ')
+  return details.join(OUTBOX_ERROR_CAUSE_SEPARATOR)
 }
 
 function postgresFailureFacts(chain: readonly unknown[]) {
