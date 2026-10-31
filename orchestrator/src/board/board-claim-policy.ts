@@ -1,6 +1,6 @@
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { BOARD_BODY_MAX_CHARS } from './board-policy.ts'
 import { pathTagRefusal } from './board-tags.ts'
+import { boardTextSecretRefusal } from './board-text-secret.ts'
 
 export const BOARD_CLAIM_DEFAULT_MS = 4 * 60 * 60 * 1000
 const BOARD_CLAIM_MAX_MS = 24 * 60 * 60 * 1000
@@ -84,8 +84,8 @@ export function parseClaimSubject(expression: string): ClaimSubject {
       throw new Error(
         `claim resource exceeds ${BOARD_CLAIM_RESOURCE_MAX_CHARS} characters; shorten it`,
       )
-    if (containsSecretShaped(value))
-      throw new Error('claim resource contains secret-shaped text; remove the credential and retry')
+    const refusal = boardTextSecretRefusal('claim resource', value)
+    if (refusal) throw new Error(refusal)
   }
   return { kind, value }
 }
@@ -98,8 +98,8 @@ export function claimNote(note: string | undefined): string | null | undefined {
     throw new Error('claim note contains a line break; remove it and retry')
   if (value.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`claim note exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(value))
-    throw new Error('claim note contains secret-shaped text; remove the credential and retry')
+  const refusal = boardTextSecretRefusal('claim note', value)
+  if (refusal) throw new Error(refusal)
   return value
 }
 

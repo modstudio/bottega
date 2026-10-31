@@ -1,7 +1,7 @@
 import type { BoardPurpose } from '../../../shared/board-purpose.ts'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { classifyCaller } from '../caller-classification.ts'
+import { boardTextsSecretRefusal } from './board-text-secret.ts'
 
 export const BOARD_POST_RATE_LIMIT = 10
 export const BOARD_POST_RATE_WINDOW_MS = 10 * 60 * 1000
@@ -246,14 +246,14 @@ export function validatePostNoticeInput(input: {
     throw new Error(`board notice title exceeds ${BOARD_TITLE_MAX_CHARS} characters; shorten it`)
   if (input.body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board notice body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (containsSecretShaped(input.title) || containsSecretShaped(input.body))
-    throw new Error('board notice contains secret-shaped text; remove the credential and retry')
-  if (
-    [input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board notice tag contains secret-shaped text; remove the credential and retry')
+  const textRefusal = boardTextsSecretRefusal('board notice', [input.title, input.body])
+  if (textRefusal) throw new Error(textRefusal)
+  const tagRefusal = boardTextsSecretRefusal('board notice tag', [
+    input.task,
+    ...(input.paths ?? []),
+    ...(input.topics ?? []),
+  ])
+  if (tagRefusal) throw new Error(tagRefusal)
   if (!input.title.trim() || !input.body.trim())
     throw new Error('board notice title and body are required')
   if (input.deadlineMs !== undefined && !input.ackRequired)

@@ -1,9 +1,9 @@
 // concern: board-suggestions
 import { BOARD_REQUEST_DEFAULT_EXPIRY_MS } from '../../../shared/board-duration.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { db, writableDb, writeTransaction } from '../database/db.ts'
 import { nextEntityNumber } from '../database/entity-number.ts'
+import { projectAt, projectByName } from '../project/projects.ts'
 import {
   BOARD_BODY_MAX_CHARS,
   BOARD_DUPLICATE_WINDOW_MS,
@@ -13,6 +13,12 @@ import {
 } from './board-policy.ts'
 import { boardActor, type PostNoticeInput, postNoticeInTransaction } from './board-service.ts'
 import { type BoardTag, type SenderBoardTags, senderBoardTags, senderTagKey } from './board-tags.ts'
+import {
+  boardTextCheckout,
+  type IsKnownCommit,
+  prepareBoardNoticeText,
+} from './board-text-preparation.ts'
+import { boardTextsSecretRefusal } from './board-text-secret.ts'
 
 type Environment = Record<string, string | undefined>
 export type SuggestBoardPostInput = SenderBoardTags & { title: string; body: string }
@@ -37,12 +43,14 @@ function validateText(input: SuggestBoardPostInput): void {
     )
   if (input.body.length > BOARD_BODY_MAX_CHARS)
     throw new Error(`board suggestion body exceeds ${BOARD_BODY_MAX_CHARS} characters; shorten it`)
-  if (
-    [input.title, input.body, input.task, ...(input.paths ?? []), ...(input.topics ?? [])].some(
-      (value) => value !== undefined && containsSecretShaped(value),
-    )
-  )
-    throw new Error('board suggestion contains secret-shaped text; remove the credential and retry')
+  const refusal = boardTextsSecretRefusal('board suggestion', [
+    input.title,
+    input.body,
+    input.task,
+    ...(input.paths ?? []),
+    ...(input.topics ?? []),
+  ])
+  if (refusal) throw new Error(refusal)
 }
 
 function rootRun(runId: string) {
@@ -63,11 +71,22 @@ export function suggestBoardPost(
   runId: string,
   input: SuggestBoardPostInput,
   clock = Date.now(),
+  isKnownCommit?: IsKnownCommit,
 ): { recordId: string; number: number; dropped: boolean } {
-  validateText(input)
-  const senderTags = senderBoardTags(input)
   const run = rootRun(runId)
   if (!run) throw new Error(`run ${runId} does not exist; put the suggestion in the final reply`)
+  const callerCwd = process.cwd()
+  const callerProject = projectAt(callerCwd)
+  const targetProject = run.repo ? projectByName(run.repo) : null
+  const checkout = boardTextCheckout({
+    callerCwd,
+    callerProject: callerProject?.name ?? null,
+    targetProject: targetProject?.name ?? null,
+    targetProjectPath: targetProject?.path ?? null,
+  })
+  input = prepareBoardNoticeText(input, checkout, isKnownCommit)
+  validateText(input)
+  const senderTags = senderBoardTags(input)
   if (!run.session_id)
     throw new Error(
       `run ${run.record_id} has no owning architect session; put the suggestion in the final reply instead`,
@@ -187,27 +206,40 @@ export function postBoardSuggestion(
   env: Environment = process.env,
   clock = Date.now(),
   cwd = process.cwd(),
+  isKnownCommit?: IsKnownCommit,
 ) {
+  const row = suggestion(id)
+  authorizeDisposal(row, env)
+  const defaults = senderDefaults(row.record_id)
+  const rawNotice: PostNoticeInput = {
+    audience: input.audience,
+    title: input.title ?? row.title,
+    body: input.body ?? row.body,
+    task: input.task ?? defaults.task,
+    paths: input.paths ?? defaults.paths,
+    topics: input.topics ?? defaults.topics,
+    suggestingRunId: row.author_run_record_id,
+  }
+  const run = rootRun(row.author_run_record_id)
+  const callerProject = projectAt(cwd)
+  const targetProject = run?.repo ? projectByName(run.repo) : null
+  const checkout = boardTextCheckout({
+    callerCwd: cwd,
+    callerProject: callerProject?.name ?? null,
+    targetProject: targetProject?.name ?? null,
+    targetProjectPath: targetProject?.path ?? null,
+  })
+  const notice = prepareBoardNoticeText(rawNotice, checkout, isKnownCommit)
   const database = writableDb()
   return writeTransaction(() => {
-    const row = suggestion(id, database)
-    authorizeDisposal(row, env)
-    const defaults = senderDefaults(row.record_id, database)
-    const notice: PostNoticeInput = {
-      audience: input.audience,
-      title: input.title ?? row.title,
-      body: input.body ?? row.body,
-      task: input.task ?? defaults.task,
-      paths: input.paths ?? defaults.paths,
-      topics: input.topics ?? defaults.topics,
-      suggestingRunId: row.author_run_record_id,
-    }
+    const current = suggestion(id, database)
+    authorizeDisposal(current, env)
     const posted = postNoticeInTransaction(notice, env, clock, cwd, database)
     database
       .query(
         "UPDATE board_message SET withdrawn_at=COALESCE(withdrawn_at,?),withdrawn_reason=COALESCE(withdrawn_reason,'suggestion-promoted') WHERE record_id=?",
       )
-      .run(new Date(clock).toISOString(), row.record_id)
+      .run(new Date(clock).toISOString(), current.record_id)
     return posted
   }, database)
 }
