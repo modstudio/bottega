@@ -162,6 +162,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-test-placement.test.ts',
   'scripts/check-test-reach.test.ts',
   'orchestrator/src/postgres/postgres-migrate.test.ts',
+  'orchestrator/src/postgres/migration-failure.test.ts',
   'orchestrator/src/ratchet/biome-adapter.test.ts',
   'orchestrator/src/ratchet/ratchet-plan.test.ts',
   'scripts/check-file-ceiling.test.ts',

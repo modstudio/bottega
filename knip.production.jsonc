@@ -19,6 +19,8 @@
     "shared/record-session.ts": ["exports"],
     // Lazy-required from transport.ts; knip does not follow that require as export use.
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],
+    // rehearse.sh's eval imports the export.
+    "orchestrator/src/postgres/migration-failure.ts": ["exports"],
     // Cloudflare loads this default export through wrangler.toml rather than an import.
     "hub/deploy/site/src/worker.ts": ["exports"]
   },
