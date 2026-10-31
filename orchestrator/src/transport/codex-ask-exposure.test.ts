@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
 import {
   askExposureEvent,
   codexAskExposureFromTexts,
@@ -34,7 +35,7 @@ test('recognized functions.exec rollout is code-mode with its CLI version', () =
 test('recognized rollout with run_tests under a namespace is top-level', () => {
   expect(
     parseCodexAskExposure(
-      tools([namespace('functions', ['exec']), namespace('bottega-ask', ['run_tests'])]),
+      tools([namespace('functions', ['exec']), namespace(WORKER_MCP_SERVER_NAME, ['run_tests'])]),
     ),
   ).toEqual({ surface: 'top-level', cliVersion: null })
 })
