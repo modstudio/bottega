@@ -94,6 +94,16 @@ export function doctorAcpStatus(gap: string | null): string {
 
 const WORKER_CHECK_SCRIPT = 'check:worker'
 const EXPECTED_WORKER_CHECK = `bun run ${WORKER_CHECK_SCRIPT}`
+const AFFECTED_TEST_SCRIPT = 'test:affected'
+const EXPECTED_AFFECTED_SELECTOR = {
+  command: 'bun',
+  args: ['run', AFFECTED_TEST_SCRIPT],
+}
+const UNREGISTERED_RUNNER = '<runner command>'
+/** The focused-test declaration as doctor reads it; the typecheck keeps `FocusedTestDeclaration` assignable through doctor.test.ts and the register call. */
+type ProjectFocusedTests =
+  | { command: string; args: string[]; affected?: unknown }
+  | { runners: unknown[] }
 
 /** Compare a registered worker check only when the project declares the standard script. */
 export function workerCheckDoctorFinding(input: {
@@ -108,6 +118,34 @@ export function workerCheckDoctorFinding(input: {
     `differs from package script ${JSON.stringify(EXPECTED_WORKER_CHECK)}; ` +
     `set it with: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
     `'${JSON.stringify({ workerCheck: EXPECTED_WORKER_CHECK })}'`
+  )
+}
+
+/** Compare a registered affected-test selector only when the project declares the marker script. */
+export function affectedSelectorDoctorFinding(input: {
+  project: string
+  focusedTests: ProjectFocusedTests | undefined
+  scripts: Readonly<Record<string, unknown>> | undefined
+}): string | null {
+  if (typeof input.scripts?.[AFFECTED_TEST_SCRIPT] !== 'string') return null
+  if (input.focusedTests && 'runners' in input.focusedTests) return null
+  const registered = input.focusedTests?.affected
+  if (Bun.deepEquals(registered, EXPECTED_AFFECTED_SELECTOR)) return null
+  const differs =
+    `${input.project}: registered focusedTests.affected ${registered === undefined ? '(unset)' : JSON.stringify(registered)} ` +
+    `differs from package script ${JSON.stringify(`bun run ${AFFECTED_TEST_SCRIPT}`)}; `
+  if (!input.focusedTests) {
+    // A selector alone fails focused-test validation, so the repair registers the runner with it.
+    return (
+      differs +
+      `no focused-test runner is registered, so set one with it: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
+      `'${JSON.stringify({ focusedTests: { command: UNREGISTERED_RUNNER, args: [], affected: EXPECTED_AFFECTED_SELECTOR } })}'`
+    )
+  }
+  return (
+    differs +
+    `set it with: ${PLATFORM_SLUG} project set ${input.project} --settings ` +
+    `'${JSON.stringify({ focusedTests: { affected: EXPECTED_AFFECTED_SELECTOR } })}'`
   )
 }
 
@@ -127,18 +165,28 @@ function projectPackageScripts(path: string): Record<string, unknown> | undefine
 }
 
 function projectRegisterQuestions<
-  Project extends { name: string; path: string; settings: { workerCheck?: string } },
+  Project extends {
+    name: string
+    path: string
+    settings: { workerCheck?: string; focusedTests?: ProjectFocusedTests }
+  },
 >(projects: readonly Project[], branchProblems: (project: Project) => readonly string[]): string[] {
-  return projects.flatMap((project) =>
-    [
+  return projects.flatMap((project) => {
+    const scripts = projectPackageScripts(project.path)
+    return [
       ...branchProblems(project).map((problem) => `${project.name}: ${problem}`),
       workerCheckDoctorFinding({
         project: project.name,
         workerCheck: project.settings.workerCheck,
-        scripts: projectPackageScripts(project.path),
+        scripts,
       }),
-    ].filter((problem): problem is string => problem !== null),
-  )
+      affectedSelectorDoctorFinding({
+        project: project.name,
+        focusedTests: project.settings.focusedTests,
+        scripts,
+      }),
+    ].filter((problem): problem is string => problem !== null)
+  })
 }
 
 function localRegistrationDiagnosis(baseUrl: string, configuredModel: string | undefined) {
