@@ -36,7 +36,11 @@ test('harness finish preserves a blocked reply as asking', () => {
 })
 
 test('harness finish fails a missing reply', () => {
-  expect(decideHarnessReply(null, dialect, true).status).toBe('failed')
+  expect(decideHarnessReply(null, dialect, true)).toMatchObject({
+    status: 'failed',
+    failureKind: 'other',
+    error: 'reply.json is missing',
+  })
 })
 
 test('harness finish accepts a schema-valid non-writing reader reply', () => {

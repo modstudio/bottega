@@ -243,95 +243,93 @@ type OutcomeDecision<FailureKind extends string> = {
   failureKind: FailureKind | 'idle' | 'contract' | 'other' | 'truncated' | 'timeout' | null
 }
 
-function decideStopOutcome<FailureKind extends string>(
+export type OutcomeRule =
+  | 'idle-completed'
+  | 'idle-asking'
+  | 'idle'
+  | 'acp-vendor-stop'
+  | 'reply-file-mismatch'
+  | 'asking'
+  | 'truncated'
+  | 'timeout-completed'
+  | 'timeout'
+  | 'reply-error'
+  | 'non-answer'
+  | 'missing-reply-contract'
+  | 'contract-asking'
+  | 'refused'
+  | 'completed-then-ended'
+  | 'missing-writer-contract'
+  | 'default'
+
+/** Name the first terminal rule that applies, in precedence order. */
+export function decideOutcomeRule<FailureKind extends string>(
   inputs: OutcomeInputs<FailureKind>,
-): OutcomeDecision<FailureKind> | null {
-  if (inputs.idleKilled && inputs.completedReply) {
-    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
-  }
+): OutcomeRule {
+  if (inputs.idleKilled && inputs.completedReply) return 'idle-completed'
   if (inputs.idleKilled && (inputs.collectedAsking || inputs.acceptedQuestions)) {
-    return { status: 'asking', failureKind: null }
+    return 'idle-asking'
   }
-  if (inputs.idleKilled) return { status: 'failed', failureKind: 'idle' }
-  if (inputs.acpVendorStop) {
-    return { status: 'failed', failureKind: inputs.acpFailureKind }
-  }
-  return null
-}
-
-function decideReplyCollectionOutcome<FailureKind extends string>(
-  inputs: OutcomeInputs<FailureKind>,
-): OutcomeDecision<FailureKind> | null {
-  if (inputs.replyFileError && inputs.replyFilePresent) {
-    return { status: 'failed', failureKind: 'contract' }
-  }
-  if (inputs.collectedAsking || inputs.acceptedQuestions) {
-    return { status: 'asking', failureKind: null }
-  }
-  return null
-}
-
-function decideLimitOutcome<FailureKind extends string>(
-  inputs: OutcomeInputs<FailureKind>,
-): OutcomeDecision<FailureKind> | null {
-  if (inputs.outputCeilingReached) return { status: 'failed', failureKind: 'truncated' }
-  if (inputs.timedOut && inputs.completedReplyAtTimeout) {
-    return { status: inputs.acceptedQuestions ? 'asking' : 'ok', failureKind: null }
-  }
-  if (inputs.timedOut) return { status: 'failed', failureKind: 'timeout' }
-  return null
-}
-
-function decideContractOutcome<FailureKind extends string>(
-  inputs: OutcomeInputs<FailureKind>,
-): OutcomeDecision<FailureKind> | null {
-  if (inputs.replyError) {
-    return { status: 'failed', failureKind: inputs.replyErrorFailureKind }
-  }
+  if (inputs.idleKilled) return 'idle'
+  if (inputs.acpVendorStop) return 'acp-vendor-stop'
+  if (inputs.replyFileError && inputs.replyFilePresent) return 'reply-file-mismatch'
+  if (inputs.collectedAsking || inputs.acceptedQuestions) return 'asking'
+  if (inputs.outputCeilingReached) return 'truncated'
+  if (inputs.timedOut && inputs.completedReplyAtTimeout) return 'timeout-completed'
+  if (inputs.timedOut) return 'timeout'
+  if (inputs.replyError) return 'reply-error'
   if (
     inputs.exitCode === 0 &&
     inputs.nonAnswer &&
     (!inputs.replyFileError || inputs.outputPresent)
   ) {
-    return { status: 'failed', failureKind: inputs.nonAnswerFailureKind }
+    return 'non-answer'
   }
-  if (inputs.replyFileError) return { status: 'failed', failureKind: 'contract' }
-  if (inputs.contractStatus === 'asking') {
-    return { status: 'failed', failureKind: 'contract' }
-  }
-  if (inputs.contractStatus === 'refused') {
-    return { status: inputs.exitCode === 0 ? 'ok' : 'failed', failureKind: null }
-  }
-  if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') {
-    return { status: 'failed', failureKind: inputs.completedContractFailureKind }
-  }
-  if (inputs.missingRequiredContract) {
-    return {
-      status: 'failed',
-      failureKind:
-        inputs.missingContractFailureKind === 'other'
-          ? 'contract'
-          : inputs.missingContractFailureKind,
-    }
-  }
-  return null
+  if (inputs.replyFileError) return 'missing-reply-contract'
+  if (inputs.contractStatus === 'asking') return 'contract-asking'
+  if (inputs.contractStatus === 'refused') return 'refused'
+  if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') return 'completed-then-ended'
+  if (inputs.missingRequiredContract) return 'missing-writer-contract'
+  return 'default'
 }
 
 /** Decide the provisional terminal outcome from facts gathered by the caller. */
 export function decideOutcome<FailureKind extends string>(
   inputs: OutcomeInputs<FailureKind>,
 ): OutcomeDecision<FailureKind> {
-  const stopped = decideStopOutcome(inputs)
-  if (stopped) return stopped
-  const replyCollection = decideReplyCollectionOutcome(inputs)
-  if (replyCollection) return replyCollection
-  const limited = decideLimitOutcome(inputs)
-  if (limited) return limited
-  const contract = decideContractOutcome(inputs)
-  if (contract) return contract
-
-  const status = inputs.exitCode === 0 && inputs.outputPresent ? 'ok' : 'failed'
-  return { status, failureKind: status === 'failed' ? inputs.defaultFailureKind : null }
+  const rule = decideOutcomeRule(inputs)
+  const completed = (): OutcomeDecision<FailureKind> => ({
+    status: inputs.acceptedQuestions ? 'asking' : 'ok',
+    failureKind: null,
+  })
+  const failed = (failureKind: OutcomeDecision<FailureKind>['failureKind']) => ({
+    status: 'failed' as const,
+    failureKind,
+  })
+  const defaultOutcome = (): OutcomeDecision<FailureKind> => {
+    const status = inputs.exitCode === 0 && inputs.outputPresent ? 'ok' : 'failed'
+    return { status, failureKind: status === 'failed' ? inputs.defaultFailureKind : null }
+  }
+  const outcomes: Record<OutcomeRule, () => OutcomeDecision<FailureKind>> = {
+    'idle-completed': completed,
+    'idle-asking': () => ({ status: 'asking', failureKind: null }),
+    idle: () => failed('idle'),
+    'acp-vendor-stop': () => failed(inputs.acpFailureKind),
+    'reply-file-mismatch': () => failed('contract'),
+    asking: () => ({ status: 'asking', failureKind: null }),
+    truncated: () => failed('truncated'),
+    'timeout-completed': completed,
+    timeout: () => failed('timeout'),
+    'reply-error': () => failed(inputs.replyErrorFailureKind),
+    'non-answer': () => failed(inputs.nonAnswerFailureKind),
+    'missing-reply-contract': () => failed('contract'),
+    'contract-asking': () => failed('contract'),
+    refused: () => ({ status: inputs.exitCode === 0 ? 'ok' : 'failed', failureKind: null }),
+    'completed-then-ended': () => failed(inputs.completedContractFailureKind),
+    'missing-writer-contract': () => failed(inputs.missingContractFailureKind),
+    default: defaultOutcome,
+  }
+  return outcomes[rule]()
 }
 
 /** One short phrase for a column that has room for one. */

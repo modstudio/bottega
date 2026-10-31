@@ -62,14 +62,6 @@ describe('outcome decision', () => {
       { status: 'failed', failureKind: null },
     ],
     [
-      'an unclassified missing writer contract is a contract failure',
-      {
-        missingRequiredContract: true,
-        missingContractFailureKind: 'other',
-      },
-      { status: 'failed', failureKind: 'contract' },
-    ],
-    [
       'a classified missing writer contract keeps its failure kind',
       {
         missingRequiredContract: true,
