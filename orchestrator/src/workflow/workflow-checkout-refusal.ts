@@ -73,6 +73,9 @@ export function checkoutOutsideChangeRefusal(
   cwd: string,
   checkout: CheckoutResolution,
 ): string {
+  const rerunFromChange =
+    `use evidence recorded from that change's checkout by rerunning with ` +
+    `\`${PLATFORM_SLUG} workflow exec --cwd <a checkout of ${identityBranch}> -- <command>\``
   if (checkout.landingCommit && checkout.landingIsHeadOrAncestor === undefined) {
     return (
       `${flag} could not establish whether head_commit belongs to ${identityBranch} because ` +
@@ -85,12 +88,8 @@ export function checkoutOutsideChangeRefusal(
       `${flag} head_commit does not yet contain landing ${checkout.landingCommit} on ` +
       `${checkout.landingBranch}; if checkout ${checkout.checkoutPath} is behind ` +
       `${checkout.landingBranch}, run \`${PLATFORM_SLUG} tree refresh ${checkout.checkoutPath}\` ` +
-      `and rerun the same command, otherwise use evidence recorded from that change's checkout`
+      `and rerun the same command; if refresh refuses the checkout as diverged, ${rerunFromChange}`
     )
   }
-  return (
-    `${flag} head_commit does not belong to ${identityBranch} or its recorded landing; ` +
-    `use evidence recorded from that change's checkout by rerunning with ` +
-    `\`${PLATFORM_SLUG} workflow exec --cwd <a checkout of ${identityBranch}> -- <command>\``
-  )
+  return `${flag} head_commit does not belong to ${identityBranch} or its recorded landing; ${rerunFromChange}`
 }
