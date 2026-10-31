@@ -6,7 +6,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { inspectionGitEnv } from '../../../shared/git.ts'
+import { gitAt } from '../../../shared/git.ts'
 import { readMachineValue } from '../../../shared/machine-config.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { agentRows } from '../agent/agent-registry.ts'
@@ -78,23 +78,15 @@ function taskKeyResolves(key: string): boolean {
 
 /** The commit the main checkout of a project currently points at. */
 function headCommit(path: string): string | null {
-  const result = Bun.spawnSync(['git', '-C', path, 'rev-parse', 'HEAD'], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return result.exitCode === 0 ? result.stdout.toString().trim() || null : null
+  const result = gitAt(path, ['rev-parse', 'HEAD'])
+  return result.code === 0 ? result.stdout.trim() || null : null
 }
 
 /** The committer time of a commit, used to order the queue by recency. */
 function commitTimeMs(path: string, commit: string): number | null {
-  const result = Bun.spawnSync(['git', '-C', path, 'show', '-s', '--format=%ct', commit], {
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  if (result.exitCode !== 0) return null
-  const seconds = Number(result.stdout.toString().trim())
+  const result = gitAt(path, ['show', '-s', '--format=%ct', commit])
+  if (result.code !== 0) return null
+  const seconds = Number(result.stdout.trim())
   return Number.isFinite(seconds) ? seconds * 1000 : null
 }
 

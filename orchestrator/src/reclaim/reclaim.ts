@@ -13,7 +13,7 @@ import {
 } from '../branch/branches.ts'
 import { db, SESSION_LIVE_MS, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { chainScoreJoin, EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { gitResult } from '../git/git-environment.ts'
 import {
   withCleanupLock,
   withWorktreeCreateLock,
@@ -52,15 +52,10 @@ const CLEAR_RETAINED_BRANCH_SQL =
   'UPDATE run SET branch_kept=?, branch_kept_tip=? WHERE record_id=?'
 
 function git(cwd: string, args: string[]): { ok: boolean; out: string } {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const result = gitResult(args, cwd)
   return {
-    ok: result.exitCode === 0,
-    out: (result.exitCode === 0 ? result.stdout : result.stderr).toString().trim(),
+    ok: result.ok,
+    out: (result.ok ? result.stdout : result.stderr).trim(),
   }
 }
 

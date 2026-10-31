@@ -95,7 +95,7 @@ export function inspectionGitEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.
 
 type GitResult = { code: number; stdout: string }
 
-function gitAt(path: string, args: string[]): GitResult {
+export function gitAt(path: string, args: string[]): GitResult {
   if (!existsSync(path)) return { code: 128, stdout: '' }
   try {
     const env = inspectionGitEnv()

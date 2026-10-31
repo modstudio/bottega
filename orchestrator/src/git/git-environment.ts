@@ -159,11 +159,15 @@ function gitOk(
 }
 
 /** Git's stdout with no trim, and an explicit failure rather than an empty string. */
-function gitResult(args: string[], cwd: string): { ok: boolean; stdout: string; stderr: string } {
+function gitResult(
+  args: string[],
+  cwd: string,
+  options: { env?: NodeJS.ProcessEnv } = {},
+): { ok: boolean; stdout: string; stderr: string } {
   if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
   const p = Bun.spawnSync(['git', ...args], {
     cwd,
-    env: targetGitEnvironment(cwd),
+    env: options.env ?? targetGitEnvironment(cwd),
     stdout: 'pipe',
     stderr: 'pipe',
   })

@@ -94,6 +94,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-contract-boundary.ts', run),
   script('scripts/check-evidence-boundary.ts', run),
   script('scripts/check-git-environment-spawn.ts', run),
+  script('scripts/check-raw-git-spawn.ts', run),
   script('scripts/check-self-spawn.ts', run),
   script('scripts/check-source-root.ts', run),
   script(
