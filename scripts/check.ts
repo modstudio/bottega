@@ -6,6 +6,7 @@ import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { projectAt } from '../orchestrator/src/project/projects.ts'
 import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
+import { changeViewPlan } from '../shared/change-view.ts'
 import {
   CHECK_EXECUTION_FILE_ENV,
   type CheckExecutionRecord,
@@ -303,21 +304,6 @@ function qualityBase() {
   return { argument: `--base=${base.commit}`, commit: base.commit }
 }
 
-function requiredGitOutput(argv: string[]): string {
-  const result = Bun.spawnSync(['git', '--no-optional-locks', ...argv], {
-    cwd: root,
-    env: inspectionGitEnv(),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  collectCpu(describeCommand(['git', '--no-optional-locks', ...argv]), result.resourceUsage.cpuTime)
-  if (result.exitCode !== 0) {
-    const detail = result.stderr.toString().trim()
-    throw new Error(`git ${argv.join(' ')} failed${detail ? `: ${detail}` : ''}`)
-  }
-  return result.stdout.toString()
-}
-
 async function pump(
   stream: ReadableStream<Uint8Array>,
   name: string,
@@ -453,14 +439,23 @@ function printFailedLegTails(results: LegResult[]) {
 const lockfilePath = join(root, 'bun.lock')
 const nodeModulesPath = join(root, 'node_modules')
 
-function gitOutput(cwd: string, argv: string[]): Buffer | null {
+function gitOutput(cwd: string, argv: string[]): Buffer | null
+function gitOutput(cwd: string, argv: string[], failure: 'throw'): string
+function gitOutput(cwd: string, argv: string[], failure: 'null' | 'throw' = 'null') {
   const result = Bun.spawnSync(['git', '--no-optional-locks', ...argv], {
     cwd,
     env: inspectionGitEnv(),
     stdout: 'pipe',
-    stderr: 'ignore',
+    stderr: 'pipe',
   })
-  return result.exitCode === 0 && result.stdout.length ? result.stdout : null
+  collectCpu(describeCommand(['git', '--no-optional-locks', ...argv]), result.resourceUsage.cpuTime)
+  if (result.exitCode !== 0) {
+    if (failure === 'null') return null
+    const detail = result.stderr.toString().trim()
+    throw new Error(`git ${argv.join(' ')} failed${detail ? `: ${detail}` : ''}`)
+  }
+  if (failure === 'throw') return result.stdout.toString()
+  return result.stdout.length ? result.stdout : null
 }
 
 function registeredLandingBranch(mainCheckout: string): string | null {
@@ -586,14 +581,10 @@ let workerBiomeStep: GateStepResult | null = null
 if (workerProjection) {
   let files: string[]
   try {
+    const plan = changeViewPlan(workerBaseCommit!, 'worktree')
     files = workerBiomeFiles({
-      changedSinceBase: requiredGitOutput([
-        'diff',
-        '--name-only',
-        '--diff-filter=d',
-        workerBaseCommit!,
-      ]),
-      untracked: requiredGitOutput(['ls-files', '--others', '--exclude-standard']),
+      nameStatus: gitOutput(root, plan.nameStatus, 'throw'),
+      untracked: gitOutput(root, plan.untracked!, 'throw'),
     })
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error))
@@ -601,7 +592,12 @@ if (workerProjection) {
   }
   if (files.length === 0) {
     console.log(`Biome: skipped because no file changed since the base ${workerBaseCommit}`)
-    workerBiomeStep = { name: workerProjection.biome.name, exitCode: 0, detail: [] }
+    workerBiomeStep = {
+      name: workerProjection.biome.name,
+      exitCode: 0,
+      detail: [],
+      omittedDetailLines: 0,
+    }
   } else {
     const workerBiomeArgv = workerProjection.biome.workerArgv!({
       root,

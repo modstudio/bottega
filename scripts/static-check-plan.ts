@@ -1,3 +1,5 @@
+import { parseNameStatus, untrackedChanges } from '../shared/change-view.ts'
+
 type WorkerDecision = { run: true } | { run: false; reason: string }
 const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'
 export const BIOME_CHECK_NAME = 'Biome'
@@ -14,11 +16,13 @@ export type StaticCheckDeclaration = {
 const run = { run: true } as const
 const omit = (reason: string): WorkerDecision => ({ run: false, reason })
 
-/** Select every non-deleted worker edit reported by Git, once and in stable order. */
-export function workerBiomeFiles(input: { changedSinceBase: string; untracked: string }): string[] {
-  return [
-    ...new Set(`${input.changedSinceBase}\n${input.untracked}`.split('\n').filter(Boolean)),
-  ].sort()
+/** Select present paths from a NUL-separated worktree change view, once and in stable order. */
+export function workerBiomeFiles(input: { nameStatus: string; untracked: string }): string[] {
+  const tracked = parseNameStatus(input.nameStatus)
+    .filter((entry) => entry.status !== 'D')
+    .map((entry) => entry.path)
+  const untracked = untrackedChanges(input.untracked, new Map()).entries.map((entry) => entry.path)
+  return [...new Set([...tracked, ...untracked])].sort()
 }
 
 const script = (

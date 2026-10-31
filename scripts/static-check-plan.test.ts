@@ -7,12 +7,15 @@ const STATIC_CHECKS = staticCheckPlan()
 describe('worker static check plan', () => {
   test('combines committed, working-tree, and untracked paths once in stable order', () => {
     const files = workerBiomeFiles({
-      changedSinceBase: 'scripts/committed.ts\nscripts/working-tree.ts\n\nscripts/shared.ts\n',
-      untracked: 'scripts/untracked.ts\nscripts/shared.ts\n\n',
+      nameStatus:
+        'M\0scripts/committed.ts\0M\0scripts/working-tree.ts\0M\0scripts/shared.ts\0D\0scripts/deleted.ts\0R100\0scripts/old.ts\0scripts/renamed.ts\0M\0scripts/naïve.ts\0',
+      untracked: 'scripts/untracked.ts\0scripts/shared.ts\0',
     })
 
     expect(files).toEqual([
       'scripts/committed.ts',
+      'scripts/naïve.ts',
+      'scripts/renamed.ts',
       'scripts/shared.ts',
       'scripts/untracked.ts',
       'scripts/working-tree.ts',
@@ -20,7 +23,7 @@ describe('worker static check plan', () => {
   })
 
   test('returns no Biome files for empty Git output', () => {
-    expect(workerBiomeFiles({ changedSinceBase: '', untracked: '' })).toEqual([])
+    expect(workerBiomeFiles({ nameStatus: '', untracked: '' })).toEqual([])
   })
 
   test('builds worker Biome argv from the selected files without changed mode', () => {
