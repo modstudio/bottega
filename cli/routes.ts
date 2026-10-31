@@ -1,5 +1,7 @@
 type RouteOwner = 'orch' | 'hub' | 'local' | 'composite' | 'outbox'
 
+export const HAND_PARSED_OWNERS: ReadonlySet<RouteOwner> = new Set(['local', 'outbox', 'composite'])
+
 export type CommandRoute = {
   command: readonly string[]
   owner: RouteOwner

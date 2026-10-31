@@ -2,7 +2,7 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { reportLegacyCalls } from './legacy-calls.ts'
-import { GROUPS, ROUTES, resolveRoute } from './routes.ts'
+import { type CommandRoute, GROUPS, HAND_PARSED_OWNERS, ROUTES, resolveRoute } from './routes.ts'
 
 export type BinaryEntries = {
   orch(argv: string[], invocation?: PublicCommandInvocation): Promise<number>
@@ -18,6 +18,34 @@ export type BinaryEntries = {
 }
 
 type OutboxOwner = 'orch' | 'hub'
+
+const ORCHESTRATOR_OUTBOX_PATH = ['record', 'outbox'] as const
+
+function helpRequested(rest: readonly string[]): boolean {
+  return rest[0] === 'help' || rest.some((argument) => argument === '--help' || argument === '-h')
+}
+
+export function routeHelp(route: CommandRoute): string {
+  const lines = [`usage: ${PLATFORM_SLUG} ${route.command.join(' ')} [options]`]
+  if (route.description) lines.push('', route.description)
+  if (route.options?.length) {
+    const width = Math.max(...route.options.map((option) => option.flags.length))
+    lines.push('', 'Options:')
+    for (const option of route.options) {
+      lines.push(`  ${option.flags.padEnd(width)}  ${option.description}`)
+    }
+  }
+  if (route.composite?.length) {
+    lines.push('', 'Parts:')
+    for (const part of route.composite) {
+      const optionNames = Object.entries(part.options ?? {}).map(([flag, takesValue]) =>
+        takesValue ? `${flag} <value>` : flag,
+      )
+      lines.push(`  ${part.label}${optionNames.length ? `: ${optionNames.join(', ')}` : ''}`)
+    }
+  }
+  return lines.join('\n')
+}
 
 function qualifiedOutboxRows(
   owner: OutboxOwner,
@@ -49,8 +77,7 @@ async function dispatchOutbox(
   const [verb, qualifiedId, ...extraArguments] = rest
   // The bulk retry selects orchestrator rows by quarantine reason, so it names no row id.
   if (verb === 'retry' && qualifiedId?.startsWith('--matching')) {
-    const prefix = ['record', 'outbox']
-    return entries.orch([...prefix, ...rest], invocationFor(prefix, invocation.publicPath))
+    return dispatchOrchestratorOutbox(rest, entries, invocation.publicPath)
   }
   const match = qualifiedId?.match(/^(orch|hub):(.+)$/)
   if (!match) {
@@ -69,11 +96,34 @@ async function dispatchOutbox(
     return 2
   }
   // Each owner's own command validates the verb, so its verb list has one definition.
-  const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
+  const prefix = owner === 'orch' ? [...ORCHESTRATOR_OUTBOX_PATH] : ['outbox']
   return entries[owner](
     [...prefix, verb!, id, ...extraArguments],
     invocationFor(prefix, invocation.publicPath),
   )
+}
+
+function dispatchOrchestratorOutbox(
+  rest: readonly string[],
+  entries: BinaryEntries,
+  publicPath: readonly string[],
+): Promise<number> {
+  return entries.orch(
+    [...ORCHESTRATOR_OUTBOX_PATH, ...rest],
+    invocationFor(ORCHESTRATOR_OUTBOX_PATH, publicPath),
+  )
+}
+
+async function outboxHelp(route: CommandRoute, entries: BinaryEntries): Promise<number> {
+  console.log(routeHelp(route))
+  console.log('\nOwner commands:')
+  const orchestratorResult = await entries.orch(
+    [...ORCHESTRATOR_OUTBOX_PATH, '--help'],
+    invocationFor(ORCHESTRATOR_OUTBOX_PATH, route.command),
+  )
+  const hubPath = ['outbox'] as const
+  const hubResult = await entries.hub([...hubPath, '--help'], invocationFor(hubPath, route.command))
+  return orchestratorResult || hubResult
 }
 
 function invocationFor(
@@ -163,7 +213,7 @@ export async function dispatchBinary(
     console.log(version())
     return 0
   }
-  if (input.length === 0 || (input.length === 1 && input[0] === '--help')) {
+  if (input.length === 0 || (input.length === 1 && helpRequested(input))) {
     topHelp()
     return 0
   }
@@ -181,13 +231,22 @@ export async function dispatchBinary(
   if (command === BOTTEGA_ENTRY_PROTOCOL['schema-check'].compiledArguments[0])
     return entries.schemaCheck(rest)
   const group = GROUPS.find(([name]) => name === command)
-  if (group && input.length === 2 && input[1] === '--help') {
+  if (group && input.length === 2 && helpRequested(input.slice(1))) {
     return groupHelp(command!, entries)
   }
   const resolved = resolveRoute(input)
   if (!resolved) {
     console.error(`unknown command: ${input.join(' ')}\nrun ${PLATFORM_SLUG} --help for usage`)
     return 2
+  }
+  if (helpRequested(resolved.rest) && HAND_PARSED_OWNERS.has(resolved.route.owner)) {
+    if (resolved.route.owner === 'outbox') {
+      const hasQualifiedId = resolved.rest.some((argument) => /^(orch|hub):.+$/.test(argument))
+      if (!hasQualifiedId) return outboxHelp(resolved.route, entries)
+    } else {
+      console.log(routeHelp(resolved.route))
+      return 0
+    }
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)
   if (resolved.route.owner === 'outbox') {
