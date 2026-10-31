@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StoredMachineNames } from '../../../shared/machine-config.ts'
+import { isUnnamedMachinePrefix } from '../../../shared/machine-label.ts'
 
 const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
 const DISPLAY_NAME_RULE = '1-60 characters'
@@ -9,7 +10,7 @@ export function shortNameRefusal(value: string): string | null {
 }
 
 export type MachineIdentifierNames = Pick<StoredMachineNames, 'shortName' | 'formerShortNames'>
-export type MachineNamePair = Pick<StoredMachineNames, 'shortName' | 'displayName'>
+export type MachineNamePair = { shortName: string; displayName: string }
 
 export type MachineLabelDecision =
   | { kind: 'bare'; remainder: string }
@@ -25,7 +26,7 @@ export function decideMachineLabel(
   const match = /^([^/]+)\/(.+)$/.exec(input)
   if (!match) return { kind: 'not-label' }
   const name = match[1]!
-  const unnamedMachinePrefix = /^[0-9a-f]{8}$/.test(name) && shortNameRefusal(name) !== null
+  const unnamedMachinePrefix = isUnnamedMachinePrefix(name) && shortNameRefusal(name) !== null
   if (shortNameRefusal(name) && !unnamedMachinePrefix) return { kind: 'not-label' }
   if (!names)
     return {

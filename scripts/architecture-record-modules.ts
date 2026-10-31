@@ -236,6 +236,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/machine-name.ts', [
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/machine-label.ts',
   ]),
   module('orchestrator/src/record/machine-name-record.ts', [
     'bun',

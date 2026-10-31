@@ -15,7 +15,8 @@ export function machineId(): string {
 
 export function machineNames(): { shortName: string; displayName: string } {
   const stored = storedMachineNames()
-  if (stored) return stored
+  if (stored)
+    return { shortName: stored.shortName, displayName: stored.displayName ?? stored.shortName }
   const shortName = defaultShortName(hostname())
   return { shortName, displayName: shortName }
 }

@@ -238,8 +238,8 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     enabled: hosted,
     retry: false,
   })
-  const machineNames = useQuery({
-    ...trpc.operator.machineNames.queryOptions(),
+  const machineDisplayName = useQuery({
+    ...trpc.operator.machineDisplayName.queryOptions(),
     enabled: !hosted,
   })
   const waiting = useQuery({
@@ -299,7 +299,7 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
             spaces={spaces}
             onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
             onSignOut={() => void signOut()}
-            machineDisplayName={machineNames.data?.displayName}
+            machineDisplayName={machineDisplayName.data?.displayName}
           />
         }
       >
