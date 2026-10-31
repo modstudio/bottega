@@ -103,12 +103,24 @@ test('hosted rail offers all memberships and choosing one sets the active space'
   expect(selected).toBe('space-b')
 })
 
-test('local identity is unchanged', () => {
+test('local identity uses the stored machine display name', () => {
   const html = renderToStaticMarkup(
-    <RailFooterIdentity hosted={false} email={null} onSignOut={() => {}} />,
+    <RailFooterIdentity
+      hosted={false}
+      email={null}
+      machineDisplayName="Shmuel's Mac"
+      onSignOut={() => {}}
+    />,
   )
 
   expect(html).toContain('Local')
-  expect(html).toContain('This machine')
+  expect(html).toContain('Shmuel&#x27;s Mac')
   expect(html).not.toContain('Sign out</button>')
+})
+
+test('local identity falls back when no machine display name is stored', () => {
+  const html = renderToStaticMarkup(
+    <RailFooterIdentity hosted={false} email={null} onSignOut={() => {}} />,
+  )
+  expect(html).toContain('This machine')
 })

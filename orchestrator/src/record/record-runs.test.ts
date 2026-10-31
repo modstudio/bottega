@@ -1,9 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import type { RecordRun } from './record-runs.ts'
-import { recordRunsWindow } from './record-runs.ts'
+import { recordRunsWindow, runRow } from './record-runs.ts'
 
 const run = (id: string, overrides: Partial<RecordRun> = {}): RecordRun => ({
   id,
+  number: Number(id),
+  machine: {
+    id: '01990000-0000-7000-8000-000000000099',
+    shortName: 'starship',
+    displayName: 'Starship',
+  },
+  machineLabel: `starship/${Number(id)}`,
   spaceId: '01990000-0000-7000-8000-000000000001',
   spaceName: 'One',
   projectName: 'project-a',
@@ -36,6 +43,51 @@ const run = (id: string, overrides: Partial<RecordRun> = {}): RecordRun => ({
   probe: false,
   score: null,
   ...overrides,
+})
+
+test('hosted run rows carry cross-machine labels with a safe unnamed-machine fallback', () => {
+  const row = {
+    id: '01990000-0000-7000-8000-000000000010',
+    number: 42,
+    machine_id: '01a0ab05-0000-7000-8000-000000000001',
+    machine_short_name: 'starship',
+    machine_display_name: 'Starship',
+    space_id: '01990000-0000-7000-8000-000000000001',
+    space_name: 'One',
+    project_name: null,
+    started_at: '2026-09-22T12:00:00.000Z',
+    finished_at: null,
+    agent: 'codex',
+    job: 'implement',
+    status: 'running',
+    latency_ms: null,
+    prompt_head: 'prompt',
+    task_key: null,
+    failure_kind: null,
+    vendor_tokens: null,
+    model_calls: null,
+    peak_call_tokens: null,
+    quota_used_percent_start: null,
+    quota_used_percent_end: null,
+    quota_window_minutes: null,
+    quota_resets_at: null,
+    vendor_cost_usd: null,
+    vendor_input_tokens: null,
+    vendor_output_tokens: null,
+    vendor_estimated_cost_usd: null,
+    vendor_cost_source: null,
+    label: null,
+    lens: null,
+    parent_run_id: null,
+    turn: 1,
+    evidence_excluded: null,
+    probe: false,
+    delivery: null,
+  }
+  expect(runRow(row)).toMatchObject({ machineLabel: 'starship/42' })
+  expect(runRow({ ...row, machine_short_name: null })).toMatchObject({
+    machineLabel: '01a0ab05/42',
+  })
 })
 
 describe('record run window', () => {

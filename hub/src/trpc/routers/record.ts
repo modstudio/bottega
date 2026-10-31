@@ -185,6 +185,7 @@ export const recordRouter = t.router({
     const rows = window.items.map((run) => {
       const row = {
         id: run.id,
+        machineLabel: run.machineLabel,
         space: run.spaceName,
         agent: run.agent,
         job: run.job,
@@ -207,6 +208,7 @@ export const recordRouter = t.router({
     const live = window.live.map((run) => {
       const row = {
         id: run.id,
+        machineLabel: run.machineLabel,
         space: run.spaceName,
         agent: run.agent,
         job: run.job,
@@ -246,6 +248,7 @@ export const recordRouter = t.router({
         : false
     return {
       id: run.id,
+      machineLabel: run.machineLabel,
       agent: run.agent,
       job: run.job,
       project: run.projectName,

@@ -1,6 +1,7 @@
 // concern: record-runs
 /** Owns tenant-bound record run reads. Must not know local run phases or CLI presentation. */
 import { SQL } from 'bun'
+import { crossMachineLabel } from '../../../shared/machine-label.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RunDetailReviewLens } from '../../../shared/review-presentation.ts'
 import { NOT_EVIDENCE } from '../failure/failure.ts'
@@ -20,6 +21,9 @@ type RecordScore = {
 }
 export type RecordRun = {
   id: string
+  number: number | null
+  machine: { id: string; shortName: string | null; displayName: string | null }
+  machineLabel: string | null
   spaceId: string
   spaceName: string
   projectName: string | null
@@ -92,9 +96,18 @@ export type RecordRunsWindow = {
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 const numeric = (value: unknown) => (value == null ? null : Number(value))
-function runRow(row: Record<string, unknown>): RecordRun {
+export function runRow(row: Record<string, unknown>): RecordRun {
+  const number = numeric(row.number)
+  const machine = {
+    id: String(row.machine_id),
+    shortName: row.machine_short_name == null ? null : String(row.machine_short_name),
+    displayName: row.machine_display_name == null ? null : String(row.machine_display_name),
+  }
   return {
     id: String(row.id),
+    number,
+    machine,
+    machineLabel: number === null ? null : crossMachineLabel('run', number, machine),
     spaceId: String(row.space_id),
     spaceName: String(row.space_name),
     projectName: row.project_name == null ? null : String(row.project_name),
@@ -152,7 +165,9 @@ async function tenant<T>(input: { url: string } & TenantPrincipal, read: (tx: SQ
 export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
+      SELECT r.id, r.number, r.machine_id, m.short_name AS machine_short_name,
+        m.display_name AS machine_display_name,
+        r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job,
         r.status, r.latency_ms, r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens,
         r.model_calls, r.peak_call_tokens, r.quota_used_percent_start, r.quota_used_percent_end,
@@ -162,6 +177,7 @@ export async function listRecordRuns(input: RunListInput): Promise<RecordRun[]> 
         r.parent_run_id, r.turn, r.evidence_excluded,
         r.probe, s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
+      LEFT JOIN machine m ON m.id=r.machine_id
       LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
       WHERE (${input.before?.at ?? null}::timestamptz IS NULL OR (r.started_at, r.id) < (${input.before?.at ?? null}::timestamptz, ${input.before?.id ?? null}::uuid))
         AND (${input.project ?? null}::text IS NULL OR p.name=${input.project ?? null})
@@ -267,7 +283,9 @@ export async function viewRecordRuns(input: RecordRunsWindowInput): Promise<Reco
   const since = new Date((input.now ?? new Date()).getTime() - input.hours * 60 * 60 * 1000)
   const windowRuns = await tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT r.id, r.space_id, sp.name AS space_name, p.name AS project_name,
+      SELECT r.id, r.number, r.machine_id, m.short_name AS machine_short_name,
+        m.display_name AS machine_display_name,
+        r.space_id, sp.name AS space_name, p.name AS project_name,
         r.started_at, r.finished_at, r.agent, r.job, r.status, r.latency_ms,
         r.prompt_head, r.task_key, r.failure_kind, r.vendor_tokens, r.model_calls,
         r.peak_call_tokens, r.quota_used_percent_start, r.quota_used_percent_end,
@@ -277,6 +295,7 @@ export async function viewRecordRuns(input: RecordRunsWindowInput): Promise<Reco
         r.label, r.lens, r.parent_run_id, r.turn, r.evidence_excluded, r.probe,
         s.delivery, s.quality, s.fidelity, s.scored_at
       FROM run r JOIN space sp ON sp.id=r.space_id
+      LEFT JOIN machine m ON m.id=r.machine_id
       LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
       WHERE r.started_at >= ${since}
       ORDER BY r.started_at DESC, r.id DESC
@@ -296,9 +315,11 @@ export async function getRecordRun(input: {
   return tenant(input, async (tx) => {
     const rows = await tx`
       SELECT r.*, sp.name AS space_name, p.name AS project_name,
+        m.short_name AS machine_short_name, m.display_name AS machine_display_name,
         s.delivery, s.quality, s.fidelity, s.scored_at,
         s.note, s.scored_by, s.updated_at AS score_updated_at
       FROM run r JOIN space sp ON sp.id=r.space_id
+      LEFT JOIN machine m ON m.id=r.machine_id
       LEFT JOIN project p ON p.id=r.project_id LEFT JOIN run_score s ON s.run_id=r.id
       WHERE r.id=${input.id}::uuid
     `

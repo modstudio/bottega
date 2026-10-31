@@ -2,7 +2,11 @@ import { SnapshotEmpty, SnapshotHeader } from '../snapshot/snapshot.tsx'
 import { hostedInsightStyles } from './hosted-insights.styles.ts'
 import { HealthView, RoutingView } from './insights'
 
-type Machine = { id: string; takenAt: string }
+type Machine = {
+  id: string
+  takenAt: string
+  machine: { id: string; shortName: string | null; displayName: string | null }
+}
 type Snapshot<Data> = {
   takenAt: string
   machineId: string

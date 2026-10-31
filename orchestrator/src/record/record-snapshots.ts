@@ -13,6 +13,7 @@ export type RecordSnapshot = {
   id: string
   kind: SnapshotKind
   machineId: string
+  machine: { id: string; shortName: string | null; displayName: string | null }
   payload: unknown
   takenAt: string
 }
@@ -52,15 +53,21 @@ export async function upsertRecordSnapshot(
 export async function listRecordSnapshots(input: Tenant): Promise<RecordSnapshot[]> {
   return tenant(input, async (tx) => {
     const rows = await tx`
-      SELECT id, kind, machine_id, payload, taken_at
-      FROM orch_snapshot
-      WHERE space_id=${input.spaceId}::uuid
-      ORDER BY kind, machine_id
+      SELECT s.id, s.kind, s.machine_id, m.short_name AS machine_short_name,
+        m.display_name AS machine_display_name, s.payload, s.taken_at
+      FROM orch_snapshot s LEFT JOIN machine m ON m.id=s.machine_id
+      WHERE s.space_id=${input.spaceId}::uuid
+      ORDER BY s.kind, s.machine_id
     `
     return rows.map((row: Record<string, unknown>) => ({
       id: String(row.id),
       kind: String(row.kind) as SnapshotKind,
       machineId: String(row.machine_id),
+      machine: {
+        id: String(row.machine_id),
+        shortName: row.machine_short_name == null ? null : String(row.machine_short_name),
+        displayName: row.machine_display_name == null ? null : String(row.machine_display_name),
+      },
       payload: row.payload,
       takenAt: new Date(String(row.taken_at)).toISOString(),
     }))

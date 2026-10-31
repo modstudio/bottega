@@ -71,6 +71,13 @@ const verdictResponseSchema = z.object({ ok: z.literal(true) })
 
 const runSchema = z.object({
   id: z.string().uuid(),
+  number: z.number().nullable(),
+  machine: z.object({
+    id: z.string().uuid(),
+    shortName: z.string().nullable(),
+    displayName: z.string().nullable(),
+  }),
+  machineLabel: z.string().nullable(),
   spaceId: z.string().uuid(),
   spaceName: z.string(),
   projectName: z.string().nullable(),
@@ -260,6 +267,11 @@ const jobSchema = z.object({
 const snapshotBase = {
   id: z.string().uuid(),
   machineId: z.string().uuid(),
+  machine: z.object({
+    id: z.string().uuid(),
+    shortName: z.string().nullable(),
+    displayName: z.string().nullable(),
+  }),
   takenAt: z.string().datetime({ offset: true }),
 }
 

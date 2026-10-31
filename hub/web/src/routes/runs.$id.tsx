@@ -24,6 +24,7 @@ type Quality = (typeof QUALITIES)[number]
 type Fidelity = (typeof FIDELITIES)[number]
 type RunDetail = {
   id: number | string
+  machineLabel?: string | null
   root_id: number | string
   agent: string
   job: string
@@ -137,6 +138,7 @@ function RunDetailPage({ id }: { id: string }) {
   const numericId = Number(id)
   const detail = useRunDetail(id, numericId, hosted)
   const run = detail.data as unknown as RunDetail | undefined
+  const runLabel = hosted ? (run?.machineLabel ?? id) : id
   const waitingItem = useWaitingItem(id, run?.root_id ?? id, hosted)
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
@@ -171,13 +173,13 @@ function RunDetailPage({ id }: { id: string }) {
   const close = () => void navigate({ to: '/runs', resetScroll: false })
   if (detail.isPending)
     return (
-      <Companion onClose={close} title={`Run ${id}`} subtitle="Loading run...">
+      <Companion onClose={close} title={`Run ${runLabel}`} subtitle="Loading run...">
         <p className="text-text-muted">Loading...</p>
       </Companion>
     )
   if (detail.error)
     return (
-      <Companion onClose={close} title={`Run ${id}`}>
+      <Companion onClose={close} title={`Run ${runLabel}`}>
         <p data-tone="error" className="text-status-text">
           Could not load this run. {detail.error.message}
         </p>
@@ -256,7 +258,7 @@ function RunDetailPage({ id }: { id: string }) {
   return (
     <Companion
       onClose={close}
-      title={`Run ${id}`}
+      title={`Run ${runLabel}`}
       subtitle={subtitle}
       actions={<RunStatusActions run={run} waiting={waitingItem} />}
       footer={signing}

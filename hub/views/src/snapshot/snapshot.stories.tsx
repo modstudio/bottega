@@ -10,8 +10,16 @@ const meta = {
     takenAt: '2026-10-19T14:30:00Z',
     machineId: 'studio',
     machines: [
-      { id: 'studio', takenAt: '2026-10-19T14:30:00Z' },
-      { id: 'laptop', takenAt: '2026-10-19T14:20:00Z' },
+      {
+        id: 'studio',
+        takenAt: '2026-10-19T14:30:00Z',
+        machine: { id: 'studio', shortName: 'studio', displayName: 'Studio' },
+      },
+      {
+        id: 'laptop',
+        takenAt: '2026-10-19T14:20:00Z',
+        machine: { id: 'laptop', shortName: 'laptop', displayName: 'Laptop' },
+      },
     ],
     onMachineChange: fn(),
   },

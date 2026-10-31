@@ -4,7 +4,11 @@ import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
 import { snapshotStyles } from './snapshot.styles.ts'
 
-type Machine = { id: string; takenAt: string }
+type Machine = {
+  id: string
+  takenAt: string
+  machine: { id: string; shortName: string | null; displayName: string | null }
+}
 
 function asOf(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -35,7 +39,10 @@ export function SnapshotHeader({
           label="Machine"
           size="sm"
           value={machineId}
-          options={machines.map((machine) => ({ value: machine.id, label: machine.id }))}
+          options={machines.map(({ id, machine }) => ({
+            value: id,
+            label: machine.displayName ?? machine.shortName ?? id,
+          }))}
           onChange={onMachineChange}
         />
       </div>
