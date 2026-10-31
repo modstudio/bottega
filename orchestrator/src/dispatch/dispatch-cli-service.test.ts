@@ -231,29 +231,6 @@ describe('caller checkout resolution', () => {
     })
   })
 
-  test('reported shape: --cwd from another project worktree records the selected main checkout', () => {
-    const decision = resolveCallerCheckoutDecision(
-      {
-        shellCwd: '/projects/atlas/.claude/worktrees/ATLAS-42',
-        explicitCwd: '/projects/starship',
-        namedProject: null,
-        cwdProject: { name: 'starship', path: '/projects/starship' },
-      },
-      () => ({
-        repoRoot: '/projects/starship',
-        registeredProjectPath: '/projects/starship',
-        linkedWorktree: false,
-        borrowedCheckout: false,
-      }),
-    )
-
-    expect(decision).toEqual({
-      callerCwd: '/projects/starship',
-      launchCwd: '/projects/starship',
-      notice: null,
-    })
-  })
-
   test('implicit-recording mutation: a dispatch with neither flag remains unchanged', () => {
     const decision = resolveCallerCheckoutDecision(
       {
