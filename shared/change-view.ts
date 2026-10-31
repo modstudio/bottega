@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { inspectionGitEnv } from './git'
+import { nulPathListArgs, splitNulNameStatus, splitNulPaths } from './git-path-list.ts'
 import type { ChangeFacts, LineRange } from './ratchet'
 
 type ChangeStatus = 'A' | 'M' | 'D' | 'R' | 'C'
@@ -24,35 +25,14 @@ function parseStatus(value: string): ChangeStatus {
 }
 
 export function parseNameStatus(text: string): ChangeEntry[] {
-  if (!text) return []
-  const fields = text.split('\0')
-  if (fields.at(-1) === '') fields.pop()
-  const entries: ChangeEntry[] = []
-
-  for (let index = 0; index < fields.length; ) {
-    const rawStatus = fields[index++]
-    if (rawStatus === undefined) break
+  return splitNulNameStatus(text).map(({ status: rawStatus, path, previousPath }) => {
     const status = parseStatus(rawStatus)
-    if (status === 'R' || status === 'C') {
-      const sourcePath = fields[index++]
-      const path = fields[index++]
-      if (sourcePath === undefined || path === undefined) {
-        throw new Error(`incomplete git ${status} name-status entry`)
-      }
-      entries.push({ status, path, sourcePath })
-      continue
-    }
-    const path = fields[index++]
-    if (path === undefined) throw new Error(`incomplete git ${status} name-status entry`)
-    entries.push({ status, path })
-  }
-
-  return entries
+    return previousPath === null ? { status, path } : { status, path, sourcePath: previousPath }
+  })
 }
 
 export function untrackedChanges(text: string, lineCounts: Map<string, number>) {
-  const paths = text ? text.split('\0') : []
-  if (paths.at(-1) === '') paths.pop()
+  const paths = splitNulPaths(text)
   const entries: ChangeEntry[] = []
   const addedLines = new Map<string, LineRange[]>()
   for (const path of paths) {
@@ -183,9 +163,10 @@ export function changeViewPlan(base: string, mode: ChangeViewMode) {
   const comparison = mode === 'staged' ? ['--cached', base] : [base]
   const diff = (format: string[]) => ['diff', ...format, '--diff-filter=ACMRD', '-M', ...comparison]
   return {
-    nameStatus: diff(['--name-status', '-z']),
+    nameStatus: diff(nulPathListArgs(['--name-status'])),
     patch: diff(['--unified=0']),
-    untracked: mode === 'worktree' ? ['ls-files', '--others', '--exclude-standard', '-z'] : null,
+    untracked:
+      mode === 'worktree' ? nulPathListArgs(['ls-files', '--others', '--exclude-standard']) : null,
     head: mode === 'worktree' ? ('working-tree' as const) : ('index' as const),
   }
 }
@@ -198,7 +179,7 @@ function committedContent(cwd: string, commit: string, path: string): ContentRes
 }
 
 function indexedContent(cwd: string, path: string): ContentResult {
-  const entry = git(cwd, ['ls-files', '--stage', '-z', '--', path])
+  const entry = git(cwd, nulPathListArgs(['ls-files', '--stage', '--', path]))
   if (!entry) return { status: 'absent' }
   return { status: 'present', text: git(cwd, ['show', `:${path}`]) }
 }
@@ -235,7 +216,7 @@ export function openChangeView({
     ? (() => {
         const paths = git(cwd, plan.untracked)
         const lineCounts = new Map<string, number>()
-        for (const path of paths.split('\0').filter(Boolean)) {
+        for (const path of splitNulPaths(paths)) {
           const content = workingTreeContent(cwd, path)
           lineCounts.set(path, content.status === 'present' ? textLineCount(content.text) : 0)
         }

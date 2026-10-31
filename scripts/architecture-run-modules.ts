@@ -247,6 +247,7 @@ export const runModuleBoundarySpecs = [
     file: 'orchestrator/src/run/run-diff.ts',
     allowed: [
       '../../../shared/brand.ts',
+      '../../../shared/git-path-list.ts',
       'node:fs',
       '../database/db.ts',
       '../git/git-environment.ts',

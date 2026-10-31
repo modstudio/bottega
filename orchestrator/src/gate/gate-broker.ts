@@ -9,6 +9,7 @@ import {
   type CheckExecutionRecord,
 } from '../../../shared/check-execution.ts'
 import { projectCodeGitEnv, scrubbedGitEnv } from '../../../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { RUN_PROCESS_MARKER_ENV } from '../../../shared/run-process-marker.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import { HOST_SLOT_HELD_ENV, HostSlotWaitAborted, withGateSlot } from '../gate-load.ts'
@@ -262,7 +263,7 @@ function gitPaths(worktree: string, args: string[]): string[] {
   if (result.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${result.stderr.toString().trim()}`)
   }
-  return result.stdout.toString().split('\0').filter(Boolean)
+  return splitNulPaths(result.stdout.toString())
 }
 
 function changedGateTooling(
@@ -283,8 +284,11 @@ function changedGateTooling(
     mergeBase,
   })
   return changedGateToolingPaths({
-    diffPaths: gitPaths(plan.worktree, ['diff', '--name-only', '-z', base, '--']),
-    untrackedPaths: gitPaths(plan.worktree, ['ls-files', '--others', '--exclude-standard', '-z']),
+    diffPaths: gitPaths(plan.worktree, nulPathListArgs(['diff', '--name-only', base, '--'])),
+    untrackedPaths: gitPaths(
+      plan.worktree,
+      nulPathListArgs(['ls-files', '--others', '--exclude-standard']),
+    ),
     gateCommand: plan.command,
   })
 }

@@ -7,6 +7,7 @@ export const worktreeBoundarySpecs = [
       'node:path',
       '../filesystem-identity-plan.ts',
       '../../../shared/record-id.ts',
+      '../../../shared/git-path-list.ts',
       '../git/checkout-identity.ts',
       '../database/database-location.ts',
       '../database/db.ts',

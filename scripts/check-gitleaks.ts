@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { decideGitleaksScan, planGitleaksScans } from './check-gitleaks-plan'
 import { resolveLandingBase } from './landing-base'
 
@@ -36,17 +37,20 @@ const scans = planGitleaksScans({
 })
 
 if (rangeCommitCount === 0) {
-  const untracked = Bun.spawnSync(['git', 'ls-files', '--others', '--exclude-standard'], {
-    cwd: root,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
+  const untracked = Bun.spawnSync(
+    nulPathListArgs(['git', 'ls-files', '--others', '--exclude-standard']),
+    {
+      cwd: root,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    },
+  )
   if (untracked.exitCode !== 0) {
     const detail = untracked.stderr.toString().trim()
     console.error(`check-gitleaks could not inspect untracked files${detail ? `: ${detail}` : ''}`)
     process.exit(1)
   }
-  if (untracked.stdout.toString().trim()) {
+  if (splitNulPaths(untracked.stdout.toString()).length) {
     console.log(
       'check-gitleaks: untracked files are not scanned; they are scanned once staged or committed',
     )

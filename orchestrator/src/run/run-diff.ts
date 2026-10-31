@@ -2,6 +2,7 @@
 /** Knows run diff rendering. Must not know run control, transports, routing, the CLI, or worktrees by value. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { projectByName } from '../project/projects.ts'
@@ -268,14 +269,14 @@ export async function runDiffCommand(
         },
       )
       if (diff.exitCode !== 0) throw new Error(diff.stderr.toString().trim())
-      const names = Bun.spawnSync(['git', 'diff', '--name-only', since, evidenceBranch], {
-        cwd: repoRoot,
-        env: targetGitEnvironment(repoRoot),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      })
-        .stdout.toString()
-        .trim()
+      const names = splitNulPaths(
+        Bun.spawnSync(nulPathListArgs(['git', 'diff', '--name-only', since, evidenceBranch]), {
+          cwd: repoRoot,
+          env: targetGitEnvironment(repoRoot),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        }).stdout.toString(),
+      )
       const stat = Bun.spawnSync(['git', 'diff', '--numstat', since, evidenceBranch], {
         cwd: repoRoot,
         env: targetGitEnvironment(repoRoot),
@@ -293,7 +294,7 @@ export async function runDiffCommand(
       }
       const c = {
         diff: diff.stdout.toString(),
-        files: names ? names.split('\n') : [],
+        files: names,
         insertions,
         deletions,
         since,

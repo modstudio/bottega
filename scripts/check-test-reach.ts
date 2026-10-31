@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -127,7 +128,7 @@ export function testReach(input: {
 }
 
 function trackedFiles(): string[] {
-  const result = Bun.spawnSync(['git', 'ls-files', '-z'], {
+  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files']), {
     cwd: ROOT,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -137,7 +138,7 @@ function trackedFiles(): string[] {
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
     )
   }
-  return result.stdout.toString().split('\0').filter(Boolean)
+  return splitNulPaths(result.stdout.toString())
 }
 
 function baseExemptions(commit: string): TestReachExemption[] | null {

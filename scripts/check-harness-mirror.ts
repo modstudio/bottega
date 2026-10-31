@@ -2,6 +2,7 @@
 import { readlinkSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 export type HarnessMirrorEntry = { path: string; isSymlink: boolean; target?: string }
 
@@ -17,7 +18,7 @@ export function decideHarnessMirror(entries: HarnessMirrorEntry[]): string[] {
 }
 
 function trackedClaudeEntries(root: string): HarnessMirrorEntry[] {
-  const result = Bun.spawnSync(['git', 'ls-files', '-s', '-z', '--', '.claude'], {
+  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', '-s', '--', '.claude']), {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -25,17 +26,13 @@ function trackedClaudeEntries(root: string): HarnessMirrorEntry[] {
   if (result.exitCode !== 0) {
     throw new Error(`could not inspect tracked .claude paths: ${result.stderr.toString().trim()}`)
   }
-  return result.stdout
-    .toString()
-    .split('\0')
-    .filter(Boolean)
-    .map((line) => {
-      const match = line.match(/^(\d+) [0-9a-f]+ \d+\t([\s\S]+)$/)
-      if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(line)}`)
-      const path = match[2]!
-      const isSymlink = match[1] === '120000'
-      return { path, isSymlink, target: isSymlink ? readlinkSync(resolve(root, path)) : undefined }
-    })
+  return splitNulPaths(result.stdout.toString()).map((line) => {
+    const match = line.match(/^(\d+) [0-9a-f]+ \d+\t([\s\S]+)$/)
+    if (!match) throw new Error(`could not parse git ls-files entry ${JSON.stringify(line)}`)
+    const path = match[2]!
+    const isSymlink = match[1] === '120000'
+    return { path, isSymlink, target: isSymlink ? readlinkSync(resolve(root, path)) : undefined }
+  })
 }
 
 if (import.meta.main) {

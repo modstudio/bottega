@@ -3,6 +3,24 @@ import { canonLoadBoundarySpecs } from './architecture-canon-load-boundaries.ts'
 
 const source = 'orchestrator/src/canon/'
 
+const canonFilesBoundarySpecs: ImportBoundary[] = [
+  {
+    name: 'canon-files-boundary',
+    file: `${source}canon-files.ts`,
+    allowed: [
+      'node:fs',
+      'node:path',
+      'shared/git.ts',
+      'shared/git-path-list.ts',
+      `${source}canon-lint.ts`,
+      `${source}codex-project-doc.ts`,
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep canon file collection independent of stores, commands, runs, routing, transports, and worktrees.',
+  },
+]
+
 const canonEditGuardBoundarySpecs: ImportBoundary[] = [
   {
     name: 'canon-edit-bash-boundary',
@@ -134,6 +152,7 @@ const canonMirrorBoundarySpecs: ImportBoundary[] = [
     file: `${source}canon-mirror.ts`,
     allowed: [
       'shared/brand.ts',
+      'shared/git-path-list.ts',
       'node:crypto',
       'node:fs',
       'node:os',
@@ -293,6 +312,7 @@ const canonRemovalBoundarySpecs: ImportBoundary[] = [
 ]
 
 export const canonBoundarySpecs = [
+  ...canonFilesBoundarySpecs,
   ...canonEditGuardBoundarySpecs,
   ...canonAuditBoundarySpecs,
   ...canonEmptyStoreRefusalBoundarySpecs,

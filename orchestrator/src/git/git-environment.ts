@@ -15,6 +15,7 @@ import {
   borrowedCheckoutOf as sharedBorrowedCheckoutOf,
   gitToplevel as sharedGitToplevel,
 } from '../../../shared/git.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 
 /**
  * A MISSING WORKING DIRECTORY IS NOT A MISSING GIT.
@@ -264,7 +265,7 @@ export function withTemporaryGitIndex<T>(
 
 /** Changed paths between a review base and a commit or measured content tree. */
 export function reviewChangedPaths(cwd: string, base: string, inputTree: string): string[] {
-  const args = ['diff', '--name-only', `${base}..${inputTree}`]
+  const args = nulPathListArgs(['diff', '--name-only', `${base}..${inputTree}`])
   const p = Bun.spawnSync(['git', '-C', cwd, ...args], {
     env: targetGitEnvironment(cwd),
     stdout: 'pipe',
@@ -276,7 +277,7 @@ export function reviewChangedPaths(cwd: string, base: string, inputTree: string)
         (p.stderr.toString().trim() || `exit ${p.exitCode}`),
     )
   }
-  return p.stdout.toString().trim().split('\n').filter(Boolean)
+  return splitNulPaths(p.stdout.toString())
 }
 
 /** Read repository configuration without inheriting the worker config we return below. */

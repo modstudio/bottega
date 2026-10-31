@@ -235,6 +235,7 @@ export const modules: ArchitectureModule[] = [
     './close-out-report.ts',
   ]),
   module('orchestrator/src/close/reader-scratch-close-out.ts', [
+    '../../../shared/git-path-list.ts',
     'node:fs',
     'node:path',
     '../git/git-environment.ts',
@@ -557,6 +558,7 @@ export const modules: ArchitectureModule[] = [
     './review-triage.ts',
   ]),
   module('orchestrator/src/review/review-coverage.ts', [
+    '../../../shared/git-path-list.ts',
     '../database/db.ts',
     './change-identity.ts',
     './review-evidence-sql.ts',
@@ -594,6 +596,7 @@ export const modules: ArchitectureModule[] = [
     './review-outbox.ts',
   ]),
   module('orchestrator/src/review/review-pins.ts', [
+    '../../../shared/git-path-list.ts',
     '../database/db.ts',
     '../git/git-environment.ts',
     './change-identity.ts',

@@ -2,6 +2,7 @@
 /** Tests live beside a same-named module or a module named by a hyphen prefix. */
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 const ROOTS = ['orchestrator', 'hub', 'retrieval', 'shared', 'scripts']
 const TEST_FILE = /\.test\.tsx?$/
@@ -44,13 +45,13 @@ export function checkTestFiles(files: string[]): TestPlacementFinding[] {
 }
 
 function trackedFiles(root: string): string[] {
-  const listed = Bun.spawnSync(['git', 'ls-files', '--', ...ROOTS], { cwd: root })
+  const listed = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', '--', ...ROOTS]), { cwd: root })
   if (listed.exitCode !== 0) {
     throw new Error(
       `could not list tracked test and module files: ${listed.stderr.toString().trim()}`,
     )
   }
-  return listed.stdout.toString().trim().split('\n').filter(Boolean)
+  return splitNulPaths(listed.stdout.toString())
 }
 
 function checkTrackedTestPlacement(root: string): TestPlacementFinding[] {

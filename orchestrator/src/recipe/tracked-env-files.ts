@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { gitOk } from '../git/git-environment.ts'
 import { connectionUrlForAllocatedDatabase, readConnectionValue } from './database-connection.ts'
 import { managedBlockPlan, omitKeys } from './env-file.ts'
@@ -101,8 +102,13 @@ function defaultEnvFileGitCheck(
   treeRoot: string,
   relativePath: string,
 ): { tracked: boolean; ignored: boolean } {
+  const tracked = gitOk(
+    nulPathListArgs(['ls-files', '--error-unmatch', '--', relativePath]),
+    treeRoot,
+  )
+  if (tracked !== null) splitNulPaths(tracked)
   return {
-    tracked: gitOk(['ls-files', '--error-unmatch', '--', relativePath], treeRoot) !== null,
+    tracked: tracked !== null,
     ignored: gitOk(['check-ignore', '-q', '--', relativePath], treeRoot) !== null,
   }
 }

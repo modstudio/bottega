@@ -2,6 +2,7 @@
 /** Finds a completed round's reviewed tip and decides whether its fix needs a narrow re-lens. */
 
 import type { Database } from 'bun:sqlite'
+import { nulPathListArgs, splitNulNameStatus } from '../../../shared/git-path-list.ts'
 import type { ReviewSettings } from '../project/project-injection.ts'
 import {
   type ApplicableReview,
@@ -257,29 +258,16 @@ function trunkChange(
   reviewedBase: string,
   currentBase: string,
 ): { changedPaths: string[]; renames: Map<string, string> } {
-  const result = git(repo, [
-    'diff',
-    '--name-status',
-    '--find-renames',
-    '-z',
-    `${reviewedBase}..${currentBase}`,
-  ])
+  const result = git(
+    repo,
+    nulPathListArgs(['diff', '--name-status', '--find-renames', `${reviewedBase}..${currentBase}`]),
+  )
   if (!result.ok) throw new Error(result.err)
-  const fields = result.out.split('\0').filter(Boolean)
   const renames = new Map<string, string>()
   const changedPaths: string[] = []
-  for (let index = 0; index < fields.length; ) {
-    const status = fields[index++]!
-    const path = fields[index++]
-    if (!path) throw new Error('git diff --name-status omitted a changed path')
-    if (status.startsWith('R')) {
-      const renamedPath = fields[index++]
-      if (!renamedPath) throw new Error('git diff --name-status omitted a renamed path')
-      renames.set(path, renamedPath)
-      changedPaths.push(renamedPath)
-    } else {
-      changedPaths.push(path)
-    }
+  for (const { status, path, previousPath } of splitNulNameStatus(result.out)) {
+    if (status.startsWith('R') && previousPath !== null) renames.set(previousPath, path)
+    changedPaths.push(path)
   }
   return { changedPaths, renames }
 }

@@ -5,6 +5,7 @@ import { existsSync, lstatSync, readFileSync, readlinkSync, writeFileSync } from
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PLATFORM_COMMAND_WORDS } from '../shared/command-spellings.ts'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { LEGACY_ORCHESTRATOR_DATABASE } from '../shared/state-directory.ts'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
@@ -213,7 +214,7 @@ function textForLegacyScan(path: string, text: string): string {
 
 function scannedFiles(): string[] {
   const result = Bun.spawnSync(
-    ['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard'],
+    nulPathListArgs(['git', 'ls-files', '--cached', '--others', '--exclude-standard']),
     {
       cwd: ROOT,
       stdout: 'pipe',
@@ -225,7 +226,7 @@ function scannedFiles(): string[] {
       `git ls-files failed with exit ${result.exitCode ?? 'unknown'}: ${result.stderr.toString().trim() || 'no error output'}`,
     )
   }
-  return result.stdout.toString().split('\0').filter(Boolean)
+  return splitNulPaths(result.stdout.toString())
 }
 
 function scanFiles(): LegacyNameCounts {

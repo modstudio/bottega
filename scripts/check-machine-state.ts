@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 import { resolveStatePaths, type StateEnvironment } from '../shared/state-directory.ts'
 
 export type MachineStatePath = {
@@ -70,7 +71,7 @@ const exactLegacyPaths = [
 ]
 
 function gitPaths(root: string, argv: string[], tracked: boolean): MachineStatePath[] {
-  const result = Bun.spawnSync(['git', 'ls-files', '-z', ...argv], {
+  const result = Bun.spawnSync(nulPathListArgs(['git', 'ls-files', ...argv]), {
     cwd: root,
     stdout: 'pipe',
     stderr: 'pipe',
@@ -78,11 +79,7 @@ function gitPaths(root: string, argv: string[], tracked: boolean): MachineStateP
   if (result.exitCode !== 0) {
     throw new Error(`could not inspect checkout paths: ${result.stderr.toString().trim()}`)
   }
-  return result.stdout
-    .toString()
-    .split('\0')
-    .filter(Boolean)
-    .map((path) => ({ path, tracked }))
+  return splitNulPaths(result.stdout.toString()).map((path) => ({ path, tracked }))
 }
 
 function checkoutPaths(root: string): MachineStatePath[] {

@@ -2,6 +2,7 @@
 /** Decides and runs release rungs made mandatory by the merged change. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
@@ -98,14 +99,14 @@ export function changedPaths(project: Project, mergeCommit: string): string[] {
     targetGitEnvironment(project.path),
     ' during landing-branch fetch',
   )
-  return git(
-    ['diff', '--name-only', `${mergeCommit}^1`, mergeCommit],
-    project.path,
-    targetGitEnvironment(project.path),
-    ' during merge first-parent diff',
+  return splitNulPaths(
+    git(
+      nulPathListArgs(['diff', '--name-only', `${mergeCommit}^1`, mergeCommit]),
+      project.path,
+      targetGitEnvironment(project.path),
+      ' during merge first-parent diff',
+    ),
   )
-    .split('\n')
-    .filter(Boolean)
 }
 
 function failure(rung: string, detail: string): RequiredRungRelease {

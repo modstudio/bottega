@@ -343,6 +343,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     name: 'review-post-fix-boundary',
     file: 'orchestrator/src/review/review-post-fix.ts',
     allowed: [
+      '../../../shared/git-path-list.ts',
       './review-applicability.ts',
       './review-evidence-sql.ts',
       './review-group.ts',

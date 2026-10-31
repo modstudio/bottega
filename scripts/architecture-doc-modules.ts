@@ -63,6 +63,7 @@ export const docModules: DocModule[] = [
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/git.ts',
+    '../../../shared/git-path-list.ts',
     './docs.ts',
     './doc-generator.ts',
   ]),

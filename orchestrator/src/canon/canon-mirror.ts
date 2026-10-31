@@ -6,6 +6,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
@@ -184,7 +185,7 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     return base
   },
   changedPaths: (path) =>
-    command(path, ['git', 'diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean),
+    splitNulPaths(command(path, nulPathListArgs(['git', 'diff', '--cached', '--name-only']))),
   stage: (path) => {
     command(path, ['git', 'add', '--all'])
   },

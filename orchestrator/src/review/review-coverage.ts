@@ -1,5 +1,6 @@
 // concern: review-coverage
 import type { Database } from 'bun:sqlite'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { db } from '../database/db.ts'
 import { changeIdentity } from './change-identity.ts'
 import { git, reviewGit, targetGitEnvironment } from './review-pins.ts'
@@ -87,9 +88,9 @@ function commitForTree(
 }
 
 function changedPaths(runner: CoverageGitRunner, from: string, to: string): Set<string> {
-  const args = ['diff', '--name-only', `${from}..${to}`]
+  const args = nulPathListArgs(['diff', '--name-only', `${from}..${to}`])
   const output = coverageOutput(runner(args), args)
-  return new Set(output ? output.split('\n') : [])
+  return new Set(splitNulPaths(output))
 }
 
 export function reviewCoverageVerdict(

@@ -13,6 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { resolveRunsDirectory } from '../database/database-location.ts'
 import { db } from '../database/db.ts'
@@ -431,9 +432,9 @@ export function extractWorktree(
     record.trackedBytes = Buffer.byteLength(diff.stdout)
   }
 
-  const others = gitResult(['ls-files', '--others', '--exclude-standard', '-z'], tree)
+  const others = gitResult(nulPathListArgs(['ls-files', '--others', '--exclude-standard']), tree)
   if (!others.ok) return failed('git ls-files --others --exclude-standard', others.stderr)
-  const files = others.stdout.split('\0').filter(Boolean)
+  const files = splitNulPaths(others.stdout)
   record.untrackedCount = files.length
   if (files.length) {
     try {
