@@ -214,9 +214,24 @@ export async function promoteMatchingWorkflowTreeDrafts(input: {
     const local = currentRecordWriteDecision(database) === 'local-authoritative'
     if (item.kind === 'catalogue') {
       if (local) promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
-      else await promoteStepCatalogue(item.n, input.reason, input.author, database)
+      else
+        await promoteStepCatalogue(
+          item.n,
+          input.reason,
+          input.author,
+          database,
+          input.project ?? undefined,
+        )
     } else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
-    else await promoteWorkflow(item.slug, item.n, input.reason, input.author, database)
+    else
+      await promoteWorkflow(
+        item.slug,
+        item.n,
+        input.reason,
+        input.author,
+        database,
+        input.project ?? undefined,
+      )
   }
   return decision
 }

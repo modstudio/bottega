@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
+import { projectByName } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
@@ -267,6 +268,43 @@ test('a workflow promotion failure is merge residue and a required release failu
     true,
   )
   expect(unreleased.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+})
+
+test.each([
+  [
+    'fetch' as const,
+    `git -C ${cwd} fetch origin, then git -C ${cwd} merge --ff-only merge-commit, then`,
+  ],
+  [
+    'branch-check' as const,
+    `put checkout ${cwd} on trunk main, then git -C ${cwd} merge --ff-only merge-commit, then`,
+  ],
+  ['fast-forward' as const, `git -C ${cwd} merge --ff-only merge-commit, then`],
+])('a %s workflow promotion failure names its stage remedy', (stage, remedy) => {
+  registerProject([])
+  recordPassingGate()
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      view: () => ({ ...pullRequest, state: 'MERGED', mergeCommit: 'merge-commit' }),
+      postMergeChange: () =>
+        ({
+          project: projectByName('merge-fixture')!,
+          branch: pullRequest.headBranch,
+        }) as PullRequestChange,
+      promoteMergedWorkflowDrafts: () => ({
+        ok: false,
+        stage,
+        detail: `${stage} fixture failed`,
+      }),
+    }),
+  )
+
+  expect(outcome.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(outcome.output).toContain(`workflow draft promotion failed at ${stage}`)
+  expect(outcome.output).toContain(remedy)
+  expect(outcome.output).toContain('workflow promote-tree')
 })
 
 const cleanupReport = (

@@ -796,6 +796,7 @@ export function promoteStepCatalogue(
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
+  project?: string,
 ) {
   assertCatalogueWriteAllowed('promote step catalogue')
   return applyRecordWriteAuthority({
@@ -805,7 +806,7 @@ export function promoteStepCatalogue(
     },
     hosted: async () => {
       if (!reason?.trim()) throw new Error('reason is required')
-      const spaceId = await activeSpace(),
+      const spaceId = await activeSpace(d, project),
         target = selectedStepCatalogue(n, d, spaceId)
       if (target.status === 'retired') throw new Error(`step catalogue version ${n} is not a draft`)
       const decision = await promoteSharedStepCatalogue(
