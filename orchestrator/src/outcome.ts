@@ -262,21 +262,38 @@ export type OutcomeRule =
   | 'missing-writer-contract'
   | 'default'
 
-/** Name the first terminal rule that applies, in precedence order. */
-export function decideOutcomeRule<FailureKind extends string>(
+function decideStopOutcomeRule<FailureKind extends string>(
   inputs: OutcomeInputs<FailureKind>,
-): OutcomeRule {
+): OutcomeRule | null {
   if (inputs.idleKilled && inputs.completedReply) return 'idle-completed'
   if (inputs.idleKilled && (inputs.collectedAsking || inputs.acceptedQuestions)) {
     return 'idle-asking'
   }
   if (inputs.idleKilled) return 'idle'
   if (inputs.acpVendorStop) return 'acp-vendor-stop'
+  return null
+}
+
+function decideReplyCollectionOutcomeRule<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeRule | null {
   if (inputs.replyFileError && inputs.replyFilePresent) return 'reply-file-mismatch'
   if (inputs.collectedAsking || inputs.acceptedQuestions) return 'asking'
+  return null
+}
+
+function decideLimitOutcomeRule<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeRule | null {
   if (inputs.outputCeilingReached) return 'truncated'
   if (inputs.timedOut && inputs.completedReplyAtTimeout) return 'timeout-completed'
   if (inputs.timedOut) return 'timeout'
+  return null
+}
+
+function decideContractOutcomeRule<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeRule | null {
   if (inputs.replyError) return 'reply-error'
   if (
     inputs.exitCode === 0 &&
@@ -290,7 +307,20 @@ export function decideOutcomeRule<FailureKind extends string>(
   if (inputs.contractStatus === 'refused') return 'refused'
   if (inputs.exitCode !== 0 && inputs.contractStatus === 'done') return 'completed-then-ended'
   if (inputs.missingRequiredContract) return 'missing-writer-contract'
-  return 'default'
+  return null
+}
+
+/** Name the first terminal rule that applies, in precedence order. */
+export function decideOutcomeRule<FailureKind extends string>(
+  inputs: OutcomeInputs<FailureKind>,
+): OutcomeRule {
+  return (
+    decideStopOutcomeRule(inputs) ??
+    decideReplyCollectionOutcomeRule(inputs) ??
+    decideLimitOutcomeRule(inputs) ??
+    decideContractOutcomeRule(inputs) ??
+    'default'
+  )
 }
 
 /** Decide the provisional terminal outcome from facts gathered by the caller. */
