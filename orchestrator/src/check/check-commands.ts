@@ -221,11 +221,14 @@ async function commentsCommand(argv: string[], presentation: Presentation): Prom
     ;({ trackedCommentFindings } = await import('./check-comment-extraction.ts'))
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
-    const identity = installationIdentity(import.meta.dir, process.env)
-    const remedy =
-      identity.kind === 'checkout'
-        ? 'run bun install in the checkout and retry'
-        : `the installed release cannot load the requested comment-language parser for ${process.platform}/${process.arch}; update to a release that carries it`
+    const { commentParserRemedy } = await import('./check-comment-parser-assets.ts')
+    let installKind: 'checkout' | 'distribution' | null = null
+    try {
+      installKind = installationIdentity(import.meta.dir, process.env).kind
+    } catch {}
+    const remedy = commentParserRemedy(installKind, process.platform, process.arch, [
+      'requested comment-language',
+    ])
     throw new Error(`could not load the comment extraction adapter: ${detail}; ${remedy}`)
   }
   const findings = trackedCommentFindings(root, commentRules(project, report))

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { commentFindingsInSources, commentsInSource } from './check-comment-extraction.ts'
+import { commentFindingsInSources } from './check-comment-extraction.ts'
 import {
   type CommentSource,
   commentFindings,
@@ -82,12 +82,12 @@ describe('comment hygiene decisions', () => {
 
 describe('ast-grep comment extraction', () => {
   const fixtures = [
-    ['TypeScript', 'fixture.ts', 'const text = "DEV-12"\n// DEV-12'],
-    ['TSX', 'fixture.tsx', 'const node = <div>{"DEV-12"}</div>\n{/* DEV-12 */}'],
-    ['JavaScript', 'fixture.js', 'const text = "DEV-12"\n/* DEV-12 */'],
-    ['PHP', 'fixture.php', '<?php $text = "DEV-12";\n# DEV-12'],
-    ['shell', 'fixture.sh', 'text="DEV-12"\n# DEV-12'],
-    ['Python', 'fixture.py', 'text = "DEV-12"\n# DEV-12'],
+    ['TypeScript', 'fixture.ts', 'const text = "DEV-12"\n// DEV-12', '// DEV-12'],
+    ['TSX', 'fixture.tsx', 'const node = <div>{"DEV-12"}</div>\n{/* DEV-12 */}', '/* DEV-12 */'],
+    ['JavaScript', 'fixture.js', 'const text = "DEV-12"\n/* DEV-12 */', '/* DEV-12 */'],
+    ['PHP', 'fixture.php', '<?php $text = "DEV-12";\n# DEV-12', '# DEV-12'],
+    ['shell', 'fixture.sh', 'text="DEV-12"\n# DEV-12', '# DEV-12'],
+    ['Python', 'fixture.py', 'text = "DEV-12"\n# DEV-12', '# DEV-12'],
   ] as const
 
   test('extracts comments in every supported language without string literals', () => {
@@ -96,12 +96,17 @@ describe('ast-grep comment extraction', () => {
       { taskKeyPrefixes: ['DEV'], historyPhrases: ['used to'] },
     )
 
-    expect(findings.map(({ file }) => file)).toEqual(fixtures.map(([, file]) => file))
+    expect(findings.map(({ file, comment }) => ({ file, comment }))).toEqual(
+      fixtures.map(([, file, , comment]) => ({ file, comment })),
+    )
   })
 
   test('a string containing a history phrase is not a comment', () => {
-    const comments = commentsInSource('fixture.ts', 'const text = "this used to work"')
+    const findings = commentFindingsInSources(
+      [{ file: 'fixture.ts', source: 'const text = "this used to work"' }],
+      { historyPhrases: ['used to'] },
+    )
 
-    expect(comments).toEqual([])
+    expect(findings).toEqual([])
   })
 })

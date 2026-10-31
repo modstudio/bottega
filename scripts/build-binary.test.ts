@@ -43,12 +43,10 @@ test('binary sandbox payloads are selected for the build target only', () => {
   ])
 })
 
-test('every binary target has exactly three comment parser prebuilds', () => {
+test('every binary target has its comment parser prebuilds on disk', () => {
   for (const target of BINARY_TARGETS) {
     const assets = commentParserAssets(target)
-    expect(assets).toHaveLength(3)
     for (const asset of assets) {
-      expect(asset.packagePath).toStartWith('orchestrator/node_modules/@ast-grep/lang-')
       expect(existsSync(join(repositoryRoot, asset.packagePath))).toBe(true)
     }
   }

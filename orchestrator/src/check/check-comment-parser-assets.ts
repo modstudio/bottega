@@ -11,6 +11,21 @@ export type CommentParserAsset = {
 
 const PACKAGE_ROOT = 'orchestrator/node_modules/@ast-grep'
 
+/** Give the operator the install-specific action that restores a missing parser. */
+export function commentParserRemedy(
+  installKind: 'checkout' | 'distribution' | null,
+  platform: string,
+  arch: string,
+  languages: readonly string[],
+): string {
+  const named = languages.join(', ')
+  const checkout = 'run bun install in the checkout and retry'
+  const distribution = `the installed release does not carry the ${named} parser for ${platform}/${arch}; update to a release that does`
+  if (installKind === 'checkout') return checkout
+  if (installKind === 'distribution') return distribution
+  return `if this is a checkout, ${checkout}; if this is a release install, ${distribution}`
+}
+
 /** Map one compiled-binary target to exactly the dynamic comment parsers it carries. */
 export function commentParserAssets(target: string): CommentParserAsset[] {
   const [platform, arch, extra] = target.split('-')

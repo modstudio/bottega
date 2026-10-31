@@ -63,7 +63,6 @@ import { worktreeModules } from './architecture-worktree-modules.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[] }
 type ArchitectureInversion = { from: string; to: string }
-type ArchitectureCycle = { cycle: string[]; reason: string }
 type ArchitectureException = { from: string; to: string; dependencyTypes: string[]; reason: string }
 type ConcernManifest = {
   roots: typeof CONCERNS
@@ -500,6 +499,7 @@ export const modules: ArchitectureModule[] = [
   ]),
   module('shared/state-directory.ts', ['./brand.ts']),
   module('shared/sandbox-runtime-assets.ts', []),
+  module('orchestrator/src/check/check-comment-parser-assets.ts', []),
   module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
@@ -739,7 +739,7 @@ export const inversions: ArchitectureInversion[] = [
   },
 ]
 
-const allowedCycles: ArchitectureCycle[] = [
+const allowedCycles: { cycle: string[]; reason: string }[] = [
   {
     cycle: [
       'orchestrator/src/canon/canon.ts',

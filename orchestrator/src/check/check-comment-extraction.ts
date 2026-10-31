@@ -17,6 +17,7 @@ import {
   COMMENT_PARSER_LANGUAGES,
   type CommentParserLanguage,
   commentParserAssets,
+  commentParserRemedy,
 } from './check-comment-parser-assets.ts'
 import {
   type CommentFinding,
@@ -58,6 +59,14 @@ type ExtractionPorts = {
 let registeredLanguageKey: string | null = null
 
 class CommentParserRefusal extends Error {}
+
+export function commentParserExtractionRoot(
+  environment: StateEnvironment,
+  version: string,
+): string {
+  const runtimeRoot = environment.BOTTEGA_SCRATCH ?? resolveStateRoot(environment)
+  return join(runtimeRoot, 'runtime', version, 'comment-parsers')
+}
 
 function languageFor(file: string): Lang | CommentParserLanguage | null {
   switch (extname(file).toLowerCase()) {
@@ -108,22 +117,32 @@ function registrationWithPath(
   }
 }
 
-function parserRefusal(
+function resolvedInstallKind(ports: ExtractionPorts): 'checkout' | 'distribution' | null {
+  try {
+    return ports.installKind?.() ?? installationIdentity(import.meta.dir, process.env).kind
+  } catch {
+    return null
+  }
+}
+
+function missingParserRefusal(
   languages: CommentParserLanguage[],
   detail: string,
   ports: ExtractionPorts,
 ): Error {
   const platform = ports.platform ?? process.platform
   const arch = ports.arch ?? process.arch
-  const installKind =
-    ports.installKind?.() ?? installationIdentity(import.meta.dir, process.env).kind
+  const installKind = resolvedInstallKind(ports)
   const named = languages.join(', ')
-  const remedy =
-    installKind === 'checkout'
-      ? 'run bun install in the checkout and retry'
-      : `the installed release does not carry the ${named} parser for ${platform}/${arch}; update to a release that does`
+  const installDescription = installKind === null ? 'unknown install' : `${installKind} install`
   return new CommentParserRefusal(
-    `could not load the ${named} comment parser for ${platform}/${arch} from the ${installKind} install: ${detail}; ${remedy}`,
+    `could not load the ${named} comment parser for ${platform}/${arch} from the ${installDescription}: ${detail}; ${commentParserRemedy(installKind, platform, arch, languages)}`,
+  )
+}
+
+function registrationConflictRefusal(key: string): Error {
+  return new CommentParserRefusal(
+    `ast-grep already registered ${key} in this process; the comments check registers once per process, so run it in a fresh process`,
   )
 }
 
@@ -139,7 +158,11 @@ function checkoutRegistrations(
         LANGUAGE_PACKAGES[language].libraryPath,
       )
     } catch (error) {
-      throw parserRefusal([language], error instanceof Error ? error.message : String(error), ports)
+      throw missingParserRefusal(
+        [language],
+        error instanceof Error ? error.message : String(error),
+        ports,
+      )
     }
   }
   return registrations
@@ -153,34 +176,47 @@ function embeddedRegistrations(
   if (!manifest) return checkoutRegistrations(languages, ports)
   const platform = ports.platform ?? process.platform
   const arch = ports.arch ?? process.arch
-  const assets = commentParserAssets(`${platform}-${arch}`).filter(({ language }) =>
-    languages.includes(language),
-  )
+  let assets: ReturnType<typeof commentParserAssets>
+  try {
+    assets = commentParserAssets(`${platform}-${arch}`).filter(({ language }) =>
+      languages.includes(language),
+    )
+  } catch (error) {
+    throw missingParserRefusal(
+      languages,
+      error instanceof Error ? error.message : String(error),
+      ports,
+    )
+  }
   const expected = assets.map((asset) => {
     const source = (ports.resolveFile ?? resolveInstallFile)(
       asset.packagePath,
       join(REPOSITORY_ROOT, asset.packagePath),
     )
-    try {
-      if (!source)
-        throw new Error(`compiled comment parser payload is missing: ${asset.packagePath}`)
-      const bytes = (ports.readFile ?? readFileSync)(source)
-      return { ...asset, bytes, digest: embeddedRuntimeDigest(bytes) }
-    } catch (error) {
-      throw parserRefusal(
+    if (!source) {
+      throw missingParserRefusal(
         [asset.language],
-        error instanceof Error ? error.message : String(error),
+        `compiled comment parser payload is missing: ${asset.packagePath}`,
         ports,
       )
     }
+    try {
+      const bytes = (ports.readFile ?? readFileSync)(source)
+      return { ...asset, bytes, digest: embeddedRuntimeDigest(bytes) }
+    } catch (error) {
+      throw new CommentParserRefusal(
+        `could not read the embedded ${asset.language} comment parser payload ${asset.packagePath}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
   })
-  const root = join(
-    resolveStateRoot(ports.environment ?? process.env),
-    'runtime',
-    manifest.version,
-    'comment-parsers',
-  )
-  extractEmbeddedRuntime(root, expected, 'compiled comment parsers')
+  const root = commentParserExtractionRoot(ports.environment ?? process.env, manifest.version)
+  try {
+    extractEmbeddedRuntime(root, expected, 'compiled comment parsers')
+  } catch (error) {
+    throw new CommentParserRefusal(
+      `could not extract the comment parsers to ${root}: ${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
   return Object.fromEntries(
     assets.map(({ language, destination }) => [
       language,
@@ -195,18 +231,18 @@ function ensureDynamicLanguages(languages: CommentParserLanguage[], ports: Extra
   const key = languages.join(',')
   if (register === registerDynamicLanguage && registeredLanguageKey === key) return
   if (register === registerDynamicLanguage && registeredLanguageKey !== null) {
-    throw parserRefusal(
-      languages,
-      `ast-grep already registered ${registeredLanguageKey} in this process`,
-      ports,
-    )
+    throw registrationConflictRefusal(registeredLanguageKey)
   }
   try {
     register(embeddedRegistrations(languages, ports))
     if (register === registerDynamicLanguage) registeredLanguageKey = key
   } catch (error) {
     if (error instanceof CommentParserRefusal) throw error
-    throw parserRefusal(languages, error instanceof Error ? error.message : String(error), ports)
+    throw missingParserRefusal(
+      languages,
+      error instanceof Error ? error.message : String(error),
+      ports,
+    )
   }
 }
 
@@ -220,11 +256,6 @@ function commentsInSources(sources: SourceFile[], ports: ExtractionPorts = {}): 
       .findAll({ rule: { kind: 'comment' } })
       .map((node) => ({ file, line: node.range().start.line + 1, text: node.text() }))
   })
-}
-
-/** The ast-grep adapter converts a source file into plain comment facts. */
-export function commentsInSource(file: string, source: string): CommentSource[] {
-  return commentsInSources([{ file, source }])
 }
 
 /** In-process seam for checking source fixtures without a Git or CLI subprocess. */
