@@ -2,7 +2,7 @@ import { PLATFORM_SLUG } from '../shared/brand.ts'
 import type { PublicCommandInvocation } from '../shared/commander-public-path.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { reportLegacyCalls } from './legacy-calls.ts'
-import { type CommandRoute, GROUPS, ROUTES, resolveRoute } from './routes.ts'
+import { type CommandRoute, GROUPS, HAND_PARSED_OWNERS, ROUTES, resolveRoute } from './routes.ts'
 
 export type BinaryEntries = {
   orch(argv: string[], invocation?: PublicCommandInvocation): Promise<number>
@@ -21,8 +21,8 @@ type OutboxOwner = 'orch' | 'hub'
 
 const ORCHESTRATOR_OUTBOX_PATH = ['record', 'outbox'] as const
 
-export function helpRequested(rest: readonly string[]): boolean {
-  return rest.some((argument) => argument === '--help' || argument === '-h')
+function helpRequested(rest: readonly string[]): boolean {
+  return rest[0] === 'help' || rest.some((argument) => argument === '--help' || argument === '-h')
 }
 
 export function routeHelp(route: CommandRoute): string {
@@ -38,7 +38,9 @@ export function routeHelp(route: CommandRoute): string {
   if (route.composite?.length) {
     lines.push('', 'Parts:')
     for (const part of route.composite) {
-      const optionNames = Object.keys(part.options ?? {})
+      const optionNames = Object.entries(part.options ?? {}).map(([flag, takesValue]) =>
+        takesValue ? `${flag} <value>` : flag,
+      )
       lines.push(`  ${part.label}${optionNames.length ? `: ${optionNames.join(', ')}` : ''}`)
     }
   }
@@ -94,7 +96,7 @@ async function dispatchOutbox(
     return 2
   }
   // Each owner's own command validates the verb, so its verb list has one definition.
-  const prefix = owner === 'orch' ? ['record', 'outbox'] : ['outbox']
+  const prefix = owner === 'orch' ? [...ORCHESTRATOR_OUTBOX_PATH] : ['outbox']
   return entries[owner](
     [...prefix, verb!, id, ...extraArguments],
     invocationFor(prefix, invocation.publicPath),
@@ -110,6 +112,18 @@ function dispatchOrchestratorOutbox(
     [...ORCHESTRATOR_OUTBOX_PATH, ...rest],
     invocationFor(ORCHESTRATOR_OUTBOX_PATH, publicPath),
   )
+}
+
+async function outboxHelp(route: CommandRoute, entries: BinaryEntries): Promise<number> {
+  console.log(routeHelp(route))
+  console.log('\nOwner commands:')
+  const orchestratorResult = await entries.orch(
+    [...ORCHESTRATOR_OUTBOX_PATH, '--help'],
+    invocationFor(ORCHESTRATOR_OUTBOX_PATH, route.command),
+  )
+  const hubPath = ['outbox'] as const
+  const hubResult = await entries.hub([...hubPath, '--help'], invocationFor(hubPath, route.command))
+  return orchestratorResult || hubResult
 }
 
 function invocationFor(
@@ -199,7 +213,7 @@ export async function dispatchBinary(
     console.log(version())
     return 0
   }
-  if (input.length === 0 || (input.length === 1 && input[0] === '--help')) {
+  if (input.length === 0 || (input.length === 1 && helpRequested(input))) {
     topHelp()
     return 0
   }
@@ -217,7 +231,7 @@ export async function dispatchBinary(
   if (command === BOTTEGA_ENTRY_PROTOCOL['schema-check'].compiledArguments[0])
     return entries.schemaCheck(rest)
   const group = GROUPS.find(([name]) => name === command)
-  if (group && input.length === 2 && input[1] === '--help') {
+  if (group && input.length === 2 && helpRequested(input.slice(1))) {
     return groupHelp(command!, entries)
   }
   const resolved = resolveRoute(input)
@@ -225,17 +239,14 @@ export async function dispatchBinary(
     console.error(`unknown command: ${input.join(' ')}\nrun ${PLATFORM_SLUG} --help for usage`)
     return 2
   }
-  if (
-    helpRequested(resolved.rest) &&
-    (resolved.route.owner === 'local' ||
-      resolved.route.owner === 'outbox' ||
-      resolved.route.owner === 'composite')
-  ) {
+  if (helpRequested(resolved.rest) && HAND_PARSED_OWNERS.has(resolved.route.owner)) {
     if (resolved.route.owner === 'outbox') {
-      return dispatchOrchestratorOutbox(resolved.rest, entries, resolved.route.command)
+      const hasQualifiedId = resolved.rest.some((argument) => /^(orch|hub):.+$/.test(argument))
+      if (!hasQualifiedId) return outboxHelp(resolved.route, entries)
+    } else {
+      console.log(routeHelp(resolved.route))
+      return 0
     }
-    console.log(routeHelp(resolved.route))
-    return 0
   }
   if (resolved.route.owner === 'local') return reportLegacyCalls(resolved.rest)
   if (resolved.route.owner === 'outbox') {

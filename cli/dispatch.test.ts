@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { type BinaryEntries, dispatchBinary, helpRequested, routeHelp } from './dispatch.ts'
-import { ROUTES } from './routes.ts'
+import { type BinaryEntries, dispatchBinary, routeHelp } from './dispatch.ts'
+import { HAND_PARSED_OWNERS, ROUTES } from './routes.ts'
 
 function entries(calls: string[]): BinaryEntries {
   const call = (owner: string) => async (argv: string[]) => {
@@ -106,6 +106,60 @@ test('record outbox retry --matching reaches the orchestrator without a row id',
   ])
 })
 
+test.each([
+  { label: '-h', rest: ['-h'] },
+  { label: 'help', rest: ['help'] },
+  { label: 'help retry', rest: ['help', 'retry'] },
+])('record outbox $label prints front-door and both owner help', async ({ rest }) => {
+  const calls: string[] = []
+  const output: string[] = []
+  const originalLog = console.log
+  console.log = (value) => output.push(String(value))
+  try {
+    expect(await dispatchBinary(['record', 'outbox', ...rest], entries(calls), () => '')).toBe(0)
+  } finally {
+    console.log = originalLog
+  }
+  expect(output.join('\n')).toContain('inspect and retry pending record writes')
+  expect(output.join('\n')).toContain('--json')
+  expect(output).toContain('\nOwner commands:')
+  expect(calls).toEqual(['orchestrator: record outbox --help', 'hub: outbox --help'])
+})
+
+test('record outbox qualified help reaches the row owner', async () => {
+  const calls: string[] = []
+  expect(
+    await dispatchBinary(['record', 'outbox', 'show', 'hub:x', '--help'], entries(calls), () => ''),
+  ).toBe(0)
+  expect(calls).toEqual(['hub: outbox show x --help'])
+})
+
+test('top-level -h prints help', async () => {
+  const output: string[] = []
+  const originalLog = console.log
+  console.log = (value) => output.push(String(value))
+  try {
+    expect(await dispatchBinary(['-h'], entries([]), () => '')).toBe(0)
+  } finally {
+    console.log = originalLog
+  }
+  expect(output.join('\n')).toContain(`usage: ${PLATFORM_SLUG} <group> [command] [arguments]`)
+})
+
+test('machine -h prints group help', async () => {
+  const calls: string[] = []
+  const output: string[] = []
+  const originalLog = console.log
+  console.log = (value) => output.push(String(value))
+  try {
+    expect(await dispatchBinary(['machine', '-h'], entries(calls), () => '')).toBe(0)
+  } finally {
+    console.log = originalLog
+  }
+  expect(output.join('\n')).toContain(`usage: ${PLATFORM_SLUG} machine <command> [arguments]`)
+  expect(calls).toEqual([])
+})
+
 test('routes public and composite commands with unchanged remaining arguments', async () => {
   const calls: string[] = []
   const dispatch = entries(calls)
@@ -188,36 +242,43 @@ test('composites fail fast except for doctor and never start collect watch', asy
   expect(await dispatchBinary(['record', 'sync', '--watch'], entries([]), () => '')).toBe(2)
 })
 
-test.each(
-  ROUTES.filter(
-    (route) =>
-      !route.hidden &&
-      (route.owner === 'local' || route.owner === 'outbox' || route.owner === 'composite'),
-  ),
-)('$command prints help for its hand-parsed route', async (route) => {
-  const calls: string[] = []
-  const output: string[] = []
-  const originalLog = console.log
-  const originalError = console.error
-  console.log = (value) => output.push(String(value))
-  console.error = (value) => output.push(String(value))
-  try {
-    expect(await dispatchBinary([...route.command, '--help'], entries(calls), () => '')).toBe(0)
-  } finally {
-    console.log = originalLog
-    console.error = originalError
-  }
-  expect(
-    output.some((line) =>
-      /unknown composite option|must include their owner|working form:/i.test(line),
-    ),
-  ).toBe(false)
-  if (route.owner === 'outbox') {
-    expect(calls.some((call) => call.split(' ').includes('--help'))).toBe(true)
-  }
-})
+test.each(ROUTES.filter((route) => !route.hidden && HAND_PARSED_OWNERS.has(route.owner)))(
+  '$command prints help for its hand-parsed route',
+  async (route) => {
+    const calls: string[] = []
+    const output: string[] = []
+    const originalLog = console.log
+    const originalError = console.error
+    console.log = (value) => output.push(String(value))
+    console.error = (value) => output.push(String(value))
+    try {
+      expect(await dispatchBinary([...route.command, '--help'], entries(calls), () => '')).toBe(0)
+    } finally {
+      console.log = originalLog
+      console.error = originalError
+    }
+    expect(
+      output.some((line) =>
+        /unknown composite option|must include their owner|working form:/i.test(line),
+      ),
+    ).toBe(false)
+    if (route.owner === 'outbox') {
+      expect(calls.some((call) => call.split(' ').includes('--help'))).toBe(true)
+    }
+  },
+)
 
 test.each([
+  {
+    command: ['machine', 'migrate'],
+    help: `usage: ${PLATFORM_SLUG} machine migrate [options]
+
+migrate the orchestrator and hub stores
+
+Parts:
+  orchestrator migrate: --backfill-spec-sha, --force-in-flight <value>, --from-operator
+  hub migration`,
+  },
   {
     command: ['machine', 'doctor'],
     help: `usage: ${PLATFORM_SLUG} machine doctor [options]
@@ -246,12 +307,4 @@ Options:
   )
   expect(route).toBeDefined()
   expect(routeHelp(route!)).toBe(help)
-})
-
-test.each([
-  [['argument', '--help'], true],
-  [['-h'], true],
-  [['--json'], false],
-] as const)('detects declared help flags in %p', (rest, expected) => {
-  expect(helpRequested(rest)).toBe(expected)
 })
