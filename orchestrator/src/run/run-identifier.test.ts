@@ -1,6 +1,6 @@
 import type { Database } from 'bun:sqlite'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
@@ -47,6 +47,16 @@ describe('run identifier', () => {
     )
     expect(queries).toBe(0)
   })
+
+  test('a bare number resolves without reading machine config', () => {
+    writeFileSync(join(configRoot, 'machine.toml'), '[machine\n')
+    const recordId = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
+    const { number } = db()
+      .query<{ number: number }, [string]>('SELECT number FROM run WHERE record_id=?')
+      .get(recordId)!
+    expect(resolveRunIdentifier(db(), number)).toBe(recordId)
+  })
+
   test('parses a number and a full UUID without accepting lookalikes', () => {
     const uuid = newRecordId()
     expect(parseRunIdentifier('42')).toEqual({ kind: 'number', number: 42 })
