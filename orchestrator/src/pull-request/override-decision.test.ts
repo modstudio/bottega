@@ -143,6 +143,9 @@ test('ceiling guidance names only a ceiling ruling that admission accepts', () =
         guidance?.includes('--ceiling-ruling') ?? false,
         `${name}, atCeiling=${atCeiling}`,
       ).toBe(decision.kind === 'accept')
+      if (atCeiling && decision.kind === 'refuse' && !facts.complete) {
+        expect(guidance, `${name} names its clearing command`).toContain('cleared by:')
+      }
     }
   }
 

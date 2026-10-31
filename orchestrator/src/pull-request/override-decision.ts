@@ -150,5 +150,9 @@ export function ceilingRulingGuidance(input: CeilingRulingGuidanceInput): string
   }
   const reason =
     decision.kind === 'refuse' ? decision.reason : 'ceiling ruling eligibility was not decided'
-  return `${REVIEW_CEILING_REACHED}; a ceiling ruling is not available yet: ${reason}`
+  const clearing = reason.includes('cleared by:')
+    ? ''
+    : `; cleared by: run the round named by \`${input.commandName} review tier <branch>\`, then ` +
+      `\`${input.commandName} pr create\` names each remaining admission gap and its command`
+  return `${REVIEW_CEILING_REACHED}; a ceiling ruling is not available yet: ${reason}${clearing}`
 }
