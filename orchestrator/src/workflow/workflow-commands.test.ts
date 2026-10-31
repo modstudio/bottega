@@ -388,7 +388,9 @@ test('workflow import resolves hosted production from the worktree without BOTTE
     else process.env.BOTTEGA_MAIN_CHECKOUT = priorMainCheckout
     fixture.dispose()
   }
-  expect(lines.join('\n')).toMatch(/^catalogue: no change\n(?:.+: no change\n?)+$/)
+  expect(lines.join('\n')).toMatch(
+    /^workflow stale-reversion check skipped: .+\ncatalogue: no change\n(?:.+: no change\n?)+$/,
+  )
 })
 
 test('workflow tree project refusal is only required for a configured record without an owner', () => {
