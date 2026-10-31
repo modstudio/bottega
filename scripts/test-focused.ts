@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
@@ -33,6 +34,31 @@ function beneath(directory: string, candidate: string) {
   return offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
 }
 
+function matchesPattern(pattern: string, path: string): boolean {
+  const expression = pattern
+    .split('*')
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('[^/]*')
+  return new RegExp(`^${expression}$`).test(path)
+}
+
+function reachedByLeg(path: string, leg: (typeof CHECK_LEGS)[number]): boolean {
+  return (
+    (leg.testDirectories.some((directory) => beneath(directory, path)) ||
+      leg.testPatterns.some((pattern) => matchesPattern(pattern, path))) &&
+    !leg.excludedTestDirectories.some((directory) => beneath(directory, path)) &&
+    !leg.excludedTestPatterns.some((pattern) => matchesPattern(pattern, path))
+  )
+}
+
+/** A root-run test must inherit the root bunfig even when it lives in a nested workspace. */
+function gateRunsTestFromRoot(path: string): boolean {
+  return (
+    (ROOT_TEST_FILES as readonly string[]).includes(path) ||
+    CHECK_LEGS.some((leg) => leg.directory === '.' && reachedByLeg(path, leg))
+  )
+}
+
 function selectedAbsolutePath(path: string): string {
   if (!path || path.startsWith('-') || isAbsolute(path)) {
     throw new Error(`invalid project-relative test path ${JSON.stringify(path)}`)
@@ -52,8 +78,10 @@ function addPath(groups: Map<string, string[]>, directory: string, path: string)
 
 function addSelection(groups: Map<string, string[]>, path: string) {
   const absolute = selectedAbsolutePath(path)
-  const packageDirectory =
-    packageDirectoriesByDepth.find((directory) => beneath(directory, absolute)) ?? root
+  const projectRelativePath = relative(root, absolute)
+  const packageDirectory = gateRunsTestFromRoot(projectRelativePath)
+    ? root
+    : (packageDirectoriesByDepth.find((directory) => beneath(directory, absolute)) ?? root)
   addPath(groups, packageDirectory, relative(packageDirectory, absolute) || '.')
   if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return
   for (const nested of packages) {
@@ -65,7 +93,9 @@ function addSelection(groups: Map<string, string[]>, path: string) {
 
 function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup {
   const nestedPackageIgnores = packages.flatMap((candidate) =>
-    candidate.directory !== directory && beneath(directory, candidate.directory)
+    candidate.directory !== directory &&
+    beneath(directory, candidate.directory) &&
+    !paths.some((path) => beneath(candidate.directory, resolve(directory, path)))
       ? ['--path-ignore-patterns', `${relative(directory, candidate.directory)}/**`]
       : [],
   )
