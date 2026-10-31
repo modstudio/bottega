@@ -90,7 +90,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
         objectIn(mode)({
           whenChanged: z.array(z.string().trim().min(1)).min(1),
           run: z.string(),
-          secrets: z.array(z.string()).optional(),
+          secrets: z.array(z.string().trim().min(1)).optional(),
         }),
       )
       .optional(),

@@ -81,38 +81,34 @@ function command(argv: string[]): string {
   return result.stdout.toString().trim()
 }
 
-function headSha(event: GitHubEvent, repository: string): string {
-  if (event.pull_request?.head?.sha) return event.pull_request.head.sha
+function eventPullRequest(
+  event: GitHubEvent,
+  repository: string,
+): { number: number; headSha: string } {
+  if (event.pull_request?.head?.sha && event.number)
+    return { number: event.number, headSha: event.pull_request.head.sha }
   const headRef = event.merge_group?.head_ref
-  const pullRequest = headRef ? mergeGroupPullRequest(headRef) : null
-  if (!pullRequest)
+  const number = headRef ? mergeGroupPullRequest(headRef) : null
+  if (!number)
     throw new Error(`merge group head_ref does not name a pull request: ${headRef ?? '<missing>'}`)
-  return command(['gh', 'api', `repos/${repository}/pulls/${pullRequest}`, '--jq', '.head.sha'])
-}
-
-function pullRequestNumber(event: GitHubEvent): number {
-  if (event.pull_request && event.number) return event.number
-  const headRef = event.merge_group?.head_ref
-  const pullRequest = headRef ? mergeGroupPullRequest(headRef) : null
-  if (pullRequest) return pullRequest
-  throw new Error('GitHub event does not identify a pull request')
+  const headSha = command(['gh', 'api', `repos/${repository}/pulls/${number}`, '--jq', '.head.sha'])
+  return { number, headSha }
 }
 
 function earlierHeadStatuses(
-  event: GitHubEvent,
+  pullRequest: { number: number; headSha: string },
   repository: string,
-  currentHeadSha: string,
 ): CommitStatus[] {
   const commits = command([
     'gh',
     'api',
     '--paginate',
-    `repos/${repository}/pulls/${pullRequestNumber(event)}/commits`,
+    `repos/${repository}/pulls/${pullRequest.number}/commits`,
     '--jq',
     '.[].sha',
   ])
     .split('\n')
-    .filter((sha) => sha && sha !== currentHeadSha)
+    .filter((sha) => sha && sha !== pullRequest.headSha)
   return commits.flatMap(
     (sha) =>
       JSON.parse(
@@ -137,11 +133,11 @@ if (import.meta.main) {
     let currentHeadStatuses: CommitStatus[] = []
     let priorStatuses: CommitStatus[] = []
     if (changed) {
-      const currentHeadSha = headSha(event, repository)
+      const pullRequest = eventPullRequest(event, repository)
       currentHeadStatuses = JSON.parse(
-        command(['gh', 'api', `repos/${repository}/commits/${currentHeadSha}/statuses`]),
+        command(['gh', 'api', `repos/${repository}/commits/${pullRequest.headSha}/statuses`]),
       ) as CommitStatus[]
-      priorStatuses = earlierHeadStatuses(event, repository, currentHeadSha)
+      priorStatuses = earlierHeadStatuses(pullRequest, repository)
     }
     const root = fileURLToPath(new URL('..', import.meta.url))
     const decision = decideRecordRehearsal({

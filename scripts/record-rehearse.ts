@@ -198,12 +198,12 @@ export async function rerunFailedRecordRehearsal(
   if (!latest) return
   const [jobId, conclusion, detailsUrl] = latest.split('\t')
   const runId = /\/actions\/runs\/(\d+)\/job\//.exec(detailsUrl ?? '')?.[1]
-  if (conclusion !== 'failure' || !jobId || !runId) return
+  if (!conclusion || !['failure', 'cancelled', 'timed_out'].includes(conclusion)) return
+  if (!jobId || !runId) return
   const rerunArgv = ['gh', 'run', 'rerun', runId, '--job', jobId]
   const outcome = checked(await runner(rerunArgv), rerunArgv)
   console.log(
-    outcome ||
-      `record rehearsal rerun requested for pull request ${pullRequest}, run ${runId}, job ${jobId}`,
+    `record rehearsal rerun requested after ${conclusion} for pull request ${pullRequest}, run ${runId}, job ${jobId}${outcome ? `: ${outcome}` : ''}`,
   )
 }
 
@@ -367,7 +367,15 @@ export async function runRecordRehearsal(input: {
     await postStatus(input.runner, sha, status)
     statusPosted = true
     if (status.state === 'failure') throw new Error(status.description)
-    await rerunFailedRecordRehearsal(input.runner, sha)
+    try {
+      await rerunFailedRecordRehearsal(input.runner, sha)
+    } catch (rerunError) {
+      const detail = rerunError instanceof Error ? rerunError.message : String(rerunError)
+      const retryCommand = /gh run rerun \d+ --job \d+/.exec(detail)?.[0]
+      console.error(
+        `record rehearsal passed; rerun request failed: ${detail}${retryCommand ? `; rerun it with ${retryCommand}` : ''}`,
+      )
+    }
     result = lines
   } catch (error) {
     failure = await rehearsalFailure(input.runner, sha, machineName, error, statusPosted)
