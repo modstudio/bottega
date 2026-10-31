@@ -32,6 +32,10 @@
     "reason": "DEV-1474"
   },
   {
+    "file": "orchestrator/src/postgres/postgres-migrate-jsonb-string-check.test.ts",
+    "reason": "DEV-1893"
+  },
+  {
     "file": "orchestrator/src/postgres/postgres-migrate-public-role.test.ts",
     "reason": "DEV-1474"
   },

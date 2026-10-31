@@ -15,7 +15,7 @@ export async function seedJsonbStringChecksValidate(
   await transaction.exec(`
     SELECT set_config('app.space_id', '${input.spaceId}', true);
     SELECT set_config('app.user_id', '${input.userId}', true);
-    -- Remove the dev_1303 replay fixture rows seeded by seedDocJsonbArrayRepair in scripts/check-record-migrations-apply.ts: jsonbInvalidDocId and its doc_revision deliberately retain a top-level string, so the doc and doc_revision VALIDATEs would otherwise fail. The hosted record has no such rows per DEV-1893's read-only count, and the record rehearsal proves this on a real restore.
+    -- Remove the dev_1303 replay fixture rows seeded by seedDocJsonbArrayRepair in scripts/check-record-migrations-apply.ts: jsonbInvalidDocId and its doc_revision deliberately retain a top-level string, so the doc and doc_revision VALIDATE statements would otherwise fail. The hosted record has no such rows per DEV-1893's read-only count, and the record rehearsal proves this on a real restore.
     DELETE FROM doc_revision WHERE id = '${dev1303InvalidDocRevisionId}';
     DELETE FROM doc WHERE id = '${dev1303InvalidDocId}';
     ALTER TABLE question NO FORCE ROW LEVEL SECURITY;
