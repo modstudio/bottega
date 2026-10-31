@@ -35,7 +35,7 @@ function parseProbeIdentifier(
   }
   if (hasRecordIdShape(given)) return { kind: 'record-id', recordId: given.toLowerCase() }
   throw new Error(
-    `invalid probe identifier ${JSON.stringify(given)}: expected ${ACCEPTED_PROBE_IDENTIFIERS}`,
+    `invalid probe identifier ${JSON.stringify(original)}: expected ${ACCEPTED_PROBE_IDENTIFIERS}`,
   )
 }
 

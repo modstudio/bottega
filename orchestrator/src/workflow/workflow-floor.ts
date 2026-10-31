@@ -2,10 +2,9 @@
 /** Pure floor-satisfaction for a workflow step. Must not know stores, processes, or clocks. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { decideMachineLabel, MachineLabelRefusal } from '../record/machine-name.ts'
-import { classifyRunIdentifier } from '../run/run-identifier-names.ts'
+import { MachineLabelRefusal } from '../record/machine-name.ts'
+import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 import {
   commandExitBindingRefusal,
@@ -219,8 +218,8 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
   const runIdentifier = classifyRunIdentifier(trimmed)
   if (runIdentifier?.kind === 'number') return { kind: 'id', id: runIdentifier.number }
   if (runIdentifier?.kind === 'record-id') return { kind: 'run', id: runIdentifier.recordId }
-  const label = decideMachineLabel(trimmed, storedMachineNames())
-  if (label.kind === 'refused') return { error: label.reason }
+  const refusal = machineLabelRefusal(trimmed)
+  if (refusal) return { error: refusal }
   return {
     error: `--artifact ${trimmed} is not doc:<scope>/<subject-or-_>/<slug>, doc:<UUID>, task:<KEY>, task:<KEY>#comment:<id>, a run number or run id, probe:<id>, exec:<id>, attached-text:<UUID>, or a GitHub pull-request link`,
   }
