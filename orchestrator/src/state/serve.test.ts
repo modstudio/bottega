@@ -117,6 +117,8 @@ const RUN_DETAIL_INTENTIONALLY_OMITTED_COLUMNS = {
   quota_used_percent_end: RUN_DETAIL_USAGE_REASON,
   quota_window_minutes: RUN_DETAIL_USAGE_REASON,
   quota_resets_at: RUN_DETAIL_USAGE_REASON,
+  tool_burst_observed_peak: RUN_DETAIL_ROUTING_REASON,
+  tool_burst_observed_at: RUN_DETAIL_ROUTING_REASON,
   endpoint_key_source: RUN_DETAIL_ROUTING_REASON,
   host_admission_first: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
   host_admission: RUN_DETAIL_LAUNCH_INTERNAL_REASON,
