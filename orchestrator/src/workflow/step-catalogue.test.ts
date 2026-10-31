@@ -6,14 +6,19 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { resolveTrackerAgentActions, TRACKER_PROTOCOLS } from '../../../shared/trackers.ts'
 import { applyMigrations } from '../database/migrations.ts'
+import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import {
+  CatalogueProductionReferenceRefusal,
   compatibleCatalogueStep,
   productionStepCatalogue,
   promoteStepCatalogueLocal,
+  setStepCatalogueLocal,
   showStepCatalogue,
   validateStepCatalogue,
 } from './step-catalogue.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
+import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
+import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const step = {
   slug: 'design',
@@ -24,6 +29,11 @@ const step = {
   autonomy: 'ask',
   needs: [],
 }
+
+const workflowDatabase = testDatabaseFixture((database) => {
+  seedWorkflows(database)
+  installWorkflowStoreFixture(database)
+})
 
 test('workflow step tracker actions exist in every tracker protocol', () => {
   const stepsFolder = resolve(import.meta.dir, '../../../.agents/workflow-steps')
@@ -352,4 +362,55 @@ test('promoting a stored pre-validator draft revalidates before changing product
   )
   expect(productionStepCatalogue(d).n).toBe(production.n)
   expect(showStepCatalogue(2, d).status).toBe('draft')
+})
+
+test('a missing sequence error is not reported as a removed-step workflow reference', () => {
+  const d = workflowDatabase()
+  const current = productionStepCatalogue(d).definition
+  const withSequence = setStepCatalogueLocal(
+    {
+      steps: current.steps,
+      sequences: [{ slug: 'quality', title: 'Quality', steps: ['lens'] }],
+    },
+    'add sequence',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(withSequence.n, 'publish sequence', 'test', d)
+  const workflow = setWorkflowLocal(
+    'sequence-only-reference',
+    {
+      title: 'Sequence reference',
+      description: 'References a catalogue sequence.',
+      arguments: [],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: [{ sequence: 'quality' }],
+        },
+      ],
+    },
+    'use sequence',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal('sequence-only-reference', workflow.n, 'publish workflow', 'test', d)
+  const withoutSequence = setStepCatalogueLocal(
+    { steps: current.steps },
+    'drop sequence',
+    'test',
+    d,
+  )
+
+  let refusal: unknown
+  try {
+    promoteStepCatalogueLocal(withoutSequence.n, 'publish catalogue', 'test', d)
+  } catch (error) {
+    refusal = error
+  }
+  expect(refusal).toBeInstanceOf(CatalogueProductionReferenceRefusal)
+  expect((refusal as CatalogueProductionReferenceRefusal).workflowSlugs).toEqual([])
+  expect((refusal as CatalogueProductionReferenceRefusal).otherErrorCount).toBe(1)
 })

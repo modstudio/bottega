@@ -198,10 +198,10 @@ async function promoteCatalogueTreeDraft(
   input: PromoteMatchingWorkflowTreeDraftsInput,
   database: Database,
   decision: WorkflowTreePromotionPlan,
+  local: boolean,
 ): Promise<void> {
   try {
-    if (currentRecordWriteDecision(database) === 'local-authoritative')
-      promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
+    if (local) promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
     else
       await promoteStepCatalogue(
         item.n,
@@ -213,12 +213,13 @@ async function promoteCatalogueTreeDraft(
   } catch (cause) {
     const refusal = catalogueProductionReferenceRefusal(cause)
     if (!refusal) throw cause
-    const remedy = workflowTreePromotionRemedyLines(refusal.workflowSlugs, decision.promotions)
-    const message = cause instanceof Error ? cause.message : String(cause)
-    throw new Error(
-      `${message}\n${remedy.map((line) => `- ${line.startsWith('workflow promote') ? `${PLATFORM_SLUG} ${line}` : line}`).join('\n')}`,
-      { cause },
+    const remedy = workflowTreePromotionRemedyLines(
+      refusal.workflowSlugs,
+      decision.promotions,
+      refusal.otherErrorCount,
     )
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`${message}\n${remedy.map((line) => `- ${line}`).join('\n')}`, { cause })
   }
 }
 
@@ -248,7 +249,8 @@ export async function promoteMatchingWorkflowTreeDrafts(
   })
   for (const item of decision.promotions) {
     const local = currentRecordWriteDecision(database) === 'local-authoritative'
-    if (item.kind === 'catalogue') await promoteCatalogueTreeDraft(item, input, database, decision)
+    if (item.kind === 'catalogue')
+      await promoteCatalogueTreeDraft(item, input, database, decision, local)
     else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
     else
       await promoteWorkflow(

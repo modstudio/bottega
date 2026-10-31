@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import {
   planWorkflowTreePromotion,
@@ -98,9 +99,28 @@ test('reports a catalogue that matches neither production nor its newest draft',
 })
 
 test('reports when no workflow draft promotion can clear a catalogue reference', () => {
-  expect(workflowTreePromotionRemedyLines(['still-linked'], [{ kind: 'catalogue', n: 2 }])).toEqual(
-    [
-      'workflow still-linked still references the removed catalogue step; no promotion order clears it',
-    ],
-  )
+  expect(
+    workflowTreePromotionRemedyLines(['still-linked'], [{ kind: 'catalogue', n: 2 }], 0),
+  ).toEqual([
+    'workflow still-linked still references the removed catalogue step; no promotion order clears it',
+  ])
+})
+
+test('reports that promotion order does not clear other catalogue reference errors', () => {
+  expect(
+    workflowTreePromotionRemedyLines(
+      ['drops-step'],
+      [
+        { kind: 'catalogue', n: 2 },
+        { kind: 'workflow', slug: 'drops-step', n: 3 },
+        { kind: 'workflow', slug: 'other-error', n: 4 },
+      ],
+      1,
+    ),
+  ).toEqual([
+    'clear in order:',
+    `${PLATFORM_SLUG} workflow promote drops-step 3`,
+    `${PLATFORM_SLUG} workflow promote-tree`,
+    'the other errors listed above are not cleared by promotion order and must be fixed in the workflow or catalogue',
+  ])
 })

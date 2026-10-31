@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StepCatalogueDefinition } from './step-catalogue.ts'
 import type { WorkflowTreeStore } from './workflow-tree.ts'
 import type { WorkflowDefinition } from './workflows.ts'
@@ -15,6 +16,7 @@ export type WorkflowTreePromotionPlan = {
 export function workflowTreePromotionRemedyLines(
   referencingWorkflowSlugs: string[],
   promotions: WorkflowTreePromotion[],
+  otherErrorCount: number,
 ): string[] {
   const workflowPromotions = new Map(
     promotions.flatMap((item) => (item.kind === 'workflow' ? [[item.slug, item.n] as const] : [])),
@@ -23,15 +25,27 @@ export function workflowTreePromotionRemedyLines(
     left.localeCompare(right),
   )
   const blocked = referencing.filter((slug) => !workflowPromotions.has(slug))
+  const otherErrors = otherErrorCount
+    ? [
+        'the other errors listed above are not cleared by promotion order and must be fixed in the workflow or catalogue',
+      ]
+    : []
   if (blocked.length)
-    return blocked.map(
-      (slug) =>
-        `workflow ${slug} still references the removed catalogue step; no promotion order clears it`,
-    )
+    return [
+      ...blocked.map(
+        (slug) =>
+          `workflow ${slug} still references the removed catalogue step; no promotion order clears it`,
+      ),
+      ...otherErrors,
+    ]
+  if (!referencing.length) return otherErrors
   return [
     'clear in order:',
-    ...referencing.map((slug) => `workflow promote ${slug} ${workflowPromotions.get(slug)!}`),
-    'workflow promote-tree',
+    ...referencing.map(
+      (slug) => `${PLATFORM_SLUG} workflow promote ${slug} ${workflowPromotions.get(slug)!}`,
+    ),
+    `${PLATFORM_SLUG} workflow promote-tree`,
+    ...otherErrors,
   ]
 }
 
