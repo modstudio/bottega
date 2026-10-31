@@ -3,9 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { BINARY_TARGETS } from './build-binary.ts'
-import { releaseVersion } from './build-release.ts'
 import { artifactName, type ReleaseManifest } from './build-release-artifacts.ts'
 import { RELEASE_BUN_VERSION } from './release-config.ts'
+import { releaseVersion } from './release-support.ts'
 
 type CommandResult = { exitCode: number; stdout: string }
 export type PublishPorts = {

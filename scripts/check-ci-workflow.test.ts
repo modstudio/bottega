@@ -139,7 +139,30 @@ test('pins every release workflow Bun to the release build version', () => {
   )
 })
 
-function releaseWorkflowFixture(pin: string | null = `bun-version: ${RELEASE_BUN_VERSION}`) {
+test('refuses a release upload outside the release publisher', () => {
+  expect(() =>
+    checkReleaseWorkflow(releaseWorkflowFixture(undefined, 'gh release upload "$TAG" artifact')),
+  ).toThrow('publish every asset through "bun run release:publish"')
+})
+
+test('refuses a release upload in a block scalar outside the release publisher', () => {
+  expect(() =>
+    checkReleaseWorkflow(
+      releaseWorkflowFixture(undefined, '|\n          gh release upload "$TAG" artifact'),
+    ),
+  ).toThrow('publish every asset through "bun run release:publish"')
+})
+
+test('refuses release creation outside the release publisher', () => {
+  expect(() =>
+    checkReleaseWorkflow(releaseWorkflowFixture(undefined, 'gh release create "$TAG"')),
+  ).toThrow('found "gh release create"')
+})
+
+function releaseWorkflowFixture(
+  pin: string | null = `bun-version: ${RELEASE_BUN_VERSION}`,
+  command?: string,
+) {
   return `name: release
 on:
   push:
@@ -152,6 +175,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           ${pin ?? 'cache: true'}
+${command ? `      - run: ${command}\n` : ''}
 `
 }
 

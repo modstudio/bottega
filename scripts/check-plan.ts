@@ -175,7 +175,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-self-spawn.test.ts',
   'scripts/check-source-root.test.ts',
   'scripts/build-binary.test.ts',
-  'scripts/build-release.test.ts',
+  'scripts/release-support.test.ts',
   'scripts/build-release-artifacts.test.ts',
   'scripts/publish-release.test.ts',
   'cli/dispatch.test.ts',

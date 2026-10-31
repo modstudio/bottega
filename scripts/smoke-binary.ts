@@ -18,8 +18,8 @@ import { HARNESS_ENV_FILE_ENV } from '../shared/config-directory.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
-import { run } from './build-release.ts'
 import { FAKE_HARNESS_SCRIPT } from './fake-harness.ts'
+import { run } from './release-support.ts'
 
 const scratch = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-smoke-`))
 let recordApiUrl: string | undefined
