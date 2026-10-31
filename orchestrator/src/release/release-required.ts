@@ -52,7 +52,7 @@ function successfulGit(cwd: string, args: string[], label: string): string {
   return result.output
 }
 
-export type RequiredRungRelease = {
+type RequiredRungRelease = {
   rung: string
   deployExit: number | null
   outputTail: string
@@ -74,7 +74,7 @@ export type RequiredReleaseRunner = {
   release(project: Project, rung: string): ReleaseResult
 }
 
-export const requiredReleaseRunner: RequiredReleaseRunner = {
+const requiredReleaseRunner: RequiredReleaseRunner = {
   changedPaths(project, mergeCommit) {
     const trunk = project.settings.trunk!
     successfulGit(project.path, ['fetch', 'origin', trunk], 'landing-branch fetch')

@@ -10,8 +10,12 @@ import {
 import type { ReleaseResult } from './release-service.ts'
 
 const project = {
+  recordId: '01990000-0000-7000-8000-000000001933',
   name: 'fixture',
   path: '/fixture',
+  stack: 'bun',
+  canon: false,
+  retiredAt: null,
   settings: {
     trunk: 'main',
     release: {
