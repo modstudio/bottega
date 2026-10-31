@@ -8,6 +8,7 @@ import { readRuns, readWorkflowRulings } from '../orch.ts'
 import { projectRecordIdFor } from '../project-record-id.ts'
 import { projects } from '../projects.ts'
 import { intervalTaskRecordIdForUpdate, uniqueTaskRecordIdForKey } from '../task-identity.ts'
+import { chunks, type IngestTransaction } from './batches.ts'
 import { decideCollectorReplace, type ExistingIntervalRow } from './interval-replace.ts'
 
 export type { OrchRun } from '../../../shared/orch-contract.ts'
@@ -413,24 +414,19 @@ function ingestRunRows(
   return { rows, skipped, ...(skippedUnlinked ? { skippedUnlinked } : {}) }
 }
 
-type RunTransaction = <T>(fn: (conn: Database) => T) => T
-
 function writeRunIngestBatches(
   runs: readonly { run: OrchRun; attribution: OrchAttribution }[],
   workflowQuestions: readonly RulingListRow[],
   now: number,
   snapshot: string,
-  transaction: RunTransaction = writeTransaction,
+  transaction: IngestTransaction = writeTransaction,
   batchSize = RUN_INGEST_BATCH_SIZE,
 ): { rows: number; skipped: number; skippedUnlinked?: number } {
   transaction((conn) => upsertWorkflowQuestions(conn, workflowQuestions))
   let rows = 0
   let skipped = 0
   let skippedUnlinked = 0
-  const batches = Array.from(
-    { length: Math.max(1, Math.ceil(runs.length / batchSize)) },
-    (_, index) => runs.slice(index * batchSize, (index + 1) * batchSize),
-  )
+  const batches = chunks(runs, batchSize)
   for (const [index, batch] of batches.entries()) {
     const result = transaction((conn) => {
       const ingested = ingestRunRows(conn, batch, now)
@@ -450,7 +446,7 @@ function writeRunIngestBatches(
 
 export async function ingestRuns(
   since: string,
-  options: { transaction?: RunTransaction; batchSize?: number } = {},
+  options: { transaction?: IngestTransaction; batchSize?: number } = {},
 ): Promise<{ rows: number; skipped: number; skippedUnlinked?: number }> {
   refreshKeyPrefixes()
   // Snapshot time, not completion: anything that happens during the read is

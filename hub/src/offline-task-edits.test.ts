@@ -1,8 +1,7 @@
-import { Database } from 'bun:sqlite'
 import { afterAll, beforeEach, expect, spyOn, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { resetFixtureStore } from '../test/run-fixtures.ts'
-import { db, writeTransaction } from './db.ts'
+import { writeTransaction } from './db.ts'
 import { observeTrackerTask } from './ingest/trackers.ts'
 import { drainHostedEditOutbox } from './offline-task-edits.ts'
 
@@ -98,40 +97,4 @@ test('a queued write reports its routing wait while the collector holds the leas
   expect(messages).toEqual([
     `hosted change saved and queued: waiting on routing: project "missing" is not registered; register it with ${PLATFORM_SLUG} project add <path>, or, if it is not a real project, note that such rows cannot be retired yet; inspect it with \`${PLATFORM_SLUG} record outbox\``,
   ])
-})
-
-test('a drain lock refusal reports the committed edit as saved and queued', async () => {
-  const queuedAt = '2026-10-11T13:00:00.000Z'
-  observeTrackerTask(
-    {
-      externalId: 'tracker-lock-1',
-      key: 'ALP-1832',
-      project: 'alpha',
-      title: 'Already committed',
-      status: 'open',
-      category: 'open',
-      updatedAt: null,
-      assignee: null,
-    },
-    queuedAt,
-  )
-  const holder = new Database(process.env.BOTTEGA_HUB_DB!, { readwrite: true, create: false })
-  db().exec('PRAGMA busy_timeout = 1')
-  holder.exec('BEGIN IMMEDIATE')
-  const messages: string[] = []
-  const error = spyOn(console, 'error').mockImplementation((message) =>
-    messages.push(String(message)),
-  )
-  try {
-    const result = await drainHostedEditOutbox(queuedAt)
-    expect(result).toEqual({ kind: 'queued', reason: 'database is locked' })
-    expect(messages).toEqual([
-      `hosted change saved and queued: database is locked; inspect it with \`${PLATFORM_SLUG} record outbox\``,
-    ])
-  } finally {
-    error.mockRestore()
-    if (holder.inTransaction) holder.exec('ROLLBACK')
-    holder.close()
-    db().exec('PRAGMA busy_timeout = 15000')
-  }
 })

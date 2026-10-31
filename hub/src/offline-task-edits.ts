@@ -1,6 +1,5 @@
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
-import { isDatabaseLocked } from '../../shared/database-lock-refusal.ts'
 import { db } from './db.ts'
 import {
   drainHostedOutbox,
@@ -19,23 +18,6 @@ export type HostedEditDelivery =
   | { kind: 'sent' }
   | { kind: 'queued'; reason: string }
   | { kind: 'rejected'; reason: string }
-
-export function applyHostedWriteLocally(
-  reference: string,
-  action: 'created' | 'updated',
-  apply: () => void,
-): boolean {
-  try {
-    apply()
-    return true
-  } catch (error) {
-    if (!isDatabaseLocked(error)) throw error
-    console.error(
-      `${reference} was ${action} in the hosted record; its local copy will arrive on the next record pull`,
-    )
-    return false
-  }
-}
 
 function classifyHostedEditDelivery(
   remaining: OutboxEntry[],

@@ -3,10 +3,11 @@ import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { TASK_STATUSES } from '../../shared/trackers.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import type { HostedTask } from './hosted-tasks.ts'
 import type { TaskWriteMode } from './hosted-write-mode.ts'
 import { persistInstallBinding } from './install-binding.ts'
-import { applyHostedWriteLocally, drainHostedEditOutbox } from './offline-task-edits.ts'
+import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { type BranchPruneResult, classifyTaskBranches } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -340,7 +341,7 @@ export function createLocalTaskInTransaction(
 }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
-  const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
+  const task = taskRowFromHosted(conn, row)
   conn
     .query(`INSERT INTO task
     (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
@@ -355,40 +356,40 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
       source=excluded.source,first_seen=excluded.first_seen,last_seen=excluded.last_seen,
       next_document_number=MAX(task.next_document_number,excluded.next_document_number)`)
     .run(
-      row.id,
-      row.key,
-      row.project,
-      row.projectId ?? projectRecordIdFor(row.project),
-      row.title,
-      row.status,
-      row.status_category,
-      row.parent_key,
-      parentRecordId,
-      row.body,
-      row.assignee,
-      row.opened_at,
-      row.closed_at,
-      row.updated_at,
-      row.source,
-      row.first_seen,
-      row.last_seen,
-      row.next_document_number,
+      task.record_id,
+      task.key,
+      task.project,
+      task.project_record_id,
+      task.title,
+      task.status,
+      task.status_category,
+      task.parent_key,
+      task.parent_record_id,
+      task.body,
+      task.assignee,
+      task.opened_at,
+      task.closed_at,
+      task.updated_at,
+      task.source,
+      task.first_seen,
+      task.last_seen,
+      task.next_document_number,
     )
   persistInstallBinding(conn)
 }
 
-function taskRowFromHosted(row: HostedTask): TaskRow {
+function taskRowFromHosted(conn: Database, row: HostedTask) {
   return {
     record_id: row.id,
     external_id: null,
     key: row.key,
     project: row.project,
-    project_record_id: row.projectId ?? null,
+    project_record_id: row.projectId ?? projectRecordIdFor(row.project),
     title: row.title,
     status: row.status,
     status_category: row.status_category,
     parent_key: row.parent_key,
-    parent_record_id: row.parent_id ?? null,
+    parent_record_id: row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null,
     body: row.body,
     assignee: row.assignee,
     opened_at: row.opened_at,
@@ -530,23 +531,27 @@ export async function createTask(
     hostedOptionsForProject(input.project, options.hosted),
   )
   const commentAt = nowIso()
-  const applied = applyHostedWriteLocally(hosted.key, 'created', () =>
-    writeTransaction((conn) => {
-      cacheTask(conn, hosted)
-      if (options.allowDuplicateReason)
-        writeLocalComment(
-          conn,
-          { key: hosted.key, record_id: hosted.id },
-          options.allowDuplicateReason,
-          commentAt,
-          true,
-          options.attribution ?? UNATTRIBUTED,
-        )
-    }),
+  const applied = applyHostedWriteLocally(
+    `${hosted.key} was created in the hosted record; its local copy will arrive on the next record pull`,
+    () =>
+      writeTransaction((conn) => {
+        cacheTask(conn, hosted)
+        if (options.allowDuplicateReason)
+          writeLocalComment(
+            conn,
+            { key: hosted.key, record_id: hosted.id },
+            options.allowDuplicateReason,
+            commentAt,
+            true,
+            options.attribution ?? UNATTRIBUTED,
+          )
+      }),
   )
   if (applied && options.allowDuplicateReason)
     await drainHostedEditOutbox(commentAt, options.hosted)
-  return applied ? showTask(hosted.key, { recordId: hosted.id }).task : taskRowFromHosted(hosted)
+  return applied
+    ? showTask(hosted.key, { recordId: hosted.id }).task
+    : taskRowFromHosted(db(), hosted)
 }
 
 export function listTasks(

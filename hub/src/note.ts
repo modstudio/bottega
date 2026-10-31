@@ -7,6 +7,7 @@ import { newRecordId } from '../../shared/record/schema.ts'
 import { hasRecordIdShape } from '../../shared/record-id.ts'
 import { projectOf } from './attribute.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import { resolveHostedUrl } from './hosted-url.ts'
 import {
   hostedUnavailableRemedy,
@@ -27,7 +28,7 @@ import {
   type StalenessChange,
   type StalenessResult,
 } from './note-staleness-store.ts'
-import { applyHostedWriteLocally, drainHostedEditOutbox } from './offline-task-edits.ts'
+import { drainHostedEditOutbox } from './offline-task-edits.ts'
 import { dispatchNoteCurator, readRunsById } from './orch.ts'
 import { queueHostedChange } from './outbox.ts'
 import { projectRecordIdFor } from './project-record-id.ts'
@@ -639,8 +640,7 @@ export async function createNote(
     hostedOptions,
   )
   const applied = applyHostedWriteLocally(
-    formatNoteLabel(hosted.project, hosted.number),
-    'created',
+    `${formatNoteLabel(hosted.project, hosted.number)} was created in the hosted record; its local copy will arrive on the next record pull`,
     () => writeTransaction((conn) => applyHostedNote(conn, hosted)),
   )
   return { note: applied ? getNote(hosted.id) : noteRowFromHosted(hosted), candidates }
@@ -746,12 +746,14 @@ export async function promoteNote(
   const promoteInput = { task: options.existingTaskKey, title: creating ? title : undefined }
   const hosted = await hostedPromoteNote(note.record_id, promoteInput, hostedOptions)
   const reference = hosted.task?.key ?? formatNoteLabel(hosted.note.project, hosted.note.number)
-  const applied = applyHostedWriteLocally(reference, 'updated', () =>
-    writeTransaction((conn) => {
-      if (hosted.task) applyHostedTask(conn, hosted.task)
-      if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
-      applyHostedNote(conn, hosted.note)
-    }),
+  const applied = applyHostedWriteLocally(
+    `${reference} was updated in the hosted record; its local copy will arrive on the next record pull`,
+    () =>
+      writeTransaction((conn) => {
+        if (hosted.task) applyHostedTask(conn, hosted.task)
+        if (hosted.comment) applyHostedTaskComment(conn, hosted.comment)
+        applyHostedNote(conn, hosted.note)
+      }),
   )
   return applied ? getNote(note.record_id) : noteRowFromHosted(hosted.note)
 }

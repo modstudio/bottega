@@ -13,6 +13,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { keyPattern, refreshKeyPrefixes, writeCommitKey } from '../attribute.ts'
 import { nowIso, type Project, writeTransaction } from '../db.ts'
 import { projects } from '../projects.ts'
+import { chunks, type IngestTransaction } from './batches.ts'
 import { upsertGitTasks } from './git-task-cache.ts'
 
 export type { FileKind } from '../../../shared/file-kind.ts'
@@ -149,7 +150,7 @@ function scanGit(since: string) {
  */
 export async function ingestGit(
   since: string,
-  options: { transaction?: GitTransaction; batchSize?: number } = {},
+  options: { transaction?: IngestTransaction; batchSize?: number } = {},
 ): Promise<{ days: number; tasks: number }> {
   const machine = storedMachineId()
   if (!machine)
@@ -169,23 +170,18 @@ export async function ingestGit(
 }
 
 type GitScan = ReturnType<typeof scanGit>
-type GitTransaction = <T>(fn: (conn: import('bun:sqlite').Database) => T) => T
-
 export function writeGitIngestBatches(
   scan: GitScan,
   machine: string,
   at: string,
-  transaction: GitTransaction = writeTransaction,
+  transaction: IngestTransaction = writeTransaction,
   batchSize = GIT_INGEST_BATCH_SIZE,
 ): void {
   const operations = [
     ...scan.commits.map((commit) => ({ kind: 'commit' as const, commit })),
     ...[...scan.days].map(([day, activity]) => ({ kind: 'day' as const, day, activity })),
   ]
-  const batches = Array.from(
-    { length: Math.max(1, Math.ceil(operations.length / batchSize)) },
-    (_, index) => operations.slice(index * batchSize, (index + 1) * batchSize),
-  )
+  const batches = chunks(operations, batchSize)
   for (const [index, batch] of batches.entries())
     transaction((conn) => {
       const dayStmt = conn.query(

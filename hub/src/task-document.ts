@@ -2,8 +2,8 @@ import { randomBytes } from 'node:crypto'
 import { PLATFORM_SLUG } from '../../shared/brand.ts'
 import { newRecordId } from '../../shared/record/schema.ts'
 import { db, nowIso, writeTransaction } from './db.ts'
+import { applyHostedWriteLocally } from './hosted-local-apply.ts'
 import {
-  applyHostedWriteLocally,
   drainHostedEditOutbox,
   queueHostedDocumentDelete,
   queueHostedDocumentUpsert,
@@ -174,29 +174,33 @@ async function createHostedTaskDocument(
     created_at: hosted.created_at,
     updated_at: hosted.updated_at,
   })
-  const applied = applyHostedWriteLocally(document.label, 'created', () =>
-    writeTransaction((conn) => {
-      conn
-        .query(
-          `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
+  const applied = applyHostedWriteLocally(
+    `${document.label} was created in the hosted record; its local copy will arrive on the next record pull`,
+    () =>
+      writeTransaction((conn) => {
+        conn
+          .query(
+            `INSERT INTO task_document (record_id,task_key,task_record_id,number,role,title,body,version,created_at,updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        )
-        .run(
-          hosted.id,
-          task.key,
-          task.record_id,
-          hostedNumber,
-          documentRole(input.role),
-          input.title,
-          input.body ?? '',
-          hosted.version,
-          hosted.created_at,
-          hosted.updated_at,
-        )
-      conn
-        .query(`UPDATE task SET next_document_number=MAX(next_document_number,?) WHERE record_id=?`)
-        .run(hostedNumber + 1, task.record_id)
-    }),
+          )
+          .run(
+            hosted.id,
+            task.key,
+            task.record_id,
+            hostedNumber,
+            documentRole(input.role),
+            input.title,
+            input.body ?? '',
+            hosted.version,
+            hosted.created_at,
+            hosted.updated_at,
+          )
+        conn
+          .query(
+            `UPDATE task SET next_document_number=MAX(next_document_number,?) WHERE record_id=?`,
+          )
+          .run(hostedNumber + 1, task.record_id)
+      }),
   )
   return applied ? getTaskDocument(hosted.id) : document
 }

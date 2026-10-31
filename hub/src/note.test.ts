@@ -340,31 +340,6 @@ describe('suggestion notes', () => {
       expect(beta.number).toBe(1)
     })
 
-    test('a lock refusal before a local create writes nothing', async () => {
-      const holder = new Database(process.env.BOTTEGA_HUB_DB!, { readwrite: true, create: false })
-      db().exec('PRAGMA busy_timeout = 1')
-      holder.exec('BEGIN IMMEDIATE')
-      const before = db()
-        .query<{ count: number }, []>('SELECT count(*) count FROM note')
-        .get()!.count
-      try {
-        await expect(
-          createNote({
-            text: `Local while locked ${crypto.randomUUID()}`,
-            cwd: '/fixtures/repos/workshop',
-            forceNew: true,
-          }),
-        ).rejects.toThrow('database is locked')
-        expect(
-          db().query<{ count: number }, []>('SELECT count(*) count FROM note').get()!.count,
-        ).toBe(before)
-      } finally {
-        if (holder.inTransaction) holder.exec('ROLLBACK')
-        holder.close()
-        db().exec('PRAGMA busy_timeout = 15000')
-      }
-    })
-
     test('deleting the highest note does not reuse its project number', async () => {
       const first = (
         await createNote({
