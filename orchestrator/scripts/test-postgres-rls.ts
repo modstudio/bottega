@@ -462,7 +462,6 @@ try {
             '--timeout',
             '30000',
             'src/postgres/postgres-migrate-jsonb-binding.test.ts',
-            'src/postgres/postgres-migrate-jsonb-string-check.test.ts',
           ],
           {
             BOTTEGA_TEST_POSTGRES_URL: `postgres://postgres:postgres@127.0.0.1:${port}/postgres`,

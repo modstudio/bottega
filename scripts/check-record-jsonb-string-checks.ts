@@ -24,32 +24,40 @@ function propertyName(property: ts.PropertyAssignment): string | undefined {
   return undefined
 }
 
+function tableCall(
+  node: ts.CallExpression,
+): { table: string; shape: ts.ObjectLiteralExpression } | undefined {
+  const isTable = ts.isPropertyAccessExpression(node.expression)
+    ? node.expression.name.text === 'withRLS'
+    : ts.isIdentifier(node.expression) && node.expression.text === 'pgTable'
+  const table = node.arguments[0]
+  const shape = node.arguments[1]
+  if (!isTable || !table || !ts.isStringLiteral(table) || !shape) return undefined
+  if (!ts.isObjectLiteralExpression(shape)) return undefined
+  return { table: table.text, shape }
+}
+
+function tableJsonbColumns(table: string, shape: ts.ObjectLiteralExpression): JsonbColumn[] {
+  const columns: JsonbColumn[] = []
+  for (const property of shape.properties) {
+    if (!ts.isPropertyAssignment(property)) continue
+    const jsonb = callNamed(property.initializer, 'jsonb')
+    if (!jsonb) continue
+    const fallback = propertyName(property)
+    const declared = jsonb.arguments[0]
+    const column = declared && ts.isStringLiteral(declared) ? declared.text : fallback
+    if (column) columns.push({ table, column })
+  }
+  return columns
+}
+
 export function jsonbColumns(sourceText: string, file = 'schema.ts'): JsonbColumn[] {
   const source = ts.createSourceFile(file, sourceText, ts.ScriptTarget.Latest, true)
   const columns: JsonbColumn[] = []
   const visit = (node: ts.Node) => {
     if (ts.isCallExpression(node)) {
-      const table = node.arguments[0]
-      const shape = node.arguments[1]
-      if (
-        (ts.isPropertyAccessExpression(node.expression)
-          ? node.expression.name.text === 'withRLS'
-          : ts.isIdentifier(node.expression) && node.expression.text === 'pgTable') &&
-        table &&
-        ts.isStringLiteral(table) &&
-        shape &&
-        ts.isObjectLiteralExpression(shape)
-      ) {
-        for (const property of shape.properties) {
-          if (!ts.isPropertyAssignment(property)) continue
-          const jsonb = callNamed(property.initializer, 'jsonb')
-          if (!jsonb) continue
-          const fallback = propertyName(property)
-          const declared = jsonb.arguments[0]
-          const column = declared && ts.isStringLiteral(declared) ? declared.text : fallback
-          if (column) columns.push({ table: table.text, column })
-        }
-      }
+      const definition = tableCall(node)
+      if (definition) columns.push(...tableJsonbColumns(definition.table, definition.shape))
     }
     ts.forEachChild(node, visit)
   }
@@ -69,8 +77,8 @@ export function missingJsonbStringChecks(
     .flatMap(({ file, source }) => jsonbColumns(source, file))
     .filter((column) => {
       const name = jsonbStringCheckName(column)
-      const expression = `jsonb_typeof(\"${column.column}\") <> 'string'`
-      return !migrationSql.includes(`CONSTRAINT \"${name}\" CHECK (${expression}) NOT VALID`)
+      const expression = `jsonb_typeof("${column.column}") <> 'string'`
+      return !migrationSql.includes(`CONSTRAINT "${name}" CHECK (${expression}) NOT VALID`)
     })
     .map((column) => `${column.table}.${column.column}`)
     .sort()

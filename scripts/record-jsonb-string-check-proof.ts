@@ -1,13 +1,14 @@
 import type { Transaction } from '@electric-sql/pglite'
 import { WITHHELD_SECRET_SHAPED } from '../orchestrator/src/record/outbox-sanitize.ts'
+import {
+  dev1303InvalidDocId,
+  dev1303InvalidDocRevisionId,
+} from './record-doc-jsonb-repair-proof.ts'
 
 export const jsonbStringChecksValidate = '20261031055501_dev_1893_jsonb_string_checks_validate'
 
 const questionId = '01990000-0000-7000-8000-000000000189'
 const machineId = '01990000-0000-7000-8000-000000000188'
-export const dev1303InvalidDocId = '01990000-0000-7000-8000-000000000027'
-export const dev1303InvalidDocRevisionId = '01990000-0000-7000-8000-000000000031'
-
 export async function seedJsonbStringChecksValidate(
   transaction: Transaction,
   input: { spaceId: string; userId: string },
@@ -15,7 +16,7 @@ export async function seedJsonbStringChecksValidate(
   await transaction.exec(`
     SELECT set_config('app.space_id', '${input.spaceId}', true);
     SELECT set_config('app.user_id', '${input.userId}', true);
-    -- Remove the dev_1303 replay fixture rows seeded by seedDocJsonbArrayRepair in scripts/check-record-migrations-apply.ts: jsonbInvalidDocId and its doc_revision deliberately retain a top-level string, so the doc and doc_revision VALIDATE statements would otherwise fail. The hosted record has no such rows per DEV-1893's read-only count, and the record rehearsal proves this on a real restore.
+    -- Remove the dev_1303 replay fixture rows seeded by seedDocJsonbArrayRepair in scripts/record-doc-jsonb-repair-proof.ts: dev1303InvalidDocId and its doc_revision deliberately retain a top-level string, so the doc and doc_revision VALIDATE statements would otherwise fail. The hosted record has no such rows per DEV-1893's read-only count, and the record rehearsal proves this on a real restore.
     DELETE FROM doc_revision WHERE id = '${dev1303InvalidDocRevisionId}';
     DELETE FROM doc WHERE id = '${dev1303InvalidDocId}';
     ALTER TABLE question NO FORCE ROW LEVEL SECURITY;
