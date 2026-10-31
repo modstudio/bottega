@@ -9,9 +9,9 @@ import type { McpServerConfig } from '../mcp/mcp-probe.ts'
 import { upsertProject } from '../project/projects.ts'
 import { writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import {
+  PROJECT_MCP_RELATIVE_WRITER_REASON,
   PROJECT_MCP_WRITER_TOOLS_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
-  PROJECT_MCP_RELATIVE_WRITER_REASON,
   requiredProjectMcpWriterIneligibility,
 } from '../sandbox/project-mcp-scope.ts'
 import { mcpCandidateIneligibility, pick } from './route.ts'

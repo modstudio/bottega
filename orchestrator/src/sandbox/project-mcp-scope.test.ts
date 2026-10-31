@@ -80,9 +80,7 @@ test('a credentialed writer server uses a credential-free proxy only with declar
 
   const acp = selectProjectMcpServers('writer', CONFIG, project, '/project', true, ACP)
   expect(acp?.servers.secretHeader).toBeUndefined()
-  expect(acp?.withheld.find(({ name }) => name === 'secretHeader')?.advice).toBe(
-    ACP_ADVICE,
-  )
+  expect(acp?.withheld.find(({ name }) => name === 'secretHeader')?.advice).toBe(ACP_ADVICE)
   expect(JSON.stringify(acp)).not.toContain('literal-secret')
 })
 

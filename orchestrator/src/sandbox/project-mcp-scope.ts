@@ -12,13 +12,13 @@ import {
   type McpServerConfig,
 } from '../mcp/mcp-probe.ts'
 import {
-  mcpConfigReadForRun,
   isProjectRelativeStdioServer,
+  mcpConfigReadForRun,
+  type ProjectMcpServerEntry,
   type ProjectMcpWithheld,
   projectProxyServers,
   projectReaderProxyServers,
   READER_PLATFORM_MCP_SERVERS,
-  type ProjectMcpServerEntry,
   type ReaderProxyServer,
 } from './mcp-reader-scope.ts'
 

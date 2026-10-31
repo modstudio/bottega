@@ -6,9 +6,9 @@ import { type Project, projectAt } from '../project/projects.ts'
 import { codexProjectServersFromSelection } from '../sandbox/codex-mcp-scope.ts'
 import {
   type ProjectMcpSelection,
-  type WriterProxyDecision,
   projectMcpWithheldLine,
   selectProjectMcpServers,
+  type WriterProxyDecision,
 } from '../sandbox/project-mcp-scope.ts'
 import { codexMcpMode } from './run-mcp-mode.ts'
 import { grokReaderServersForRun, projectMcpServerName } from './run-worker-home.ts'

@@ -13,8 +13,8 @@ import { scopeGrokReaderMcpHome } from '../sandbox/grok-reader-mcp-home.ts'
 import { inspectGrokReaderMcp } from '../sandbox/grok-reader-mcp-inspect.ts'
 import {
   mcpConfigReadForRun,
-  projectReaderProxyServersForRun,
   type ProjectMcpServerEntry,
+  projectReaderProxyServersForRun,
   type ReaderProxyServer,
 } from '../sandbox/mcp-reader-scope.ts'
 import {
