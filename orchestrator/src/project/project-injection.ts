@@ -60,6 +60,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           deploy: z.string().optional(),
           live: z.string().trim().min(1).optional(),
           onDemand: z.boolean().optional(),
+          requiredWhenChanged: z.array(z.string().trim().min(1)).optional(),
         }),
       )
       .superRefine((rungs, context) => {

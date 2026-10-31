@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { closeDatabaseForFixture, db } from '../database/db.ts'
 import { migrationJournal } from '../database/migrations.ts'
+import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
@@ -12,6 +13,7 @@ import type { PullRequestCheck } from './merge-decision.ts'
 import { type PullRequestChange, recordMergeAdmission } from './pr-admission.ts'
 import {
   MERGED_WITH_RESIDUE_EXIT_CODE,
+  MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
@@ -43,6 +45,7 @@ const pullRequest: PullRequestMergeFacts = {
   baseBranch: 'main',
   title: 'Prove the pull request head',
   state: 'OPEN',
+  mergeCommit: null,
 }
 
 function adapter(
@@ -64,11 +67,13 @@ function adapter(
       prNumber: number,
       database: ReturnType<typeof db>,
     ) => string | null
+    postMergeChange?: () => PullRequestChange
     recordLandings?: () => void
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
     queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
     wait?: () => void
+    releaseRequired?: (enabled: boolean) => RequiredReleaseReport
   } = {},
 ): PullRequestMergeAdapter {
   return {
@@ -89,6 +94,13 @@ function adapter(
       })),
     recordAdmission: (change, decision, prNumber, database) =>
       input.recordAdmission?.(change, decision, prNumber, database) ?? null,
+    postMergeChange:
+      input.postMergeChange ??
+      (() =>
+        ({
+          project: { name: 'merge-fixture', path: cwd },
+          branch: pullRequest.headBranch,
+        }) as PullRequestChange),
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
@@ -106,9 +118,92 @@ function adapter(
     failedMergeGroupRun: () => null,
     now: Date.now,
     wait: () => input.wait?.(),
+    releaseRequired: (_project, _mergeCommit, _target, enabled) =>
+      input.releaseRequired?.(enabled) ?? { required: [], releases: [], satisfied: true },
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
   }
 }
+
+const requiredRelease = (
+  overrides: Partial<RequiredReleaseReport> = {},
+): RequiredReleaseReport => ({
+  required: ['hosted-api'],
+  releases: [
+    {
+      rung: 'hosted-api',
+      deployExit: 0,
+      outputTail: 'pending 0',
+      satisfied: true,
+      deployed: true,
+    },
+  ],
+  satisfied: true,
+  ...overrides,
+})
+
+test('required release runs after landing recording and before cleanup and maps failure', () => {
+  registerProject([])
+  recordPassingGate()
+  const calls: string[] = []
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      recordLandings: () => calls.push('record-landings'),
+      releaseRequired: (enabled) => {
+        expect(enabled).toBe(true)
+        calls.push('release-required')
+        return requiredRelease({
+          releases: [
+            {
+              rung: 'hosted-api',
+              deployExit: 7,
+              outputTail: 'migration pending 1',
+              satisfied: false,
+              deployed: true,
+            },
+          ],
+          satisfied: false,
+        })
+      },
+      shipCleanup: () => {
+        calls.push('cleanup')
+        return cleanupReport()
+      },
+    }),
+    undefined,
+    true,
+  )
+  expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
+  expect(calls).toEqual(['record-landings', 'release-required', 'cleanup'])
+  expect(outcome.output).toContain('required rung hosted-api: deploy exit 7')
+})
+
+test('an already-merged pull request skips admission and resumes post-merge stages', () => {
+  registerProject([])
+  let admitted = false
+  let released = false
+  const outcome = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      view: () => ({ ...pullRequest, state: 'MERGED', mergeCommit: 'merge-commit' }),
+      admission: () => {
+        admitted = true
+        throw new Error('must not run')
+      },
+      releaseRequired: () => {
+        released = true
+        return requiredRelease()
+      },
+    }),
+    undefined,
+    true,
+  )
+  expect(outcome.exitCode).toBe(0)
+  expect(admitted).toBe(false)
+  expect(released).toBe(true)
+})
 
 const cleanupReport = (
   overrides: Partial<Pick<ShipCleanupReport, 'kept' | 'errors'>> = {},

@@ -339,6 +339,33 @@ describe('importWorkflowTree', () => {
     })
   })
 
+  test('both ship-task modes include merge-pr from the composed workflow', async () => {
+    const d = database()
+    await importAndPromoteCurrentTree(d)
+    d.query(
+      'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+    ).run(
+      'merge-modes-fixture',
+      '/fixture',
+      'bun',
+      JSON.stringify({
+        tracker: { protocol: 'workspace-mcp', states: { started: 'active', completed: 'done' } },
+        docs: { protocol: 'orch-docs' },
+        gate: 'bun run check',
+        trunk: 'main',
+        release: { rungs: [], mergeMethod: 'squash', requiredChecks: [] },
+      }),
+    )
+    const args = { key: 'DEV-1933', branch: 'DEV-1933-test', worktree: '/fixture' }
+    for (const mode of ['full', 'merge']) {
+      expect(
+        composeWorkflow('ship-task', 'merge-modes-fixture', mode, args, d).steps.map(
+          ({ slug }) => slug,
+        ),
+      ).toContain('merge-pr')
+    }
+  })
+
   test('the ship flow closes a task only after its pull request merges', async () => {
     const d = database()
     await importAndPromoteCurrentTree(d)
