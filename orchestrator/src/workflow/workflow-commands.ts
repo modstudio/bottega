@@ -669,10 +669,15 @@ function cursorCommandTarget(
   hasStep = false,
 ): { project: string; workflow: string; step?: string } {
   const project = flagValue(argv, 'project')
-  const first = argv[2]?.startsWith('--') ? undefined : argv[2]
-  const second = argv[3]?.startsWith('--') ? undefined : argv[3]
-  const suppliedWorkflow = hasStep && !second ? undefined : first
-  const step = hasStep ? (second ?? first) : undefined
+  const tail = argv.slice(2)
+  const flagIndex = tail.findIndex((value) => value.startsWith('--'))
+  const positionals = flagIndex < 0 ? tail : tail.slice(0, flagIndex)
+  const [suppliedWorkflow, suppliedStep] = hasStep
+    ? positionals.length > 1
+      ? positionals
+      : [undefined, positionals[0]]
+    : [positionals[0], undefined]
+  let step = suppliedStep
   if (cursor !== undefined) {
     const row = selectWorkflowCursor(
       { project, workflow: suppliedWorkflow },
@@ -680,7 +685,8 @@ function cursorCommandTarget(
       context.session,
       db(),
     )!
-    if (hasStep && !step) throw new Error(`${caller} requires a step slug or position`)
+    if (hasStep && (!suppliedStep || (!suppliedWorkflow && suppliedStep === row.workflow_slug)))
+      step = row.step_slug
     return { project: row.project, workflow: row.workflow_slug, step }
   }
   if (!project) throw new Error('--project is required without --cursor')
