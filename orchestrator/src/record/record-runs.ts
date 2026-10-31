@@ -96,6 +96,9 @@ export type RecordRunsWindow = {
 
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 const numeric = (value: unknown) => (value == null ? null : Number(value))
+function runMachineLabel(number: number | null, machine: RecordRun['machine']): string | null {
+  return number === null ? null : crossMachineLabel('run', number, machine)
+}
 export function runRow(row: Record<string, unknown>): RecordRun {
   const number = numeric(row.number)
   const machine = {
@@ -107,7 +110,7 @@ export function runRow(row: Record<string, unknown>): RecordRun {
     id: String(row.id),
     number,
     machine,
-    machineLabel: number === null ? null : crossMachineLabel('run', number, machine),
+    machineLabel: runMachineLabel(number, machine),
     spaceId: String(row.space_id),
     spaceName: String(row.space_name),
     projectName: row.project_name == null ? null : String(row.project_name),

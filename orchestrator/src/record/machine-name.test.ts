@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { crossMachineLabel } from '../../../shared/machine-label.ts'
 import {
   decideMachineLabel,
   decideMachineNameClaim,
@@ -22,6 +23,20 @@ test('decides current, former, foreign, absent, and malformed machine labels', (
     reason: expect.stringContaining('record space switch --short-name'),
   })
   expect(decideMachineLabel('Bad/42', names)).toEqual({ kind: 'not-label' })
+})
+
+test('a cross-machine run label parses back to the same name and number', () => {
+  const machine = {
+    id: '01a0ab05-0000-7000-8000-000000000001',
+    shortName: 'starship',
+  }
+  const label = crossMachineLabel('run', 123, machine)
+  expect(decideMachineLabel(label, { shortName: machine.shortName, formerShortNames: [] })).toEqual(
+    {
+      kind: 'bare',
+      remainder: '123',
+    },
+  )
 })
 
 test('validates machine names in both directions', () => {

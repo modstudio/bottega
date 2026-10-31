@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { decideMachineLabel } from '../orchestrator/src/record/machine-name.ts'
 import { crossMachineLabel } from './machine-label.ts'
 
 const machine = {
@@ -14,14 +13,4 @@ test('labels cross-machine run and question numbers with the short name', () => 
 
 test('labels a machine without a short name with its id prefix', () => {
   expect(crossMachineLabel('run', 123, { ...machine, shortName: null })).toBe('01a0ab05/123')
-})
-
-test('a run label parses back to its machine name and number', () => {
-  const label = crossMachineLabel('run', 123, machine)
-  expect(decideMachineLabel(label, { shortName: machine.shortName, formerShortNames: [] })).toEqual(
-    {
-      kind: 'bare',
-      remainder: '123',
-    },
-  )
 })

@@ -332,6 +332,7 @@ export const recordReadBoundariesAfterPublish: ImportBoundary[] = [
     'orchestrator/src/record/record-runs.ts',
     [
       'bun',
+      '../../../shared/machine-label.ts',
       '../../../shared/record/tenant.ts',
       '../../../shared/review-presentation.ts',
       '../failure/failure.ts',

@@ -54,6 +54,11 @@ type Verdict = {
   note: string | null
 }
 
+function presentedRun(data: unknown, hosted: boolean, id: string): [RunDetail | undefined, string] {
+  const run = data as RunDetail | undefined
+  return [run, hosted ? (run?.machineLabel ?? id) : id]
+}
+
 export const Route = createFileRoute('/runs/$id')({ component: RunDetailRoute })
 
 function RunDetailRoute() {
@@ -137,8 +142,7 @@ function RunDetailPage({ id }: { id: string }) {
   const hosted = isHostedMode()
   const numericId = Number(id)
   const detail = useRunDetail(id, numericId, hosted)
-  const run = detail.data as unknown as RunDetail | undefined
-  const runLabel = hosted ? (run?.machineLabel ?? id) : id
+  const [run, runLabel] = presentedRun(detail.data, hosted, id)
   const waitingItem = useWaitingItem(id, run?.root_id ?? id, hosted)
   const [delivery, setDelivery] = useState<Delivery | null>(null)
   const [quality, setQuality] = useState<Quality | null>(null)
