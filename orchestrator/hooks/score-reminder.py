@@ -259,7 +259,10 @@ def main() -> int:
             note_args,
             capture_output=True, text=True, timeout=min(5, remaining), check=True,
         )
-        notes = [(row["label"], row["text"]) for row in json.loads(result.stdout)]
+        notes = [
+            (row["label"], row["text"], row["project"])
+            for row in json.loads(result.stdout)
+        ]
     except Exception:
         notes = []
 
@@ -275,10 +278,9 @@ def main() -> int:
         )
     else:
         seen = None
-    blocking = bool(rows or pairs or blocking_holds)
-    stop = decide_stop(blocking, notes, seen)
+    stop = decide_stop(len(rows), len(pairs), len(blocking_holds), notes, seen)
     if not write_marker(note_marker_path, {"seen": stop.seen}):
-        stop = decide_stop(blocking, notes, None)
+        stop = decide_stop(len(rows), len(pairs), len(blocking_holds), notes, None)
 
     if not stop.block:
         con.close()

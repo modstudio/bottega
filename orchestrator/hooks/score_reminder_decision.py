@@ -57,8 +57,10 @@ class StopDecision(NamedTuple):
 
 
 def decide_stop(
-    blocking: bool,
-    notes: list[tuple[str, str]],
+    unscored_runs: int,
+    pairs: int,
+    blocking_holds: int,
+    notes: list[tuple[str, str, str]],
     seen: set[str] | None,
 ) -> StopDecision:
     unseen = notes if seen is None else [note for note in notes if note[0] not in seen]
@@ -67,16 +69,20 @@ def decide_stop(
         count = len(unseen)
         note_lines.append(
             f"{count} note{'s' if count != 1 else ''} filed in this session; "
-            "system-health triages them:"
+            "hand each to its project's architects:"
         )
         note_lines.extend(
             f"  {label}  {text[:80]}  "
-            "(hand it to system-health with a board request to architects:bottega)"
-            for label, text in unseen
+            f"(hand it to architects:{project} with a board request)"
+            for label, text, project in unseen
         )
     updated_seen = set() if seen is None else set(seen)
-    updated_seen.update(label for label, _text in unseen)
-    return StopDecision(block=blocking, note_lines=note_lines, seen=sorted(updated_seen))
+    updated_seen.update(label for label, _text, _project in unseen)
+    return StopDecision(
+        block=bool(unscored_runs or pairs or blocking_holds),
+        note_lines=note_lines,
+        seen=sorted(updated_seen),
+    )
 
 
 def unscored_remedy(status: str, failure_kind: str | None, agent: str) -> str:

@@ -62,40 +62,44 @@ class HeldTreeDecisionTest(unittest.TestCase):
 
 
 class StopDecisionTest(unittest.TestCase):
-    NOTES = [("#12", "first note"), ("#34", "second note")]
+    NOTES = [
+        ("workshop#12", "first note", "workshop"),
+        ("starship#34", "second note", "starship"),
+    ]
 
     def test_notes_only_are_informational_and_marked_seen(self):
-        decision = decide_stop(False, self.NOTES, set())
+        decision = decide_stop(0, 0, 0, self.NOTES, set())
         self.assertFalse(decision.block)
         self.assertEqual(len(decision.note_lines), 3)
         self.assertEqual(
             decision.note_lines[0],
-            "2 notes filed in this session; system-health triages them:",
+            "2 notes filed in this session; hand each to its project's architects:",
         )
-        self.assertIn("#12  first note", decision.note_lines[1])
-        self.assertIn("#34  second note", decision.note_lines[2])
-        self.assertEqual(decision.seen, ["#12", "#34"])
+        self.assertIn("workshop#12  first note", decision.note_lines[1])
+        self.assertIn("starship#34  second note", decision.note_lines[2])
+        self.assertIn("architects:starship", decision.note_lines[2])
+        self.assertEqual(decision.seen, ["starship#34", "workshop#12"])
 
     def test_notes_only_already_seen_do_not_repeat(self):
-        decision = decide_stop(False, self.NOTES, {"#12", "#34"})
+        decision = decide_stop(0, 0, 0, self.NOTES, {"starship#34", "workshop#12"})
         self.assertFalse(decision.block)
         self.assertEqual(decision.note_lines, [])
 
     def test_blocking_without_notes_blocks(self):
-        self.assertTrue(decide_stop(True, [], set()).block)
+        self.assertTrue(decide_stop(1, 0, 0, [], set()).block)
 
     def test_blocking_with_unseen_note_includes_the_note(self):
-        decision = decide_stop(True, [self.NOTES[0]], set())
+        decision = decide_stop(1, 0, 0, [self.NOTES[0]], set())
         self.assertTrue(decision.block)
-        self.assertIn("#12  first note", decision.note_lines[1])
+        self.assertIn("workshop#12  first note", decision.note_lines[1])
 
     def test_unknown_seen_state_prints_every_note(self):
-        decision = decide_stop(False, self.NOTES, None)
+        decision = decide_stop(0, 0, 0, self.NOTES, None)
         self.assertEqual(len(decision.note_lines), 3)
-        self.assertEqual(decision.seen, ["#12", "#34"])
+        self.assertEqual(decision.seen, ["starship#34", "workshop#12"])
 
     def test_note_lines_offer_no_triage_commands(self):
-        decision = decide_stop(False, self.NOTES, set())
+        decision = decide_stop(0, 0, 0, self.NOTES, set())
         for line in decision.note_lines:
             self.assertNotIn("note keep", line)
             self.assertNotIn("note drop", line)
