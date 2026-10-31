@@ -18,6 +18,23 @@ test('parses probe and exec artifact references in one owner', () => {
   expect(parseProbeArtifact('task:DEV-1708')).toBeUndefined()
 })
 
+test('parses current and former machine labels and refuses foreign labels', () => {
+  const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
+  expect(parseProbeArtifact('probe:mine/7', names)?.identifier).toEqual({
+    kind: 'number',
+    number: 7,
+  })
+  expect(parseProbeArtifact('exec:old-mine/8', names)?.identifier).toEqual({
+    kind: 'number',
+    number: 8,
+  })
+  expect(() => parseProbeArtifact('probe:other/7', names)).toThrow(
+    "acts only on this machine's (`mine`) rows",
+  )
+  expect(() => parseProbeArtifact('probe:mine/7', null)).toThrow('has no short name')
+  expect(() => parseProbeArtifact('probe:Bad/7', names)).toThrow('invalid probe identifier')
+})
+
 test('resolves a probe number or UUID to the probe UUID', () => {
   const d = migratedTestDatabase()
   try {
@@ -45,10 +62,10 @@ test('refuses malformed and unknown probe identifiers with the accepted forms', 
   const d = migratedTestDatabase()
   try {
     expect(() => resolveProbeIdentifier(d, 'abc')).toThrow(
-      'expected a positive decimal probe number or a full probe UUID',
+      'expected a positive decimal probe number, name/number, or a full probe UUID',
     )
     expect(() => resolveProbeIdentifier(d, 404)).toThrow(
-      'pass a positive decimal probe number or a full probe UUID',
+      'pass a positive decimal probe number, name/number, or a full probe UUID',
     )
   } finally {
     d.close()

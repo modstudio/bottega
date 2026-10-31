@@ -78,7 +78,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
-    '../run/run-identifier-grammar.ts',
+    '../run/run-identifier.ts',
     './probe-identifier.ts',
     './workflow-floor-refusal.ts',
   ]),
@@ -251,7 +251,11 @@ export const workflowFloorBoundarySpecs: WorkflowFloorBoundarySpec[] = [
   {
     name: 'probe-identifier-boundary',
     file: 'orchestrator/src/workflow/probe-identifier.ts',
-    allowed: ['../../../shared/record-id.ts'],
+    allowed: [
+      '../../../shared/machine-config.ts',
+      '../../../shared/record-id.ts',
+      '../run/run-identifier-grammar.ts',
+    ],
     reason: 'Keep probe number-or-UUID edge resolution inside the probe identity concern.',
   },
 ]

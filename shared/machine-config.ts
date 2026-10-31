@@ -79,6 +79,7 @@ export const MACHINE_CONFIG = {
   'machine.id': { type: 'string', default: '', validator: machineIdValidation },
   'machine.short_name': { type: 'string', default: '' },
   'machine.display_name': { type: 'string', default: '' },
+  'machine.former_short_names': { type: 'string', default: '' },
   ...DELEGATION_MACHINE_CONFIG,
   'model_host.url': {
     environment: 'BOTTEGA_MODEL_HOST_URL',
@@ -863,14 +864,35 @@ export function storedMachineId(env: ConfigEnvironment = process.env): string | 
   return id
 }
 
-export type StoredMachineNames = { shortName: string; displayName: string }
+export type StoredMachineNames = {
+  shortName: string
+  displayName: string
+  formerShortNames?: string[]
+}
+
+export function parseFormerShortNames(value: string): string[] {
+  return [...new Set(value.split(',').filter(Boolean))]
+}
+
+export function formerShortNamesAfterRename(
+  former: readonly string[],
+  previous: string,
+  current: string,
+): string[] {
+  return [...new Set([...former, ...(previous && previous !== current ? [previous] : [])])].filter(
+    (name) => name !== current,
+  )
+}
 
 export function storedMachineNames(
   env: ConfigEnvironment = process.env,
 ): StoredMachineNames | null {
   const shortName = readMachineValue('machine.short_name', env)
   const displayName = readMachineValue('machine.display_name', env)
-  return shortName && displayName ? { shortName, displayName } : null
+  const formerShortNames = parseFormerShortNames(
+    readMachineValue('machine.former_short_names', env),
+  )
+  return shortName && displayName ? { shortName, displayName, formerShortNames } : null
 }
 
 export function writeMachineNames(
@@ -878,10 +900,16 @@ export function writeMachineNames(
   env: ConfigEnvironment = process.env,
 ): void {
   atomicPatch((root) => {
+    const machine = (root.machine as Record<string, unknown> | undefined) ?? {}
+    const previous = typeof machine.short_name === 'string' ? machine.short_name : ''
+    const former = parseFormerShortNames(
+      typeof machine.former_short_names === 'string' ? machine.former_short_names : '',
+    )
     root.machine = {
-      ...((root.machine as Record<string, unknown> | undefined) ?? {}),
+      ...machine,
       short_name: names.shortName,
       display_name: names.displayName,
+      former_short_names: formerShortNamesAfterRename(former, previous, names.shortName).join(','),
     }
   }, env)
 }

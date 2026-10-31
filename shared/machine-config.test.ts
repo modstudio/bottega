@@ -8,9 +8,11 @@ import {
   deleteMachineValue,
   editMachinePermission,
   editMachinePermissionTable,
+  formerShortNamesAfterRename,
   listMachineEntries,
   MACHINE_CONFIG,
   machineId,
+  parseFormerShortNames,
   readDelegationSettings,
   readMachinePermissions,
   readMachineValue,
@@ -25,6 +27,14 @@ const silent = () => {}
 const freshWarnings = () => new Set<string>()
 
 describe('machine config resolution', () => {
+  test('former machine names append on rename without duplicates or the current name', () => {
+    expect(parseFormerShortNames('old,older,old')).toEqual(['old', 'older'])
+    expect(formerShortNamesAfterRename(['old', 'mine'], 'mine', 'new-name')).toEqual([
+      'old',
+      'mine',
+    ])
+    expect(formerShortNamesAfterRename(['old', 'mine'], 'mine', 'old')).toEqual(['mine'])
+  })
   test('machine identity lookup does not create config and carry-over is stable', () => {
     const root = mkdtempSync(join(tmpdir(), 'machine-id-'))
     try {

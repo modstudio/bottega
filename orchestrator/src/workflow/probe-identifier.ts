@@ -1,7 +1,9 @@
 // concern: workflow floor evidence
 /** Resolves a user-facing probe number or UUID once, at the edge. */
 
+import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { decideMachineLabel, type MachineIdentifierNames } from '../run/run-identifier-grammar.ts'
 
 type ProbeDatabase = {
   query(sql: string): unknown
@@ -18,10 +20,24 @@ export type ParsedProbeArtifact = {
   identifier: ParsedProbeIdentifier
 }
 
-const ACCEPTED_PROBE_IDENTIFIERS = 'a positive decimal probe number or a full probe UUID'
+const ACCEPTED_PROBE_IDENTIFIERS =
+  'a positive decimal probe number, name/number, or a full probe UUID'
 
-function parseProbeIdentifier(input: string | number): ParsedProbeIdentifier {
-  const given = String(input)
+const machineNames = (): MachineIdentifierNames | null => {
+  const stored = storedMachineNames()
+  return stored
+    ? { shortName: stored.shortName, formerShortNames: stored.formerShortNames ?? [] }
+    : null
+}
+
+function parseProbeIdentifier(
+  input: string | number,
+  names: MachineIdentifierNames | null = machineNames(),
+): ParsedProbeIdentifier {
+  const original = String(input)
+  const label = decideMachineLabel(original, names)
+  if (label.kind === 'refused') throw new Error(label.reason)
+  const given = label.kind === 'bare' ? label.remainder : original
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
     if (Number.isSafeInteger(number) && number > 0) return { kind: 'number', number }
@@ -32,17 +48,24 @@ function parseProbeIdentifier(input: string | number): ParsedProbeIdentifier {
   )
 }
 
-export function parseProbeArtifact(artifact: string): ParsedProbeArtifact | undefined {
+export function parseProbeArtifact(
+  artifact: string,
+  names: MachineIdentifierNames | null = machineNames(),
+): ParsedProbeArtifact | undefined {
   const parsed = /^(probe|exec):(.+)$/i.exec(artifact.trim())
   if (!parsed) return undefined
   return {
     kind: parsed[1]!.toLowerCase() as ParsedProbeArtifact['kind'],
-    identifier: parseProbeIdentifier(parsed[2]!),
+    identifier: parseProbeIdentifier(parsed[2]!, names),
   }
 }
 
-export function resolveProbeIdentifier(database: ProbeDatabase, input: string | number): string {
-  const parsed = parseProbeIdentifier(input)
+export function resolveProbeIdentifier(
+  database: ProbeDatabase,
+  input: string | number,
+  names: MachineIdentifierNames | null = machineNames(),
+): string {
+  const parsed = parseProbeIdentifier(input, names)
   if (parsed.kind === 'number') {
     const query = database.query('SELECT record_id FROM probe WHERE number=?') as ProbeRecordIdQuery
     const row = query.get(parsed.number)
