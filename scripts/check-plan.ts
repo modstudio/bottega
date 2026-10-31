@@ -158,7 +158,7 @@ export const CHECK_LEGS = [
   {
     name: 'scripts',
     directory: '.',
-    ciJob: 'scripts',
+    ciJob: null,
     testDirectories: [],
     testPatterns: [],
     excludedTestDirectories: [],

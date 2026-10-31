@@ -92,7 +92,7 @@ describe('canon drift branch gate', () => {
       canonBranchFindings({
         checkout: root,
         base,
-        rows: [{ slug: 'AGENTS.md', body: 'stored\n' }],
+        rows: [{ slug: 'AGENTS.md', body: 'stored\n', subject: null }],
       }),
     ).toEqual([
       { path: 'AGENTS.md', operation: 'write' },
@@ -120,8 +120,8 @@ describe('canon drift branch gate', () => {
         checkout: root,
         base,
         rows: [
-          { slug: '.agents/rules/example.md', body: 'rule\n' },
-          { slug: 'AGENTS.md', body: 'card\n' },
+          { slug: '.agents/rules/example.md', body: 'rule\n', subject: null },
+          { slug: 'AGENTS.md', body: 'card\n', subject: null },
         ],
       }),
     ).toEqual([

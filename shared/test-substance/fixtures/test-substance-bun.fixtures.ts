@@ -9,9 +9,7 @@ describe('fixture', () => {
   test('has no assertion', () => {})
   test('asserts through a same-file helper', () => expectThroughHelper())
   test('asserts through an imported helper', () => expectImported())
-  test('clean: implicit helper return', () => {
-    expectThroughHelper()
-  })
+  test('clean: implicit helper return', () => expectThroughHelper())
   test('clean: assertion-named property call', () => row.expectForwarded())
   test('clean: imported helper with any name', async () => {
     await refusedBy(Promise.reject(new Error('constraint')), 'constraint_name')

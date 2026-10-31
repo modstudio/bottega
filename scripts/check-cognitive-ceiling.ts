@@ -28,18 +28,7 @@ type LintResult = {
 }
 
 type Reporter = Pick<Console, 'error' | 'log'>
-function isFunctionImplementation(node: ts.Node): node is ts.FunctionLikeDeclaration {
-  return (
-    ts.isFunctionDeclaration(node) ||
-    ts.isMethodDeclaration(node) ||
-    ts.isGetAccessorDeclaration(node) ||
-    ts.isSetAccessorDeclaration(node) ||
-    ts.isConstructorDeclaration(node) ||
-    ts.isFunctionExpression(node) ||
-    ts.isArrowFunction(node)
-  )
-}
-function functionBaseName(node: ts.FunctionLikeDeclaration): string {
+function functionBaseName(node: ts.SignatureDeclaration): string {
   if (node.name) return node.name.getText()
   let parent: ts.Node | undefined = node.parent
   while (parent && (ts.isParenthesizedExpression(parent) || ts.isAsExpression(parent))) {
@@ -62,9 +51,9 @@ function functionBaseName(node: ts.FunctionLikeDeclaration): string {
 }
 
 function namedFunctions(source: ts.SourceFile) {
-  const functions: ts.FunctionLikeDeclaration[] = []
+  const functions: ts.SignatureDeclaration[] = []
   const visit = (node: ts.Node) => {
-    if (isFunctionImplementation(node)) functions.push(node)
+    if (ts.isFunctionLike(node)) functions.push(node)
     ts.forEachChild(node, visit)
   }
   visit(source)
