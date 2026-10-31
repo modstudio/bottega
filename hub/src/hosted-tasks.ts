@@ -289,19 +289,11 @@ async function statusEventNaturalKeyHolder(
   row: HostedStatusEvent,
   resolvedTaskId: string | null,
 ): Promise<HostedStatusEventHolder | undefined> {
-  if (resolvedTaskId)
-    return rows<HostedStatusEventHolder>(
-      await tx`SELECT id,space_id,task_id,task_key,to_status,at,deleted_at
-        FROM hub_task_status_event
-        WHERE space_id=${identity.spaceId}::uuid
-          AND (task_id=${resolvedTaskId}::uuid OR
-            (task_id IS NULL AND task_key=${row.task_key}))
-          AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
-    )[0]
+  if (!resolvedTaskId) return undefined
   return rows<HostedStatusEventHolder>(
     await tx`SELECT id,space_id,task_id,task_key,to_status,at,deleted_at
       FROM hub_task_status_event
-      WHERE space_id=${identity.spaceId}::uuid AND task_key=${row.task_key}
+      WHERE space_id=${identity.spaceId}::uuid AND task_id=${resolvedTaskId}::uuid
         AND to_status=${row.to_status} AND at=${row.at}::timestamptz`,
   )[0]
 }

@@ -341,7 +341,7 @@ export function createLocalTaskInTransaction(
 }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
-  const task = taskRowFromHosted(conn, row)
+  const task = taskRowFromHosted(row)
   conn
     .query(`INSERT INTO task
     (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
@@ -378,7 +378,9 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   persistInstallBinding(conn)
 }
 
-function taskRowFromHosted(conn: Database, row: HostedTask) {
+function taskRowFromHosted(row: HostedTask) {
+  if (row.parent_key && !row.parent_id)
+    throw new Error(`live task ${row.id} for parent ${row.parent_key} has no parent record id`)
   return {
     record_id: row.id,
     external_id: null,
@@ -389,7 +391,7 @@ function taskRowFromHosted(conn: Database, row: HostedTask) {
     status: row.status,
     status_category: row.status_category,
     parent_key: row.parent_key,
-    parent_record_id: row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null,
+    parent_record_id: row.parent_id ?? null,
     body: row.body,
     assignee: row.assignee,
     opened_at: row.opened_at,
@@ -549,9 +551,7 @@ export async function createTask(
   )
   if (applied && options.allowDuplicateReason)
     await drainHostedEditOutbox(commentAt, options.hosted)
-  return applied
-    ? showTask(hosted.key, { recordId: hosted.id }).task
-    : taskRowFromHosted(db(), hosted)
+  return applied ? showTask(hosted.key, { recordId: hosted.id }).task : taskRowFromHosted(hosted)
 }
 
 export function listTasks(

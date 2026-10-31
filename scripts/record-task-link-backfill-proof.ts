@@ -2,6 +2,7 @@ import type { Transaction } from '@electric-sql/pglite'
 import { CheckFailure } from './record-migration-failure.ts'
 
 export const taskLinkBackfill = '20261026112733_dev_1773_task_link_backfill'
+export const taskChildUuidMigration = '20261031212958_dev_1958_task_child_uuid'
 
 const ids = {
   machine: '01990000-0000-7000-8000-000000001783',
@@ -15,6 +16,22 @@ const ids = {
   deletedQuestion: '01990000-0000-7000-8000-00000000178b',
   otherSpaceQuestion: '01990000-0000-7000-8000-00000000178c',
 } as const
+
+const childIds = {
+  task: '01990000-0000-7000-8000-000000001958',
+  comment: '01990000-0000-7000-8000-000000001959',
+  document: '01990000-0000-7000-8000-00000000195a',
+  event: '01990000-0000-7000-8000-00000000195b',
+  child: '01990000-0000-7000-8000-00000000195c',
+  triggerTask: '01990000-0000-7000-8000-00000000195d',
+  triggerComment: '01990000-0000-7000-8000-00000000195e',
+  triggerDocument: '01990000-0000-7000-8000-00000000195f',
+  triggerEvent: '01990000-0000-7000-8000-000000001960',
+  triggerChild: '01990000-0000-7000-8000-000000001961',
+} as const
+
+const childKey = 'DEV-1958-BACKFILL-PROOF'
+const triggerKey = 'DEV-1958-TRIGGER-PROOF'
 
 const matchedKey = 'DEV-1773-MIGRATION-PROOF'
 const deletedKey = 'DEV-1773-DELETED-PROOF'
@@ -107,5 +124,118 @@ export async function proofTaskLinkBackfill(
   ]
   if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
     throw new CheckFailure(`DEV-1773 task-link backfill produced ${JSON.stringify(result.rows)}`)
+  }
+}
+
+export async function seedTaskChildUuidBackfill(
+  transaction: Transaction,
+  input: { spaceId: string },
+): Promise<void> {
+  await transaction.exec(`
+    ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_comment NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_document NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_status_event NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,status,status_category,source,
+       first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${childIds.task}','${input.spaceId}','task-child-proof','${childKey}',
+       'task-child-proof','parent','open','open','local',now(),now(),now(),now());
+    INSERT INTO hub_task_comment
+      (id,space_id,project_name,task_key,body,created_at,updated_at)
+    VALUES
+      ('${childIds.comment}','${input.spaceId}','task-child-proof','${childKey}',
+       'backfill comment',now(),now());
+    INSERT INTO hub_task_document
+      (id,space_id,project_name,task_key,number,title,body,version,created_at,updated_at)
+    VALUES
+      ('${childIds.document}','${input.spaceId}','task-child-proof','${childKey}',1,
+       'backfill document','body','v1',now(),now());
+    INSERT INTO hub_task_status_event
+      (id,space_id,project_name,task_key,at,to_status,created_at,updated_at)
+    VALUES
+      ('${childIds.event}','${input.spaceId}','task-child-proof','${childKey}',now(),
+       'open',now(),now());
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,status,status_category,parent_key,source,
+       first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${childIds.child}','${input.spaceId}','task-child-proof','DEV-1958-CHILD-PROOF',
+       'task-child-proof','child','open','open','${childKey}','local',now(),now(),now(),now());
+    ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_comment FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_document FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_status_event FORCE ROW LEVEL SECURITY;
+  `)
+}
+
+export async function proofTaskChildUuidMigration(
+  transaction: Transaction,
+  input: { spaceId: string },
+): Promise<void> {
+  await transaction.exec(`
+    ALTER TABLE hub_task NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_comment NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_document NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_status_event NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO hub_task_comment
+      (id,space_id,project_name,task_key,body,created_at,updated_at)
+    VALUES
+      ('${childIds.triggerComment}','${input.spaceId}','task-child-proof','${triggerKey}',
+       'trigger comment',now(),now());
+    INSERT INTO hub_task_document
+      (id,space_id,project_name,task_key,number,title,body,version,created_at,updated_at)
+    VALUES
+      ('${childIds.triggerDocument}','${input.spaceId}','task-child-proof','${triggerKey}',1,
+       'trigger document','body','v1',now(),now());
+    INSERT INTO hub_task_status_event
+      (id,space_id,project_name,task_key,at,to_status,created_at,updated_at)
+    VALUES
+      ('${childIds.triggerEvent}','${input.spaceId}','task-child-proof','${triggerKey}',now(),
+       'open',now(),now());
+    INSERT INTO hub_task
+      (id,space_id,project_name,key,project,title,status,status_category,parent_key,source,
+       first_seen,last_seen,created_at,updated_at)
+    VALUES
+      ('${childIds.triggerChild}','${input.spaceId}','task-child-proof','DEV-1958-TRIGGER-CHILD',
+       'task-child-proof','trigger child','open','open','${triggerKey}','local',now(),now(),now(),now()),
+      ('${childIds.triggerTask}','${input.spaceId}','task-child-proof','${triggerKey}',
+       'task-child-proof','trigger parent','open','open',NULL,'local',now(),now(),now(),now());
+  `)
+  const result = await transaction.query<{ kind: string; id: string; task_id: string | null }>(`
+    SELECT 'comment' AS kind,id::text,task_id::text FROM hub_task_comment
+    WHERE id IN ('${childIds.comment}','${childIds.triggerComment}')
+    UNION ALL
+    SELECT 'document',id::text,task_id::text FROM hub_task_document
+    WHERE id IN ('${childIds.document}','${childIds.triggerDocument}')
+    UNION ALL
+    SELECT 'event',id::text,task_id::text FROM hub_task_status_event
+    WHERE id IN ('${childIds.event}','${childIds.triggerEvent}')
+    UNION ALL
+    SELECT 'parent',id::text,parent_id::text FROM hub_task
+    WHERE id IN ('${childIds.child}','${childIds.triggerChild}')
+    ORDER BY kind,id
+  `)
+  await transaction.exec(`
+    ALTER TABLE hub_task FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_comment FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_document FORCE ROW LEVEL SECURITY;
+    ALTER TABLE hub_task_status_event FORCE ROW LEVEL SECURITY;
+  `)
+  const expected = [
+    { kind: 'comment', id: childIds.comment, task_id: childIds.task },
+    { kind: 'comment', id: childIds.triggerComment, task_id: childIds.triggerTask },
+    { kind: 'document', id: childIds.document, task_id: childIds.task },
+    { kind: 'document', id: childIds.triggerDocument, task_id: childIds.triggerTask },
+    { kind: 'event', id: childIds.event, task_id: childIds.task },
+    { kind: 'event', id: childIds.triggerEvent, task_id: childIds.triggerTask },
+    { kind: 'parent', id: childIds.child, task_id: childIds.task },
+    { kind: 'parent', id: childIds.triggerChild, task_id: childIds.triggerTask },
+  ]
+  if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
+    throw new CheckFailure(
+      `DEV-1958 task-child UUID migration produced ${JSON.stringify(result.rows)}`,
+    )
   }
 }

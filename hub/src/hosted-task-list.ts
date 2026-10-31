@@ -62,8 +62,7 @@ async function taskCandidates(
         SELECT * FROM hub_task WHERE space_id=${identity.spaceId}::uuid
         AND (${filters.project ?? null}::text IS NULL OR project_name=${filters.project ?? null})
         AND (${filters.status ?? null}::text IS NULL OR status_category=${filters.status ?? null})
-        AND (${filters.parent ?? null}::text IS NULL OR parent_id=${parentId}::uuid
-          OR (parent_id IS NULL AND parent_key=${filters.parent ?? null}))
+        AND (${filters.parent ?? null}::text IS NULL OR parent_id=${parentId}::uuid)
         AND updated_at > ${cursor.since}::timestamptz
         AND (updated_at,id) > (${cursor.at}::timestamptz,${cursor.id}::uuid)
         AND (${filters.includeDeleted ?? false} OR deleted_at IS NULL)

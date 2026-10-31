@@ -58,6 +58,7 @@ export function hostedTaskJoinCondition(
   task = 't',
 ) {
   const relationship = hostedTaskRelationship(table)
+  if (table !== 'hub_note') return `${task}.id=${child}.${relationship.idColumn}`
   return (
     `(${child}.${relationship.idColumn} IS NOT NULL AND ${task}.id=${child}.${relationship.idColumn}) OR (` +
     `${child}.${relationship.idColumn} IS NULL AND ${task}.space_id=${child}.space_id AND ` +
@@ -109,13 +110,17 @@ export async function repairHostedTaskReferences(
   if (!labelUpdate) return
   for (const relationship of hostedTaskRelationships) {
     const excludeTask = relationship.table === 'hub_task' ? tx`AND id<>${taskId}::uuid` : tx``
+    const referenceMatch =
+      relationship.table === 'hub_note'
+        ? tx`(${tx.unsafe(relationship.idColumn)}=${taskId}::uuid OR
+          (${tx.unsafe(relationship.idColumn)} IS NULL AND
+           ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.previousKey}))`
+        : tx`${tx.unsafe(relationship.idColumn)}=${taskId}::uuid`
     await tx`UPDATE ${tx.unsafe(relationship.table)}
       SET ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.nextKey},
         ${tx.unsafe(relationship.idColumn)}=${taskId}::uuid,
         updated_at=GREATEST(updated_at,${updatedAt}::timestamptz)
       WHERE space_id=${spaceId}::uuid ${excludeTask}
-        AND (${tx.unsafe(relationship.idColumn)}=${taskId}::uuid OR
-          (${tx.unsafe(relationship.idColumn)} IS NULL AND
-           ${tx.unsafe(relationship.keyColumn)}=${labelUpdate.previousKey}))`
+        AND ${referenceMatch}`
   }
 }

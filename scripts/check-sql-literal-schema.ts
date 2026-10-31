@@ -295,13 +295,7 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
   ),
   ...exempt(
     'hub/src/task-cache.ts',
-    [
-      'b7f6c7605b1f9d32',
-      '1f2d5abb47af88e2',
-      'ca6bd2b5e54e9d61',
-      'e187eb7cea1d262e',
-      'f490ea925bd5b1f3',
-    ],
+    ['ca6bd2b5e54e9d61', 'e187eb7cea1d262e', 'f490ea925bd5b1f3'],
     'task cache helper interpolates controlled table and column descriptors',
   ),
   ...exempt(

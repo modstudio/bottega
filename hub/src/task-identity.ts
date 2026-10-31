@@ -49,14 +49,6 @@ export function observedTaskKeyPrefixes(conn: Database = db()): string[] {
     .flatMap(({ key }) => taskKeyPrefix(key) ?? [])
 }
 
-export const taskIdentityRelationships = [
-  { table: 'task', keyColumn: 'parent_key', recordColumn: 'parent_record_id' },
-  { table: 'task_comment', keyColumn: 'task_key', recordColumn: 'task_record_id' },
-  { table: 'task_document', keyColumn: 'task_key', recordColumn: 'task_record_id' },
-  { table: 'task_status_event', keyColumn: 'task_key', recordColumn: 'task_record_id' },
-  { table: 'note', keyColumn: 'promoted_task', recordColumn: 'promoted_task_record_id' },
-] as const
-
 type TaskIdentityCandidate = {
   project: string
   key: string

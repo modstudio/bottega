@@ -7,9 +7,16 @@ import {
 } from './hosted-task-reference.ts'
 
 describe('hosted task references', () => {
-  test('joins by record id and falls back to the scoped key only for unbackfilled rows', () => {
-    expect(hostedTaskJoinCondition('hub_task_status_event', 'e')).toBe(
-      '(e.task_id IS NOT NULL AND t.id=e.task_id) OR (e.task_id IS NULL AND t.space_id=e.space_id AND t.key=e.task_key)',
+  test('joins task children only by their task UUID', () => {
+    expect(hostedTaskJoinCondition('hub_task_comment', 'c')).toBe('t.id=c.task_id')
+    expect(hostedTaskJoinCondition('hub_task_document', 'd')).toBe('t.id=d.task_id')
+    expect(hostedTaskJoinCondition('hub_task_status_event', 'e')).toBe('t.id=e.task_id')
+    expect(hostedTaskJoinCondition('hub_task', 'child')).toBe('t.id=child.parent_id')
+  })
+
+  test('keeps the promoted-note key fallback outside the task-child relationships', () => {
+    expect(hostedTaskJoinCondition('hub_note', 'n')).toBe(
+      '(n.promoted_task_id IS NOT NULL AND t.id=n.promoted_task_id) OR (n.promoted_task_id IS NULL AND t.space_id=n.space_id AND t.key=n.promoted_task)',
     )
   })
 

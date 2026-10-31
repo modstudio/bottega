@@ -48,8 +48,11 @@ import {
   seedRunTaskReferenceBackfill,
 } from './record-run-task-backfill-proof.ts'
 import {
+  proofTaskChildUuidMigration,
   proofTaskLinkBackfill,
+  seedTaskChildUuidBackfill,
   seedTaskLinkBackfill,
+  taskChildUuidMigration,
   taskLinkBackfill,
 } from './record-task-link-backfill-proof.ts'
 
@@ -819,6 +822,8 @@ async function proofIdentityMigration(transaction: Transaction, name: string): P
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })
+  if (name === taskChildUuidMigration)
+    await proofTaskChildUuidMigration(transaction, { spaceId: PLATFORM_SPACE_ID })
   if (name === runOwnerRequired) await proofRunOwnerRequired(transaction)
 }
 
@@ -864,6 +869,8 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
       spaceId: PLATFORM_SPACE_ID,
       userId: platformOperatorId,
     })
+  if (name === taskChildUuidMigration)
+    await seedTaskChildUuidBackfill(transaction, { spaceId: PLATFORM_SPACE_ID })
   if (name === runOwnerBackfill) await seedRunOwnerBackfill(transaction, PLATFORM_SPACE_ID)
   if (name === jsonbStringChecksValidate)
     await seedJsonbStringChecksValidate(transaction, {

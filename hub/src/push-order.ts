@@ -14,11 +14,11 @@ function taskDepth(
   tasks: ReadonlyMap<string, typeof change>,
   visiting = new Set<string>(),
 ): number {
-  const parentKey = change.row.parent_key
-  if (!parentKey || visiting.has(change.row.key)) return 0
-  const parent = tasks.get(parentKey)
+  const parentId = change.row.parent_id
+  if (!parentId || visiting.has(change.row.id)) return 0
+  const parent = tasks.get(parentId)
   if (!parent) return 0
-  visiting.add(change.row.key)
+  visiting.add(change.row.id)
   return 1 + taskDepth(parent, tasks, visiting)
 }
 
@@ -26,7 +26,7 @@ export function orderHostedPushChanges(changes: readonly HostedPushChange[]): Ho
   const tasks = new Map(
     changes.flatMap((change) =>
       change.table === HOSTED_TASK_TABLE && change.op === 'upsert'
-        ? [[change.row.key, change] as const]
+        ? [[change.row.id, change] as const]
         : [],
     ),
   )

@@ -8,7 +8,6 @@ import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
-import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
 
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
 type HostedChangeRow =
@@ -23,14 +22,12 @@ export function childTaskRecordId(
   conn: Database,
   row: { task_id?: string | null; task_key: string; project_name: string },
 ) {
-  if (row.task_id) {
-    return (
-      conn
-        .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
-        .get(row.task_id)?.record_id ?? null
-    )
-  }
-  return taskRecordIdFor(conn, row.task_key, row.project_name)
+  if (!row.task_id) return null
+  return (
+    conn
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
+      .get(row.task_id)?.record_id ?? null
+  )
 }
 
 function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskChild) {
@@ -40,26 +37,6 @@ function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskC
       `live task ${kind} ${row.id} for task ${row.task_id ?? row.task_key} has no parent record id`,
     )
   return taskRecordId
-}
-
-export function reconcileParentRecordIds(conn: Database) {
-  for (const relationship of taskIdentityRelationships) {
-    if (relationship.table !== 'task') continue
-    const unresolved = conn
-      .query<{ key: string; project: string }, []>(
-        `SELECT DISTINCT ${relationship.keyColumn} key, project FROM ${relationship.table}
-         WHERE ${relationship.keyColumn} IS NOT NULL AND ${relationship.recordColumn} IS NULL`,
-      )
-      .all()
-    const update = conn.query(
-      `UPDATE ${relationship.table} SET ${relationship.recordColumn}=?
-       WHERE ${relationship.keyColumn}=? AND project=? AND ${relationship.recordColumn} IS NULL`,
-    )
-    for (const { key, project } of unresolved) {
-      const recordId = taskRecordIdFor(conn, key, project)
-      if (recordId) update.run(recordId, key, project)
-    }
-  }
 }
 
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
@@ -82,7 +59,9 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     conn.query(`DELETE FROM task WHERE record_id=?`).run(row.id)
     return
   }
-  const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
+  const parentRecordId = row.parent_id ?? null
+  if (row.parent_key && !parentRecordId)
+    throw new Error(`live task ${row.id} for parent ${row.parent_key} has no parent record id`)
   const current = conn
     .query<{ source: string; opened_at: string | null; updated_at: string }, [string]>(
       'SELECT source,opened_at,updated_at FROM task WHERE record_id=?',
@@ -229,21 +208,14 @@ type StatusEventMatchRow = {
 function matchingStatusEvent(
   conn: Database,
   row: HostedChanges['statusEvents'][number],
-  taskRecordId: string | null,
+  taskRecordId: string,
 ): { record_id: string } | null {
-  const candidates = taskRecordId
-    ? conn
-        .query<StatusEventMatchRow, [string, string, string]>(
-          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
-           WHERE record_id<>? AND (task_record_id=? OR (task_record_id IS NULL AND task_key=?))`,
-        )
-        .all(row.id, taskRecordId, row.task_key)
-    : conn
-        .query<StatusEventMatchRow, [string, string]>(
-          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
-           WHERE record_id<>? AND task_key=?`,
-        )
-        .all(row.id, row.task_key)
+  const candidates = conn
+    .query<StatusEventMatchRow, [string, string]>(
+      `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
+       WHERE record_id<>? AND task_record_id=?`,
+    )
+    .all(row.id, taskRecordId)
   return (
     candidates.find((candidate) =>
       isSameStatusEvent(
@@ -262,7 +234,7 @@ function matchingStatusEvent(
 function writeStatusEvent(
   conn: Database,
   row: HostedChanges['statusEvents'][number],
-  taskRecordId: string | null,
+  taskRecordId: string,
 ) {
   const updated = conn
     .query(
@@ -330,10 +302,20 @@ function applyStatusEvent(conn: Database, row: HostedChanges['statusEvents'][num
 }
 
 export function applyHostedTaskRows(conn: Database, changes: HostedChanges) {
-  changes.tasks.forEach((row) => {
+  const tasksById = new Map(changes.tasks.map((row) => [row.id, row]))
+  const orderedTasks: HostedChanges['tasks'] = []
+  const visited = new Set<string>()
+  const visit = (row: HostedChanges['tasks'][number]) => {
+    if (visited.has(row.id)) return
+    visited.add(row.id)
+    const parent = row.parent_id ? tasksById.get(row.parent_id) : undefined
+    if (parent) visit(parent)
+    orderedTasks.push(row)
+  }
+  for (const row of changes.tasks) visit(row)
+  orderedTasks.forEach((row) => {
     applySnapshotRow(conn, 'hub_task', row.id, row, applyHostedTask)
   })
-  reconcileParentRecordIds(conn)
   changes.comments.forEach((row) => {
     applySnapshotRow(conn, 'hub_task_comment', row.id, row, applyHostedTaskComment)
   })

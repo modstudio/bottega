@@ -642,6 +642,7 @@ describe('hosted-only task safety', () => {
         {
           id: '01990000-0000-7000-8000-000000000103',
           task_key: 'DEV-990',
+          task_id: '01990000-0000-7000-8000-000000000101',
           project_name: 'workshop',
           body: 'pulled',
           created_at: at,
@@ -654,6 +655,7 @@ describe('hosted-only task safety', () => {
         {
           id: '01990000-0000-7000-8000-000000000102',
           task_key: 'DEV-990',
+          task_id: '01990000-0000-7000-8000-000000000101',
           project_name: 'workshop',
           number: 1,
           role: null,
@@ -755,6 +757,7 @@ describe('hosted-only task safety', () => {
         {
           id: firstId,
           task_key: 'DEV-982',
+          task_id: taskId,
           project_name: 'workshop',
           body: 'updated',
           created_at: at,
@@ -764,6 +767,7 @@ describe('hosted-only task safety', () => {
         {
           id: secondId,
           task_key: 'DEV-982',
+          task_id: taskId,
           project_name: 'workshop',
           body: 'second',
           created_at: at,
@@ -816,6 +820,7 @@ describe('hosted-only task safety', () => {
           key: 'DEV-992',
           title: 'child first',
           parent_key: 'DEV-991',
+          parent_id: '01990000-0000-7000-8000-000000000200',
         },
         {
           ...common,

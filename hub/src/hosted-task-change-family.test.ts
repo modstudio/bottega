@@ -228,6 +228,7 @@ test('first run reads head, full-pulls, and stores that head', async () => {
                 row: {
                   id: commentId,
                   task_key: 'DEV-1240',
+                  task_id: taskId,
                   project_name: 'one',
                   body: 'written during snapshot',
                   created_at: at,
@@ -398,6 +399,7 @@ test('a throwing apply leaves the change cursor unmoved', async () => {
             row: {
               id: documentId,
               task_key: 'DEV-1240',
+              task_id: taskId,
               project_name: 'one',
               number: null,
               role: 'handoff',
