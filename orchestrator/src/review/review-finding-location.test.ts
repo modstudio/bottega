@@ -3,12 +3,21 @@ import { findingLocationNote, reviewFindingRepositoryPath } from './review-findi
 
 describe('review finding repository paths', () => {
   test.each([
+    ['scripts/static-check-plan.ts:10', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10:12', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10-12', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10,12', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10,12-16', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10-12,16', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10,', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts#L10', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts#L10-L12', 'scripts/static-check-plan.ts'],
+    ['`scripts/static-check-plan.ts:10,12-16`', 'scripts/static-check-plan.ts'],
+    ['scripts/static-check-plan.ts:10,38-53 (in foo)', 'scripts/static-check-plan.ts'],
+    ['/scripts/static-check-plan.ts:10,12-16', null],
     ['orchestrator/src/x.ts', 'orchestrator/src/x.ts'],
     ['orchestrator/src/x.ts:766-771 (deployFromLine), rendered by ...', 'orchestrator/src/x.ts'],
     ['orchestrator/src/x.ts:303 and :361', 'orchestrator/src/x.ts'],
-    ['orchestrator/src/x.ts:114:7', 'orchestrator/src/x.ts'],
-    ['orchestrator/src/x.ts#L114', 'orchestrator/src/x.ts'],
-    ['orchestrator/src/x.ts#L10-L20', 'orchestrator/src/x.ts'],
     ['`orchestrator/src/x.ts:3`', 'orchestrator/src/x.ts'],
     ['the reviewed implementation has no matching file', null],
   ])('extracts %s', (location, expected) => {

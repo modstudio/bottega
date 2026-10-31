@@ -18,7 +18,7 @@ export function reviewFindingRepositoryPath(location: string): string | null {
   const path = token
     .replace(/^\.\//, '')
     .replace(/[,;.]+$/, '')
-    .replace(/(?:#L\d+(?:-L\d+)?|:\d+-\d+|(?::\d+)+)$/, '')
+    .replace(/(?:#L\d+(?:-L\d+)?|:\d+(?:[,:-]\d+)*)$/, '')
     .replace(/[,;.]+$/, '')
   if (!path || path === 'n/a' || path.startsWith('/')) return null
   const lastSegment = path.slice(path.lastIndexOf('/') + 1)
