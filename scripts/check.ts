@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
 import { projectAt } from '../orchestrator/src/project/projects.ts'
+import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
 import {
   CHECK_EXECUTION_FILE_ENV,
@@ -11,7 +12,12 @@ import {
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
 import { borrowedCheckoutOf, inspectionGitEnv, mainCheckoutOf } from '../shared/git'
-import { decideGateOutcome, type GateStepResult } from './check-outcome.ts'
+import { findingLine } from '../shared/ratchet.ts'
+import {
+  decideGateOutcome,
+  FAILED_STEP_DETAIL_LINES,
+  type GateStepResult,
+} from './check-outcome.ts'
 import { CHECK_LEGS, ROOT_TEST_FILES, STATIC_OMIT_GROUPS } from './check-plan.ts'
 import {
   attributeCommandCpu,
@@ -30,7 +36,7 @@ import {
 } from './check-runtime'
 import { resolveLandingBase } from './landing-base'
 import { readRemainingReport } from './remaining-report.ts'
-import { staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
+import { BIOME_CHECK_NAME, staticCheckPlan, workerCheckProjection } from './static-check-plan.ts'
 
 type Command = { cwd: string; argv: string[]; category?: string }
 type Leg = {
@@ -56,6 +62,7 @@ const checkArguments: CheckArguments = (() => {
 })()
 const checkStartedAt = performance.now()
 const KILLED_CHILD_EXIT_TIMEOUT_MS = 5_000
+const STEP_OUTPUT_DRAIN_TIMEOUT_MS = 2_000
 const executionFile = process.env[CHECK_EXECUTION_FILE_ENV]
 const reportDirectory = executionFile ? mkdtempSync(join(tmpdir(), 'check-reports-')) : undefined
 
@@ -201,13 +208,55 @@ const legs: Leg[] = CHECK_LEGS.map((leg) => ({
 
 async function inherit(argv: string[], cwd = root, observation: ExecutionObservation = {}) {
   const startedAt = performance.now()
+  const detail: string[] = []
+  let omittedDetailLines = 0
+  const streamReaders = new Set<ReadableStreamDefaultReader<Uint8Array>>()
   const child = track(
-    Bun.spawn(argv, { cwd, stdout: 'inherit', stderr: 'inherit' }),
+    Bun.spawn(argv, { cwd, stdout: 'pipe', stderr: 'pipe' }),
     describeCommand(argv, cwd),
     observation,
     startedAt,
   )
-  return child.exited
+  const readers = [
+    pump(child.stdout, '', detail, {
+      error: false,
+      raw: true,
+      tailLines: FAILED_STEP_DETAIL_LINES,
+      readers: streamReaders,
+      onDrop: () => {
+        omittedDetailLines += 1
+      },
+    }),
+    pump(child.stderr, '', detail, {
+      error: true,
+      raw: true,
+      tailLines: FAILED_STEP_DETAIL_LINES,
+      readers: streamReaders,
+      onDrop: () => {
+        omittedDetailLines += 1
+      },
+    }),
+  ]
+  const exitCode = await child.exited
+  let drainTimer: ReturnType<typeof setTimeout>
+  const drained = await Promise.race([
+    Promise.all(readers).then(() => true),
+    new Promise<false>((resolve) => {
+      drainTimer = setTimeout(() => resolve(false), STEP_OUTPUT_DRAIN_TIMEOUT_MS)
+    }),
+  ])
+  clearTimeout(drainTimer!)
+  if (!drained) {
+    for (const reader of streamReaders) void reader.cancel().catch(() => {})
+  }
+  return {
+    exitCode,
+    detail,
+    omittedDetailLines,
+    ...(drained
+      ? {}
+      : { note: 'output stayed open after the step exited; a descendant process still holds it' }),
+  }
 }
 
 function materializeStaticCheck(
@@ -230,13 +279,16 @@ function materializeStaticCheck(
 }
 
 async function recordGateStep(check: StaticCheck): Promise<GateStepResult> {
+  const result = await inherit(check.argv, root, {
+    check: check.name,
+    category: check.category,
+    reportPath: check.reportPath,
+  })
   return {
     name: check.name,
-    exitCode: await inherit(check.argv, root, {
-      check: check.name,
-      category: check.category,
-      reportPath: check.reportPath,
-    }),
+    ...(result.exitCode !== 0 && check.name === BIOME_CHECK_NAME
+      ? await biomeErrorDetails(check.argv, result)
+      : result),
   }
 }
 
@@ -250,35 +302,66 @@ async function pump(
   stream: ReadableStream<Uint8Array>,
   name: string,
   tail: string[],
-  error: boolean,
+  options: {
+    error: boolean
+    raw?: boolean
+    tailLines?: number
+    readers?: Set<ReadableStreamDefaultReader<Uint8Array>>
+    onDrop?: () => void
+  },
 ) {
+  const { error, raw = false, tailLines = 40, readers, onDrop } = options
   const reader = stream.getReader()
+  readers?.add(reader)
   const decoder = new TextDecoder()
   let pending = ''
   for (;;) {
     const chunk = await reader.read()
     if (chunk.done) break
+    if (raw) writeRawChunk(chunk.value, error)
     pending += decoder.decode(chunk.value, { stream: true })
     const lines = pending.split('\n')
     pending = lines.pop()!
     for (const line of lines) {
-      const gateWait = name === 'orchestrator' && line.match(/^held (\d+)ms for host load /)
-      if (gateWait) {
-        excludedGateWaitMs += Number(gateWait[1])
-        armRuntimeDeadline()
-      }
-      const prefixed = `[${name}] ${line}`
-      ;(error ? console.error : console.log)(prefixed)
-      tail.push(prefixed)
-      if (tail.length > 40) tail.shift()
+      observeGateWait(name, line)
+      recordPumpedLine(name, line, tail, error, raw, tailLines, onDrop)
     }
   }
   pending += decoder.decode()
-  if (pending) {
-    const prefixed = `[${name}] ${pending}`
-    ;(error ? console.error : console.log)(prefixed)
-    tail.push(prefixed)
-    if (tail.length > 40) tail.shift()
+  if (pending) recordPumpedLine(name, pending, tail, error, raw, tailLines, onDrop)
+  readers?.delete(reader)
+}
+
+function writeRawChunk(chunk: Uint8Array, error: boolean) {
+  if (error) process.stderr.write(chunk)
+  else process.stdout.write(chunk)
+}
+
+function observeGateWait(name: string, line: string) {
+  const gateWait = name === 'orchestrator' && line.match(/^held (\d+)ms for host load /)
+  if (!gateWait) return
+  excludedGateWaitMs += Number(gateWait[1])
+  armRuntimeDeadline()
+}
+
+function recordPumpedLine(
+  name: string,
+  line: string,
+  tail: string[],
+  error: boolean,
+  raw: boolean,
+  tailLines: number,
+  onDrop?: () => void,
+) {
+  const prefixed = name ? `[${name}] ${line}` : line
+  if (!raw) {
+    if (error) console.error(prefixed)
+    else console.log(prefixed)
+  }
+  tail.push(prefixed)
+  if (tail.length > tailLines) {
+    tail.shift()
+    onDrop?.()
   }
 }
 
@@ -293,14 +376,49 @@ async function runLeg(leg: RunnableLeg): Promise<LegResult> {
       startedAt,
     )
     const readers = [
-      pump(child.stdout, leg.name, tail, false),
-      pump(child.stderr, leg.name, tail, true),
+      pump(child.stdout, leg.name, tail, { error: false }),
+      pump(child.stderr, leg.name, tail, { error: true }),
     ]
     const exitCode = await child.exited
     await Promise.all(readers)
-    if (exitCode !== 0) return { name: leg.name, exitCode, tail }
+    if (exitCode !== 0) return { name: leg.name, exitCode, detail: [], omittedDetailLines: 0, tail }
   }
-  return { name: leg.name, exitCode: 0, tail }
+  return { name: leg.name, exitCode: 0, detail: [], omittedDetailLines: 0, tail }
+}
+
+async function biomeErrorDetails(
+  failedArgv: readonly string[],
+  fallback: Pick<GateStepResult, 'exitCode' | 'detail' | 'omittedDetailLines' | 'note'>,
+): Promise<Pick<GateStepResult, 'exitCode' | 'detail' | 'omittedDetailLines' | 'note'>> {
+  try {
+    const ciIndex = failedArgv.indexOf('ci')
+    if (ciIndex === -1) throw new Error('Biome command has no ci subcommand')
+    const argv = [
+      ...failedArgv.slice(0, ciIndex + 1),
+      '--reporter=json',
+      '--diagnostic-level=error',
+      '--max-diagnostics=none',
+      ...failedArgv.slice(ciIndex + 1),
+    ]
+    const startedAt = performance.now()
+    const child = track(
+      Bun.spawn(argv, { cwd: root, stdout: 'pipe', stderr: 'ignore' }),
+      describeCommand(argv),
+      {},
+      startedAt,
+    )
+    const [exitCode, output] = await Promise.all([child.exited, new Response(child.stdout).text()])
+    if (exitCode !== 0 && exitCode !== 1) {
+      throw new Error(`Biome JSON pass exited ${exitCode}`)
+    }
+    const details = biomeFindings(Bun.stripANSI(output)).map(findingLine)
+    if (details.length === 0) throw new Error('Biome JSON pass returned no diagnostics')
+    return { exitCode: fallback.exitCode, detail: details, omittedDetailLines: 0 }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    const reasonNote = `Biome error list could not be read: ${reason}`
+    return { ...fallback, note: [fallback.note, reasonNote].filter(Boolean).join('; ') }
+  }
 }
 
 function printFailedLegTails(results: LegResult[]) {
@@ -381,7 +499,7 @@ async function installDependencies() {
     lockfileMatchesProvisioningSource:
       sourceLockfile !== null && (lockfile?.equals(sourceLockfile) ?? false),
   })
-  if (decision === 'normal-install') return inherit(['bun', 'install', '--silent'])
+  if (decision === 'normal-install') return (await inherit(['bun', 'install', '--silent'])).exitCode
   if (decision === 'skip-provisioned') {
     console.log("INSTALL: skipped; worker dependencies match the tree's provisioning base")
     return 0
@@ -412,9 +530,11 @@ async function installDependencies() {
 
 if ((await installDependencies()) !== 0) process.exit(1)
 
-const dependencyAuditExitCode = await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
-  check: 'dependency audit',
-})
+const dependencyAuditExitCode = (
+  await inherit(['bun', 'scripts/check-dependency-audit.ts'], root, {
+    check: 'dependency audit',
+  })
+).exitCode
 if (dependencyAuditExitCode !== 0) process.exit(1)
 
 const rootTests = [
@@ -439,15 +559,20 @@ if (workerProjection) {
     process.exit(1)
   }
 }
-const workerBiomeStep = workerProjection
-  ? {
-      name: workerProjection.biome.name,
-      exitCode: await inherit(
-        workerProjection.biome.workerArgv!({ root, qualityBase: workerQualityBase! }),
-        root,
-      ),
-    }
-  : null
+let workerBiomeStep: GateStepResult | null = null
+if (workerProjection) {
+  const workerBiomeArgv = workerProjection.biome.workerArgv!({
+    root,
+    qualityBase: workerQualityBase!,
+  })
+  const workerBiomeResult = await inherit(workerBiomeArgv, root)
+  workerBiomeStep = {
+    name: workerProjection.biome.name,
+    ...(workerBiomeResult.exitCode !== 0
+      ? await biomeErrorDetails(workerBiomeArgv, workerBiomeResult)
+      : workerBiomeResult),
+  }
+}
 const results = await Promise.all(
   (workerProjection
     ? workerProjection.typecheckLegs
@@ -467,9 +592,10 @@ const results = await Promise.all(
 printFailedLegTails(results)
 const gateSteps: GateStepResult[] = [...(workerBiomeStep ? [workerBiomeStep] : []), ...results]
 if (checkArguments.mode === 'suite' && runsRootSuiteTests(checkArguments)) {
+  const rootTestResult = await inherit(rootTests, root, { category: UNIT_TEST_CHECK_CATEGORY })
   gateSteps.push({
     name: 'root tests',
-    exitCode: await inherit(rootTests, root, { category: UNIT_TEST_CHECK_CATEGORY }),
+    ...rootTestResult,
   })
 }
 
@@ -536,7 +662,7 @@ if (checkArguments.mode === 'static' && cpuBudgetVerdict === 'over-informational
 const gate = decideGateOutcome(gateSteps)
 if (gate.failures.length > 0) {
   console.error('gate failures:')
-  for (const name of gate.failures) console.error(name)
+  for (const line of gate.summary) console.error(line)
 }
 if (workerProjection) {
   console.log(

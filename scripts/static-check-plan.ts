@@ -1,5 +1,6 @@
 type WorkerDecision = { run: true } | { run: false; reason: string }
 const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'
+export const BIOME_CHECK_NAME = 'Biome'
 
 export type StaticCheckDeclaration = {
   name: string
@@ -35,7 +36,7 @@ const script = (
 /** The full static gate and worker subset, declared once and safe to import. */
 const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   {
-    name: 'Biome',
+    name: BIOME_CHECK_NAME,
     argv: ({ root }) => [`${root}node_modules/.bin/biome`, 'ci', '.'],
     worker: run,
     workerArgv: ({ root }) => [

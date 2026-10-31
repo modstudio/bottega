@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { type ChangeViewMode, openChangeView } from '../../../shared/change-view.ts'
 import { inspectionGitEnv } from '../../../shared/git.ts'
-import { type Finding, ratchetDecision } from '../../../shared/ratchet.ts'
+import { type Finding, findingLine, ratchetDecision } from '../../../shared/ratchet.ts'
 import { WORKER_GATE_BASE_ENV } from '../gate/gate-decision.ts'
 import { projectAt } from '../project/projects.ts'
 import { biomeFindings } from './biome-adapter.ts'
@@ -306,9 +306,7 @@ function reportDecision(
 ) {
   const refused = ratchetDecision({ base, head, change, unanalysedBase })
   for (const finding of refused) {
-    reporter.error(
-      `${finding.file}:${finding.line} ${finding.rule} ${finding.message}; ${refusalReason(finding)}`,
-    )
+    reporter.error(`${findingLine(finding)}; ${refusalReason(finding)}`)
   }
   return refused.length === 0
 }
