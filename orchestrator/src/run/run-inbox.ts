@@ -400,6 +400,17 @@ async function presentJsonInbox(
   return true
 }
 
+function runGroupFooter(
+  question: { run_record_id: string; root_id: string },
+  nextQuestion: { run_record_id: string } | undefined,
+): string[] {
+  if (nextQuestion?.run_record_id === question.run_record_id) return []
+  return [
+    `\nrule on them:  ${PLATFORM_SLUG} question answer ${question.root_id} "<ruling>"    (one per question, in order)` +
+      `\n               ${PLATFORM_SLUG} question answer ${question.root_id} --q<id> "<ruling>"`,
+  ]
+}
+
 export async function runInboxCommand(
   flags: RunInboxFlags,
   presentation: RunInboxPresentation,
@@ -536,15 +547,13 @@ export async function runInboxCommand(
   }
   presentWorkflowQuestions(workflowRows, log)
   let lastRun = ''
-  let lastRoot = ''
-  for (const q of answerable) {
+  for (const [index, q] of answerable.entries()) {
     if (q.run_record_id !== lastRun) {
       log(
         `\nrun ${q.run_number} · ${q.agent}/${q.job}${q.repo ? ` · ${q.repo}` : ''} · ${q.status}`,
       )
       lastRun = q.run_record_id
     }
-    lastRoot = q.root_id
     log(`  [q${q.number}] ${q.question}`)
     if (q.why) log(`        why: ${q.why}`)
     const opts = q.options ? (JSON.parse(q.options) as string[]) : []
@@ -553,12 +562,9 @@ export async function runInboxCommand(
     if (q.session_id === null) {
       log('        unowned — any session may rule, and the answering identity is recorded')
     }
-  }
-  if (answerable.length) {
-    log(
-      `\nrule on them:  ${PLATFORM_SLUG} question answer ${lastRoot} "<ruling>"    (one per question, in order)` +
-        `\n               ${PLATFORM_SLUG} question answer ${lastRoot} --q<id> "<ruling>"`,
-    )
+    runGroupFooter(q, answerable[index + 1]).forEach((line) => {
+      log(line)
+    })
   }
   for (const r of recoverable) {
     const stranded = chainHasPendingDelivery(r.record_id)

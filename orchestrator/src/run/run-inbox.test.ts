@@ -94,6 +94,37 @@ test('inbox names the canonical root in its answer footer', async () => {
   expect(await inbox()).toContain(`${PLATFORM_SLUG} question answer ${root}`)
 })
 
+test("inbox follows each run's questions with its own root in the answer footer", async () => {
+  const rootA = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'orch-test-session',
+  })
+  const rootB = addRun({
+    agent: 'codex',
+    job: 'implement',
+    status: 'asking',
+    session: 'orch-test-session',
+  })
+  question(rootA, 'first question for A?')
+  question(rootA, 'second question for A?')
+  question(rootB, 'question for B?')
+
+  const shown = await inbox()
+  const headerA = `run ${runNumber(rootA)} · codex/implement`
+  const headerB = `run ${runNumber(rootB)} · codex/implement`
+  const startA = shown.indexOf(headerA)
+  const startB = shown.indexOf(headerB)
+  const groupA = shown.slice(startA, startA < startB ? startB : shown.length)
+  const groupB = shown.slice(startB, startB < startA ? startA : shown.length)
+
+  expect(groupA).toContain(`${PLATFORM_SLUG} question answer ${rootA}`)
+  expect(groupA).not.toContain(`${PLATFORM_SLUG} question answer ${rootB}`)
+  expect(groupB).toContain(`${PLATFORM_SLUG} question answer ${rootB}`)
+  expect(groupB).not.toContain(`${PLATFORM_SLUG} question answer ${rootA}`)
+})
+
 test('inbox does not list a closed question', async () => {
   const run = addRun({ agent: 'codex', job: 'implement', status: 'stopped' })
   const inserted = question(run, 'obsolete question')
