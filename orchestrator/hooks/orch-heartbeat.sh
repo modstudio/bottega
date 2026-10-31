@@ -62,11 +62,14 @@ cd "$ROOT" 2>/dev/null || {
   echo "DEGRADED: launch directory removed; re-arm from the main checkout"
   exit 2
 }
-common_dir=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir) || {
-  echo "DEGRADED: cannot resolve the main checkout; re-arm from the main checkout"
-  exit 2
-}
-main_checkout=${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}
+main_checkout=${BOTTEGA_MAIN_CHECKOUT:-}
+if [ -z "$main_checkout" ]; then
+  common_dir=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir) || {
+    echo "DEGRADED: cannot resolve the main checkout; re-arm from the main checkout"
+    exit 2
+  }
+  main_checkout=$(dirname "$common_dir")
+fi
 BOTTEGA="$main_checkout/bin/bottega"
 if [ -n "${BOTTEGA_ORCHESTRATOR_DB:-}" ]; then
   case "$BOTTEGA_ORCHESTRATOR_DB" in

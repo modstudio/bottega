@@ -9,6 +9,8 @@ const mainCheckoutVariable = 'main_checkout'
 const mainCheckoutPrefix = `$${mainCheckoutVariable}/`
 const commonDirectoryAssignment = ['common_dir=$(git', '--path-format=absolute --git-common-dir']
 const mainCheckoutFallback = `${mainCheckoutVariable}=\${${FROZEN_ENV_NAMES.mainCheckout}:-$(dirname "$common_dir")}`
+const mainCheckoutOverride = `${mainCheckoutVariable}=\${${FROZEN_ENV_NAMES.mainCheckout}:-}`
+const mainCheckoutFromCommonDirectory = `${mainCheckoutVariable}=$(dirname "$common_dir")`
 const rule =
   "a hook that runs the binary names the main checkout's copy, because a tree's binary can carry a journal ahead of the operator store"
 
@@ -31,12 +33,12 @@ export function gitHookBinaryViolations(file: string, text: string): string[] {
   const violations = occurrences
     .filter(({ valid }) => !valid)
     .map(({ line }) => `${file}:${line}: ${rule}`)
-  const requiredAssignments = [commonDirectoryAssignment, [mainCheckoutFallback]]
-  if (
-    requiredAssignments.some(
-      (fragments) => !lines.some((line) => lineIncludesEvery(line, fragments)),
-    )
-  ) {
+  const hasRequiredLine = (fragments: string[]) =>
+    lines.some((line) => lineIncludesEvery(line, fragments))
+  const hasMainCheckoutAssignment =
+    hasRequiredLine([mainCheckoutFallback]) ||
+    (hasRequiredLine([mainCheckoutOverride]) && hasRequiredLine([mainCheckoutFromCommonDirectory]))
+  if (!hasRequiredLine(commonDirectoryAssignment) || !hasMainCheckoutAssignment) {
     violations.push(`${file}:1: ${rule}; assign ${mainCheckoutVariable} from --git-common-dir`)
   }
   return violations
@@ -46,14 +48,27 @@ function main(): void {
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   const hooksDirectory = join(repositoryRoot, '.githooks')
   const orchestratorHooksDirectory = join(repositoryRoot, 'orchestrator', 'hooks')
-  // Python hooks are rendered into harness settings by the main checkout's absolute path,
-  // so their file-relative binary is the main checkout's by construction.
+  // Python and TypeScript harness hooks are rendered into harness settings by the main
+  // checkout's absolute path, so their file-relative binary is main's by construction.
+  const shellShebangs = new Set([
+    '#!/bin/sh',
+    '#!/bin/bash',
+    '#!/usr/bin/env sh',
+    '#!/usr/bin/env bash',
+  ])
   const hookFiles = readdirSync(hooksDirectory, { withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => `.githooks/${entry.name}`)
     .concat(
       readdirSync(orchestratorHooksDirectory, { withFileTypes: true })
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.sh'))
+        .filter((entry) => {
+          if (!entry.isFile()) return false
+          const firstLine = readFileSync(
+            join(orchestratorHooksDirectory, entry.name),
+            'utf8',
+          ).split('\n', 1)[0]
+          return shellShebangs.has(firstLine)
+        })
         .map((entry) => `orchestrator/hooks/${entry.name}`),
     )
   const violations = hookFiles.flatMap((file) =>

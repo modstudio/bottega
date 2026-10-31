@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
-import { gitHookBinaryViolations } from './check-git-hook-binary.ts'
+import { gitHookBinaryViolations } from './check-hook-binary.ts'
 
 const assignment = `common_dir=$(git rev-parse --path-format=absolute --git-common-dir)
 main_checkout=\${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}`
@@ -24,6 +24,18 @@ describe('gitHookBinaryViolations', () => {
         'orchestrator/hooks/orch-heartbeat.sh',
         `common_dir=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)
 main_checkout=\${BOTTEGA_MAIN_CHECKOUT:-$(dirname "$common_dir")}
+${PLATFORM_SLUG.toUpperCase()}="$main_checkout/bin/${PLATFORM_SLUG}"`,
+      ),
+    ).toEqual([])
+  })
+
+  test('accepts a heartbeat-style hook that reads the override before git', () => {
+    expect(
+      gitHookBinaryViolations(
+        'orchestrator/hooks/orch-heartbeat.sh',
+        `main_checkout=\${BOTTEGA_MAIN_CHECKOUT:-}
+common_dir=$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir)
+main_checkout=$(dirname "$common_dir")
 ${PLATFORM_SLUG.toUpperCase()}="$main_checkout/bin/${PLATFORM_SLUG}"`,
       ),
     ).toEqual([])

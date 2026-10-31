@@ -76,12 +76,6 @@ def run_heartbeat(rows, ack_result=""):
     """Run one tick over `rows` and report the lines it emitted and the ids it acknowledged."""
     with tempfile.TemporaryDirectory() as root:
         checkout = Path(root)
-        subprocess.run(
-            ["git", "init", "--quiet", str(checkout)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
         hooks = checkout / "orchestrator" / "hooks"
         binary = checkout / "bin"
         hooks.mkdir(parents=True)

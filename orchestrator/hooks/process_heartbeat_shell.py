@@ -197,7 +197,11 @@ esac
                     "one fixture tick run",
                     ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                     cwd=checkout,
-                    env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(store)},
+                    env={
+                        **os.environ,
+                        "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                        "BOTTEGA_ORCHESTRATOR_DB": str(store),
+                    },
                     capture_output=True,
                     text=True,
                     check=True,
@@ -437,7 +441,11 @@ esac
                 "the single tick run",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
                 capture_output=True,
                 text=True,
                 check=True,
@@ -506,6 +514,7 @@ esac
             command = ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "2"]
             env = {
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_SECOND_TICK": str(marker),
             }
@@ -564,7 +573,11 @@ esac
                 "the single tick run",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
                 capture_output=True,
                 text=True,
                 check=True,
@@ -634,6 +647,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                     "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_UPDATED": str(checkout / "updated"),
                     "FAKE_HEARTBEAT_HELPER": str(helper),
@@ -688,7 +702,11 @@ esac
                 "the degraded single tick run",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
                 capture_output=True,
                 text=True,
                 check=True,
@@ -840,6 +858,7 @@ esac
             calls = checkout / "completion-calls"
             environment = {
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_TICK": str(checkout / "tick"),
                 "FAKE_COMPLETION_CALLS": str(calls),
@@ -972,6 +991,7 @@ esac
             fake.chmod(0o755)
             environment = {
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
                 "FAKE_TERMINAL_SEEN": str(checkout / "terminal-seen"),
@@ -1077,6 +1097,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                     "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_LIVE_SEEN": str(checkout / "live-seen"),
                 },
@@ -1181,6 +1202,7 @@ esac
             fake.chmod(0o755)
             env = {
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_FIRST_LIVE": str(checkout / "first-live"),
                 "FAKE_FIRST_MISSING": str(checkout / "first-missing"),
@@ -1322,6 +1344,7 @@ esac
             fake.chmod(0o755)
             environment = {
                 **os.environ,
+                "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                 "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                 "FAKE_TICK": str(checkout / "tick"),
                 "FAKE_UPDATED": str(checkout / "updated"),
@@ -1399,7 +1422,11 @@ esac
                 "the single tick run",
                 ["bash", str(hooks / "orch-heartbeat.sh"), "fixture-session", "0.01", "1"],
                 cwd=checkout,
-                env={**os.environ, "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db")},
+                env={
+                    **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
+                    "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
+                },
                 capture_output=True,
                 text=True,
                 check=True,
@@ -1448,6 +1475,7 @@ esac
                 cwd=checkout,
                 env={
                     **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                     "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "FAKE_MONITOR_CALLS": str(calls),
                 },
@@ -1507,6 +1535,7 @@ esac
                 fake.chmod(0o755)
                 environment = {
                     **os.environ,
+                    "BOTTEGA_MAIN_CHECKOUT": str(checkout),
                     "BOTTEGA_ORCHESTRATOR_DB": str(checkout / "absent.db"),
                     "NOTICE_TIMEOUT_SECONDS": "30",
                     "FAKE_MONITOR_PID_FILE": str(monitor_pid_file),
