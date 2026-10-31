@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
 import { resolveWorkflowProjectFacts } from './workflow-project-facts.ts'
@@ -29,7 +27,7 @@ describe('workflow project facts', () => {
     expect(facts).toEqual({ reference })
   })
 
-  test('open-pr composition carries declared before-pull-request entries', () => {
+  test('a step needing before-pull-request receives the declared entries', () => {
     const beforePullRequest = [
       {
         whenChanged: ['shared/record/migrations/**'],
@@ -37,11 +35,22 @@ describe('workflow project facts', () => {
         secrets: ['REHEARSAL_TOKEN'],
       },
     ]
-    const path = resolve(import.meta.dir, '../../../.agents/workflow-steps/open-pr.md')
-    const openPullRequest = parseWorkflowTree([
-      { path: '.agents/workflow-steps/open-pr.md', body: readFileSync(path, 'utf8') },
+    const step = parseWorkflowTree([
+      {
+        path: '.agents/workflow-steps/synthetic.md',
+        body: `---
+title: Synthetic
+floor: []
+job: null
+autonomy: ask
+needs:
+  - before-pull-request
+---
+Synthetic body.
+`,
+      },
     ]).steps[0]!
-    const { facts } = resolveWorkflowProjectFacts(
+    const declared = resolveWorkflowProjectFacts(
       {
         name: 'fixture',
         stack: 'bun',
@@ -50,13 +59,21 @@ describe('workflow project facts', () => {
           release: { rungs: [], mergeMethod: 'squash', requiredChecks: [], beforePullRequest },
         },
       },
-      openPullRequest.needs,
+      step.needs,
       false,
       {},
       autonomy,
-    )
+    ).facts
+    const absent = resolveWorkflowProjectFacts(
+      { name: 'fixture', stack: 'bun', settings: {} },
+      step.needs,
+      false,
+      {},
+      autonomy,
+    ).facts
 
-    expect(facts).toEqual({ trunk: 'main', beforePullRequest })
+    expect(declared).toEqual({ beforePullRequest })
+    expect(absent).toEqual({ beforePullRequest: [] })
   })
 
   test.each([
