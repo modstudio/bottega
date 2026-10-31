@@ -1,50 +1,14 @@
 import { expect, test } from 'bun:test'
-import { readdirSync, readFileSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { readdirSync } from 'node:fs'
+import { relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
+import { gateTestDirectories, testLegReaches } from './check-test-reach.ts'
 import { groupFocusedTestPaths } from './test-focused.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
-function beneath(directory: string, candidate: string): boolean {
-  const offset = relative(directory, candidate)
-  return offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
-}
-
-function matchesPattern(pattern: string, path: string): boolean {
-  const expression = pattern
-    .split('*')
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('[^/]*')
-  return new RegExp(`^${expression}$`).test(path)
-}
-
-function legReaches(path: string, leg: (typeof CHECK_LEGS)[number]): boolean {
-  return (
-    (leg.testDirectories.some((directory) => beneath(directory, path)) ||
-      leg.testPatterns.some((pattern) => matchesPattern(pattern, path))) &&
-    !leg.excludedTestDirectories.some((directory) => beneath(directory, path)) &&
-    !leg.excludedTestPatterns.some((pattern) => matchesPattern(pattern, path))
-  )
-}
-
-const workspaceDirectories = (
-  JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as { workspaces: string[] }
-).workspaces
-  .map((workspace) => resolve(root, workspace))
-  .sort((left, right) => right.length - left.length)
-
-function expectedGateDirectory(path: string): string {
-  const rootRun =
-    (ROOT_TEST_FILES as readonly string[]).includes(path) ||
-    CHECK_LEGS.some((leg) => leg.directory === '.' && legReaches(path, leg))
-  if (rootRun) return root
-  const absolute = resolve(root, path)
-  return workspaceDirectories.find((directory) => beneath(directory, absolute)) ?? root
-}
-
-function reachedTypeScriptTests(): string[] {
+function trackedTypeScriptTests(): string[] {
   const testFilesUnder = (directory: string): string[] =>
     readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
       const path = resolve(directory, entry.name)
@@ -57,7 +21,7 @@ function reachedTypeScriptTests(): string[] {
   return testFilesUnder(root).filter(
     (path) =>
       (ROOT_TEST_FILES as readonly string[]).includes(path) ||
-      CHECK_LEGS.some((leg) => legReaches(path, leg)),
+      CHECK_LEGS.some((leg) => testLegReaches(path, leg)),
   )
 }
 
@@ -88,19 +52,41 @@ test('groups focused paths by nearest package with package-relative arguments', 
   ])
 })
 
-test('matches the gate directory for every reached TypeScript test file', () => {
-  for (const path of reachedTypeScriptTests()) {
+test('every TypeScript test file resolves to a declared gate directory', () => {
+  for (const path of trackedTypeScriptTests()) {
+    expect(gateTestDirectories(path, ROOT_TEST_FILES, CHECK_LEGS).length, path).toBeGreaterThan(0)
+  }
+})
+
+test('pins focused directories at each gate-directory boundary', () => {
+  const cases = [
+    ['cli/routes.test.ts', '.'],
+    ['hub/ui/src/state/pagination.test.ts', 'hub'],
+    ['hub/site/src/chrome.test.tsx', 'hub/site'],
+    ['orchestrator/src/porting/porting.test.ts', 'orchestrator'],
+    ['shared/state-directory.test.ts', '.'],
+  ] as const
+  for (const [path, expectedDirectory] of cases) {
     const [group] = groupFocusedTestPaths([path])
-    expect({ path, directory: relative(root, group!.directory) || '.' }).toEqual({
-      path,
-      directory: relative(root, expectedGateDirectory(path)) || '.',
-    })
+    expect(relative(root, group!.directory) || '.', path).toBe(expectedDirectory)
   }
 })
 
 test('a root-run file inside a workspace is not ignored by the root group', () => {
   const [group] = groupFocusedTestPaths(['cli/routes.test.ts'])
   expect(relative(root, group!.directory) || '.').toBe('.')
+  expect(group!.argv).toContain('./cli/routes.test.ts')
+  expect(group!.argv).not.toContain('cli/**')
+})
+
+test('a directory containing only root-run tests runs from the root', () => {
+  const [group] = groupFocusedTestPaths(['cli'])
+  expect(relative(root, group!.directory) || '.').toBe('.')
+  expect(group!.argv.slice(-3)).toEqual([
+    './cli/dispatch.test.ts',
+    './cli/legacy-calls.test.ts',
+    './cli/routes.test.ts',
+  ])
   expect(group!.argv).not.toContain('cli/**')
 })
 

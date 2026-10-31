@@ -2,18 +2,16 @@ import { afterAll } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { FROZEN_STATE_NAMES } from '../shared/brand.ts'
 import { CONFIG_HOME_ENV } from '../shared/config-directory.ts'
 
 const originalConfigHome = process.env[CONFIG_HOME_ENV]
 const originalOrchestratorDatabase = process.env.BOTTEGA_ORCHESTRATOR_DB
 const originalRecordApiUrl = process.env.BOTTEGA_RECORD_API_URL
 const configDir = mkdtempSync(join(tmpdir(), 'root-test-config-'))
-const databaseDir =
-  originalOrchestratorDatabase === undefined
-    ? mkdtempSync(join(tmpdir(), 'root-test-database-'))
-    : null
+const databaseDir = mkdtempSync(join(tmpdir(), 'root-test-database-'))
 process.env[CONFIG_HOME_ENV] = configDir
-if (databaseDir) process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseDir, 'orchestrator.db')
+process.env.BOTTEGA_ORCHESTRATOR_DB = join(databaseDir, FROZEN_STATE_NAMES.orchestratorDatabase)
 delete process.env.BOTTEGA_RECORD_API_URL
 
 afterAll(() => {
@@ -24,5 +22,5 @@ afterAll(() => {
   if (originalRecordApiUrl === undefined) delete process.env.BOTTEGA_RECORD_API_URL
   else process.env.BOTTEGA_RECORD_API_URL = originalRecordApiUrl
   rmSync(configDir, { recursive: true, force: true })
-  if (databaseDir) rmSync(databaseDir, { recursive: true, force: true })
+  rmSync(databaseDir, { recursive: true, force: true })
 })

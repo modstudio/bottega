@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
+import { gateTestDirectories, testLegReaches } from './check-test-reach.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
@@ -34,29 +35,33 @@ function beneath(directory: string, candidate: string) {
   return offset === '' || (offset !== '..' && !offset.startsWith(`..${sep}`) && !isAbsolute(offset))
 }
 
-function matchesPattern(pattern: string, path: string): boolean {
-  const expression = pattern
-    .split('*')
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('[^/]*')
-  return new RegExp(`^${expression}$`).test(path)
+/** Prefer the file's workspace when the gate names it; otherwise use the reaching leg. */
+function gateRunDirectory(path: string): string {
+  const directories = gateTestDirectories(path, ROOT_TEST_FILES, CHECK_LEGS)
+  const workspace = packageDirectoriesByDepth
+    .map((directory) => relative(root, directory) || '.')
+    .find((directory) => path === directory || path.startsWith(`${directory}/`))
+  const selected = workspace && directories.includes(workspace) ? workspace : directories[0]!
+  return resolve(root, selected)
 }
 
-function reachedByLeg(path: string, leg: (typeof CHECK_LEGS)[number]): boolean {
-  return (
-    (leg.testDirectories.some((directory) => beneath(directory, path)) ||
-      leg.testPatterns.some((pattern) => matchesPattern(pattern, path))) &&
-    !leg.excludedTestDirectories.some((directory) => beneath(directory, path)) &&
-    !leg.excludedTestPatterns.some((pattern) => matchesPattern(pattern, path))
-  )
-}
-
-/** A root-run test must inherit the root bunfig even when it lives in a nested workspace. */
-function gateRunsTestFromRoot(path: string): boolean {
-  return (
-    (ROOT_TEST_FILES as readonly string[]).includes(path) ||
-    CHECK_LEGS.some((leg) => leg.directory === '.' && reachedByLeg(path, leg))
-  )
+function reachedTypeScriptTestsUnder(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const absolute = resolve(directory, entry.name)
+      if (entry.isDirectory()) {
+        return ['node_modules', '.git', '.claude'].includes(entry.name)
+          ? []
+          : reachedTypeScriptTestsUnder(absolute)
+      }
+      if (!entry.isFile() || !/\.test\.tsx?$/.test(entry.name)) return []
+      const path = relative(root, absolute)
+      return (ROOT_TEST_FILES as readonly string[]).includes(path) ||
+        CHECK_LEGS.some((leg) => testLegReaches(path, leg))
+        ? [path]
+        : []
+    })
+    .sort()
 }
 
 function selectedAbsolutePath(path: string): string {
@@ -76,33 +81,64 @@ function addPath(groups: Map<string, string[]>, directory: string, path: string)
   groups.set(directory, grouped)
 }
 
+function addDirectorySelection(
+  groups: Map<string, string[]>,
+  path: string,
+  absolute: string,
+  reachedTests: string[],
+): void {
+  const runDirectories = new Set(reachedTests.map(gateRunDirectory))
+  if (runDirectories.has(root) && runDirectories.size > 1) {
+    throw new Error(
+      `test directory ${JSON.stringify(path)} mixes tests the gate runs from the root with tests it runs elsewhere; select files or subdirectories separately`,
+    )
+  }
+  if (runDirectories.size <= 1) {
+    const fallbackDirectory =
+      packageDirectoriesByDepth.find((candidate) => beneath(candidate, absolute)) ?? root
+    const runDirectory = [...runDirectories][0] ?? fallbackDirectory
+    if (runDirectory === root && reachedTests.length > 0) {
+      for (const testPath of reachedTests) addPath(groups, root, testPath)
+      return
+    }
+    addPath(groups, runDirectory, relative(runDirectory, absolute) || '.')
+    return
+  }
+  for (const testPath of reachedTests) {
+    const runDirectory = gateRunDirectory(testPath)
+    if (beneath(absolute, runDirectory)) addPath(groups, runDirectory, '.')
+    else addPath(groups, runDirectory, relative(runDirectory, resolve(root, testPath)))
+  }
+}
+
 function addSelection(groups: Map<string, string[]>, path: string) {
   const absolute = selectedAbsolutePath(path)
   const projectRelativePath = relative(root, absolute)
-  const packageDirectory = gateRunsTestFromRoot(projectRelativePath)
-    ? root
-    : (packageDirectoriesByDepth.find((directory) => beneath(directory, absolute)) ?? root)
-  addPath(groups, packageDirectory, relative(packageDirectory, absolute) || '.')
-  if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return
-  for (const nested of packages) {
-    if (nested.directory !== packageDirectory && beneath(absolute, nested.directory)) {
-      addPath(groups, nested.directory, '.')
-    }
+  const directory = existsSync(absolute) && statSync(absolute).isDirectory()
+  if (!directory) {
+    const runDirectory = gateRunDirectory(projectRelativePath)
+    addPath(groups, runDirectory, relative(runDirectory, absolute))
+    return
   }
+  addDirectorySelection(groups, path, absolute, reachedTypeScriptTestsUnder(absolute))
 }
 
 function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup {
   const nestedPackageIgnores = packages.flatMap((candidate) =>
     candidate.directory !== directory &&
     beneath(directory, candidate.directory) &&
-    !paths.some((path) => beneath(candidate.directory, resolve(directory, path)))
+    !paths.some((path) => beneath(candidate.directory, resolve(directory, path))) &&
+    !reachedTypeScriptTestsUnder(candidate.directory).some(
+      (path) => gateRunDirectory(path) === directory,
+    )
       ? ['--path-ignore-patterns', `${relative(directory, candidate.directory)}/**`]
       : [],
   )
   // Plain `bun test` from the package directory loads that package's bunfig.toml and preload.
   // A package's own `test` script cannot be used: several embed a path operand (`bun test src`),
   // which bun ORs with the selected paths, so the run would not narrow.
-  return { directory, paths, argv: ['bun', 'test', ...nestedPackageIgnores, ...paths] }
+  const operands = directory === root ? paths.map((path) => `./${path}`) : paths
+  return { directory, paths, argv: ['bun', 'test', ...nestedPackageIgnores, ...operands] }
 }
 
 export function groupFocusedTestPaths(paths: readonly string[]): FocusedTestGroup[] {

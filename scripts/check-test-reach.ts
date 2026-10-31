@@ -20,7 +20,7 @@ const CI_ONLY_TEST_PATTERNS = CI_ONLY_SUITES.flatMap((suite) => suite.testPatter
 function testFile(path: string): boolean {
   return (
     /(?:\.test\.tsx?|(?:^|\/)test_[^/]+\.py)$/.test(path) ||
-    CI_ONLY_TEST_PATTERNS.some((pattern) => matchesPattern(pattern, path))
+    CI_ONLY_TEST_PATTERNS.some((pattern) => matchesTestPattern(pattern, path))
   )
 }
 
@@ -43,12 +43,64 @@ function beneath(directory: string, path: string): boolean {
   return path === directory || path.startsWith(`${directory}/`)
 }
 
-function matchesPattern(pattern: string, path: string): boolean {
+function matchesTestPattern(pattern: string, path: string): boolean {
   const expression = pattern
     .split('*')
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('[^/]*')
   return new RegExp(`^${expression}$`).test(path)
+}
+
+function suiteGateDirectory(
+  path: string,
+  directory: string,
+  suite: { argv: readonly string[] },
+): string | null {
+  const cwdIndex = suite.argv.indexOf('--cwd')
+  const cwd = cwdIndex < 0 ? undefined : suite.argv[cwdIndex + 1]
+  if (!cwd) return null
+  const suiteDirectory = directory === '.' ? cwd : `${directory}/${cwd}`
+  return beneath(suiteDirectory, path) ? suiteDirectory : null
+}
+
+export type TestReachLeg = {
+  directory?: string
+  testDirectories: readonly string[]
+  testPatterns: readonly string[]
+  excludedTestDirectories: readonly string[]
+  excludedTestPatterns: readonly string[]
+  suite?: readonly { argv: readonly string[] }[]
+}
+
+/** Whether a gate leg reaches one project-relative test path. */
+export function testLegReaches(path: string, leg: TestReachLeg): boolean {
+  return (
+    (leg.testDirectories.some((directory) => beneath(directory, path)) ||
+      leg.testPatterns.some((pattern) => matchesTestPattern(pattern, path))) &&
+    !leg.excludedTestDirectories.some((directory) => beneath(directory, path)) &&
+    !leg.excludedTestPatterns.some((pattern) => matchesTestPattern(pattern, path))
+  )
+}
+
+/** Every directory from which the gate runs one project-relative test path. */
+export function gateTestDirectories(
+  path: string,
+  rootTests: readonly string[],
+  legs: readonly TestReachLeg[],
+): string[] {
+  if (rootTests.includes(path)) return ['.']
+  const directories = new Set<string>()
+  for (const leg of legs) {
+    if (!testLegReaches(path, leg)) continue
+    const directory = leg.directory ?? '.'
+    directories.add(directory)
+    for (const suite of leg.suite ?? []) {
+      const suiteDirectory = suiteGateDirectory(path, directory, suite)
+      if (suiteDirectory) directories.add(suiteDirectory)
+    }
+  }
+  if (directories.size === 0) throw new Error(`no gate test directory reaches ${path}`)
+  return [...directories]
 }
 
 export function parseTestReachExemptions(text: string): TestReachExemption[] {
@@ -109,14 +161,7 @@ export function testReach(input: {
   const trackedSet = new Set(tracked)
   const rootTests = new Set(input.rootTests)
   const exemptionFiles = new Set(input.exemptions.map((entry) => entry.file))
-  const reachedByLeg = (file: string) =>
-    input.legs.some(
-      (leg) =>
-        (leg.testDirectories.some((directory) => beneath(directory, file)) ||
-          leg.testPatterns.some((pattern) => matchesPattern(pattern, file))) &&
-        !leg.excludedTestDirectories.some((directory) => beneath(directory, file)) &&
-        !leg.excludedTestPatterns.some((pattern) => matchesPattern(pattern, file)),
-    )
+  const reachedByLeg = (file: string) => input.legs.some((leg) => testLegReaches(file, leg))
   const unreached = tracked.filter((file) => !rootTests.has(file) && !reachedByLeg(file))
   return {
     unreached,
