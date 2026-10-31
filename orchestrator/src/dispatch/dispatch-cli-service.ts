@@ -21,7 +21,7 @@ import { compatibleTaskBranch } from '../branch/task-branch-reuse.ts'
 import { flagValue, flagValues, readMessageText } from '../cli/args.ts'
 import { doPositionals } from '../commands/do-options.ts'
 import { readStrictCodexSchema } from '../contract/codex-schema.ts'
-import { contractConflicts, resolveReplyDialect } from '../contract/contract.ts'
+import { resolveReplyDialect } from '../contract/contract.ts'
 import { db, sessionId } from '../database/db.ts'
 import { recordRunWarning } from '../events.ts'
 import { newestTurnOutputPath } from '../evidence/evidence-query.ts'
@@ -582,18 +582,6 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
         warnTaskBranchBypass(cwd, key, base, presentation.error),
       resolveTaskBranchForDispatch: (cwd, key, branch, report) =>
         resolveTaskBranchForDispatch(cwd, key, branch, report, presentation.error),
-      contractConflicts,
-      warnImplementContractConflicts: (conflicts, id) => {
-        if (!conflicts.length) return
-        presentation.error(
-          '! implement spec may conflict with its no-push/no-merge/no-rewrite contract:',
-        )
-        for (const conflict of conflicts)
-          presentation.error(`  line ${conflict.line}: ${conflict.text}`)
-        presentation.error(
-          `  The spec was not changed. Run ${id} has started; review the spec before the worker reaches this conflict.`,
-        )
-      },
       checkoutHasUncommittedWork,
       resolveBase,
       isWorktreeRelativeRef,

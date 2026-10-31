@@ -150,8 +150,6 @@ type DispatchPresentation = {
     branch: string | undefined,
     report: boolean,
   ): NonNullable<DetachSpec['resolvedTaskBranch']> | null
-  contractConflicts(prompt: string): { line: number; text: string }[]
-  warnImplementContractConflicts(conflicts: { line: number; text: string }[], runId: string): void
   checkoutHasUncommittedWork(cwd: string): boolean
   resolveBase(cwd: string, base: string): string
   isWorktreeRelativeRef(ref: string): boolean
@@ -414,8 +412,6 @@ export async function dispatchCommand(
     warnCallerDrift,
     warnTaskBranchBypass,
     resolveTaskBranchForDispatch,
-    contractConflicts,
-    warnImplementContractConflicts,
     checkoutHasUncommittedWork,
     implicitReviewWarning,
     resolveCallerCheckout,
@@ -545,7 +541,6 @@ export async function dispatchCommand(
     flag('keep-tree'),
     flag('keep-tree-reason'),
   )
-  const conflicts = jobName === 'implement' ? contractConflicts(prompt) : []
   // A fan-out cannot be run synchronously, and that is not a caller's problem
   // to solve.
   //
@@ -601,7 +596,6 @@ export async function dispatchCommand(
       resolvedTaskBranch,
     })
     recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
-    if (!porcelain) warnImplementContractConflicts(conflicts, id)
     presentation.detachedResult(id, json)
     if (!has('quiet') && !porcelain) {
       error(detachedRunCollectRemedy(id, presentation.runNumber))
@@ -659,6 +653,5 @@ export async function dispatchCommand(
     resolvedTaskBranch,
   })
   recordTaskKeyWarning(id, taskKeyWarning, recordRunWarning)
-  warnImplementContractConflicts(conflicts, id)
   await follow(id, has('quiet'))
 }
