@@ -14,6 +14,7 @@ export const question = pgTable.withRLS(
   'question',
   {
     id: uuid().primaryKey(),
+    number: integer(),
     spaceId: spaceIdentity(),
     runId: uuid('run_id').references(() => run.id),
     workflowKey: text('workflow_key'),

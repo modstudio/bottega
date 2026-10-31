@@ -22,6 +22,7 @@ export const run = pgTable.withRLS(
   'run',
   {
     id: uuid().primaryKey(),
+    number: integer(),
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
     machineId: uuid('machine_id')

@@ -9,9 +9,10 @@ const contract = (
 ) => ({ columns: typeof names === 'string' ? columns(names) : names, laterAdded })
 
 const RUN_RECORD_PAYLOAD_COLUMNS = columns(
-  'id spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad hostAdmissionFirst hostAdmission provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
+  'id number spaceId projectId projectName machineId localId startedByUserId startedAt finishedAt agent job promptSha specSha promptBytes promptHead taskKey taskId label lens latencyMs exitCode outputBytes vendorTokens modelCalls peakCallTokens quotaUsedPercentStart quotaUsedPercentEnd quotaWindowMinutes quotaResetsAt vendorCostUsd vendorInputTokens vendorOutputTokens vendorEstimatedCostUsd vendorCostSource resourceCpuMs resourcePeakRssBytes resourceSamples resourceSource probe failureKind status error retryOf parentRunId turn filesChanged changedPaths linesAdded linesRemoved testsRan testsPassed testsClaimDisagrees deviations escalations stack model evidenceExcluded evidenceUnvoid inputTree headCommit reviewRef reviewRole branch baseCommit mintedBranch docsInjected docRevisions canonSha transport sessionId routeReason noFailover automaticFailover outsideWorktreeWrites reviewProvenance provenanceStatus workPreserved closeOutOutcome closeOutDetail provisioningKind provisioningMs provisioningPhases provisioningEntries provisioningEntriesLimited provisioningHostLoad hostAdmissionFirst hostAdmission provisioningOutcome provisioningEntryRoots withheldFields createdAt updatedAt',
 )
 const RUN_RECORD_PAYLOAD_CONTRACT = contract(RUN_RECORD_PAYLOAD_COLUMNS, {
+  number: null,
   projectId: null,
   startedByUserId: null,
   taskKey: null,
@@ -59,9 +60,10 @@ const SCORE_RECORD_PAYLOAD_CONTRACT = contract(SCORE_RECORD_PAYLOAD_COLUMNS, {
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = columns(
   // workflowCursorId is accepted and ignored because queued payloads are frozen.
-  'id spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answeredByName answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
+  'id number spaceId runId workflowKey workflowTaskId workflowCursorId workflowCursorRecordId projectId projectName machineId localId revision askedAt question options recommendation why askedVia answer answerBasis answeredAt answeredBy answeredByName answererKind answerChannel awaitingOperatorAt relayedBy overturnedAt overturnedBy overturnedByName overturnReason replacement filedAs filedRef filedRecordId filedLabel filedAt closedAt closeReason withheldFields audits createdAt updatedAt',
 )
 const QUESTION_RECORD_PAYLOAD_CONTRACT = contract(QUESTION_RECORD_PAYLOAD_COLUMNS, {
+  number: null,
   workflowTaskId: null,
   workflowCursorRecordId: null,
   workflowCursorId: null,

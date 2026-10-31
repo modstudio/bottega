@@ -199,6 +199,7 @@ test('question ruling names reach the hosted record', async () => {
     pending: 0,
   })
   const hosted = hostedQuestionCursor(remote, cursorId)
+  expect(hosted.valueFor('number')).toBe(1)
   expect(hosted.valueFor('answered_by_name')).toBe('Ada Lovelace')
   expect(hosted.valueFor('overturned_by_name')).toBe('Grace Hopper')
   local.close()

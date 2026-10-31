@@ -257,7 +257,11 @@ async function pushRun(
         AND space_id=${principal.spaceId}::uuid AND superseded_at IS NULL
     `
     if (exclusion[0]?.reason) values.evidenceExcluded = String(exclusion[0].reason)
-    const { id: _id, createdAt: _createdAt, ...updates } = values
+    const { id: _id, createdAt: _createdAt, number: _number, ...runUpdates } = values
+    const updates = {
+      ...runUpdates,
+      number: drizzleSql`COALESCE(excluded.number, ${runRecord.number})`,
+    }
     const written = await drizzle({ client: tx })
       .insert(runRecord)
       .values(values)
@@ -303,6 +307,7 @@ export const questionValues = (
   workflowTaskId: string | null,
 ) => ({
   id: String(row.id),
+  number: nullableNumber(row.number),
   spaceId: String(row.spaceId),
   runId: nullableString(row.runId),
   workflowKey: nullableString(row.workflowKey),
@@ -546,16 +551,23 @@ const recordKinds = {
         const {
           id: _id,
           createdAt: _createdAt,
+          number: _number,
           workflowTaskId: _workflowTaskId,
           ...existingUpdates
         } = values
         const updates = {
           ...existingUpdates,
+          number: drizzleSql`COALESCE(excluded.number, ${questionRecord.number})`,
           workflowTaskId: drizzleSql`COALESCE(excluded.workflow_task_id, ${questionRecord.workflowTaskId})`,
         }
         const incomingQuestionWins = hostedQuestionWins(
           drizzleSql`excluded.revision`,
           questionRecord.revision,
+        )
+        const incomingQuestionFillsNumber = and(
+          drizzleSql`${questionRecord.number} IS NULL`,
+          drizzleSql`excluded.number IS NOT NULL`,
+          drizzleSql`excluded.revision = ${questionRecord.revision}`,
         )
         const written = await drizzle({ client: tx })
           .insert(questionRecord)
@@ -563,7 +575,10 @@ const recordKinds = {
           .onConflictDoUpdate({
             target: questionRecord.id,
             set: updates,
-            setWhere: and(eq(questionRecord.machineId, values.machineId), incomingQuestionWins),
+            setWhere: and(
+              eq(questionRecord.machineId, values.machineId),
+              drizzleSql`(${incomingQuestionWins} OR ${incomingQuestionFillsNumber})`,
+            ),
           })
           .returning({ id: questionRecord.id })
         requireOwnedUpsert(written, 'question', values.id, existingOwned)
