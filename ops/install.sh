@@ -31,15 +31,6 @@ if ((SPARE_START_HOUR > 23 || SPARE_START_MINUTE > 59)); then
   echo "refusing to install: spare.start_time is not HH:MM (got '${SPARE_START_TIME}')" >&2
   exit 1
 fi
-if ! ENV_FILES_OUTPUT="$(bun --no-env-file "$INSTALL_ROOT/shared/config-directory.ts" env-paths)"; then
-  exit 1
-fi
-ENV_FILES=()
-if [[ -n "$ENV_FILES_OUTPUT" ]]; then
-  while IFS= read -r env_file; do
-    ENV_FILES+=("$env_file")
-  done <<< "$ENV_FILES_OUTPUT"
-fi
 if [[ -f "$INSTALL_ROOT/.git" ]]; then
   GIT_COMMON_DIR="$(git -C "$INSTALL_ROOT" rev-parse --path-format=absolute --git-common-dir)"
   MAIN_CHECKOUT="$(cd "$GIT_COMMON_DIR/.." && pwd)"
@@ -112,33 +103,16 @@ fi
 for tmpl in "$CONCERN"/launchd/*.plist.template; do
   label="$(basename "$tmpl" .plist.template)"
 
-  if [[ "$label" == "com.user.local-model-tunnel" && -z "$MODEL_HOST" ]]; then
-    remove_skipped_agent "$label" "model_host.ssh_alias is unset"
+  skip_reason="$(bun --no-env-file "$INSTALL_ROOT/shared/launch-agent-skip.ts" skip-reason "$label")"
+  if [[ -n "$skip_reason" ]]; then
+    remove_skipped_agent "$label" "$skip_reason"
     continue
   fi
   if [[ "$label" == "com.user.local-model-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/local-model-tunnel"
   fi
-  if [[ "$label" == "com.user.record-tunnel" && -z "$RECORD_TUNNEL_APP" ]]; then
-    remove_skipped_agent "$label" "record.tunnel_app is unset"
-    continue
-  fi
-  if [[ "$label" == "com.user.record-tunnel" && -z "$FLYCTL" ]]; then
-    remove_skipped_agent "$label" "flyctl is not on PATH"
-    continue
-  fi
   if [[ "$label" == "com.user.record-tunnel" ]]; then
     mkdir -p "$HOME/Library/Logs/record-tunnel"
-  fi
-  if [[ "$label" == "com.user.orch-record-sync" ]]; then
-    has_env_file=false
-    for env_file in ${ENV_FILES[@]+"${ENV_FILES[@]}"}; do
-      [[ -f "$env_file" ]] && has_env_file=true
-    done
-    if [[ "$has_env_file" == false ]]; then
-      remove_skipped_agent "$label" "env files are absent: ${ENV_FILES[*]-}"
-      continue
-    fi
   fi
   if [[ "$label" == "com.user.orch-record-sync" ]]; then
     mkdir -p "$HOME/Library/Logs/orch-record-sync"

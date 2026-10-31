@@ -257,7 +257,7 @@ async function atomicModePreservingWrite(path: string, text: string, mode: numbe
   }
 }
 
-async function installationPlistOwners(): Promise<InstalledPlistOwner[]> {
+export async function installationPlistOwners(): Promise<InstalledPlistOwner[]> {
   const root = resolve(import.meta.dir, '../../..')
   const templates: Array<{ path: string; text: string }> = []
   for (const owner of LAUNCHD_TEMPLATE_OWNERS) {
