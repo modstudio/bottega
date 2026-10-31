@@ -157,7 +157,7 @@ describe('caller checkout resolution', () => {
     borrowedCheckout: false,
   }
 
-  test('same-project-recording mutation: --cwd alone keeps the shell cwd as launch cwd', () => {
+  test('same-project-recording mutation: --cwd alone records the --cwd worktree as launch cwd', () => {
     const checked: string[] = []
     const decision = resolveCallerCheckoutDecision(
       {
@@ -165,7 +165,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: '/projects/project/.claude/worktrees/DEV-1227',
         namedProject: null,
         cwdProject: { name: 'project', path: '/projects/project' },
-        shellProject: { name: 'project', path: '/projects/project' },
       },
       (cwd) => {
         checked.push(cwd)
@@ -176,7 +175,7 @@ describe('caller checkout resolution', () => {
     expect(checked).toEqual(['/projects/project/.claude/worktrees/DEV-1227'])
     expect(decision).toEqual({
       callerCwd: '/projects/project/.claude/worktrees/DEV-1227',
-      launchCwd: '/projects/project',
+      launchCwd: '/projects/project/.claude/worktrees/DEV-1227',
       notice: null,
     })
   })
@@ -189,7 +188,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: null,
         namedProject: { name: 'starship', path: '/projects/starship' },
         cwdProject: null,
-        shellProject: { name: 'atlas', path: '/projects/atlas' },
       },
       (cwd) => {
         checked.push(cwd)
@@ -210,14 +208,13 @@ describe('caller checkout resolution', () => {
     })
   })
 
-  test('durable-recording mutation: --repo with its worktree records the registered path', () => {
+  test('durable-recording mutation: --repo with its worktree records the --cwd worktree', () => {
     const decision = resolveCallerCheckoutDecision(
       {
         shellCwd: '/projects/atlas',
         explicitCwd: '/projects/starship/.claude/worktrees/STAR-42',
         namedProject: { name: 'starship', path: '/projects/starship' },
         cwdProject: { name: 'starship', path: '/projects/starship' },
-        shellProject: { name: 'atlas', path: '/projects/atlas' },
       },
       () => ({
         repoRoot: '/projects/starship',
@@ -229,7 +226,7 @@ describe('caller checkout resolution', () => {
 
     expect(decision).toEqual({
       callerCwd: '/projects/starship/.claude/worktrees/STAR-42',
-      launchCwd: '/projects/starship',
+      launchCwd: '/projects/starship/.claude/worktrees/STAR-42',
       notice: null,
     })
   })
@@ -241,7 +238,6 @@ describe('caller checkout resolution', () => {
         explicitCwd: null,
         namedProject: null,
         cwdProject: null,
-        shellProject: { name: 'project', path: '/projects/project' },
       },
       () => mainCheckoutFacts,
     )
@@ -256,8 +252,8 @@ describe('caller checkout resolution', () => {
   test('shell-cwd mutation: implicit linked worktree resolves to the registered project and warns', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/project/.claude/worktrees/DEV-780',
-        explicitCwd: null,
+        checkoutCwd: '/project/.claude/worktrees/DEV-780',
+        callerChoseCheckout: false,
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: true,
@@ -274,8 +270,8 @@ describe('caller checkout resolution', () => {
   test('explicit-cwd mutation: an explicitly selected linked worktree remains selected', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/elsewhere',
-        explicitCwd: '/project/.claude/worktrees/DEV-780',
+        checkoutCwd: '/project/.claude/worktrees/DEV-780',
+        callerChoseCheckout: true,
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: true,
@@ -283,7 +279,7 @@ describe('caller checkout resolution', () => {
       }),
     ).toEqual({
       callerCwd: '/project/.claude/worktrees/DEV-780',
-      launchCwd: '/elsewhere',
+      launchCwd: '/project/.claude/worktrees/DEV-780',
       notice: null,
     })
   })
@@ -291,8 +287,8 @@ describe('caller checkout resolution', () => {
   test('registration mutation: an implicit cwd in an unregistered repository is unchanged', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/unregistered',
-        explicitCwd: null,
+        checkoutCwd: '/unregistered',
+        callerChoseCheckout: false,
         repoRoot: '/unregistered',
         registeredProjectPath: null,
         linkedWorktree: false,
@@ -308,8 +304,8 @@ describe('caller checkout resolution', () => {
   test('an implicit borrowed clone resolves to the registered project', () => {
     expect(
       callerCheckoutDecision({
-        recordedLaunchCwd: '/project/.claude/worktrees/orch-832',
-        explicitCwd: null,
+        checkoutCwd: '/project/.claude/worktrees/orch-832',
+        callerChoseCheckout: false,
         repoRoot: '/project',
         registeredProjectPath: '/project',
         linkedWorktree: false,
