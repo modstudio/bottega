@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveCommitAt } from '../../../shared/git.ts'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 
@@ -30,12 +31,14 @@ export function passingGateForCommit(
   commit: string,
   cwd = process.cwd(),
   d: Database = db(),
+  resolveCommit: (checkout: string, argument: string) => string = resolveCommitAt,
 ): { project: string; commit: string; gateNumber: number | null } {
   const project = projectAt(cwd, d)
   if (!project)
     throw new Error(`${PLATFORM_SLUG} gate passed: no registered project contains ${cwd}`)
-  const normalized = commit.trim()
-  if (!normalized) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
+  const argument = commit.trim()
+  if (!argument) throw new Error(`${PLATFORM_SLUG} gate passed requires a commit`)
+  const resolved = resolveCommit(project.path, argument)
   const candidates = d
     .query<GateCandidate, [string]>(
       `SELECT g.record_id recordId,g.number,r.project_record_id AS projectId,g.cwd
@@ -43,10 +46,10 @@ export function passingGateForCommit(
         WHERE g.head_commit=? AND g.purpose='gate' AND g.finished_at IS NOT NULL AND g.exit_code=0 AND g.timed_out=0
         ORDER BY g.finished_at DESC,g.record_id DESC`,
     )
-    .all(normalized)
+    .all(resolved)
   return {
     project: project.name,
-    commit: normalized,
+    commit: resolved,
     gateNumber: selectPassingGateNumber(
       candidates,
       project.recordId,

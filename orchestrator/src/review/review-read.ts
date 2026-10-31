@@ -2,6 +2,7 @@
 /** Records an architect's read of one exact branch change group. */
 import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { resolveCommitAt } from '../../../shared/git.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
@@ -16,6 +17,7 @@ import { enqueueReviewRead } from './review-outbox.ts'
 type Flags = { flag(name: string): string | undefined }
 type Presentation = { log(...values: unknown[]): void }
 type Git = (cwd: string, args: string[]) => string
+type ResolveCommit = (checkout: string, argument: string) => string
 
 const git: Git = (cwd, args) => {
   const result = Bun.spawnSync(['git', ...args], {
@@ -67,6 +69,7 @@ export function recordArchitectRead(
   suppliedDatabase?: Database,
   runGit: Git = git,
   recordedAt = nowIso(),
+  resolveCommit: ResolveCommit = resolveCommitAt,
 ): string {
   if (process.env.BOTTEGA_DEPTH !== undefined) {
     throw new Error(
@@ -84,7 +87,7 @@ export function recordArchitectRead(
   if (!branch)
     throw new Error(`${PLATFORM_SLUG} review read requires a checked-out branch, not detached HEAD`)
   const caller = requireBranchRunOwner(database, project.name, branch, sessionId())
-  const tip = runGit(input.cwd, ['rev-parse', '--verify', `${input.sha ?? 'HEAD'}^{commit}`])
+  const tip = resolveCommit(project.path, input.sha ?? 'HEAD')
   try {
     runGit(input.cwd, ['merge-base', '--is-ancestor', tip, 'HEAD'])
   } catch {

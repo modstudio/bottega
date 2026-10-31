@@ -1,5 +1,58 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { borrowedCheckoutFromAlternates, projectCodeGitEnv, scrubbedGitEnv } from './git.ts'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import {
+  borrowedCheckoutFromAlternates,
+  decideCommitResolution,
+  projectCodeGitEnv,
+  scrubbedGitEnv,
+} from './git.ts'
+
+describe('recorded-evidence commit resolution', () => {
+  const checkout = '/projects/app'
+
+  test('returns the full commit for full and abbreviated arguments', () => {
+    const commit = '0123456789abcdef0123456789abcdef01234567'
+    expect(
+      decideCommitResolution(commit, checkout, { revParse: { code: 0, stdout: commit } }),
+    ).toEqual({ commit })
+    expect(
+      decideCommitResolution('0123456', checkout, { revParse: { code: 0, stdout: `${commit}\n` } }),
+    ).toEqual({ commit })
+  })
+
+  test('refuses an unresolvable argument with the checkout and remedy', () => {
+    expect(
+      decideCommitResolution('missing', checkout, { revParse: { code: 128, stdout: '' } }),
+    ).toEqual({
+      refusal:
+        'missing does not resolve to a commit in /projects/app; run `git fetch` in that checkout, or pass the full hash',
+    })
+  })
+
+  test('refuses an ambiguous abbreviation with every candidate full hash', () => {
+    const candidates = ['a'.repeat(40), 'b'.repeat(40)]
+    expect(
+      decideCommitResolution('abcd', checkout, {
+        revParse: { code: 128, stdout: '' },
+        candidates,
+      }),
+    ).toEqual({
+      refusal: `abcd is ambiguous in /projects/app; candidate commits: ${candidates.join(', ')}`,
+    })
+  })
+
+  test('caller-typed recorded-evidence commit sites use the shared resolver', () => {
+    for (const path of [
+      'orchestrator/src/gate/gate-passed.ts',
+      'orchestrator/src/review/review-read.ts',
+    ]) {
+      expect(readFileSync(resolve(import.meta.dir, '..', path), 'utf8')).toContain(
+        '= resolveCommitAt',
+      )
+    }
+  })
+})
 
 describe('borrowed checkout identity', () => {
   const objects = '/trees/reader/.git/objects'

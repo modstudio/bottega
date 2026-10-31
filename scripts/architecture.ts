@@ -584,6 +584,7 @@ export const modules: ArchitectureModule[] = [
   module('orchestrator/src/review/review-read.ts', [
     'shared/brand.ts',
     'bun:sqlite',
+    '../../../shared/git.ts',
     '../../../shared/record/schema.ts',
     '../../../shared/secret-shaped.ts',
     '../caller-classification.ts',

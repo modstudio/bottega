@@ -473,6 +473,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
     allowed: [
       'shared/brand.ts',
       'bun:sqlite',
+      '../../../shared/git.ts',
       '../../../shared/record/schema.ts',
       '../../../shared/secret-shaped.ts',
       '../caller-classification.ts',

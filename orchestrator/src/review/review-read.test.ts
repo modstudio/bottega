@@ -221,7 +221,13 @@ test('a tip unreachable from the checked-out branch is refused without a review 
   }
 
   expect(() =>
-    recordArchitectRead({ cwd, sha: 'unreachable', note: 'read the final fix' }, d, runGit),
+    recordArchitectRead(
+      { cwd, sha: 'unreachable', note: 'read the final fix' },
+      d,
+      runGit,
+      undefined,
+      () => 'unreachable-tip',
+    ),
   ).toThrow(
     `could not reconcile branch DEV-1068-work with tip unreachable-tip; run ${PLATFORM_SLUG} review read from the worktree that has the branch containing that commit checked out (${PLATFORM_SLUG} tree open <run> opens one)`,
   )

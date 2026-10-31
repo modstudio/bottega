@@ -27,6 +27,24 @@ test('the hook result is one line for either outcome', () => {
   )
 })
 
+test('the lookup and answer use the resolved full commit', () => {
+  const d = new Database(':memory:')
+  d.exec('PRAGMA foreign_keys=ON')
+  applyMigrations(d)
+  d.query(
+    'INSERT INTO project (record_id,name,path,stack,settings) VALUES (lower(hex(randomblob(4))) || char(45) || lower(hex(randomblob(2))) || char(45,55) || substr(lower(hex(randomblob(2))),2) || char(45,56) || substr(lower(hex(randomblob(2))),2) || char(45) || lower(hex(randomblob(6))),?,?,?,?)',
+  ).run('fixture', repositoryPath, 'bun', '{}')
+  const full = 'a'.repeat(40)
+  const seen: [string, string][] = []
+  const result = passingGateForCommit('aaaa', repositoryPath, d, (checkout, argument) => {
+    seen.push([checkout, argument])
+    return full
+  })
+  expect(seen).toEqual([[repositoryPath, 'aaaa']])
+  expect(result.commit).toBe(full)
+  expect(formatPassingGate(result)).toBe(`no passing gate recorded for fixture commit ${full}`)
+})
+
 test('a timed-out zero-exit gate is not a passing gate', () => {
   const d = new Database(':memory:')
   d.exec('PRAGMA foreign_keys=ON')
@@ -43,14 +61,15 @@ test('a timed-out zero-exit gate is not a passing gate', () => {
     )
     .get(commit, repositoryPath) as { record_id: string; number: number }
 
-  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBeNull()
+  const resolveCommit = () => commit
+  expect(passingGateForCommit(commit, repositoryPath, d, resolveCommit).gateNumber).toBeNull()
 
   d.query('UPDATE gate_execution SET timed_out=0 WHERE record_id=?').run(gate.record_id)
   const number = d
     .query<{ number: number }, [string]>('SELECT number FROM gate_execution WHERE record_id=?')
     .get(gate.record_id)!.number
-  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBe(number)
+  expect(passingGateForCommit(commit, repositoryPath, d, resolveCommit).gateNumber).toBe(number)
 
   d.query("UPDATE gate_execution SET purpose='worker-check' WHERE record_id=?").run(gate.record_id)
-  expect(passingGateForCommit(commit, repositoryPath, d).gateNumber).toBeNull()
+  expect(passingGateForCommit(commit, repositoryPath, d, resolveCommit).gateNumber).toBeNull()
 })
