@@ -58,11 +58,7 @@ export const runModuleSpecs = [
   },
   {
     file: 'orchestrator/src/run/run-identifier-grammar.ts',
-    allowed: [
-      '../../../shared/brand.ts',
-      '../../../shared/record-id.ts',
-      '../record/machine-name.ts',
-    ],
+    allowed: ['../../../shared/record-id.ts', '../record/machine-name.ts'],
   },
   {
     file: 'orchestrator/src/run/run-identifier-names.ts',

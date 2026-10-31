@@ -82,7 +82,7 @@ export async function requireRecordSpaceMembership(
 export async function switchRecordSpace(
   value: string,
   client: Pick<RecordApiClient, 'whoami' | 'setActiveOrganization'> = recordApiClient(),
-  names?: StoredMachineNames,
+  names?: Pick<StoredMachineNames, 'shortName' | 'displayName'>,
 ): Promise<RecordMembership> {
   const listed = await recordMemberships(client)
   const selected = resolveRecordSpace(value, listed.memberships)
@@ -144,7 +144,7 @@ export async function pendingRecordInvitations(
 export async function acceptRecordInvitation(
   invitationId: string,
   client: Pick<RecordApiClient, 'acceptInvitation'> = recordApiClient(),
-  names?: StoredMachineNames,
+  names?: Pick<StoredMachineNames, 'shortName' | 'displayName'>,
 ): Promise<string> {
   const accepted = await client.acceptInvitation(invitationId)
   if (names) await claimCurrentMachineNames(names)

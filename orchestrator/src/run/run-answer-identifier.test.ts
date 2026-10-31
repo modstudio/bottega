@@ -27,7 +27,7 @@ const question = (overrides: Partial<NonNullable<AnswerIdentifierFacts['question
 })
 
 describe('answer identifier parse', () => {
-  test('accepts current and former labels for question and run numbers', () => {
+  test('composes machine labels with question and run number grammar', () => {
     const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
     expect(parseAnswerIdentifier('mine/q42', names)).toEqual({
       kind: 'question-number',
@@ -37,8 +37,6 @@ describe('answer identifier parse', () => {
     expect(() => parseAnswerIdentifier('other/q42', names)).toThrow(
       "acts only on this machine's (`mine`) rows",
     )
-    expect(() => parseAnswerIdentifier('mine/q42', null)).toThrow('has no short name')
-    expect(() => parseAnswerIdentifier('Bad/q42', names)).toThrow('invalid answer identifier')
   })
   test('owns q-prefix grammar and accepts the run identifier forms', () => {
     const recordId = newRecordId()

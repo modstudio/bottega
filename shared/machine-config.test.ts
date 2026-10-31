@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -20,11 +20,47 @@ import {
   setMachineAutonomy,
   setMachineValue,
   storedMachineId,
+  storedMachineNames,
+  writeMachineNames,
 } from './machine-config.ts'
 
 const path = '/config/platform/machine.toml'
 const silent = () => {}
 const freshWarnings = () => new Set<string>()
+
+describe('stored machine names', () => {
+  let configRoot: string
+  let previousConfigRoot: string | undefined
+
+  beforeEach(() => {
+    previousConfigRoot = process.env[CONFIG_HOME_ENV]
+    configRoot = mkdtempSync(join(tmpdir(), 'machine-names-'))
+    process.env[CONFIG_HOME_ENV] = configRoot
+  })
+
+  afterEach(() => {
+    if (previousConfigRoot === undefined) delete process.env[CONFIG_HOME_ENV]
+    else process.env[CONFIG_HOME_ENV] = previousConfigRoot
+    rmSync(configRoot, { recursive: true, force: true })
+  })
+
+  test('writes and reads former names across renames without current names or duplicates', () => {
+    writeMachineNames({ shortName: 'machine-a', displayName: 'Machine A' })
+    writeMachineNames({ shortName: 'machine-b', displayName: 'Machine B' })
+    expect(storedMachineNames()).toEqual({
+      shortName: 'machine-b',
+      displayName: 'Machine B',
+      formerShortNames: ['machine-a'],
+    })
+
+    writeMachineNames({ shortName: 'machine-a', displayName: 'Machine A' })
+    expect(storedMachineNames()).toEqual({
+      shortName: 'machine-a',
+      displayName: 'Machine A',
+      formerShortNames: ['machine-b'],
+    })
+  })
+})
 
 describe('machine config resolution', () => {
   test('former machine names append on rename without duplicates or the current name', () => {

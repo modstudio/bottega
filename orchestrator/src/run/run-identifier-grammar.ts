@@ -1,35 +1,12 @@
 // concern: run-control
 /** Recognizes a user-facing run number or UUID. Pure: it knows no store, process, or clock. */
 
-import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { shortNameRefusal } from '../record/machine-name.ts'
-
-export type MachineIdentifierNames = { shortName: string; formerShortNames: readonly string[] }
-export type LabelDecision =
-  | { kind: 'bare'; remainder: string }
-  | { kind: 'not-label' }
-  | { kind: 'refused'; reason: string }
-
-export function decideMachineLabel(
-  input: string,
-  names: MachineIdentifierNames | null,
-): LabelDecision {
-  const match = /^([^/]+)\/(.+)$/.exec(input)
-  if (!match || shortNameRefusal(match[1]!)) return { kind: 'not-label' }
-  const name = match[1]!
-  if (!names)
-    return {
-      kind: 'refused',
-      reason: `this machine has no short name because it has not joined a space; a bare number or UUID works meanwhile; set the name by joining a space with \`${PLATFORM_SLUG} record space switch --short-name <name>\``,
-    }
-  if (name === names.shortName || names.formerShortNames.includes(name))
-    return { kind: 'bare', remainder: match[2]! }
-  return {
-    kind: 'refused',
-    reason: `\`${input}\` names a row on machine \`${name}\`; this command acts only on this machine's (\`${names.shortName}\`) rows`,
-  }
-}
+import {
+  decideMachineLabel,
+  type MachineIdentifierNames,
+  MachineLabelRefusal,
+} from '../record/machine-name.ts'
 
 export type ParsedRunIdentifier =
   | { kind: 'number'; number: number }
@@ -44,7 +21,7 @@ export function classifyRunIdentifier(
 ): ParsedRunIdentifier | null {
   const original = String(input)
   const label = decideMachineLabel(original, names)
-  if (label.kind === 'refused') throw new Error(label.reason)
+  if (label.kind === 'refused') return null
   const given = label.kind === 'bare' ? label.remainder : original
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
@@ -59,6 +36,8 @@ export function parseRunIdentifier(
   names: MachineIdentifierNames | null,
 ): ParsedRunIdentifier {
   const given = String(input)
+  const label = decideMachineLabel(given, names)
+  if (label.kind === 'refused') throw new MachineLabelRefusal(label.reason)
   const parsed = classifyRunIdentifier(input, names)
   if (parsed) return parsed
   throw new Error(

@@ -7,6 +7,38 @@ export function shortNameRefusal(value: string): string | null {
   return /^[a-z][a-z0-9-]{1,19}$/.test(value) ? null : `short name must be ${SHORT_NAME_RULE}`
 }
 
+export type MachineIdentifierNames = {
+  shortName: string
+  formerShortNames: readonly string[]
+}
+
+export type MachineLabelDecision =
+  | { kind: 'bare'; remainder: string }
+  | { kind: 'not-label' }
+  | { kind: 'refused'; reason: string }
+
+export class MachineLabelRefusal extends Error {}
+
+export function decideMachineLabel(
+  input: string,
+  names: MachineIdentifierNames | null,
+): MachineLabelDecision {
+  const match = /^([^/]+)\/(.+)$/.exec(input)
+  if (!match || shortNameRefusal(match[1]!)) return { kind: 'not-label' }
+  const name = match[1]!
+  if (!names)
+    return {
+      kind: 'refused',
+      reason: `this machine has no short name because it has not joined a space; a bare number or UUID works meanwhile; set the name by joining a space with \`${PLATFORM_SLUG} record space switch --short-name <name>\``,
+    }
+  if (name === names.shortName || names.formerShortNames.includes(name))
+    return { kind: 'bare', remainder: match[2]! }
+  return {
+    kind: 'refused',
+    reason: `\`${input}\` names a row on machine \`${name}\`; this command acts only on this machine's (\`${names.shortName}\`) rows`,
+  }
+}
+
 export function displayNameRefusal(value: string): string | null {
   return value.length >= 1 && value.length <= 60
     ? null

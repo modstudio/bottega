@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
 import {
@@ -202,7 +203,8 @@ export function parseArtifactRef(value: string): ArtifactRef | { error: string }
     const probeArtifact = parseProbeArtifact(trimmed)
     if (probeArtifact?.identifier.kind === 'record-id')
       return { kind: probeArtifact.kind, recordId: probeArtifact.identifier.recordId }
-  } catch {
+  } catch (error) {
+    if (error instanceof MachineLabelRefusal) return { error: error.message }
     // The generic artifact refusal below owns malformed artifact guidance.
   }
   const doc = /^doc:(\S+)$/i.exec(trimmed)

@@ -3,7 +3,11 @@
 
 import { storedMachineNames } from '../../../shared/machine-config.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
-import { decideMachineLabel, type MachineIdentifierNames } from '../run/run-identifier-grammar.ts'
+import {
+  decideMachineLabel,
+  type MachineIdentifierNames,
+  MachineLabelRefusal,
+} from '../record/machine-name.ts'
 
 type ProbeDatabase = {
   query(sql: string): unknown
@@ -23,20 +27,13 @@ export type ParsedProbeArtifact = {
 const ACCEPTED_PROBE_IDENTIFIERS =
   'a positive decimal probe number, name/number, or a full probe UUID'
 
-const machineNames = (): MachineIdentifierNames | null => {
-  const stored = storedMachineNames()
-  return stored
-    ? { shortName: stored.shortName, formerShortNames: stored.formerShortNames ?? [] }
-    : null
-}
-
 function parseProbeIdentifier(
   input: string | number,
-  names: MachineIdentifierNames | null = machineNames(),
+  names: MachineIdentifierNames | null = storedMachineNames(),
 ): ParsedProbeIdentifier {
   const original = String(input)
   const label = decideMachineLabel(original, names)
-  if (label.kind === 'refused') throw new Error(label.reason)
+  if (label.kind === 'refused') throw new MachineLabelRefusal(label.reason)
   const given = label.kind === 'bare' ? label.remainder : original
   if (/^[0-9]+$/.test(given)) {
     const number = Number(given)
@@ -50,7 +47,7 @@ function parseProbeIdentifier(
 
 export function parseProbeArtifact(
   artifact: string,
-  names: MachineIdentifierNames | null = machineNames(),
+  names: MachineIdentifierNames | null = storedMachineNames(),
 ): ParsedProbeArtifact | undefined {
   const parsed = /^(probe|exec):(.+)$/i.exec(artifact.trim())
   if (!parsed) return undefined
@@ -63,7 +60,7 @@ export function parseProbeArtifact(
 export function resolveProbeIdentifier(
   database: ProbeDatabase,
   input: string | number,
-  names: MachineIdentifierNames | null = machineNames(),
+  names: MachineIdentifierNames | null = storedMachineNames(),
 ): string {
   const parsed = parseProbeIdentifier(input, names)
   if (parsed.kind === 'number') {

@@ -9,7 +9,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
 import { parseRunIdentifier, resolveRunIdentifier } from './run-identifier.ts'
-import { parseRunIdentifier as parseGrammar } from './run-identifier-grammar.ts'
+import { classifyRunIdentifier as classifyGrammar } from './run-identifier-grammar.ts'
 
 let configRoot: string
 let previousConfigRoot: string | undefined
@@ -27,17 +27,10 @@ afterEach(() => {
 })
 
 describe('run identifier', () => {
-  test('parses current and former machine labels and refuses foreign labels before lookup', () => {
-    const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
-    expect(parseGrammar('mine/42', names)).toEqual(parseGrammar('42', names))
-    expect(parseGrammar('old-mine/42', names)).toEqual({ kind: 'number', number: 42 })
-    expect(() => parseGrammar('other/123', names)).toThrow(
-      "`other/123` names a row on machine `other`; this command acts only on this machine's (`mine`) rows",
-    )
-    expect(() => parseGrammar('mine/42', null)).toThrow(
-      'has no short name because it has not joined a space',
-    )
-    expect(() => parseGrammar('Bad/42', names)).toThrow('invalid run identifier')
+  test('a slash-named branch is not classified as this machine run identifier', () => {
+    expect(
+      classifyGrammar('release/1.2', { shortName: 'mine', formerShortNames: ['old-mine'] }),
+    ).toBeNull()
   })
 
   test('a foreign label refuses in the resolver before any database query', () => {

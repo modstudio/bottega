@@ -3,12 +3,13 @@
 
 import type { Database } from 'bun:sqlite'
 import { storedMachineNames } from '../../../shared/machine-config.ts'
-import { questionOpenSql } from './question-open.ts'
 import {
-  classifyRunIdentifier,
   decideMachineLabel,
   type MachineIdentifierNames,
-} from './run-identifier-grammar.ts'
+  MachineLabelRefusal,
+} from '../record/machine-name.ts'
+import { questionOpenSql } from './question-open.ts'
+import { classifyRunIdentifier } from './run-identifier-grammar.ts'
 
 export type ParsedAnswerIdentifier =
   | { kind: 'question-number'; number: number }
@@ -58,16 +59,11 @@ function explicitQuestionRemedy(questionNumbers: number[]): string {
 
 export function parseAnswerIdentifier(
   input: string | number,
-  names: MachineIdentifierNames | null = (() => {
-    const stored = storedMachineNames()
-    return stored
-      ? { shortName: stored.shortName, formerShortNames: stored.formerShortNames ?? [] }
-      : null
-  })(),
+  names: MachineIdentifierNames | null = storedMachineNames(),
 ): ParsedAnswerIdentifier {
   const original = String(input)
   const label = decideMachineLabel(original, names)
-  if (label.kind === 'refused') throw new Error(label.reason)
+  if (label.kind === 'refused') throw new MachineLabelRefusal(label.reason)
   const given = label.kind === 'bare' ? label.remainder : original
   const question = given.match(/^q([0-9]+)$/)
   if (question) {

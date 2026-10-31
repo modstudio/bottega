@@ -188,7 +188,7 @@ export async function machineInit(
   label = hostname(),
   client = configClient(),
   env: ConfigEnvironment = process.env,
-  names?: StoredMachineNames,
+  names?: Pick<StoredMachineNames, 'shortName' | 'displayName'>,
 ): Promise<string> {
   const pinned = readHostedConfigIdentity(env)
   const current = await client.whoami()

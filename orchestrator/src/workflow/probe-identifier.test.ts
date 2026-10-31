@@ -18,7 +18,7 @@ test('parses probe and exec artifact references in one owner', () => {
   expect(parseProbeArtifact('task:DEV-1708')).toBeUndefined()
 })
 
-test('parses current and former machine labels and refuses foreign labels', () => {
+test('composes machine labels with probe and exec grammar', () => {
   const names = { shortName: 'mine', formerShortNames: ['old-mine'] }
   expect(parseProbeArtifact('probe:mine/7', names)?.identifier).toEqual({
     kind: 'number',
@@ -31,8 +31,6 @@ test('parses current and former machine labels and refuses foreign labels', () =
   expect(() => parseProbeArtifact('probe:other/7', names)).toThrow(
     "acts only on this machine's (`mine`) rows",
   )
-  expect(() => parseProbeArtifact('probe:mine/7', null)).toThrow('has no short name')
-  expect(() => parseProbeArtifact('probe:Bad/7', names)).toThrow('invalid probe identifier')
 })
 
 test('resolves a probe number or UUID to the probe UUID', () => {

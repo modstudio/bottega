@@ -7,15 +7,8 @@ import {
   parseRunIdentifier as parseGrammar,
 } from './run-identifier-grammar.ts'
 
-function machineIdentifierNames() {
-  const stored = storedMachineNames()
-  return stored
-    ? { shortName: stored.shortName, formerShortNames: stored.formerShortNames ?? [] }
-    : null
-}
-
 export const classifyRunIdentifier = (input: string | number) =>
-  classifyGrammar(input, machineIdentifierNames())
+  classifyGrammar(input, storedMachineNames())
 
 export const parseRunIdentifier = (input: string | number) =>
-  parseGrammar(input, machineIdentifierNames())
+  parseGrammar(input, storedMachineNames())

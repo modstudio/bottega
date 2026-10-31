@@ -8,7 +8,9 @@ import { displayNameRefusal, shortNameRefusal } from './machine-name.ts'
 import { recordApiClient } from './record-api-client.ts'
 import { syncRecord } from './record-sync.ts'
 
-export async function claimCurrentMachineNames(names: StoredMachineNames): Promise<void> {
+type CurrentMachineNames = Pick<StoredMachineNames, 'shortName' | 'displayName'>
+
+export async function claimCurrentMachineNames(names: CurrentMachineNames): Promise<void> {
   const result = await syncRecord({ identity: { id: machineId(), ...names } })
   if (result.machineNameRefusal) throw new Error(result.machineNameRefusal)
   writeMachineNames(names)
