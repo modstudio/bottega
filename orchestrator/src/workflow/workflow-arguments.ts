@@ -23,11 +23,12 @@ export function refuseUnknownWorkflowArgument(
   slug: string,
   definition: WorkflowDefinition,
   args: Record<string, string>,
+  context = '',
 ): void {
   const declared = definition.arguments.map(({ name }) => name)
   const unknown = Object.keys(args).find((name) => !declared.includes(name))
   if (unknown)
     throw new Error(
-      `workflow "${slug}" has no argument "${unknown}"; declared arguments: ${declared.join(', ') || '(none)'}`,
+      `${context ? `${context}: ` : ''}workflow "${slug}" has no argument "${unknown}"; declared arguments: ${declared.join(', ') || '(none)'}`,
     )
 }

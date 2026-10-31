@@ -47,6 +47,7 @@ import {
   workflowModeStepError,
 } from './workflow-step-sequences.ts'
 import {
+  keylessTrackerActionMetadata,
   resolveWorkflowStepExpectedStatus,
   resolveWorkflowStepFloors,
   resolveWorkflowStepTemplates,
@@ -942,11 +943,13 @@ export function getWorkflowStep(
     effectiveAutonomy,
   )
   const values: Record<string, unknown> = { project: projectName, ...args, ...facts }
+  const keylessTrackerActionPaths = new Set<string>()
   const resolve = (template: string) =>
     resolveWorkflowTemplate(template, values, {
       argumentNames: new Set(definition.arguments.map(({ name }) => name)),
       project: project.name,
       key: args.key,
+      onKeylessTrackerAction: (path) => keylessTrackerActionPaths.add(path),
     })
   const templates = resolveWorkflowStepTemplates(step, resolve)
   const successor = ({ steps }: { steps: ReturnType<typeof expandWorkflowModeSteps> }) => {
@@ -981,6 +984,7 @@ export function getWorkflowStep(
     mode: selectedMode?.mode.slug,
     facts,
     body: templates.body,
+    ...keylessTrackerActionMetadata(keylessTrackerActionPaths),
     next,
     ...cursorAutonomyOutput(autonomy),
   }

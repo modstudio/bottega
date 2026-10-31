@@ -68,6 +68,7 @@ import {
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
+import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import {
   bindCloseSelfRuling,
@@ -742,8 +743,8 @@ function nextWorkflowStepImpl(
   mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
-  const adoptionTaskRecordId = context.adoptionTaskRecordId ?? context.taskRecordId
-  adoptWorkflowTask(row, evidence.task, adoptionTaskRecordId, d, live)
+  refuseKeylessStepClose(row, evidence.task, d, live)
+  adoptWorkflowTask(row, evidence.task, context.adoptionTaskRecordId ?? context.taskRecordId, d)
   const composition = cursorComposition(row, d, live)
   if (!note?.trim()) {
     const step = composition.steps[row.ordinal]!

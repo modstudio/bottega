@@ -8,7 +8,7 @@ export function workflowCursorReference(cursor: number): { cli: string; mcp: str
 }
 
 export const workflowTaskBindingCommand = (row: { id: number; workflow_slug: string }) =>
-  `${PLATFORM_SLUG} workflow next ${row.workflow_slug} --cursor ${row.id} --task <KEY>`
+  `${PLATFORM_SLUG} workflow next ${row.workflow_slug}${workflowCursorReference(row.id).cli} --task <KEY>`
 
 export function formatCursorOpened(input: {
   cursor: number
