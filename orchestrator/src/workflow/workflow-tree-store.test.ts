@@ -871,6 +871,54 @@ describe('promoteMatchingWorkflowTreeDrafts', () => {
     expect(showResolvedWorkflow(tree.workflows[0]!.slug, undefined, null, d).n).toBe(workflow.n)
   })
 
+  test('a removed production step names the workflow draft promotion before promote-tree', async () => {
+    const d = database()
+    d.exec('DELETE FROM record_install_binding')
+    const tree = structuredClone(productionWorkflowTree({ database: d }))
+    const workflow = tree.workflows[0]!
+    const removedStep = workflow.definition.modes
+      .flatMap(({ steps }) => steps)
+      .find((step): step is string => typeof step === 'string')!
+    tree.steps = tree.steps.filter(({ slug }) => slug !== removedStep)
+    workflow.definition.modes = workflow.definition.modes.map((mode) => ({
+      ...mode,
+      steps: mode.steps.filter((step) => step !== removedStep),
+    }))
+    const catalogueDraft = setStepCatalogueLocal(
+      { steps: tree.steps, sequences: tree.sequences },
+      'drop workflow step fixture',
+      'test',
+      d,
+    )
+    const workflowDraft = setWorkflowLocal(
+      workflow.slug,
+      workflow.definition,
+      'drop workflow step reference fixture',
+      'test',
+      d,
+    )
+
+    const refusal = await promoteMatchingWorkflowTreeDrafts({
+      tree,
+      reason: 'promote matching removal',
+      author: 'test',
+      database: d,
+    }).then(
+      () => null,
+      (cause: unknown) => cause,
+    )
+
+    const workflowRemedy = `${PLATFORM_SLUG} workflow promote ${workflow.slug} ${workflowDraft.n}`
+    const treeRemedy = `${PLATFORM_SLUG} workflow promote-tree`
+    expect(refusal).toBeInstanceOf(Error)
+    if (!(refusal instanceof Error)) throw new Error('expected catalogue promotion refusal')
+    expect(refusal.message).toContain(workflowRemedy)
+    expect(refusal.message.indexOf(workflowRemedy)).toBeLessThan(
+      refusal.message.indexOf(treeRemedy),
+    )
+    expect(productionStepCatalogue(d).n).not.toBe(catalogueDraft.n)
+  })
+
   test('promotes nothing when the tree already matches production', async () => {
     const d = database()
     d.exec('DELETE FROM record_install_binding')

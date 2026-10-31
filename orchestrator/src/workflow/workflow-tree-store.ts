@@ -8,6 +8,7 @@ import { currentRecordWriteDecision } from '../record/record-write-authority.ts'
 import {
   type CatalogueSequence,
   type CatalogueStep,
+  catalogueProductionReferenceRefusal,
   importableStepCatalogueErrors,
   importStepCatalogue,
   promoteStepCatalogue,
@@ -25,7 +26,9 @@ import {
 } from './workflow-tree.ts'
 import {
   planWorkflowTreePromotion,
+  type WorkflowTreePromotion,
   type WorkflowTreePromotionPlan,
+  workflowTreePromotionRemedyLines,
 } from './workflow-tree-promotion.ts'
 import {
   importWorkflow,
@@ -182,13 +185,48 @@ function newestDraftRows(
   return { catalogueRow, workflowRows }
 }
 
-export async function promoteMatchingWorkflowTreeDrafts(input: {
+type PromoteMatchingWorkflowTreeDraftsInput = {
   tree: WorkflowTreeStore
   reason: string
   author?: string
   database?: Database
   project?: string | null
-}): Promise<WorkflowTreePromotionPlan> {
+}
+
+async function promoteCatalogueTreeDraft(
+  item: Extract<WorkflowTreePromotion, { kind: 'catalogue' }>,
+  input: PromoteMatchingWorkflowTreeDraftsInput,
+  database: Database,
+  decision: WorkflowTreePromotionPlan,
+  local: boolean,
+): Promise<void> {
+  try {
+    if (local) promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
+    else
+      await promoteStepCatalogue(
+        item.n,
+        input.reason,
+        input.author,
+        database,
+        input.project ?? undefined,
+      )
+  } catch (cause) {
+    const refusal = catalogueProductionReferenceRefusal(cause)
+    if (!refusal) throw cause
+    const remedy = workflowTreePromotionRemedyLines(
+      refusal.workflowSlugs,
+      decision.promotions,
+      refusal.otherErrorCount,
+      PLATFORM_SLUG,
+    )
+    const message = cause instanceof Error ? cause.message : String(cause)
+    throw new Error(`${message}\n${remedy.map((line) => `- ${line}`).join('\n')}`, { cause })
+  }
+}
+
+export async function promoteMatchingWorkflowTreeDrafts(
+  input: PromoteMatchingWorkflowTreeDraftsInput,
+): Promise<WorkflowTreePromotionPlan> {
   const database = input.database ?? writableDb()
   const spaceId = workflowReadSpaceFor(database, input.project ?? null)
   const { catalogueRow, workflowRows } = newestDraftRows(database, spaceId)
@@ -212,17 +250,9 @@ export async function promoteMatchingWorkflowTreeDrafts(input: {
   })
   for (const item of decision.promotions) {
     const local = currentRecordWriteDecision(database) === 'local-authoritative'
-    if (item.kind === 'catalogue') {
-      if (local) promoteStepCatalogueLocal(item.n, input.reason, input.author, database)
-      else
-        await promoteStepCatalogue(
-          item.n,
-          input.reason,
-          input.author,
-          database,
-          input.project ?? undefined,
-        )
-    } else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
+    if (item.kind === 'catalogue')
+      await promoteCatalogueTreeDraft(item, input, database, decision, local)
+    else if (local) promoteWorkflowLocal(item.slug, item.n, input.reason, input.author, database)
     else
       await promoteWorkflow(
         item.slug,

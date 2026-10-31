@@ -62,9 +62,15 @@ export const sharedPromotionTarget = (
 ): string =>
   `space ${spaceId ?? 'local'} catalogue ${disposition} planned version ${plannedVersion}`
 
-export const sharedPromotionRefusal = (slug: string, target: string, reason: string): Error =>
+export const sharedPromotionRefusal = (
+  slug: string,
+  target: string,
+  reason: string,
+  cause?: unknown,
+): Error =>
   new Error(
     `refusing shared workflow promotion for "${slug}": ${target} cannot carry the workflow: ${reason}`,
+    { cause },
   )
 
 const pinsSharedPromotion = (

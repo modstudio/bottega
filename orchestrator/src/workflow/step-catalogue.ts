@@ -740,7 +740,7 @@ function catalogueModePromotionErrors(
   available: ReadonlySet<string>,
   currentSequences: readonly CatalogueSequence[],
   proposedSequences: readonly CatalogueSequence[],
-): string[] {
+): { errors: string[]; removedStepErrorCount: number } {
   const entries = mode.steps ?? []
   const current = inspectWorkflowSteps(entries, currentSequences, available)
   const errors = current.missingSteps.length
@@ -761,34 +761,80 @@ function catalogueModePromotionErrors(
       `${workflowSlug} mode ${mode.slug ?? ''}: sequence "${invalid.sequence}" cannot omit non-member step "${invalid.step}"`,
     )
   }
-  return errors
+  return { errors, removedStepErrorCount: current.missingSteps.length ? 1 : 0 }
 }
 
 function cataloguePromotionReferenceErrors(
   definition: StepCatalogueDefinition,
   currentSequences: readonly CatalogueSequence[],
   rows: { slug: string; definition: string }[],
-): string[] {
+): { errors: string[]; workflowSlugs: string[]; otherErrorCount: number } {
   const available = new Set(definition.steps.map((step) => step.slug))
   const proposedSequences = definition.sequences ?? []
-  return rows.flatMap((row) => {
+  const references = rows.flatMap((row) => {
     const workflow = JSON.parse(row.definition) as ProductionWorkflowDefinition
     if (workflow.steps) return [] // Legacy inline versions remain valid history and self-contained.
-    return (workflow.modes ?? []).flatMap((mode) => [
-      ...catalogueModePromotionErrors(
+    const modes = (workflow.modes ?? []).map((mode) => {
+      const promotion = catalogueModePromotionErrors(
         row.slug,
         mode,
         available,
         currentSequences,
         proposedSequences,
-      ),
-      ...workflowConditionErrors(
+      )
+      const conditionErrors = workflowConditionErrors(
         mode.slug ?? '',
         inspectWorkflowSteps(mode.steps ?? [], proposedSequences, available).detailed,
         definition.steps,
-      ),
-    ])
+      )
+      return {
+        errors: [...promotion.errors, ...conditionErrors],
+        removedStepErrorCount: promotion.removedStepErrorCount,
+      }
+    })
+    const errors = modes.flatMap((mode) => mode.errors)
+    const removedStepErrorCount = modes.reduce(
+      (count, mode) => count + mode.removedStepErrorCount,
+      0,
+    )
+    return errors.length ? [{ slug: row.slug, errors, removedStepErrorCount }] : []
   })
+  return {
+    errors: references.flatMap(({ errors }) => errors),
+    workflowSlugs: references.flatMap(({ slug, removedStepErrorCount }) =>
+      removedStepErrorCount ? [slug] : [],
+    ),
+    otherErrorCount: references.reduce(
+      (count, reference) => count + reference.errors.length - reference.removedStepErrorCount,
+      0,
+    ),
+  }
+}
+
+export class CatalogueProductionReferenceRefusal extends Error {
+  readonly workflowSlugs: string[]
+  readonly otherErrorCount: number
+
+  constructor(workflowSlugs: string[], errors: string[], otherErrorCount = 0) {
+    super(
+      `step catalogue changes references used by production workflows:\n${errors.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
+    )
+    this.workflowSlugs = workflowSlugs
+    this.otherErrorCount = otherErrorCount
+  }
+}
+
+export function catalogueProductionReferenceRefusal(
+  error: unknown,
+): CatalogueProductionReferenceRefusal | null {
+  const seen = new Set<unknown>()
+  let current = error
+  while (current instanceof Error && !seen.has(current)) {
+    if (current instanceof CatalogueProductionReferenceRefusal) return current
+    seen.add(current)
+    current = current.cause
+  }
+  return null
 }
 
 export function promoteStepCatalogue(
@@ -857,9 +903,11 @@ function cataloguePromotionPreflight(
     ? workflowsAfterReplacement(currentWorkflowRows, replacement.slug, replacement.definition)
     : currentWorkflowRows
   const missing = cataloguePromotionReferenceErrors(definition, currentSequences, rows)
-  if (missing.length)
-    throw new Error(
-      `step catalogue changes references used by production workflows:\n${missing.map((line) => `- ${line}`).join('\n')}\nfix: keep the named sequences and reached steps, or promote workflow drafts that remove those references first`,
+  if (missing.errors.length)
+    throw new CatalogueProductionReferenceRefusal(
+      missing.workflowSlugs,
+      missing.errors,
+      missing.otherErrorCount,
     )
   const workflows = rows.map((row) => ({
     slug: row.slug,
