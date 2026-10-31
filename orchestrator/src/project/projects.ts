@@ -563,6 +563,11 @@ function keyPrefixProblems(value: unknown, context: ProjectSettingsValidationCon
   return problems
 }
 
+function workerCheckProblems(value: unknown): string[] {
+  if (value === undefined || (typeof value === 'string' && value.trim())) return []
+  return ['workerCheck must be a non-empty string']
+}
+
 export function validateProjectSettings(
   settings: ProjectSettings,
   mode: SettingsObjectMode,
@@ -594,15 +599,9 @@ export function validateProjectSettings(
     ...visibilityProblems(settings.visibility),
     ...focusedTestsProblems(settings.focusedTests),
     ...gateInputProblems(settings.gateInput),
+    ...workerCheckProblems(settings.workerCheck),
     ...projectAgentKeyProblems(settings.agentKeys),
   ]
-
-  if (
-    settings.workerCheck !== undefined &&
-    (typeof settings.workerCheck !== 'string' || !settings.workerCheck.trim())
-  ) {
-    problems.push('workerCheck must be a non-empty string')
-  }
 
   if (invalidOptionalStringArray(settings.secretPaths)) {
     problems.push('secretPaths must be an array of non-empty path strings')

@@ -561,6 +561,18 @@ function registerRunCheckTool(input: {
   )
 }
 
+function registerWorkerExecutionTools(input: Parameters<typeof registerRunCheckTool>[0]): void {
+  if (checkToolAvailable(input.runId, input.token)) registerRunCheckTool(input)
+  if (focusedTestToolAvailable(input.runId, input.token)) {
+    registerFocusedTestTool({
+      registerTool: input.registerTool,
+      runId: input.runId,
+      token: input.token,
+      text: input.text,
+    })
+  }
+}
+
 function askServerState(runId: string, dependencies: AskServerDependencies) {
   return [new Set<string>(), dependencies.lifecycle ?? askLifecycle(runId), [] as string[]] as const
 }
@@ -661,19 +673,14 @@ export function createAskMcpServer(
   )
 
   // Readers and inline jobs do not receive an execution surface.
-  if (checkToolAvailable(runId, token)) {
-    registerRunCheckTool({
-      registerTool,
-      runId,
-      token,
-      pendingResults: pendingGateResults,
-      dependencies: dependencies.gate,
-      text,
-    })
-  }
-  if (focusedTestToolAvailable(runId, token)) {
-    registerFocusedTestTool({ registerTool, runId, token, text })
-  }
+  registerWorkerExecutionTools({
+    registerTool,
+    runId,
+    token,
+    pendingResults: pendingGateResults,
+    dependencies: dependencies.gate,
+    text,
+  })
 
   if (gateResultToolAvailable(runId, token)) {
     registerTool(

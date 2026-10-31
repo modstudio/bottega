@@ -188,6 +188,50 @@ function validateFocusedTestCommand(
   }
 }
 
+function validateFocusedTestPatterns(input: {
+  value: unknown
+  location: string
+  multipleRunners: boolean
+  claimedPatterns: Set<string>
+}): { patterns: string[] | undefined; problems: string[] } {
+  if (input.value === undefined) {
+    return {
+      patterns: undefined,
+      problems: input.multipleRunners
+        ? [`${input.location}.patterns is required when focusedTests declares multiple runners`]
+        : [],
+    }
+  }
+  if (
+    !Array.isArray(input.value) ||
+    input.value.length === 0 ||
+    input.value.some((pattern) => typeof pattern !== 'string' || !pattern.trim())
+  ) {
+    return {
+      patterns: undefined,
+      problems: [`${input.location}.patterns must be a non-empty array of non-empty strings`],
+    }
+  }
+  const patterns = input.value.map((pattern) => String(pattern).trim())
+  const problems: string[] = []
+  for (const pattern of patterns) {
+    if (input.claimedPatterns.has(pattern)) {
+      problems.push(
+        `focusedTests path pattern ${JSON.stringify(pattern)} is claimed by two runners`,
+      )
+    }
+    input.claimedPatterns.add(pattern)
+    try {
+      new Bun.Glob(pattern)
+    } catch {
+      problems.push(
+        `${input.location}.patterns contains invalid pattern ${JSON.stringify(pattern)}`,
+      )
+    }
+  }
+  return { patterns, problems }
+}
+
 /** The runner and selector parts of one `focusedTests` value, validated independently. */
 function focusedTestDeclarationParts(value: unknown): {
   runners: FocusedTestRunner[]
@@ -230,37 +274,13 @@ function focusedTestDeclarationParts(value: unknown): {
       const declared = entry as Record<string, unknown>
       const affected = validateFocusedTestCommand(declared.affected, `${location}.affected`)
       problems.push(...affected.problems)
-      let patterns: string[] | undefined
-      if (declared.patterns !== undefined) {
-        if (
-          !Array.isArray(declared.patterns) ||
-          declared.patterns.length === 0 ||
-          declared.patterns.some((pattern) => typeof pattern !== 'string' || !pattern.trim())
-        ) {
-          problems.push(`${location}.patterns must be a non-empty array of non-empty strings`)
-        } else {
-          patterns = declared.patterns.map((pattern) => String(pattern).trim())
-          for (const pattern of patterns) {
-            if (claimedPatterns.has(pattern)) {
-              problems.push(
-                `focusedTests path pattern ${JSON.stringify(pattern)} is claimed by two runners`,
-              )
-            }
-            claimedPatterns.add(pattern)
-            try {
-              new Bun.Glob(pattern)
-            } catch {
-              problems.push(
-                `${location}.patterns contains invalid pattern ${JSON.stringify(pattern)}`,
-              )
-            }
-          }
-        }
-      } else if (declaredRunners.length > 1) {
-        problems.push(
-          `${location}.patterns is required when focusedTests declares multiple runners`,
-        )
-      }
+      const { patterns, problems: patternProblems } = validateFocusedTestPatterns({
+        value: declared.patterns,
+        location,
+        multipleRunners: declaredRunners.length > 1,
+        claimedPatterns,
+      })
+      problems.push(...patternProblems)
       if (command.command && !affected.problems.length) {
         runners.push({
           ...command.command,
