@@ -43,7 +43,7 @@ export function register(program: Command): void {
     .action((project, options) => {
       if (!project)
         throw new Error(
-          `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"]`,
+          `${PLATFORM_SLUG} release run <project> [--rung <name>] [--rollback "<reason>"] [--behind-trunk "<reason>"] [--redeploy "<reason>"]`,
         )
       const result = releaseProject(
         project,

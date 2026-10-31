@@ -350,6 +350,30 @@ describe('project workflow injection', () => {
     ).toEqual([expect.stringContaining('release.rungs.0.live: Too small')])
   })
 
+  test('requires a live probe when a rung declares required changed paths', () => {
+    expect(
+      validateProjectSettings(
+        {
+          release: {
+            ...release,
+            rungs: [
+              {
+                ...release.rungs[0]!,
+                live: undefined,
+                requiredWhenChanged: ['shared/record/migrations/**'],
+              },
+            ],
+          },
+        },
+        'strict',
+      ),
+    ).toEqual([
+      expect.stringContaining(
+        'release rung "production" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged',
+      ),
+    ])
+  })
+
   test('refuses repeated rung names and a non-boolean on-demand marker', () => {
     expect(
       validateProjectSettings(

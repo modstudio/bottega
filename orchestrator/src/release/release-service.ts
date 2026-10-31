@@ -17,6 +17,7 @@ import {
   readLiveCommit,
 } from './live-reading.ts'
 import {
+  alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
@@ -155,32 +156,29 @@ function checkoutFacts(path: string, branch: string) {
   }
 }
 
+function newestSuccessfulRelease(
+  project: string,
+  rung: string,
+  liveOnly: boolean,
+): ReleaseLedgerRow | null {
+  const livePredicate = liveOnly ? ' AND live_matches_candidate=1' : ''
+  return (
+    writableDb()
+      .query<ReleaseLedgerRow, [string, string]>(
+        `SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0${livePredicate} ORDER BY started_at DESC,record_id DESC LIMIT 1`,
+      )
+      .get(project, rung) ?? null
+  )
+}
+
 /** Return the candidate commit from a rung's newest successful ledger row. */
 export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
-  const row = writableDb()
-    .query<{ candidate_commit: string }, [string, string]>(
-      'SELECT candidate_commit FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0 ORDER BY started_at DESC,record_id DESC LIMIT 1',
-    )
-    .get(project, rung)
-  return row?.candidate_commit ?? null
+  return newestSuccessfulRelease(project, rung, false)?.candidate_commit ?? null
 }
 
 /** Return the newest candidate confirmed live by a successful release of this rung. */
 export function newestSuccessfulLiveReleaseCommit(project: string, rung: string): string | null {
-  const row = writableDb()
-    .query<{ candidate_commit: string }, [string, string]>(
-      'SELECT candidate_commit FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND exit_code=0 AND live_matches_candidate=1 ORDER BY started_at DESC,record_id DESC LIMIT 1',
-    )
-    .get(project, rung)
-  return row?.candidate_commit ?? null
-}
-
-function successfulLiveReleaseAt(project: string, rung: string, candidate: string) {
-  return writableDb()
-    .query<ReleaseLedgerRow, [string, string, string]>(
-      'SELECT * FROM release_ledger WHERE project_record_id=(SELECT record_id FROM project WHERE name=?) AND rung=? AND candidate_commit=? AND exit_code=0 AND live_matches_candidate=1 ORDER BY started_at DESC,record_id DESC LIMIT 1',
-    )
-    .get(project, rung, candidate)
+  return newestSuccessfulRelease(project, rung, true)?.candidate_commit ?? null
 }
 
 function liveReadingRefusal(
@@ -323,11 +321,12 @@ export type ReleaseResult = {
 }
 
 function validateReleaseReasons(
-  reasons: readonly [field: 'rollback' | 'behind-trunk', reason: string | undefined][],
+  reasons: readonly [field: 'rollback' | 'behind-trunk' | 'redeploy', reason: string | undefined][],
 ): void {
   for (const [field, reason] of reasons) {
     const decision = releaseReasonDecision(
       field,
+      reason,
       reason !== undefined && containsSecretShaped(reason),
     )
     if (!decision.ok) throw new Error(decision.message)
@@ -344,13 +343,8 @@ export function releaseProject(
   validateReleaseReasons([
     ['rollback', rollbackReason],
     ['behind-trunk', behindTrunkReason],
+    ['redeploy', redeployReason],
   ])
-  if (redeployReason !== undefined && containsSecretShaped(redeployReason)) {
-    throw new Error('redeploy reason looks like a secret; replace it with a non-secret explanation')
-  }
-  if (redeployReason !== undefined && !redeployReason.trim()) {
-    throw new Error('redeploy reason must be non-empty; pass --redeploy "<reason>"')
-  }
   const { project, selected, deploy, trunk } = releaseTarget(projectName, requestedRung)
   const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
   if (!lock.ok) throw new Error(lock.message)
@@ -361,26 +355,34 @@ export function releaseProject(
       const checkout = checkoutFacts(project.path, selected.branch)
       const checkoutDecision = checkoutReleaseDecision(checkout)
       if (!checkoutDecision.ok) throw new Error(checkoutDecision.message)
-      const alreadyLive = successfulLiveReleaseAt(projectName, selected.name, checkout.head)
-      if (alreadyLive && redeployReason === undefined) {
+      const newestLive = newestSuccessfulRelease(projectName, selected.name, true)
+      if (
+        alreadyLiveReleaseDecision({
+          newestLive: newestLive?.candidate_commit ?? null,
+          candidate: checkout.head,
+          redeployReason,
+          rollbackReason,
+        }) &&
+        newestLive
+      ) {
         return {
-          id: alreadyLive.number,
+          id: newestLive.number,
           project: projectName,
           rung: selected.name,
           branch: selected.branch,
           deployed: checkout.head,
           trunk,
-          commitsBehindTrunk: alreadyLive.commits_behind_trunk ?? 0,
-          behindTrunkReason: alreadyLive.behind_trunk_reason,
-          liveBefore: alreadyLive.live_commit_before,
+          commitsBehindTrunk: newestLive.commits_behind_trunk ?? 0,
+          behindTrunkReason: newestLive.behind_trunk_reason,
+          liveBefore: newestLive.live_commit_before,
           baseline: false,
-          rollback: Boolean(alreadyLive.rollback),
-          rollbackReason: alreadyLive.rollback_reason,
+          rollback: Boolean(newestLive.rollback),
+          rollbackReason: newestLive.rollback_reason,
           exitCode: 0,
           outputTail: `rung ${selected.name} is already live at ${checkout.head}`,
-          liveAfter: alreadyLive.live_commit_after,
+          liveAfter: newestLive.live_commit_after,
           liveMatchesCandidate: true,
-          warning: alreadyLive.warning,
+          warning: newestLive.warning,
           alreadyLive: true,
         }
       }

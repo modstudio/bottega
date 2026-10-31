@@ -66,6 +66,13 @@ const releaseSchema = (mode: SettingsObjectMode) =>
       .superRefine((rungs, context) => {
         const seen = new Set<string>()
         for (const [index, rung] of rungs.entries()) {
+          if (rung.requiredWhenChanged !== undefined && rung.live === undefined) {
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'requiredWhenChanged'],
+              message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
+            })
+          }
           if (seen.has(rung.name)) {
             context.addIssue({
               code: 'custom',

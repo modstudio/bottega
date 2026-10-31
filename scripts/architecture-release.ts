@@ -28,6 +28,7 @@ export const releaseModules = [
       'shared/brand.ts',
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/projects.ts',
+      'orchestrator/src/review/review-declared-globs.ts',
       'orchestrator/src/release/release-service.ts',
     ],
     typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],

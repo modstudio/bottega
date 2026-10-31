@@ -93,6 +93,66 @@ describe('decideRequiredRungs', () => {
 })
 
 describe('releaseRequiredRungs', () => {
+  test('does not inspect changes when no rung declares required paths', () => {
+    let inspected = false
+    const report = releaseRequiredRungs({
+      project: {
+        ...project,
+        settings: {
+          ...project.settings,
+          release: { ...project.settings.release!, rungs: [] },
+        },
+      },
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        changedPaths: () => {
+          inspected = true
+          return []
+        },
+      }),
+    })
+    expect(report).toEqual({ required: [], releases: [], satisfied: true })
+    expect(inspected).toBe(false)
+  })
+
+  test('contains a changed-path failure and names every declaring rung', () => {
+    const report = releaseRequiredRungs({
+      project: {
+        ...project,
+        settings: {
+          ...project.settings,
+          release: {
+            ...project.settings.release!,
+            rungs: [
+              ...project.settings.release!.rungs,
+              {
+                name: 'worker',
+                branch: 'main',
+                requiredWhenChanged: ['worker/**'],
+              },
+            ],
+          },
+        },
+      },
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        changedPaths: () => {
+          throw new Error('landing-branch fetch failed')
+        },
+      }),
+    })
+    expect(report).toEqual({
+      required: ['hosted-api', 'worker'],
+      releases: [
+        expect.objectContaining({ rung: 'hosted-api', outputTail: 'landing-branch fetch failed' }),
+        expect.objectContaining({ rung: 'worker', outputTail: 'landing-branch fetch failed' }),
+      ],
+      satisfied: false,
+    })
+  })
+
   test('releases a required rung and requires a matching live check', () => {
     const report = releaseRequiredRungs({
       project,
@@ -186,6 +246,26 @@ describe('releaseRequiredRungs', () => {
       outputTail: 'already live at newer',
     })
     expect(deployed).toBe(false)
+  })
+
+  test('deploys when the newest live release does not contain the merge', () => {
+    let deployed = false
+    const report = releaseRequiredRungs({
+      project,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        newestLive: () => 'older',
+        contains: () => false,
+        release: () => {
+          deployed = true
+          return successfulRelease()
+        },
+      }),
+    })
+    expect(report.satisfied).toBe(true)
+    expect(report.releases[0]?.deployed).toBe(true)
+    expect(deployed).toBe(true)
   })
 
   test('a failed required rung is retried and may then succeed', () => {

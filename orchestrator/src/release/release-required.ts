@@ -2,8 +2,9 @@
 /** Decides and runs release rungs made mandatory by the merged change. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { targetGitEnvironment } from '../git/git-environment.ts'
+import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
+import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
 import {
   newestSuccessfulLiveReleaseCommit,
   type ReleaseResult,
@@ -21,35 +22,8 @@ export function decideRequiredRungs(
   changedPaths: readonly string[],
 ): string[] {
   return rungs
-    .filter((rung) =>
-      rung.requiredWhenChanged?.some((pattern) => {
-        const glob = new Bun.Glob(pattern)
-        return changedPaths.some((path) => glob.match(path))
-      }),
-    )
+    .filter((rung) => declaredGlobsMatch(changedPaths, rung.requiredWhenChanged ?? []))
     .map((rung) => rung.name)
-}
-
-type CommandResult = { exitCode: number; output: string }
-
-function git(cwd: string, args: string[]): CommandResult {
-  const result = Bun.spawnSync(['git', ...args], {
-    cwd,
-    env: targetGitEnvironment(cwd),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  })
-  return {
-    exitCode: result.exitCode,
-    output: [result.stdout.toString(), result.stderr.toString()].filter(Boolean).join('').trim(),
-  }
-}
-
-function successfulGit(cwd: string, args: string[], label: string): string {
-  const result = git(cwd, args)
-  if (result.exitCode !== 0)
-    throw new Error(`${label} failed: ${result.output || `exit ${result.exitCode}`}`)
-  return result.output
 }
 
 type RequiredRungRelease = {
@@ -76,41 +50,56 @@ export type RequiredReleaseRunner = {
 
 const requiredReleaseRunner: RequiredReleaseRunner = {
   changedPaths(project, mergeCommit) {
-    const trunk = project.settings.trunk!
-    successfulGit(project.path, ['fetch', 'origin', trunk], 'landing-branch fetch')
-    return successfulGit(
+    const trunk = project.settings.trunk
+    if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
+    git(
+      ['fetch', 'origin', trunk],
       project.path,
+      targetGitEnvironment(project.path),
+      ' during landing-branch fetch',
+    )
+    return git(
       ['diff', '--name-only', `${mergeCommit}^1`, mergeCommit],
-      'merge first-parent diff',
+      project.path,
+      targetGitEnvironment(project.path),
+      ' during merge first-parent diff',
     )
       .split('\n')
       .filter(Boolean)
   },
   prepareMain(project) {
-    const trunk = project.settings.trunk!
-    const branch = successfulGit(
-      project.path,
+    const trunk = project.settings.trunk
+    if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
+    const branch = git(
       ['branch', '--show-current'],
-      'main checkout branch lookup',
+      project.path,
+      targetGitEnvironment(project.path),
+      ' during main checkout branch lookup',
     )
     if (branch !== trunk) {
       throw new Error(
         `registered main checkout is on ${branch || 'detached HEAD'}, not ${trunk}; switch it to ${trunk}`,
       )
     }
-    const dirty = successfulGit(project.path, ['status', '--porcelain'], 'main checkout status')
-    if (dirty) throw new Error('registered main checkout is dirty; clean it')
-    successfulGit(
+    const dirty = git(
+      ['status', '--porcelain'],
       project.path,
+      targetGitEnvironment(project.path),
+      ' during main checkout status',
+    )
+    if (dirty) throw new Error('registered main checkout is dirty; clean it')
+    git(
       ['merge', '--ff-only', `origin/${trunk}`],
-      'main checkout fast-forward',
+      project.path,
+      targetGitEnvironment(project.path),
+      ' during main checkout fast-forward',
     )
   },
   newestLive(project, rung) {
     return newestSuccessfulLiveReleaseCommit(project.name, rung)
   },
   contains(project, ancestor, descendant) {
-    return git(project.path, ['merge-base', '--is-ancestor', ancestor, descendant]).exitCode === 0
+    return gitResult(['merge-base', '--is-ancestor', ancestor, descendant], project.path).ok
   },
   release(project, rung) {
     return releaseProject(project.name, rung, undefined, undefined)
@@ -129,7 +118,20 @@ export function releaseRequiredRungs(input: {
 }): RequiredReleaseReport {
   const runner = input.runner ?? requiredReleaseRunner
   const rungs = input.project.settings.release?.rungs ?? []
-  const required = decideRequiredRungs(rungs, runner.changedPaths(input.project, input.mergeCommit))
+  const declared = rungs.filter((rung) => rung.requiredWhenChanged !== undefined)
+  if (declared.length === 0) return { required: [], releases: [], satisfied: true }
+  let required: string[]
+  try {
+    required = decideRequiredRungs(rungs, runner.changedPaths(input.project, input.mergeCommit))
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    const names = declared.map((rung) => rung.name)
+    return {
+      required: names,
+      releases: names.map((rung) => failure(rung, detail)),
+      satisfied: false,
+    }
+  }
   if (required.length === 0) return { required, releases: [], satisfied: true }
   if (!input.releaseRequired) {
     return {
@@ -147,17 +149,17 @@ export function releaseRequiredRungs(input: {
     return { required, releases: required.map((rung) => failure(rung, detail)), satisfied: false }
   }
   const releases = required.map((rung): RequiredRungRelease => {
-    const live = runner.newestLive(input.project, rung)
-    if (live && runner.contains(input.project, input.mergeCommit, live)) {
-      return {
-        rung,
-        deployExit: 0,
-        outputTail: `already live at ${live}`,
-        satisfied: true,
-        deployed: false,
-      }
-    }
     try {
+      const live = runner.newestLive(input.project, rung)
+      if (live && runner.contains(input.project, input.mergeCommit, live)) {
+        return {
+          rung,
+          deployExit: 0,
+          outputTail: `already live at ${live}`,
+          satisfied: true,
+          deployed: false,
+        }
+      }
       const result = runner.release(input.project, rung)
       return {
         rung,
