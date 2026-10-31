@@ -28,6 +28,7 @@ workflows and their cursors
 - [bottega workflow next](#bottega-workflow-next)
 - [bottega workflow probe](#bottega-workflow-probe)
 - [bottega workflow promote](#bottega-workflow-promote)
+- [bottega workflow promote-tree](#bottega-workflow-promote-tree)
 - [bottega workflow render-check](#bottega-workflow-render-check)
 - [bottega workflow retire](#bottega-workflow-retire)
 - [bottega workflow rule](#bottega-workflow-rule)
@@ -61,6 +62,7 @@ workflows and their cursors
 - [bottega workflow next](./workflow.md#bottega-workflow-next)
 - [bottega workflow probe](./workflow.md#bottega-workflow-probe)
 - [bottega workflow promote](./workflow.md#bottega-workflow-promote)
+- [bottega workflow promote-tree](./workflow.md#bottega-workflow-promote-tree)
 - [bottega workflow render-check](./workflow.md#bottega-workflow-render-check)
 - [bottega workflow retire](./workflow.md#bottega-workflow-retire)
 - [bottega workflow rule](./workflow.md#bottega-workflow-rule)
@@ -448,6 +450,22 @@ promote a draft workflow version to production
 - `--reason <value>`: record why this change is being made
 - `--author <value>`: record who is making this change
 - `--json`: print JSON output
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow promote-tree
+
+**Synopsis:** `bottega workflow promote-tree [--cwd <value>] [--reason <value>] [--author <value>]`
+
+promote newest workflow drafts that match a project workflow tree
+
+### Options
+
+- `--cwd <value>`: select the project workflow tree
+- `--reason <value>`: record why this change is being made
+- `--author <value>`: record who is making this change
 
 ### Related
 

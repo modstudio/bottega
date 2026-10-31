@@ -59,6 +59,7 @@ import { uiArchitectureRules, viewArchitectureRules } from './architecture-ui-la
 import { workflowAutonomyModules } from './architecture-workflow-autonomy-modules.ts'
 import { workflowCommandModules } from './architecture-workflow-command-modules.ts'
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
+import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[] }
@@ -697,29 +698,7 @@ export const modules: ArchitectureModule[] = [
     './workflow-definition.ts',
     './workflow-shared-promotion.ts',
   ]),
-  module('orchestrator/src/workflow/workflow-import-output.ts', ['./workflow-tree-store.ts']),
-  module('orchestrator/src/workflow/workflow-tree.ts', [
-    './step-catalogue.ts',
-    './workflow-step-sequences.ts',
-    './workflows.ts',
-  ]),
-  module('orchestrator/src/workflow/workflow-tree-files.ts', [
-    'node:fs',
-    'node:path',
-    './workflow-tree.ts',
-  ]),
-  module('orchestrator/src/workflow/workflow-tree-store.ts', [
-    '../../../shared/brand.ts',
-    'bun:sqlite',
-    'node:util',
-    '../database/db.ts',
-    '../record/record-write-authority.ts',
-    './step-catalogue.ts',
-    './workflow-read-space.ts',
-    './workflow-step-sequences.ts',
-    './workflow-tree.ts',
-    './workflows.ts',
-  ]),
+  ...workflowTreeModules,
   ...worktreeModules,
 ]
 

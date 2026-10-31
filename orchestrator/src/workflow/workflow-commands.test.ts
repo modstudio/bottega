@@ -44,7 +44,7 @@ test('workflow preserves the unknown-verb refusal and exit status', async () => 
     error.mockRestore()
   }
   expect(errors).toEqual([
-    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import`,
+    `unknown: ${PLATFORM_SLUG} workflow. Try list | show | set | promote | retire | fork | versions | render-check | compose | step | attach | next | await | rule | abandon | cursors | probe | exec | hydrate | import | promote-tree`,
   ])
 })
 

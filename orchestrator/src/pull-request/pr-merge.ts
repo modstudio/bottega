@@ -5,6 +5,7 @@
  */
 
 import type { Database } from 'bun:sqlite'
+import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
@@ -104,6 +105,11 @@ export type PullRequestMergeAdapter = {
     pullRequest: PullRequestMergeFacts,
     database: Database,
   ): void
+  promoteMergedWorkflowDrafts?(
+    change: PullRequestChange,
+    pullRequest: PullRequestMergeFacts,
+    mergeCommit: string,
+  ): string
   recordCi?(
     change: PullRequestChange,
     pullRequest: PullRequestMergeFacts,
@@ -303,6 +309,30 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       number: pullRequest.number,
     })
   },
+  promoteMergedWorkflowDrafts(change, pullRequest, mergeCommit) {
+    if (!mergedChangeNeedsWorkflowPromotion(change.group.pathSet))
+      return 'workflow draft promotion skipped: merged change touched no workflow tree path'
+    successful(change.project.path, ['git', 'fetch', 'origin'], 'workflow promotion fetch')
+    successful(
+      change.project.path,
+      ['git', 'merge', '--ff-only', mergeCommit],
+      'workflow promotion fast-forward',
+    )
+    const binary = join(change.project.path, 'bin', PLATFORM_SLUG)
+    return successful(
+      change.project.path,
+      [
+        binary,
+        'workflow',
+        'promote-tree',
+        '--cwd',
+        change.project.path,
+        '--reason',
+        `merged PR #${pullRequest.number} (${mergeCommit})`,
+      ],
+      'workflow draft promotion',
+    )
+  },
   recordCi(change, pullRequest, database) {
     const result = recordPullRequestCi({
       project: change.project,
@@ -363,6 +393,14 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   shipCleanup(project, branch, _prNumber, database) {
     return shipCleanup(branch, { project, confirmedLanded: true, database })
   },
+}
+
+function mergedChangeNeedsWorkflowPromotion(paths: readonly string[]): boolean {
+  return paths.some((path) =>
+    ['.agents/workflow-steps/', '.agents/workflows/', '.agents/workflow-sequences/'].some(
+      (prefix) => path.startsWith(prefix),
+    ),
+  )
 }
 
 function collectMergeProof(
@@ -671,6 +709,7 @@ function mergedPullRequestOutput(input: {
   prNumber: number
   mergeCommit: string
   recordingError?: string
+  promotion: { output: string; error?: string }
   requeueOutput?: string
   requiredRelease: RequiredReleaseReport
   target: string
@@ -692,12 +731,16 @@ function mergedPullRequestOutput(input: {
     input.target,
     input.project,
   )
-  const outputParts = [input.mergeCommit, releaseOutput].filter(Boolean)
-  let cleanupExitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE = 0
+  const outputParts = [input.mergeCommit, input.promotion.output, releaseOutput].filter(Boolean)
+  let cleanupExitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE = input.promotion.error
+    ? MERGED_WITH_RESIDUE_EXIT_CODE
+    : 0
   if (!input.adapter.shipCleanup) {
     return withRequeueOutput({
       output: outputParts.join('\n'),
-      exitCode: input.requiredRelease.satisfied ? 0 : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+      exitCode: input.requiredRelease.satisfied
+        ? cleanupExitCode
+        : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
     })
   }
   try {
@@ -708,7 +751,7 @@ function mergedPullRequestOutput(input: {
       input.database,
     )
     outputParts.push(formatShipCleanup(report))
-    cleanupExitCode = report.verdict.clean ? 0 : MERGED_WITH_RESIDUE_EXIT_CODE
+    if (!report.verdict.clean) cleanupExitCode = MERGED_WITH_RESIDUE_EXIT_CODE
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause)
     outputParts.push(
@@ -722,6 +765,37 @@ function mergedPullRequestOutput(input: {
       ? cleanupExitCode
       : MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
   })
+}
+
+function promoteMergedWorkflowDrafts(input: {
+  adapter: PullRequestMergeAdapter
+  change: PullRequestChange
+  pullRequest: PullRequestMergeFacts
+  mergeCommit: string
+}): { output: string; error?: string } {
+  if (!input.adapter.promoteMergedWorkflowDrafts) return { output: '' }
+  try {
+    return {
+      output: input.adapter.promoteMergedWorkflowDrafts(
+        input.change,
+        input.pullRequest,
+        input.mergeCommit,
+      ),
+    }
+  } catch (cause) {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    const checkout = input.change.project?.path ?? '<main-checkout>'
+    const promotion = `${PLATFORM_SLUG} workflow promote-tree --cwd ${checkout} --reason "merged PR #${input.pullRequest.number} (${input.mergeCommit})"`
+    const command = detail.startsWith('workflow promotion fetch failed:')
+      ? `git -C ${checkout} fetch origin, then git -C ${checkout} merge --ff-only ${input.mergeCommit}, then ${promotion}`
+      : detail.startsWith('workflow promotion fast-forward failed:')
+        ? `git -C ${checkout} merge --ff-only ${input.mergeCommit}, then ${promotion}`
+        : promotion
+    return {
+      output: `workflow draft promotion failed: ${detail}; clear with: ${command}`,
+      error: detail,
+    }
+  }
 }
 
 function recordPostMergeEvidence(input: {
@@ -859,6 +933,12 @@ function completeMerge(input: {
       pullRequest: pullRequest!,
       database: input.database,
       projectName: input.project.name,
+    }),
+    promotion: promoteMergedWorkflowDrafts({
+      adapter: input.adapter,
+      change: admittedChange!,
+      pullRequest: pullRequest!,
+      mergeCommit,
     }),
     requeueOutput,
     requiredRelease: input.adapter.releaseRequired(

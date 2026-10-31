@@ -73,7 +73,11 @@ import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-ref
 import { attachWorkflowText } from './workflow-text.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
-import { importWorkflowTree, productionWorkflowTree } from './workflow-tree-store.ts'
+import {
+  importWorkflowTree,
+  productionWorkflowTree,
+  promoteMatchingWorkflowTreeDrafts,
+} from './workflow-tree-store.ts'
 import {
   composeWorkflow,
   forkWorkflow,
@@ -843,6 +847,32 @@ export async function importCommand(
     changedPaths,
   )
   print(result, [...(skipped ? [skipped] : []), ...workflowImportLines(result)].join('\n'))
+}
+
+export async function promoteTreeCommand(
+  argv: string[],
+  presentation: WorkflowPresentation,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const { root, project } = workflowCommandProject('import', options)
+  const reason = flagValue(argv, 'reason')
+  if (!reason?.trim()) throw new Error('reason is required')
+  const promoted = await promoteMatchingWorkflowTreeDrafts({
+    tree: parseWorkflowTree(collectWorkflowTree(root)),
+    reason,
+    author: flagValue(argv, 'author'),
+    project: project?.name ?? null,
+  })
+  if (!promoted.length) {
+    presentation.log('nothing needed promotion')
+    return
+  }
+  for (const item of promoted)
+    presentation.log(
+      item.kind === 'catalogue'
+        ? `promoted catalogue draft ${item.n}`
+        : `promoted workflow ${item.slug} draft ${item.n}`,
+    )
 }
 
 function workflowArgs(argv: string[]): Record<string, string> {

@@ -69,6 +69,7 @@ function adapter(
     ) => string | null
     postMergeChange?: () => PullRequestChange
     recordLandings?: () => void
+    promoteMergedWorkflowDrafts?: () => string
     recordCi?: () => string | undefined
     shipCleanup?: () => ShipCleanupReport
     queueState?: () => ReturnType<PullRequestMergeAdapter['queueState']>
@@ -102,6 +103,9 @@ function adapter(
           branch: pullRequest.headBranch,
         }) as PullRequestChange),
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
+    ...(input.promoteMergedWorkflowDrafts
+      ? { promoteMergedWorkflowDrafts: input.promoteMergedWorkflowDrafts }
+      : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) =>
       input.merge?.(method, subject, headCommit) ?? 'merge-commit',
@@ -141,7 +145,7 @@ const requiredRelease = (
   ...overrides,
 })
 
-test('required release runs after landing recording and before cleanup and maps failure', () => {
+test('post-merge stages run landings, promotion, required release, then cleanup', () => {
   registerProject([])
   recordPassingGate()
   const calls: string[] = []
@@ -150,6 +154,10 @@ test('required release runs after landing recording and before cleanup and maps 
     cwd,
     adapter({
       recordLandings: () => calls.push('record-landings'),
+      promoteMergedWorkflowDrafts: () => {
+        calls.push('promote-workflows')
+        return 'promoted workflow drafts'
+      },
       releaseRequired: (enabled) => {
         expect(enabled).toBe(true)
         calls.push('release-required')
@@ -175,7 +183,7 @@ test('required release runs after landing recording and before cleanup and maps 
     true,
   )
   expect(outcome.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
-  expect(calls).toEqual(['record-landings', 'release-required', 'cleanup'])
+  expect(calls).toEqual(['record-landings', 'promote-workflows', 'release-required', 'cleanup'])
   expect(outcome.output).toContain('required rung hosted-api: deploy exit 7')
 })
 
@@ -203,6 +211,46 @@ test('an already-merged pull request skips admission and resumes post-merge stag
   expect(outcome.exitCode).toBe(0)
   expect(admitted).toBe(false)
   expect(released).toBe(true)
+})
+
+test('a workflow promotion failure is merge residue and a required release failure wins', () => {
+  registerProject([])
+  recordPassingGate()
+  const failedPromotion = () => {
+    throw new Error('catalogue promotion refused')
+  }
+  const residue = mergePullRequest(
+    '42',
+    cwd,
+    adapter({ promoteMergedWorkflowDrafts: failedPromotion }),
+  )
+  expect(residue.exitCode).toBe(MERGED_WITH_RESIDUE_EXIT_CODE)
+  expect(residue.output).toContain('workflow draft promotion failed: catalogue promotion refused')
+  expect(residue.output).toContain('workflow promote-tree')
+
+  const unreleased = mergePullRequest(
+    '42',
+    cwd,
+    adapter({
+      promoteMergedWorkflowDrafts: failedPromotion,
+      releaseRequired: () =>
+        requiredRelease({
+          satisfied: false,
+          releases: [
+            {
+              rung: 'hosted-api',
+              deployExit: 7,
+              outputTail: 'not live',
+              satisfied: false,
+              deployed: true,
+            },
+          ],
+        }),
+    }),
+    undefined,
+    true,
+  )
+  expect(unreleased.exitCode).toBe(MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE)
 })
 
 const cleanupReport = (

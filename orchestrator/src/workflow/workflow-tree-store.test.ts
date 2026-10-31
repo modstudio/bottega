@@ -222,6 +222,26 @@ describe('importWorkflowTree', () => {
     ).toBe(production.definition.steps.find((step) => step.slug === 'blast-radius')?.body)
   })
 
+  test('an unknown fact source is kept on a draft with a warning and refused at promotion', async () => {
+    const d = database()
+    const tree = renderedTree(d)
+    const target = tree.find(({ path }) => path === '.agents/workflow-steps/blast-radius.md')!
+    target.body = target.body.replace('needs: []', 'needs:\n  - branch-added-source')
+
+    const result = await importWorkflowTree(
+      parseWorkflowTree(tree),
+      'use branch-added source',
+      'worker',
+      d,
+    )
+
+    expect(result.warnings).toEqual([{ step: 'blast-radius', source: 'branch-added-source' }])
+    expect(result.catalogue.status).toBe('created')
+    expect(() => promoteStepCatalogueLocal(2, 'publish branch-added source', 'worker', d)).toThrow(
+      'step "blast-radius" has invalid injection source "branch-added-source"',
+    )
+  })
+
   test('a sequence file imports into the catalogue draft', async () => {
     const d = database()
     const tree = renderedTree(d)

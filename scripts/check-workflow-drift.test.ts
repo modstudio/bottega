@@ -6,6 +6,7 @@ describe('workflow drift branch gate', () => {
     expect(
       workflowDriftPartition(
         ['.agents/workflows/review-fleet.md', '.agents/workflow-steps/catalogue.md'],
+        ['.agents/workflows/review-fleet.md', '.agents/workflow-steps/catalogue.md'],
         ['README.md'],
       ),
     ).toEqual({
@@ -18,11 +19,32 @@ describe('workflow drift branch gate', () => {
     expect(
       workflowDriftPartition(
         ['.agents/workflows/review-fleet.md', '.agents/workflow-sequences/review.md'],
+        ['.agents/workflows/review-fleet.md', '.agents/workflow-sequences/review.md'],
         ['.agents/workflows/review-fleet.md'],
       ),
     ).toEqual({
       failing: ['.agents/workflows/review-fleet.md'],
       informational: ['.agents/workflow-sequences/review.md'],
     })
+  })
+
+  test('accepts a branch-changed file matching its newest draft', () => {
+    expect(
+      workflowDriftPartition(
+        ['.agents/workflows/review-fleet.md'],
+        [],
+        ['.agents/workflows/review-fleet.md'],
+      ),
+    ).toEqual({ failing: [], informational: [] })
+  })
+
+  test('accepts a branch-changed file matching production', () => {
+    expect(
+      workflowDriftPartition(
+        [],
+        ['.agents/workflows/review-fleet.md'],
+        ['.agents/workflows/review-fleet.md'],
+      ),
+    ).toEqual({ failing: [], informational: [] })
   })
 })

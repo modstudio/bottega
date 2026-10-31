@@ -147,6 +147,23 @@ export function validateStepCatalogue(value: unknown): string[] {
   return [...new Set(errors)]
 }
 
+export function unknownWorkflowFactNeeds(
+  value: unknown,
+): { step: string; source: string; error: string }[] {
+  if (!object(value) || !Array.isArray(value.steps)) return []
+  return value.steps.flatMap((item) => {
+    if (!object(item) || !Array.isArray(item.needs)) return []
+    const step = String(item.slug ?? '')
+    return item.needs
+      .map(String)
+      .flatMap((source) =>
+        (workflowFactSources as readonly string[]).includes(source)
+          ? []
+          : [{ step, source, error: `step "${step}" has invalid injection source "${source}"` }],
+      )
+  })
+}
+
 function validateOutcomes(item: Record<string, unknown>, errors: string[]): void {
   if (item.outcomes === undefined) return
   const slug = String(item.slug ?? '')
@@ -463,13 +480,18 @@ function validateNeeds(item: Record<string, unknown>, errors: string[]): void {
   }
   const needs = item.needs.map(String)
   if (new Set(needs).size !== needs.length) errors.push(`step "${slug}" needs has duplicates`)
-  for (const source of needs)
-    if (!(workflowFactSources as readonly string[]).includes(source))
-      errors.push(`step "${slug}" has invalid injection source "${source}"`)
+  errors.push(...unknownWorkflowFactNeeds({ steps: [item] }).map(({ error }) => error))
 }
 
 function requireCatalogue(value: unknown): asserts value is StepCatalogueDefinition {
   const errors = validateStepCatalogue(value)
+  if (errors.length)
+    throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
+}
+
+function requireImportableCatalogue(value: unknown): asserts value is StepCatalogueDefinition {
+  const ignored = new Set(unknownWorkflowFactNeeds(value).map(({ error }) => error))
+  const errors = validateStepCatalogue(value).filter((error) => !ignored.has(error))
   if (errors.length)
     throw new Error(`invalid step catalogue:\n${errors.map((error) => `- ${error}`).join('\n')}`)
 }
@@ -481,7 +503,7 @@ const lifecycle = versionedLifecycle<StepCatalogueDefinition>({
   eventTable: 'step_catalogue_event',
   foreignKey: 'catalogue_record_id',
   validate(value) {
-    requireCatalogue(value)
+    requireImportableCatalogue(value)
   },
 })
 const CATALOGUE = 'shared'
@@ -553,7 +575,10 @@ export const setStepCatalogueLocal = (
   reason: string | undefined,
   author?: string,
   d: Database = writableDb(),
-) => lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
+) => {
+  requireCatalogue(definition)
+  return lifecycle.write(CATALOGUE, definition, reason, author, 'set', d)
+}
 const writeAuthor = (value?: string) => value?.trim() || sessionId() || 'unknown'
 async function activeSpace(d?: Database, project?: string) {
   const identity = await recordApiClient().whoami()
@@ -570,11 +595,15 @@ function catalogueDraft(
   d: Database,
   project?: string,
   onHostedWrite?: (n: number) => void,
+  allowUnknownNeeds = false,
 ) {
+  if (allowUnknownNeeds) requireImportableCatalogue(definition)
+  else requireCatalogue(definition)
   return applyRecordWriteAuthority({
     local: () => lifecycle.write(CATALOGUE, definition, reason, author, event, d),
     hosted: async () => {
-      requireCatalogue(definition)
+      if (allowUnknownNeeds) requireImportableCatalogue(definition)
+      else requireCatalogue(definition)
       if (!reason?.trim()) throw new Error('reason is required')
       const spaceId = await activeSpace(d, project)
       const result = await recordApiClient().draftWorkflow!(
@@ -794,6 +823,11 @@ function cataloguePromotionPreflight(
   spaceId: string | null,
   replacement?: { slug: string; definition: WorkflowDefinition },
 ): void {
+  const validationErrors = validateStepCatalogue(definition)
+  if (validationErrors.length)
+    throw new Error(
+      `invalid step catalogue:\n${validationErrors.map((error) => `- ${error}`).join('\n')}`,
+    )
   const current = d
     .query<{ definition: string }, [string | null]>(
       `SELECT v.definition FROM step_catalogue c JOIN step_catalogue_version v ON v.catalogue_record_id=c.record_id
@@ -848,12 +882,30 @@ export function importStepCatalogue(
   d: Database = writableDb(),
   project?: string,
   onHostedWrite?: (n: number) => void,
+  allowUnknownNeeds = false,
 ) {
   assertCatalogueWriteAllowed('import step catalogue')
-  return catalogueDraft('import', definition, undefined, reason, author, d, project, onHostedWrite)
+  return catalogueDraft(
+    'import',
+    definition,
+    undefined,
+    reason,
+    author,
+    d,
+    project,
+    onHostedWrite,
+    allowUnknownNeeds,
+  )
 }
 
 const importStepCatalogueLocal = (
+  definition: unknown,
+  reason: string | undefined,
+  author?: string,
+  d: Database = writableDb(),
+) => lifecycle.write(CATALOGUE, definition, reason, author, 'import', d)
+
+export const importStepCatalogueWithUnknownNeedsLocal = (
   definition: unknown,
   reason: string | undefined,
   author?: string,
