@@ -19,6 +19,7 @@ test('reports a literal authorization header without rendering its value', () =>
   expect(lines[0]).toContain('project example MCP server tracker')
   expect(lines[0]).toContain('header Authorization')
   expect(lines[0]).not.toContain('literal-credential')
+  expect(lines[0]).not.toContain('${')
 })
 
 test('accepts header and environment references and ignores non-secret keys', () => {

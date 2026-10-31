@@ -48,7 +48,7 @@ export function literalCredentialLines(
 ): string[] {
   const remedy =
     `store the value with ${PLATFORM_SLUG} machine config secret set, then serve it from a ` +
-    `headersHelper (or a \${VAR} reference for an env key)`
+    `headersHelper`
   return findings.map(
     ({ server, key, where }) =>
       `project ${project} MCP server ${server} holds a literal credential in ${where} ${key}; ${remedy}`,
