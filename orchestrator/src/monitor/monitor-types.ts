@@ -8,10 +8,12 @@ import type { HostAdmissionSummary } from './host-admission-summary.ts'
 
 export const MONITOR_DETAIL_CHARS = 512
 
+export function boundToChars(text: string, chars: number): string {
+  return text.length <= chars ? text : `${text.slice(0, chars - 1)}…`
+}
+
 export function boundedConditionDetail(detail: string): string {
-  return detail.length <= MONITOR_DETAIL_CHARS
-    ? detail
-    : `${detail.slice(0, MONITOR_DETAIL_CHARS - 1)}…`
+  return boundToChars(detail, MONITOR_DETAIL_CHARS)
 }
 
 export type MonitorHostLoad = HostLoadSample

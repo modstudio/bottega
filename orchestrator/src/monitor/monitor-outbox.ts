@@ -10,7 +10,7 @@ import {
   outboxHeldUnknownColumns,
 } from '../record/outbox-held-contract.ts'
 import { quarantinedOutboxRows } from '../record/outbox-quarantine.ts'
-import type { AddressedMonitorCondition } from './monitor-types.ts'
+import { type AddressedMonitorCondition, boundToChars } from './monitor-types.ts'
 
 export const QUARANTINE_ERROR_SUMMARY_CHARS = 256
 
@@ -20,9 +20,7 @@ export function quarantineErrorSummary(error: string): string {
     separatorIndex === -1
       ? (error.split('\n', 1)[0] ?? '')
       : error.slice(separatorIndex + OUTBOX_ERROR_CAUSE_SEPARATOR.length)
-  return summary.length <= QUARANTINE_ERROR_SUMMARY_CHARS
-    ? summary
-    : `${summary.slice(0, QUARANTINE_ERROR_SUMMARY_CHARS - 1)}…`
+  return boundToChars(summary, QUARANTINE_ERROR_SUMMARY_CHARS)
 }
 
 function quarantinedParentRemedy(id: number): string {
