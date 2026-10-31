@@ -338,8 +338,9 @@ function validateManifestShapes(
   manifests: StoreManifests,
 ): void {
   for (const column of manifests.uuids.keys()) {
-    if (columns.get(column)?.type !== 'text')
-      throw new Error(`${store} UUID column ${column} must be stored as TEXT`)
+    const type = columns.get(column)?.type
+    if (type !== 'text' && (store !== 'hosted' || type !== 'jsonb'))
+      throw new Error(`${store} UUID column ${column} must be stored as TEXT (or JSONB on hosted)`)
   }
   for (const column of manifests.references.keys()) {
     if (columns.get(column)?.foreignKey)

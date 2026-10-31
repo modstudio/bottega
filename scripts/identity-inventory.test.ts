@@ -513,6 +513,36 @@ test('a display label needs a reason', () => {
   )
 })
 
+test('a hosted JSONB UUID declaration passes while an integer declaration is refused', () => {
+  const uuidManifest = (column: string) => ({
+    store: 'hosted' as const,
+    column,
+    reason: 'UUID array',
+  })
+  const table = {
+    name: 'item',
+    primaryKey: ['id'],
+    columns: [column('item', 'id', 'uuid', true), column('item', 'related_ids', 'jsonb')],
+  }
+
+  expect(() =>
+    classifyKeyInventory('hosted', [table], {
+      ...EMPTY,
+      uuids: [uuidManifest('item.related_ids')],
+    }),
+  ).not.toThrow()
+  expect(() =>
+    classifyKeyInventory(
+      'hosted',
+      [{ ...table, columns: [...table.columns, column('item', 'invalid_ids', 'integer')] }],
+      {
+        ...EMPTY,
+        uuids: [uuidManifest('item.invalid_ids')],
+      },
+    ),
+  ).toThrow('hosted UUID column item.invalid_ids must be stored as TEXT (or JSONB on hosted)')
+})
+
 test('an unclassified project-name-shaped orchestrator column is refused', () => {
   const table = {
     name: 'cursor',
