@@ -22,6 +22,83 @@ import {
   workflowLocalLifecycle,
 } from './workflows.ts'
 
+type VersionedDefinition = { n: number; value: unknown }
+export type WorkflowTreeProduction = {
+  tree: WorkflowTreeStore
+  catalogueVersion: number
+  workflowVersions: Map<string, number>
+}
+export type WorkflowTreeHistory = {
+  steps: Map<string, VersionedDefinition[]>
+  sequences: Map<string, VersionedDefinition[]>
+  workflows: Map<string, VersionedDefinition[]>
+}
+export type WorkflowTreeReversion = {
+  kind: 'step' | 'sequence' | 'workflow'
+  slug: string
+  path: string
+  matchedVersion: number
+  productionVersion: number
+}
+
+const pathFor = (kind: WorkflowTreeReversion['kind'], slug: string) =>
+  `.agents/${kind === 'workflow' ? 'workflows' : `workflow-${kind}s`}/${slug}.md`
+
+function matchingReversions(
+  kind: WorkflowTreeReversion['kind'],
+  imported: { slug: string; value: unknown }[],
+  production: { slug: string; value: unknown; n: number }[],
+  history: Map<string, VersionedDefinition[]>,
+  branchChangedPaths: ReadonlySet<string>,
+): WorkflowTreeReversion[] {
+  const current = new Map(production.map((item) => [item.slug, item]))
+  return imported.flatMap(({ slug, value }) => {
+    const path = pathFor(kind, slug)
+    const present = current.get(slug)
+    if (!present || same(value, present.value) || branchChangedPaths.has(path)) return []
+    const match = history.get(slug)?.find((candidate) => same(value, candidate.value))
+    return match
+      ? [{ kind, slug, path, matchedVersion: match.n, productionVersion: present.n }]
+      : []
+  })
+}
+
+export function workflowTreeReversions(input: {
+  tree: WorkflowTreeStore
+  production: WorkflowTreeProduction
+  history: WorkflowTreeHistory
+  branchChangedPaths: ReadonlySet<string>
+}): WorkflowTreeReversion[] {
+  const catalogueN = input.production.catalogueVersion
+  return [
+    ...matchingReversions(
+      'step',
+      input.tree.steps.map((value) => ({ slug: value.slug, value })),
+      input.production.tree.steps.map((value) => ({ slug: value.slug, value, n: catalogueN })),
+      input.history.steps,
+      input.branchChangedPaths,
+    ),
+    ...matchingReversions(
+      'sequence',
+      input.tree.sequences.map((value) => ({ slug: value.slug, value })),
+      input.production.tree.sequences.map((value) => ({ slug: value.slug, value, n: catalogueN })),
+      input.history.sequences,
+      input.branchChangedPaths,
+    ),
+    ...matchingReversions(
+      'workflow',
+      input.tree.workflows.map(({ slug, definition: value }) => ({ slug, value })),
+      input.production.tree.workflows.map(({ slug, definition: value }) => ({
+        slug,
+        value,
+        n: input.production.workflowVersions.get(slug)!,
+      })),
+      input.history.workflows,
+      input.branchChangedPaths,
+    ),
+  ].sort((left, right) => left.path.localeCompare(right.path))
+}
+
 export function productionWorkflowTree(
   input: { database?: Database; project?: string | null } = {},
 ): WorkflowTreeStore {
@@ -129,6 +206,92 @@ function newestDefinitions(
       .map(({ definition }) => JSON.parse(definition) as unknown),
     workflows,
   }
+}
+
+function appendVersion(
+  target: Map<string, VersionedDefinition[]>,
+  slug: string,
+  version: VersionedDefinition,
+) {
+  target.set(slug, [...(target.get(slug) ?? []), version])
+}
+
+function productionHistory(
+  database: Database,
+  spaceId: string | null,
+): {
+  catalogueVersion: number
+  workflowVersions: Map<string, number>
+  history: WorkflowTreeHistory
+} {
+  const catalogues = database
+    .query<{ n: number; definition: string; status: string }, [string | null]>(
+      `SELECT v.n,v.definition,v.status FROM step_catalogue_version v
+       JOIN step_catalogue c ON c.record_id=v.catalogue_record_id
+       WHERE c.slug='shared' AND c.space_id IS ? AND v.promoted_at IS NOT NULL
+       ORDER BY v.n DESC`,
+    )
+    .all(spaceId)
+  const workflows = database
+    .query<{ slug: string; n: number; definition: string; status: string }, [string | null]>(
+      `SELECT w.slug,v.n,v.definition,v.status FROM workflow_version v
+       JOIN workflow w ON w.record_id=v.workflow_record_id
+       WHERE w.space_id IS ? AND v.promoted_at IS NOT NULL
+       ORDER BY w.slug,v.n DESC`,
+    )
+    .all(spaceId)
+  const currentCatalogue = catalogues.find(({ status }) => status === 'production')
+  if (!currentCatalogue) throw new Error('cannot read current production catalogue version')
+  const history: WorkflowTreeHistory = {
+    steps: new Map(),
+    sequences: new Map(),
+    workflows: new Map(),
+  }
+  for (const row of catalogues.filter(({ n }) => n !== currentCatalogue.n)) {
+    const definition = JSON.parse(row.definition) as {
+      steps: CatalogueStep[]
+      sequences?: CatalogueSequence[]
+    }
+    for (const value of definition.steps)
+      appendVersion(history.steps, value.slug, { n: row.n, value })
+    for (const value of definition.sequences ?? [])
+      appendVersion(history.sequences, value.slug, { n: row.n, value })
+  }
+  const workflowVersions = new Map<string, number>()
+  for (const row of workflows) {
+    if (row.status === 'production') workflowVersions.set(row.slug, row.n)
+    else
+      appendVersion(history.workflows, row.slug, {
+        n: row.n,
+        value: JSON.parse(row.definition) as unknown,
+      })
+  }
+  return { catalogueVersion: currentCatalogue.n, workflowVersions, history }
+}
+
+function staleReversionRefusal(
+  tree: WorkflowTreeStore,
+  production: WorkflowTreeStore,
+  facts: ReturnType<typeof productionHistory>,
+  branchChangedPaths: ReadonlySet<string>,
+): Error | null {
+  const reversions = workflowTreeReversions({
+    tree,
+    production: { tree: production, ...facts },
+    history: facts.history,
+    branchChangedPaths,
+  })
+  if (!reversions.length) return null
+  return new Error(
+    `refusing stale workflow tree reversion:\n${reversions
+      .map(
+        ({ kind, slug, matchedVersion, productionVersion }) =>
+          `- ${kind} ${slug}: tree matches production version ${matchedVersion}; current production version is ${productionVersion}`,
+      )
+      .join(
+        '\n',
+      )}\nremedy: run ${PLATFORM_SLUG} workflow hydrate --cwd <tree>, then commit the hydrated files`,
+  )
 }
 
 function refusalReason(errors: string[], fallback: string): string {
@@ -349,12 +512,22 @@ export function importWorkflowTree(
   author?: string,
   d?: Database,
   project?: string,
+  branchChangedPaths?: ReadonlySet<string>,
 ): WorkflowTreeImportResult | Promise<WorkflowTreeImportResult> {
   if (!reason?.trim()) throw new Error('reason is required')
   const database = d ?? writableDb()
   return writeTransaction(() => {
     const production = productionWorkflowTree({ database, project: project ?? null })
     const spaceId = workflowReadSpaceFor(database, project ?? null)
+    if (branchChangedPaths) {
+      const refusal = staleReversionRefusal(
+        tree,
+        production,
+        productionHistory(database, spaceId),
+        branchChangedPaths,
+      )
+      if (refusal) throw refusal
+    }
     const plan = planWorkflowTreeImport(tree, production, newestDefinitions(database, spaceId))
     if (!plan.catalogueChanged && !plan.workflowsToWrite.length)
       return {

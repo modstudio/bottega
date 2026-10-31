@@ -249,8 +249,8 @@ export const CI_ONLY_JOBS = [
 
 export const STATIC_OMIT_GROUPS = {
   'machine-only': {
-    reason: "CI runners do not have this machine's project register and canon store",
-    checks: ['project checks', 'scripts/check-canon-drift.ts'],
+    reason: "CI runners do not have this machine's project register and local stores",
+    checks: ['project checks', 'scripts/check-canon-drift.ts', 'scripts/check-workflow-drift.ts'],
   },
   secrets: {
     reason: 'the CI secrets job runs the same gitleaks scan in its container',

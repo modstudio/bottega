@@ -9,9 +9,12 @@ import { hasRecordIdShape } from '../../../shared/record-id.ts'
 import { flagValue, flagValues } from '../cli/args.ts'
 import { db } from '../database/db.ts'
 import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
+import { contentTree, reviewChangedPaths } from '../git/git-environment.ts'
 import { type Project, projectAt, projects } from '../project/projects.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
+import { resolveReviewBase } from '../review/review-target.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
+import { resolveBase } from '../worktree/worktree-caller.ts'
 import { parseAutonomy } from './autonomy.ts'
 import { resolveProbeArtifact } from './probe-identifier.ts'
 import {
@@ -813,14 +816,27 @@ export async function importCommand(
   options: WorkflowCommandOptions = {},
 ): Promise<void> {
   const { root, project } = workflowCommandProject('import', options)
+  let changedPaths: Set<string> | undefined
+  let skipped: string | undefined
+  try {
+    const trunk = project?.settings.trunk?.trim()
+    if (!trunk) throw new Error('the registered project has no landing branch in settings.trunk')
+    const head = resolveBase(root, 'HEAD')
+    const base = resolveReviewBase(root, head, trunk)
+    if (!base) throw new Error(`no merge base with registered landing branch ${trunk}`)
+    changedPaths = new Set(reviewChangedPaths(root, base, contentTree(root)))
+  } catch (cause) {
+    skipped = `workflow stale-reversion check skipped: ${String((cause as Error).message ?? cause)}`
+  }
   const result = await importWorkflowTree(
     parseWorkflowTree(collectWorkflowTree(root)),
     flagValue(argv, 'reason'),
     flagValue(argv, 'author'),
     undefined,
     project?.name,
+    changedPaths,
   )
-  print(result, workflowImportLines(result).join('\n'))
+  print(result, [...(skipped ? [skipped] : []), ...workflowImportLines(result)].join('\n'))
 }
 
 function workflowArgs(argv: string[]): Record<string, string> {
