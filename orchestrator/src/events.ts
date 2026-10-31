@@ -103,6 +103,13 @@ export type RunLogEvent =
   | { ts: string; type: 'ask_started'; tools: string[] }
   | { ts: string; type: 'ask_initialized' }
   | { ts: string; type: 'ask_listed'; tools: string[] }
+  | {
+      ts: string
+      type: 'ask_exposure'
+      surface: 'top-level' | 'code-mode' | 'absent' | 'unknown'
+      cli_version: string | null
+      note: string | null
+    }
 
 type PeekEventSummary =
   | { type: 'text'; text: string }
@@ -124,6 +131,12 @@ type PeekEventSummary =
   | { type: 'ask_started'; tools: string[] }
   | { type: 'ask_initialized' }
   | { type: 'ask_listed'; tools: string[] }
+  | {
+      type: 'ask_exposure'
+      surface: 'top-level' | 'code-mode' | 'absent' | 'unknown'
+      cli_version: string | null
+      note: string | null
+    }
   | {
       type: 'focused_test'
       paths: string[]
@@ -219,9 +232,14 @@ export function recordRunWarning(runId: string, warning: string): void {
 }
 
 function isWorkerActivity(event: RunLogEvent): boolean {
-  return !['warning', 'ask_expected', 'ask_started', 'ask_initialized', 'ask_listed'].includes(
-    event.type,
-  )
+  return ![
+    'warning',
+    'ask_expected',
+    'ask_started',
+    'ask_initialized',
+    'ask_listed',
+    'ask_exposure',
+  ].includes(event.type)
 }
 
 export type LiveOperationalStatus = {
@@ -705,6 +723,7 @@ function summarizeEvent(event: RunLogEvent): PeekEventSummary {
   }
   if (event.type === 'ask_started' || event.type === 'ask_listed')
     return { type: event.type, tools: event.tools }
+  if (event.type === 'ask_exposure') return { ...event }
   if (event.type === 'focused_test' || event.type === 'focused_test_refusal')
     return summarizeFocusedTestEvent(event)
   if (event.type === 'gate_log') return { type: 'gate_log' }

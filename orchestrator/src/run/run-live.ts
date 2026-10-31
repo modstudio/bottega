@@ -19,7 +19,12 @@ import {
   type WorkerReply,
 } from '../contract/contract.ts'
 import { db, nowIso } from '../database/db.ts'
-import { recordRunWarning, type StreamEvent, teeTransportEvents } from '../events.ts'
+import {
+  appendRunEvent,
+  recordRunWarning,
+  type StreamEvent,
+  teeTransportEvents,
+} from '../events.ts'
 import { type classify, hasVendorTerminationMarker } from '../failure/failure.ts'
 import { contentTree, gitContext, reviewChangedPaths } from '../git/git-environment.ts'
 import { idlePollMs, terminateProcessGroup } from '../idle-kill.ts'
@@ -38,6 +43,7 @@ import { processStartTime } from '../project/project-lock.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
+import { codexAskExposureFromHome } from '../transport/codex-ask-exposure.ts'
 import { EMPTY_QUOTA_READINGS, type QuotaReadings } from '../transport/quota-readings.ts'
 import {
   EMPTY_VENDOR_USAGE,
@@ -811,6 +817,19 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     await teeing.catch(() => {
       /* the live log is observation, never outcome */
     })
+    if ((a.harness ?? a.name) === 'codex') {
+      const exposure = codexAskExposureFromHome(startOpts.env.CODEX_HOME)
+      appendRunEvent(claim.id, {
+        ts: nowIso(),
+        type: 'ask_exposure',
+        surface: exposure.surface,
+        cli_version: exposure.cliVersion,
+        note:
+          exposure.surface === 'code-mode'
+            ? 'code-mode means exec offered, nested set not enumerated; not proof run_tests was reachable'
+            : null,
+      })
+    }
     const stdout = collected.stdout
     const stderr = collected.stderr
     // One derivation from the raw stream, carried through terminalisation.

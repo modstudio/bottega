@@ -313,6 +313,7 @@ export const modules: ArchitectureModule[] = [
     './project-mcp-scope.ts',
   ]),
   module('orchestrator/src/contract/codex-schema.ts', []),
+  module('orchestrator/src/contract/codex-mcp-tool.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/contract/contract-reply.ts', []),
   ...recipeModules,
   module('orchestrator/src/hook-tree/hook-tree.ts', [

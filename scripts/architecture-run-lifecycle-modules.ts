@@ -328,9 +328,16 @@ export const runLifecycleModules: ArchitectureModule[] = [
     './run-worker-brokers.ts',
     '../sandbox/sandbox.ts',
     '../transport/quota-readings.ts',
+    '../transport/codex-ask-exposure.ts',
     '../transport/transport.ts',
     '../transport/transport-goose-ledger.ts',
     '../worktree/worktree-types.ts',
+  ]),
+  module('orchestrator/src/transport/codex-ask-exposure.ts', [
+    'node:fs',
+    'node:path',
+    '../../../shared/brand.ts',
+    '../contract/codex-mcp-tool.ts',
   ]),
   module('orchestrator/src/run/run-call-usage.ts', ['../events.ts']),
   module('orchestrator/src/run/run-throttle.ts', [
