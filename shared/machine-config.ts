@@ -874,7 +874,7 @@ export function parseFormerShortNames(value: string): string[] {
   return [...new Set(value.split(',').filter(Boolean))]
 }
 
-export function formerShortNamesAfterRename(
+function formerShortNamesAfterRename(
   former: readonly string[],
   previous: string,
   current: string,
