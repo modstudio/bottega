@@ -29,7 +29,7 @@ function workflowRunCommands(job: string): string[] {
   const lines = job.split('\n')
   const commands: string[] = []
   for (let index = 0; index < lines.length; index += 1) {
-    const run = /^(?<indent>\s*)run:\s*(?<value>.*)$/.exec(lines[index]!)
+    const run = /^(?<indent>\s*)(?:-\s+)?run:\s*(?<value>.*)$/.exec(lines[index]!)
     if (!run) continue
     const value = run.groups!.value!
     if (value !== '' && !/^[>|]/.test(value)) {

@@ -5,8 +5,8 @@ import { commentParserAssets } from '../orchestrator/src/check/check-comment-par
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REF_GUARD_RUNTIME_ASSET, registerEmbeddedAssets } from '../shared/embedded-assets.ts'
 import { sandboxRuntimePayloadPaths } from '../shared/sandbox-runtime-assets.ts'
-import { distributionManifest, releaseVersion, run } from './release-support.ts'
 import { requireReleaseBun } from './release-config.ts'
+import { distributionManifest, releaseVersion, run } from './release-support.ts'
 
 const repositoryRoot = resolve(import.meta.dir, '..')
 
