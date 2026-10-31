@@ -14,6 +14,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../shared/brand.ts'
+import { HARNESS_ENV_FILE_ENV } from '../shared/config-directory.ts'
 import { newRecordId } from '../shared/record-id.ts'
 import { BOTTEGA_ENTRY_PROTOCOL } from '../shared/self-spawn.ts'
 import { buildHostBinary } from './build-binary.ts'
@@ -26,11 +27,12 @@ let securityBin: string | undefined
 let harnessBin: string | undefined
 let mcpRecord: string | undefined
 let mcpState: string | undefined
+let recordApiEnabled = false
 
 function smokeEnvironment(stateHome: string): Record<string, string | undefined> {
   const env = {
     ...process.env,
-    BOTTEGA_STATE_HOME: stateHome,
+    XDG_CONFIG_HOME: join(stateHome, 'config'),
     ...(securityBin
       ? {
           PATH: [harnessBin, securityBin, '/usr/bin', '/bin'].filter(Boolean).join(':'),
@@ -44,10 +46,12 @@ function smokeEnvironment(stateHome: string): Record<string, string | undefined>
       delete env[key]
     }
   }
+  env.BOTTEGA_STATE_HOME = stateHome
+  env[HARNESS_ENV_FILE_ENV] = ''
   env.CLAUDE_CODE_SESSION_ID = 'DEV-997-binary-smoke'
   env.BOTTEGA_EMBED_URL = 'http://127.0.0.1:1/v1/embeddings'
   env.BOTTEGA_RERANK_URL = 'http://127.0.0.1:1/v1/rerank'
-  if (recordApiUrl) env.BOTTEGA_RECORD_API_URL = recordApiUrl
+  if (recordApiEnabled && recordApiUrl) env.BOTTEGA_RECORD_API_URL = recordApiUrl
   delete env.BOTTEGA_HOSTED_URL
   delete env.BOTTEGA_HUB_DB
   return env
@@ -223,6 +227,7 @@ try {
     'TASK-1',
   )
   await smoke(binary, ['task', 'list', '--project', 'tasks'], stateHome, 'TASK-1')
+  recordApiEnabled = true
   const setupFacts = JSON.parse(
     await smoke(binary, ['machine', 'setup', 'facts', '--json'], stateHome),
   ) as { os?: unknown }
@@ -307,6 +312,7 @@ try {
   ) {
     throw new Error(`second ${PLATFORM_SLUG} machine setup apply did not report unchanged`)
   }
+  recordApiEnabled = false
   const orchestrator = new Database(join(stateHome, 'orchestrator', 'orchestrator.db'), {
     readonly: true,
   })
@@ -318,7 +324,9 @@ try {
   } finally {
     orchestrator.close()
   }
+  recordApiEnabled = true
   await smoke(binary, ['record', 'pull', '--only', 'runs'], stateHome, 'collected in')
+  recordApiEnabled = false
   await smoke(
     binary,
     ['machine', 'reclaim', 'fixture-questions', '--dry-run'],
@@ -342,10 +350,17 @@ try {
   const probeRepository = join(scratch, 'probe-repository')
   mkdirSync(probeRepository)
   writeFileSync(join(probeRepository, 'README.md'), 'binary sandbox smoke\n')
+  writeFileSync(join(probeRepository, 'fixture.sh'), '# shell fixture\n')
+  writeFileSync(join(probeRepository, 'fixture.php'), '<?php\n// php fixture\n')
+  writeFileSync(join(probeRepository, 'fixture.py'), '# python fixture\n')
+  writeFileSync(join(probeRepository, 'fixture.ts'), '// TypeScript fixture\n')
   await run(['git', 'init', '--initial-branch=main'], probeRepository)
   await run(['git', 'config', 'user.email', 'smoke@example.invalid'], probeRepository)
   await run(['git', 'config', 'user.name', 'Binary Smoke'], probeRepository)
-  await run(['git', 'add', 'README.md'], probeRepository)
+  await run(
+    ['git', 'add', 'README.md', 'fixture.sh', 'fixture.php', 'fixture.py', 'fixture.ts'],
+    probeRepository,
+  )
   await run(['git', 'commit', '-m', 'DEV-997 binary smoke fixture'], probeRepository)
   const smokeStore = new Database(join(stateHome, 'orchestrator', 'orchestrator.db'))
   try {
@@ -369,6 +384,11 @@ try {
   } finally {
     smokeStore.close()
   }
+  await smoke(
+    binary,
+    ['gate', 'check', 'comments', '--project', 'binary-smoke', '--report'],
+    stateHome,
+  )
   await smoke(
     binary,
     ['workflow', 'probe', '--', 'git', 'status', '--short'],

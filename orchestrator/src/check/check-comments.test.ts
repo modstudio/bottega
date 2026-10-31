@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { commentsInSource } from './check-comment-extraction.ts'
+import { commentFindingsInSources } from './check-comment-extraction.ts'
 import {
   type CommentSource,
   commentFindings,
@@ -90,25 +90,23 @@ describe('ast-grep comment extraction', () => {
     ['Python', 'fixture.py', 'text = "DEV-12"\n# DEV-12', '# DEV-12'],
   ] as const
 
-  for (const [language, file, source, expected] of fixtures) {
-    test(`extracts ${language} comments without string literals`, () => {
-      const comments = commentsInSource(file, source)
+  test('extracts comments in every supported language without string literals', () => {
+    const findings = commentFindingsInSources(
+      fixtures.map(([, file, source]) => ({ file, source })),
+      { taskKeyPrefixes: ['DEV'], historyPhrases: ['used to'] },
+    )
 
-      expect(comments.map((value) => value.text)).toEqual([expected])
-      expect(
-        comments.flatMap((value) =>
-          commentFindings(value, {
-            taskKeyPrefixes: ['DEV'],
-            historyPhrases: ['used to'],
-          }),
-        ),
-      ).toHaveLength(1)
-    })
-  }
+    expect(findings.map(({ file, comment }) => ({ file, comment }))).toEqual(
+      fixtures.map(([, file, , comment]) => ({ file, comment })),
+    )
+  })
 
   test('a string containing a history phrase is not a comment', () => {
-    const comments = commentsInSource('fixture.ts', 'const text = "this used to work"')
+    const findings = commentFindingsInSources(
+      [{ file: 'fixture.ts', source: 'const text = "this used to work"' }],
+      { historyPhrases: ['used to'] },
+    )
 
-    expect(comments).toEqual([])
+    expect(findings).toEqual([])
   })
 })

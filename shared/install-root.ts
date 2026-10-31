@@ -29,7 +29,7 @@ export type InstallationPaths = {
   hubAssets: string
 }
 
-type InstallationIdentity =
+export type InstallationIdentity =
   | { kind: 'distribution'; root: string; manifest: DistributionManifest }
   | { kind: 'checkout'; root: string; version: string }
 
@@ -134,7 +134,7 @@ export function readDistributionManifest(root: string): DistributionManifest | n
 }
 
 /** Read the identity of the running distribution or checkout. */
-function installationIdentity(
+export function installationIdentity(
   fromDirectory: string,
   env: InstallEnvironment,
 ): InstallationIdentity {
