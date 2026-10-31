@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Client, InMemoryTransport, type Tool } from '@modelcontextprotocol/client'
+import { Server } from '@modelcontextprotocol/server'
 import { MCP_SERVER_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { McpServerConfig } from './mcp-probe.ts'
 import {
@@ -127,6 +128,129 @@ test('proxy exhausts listing pages, refuses guessed names, and forwards allowed 
   }
 })
 
+test('writer proxy lists and calls only explicitly registered tools', async () => {
+  const calls: string[] = []
+  const upstream: ReaderMcpUpstream = {
+    listTools: async () => ({
+      tools: [
+        {
+          name: 'query-database',
+          inputSchema: { type: 'object' },
+          annotations: { readOnlyHint: true },
+        },
+        { name: 'update-task', inputSchema: { type: 'object' } },
+      ],
+    }),
+    callTool: async (name) => {
+      calls.push(name)
+      return { content: [{ type: 'text', text: name }] }
+    },
+    close: async () => {},
+  }
+  const proxy = await createReaderMcpProxy(
+    upstream,
+    {
+      server: 'project',
+      projectServer: 'project',
+      registeredTools: ['update-task'],
+    },
+    'writer',
+  )
+  const client = new Client({ name: 'writer-proxy-test', version: '1' })
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+  await proxy.server.connect(serverTransport)
+  await client.connect(clientTransport)
+  try {
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['update-task'])
+    const refused = await client.callTool({ name: 'query-database', arguments: {} })
+    expect(refused.isError).toBeTrue()
+    expect(refused.content).toEqual([
+      { type: 'text', text: 'Writing job may not call tool "query-database".' },
+    ])
+    expect(calls).toEqual([])
+    await client.callTool({ name: 'update-task', arguments: {} })
+    expect(calls).toEqual(['update-task'])
+  } finally {
+    await client.close()
+    await proxy.close()
+  }
+})
+
+test('writer command serves only the project writer_tools grant', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'writer-proxy-command-'))
+  const main = join(root, 'main')
+  const tree = join(root, 'tree')
+  mkdirSync(main)
+  mkdirSync(tree)
+  const upstreamCalls: string[] = []
+  const upstreamServer = new Server(
+    { name: 'writer-command-upstream', version: '1' },
+    { capabilities: { tools: {} } },
+  )
+  upstreamServer.setRequestHandler('tools/list', async () => ({
+    tools: [
+      { name: 'read-status', inputSchema: { type: 'object' } },
+      { name: 'update-task', inputSchema: { type: 'object' } },
+    ],
+  }))
+  upstreamServer.setRequestHandler('tools/call', async (request) => {
+    upstreamCalls.push(request.params.name)
+    return { content: [{ type: 'text', text: request.params.name }] }
+  })
+  const upstreamClient = new Client({ name: 'writer-command-upstream-client', version: '1' })
+  const [upstreamClientTransport, upstreamServerTransport] = InMemoryTransport.createLinkedPair()
+  await upstreamServer.connect(upstreamServerTransport)
+  await upstreamClient.connect(upstreamClientTransport)
+  try {
+    await readerMcpProxyCommand('writer', 'project', 'tracker', tree, {
+      projectByName: () => ({
+        name: 'project',
+        path: main,
+        settings: {
+          mcp: {
+            reader_tools: { tracker: ['read-status'] },
+            writer_tools: { tracker: ['update-task'] },
+          },
+        },
+      }),
+      retiredProjectByName: () => null,
+      readMcpConfigResult: () => ({
+        ok: true,
+        path: join(main, '.mcp.json'),
+        config: { tracker: { name: 'tracker', command: 'tracker-server' } },
+      }),
+      connectMcpToolClient: async () => ({
+        client: upstreamClient,
+        close: () => upstreamClient.close(),
+      }),
+      serveProxy: async (proxy) => {
+        const client = new Client({ name: 'writer-command-client', version: '1' })
+        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+        await proxy.server.connect(serverTransport)
+        await client.connect(clientTransport)
+        try {
+          expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(['update-task'])
+          expect((await client.callTool({ name: 'read-status', arguments: {} })).isError).toBeTrue()
+          await client.callTool({ name: 'update-task', arguments: {} })
+          expect(upstreamCalls).toEqual(['update-task'])
+        } finally {
+          await client.close()
+          await proxy.close()
+        }
+      },
+      environment: {},
+      error: (line) => {
+        throw new Error(line)
+      },
+      setExitCode: () => {},
+    })
+  } finally {
+    await upstreamServer.close().catch(() => undefined)
+    await upstreamClient.close().catch(() => undefined)
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
 test('command sanitizes a configured credential from an upstream startup failure', async () => {
   const root = mkdtempSync(join(tmpdir(), 'reader-proxy-command-'))
   const main = join(root, 'main')
@@ -138,7 +262,7 @@ test('command sanitizes a configured credential from an upstream startup failure
   const errors: string[] = []
   const exitCodes: number[] = []
   try {
-    await readerMcpProxyCommand('project', 'tracker', tree, {
+    await readerMcpProxyCommand('reader', 'project', 'tracker', tree, {
       projectByName: () => ({ name: 'project', path: main, settings: {} }),
       retiredProjectByName: () => null,
       readMcpConfigResult: () => ({
@@ -173,6 +297,19 @@ test('command sanitizes a configured credential from an upstream startup failure
   }
 })
 
+test('command refuses an unknown proxy policy at its edge', async () => {
+  const errors: string[] = []
+  const exitCodes: number[] = []
+  await readerMcpProxyCommand('admin', 'project', 'tracker', '/tree', {
+    error: (line) => errors.push(line),
+    setExitCode: (code) => exitCodes.push(code),
+  })
+  expect(errors).toEqual([
+    'MCP admin proxy for tracker could not start: policy must be "reader" or "writer", received "admin"',
+  ])
+  expect(exitCodes).toEqual([1])
+})
+
 test('command sanitizes a helper-resolved header from an upstream startup failure', async () => {
   const root = mkdtempSync(join(tmpdir(), 'reader-proxy-helper-header-'))
   const main = join(root, 'main')
@@ -184,7 +321,7 @@ test('command sanitizes a helper-resolved header from an upstream startup failur
   const errors: string[] = []
   const sentinel = 'sentinel-helper-header-token'
   try {
-    await readerMcpProxyCommand('project', 'tracker', tree, {
+    await readerMcpProxyCommand('reader', 'project', 'tracker', tree, {
       projectByName: () => ({ name: 'project', path: main, settings: {} }),
       retiredProjectByName: () => null,
       readMcpConfigResult: () => ({
@@ -257,7 +394,7 @@ test('command resolves the platform’s own server without a tree entry, and a t
       },
     ]
     for (const config of configs) {
-      await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+      await readerMcpProxyCommand('reader', PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
         ...common,
         readMcpConfigResult: () => ({ ok: true, path: join(main, '.mcp.json'), config }),
       })
@@ -304,17 +441,17 @@ test('command falls back to the built-in launch when the launch file is absent a
   try {
     // The platform's own server is registered at user scope, so a tree with no
     // launch file at all still starts the installed binary serving it.
-    await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+    await readerMcpProxyCommand('reader', PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
       ...common,
       readMcpConfigResult: () => ({ ok: false, path, reason: 'missing' }),
     })
     // The same absence still refuses a name no installation answers for.
-    await readerMcpProxyCommand(PLATFORM_SLUG, 'tracker', tree, {
+    await readerMcpProxyCommand('reader', PLATFORM_SLUG, 'tracker', tree, {
       ...common,
       readMcpConfigResult: () => ({ ok: false, path, reason: 'missing' }),
     })
     // A broken file is reported for every name, the platform's included.
-    await readerMcpProxyCommand(PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
+    await readerMcpProxyCommand('reader', PLATFORM_SLUG, MCP_SERVER_NAME, tree, {
       ...common,
       readMcpConfigResult: () => ({ ok: false, path, reason: 'invalid' }),
     })
@@ -342,7 +479,7 @@ test('command distinguishes unavailable launch files and refuses the registered 
       error: (line: string) => errors.push(line),
       setExitCode: () => {},
     }
-    await readerMcpProxyCommand('project', 'tracker', root, {
+    await readerMcpProxyCommand('reader', 'project', 'tracker', root, {
       ...common,
       readMcpConfigResult: () => ({
         ok: true,
@@ -362,7 +499,7 @@ test('command distinguishes unavailable launch files and refuses the registered 
       { ok: false as const, path: join(root, '.mcp.json'), reason: 'invalid' as const },
       { ok: true as const, path: join(root, '.mcp.json'), config: {} },
     ]) {
-      await readerMcpProxyCommand('project', 'tracker', tree, {
+      await readerMcpProxyCommand('reader', 'project', 'tracker', tree, {
         ...common,
         readMcpConfigResult: () => result,
       })

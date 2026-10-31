@@ -117,7 +117,7 @@ export async function upsertHostedProjectRow(
       id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context, agent_keys,
       visibility, landing_branch, production_branch, gate, worker_check, gate_input, focused_tests, require_clean_main, color,
       color_dark, env_prefix, mcp_server, worker_mcp_servers, secret_paths,
-      mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
+      mcp_probe_tool, mcp_reader_tools, mcp_writer_tools, docs, reference, signals, review, test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     ) VALUES (
       ${id}::uuid, ${input.spaceId}::uuid, ${input.name}, ${tx.array(columns.keyPrefixes, 'text')},
       ${input.path}, ${input.stack}, ${input.canon}, ${columns.managedContext},
@@ -128,6 +128,7 @@ export async function upsertHostedProjectRow(
       ${columns.mcpServer}, ${postgresTextArray(tx, columns.workerMcpServers)},
       ${postgresTextArray(tx, columns.secretPaths)}, ${columns.mcpProbeTool},
       ${bindJsonb(tx, columns.mcpReaderTools)},
+      ${bindJsonb(tx, columns.mcpWriterTools)},
       ${bindJsonb(tx, columns.docs)},
       ${bindJsonb(tx, columns.reference)},
       ${bindJsonb(tx, columns.signals)},
@@ -165,6 +166,7 @@ export async function upsertHostedProjectRow(
       secret_paths = EXCLUDED.secret_paths,
       mcp_probe_tool = EXCLUDED.mcp_probe_tool,
       mcp_reader_tools = EXCLUDED.mcp_reader_tools,
+      mcp_writer_tools = EXCLUDED.mcp_writer_tools,
       docs = EXCLUDED.docs,
       reference = EXCLUDED.reference,
       signals = EXCLUDED.signals,
@@ -208,6 +210,7 @@ export async function listRecordProjects(
         secretPaths: row.secret_paths as string[] | null,
         mcpProbeTool: row.mcp_probe_tool == null ? null : String(row.mcp_probe_tool),
         mcpReaderTools: row.mcp_reader_tools as HostedProjectColumns['mcpReaderTools'],
+        mcpWriterTools: row.mcp_writer_tools as HostedProjectColumns['mcpWriterTools'],
         docs: row.docs as HostedProjectColumns['docs'],
         reference: row.reference as HostedProjectColumns['reference'],
         signals: row.signals as HostedProjectColumns['signals'],

@@ -7,7 +7,9 @@ import {
 } from './mcp-reader-scope.ts'
 import {
   mergeMcpSetupHeader,
-  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+  PROJECT_MCP_RELATIVE_WRITER_ADVICE,
+  PROJECT_MCP_RELATIVE_WRITER_REASON,
+  PROJECT_MCP_WRITER_TOOLS_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   projectMcpWithheldLine,
   projectMcpWriterRemedy,
@@ -18,7 +20,7 @@ const writerWithheld = (...names: string[]) =>
   names.map((name) => ({
     name,
     reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
-    advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+    advice: PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', name),
     remedy: projectMcpWriterRemedy(PROJECT),
   }))
 
@@ -39,9 +41,12 @@ const CONFIG: Record<string, McpServerConfig> = {
   noLaunch: { name: 'noLaunch' },
 }
 const PROJECT = { name: 'starship', path: '/project', settings: {} }
+const PROXY = { kind: 'proxy' } as const
+const ACP_ADVICE = 'ACP test decision withholds this server'
+const ACP = { kind: 'withhold', advice: ACP_ADVICE } as const
 
 test('a writing run attaches every project server except the withheld ones', () => {
-  const selection = selectProjectMcpServers('writer', CONFIG, PROJECT, '/project', true)
+  const selection = selectProjectMcpServers('writer', CONFIG, PROJECT, '/project', true, PROXY)
   expect(selection?.kind).toBe('direct')
   if (selection?.kind !== 'direct') return
   expect(selection.servers.local).toEqual({
@@ -56,8 +61,62 @@ test('a writing run attaches every project server except the withheld ones', () 
   expect(JSON.stringify(selection)).not.toContain('literal-secret')
 })
 
+test('a credentialed writer server uses a credential-free proxy only with declared writer tools', () => {
+  const project = {
+    ...PROJECT,
+    settings: { mcp: { writer_tools: { secretHeader: ['update-task'] } } },
+  }
+  const selection = selectProjectMcpServers('writer', CONFIG, project, '/project', true, PROXY)
+  expect(selection?.kind).toBe('direct')
+  expect(selection?.servers.secretHeader).toMatchObject({
+    args: expect.arrayContaining(['writer', 'starship', 'secretHeader', '/project']),
+  })
+  expect(selection?.withheld.map(({ name }) => name)).toEqual([
+    'secretEnv',
+    'helperHeader',
+    'noLaunch',
+  ])
+  expect(JSON.stringify(selection)).not.toContain('literal-secret')
+
+  const acp = selectProjectMcpServers('writer', CONFIG, project, '/project', true, ACP)
+  expect(acp?.servers.secretHeader).toBeUndefined()
+  expect(acp?.withheld.find(({ name }) => name === 'secretHeader')?.advice).toBe(ACP_ADVICE)
+  expect(JSON.stringify(acp)).not.toContain('literal-secret')
+})
+
+test('a credentialed project-relative writer server is always withheld', () => {
+  const project = {
+    ...PROJECT,
+    settings: { mcp: { writer_tools: { relative: ['update-task'] } } },
+  }
+  const selection = selectProjectMcpServers(
+    'writer',
+    {
+      relative: {
+        name: 'relative',
+        command: 'scripts/mcp/tracker',
+        env: { TOKEN: 'literal-secret' },
+      },
+    },
+    project,
+    '/worker-tree',
+    true,
+    PROXY,
+  )
+  expect(selection?.servers.relative).toBeUndefined()
+  expect(selection?.withheld).toEqual([
+    {
+      name: 'relative',
+      reason: PROJECT_MCP_RELATIVE_WRITER_REASON,
+      advice: PROJECT_MCP_RELATIVE_WRITER_ADVICE,
+      remedy: projectMcpWriterRemedy(project),
+    },
+  ])
+  expect(JSON.stringify(selection)).not.toContain('literal-secret')
+})
+
 test('a reading run attaches the credential-free reader proxy and withholds nothing', () => {
-  const selection = selectProjectMcpServers('reader', CONFIG, PROJECT, '/project', true)
+  const selection = selectProjectMcpServers('reader', CONFIG, PROJECT, '/project', true, PROXY)
   expect(selection?.kind).toBe('reader')
   if (selection?.kind !== 'reader') return
   expect(Object.keys(selection.servers)).toContain('local')
@@ -80,6 +139,7 @@ test('a reading run with no project tree withholds project-relative stdio server
     PROJECT,
     '/isolate',
     false,
+    PROXY,
   )
   expect(selection?.kind).toBe('reader')
   if (selection?.kind !== 'reader') return
@@ -100,6 +160,7 @@ test('a reading run of the project that owns the platform server is handed its p
     { name: PLATFORM_SLUG, path: '/project', settings: {} },
     '/project',
     true,
+    PROXY,
   )
   expect(selection?.kind).toBe('reader')
   if (selection?.kind !== 'reader') return
@@ -118,6 +179,7 @@ test('the run allowlist decides which servers attach and is checked before withh
     { ...PROJECT, settings: { workerMcpServers: ['local', 'secretEnv'] } },
     '/project',
     true,
+    PROXY,
   )
   expect(selection?.kind).toBe('direct')
   expect(Object.keys(selection?.servers ?? {})).toEqual(['local'])
@@ -133,24 +195,24 @@ test('a project config never occupies a platform MCP identity', () => {
     },
     local: { name: 'local', command: './bin/local' },
   }
-  const direct = selectProjectMcpServers('writer', config, PROJECT, '/project', true)
+  const direct = selectProjectMcpServers('writer', config, PROJECT, '/project', true, PROXY)
   expect(direct?.kind).toBe('direct')
   if (direct?.kind !== 'direct') return
   expect(Object.keys(direct.servers)).toEqual(['local'])
   expect(direct.withheld).toEqual([])
-  const reader = selectProjectMcpServers('reader', config, PROJECT, '/project', true)
+  const reader = selectProjectMcpServers('reader', config, PROJECT, '/project', true, PROXY)
   expect(Object.keys(reader?.servers ?? {})).not.toContain(WORKER_MCP_SERVER_NAME)
   expect(Object.keys(reader?.servers ?? {})).not.toContain(MCP_SERVER_NAME)
 })
 
 test('MCP off attaches no project server at all', () => {
-  expect(selectProjectMcpServers(false, CONFIG, PROJECT, '/project', true)).toBeNull()
+  expect(selectProjectMcpServers(false, CONFIG, PROJECT, '/project', true, PROXY)).toBeNull()
 })
 
 test('withheld names are reported in the harness that loses them, and not when none are', () => {
   expect(projectMcpWithheldLine('goose', [])).toBeNull()
   expect(projectMcpWithheldLine('goose', writerWithheld('a', 'b'))).toBe(
-    'MCP scope: goose withheld a, b (inline env/headers, a headersHelper, or no launch definition); writing workers cannot receive these; run as a reader through the proxy, or declare the server without them',
+    `MCP scope: goose withheld a (${PROJECT_MCP_WRITER_WITHHELD_REASON}; ${PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', 'a')}), b (${PROJECT_MCP_WRITER_WITHHELD_REASON}; ${PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', 'b')})`,
   )
 })
 

@@ -241,6 +241,7 @@ export const project = pgTable.withRLS(
     secretPaths: text('secret_paths').array(),
     mcpProbeTool: text('mcp_probe_tool'),
     mcpReaderTools: jsonb('mcp_reader_tools'),
+    mcpWriterTools: jsonb('mcp_writer_tools'),
     agentKeys: jsonb('agent_keys'),
     docs: jsonb(),
     reference: jsonb(),

@@ -7,8 +7,10 @@ import { seedNeutralCodexQuotaReading } from '../../test/fixtures/store.ts'
 import type { Agent } from '../agent/agents.ts'
 import type { McpServerConfig } from '../mcp/mcp-probe.ts'
 import { upsertProject } from '../project/projects.ts'
+import { writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import {
-  PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+  PROJECT_MCP_RELATIVE_WRITER_REASON,
+  PROJECT_MCP_WRITER_TOOLS_ADVICE,
   PROJECT_MCP_WRITER_WITHHELD_REASON,
   requiredProjectMcpWriterIneligibility,
 } from '../sandbox/project-mcp-scope.ts'
@@ -82,10 +84,18 @@ test.each(AGENT_CASES.flatMap((agent) => SERVER_CASES.map((server) => ({ agent, 
       undefined,
       undefined,
       undefined,
-      requiredProjectMcpWriterIneligibility('starship', 'require', true, config, {
-        name: 'starship',
-        path: '/project',
-      }),
+      requiredProjectMcpWriterIneligibility(
+        'starship',
+        'require',
+        true,
+        config,
+        {
+          name: 'starship',
+          path: '/project',
+          settings: {},
+        },
+        writerProxyRoute(agent.harness ?? agent.name, agent.defaultTransport ?? 'cli'),
+      ),
     )
 
     if (withheld) {
@@ -110,12 +120,64 @@ test.each(AGENT_CASES)('$harness remains eligible for a helper-auth reader serve
       undefined,
       undefined,
       undefined,
-      requiredProjectMcpWriterIneligibility('starship', 'require', false, SERVER_CASES[0]!.config, {
-        name: 'starship',
-        path: '/project',
-      }),
+      requiredProjectMcpWriterIneligibility(
+        'starship',
+        'require',
+        false,
+        SERVER_CASES[0]!.config,
+        {
+          name: 'starship',
+          path: '/project',
+          settings: {},
+        },
+        writerProxyRoute(agent.harness ?? agent.name, agent.defaultTransport ?? 'cli'),
+      ),
     ),
   ).toBeNull()
+})
+
+test.each(AGENT_CASES)(
+  '$harness applies writer proxy eligibility to a declared writer tool',
+  (agent) => {
+    const why = requiredProjectMcpWriterIneligibility(
+      'starship',
+      'require',
+      true,
+      SERVER_CASES[0]!.config,
+      {
+        name: 'starship',
+        path: '/project',
+        settings: { mcp: { writer_tools: { starship: ['update-task'] } } },
+      },
+      writerProxyRoute(agent.harness ?? agent.name, agent.defaultTransport ?? 'cli'),
+    )
+    if (agent.defaultTransport === 'acp') {
+      expect(why).toContain('ACP writers do not receive proxied project servers yet')
+    } else {
+      expect(why).toBeNull()
+    }
+  },
+)
+
+test('a required credentialed project-relative writer server is ineligible for routing', () => {
+  const why = requiredProjectMcpWriterIneligibility(
+    'starship',
+    'require',
+    true,
+    {
+      name: 'starship',
+      command: 'scripts/mcp/starship',
+      env: { TOKEN: 'fixture-token' },
+    },
+    {
+      name: 'starship',
+      path: '/project',
+      settings: { mcp: { writer_tools: { starship: ['update-task'] } } },
+    },
+    { kind: 'proxy' },
+  )
+
+  expect(why).toContain(PROJECT_MCP_RELATIVE_WRITER_REASON)
 })
 
 test('a starship-shaped required writer server refuses routing before dispatch', () => {
@@ -162,7 +224,7 @@ test('a starship-shaped required writer server refuses routing before dispatch',
     expect(route).toThrow(
       `required project MCP server 'starship' is withheld from writing workers (${PROJECT_MCP_WRITER_WITHHELD_REASON})`,
     )
-    expect(route).toThrow(PROJECT_MCP_WRITER_WITHHELD_ADVICE)
+    expect(route).toThrow(PROJECT_MCP_WRITER_TOOLS_ADVICE.replace('<server>', 'starship'))
     expect(route).toThrow(join(root, '.mcp.json'))
   } finally {
     rmSync(root, { recursive: true, force: true })

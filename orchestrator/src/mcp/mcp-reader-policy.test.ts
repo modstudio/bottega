@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { readerMayCallTool } from './mcp-reader-policy.ts'
+import { readerMayCallTool, writerMayCallTool } from './mcp-reader-policy.ts'
 
 const decision = (overrides: Partial<Parameters<typeof readerMayCallTool>[0]> = {}) =>
   readerMayCallTool({
@@ -23,4 +23,17 @@ test('reader tool decision accepts annotations only from the project own server'
 test('reader tool decision refuses absent and false annotations', () => {
   expect(decision()).toBeFalse()
   expect(decision({ readOnlyHint: false })).toBeFalse()
+})
+
+test('writer tool decision admits exact register names and ignores read-only annotations', () => {
+  const facts = {
+    name: 'query-database',
+    readOnlyHint: true,
+    server: 'project',
+    projectServer: 'project',
+    registeredTools: [] as string[],
+  }
+  expect(writerMayCallTool(facts)).toBeFalse()
+  expect(writerMayCallTool({ ...facts, registeredTools: ['query-database'] })).toBeTrue()
+  expect(readerMayCallTool(facts)).toBeTrue()
 })

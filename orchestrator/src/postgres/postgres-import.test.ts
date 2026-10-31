@@ -102,7 +102,7 @@ async function targetState(sql: SQL): Promise<unknown> {
     SELECT id, space_id, name, key_prefixes, checkout_path, stack, canon, managed_context,
       visibility, landing_branch, production_branch, gate, worker_check, gate_input, focused_tests, agent_keys,
       require_clean_main, color, color_dark, env_prefix, mcp_server, worker_mcp_servers,
-      secret_paths, mcp_probe_tool, mcp_reader_tools, docs, reference, signals, review,
+      secret_paths, mcp_probe_tool, mcp_reader_tools, mcp_writer_tools, docs, reference, signals, review,
       test_substance, mechanical_checks, release, states, tracker, worktree, retired_at, created_at
     FROM project ORDER BY name
   `
@@ -245,6 +245,7 @@ realPostgres('project import against copied live SQLite data', () => {
       managedContext: 'managed_context',
       mcp: 'mcp_probe_tool',
       'mcp.reader_tools': 'mcp_reader_tools',
+      'mcp.writer_tools': 'mcp_writer_tools',
       mcpServer: 'mcp_server',
       mechanicalChecks: 'mechanical_checks',
       productionBranch: 'production_branch',
@@ -264,7 +265,7 @@ realPostgres('project import against copied live SQLite data', () => {
     }
     expect(
       Object.keys(columnForSetting)
-        .filter((key) => key !== 'mcp.reader_tools')
+        .filter((key) => key !== 'mcp.reader_tools' && key !== 'mcp.writer_tools')
         .sort(),
     ).toEqual(Object.keys(PROJECT_SETTING_COLUMNS).sort())
     const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
@@ -286,6 +287,9 @@ realPostgres('project import against copied live SQLite data', () => {
         if (key === 'mcp') {
           expect(target[columnForSetting['mcp.reader_tools']!] as unknown).toEqual(
             (settings.mcp as { reader_tools?: Record<string, string[]> }).reader_tools ?? null,
+          )
+          expect(target[columnForSetting['mcp.writer_tools']!] as unknown).toEqual(
+            (settings.mcp as { writer_tools?: Record<string, string[]> }).writer_tools ?? null,
           )
         }
       }

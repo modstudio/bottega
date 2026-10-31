@@ -160,10 +160,10 @@ function registerMcpServers(program: Command): void {
       }
     })
   program
-    .command('mcp-reader-proxy <project> <server> <tree>', { hidden: true })
+    .command('mcp-reader-proxy <policy> <project> <server> <tree>', { hidden: true })
     .allowExcessArguments(false)
-    .action((project: string, server: string, tree: string) =>
-      readerMcpProxyCommand(project, server, tree),
+    .action((policy: string, project: string, server: string, tree: string) =>
+      readerMcpProxyCommand(policy, project, server, tree),
     )
 }
 

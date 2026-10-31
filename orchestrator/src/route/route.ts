@@ -19,6 +19,7 @@ import {
 } from '../mcp/mcp-native-attachment.ts'
 import { type McpServerConfig, readMcpConfig } from '../mcp/mcp-probe.ts'
 import { currentProjectRepository, type Project, projectByName } from '../project/projects.ts'
+import { writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import type { SubscriptionCostContext } from '../run/run-subscription-cost.ts'
 import { calibrationFor } from '../runtime/calibration-port.ts'
 import { weigh } from '../score/score.ts'
@@ -352,15 +353,6 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
     highStakesLens,
   })
   const runningByAgent = runningRunsByAgent()
-  const writerMcpIneligibility = requiredMcp
-    ? requiredProjectMcpWriterIneligibility(
-        requiredMcp.server,
-        requiredMcp.mode,
-        Boolean(j.needs.writesRepo),
-        requiredMcpConfig,
-        requiredMcpProject,
-      )
-    : null
   const mcpIneligibility = (agent: Agent) =>
     mcpCandidateIneligibility(
       agent,
@@ -368,7 +360,19 @@ function candidatePass(jobName: string, promptBytes = 0, options: CandidateOptio
       mcpListing?.listedTools,
       pinnedTransport,
       transportPinSource,
-      writerMcpIneligibility,
+      requiredMcp
+        ? requiredProjectMcpWriterIneligibility(
+            requiredMcp.server,
+            requiredMcp.mode,
+            Boolean(j.needs.writesRepo),
+            requiredMcpConfig,
+            requiredMcpProject,
+            writerProxyRoute(
+              agent.harness ?? agent.name,
+              pinnedTransport ?? agent.defaultTransport ?? 'cli',
+            ),
+          )
+        : null,
     )
   const policyEligibility = (agent: Agent) =>
     routePolicyEligibility(

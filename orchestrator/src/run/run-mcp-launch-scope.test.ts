@@ -1,8 +1,11 @@
 import { afterEach, expect, test } from 'bun:test'
+import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { newRecordId } from '../../../shared/record-id.ts'
 import type { Agent } from '../agent/agents.ts'
+import { upsertProject } from '../project/projects.ts'
 import { PROJECT_RELATIVE_NO_TREE_REASON } from '../sandbox/mcp-reader-scope.ts'
 import {
   PROJECT_MCP_WRITER_WITHHELD_ADVICE,
@@ -13,10 +16,12 @@ import {
 } from '../sandbox/project-mcp-scope.ts'
 import { acpProjectMcpServers } from '../transport/transport-acp-mcp.ts'
 import {
+  PROJECT_MCP_ACP_WRITER_ADVICE,
   projectSelectionForLaunch,
   withheldScopeLine,
   workerMcpLaunchScope,
   workerMcpLaunchSelection,
+  writerProxyRoute,
 } from './run-mcp-launch-scope.ts'
 
 const roots: string[] = []
@@ -77,12 +82,31 @@ test('inline credentials are withheld from the selection rather than rendered', 
       {
         name: 'secret',
         reason: PROJECT_MCP_WRITER_WITHHELD_REASON,
-        advice: PROJECT_MCP_WRITER_WITHHELD_ADVICE,
+        advice: PROJECT_MCP_ACP_WRITER_ADVICE,
         remedy: projectMcpWriterRemedy(null),
       },
     ],
   })
   expect(JSON.stringify(scope.projectSelection)).not.toContain('literal-secret')
+})
+
+test('a Grok CLI writer receives its credentialed project server through the writer proxy', () => {
+  const cwd = tree({
+    tracker: { command: 'tracker-server', env: { TRACKER_TOKEN: 'literal-secret' } },
+  })
+  execFileSync('git', ['init', '--quiet'], { cwd })
+  upsertProject({
+    recordId: newRecordId(),
+    name: 'grok-writer-proxy-fixture',
+    path: cwd,
+    settings: { mcp: { writer_tools: { tracker: ['update-task'] } } },
+  })
+  const scope = launch('grok', 'cli', true, cwd)
+  expect(scope.projectSelection?.withheld).toEqual([])
+  expect(scope.grok?.tracker).toMatchObject({
+    args: expect.arrayContaining(['writer', 'grok-writer-proxy-fixture', 'tracker', cwd]),
+  })
+  expect(JSON.stringify(scope.grok)).not.toContain('literal-secret')
 })
 
 test('the selection-only entry derives the same selection as a full launch scope', () => {
@@ -93,6 +117,7 @@ test('the selection-only entry derives the same selection as a full launch scope
     hasProjectTree: true,
     callerCwd: cwd,
     cwd,
+    writerProxy: writerProxyRoute('goose', 'acp'),
   })
   expect(writes).toEqual(launch('goose', 'acp', true, cwd).projectSelection)
   const reads = workerMcpLaunchSelection({
@@ -101,6 +126,7 @@ test('the selection-only entry derives the same selection as a full launch scope
     hasProjectTree: true,
     callerCwd: cwd,
     cwd,
+    writerProxy: writerProxyRoute('goose', 'acp'),
   })
   expect(reads?.kind).toBe('reader')
   expect(
@@ -110,6 +136,7 @@ test('the selection-only entry derives the same selection as a full launch scope
       hasProjectTree: true,
       callerCwd: cwd,
       cwd,
+      writerProxy: writerProxyRoute('goose', 'acp'),
     }),
   ).toBeNull()
 })
@@ -165,6 +192,7 @@ test('a Grok CLI reader reports a project-relative server withheld without a tre
     { name: 'starship', path: '/project', settings: {} },
     '/isolate',
     false,
+    writerProxyRoute('grok', 'cli'),
   )
   expect(selection?.kind).toBe('reader')
   expect((selection?.withheld ?? []).map((entry) => entry.name)).toEqual(['boost'])

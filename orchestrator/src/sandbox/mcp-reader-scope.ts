@@ -18,6 +18,30 @@ export type ReaderProxyServer = {
   args: string[]
 }
 
+/** One project server shape a harness renderer accepts. */
+export type ProjectMcpServerEntry =
+  | ReaderProxyServer
+  | { command: string; args: string[]; cwd: string }
+  | { url: string }
+
+/** Build credential-free proxy launches for already-selected server names. */
+export function projectProxyServers(
+  names: readonly string[],
+  policy: 'reader' | 'writer',
+  projectName: string,
+  cwd: string,
+): Record<string, ReaderProxyServer> {
+  const argv = bottegaEntryArgv('mcp-reader-proxy')
+  const command = argv[0]!
+  const baseArgs = argv.slice(1)
+  return Object.fromEntries(
+    names.map((server) => [
+      server,
+      { command, args: [...baseArgs, policy, projectName, server, cwd] },
+    ]),
+  )
+}
+
 export type ProjectMcpWithheld = {
   name: string
   reason: string
@@ -36,7 +60,12 @@ export function withholdProjectRelativeStdioServer(
   server: { command?: string; url?: string },
   hasProjectTree: boolean,
 ): boolean {
-  if (hasProjectTree || server.url || !server.command) return false
+  return !hasProjectTree && isProjectRelativeStdioServer(server)
+}
+
+/** Whether a stdio launch resolves a relative path beneath its launch cwd. */
+export function isProjectRelativeStdioServer(server: { command?: string; url?: string }): boolean {
+  if (server.url || !server.command) return false
   return server.command.includes('/') && !isAbsolute(server.command)
 }
 
@@ -45,7 +74,7 @@ export const READER_PLATFORM_MCP_SERVERS = [MCP_SERVER_NAME, WORKER_MCP_SERVER_N
 /** Build the only MCP table a Grok reader's run home may expose. */
 export function grokReaderMcpServerTable(
   userServers: Record<string, unknown> | undefined,
-  proxies: Record<string, ReaderProxyServer>,
+  proxies: Record<string, ProjectMcpServerEntry>,
 ): Record<string, unknown> {
   return {
     ...(userServers?.[MCP_SERVER_NAME] ? { [MCP_SERVER_NAME]: userServers[MCP_SERVER_NAME] } : {}),
@@ -134,13 +163,8 @@ export function projectReaderProxyServers(
       kept.push(name)
     }
   }
-  const argv = bottegaEntryArgv('mcp-reader-proxy')
-  const command = argv[0]!
-  const baseArgs = argv.slice(1)
   return {
-    servers: Object.fromEntries(
-      kept.map((server) => [server, { command, args: [...baseArgs, project.name, server, cwd] }]),
-    ),
+    servers: projectProxyServers(kept, 'reader', project.name, cwd),
     withheld,
   }
 }

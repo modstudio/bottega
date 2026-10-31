@@ -11,7 +11,6 @@ import type { McpToolPage } from '../mcp/mcp-tool-list.ts'
 import {
   mergeMcpSetupHeader,
   type ProjectMcpSelection,
-  type ProjectMcpServer,
   type ProjectMcpWithheld,
   projectMcpWithheldLine,
 } from './project-mcp-scope.ts'
@@ -79,13 +78,19 @@ export function codexAskServerCommand(): string[] {
   return bottegaEntryArgv('ask-server')
 }
 
-function codexServers(servers: Record<string, ProjectMcpServer>): Record<string, CodexMcpServer> {
+function codexServers(
+  servers: Extract<ProjectMcpSelection, { kind: 'direct' }>['servers'],
+): Record<string, CodexMcpServer> {
   const rendered: Record<string, CodexMcpServer> = {}
   for (const [name, server] of Object.entries(servers)) {
     rendered[name] =
       'url' in server
         ? { url: server.url }
-        : { command: server.command, args: server.args, cwd: server.cwd }
+        : {
+            command: server.command,
+            args: server.args,
+            ...('cwd' in server ? { cwd: server.cwd } : {}),
+          }
   }
   return rendered
 }

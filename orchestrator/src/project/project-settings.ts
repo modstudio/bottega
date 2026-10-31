@@ -167,7 +167,11 @@ export type ProjectSettings = {
    */
   workerMcpServers?: string[]
   /** A cheap probe tool and per-server tool names reading jobs may call through the MCP proxy. */
-  mcp?: { probe_tool?: string; reader_tools?: Record<string, string[]> }
+  mcp?: {
+    probe_tool?: string
+    reader_tools?: Record<string, string[]>
+    writer_tools?: Record<string, string[]>
+  }
   /** How this project's task tracker is reached and how its vocabulary maps. */
   tracker?: TrackerSettings
   /**

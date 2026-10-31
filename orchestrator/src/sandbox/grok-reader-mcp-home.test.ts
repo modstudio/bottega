@@ -25,11 +25,11 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     const proxies = {
       project: {
         command: FRONT_DOOR,
-        args: ['mcp-reader-proxy', 'fixture', 'project', '/run/tree'],
+        args: ['mcp-reader-proxy', 'reader', 'fixture', 'project', '/run/tree'],
       },
       secondary: {
         command: FRONT_DOOR,
-        args: ['mcp-reader-proxy', 'fixture', 'secondary', '/run/tree'],
+        args: ['mcp-reader-proxy', 'reader', 'fixture', 'secondary', '/run/tree'],
       },
     }
     mkdirSync(join(cwd, '.grok'))
@@ -50,7 +50,9 @@ test('Grok reader home replaces project routes with credential-free proxies', ()
     expect(written).not.toContain('same-project-under-another-name')
     expect(written).toContain(`project = { command = ${JSON.stringify(FRONT_DOOR)}`)
     expect(written).toContain(`secondary = { command = ${JSON.stringify(FRONT_DOOR)}`)
-    expect(written).toContain('args = [ "mcp-reader-proxy", "fixture", "project", "/run/tree" ]')
+    expect(written).toContain(
+      'args = [ "mcp-reader-proxy", "reader", "fixture", "project", "/run/tree" ]',
+    )
     expect(written).toContain(`${MCP_SERVER_NAME} = { command = "orch" }`)
     expect(grokAskCommandFromConfig(written)).toEqual(grokAskServerCommand('host'))
     const projectLayer = readFileSync(join(cwd, '.grok', 'config.toml'), 'utf8')

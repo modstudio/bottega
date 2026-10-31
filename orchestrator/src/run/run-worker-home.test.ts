@@ -83,7 +83,7 @@ test('Grok launch scopes only a reader home while leaving a writer direct', asyn
   const proxies = {
     project: {
       command: FRONT_DOOR,
-      args: ['mcp-reader-proxy', 'fixture', 'project', reader],
+      args: ['mcp-reader-proxy', 'reader', 'fixture', 'project', reader],
     },
   }
 
