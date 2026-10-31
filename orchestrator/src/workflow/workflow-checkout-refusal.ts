@@ -82,9 +82,10 @@ export function checkoutOutsideChangeRefusal(
   }
   if (checkout.landingCommit && checkout.landingIsHeadOrAncestor === false) {
     return (
-      `${flag} checkout ${checkout.checkoutPath} at its head does not yet contain landing ` +
-      `${checkout.landingCommit} on ${checkout.landingBranch}; run ` +
-      `\`${PLATFORM_SLUG} tree refresh ${checkout.checkoutPath}\`, then rerun the same command`
+      `${flag} head_commit does not yet contain landing ${checkout.landingCommit} on ` +
+      `${checkout.landingBranch}; if checkout ${checkout.checkoutPath} is behind ` +
+      `${checkout.landingBranch}, run \`${PLATFORM_SLUG} tree refresh ${checkout.checkoutPath}\` ` +
+      `and rerun the same command, otherwise use evidence recorded from that change's checkout`
     )
   }
   return (
