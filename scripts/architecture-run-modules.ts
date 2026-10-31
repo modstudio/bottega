@@ -8,6 +8,10 @@ export const runModuleSpecs = [
     allowed: ['../../../shared/delegation-mode.ts', '../jobs/delegation.ts', '../jobs/jobs.ts'],
   },
   {
+    file: 'orchestrator/src/health/launch-agent-doctor.ts',
+    allowed: ['../../../shared/launch-agent-skip.ts', '../setup/launchd-owners.ts'],
+  },
+  {
     file: 'orchestrator/src/run/run-subscription-cost.ts',
     allowed: ['../agent/agents.ts'],
   },

@@ -1,18 +1,8 @@
 // concern: setup environment migration
 /** Decides and applies the one-time operator environment-name migration. */
 
-import {
-  mkdir,
-  open,
-  readdir,
-  readFile,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { ConfigClientError } from '../../../shared/config-client.ts'
 import { resolveEnvFilePaths } from '../../../shared/config-directory.ts'
@@ -21,6 +11,7 @@ import {
   legacyEnvironmentNameMatches,
   replacementEnvironmentName,
 } from './environment-name-migration.ts'
+import { installationPlistOwners } from './launchd-owners.ts'
 import {
   decideStateFileMove,
   defaultStateFilePair,
@@ -198,33 +189,6 @@ export function environmentFilesDecision(
   return { kind: 'replace', files: decisions }
 }
 
-export type InstalledPlistOwner = { label: string; command: string }
-
-const LAUNCHD_TEMPLATE_OWNERS = [
-  { concern: 'hub', directory: 'launchd', command: 'hub/bin/install-launchd.sh' },
-  { concern: 'ops', directory: 'launchd', command: 'ops/install.sh' },
-] as const
-
-/** Derive every installed label and its owning installer from template paths. */
-export function installedPlistOwners(
-  templates: ReadonlyArray<{ path: string; text: string }>,
-): InstalledPlistOwner[] {
-  return templates
-    .filter(({ path }) => path.endsWith('.plist.template'))
-    .map(({ path, text }) => {
-      const label = /<key>Label<\/key>\s*<string>([^<]+)<\/string>/.exec(text)?.[1]
-      if (!label) throw new Error(`launchd template ${path} has no Label`)
-      const concern = basename(dirname(dirname(path)))
-      const owner = LAUNCHD_TEMPLATE_OWNERS.find((candidate) => candidate.concern === concern)
-      if (!owner) throw new Error(`launchd template ${path} has unknown concern ${concern}`)
-      return {
-        label,
-        command: owner.command,
-      }
-    })
-    .sort((left, right) => left.label.localeCompare(right.label))
-}
-
 /** Report only inventoried old names carried by an installed plist. */
 export function staleInstalledPlistEnvironmentNames(text: string): string[] {
   return [...new Set(legacyEnvironmentNameMatches(text).map(({ name }) => name))]
@@ -255,20 +219,6 @@ async function atomicModePreservingWrite(path: string, text: string, mode: numbe
     await rm(temporary, { force: true })
     throw error
   }
-}
-
-async function installationPlistOwners(): Promise<InstalledPlistOwner[]> {
-  const root = resolve(import.meta.dir, '../../..')
-  const templates: Array<{ path: string; text: string }> = []
-  for (const owner of LAUNCHD_TEMPLATE_OWNERS) {
-    const directory = join(root, owner.concern, owner.directory)
-    for (const name of await readdir(directory)) {
-      if (!name.endsWith('.plist.template')) continue
-      const path = join(directory, name)
-      templates.push({ path, text: await readFile(path, 'utf8') })
-    }
-  }
-  return installedPlistOwners(templates)
 }
 
 async function staleInstalledPlists(

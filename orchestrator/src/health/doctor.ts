@@ -47,6 +47,7 @@ import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
 import { worktreeDirty } from '../worktree/worktree-attribution.ts'
 import { lifecycleReportLines } from '../worktree/worktree-lifecycle.ts'
 import { configuredDelegationDoctorLines } from './delegation-doctor.ts'
+import { launchAgentDoctorLines } from './launch-agent-doctor.ts'
 
 type DoctorFlags = { has(name: string): boolean }
 type DoctorPresentation = {
@@ -235,6 +236,11 @@ async function reportDatabaseStatus(log: DoctorPresentation['log']): Promise<voi
   log(await runTaskReferenceDoctorLine())
 }
 
+async function reportInstallationStatus(log: DoctorPresentation['log']): Promise<void> {
+  await reportDatabaseStatus(log)
+  for (const line of await launchAgentDoctorLines()) log(line)
+}
+
 async function reportProjectAgentKeys(log: DoctorPresentation['log']): Promise<void> {
   const { projects } = await import('../project/projects.ts')
   const registered = projects()
@@ -416,7 +422,7 @@ export async function doctorCommand(
   if (failingEvalSlugs.length) {
     log(`FAILING CANON EVALS: ${failingEvalSlugs.join(', ')}`)
   }
-  await reportDatabaseStatus(log)
+  await reportInstallationStatus(log)
   const { harnessHealth } = await import('./health.ts')
   const costlyFailures = harnessHealth()
     .classes.filter((row) => row.count > 0)

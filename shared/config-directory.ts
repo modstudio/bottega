@@ -63,14 +63,3 @@ export function resolveEnvFilePaths(env: ConfigEnvironment): string[] {
   const harness = resolveHarnessEnvFile(env)
   return [...(harness ? [harness] : []), resolvePlatformEnvFile(env)]
 }
-
-if (import.meta.main) {
-  const command = process.argv[2]
-  const env = process.env as ConfigEnvironment
-  const paths = resolveEnvFilePaths(env)
-  if (command === 'env-paths') {
-    for (const path of paths) console.log(path)
-  } else {
-    throw new Error('working form: bun shared/config-directory.ts env-paths')
-  }
-}
