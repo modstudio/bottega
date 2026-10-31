@@ -2,6 +2,8 @@
   // The dead-code pass: production sources only, in-file use counts as use.
   // Entries must match knip.jsonc; a mismatch surfaces as a new finding in the other pass.
   "$schema": "https://unpkg.com/knip@6.36.0/schema.json",
+  // Workflow entries are not production entries and shadow ! entries for the same files.
+  "github-actions": false,
   "includeEntryExports": true,
   "ignoreExportsUsedInFile": true,
   // shared/record/drizzle.config.ts loads every exported table from these files.

@@ -168,6 +168,18 @@ export function productionSourcesAnalyzed(findings: DeadCodeFinding[]) {
   )
 }
 
+const ENTRY_GLOB_CHARACTERS = /[*?{}[\]]/
+
+export function missingLiteralProductionEntries(
+  entries: readonly string[],
+  seenFiles: ReadonlySet<string>,
+): string[] {
+  return entries
+    .filter((entry) => entry.endsWith('!') && !entry.startsWith('!'))
+    .map((entry) => entry.slice(0, -1))
+    .filter((entry) => !ENTRY_GLOB_CHARACTERS.test(entry) && !seenFiles.has(entry))
+}
+
 export function deadCodeRatchetFinding(finding: DeadCodeFinding): Finding {
   return {
     file: `${finding.workspace}\0${finding.file}`,

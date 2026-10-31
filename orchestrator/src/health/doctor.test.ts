@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import { PLATFORM_NAME } from '../../../shared/brand.ts'
+import { PLATFORM_NAME, PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { registerEmbeddedAssets } from '../../../shared/embedded-assets.ts'
 import { acpRuntimeGaps } from '../transport/transport.ts'
-import { canonEvalDoctorDecision, doctorAcpStatus } from './doctor.ts'
+import { canonEvalDoctorDecision, doctorAcpStatus, workerCheckDoctorFinding } from './doctor.ts'
 
 afterEach(() => registerEmbeddedAssets(null))
 
@@ -64,4 +64,35 @@ test('a compiled install reports missing codex-acp as informational', () => {
   })
   expect(gap).toContain('codex-acp executable is not installed')
   expect(doctorAcpStatus(gap)).toStartWith('informational — ')
+})
+
+describe('project worker check diagnosis', () => {
+  test('reports a differing registered command with the exact repair', () => {
+    expect(
+      workerCheckDoctorFinding({
+        project: 'fixture',
+        workerCheck: 'bun run old-worker-check',
+        scripts: { 'check:worker': 'bun scripts/check.ts --worker' },
+      }),
+    ).toBe(
+      `fixture: registered workerCheck "bun run old-worker-check" differs from package script "bun run check:worker"; set it with: ${PLATFORM_SLUG} project set fixture --settings '{"workerCheck":"bun run check:worker"}'`,
+    )
+  })
+
+  test('reports nothing for the matching command or a project without the script', () => {
+    expect(
+      workerCheckDoctorFinding({
+        project: 'fixture',
+        workerCheck: 'bun run check:worker',
+        scripts: { 'check:worker': 'bun scripts/check.ts --worker' },
+      }),
+    ).toBeNull()
+    expect(
+      workerCheckDoctorFinding({
+        project: 'fixture',
+        workerCheck: 'bun run old-worker-check',
+        scripts: { check: 'bun scripts/check.ts' },
+      }),
+    ).toBeNull()
+  })
 })
