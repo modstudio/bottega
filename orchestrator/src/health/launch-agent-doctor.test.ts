@@ -27,9 +27,8 @@ describe('launch agent doctor decision', () => {
     })
   })
 
-  test.each([['launchctl missing' as const], ['gui domain unreachable' as const]])(
-    'reports %s without treating unloaded agents as findings',
-    (reason) => {
+  test('reports unavailable load checks without treating unloaded agents as findings', () => {
+    for (const reason of ['launchctl missing', 'gui domain unreachable'] as const) {
       expect(
         decideLaunchAgentDoctor({
           owners,
@@ -41,6 +40,6 @@ describe('launch agent doctor decision', () => {
         findings: [],
         launchctlUnavailable: reason,
       })
-    },
-  )
+    }
+  })
 })

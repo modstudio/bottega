@@ -63,7 +63,12 @@ function loadedLaunchAgentLabels(
 
 /** Gather installer and launchd facts, returning report-only doctor lines. */
 export async function launchAgentDoctorLines(): Promise<string[]> {
-  const owners = await installationPlistOwners()
+  let owners: InstalledPlistOwner[]
+  try {
+    owners = await installationPlistOwners()
+  } catch {
+    return ['launch agents', '  launchd templates unreadable — load check unavailable']
+  }
   const facts = gatherLaunchAgentSkipFacts()
   const skipReasons = Object.fromEntries(
     owners.map(({ label }) => [label, launchAgentSkipReason(label, facts)]),
