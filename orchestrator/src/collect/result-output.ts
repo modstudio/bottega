@@ -27,15 +27,16 @@ export function observedTestsLine(input: {
   passed: number | null
   claimDisagrees: number | null
 }): string | null {
-  if (input.claimDisagrees === null) {
-    return 'tests observed: unverified; tests_claim_disagrees: unverified'
-  }
   if (input.ran === null) {
-    return 'tests observed: not observed; tests_claim_disagrees: false'
+    return input.claimDisagrees === null
+      ? null
+      : 'tests observed: not observed; tests_claim_disagrees: false'
   }
+  const disagreement =
+    input.claimDisagrees === null ? 'unverified' : String(Boolean(input.claimDisagrees))
   return (
     `tests observed: {"ran":${Boolean(input.ran)},"passed":` +
     `${input.passed === null ? 'null' : Boolean(input.passed)}}; ` +
-    `tests_claim_disagrees: ${Boolean(input.claimDisagrees)}`
+    `tests_claim_disagrees: ${disagreement}`
   )
 }
