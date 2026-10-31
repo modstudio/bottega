@@ -6,6 +6,7 @@ import type {
   ManifestColumn,
 } from './identity-inventory.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
+import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
@@ -339,6 +340,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
 ]
 
 const DISPLAY_LABELS: readonly DisplayLabel[] = [
+  ...TASK_CHILD_DISPLAY_LABELS,
   {
     store: 'hosted',
     column: 'question.number',
@@ -542,21 +544,10 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'run.launch_key',
     'workflow_cursor.instance_id',
   ]),
-  ...manifest('hub', 'natural or encoded reference to an application row', [
-    'task.parent_key',
-    'task_comment.task_key',
-    'task_document.task_key',
-    'task_identity_migration_repairs.task_key',
-    'task_status_event.task_key',
-  ]),
   ...manifest('hosted', 'natural or encoded reference to an application row', [
     'board_receipt.reader_session',
     'contention.resource_key',
     'doc_revision.related_subject_ids',
-    'hub_task.parent_key',
-    'hub_task_comment.task_key',
-    'hub_task_document.task_key',
-    'hub_task_status_event.task_key',
     'landing_triage_snapshot.review_ids',
     'machine_public_key.key_id',
     'question.filed_ref',

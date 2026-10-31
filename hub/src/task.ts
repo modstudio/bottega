@@ -20,6 +20,7 @@ import {
 import { runRef } from './reconcile.ts'
 import type { Attribution } from './task-attribution.ts'
 import { commentAuthorDecision, UNATTRIBUTED } from './task-attribution.ts'
+import { parentTaskRecordId } from './task-cache.ts'
 import { hostedCreateTask } from './task-client.ts'
 import { decideTaskClose, landingCheck } from './task-close-decision.ts'
 import { localTaskDetail, type TaskDetail, taskBodyVersion } from './task-detail.ts'
@@ -341,7 +342,7 @@ export function createLocalTaskInTransaction(
 }
 
 function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
-  const task = taskRowFromHosted(conn, row)
+  const task = hostedTaskRow(conn, row)
   conn
     .query(`INSERT INTO task
     (record_id,key,project,project_record_id,title,status,status_category,parent_key,parent_record_id,body,assignee,opened_at,closed_at,
@@ -378,7 +379,7 @@ function cacheTask(conn: import('bun:sqlite').Database, row: HostedTask) {
   persistInstallBinding(conn)
 }
 
-function taskRowFromHosted(conn: Database, row: HostedTask) {
+function hostedTaskRow(conn: import('bun:sqlite').Database, row: HostedTask) {
   return {
     record_id: row.id,
     external_id: null,
@@ -389,7 +390,7 @@ function taskRowFromHosted(conn: Database, row: HostedTask) {
     status: row.status,
     status_category: row.status_category,
     parent_key: row.parent_key,
-    parent_record_id: row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null,
+    parent_record_id: parentTaskRecordId(conn, row),
     body: row.body,
     assignee: row.assignee,
     opened_at: row.opened_at,
@@ -549,9 +550,7 @@ export async function createTask(
   )
   if (applied && options.allowDuplicateReason)
     await drainHostedEditOutbox(commentAt, options.hosted)
-  return applied
-    ? showTask(hosted.key, { recordId: hosted.id }).task
-    : taskRowFromHosted(db(), hosted)
+  return applied ? showTask(hosted.key, { recordId: hosted.id }).task : hostedTaskRow(db(), hosted)
 }
 
 export function listTasks(

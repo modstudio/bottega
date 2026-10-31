@@ -642,6 +642,7 @@ describe('hosted-only task safety', () => {
         {
           id: '01990000-0000-7000-8000-000000000103',
           task_key: 'DEV-990',
+          task_id: '01990000-0000-7000-8000-000000000101',
           project_name: 'workshop',
           body: 'pulled',
           created_at: at,
@@ -654,6 +655,7 @@ describe('hosted-only task safety', () => {
         {
           id: '01990000-0000-7000-8000-000000000102',
           task_key: 'DEV-990',
+          task_id: '01990000-0000-7000-8000-000000000101',
           project_name: 'workshop',
           number: 1,
           role: null,
@@ -755,6 +757,7 @@ describe('hosted-only task safety', () => {
         {
           id: firstId,
           task_key: 'DEV-982',
+          task_id: taskId,
           project_name: 'workshop',
           body: 'updated',
           created_at: at,
@@ -764,6 +767,7 @@ describe('hosted-only task safety', () => {
         {
           id: secondId,
           task_key: 'DEV-982',
+          task_id: taskId,
           project_name: 'workshop',
           body: 'second',
           created_at: at,
@@ -808,6 +812,7 @@ describe('hosted-only task safety', () => {
       deleted_at: null,
       next_document_number: 1,
     }
+    const parentId = '01990000-0000-7000-8000-000000000200'
     applyHostedTaskChanges({
       tasks: [
         {
@@ -816,10 +821,28 @@ describe('hosted-only task safety', () => {
           key: 'DEV-992',
           title: 'child first',
           parent_key: 'DEV-991',
+          parent_id: parentId,
         },
+      ],
+      comments: [],
+      documents: [],
+      statusEvents: [],
+      cursor: at,
+    })
+
+    expect(
+      db()
+        .query<{ parent_record_id: string | null }, []>(
+          "SELECT parent_record_id FROM task WHERE key='DEV-992'",
+        )
+        .get()?.parent_record_id,
+    ).toBeNull()
+
+    applyHostedTaskChanges({
+      tasks: [
         {
           ...common,
-          id: '01990000-0000-7000-8000-000000000200',
+          id: parentId,
           key: 'DEV-991',
           title: 'parent second',
           parent_key: null,
@@ -833,10 +856,10 @@ describe('hosted-only task safety', () => {
 
     expect(
       db()
-        .query<{ parent_record_id: string }, []>(
+        .query<{ parent_record_id: string | null }, []>(
           "SELECT parent_record_id FROM task WHERE key='DEV-992'",
         )
         .get()?.parent_record_id,
-    ).toBe('01990000-0000-7000-8000-000000000200')
+    ).toBe(parentId)
   })
 })

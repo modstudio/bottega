@@ -15,6 +15,7 @@ import {
   duplicateCandidates,
   duplicateScore,
   editTaskComment,
+  listTasks,
   setTask,
   setTaskBody,
   showTask,
@@ -70,6 +71,11 @@ const hosted = {
           return match ? Math.max(max, Number(match[1])) : max
         }, 0)
       const taskKey = `${prefix}-${highest + 1}`
+      const parentId = body.parent
+        ? (db()
+            .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE key=?')
+            .get(body.parent as string)?.record_id ?? null)
+        : null
       return Response.json({
         id: Bun.randomUUIDv7(),
         key: taskKey,
@@ -79,6 +85,7 @@ const hosted = {
         status: body.status,
         status_category: body.status,
         parent_key: body.parent ?? null,
+        parent_id: parentId,
         body: body.body ?? null,
         assignee: null,
         opened_at: at,
@@ -756,6 +763,46 @@ describe('local task tracker', () => {
       ['01990000-0000-7000-8000-000000000001', 'alpha first'],
       ['01990000-0000-7000-8000-000000000002', 'alpha second'],
     ])
+  })
+
+  test('task-child display keys never override their task UUID links', () => {
+    const linkedId = seed('LINK-1', 'alpha')
+    const labelId = seed('LABEL-2', 'alpha')
+    writeTransaction((conn) => {
+      conn
+        .query(`UPDATE task SET parent_key='LABEL-2',parent_record_id=? WHERE record_id=?`)
+        .run(linkedId, labelId)
+      conn
+        .query(
+          `INSERT INTO task_comment(record_id,task_key,task_record_id,body,created_at) VALUES
+           ('01990000-0000-7000-8000-000000000101','LABEL-2',?,'linked comment','2026-09-01')`,
+        )
+        .run(linkedId)
+      conn
+        .query(
+          `INSERT INTO task_document
+           (record_id,task_key,task_record_id,number,title,body,version,created_at,updated_at)
+           VALUES ('01990000-0000-7000-8000-000000000102','LABEL-2',?,1,'linked document','body','v1','2026-09-01','2026-09-01')`,
+        )
+        .run(linkedId)
+      conn
+        .query(
+          `INSERT INTO task_status_event(record_id,task_key,task_record_id,at,to_status)
+           VALUES ('01990000-0000-7000-8000-000000000103','LABEL-2',?,'2026-09-01','active')`,
+        )
+        .run(linkedId)
+    })
+
+    const linked = taskRecord('LINK-1', { recordId: linkedId })
+    const label = taskRecord('LABEL-2', { recordId: labelId })
+    expect(linked.comments.map((row) => row.body)).toEqual(['linked comment'])
+    expect(linked.documents.map((row) => row.title)).toEqual(['linked document'])
+    expect(linked.statusEvents.map((row) => row.toStatus)).toEqual(['active'])
+    expect(label.comments).toEqual([])
+    expect(label.documents).toEqual([])
+    expect(label.statusEvents).toEqual([])
+    expect(listTasks({ parent: 'LINK-1' }).map((row) => row.record_id)).toEqual([labelId])
+    expect(listTasks({ parent: 'LABEL-2' })).toEqual([])
   })
 })
 

@@ -37,22 +37,13 @@
     "question_delivery:primary-key",
     "seq:primary-key",
     "setting:primary-key",
-    "task.parent_key:reference",
-    "task_comment.task_key:reference",
-    "task_document.task_key:reference",
     "task_identity_claim:primary-key",
-    "task_identity_migration_repairs.task_key:reference",
-    "task_identity_migration_repairs:primary-key",
-    "task_status_event.task_key:reference"
+    "task_identity_migration_repairs:primary-key"
   ],
   "hosted": [
     "board_receipt.reader_session:reference",
     "contention.resource_key:reference",
     "doc_revision.related_subject_ids:reference",
-    "hub_task.parent_key:reference",
-    "hub_task_comment.task_key:reference",
-    "hub_task_document.task_key:reference",
-    "hub_task_status_event.task_key:reference",
     "landing_triage_snapshot.review_ids:reference",
     "machine_public_key.key_id:reference",
     "question.filed_ref:reference",

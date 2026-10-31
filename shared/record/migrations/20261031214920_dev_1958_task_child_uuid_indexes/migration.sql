@@ -1,0 +1,2 @@
+CREATE INDEX "hub_task_comment_unlinked_task_key_idx" ON "hub_task_comment" ("space_id","task_key") WHERE "task_id" IS NULL;--> statement-breakpoint
+CREATE INDEX "hub_task_document_unlinked_task_key_idx" ON "hub_task_document" ("space_id","task_key") WHERE "task_id" IS NULL;

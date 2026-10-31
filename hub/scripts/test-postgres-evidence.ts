@@ -1647,11 +1647,11 @@ try {
     await pushIntervals(actorUrl, identity, measureIntervals)
     const doneAt = '2026-09-17T12:10:00.000Z'
     await admin`INSERT INTO hub_task_status_event
-      (id,space_id,project_name,task_key,at,from_status,to_status,created_at,updated_at)
+      (id,space_id,project_name,task_key,task_id,at,from_status,to_status,created_at,updated_at)
       VALUES
-        (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-758',
+        (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-758',${measureTaskId}::uuid,
           ${doneAt}::timestamptz,'open','done',${doneAt}::timestamptz,${doneAt}::timestamptz),
-        (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-758',
+        (${newRecordId()}::uuid,${SPACE_A}::uuid,${PLATFORM_SLUG},'DEV-758',${measureTaskId}::uuid,
           ${'2026-09-17T12:50:00.000Z'}::timestamptz,'open','done',
           ${'2026-09-17T12:50:00.000Z'}::timestamptz,${'2026-09-17T12:50:00.000Z'}::timestamptz)`
     const loaded = await loadHostedMeasureRows(actorUrl, identity, measureWindow)

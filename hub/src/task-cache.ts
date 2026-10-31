@@ -8,7 +8,7 @@ import { HOSTED_STATUS_EVENT_TABLE } from './push-contract.ts'
 import { isSameStatusEvent, statusEventIdentity } from './status-event-identity.ts'
 import type { hostedTaskChanges } from './task-client.ts'
 import { formatTaskDocumentLabel } from './task-document-label.ts'
-import { taskIdentityRelationships, taskRecordIdFor } from './task-identity.ts'
+import { taskRecordIdFor } from './task-identity.ts'
 
 type HostedChanges = Awaited<ReturnType<typeof hostedTaskChanges>>
 type HostedChangeRow =
@@ -19,18 +19,43 @@ type HostedChangeRow =
 
 type HostedTaskChild = Exclude<HostedChangeRow, HostedChanges['tasks'][number]>
 
-export function childTaskRecordId(
+function cachedTaskRecordId(conn: Database, recordId: string | null | undefined) {
+  if (!recordId) return null
+  return (
+    conn
+      .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
+      .get(recordId)?.record_id ?? null
+  )
+}
+
+export function childTaskRecordId(conn: Database, row: { task_id?: string | null }) {
+  return cachedTaskRecordId(conn, row.task_id)
+}
+
+export function parentTaskRecordId(
   conn: Database,
-  row: { task_id?: string | null; task_key: string; project_name: string },
+  row: { parent_id?: string | null; parent_key: string | null; project: string },
 ) {
-  if (row.task_id) {
-    return (
-      conn
-        .query<{ record_id: string }, [string]>('SELECT record_id FROM task WHERE record_id=?')
-        .get(row.task_id)?.record_id ?? null
+  const parent = cachedTaskRecordId(conn, row.parent_id)
+  if (parent) return parent
+  return row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
+}
+
+export function reconcileParentRecordIds(conn: Database) {
+  const unresolved = conn
+    .query<{ parent_key: string; project: string }, []>(
+      `SELECT DISTINCT parent_key,project FROM task
+       WHERE parent_key IS NOT NULL AND parent_record_id IS NULL`,
     )
+    .all()
+  const update = conn.query(
+    `UPDATE task SET parent_record_id=?
+     WHERE parent_key=? AND project=? AND parent_record_id IS NULL`,
+  )
+  for (const { parent_key, project } of unresolved) {
+    const recordId = taskRecordIdFor(conn, parent_key, project)
+    if (recordId) update.run(recordId, parent_key, project)
   }
-  return taskRecordIdFor(conn, row.task_key, row.project_name)
 }
 
 function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskChild) {
@@ -40,26 +65,6 @@ function requireChildTaskRecordId(conn: Database, kind: string, row: HostedTaskC
       `live task ${kind} ${row.id} for task ${row.task_id ?? row.task_key} has no parent record id`,
     )
   return taskRecordId
-}
-
-export function reconcileParentRecordIds(conn: Database) {
-  for (const relationship of taskIdentityRelationships) {
-    if (relationship.table !== 'task') continue
-    const unresolved = conn
-      .query<{ key: string; project: string }, []>(
-        `SELECT DISTINCT ${relationship.keyColumn} key, project FROM ${relationship.table}
-         WHERE ${relationship.keyColumn} IS NOT NULL AND ${relationship.recordColumn} IS NULL`,
-      )
-      .all()
-    const update = conn.query(
-      `UPDATE ${relationship.table} SET ${relationship.recordColumn}=?
-       WHERE ${relationship.keyColumn}=? AND project=? AND ${relationship.recordColumn} IS NULL`,
-    )
-    for (const { key, project } of unresolved) {
-      const recordId = taskRecordIdFor(conn, key, project)
-      if (recordId) update.run(recordId, key, project)
-    }
-  }
 }
 
 export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][number]) {
@@ -82,7 +87,7 @@ export function applyHostedTask(conn: Database, row: HostedChanges['tasks'][numb
     conn.query(`DELETE FROM task WHERE record_id=?`).run(row.id)
     return
   }
-  const parentRecordId = row.parent_key ? taskRecordIdFor(conn, row.parent_key, row.project) : null
+  const parentRecordId = parentTaskRecordId(conn, row)
   const current = conn
     .query<{ source: string; opened_at: string | null; updated_at: string }, [string]>(
       'SELECT source,opened_at,updated_at FROM task WHERE record_id=?',
@@ -229,31 +234,19 @@ type StatusEventMatchRow = {
 function matchingStatusEvent(
   conn: Database,
   row: HostedChanges['statusEvents'][number],
-  taskRecordId: string | null,
+  taskRecordId: string,
 ): { record_id: string } | null {
-  const candidates = taskRecordId
-    ? conn
-        .query<StatusEventMatchRow, [string, string, string]>(
-          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
-           WHERE record_id<>? AND (task_record_id=? OR (task_record_id IS NULL AND task_key=?))`,
-        )
-        .all(row.id, taskRecordId, row.task_key)
-    : conn
-        .query<StatusEventMatchRow, [string, string]>(
-          `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
-           WHERE record_id<>? AND task_key=?`,
-        )
-        .all(row.id, row.task_key)
+  const candidates = conn
+    .query<StatusEventMatchRow, [string, string]>(
+      `SELECT record_id,task_record_id,task_key,to_status,at FROM task_status_event
+       WHERE record_id<>? AND task_record_id=?`,
+    )
+    .all(row.id, taskRecordId)
   return (
     candidates.find((candidate) =>
       isSameStatusEvent(
-        statusEventIdentity(taskRecordId, row.task_key, row.to_status, row.at),
-        statusEventIdentity(
-          candidate.task_record_id,
-          candidate.task_key,
-          candidate.to_status,
-          candidate.at,
-        ),
+        statusEventIdentity(taskRecordId, row.to_status, row.at),
+        statusEventIdentity(candidate.task_record_id, candidate.to_status, candidate.at),
       ),
     ) ?? null
   )
@@ -262,7 +255,7 @@ function matchingStatusEvent(
 function writeStatusEvent(
   conn: Database,
   row: HostedChanges['statusEvents'][number],
-  taskRecordId: string | null,
+  taskRecordId: string,
 ) {
   const updated = conn
     .query(

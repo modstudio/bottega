@@ -26,6 +26,7 @@ function seedTask(recordId: string, key: string) {
 function changes(options: {
   ids: { comment: string; document: string; event: string }
   taskKey?: string
+  taskId?: string
   deleted?: boolean
 }) {
   const taskKey = options.taskKey ?? 'DEV-1'
@@ -36,6 +37,7 @@ function changes(options: {
       {
         id: options.ids.comment,
         task_key: taskKey,
+        task_id: options.taskId ?? TASK_A,
         project_name: 'workshop',
         body: 'hosted comment',
         created_at: AT,
@@ -47,6 +49,7 @@ function changes(options: {
       {
         id: options.ids.document,
         task_key: taskKey,
+        task_id: options.taskId ?? TASK_A,
         project_name: 'workshop',
         number: 1,
         role: null,
@@ -62,6 +65,7 @@ function changes(options: {
       {
         id: options.ids.event,
         task_key: taskKey,
+        task_id: options.taskId ?? TASK_A,
         project_name: 'workshop',
         at: '2026-10-08T12:01:00.000Z',
         from_status: 'open',
