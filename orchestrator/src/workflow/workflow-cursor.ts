@@ -881,16 +881,7 @@ export function abandonWorkflowCursorByHandle(
         selected.task_record_id = context.taskRecordId
       return abandonSelectedWorkflowCursor(selected, reason, context, d)
     })
-  return writeTransaction(
-    () =>
-      abandonSelectedWorkflowCursor(
-        selectWorkflowCursor({}, cursor, context.session, d) as CursorRow,
-        reason,
-        context,
-        d,
-      ),
-    d,
-  )
+  return abandonWorkflowCursor('', '', '', {}, reason, context, d, cursor)
 }
 
 function awaitWorkflowRulingImpl(

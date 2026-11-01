@@ -81,6 +81,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-cursor.ts',
     './workflow-cursor-format.ts',
     './workflow-cursor-result.ts',
+    './workflow-cursor-row.ts',
     './workflow-cursor-selection.ts',
     './workflow-floor-evidence.ts',
     './workflow-self-ruling-mutation.ts',
