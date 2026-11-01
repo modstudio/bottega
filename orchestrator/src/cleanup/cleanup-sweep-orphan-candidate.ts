@@ -17,6 +17,7 @@ import {
   worktreeDirty,
   worktreeNameRunId,
 } from '../worktree/worktree-attribution.ts'
+import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanCandidate,
@@ -191,7 +192,9 @@ function orphanCandidateHeld(input: {
 export function orphanCandidateDecision(
   path: string,
   project: Project,
+  label: string,
   dry: boolean,
+  presentation: CleanupPresentation,
 ): OrphanCandidateDecision {
   const marker = readWorktreeMarker(path)
   const { nameRunId, runRecordId } = orphanCandidateIds(path, marker)
@@ -213,6 +216,8 @@ export function orphanCandidateDecision(
     safe.unmarkedBorrowedReader,
   )
   const namedAlive = named.outcome === 'owned' && named.run.alive
+  const namedUnknown = named.outcome === 'unknown'
+  if (namedUnknown) presentation.error(`could not reclaim ${label}: ${named.reason}`)
   const ruling = decideFilesystemOrphanCandidate({
     marker: marker.state,
     markerRunId: marker.state === 'present' ? marker.runRecordId : null,
@@ -234,9 +239,9 @@ export function orphanCandidateDecision(
       action: 'keep',
       line: ruling.keepLine,
       reason: ruling.keepReason,
-      failed: false,
+      failed: namedUnknown,
       held: orphanCandidateHeld({
-        namedAlive,
+        namedAlive: namedAlive || namedUnknown,
         marker,
         nameRunId,
         path,
@@ -246,8 +251,8 @@ export function orphanCandidateDecision(
     }
   }
   if (ruling.action === 'dry-would-reclaim') {
-    return { action: 'dry', detail: safe.detail, failed: false }
+    return { action: 'dry', detail: safe.detail, failed: namedUnknown }
   }
   if (!owner) throw new Error(`orphan reclaim ruling lacked owner for ${path}`)
-  return { action: 'reclaim', runId: owner.record_id, safe, failed: false }
+  return { action: 'reclaim', runId: owner.record_id, safe, failed: namedUnknown }
 }

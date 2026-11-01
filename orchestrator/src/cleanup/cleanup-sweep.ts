@@ -755,7 +755,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
 
       const label = `orphan  ${path}`
       const keepHeld = heldKeeper(keep, addHeld, p.name, path)
-      const decision = orphanCandidateDecision(path, p, dry)
+      const decision = orphanCandidateDecision(path, p, label, dry, options.presentation)
       cleanupFailed ||= decision.failed
       if (decision.action === 'keep') {
         keep(`${label}  ${decision.line}`, decision.reason)

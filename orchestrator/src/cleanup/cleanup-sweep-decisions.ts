@@ -333,6 +333,9 @@ function decideMarkedFilesystemOrphan(
       keepReason: 'not created by orch',
     }
   }
+  if (facts.ownership === 'unknown') {
+    return { action: 'keep', keepLine: 'live — kept', keepReason: 'live — kept' }
+  }
   if (facts.alive) {
     return { action: 'keep', keepLine: 'live — kept', keepReason: 'live — kept' }
   }

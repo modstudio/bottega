@@ -621,6 +621,18 @@ describe('unmarked filesystem orphan candidate ruling', () => {
       dryExpected: { action: 'dry-would-reclaim' },
     },
     {
+      name: 'a marked tree with unknown run ownership keeps its existing live ruling',
+      facts: {
+        ...base,
+        marker: 'present',
+        markerRunId: base.nameRunId,
+        nameRunId: null,
+        ownership: 'unknown',
+        orchOwned: true,
+      },
+      expected: { action: 'keep', keepLine: 'live — kept', keepReason: 'live — kept' },
+    },
+    {
       name: 'a present owned non-removable marker tree keeps its safety ruling',
       facts: {
         ...base,
