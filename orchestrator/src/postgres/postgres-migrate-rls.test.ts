@@ -46,6 +46,11 @@ import {
 import { signInCommand, signUpCommand, whoamiCommand } from '../record/record-auth-command.ts'
 import { diagnoseRecord, recordDoctorExitCode } from '../record/record-doctor.ts'
 import {
+  RECORD_POOL_IDLE_TIMEOUT_SECONDS,
+  RECORD_POOL_MAX,
+  recordPool,
+} from '../record/record-pool.ts'
+import {
   acceptRecordInvitation,
   inviteToActiveRecordSpace,
   pendingRecordInvitations,
@@ -275,6 +280,23 @@ realPostgres('RLS proof against real Postgres', () => {
     process.env.BETTER_AUTH_SECRET = 'postgres-harness-secret-at-least-thirty-two-characters'
     installRecordApiClient(null)
     recordSession.setToken(tokenA)
+  })
+
+  test('a failed tenant transaction returns a clean pooled connection', async () => {
+    expect(RECORD_POOL_MAX).toBe(10)
+    expect(RECORD_POOL_IDLE_TIMEOUT_SECONDS).toBe(30)
+    const poolUrl = new URL(actorUrl!)
+    poolUrl.searchParams.set('application_name', 'record-pool-rollback-proof')
+    const pool = recordPool(poolUrl.toString(), 1)
+    await expect(
+      pool.begin(async (tx) => {
+        await tx`SELECT set_config('app.user_id', ${ids.USER_A}, true)`
+        throw new Error('rollback probe')
+      }),
+    ).rejects.toThrow('rollback probe')
+
+    const rows = await pool`SELECT current_setting('app.user_id', true) AS setting`
+    expect(rows[0]?.setting).toBe('')
   })
 
   afterAll(async () => {

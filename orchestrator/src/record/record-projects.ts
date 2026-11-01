@@ -1,10 +1,11 @@
 // concern: record-projects
 /** Owns tenant-bound hosted project reads and writes. Must not know local cache, CLI, or HTTP. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import { repositoryVisibility } from '../../../shared/repository-visibility.ts'
+import { recordPool } from './record-pool.ts'
 import {
   type HostedProjectColumns,
   hostedProjectColumns,
@@ -32,15 +33,10 @@ export class RecordProjectError extends Error {
 type Tenant = { url: string } & TenantPrincipal
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return read(tx)
+  })
 }
 
 async function renameHostedDocSubjects(

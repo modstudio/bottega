@@ -1,7 +1,7 @@
 // concern: record-canon-import
 /** Owns tenant-bound hosted canon imports. Must not know local cache, CLI, or HTTP. */
 
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocKind, DocStatus } from '../../../shared/docs.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
@@ -16,6 +16,7 @@ import { bindRecordDocAudiences } from './record-doc-audience-sql.ts'
 import { assertRevisionWrite, assertWrite, RecordDocError } from './record-doc-errors.ts'
 import { insertRecordDocRevision } from './record-doc-revision-write.ts'
 import { recordCanonTreeWriteRefusal } from './record-doc-tree.ts'
+import { recordPool } from './record-pool.ts'
 
 export type RecordCanonImportInput = {
   address: { kind: 'user' } | { kind: 'project'; subject: string; projectId: string }
@@ -37,15 +38,10 @@ type CanonImportRow = RecordCanonImportInput['rows'][number]
 type StoredCanonRow = Record<string, unknown>
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return read(tx)
+  })
 }
 
 function indexCanonBatch(input: Tenant & RecordCanonImportInput, currentRows: StoredCanonRow[]) {

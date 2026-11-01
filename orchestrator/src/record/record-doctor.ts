@@ -2,7 +2,7 @@
 /** Diagnoses customer record access, agent credentials, and optional operator connections. */
 
 import type { Database } from 'bun:sqlite'
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { resolveEnvValuesWithHosted } from '../../../shared/env-source.ts'
 import {
@@ -33,6 +33,7 @@ import { machineId } from './machine-identity.ts'
 import { quarantinedOutboxRows } from './outbox-quarantine.ts'
 import { RecordApiRequestError, recordApiClient } from './record-api-client.ts'
 import { recordAttributionFailure } from './record-attribution.ts'
+import { recordPool } from './record-pool.ts'
 import { effectiveProjectSpace } from './record-project-destination.ts'
 import { storedRecordToken } from './record-session.ts'
 
@@ -436,74 +437,67 @@ async function operatorRecordChecks(input: {
       checks.push({ name, status: 'fail', detail: failureDetail(error, urls) })
     }
   }
-  const actor = new SQL(input.recordUrl)
+  const actor = recordPool(input.recordUrl)
   const identityNames = [
     'runs with no started_by',
     'local versus hosted questions',
     'session intervals with no session identity',
   ] as const
-  try {
-    const connected = await run('record connection works', async () => {
-      await actor`SELECT 1`
-      return true
-    })
-    await run('record connection is not record_owner', () => refuseOwnerConnection(actor, 'doctor'))
-    if (!connected || !input.identity) {
-      const detail = connected
-        ? 'accepted active session unavailable'
-        : 'record connection unavailable'
-      for (const name of identityNames) checks.push({ name, status: 'skipped', detail })
-    } else {
-      const identity = input.identity
-      try {
-        const attribution = await actor.begin(async (tx) => {
-          await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
-          await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
-          const runs =
-            await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
-          const intervals =
-            await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
-          const questions =
-            await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
-          return {
-            runs: runs[0]!,
-            intervals: intervals[0]!,
-            questions: questions[0]!,
-          }
-        })
-        checks.push({
-          name: identityNames[0],
-          status: 'pass',
-          detail: unattributedShare(
-            Number(attribution.runs.missing),
-            Number(attribution.runs.total),
-          ),
-        })
-        checks.push(
-          questionCountCheck(
-            identityNames[1],
-            localQuestionCountForSpace(input.database, input.projects, {
-              id: identity.activeSpaceId,
-              slug: identity.activeSpaceSlug,
-            }),
-            Number(attribution.questions.total),
-          ),
-        )
-        checks.push({
-          name: identityNames[2],
-          status: 'pass',
-          detail: unattributedShare(
-            Number(attribution.intervals.missing),
-            Number(attribution.intervals.total),
-          ),
-        })
-      } catch (error) {
-        const detail = failureDetail(error, urls)
-        for (const name of identityNames) checks.push({ name, status: 'fail', detail })
-      }
+  const connected = await run('record connection works', async () => {
+    await actor`SELECT 1`
+    return true
+  })
+  await run('record connection is not record_owner', () => refuseOwnerConnection(actor, 'doctor'))
+  if (!connected || !input.identity) {
+    const detail = connected
+      ? 'accepted active session unavailable'
+      : 'record connection unavailable'
+    for (const name of identityNames) checks.push({ name, status: 'skipped', detail })
+  } else {
+    const identity = input.identity
+    try {
+      const attribution = await actor.begin(async (tx) => {
+        await tx`SELECT set_config('app.user_id', ${identity.userId}, true)`
+        await tx`SELECT set_config('app.space_id', ${identity.activeSpaceId}, true)`
+        const runs =
+          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE started_by_user_id IS NULL)::int AS missing FROM run WHERE space_id=${identity.activeSpaceId}::uuid`
+        const intervals =
+          await tx`SELECT count(*)::int AS total, count(*) FILTER (WHERE session_id IS NULL)::int AS missing FROM hub_interval WHERE space_id=${identity.activeSpaceId}::uuid AND source='claude'`
+        const questions =
+          await tx`SELECT count(*)::int AS total FROM question WHERE space_id=${identity.activeSpaceId}::uuid AND machine_id=${machineId()}::uuid`
+        return {
+          runs: runs[0]!,
+          intervals: intervals[0]!,
+          questions: questions[0]!,
+        }
+      })
+      checks.push({
+        name: identityNames[0],
+        status: 'pass',
+        detail: unattributedShare(Number(attribution.runs.missing), Number(attribution.runs.total)),
+      })
+      checks.push(
+        questionCountCheck(
+          identityNames[1],
+          localQuestionCountForSpace(input.database, input.projects, {
+            id: identity.activeSpaceId,
+            slug: identity.activeSpaceSlug,
+          }),
+          Number(attribution.questions.total),
+        ),
+      )
+      checks.push({
+        name: identityNames[2],
+        status: 'pass',
+        detail: unattributedShare(
+          Number(attribution.intervals.missing),
+          Number(attribution.intervals.total),
+        ),
+      })
+    } catch (error) {
+      const detail = failureDetail(error, urls)
+      for (const name of identityNames) checks.push({ name, status: 'fail', detail })
     }
-  } finally {
-    await actor.close()
   }
 
   const ownerNames = [
@@ -521,26 +515,25 @@ async function operatorRecordChecks(input: {
       })
     return checks
   }
-  const owner = new SQL(input.migrateUrl)
-  try {
-    await run(ownerNames[0]!, async () => {
-      const rows =
-        await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
-      if (rows.length !== 3) throw new Error('one or more record roles are absent')
-    })
-    await run(ownerNames[1]!, async () => {
-      const rows =
-        await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
-      if (rows[0]?.owner !== RECORD_OWNER_ROLE)
-        throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
-    })
-    await run(ownerNames[2]!, async () => {
-      const applied = await appliedRecordMigrationCount(input.migrateUrl!)
-      const shipped = recordMigrationCount()
-      if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
-    })
-    await run(ownerNames[3]!, async () => {
-      const rows = await owner`
+  const owner = recordPool(input.migrateUrl)
+  await run(ownerNames[0]!, async () => {
+    const rows =
+      await owner`SELECT rolname FROM pg_roles WHERE rolname IN (${RECORD_OWNER_ROLE},${RECORD_ACTOR_ROLE},${RECORD_READER_ROLE})`
+    if (rows.length !== 3) throw new Error('one or more record roles are absent')
+  })
+  await run(ownerNames[1]!, async () => {
+    const rows =
+      await owner`SELECT pg_get_userbyid(nspowner) AS owner FROM pg_namespace WHERE nspname='public'`
+    if (rows[0]?.owner !== RECORD_OWNER_ROLE)
+      throw new Error(`schema public is not owned by ${RECORD_OWNER_ROLE}`)
+  })
+  await run(ownerNames[2]!, async () => {
+    const applied = await appliedRecordMigrationCount(input.migrateUrl!)
+    const shipped = recordMigrationCount()
+    if (applied !== shipped) throw new Error(`applied ${applied}; shipped ${shipped}`)
+  })
+  await run(ownerNames[3]!, async () => {
+    const rows = await owner`
         SELECT CASE table_name WHEN '"user"' THEN 'user' ELSE table_name END AS table_name, privilege
         FROM (VALUES
           ('project', 'SELECT'), ('project', 'INSERT'), ('project', 'UPDATE'), ('project', 'DELETE'),
@@ -549,19 +542,15 @@ async function operatorRecordChecks(input: {
         ) AS required(table_name, privilege)
         WHERE NOT has_table_privilege(${RECORD_ACTOR_ROLE}, table_name, privilege)
         ORDER BY table_name, privilege`
-      if (rows.length)
-        throw new Error(
-          rows
-            .map(
-              (row: Record<string, unknown>) =>
-                `${String(row.table_name)} ${String(row.privilege)}`,
-            )
-            .join(', '),
-        )
-    })
-  } finally {
-    await owner.close()
-  }
+    if (rows.length)
+      throw new Error(
+        rows
+          .map(
+            (row: Record<string, unknown>) => `${String(row.table_name)} ${String(row.privilege)}`,
+          )
+          .join(', '),
+      )
+  })
   return checks
 }
 

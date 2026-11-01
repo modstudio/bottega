@@ -1,6 +1,6 @@
 // concern: record-doc-read
 /** Owns tenant-bound hosted document reads and audience projection. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { docAudienceRefusal, docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
   type DocAudience,
@@ -13,6 +13,7 @@ import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.
 import { type RecordCursor, recordCursorAt } from './record-cursor.ts'
 import { RecordDocError } from './record-doc-errors.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
+import { recordPool } from './record-pool.ts'
 
 function hostedDocList(
   value: unknown,
@@ -47,15 +48,10 @@ export type RecordDocListInput = {
 }
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return read(tx)
+  })
 }
 
 export async function listRecordDocs(input: Tenant & RecordDocListInput): Promise<RecordDoc[]> {

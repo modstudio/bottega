@@ -1,7 +1,7 @@
 // concern: record-docs
 /** Owns tenant-bound hosted document reads and writes. Must not know local cache, CLI, or HTTP. */
 
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { assertDocSections } from '../../../shared/doc-sections.ts'
 import type { DocForm, DocKind, DocStatus } from '../../../shared/docs.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
@@ -66,6 +66,7 @@ import {
 } from './record-doc-stored-fields.ts'
 import { existingDocAtAddress, recordTreeWriteRefusal } from './record-doc-tree.ts'
 import type { RecordDocWriteInput } from './record-doc-write-input.ts'
+import { recordPool } from './record-pool.ts'
 
 export { RecordDocError } from './record-doc-errors.ts'
 export type { RecordDoc, RecordDocImportInput, RecordDocRevision } from './record-doc-mapping.ts'
@@ -126,15 +127,10 @@ function assertImportedRecordDoc(
 export type RecordDocOrderInput = Omit<RecordDocOrder, 'spaceId'>
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return read(tx)
+  })
 }
 
 export async function reorderRecordDocs(

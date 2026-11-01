@@ -1,7 +1,7 @@
 import { Database } from 'bun:sqlite'
-import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { recordPool } from '../record/record-pool.ts'
 import { hostedProjectColumns } from '../record/record-project-columns.ts'
 import { upsertHostedProjectRow } from '../record/record-projects.ts'
 
@@ -123,57 +123,52 @@ export async function importProjects(options: ProjectImportOptions): Promise<Pro
     )
   const userId = options.principal.userId
   const source = readSources(options.orchDb, options.hubDb)
-  const postgres = new SQL(options.databaseUrl)
-  try {
-    return await postgres.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${options.spaceId}, true)`
-      const spaces = await tx`SELECT id FROM space WHERE id = ${options.spaceId}::uuid`
-      if (spaces.length !== 1) throw new Error(`target space does not exist: ${options.spaceId}`)
+  return recordPool(options.databaseUrl).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${userId}, true)`
+    await tx`SELECT set_config('app.space_id', ${options.spaceId}, true)`
+    const spaces = await tx`SELECT id FROM space WHERE id = ${options.spaceId}::uuid`
+    if (spaces.length !== 1) throw new Error(`target space does not exist: ${options.spaceId}`)
 
-      const projectIds = new Map<string, string>()
-      const prefixOwners = new Map<string, string[]>()
-      const retiredPrefixOwners = new Map<string, string[]>()
-      for (const row of source.projects) {
-        const settings = projectSettings(row)
-        const columns = hostedProjectColumns(settings, row.name)
-        for (const prefix of columns.keyPrefixes) {
-          const owners = row.retired_at === null ? prefixOwners : retiredPrefixOwners
-          owners.set(prefix, [...(owners.get(prefix) ?? []), row.name])
-        }
-        const id = await upsertHostedProjectRow(tx, {
-          id: projectImportRecordId(row.record_id),
-          spaceId: options.spaceId,
-          name: row.name,
-          path: row.path,
-          stack: row.stack,
-          canon: row.canon !== 0,
-          retiredAt: row.retired_at,
-          columns,
-        })
-        projectIds.set(row.name, id)
+    const projectIds = new Map<string, string>()
+    const prefixOwners = new Map<string, string[]>()
+    const retiredPrefixOwners = new Map<string, string[]>()
+    for (const row of source.projects) {
+      const settings = projectSettings(row)
+      const columns = hostedProjectColumns(settings, row.name)
+      for (const prefix of columns.keyPrefixes) {
+        const owners = row.retired_at === null ? prefixOwners : retiredPrefixOwners
+        owners.set(prefix, [...(owners.get(prefix) ?? []), row.name])
       }
+      const id = await upsertHostedProjectRow(tx, {
+        id: projectImportRecordId(row.record_id),
+        spaceId: options.spaceId,
+        name: row.name,
+        path: row.path,
+        stack: row.stack,
+        canon: row.canon !== 0,
+        retiredAt: row.retired_at,
+        columns,
+      })
+      projectIds.set(row.name, id)
+    }
 
-      const skippedSequences: SequenceSkip[] = []
-      let importedSequences = 0
-      for (const sequence of source.sequences) {
-        const decision = sequenceImportDecision(sequence, prefixOwners, retiredPrefixOwners)
-        if ('skip' in decision) {
-          skippedSequences.push(decision.skip)
-          continue
-        }
-        const projectId = projectIds.get(decision.owner)!
-        await tx`
+    const skippedSequences: SequenceSkip[] = []
+    let importedSequences = 0
+    for (const sequence of source.sequences) {
+      const decision = sequenceImportDecision(sequence, prefixOwners, retiredPrefixOwners)
+      if ('skip' in decision) {
+        skippedSequences.push(decision.skip)
+        continue
+      }
+      const projectId = projectIds.get(decision.owner)!
+      await tx`
           INSERT INTO seq (id, space_id, project_id, name, next)
           VALUES (${newRecordId()}::uuid, ${options.spaceId}::uuid, ${projectId}::uuid, ${sequence.name}, ${sequence.next})
           ON CONFLICT (space_id, project_id, name) DO UPDATE SET next = EXCLUDED.next
         `
-        importedSequences++
-      }
+      importedSequences++
+    }
 
-      return { projects: source.projects.length, sequences: importedSequences, skippedSequences }
-    })
-  } finally {
-    await postgres.close()
-  }
+    return { projects: source.projects.length, sequences: importedSequences, skippedSequences }
+  })
 }

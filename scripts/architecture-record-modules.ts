@@ -12,6 +12,7 @@ const module = (file: string, allowed: string[]): RecordModule => ({
 })
 
 export const recordModules: RecordModule[] = [
+  module('orchestrator/src/record/record-pool.ts', ['bun']),
   module('orchestrator/src/postgres/postgres-migrate.ts', []),
   module('orchestrator/src/postgres/migration-failure.ts', []),
   module('orchestrator/src/postgres/migration-notices.ts', []),
@@ -54,6 +55,7 @@ export const recordModules: RecordModule[] = [
     '../lens/lens-profile-version.ts',
     './record-cursor.ts',
     './record-lens-contract.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-catalogue-import.ts', [
     'bun',
@@ -66,6 +68,7 @@ export const recordModules: RecordModule[] = [
     './record-lens-contract.ts',
     './record-port-contract.ts',
     './record-workflow-contract.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-catalogue-reconciliation.ts', []),
   module('orchestrator/src/record/record-space-built-ins.ts', [
@@ -74,6 +77,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/tenant.ts',
     '../lens/lens-built-ins.ts',
     '../workflow/workflow-built-ins.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/workflow/workflow-built-ins.ts', [
     '../../../shared/brand.ts',
@@ -146,6 +150,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record/tenant.ts',
     './record-cursor.ts',
     './record-workflow-contract.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-workflow-contract.ts', [
     'zod',
@@ -252,6 +257,7 @@ export const recordModules: RecordModule[] = [
     './record-sync-contract.ts',
     './record-sync-decision.ts',
     './record-sync-principal.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/machine-name-command.ts', [
     '../../../shared/machine-config.ts',
@@ -302,6 +308,7 @@ export const recordModules: RecordModule[] = [
     './record-sync-run-values.ts',
     './record-value-conversions.ts',
     './score-sync.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-question-audit.ts', [
     'bun',
@@ -340,7 +347,7 @@ export const recordModules: RecordModule[] = [
     './record-auth.ts',
     './record-pending-invitations.ts',
   ]),
-  module('orchestrator/src/record/record-pending-invitations.ts', ['bun']),
+  module('orchestrator/src/record/record-pending-invitations.ts', ['bun', './record-pool.ts']),
   module('orchestrator/src/record/record-doc-article-fields.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-project-identity.ts',
@@ -378,6 +385,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/subjects.ts',
     './record-cursor.ts',
     './record-project-identity.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-api-request-space.ts', [
     'hono',
@@ -416,6 +424,7 @@ export const recordModules: RecordModule[] = [
     './record-doc-errors.ts',
     './record-doc-list-shape.ts',
     './record-doc-mapping.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-doc-import-write.ts', [
     'bun',
@@ -491,6 +500,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record-remedies.ts',
     './record-session.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-release-check.ts', [
     '../../../shared/brand.ts',
@@ -523,6 +533,7 @@ export const recordModules: RecordModule[] = [
     './record-attribution.ts',
     './record-project-destination.ts',
     './record-session.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/outbox-failure.ts', ['./record-verdicts.ts']),
   module('orchestrator/src/record/outbox-held-contract.ts', ['../../../shared/brand.ts']),
@@ -563,6 +574,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-remedies.ts',
     '../database/db.ts',
     './record-auth.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-space.ts', [
     '../../../shared/brand.ts',
@@ -596,6 +608,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/docs.ts',
     '../../../shared/record/tenant.ts',
     './record-doc-audiences.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-doc-errors.ts', ['../doc/doc-write-allowed.ts']),
   module('orchestrator/src/record/record-doc-order.ts', [
@@ -604,6 +617,7 @@ export const recordModules: RecordModule[] = [
     '../doc/doc-order.ts',
     '../doc/doc-write-allowed.ts',
     './record-doc-errors.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-api-doc-order.ts', [
     'hono',
@@ -643,6 +657,7 @@ export const recordModules: RecordModule[] = [
     '../postgres/postgres-migrate.ts',
     './record-session.ts',
     './record-space.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-board-contract.ts', [
     '../../../shared/board-purpose.ts',
@@ -657,6 +672,7 @@ export const recordModules: RecordModule[] = [
     'bun',
     '../../../shared/record/tenant.ts',
     './record-board-contract.ts',
+    './record-pool.ts',
   ]),
   module('orchestrator/src/record/record-board-messages.ts', [
     'bun',

@@ -1,6 +1,6 @@
 // concern: record-lens-catalogue
 /** Owns tenant-bound hosted lens catalogue reads and writes. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
@@ -12,19 +12,15 @@ import type {
   RecordProjectLensSelectionInput,
 } from './record-lens-contract.ts'
 import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY, RecordLensError } from './record-lens-contract.ts'
+import { recordPool } from './record-pool.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return use(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return use(tx)
+  })
 }
 
 const text = (value: unknown) => String(value)

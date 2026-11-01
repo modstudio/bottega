@@ -1,9 +1,10 @@
 // concern: record-port-catalogue
 /** Owns tenant-bound hosted port item reads and compare-and-set writes. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
+import { recordPool } from './record-pool.ts'
 import {
   RECORD_PORT_CURSORS,
   RecordPortError,
@@ -22,15 +23,10 @@ const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : S
 const nullableIso = (value: unknown) => (value == null ? null : iso(value))
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return use(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return use(tx)
+  })
 }
 
 function mapped(

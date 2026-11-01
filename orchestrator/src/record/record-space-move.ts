@@ -1,10 +1,10 @@
 // concern: record-space-move
 /** Owns the atomic hosted move of one project's attributable rows. */
 
-import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { recordPool } from './record-pool.ts'
 import { currentRecordUserSession } from './record-session.ts'
 import type { RecordMembership } from './record-space.ts'
 
@@ -55,21 +55,15 @@ export async function moveRecordProjectSpace(input: {
   confirm?: number
 }): Promise<ProjectSpaceMoveResult> {
   const current = await currentRecordUserSession(input.url)
-  const membershipClient = new SQL(input.url)
-  let membershipRows: Record<string, unknown>[]
-  try {
-    membershipRows = await membershipClient.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${current.activeSpaceId ?? ''}, true)`
-      return tx`
+  const membershipRows = await recordPool(input.url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+    await tx`SELECT set_config('app.space_id', ${current.activeSpaceId ?? ''}, true)`
+    return tx`
         SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${current.user.id}::uuid ORDER BY s.slug
       `
-    })
-  } finally {
-    await membershipClient.close()
-  }
+  })
   const listed = membershipRows.map((row: Record<string, unknown>) => ({
     spaceId: String(row.space_id),
     name: String(row.name),
@@ -85,42 +79,37 @@ export async function moveRecordProjectSpace(input: {
     )
   }
 
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${source}, true)`
-      const available = await tx`
+  return recordPool(input.url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+    await tx`SELECT set_config('app.space_id', ${source}, true)`
+    const available = await tx`
         SELECT to_regprocedure('record_applied_migration_count()') IS NOT NULL AS available
       `
-      if (!available[0]?.available) {
-        throw new Error(
-          `record migrations are behind this command; run \`${PLATFORM_SLUG} record migrate\`, then retry`,
-        )
-      }
-      const applied = await tx`SELECT record_applied_migration_count() AS count`
-      const shipped = recordMigrationCount()
-      if (Number(applied[0]?.count ?? 0) !== shipped) {
-        throw new Error(
-          `record migrations are behind this command (applied ${Number(applied[0]?.count ?? 0)}, shipped ${shipped}); run \`${PLATFORM_SLUG} record migrate\`, then retry`,
-        )
-      }
-      const rows = await tx`
+    if (!available[0]?.available) {
+      throw new Error(
+        `record migrations are behind this command; run \`${PLATFORM_SLUG} record migrate\`, then retry`,
+      )
+    }
+    const applied = await tx`SELECT record_applied_migration_count() AS count`
+    const shipped = recordMigrationCount()
+    if (Number(applied[0]?.count ?? 0) !== shipped) {
+      throw new Error(
+        `record migrations are behind this command (applied ${Number(applied[0]?.count ?? 0)}, shipped ${shipped}); run \`${PLATFORM_SLUG} record migrate\`, then retry`,
+      )
+    }
+    const rows = await tx`
         SELECT * FROM record_move_project_space(
           ${source}, ${input.project}, ${destination.spaceId}, ${input.confirm ?? null}::bigint
         )
       `
-      const resultRows: ProjectSpaceMoveRow[] = rows.map((row: Record<string, unknown>) => ({
-        tableName: String(row.table_name),
-        reachedBy: String(row.reached_by),
-        rowCount: Number(row.row_count),
-        moved: Boolean(row.moved),
-      }))
-      const total = resultRows.reduce((sum, row) => sum + row.rowCount, 0)
-      requireCurrentMoveTotal(input.confirm, total)
-      return { destinationSlug: destination.slug, rows: resultRows, total }
-    })
-  } finally {
-    await client.close()
-  }
+    const resultRows: ProjectSpaceMoveRow[] = rows.map((row: Record<string, unknown>) => ({
+      tableName: String(row.table_name),
+      reachedBy: String(row.reached_by),
+      rowCount: Number(row.row_count),
+      moved: Boolean(row.moved),
+    }))
+    const total = resultRows.reduce((sum, row) => sum + row.rowCount, 0)
+    requireCurrentMoveTotal(input.confirm, total)
+    return { destinationSlug: destination.slug, rows: resultRows, total }
+  })
 }

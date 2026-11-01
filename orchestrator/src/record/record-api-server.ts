@@ -82,6 +82,7 @@ import {
   upsertRecordLensProfile,
 } from './record-lens-catalogue.ts'
 import { listPendingRecordInvitations } from './record-pending-invitations.ts'
+import { closeRecordPools } from './record-pool.ts'
 import { listRecordPortCatalogue, writeRecordPort } from './record-port-catalogue.ts'
 import { listRecordProjects, retireRecordProject, upsertRecordProject } from './record-projects.ts'
 import {
@@ -153,6 +154,7 @@ export async function stopRecordApiServer(input: {
   input.boardStreamRegistry.closeAll()
   await input.boardWakeSource.close()
   await input.stop(input.closeActiveConnections)
+  await closeRecordPools()
 }
 
 function serveRecordApi(

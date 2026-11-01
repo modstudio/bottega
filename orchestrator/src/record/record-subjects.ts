@@ -1,6 +1,6 @@
 // concern: record-subjects
 /** Owns tenant-bound hosted subject reads and writes. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
@@ -11,6 +11,7 @@ import {
   subjectState,
 } from '../../../shared/subjects.ts'
 import { type RecordCursor, type RecordCursorRow, recordCursorAt } from './record-cursor.ts'
+import { recordPool } from './record-pool.ts'
 import { resolveRecordProjectIdentity } from './record-project-identity.ts'
 
 export type RecordSubject = SubjectOutput & RecordCursorRow
@@ -26,15 +27,10 @@ export class RecordSubjectError extends Error {
 type Tenant = { url: string } & TenantPrincipal
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return use(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return use(tx)
+  })
 }
 
 /** A timestamp column as ISO text; a Date keeps its milliseconds, which its string form drops. */
