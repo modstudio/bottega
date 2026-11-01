@@ -1,6 +1,6 @@
 import { parseNameStatus, untrackedChanges } from '../shared/change-view.ts'
 
-type WorkerDecision = { run: true } | { run: false; reason: string }
+type WorkerDecision = { run: true } | { run: false; reason: string; evidence: string }
 const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'
 export const BIOME_CHECK_NAME = 'Biome'
 
@@ -14,7 +14,49 @@ export type StaticCheckDeclaration = {
 }
 
 const run = { run: true } as const
-const omit = (reason: string): WorkerDecision => ({ run: false, reason })
+const omit = (reason: string, evidence: string): WorkerDecision => ({
+  run: false,
+  reason,
+  evidence,
+})
+
+export type WorkerOmissionEvidence =
+  | { kind: 'run'; runId: string }
+  | { kind: 'command'; command: string }
+  | { kind: 'citation'; path: string; symbol: string }
+  | { kind: 'invalid' }
+
+/** Classify the recorded support for omitting a check from the worker gate. */
+export function classifyWorkerOmissionEvidence(evidence: string): WorkerOmissionEvidence {
+  const runEvidence = /^run (\d+)$/.exec(evidence)
+  if (runEvidence) return { kind: 'run', runId: runEvidence[1]! }
+
+  const commandEvidence = /^"([^"\r\n]+)"$/.exec(evidence)
+  if (commandEvidence) return { kind: 'command', command: commandEvidence[1]! }
+
+  const citationEvidence = /^([^:\r\n]+):([A-Za-z_$][\w$]*)$/.exec(evidence)
+  if (citationEvidence) {
+    const path = citationEvidence[1]!
+    const repositoryRelative =
+      !path.startsWith('/') && !path.split('/').some((part) => part === '.' || part === '..')
+    if (repositoryRelative) return { kind: 'citation', path, symbol: citationEvidence[2]! }
+  }
+
+  return { kind: 'invalid' }
+}
+
+function workerOmissionReason(decision: Extract<WorkerDecision, { run: false }>): string {
+  const evidence = classifyWorkerOmissionEvidence(decision.evidence)
+  const renderedEvidence =
+    evidence.kind === 'run'
+      ? `run ${evidence.runId}`
+      : evidence.kind === 'command'
+        ? `"${evidence.command}"`
+        : evidence.kind === 'citation'
+          ? `${evidence.path}:${evidence.symbol}`
+          : decision.evidence
+  return `${decision.reason} (evidence: ${renderedEvidence})`
+}
 
 /** Select present paths from a NUL-separated worktree change view, once and in stable order. */
 export function workerBiomeFiles(input: { nameStatus: string; untracked: string }): string[] {
@@ -61,7 +103,10 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   {
     name: 'project checks',
     argv: ({ root }) => ['bun', `${root}orchestrator/scripts/check-projects.ts`],
-    worker: omit("reads the machine's project register; slow: 4.1s CPU in the gate"),
+    worker: omit(
+      'slow: 4.2s CPU under the worker check; the landing gate and CI run it',
+      'run 25620',
+    ),
   },
   {
     name: 'orchestrator identity inventory',
@@ -80,18 +125,27 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   {
     name: 'hosted SQL schema',
     argv: ({ root }) => ['bun', `${root}scripts/check-hosted-sql-schema.ts`],
-    worker: omit('needs a database'),
+    worker: omit(
+      'slow: 3.8s CPU under the worker check; the landing gate and CI run it',
+      'run 25620',
+    ),
   },
+  script('scripts/check-machine-state.ts', run),
   script(
-    'scripts/check-machine-state.ts',
-    omit('inspects machine-state paths outside the worker tree'),
+    'scripts/check-cascade-preservation.ts',
+    omit('slow: 2.7s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
   ),
-  script('scripts/check-cascade-preservation.ts', omit('slow: 3.2s CPU in the gate')),
-  script('scripts/check-postgres-migrations.ts', omit('needs a database')),
+  script(
+    'scripts/check-postgres-migrations.ts',
+    omit('slow: 2.5s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
+  ),
   script('scripts/check-postgres-array-bindings.ts', run),
   script('scripts/check-record-jsonb-string-checks.ts', run),
   script('scripts/check-outbox-payload-contracts.ts', run),
-  script('scripts/check-record-migrations-apply.ts', omit('needs a database')),
+  script(
+    'scripts/check-record-migrations-apply.ts',
+    omit('slow: 2.3s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
+  ),
   script('scripts/check-bun-serve-timeout.ts', run),
   script('scripts/check-hosted-hub-server-boundary.ts', run),
   script(HOSTED_REFUSAL_TEXT_CHECK, run),
@@ -110,15 +164,9 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-git-path-list.ts', run),
   script('scripts/check-self-spawn.ts', run),
   script('scripts/check-source-root.ts', run),
-  script(
-    'scripts/check-launchd-templates.ts',
-    omit('reads machine configuration outside the worker tree'),
-  ),
-  script(
-    'scripts/check-hook-binary.ts',
-    omit('validates installed hook binaries outside the worker tree'),
-  ),
-  script('scripts/check-gitleaks.ts', omit('needs the installed gitleaks binary')),
+  script('scripts/check-launchd-templates.ts', run),
+  script('scripts/check-hook-binary.ts', run),
+  script('scripts/check-gitleaks.ts', run),
   script('scripts/check-write-transaction-site.ts', run),
   script('scripts/check-branch-ref-mutation-site.ts', run),
   script('scripts/check-command-descriptions.ts', run),
@@ -173,10 +221,19 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-legacy-names.ts', run),
   script('scripts/check-doc-editor-rich-style.ts', run),
   script('scripts/check-harness-mirror.ts', run),
-  script('scripts/check-canon-drift.ts', omit('compares tree canon with the machine doc store')),
+  script(
+    'scripts/check-canon-drift.ts',
+    omit(
+      'a worker cannot write the doc store, so its canon edit always differs from the store',
+      'shared/store-access.ts:decideStoreAccess',
+    ),
+  ),
   script(
     'scripts/check-workflow-drift.ts',
-    omit('compares tree workflows with the machine doc store'),
+    omit(
+      'a worker cannot write the doc store, so its workflow step edit always differs from the store',
+      'shared/store-access.ts:decideStoreAccess',
+    ),
   ),
   script('scripts/check-workflow-tree.ts', run),
   script('scripts/check-ci-workflow.ts', run),
@@ -185,7 +242,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   }),
   script(
     'orchestrator/scripts/check-pack-budget.ts',
-    omit('compiles packs from the machine doc store; slow: 7.5s CPU in the gate'),
+    omit('slow: 6.3s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
   ),
   script('orchestrator/scripts/check-canon-lint.ts', run),
   script('scripts/quality/check-test-substance.ts', run, {
@@ -234,12 +291,21 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
         : [
             {
               name: `${leg.name} typecheck`,
-              reason: leg.worker.run ? 'has no typecheck command' : leg.worker.reason,
+              reason: leg.worker.run
+                ? 'has no typecheck command'
+                : workerOmissionReason(leg.worker),
             },
           ],
     ),
     ...staticChecks.flatMap((check) =>
-      check.worker.run ? [] : [{ name: check.name, reason: check.worker.reason }],
+      check.worker.run
+        ? []
+        : [
+            {
+              name: check.name,
+              reason: workerOmissionReason(check.worker),
+            },
+          ],
     ),
   ]
   return { biome, typecheckLegs, staticChecks: workerStaticChecks, omitted }

@@ -41,7 +41,7 @@ export const CHECK_LEGS = [
     excludedTestPatterns: [],
     typecheck: null,
     typecheckConfigs: [],
-    worker: { run: false, reason: 'has no typecheck command' },
+    worker: { run: true },
     suite: [
       {
         argv: [
@@ -85,7 +85,11 @@ export const CHECK_LEGS = [
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck'],
     typecheckConfigs: ['hub/data/tsconfig.json'],
-    worker: { run: false, reason: 'slow: 5.1s CPU in the gate' },
+    worker: {
+      run: false,
+      reason: 'slow: 5.6s CPU in the gate (gate 5311)',
+      evidence: '"bun run check"',
+    },
     suite: [{ argv: ['bun', 'run', 'test'], unitTests: true }],
   },
   {
@@ -105,7 +109,11 @@ export const CHECK_LEGS = [
       'hub/util/tsconfig.json',
       'hub/site/tsconfig.json',
     ],
-    worker: { run: false, reason: 'slow: 22.8s CPU in the gate' },
+    worker: {
+      run: false,
+      reason: 'slow: 24.0s CPU in the gate (gate 5311)',
+      evidence: '"bun run check"',
+    },
     suite: [
       { argv: ['bun', 'run', 'test'], unitTests: true },
       { argv: ['bun', 'run', 'build'], unitTests: false },
@@ -165,7 +173,11 @@ export const CHECK_LEGS = [
     excludedTestPatterns: [],
     typecheck: ['bun', 'run', 'typecheck:scripts'],
     typecheckConfigs: ['scripts/tsconfig.json'],
-    worker: { run: false, reason: 'slow: 11.9s CPU in the gate' },
+    worker: {
+      run: false,
+      reason: 'slow: 13.8s CPU in the gate (gate 5311)',
+      evidence: '"bun run check"',
+    },
     suite: [],
   },
 ] as const

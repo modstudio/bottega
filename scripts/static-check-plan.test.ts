@@ -1,8 +1,17 @@
 import { describe, expect, test } from 'bun:test'
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS } from './check-plan.ts'
-import { staticCheckPlan, workerBiomeFiles, workerCheckProjection } from './static-check-plan.ts'
+import {
+  classifyWorkerOmissionEvidence,
+  staticCheckPlan,
+  workerBiomeFiles,
+  workerCheckProjection,
+} from './static-check-plan.ts'
 
 const STATIC_CHECKS = staticCheckPlan()
+const REPOSITORY_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
 describe('worker static check plan', () => {
   test('combines committed, working-tree, and untracked paths once in stable order', () => {
@@ -41,10 +50,39 @@ describe('worker static check plan', () => {
     expect(argv).not.toContain('--changed')
   })
 
-  test('gives every omission a non-empty reason', () => {
+  test.each([
+    ['run 25620', 'run'],
+    ['"bun run check"', 'command'],
+    ['shared/store-access.ts:decideStoreAccess', 'citation'],
+    ['', 'invalid'],
+    ['needs a database', 'invalid'],
+    ['DEV-1949', 'invalid'],
+  ] as const)('classifies omission evidence %s as %s', (evidence, kind) => {
+    expect(classifyWorkerOmissionEvidence(evidence).kind).toBe(kind)
+  })
+
+  test('requires valid, resolvable evidence for every worker omission', () => {
     expect(STATIC_CHECKS.length).toBeGreaterThan(0)
-    for (const check of STATIC_CHECKS) {
-      if (!check.worker.run) expect(check.worker.reason.trim()).not.toBe('')
+    const omissions = [
+      ...STATIC_CHECKS.flatMap((check) => (check.worker.run ? [] : [check.worker])),
+      ...CHECK_LEGS.flatMap((leg) => (leg.worker.run ? [] : [leg.worker])),
+    ]
+    expect(omissions.length).toBeGreaterThan(0)
+
+    for (const omission of omissions) {
+      const evidence = classifyWorkerOmissionEvidence(omission.evidence)
+      expect(evidence.kind, omission.evidence).not.toBe('invalid')
+      if (evidence.kind !== 'citation') continue
+
+      const citedPath = join(REPOSITORY_ROOT, evidence.path)
+      expect(existsSync(citedPath), `${evidence.path} must exist`).toBe(true)
+      const declaration = new RegExp(
+        `\\b(?:function|const|class|type|interface)\\s+${evidence.symbol}\\b`,
+      )
+      expect(
+        readFileSync(citedPath, 'utf8'),
+        `${omission.evidence} must name a declaration`,
+      ).toMatch(declaration)
     }
   })
 
@@ -63,6 +101,10 @@ describe('worker static check plan', () => {
       'scripts/check-dead-code.ts',
       'scripts/check-brand.ts',
       'scripts/check-legacy-names.ts',
+      'scripts/check-gitleaks.ts',
+      'scripts/check-machine-state.ts',
+      'scripts/check-launchd-templates.ts',
+      'scripts/check-hook-binary.ts',
       'orchestrator/scripts/check-canon-lint.ts',
       'scripts/quality/check-test-substance.ts',
     ]) {
