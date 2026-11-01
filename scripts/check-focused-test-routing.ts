@@ -1,11 +1,23 @@
 #!/usr/bin/env bun
-import { relative } from 'node:path'
+import { basename, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { trackedFiles } from './check-test-reach.ts'
-import { groupFocusedTestPaths } from './test-focused.ts'
+import { focusedSuiteOwners, groupFocusedTestPaths, suiteOwnerClaiming } from './test-focused.ts'
 
-const testFiles = trackedFiles().filter((path) => /\.test\.tsx?$/.test(path))
+const tracked = trackedFiles()
+const testFiles = tracked.filter((path) => /\.test\.tsx?$/.test(path))
+const pythonSuites = focusedSuiteOwners()
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
+
+const pythonFiles = tracked.filter((path) => suiteOwnerClaiming(path) !== undefined)
+
+function suiteDeclarationFailures(): { file: string; error: string }[] {
+  return pythonSuites.flatMap((suite) =>
+    suite.focused
+      ? []
+      : [{ file: suite.owner, error: 'test-pattern owner is missing the focused field' }],
+  )
+}
 
 function routingFailures(): { file: string; error: string }[] {
   // One grouped call is the cheap pass path; only a failure pays for naming every file.
@@ -41,13 +53,40 @@ function routingFailures(): { file: string; error: string }[] {
   }
 }
 
-const failures = routingFailures()
+function pythonRoutingFailures(): { file: string; error: string }[] {
+  return pythonSuites.flatMap((suite) => {
+    if (!suite.focused) return []
+    const form = suite.focused
+    return pythonFiles
+      .filter((file) => suiteOwnerClaiming(file)?.owner === suite.owner)
+      .flatMap((file) => {
+        try {
+          const groups = groupFocusedTestPaths([file])
+          const expectedArgv = [...form.argv, basename(file, '.py')]
+          return groups.length === 1 &&
+            relative(form.directory, file) === basename(file) &&
+            JSON.stringify(groups[0]!.argv) === JSON.stringify(expectedArgv)
+            ? []
+            : [
+                {
+                  file,
+                  error: `must route through ${form.directory}: ${expectedArgv.join(' ')}`,
+                },
+              ]
+        } catch (error) {
+          return [{ file, error: error instanceof Error ? error.message : String(error) }]
+        }
+      })
+  })
+}
+
+const failures = [...suiteDeclarationFailures(), ...routingFailures(), ...pythonRoutingFailures()]
 if (failures.length > 0) {
-  console.error('focused test routing failed: every tracked TypeScript test must resolve')
+  console.error('focused test routing failed: every tracked test must resolve through its runner')
   for (const failure of failures) console.error(`- ${failure.file}: ${failure.error}`)
   process.exit(1)
 }
 
 console.log(
-  `focused test routing: ${testFiles.length} tracked TypeScript tests resolve with exact path operands`,
+  `focused test routing: ${testFiles.length} tracked TypeScript tests and ${pythonFiles.length} tracked Python tests resolve through their declared runners`,
 )

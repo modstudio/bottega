@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS, ROOT_TEST_FILES } from './check-plan.ts'
-import { gateTestDirectories, testLegReaches } from './check-test-reach.ts'
+import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
+import { gateTestDirectories, matchesTestPattern, testLegReaches } from './check-test-reach.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
@@ -29,6 +29,13 @@ const packageDirectoriesByDepth = packages
   .sort((left, right) => right.length - left.length)
 
 export type FocusedTestGroup = { directory: string; paths: string[]; argv: string[] }
+
+type FocusedForm = { directory: string; argv: readonly string[] }
+export type FocusedSuiteOwner = {
+  owner: string
+  testPatterns: readonly string[]
+  focused?: FocusedForm
+}
 
 function beneath(directory: string, candidate: string) {
   const offset = relative(directory, candidate)
@@ -69,6 +76,54 @@ function typeScriptTestsUnder(directory: string): string[] {
       }
       if (!entry.isFile() || !/\.test\.tsx?$/.test(entry.name)) return []
       return [relative(root, absolute)]
+    })
+    .sort()
+}
+
+export function focusedSuiteOwners(): FocusedSuiteOwner[] {
+  const checkLegSuites = CHECK_LEGS.filter((leg) => leg.testPatterns.length > 0).map((leg) => {
+    const suite = leg.suite.find((candidate) => 'focused' in candidate)
+    return {
+      owner: `CHECK_LEGS leg ${JSON.stringify(leg.name)}`,
+      testPatterns: leg.testPatterns,
+      focused: suite && 'focused' in suite ? suite.focused : undefined,
+    }
+  })
+  return [
+    ...checkLegSuites,
+    ...CI_ONLY_SUITES.map((suite) => ({
+      owner: `CI_ONLY_SUITES job ${JSON.stringify(suite.job)}`,
+      testPatterns: suite.testPatterns,
+      focused: 'focused' in suite ? suite.focused : undefined,
+    })),
+  ]
+}
+
+const suiteOwners = focusedSuiteOwners()
+
+export function suiteOwnerClaiming(path: string): FocusedSuiteOwner | undefined {
+  return suiteOwners.find((suite) =>
+    suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
+  )
+}
+
+function focusedSuiteFor(path: string): (FocusedSuiteOwner & { focused: FocusedForm }) | undefined {
+  const suite = suiteOwnerClaiming(path)
+  return suite?.focused ? (suite as FocusedSuiteOwner & { focused: FocusedForm }) : undefined
+}
+
+function claimedPythonTestsUnder(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true })
+    .flatMap((entry) => {
+      const absolute = resolve(directory, entry.name)
+      if (entry.isDirectory()) {
+        return ['node_modules', '.git', '.claude'].includes(entry.name)
+          ? []
+          : claimedPythonTestsUnder(absolute)
+      }
+      if (!entry.isFile()) return []
+      const path = relative(root, absolute)
+      return focusedSuiteFor(path) ? [path] : []
     })
     .sort()
 }
@@ -121,16 +176,74 @@ function addDirectorySelection(
   }
 }
 
-function addSelection(groups: Map<string, string[]>, path: string) {
+function addBunSelection(groups: Map<string, string[]>, absolute: string) {
+  const projectRelativePath = relative(root, absolute)
+  const runDirectory = gateRunDirectory(projectRelativePath)
+  addPath(groups, runDirectory, relative(runDirectory, absolute))
+}
+
+function focusedGroupKey(form: FocusedForm): string {
+  return JSON.stringify([form.directory, form.argv])
+}
+
+function addFocusedSelection(
+  groups: Map<string, { form: FocusedForm; modules: string[] }>,
+  suite: FocusedSuiteOwner & { focused: FocusedForm },
+  path: string,
+) {
+  const key = focusedGroupKey(suite.focused)
+  const group = groups.get(key) ?? { form: suite.focused, modules: [] }
+  const module = basename(path, '.py')
+  if (!group.modules.includes(module)) group.modules.push(module)
+  groups.set(key, group)
+}
+
+type RefusedSelection = { path: string; reason: 'missing' | 'unclaimed' }
+
+function refusal(refused: readonly RefusedSelection[]): Error {
+  const missing = refused.filter(({ reason }) => reason === 'missing').map(({ path }) => path)
+  const unclaimed = refused.filter(({ reason }) => reason === 'unclaimed').map(({ path }) => path)
+  const messages: string[] = []
+  if (missing.length > 0) {
+    messages.push(
+      `${missing.map((path) => JSON.stringify(path)).join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist in this tree.`,
+    )
+  }
+  if (unclaimed.length > 0) {
+    const patterns = [...new Set(focusedSuiteOwners().flatMap((suite) => suite.testPatterns))]
+    messages.push(
+      `No runner claims ${unclaimed.map((path) => JSON.stringify(path)).join(', ')}. ` +
+        `Run *.test.ts(x) files or files matching a declared suite pattern: ${patterns.join(', ')}.`,
+    )
+  }
+  return new Error(`run_tests cannot run: ${messages.join(' ')}`)
+}
+
+function addSelection(
+  bunGroups: Map<string, string[]>,
+  focusedGroups: Map<string, { form: FocusedForm; modules: string[] }>,
+  path: string,
+): RefusedSelection[] {
   const absolute = selectedAbsolutePath(path)
   const projectRelativePath = relative(root, absolute)
-  const directory = existsSync(absolute) && statSync(absolute).isDirectory()
+  if (!existsSync(absolute)) return [{ path, reason: 'missing' }]
+  const directory = statSync(absolute).isDirectory()
   if (!directory) {
-    const runDirectory = gateRunDirectory(projectRelativePath)
-    addPath(groups, runDirectory, relative(runDirectory, absolute))
-    return
+    const focusedSuite = focusedSuiteFor(projectRelativePath)
+    if (focusedSuite) addFocusedSelection(focusedGroups, focusedSuite, projectRelativePath)
+    else if (/\.test\.tsx?$/.test(projectRelativePath)) addBunSelection(bunGroups, absolute)
+    else return [{ path, reason: 'unclaimed' }]
+    return []
   }
-  addDirectorySelection(groups, path, absolute, typeScriptTestsUnder(absolute))
+  const typeScriptTests = typeScriptTestsUnder(absolute)
+  const pythonTests = claimedPythonTestsUnder(absolute)
+  if (typeScriptTests.length > 0) addDirectorySelection(bunGroups, path, absolute, typeScriptTests)
+  for (const pythonPath of pythonTests) {
+    addFocusedSelection(focusedGroups, focusedSuiteFor(pythonPath)!, pythonPath)
+  }
+  return typeScriptTests.length === 0 && pythonTests.length === 0
+    ? [{ path, reason: 'unclaimed' }]
+    : []
 }
 
 function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup {
@@ -152,9 +265,18 @@ function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup 
 
 export function groupFocusedTestPaths(paths: readonly string[]): FocusedTestGroup[] {
   if (paths.length === 0) throw new Error('provide at least one project-relative test path')
-  const groups = new Map<string, string[]>()
-  for (const path of paths) addSelection(groups, path)
-  return [...groups].map(([directory, groupedPaths]) => focusedTestGroup(directory, groupedPaths))
+  const bunGroups = new Map<string, string[]>()
+  const focusedGroups = new Map<string, { form: FocusedForm; modules: string[] }>()
+  const refused = paths.flatMap((path) => addSelection(bunGroups, focusedGroups, path))
+  if (refused.length > 0) throw refusal(refused)
+  return [
+    ...focusedGroups.values().map(({ form, modules }) => ({
+      directory: resolve(root, form.directory),
+      paths: modules,
+      argv: [...form.argv, ...modules],
+    })),
+    ...[...bunGroups].map(([directory, groupedPaths]) => focusedTestGroup(directory, groupedPaths)),
+  ]
 }
 
 async function runFocusedTests(paths: readonly string[]): Promise<number> {

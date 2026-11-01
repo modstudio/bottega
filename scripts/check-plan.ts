@@ -1,5 +1,10 @@
 import { ORCHESTRATOR_GATE_TEST_SELECTION } from '../orchestrator/test/gate-test-selection.ts'
 
+const HOOKS_FOCUSED_FORM = {
+  directory: 'orchestrator/hooks',
+  argv: ['python3', '-m', 'unittest'],
+} as const
+
 export const CHECK_LEGS = [
   {
     name: 'cli',
@@ -54,6 +59,7 @@ export const CHECK_LEGS = [
           '-p',
           'test_*.py',
         ],
+        focused: HOOKS_FOCUSED_FORM,
         unitTests: true,
       },
     ],
@@ -293,6 +299,7 @@ export const CI_ONLY_SUITES = [
       '-p',
       'process_*.py',
     ],
+    focused: HOOKS_FOCUSED_FORM,
   },
 ].map((suite) => ({ ...suite, testPatterns: suiteReachPatterns(suite.argv) }))
 
