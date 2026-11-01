@@ -974,19 +974,19 @@ function applyMigrationRange(
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
-      if (entry.tag === LENS_PROFILE_PIN_CONTRACT_MIGRATION) {
+      if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
         const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
-        applyBackfills(d, lensProfilePinBackfillEntries(allowedEntries.slice(0, boundary)), folder)
+        const boundaryEntries = allowedEntries.slice(0, boundary)
+        applyBackfills(
+          d,
+          entry.tag === LENS_PROFILE_PIN_CONTRACT_MIGRATION
+            ? lensProfilePinBackfillEntries(boundaryEntries)
+            : boundaryEntries,
+          folder,
+        )
       }
       prepareMigrationEntry(d, entry, beforeApply)
       createMigrationsTable(d)
-      if (
-        BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag) &&
-        entry.tag !== LENS_PROFILE_PIN_CONTRACT_MIGRATION
-      ) {
-        const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
-        applyBackfills(d, allowedEntries.slice(0, boundary), folder)
-      }
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)

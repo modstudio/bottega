@@ -119,4 +119,153 @@ export function registerProjectSpacePinProofs(input: ProjectSpaceProofInput): vo
     )
     expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
   })
+
+  test('a dangling live pin refuses both dry-run and confirmed moves', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('dangling live pin proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1991 Dangling Live Pin',
+      `dev-1991-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId(),
+      profile = newRecordId(),
+      selection = newRecordId(),
+      dangling = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','dangling-live-pin',now());
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
+         SELECT '${profile}','${source}',id,'architecture','dangling-live',1,
+           '${profile}','{"guidance":"current"}',true,now() FROM lens
+         WHERE space_id='${source}' ORDER BY key LIMIT 1;
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','dangling-live','${dangling}',1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    for (const confirm of [undefined, 0])
+      await expect(
+        moveRecordProjectSpace({
+          url: input.actorUrl,
+          project: 'dangling-live-pin',
+          source,
+          destination: destination.slug,
+          confirm,
+        }),
+      ).rejects.toThrow('project lens profile pinned-version conflict:')
+    expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
+  })
+
+  test('a selection without a source profile survives the move', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('missing source profile proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1991 Missing Source Profile',
+      `dev-1991-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId(),
+      selection = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','missing-source-profile',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','does-not-exist',NULL,1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    const dry = await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'missing-source-profile',
+      source,
+      destination: destination.slug,
+    })
+    await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'missing-source-profile',
+      source,
+      destination: destination.slug,
+      confirm: dry.total,
+    })
+    expect(
+      input
+        .admin(
+          `SELECT space_id || ':' || count(*) FROM project_lens_profile WHERE id='${selection}' GROUP BY space_id;`,
+        )
+        .trim(),
+    ).toBe(`${destination.id}:1`)
+  })
+
+  test('an axis-level selection and its revision move exactly once across matching profiles', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('axis-level pin proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1991 Axis Pin',
+      `dev-1991-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId(),
+      sourceProfileA = newRecordId(),
+      sourceProfileB = newRecordId(),
+      destinationProfileA = newRecordId(),
+      destinationProfileB = newRecordId(),
+      sourceRevision = newRecordId(),
+      destinationRevision = newRecordId(),
+      selection = newRecordId(),
+      selectionRevision = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','axis-pin-proof',now());
+       WITH picked AS (
+         SELECT id,row_number() OVER (ORDER BY key) n FROM lens WHERE space_id='${source}' LIMIT 2
+       )
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
+         SELECT CASE n WHEN 1 THEN '${sourceProfileA}'::uuid ELSE '${sourceProfileB}'::uuid END,
+           '${source}',id,'architecture','axis-shared',2,
+           CASE n WHEN 1 THEN '${sourceProfileA}'::uuid ELSE '${sourceProfileB}'::uuid END,
+           '{"guidance":"current"}',true,now() FROM picked;
+       WITH picked AS (
+         SELECT id,row_number() OVER (ORDER BY key) n FROM lens WHERE space_id='${destination.id}' LIMIT 2
+       )
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
+         SELECT CASE n WHEN 1 THEN '${destinationProfileA}'::uuid ELSE '${destinationProfileB}'::uuid END,
+           '${destination.id}',id,'architecture','axis-shared',2,
+           CASE n WHEN 1 THEN '${destinationProfileA}'::uuid ELSE '${destinationProfileB}'::uuid END,
+           '{"guidance":"current"}',true,now() FROM picked;
+       INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at) VALUES
+         ('${sourceRevision}','${source}','${sourceProfileA}',1,
+          '{"body":{"guidance":"prior"},"enabled":true}','proof',now()),
+         ('${destinationRevision}','${destination.id}','${destinationProfileA}',1,
+          '{"body":{"guidance":"prior"},"enabled":true}','proof',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         VALUES ('${selection}','${source}','${project}',NULL,'architecture','axis-shared','${sourceRevision}',1,now());
+       INSERT INTO project_lens_profile_revision
+         (id,space_id,selection_id,prior_profile_name,prior_selected_version_id,reason,at)
+         VALUES ('${selectionRevision}','${source}','${selection}','axis-shared','${sourceProfileB}','proof',now());`,
+    )
+    const dry = await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'axis-pin-proof',
+      source,
+      destination: destination.slug,
+    })
+    await moveRecordProjectSpace({
+      url: input.actorUrl,
+      project: 'axis-pin-proof',
+      source,
+      destination: destination.slug,
+      confirm: dry.total,
+    })
+    expect(
+      input
+        .admin(
+          `SELECT count(*) || ':' || min(selected_version_id::text) FROM project_lens_profile WHERE id='${selection}';
+           SELECT count(*) || ':' || min(prior_selected_version_id::text) FROM project_lens_profile_revision WHERE id='${selectionRevision}';`,
+        )
+        .trim()
+        .split('\n'),
+    ).toEqual([`1:${destinationRevision}`, `1:${destinationProfileB}`])
+  })
 }

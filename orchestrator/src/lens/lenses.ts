@@ -13,6 +13,10 @@ import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY } from '../record/record-lens-con
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
+import {
+  LOCAL_PIN_VERSION_SQL,
+  LOCAL_SELECTION_PIN_VERSION_JOINS_SQL,
+} from './lens-profile-pin-version-sql.ts'
 import { lensProfileSnapshot, nextLensProfileVersion } from './lens-profile-version.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
@@ -647,20 +651,12 @@ function writeProjectProfileSelectionLocal(input: {
   )
   const prior = d
     .query(
-      `SELECT s.record_id,s.profile_name,s.selected_version_id,s.selection_version,
-        COALESCE(current_profile.version,selected_revision.version) selected_version
-       FROM project_lens_profile s
-       LEFT JOIN lens l ON l.record_id=s.lens_record_id
-       LEFT JOIN lens_profile current_profile
-         ON current_profile.space_id IS s.space_id
-         AND current_profile.lens_record_id IS s.lens_record_id
-         AND current_profile.axis=s.axis
-         AND current_profile.name=s.profile_name
-         AND current_profile.current_version_id=s.selected_version_id
-       LEFT JOIN lens_profile_revision selected_revision
-         ON selected_revision.space_id IS s.space_id
-         AND selected_revision.record_id=s.selected_version_id
-       WHERE s.project_record_id=? AND l.id IS ? AND s.axis=? AND s.space_id IS ?`,
+      `SELECT selection.record_id,selection.profile_name,selection.selected_version_id,selection.selection_version,
+        ${LOCAL_PIN_VERSION_SQL} selected_version
+       FROM project_lens_profile selection
+       LEFT JOIN lens l ON l.record_id=selection.lens_record_id
+       ${LOCAL_SELECTION_PIN_VERSION_JOINS_SQL}
+       WHERE selection.project_record_id=? AND l.id IS ? AND selection.axis=? AND selection.space_id IS ?`,
     )
     .get(project.recordId, selection.lensId ?? null, axis, spaceId) as {
     profile_name: string
@@ -819,20 +815,12 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
     const selections = project
       ? (d
           .query(
-            `SELECT l.id lens_id,s.profile_name,s.selected_version_id,
-              COALESCE(current_profile.version,selected_revision.version) selected_version
-             FROM project_lens_profile s
-             LEFT JOIN lens l ON l.record_id=s.lens_record_id
-             LEFT JOIN lens_profile current_profile
-               ON current_profile.space_id IS s.space_id
-               AND current_profile.lens_record_id IS s.lens_record_id
-               AND current_profile.axis=s.axis
-               AND current_profile.name=s.profile_name
-               AND current_profile.current_version_id=s.selected_version_id
-             LEFT JOIN lens_profile_revision selected_revision
-               ON selected_revision.space_id IS s.space_id
-               AND selected_revision.record_id=s.selected_version_id
-             WHERE s.project_record_id=? AND s.axis=? AND (l.id=? OR s.lens_record_id IS NULL) AND s.space_id IS ?`,
+            `SELECT l.id lens_id,selection.profile_name,selection.selected_version_id,
+              ${LOCAL_PIN_VERSION_SQL} selected_version
+             FROM project_lens_profile selection
+             LEFT JOIN lens l ON l.record_id=selection.lens_record_id
+             ${LOCAL_SELECTION_PIN_VERSION_JOINS_SQL}
+             WHERE selection.project_record_id=? AND selection.axis=? AND (l.id=? OR selection.lens_record_id IS NULL) AND selection.space_id IS ?`,
           )
           .all(project.recordId, axis, id, spaceId) as {
           lens_id: string | null

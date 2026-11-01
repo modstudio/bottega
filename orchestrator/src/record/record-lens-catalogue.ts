@@ -28,28 +28,52 @@ const nullable = (value: unknown) => (value == null ? null : String(value))
 const number = (value: unknown) => Number(value)
 const iso = (value: unknown) => (value instanceof Date ? value.toISOString() : String(value))
 
+function hostedLensProfilePinVersionSql(input: {
+  selection: string
+  row: string
+  profileName: string
+  versionId: string
+  label: string
+}): { projection: string; joins: string } {
+  const { selection, row, profileName, versionId, label } = input
+  return {
+    projection: `COALESCE(current_profile.version, pinned_revision.version) AS ${label}`,
+    joins: `LEFT JOIN lens_profile current_profile
+      ON current_profile.space_id=${row}.space_id
+      AND current_profile.lens_id=${selection}.lens_id
+      AND current_profile.axis=${selection}.axis
+      AND current_profile.name=${profileName}
+      AND current_profile.current_version_id=${versionId}
+    LEFT JOIN lens_profile_revision pinned_revision
+      ON pinned_revision.space_id=${row}.space_id
+      AND pinned_revision.id=${versionId}`,
+  }
+}
+
 async function selectionRows(
   tx: SQL,
   spaceId: string,
   after: { at: string | null; id: string | null; rowId: string | null; limit: number },
 ): Promise<Record<string, unknown>[]> {
-  return tx`SELECT selection.*,
-      COALESCE(current_profile.version, selected_revision.version) AS selected_version,
+  const pinVersion = hostedLensProfilePinVersionSql({
+    selection: 'selection',
+    row: 'selection',
+    profileName: 'selection.profile_name',
+    versionId: 'selection.selected_version_id',
+    label: 'selected_version',
+  })
+  return tx.unsafe(
+    `SELECT selection.*,
+      ${pinVersion.projection},
       to_char(selection.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM project_lens_profile selection
-    LEFT JOIN lens_profile current_profile
-      ON current_profile.space_id=selection.space_id
-      AND current_profile.lens_id=selection.lens_id
-      AND current_profile.axis=selection.axis
-      AND current_profile.name=selection.profile_name
-      AND current_profile.current_version_id=selection.selected_version_id
-    LEFT JOIN lens_profile_revision selected_revision
-      ON selected_revision.space_id=selection.space_id
-      AND selected_revision.id=selection.selected_version_id
-    WHERE selection.space_id=${spaceId}::uuid
-      AND (${after.rowId}::uuid IS NULL OR selection.id=${after.rowId}::uuid)
-      AND (${after.at}::timestamptz IS NULL OR (selection.updated_at,selection.id)>(${after.at}::timestamptz,${after.id}::uuid))
-    ORDER BY selection.updated_at,selection.id LIMIT ${after.limit}`
+    ${pinVersion.joins}
+    WHERE selection.space_id=$1::uuid
+      AND ($2::uuid IS NULL OR selection.id=$2::uuid)
+      AND ($3::timestamptz IS NULL OR (selection.updated_at,selection.id)>($3::timestamptz,$4::uuid))
+    ORDER BY selection.updated_at,selection.id LIMIT $5`,
+    [spaceId, after.rowId, after.at, after.id, after.limit],
+  )
 }
 
 async function selectionRevisionRows(
@@ -57,25 +81,27 @@ async function selectionRevisionRows(
   spaceId: string,
   after: { at: string | null; id: string | null; rowId: string | null; limit: number },
 ): Promise<Record<string, unknown>[]> {
-  return tx`SELECT history.*,
-      COALESCE(current_profile.version, prior_revision.version) AS prior_selected_version,
+  const pinVersion = hostedLensProfilePinVersionSql({
+    selection: 'selection',
+    row: 'history',
+    profileName: 'history.prior_profile_name',
+    versionId: 'history.prior_selected_version_id',
+    label: 'prior_selected_version',
+  })
+  return tx.unsafe(
+    `SELECT history.*,
+      ${pinVersion.projection},
       to_char(history.at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at
     FROM project_lens_profile_revision history
     JOIN project_lens_profile selection
       ON selection.space_id=history.space_id AND selection.id=history.selection_id
-    LEFT JOIN lens_profile current_profile
-      ON current_profile.space_id=history.space_id
-      AND current_profile.lens_id=selection.lens_id
-      AND current_profile.axis=selection.axis
-      AND current_profile.name=history.prior_profile_name
-      AND current_profile.current_version_id=history.prior_selected_version_id
-    LEFT JOIN lens_profile_revision prior_revision
-      ON prior_revision.space_id=history.space_id
-      AND prior_revision.id=history.prior_selected_version_id
-    WHERE history.space_id=${spaceId}::uuid
-      AND (${after.rowId}::uuid IS NULL OR history.id=${after.rowId}::uuid)
-      AND (${after.at}::timestamptz IS NULL OR (history.at,history.id)>(${after.at}::timestamptz,${after.id}::uuid))
-    ORDER BY history.at,history.id LIMIT ${after.limit}`
+    ${pinVersion.joins}
+    WHERE history.space_id=$1::uuid
+      AND ($2::uuid IS NULL OR history.id=$2::uuid)
+      AND ($3::timestamptz IS NULL OR (history.at,history.id)>($3::timestamptz,$4::uuid))
+    ORDER BY history.at,history.id LIMIT $5`,
+    [spaceId, after.rowId, after.at, after.id, after.limit],
+  )
 }
 
 function mapped(
@@ -425,22 +451,24 @@ export async function selectRecordProjectLensProfile(
       await tx`SELECT id FROM project WHERE id=${input.projectId}::uuid AND space_id=${input.spaceId}::uuid`
     if (!project[0]) throw new RecordLensError('project is not in the destination space', 404)
     const { lensId, selectedVersionId } = await validatedSelectionLensId(tx, input)
-    const rows = await tx`SELECT selection.*,
-      COALESCE(current_profile.version, selected_revision.version) AS selected_version
+    const pinVersion = hostedLensProfilePinVersionSql({
+      selection: 'selection',
+      row: 'selection',
+      profileName: 'selection.profile_name',
+      versionId: 'selection.selected_version_id',
+      label: 'selected_version',
+    })
+    const rows = await tx.unsafe(
+      `SELECT selection.*,
+      ${pinVersion.projection}
       FROM project_lens_profile selection
-      LEFT JOIN lens_profile current_profile
-        ON current_profile.space_id=selection.space_id
-        AND current_profile.lens_id=selection.lens_id
-        AND current_profile.axis=selection.axis
-        AND current_profile.name=selection.profile_name
-        AND current_profile.current_version_id=selection.selected_version_id
-      LEFT JOIN lens_profile_revision selected_revision
-        ON selected_revision.space_id=selection.space_id
-        AND selected_revision.id=selection.selected_version_id
-      WHERE selection.space_id=${input.spaceId}::uuid
-        AND selection.project_id=${input.projectId}::uuid
-        AND selection.lens_id IS NOT DISTINCT FROM ${lensId}::uuid
-        AND selection.axis=${input.axis} FOR UPDATE OF selection`
+      ${pinVersion.joins}
+      WHERE selection.space_id=$1::uuid
+        AND selection.project_id=$2::uuid
+        AND selection.lens_id IS NOT DISTINCT FROM $3::uuid
+        AND selection.axis=$4 FOR UPDATE OF selection`,
+      [input.spaceId, input.projectId, lensId, input.axis],
+    )
     const prior = rows[0] as Record<string, unknown> | undefined
     assertRecordLensVersion(
       'project lens selection',

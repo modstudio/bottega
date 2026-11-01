@@ -1,12 +1,15 @@
 // concern: migration-backfill-compatibility
 /** Selects backfills that remain valid against the store's current schema generation. */
 import type { Database } from 'bun:sqlite'
-import { selectionIntegerVersionExists } from './lens-profile-pin-contract-preflight.ts'
+import {
+  LENS_PROFILE_PIN_CONTRACT_MIGRATION,
+  selectionIntegerVersionExists,
+} from './lens-profile-pin-contract-preflight.ts'
 import type { MigrationJournalEntry } from './migration-compatibility.ts'
 
 export const BACKFILL_SCHEMA_BOUNDARIES = new Set([
   '0117_project_uuid_key',
-  '0192_lens_profile_pin_contract',
+  LENS_PROFILE_PIN_CONTRACT_MIGRATION,
 ])
 const INTEGER_PROJECT_BACKFILLS = new Set([
   '0006_project_id_backfill',

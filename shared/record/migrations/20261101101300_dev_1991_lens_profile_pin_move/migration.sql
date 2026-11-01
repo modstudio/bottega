@@ -302,17 +302,25 @@ BEGIN
   ALTER TABLE lens NO FORCE ROW LEVEL SECURITY;
   ALTER TABLE lens_profile NO FORCE ROW LEVEL SECURITY;
   CREATE TEMP TABLE selected_profile_map AS
-    SELECT DISTINCT sl.key lens_key,sp.axis,sp.name,sp.id source_profile_id,
-      dl.id destination_lens_id,dp.id destination_profile_id,
-      dp.id IS NULL copy_profile,sp.version,sp.body,sp.enabled,sp.updated_at
-    FROM project_lens_profile s
-    JOIN lens sl ON sl.space_id=source_id AND (s.lens_id=sl.id OR s.lens_id IS NULL)
-    JOIN lens_profile sp ON sp.space_id=source_id AND sp.lens_id=sl.id
-      AND sp.axis=s.axis AND sp.name=s.profile_name
-    LEFT JOIN lens dl ON dl.space_id=destination_id AND dl.key=sl.key
-    LEFT JOIN lens_profile dp ON dp.space_id=destination_id AND dp.lens_id=dl.id
-      AND dp.axis=sp.axis AND dp.name=sp.name
-    WHERE s.space_id=source_id AND s.project_id=moving_project_id;
+    WITH profiles AS (
+      SELECT DISTINCT sl.key lens_key,sp.axis,sp.name,sp.id source_profile_id,
+        dl.id destination_lens_id,dp.id existing_destination_profile_id,
+        dp.current_version_id existing_destination_current_version_id,
+        sp.version,sp.body,sp.enabled,sp.updated_at
+      FROM project_lens_profile s
+      JOIN lens sl ON sl.space_id=source_id AND (s.lens_id=sl.id OR s.lens_id IS NULL)
+      JOIN lens_profile sp ON sp.space_id=source_id AND sp.lens_id=sl.id
+        AND sp.axis=s.axis AND sp.name=s.profile_name
+      LEFT JOIN lens dl ON dl.space_id=destination_id AND dl.key=sl.key
+      LEFT JOIN lens_profile dp ON dp.space_id=destination_id AND dp.lens_id=dl.id
+        AND dp.axis=sp.axis AND dp.name=sp.name
+      WHERE s.space_id=source_id AND s.project_id=moving_project_id
+    )
+    SELECT lens_key,axis,name,source_profile_id,destination_lens_id,
+      coalesce(existing_destination_profile_id,gen_random_uuid()) destination_profile_id,
+      coalesce(existing_destination_current_version_id,gen_random_uuid()) destination_current_version_id,
+      existing_destination_profile_id IS NULL copy_profile,version,body,enabled,updated_at
+    FROM profiles;
   SELECT string_agg(format('%s/%s/%s',lens_key,axis,name),', ' ORDER BY lens_key,axis,name)
     INTO missing_lenses FROM selected_profile_map WHERE destination_lens_id IS NULL;
   IF missing_lenses IS NOT NULL THEN
@@ -330,11 +338,18 @@ BEGIN
     RAISE EXCEPTION 'project % cannot move from space % to space % because lens profiles have different current content: %; reconcile them, then retry',project_name,source_space,destination_space,profile_conflicts;
   END IF;
 
+  CREATE TEMP TABLE selected_profile_revision_map AS
+    SELECT m.source_profile_id,r.id source_revision_id,gen_random_uuid() destination_revision_id,
+      r.version,r.prior_body,r.reason,r.session_id,r.at
+    FROM selected_profile_map m
+    JOIN lens_profile_revision r ON r.profile_id=m.source_profile_id
+    WHERE m.copy_profile;
+
   ALTER TABLE lens NO FORCE ROW LEVEL SECURITY;
   ALTER TABLE lens_profile NO FORCE ROW LEVEL SECURITY;
   ALTER TABLE lens_profile_revision NO FORCE ROW LEVEL SECURITY;
-  CREATE TEMP TABLE live_pin_map AS
-    SELECT s.id selection_id,sl.key lens_key,s.axis,s.profile_name,
+  CREATE TEMP TABLE live_pin_candidates AS
+    SELECT s.id selection_id,sl.key lens_key,s.axis,s.profile_name,s.selected_version_id,
       CASE WHEN s.selected_version_id=sp.current_version_id THEN sp.version ELSE sr.version END source_version,
       CASE
         WHEN s.selected_version_id=sp.current_version_id
@@ -343,12 +358,18 @@ BEGIN
       END source_content,
       CASE
         WHEN s.selected_version_id IS NULL THEN NULL
-        WHEN m.copy_profile THEN NULL
+        WHEN m.copy_profile AND s.selected_version_id=sp.current_version_id
+          THEN m.destination_current_version_id
+        WHEN m.copy_profile THEN copied_revision.destination_revision_id
         WHEN spv.version=dp.version THEN dp.current_version_id
         ELSE dr.id
       END destination_version_id,
       CASE
-        WHEN s.selected_version_id IS NULL OR m.copy_profile THEN NULL
+        WHEN s.selected_version_id IS NULL THEN NULL
+        WHEN m.copy_profile THEN CASE
+          WHEN s.selected_version_id=sp.current_version_id
+            THEN jsonb_build_object('body',sp.body::jsonb,'enabled',sp.enabled)
+          ELSE sr.prior_body::jsonb END
         WHEN spv.version=dp.version
           THEN jsonb_build_object('body',dp.body::jsonb,'enabled',dp.enabled)
         ELSE dr.prior_body::jsonb
@@ -364,18 +385,32 @@ BEGIN
     JOIN selected_profile_map m ON m.lens_key=sl.key AND m.axis=s.axis AND m.name=s.profile_name
     LEFT JOIN lens_profile dp ON dp.id=m.destination_profile_id
     LEFT JOIN lens_profile_revision dr ON dr.profile_id=dp.id AND dr.version=spv.version
+    LEFT JOIN selected_profile_revision_map copied_revision
+      ON copied_revision.source_revision_id=sr.id
     WHERE s.space_id=source_id AND s.project_id=moving_project_id;
+  CREATE TEMP TABLE live_pin_map AS
+    SELECT selection_id,string_agg(lens_key,',' ORDER BY lens_key) lens_key,axis,profile_name,
+      (array_agg(source_version ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_version,
+      (array_agg(source_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_content,
+      (array_agg(destination_version_id ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_version_id,
+      (array_agg(destination_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_content,
+      coalesce(bool_or(copy_profile) FILTER (WHERE source_version IS NOT NULL),false) copy_profile,
+      count(DISTINCT (destination_version_id,destination_content)) FILTER (WHERE source_version IS NOT NULL)>1 resolution_disagrees,
+      bool_or(selected_version_id IS NOT NULL) pinned
+    FROM live_pin_candidates
+    GROUP BY selection_id,axis,profile_name;
   SELECT string_agg(
       format('project %s lens %s profile %s version %s from space %s differs from or is missing in space %s',
         project_name,lens_key,profile_name,source_version,source_space,destination_space),
       ', ' ORDER BY lens_key,profile_name,source_version)
     INTO profile_conflicts
   FROM live_pin_map
-  WHERE source_version IS NOT NULL
-    AND NOT copy_profile
-    AND (destination_version_id IS NULL OR source_content IS DISTINCT FROM destination_content);
-  CREATE TEMP TABLE historical_pin_map AS
-    SELECT r.id revision_id,sl.key lens_key,s.axis,r.prior_profile_name,
+  WHERE pinned AND (
+    source_version IS NULL OR resolution_disagrees OR
+    (NOT copy_profile AND (destination_version_id IS NULL OR source_content IS DISTINCT FROM destination_content))
+  );
+  CREATE TEMP TABLE historical_pin_candidates AS
+    SELECT r.id revision_id,sl.key lens_key,s.axis,r.prior_profile_name,r.prior_selected_version_id,
       CASE WHEN r.prior_selected_version_id=sp.current_version_id THEN sp.version ELSE sr.version END source_version,
       CASE
         WHEN r.prior_selected_version_id=sp.current_version_id
@@ -384,12 +419,18 @@ BEGIN
       END source_content,
       CASE
         WHEN r.prior_selected_version_id IS NULL THEN NULL
-        WHEN coalesce(m.copy_profile,false) THEN NULL
+        WHEN m.copy_profile AND r.prior_selected_version_id=sp.current_version_id
+          THEN m.destination_current_version_id
+        WHEN m.copy_profile THEN copied_revision.destination_revision_id
         WHEN spv.version=dp.version THEN dp.current_version_id
         ELSE dr.id
       END destination_version_id,
       CASE
-        WHEN r.prior_selected_version_id IS NULL OR coalesce(m.copy_profile,false) THEN NULL
+        WHEN r.prior_selected_version_id IS NULL THEN NULL
+        WHEN m.copy_profile THEN CASE
+          WHEN r.prior_selected_version_id=sp.current_version_id
+            THEN jsonb_build_object('body',sp.body::jsonb,'enabled',sp.enabled)
+          ELSE sr.prior_body::jsonb END
         WHEN spv.version=dp.version
           THEN jsonb_build_object('body',dp.body::jsonb,'enabled',dp.enabled)
         ELSE dr.prior_body::jsonb
@@ -410,14 +451,27 @@ BEGIN
     LEFT JOIN lens dl ON dl.space_id=destination_id AND dl.key=sl.key
     LEFT JOIN lens_profile dp ON dp.space_id=destination_id AND dp.lens_id=dl.id
       AND dp.axis=s.axis AND dp.name=r.prior_profile_name
-    LEFT JOIN lens_profile_revision dr ON dr.profile_id=dp.id AND dr.version=spv.version;
+    LEFT JOIN lens_profile_revision dr ON dr.profile_id=dp.id AND dr.version=spv.version
+    LEFT JOIN selected_profile_revision_map copied_revision
+      ON copied_revision.source_revision_id=sr.id;
+  CREATE TEMP TABLE historical_pin_map AS
+    SELECT revision_id,string_agg(lens_key,',' ORDER BY lens_key) lens_key,axis,prior_profile_name,
+      (array_agg(source_version ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_version,
+      (array_agg(source_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_content,
+      (array_agg(destination_version_id ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_version_id,
+      (array_agg(destination_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_content,
+      coalesce(bool_or(copy_profile) FILTER (WHERE source_version IS NOT NULL),false) copy_profile,
+      count(DISTINCT (destination_version_id,destination_content)) FILTER (WHERE source_version IS NOT NULL)>1 resolution_disagrees,
+      bool_or(prior_selected_version_id IS NOT NULL) pinned
+    FROM historical_pin_candidates
+    GROUP BY revision_id,axis,prior_profile_name;
   SELECT string_agg(
       format('%s/%s/%s version %s',lens_key,axis,prior_profile_name,source_version),
       ', ' ORDER BY lens_key,axis,prior_profile_name,source_version)
     INTO historical_pin_conflicts
   FROM historical_pin_map
   WHERE pinned AND (
-    source_version IS NULL OR
+    source_version IS NULL OR resolution_disagrees OR
     (NOT copy_profile AND (
       destination_version_id IS NULL OR source_content IS DISTINCT FROM destination_content
     ))
@@ -443,54 +497,30 @@ BEGIN
   BEGIN
     ALTER TABLE lens_profile NO FORCE ROW LEVEL SECURITY;
     INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
-      SELECT gen_random_uuid(),destination_id,destination_lens_id,axis,name,version,gen_random_uuid(),body,enabled,updated_at
+      SELECT destination_profile_id,destination_id,destination_lens_id,axis,name,version,destination_current_version_id,body,enabled,updated_at
       FROM selected_profile_map WHERE destination_profile_id IS NULL;
     UPDATE selected_profile_map m SET destination_profile_id=p.id
       FROM lens_profile p WHERE p.space_id=destination_id AND p.lens_id=m.destination_lens_id
         AND p.axis=m.axis AND p.name=m.name;
     ALTER TABLE lens_profile_revision NO FORCE ROW LEVEL SECURITY;
     INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,session_id,at)
-      SELECT gen_random_uuid(),destination_id,m.destination_profile_id,r.version,r.prior_body,r.reason,r.session_id,r.at
-      FROM selected_profile_map m JOIN lens_profile_revision r ON r.profile_id=m.source_profile_id
-      WHERE m.copy_profile;
-    UPDATE live_pin_map pm SET destination_version_id=CASE
-        WHEN pm.source_version=dp.version THEN dp.current_version_id
-        ELSE (SELECT r.id FROM lens_profile_revision r
-          WHERE r.profile_id=dp.id AND r.version=pm.source_version) END,
-      destination_content=CASE
-        WHEN pm.source_version=dp.version
-          THEN jsonb_build_object('body',dp.body::jsonb,'enabled',dp.enabled)
-        ELSE (SELECT r.prior_body::jsonb FROM lens_profile_revision r
-          WHERE r.profile_id=dp.id AND r.version=pm.source_version) END
-      FROM selected_profile_map m
-      JOIN lens_profile dp ON dp.id=m.destination_profile_id
-      WHERE pm.copy_profile AND pm.lens_key=m.lens_key AND pm.axis=m.axis AND pm.profile_name=m.name;
-    UPDATE historical_pin_map pm SET destination_version_id=CASE
-        WHEN pm.source_version=dp.version THEN dp.current_version_id
-        ELSE (SELECT r.id FROM lens_profile_revision r
-          WHERE r.profile_id=dp.id AND r.version=pm.source_version) END,
-      destination_content=CASE
-        WHEN pm.source_version=dp.version
-          THEN jsonb_build_object('body',dp.body::jsonb,'enabled',dp.enabled)
-        ELSE (SELECT r.prior_body::jsonb FROM lens_profile_revision r
-          WHERE r.profile_id=dp.id AND r.version=pm.source_version) END
-      FROM selected_profile_map m
-      JOIN lens_profile dp ON dp.id=m.destination_profile_id
-      WHERE pm.copy_profile AND pm.lens_key=m.lens_key AND pm.axis=m.axis
-        AND pm.prior_profile_name=m.name;
+      SELECT r.destination_revision_id,destination_id,m.destination_profile_id,
+        r.version,r.prior_body,r.reason,r.session_id,r.at
+      FROM selected_profile_revision_map r
+      JOIN selected_profile_map m ON m.source_profile_id=r.source_profile_id;
     ALTER TABLE project_lens_profile_revision NO FORCE ROW LEVEL SECURITY;
     CREATE TEMP TABLE saved_selection_revision AS
       SELECT r.*,pm.destination_version_id resolved_prior_version_id
       FROM project_lens_profile_revision r
       JOIN project_lens_profile s ON s.id=r.selection_id
-      JOIN historical_pin_map pm ON pm.revision_id=r.id
+      LEFT JOIN historical_pin_map pm ON pm.revision_id=r.id
       WHERE s.space_id=source_id AND s.project_id=moving_project_id;
     ALTER TABLE project_lens_profile NO FORCE ROW LEVEL SECURITY;
     CREATE TEMP TABLE saved_selection AS
       SELECT s.*,l.key lens_key,pm.destination_version_id resolved_version_id
       FROM project_lens_profile s
       LEFT JOIN lens l ON l.id=s.lens_id
-      JOIN live_pin_map pm ON pm.selection_id=s.id
+      LEFT JOIN live_pin_map pm ON pm.selection_id=s.id
       WHERE s.space_id=source_id AND s.project_id=moving_project_id;
     DELETE FROM project_lens_profile WHERE space_id=source_id AND project_id=moving_project_id;
 
