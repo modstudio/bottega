@@ -138,6 +138,7 @@ export function buildRunRecordPayload(
     escalations: row.escalations,
     stack: row.stack,
     model: row.model,
+    executor: row.executor,
     evidenceExcluded: row.evidence_excluded,
     evidenceUnvoid,
     inputTree: row.input_tree,

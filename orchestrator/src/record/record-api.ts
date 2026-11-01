@@ -19,19 +19,17 @@ import {
   recordDocImportSchema,
   recordDocUpsertSchema,
 } from './record-api-doc-schemas.ts'
-import {
-  type RecordInvitationRouteDeps,
-  registerRecordInvitationRoute,
-} from './record-api-invitations.ts'
 import { type RecordLensRouteDeps, registerRecordLensRoutes } from './record-api-lens.ts'
-import { type RecordMachineRouteDeps, registerRecordMachineRoutes } from './record-api-machine.ts'
 import { type RecordPortRouteDeps, registerRecordPortRoutes } from './record-api-port.ts'
 import { registerPublicDocRoutes, registerSignedDocSearchRoute } from './record-api-public-docs.ts'
 import { type RecordReleaseRouteDeps, registerRecordReleaseRoutes } from './record-api-releases.ts'
 import { registerRecordRequestSpace } from './record-api-request-space.ts'
+import {
+  type RecordSessionRouteDeps,
+  registerRecordSessionRoutes,
+} from './record-api-session-routes.ts'
 import type { RecordSettingsRouteDeps } from './record-api-settings.ts'
 import { type RecordSubjectRouteDeps, registerRecordSubjectRoutes } from './record-api-subjects.ts'
-import { type RecordSyncRouteDeps, registerRecordSyncRoute } from './record-api-sync.ts'
 import {
   type RecordWorkflowRouteDeps,
   registerRecordWorkflowRoutes,
@@ -88,14 +86,12 @@ type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceI
 type Tenant = { url: string; userId: string; spaceId: string; spaceIds: string[] }
 type Deps = RecordSubjectRouteDeps &
   RecordReleaseRouteDeps &
-  RecordSyncRouteDeps &
   RecordLensRouteDeps &
   RecordPortRouteDeps &
   RecordWorkflowRouteDeps &
-  RecordSettingsRouteDeps &
   RecordApiDeps
-type RecordApiDeps = RecordInvitationRouteDeps &
-  RecordMachineRouteDeps & {
+type RecordApiDeps = RecordSessionRouteDeps &
+  RecordSettingsRouteDeps & {
     clientAddresses: RecordClientAddresses
     recordUrl: string
     allowedOrigins?: string[]
@@ -286,12 +282,6 @@ const catalogueRoutes = [
   registerRecordWorkflowRoutes,
 ]
 
-function registerSessionRoutes(app: Hono<ApiEnvironment>, deps: Deps): void {
-  registerRecordMachineRoutes(app, deps)
-  registerRecordInvitationRoute(app, deps)
-  registerRecordSyncRoute(app, deps)
-}
-
 const encoded = (value: Uint8Array) => Buffer.from(value).toString('base64url')
 const decoded = (value: string) => new Uint8Array(Buffer.from(value, 'base64url'))
 const jsonWrap = (wrap: ConfigWrapInput) => ({
@@ -328,10 +318,8 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     context.set('identity', identity)
     await next()
   })
-  app.get('/v1/whoami', (context) => {
-    return context.json(context.get('identity'))
-  })
-  registerSessionRoutes(app, deps)
+  app.get('/v1/whoami', (context) => context.json(context.get('identity')))
+  registerRecordSessionRoutes(app, deps)
   registerRecordRequestSpace(app)
   app.put('/v1/active-space', async (context) => {
     const input = z

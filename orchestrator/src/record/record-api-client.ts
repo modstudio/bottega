@@ -39,6 +39,10 @@ import {
   subjectMutationBody,
 } from './record-api-client-paths.ts'
 import { type RecordPortClient, recordPortClient } from './record-api-client-port.ts'
+import {
+  type RecordRoutingEvidenceClient,
+  recordRoutingEvidenceClient,
+} from './record-api-client-routing-evidence.ts'
 import { type RecordSessionClient, recordSessionClient } from './record-api-client-session.ts'
 import type { RecordSettingsClient } from './record-api-client-settings.ts'
 import { type RecordWorkflowClient, recordWorkflowClient } from './record-api-client-workflow.ts'
@@ -204,6 +208,7 @@ export type RecordApiClient = ProjectIdentityClient &
   RecordPortClient &
   RecordWorkflowClient &
   RecordSettingsClient & {
+    listRoutingEvidence: RecordRoutingEvidenceClient['listRoutingEvidence']
     createOrganization(input: { name: string; slug: string }): Promise<{ id: string; slug: string }>
     setActiveOrganization(input: {
       organizationId?: string
@@ -730,6 +735,7 @@ export function recordApiClient(request = defaultRequest): RecordApiClient {
     ...projectIdentityClient(request),
     ...recordProjectSubjectClient(request),
     ...recordRunClient(request),
+    ...recordRoutingEvidenceClient(request),
     ...recordBoardClient(request),
     ...recordApiBoardWatchClient(),
   }

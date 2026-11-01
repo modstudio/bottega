@@ -194,6 +194,7 @@ export function unusedBoardClientMethods(): Pick<
   | 'getPublicDoc'
   | 'searchPublicDocs'
   | 'searchDocs'
+  | 'listRoutingEvidence'
   | 'listBoardMessages'
   | 'postBoardMessage'
   | 'replyBoardMessage'
@@ -234,6 +235,7 @@ export function unusedBoardClientMethods(): Pick<
     getPublicDoc: unusedBoard,
     searchPublicDocs: unusedBoard,
     searchDocs: unusedBoard,
+    listRoutingEvidence: unusedBoard,
     listBoardMessages: unusedBoard,
     postBoardMessage: unusedBoard,
     replyBoardMessage: unusedBoard,
@@ -301,6 +303,9 @@ export function createMemoryRecordApiClient(): RecordApiClient {
   return {
     ...unusedIdentityAndSpaceClientMethods(),
     ...unusedBoardClientMethods(),
+    async listRoutingEvidence() {
+      return { items: [], nextCursor: null }
+    },
     async listLensCatalogue() {
       return { items: [], nextCursor: null }
     },

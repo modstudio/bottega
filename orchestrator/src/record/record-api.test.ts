@@ -34,6 +34,7 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
       live: [],
     }),
     readRun: async () => null,
+    listRoutingEvidence: async () => [],
     readReviews: async () => [],
     readReview: async () => null,
     readReleases: async () => [],

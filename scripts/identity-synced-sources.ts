@@ -66,6 +66,7 @@ export const SYNCED_SOURCE_DECLARATIONS: SyncedSources = {
     'listProjects',
     'listPublicDocs',
     'listRevisions',
+    'listRoutingEvidence',
     'listScores',
     'listSnapshots',
     'listWorkflowCatalogue',
