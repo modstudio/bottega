@@ -17,6 +17,7 @@ const MEMBERSHIP_ID = '01990000-0000-7000-8000-000000002016'
 const MACHINE_ID = '01990000-0000-7000-8000-000000002017'
 const FIRST_RUN_ID = '01990000-0000-7000-8000-000000002018'
 const SECOND_RUN_ID = '01990000-0000-7000-8000-000000002019'
+const OTHER_SPACE_ID = '01990000-0000-7000-8000-000000002026'
 const STAMP = '2026-11-01T16:00:00.000Z'
 
 realPostgres('hosted routing evidence', () => {
@@ -25,6 +26,8 @@ realPostgres('hosted routing evidence', () => {
     try {
       await admin`INSERT INTO space (id,name,slug,created_at)
         VALUES (${SPACE_ID}::uuid,'Routing evidence proof','routing-evidence-proof',${STAMP}::timestamptz)`
+      await admin`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${OTHER_SPACE_ID}::uuid,'Routing sequence proof','routing-sequence-proof',${STAMP}::timestamptz)`
       await admin`INSERT INTO "user" (id,email,name,created_at) VALUES
         (${USER_ID}::uuid,'routing-evidence@example.test','Routing Evidence',${STAMP}::timestamptz),
         (${OUTSIDER_ID}::uuid,'routing-outsider@example.test','Routing Outsider',${STAMP}::timestamptz)`
@@ -118,6 +121,48 @@ realPostgres('hosted routing evidence', () => {
           })
         ).map((row) => row.id),
       ).toEqual([FIRST_RUN_ID])
+
+      const sequenceOf = async (id: string) =>
+        BigInt(
+          String((await admin`SELECT evidence_seq FROM run WHERE id=${id}::uuid`)[0]!.evidence_seq),
+        )
+      let sequence = await sequenceOf(FIRST_RUN_ID)
+      await admin`UPDATE run SET label='sequence update' WHERE id=${FIRST_RUN_ID}::uuid`
+      let advanced = await sequenceOf(FIRST_RUN_ID)
+      expect(advanced).toBeGreaterThan(sequence)
+      sequence = advanced
+      await admin`DELETE FROM run_score WHERE run_id=${FIRST_RUN_ID}::uuid`
+      advanced = await sequenceOf(FIRST_RUN_ID)
+      expect(advanced).toBeGreaterThan(sequence)
+      sequence = advanced
+      await admin`INSERT INTO run_score (
+        run_id,space_id,delivery,quality,fidelity,scored_at,scored_by,withheld_fields,updated_at
+      ) VALUES (
+        ${FIRST_RUN_ID}::uuid,${SPACE_ID}::uuid,'full','right','faithful',${STAMP}::timestamptz,
+        'architect','[]'::jsonb,${STAMP}::timestamptz
+      )`
+      advanced = await sequenceOf(FIRST_RUN_ID)
+      expect(advanced).toBeGreaterThan(sequence)
+      sequence = advanced
+      await admin`UPDATE review_lens SET agent='second reviewer' WHERE run_id=${FIRST_RUN_ID}::uuid`
+      advanced = await sequenceOf(FIRST_RUN_ID)
+      expect(advanced).toBeGreaterThan(sequence)
+      sequence = advanced
+      await admin`DELETE FROM review_lens WHERE run_id=${FIRST_RUN_ID}::uuid`
+      expect(await sequenceOf(FIRST_RUN_ID)).toBeGreaterThan(sequence)
+
+      const otherFirst = await admin`
+        SELECT routing_evidence_advance(${OTHER_SPACE_ID}::uuid) AS sequence
+      `
+      const otherSecond = await admin`
+        SELECT routing_evidence_advance(${OTHER_SPACE_ID}::uuid) AS sequence
+      `
+      expect(BigInt(String(otherFirst[0]!.sequence))).toBe(1n)
+      expect(BigInt(String(otherSecond[0]!.sequence))).toBe(2n)
+      const primaryHead = await admin`
+        SELECT sequence FROM routing_evidence_head WHERE space_id=${SPACE_ID}::uuid
+      `
+      expect(BigInt(String(primaryHead[0]!.sequence))).toBeGreaterThan(2n)
     } finally {
       await admin`DELETE FROM review_lens WHERE run_id IN (${FIRST_RUN_ID}::uuid,${SECOND_RUN_ID}::uuid)`
       await admin`DELETE FROM run_score WHERE space_id=${SPACE_ID}::uuid`
@@ -126,6 +171,9 @@ realPostgres('hosted routing evidence', () => {
       await admin`DELETE FROM machine_name_claim WHERE machine_id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM "user" WHERE id IN (${USER_ID}::uuid,${OUTSIDER_ID}::uuid)`
+      await admin`DELETE FROM routing_evidence_head WHERE space_id=${OTHER_SPACE_ID}::uuid`
+      await admin`DELETE FROM space WHERE id=${OTHER_SPACE_ID}::uuid`
+      await admin`DELETE FROM routing_evidence_head WHERE space_id=${SPACE_ID}::uuid`
       await admin`DELETE FROM space WHERE id=${SPACE_ID}::uuid`
       await admin.close()
     }

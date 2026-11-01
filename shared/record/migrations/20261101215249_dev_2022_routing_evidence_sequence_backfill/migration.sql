@@ -66,7 +66,7 @@ ON CONFLICT (space_id) DO UPDATE SET sequence = EXCLUDED.sequence;
 ALTER TABLE public.review_lens FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.run_score FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.run FORCE ROW LEVEL SECURITY;
-ALTER TABLE public.routing_evidence_head FORCE ROW LEVEL SECURITY;
+ALTER TABLE "routing_evidence_head" FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
 REVOKE DELETE ON TABLE public.routing_evidence_head FROM record_actor;
 --> statement-breakpoint

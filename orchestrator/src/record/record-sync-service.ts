@@ -265,7 +265,7 @@ async function pushRun(
     }
     const written = await drizzle({ client: tx })
       .insert(runRecord)
-      .values(values)
+      .values({ ...values, evidenceSeq: 0n })
       .onConflictDoUpdate({
         target: runRecord.id,
         set: updates,
