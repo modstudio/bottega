@@ -2,7 +2,7 @@
 /** Classifies sampled database sessions from plain values without observing a server or clock. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   ADMIN_APPLICATION_NAME,
   isTreeApplicationName,
@@ -39,7 +39,7 @@ const MAX_REPORTED_APPLICATION_NAMES = 5
 /** A client chooses its own application name, so the text is untrusted. */
 function reportedName(name: string): string {
   if (!name) return '(empty)'
-  return containsSecretShaped(name) ? '(withheld: secret-shaped)' : JSON.stringify(name)
+  return redactSecretShaped(JSON.stringify(name)).text
 }
 
 function applicationSummary(applications: Map<string, number>): string {

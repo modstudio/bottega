@@ -1,5 +1,5 @@
 import type { Transaction } from '@electric-sql/pglite'
-import { WITHHELD_SECRET_SHAPED } from '../orchestrator/src/record/outbox-sanitize.ts'
+import { WITHHELD_SECRET_SHAPED } from '../shared/secret-shaped.ts'
 import {
   dev1303InvalidDocId,
   dev1303InvalidDocRevisionId,

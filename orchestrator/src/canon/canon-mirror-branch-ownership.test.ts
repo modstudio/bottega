@@ -25,13 +25,22 @@ test('a reused local mirror branch at a foreign tip is refused', async () => {
         (record_id,number,started_at,agent,job,repo,project_record_id,prompt_sha,prompt_bytes,prompt_head,status,branch,base_commit,head_commit)
         VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),'2026-09-28','(architect)','canon-mirror','cm-foreign-branch',?,'fixture',7,'fixture','failed','DEV-1002-canon-mirror','recorded-base','0123456789abcdef0123456789abcdef01234567')`)
       .run(project.id)
+    const port = mirrorFixturePort(root, { localBranch: () => true })
+    const localTip = spawnFixtureGitSync(['rev-parse', 'refs/heads/DEV-1002-canon-mirror'], {
+      cwd: root,
+    })
+      .stdout.toString()
+      .trim()
     const result = await mirrorRepositoryCanon({
       project: 'cm-foreign-branch',
       dryRun: false,
-      port: mirrorFixturePort(root, { localBranch: () => true }),
+      port,
       noteFailure: async () => {},
     })
     expect(result[0]?.text).toContain('refusing unowned local branch')
+    expect(result[0]?.text).toContain(localTip.slice(0, 12))
+    expect(result[0]?.text).toContain('0123456789ab')
+    expect(result[0]?.text).not.toContain('[withheld')
     expect(
       spawnFixtureGitSync(['show-ref', '--verify', '--quiet', 'refs/heads/DEV-1002-canon-mirror'], {
         cwd: root,

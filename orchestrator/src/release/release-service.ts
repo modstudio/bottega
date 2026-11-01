@@ -130,12 +130,8 @@ function releaseAncestry(live: string | null, candidate: string, cwd: string): b
   }
 }
 
-function capturedReleaseText(text: string): string {
-  return releaseCapturedText(text, containsSecretShaped(text))
-}
-
-function capturedOutputTail(output: string): string {
-  return boundedGateOutputTail(capturedReleaseText(output), GATE_OUTPUT_TAIL_BYTES)
+function capturedOutputTail(output: string, knownCommits: readonly string[]): string {
+  return boundedGateOutputTail(releaseCapturedText(output, knownCommits), GATE_OUTPUT_TAIL_BYTES)
 }
 
 function checkoutFacts(path: string, branch: string) {
@@ -287,13 +283,18 @@ function postDeployFacts(
     return {
       liveAfter,
       liveMatchesCandidate: checked.matches,
-      warning: checked.warning === null ? null : capturedReleaseText(checked.warning),
+      warning:
+        checked.warning === null
+          ? null
+          : releaseCapturedText(checked.warning, [candidate, liveAfter]),
     }
   } catch (error) {
     return {
       liveAfter: null,
       liveMatchesCandidate: null,
-      warning: capturedReleaseText(error instanceof Error ? error.message : String(error)),
+      warning: releaseCapturedText(error instanceof Error ? error.message : String(error), [
+        candidate,
+      ]),
     }
   }
 }
@@ -464,7 +465,7 @@ function releaseProjectUnderLock(
     selected.name,
     checkout.head,
   )
-  const outputTail = capturedOutputTail(deployed.output)
+  const outputTail = capturedOutputTail(deployed.output, [checkout.head, live ?? ''])
   const warning = releaseWarning(redeployReason, checked.warning)
   finishReleaseLedgerEntry(
     writableDb(),

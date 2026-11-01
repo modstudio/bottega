@@ -2,7 +2,7 @@
 /** Knows harness MCP CLI grammar and bounded execution. Must not know setup questions or projects. */
 
 import { MCP_SERVER_NAME, PLATFORM_SLUG, WORKER_MCP_SERVER_NAME } from '../../../shared/brand.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv, bottegaMcpServeArgv } from '../../../shared/self-spawn.ts'
 import { LEGACY_MCP_SERVER_NAMES, type LegacyMcpServerName } from './setup-mcp-config.ts'
 
@@ -359,6 +359,6 @@ export function commandFailureReason(result: SetupCommandResult): string {
 
 export function screenedMcpField(value: unknown): string {
   const rendered = JSON.stringify(value)
-  if (containsSecretShaped(rendered)) return '[withheld: secret-shaped]'
-  return rendered.length > 500 ? `${rendered.slice(0, 500)}…` : rendered
+  const redacted = redactSecretShaped(rendered).text
+  return redacted.length > 500 ? `${redacted.slice(0, 500)}…` : redacted
 }

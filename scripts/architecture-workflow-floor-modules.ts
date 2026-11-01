@@ -78,6 +78,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor.ts', [
     '../../../shared/brand.ts',
     '../../../shared/record-id.ts',
+    '../../../shared/secret-shaped.ts',
     '../record/machine-name.ts',
     '../run/run-identifier-names.ts',
     './probe-identifier.ts',

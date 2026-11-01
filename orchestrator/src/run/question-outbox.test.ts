@@ -5,7 +5,6 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { writeTransaction } from '../database/db.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
-import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { backfillQuestionRecords, enqueueQuestionRecord } from './question-outbox.ts'
 
 const QUESTION_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.question.columns
@@ -161,8 +160,8 @@ test('secret-shaped hosted fields are withheld while local text stays intact', (
     .query<{ payload: string }, []>("SELECT payload FROM outbox WHERE kind='question'")
     .get()!
   const payload = JSON.parse(outbox.payload) as Record<string, unknown>
-  expect(payload.answer).toBe(WITHHELD_SECRET_SHAPED)
-  expect(payload.answerBasis).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.answer).toBe('[withheld: authorization]')
+  expect(payload.answerBasis).toBe('[withheld: authorization]')
   expect(payload.withheldFields).toEqual(['answer', 'answer_basis'])
   expect(outbox.payload).not.toContain(secret)
 })

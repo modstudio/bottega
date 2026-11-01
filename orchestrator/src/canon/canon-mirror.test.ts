@@ -83,16 +83,16 @@ test('merge binds gh to the pushed head commit', () => {
   ])
 })
 
-test('secret-shaped command failures are withheld', () => {
+test('secret-shaped command failures keep their non-secret text', () => {
   expect(screenCanonMirrorError(new Error('gh failed: token=abc123'))).toBe(
-    'command failed: output withheld because it resembles a secret',
+    'gh failed: [withheld: assignment]',
   )
 })
 
-test('git object ids remain visible when screening ownership refusals', () => {
+test('unrecognised git object ids are masked as spans', () => {
   const sha = '0123456789abcdef0123456789abcdef01234567'
   expect(screenCanonMirrorError(`refusing remote branch at ${sha}`)).toBe(
-    `refusing remote branch at ${sha}`,
+    'refusing remote branch at [withheld: hex-run]',
   )
 })
 

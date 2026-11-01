@@ -215,6 +215,17 @@ test('a withheld pr-create exec names the pull-request link remedy', () => {
   }
 })
 
+test('a masked pr-create exec is met when its command and pull-request link stay readable', () => {
+  expect(
+    decidePullRequestEvidence({
+      ...exec,
+      output: `credential [withheld: assignment]\n${url}`,
+      outputWithheld: true,
+      link,
+    }),
+  ).toEqual({ met: true })
+})
+
 test('parseArtifactRef accepts a GitHub pull-request URL only as the whole string', () => {
   expect(parseArtifactRef(url)).toEqual({ kind: 'pull-request', url })
   expect(parseArtifactRef(`${url}/files`)).toMatchObject({

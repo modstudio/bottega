@@ -1,6 +1,6 @@
 /** Pure redacted presentation of stored managed settings. */
 import { createHash } from 'node:crypto'
-import { containsSecretShaped } from './secret-shaped.ts'
+import { containsSecretShaped, redactSecretShaped } from './secret-shaped.ts'
 
 export const SETTINGS_PERMISSION_LISTS = ['allow', 'ask', 'deny'] as const
 export type SettingsPermissionList = (typeof SETTINGS_PERMISSION_LISTS)[number]
@@ -16,8 +16,6 @@ const object = (value: unknown): value is Record<string, unknown> =>
 
 const fingerprint = (value: unknown) =>
   createHash('sha256').update(canonicalJson(value)).digest('hex').slice(0, 12)
-const fingerprintText = (value: string) =>
-  createHash('sha256').update(value).digest('hex').slice(0, 12)
 
 const canonicalJson = (value: unknown): string => JSON.stringify(canonicalize(value))
 
@@ -59,11 +57,7 @@ export function summarizeSettings(settings: StoredSettings) {
     permissions: Object.fromEntries(
       SETTINGS_PERMISSION_LISTS.map((name) => [
         name,
-        lists[name].map((rule, index) =>
-          containsSecretShaped(rule)
-            ? `permissions.${name}[${index}] ${fingerprintText(rule)} secret-shaped`
-            : rule,
-        ),
+        lists[name].map((rule) => redactSecretShaped(rule).text),
       ]),
     ) as Record<SettingsPermissionList, string[]>,
     hooks: hookSummaries(settings.hooks),
@@ -80,11 +74,7 @@ function hookSummaries(hooks: unknown) {
       const matcher = object(item) && typeof item.matcher === 'string' ? item.matcher : '-'
       return {
         event: secretCommand ? `hooks.${event}[${index}]` : event,
-        matcher: secretCommand
-          ? 'secret-shaped'
-          : containsSecretShaped(matcher)
-            ? '[withheld: secret-shaped]'
-            : matcher,
+        matcher: secretCommand ? 'secret-shaped' : redactSecretShaped(matcher).text,
         fingerprint: fingerprint(item),
       }
     })

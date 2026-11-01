@@ -444,7 +444,7 @@ describe('completed-reply process-ended error composition', () => {
         `${endedNotice(1)}\n` +
         `signal: SIGKILL\n` +
         `last vendor event: error\n` +
-        `vendor stderr: [withheld: secret-shaped content]`,
+        `vendor stderr: [withheld: assignment]`,
     },
     {
       name: 'a secret-shaped type is withheld',
@@ -455,7 +455,7 @@ describe('completed-reply process-ended error composition', () => {
         lastVendorEventType: 'token=not-a-real-secret',
         stderr: '',
       },
-      expected: `${endedNotice(1)}\nlast vendor event: [withheld: secret-shaped content]`,
+      expected: `${endedNotice(1)}\nlast vendor event: [withheld: assignment]`,
     },
     {
       name: 'a multiline type is omitted',
@@ -564,7 +564,7 @@ describe('completed-reply process-ended live outcome', () => {
     ).toBe(
       `${endedNotice(1)}\n` +
         `last vendor event: turn.failed\n` +
-        `vendor error: [withheld: secret-shaped content]`,
+        `vendor error: [withheld: assignment]`,
     )
   })
 

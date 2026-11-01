@@ -3,6 +3,7 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { RECORD_ACTOR_ROLE } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { exerciseQuarantinedRedactionSync } from '../../test/fixtures/outbox-redaction.ts'
 import {
   localOutbox,
@@ -22,7 +23,6 @@ import { VOID_EXCLUSION_REASON } from '../verdict/verdict-rules.ts'
 import { enqueueContention } from './landing-outbox.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import { retireOutboxRow, retryOutboxRow } from './outbox-quarantine.ts'
-import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 import { syncRecord } from './record-sync.ts'
 
 const LANDING_OVERRIDE_RECORD_PAYLOAD_COLUMNS = OUTBOX_PAYLOAD_CONTRACTS.landing_override.columns

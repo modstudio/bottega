@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import type { FilesystemIdentityPlan, FilesystemIdentityRun } from '../filesystem-identity-plan.ts'
 import {
   AGENT_CAPACITY_ERROR_NAME,
@@ -20,7 +20,6 @@ import {
 import { RUNS_DIR } from './run-artifacts.ts'
 
 const COORDINATOR_ERROR_TAIL_LIMIT = 2000
-const SECRET_SHAPED_OUTPUT = '[withheld: secret-shaped content]'
 
 function withoutRoutingRefusalMarker(value: string): string {
   return value
@@ -134,12 +133,11 @@ export function recordedCoordinatorCause(runRecordId: string): string | null {
 /** Bound coordinator diagnostics only after checking the whole candidate tail for secrets. */
 export function coordinatorErrorTail(output: string, limit = COORDINATOR_ERROR_TAIL_LIMIT): string {
   const refusal = routingRefusalSpan(output)
-  const outsideRoutingRefusal = refusal
-    ? `${output.slice(0, refusal.start)}${output.slice(refusal.end)}`
-    : output
-  const trimmed = (refusal ? withoutRoutingRefusalMarker(output) : output).trim()
+  const redacted = refusal
+    ? `${redactSecretShaped(output.slice(0, refusal.start)).text}${output.slice(refusal.start, refusal.end)}${redactSecretShaped(output.slice(refusal.end)).text}`
+    : redactSecretShaped(output).text
+  const trimmed = (refusal ? withoutRoutingRefusalMarker(redacted) : redacted).trim()
   if (!trimmed) return '(no output)'
-  if (containsSecretShaped(outsideRoutingRefusal)) return SECRET_SHAPED_OUTPUT
   if (trimmed.length <= limit) return trimmed
   const marker = '… [earlier output omitted] …\n'
   if (limit <= marker.length) return trimmed.slice(-limit)

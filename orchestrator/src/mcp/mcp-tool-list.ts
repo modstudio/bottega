@@ -7,7 +7,7 @@
 import type { Stream } from 'node:stream'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
-import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
+import { redactSecretShapedOutput } from '../secret-shaped-output.ts'
 import { resolveProjectMcpCommand } from './mcp-command.ts'
 
 const MCP_TOOL_LIST_TIMEOUT_MS = 8_000
@@ -50,7 +50,7 @@ export function launchFailureReason(error: unknown): string {
  */
 export function launchFailure(error: unknown, tail: string): Error {
   const message = String((error as Error)?.message ?? error)
-  const diagnostic = tail ? `${message}\nstderr: ${withholdSecretShapedLines(tail)}` : message
+  const diagnostic = tail ? `${message}\nstderr: ${redactSecretShapedOutput(tail)}` : message
   const failure = new Error(launchFailureReason(diagnostic))
   failure.name = (error as Error)?.name ?? failure.name
   failure.cause = error

@@ -8,7 +8,6 @@ import {
   renderSyncedRedaction,
   syncedRedactionRules,
 } from './outbox-redaction.ts'
-import { WITHHELD_SECRET_SHAPED } from './outbox-sanitize.ts'
 
 const STAMP = '2026-09-28T10:00:00.000Z'
 const NEXT_STAMP = '2026-09-28T10:01:00.000Z'
@@ -77,7 +76,7 @@ test('redaction re-enqueues only chosen-rule leaves, audits paths, and leaves lo
   expect(rows).toHaveLength(2)
   expect(rows[1]!.record_id).toBe('record-42')
   const replacement = JSON.parse(rows[1]!.payload) as Record<string, unknown>
-  expect(replacement.error).toBe(WITHHELD_SECRET_SHAPED)
+  expect(replacement.error).toBe('[withheld: url-userinfo]example.test/path')
   expect(replacement.label).toBe(base64)
   expect(replacement.withheldFields).toEqual(['error'])
   expect(rows[1]!.payload).not.toContain(urlUserinfo)
@@ -207,7 +206,8 @@ test.each([
     database.query<{ payload: string }, []>('SELECT payload FROM outbox ORDER BY id DESC').get()!
       .payload,
   ) as Record<string, unknown>
-  expect(replacement.error).toBe(WITHHELD_SECRET_SHAPED)
+  expect(replacement.error).toContain(`[withheld: ${rule}]`)
+  expect(replacement.error).toContain('[withheld: hex-run]')
   expect(replacement.withheldFields).toEqual(['error'])
   database.close()
 })

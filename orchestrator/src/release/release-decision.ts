@@ -2,8 +2,7 @@
 /** Pure release policy over checkout, ancestry, lock, rung, and post-deploy facts. */
 
 import { RELEASE_TAG_SHAPE, releaseTagVersion } from '../../../shared/release-tag.ts'
-
-export const RELEASE_OUTPUT_WITHHELD = '[withheld: secret-shaped content]'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 
 const RELEASE_ENVIRONMENT_NAMES = [
   'BOTTEGA_RELEASE_PROJECT',
@@ -37,9 +36,9 @@ export function releaseCommandEnvironment(
   return rollback ? { ...environment, [RELEASE_ENVIRONMENT_NAMES[3]]: '1' } : environment
 }
 
-/** Withhold captured release text as a unit so secrets cannot straddle a later tail boundary. */
-export function releaseCapturedText(text: string, secretShaped: boolean): string {
-  return secretShaped ? RELEASE_OUTPUT_WITHHELD : text
+/** Redact the whole capture before taking a tail so a secret cannot straddle its boundary. */
+export function releaseCapturedText(text: string, knownCommits: readonly string[] = []): string {
+  return redactSecretShaped(text, { knownCommits }).text
 }
 
 export function releaseReasonDecision(

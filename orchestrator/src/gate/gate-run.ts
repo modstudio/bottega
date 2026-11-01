@@ -17,7 +17,7 @@ import {
 } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
 import { ensureMainStackStarted } from '../resources/main-stack.ts'
-import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
+import { redactSecretShapedOutput } from '../secret-shaped-output.ts'
 import {
   gateCheckExecutionPath,
   insertGateCheckExecutions,
@@ -275,7 +275,7 @@ export async function runArchitectGate(input: {
   const commit =
     before !== null && gateHeadCommit(checkoutTopLevel, observe) === before ? before : null
   const tail = boundedGateOutputTail(
-    withholdSecretShapedLines(ran.output, [process.env[WORKER_GATE_BASE_ENV] ?? '', before ?? '']),
+    redactSecretShapedOutput(ran.output, [process.env[WORKER_GATE_BASE_ENV] ?? '', before ?? '']),
     GATE_OUTPUT_TAIL_BYTES,
   )
   const d = input.d ?? writableDb()

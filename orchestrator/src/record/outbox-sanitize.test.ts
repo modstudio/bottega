@@ -13,11 +13,11 @@ import {
   firstOutboxEvidenceRule,
   type OutboxSanitizeKind,
   sanitizeOutboxPayload,
-  WITHHELD_SECRET_SHAPED,
 } from './outbox-sanitize.ts'
 
 const SECRET = 'ghp_123456789012345678901234567890123456'
 const SAFE = 'ordinary evidence text'
+const MASKED_SECRET = '[withheld: provider-prefix]'
 
 type KindCase = {
   kind: OutboxSanitizeKind
@@ -142,7 +142,7 @@ test.each(kinds)(
     expect(sanitized.withheldFields).toEqual([path])
     const serialized = JSON.stringify(sanitized)
     expect(serialized).not.toContain(SECRET)
-    expect(serialized).toContain(WITHHELD_SECRET_SHAPED)
+    expect(serialized).toContain(MASKED_SECRET)
     expect(firstOutboxEvidenceRule(kind, planted)).toBe('provider-prefix')
   },
 )
@@ -154,7 +154,7 @@ test('run reviewProvenance withholds a nested string leaf in place', () => {
   })
   expect(sanitized.withheldFields).toEqual(['reviewProvenance.commands_run[1]'])
   expect(sanitized.reviewProvenance).toEqual({
-    commands_run: [SAFE, WITHHELD_SECRET_SHAPED],
+    commands_run: [SAFE, MASKED_SECRET],
   })
 })
 
@@ -164,9 +164,27 @@ test('question withholds secret-shaped option elements and keeps the options arr
     options: [SAFE, SECRET],
     audits: [{ reason: SECRET }, { reason: SAFE }],
   })
-  expect(sanitized.options).toEqual([SAFE, WITHHELD_SECRET_SHAPED])
-  expect(sanitized.audits).toEqual([{ reason: WITHHELD_SECRET_SHAPED }, { reason: SAFE }])
+  expect(sanitized.options).toEqual([SAFE, MASKED_SECRET])
+  expect(sanitized.audits).toEqual([{ reason: MASKED_SECRET }, { reason: SAFE }])
   expect(sanitized.withheldFields).toEqual(['options[1]', 'audit_reason'])
+})
+
+test('string leaves retain text outside a masked span', () => {
+  expect(
+    sanitizeOutboxPayload('run', { error: `deploy digest sha256:${'a'.repeat(64)} ready` }),
+  ).toMatchObject({
+    error: 'deploy digest sha256:[withheld: hex-run] ready',
+    withheldFields: ['error'],
+  })
+})
+
+test('a bare 64-hex evidence word stays readable', () => {
+  const evidence = 'a'.repeat(64)
+  expect(sanitizeOutboxPayload('score', { note: evidence })).toEqual({
+    note: evidence,
+    withheldFields: [],
+  })
+  expect(firstOutboxEvidenceRule('score', { note: evidence })).toBeNull()
 })
 
 test('a sanitized run row stays eligible for the send-time payload re-check', () => {
@@ -206,7 +224,7 @@ test('a sanitized run row stays eligible for the send-time payload re-check', ()
     >('SELECT * FROM outbox')
     .get()!
   const payload = JSON.parse(row.payload) as Record<string, unknown>
-  expect(payload.error).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.error).toBe(MASKED_SECRET)
   expect(payload.withheldFields).toEqual(['error'])
   expect(row.payload).not.toContain(SECRET)
   expect(database.query("SELECT error FROM run WHERE record_id='run-record-42'").get()).toEqual({
@@ -276,12 +294,12 @@ test('enqueue withholds a planted leaf for score, question, review, override, an
       .all()
       .map((row) => [row.kind, JSON.parse(row.payload) as Record<string, unknown>]),
   )
-  expect(byKind.score?.note).toBe(WITHHELD_SECRET_SHAPED)
+  expect(byKind.score?.note).toBe(MASKED_SECRET)
   expect(byKind.score?.withheldFields).toEqual(['note'])
-  expect(byKind.question?.answer).toBe(WITHHELD_SECRET_SHAPED)
-  expect(byKind.review?.commitMessage).toBe(WITHHELD_SECRET_SHAPED)
-  expect(byKind.landing_override?.reason).toBe(WITHHELD_SECRET_SHAPED)
-  expect(byKind.contention?.cause).toBe(WITHHELD_SECRET_SHAPED)
+  expect(byKind.question?.answer).toBe(MASKED_SECRET)
+  expect(byKind.review?.commitMessage).toBe(MASKED_SECRET)
+  expect(byKind.landing_override?.reason).toBe(MASKED_SECRET)
+  expect(byKind.contention?.cause).toBe(MASKED_SECRET)
   expect(JSON.stringify(byKind)).not.toContain(SECRET)
   database.close()
 })
@@ -332,8 +350,8 @@ test('review finding and read enqueue withhold planted leaves', () => {
       .all()
       .map((row) => [row.kind, JSON.parse(row.payload) as Record<string, unknown>]),
   )
-  expect(rows.review_finding?.evidence).toBe(WITHHELD_SECRET_SHAPED)
-  expect(rows.review_read?.note).toBe(WITHHELD_SECRET_SHAPED)
+  expect(rows.review_finding?.evidence).toBe(MASKED_SECRET)
+  expect(rows.review_read?.note).toBe(MASKED_SECRET)
   expect(JSON.stringify(rows)).not.toContain(SECRET)
   database.close()
 })

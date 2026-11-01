@@ -1,8 +1,6 @@
 // concern: outbox-sanitize
 /** Withholds secret-shaped free-text leaves from hosted outbox payloads. Must not know Postgres. */
-import { evidenceSecretShapedRules } from '../../../shared/secret-shaped.ts'
-
-export const WITHHELD_SECRET_SHAPED = '[withheld: secret-shaped content]'
+import { redactSecretShaped, WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 
 export type OutboxSanitizeKind =
   | 'run'
@@ -135,12 +133,16 @@ function wholeFieldTexts(value: unknown): string[] {
   return [String(value)]
 }
 
+function redactOutboxText(text: string): { text: string; rules: string[] } {
+  return redactSecretShaped(text, { exemptEvidenceTokens: true })
+}
+
 function firstRuleInTexts(
   texts: string[],
   acceptsRule: (rule: string) => boolean = () => true,
 ): string | null {
   for (const text of texts) {
-    const rule = evidenceSecretShapedRules(text).find(acceptsRule)
+    const rule = redactOutboxText(text).rules.find(acceptsRule)
     if (rule) return rule
   }
   return null
@@ -185,7 +187,7 @@ function detachAt(payload: Record<string, unknown>, path: string): unknown {
 function applyValueLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
-  onMatch: (path: string, rule: string, replace: () => void) => void,
+  onMatch: (path: string, rule: string, replace: (next?: string) => void) => void,
   acceptsRule: (rule: string) => boolean,
 ): void {
   const recorded = leaf.recordedAs ?? leaf.at
@@ -198,8 +200,11 @@ function applyValueLeaf(
       const current = item[field]
       const rule = firstRuleInTexts(wholeFieldTexts(current), acceptsRule)
       if (!rule) continue
-      onMatch(recorded, rule, () => {
-        item[field] = WITHHELD_SECRET_SHAPED
+      onMatch(recorded, rule, (next) => {
+        item[field] =
+          typeof current === 'string'
+            ? (next ?? redactOutboxText(current).text)
+            : WITHHELD_SECRET_SHAPED
       })
     }
     return
@@ -207,27 +212,33 @@ function applyValueLeaf(
   const current = getAt(payload, leaf.at)
   const rule = firstRuleInTexts(wholeFieldTexts(current), acceptsRule)
   if (!rule) return
-  onMatch(recorded, rule, () => {
+  onMatch(recorded, rule, (next) => {
     const nested = leaf.at.lastIndexOf('.')
     if (nested > 0) detachAt(payload, leaf.at.slice(0, nested))
-    setAt(payload, leaf.at, WITHHELD_SECRET_SHAPED)
+    setAt(
+      payload,
+      leaf.at,
+      typeof current === 'string'
+        ? (next ?? redactOutboxText(current).text)
+        : WITHHELD_SECRET_SHAPED,
+    )
   })
 }
 
 function applyElementsLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
-  onMatch: (path: string, rule: string, replace: () => void) => void,
+  onMatch: (path: string, rule: string, replace: (next?: string) => void) => void,
   acceptsRule: (rule: string) => boolean,
 ): void {
   const current = detachAt(payload, leaf.at)
   if (!Array.isArray(current)) return
   for (const [index, item] of current.entries()) {
     if (typeof item !== 'string') continue
-    const rule = evidenceSecretShapedRules(item).find(acceptsRule)
+    const rule = redactOutboxText(item).rules.find(acceptsRule)
     if (!rule) continue
-    onMatch(`${leaf.at}[${index}]`, rule, () => {
-      current[index] = WITHHELD_SECRET_SHAPED
+    onMatch(`${leaf.at}[${index}]`, rule, (next) => {
+      current[index] = next ?? redactOutboxText(item).text
     })
   }
 }
@@ -235,19 +246,19 @@ function applyElementsLeaf(
 function applyWalkLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
-  onMatch: (path: string, rule: string, replace: () => void) => void,
+  onMatch: (path: string, rule: string, replace: (next?: string) => void) => void,
   acceptsRule: (rule: string) => boolean,
 ): void {
   walkStrings(detachAt(payload, leaf.at), leaf.at, (path, text, replace) => {
-    const rule = evidenceSecretShapedRules(text).find(acceptsRule)
-    if (rule) onMatch(path, rule, () => replace(WITHHELD_SECRET_SHAPED))
+    const rule = redactOutboxText(text).rules.find(acceptsRule)
+    if (rule) onMatch(path, rule, (next) => replace(next ?? redactOutboxText(text).text))
   })
 }
 
 function applyLeaf(
   payload: Record<string, unknown>,
   leaf: SecretLeaf,
-  onMatch: (path: string, rule: string, replace: () => void) => void,
+  onMatch: (path: string, rule: string, replace: (next?: string) => void) => void,
   acceptsRule: (rule: string) => boolean = () => true,
 ): void {
   if (leaf.style === 'value') applyValueLeaf(payload, leaf, onMatch, acceptsRule)

@@ -661,5 +661,5 @@ test('screens secret-shaped read-back and command output from refusal and apply 
   expect(results[0]?.status).toBe('refused')
   expect(json).toContain('did not verify')
   expect(json).not.toContain(secret)
-  expect(json).toContain('[withheld: secret-shaped]')
+  expect(json).toContain('[withheld: provider-prefix]')
 })
