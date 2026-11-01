@@ -321,6 +321,12 @@ BEGIN
       coalesce(existing_destination_current_version_id,gen_random_uuid()) destination_current_version_id,
       existing_destination_profile_id IS NULL copy_profile,version,body,enabled,updated_at
     FROM profiles;
+  CREATE TEMP TABLE selected_lens_map AS
+    SELECT DISTINCT sl.key lens_key,dl.id destination_lens_id
+    FROM project_lens_profile s
+    JOIN lens sl ON sl.space_id=source_id AND sl.id=s.lens_id
+    LEFT JOIN lens dl ON dl.space_id=destination_id AND dl.key=sl.key
+    WHERE s.space_id=source_id AND s.project_id=moving_project_id;
   SELECT string_agg(format('%s/%s/%s',missing.lens_key,missing.axis,missing.name),', '
       ORDER BY missing.lens_key,missing.axis,missing.name)
     INTO missing_lenses
@@ -329,11 +335,11 @@ BEGIN
     FROM selected_profile_map
     WHERE destination_lens_id IS NULL
     UNION
-    SELECT sl.key,s.axis,s.profile_name
+    SELECT lm.lens_key,s.axis,s.profile_name
     FROM project_lens_profile s
     JOIN lens sl ON sl.space_id=source_id AND sl.id=s.lens_id
-    LEFT JOIN lens dl ON dl.space_id=destination_id AND dl.key=sl.key
-    WHERE s.space_id=source_id AND s.project_id=moving_project_id AND dl.id IS NULL
+    JOIN selected_lens_map lm ON lm.lens_key=sl.key
+    WHERE s.space_id=source_id AND s.project_id=moving_project_id AND lm.destination_lens_id IS NULL
   ) missing;
   IF missing_lenses IS NOT NULL THEN
     ALTER TABLE lens_profile FORCE ROW LEVEL SECURITY;
@@ -558,11 +564,10 @@ BEGIN
       END IF;
     END LOOP;
     INSERT INTO project_lens_profile(id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
-      SELECT s.id,destination_id,s.project_id,CASE WHEN s.lens_key IS NULL THEN NULL ELSE (
-          SELECT dl.id FROM lens dl WHERE dl.space_id=destination_id AND dl.key=s.lens_key
-        ) END,
+      SELECT s.id,destination_id,s.project_id,CASE WHEN s.lens_key IS NULL THEN NULL ELSE lm.destination_lens_id END,
         s.axis,s.profile_name,s.resolved_version_id,s.selection_version,s.updated_at
-      FROM saved_selection s;
+      FROM saved_selection s
+      LEFT JOIN selected_lens_map lm ON lm.lens_key=s.lens_key;
     INSERT INTO project_lens_profile_revision(id,space_id,selection_id,prior_profile_name,prior_selected_version_id,reason,session_id,at)
       SELECT id,destination_id,selection_id,prior_profile_name,resolved_prior_version_id,reason,session_id,at
       FROM saved_selection_revision;
