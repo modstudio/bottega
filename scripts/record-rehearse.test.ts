@@ -91,7 +91,8 @@ MIGRATE NOTICE second: no-op`)
 })
 
 test('round trips migration notices separately from a migrate failure', () => {
-  const output = rehearsalMigrateFailureOutput(`MIGRATE NOTICE -: schema "drizzle" already exists, skipping
+  const output =
+    rehearsalMigrateFailureOutput(`MIGRATE NOTICE -: schema "drizzle" already exists, skipping
 MIGRATE NOTICE guarded: moved rows
 MIGRATE NOTICE audit: recorded branch
 permission denied for migration guard`)
