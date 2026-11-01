@@ -3,13 +3,14 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations } from './migrations.ts'
 import { fixtureProjectRecordId, migratedTestDatabase } from './test-database.fixture.ts'
 
-test('board receipt reader-run backfill resolves local runs and counts non-run or non-local readers as NULL', () => {
+test('board receipt reader-run backfill resolves local receipts and remote cache readers', () => {
   const database = migratedTestDatabase()
   try {
     const projectId = fixtureProjectRecordId(database)
     const runId = newRecordId()
     const messageId = newRecordId()
     const hostedMessageId = newRecordId()
+    const remoteRunId = newRecordId()
     database
       .query(
         `INSERT INTO run
@@ -48,9 +49,16 @@ test('board receipt reader-run backfill resolves local runs and counts non-run o
       .query(
         `INSERT INTO hosted_board_receipt_cache
          (record_id,message_id,reader_session,audience_at_posting)
-         VALUES (?,?,?,1)`,
+         VALUES (?,?,?,1),(?,?,?,1)`,
       )
-      .run(newRecordId(), hostedMessageId, `run:${newRecordId()}`)
+      .run(
+        newRecordId(),
+        hostedMessageId,
+        `run:${remoteRunId}`,
+        newRecordId(),
+        hostedMessageId,
+        'session-reader',
+      )
 
     applyMigrations(database)
 
@@ -74,10 +82,13 @@ test('board receipt reader-run backfill resolves local runs and counts non-run o
     expect(
       database
         .query(
-          'SELECT COUNT(*) AS count FROM hosted_board_receipt_cache WHERE reader_run_record_id IS NULL',
+          'SELECT reader_session,reader_run_record_id FROM hosted_board_receipt_cache ORDER BY reader_session',
         )
-        .get(),
-    ).toEqual({ count: 1 })
+        .all(),
+    ).toEqual([
+      { reader_session: `run:${remoteRunId}`, reader_run_record_id: remoteRunId },
+      { reader_session: 'session-reader', reader_run_record_id: null },
+    ])
   } finally {
     database.close()
   }
