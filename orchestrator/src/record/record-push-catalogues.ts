@@ -105,13 +105,41 @@ function lensPlanRows(local: Database): LensPlanRows {
       .all() as Record<string, unknown>[],
     selections = local
       .query(
-        `SELECT record_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version FROM project_lens_profile WHERE space_id IS NULL`,
+        `SELECT selection.record_id,selection.project_record_id,selection.lens_record_id,
+          selection.axis,selection.profile_name,selection.selected_version_id,
+          selection.selection_version,
+          COALESCE(current_profile.version,selected_revision.version) selected_version
+         FROM project_lens_profile selection
+         LEFT JOIN lens_profile current_profile
+           ON current_profile.space_id IS selection.space_id
+           AND current_profile.lens_record_id IS selection.lens_record_id
+           AND current_profile.axis=selection.axis
+           AND current_profile.name=selection.profile_name
+           AND current_profile.current_version_id=selection.selected_version_id
+         LEFT JOIN lens_profile_revision selected_revision
+           ON selected_revision.space_id IS selection.space_id
+           AND selected_revision.record_id=selection.selected_version_id
+         WHERE selection.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     selectionRevisions = local
       .query(
-        `SELECT r.record_id,r.selection_record_id,r.prior_profile_name,r.prior_selected_version,r.prior_selected_version_id,r.reason,r.session_id,r.at,s.project_record_id
-         FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.record_id=r.selection_record_id WHERE r.space_id IS NULL`,
+        `SELECT history.record_id,history.selection_record_id,history.prior_profile_name,
+          history.prior_selected_version_id,history.reason,history.session_id,history.at,
+          selection.project_record_id,
+          COALESCE(current_profile.version,prior_revision.version) prior_selected_version
+         FROM project_lens_profile_revision history
+         JOIN project_lens_profile selection ON selection.record_id=history.selection_record_id
+         LEFT JOIN lens_profile current_profile
+           ON current_profile.space_id IS history.space_id
+           AND current_profile.lens_record_id IS selection.lens_record_id
+           AND current_profile.axis=selection.axis
+           AND current_profile.name=history.prior_profile_name
+           AND current_profile.current_version_id=history.prior_selected_version_id
+         LEFT JOIN lens_profile_revision prior_revision
+           ON prior_revision.space_id IS history.space_id
+           AND prior_revision.record_id=history.prior_selected_version_id
+         WHERE history.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     profiles = (

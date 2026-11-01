@@ -31,10 +31,10 @@ describe('lens catalogue', () => {
       .run(lensRecordId, space)
     db()
       .query(
-        `INSERT INTO lens_profile(record_id,space_id,lens_record_id,axis,name,version,body,enabled)
-         VALUES (?,?,?,'framework','default',1,'{}',1)`,
+        `INSERT INTO lens_profile(record_id,space_id,lens_record_id,axis,name,version,current_version_id,body,enabled)
+         VALUES (?,?,?,'framework','default',1,?,'{}',1)`,
       )
-      .run(newRecordId(), space, lensRecordId)
+      .run(newRecordId(), space, lensRecordId, newRecordId())
     rememberActiveRecordSpace(db(), space)
 
     expect(listLenses().map((lens) => lens.id)).toEqual(['hosted-inspection'])
@@ -391,11 +391,11 @@ describe('lens catalogue', () => {
     ).toEqual({ record_id: pin.selected_version_id })
 
     db().query('UPDATE project_lens_profile SET selected_version_id=NULL').run()
-    expect(resolveLens('correctness', 'pinned')!.body).toContain('Version one.')
+    expect(resolveLens('correctness', 'pinned')!.body).toContain('Version two.')
 
     db().query('UPDATE project_lens_profile SET selected_version_id=?').run(newRecordId())
     expect(() => resolveLens('correctness', 'pinned')).toThrow(
-      /profile correctness\/framework\/pinned-profile has no pinned version id .*; its current version 2 is .*; re-pin with select-profile --lens correctness --version 1/,
+      /profile correctness\/framework\/pinned-profile has no pinned version id .*; its current version 2 is .*; re-pin with select-profile --lens correctness --version 2/,
     )
 
     await selectProjectProfile({
@@ -409,12 +409,11 @@ describe('lens catalogue', () => {
     expect(resolveLens('correctness', 'pinned')!.body).toContain('Version two.')
     expect(
       db()
-        .query<{ selected_version: number; selected_version_id: string }, []>(
-          `SELECT selected_version,selected_version_id FROM project_lens_profile WHERE profile_name='pinned-profile'`,
+        .query<{ selected_version_id: string }, []>(
+          `SELECT selected_version_id FROM project_lens_profile WHERE profile_name='pinned-profile'`,
         )
         .get(),
     ).toEqual({
-      selected_version: 2,
       selected_version_id: db()
         .query<{ current_version_id: string }, []>(
           `SELECT current_version_id FROM lens_profile WHERE name='pinned-profile'`,
@@ -473,12 +472,12 @@ describe('lens catalogue', () => {
     })
     expect(
       db()
-        .query(`SELECT prior_profile_name,prior_selected_version,reason,session_id,at
+        .query(`SELECT prior_profile_name,prior_selected_version_id,reason,session_id,at
       FROM project_lens_profile_revision WHERE reason='test'`)
         .get(),
     ).toEqual({
       prior_profile_name: null,
-      prior_selected_version: null,
+      prior_selected_version_id: null,
       reason: 'test',
       session_id: sessionId(),
       at: expect.any(String),
@@ -513,12 +512,12 @@ describe('lens catalogue', () => {
     expect(
       db()
         .query(
-          `SELECT prior_profile_name,prior_selected_version,reason FROM project_lens_profile_revision WHERE reason='return to baseline'`,
+          `SELECT prior_profile_name,prior_selected_version_id,reason FROM project_lens_profile_revision WHERE reason='return to baseline'`,
         )
         .get(),
     ).toEqual({
       prior_profile_name: 'node',
-      prior_selected_version: null,
+      prior_selected_version_id: null,
       reason: 'return to baseline',
     })
   })
@@ -580,7 +579,7 @@ describe('lens catalogue', () => {
     for (const row of local)
       db()
         .query(
-          'INSERT INTO lens_profile (lens_record_id,axis,name,version,body,enabled,record_id,space_id) VALUES ((SELECT record_id FROM lens WHERE id=? AND space_id=?),?,?,?,?,?,?,?)',
+          'INSERT INTO lens_profile (lens_record_id,axis,name,version,body,enabled,record_id,space_id,current_version_id) VALUES ((SELECT record_id FROM lens WHERE id=? AND space_id=?),?,?,?,?,?,?,?,?)',
         )
         .run(
           'correctness',
@@ -592,11 +591,12 @@ describe('lens catalogue', () => {
           row.enabled,
           newRecordId(),
           space,
+          newRecordId(),
         )
     expect(resolveLens('correctness', 'hosted')!.question).toBe('Hosted question?')
     db()
       .query(
-        `INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version)
+        `INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version_id,selection_version)
          VALUES (?,?,?,(SELECT record_id FROM lens WHERE id=? AND space_id=?),?,?,?,?)`,
       )
       .run(

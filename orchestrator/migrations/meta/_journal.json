@@ -1458,6 +1458,14 @@
       "tag": "0191_workflow_text_copy",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 192,
+      "version": "6",
+      "when": 1793577600057,
+      "tag": "0192_lens_profile_pin_contract",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

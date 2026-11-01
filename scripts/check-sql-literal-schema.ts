@@ -124,6 +124,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'gate check migration orphan preflight reads controlled legacy columns before the UUID-key rebuild',
   ),
   ...exempt(
+    'orchestrator/src/database/lens-profile-pin-contract-preflight.ts',
+    ['b48998b5b894886c'],
+    'lens profile pin contract preflight intentionally reads the integer pin columns before the contract drops them',
+  ),
+  ...exempt(
     'orchestrator/src/database/migrations.ts',
     [
       '8761a82c297b0919',

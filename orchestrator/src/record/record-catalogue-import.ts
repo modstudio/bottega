@@ -2,7 +2,6 @@
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
 import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { newRecordId } from '../../../shared/record-id.ts'
 import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
@@ -121,12 +120,7 @@ async function appendMatchedProfileVersions(
       result.inserted++
     }
   })
-  if (row.currentVersionId === null) {
-    result.skipped.push({
-      id: row.id,
-      reason: `lens_profile ${row.id} current version has no id; not appended`,
-    })
-  } else if ((await recordProfileVersionNumber(tx, input.spaceId, row.currentVersionId)) !== null)
+  if ((await recordProfileVersionNumber(tx, input.spaceId, row.currentVersionId)) !== null)
     result.alreadyPresent++
   else {
     await appendProfileRevision(tx, input, profileId, {
@@ -158,7 +152,7 @@ async function importLensProfiles(
     const id = foundId(existing)
     if (id) result.alreadyPresent++
     else {
-      await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId ?? newRecordId()}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
+      await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
       result.inserted++
     }
     const profileId = id ?? row.id
@@ -219,10 +213,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
       const id = foundId(existing)
       if (id) result.alreadyPresent++
       else {
-        const heldVersion = row.selectedVersionId
-          ? await recordProfileVersionNumber(tx, input.spaceId, row.selectedVersionId)
-          : null
-        await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selected_version_id,selection_version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.projectId}::uuid,${lensId}::uuid,${row.axis},${row.profileName},${heldVersion ?? row.selectedVersion},${row.selectedVersionId}::uuid,${row.selectionVersion},${row.updatedAt}::timestamptz)`
+        await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.projectId}::uuid,${lensId}::uuid,${row.axis},${row.profileName},${row.selectedVersionId}::uuid,${row.selectionVersion},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
       selections.set(row.id, id ?? row.id)
@@ -237,10 +228,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         await tx`SELECT id FROM project_lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid LIMIT 1`
       if (existing[0]) result.alreadyPresent++
       else {
-        const heldVersion = row.priorSelectedVersionId
-          ? await recordProfileVersionNumber(tx, input.spaceId, row.priorSelectedVersionId)
-          : null
-        await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${heldVersion ?? row.priorSelectedVersion},${row.priorSelectedVersionId}::uuid,${row.reason},${row.sessionId},${row.at}::timestamptz)`
+        await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version_id,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${row.priorSelectedVersionId}::uuid,${row.reason},${row.sessionId},${row.at}::timestamptz)`
         result.inserted++
       }
     })

@@ -195,25 +195,25 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
          VALUES ('${noteAcknowledgement}','${source}','move-proof','${project}','${note}',
           'move-session',now(),1,now(),now());
        INSERT INTO lens_profile
-         (id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+         (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${customProfile}','${source}',id,'architecture','move-custom',2,
-          '{"guidance":"custom move profile"}',true,now() FROM lens
+          '${customProfile}','{"guidance":"custom move profile"}',true,now() FROM lens
          WHERE space_id='${source}' ORDER BY key LIMIT 1;
        INSERT INTO lens_profile_revision
          (id,space_id,profile_id,version,prior_body,reason,session_id,at)
          VALUES ('${customProfileRevision}','${source}','${customProfile}',1,
           '{"body":{"guidance":"prior"},"enabled":true}','proof','move-session',now());
        INSERT INTO project_lens_profile
-         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
          SELECT '${builtInSelection}','${source}','${project}',id,'framework','default',NULL,1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
        INSERT INTO project_lens_profile
-         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
          SELECT '${customSelection}','${source}','${project}',id,'architecture','move-custom',NULL,1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
        INSERT INTO project_lens_profile_revision
-         (id,space_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at)
-         VALUES ('${selectionRevision}','${source}','${customSelection}','default',3,
+         (id,space_id,selection_id,prior_profile_name,prior_selected_version_id,reason,session_id,at)
+         VALUES ('${selectionRevision}','${source}','${customSelection}','default','${customProfileRevision}',
            'move proof selection history','move-session',now());
        INSERT INTO port_pair(id,space_id,source_project_id,target_project_id,created_at) VALUES
          ('${pair}','${source}','${otherProject}','${project}',now()),
@@ -374,7 +374,7 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
        SELECT count(*) FROM project_lens_profile WHERE id IN ('${builtInSelection}','${customSelection}');
        SELECT count(*) FROM project_lens_profile_revision
          WHERE id='${selectionRevision}' AND selection_id='${customSelection}'
-           AND prior_profile_name='default' AND prior_selected_version=3
+           AND prior_profile_name='default' AND prior_selected_version_id='${customProfileRevision}'
            AND reason='move proof selection history' AND session_id='move-session';
        SELECT count(*) FROM lens_profile p JOIN lens l ON l.id=p.lens_id
          WHERE p.space_id='${destination.id}' AND p.axis='architecture' AND p.name='move-custom'
@@ -447,16 +447,16 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     input.admin(
       `INSERT INTO project(id,space_id,name,created_at)
          VALUES ('${project}','${source}','profile-conflict-proof',now());
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${sourceProfile}','${source}',id,'architecture','conflicting-profile',1,
-           '{"guidance":"source"}',true,now() FROM lens
+           '${sourceProfile}','{"guidance":"source"}',true,now() FROM lens
          WHERE space_id='${source}' ORDER BY key LIMIT 1;
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${destinationProfile}','${destination.id}',id,'architecture','conflicting-profile',1,
-           '{"guidance":"destination"}',true,now() FROM lens
+           '${destinationProfile}','{"guidance":"destination"}',true,now() FROM lens
          WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
        INSERT INTO project_lens_profile
-         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
          SELECT '${selection}','${source}','${project}',id,'architecture','conflicting-profile',NULL,1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
     )
@@ -496,13 +496,13 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     input.admin(
       `INSERT INTO project(id,space_id,name,created_at)
          VALUES ('${project}','${source}','unpinned-history-proof',now());
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${sourceProfile}','${source}',id,'architecture','history-profile',2,
-           '{"guidance":"current"}',true,now() FROM lens
+           '${sourceProfile}','{"guidance":"current"}',true,now() FROM lens
          WHERE space_id='${source}' ORDER BY key LIMIT 1;
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${destinationProfile}','${destination.id}',id,'architecture','history-profile',2,
-           '{"guidance":"current"}',true,now() FROM lens
+           '${destinationProfile}','{"guidance":"current"}',true,now() FROM lens
          WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
        INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at) VALUES
          ('${newRecordId()}','${source}','${sourceProfile}',1,
@@ -510,7 +510,7 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
          ('${newRecordId()}','${destination.id}','${destinationProfile}',1,
           '{"body":{"guidance":"destination prior"},"enabled":true}','proof',now());
        INSERT INTO project_lens_profile
-         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
          SELECT '${selection}','${source}','${project}',id,'architecture','history-profile',NULL,1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
     )
@@ -553,26 +553,27 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     const project = newRecordId()
     const sourceProfile = newRecordId()
     const destinationProfile = newRecordId()
+    const sourceRevision = newRecordId()
     const selection = newRecordId()
     input.admin(
       `INSERT INTO project(id,space_id,name,created_at)
          VALUES ('${project}','${source}','pinned-history-proof',now());
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${sourceProfile}','${source}',id,'architecture','pinned-history',2,
-           '{"guidance":"current"}',true,now() FROM lens
+           '${sourceProfile}','{"guidance":"current"}',true,now() FROM lens
          WHERE space_id='${source}' ORDER BY key LIMIT 1;
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${destinationProfile}','${destination.id}',id,'architecture','pinned-history',2,
-           '{"guidance":"current"}',true,now() FROM lens
+           '${destinationProfile}','{"guidance":"current"}',true,now() FROM lens
          WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
        INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at) VALUES
-         ('${newRecordId()}','${source}','${sourceProfile}',1,
+         ('${sourceRevision}','${source}','${sourceProfile}',1,
           '{"body":{"guidance":"source prior"},"enabled":true}','proof',now()),
          ('${newRecordId()}','${destination.id}','${destinationProfile}',1,
           '{"body":{"guidance":"destination prior"},"enabled":true}','proof',now());
        INSERT INTO project_lens_profile
-         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
-         SELECT '${selection}','${source}','${project}',id,'architecture','pinned-history',1,1,now()
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','pinned-history','${sourceRevision}',1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
     )
     await expect(
@@ -599,24 +600,25 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
     const project = newRecordId()
     const sourceProfile = newRecordId()
     const destinationProfile = newRecordId()
+    const sourceRevision = newRecordId()
     const selection = newRecordId()
     input.admin(
       `INSERT INTO project(id,space_id,name,created_at)
          VALUES ('${project}','${source}','missing-version-proof',now());
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${sourceProfile}','${source}',id,'architecture','missing-version',2,
-           '{"guidance":"current"}',true,now() FROM lens
+           '${sourceProfile}','{"guidance":"current"}',true,now() FROM lens
          WHERE space_id='${source}' ORDER BY key LIMIT 1;
-       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+       INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
          SELECT '${destinationProfile}','${destination.id}',id,'architecture','missing-version',2,
-           '{"guidance":"current"}',true,now() FROM lens
+           '${destinationProfile}','{"guidance":"current"}',true,now() FROM lens
          WHERE space_id='${destination.id}' ORDER BY key LIMIT 1;
        INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,at)
-         VALUES ('${newRecordId()}','${source}','${sourceProfile}',1,
+         VALUES ('${sourceRevision}','${source}','${sourceProfile}',1,
           '{"body":{"guidance":"prior"},"enabled":true}','proof',now());
        INSERT INTO project_lens_profile
-         (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at)
-         SELECT '${selection}','${source}','${project}',id,'architecture','missing-version',1,1,now()
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','missing-version','${sourceRevision}',1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
     )
     await expect(

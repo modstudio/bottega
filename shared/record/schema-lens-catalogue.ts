@@ -81,7 +81,7 @@ export const lensProfile = pgTable.withRLS(
     axis: text().notNull(),
     name: text().notNull(),
     version: integer().notNull(),
-    currentVersionId: uuid('current_version_id').default(sql`public.record_uuid_v7()`),
+    currentVersionId: uuid('current_version_id').notNull().default(sql`public.record_uuid_v7()`),
     body: text().notNull(),
     enabled: boolean().notNull().default(true),
     updatedAt: updatedAt(),
@@ -96,6 +96,10 @@ export const lensProfile = pgTable.withRLS(
       table.name,
     ),
     sameSpaceIdentity('lens_profile_space_id_unique', table),
+    uniqueIndex('lens_profile_space_current_version_unique').on(
+      table.spaceId,
+      table.currentVersionId,
+    ),
     index('lens_profile_space_updated_id_idx').on(table.spaceId, table.updatedAt, table.id),
     foreignKey({
       columns: [table.spaceId, table.lensId],
@@ -140,17 +144,12 @@ export const projectLensProfile = pgTable.withRLS(
     lensId: uuid('lens_id'),
     axis: text().notNull(),
     profileName: text('profile_name').notNull(),
-    selectedVersion: integer('selected_version'),
     selectedVersionId: uuid('selected_version_id'),
     selectionVersion: integer('selection_version').notNull().default(1),
     updatedAt: updatedAt(),
   },
   (table) => [
     check('project_lens_profile_axis_check', sql`${table.axis} IN ('framework','architecture')`),
-    check(
-      'project_lens_profile_selected_version_check',
-      sql`${table.selectedVersion} IS NULL OR ${table.selectedVersion} > 0`,
-    ),
     check('project_lens_profile_selection_version_check', sql`${table.selectionVersion} > 0`),
     uniqueIndex('project_lens_profile_specific')
       .on(table.spaceId, table.projectId, table.lensId, table.axis)
@@ -181,17 +180,12 @@ export const projectLensProfileRevision = pgTable.withRLS(
     spaceId: spaceIdentity(),
     selectionId: uuid('selection_id').notNull(),
     priorProfileName: text('prior_profile_name'),
-    priorSelectedVersion: integer('prior_selected_version'),
     priorSelectedVersionId: uuid('prior_selected_version_id'),
     reason: text().notNull(),
     sessionId: text('session_id'),
     at: recordedAt('at'),
   },
   (table) => [
-    check(
-      'project_lens_profile_revision_selected_version_check',
-      sql`${table.priorSelectedVersion} IS NULL OR ${table.priorSelectedVersion} > 0`,
-    ),
     check('project_lens_profile_revision_reason_check', sql`length(trim(${table.reason})) > 0`),
     foreignKey({
       columns: [table.spaceId, table.selectionId],

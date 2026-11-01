@@ -87,7 +87,6 @@ export function applyLensCatalogueRow(
 }
 
 const nullableText = (value: unknown) => (value == null ? null : String(value))
-const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
 function applyLensRow(local: Database, item: Record<string, unknown>): void {
   const recordId = String(item.id)
@@ -207,7 +206,7 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
         recordId,
         lens.record_id,
         Number(item.version),
-        nullableText(item.currentVersionId),
+        String(item.currentVersionId),
         String(item.body),
         item.enabled ? 1 : 0,
         found.record_id,
@@ -224,7 +223,7 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
         String(item.axis),
         String(item.name),
         Number(item.version),
-        nullableText(item.currentVersionId),
+        String(item.currentVersionId),
         String(item.body),
         item.enabled ? 1 : 0,
       )
@@ -309,12 +308,11 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version=?,selected_version_id=?,selection_version=? WHERE record_id=?',
+        'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version_id=?,selection_version=? WHERE record_id=?',
       )
       .run(
         recordId,
         String(item.profileName),
-        nullableNumber(item.selectedVersion),
         nullableText(item.selectedVersionId),
         Number(item.selectionVersion),
         found.record_id,
@@ -322,7 +320,7 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
   else
     local
       .query(
-        'INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version) VALUES (?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version_id,selection_version) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
@@ -331,7 +329,6 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
         lens?.record_id ?? null,
         String(item.axis),
         String(item.profileName),
-        nullableNumber(item.selectedVersion),
         nullableText(item.selectedVersionId),
         Number(item.selectionVersion),
       )
@@ -363,12 +360,11 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile_revision SET record_id=?,prior_profile_name=?,prior_selected_version=?,prior_selected_version_id=?,reason=?,session_id=?,at=? WHERE record_id=?',
+        'UPDATE project_lens_profile_revision SET record_id=?,prior_profile_name=?,prior_selected_version_id=?,reason=?,session_id=?,at=? WHERE record_id=?',
       )
       .run(
         recordId,
         nullableText(item.priorProfileName),
-        nullableNumber(item.priorSelectedVersion),
         nullableText(item.priorSelectedVersionId),
         String(item.reason),
         nullableText(item.sessionId),
@@ -378,14 +374,13 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
   else
     local
       .query(
-        'INSERT INTO project_lens_profile_revision (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?,?)',
+        'INSERT INTO project_lens_profile_revision (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version_id,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
         spaceId,
         parent.record_id,
         nullableText(item.priorProfileName),
-        nullableNumber(item.priorSelectedVersion),
         nullableText(item.priorSelectedVersionId),
         String(item.reason),
         nullableText(item.sessionId),

@@ -532,31 +532,21 @@ function versionedProfile(
   selection: Pick<ProfileSelection, 'version' | 'versionId'>,
   d: Database,
 ): ProfileRow {
-  if (selection.versionId !== null && selection.versionId === profile.current_version_id)
-    return profile
-  if (
-    selection.versionId === null &&
-    (selection.version === null || selection.version === profile.version)
-  )
+  if (selection.versionId === null || selection.versionId === profile.current_version_id)
     return profile
   const prior = d
     .query(
       `SELECT record_id,version,prior_body FROM lens_profile_revision
-       WHERE profile_record_id=? AND space_id IS ?
-         AND (${selection.versionId === null ? 'version=?' : 'record_id=?'})`,
+       WHERE profile_record_id=? AND space_id IS ? AND record_id=?`,
     )
-    .get(profile.record_id, profile.space_id, selection.versionId ?? selection.version) as {
+    .get(profile.record_id, profile.space_id, selection.versionId) as {
     record_id: string
     version: number
     prior_body: string
   } | null
   if (!prior) {
-    if (selection.versionId !== null)
-      throw new Error(
-        `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no pinned version id ${selection.versionId}; its current version ${profile.version} is ${profile.current_version_id ?? 'unidentified'}; re-pin with select-profile --lens ${profile.lens_id} --version ${selection.version ?? profile.version}`,
-      )
     throw new Error(
-      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${selection.version}`,
+      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no pinned version id ${selection.versionId}; its current version ${profile.version} is ${profile.current_version_id ?? 'unidentified'}; re-pin with select-profile --lens ${profile.lens_id} --version ${selection.version ?? profile.version}`,
     )
   }
   const snapshot = objectJson(prior.prior_body, 'stored profile revision') as {
@@ -573,12 +563,17 @@ function versionedProfile(
 }
 
 function selectedProfileVersionId(profile: ProfileRow, version: number, d: Database): string {
-  const resolved = versionedProfile(profile, { version, versionId: null }, d)
-  if (!resolved.current_version_id)
-    throw new Error(
-      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${version}`,
+  if (profile.version === version && profile.current_version_id) return profile.current_version_id
+  const prior = d
+    .query<{ record_id: string }, [string, string | null, number]>(
+      `SELECT record_id FROM lens_profile_revision
+       WHERE profile_record_id=? AND space_id IS ? AND version=?`,
     )
-  return resolved.current_version_id
+    .get(profile.record_id, profile.space_id, version)
+  if (prior) return prior.record_id
+  throw new Error(
+    `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${version}`,
+  )
 }
 
 function validateSelectedProfile(
@@ -652,8 +647,19 @@ function writeProjectProfileSelectionLocal(input: {
   )
   const prior = d
     .query(
-      `SELECT s.record_id,s.profile_name,s.selected_version,s.selected_version_id,s.selection_version FROM project_lens_profile s
+      `SELECT s.record_id,s.profile_name,s.selected_version_id,s.selection_version,
+        COALESCE(current_profile.version,selected_revision.version) selected_version
+       FROM project_lens_profile s
        LEFT JOIN lens l ON l.record_id=s.lens_record_id
+       LEFT JOIN lens_profile current_profile
+         ON current_profile.space_id IS s.space_id
+         AND current_profile.lens_record_id IS s.lens_record_id
+         AND current_profile.axis=s.axis
+         AND current_profile.name=s.profile_name
+         AND current_profile.current_version_id=s.selected_version_id
+       LEFT JOIN lens_profile_revision selected_revision
+         ON selected_revision.space_id IS s.space_id
+         AND selected_revision.record_id=s.selected_version_id
        WHERE s.project_record_id=? AND l.id IS ? AND s.axis=? AND s.space_id IS ?`,
     )
     .get(project.recordId, selection.lensId ?? null, axis, spaceId) as {
@@ -667,15 +673,14 @@ function writeProjectProfileSelectionLocal(input: {
     const selectedLensRecordId = selection.lensId
       ? lensRecordId(d, selection.lensId, spaceId)
       : null
-    d.query(`INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version) VALUES (?,?,?,?,?,?,?,?,?)
-    ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selected_version_id=excluded.selected_version_id,selection_version=excluded.selection_version`).run(
+    d.query(`INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version_id,selection_version) VALUES (?,?,?,?,?,?,?,?)
+    ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version_id=excluded.selected_version_id,selection_version=excluded.selection_version`).run(
       hosted?.selection.id ?? prior?.record_id ?? newRecordId(),
       spaceId,
       project.recordId,
       selectedLensRecordId,
       axis,
       selection.name,
-      selection.version ?? null,
       hosted?.selection.selectedVersionId ?? selectedVersionId,
       hosted?.selection.selectionVersion ?? (prior?.selection_version ?? 0) + 1,
     )
@@ -685,12 +690,11 @@ function writeProjectProfileSelectionLocal(input: {
       )
       .get(project.recordId, selectedLensRecordId, axis, spaceId) as { record_id: string }
     d.query(`INSERT INTO project_lens_profile_revision
-    (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?,?)`).run(
+    (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version_id,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)`).run(
       hosted?.revision.id ?? newRecordId(),
       spaceId,
       selected.record_id,
       prior?.profile_name ?? null,
-      prior?.selected_version ?? null,
       hosted?.revision.priorSelectedVersionId ?? prior?.selected_version_id ?? null,
       selection.reason,
       sessionId(),
@@ -815,8 +819,19 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
     const selections = project
       ? (d
           .query(
-            `SELECT l.id lens_id,s.profile_name,s.selected_version,s.selected_version_id FROM project_lens_profile s
+            `SELECT l.id lens_id,s.profile_name,s.selected_version_id,
+              COALESCE(current_profile.version,selected_revision.version) selected_version
+             FROM project_lens_profile s
              LEFT JOIN lens l ON l.record_id=s.lens_record_id
+             LEFT JOIN lens_profile current_profile
+               ON current_profile.space_id IS s.space_id
+               AND current_profile.lens_record_id IS s.lens_record_id
+               AND current_profile.axis=s.axis
+               AND current_profile.name=s.profile_name
+               AND current_profile.current_version_id=s.selected_version_id
+             LEFT JOIN lens_profile_revision selected_revision
+               ON selected_revision.space_id IS s.space_id
+               AND selected_revision.record_id=s.selected_version_id
              WHERE s.project_record_id=? AND s.axis=? AND (l.id=? OR s.lens_record_id IS NULL) AND s.space_id IS ?`,
           )
           .all(project.recordId, axis, id, spaceId) as {
