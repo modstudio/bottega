@@ -1,6 +1,6 @@
 // concern: record-public-docs
 /** Owns public-role document reads and hosted document search. Must not know HTTP or sessions. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { docBodyForAudience } from '../../../shared/doc-sections.ts'
 import {
   DOC_SNIPPET_START,
@@ -18,6 +18,7 @@ import {
 } from '../../../shared/docs.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordDocAudiences } from './record-doc-audiences.ts'
+import { recordPool } from './record-pool.ts'
 
 const DOC_SEARCH_RESULT_LIMIT = 20
 const TS_HEADLINE_OPTIONS = `StartSel=${DOC_SNIPPET_START}, StopSel=${DOC_SNIPPET_STOP}, HighlightAll=false, MaxFragments=1, MaxWords=30, MinWords=12`
@@ -115,27 +116,17 @@ export function recordDocSearchMatchRow(row: Record<string, unknown>): RecordDoc
 }
 
 async function publicRead<T>(url: string, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx.unsafe('SET LOCAL ROLE record_public')
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(url).begin(async (tx) => {
+    await tx.unsafe('SET LOCAL ROLE record_public')
+    return read(tx)
+  })
 }
 
 async function tenantRead<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return read(tx)
+  })
 }
 
 export async function listPublicRecordDocs(input: {

@@ -1,9 +1,10 @@
 // concern: record-config
 /** Owns tenant-bound hosted config, ciphertext, DEK, wrap, and machine-key operations. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { machineKeyId } from '../../../shared/machine-key-id.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { recordPool } from './record-pool.ts'
 
 export const CONFIG_SCOPES = ['user', 'space'] as const
 export const MACHINE_KEY_ID_PATTERN = /^[A-Za-z0-9_-]{22}$/
@@ -66,15 +67,10 @@ const scopedUser = (input: ConfigTenant, scope: ConfigScope) =>
   scope === 'user' ? input.userId : null
 
 async function tenant<T>(input: ConfigTenant, operation: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return operation(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return operation(tx)
+  })
 }
 
 function entryRow(row: Record<string, unknown>): ConfigEntry {

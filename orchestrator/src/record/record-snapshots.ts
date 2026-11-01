@@ -1,11 +1,12 @@
 // concern: record-snapshots
 /** Owns tenant-bound latest orchestrator snapshots. Must not know HTTP or local commands. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import type { MachineRef } from '../../../shared/machine-label.ts'
 import { bindJsonb } from '../../../shared/record/jsonb-sql.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { recordMachine } from './record-machine.ts'
+import { recordPool } from './record-pool.ts'
 
 export const SNAPSHOT_KINDS = ['state', 'blockers', 'health', 'jobs', 'agents'] as const
 export type SnapshotKind = (typeof SNAPSHOT_KINDS)[number]
@@ -21,15 +22,10 @@ export type RecordSnapshot = {
 }
 
 async function tenant<T>(input: Tenant, work: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return work(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return work(tx)
+  })
 }
 
 export async function upsertRecordSnapshot(

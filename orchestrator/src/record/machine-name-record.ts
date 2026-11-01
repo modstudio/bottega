@@ -1,11 +1,12 @@
 // concern: machine-name-record
 /** Atomically claims and updates hosted machine names. Must not know CLI presentation. */
 
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../shared/record-space-request.ts'
 import { decideMachineNameClaim, displayNameRefusal, shortNameRefusal } from './machine-name.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { recordPool } from './record-pool.ts'
 import type { RecordPrincipal } from './record-sync-contract.ts'
 import {
   MachineNameRefusal,
@@ -134,37 +135,30 @@ export async function renameHostedMachine(input: {
     const refusal = displayNameRefusal(input.displayName)
     if (refusal) throw new Error(refusal)
   }
-  const postgres = new SQL(input.url)
-  try {
-    await postgres.begin(async (tx) => {
-      const owned =
-        await tx`SELECT short_name,display_name FROM machine WHERE id=${input.machineId}::uuid AND user_id=${input.identity.user.id}::uuid FOR UPDATE`
-      if (!owned.length)
-        throw new Error(`machine ${input.machineId} is not registered to the signed-in user`)
-      if (!input.shortName && owned[0]!.short_name == null)
-        throw new Error(`machine ${input.machineId} has no hosted short name; pass --short-name`)
-      if (!input.displayName && owned[0]!.display_name == null)
-        throw new Error(
-          `machine ${input.machineId} has no hosted display name; pass --display-name`,
-        )
-      const shortName = input.shortName ?? String(owned[0]!.short_name)
-      const displayName = input.displayName ?? String(owned[0]!.display_name)
-      if (input.shortName) {
-        for (const spaceId of writableSpaces(input.identity)) {
-          await claimInSpace(tx, {
-            userId: input.identity.user.id,
-            spaceId,
-            machineId: input.machineId,
-            shortName,
-            now: input.now ?? new Date().toISOString(),
-          })
-        }
+  await recordPool(input.url).begin(async (tx) => {
+    const owned =
+      await tx`SELECT short_name,display_name FROM machine WHERE id=${input.machineId}::uuid AND user_id=${input.identity.user.id}::uuid FOR UPDATE`
+    if (!owned.length)
+      throw new Error(`machine ${input.machineId} is not registered to the signed-in user`)
+    if (!input.shortName && owned[0]!.short_name == null)
+      throw new Error(`machine ${input.machineId} has no hosted short name; pass --short-name`)
+    if (!input.displayName && owned[0]!.display_name == null)
+      throw new Error(`machine ${input.machineId} has no hosted display name; pass --display-name`)
+    const shortName = input.shortName ?? String(owned[0]!.short_name)
+    const displayName = input.displayName ?? String(owned[0]!.display_name)
+    if (input.shortName) {
+      for (const spaceId of writableSpaces(input.identity)) {
+        await claimInSpace(tx, {
+          userId: input.identity.user.id,
+          spaceId,
+          machineId: input.machineId,
+          shortName,
+          now: input.now ?? new Date().toISOString(),
+        })
       }
-      await tx`UPDATE machine SET short_name=${shortName},display_name=${displayName},name=${displayName} WHERE id=${input.machineId}::uuid AND user_id=${input.identity.user.id}::uuid`
-    })
-  } finally {
-    await postgres.close()
-  }
+    }
+    await tx`UPDATE machine SET short_name=${shortName},display_name=${displayName},name=${displayName} WHERE id=${input.machineId}::uuid AND user_id=${input.identity.user.id}::uuid`
+  })
 }
 
 export async function retireHostedMachine(input: {
@@ -173,26 +167,21 @@ export async function retireHostedMachine(input: {
   shortName: string
   now?: string
 }): Promise<string> {
-  const postgres = new SQL(input.url)
-  try {
-    return await postgres.begin(async (tx) => {
-      const ids = new Set<string>()
-      for (const spaceId of writableSpaces(input.identity)) {
-        await bindPrincipal(tx, { userId: input.identity.user.id, spaceId })
-        const rows = await tx`
+  return recordPool(input.url).begin(async (tx) => {
+    const ids = new Set<string>()
+    for (const spaceId of writableSpaces(input.identity)) {
+      await bindPrincipal(tx, { userId: input.identity.user.id, spaceId })
+      const rows = await tx`
           SELECT m.id FROM machine m JOIN machine_name_claim c ON c.machine_id=m.id
           WHERE m.user_id=${input.identity.user.id}::uuid AND c.short_name=${input.shortName}
             AND c.space_id=${spaceId}::uuid
         `
-        for (const row of rows) ids.add(String(row.id))
-      }
-      if (ids.size !== 1)
-        throw new Error(`no unique joined machine has short name ${input.shortName}`)
-      const id = [...ids][0]!
-      await tx`UPDATE machine SET retired_at=${input.now ?? new Date().toISOString()}::timestamptz WHERE id=${id}::uuid AND user_id=${input.identity.user.id}::uuid`
-      return id
-    })
-  } finally {
-    await postgres.close()
-  }
+      for (const row of rows) ids.add(String(row.id))
+    }
+    if (ids.size !== 1)
+      throw new Error(`no unique joined machine has short name ${input.shortName}`)
+    const id = [...ids][0]!
+    await tx`UPDATE machine SET retired_at=${input.now ?? new Date().toISOString()}::timestamptz WHERE id=${id}::uuid AND user_id=${input.identity.user.id}::uuid`
+    return id
+  })
 }

@@ -1,10 +1,11 @@
 // concern: record-public-doc-designation
 /** Owns public-document project designation policy and owner-role persistence. */
 
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
+import { recordPool } from './record-pool.ts'
 import { currentRecordUserSession } from './record-session.ts'
 
 type PublicDocDesignationAction = 'designate' | 'clear'
@@ -63,7 +64,7 @@ const defaultDependencies: DesignationDependencies = {
       throw error
     }
   },
-  openOwner: (url) => new SQL(url),
+  openOwner: recordPool,
 }
 
 function refuse(message: string | null): void {
@@ -78,15 +79,11 @@ async function withPublicDocOwnerSession<T>(
   const userId = await dependencies.currentUserId(input.actorUrl)
   refuse(publicDocDesignationSignInRefusal(userId))
   const client = dependencies.openOwner(input.ownerUrl)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${userId!}, true)`
-      await tx`SELECT set_config('app.space_id', '', true)`
-      return run(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return client.begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${userId!}, true)`
+    await tx`SELECT set_config('app.space_id', '', true)`
+    return run(tx)
+  })
 }
 
 async function lookupTarget(

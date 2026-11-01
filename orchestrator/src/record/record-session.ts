@@ -1,7 +1,6 @@
 // concern: record-session
 /** Owns access to the locally stored record session. Must not know run phases. */
 import type { Database } from 'bun:sqlite'
-import { SQL } from 'bun'
 import { RECORD_ACTIVE_SPACE_REMEDY } from '../../../shared/record-remedies.ts'
 import {
   readRecordSessionToken,
@@ -18,6 +17,7 @@ import {
   RECORD_SIGN_IN_REMEDY,
   recordAuth,
 } from './record-auth.ts'
+import { recordPool } from './record-pool.ts'
 
 const RECORD_USER_KEY = 'record_signed_in_user'
 
@@ -126,24 +126,19 @@ export async function currentRecordUserSession(
     noSpaceBuiltIns,
   ).api.getSession({ headers: bearerHeaders(token) })
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
-  const client = new SQL(url)
-  try {
-    const memberships = await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-      await tx`SELECT set_config('app.space_id', '', true)`
-      return tx`
+  const memberships = await recordPool(url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+    await tx`SELECT set_config('app.space_id', '', true)`
+    return tx`
         SELECT space_id FROM membership
         WHERE user_id=${current.user.id}::uuid
       `
-    })
-    return recordUserSessionFromMemberships(
-      token,
-      current,
-      memberships.map((row: Record<string, unknown>) => String(row.space_id)),
-    )
-  } finally {
-    await client.close()
-  }
+  })
+  return recordUserSessionFromMemberships(
+    token,
+    current,
+    memberships.map((row: Record<string, unknown>) => String(row.space_id)),
+  )
 }
 
 export async function currentRecordSession(

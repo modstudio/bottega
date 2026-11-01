@@ -1,6 +1,6 @@
 // concern: record-space-built-ins
 /** Convergently installs the shared TypeScript built-ins into hosted spaces. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import {
@@ -12,6 +12,7 @@ import {
   BUILT_IN_WORKFLOW_AUTHOR,
   builtInWorkflowCatalogue,
 } from '../workflow/workflow-built-ins.ts'
+import { recordPool } from './record-pool.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 export type SpaceBuiltInsResult = { inserted: number; alreadyPresent: number }
@@ -116,48 +117,38 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
 }
 
 export async function ensureSpaceBuiltIns(input: Tenant): Promise<SpaceBuiltInsResult> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return ensureInTransaction(tx, input.spaceId)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return ensureInTransaction(tx, input.spaceId)
+  })
 }
 
 /** The migration owner performs the release backfill because tenant RLS cannot enumerate spaces. */
 export async function ensureAllSpaceBuiltIns(url: string): Promise<SpaceBuiltInsResult> {
-  const client = new SQL(url)
-  try {
-    return await client.begin(async (tx) => {
-      const tables = [
-        'space',
-        'lens',
-        'lens_profile',
-        'workflow',
-        'workflow_version',
-        'workflow_event',
-        'step_catalogue',
-        'step_catalogue_version',
-        'step_catalogue_event',
-      ]
-      for (const table of tables)
-        await tx.unsafe(`ALTER TABLE "${table}" NO FORCE ROW LEVEL SECURITY`)
-      const total = { inserted: 0, alreadyPresent: 0 }
-      await forEachAsync(
-        (await tx`SELECT id FROM space ORDER BY id`) as { id: unknown }[],
-        async (row) => {
-          const result = await ensureInTransaction(tx, String(row.id))
-          total.inserted += result.inserted
-          total.alreadyPresent += result.alreadyPresent
-        },
-      )
-      for (const table of tables) await tx.unsafe(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
-      return total
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(url).begin(async (tx) => {
+    const tables = [
+      'space',
+      'lens',
+      'lens_profile',
+      'workflow',
+      'workflow_version',
+      'workflow_event',
+      'step_catalogue',
+      'step_catalogue_version',
+      'step_catalogue_event',
+    ]
+    for (const table of tables)
+      await tx.unsafe(`ALTER TABLE "${table}" NO FORCE ROW LEVEL SECURITY`)
+    const total = { inserted: 0, alreadyPresent: 0 }
+    await forEachAsync(
+      (await tx`SELECT id FROM space ORDER BY id`) as { id: unknown }[],
+      async (row) => {
+        const result = await ensureInTransaction(tx, String(row.id))
+        total.inserted += result.inserted
+        total.alreadyPresent += result.alreadyPresent
+      },
+    )
+    for (const table of tables) await tx.unsafe(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY`)
+    return total
+  })
 }

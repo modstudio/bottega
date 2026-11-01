@@ -1,9 +1,10 @@
 // concern: record-board-tx
 /** Tenant-bound hosted board transactions. Must not know HTTP or local stores. */
 
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { BOARD_MESSAGE_REVISION_LOCK_KEY, RecordBoardError } from './record-board-contract.ts'
+import { recordPool } from './record-pool.ts'
 
 export type BoardTenant = { url: string } & TenantPrincipal
 
@@ -79,19 +80,14 @@ export async function withBoardTenant<T>(
   lockMessages: boolean,
   read: (tx: SQL) => Promise<T>,
 ): Promise<T> {
-  const client = new SQL(input.url)
   try {
-    try {
-      return await client.begin(async (tx) => {
-        await bindTenant(tx, input)
-        if (lockMessages) await tx`SELECT pg_advisory_xact_lock(${BOARD_MESSAGE_REVISION_LOCK_KEY})`
-        return read(tx)
-      })
-    } catch (error) {
-      throw hostedBoardStoreRefusal(error) ?? error
-    }
-  } finally {
-    await client.close()
+    return await recordPool(input.url).begin(async (tx) => {
+      await bindTenant(tx, input)
+      if (lockMessages) await tx`SELECT pg_advisory_xact_lock(${BOARD_MESSAGE_REVISION_LOCK_KEY})`
+      return read(tx)
+    })
+  } catch (error) {
+    throw hostedBoardStoreRefusal(error) ?? error
   }
 }
 

@@ -1,20 +1,16 @@
 // concern: record-reviews
 /** Owns tenant-bound hosted review reads. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import type { RecordCursor } from './record-cursor.ts'
+import { recordPool } from './record-pool.ts'
 import { recordPresentation, reviewLensPresentation } from './review-presentation.ts'
 
 async function tenant<T>(input: { url: string } & TenantPrincipal, read: (tx: SQL) => Promise<T>) {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    return read(tx)
+  })
 }
 
 export async function listRecordReviews(input: {

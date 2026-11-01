@@ -5,6 +5,7 @@ import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordSpaceMembership } from '../../../shared/record-space-membership.ts'
 import { recordMigrationCount } from '../postgres/postgres-migrate.ts'
+import { recordPool } from './record-pool.ts'
 import { currentRecordUserSession } from './record-session.ts'
 import type { RecordMembership } from './record-space.ts'
 
@@ -55,21 +56,15 @@ export async function moveRecordProjectSpace(input: {
   confirm?: number
 }): Promise<ProjectSpaceMoveResult> {
   const current = await currentRecordUserSession(input.url)
-  const membershipClient = new SQL(input.url)
-  let membershipRows: Record<string, unknown>[]
-  try {
-    membershipRows = await membershipClient.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${current.activeSpaceId ?? ''}, true)`
-      return tx`
+  const membershipRows = await recordPool(input.url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+    await tx`SELECT set_config('app.space_id', ${current.activeSpaceId ?? ''}, true)`
+    return tx`
         SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${current.user.id}::uuid ORDER BY s.slug
       `
-    })
-  } finally {
-    await membershipClient.close()
-  }
+  })
   const listed = membershipRows.map((row: Record<string, unknown>) => ({
     spaceId: String(row.space_id),
     name: String(row.name),
@@ -85,14 +80,16 @@ export async function moveRecordProjectSpace(input: {
     )
   }
 
-  const client = new SQL(input.url)
+  // record_move_project_space leaves session-lifetime temp tables behind, so a
+  // pooled connection would refuse the next move; this client lives for one move.
+  const client = new SQL(input.url, { max: 1 })
   try {
     return await client.begin(async (tx) => {
       await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
       await tx`SELECT set_config('app.space_id', ${source}, true)`
       const available = await tx`
-        SELECT to_regprocedure('record_applied_migration_count()') IS NOT NULL AS available
-      `
+          SELECT to_regprocedure('record_applied_migration_count()') IS NOT NULL AS available
+        `
       if (!available[0]?.available) {
         throw new Error(
           `record migrations are behind this command; run \`${PLATFORM_SLUG} record migrate\`, then retry`,
@@ -106,10 +103,10 @@ export async function moveRecordProjectSpace(input: {
         )
       }
       const rows = await tx`
-        SELECT * FROM record_move_project_space(
-          ${source}, ${input.project}, ${destination.spaceId}, ${input.confirm ?? null}::bigint
-        )
-      `
+          SELECT * FROM record_move_project_space(
+            ${source}, ${input.project}, ${destination.spaceId}, ${input.confirm ?? null}::bigint
+          )
+        `
       const resultRows: ProjectSpaceMoveRow[] = rows.map((row: Record<string, unknown>) => ({
         tableName: String(row.table_name),
         reachedBy: String(row.reached_by),

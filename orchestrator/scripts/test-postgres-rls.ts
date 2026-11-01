@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from 'node:crypto'
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,12 @@ import {
 } from '../../shared/record/schema.ts'
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
 import { testPostgresSpawnEnvironment } from './test-postgres-spawn-env.ts'
+import {
+  busiestDestination,
+  parseNetstatTimeWait,
+  parseSsTimeWait,
+  timeWaitPeakExceeded,
+} from './time-wait-guard.ts'
 
 const falsify = process.argv.includes('--falsify')
 const withoutLiveImport = process.argv.includes('--without-live-import')
@@ -37,6 +43,128 @@ class EarlyExit {
     this.code = code
   }
 }
+
+let currentLeg = 'fixture setup'
+type TimeWaitMonitor = { finish(): void }
+let timeWaitMonitor: TimeWaitMonitor | null = null
+
+function runLeg(argv: readonly string[]): string {
+  return argv.find((argument) => argument.endsWith('.test.ts')) ?? argv.slice(0, 4).join(' ')
+}
+
+// A sampler that cannot start leaves the guard informational instead of failing the run.
+function spawnSampler(command: string[]): Bun.SyncSubprocess<'pipe', 'pipe'> | { reason: string } {
+  try {
+    return Bun.spawnSync(command)
+  } catch (error) {
+    return {
+      reason: `${command[0]} could not run: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
+function ephemeralPortRange(): { size: number } | { reason: string } {
+  if (process.platform === 'darwin') {
+    const first = spawnSampler(['sysctl', '-n', 'net.inet.ip.portrange.first'])
+    const last = spawnSampler(['sysctl', '-n', 'net.inet.ip.portrange.last'])
+    if ('reason' in first) return first
+    if ('reason' in last) return last
+    if (first.exitCode !== 0 || last.exitCode !== 0) {
+      return { reason: 'sysctl could not read the darwin ephemeral port range' }
+    }
+    const low = Number(first.stdout.toString().trim())
+    const high = Number(last.stdout.toString().trim())
+    if (!Number.isInteger(low) || !Number.isInteger(high) || high < low) {
+      return { reason: 'sysctl returned an invalid darwin ephemeral port range' }
+    }
+    return { size: high - low + 1 }
+  }
+  if (process.platform === 'linux') {
+    try {
+      const [lowText, highText] = readFileSync('/proc/sys/net/ipv4/ip_local_port_range', 'utf8')
+        .trim()
+        .split(/\s+/)
+      const low = Number(lowText)
+      const high = Number(highText)
+      if (!Number.isInteger(low) || !Number.isInteger(high) || high < low) {
+        return { reason: 'procfs returned an invalid linux ephemeral port range' }
+      }
+      return { size: high - low + 1 }
+    } catch (error) {
+      return {
+        reason: `procfs could not read the linux ephemeral port range: ${error instanceof Error ? error.message : String(error)}`,
+      }
+    }
+  }
+  return { reason: `TIME_WAIT sampling is unsupported on ${process.platform}` }
+}
+
+function startTimeWaitMonitor(): TimeWaitMonitor {
+  const range = ephemeralPortRange()
+  let destinationPeak = -1
+  let destinationPeakEndpoint: string | undefined
+  let destinationPeakLeg = currentLeg
+  let totalPeak = -1
+  let totalPeakLeg = currentLeg
+  let reason = 'reason' in range ? range.reason : null
+  const sample = () => {
+    if (reason) return
+    const command =
+      process.platform === 'darwin'
+        ? ['/usr/sbin/netstat', '-an', '-p', 'tcp']
+        : ['ss', '-tan', 'state', 'time-wait']
+    const result = spawnSampler(command)
+    if ('reason' in result) {
+      reason = result.reason
+      return
+    }
+    if (result.exitCode !== 0) {
+      reason = `${command[0]} exited ${result.exitCode}: ${result.stderr.toString().trim()}`
+      return
+    }
+    const parsed =
+      process.platform === 'darwin'
+        ? parseNetstatTimeWait(result.stdout.toString())
+        : parseSsTimeWait(result.stdout.toString())
+    if ('reason' in parsed) {
+      reason = parsed.reason
+      return
+    }
+    const busiest = busiestDestination(parsed)
+    if (busiest.count > destinationPeak) {
+      destinationPeak = busiest.count
+      destinationPeakEndpoint = busiest.destination
+      destinationPeakLeg = currentLeg
+    }
+    if (parsed.total > totalPeak) {
+      totalPeak = parsed.total
+      totalPeakLeg = currentLeg
+    }
+  }
+  sample()
+  const timer = setInterval(sample, 1_000)
+  return {
+    finish() {
+      clearInterval(timer)
+      sample()
+      if (reason || destinationPeak < 0 || totalPeak < 0 || 'reason' in range) {
+        console.log(
+          `TIME_WAIT not measured: ${reason ?? 'no valid sample'}; guard is informational`,
+        )
+        return
+      }
+      console.log(
+        `peak TIME_WAIT to ${destinationPeakEndpoint ?? 'no destination'}: ${destinationPeak} of ${range.size} (${destinationPeakLeg}); machine total peak ${totalPeak} (${totalPeakLeg})`,
+      )
+      if (timeWaitPeakExceeded(destinationPeak, range.size)) {
+        console.error(
+          `TIME_WAIT peak to ${destinationPeakEndpoint ?? 'no destination'} exceeded the allowed fraction during ${destinationPeakLeg}`,
+        )
+        process.exitCode = 1
+      }
+    },
+  }
+}
 function copyDatabase(source: string, target: string): void {
   copyFileSync(source, target)
   for (const suffix of ['-wal', '-shm']) {
@@ -45,6 +173,7 @@ function copyDatabase(source: string, target: string): void {
 }
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
+  currentLeg = runLeg(argv)
   const child = Bun.spawn(argv, {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     env: testPostgresSpawnEnvironment(process.env, stateRoot, env),
@@ -130,10 +259,12 @@ function release(): void {
 
 const signalHandlers = {
   SIGINT: () => {
+    timeWaitMonitor?.finish()
     release()
     process.exit(130)
   },
   SIGTERM: () => {
+    timeWaitMonitor?.finish()
     release()
     process.exit(143)
   },
@@ -192,6 +323,7 @@ try {
   if (portResult.exitCode !== 0) throw new Error(portResult.stderr.toString())
   const port = portResult.stdout.toString().trim().split(':').at(-1)
   if (!port) throw new Error('disposable Postgres published no host port')
+  timeWaitMonitor = startTimeWaitMonitor()
 
   postgres(`
     CREATE ROLE ${RECORD_OWNER_ROLE} LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;
@@ -422,6 +554,12 @@ try {
   if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
     throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
 
+  const cleanRecordPool = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-pool-postgres.test.ts'],
+    { BOTTEGA_TEST_RECORD_POOL_URL: actorUrl },
+  )
+  if (cleanRecordPool !== 0) throw new EarlyExit(cleanRecordPool)
+
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
@@ -520,6 +658,7 @@ try {
   if (error instanceof EarlyExit) process.exitCode = error.code
   else throw error
 } finally {
+  timeWaitMonitor?.finish()
   release()
   process.off('SIGINT', signalHandlers.SIGINT)
   process.off('SIGTERM', signalHandlers.SIGTERM)

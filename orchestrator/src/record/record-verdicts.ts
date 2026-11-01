@@ -1,6 +1,6 @@
 // concern: record-verdicts
 /** Owns tenant-bound hosted run verdicts and evidence exclusion. Must not know local cache, CLI, or HTTP. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { Delivery, Fidelity, Quality } from '../score/score.ts'
 import type { VerdictInput } from '../verdict/verdict-payload.ts'
@@ -10,6 +10,7 @@ import {
   VOID_EXCLUSION_REASON,
 } from '../verdict/verdict-rules.ts'
 import type { RecordCursor } from './record-cursor.ts'
+import { recordPool } from './record-pool.ts'
 
 export class RecordVerdictError extends Error {
   status: 400 | 404 | 409
@@ -35,16 +36,11 @@ export type RecordScore = {
 const iso = (value: unknown) => (value == null ? null : new Date(String(value)).toISOString())
 
 async function tenant<T>(input: Tenant, read: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
-      await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
-      return read(tx)
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${input.userId}, true)`
+    await tx`SELECT set_config('app.space_id', ${input.spaceId}, true)`
+    return read(tx)
+  })
 }
 
 type HostedVerdict = Pick<Tenant, 'spaceId'> & VerdictInput & { id: string }

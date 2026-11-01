@@ -1,6 +1,6 @@
 // concern: record-catalogue-import
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
@@ -8,6 +8,7 @@ import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
 import { reconcileCatalogueHistory } from './record-catalogue-reconciliation.ts'
 import type { RecordLensImportInput } from './record-lens-contract.ts'
+import { recordPool } from './record-pool.ts'
 import type { RecordPortImportInput } from './record-port-contract.ts'
 import type {
   RecordWorkflowImportInput,
@@ -27,23 +28,18 @@ async function forEachAsync<T>(
 }
 
 async function tenant<T>(input: Tenant, use: (tx: SQL) => Promise<T>): Promise<T> {
-  const client = new SQL(input.url)
-  try {
-    return await client.begin(async (tx) => {
-      await bindTenant(tx, input)
-      await tx`SELECT id FROM space WHERE id=${input.spaceId}::uuid FOR UPDATE`
-      const dryRun = 'dryRun' in input && input.dryRun === true
-      if (dryRun) await tx`SAVEPOINT catalogue_import_dry_run`
-      const result = await use(tx)
-      if (dryRun) {
-        await tx`ROLLBACK TO SAVEPOINT catalogue_import_dry_run`
-        await tx`RELEASE SAVEPOINT catalogue_import_dry_run`
-      }
-      return result
-    })
-  } finally {
-    await client.close()
-  }
+  return recordPool(input.url).begin(async (tx) => {
+    await bindTenant(tx, input)
+    await tx`SELECT id FROM space WHERE id=${input.spaceId}::uuid FOR UPDATE`
+    const dryRun = 'dryRun' in input && input.dryRun === true
+    if (dryRun) await tx`SAVEPOINT catalogue_import_dry_run`
+    const result = await use(tx)
+    if (dryRun) {
+      await tx`ROLLBACK TO SAVEPOINT catalogue_import_dry_run`
+      await tx`RELEASE SAVEPOINT catalogue_import_dry_run`
+    }
+    return result
+  })
 }
 
 function foundId(rows: Record<string, unknown>[]): string | null {

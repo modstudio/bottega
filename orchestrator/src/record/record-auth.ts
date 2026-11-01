@@ -13,6 +13,7 @@ import { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 import { sendRecordInvitationEmail } from '../mail/invitation-mailer.ts'
 import { sendPasswordResetEmail } from '../mail/password-reset-mailer.ts'
 import { RECORD_INVITATION_EXPIRES_IN_SECONDS } from './record-invitation.ts'
+import { recordPool } from './record-pool.ts'
 
 export { RECORD_SIGN_IN_REMEDY } from '../../../shared/record-remedies.ts'
 
@@ -403,25 +404,18 @@ export async function recordIdentity(
   user: Record<string, unknown> & { id: string },
   activeSpaceId: string | null,
 ): Promise<RecordIdentity> {
-  const sql = new SQL(url)
-  try {
-    return await sql.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
-      const users = await tx`SELECT personal_space_id FROM "user" WHERE id=${user.id}::uuid`
-      const personalSpaceId = users[0]?.personal_space_id
-        ? String(users[0].personal_space_id)
-        : null
-      const memberships = await tx`
+  return recordPool(url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${user.id}, true)`
+    await tx`SELECT set_config('app.space_id', ${activeSpaceId ?? ''}, true)`
+    const users = await tx`SELECT personal_space_id FROM "user" WHERE id=${user.id}::uuid`
+    const personalSpaceId = users[0]?.personal_space_id ? String(users[0].personal_space_id) : null
+    const memberships = await tx`
         SELECT s.id AS space_id, s.name, s.slug, m.role, m.permission
         FROM membership m JOIN space s ON s.id=m.space_id
         WHERE m.user_id=${user.id}::uuid ORDER BY s.slug
       `
-      return recordIdentityFromRows(user, activeSpaceId, personalSpaceId, [...memberships])
-    })
-  } finally {
-    await sql.close()
-  }
+    return recordIdentityFromRows(user, activeSpaceId, personalSpaceId, [...memberships])
+  })
 }
 
 export const bearerHeaders = (token: string) => new Headers({ Authorization: `Bearer ${token}` })
@@ -434,26 +428,20 @@ export async function setActiveRecordSpaceForSession(
   const auth = recordAuth(url, process.env, undefined, undefined, undefined, noSpaceBuiltIns)
   const current = await auth.api.getSession({ headers })
   if (!current) throw new Error(RECORD_SIGN_IN_REMEDY)
-  const sql = new SQL(url)
-  try {
-    await sql.begin(async (tx) => {
-      await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
-      await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
-      const memberships = await tx`
+  await recordPool(url).begin(async (tx) => {
+    await tx`SELECT set_config('app.user_id', ${current.user.id}, true)`
+    await tx`SELECT set_config('app.space_id', ${spaceId}, true)`
+    const memberships = await tx`
         SELECT 1 FROM membership WHERE user_id=${current.user.id}::uuid AND space_id=${spaceId}::uuid
       `
-      if (memberships.length !== 1)
-        throw new Error(`record user is not a member of space ${spaceId}`)
-      await tx`
+    if (memberships.length !== 1) throw new Error(`record user is not a member of space ${spaceId}`)
+    await tx`
         UPDATE session SET active_space_id=${spaceId}::uuid, updated_at=now()
         WHERE id=${current.session.id}::uuid
       `
-      await tx`
+    await tx`
         UPDATE "user" SET last_active_space_id=${spaceId}::uuid, updated_at=now()
         WHERE id=${current.user.id}::uuid
       `
-    })
-  } finally {
-    await sql.close()
-  }
+  })
 }

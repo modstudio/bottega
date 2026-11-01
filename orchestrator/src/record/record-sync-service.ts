@@ -1,6 +1,6 @@
 // concern: record-sync-service
 /** Validates and writes ordered evidence batches under the hosted session's authority. */
-import { SQL } from 'bun'
+import type { SQL } from 'bun'
 import { and, sql as drizzleSql, eq } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -33,6 +33,7 @@ import { OUTBOX_PAYLOAD_CONTRACTS } from './outbox-payload-contracts.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import { evidenceReferences, type MachineEvidenceTable } from './record-evidence-references.ts'
 import { assertRecordPayloadColumns } from './record-payload-columns.ts'
+import { recordPool } from './record-pool.ts'
 import { pushQuestionAudits } from './record-question-audit.ts'
 import { pushReleaseRecord } from './record-release-sync.ts'
 import { reviewReadRecordValues } from './record-review-read.ts'
@@ -945,35 +946,31 @@ export async function syncHostedRecord(input: {
   request: RecordSyncRequest
   postgres?: SQL
 }): Promise<RecordSyncResponse> {
-  const postgres = input.postgres ?? new SQL(input.url)
+  const postgres = input.postgres ?? recordPool(input.url)
+  const activeSpaceId = input.identity.activeSpaceId
+  if (!activeSpaceId) throw new Error('record session has no active space')
+  let machineNameRefusal: string | undefined
   try {
-    const activeSpaceId = input.identity.activeSpaceId
-    if (!activeSpaceId) throw new Error('record session has no active space')
-    let machineNameRefusal: string | undefined
-    try {
-      await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
-        userId: input.identity.user.id,
-        spaceId: activeSpaceId,
-      })
-    } catch (error) {
-      if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
-      else throw error
-    }
-    const results: RecordSyncRowResult[] = []
-    const projectIds: ProjectResolutionCache = new Map()
-    for (const row of input.request.rows) {
-      results.push(
-        await pushHostedRow({
-          postgres,
-          row,
-          identity: input.identity,
-          machineId: input.request.machine.id,
-          projectIds,
-        }),
-      )
-    }
-    return { results, ...(machineNameRefusal ? { machineNameRefusal } : {}) }
-  } finally {
-    if (!input.postgres) await postgres.close()
+    await upsertHostedMachine(postgres, input.request.machine.seenAt, input.request.machine, {
+      userId: input.identity.user.id,
+      spaceId: activeSpaceId,
+    })
+  } catch (error) {
+    if (error instanceof MachineNameRefusal) machineNameRefusal = error.message
+    else throw error
   }
+  const results: RecordSyncRowResult[] = []
+  const projectIds: ProjectResolutionCache = new Map()
+  for (const row of input.request.rows) {
+    results.push(
+      await pushHostedRow({
+        postgres,
+        row,
+        identity: input.identity,
+        machineId: input.request.machine.id,
+        projectIds,
+      }),
+    )
+  }
+  return { results, ...(machineNameRefusal ? { machineNameRefusal } : {}) }
 }
