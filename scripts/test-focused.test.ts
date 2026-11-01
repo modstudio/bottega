@@ -147,6 +147,7 @@ test('a directory mixing root-run and workspace-run tests expands into both grou
       paths: [
         'orchestrator/src/postgres/migration-failure.test.ts',
         'orchestrator/src/postgres/migration-notices.test.ts',
+        'orchestrator/src/postgres/postgres-migrate-stranded-runs.test.ts',
         'orchestrator/src/postgres/postgres-migrate.test.ts',
       ],
     },
@@ -170,9 +171,10 @@ test('a directory mixing root-run and workspace-run tests expands into both grou
       ],
     },
   ])
-  expect(groups[0]!.argv.slice(-3)).toEqual([
+  expect(groups[0]!.argv.slice(-4)).toEqual([
     './orchestrator/src/postgres/migration-failure.test.ts',
     './orchestrator/src/postgres/migration-notices.test.ts',
+    './orchestrator/src/postgres/postgres-migrate-stranded-runs.test.ts',
     './orchestrator/src/postgres/postgres-migrate.test.ts',
   ])
 })

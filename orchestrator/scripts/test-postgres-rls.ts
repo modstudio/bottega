@@ -231,6 +231,11 @@ function release(): void {
         DROP DATABASE IF EXISTS hosted_project_cleanup_collision WITH (FORCE);
         DROP DATABASE IF EXISTS migration_notice WITH (FORCE);
         DROP DATABASE IF EXISTS migration_compatibility WITH (FORCE);
+        DROP DATABASE IF EXISTS stranded_runs_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS stranded_runs_mismatch WITH (FORCE);
+        DROP DATABASE IF EXISTS stranded_runs_reference WITH (FORCE);
+        DROP DATABASE IF EXISTS stranded_runs_empty WITH (FORCE);
+        DROP DATABASE IF EXISTS stranded_runs_self_reference WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
@@ -353,6 +358,11 @@ try {
     CREATE DATABASE hosted_project_cleanup_collision OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE migration_notice OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE migration_compatibility OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE stranded_runs_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE stranded_runs_mismatch OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE stranded_runs_reference OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE stranded_runs_empty OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE stranded_runs_self_reference OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
@@ -375,6 +385,11 @@ try {
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_project_cleanup_collision')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'migration_notice')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'migration_compatibility')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'stranded_runs_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'stranded_runs_mismatch')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'stranded_runs_reference')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'stranded_runs_empty')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'stranded_runs_self_reference')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -409,6 +424,23 @@ try {
     },
   )
   if (migrationClient !== 0) throw new EarlyExit(migrationClient)
+  const strandedRunsUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/stranded_runs_migration`
+  const strandedRunsMismatchUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/stranded_runs_mismatch`
+  const strandedRunsReferenceUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/stranded_runs_reference`
+  const strandedRunsEmptyUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/stranded_runs_empty`
+  const strandedRunsSelfReferenceUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/stranded_runs_self_reference`
+
+  const strandedRunsMigration = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-stranded-runs.test.ts'],
+    {
+      BOTTEGA_TEST_STRANDED_RUNS_URL: strandedRunsUrl,
+      BOTTEGA_TEST_STRANDED_RUNS_MISMATCH_URL: strandedRunsMismatchUrl,
+      BOTTEGA_TEST_STRANDED_RUNS_REFERENCE_URL: strandedRunsReferenceUrl,
+      BOTTEGA_TEST_STRANDED_RUNS_EMPTY_URL: strandedRunsEmptyUrl,
+      BOTTEGA_TEST_STRANDED_RUNS_SELF_REFERENCE_URL: strandedRunsSelfReferenceUrl,
+    },
+  )
+  if (strandedRunsMigration !== 0) throw new EarlyExit(strandedRunsMigration)
 
   const hostedProjectCleanupMigration = await run(
     [
