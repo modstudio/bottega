@@ -1,11 +1,11 @@
+import type { StateClassStore } from './identity-inventory.ts'
 import type { StateClassDeclaration } from './identity-state-classes.ts'
 
-type Store = 'orchestrator' | 'hub'
 type StateClassInput = {
-  tables: Readonly<Record<Store, readonly string[]>>
+  tables: Readonly<Record<StateClassStore, readonly string[]>>
   declarations: readonly StateClassDeclaration[]
   outboxSources: readonly string[]
-  pushableHubTables: readonly string[]
+  pushableHubTables: readonly { hosted: string; local: string }[]
   hostedTables: readonly string[]
 }
 
@@ -94,19 +94,16 @@ function declarationRefusals(
 }
 
 function pushableRefusals(
-  pushableHubTables: readonly string[],
+  pushableHubTables: readonly { hosted: string; local: string }[],
   declared: ReadonlyMap<string, readonly StateClassDeclaration[]>,
 ): string[] {
-  return pushableHubTables.flatMap((hostedTable) => {
-    const key = `hub.${hostedTable.replace(/^hub_/, '')}`
+  return pushableHubTables.flatMap(({ hosted, local }) => {
+    const key = `hub.${local}`
     const rows = declared.get(key) ?? []
-    if (
-      rows.length !== 1 ||
-      (rows[0]?.class === 'hosted-first' && rows[0].counterpart === hostedTable)
-    )
+    if (rows.length !== 1 || (rows[0]?.class === 'hosted-first' && rows[0].counterpart === hosted))
       return []
     return [
-      `${key}: pushable hub table ${hostedTable} must be hosted-first with that counterpart; remedy: ${remedy}`,
+      `${key}: pushable hub table ${hosted} must be hosted-first with that counterpart; remedy: ${remedy}`,
     ]
   })
 }

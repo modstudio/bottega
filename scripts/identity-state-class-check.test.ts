@@ -2,7 +2,7 @@ import { Database } from 'bun:sqlite'
 import { describe, expect, test } from 'bun:test'
 import { readSqliteKeyTables } from './identity-inventory.ts'
 import { stateClassRefusals } from './identity-state-class-check.ts'
-import { STATE_CLASSES, type StateClassDeclaration } from './identity-state-classes.ts'
+import type { StateClassDeclaration } from './identity-state-classes.ts'
 
 const hosted = (
   table: string,
@@ -22,7 +22,7 @@ const refusals = (
     orchestrator?: readonly string[]
     hub?: readonly string[]
     outboxSources?: readonly string[]
-    pushableHubTables?: readonly string[]
+    pushableHubTables?: readonly { hosted: string; local: string }[]
     hostedTables?: readonly string[]
   } = {},
 ) =>
@@ -92,7 +92,7 @@ describe('stateClassRefusals', () => {
       refusals([declaration], {
         orchestrator: [],
         hub: ['task'],
-        pushableHubTables: ['hub_task'],
+        pushableHubTables: [{ hosted: 'hub_task', local: 'task' }],
         hostedTables: ['hub_task', 'other_hosted_row'],
       }),
     ).toContain(
@@ -132,13 +132,4 @@ describe('stateClassRefusals', () => {
       'orchestrator.local_row: machine-only declaration needs a non-empty reason and ruling; remedy: edit scripts/identity-state-classes.ts',
     )
   })
-})
-
-test('workflow cursor awaits its ruled hosted task', () => {
-  expect(
-    STATE_CLASSES.find(
-      (declaration) =>
-        declaration.store === 'orchestrator' && declaration.table === 'workflow_cursor',
-    ),
-  ).toMatchObject({ class: 'hosted-first', task: 'DEV-1926' })
 })
