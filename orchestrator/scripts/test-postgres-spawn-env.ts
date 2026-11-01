@@ -1,14 +1,31 @@
-import { STATE_HOME_ENV } from '../../shared/state-directory.ts'
+import { STATE_HOME_ENV, type StateEnvironment } from '../../shared/state-directory.ts'
 
-type SpawnEnvironment = Record<string, string | undefined>
+const STORE_PATH_ENVIRONMENT_NAMES = [
+  'BOTTEGA_ORCHESTRATOR_DB',
+  'BOTTEGA_RUNS',
+  'BOTTEGA_HUB_DB',
+] as const
+
+function isStorePathEnvironmentName(name: string): boolean {
+  return STORE_PATH_ENVIRONMENT_NAMES.some((candidate) => candidate === name)
+}
 
 export function testPostgresSpawnEnvironment(
-  inherited: SpawnEnvironment,
+  inherited: StateEnvironment,
   stateRoot: string,
-  caller: SpawnEnvironment = {},
-): SpawnEnvironment {
-  const inheritedWithoutRecord = Object.fromEntries(
-    Object.entries(inherited).filter(([name]) => !name.startsWith('BOTTEGA_RECORD_')),
+  caller: StateEnvironment = {},
+): StateEnvironment {
+  const inheritedWithoutRecordOrStorePaths = Object.fromEntries(
+    Object.entries(inherited).filter(
+      ([name]) => !name.startsWith('BOTTEGA_RECORD_') && !isStorePathEnvironmentName(name),
+    ),
   )
-  return { ...inheritedWithoutRecord, ...caller, [STATE_HOME_ENV]: stateRoot }
+  const callerWithoutStorePaths = Object.fromEntries(
+    Object.entries(caller).filter(([name]) => !isStorePathEnvironmentName(name)),
+  )
+  return {
+    ...inheritedWithoutRecordOrStorePaths,
+    ...callerWithoutStorePaths,
+    [STATE_HOME_ENV]: stateRoot,
+  }
 }
