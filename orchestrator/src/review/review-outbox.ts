@@ -22,13 +22,7 @@ const enqueue = (
 ) => {
   database
     .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
-    .run(
-      newRecordId(),
-      kind,
-      recordId,
-      stringifyOutboxPayload(kind, value),
-      at,
-    )
+    .run(newRecordId(), kind, recordId, stringifyOutboxPayload(kind, value), at)
 }
 
 export function enqueueReview(database: Database, reviewRecordId: string): void {

@@ -76,10 +76,14 @@ test('repairs decoded NUL separators without rewriting clean outside-worktree ev
       .get(cleanId)!.value
     const repaired = JSON.parse(repairedText) as { before: string; after: string }[]
     const repairedOutboxText = database
-      .query<{ payload: string }, [string]>("SELECT payload FROM outbox WHERE kind='run' AND row_id=?")
+      .query<{ payload: string }, [string]>(
+        "SELECT payload FROM outbox WHERE kind='run' AND row_id=?",
+      )
       .get(dirtyId)!.payload
     const cleanOutboxText = database
-      .query<{ payload: string }, [string]>("SELECT payload FROM outbox WHERE kind='run' AND row_id=?")
+      .query<{ payload: string }, [string]>(
+        "SELECT payload FROM outbox WHERE kind='run' AND row_id=?",
+      )
       .get(cleanId)!.payload
     const repairedOutbox = JSON.parse(repairedOutboxText) as {
       outsideWorktreeWrites: { before: string; after: string }[]

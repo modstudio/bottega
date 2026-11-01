@@ -220,11 +220,7 @@ export function enqueuePullRequestCi(database: Database, recordId: string, at = 
   if (pending) {
     database
       .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
-      .run(
-        stringifyOutboxPayload('pull_request_ci', value),
-        at,
-        pending.id,
-      )
+      .run(stringifyOutboxPayload('pull_request_ci', value), at, pending.id)
   } else {
     enqueue(database, 'pull_request_ci', recordId, value, at)
   }

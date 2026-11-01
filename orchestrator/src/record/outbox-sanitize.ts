@@ -328,10 +328,7 @@ export function sanitizeOutboxPayload(
   return next
 }
 
-export function stringifyOutboxPayload(
-  kind: string,
-  payload: Record<string, unknown>,
-): string {
+export function stringifyOutboxPayload(kind: string, payload: Record<string, unknown>): string {
   return serializeOutboxPayload(kind, sanitizeOutboxPayload(kind, payload))
 }
 
