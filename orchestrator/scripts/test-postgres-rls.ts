@@ -440,15 +440,10 @@ try {
     {
       BOTTEGA_TEST_BOARD_SHARED_SPACE_MIGRATION_URL: boardSharedSpaceMigrationUrl,
       BOTTEGA_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL: boardSharedSpaceInvalidMigrationUrl,
+      BOTTEGA_TEST_BOARD_READER_RUN_MIGRATION_URL: boardReaderRunMigrationUrl,
     },
   )
   if (boardSharedSpaceMigration !== 0) throw new EarlyExit(boardSharedSpaceMigration)
-
-  const boardReaderRunMigration = await run(
-    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-board-reader-run.test.ts'],
-    { BOTTEGA_TEST_BOARD_READER_RUN_MIGRATION_URL: boardReaderRunMigrationUrl },
-  )
-  if (boardReaderRunMigration !== 0) throw new EarlyExit(boardReaderRunMigration)
 
   const publicRoleMigration = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-public-role.test.ts'],

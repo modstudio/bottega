@@ -15,16 +15,12 @@ import {
   RECORD_READER_ROLE,
 } from '../shared/record/schema.ts'
 import { proofProjectSpaceOwnershipDeclaration } from './check-record-project-space-ownership.ts'
+import * as boardMigrationProof from './record-board-reader-run-backfill-proof.ts'
 import {
   docJsonbArrayRepair,
   proofDocJsonbArrayRepair,
   seedDocJsonbArrayRepair,
 } from './record-doc-jsonb-repair-proof.ts'
-import {
-  boardReaderRunBackfill,
-  proofBoardReaderRunBackfill,
-  seedBoardReaderRunBackfill,
-} from './record-board-reader-run-backfill-proof.ts'
 import {
   applyHostedProjectCleanupProof,
   seedHostedProjectCleanupProof,
@@ -83,10 +79,6 @@ const publicAudienceProjectId = '01990000-0000-7000-8000-000000000015'
 const internalAudienceProjectId = '01990000-0000-7000-8000-000000000016'
 const publicAudienceDocId = '01990000-0000-7000-8000-000000000017'
 const internalAudienceDocId = '01990000-0000-7000-8000-000000000018'
-const boardBackfillRootId = '01990000-0000-7000-8000-000000000021'
-const boardBackfillReplyId = '01990000-0000-7000-8000-000000000022'
-const boardBackfillReplyAuthorId = '01990000-0000-7000-8000-000000000023'
-const boardBackfillQuestionId = '01990000-0000-7000-8000-000000000027'
 const hubProjectMatchId = '01990000-0000-7000-8000-000000000050'
 const hubProjectMatchTaskId = '01990000-0000-7000-8000-000000000051'
 const hubProjectUnmatchedTaskId = '01990000-0000-7000-8000-000000000052'
@@ -348,69 +340,6 @@ async function proofAudienceVocabularyBackfill(transaction: Transaction): Promis
     throw new CheckFailure(
       `DEV-1238 revision audience vocabulary backfill produced ${JSON.stringify(revisions.rows)}`,
     )
-  }
-}
-
-async function seedBoardThreadAuthorBackfill(transaction: Transaction): Promise<void> {
-  await transaction.exec(`
-    INSERT INTO "user" (id, email, name, created_at) VALUES
-      ('${boardBackfillReplyAuthorId}', 'board-backfill-reply@example.test',
-       'Board backfill reply author', now());
-    ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;
-    INSERT INTO board_message
-      (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
-    VALUES
-      ('${boardBackfillRootId}', '${platformOperatorId}', 'notice', 'operator',
-       'Board backfill root', 'root', false, now() + interval '1 day', now());
-    INSERT INTO board_message
-      (id, author_user_id, kind, audience, title, body, ack_required, expires_at, created_at)
-    VALUES
-      ('${boardBackfillQuestionId}', '${platformOperatorId}', 'question', 'operator',
-       'Board backfill question', 'question', false, now() + interval '1 day', now());
-    INSERT INTO board_message
-      (id, author_user_id, kind, thread_root_id, body, ack_required, created_at)
-    VALUES
-      ('${boardBackfillReplyId}', '${boardBackfillReplyAuthorId}', 'reply',
-       '${boardBackfillRootId}', 'reply', false, now());
-    ALTER TABLE board_message FORCE ROW LEVEL SECURITY;
-  `)
-}
-
-async function proofBoardPurposeBackfill(transaction: Transaction): Promise<void> {
-  await transaction.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{
-    kind: string
-    purpose: string | null
-  }>(`
-    SELECT kind,purpose FROM board_message
-    WHERE id IN ('${boardBackfillRootId}','${boardBackfillQuestionId}','${boardBackfillReplyId}')
-    ORDER BY kind
-  `)
-  await transaction.exec('ALTER TABLE board_message FORCE ROW LEVEL SECURITY;')
-  const expected = [
-    { kind: 'notice', purpose: 'information' },
-    { kind: 'question', purpose: 'request' },
-    { kind: 'reply', purpose: null },
-  ]
-  if (JSON.stringify(result.rows) !== JSON.stringify(expected)) {
-    throw new CheckFailure(
-      `DEV-1217 board purpose backfill produced ${JSON.stringify(result.rows)}`,
-    )
-  }
-}
-
-async function proofBoardThreadAuthorBackfill(transaction: Transaction): Promise<void> {
-  await transaction.exec('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;')
-  const result = await transaction.query<{ invalid: number }>(`
-    SELECT count(*)::int AS invalid
-    FROM board_message AS reply
-    LEFT JOIN board_message AS root ON root.id = reply.thread_root_id
-    WHERE reply.kind = 'reply'
-      AND reply.thread_root_author_user_id IS DISTINCT FROM root.author_user_id
-  `)
-  await transaction.exec('ALTER TABLE board_message FORCE ROW LEVEL SECURITY;')
-  if (result.rows[0]?.invalid !== 0) {
-    throw new CheckFailure('DEV-1217 board reply anchors do not match their root authors')
   }
 }
 
@@ -850,9 +779,11 @@ async function applyAndProveMigration(
   await applyRecordMigration(transaction, migration)
   await proofDocumentMigration(transaction, migration)
   if (migration.name === boardSharedSpacesMigration)
-    await proofBoardThreadAuthorBackfill(transaction)
-  if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
-  if (migration.name === boardReaderRunBackfill) await proofBoardReaderRunBackfill(transaction)
+    await boardMigrationProof.proofBoardThreadAuthorBackfill(transaction)
+  if (migration.name === boardPurposeBackfillMigration)
+    await boardMigrationProof.proofBoardPurposeBackfill(transaction)
+  if (migration.name === boardMigrationProof.boardReaderRunBackfill)
+    await boardMigrationProof.proofBoardReaderRunBackfill(transaction)
   await proofIdentityMigration(transaction, migration.name)
   if (migration.name === jsonbStringChecksValidate)
     await proofJsonbStringChecksValidate(transaction, PLATFORM_SPACE_ID)
@@ -929,8 +860,10 @@ async function proofLensPinContractGuard(
 async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
   if (name === brokenDocBackfill) await seedDocBackfillProof(transaction)
   if (name === audienceVocabularyBackfill) await seedAudienceVocabularyBackfill(transaction)
-  if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
-  if (name === boardReaderRunBackfill) await seedBoardReaderRunBackfill(transaction)
+  if (name === boardSharedSpacesMigration)
+    await boardMigrationProof.seedBoardThreadAuthorBackfill(transaction)
+  if (name === boardMigrationProof.boardReaderRunBackfill)
+    await boardMigrationProof.seedBoardReaderRunBackfill(transaction)
   if (name === docJsonbArrayRepair)
     await seedDocJsonbArrayRepair(transaction, {
       spaceId: PLATFORM_SPACE_ID,

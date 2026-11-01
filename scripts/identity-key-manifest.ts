@@ -1,3 +1,4 @@
+import { BOARD_READER_EXTERNAL_IDENTIFIERS } from './identity-board-reader-manifest.ts'
 import type {
   DisplayLabel,
   InfrastructureIdentity,
@@ -8,7 +9,6 @@ import type {
 } from './identity-inventory.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
-import { BOARD_READER_EXTERNAL_IDENTIFIERS } from './identity-board-reader-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))

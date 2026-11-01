@@ -476,8 +476,7 @@ function claimContext(
     messagesById: new Map(messages.map((message) => [message.id, message])),
     threadMessages,
     presence: presenceFacts(database, clock),
-    readerBeganAt:
-      reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database, readerRunRecordId),
+    readerBeganAt: boardReaderBeganAt(reader, database, readerRunRecordId),
     readerRunId: readerRunRecordId,
     signedIn,
     claimFacts,

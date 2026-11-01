@@ -201,6 +201,7 @@ function architectPresenceFacts(database: ReturnType<typeof db>) {
     }[]
   ).map((row) => ({
     reader: row.session_id,
+    readerRunRecordId: null,
     role: 'architect' as const,
     project: row.project,
     machine: row.machine,
@@ -304,6 +305,7 @@ function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
   }
   return [...claimReaders].map(([reader, fact]) => ({
     reader,
+    readerRunRecordId: null,
     role: fact.role,
     project: '',
     machine: hostname(),
