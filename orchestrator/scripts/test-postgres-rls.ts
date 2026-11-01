@@ -52,10 +52,23 @@ function runLeg(argv: readonly string[]): string {
   return argv.find((argument) => argument.endsWith('.test.ts')) ?? argv.slice(0, 4).join(' ')
 }
 
+// A sampler that cannot start leaves the guard informational instead of failing the run.
+function spawnSampler(command: string[]): Bun.SyncSubprocess<'pipe', 'pipe'> | { reason: string } {
+  try {
+    return Bun.spawnSync(command)
+  } catch (error) {
+    return {
+      reason: `${command[0]} could not run: ${error instanceof Error ? error.message : String(error)}`,
+    }
+  }
+}
+
 function ephemeralPortRange(): { size: number } | { reason: string } {
   if (process.platform === 'darwin') {
-    const first = Bun.spawnSync(['sysctl', '-n', 'net.inet.ip.portrange.first'])
-    const last = Bun.spawnSync(['sysctl', '-n', 'net.inet.ip.portrange.last'])
+    const first = spawnSampler(['sysctl', '-n', 'net.inet.ip.portrange.first'])
+    const last = spawnSampler(['sysctl', '-n', 'net.inet.ip.portrange.last'])
+    if ('reason' in first) return first
+    if ('reason' in last) return last
     if (first.exitCode !== 0 || last.exitCode !== 0) {
       return { reason: 'sysctl could not read the darwin ephemeral port range' }
     }
@@ -100,7 +113,11 @@ function startTimeWaitMonitor(): TimeWaitMonitor {
       process.platform === 'darwin'
         ? ['/usr/sbin/netstat', '-an', '-p', 'tcp']
         : ['ss', '-tan', 'state', 'time-wait']
-    const result = Bun.spawnSync(command)
+    const result = spawnSampler(command)
+    if ('reason' in result) {
+      reason = result.reason
+      return
+    }
     if (result.exitCode !== 0) {
       reason = `${command[0]} exited ${result.exitCode}: ${result.stderr.toString().trim()}`
       return
