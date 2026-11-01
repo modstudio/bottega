@@ -235,7 +235,7 @@ export function unusedBoardClientMethods(): Pick<
     getPublicDoc: unusedBoard,
     searchPublicDocs: unusedBoard,
     searchDocs: unusedBoard,
-    listRoutingEvidence: unusedBoard,
+    listRoutingEvidence: async () => ({ items: [], nextCursor: null, endCursor: null }),
     listBoardMessages: unusedBoard,
     postBoardMessage: unusedBoard,
     replyBoardMessage: unusedBoard,

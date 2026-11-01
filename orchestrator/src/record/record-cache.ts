@@ -11,46 +11,24 @@ import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-spac
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
 import { pullWorkflowCatalogue } from './record-cache-workflow.ts'
-import {
-  decodeRecordCursor,
-  encodeRecordCursor,
-  parseStoredRecordCursor,
-  type RecordCursor,
-} from './record-cursor.ts'
+import { decodeRecordCursor, encodeRecordCursor, type RecordCursor } from './record-cursor.ts'
 import { recordDocList } from './record-doc-list-shape.ts'
 import {
   declaredRecordSpace,
   noActiveRecordSpaceRefusal,
   projectRecordDestination,
 } from './record-project-destination.ts'
+import { pullRoutingPool, type RoutingPoolPullResult } from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
 const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
-function readRecordCursor(
-  local: Database,
-  key: string,
-  legacyTimestamp = false,
-): RecordCursor | undefined {
-  const value = readCursor(local, key)
-  if (value === undefined) return undefined
-  const parsed = parseStoredRecordCursor(value, legacyTimestamp)
-  if ('cursor' in parsed) {
-    if (parsed.migrated) writeRecordCursor(local, key, parsed.cursor)
-    return parsed.cursor
-  }
-  throw new Error(`invalid record cache cursor for ${key}`)
-}
-
-function writeRecordCursor(local: Database, key: string, cursor: RecordCursor): void {
-  writeCursor(local, key, JSON.stringify(cursor))
-}
-
 function readCursor(local: Database, key: string): string | undefined {
   return local
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
@@ -221,6 +199,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   lensCatalogue: number
   workflowCatalogue: number
   portCatalogue: number
+  routingPool: RoutingPoolPullResult
 }> {
   const hasMeta = local
     .query<{ n: number }, []>(
@@ -237,6 +216,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
       lensCatalogue: 0,
       workflowCatalogue: 0,
       portCatalogue: 0,
+      routingPool: { added: 0, updated: 0, caughtUp: true },
     }
   const client = recordApiClient()
   const identity = await client.whoami()
@@ -270,6 +250,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     }, local)
     if (!page.nextCursor) break
   }
+  const routingPool = await pullRoutingPool(local, cache.spaces)
   return {
     ...pulledDocs,
     ...pulledSubjects,
@@ -277,6 +258,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     lensCatalogue,
     workflowCatalogue: workflowPull.count,
     portCatalogue: portPull.count,
+    routingPool,
   }
 }
 

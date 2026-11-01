@@ -7,6 +7,7 @@ import type {
   ManifestColumn,
   RuledReference,
 } from './identity-inventory.ts'
+import { ROUTING_POOL_IDENTITY } from './identity-routing-pool-manifest.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
 
@@ -208,6 +209,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'workflow_version.n',
     'workflow_event.version_n',
   ]),
+  ...ROUTING_POOL_IDENTITY.integerValues,
   ...manifest('hub', 'boolean flag', ['install_binding.bound', 'interval.open', 'send.test']),
   ...manifest('hub', 'count, ordinal, version, handle, or measurement', [
     'day.claude_tokens',
@@ -935,6 +937,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'workflow_version.workflow_record_id',
     'workflow_version.space_id',
   ]),
+  ...ROUTING_POOL_IDENTITY.uuids,
   ...manifest('hub', 'owned or referenced UUID', [
     'commit_key.task_record_id',
     'operator_waiting_email.item_id',

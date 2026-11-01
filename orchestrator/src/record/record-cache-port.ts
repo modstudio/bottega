@@ -3,12 +3,8 @@
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
-import {
-  decodeRecordCursor,
-  encodeRecordCursor,
-  parseStoredRecordCursor,
-  type RecordCursor,
-} from './record-cursor.ts'
+import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
+import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import {
   RECORD_PORT_CURSORS,
   RECORD_PORT_TABLES,
@@ -19,22 +15,6 @@ import {
 } from './record-port-contract.ts'
 
 const CURSOR = 'record_port_cursor'
-const read = (local: Database, key: string) =>
-  local.query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?').get(key)
-    ?.value
-const cursor = (local: Database, key: string): RecordCursor | undefined => {
-  const value = read(local, key)
-  if (value === undefined) return undefined
-  const parsed = parseStoredRecordCursor(value, false)
-  if ('cursor' in parsed) return parsed.cursor
-  throw new Error(`invalid record cache cursor for ${key}`)
-}
-const remember = (local: Database, key: string, value: RecordCursor) =>
-  local
-    .query(
-      'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(key, JSON.stringify(value))
 
 export async function pullPortCatalogue(
   local: Database,
@@ -63,7 +43,7 @@ async function pullTable(
   table: RecordPortTable,
 ): Promise<{ count: number; completed: boolean }> {
   const key = `${CURSOR}:${spaceId}:${table}`
-  let current = cursor(local, key)
+  let current = readRecordCursor(local, key)
   let requestCursor = current ? encodeRecordCursor(current) : undefined
   let count = 0
   for (;;) {
@@ -88,7 +68,7 @@ async function pullTable(
             at: String((last as RecordPortRow & Record<string, unknown>)[timestamp]),
             id: last.id,
           }
-      remember(local, key, current)
+      writeRecordCursor(local, key, current)
     }, local)
     if (!page.nextCursor) return { count, completed: true }
     requestCursor = page.nextCursor

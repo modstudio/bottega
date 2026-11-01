@@ -153,6 +153,16 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-routing-evidence.ts', [
     './record-routing-evidence-contract.ts',
   ]),
+  module('orchestrator/src/record/record-cache-cursor.ts', ['bun:sqlite', './record-cursor.ts']),
+  module('orchestrator/src/record/record-routing-pool.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './record-api-client.ts',
+    './record-cache-cursor.ts',
+    './record-cursor.ts',
+    './record-routing-evidence-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-machine.ts', ['./record-api-client-paths.ts']),
   module('orchestrator/src/record/record-api-client-session.ts', [
     './record-api-client-paths.ts',
@@ -163,6 +173,7 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     './record-api-client.ts',
+    './record-cache-cursor.ts',
     './record-cursor.ts',
     './record-lens-contract.ts',
   ]),
@@ -200,6 +211,7 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     './record-api-client.ts',
+    './record-cache-cursor.ts',
     './record-cursor.ts',
     './record-workflow-contract.ts',
   ]),

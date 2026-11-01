@@ -49,12 +49,22 @@ test('routing evidence binds the requested space and pages without exposing its 
 
   const response = await app.request(`/v1/routing-evidence?spaceId=${spaceId}&limit=1`)
   expect(response.status).toBe(200)
-  const page = (await response.json()) as { items: unknown[]; nextCursor: string | null }
+  const page = (await response.json()) as {
+    items: unknown[]
+    nextCursor: string | null
+    endCursor: string | null
+  }
   const { [recordCursorAt]: _cursor, ...projected } = row
   expect(page.items).toEqual([projected])
   expect(page.nextCursor).not.toBeNull()
+  expect(page.endCursor).not.toBeNull()
   expect(listRoutingEvidence).toHaveBeenCalledWith(
     expect.objectContaining({ spaceId, userId: identity.user.id, limit: 1, cursor: null }),
   )
+  const lastPage = (await (
+    await app.request(`/v1/routing-evidence?spaceId=${spaceId}&limit=2`)
+  ).json()) as { nextCursor: string | null; endCursor: string | null }
+  expect(lastPage.nextCursor).toBeNull()
+  expect(lastPage.endCursor).not.toBeNull()
   expect((await app.request(`/v1/routing-evidence?spaceId=${spaceId}&limit=101`)).status).toBe(400)
 })

@@ -33,6 +33,12 @@ function heldOutboxLines(
   return rows.map((row) => `held ${row.rows}\t${row.kind}\t${row.reason}`)
 }
 
+export function routingPoolLine(
+  pool: NonNullable<Awaited<ReturnType<typeof syncRecord>>['routingPool']>,
+): string {
+  return `routing pool: ${pool.added} added, ${pool.updated} updated, ${pool.caughtUp ? 'caught up' : 'filling'}`
+}
+
 export function quarantinedParentHeldLines(
   rows: NonNullable<Awaited<ReturnType<typeof syncRecord>>['quarantinedParentHolds']>,
 ): string[] {
@@ -79,6 +85,7 @@ export async function syncCommand(
     return
   }
   presentation.log(`pushed ${result.pushed}, failed ${result.failed}, pending ${result.pending}`)
+  if (result.routingPool) presentation.log(routingPoolLine(result.routingPool))
   if (result.machineNameRefusal)
     presentation.log(`machine name not claimed: ${result.machineNameRefusal}`)
   for (const line of quarantinedOutboxLines(result.quarantined)) presentation.log(line)
