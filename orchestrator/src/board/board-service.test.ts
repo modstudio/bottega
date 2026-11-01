@@ -1,4 +1,5 @@
 import { beforeEach, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { hostname } from 'node:os'
 import { resolve } from 'node:path'
 import {
@@ -561,6 +562,37 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
     posting.cwd,
   )
   expect(owned.reached).toBe(1)
+  expect(
+    db()
+      .query(
+        'SELECT reader_session,reader_run_record_id FROM board_receipt WHERE message_record_id=?',
+      )
+      .get(owned.recordId),
+  ).toEqual({ reader_session: `run:${root.id}`, reader_run_record_id: root.id })
+
+  db()
+    .query(
+      `INSERT INTO presence(session_id,harness,role,machine,project,project_record_id,cwd,current_task_key,last_seen)
+       VALUES ('receipt-session-reader','claude-code','architect','test','owned-run-project',
+               (SELECT record_id FROM project ORDER BY name LIMIT 1),'/tmp',NULL,?)`,
+    )
+    .run(new Date(clock).toISOString())
+  const sessionReceipt = postNotice(
+    {
+      audience: 'session:receipt-session-reader',
+      title: 'Session receipt',
+      body: 'No run sibling.',
+    },
+    {},
+    clock + 2,
+  )
+  expect(
+    db()
+      .query(
+        'SELECT reader_session,reader_run_record_id FROM board_receipt WHERE message_record_id=?',
+      )
+      .get(sessionReceipt.recordId),
+  ).toEqual({ reader_session: 'receipt-session-reader', reader_run_record_id: null })
   expect(claimRunNotices(root.id, false, clock + 3).map((notice) => notice.recordId)).toContain(
     owned.recordId,
   )
@@ -587,6 +619,14 @@ test('run audience is owner-gated for architects and resolves a turn to its chai
     clock + 5,
   )
   expect(operator.reached).toBe(1)
+})
+
+test('board receipt readers do not parse run labels', () => {
+  for (const file of ['board-service.ts', 'board-store.ts']) {
+    const source = readFileSync(resolve(import.meta.dir, file), 'utf8')
+    expect(source).not.toMatch(/\^run:\([^\n]+\)\$/)
+    expect(source).not.toMatch(/reader_session[^\n]*(?:slice|substring|substr)/)
+  }
 })
 
 test('an unregistered live chain resolves for run and machine but not project audiences', () => {

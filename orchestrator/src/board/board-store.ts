@@ -134,12 +134,15 @@ function rootPurpose(
   return purpose
 }
 
-export function boardReaderBeganAt(reader: string, database = db()): string | null {
-  const run = /^run:([0-9a-f-]{36})$/.exec(reader)
-  if (run)
+export function boardReaderBeganAt(
+  reader: string,
+  database = db(),
+  readerRunRecordId: string | null = null,
+): string | null {
+  if (readerRunRecordId)
     return (
       (
-        database.query('SELECT started_at FROM run WHERE record_id=?').get(run[1]!) as {
+        database.query('SELECT started_at FROM run WHERE record_id=?').get(readerRunRecordId) as {
           started_at: string
         } | null
       )?.started_at ?? null
@@ -257,6 +260,7 @@ function workerPresenceFacts(database: ReturnType<typeof db>) {
   }
   return [...workers.values()].map((row) => ({
     reader: `run:${row.root_id}`,
+    readerRunRecordId: row.root_id,
     role: 'worker' as const,
     project: row.repo ?? '',
     machine: hostname(),
@@ -348,10 +352,10 @@ export function recipients(
   const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
   if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
   return coarse.filter((reader) => {
-    const run = /^run:([0-9a-f-]{36})$/i.exec(reader)
+    const runRecordId = facts.find((fact) => fact.reader === reader)?.readerRunRecordId ?? null
     return boardNoticeMatches(
       tags,
-      run ? boardRunContext(run[1]!, database) : boardContext(reader, at, database),
+      runRecordId ? boardRunContext(runRecordId, database) : boardContext(reader, at, database),
     )
   })
 }
@@ -506,12 +510,15 @@ function recordRecipients(
     presenceFacts(database, clock),
     project,
   ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
+  const facts = presenceFacts(database, clock)
+  const runIds = new Map(facts.map((fact) => [fact.reader, fact.readerRunRecordId ?? null]))
   const add = database.query(
     `INSERT OR IGNORE INTO board_receipt
-     (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,?,1,NULL,NULL)`,
+     (record_id,message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,?,?,1,NULL,NULL)`,
   )
-  for (const reader of readers) add.run(newRecordId(), messageRecordId, reader)
+  for (const reader of readers)
+    add.run(newRecordId(), messageRecordId, reader, runIds.get(reader) ?? null)
   return readers.length
 }
 

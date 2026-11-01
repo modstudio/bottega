@@ -783,6 +783,9 @@ test('the plan and upload include only receipts for readers that are still aroun
   receipt(notice.recordId, 'live-reader')
   receipt(notice.recordId, 'long-gone-reader')
   receipt(notice.recordId, `run:${finishedRun.id}`)
+  db()
+    .query('UPDATE board_receipt SET reader_run_record_id=? WHERE reader_session=?')
+    .run(finishedRun.id, `run:${finishedRun.id}`)
   const readers: string[] = []
   const base = capturingClient([]).client
   const client: RecordApiClient = {

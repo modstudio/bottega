@@ -51,7 +51,7 @@ export async function listHostedBoardChanges(
       ORDER BY kind, value, origin
     `) as Record<string, unknown>[]
     const receiptRows = (await tx`
-      SELECT message_id, reader_user_id, reader_session, audience_at_posting,
+      SELECT message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting,
         delivered_at, acknowledged_at
       FROM board_receipt
       WHERE reader_user_id=${input.userId}::uuid

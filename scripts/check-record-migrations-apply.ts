@@ -69,6 +69,10 @@ const boardPurposeBackfillMigration = '20261013225840_dev_1217_board_purpose_bac
 const hubProjectIdentityExpand = '20261015133608_dev_1214_hub_project_identity'
 const hubProjectIdentityBackfill = '20261015133609_dev_1214_hub_project_identity_backfill'
 const lensPinContractGuard = '20261101120000_dev_1991_lens_profile_pin_contract_guard'
+const boardReaderRunBackfill = '20261101151123_dev_2002_board_receipt_reader_run_backfill'
+const boardReaderRunId = '01990000-0000-7000-8000-000000000401'
+const boardReaderMachineId = '01990000-0000-7000-8000-000000000402'
+const boardReaderMessageId = '01990000-0000-7000-8000-000000000403'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -392,6 +396,57 @@ async function proofBoardPurposeBackfill(transaction: Transaction): Promise<void
       `DEV-1217 board purpose backfill produced ${JSON.stringify(result.rows)}`,
     )
   }
+}
+
+async function seedBoardReaderRunBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec(`
+    ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE board_receipt NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE run NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO machine (id,user_id,name,registered_at,last_seen)
+    VALUES ('${boardReaderMachineId}','${platformOperatorId}','reader-run-proof',now(),now());
+    INSERT INTO run
+      (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
+       prompt_head,probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
+    VALUES
+      ('${boardReaderRunId}','${PLATFORM_SPACE_ID}','${boardReaderMachineId}','${platformOperatorId}',
+       now(),'codex','implement','sha',1,'proof',false,'ok',1,false,false,false,now(),now());
+    INSERT INTO board_message
+      (id,author_user_id,kind,purpose,audience,title,body,ack_required,expires_at,created_at)
+    VALUES
+      ('${boardReaderMessageId}','${platformOperatorId}','notice','information','operator',
+       'Reader run backfill','proof',false,now() + interval '1 day',now());
+    INSERT INTO board_receipt
+      (id,message_id,reader_user_id,reader_session,audience_at_posting)
+    VALUES
+      ('01990000-0000-7000-8000-000000000404','${boardReaderMessageId}','${platformOperatorId}',
+       'run:${boardReaderRunId}',true),
+      ('01990000-0000-7000-8000-000000000405','${boardReaderMessageId}','${platformOperatorId}',
+       'hosted-session-reader',true);
+    ALTER TABLE run FORCE ROW LEVEL SECURITY;
+    ALTER TABLE board_receipt FORCE ROW LEVEL SECURITY;
+    ALTER TABLE board_message FORCE ROW LEVEL SECURITY;
+  `)
+}
+
+async function proofBoardReaderRunBackfill(transaction: Transaction): Promise<void> {
+  await transaction.exec('ALTER TABLE board_receipt NO FORCE ROW LEVEL SECURITY;')
+  const result = await transaction.query<{
+    reader_session: string
+    reader_run_record_id: string | null
+  }>(`
+    SELECT reader_session,reader_run_record_id::text AS reader_run_record_id
+    FROM board_receipt WHERE message_id='${boardReaderMessageId}' ORDER BY reader_session
+  `)
+  await transaction.exec('ALTER TABLE board_receipt FORCE ROW LEVEL SECURITY;')
+  const expected = [
+    { reader_session: 'hosted-session-reader', reader_run_record_id: null },
+    { reader_session: `run:${boardReaderRunId}`, reader_run_record_id: boardReaderRunId },
+  ]
+  if (JSON.stringify(result.rows) !== JSON.stringify(expected))
+    throw new CheckFailure(
+      `DEV-2002 board receipt reader run backfill produced ${JSON.stringify(result.rows)}`,
+    )
 }
 
 async function proofBoardThreadAuthorBackfill(transaction: Transaction): Promise<void> {
@@ -847,6 +902,7 @@ async function applyAndProveMigration(
   if (migration.name === boardSharedSpacesMigration)
     await proofBoardThreadAuthorBackfill(transaction)
   if (migration.name === boardPurposeBackfillMigration) await proofBoardPurposeBackfill(transaction)
+  if (migration.name === boardReaderRunBackfill) await proofBoardReaderRunBackfill(transaction)
   await proofIdentityMigration(transaction, migration.name)
   if (migration.name === jsonbStringChecksValidate)
     await proofJsonbStringChecksValidate(transaction, PLATFORM_SPACE_ID)
@@ -924,6 +980,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
   if (name === brokenDocBackfill) await seedDocBackfillProof(transaction)
   if (name === audienceVocabularyBackfill) await seedAudienceVocabularyBackfill(transaction)
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
+  if (name === boardReaderRunBackfill) await seedBoardReaderRunBackfill(transaction)
   if (name === docJsonbArrayRepair)
     await seedDocJsonbArrayRepair(transaction, {
       spaceId: PLATFORM_SPACE_ID,

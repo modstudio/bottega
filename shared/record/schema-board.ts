@@ -355,6 +355,8 @@ export const boardReceipt = pgTable.withRLS(
       .notNull()
       .references(() => user.id),
     readerSession: text('reader_session').notNull(),
+    // Hosted receipts can arrive while their live run still has no terminal outbox row.
+    readerRunRecordId: uuid('reader_run_record_id'),
     audienceAtPosting: boolean('audience_at_posting').notNull(),
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),

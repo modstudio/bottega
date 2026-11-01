@@ -938,8 +938,8 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
     .run(cached.id, cached.kind, null, cached.revision, JSON.stringify(cached))
   expect(cachedAudienceAtPosting(cached.id, 'early-session')).toBe(true)
   expect(cachedAudienceAtPosting(cached.id, 'late-session')).toBe(false)
-  expect(cachedAudienceAtPosting(cached.id, `run:${earlyRun.id}`)).toBe(true)
-  expect(cachedAudienceAtPosting(cached.id, `run:${lateRun.id}`)).toBe(false)
+  expect(cachedAudienceAtPosting(cached.id, `run:${earlyRun.id}`, db(), earlyRun.id)).toBe(true)
+  expect(cachedAudienceAtPosting(cached.id, `run:${lateRun.id}`, db(), lateRun.id)).toBe(false)
 })
 
 test('hosted push selection withholds every older message and keeps newer messages', () => {

@@ -542,21 +542,30 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
 
 const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ...manifest('orchestrator', 'natural or encoded reference to an application row', [
-    'board_hosted_adoption_receipt.reader_session',
-    'board_receipt.reader_session',
     'contention.resource_key',
-    'hosted_board_receipt_cache.reader_session',
     'operator_notification.item_id',
     'run.launch_key',
     'workflow_cursor.instance_id',
   ]),
   ...manifest('hosted', 'natural or encoded reference to an application row', [
-    'board_receipt.reader_session',
     'contention.resource_key',
   ]),
 ]
 
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
+  ...(
+    [
+      ['orchestrator', 'board_hosted_adoption_receipt.reader_session'],
+      ['orchestrator', 'board_receipt.reader_session'],
+      ['orchestrator', 'hosted_board_receipt_cache.reader_session'],
+      ['hosted', 'board_receipt.reader_session'],
+    ] as const
+  ).map(([store, column]) => ({
+    store,
+    column,
+    reason:
+      'reader identity: a harness session id, the operator, or a run label whose run is named by reader_run_record_id',
+  })),
   ...manifest('hosted', 'fingerprint derived from a machine public key', [
     'machine_public_key.key_id',
   ]),
@@ -715,6 +724,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'board_message.thread_root_record_id',
     'board_hosted_adoption_ledger.source_record_id',
     'board_hosted_adoption_receipt.message_record_id',
+    'board_hosted_adoption_receipt.reader_run_record_id',
     'board_message.note_record_id',
     'board_message.record_id',
     'board_message_tag.record_id',
@@ -725,6 +735,8 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'board_reach_recording_failure.record_id',
     'board_receipt.record_id',
     'board_receipt.message_record_id',
+    'board_receipt.reader_run_record_id',
+    'hosted_board_receipt_cache.reader_run_record_id',
     'board_withdrawal_delivery.record_id',
     'board_withdrawal_delivery.message_record_id',
     'branch_landing_record.record_id',

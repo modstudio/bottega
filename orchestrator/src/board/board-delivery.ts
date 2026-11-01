@@ -22,7 +22,7 @@ import {
   markRunNoticesDelivered,
   markSessionMessagesDelivered,
   readNotices,
-  runReader,
+  runReaderIdentity,
 } from './board-service.ts'
 
 export const BOARD_PUSH_REFRESH_SECONDS = 15
@@ -152,7 +152,7 @@ export async function claimRunBoardNotices(
         : notice.oneLine,
   })
   const refreshed = await refreshHostedBoard({ budgetMs })
-  const reader = runReader(runId)
+  const { reader, readerRunRecordId } = runReaderIdentity(runId)
   const local = claimRunPushNotices(runId, all)
   if (refreshed.status === 'local')
     return {
@@ -160,7 +160,14 @@ export async function claimRunBoardNotices(
       warning: local.warning,
       withheldOlderCount: local.withheldOlderCount,
     }
-  const hosted = claimCachedHostedForPush(reader, all)
+  const hosted = claimCachedHostedForPush(
+    reader,
+    all,
+    Date.now(),
+    undefined,
+    true,
+    readerRunRecordId,
+  )
   return {
     notices: [...local.notices.map(deliveryNotice), ...hosted.notices.map(deliveryNotice)].map(
       runNotice,
@@ -175,9 +182,9 @@ export async function markRunBoardNoticesDelivered(
   sourceIds: Array<string | number>,
 ): Promise<void> {
   const ids = splitBoardIds(sourceIds)
-  const reader = runReader(runId)
+  const { reader, readerRunRecordId } = runReaderIdentity(runId)
   markRunNoticesDelivered(runId, ids.local)
-  if (ids.hosted.length) await markCachedHostedDelivered(reader, ids.hosted)
+  if (ids.hosted.length) await markCachedHostedDelivered(reader, ids.hosted, { readerRunRecordId })
 }
 
 export async function markBoardNoticesDelivered(

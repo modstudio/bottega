@@ -1,13 +1,10 @@
 {
   "orchestrator": [
     "board_hosted_adoption_receipt:primary-key",
-    "board_hosted_adoption_receipt.reader_session:reference",
     "board_reach_recording:primary-key",
-    "board_receipt.reader_session:reference",
     "branch_landing_record:primary-key",
     "contention.resource_key:reference",
     "hosted_board_message_tag_cache:primary-key",
-    "hosted_board_receipt_cache.reader_session:reference",
     "main_stack_activity:primary-key",
     "operator_notification.item_id:reference",
     "orch_migrations:primary-key",
@@ -37,5 +34,5 @@
     "task_identity_claim:primary-key",
     "task_identity_migration_repairs:primary-key"
   ],
-  "hosted": ["board_receipt.reader_session:reference", "contention.resource_key:reference"]
+  "hosted": ["contention.resource_key:reference"]
 }

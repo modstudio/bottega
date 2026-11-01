@@ -31,6 +31,7 @@ export function architectIdentity(
 
 export type PresenceFact = {
   reader: string
+  readerRunRecordId?: string | null
   role: 'operator' | 'architect' | 'worker'
   project: string
   machine: string
