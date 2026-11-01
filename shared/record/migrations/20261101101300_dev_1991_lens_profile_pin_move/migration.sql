@@ -321,8 +321,20 @@ BEGIN
       coalesce(existing_destination_current_version_id,gen_random_uuid()) destination_current_version_id,
       existing_destination_profile_id IS NULL copy_profile,version,body,enabled,updated_at
     FROM profiles;
-  SELECT string_agg(format('%s/%s/%s',lens_key,axis,name),', ' ORDER BY lens_key,axis,name)
-    INTO missing_lenses FROM selected_profile_map WHERE destination_lens_id IS NULL;
+  SELECT string_agg(format('%s/%s/%s',missing.lens_key,missing.axis,missing.name),', '
+      ORDER BY missing.lens_key,missing.axis,missing.name)
+    INTO missing_lenses
+  FROM (
+    SELECT lens_key,axis,name
+    FROM selected_profile_map
+    WHERE destination_lens_id IS NULL
+    UNION
+    SELECT sl.key,s.axis,s.profile_name
+    FROM project_lens_profile s
+    JOIN lens sl ON sl.space_id=source_id AND sl.id=s.lens_id
+    LEFT JOIN lens dl ON dl.space_id=destination_id AND dl.key=sl.key
+    WHERE s.space_id=source_id AND s.project_id=moving_project_id AND dl.id IS NULL
+  ) missing;
   IF missing_lenses IS NOT NULL THEN
     ALTER TABLE lens_profile FORCE ROW LEVEL SECURITY;
     ALTER TABLE lens FORCE ROW LEVEL SECURITY;
@@ -546,9 +558,11 @@ BEGIN
       END IF;
     END LOOP;
     INSERT INTO project_lens_profile(id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
-      SELECT s.id,destination_id,s.project_id,CASE WHEN s.lens_key IS NULL THEN NULL ELSE m.destination_lens_id END,
+      SELECT s.id,destination_id,s.project_id,CASE WHEN s.lens_key IS NULL THEN NULL ELSE (
+          SELECT dl.id FROM lens dl WHERE dl.space_id=destination_id AND dl.key=s.lens_key
+        ) END,
         s.axis,s.profile_name,s.resolved_version_id,s.selection_version,s.updated_at
-      FROM saved_selection s LEFT JOIN selected_profile_map m ON m.lens_key=s.lens_key AND m.axis=s.axis AND m.name=s.profile_name;
+      FROM saved_selection s;
     INSERT INTO project_lens_profile_revision(id,space_id,selection_id,prior_profile_name,prior_selected_version_id,reason,session_id,at)
       SELECT id,destination_id,selection_id,prior_profile_name,resolved_prior_version_id,reason,session_id,at
       FROM saved_selection_revision;

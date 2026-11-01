@@ -175,6 +175,11 @@ export function registerProjectSpacePinProofs(input: ProjectSpaceProofInput): vo
          SELECT '${selection}','${source}','${project}',id,'architecture','does-not-exist',NULL,1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
     )
+    const sourceLensKey = input
+      .admin(
+        `SELECT l.key FROM project_lens_profile s JOIN lens l ON l.id=s.lens_id WHERE s.id='${selection}';`,
+      )
+      .trim()
     const dry = await moveRecordProjectSpace({
       url: input.actorUrl,
       project: 'missing-source-profile',
@@ -191,10 +196,44 @@ export function registerProjectSpacePinProofs(input: ProjectSpaceProofInput): vo
     expect(
       input
         .admin(
-          `SELECT space_id || ':' || count(*) FROM project_lens_profile WHERE id='${selection}' GROUP BY space_id;`,
+          `SELECT s.space_id || ':' || l.space_id || ':' || l.key || ':' || s.profile_name
+           FROM project_lens_profile s JOIN lens l ON l.id=s.lens_id WHERE s.id='${selection}';`,
         )
         .trim(),
-    ).toBe(`${destination.id}:1`)
+    ).toBe(`${destination.id}:${destination.id}:${sourceLensKey}:does-not-exist`)
+  })
+
+  test('a lens-scoped selection refuses when its lens key is absent from the destination', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('missing destination lens proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1991 Missing Destination Lens',
+      `dev-1991-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId(),
+      selection = newRecordId(),
+      sourceLens = newRecordId()
+    input.admin(
+      `INSERT INTO lens(id,space_id,key,title,question,excludes,slots,version,enabled,requires_execution,updated_at)
+         VALUES ('${sourceLens}','${source}','dev-1991-source-only','Source only','Question','Excludes','Slots',1,true,false,now());
+       INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','missing-destination-lens',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         VALUES ('${selection}','${source}','${project}','${sourceLens}','architecture','does-not-exist',NULL,1,now());`,
+    )
+    for (const confirm of [undefined, 0])
+      await expect(
+        moveRecordProjectSpace({
+          url: input.actorUrl,
+          project: 'missing-destination-lens',
+          source,
+          destination: destination.slug,
+          confirm,
+        }),
+      ).rejects.toThrow('because destination lenses are missing for selected profiles:')
+    expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
   })
 
   test('a pinned selection without a source profile refuses the move', async () => {
