@@ -2,6 +2,7 @@
 /** Applies machine rename and retirement after command-edge validation. */
 
 import { writeMachineNames } from '../../../shared/machine-config.ts'
+import { resolveMachineDisplayName } from '../../../shared/machine-label.ts'
 import { machineId, machineNames } from './machine-identity.ts'
 import { displayNameRefusal, type MachineNamePair, shortNameRefusal } from './machine-name.ts'
 import { recordApiClient } from './record-api-client.ts'
@@ -22,7 +23,7 @@ export async function renameMachine(input: {
   const current = machineNames()
   const names = {
     shortName: input.shortName ?? current.shortName,
-    displayName: input.displayName ?? current.displayName ?? current.shortName,
+    displayName: input.displayName ?? resolveMachineDisplayName(current),
   }
   const refusal = shortNameRefusal(names.shortName) ?? displayNameRefusal(names.displayName)
   if (refusal) throw new Error(refusal)

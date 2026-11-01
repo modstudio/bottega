@@ -19,6 +19,20 @@ const boundary = (
   reason,
 })
 
+export const recordMachineBoundaries: ImportBoundary[] = [
+  boundary(
+    'machine-identity-boundary',
+    'orchestrator/src/record/machine-identity.ts',
+    [
+      'node:os',
+      '../../../shared/machine-config.ts',
+      '../../../shared/machine-label.ts',
+      './machine-name.ts',
+    ],
+    'Enforce the machine-identity concern boundary.',
+  ),
+]
+
 export const recordApiBoundaries: ImportBoundary[] = [
   boundary(
     'record-port-contract-boundary',

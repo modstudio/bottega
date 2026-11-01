@@ -1,7 +1,7 @@
 export const hubModuleSpecs = [
   {
     file: 'hub/src/machine-display-name.ts',
-    allowed: ['../../shared/machine-config.ts'],
+    allowed: ['../../shared/machine-config.ts', '../../shared/machine-label.ts'],
   },
   {
     file: 'hub/src/hosted-route-config.ts',

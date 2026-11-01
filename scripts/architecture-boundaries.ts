@@ -10,6 +10,7 @@ import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
 import {
   recordApiBoundaries,
+  recordMachineBoundaries,
   recordReadBoundariesAfterPublish,
   recordReadBoundariesBeforePublish,
   recordSchemaBoundaries,
@@ -553,12 +554,7 @@ export const importBoundaries: ImportBoundary[] = [
     ],
     'Keep judgment independent of transports, worktrees, routing, the CLI, durable execution, dispatch, and cleanup.',
   ),
-  boundary(
-    'machine-identity-boundary',
-    'orchestrator/src/record/machine-identity.ts',
-    ['node:os', '../../../shared/machine-config.ts', './machine-name.ts'],
-    'Enforce the machine-identity concern boundary.',
-  ),
+  ...recordMachineBoundaries,
   ...mcpBoundarySpecs,
   boundary(
     'metric-commands-boundary',

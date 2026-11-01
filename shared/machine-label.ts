@@ -4,6 +4,20 @@ export type MachineRef = {
   displayName: string | null
 }
 
+export type MachineNamePair<Value extends string | null = string> = {
+  shortName: Value
+  displayName: Value
+}
+
+export function resolveMachineDisplayName(names: {
+  shortName: string
+  displayName: string | null
+}): string
+export function resolveMachineDisplayName(names: MachineNamePair<string | null>): string | null
+export function resolveMachineDisplayName(names: MachineNamePair<string | null>): string | null {
+  return names.displayName ?? names.shortName
+}
+
 const UNNAMED_MACHINE_PREFIX = /^[0-9a-f]{8}$/
 
 export function isUnnamedMachinePrefix(name: string): boolean {

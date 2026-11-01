@@ -263,6 +263,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/machine-name-command.ts', [
     '../../../shared/machine-config.ts',
+    '../../../shared/machine-label.ts',
     './machine-identity.ts',
     './machine-name.ts',
     './record-api-client.ts',
