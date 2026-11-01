@@ -13,7 +13,7 @@ from enum import Enum, auto
 from typing import NamedTuple
 
 from inbox_question_decision import decide_inbox_questions
-from secret_shaped import contains_secret_shaped, redact_secret_shaped
+from secret_shaped import redact_secret_shaped
 
 NOTICE_REASON_MAX_BYTES = 4096
 NOTICE_REASON_MAX_CHARS = 240

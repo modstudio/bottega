@@ -4,11 +4,62 @@ import table from './secret-shaped-rules.json' with { type: 'json' }
 
 type RuleKind = 'span' | 'pem' | 'jwt' | 'base64'
 type RuleDefinition = { name: string; kind: RuleKind; pattern: string; ignoreCase: boolean }
+type RuleTable = {
+  rules: RuleDefinition[]
+  exemptEvidenceToken: { pattern: string; ignoreCase: boolean }
+  base64MinBytes: number
+}
 
-const definitions = table.rules as RuleDefinition[]
+const RULE_KINDS = new Set<RuleKind>(['span', 'pem', 'jwt', 'base64'])
+
+function compiledPattern(pattern: unknown, field: string): string {
+  if (typeof pattern !== 'string') throw new Error(`${field} must be a string`)
+  try {
+    new RegExp(pattern)
+  } catch (error) {
+    throw new Error(`${field} must compile: ${String(error)}`)
+  }
+  return pattern
+}
+
+/** Validates the file-read rules table before any redaction rule is built. */
+export function validateSecretShapedRuleTable(parsed: unknown): RuleTable {
+  if (typeof parsed !== 'object' || parsed === null)
+    throw new Error('secret-shaped rule table must be an object')
+  const candidate = parsed as Record<string, unknown>
+  if (!Array.isArray(candidate.rules)) throw new Error('rules must be an array')
+  const rules = candidate.rules.map((value, index): RuleDefinition => {
+    if (typeof value !== 'object' || value === null)
+      throw new Error(`rule ${index} must be an object`)
+    const rule = value as Record<string, unknown>
+    if (typeof rule.name !== 'string') throw new Error(`rule ${index} name must be a string`)
+    if (typeof rule.kind !== 'string' || !RULE_KINDS.has(rule.kind as RuleKind))
+      throw new Error(`rule ${index} kind must be one of span, pem, jwt, base64`)
+    const pattern = compiledPattern(rule.pattern, `rule ${index} pattern`)
+    if (typeof rule.ignoreCase !== 'boolean')
+      throw new Error(`rule ${index} ignoreCase must be a boolean`)
+    return { name: rule.name, kind: rule.kind as RuleKind, pattern, ignoreCase: rule.ignoreCase }
+  })
+  if (typeof candidate.exemptEvidenceToken !== 'object' || candidate.exemptEvidenceToken === null)
+    throw new Error('exemptEvidenceToken must be an object')
+  const exemption = candidate.exemptEvidenceToken as Record<string, unknown>
+  const pattern = compiledPattern(exemption.pattern, 'exemptEvidenceToken pattern')
+  if (typeof exemption.ignoreCase !== 'boolean')
+    throw new Error('exemptEvidenceToken ignoreCase must be a boolean')
+  if (!Number.isInteger(candidate.base64MinBytes) || (candidate.base64MinBytes as number) < 0)
+    throw new Error('base64MinBytes must be a non-negative integer')
+  return {
+    rules,
+    exemptEvidenceToken: { pattern, ignoreCase: exemption.ignoreCase },
+    base64MinBytes: candidate.base64MinBytes as number,
+  }
+}
+
+const validatedTable = validateSecretShapedRuleTable(table)
+const definitions = validatedTable.rules
 const EXEMPT_EVIDENCE_TOKEN = new RegExp(
-  table.exemptEvidenceToken.pattern,
-  `g${table.exemptEvidenceToken.ignoreCase ? 'i' : ''}`,
+  validatedTable.exemptEvidenceToken.pattern,
+  `g${validatedTable.exemptEvidenceToken.ignoreCase ? 'i' : ''}`,
 )
 
 function withheldMarker(rule: string): string {
@@ -59,7 +110,9 @@ const RULES: readonly SecretRule[] = definitions.map((definition) => {
       name: definition.name,
       spans: (text) => filteredSpans(pattern, text, base64RunIsSecret),
     }
-  return { name: definition.name, spans: (text) => regexSpans(pattern, text) }
+  if (definition.kind === 'span')
+    return { name: definition.name, spans: (text) => regexSpans(pattern, text) }
+  throw new Error(`unsupported secret-shaped rule kind: ${definition.kind}`)
 })
 
 export function secretShapedRule(text: string): string | null {
@@ -149,7 +202,7 @@ function jwtHeaderIsObject(token: string): boolean {
 
 function base64RunIsSecret(run: string): boolean {
   const bytes = decodedBase64Bytes(run)
-  if (bytes === null || bytes < table.base64MinBytes) return false
+  if (bytes === null || bytes < validatedTable.base64MinBytes) return false
   if (/[+=]/.test(run)) return true
   return /[a-z]/.test(run) && /[A-Z]/.test(run) && /\d/.test(run)
 }

@@ -8,7 +8,47 @@ from pathlib import Path
 
 
 _TABLE_PATH = Path(__file__).resolve().parents[2] / "shared" / "secret-shaped-rules.json"
-_TABLE = json.loads(_TABLE_PATH.read_text(encoding="utf-8"))
+_RULE_KINDS = {"span", "pem", "jwt", "base64"}
+
+
+def _compiled_pattern(value, field):
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    try:
+        re.compile(value)
+    except re.error as error:
+        raise ValueError(f"{field} must compile: {error}") from error
+    return value
+
+
+def _validate_table(parsed):
+    if not isinstance(parsed, dict):
+        raise ValueError("secret-shaped rule table must be an object")
+    if not isinstance(parsed.get("rules"), list):
+        raise ValueError("rules must be an array")
+    for index, rule in enumerate(parsed["rules"]):
+        if not isinstance(rule, dict):
+            raise ValueError(f"rule {index} must be an object")
+        if not isinstance(rule.get("name"), str):
+            raise ValueError(f"rule {index} name must be a string")
+        if rule.get("kind") not in _RULE_KINDS:
+            raise ValueError(f"rule {index} kind must be one of span, pem, jwt, base64")
+        _compiled_pattern(rule.get("pattern"), f"rule {index} pattern")
+        if not isinstance(rule.get("ignoreCase"), bool):
+            raise ValueError(f"rule {index} ignoreCase must be a boolean")
+    exemption = parsed.get("exemptEvidenceToken")
+    if not isinstance(exemption, dict):
+        raise ValueError("exemptEvidenceToken must be an object")
+    _compiled_pattern(exemption.get("pattern"), "exemptEvidenceToken pattern")
+    if not isinstance(exemption.get("ignoreCase"), bool):
+        raise ValueError("exemptEvidenceToken ignoreCase must be a boolean")
+    minimum = parsed.get("base64MinBytes")
+    if not isinstance(minimum, int) or isinstance(minimum, bool) or minimum < 0:
+        raise ValueError("base64MinBytes must be a non-negative integer")
+    return parsed
+
+
+_TABLE = _validate_table(json.loads(_TABLE_PATH.read_text(encoding="utf-8")))
 _RULES = [
     {
         **definition,
@@ -66,7 +106,9 @@ def _rule_spans(rule: dict, text: str) -> list[tuple[int, int]]:
         return [match.span() for match in matches if _jwt_header_is_object(match.group(0))]
     if rule["kind"] == "base64":
         return [match.span() for match in matches if _base64_run_is_secret(match.group(0))]
-    return [match.span() for match in matches]
+    if rule["kind"] == "span":
+        return [match.span() for match in matches]
+    raise ValueError(f"unsupported secret-shaped rule kind: {rule['kind']}")
 
 
 def redact_secret_shaped(
@@ -104,8 +146,3 @@ def redact_secret_shaped(
         cursor = end
     parts.append(text[cursor:])
     return "".join(parts), rules
-
-
-def contains_secret_shaped(text: str) -> bool:
-    """Return whether any rule recognizes a secret-shaped span."""
-    return any(_rule_spans(rule, text) for rule in _RULES)
