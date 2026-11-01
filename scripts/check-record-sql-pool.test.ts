@@ -23,4 +23,14 @@ test('allows only the declared sites in an exempt file', () => {
       },
     ]),
   ).toEqual([])
+  expect(
+    recordSqlPoolViolations([
+      {
+        file: 'orchestrator/src/record/record-board-wake.ts',
+        source: 'const listener = new SQL(url)\nconst extra = new SQL(url)',
+      },
+    ]),
+  ).toEqual([
+    'orchestrator/src/record/record-board-wake.ts:2: new SQL() is not allowed here; use recordPool(url) from orchestrator/src/record/record-pool.ts',
+  ])
 })
