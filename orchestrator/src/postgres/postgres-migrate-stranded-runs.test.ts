@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const successUrl = process.env.BOTTEGA_TEST_STRANDED_RUNS_URL
@@ -125,6 +126,7 @@ async function runFacts(sql: SQL, query: string) {
 }
 
 async function migrationRefusal(sql: SQL) {
+  for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
   const failure = await migrate(drizzle({ client: sql }), { migrationsFolder }).then(
     () => null,
     (error: unknown) => error,
@@ -172,8 +174,10 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   test('moves every listed run and declared run-owned row and reruns as a no-op', async () => {
     const sql = new SQL(successUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, listedRuns)
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
       const facts = await movedFacts(sql)
       expect(facts).toHaveLength(47)
@@ -202,6 +206,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   test('a measured-set mismatch reports counts and rolls back', async () => {
     const sql = new SQL(mismatchUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, listedRuns.slice(1), { unlisted: true })
       expect(await migrationRefusal(sql)).toContain(
@@ -220,6 +225,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   test('a non-owned run foreign-key reference names its table and rolls back', async () => {
     const sql = new SQL(referenceUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, listedRuns, { question: true })
       expect(await migrationRefusal(sql)).toContain('question=1')
@@ -236,6 +242,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   test('a record with none of the listed runs is unchanged', async () => {
     const sql = new SQL(emptyUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seedUnrelatedRecord(sql)
       expect(migrationSql).toContain(
@@ -256,6 +263,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   test('an unlisted run self-reference names run and rolls back', async () => {
     const sql = new SQL(selfReferenceUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, listedRuns)
       await sql.unsafe('ALTER TABLE run NO FORCE ROW LEVEL SECURITY')

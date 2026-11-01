@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const validMigrationUrl = process.env.BOTTEGA_TEST_BOARD_SHARED_SPACE_MIGRATION_URL
@@ -28,6 +29,7 @@ const readerRunMigration = '20261101151116_dev_2002_board_receipt_reader_run_rec
 
 async function preparePriorStore(url: string, nested: boolean): Promise<SQL> {
   const sql = new SQL(url)
+  for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
   await migrate(drizzle({ client: sql }), {
     migrationsFolder: priorMigrations,
   })
@@ -77,6 +79,7 @@ realPostgres('populated board shared-space migration', () => {
   test('backfills every existing reply anchor from its root author', async () => {
     const sql = await preparePriorStore(validMigrationUrl!, false)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
       await sql.unsafe('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY')
       const rows = await sql`
@@ -96,6 +99,7 @@ realPostgres('populated board shared-space migration', () => {
     try {
       let failure: unknown
       try {
+        for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
         await migrate(drizzle({ client: sql }), { migrationsFolder })
       } catch (error) {
         failure = error
@@ -129,6 +133,7 @@ describe.skipIf(!readerRunMigrationUrl)('populated board reader run migration', 
   test('backfills a run reader and leaves a session reader NULL', async () => {
     const sql = new SQL(readerRunMigrationUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: readerRunPriorMigrations })
       await sql.unsafe('ALTER TABLE board_message NO FORCE ROW LEVEL SECURITY')
       await sql.unsafe('ALTER TABLE board_receipt NO FORCE ROW LEVEL SECURITY')
@@ -165,6 +170,7 @@ describe.skipIf(!readerRunMigrationUrl)('populated board reader run migration', 
           ('02990000-0000-7000-8000-000000000408',${READER_MESSAGE_ID},${AUTHOR_ID},${`run:${MISSING_READER_RUN_ID}`},true)
       `
 
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
       const rows = await sql`
         SELECT reader_session,reader_run_record_id::text AS reader_run_record_id

@@ -5,6 +5,7 @@ import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { PLATFORM_NAME } from '../../shared/brand.ts'
+import { migrationSessionStatements } from '../../shared/record/migration-session.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HUB_CHANGE_SOURCES } from '../../shared/record/schema-hub.ts'
 import {
@@ -61,6 +62,7 @@ async function createDatabase() {
     );
   `)
   await database.transaction(async (transaction) => {
+    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
     for (const migration of readMigrationFiles({ migrationsFolder }))
       await applyMigration(transaction, migration)
   })

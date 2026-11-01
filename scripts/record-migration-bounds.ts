@@ -1,13 +1,11 @@
 import type { MigrationMeta } from 'drizzle-orm/migrator'
-import { publishedMigrationSetting } from '../shared/record/migration-session.ts'
+import {
+  MIGRATION_BOUNDED_PARAMETERS,
+  publishedMigrationSetting,
+} from '../shared/record/migration-session.ts'
 
-const parameterNames = [
-  'lock_timeout',
-  'statement_timeout',
-  'idle_in_transaction_session_timeout',
-] as const
-type BoundedParameter = (typeof parameterNames)[number]
-const boundedParameters = `(?:${parameterNames.join('|')})`
+type BoundedParameter = (typeof MIGRATION_BOUNDED_PARAMETERS)[number]
+const boundedParameters = `(?:${MIGRATION_BOUNDED_PARAMETERS.join('|')})`
 const disabledBound = new RegExp(
   `\\bSET(?:\\s+(?:LOCAL|SESSION))?\\s+${boundedParameters}\\s*(?:=|TO)\\s*(?:(?:'0(?:ms|s|min|h|d)?'|0(?:ms|s|min|h|d)?)(?=\\s|;|$)|DEFAULT\\b)`,
   'i',
@@ -36,7 +34,7 @@ function changedParameter(statement: string): BoundedParameter | undefined {
 }
 
 function restoredParameter(statement: string): BoundedParameter | undefined {
-  for (const parameter of parameterNames) {
+  for (const parameter of MIGRATION_BOUNDED_PARAMETERS) {
     const restore = new RegExp(
       `^SELECT\\s+set_config\\s*\\(\\s*'${parameter}'\\s*,\\s*current_setting\\s*\\(\\s*'${publishedMigrationSetting(parameter)}'\\s*\\)\\s*,\\s*true\\s*\\)$`,
       'i',

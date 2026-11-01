@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { migrationSessionStatements } from '../../shared/record/migration-session.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 import { HOSTED_FIXTURE_MACHINE_ID } from '../test/hosted-record-fixture.ts'
 import { hubChangeReadability } from './hosted-changes.ts'
@@ -113,6 +114,7 @@ async function hostedEvidenceDatabase() {
     );
   `)
   await database.transaction(async (transaction) => {
+    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
     for (const migration of readMigrationFiles({ migrationsFolder })) {
       await applyMigration(transaction, migration)
     }

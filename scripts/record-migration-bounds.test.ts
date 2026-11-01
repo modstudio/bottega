@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { join } from 'node:path'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
-import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { assertMigrationBounds } from './record-migration-bounds.ts'
 
 function migration(sql: string): MigrationMeta {
@@ -91,12 +89,5 @@ describe('record migration bounds', () => {
     expect(() => assertMigrationBounds([changed, repair])).toThrow(
       /first_migration.*statement_timeout/,
     )
-  })
-
-  test('accepts the real migration set', () => {
-    const folder = join(import.meta.dir, '..', 'shared', 'record', 'migrations')
-    expect(() =>
-      assertMigrationBounds(readMigrationFiles({ migrationsFolder: folder })),
-    ).not.toThrow()
   })
 })

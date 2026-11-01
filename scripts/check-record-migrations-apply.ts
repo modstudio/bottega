@@ -6,6 +6,7 @@ import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../orchestrator/src/record/record-board-stream.ts'
 import { managedCanonProjectNames } from '../orchestrator/src/record/record-canon-facts.ts'
+import { MIGRATION_BOUNDED_PARAMETERS } from '../shared/record/migration-session.ts'
 import {
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
@@ -37,7 +38,10 @@ import {
   MigrationFailure,
   phaseFailure,
 } from './record-migration-failure.ts'
-import { prepareRecordMigrationProof } from './record-migration-session.ts'
+import {
+  prepareRecordMigrationProof,
+  verifyMigrationSessionBounds,
+} from './record-migration-session.ts'
 import {
   proofRunOwnerRequired,
   runOwnerBackfill,
@@ -888,19 +892,14 @@ async function main(): Promise<void> {
       await database.transaction(async (transaction) => {
         const runnerSettings = await prepareRecordMigrationProof(transaction, migrations)
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
-        for (const parameter of [
-          'lock_timeout',
-          'statement_timeout',
-          'idle_in_transaction_session_timeout',
-        ] as const) {
-          const expected = runnerSettings.get(parameter)
-          const shown = await transaction.query<Record<string, string>>(`SHOW ${parameter}`)
-          const actual = shown.rows[0]?.[parameter]
-          if (actual !== expected) {
-            throw new CheckFailure(
-              `${parameter} ended the migration batch at ${JSON.stringify(actual)} instead of the runner value ${JSON.stringify(expected)}`,
-            )
-          }
+        try {
+          await verifyMigrationSessionBounds(
+            transaction,
+            runnerSettings,
+            MIGRATION_BOUNDED_PARAMETERS,
+          )
+        } catch (error) {
+          throw new CheckFailure(error instanceof Error ? error.message : String(error))
         }
         await proofManagedCanonProjects(transaction)
         await proofProjectRelationsStayWithinOneSpace(transaction)

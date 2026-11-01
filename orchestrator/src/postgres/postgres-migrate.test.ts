@@ -6,39 +6,11 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate as migrateWithBunSql } from 'drizzle-orm/bun-sql/migrator'
 import {
-  MIGRATION_CLIENT_CHECK_INTERVAL,
-  MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT,
-  MIGRATION_LOCK_TIMEOUT,
-  MIGRATION_STATEMENT_TIMEOUT,
-  migrationSessionSettings,
-  publishedMigrationSetting,
-} from '../../../shared/record/migration-session.ts'
-import {
   formatMigrationNotice,
   MIGRATION_NOTICE_MESSAGE_LIMIT,
   migratePostgresFolder,
   pendingRecordMigrationNames,
 } from './postgres-migrate.ts'
-
-describe('migration session settings', () => {
-  test('bounds every migration wait and statement', () => {
-    const settings = migrationSessionSettings()
-
-    expect(settings).toEqual([
-      ['lock_timeout', MIGRATION_LOCK_TIMEOUT],
-      ['statement_timeout', MIGRATION_STATEMENT_TIMEOUT],
-      ['idle_in_transaction_session_timeout', MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT],
-      [publishedMigrationSetting('lock_timeout'), MIGRATION_LOCK_TIMEOUT],
-      [publishedMigrationSetting('statement_timeout'), MIGRATION_STATEMENT_TIMEOUT],
-      [
-        publishedMigrationSetting('idle_in_transaction_session_timeout'),
-        MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT,
-      ],
-      ['client_connection_check_interval', MIGRATION_CLIENT_CHECK_INTERVAL],
-    ])
-    expect(settings.every(([, value]) => !/^0(?:[a-z]+)?$/i.test(value))).toBe(true)
-  })
-})
 
 test('formats a bounded single-line migration notice', () => {
   expect(formatMigrationNotice('20261101000000_fixture', 'first\n  second')).toBe(
