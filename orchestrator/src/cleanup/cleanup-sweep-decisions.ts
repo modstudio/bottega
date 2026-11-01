@@ -405,8 +405,8 @@ function decideUnmarkedFilesystemOrphan(
     const noun = facts.uniqueCommitCount === 1 ? 'commit' : 'commits'
     return {
       action: 'keep',
-      keepLine: `kept: ${facts.uniqueCommitCount} ${noun} not on main; retain them in main or archive them, then run ${PLATFORM_SLUG} machine sweep`,
-      keepReason: 'holds commits not on main',
+      keepLine: `kept: ${facts.uniqueCommitCount} ${noun} exist only in this clone; retain them in main or archive them, then run ${PLATFORM_SLUG} machine sweep`,
+      keepReason: 'holds commits that exist only in this clone',
     }
   }
   if (facts.dirty) {

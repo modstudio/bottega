@@ -187,7 +187,6 @@ test('reader close-out excludes its base when the source no longer reaches it', 
     expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
     expect(fixture.spawnCommands.map(normalizedGitArgs)).toContainEqual([
       'rev-list',
-      '--count',
       '--all',
       '^1234567890abcdef1234567890abcdef12345678',
     ])

@@ -712,8 +712,8 @@ describe('unmarked filesystem orphan candidate ruling', () => {
       facts: { ...base, uniqueCommitCount: 2 },
       expected: {
         action: 'keep',
-        keepLine: `kept: 2 commits not on main; retain them in main or archive them, then run ${PLATFORM_SLUG} machine sweep`,
-        keepReason: 'holds commits not on main',
+        keepLine: `kept: 2 commits exist only in this clone; retain them in main or archive them, then run ${PLATFORM_SLUG} machine sweep`,
+        keepReason: 'holds commits that exist only in this clone',
       },
     },
     {
