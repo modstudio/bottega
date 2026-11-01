@@ -125,6 +125,48 @@ export type RunLogEvent =
       note: string | null
     }
 
+/** Which recorded text could carry a secret, so it is masked before it reaches the durable log? */
+export function redactRunLogEvent(event: RunLogEvent): RunLogEvent {
+  switch (event.type) {
+    case 'text':
+    case 'warning':
+      return { ...event, text: redactSecretShapedOutput(event.text) }
+    case 'tool_call':
+      return {
+        ...event,
+        title: redactSecretShapedOutput(event.title),
+        ...(event.input === undefined ? {} : { input: redactSecretShapedOutput(event.input) }),
+      }
+    case 'tool_result':
+      return {
+        ...event,
+        ...(event.text === undefined ? {} : { text: redactSecretShapedOutput(event.text) }),
+      }
+    case 'ask_exposure':
+      return {
+        ...event,
+        note: event.note === null ? null : redactSecretShapedOutput(event.note),
+      }
+    case 'focused_test':
+    case 'focused_test_refusal':
+    case 'gate_log':
+    case 'note':
+    case 'tool_burst_observed':
+    case 'usage':
+    case 'throttled':
+    case 'capacity_wait':
+    case 'ask_expected':
+    case 'ask_started':
+    case 'ask_initialized':
+    case 'ask_listed':
+      return event
+    default: {
+      const exhaustive: never = event
+      return exhaustive
+    }
+  }
+}
+
 type PeekEventSummary =
   | { type: 'text'; text: string }
   | { type: 'warning'; text: string }
@@ -234,7 +276,7 @@ export function appendRunEvent(runId: string, event: RunLogEvent, path?: string)
   try {
     const destination = path ?? runEventsPath(runId)
     mkdirSync(dirname(destination), { recursive: true })
-    appendFileSync(destination, `${JSON.stringify(event)}\n`)
+    appendFileSync(destination, `${JSON.stringify(redactRunLogEvent(event))}\n`)
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
@@ -341,9 +383,7 @@ function observedToolEvents(
       type: 'tool_call',
       kind: event.toolKind,
       title: event.title,
-      ...(event.input === undefined
-        ? {}
-        : { input: redactSecretShapedOutput(capToolEventText(event.input)) }),
+      ...(event.input === undefined ? {} : { input: capToolEventText(event.input) }),
       ...(locations?.length ? { locations } : {}),
     })
   }
@@ -355,7 +395,7 @@ function observedToolEvents(
       status: event.status,
       ...(bytes === undefined ? {} : { bytes }),
       ...(event.status === 'failed' && event.result !== undefined
-        ? { text: redactSecretShapedOutput(capToolEventText(event.result)) }
+        ? { text: capToolEventText(event.result) }
         : {}),
     })
   }
