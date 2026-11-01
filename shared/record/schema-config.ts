@@ -162,6 +162,16 @@ export const secretDekWrap = pgTable.withRLS(
       foreignColumns: [secretDek.spaceId, secretDek.id],
       name: 'secret_dek_wrap_space_dek_fk',
     }),
+    foreignKey({
+      columns: [table.spaceId, table.recipientKeyId],
+      foreignColumns: [machinePublicKey.spaceId, machinePublicKey.keyId],
+      name: 'secret_dek_wrap_space_recipient_key_fk',
+    }),
+    foreignKey({
+      columns: [table.spaceId, table.senderKeyId],
+      foreignColumns: [machinePublicKey.spaceId, machinePublicKey.keyId],
+      name: 'secret_dek_wrap_space_sender_key_fk',
+    }),
     check('secret_dek_wrap_recipient_key_id_check', keyIdCheck(table.recipientKeyId)),
     check('secret_dek_wrap_sender_key_id_check', keyIdCheck(table.senderKeyId)),
     ...actorPolicies('secret_dek_wrap', table.spaceId),

@@ -104,6 +104,13 @@ test('remaining hosted tables mint UUID keys and preserve their old conflict key
         ('01990000-0000-7000-8000-000000001003',1);
       INSERT INTO public_doc_space(space_id,project_id) VALUES
         ('01990000-0000-7000-8000-000000001003','01990000-0000-7000-8000-000000001004');
+      INSERT INTO machine_public_key(space_id,key_id,public_key,label,created_at) VALUES
+        ('01990000-0000-7000-8000-000000001003','AAAAAAAAAAAAAAAAAAAAAA',
+         decode(repeat('00',32),'hex'),'recipient fixture',now()),
+        ('01990000-0000-7000-8000-000000001003','BBBBBBBBBBBBBBBBBBBBBB',
+         decode(repeat('01',32),'hex'),'sender fixture',now()),
+        ('01990000-0000-7000-8000-000000001003','CCCCCCCCCCCCCCCCCCCCCC',
+         decode(repeat('02',32),'hex'),'duplicate fixture',now());
       INSERT INTO secret_dek_wrap(
         space_id,dek_id,recipient_key_id,sender_key_id,enc,ciphertext,created_at
       ) VALUES (
@@ -113,9 +120,6 @@ test('remaining hosted tables mint UUID keys and preserve their old conflict key
       INSERT INTO seq(space_id,project_id,name,next) VALUES
         ('01990000-0000-7000-8000-000000001003','01990000-0000-7000-8000-000000001004',
          'task:DEV',1);
-      INSERT INTO machine_public_key(space_id,key_id,public_key,label,created_at) VALUES
-        ('01990000-0000-7000-8000-000000001003','CCCCCCCCCCCCCCCCCCCCCC',
-         decode(repeat('00',32),'hex'),'fixture',now());
       INSERT INTO question_mutation_audit(question_id,space_id,action,at) VALUES
         ('01990000-0000-7000-8000-000000001006','01990000-0000-7000-8000-000000001003',
          'answer','2026-10-25T00:00:00Z');

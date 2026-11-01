@@ -21,6 +21,7 @@ const EMPTY: KeyManifests = {
   values: [],
   displayLabels: [],
   references: [],
+  ruledReferences: [],
   externalIdentifiers: [],
   uuids: [],
   infrastructure: [],
@@ -257,6 +258,98 @@ test('an external identifier cannot conceal a primary or foreign key', () => {
   }
 })
 
+test('a ruled reference with a declared foreign key produces no reference finding', () => {
+  const table = {
+    name: 'child',
+    primaryKey: ['id'],
+    columns: [
+      column('child', 'id', 'uuid', true),
+      column('child', 'parent_key', 'text', false, true),
+    ],
+  }
+  const manifests = {
+    ...EMPTY,
+    ruledReferences: [
+      {
+        store: 'hosted' as const,
+        column: 'child.parent_key',
+        reason: 'enforced fingerprint reference',
+        ruling: 'operator ruling',
+      },
+    ],
+  }
+  expect(classifyKeyInventory('hosted', [table], manifests).findings).not.toContain(
+    'child.parent_key:reference',
+  )
+})
+
+test('a ruled reference without a declared foreign key is refused', () => {
+  const table = {
+    name: 'child',
+    primaryKey: ['id'],
+    columns: [column('child', 'id', 'uuid', true), column('child', 'parent_key', 'text')],
+  }
+  const manifests = {
+    ...EMPTY,
+    ruledReferences: [
+      {
+        store: 'hosted' as const,
+        column: 'child.parent_key',
+        reason: 'unenforced fingerprint reference',
+        ruling: 'operator ruling',
+      },
+    ],
+  }
+  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+    'hosted ruled reference child.parent_key must be a declared foreign key',
+  )
+})
+
+test('a stale ruled reference is refused', () => {
+  const table = {
+    name: 'child',
+    primaryKey: ['id'],
+    columns: [column('child', 'id', 'uuid', true)],
+  }
+  const manifests = {
+    ...EMPTY,
+    ruledReferences: [
+      {
+        store: 'hosted' as const,
+        column: 'child.missing_key',
+        reason: 'missing fingerprint reference',
+        ruling: 'operator ruling',
+      },
+    ],
+  }
+  expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+    'hosted ruled reference child.missing_key is stale',
+  )
+})
+
+test('a ruled reference requires a reason and a ruling', () => {
+  const table = {
+    name: 'child',
+    primaryKey: ['id'],
+    columns: [
+      column('child', 'id', 'uuid', true),
+      column('child', 'parent_key', 'text', false, true),
+    ],
+  }
+  for (const [field, reason, ruling] of [
+    ['reason', ' ', 'operator ruling'],
+    ['ruling', 'fingerprint reference', ' '],
+  ] as const) {
+    const manifests = {
+      ...EMPTY,
+      ruledReferences: [{ store: 'hosted' as const, column: 'child.parent_key', reason, ruling }],
+    }
+    expect(() => classifyKeyInventory('hosted', [table], manifests)).toThrow(
+      `hosted ruled reference child.parent_key needs a ${field}`,
+    )
+  }
+})
+
 test('a baseline entry that disappeared must be removed', () => {
   expect(() => assertShrinkingKeyBaseline('hosted', [], ['old:primary-key'], [])).toThrow(
     'baseline entries disappeared; remove them: old:primary-key',
@@ -470,10 +563,16 @@ test('a display label may not overlap another identity manifest', () => {
   for (const [manifest, overlapKind] of [
     ['values', 'value/display label'],
     ['references', 'display label/reference'],
+    ['ruledReferences', 'display label/ruled reference'],
     ['externalIdentifiers', 'display label/external identifier'],
     ['uuids', 'display label/UUID'],
   ] as const) {
-    const overlap = { store: 'hosted' as const, column: 'task.task_key', reason: 'overlap' }
+    const overlap = {
+      store: 'hosted' as const,
+      column: 'task.task_key',
+      reason: 'overlap',
+      ruling: 'operator ruling',
+    }
     const manifests = {
       ...EMPTY,
       displayLabels,

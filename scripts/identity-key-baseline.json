@@ -43,9 +43,6 @@
   "hosted": [
     "board_receipt.reader_session:reference",
     "contention.resource_key:reference",
-    "machine_public_key.key_id:reference",
-    "question.filed_ref:reference",
-    "secret_dek_wrap.recipient_key_id:reference",
-    "secret_dek_wrap.sender_key_id:reference"
+    "question.filed_ref:reference"
   ]
 }
