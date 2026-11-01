@@ -91,6 +91,7 @@ const remaining = (calls: string[]) => ({
 
 function complete(input: {
   post: PullRequestPostLandingAdapter
+  project?: Project
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
   calls?: string[]
@@ -99,7 +100,7 @@ function complete(input: {
     adapter: remaining(input.calls ?? []),
     postLandingAdapter: input.post,
     database: db(),
-    project,
+    project: input.project ?? project,
     pullRequest,
     mergeCommit: 'merge-commit',
     target: '42',
@@ -143,6 +144,46 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
   expect(() => writableDb()).toThrow('its post-landing child owns the store')
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
+})
+
+test('a change inside a rung entry closure requires that rung and hands it off', () => {
+  const entryProject = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release,
+        rungs: [
+          { name: 'hosted-api', branch: 'main', requiredWhenChanged: ['shared/record/**'] },
+          { name: 'hosted-hub', branch: 'main', live: 'hub', entryPoints: ['hub/src/hosted.ts'] },
+        ],
+      },
+    },
+  } as Project
+  const asked: Array<{ mergeCommit: string; entries: readonly string[] }> = []
+  const received: PullRequestPostLandingPayload[] = []
+  complete({
+    project: entryProject,
+    post: {
+      changedPaths: () => ['shared/machine-label.ts'],
+      entryClosure: (_project, mergeCommit, entries) => {
+        asked.push({ mergeCommit, entries })
+        return new Map([
+          ['hub/src/hosted.ts', new Set(['hub/src/hosted.ts', 'shared/machine-label.ts'])],
+        ])
+      },
+      mainHead: () => 'main-before',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: (payload) => {
+        received.push(payload)
+        return { output: '', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(asked).toEqual([{ mergeCommit: 'merge-commit', entries: ['hub/src/hosted.ts'] }])
+  expect(received[0]?.requiredRungs).toEqual(['hosted-hub'])
 })
 
 test('the real post-landing adapter refuses before git or spawn under the test runner', () => {

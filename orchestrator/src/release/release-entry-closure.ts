@@ -1,15 +1,7 @@
 // concern: release-entry-closure
 /** Computes the runtime module closure of release image entry points. */
 
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -33,7 +25,6 @@ type PackageManifest = {
 
 export function closureFromMetafile(
   root: string,
-  cwd: string,
   metafile: Metafile,
   workspaceNames: ReadonlySet<string>,
 ): Set<string> {
@@ -47,7 +38,7 @@ export function closureFromMetafile(
         throw new Error(`workspace import ${imported.path} from ${input} was externalized`)
       }
     }
-    const repositoryPath = relative(root, resolve(cwd, input))
+    const repositoryPath = relative(root, resolve(root, input))
     if (
       repositoryPath !== '' &&
       !isAbsolute(repositoryPath) &&
@@ -137,20 +128,6 @@ function spawnOrThrow(command: string[], cwd: string, detail: string): void {
   }
 }
 
-function trackedFilesIn(root: string): string[] {
-  const files: string[] = []
-  const walk = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      if (entry.name === 'node_modules') continue
-      const path = join(directory, entry.name)
-      if (entry.isDirectory()) walk(path)
-      else if (entry.isFile()) files.push(relative(root, path).replaceAll('\\', '/'))
-    }
-  }
-  walk(root)
-  return files
-}
-
 export function entryClosureAtCommit(
   project: Project,
   commit: string,
@@ -172,7 +149,14 @@ export function entryClosureAtCommit(
       `tar failed while extracting release entry tree at ${commit}`,
     )
     const workspace = workspaceExternals(tree)
-    const trackedFiles = trackedFilesIn(tree)
+    const trackedFiles = git(
+      ['ls-tree', '-r', '-z', '--name-only', '--full-tree', commit],
+      project.path,
+      targetGitEnvironment(project.path),
+      ` while listing tracked files at ${commit}`,
+    )
+      .split('\0')
+      .filter(Boolean)
     for (const [name, workspaceDirectory] of workspace.names) {
       const link = join(tree, 'node_modules', name)
       mkdirSync(dirname(link), { recursive: true })
@@ -203,12 +187,7 @@ export function entryClosureAtCommit(
         `release entry ${entry} failed to build`,
       )
       const metafile = JSON.parse(readFileSync(metafilePath, 'utf8')) as Metafile
-      const entryClosure = closureFromMetafile(
-        tree,
-        tree,
-        metafile,
-        new Set(workspace.names.keys()),
-      )
+      const entryClosure = closureFromMetafile(tree, metafile, new Set(workspace.names.keys()))
       for (const path of [...entryClosure]) {
         if (!path.endsWith('.css')) continue
         for (const sourcePath of sourceDirectivePaths(

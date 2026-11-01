@@ -19,7 +19,6 @@ describe('closureFromMetafile', () => {
     const root = join(tmpdir(), 'release-closure-root')
     const closure = closureFromMetafile(
       root,
-      root,
       { inputs: { 'a.ts': {}, 'src/b.ts': {}, '../outside.ts': {} } },
       new Set(),
     )
@@ -29,7 +28,6 @@ describe('closureFromMetafile', () => {
   test('refuses an externalized workspace import and names both sides', () => {
     expect(() =>
       closureFromMetafile(
-        '/repo',
         '/repo',
         {
           inputs: {
@@ -44,7 +42,6 @@ describe('closureFromMetafile', () => {
   test('allows an externalized third-party import', () => {
     expect(
       closureFromMetafile(
-        '/repo',
         '/repo',
         { inputs: { 'a.ts': { imports: [{ path: 'zod', external: true }] } } },
         new Set(['@scope/pkg']),
