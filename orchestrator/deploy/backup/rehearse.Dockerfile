@@ -22,6 +22,7 @@ COPY retrieval/package.json retrieval/package.json
 RUN bun install --frozen-lockfile
 
 COPY shared/record/migrations shared/record/migrations
+COPY shared/record/migration-session.ts shared/record/migration-session.ts
 COPY orchestrator/src/postgres/postgres-migrate.ts orchestrator/src/postgres/postgres-migrate.ts
 COPY orchestrator/src/postgres/migration-failure.ts orchestrator/src/postgres/migration-failure.ts
 COPY orchestrator/src/postgres/migration-notices.ts orchestrator/src/postgres/migration-notices.ts

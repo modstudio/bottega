@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 
 const url = process.env.BOTTEGA_TEST_WORKFLOW_GENERATION_MIGRATION_URL
 const postgres = url ? describe : describe.skip
@@ -32,8 +33,9 @@ postgres('populated workflow generation replay migration', () => {
     for (const folder of readdirSync(migrationsFolder).filter((name) => name < generationMigration))
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
 
-    const sql = new SQL(url!)
+    const sql = new SQL({ url: url!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await sql.unsafe(`
         ALTER TABLE workflow NO FORCE ROW LEVEL SECURITY;
@@ -63,6 +65,7 @@ postgres('populated workflow generation replay migration', () => {
         ALTER TABLE step_catalogue_version FORCE ROW LEVEL SECURITY;
         ALTER TABLE step_catalogue_event FORCE ROW LEVEL SECURITY;
       `)
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
     } finally {
       await sql.close()

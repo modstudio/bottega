@@ -1,12 +1,32 @@
 import type { Transaction } from '@electric-sql/pglite'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
-import { migrationSessionSettings } from '../orchestrator/src/postgres/postgres-migrate.ts'
+import {
+  MIGRATION_BOUNDED_PARAMETERS,
+  migrationSessionSettings,
+} from '../shared/record/migration-session.ts'
 import { assertMigrationBounds } from './record-migration-bounds.ts'
+
+export async function verifyMigrationSessionBounds(
+  transaction: Transaction,
+  expected: ReadonlyMap<string, string>,
+  parameters: readonly string[],
+): Promise<void> {
+  for (const parameter of parameters) {
+    const shown = await transaction.query<Record<string, string>>(`SHOW ${parameter}`)
+    const actual = shown.rows[0]?.[parameter]
+    const expectedValue = expected.get(parameter)
+    if (actual !== expectedValue) {
+      throw new Error(
+        `${parameter} is ${JSON.stringify(actual)} instead of ${JSON.stringify(expectedValue)}`,
+      )
+    }
+  }
+}
 
 export async function prepareRecordMigrationProof(
   transaction: Transaction,
   migrations: MigrationMeta[],
-): Promise<void> {
+): Promise<Map<string, string>> {
   assertMigrationBounds(migrations)
   const effective = new Map<string, string>()
   for (const [name, value] of migrationSessionSettings()) {
@@ -16,10 +36,6 @@ export async function prepareRecordMigrationProof(
     )
     effective.set(name, result.rows[0]?.set_config ?? '')
   }
-  for (const name of ['lock_timeout', 'statement_timeout']) {
-    const shown = await transaction.query<Record<string, string>>(`SHOW ${name}`)
-    if (shown.rows[0]?.[name] !== effective.get(name)) {
-      throw new Error(`${name} is not in force inside the migration transaction`)
-    }
-  }
+  await verifyMigrationSessionBounds(transaction, effective, MIGRATION_BOUNDED_PARAMETERS)
+  return effective
 }

@@ -6,6 +6,7 @@ import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { BOARD_MESSAGE_NOTIFY_CHANNEL } from '../orchestrator/src/record/record-board-stream.ts'
 import { managedCanonProjectNames } from '../orchestrator/src/record/record-canon-facts.ts'
+import { MIGRATION_BOUNDED_PARAMETERS } from '../shared/record/migration-session.ts'
 import {
   PLATFORM_SPACE_ID,
   RECORD_ACTOR_ROLE,
@@ -37,7 +38,10 @@ import {
   MigrationFailure,
   phaseFailure,
 } from './record-migration-failure.ts'
-import { prepareRecordMigrationProof } from './record-migration-session.ts'
+import {
+  prepareRecordMigrationProof,
+  verifyMigrationSessionBounds,
+} from './record-migration-session.ts'
 import {
   proofRunOwnerRequired,
   runOwnerBackfill,
@@ -886,8 +890,17 @@ async function main(): Promise<void> {
     }
     try {
       await database.transaction(async (transaction) => {
-        await prepareRecordMigrationProof(transaction, migrations)
+        const runnerSettings = await prepareRecordMigrationProof(transaction, migrations)
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
+        try {
+          await verifyMigrationSessionBounds(
+            transaction,
+            runnerSettings,
+            MIGRATION_BOUNDED_PARAMETERS,
+          )
+        } catch (error) {
+          throw new CheckFailure(error instanceof Error ? error.message : String(error))
+        }
         await proofManagedCanonProjects(transaction)
         await proofProjectRelationsStayWithinOneSpace(transaction)
         await proofCatalogueDefaultGrants(transaction)

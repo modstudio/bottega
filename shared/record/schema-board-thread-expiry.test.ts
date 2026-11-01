@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { BOARD_STANDING_DEFAULT_EXPIRY_MS } from '../board-duration.ts'
+import { migrationSessionStatements } from './migration-session.ts'
 import { RECORD_ACTOR_ROLE } from './schema.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
@@ -110,6 +111,7 @@ async function createRecordDatabase(): Promise<PGlite> {
     );
   `)
   await database.transaction(async (transaction) => {
+    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
     for (const migration of readMigrationFiles({ migrationsFolder })) {
       await applyMigration(transaction, migration)
     }

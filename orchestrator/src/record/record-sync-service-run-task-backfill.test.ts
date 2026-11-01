@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_RUN_TASK_REFERENCE_MIGRATION_URL
@@ -37,8 +38,9 @@ realPostgres('populated run task_id expand and backfill', () => {
     priorToExpand = mkdtempSync(join(tmpdir(), 'dev-1771-prior-expand-'))
     copyMigrations(priorToExpand, (name) => name < expandMigration)
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorToExpand })
       await sql.unsafe(`
         ALTER TABLE space NO FORCE ROW LEVEL SECURITY;
@@ -79,8 +81,9 @@ realPostgres('populated run task_id expand and backfill', () => {
   })
 
   test('backfill links only the task with the same key in the same space', async () => {
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
       await sql.unsafe('ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY')
       const rows = await sql`

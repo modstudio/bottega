@@ -6,6 +6,7 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_RECIPIENT_MIGRATION_URL
@@ -27,8 +28,9 @@ realPostgres('populated report recipient migration', () => {
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
     }
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await sql.unsafe(`SET app.space_id = '${PLATFORM_SPACE_ID}'`)
       await sql`
@@ -52,6 +54,7 @@ realPostgres('populated report recipient migration', () => {
            ${PLATFORM_SLUG}, 1, 'sent', NULL, 0, now(), 'test-machine', ${SUBSCRIPTION_ID},
            now() - interval '1 day', now())
       `
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
     } finally {
       await sql.close()

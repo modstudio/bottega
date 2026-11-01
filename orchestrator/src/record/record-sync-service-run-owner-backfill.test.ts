@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_RUN_OWNER_MIGRATION_URL
@@ -24,8 +25,9 @@ realPostgres('populated run owner backfill and contract', () => {
     for (const folder of readdirSync(migrationsFolder).filter((name) => name < backfillMigration)) {
       cpSync(join(migrationsFolder, folder), join(priorToBackfill, folder), { recursive: true })
     }
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorToBackfill })
       await sql.unsafe(`
         INSERT INTO "user" (id, email, name, created_at) VALUES
@@ -53,8 +55,9 @@ realPostgres('populated run owner backfill and contract', () => {
   afterAll(() => rmSync(priorToBackfill, { recursive: true, force: true }))
 
   test('fills missing owners, preserves owners, contracts the column, and restores FORCE RLS', async () => {
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
       await sql.unsafe('ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY')
       const rows = await sql`

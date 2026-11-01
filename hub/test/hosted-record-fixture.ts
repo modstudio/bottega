@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import type { SQL } from 'bun'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { migrationSessionStatements } from '../../shared/record/migration-session.ts'
 import { RECORD_ACTOR_ROLE } from '../../shared/record/schema.ts'
 
 export const HOSTED_FIXTURE_MACHINE_ID = '01990000-0000-7000-8000-000000001249'
@@ -40,6 +41,7 @@ export async function createHostedRecordFixture(options: {
     );
   `)
   await database.transaction(async (transaction) => {
+    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
     for (const migration of readMigrationFiles({ migrationsFolder }))
       await applyMigration(transaction, migration)
   })

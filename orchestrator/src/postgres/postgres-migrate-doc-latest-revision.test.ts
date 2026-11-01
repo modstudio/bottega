@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 
 const ownerUrl = process.env.BOTTEGA_TEST_DOC_REVISION_MIGRATION_URL
 const superuserUrl = process.env.BOTTEGA_TEST_DOC_REVISION_MIGRATION_SUPERUSER_URL
@@ -27,9 +28,10 @@ realPostgres('hosted doc latest revision repair', () => {
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
     }
 
-    const owner = new SQL(ownerUrl!)
+    const owner = new SQL({ url: ownerUrl!, max: 1 })
     const superuser = new SQL(superuserUrl!)
     try {
+      for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
       await migrate(drizzle({ client: owner }), { migrationsFolder: priorMigrations })
       await superuser.unsafe(`
         INSERT INTO space (id, name, slug, created_at)
@@ -52,6 +54,7 @@ realPostgres('hosted doc latest revision repair', () => {
           ('${NEWER_REVISION_ID}', '${SPACE_ID}', '${SET_DOC_ID}', 'machine', NULL, 'set',
            'set', 'Set', 'newer', 'inject', 'proof', 'prove pointer is untouched', now());
       `)
+      for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
       await migrate(drizzle({ client: owner }), { migrationsFolder })
     } finally {
       await owner.close()

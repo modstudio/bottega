@@ -506,6 +506,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/sandbox-runtime-assets.ts', []),
   module('orchestrator/src/check/check-comment-parser-assets.ts', []),
   module('shared/record/schema.ts', ['../brand.ts', '../record-id.ts']),
+  module('shared/record/migration-session.ts', []),
   module('shared/record-session.ts', ['./brand.ts', './keychain.ts']),
   ...settingsModules,
   ...recordModules,

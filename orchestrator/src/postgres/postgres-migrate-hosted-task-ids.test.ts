@@ -6,6 +6,7 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_HOSTED_TASK_ID_MIGRATION_URL
@@ -28,8 +29,9 @@ realPostgres('populated hosted task id backfill', () => {
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
     }
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await sql.unsafe(`SET app.space_id = '${PLATFORM_SPACE_ID}'`)
       await sql`
@@ -90,6 +92,7 @@ realPostgres('populated hosted task id backfill', () => {
       ])
 
       await sql.unsafe('RESET app.space_id')
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
     } finally {
       await sql.close()

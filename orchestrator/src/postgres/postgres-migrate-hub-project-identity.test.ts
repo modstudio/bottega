@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_HUB_PROJECT_IDENTITY_MIGRATION_URL
@@ -43,8 +44,9 @@ realPostgres('populated hub project_id expand and backfill', () => {
     copyMigrations(priorToExpand, (name) => name < expandMigration)
     copyMigrations(throughExpand, (name) => name < backfillMigration)
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorToExpand })
       await sql.unsafe(`
         SELECT set_config('app.space_id', '${PLATFORM_SPACE_ID}', true);
@@ -63,6 +65,7 @@ realPostgres('populated hub project_id expand and backfill', () => {
         SELECT set_config('app.space_id', '', true);
         SELECT set_config('app.user_id', '', true);
       `)
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: throughExpand })
     } finally {
       await sql.close()
@@ -75,13 +78,14 @@ realPostgres('populated hub project_id expand and backfill', () => {
   })
 
   test('expand leaves project_id null and backfill fills a unique match', async () => {
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
       expect(await taskProjectIds(sql)).toEqual([
         { id: matchTaskId, project_id: null },
         { id: unmatchedTaskId, project_id: null },
       ])
 
+      for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })
 
       expect(await taskProjectIds(sql)).toEqual([

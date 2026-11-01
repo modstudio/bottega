@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { migrationSessionStatements } from '../../../shared/record/migration-session.ts'
 import { PLATFORM_SPACE_ID, RECORD_OWNER_ROLE } from '../../../shared/record/schema.ts'
 
 const ownerUrl = process.env.BOTTEGA_TEST_DOC_AUTHOR_MIGRATION_URL
@@ -25,6 +26,7 @@ async function resetToBeforeBackfill(owner: SQL, superuser: SQL): Promise<void> 
     DROP SCHEMA IF EXISTS drizzle CASCADE;
     CREATE SCHEMA public AUTHORIZATION ${RECORD_OWNER_ROLE};
   `)
+  for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
   await migrate(drizzle({ client: owner }), { migrationsFolder: priorMigrations })
 }
 
@@ -71,7 +73,7 @@ realPostgres('populated hosted doc revision author backfill', () => {
   afterAll(() => rmSync(priorMigrations, { recursive: true, force: true }))
 
   test('rewrites only eligible authors when exactly one non-stand-in person exists', async () => {
-    const owner = new SQL(ownerUrl!)
+    const owner = new SQL({ url: ownerUrl!, max: 1 })
     const superuser = new SQL(superuserUrl!)
     try {
       await resetToBeforeBackfill(owner, superuser)
@@ -94,6 +96,7 @@ realPostgres('populated hosted doc revision author backfill', () => {
           at,
         )
 
+      for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
       await migrate(drizzle({ client: owner }), { migrationsFolder })
       const expected = cases.map(([reason, , sessionId, , author]) => ({
         reason,
@@ -108,6 +111,7 @@ realPostgres('populated hosted doc revision author backfill', () => {
       `)
       expect(forced.map((row: { forced: boolean }) => row.forced)).toEqual([true])
 
+      for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
       await migrate(drizzle({ client: owner }), { migrationsFolder })
       expect(await revisionAuthors(superuser)).toEqual(expected)
 
@@ -120,6 +124,7 @@ realPostgres('populated hosted doc revision author backfill', () => {
         'session-stand-in',
         '2026-10-13T01:59:50Z',
       )
+      for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
       await migrate(drizzle({ client: owner }), { migrationsFolder })
       expect(await revisionAuthors(superuser)).toEqual([
         { reason: 'stand-in only', author: 'unknown', session_id: 'session-stand-in' },
@@ -138,6 +143,7 @@ realPostgres('populated hosted doc revision author backfill', () => {
         'session-two-people',
         '2026-10-13T01:59:50Z',
       )
+      for (const statement of migrationSessionStatements()) await owner.unsafe(statement)
       await migrate(drizzle({ client: owner }), { migrationsFolder })
       expect(await revisionAuthors(superuser)).toEqual([
         { reason: 'two people', author: 'unknown', session_id: 'session-two-people' },
