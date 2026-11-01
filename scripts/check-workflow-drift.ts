@@ -12,7 +12,8 @@ import { branchChangedPaths, registeredProjectAt } from './check-canon-drift.ts'
 import { resolveRegisteredLandingBase } from './landing-base.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const remedy = `${PLATFORM_SLUG} workflow hydrate --cwd <tree>`
+const importRemedy = `${PLATFORM_SLUG} workflow import --cwd <tree> --reason "<why>"`
+const hydrateRemedy = `${PLATFORM_SLUG} workflow hydrate --cwd <tree>`
 
 type WorkflowDriftInput = {
   productionPaths: string[]
@@ -31,6 +32,20 @@ export function workflowDriftPartition(
   return {
     failing: paths.filter((path) => changed.has(path)),
     informational: paths.filter((path) => !changed.has(path)),
+  }
+}
+
+export function workflowDriftReport(partition: { failing: string[]; informational: string[] }): {
+  failing: string[]
+  informational?: string
+} {
+  return {
+    failing: partition.failing.map(
+      (path) => `${path}: tree differs from production workflow store; remedy: ${importRemedy}`,
+    ),
+    informational: partition.informational.length
+      ? `workflow drift (informational): ${partition.informational.join(', ')}; remedy: ${hydrateRemedy}`
+      : undefined,
   }
 }
 
@@ -66,7 +81,9 @@ if (import.meta.main) {
     console.error(
       `cannot read the project register or production workflows through a read-only connection: ${String((cause as Error).message ?? cause)}`,
     )
-    console.error(`remedy: restore store access, then ${remedy}`)
+    console.error(
+      `remedy: restore store access; then, for a step file this branch changed, run ${importRemedy}; for a tree that is merely behind production, run ${hydrateRemedy}`,
+    )
     process.exitCode = 1
   } finally {
     database?.close()
@@ -83,13 +100,9 @@ if (import.meta.main) {
         input.draftPaths,
         branchChangedPaths(root, base),
       )
-      for (const path of result.failing)
-        console.error(`${path}: tree differs from production workflow store; remedy: ${remedy}`)
-      if (result.informational.length) {
-        console.log(
-          `workflow drift (informational): ${result.informational.join(', ')}; remedy: ${remedy}`,
-        )
-      }
+      const report = workflowDriftReport(result)
+      for (const line of report.failing) console.error(line)
+      if (report.informational) console.log(report.informational)
       console.log(`workflow drift: checked in ${(performance.now() - started).toFixed(1)} ms`)
       if (result.failing.length) process.exitCode = 1
     } catch (cause) {
