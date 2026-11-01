@@ -108,6 +108,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-refusal.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
+  module('orchestrator/src/workflow/workflow-obligation-floor.ts', [
+    'bun:sqlite',
+    './workflow-floor.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [
     '../../../shared/brand.ts',
     './autonomy.ts',
@@ -205,6 +209,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-input.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-read.ts',
+    './workflow-obligation-floor.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',
   ]),

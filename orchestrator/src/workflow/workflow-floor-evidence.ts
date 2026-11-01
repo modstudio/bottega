@@ -39,7 +39,6 @@ import {
   type Floor,
   flagForFloor,
   githubPullRequestUrlIn,
-  type OpenObligation,
   parseArtifactRef,
   pullRequestCreateArgv,
   type ValidatedEvidence,
@@ -52,10 +51,7 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
-import {
-  floorFromObligationRow,
-  type WorkflowObligationFloorRow,
-} from './workflow-obligation-floor.ts'
+import { floorFromObligationRow } from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -88,20 +84,7 @@ export type CursorIdentity = {
   stepActivatedAt: string
 }
 
-export function openWorkflowObligations(cursorId: string, d: Database): OpenObligation[] {
-  type StoredOpenObligation = Omit<OpenObligation, 'floorDefinition'> & WorkflowObligationFloorRow
-  const rows = d
-    .query<StoredOpenObligation, [string]>(
-      `SELECT record_id id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor,
-              require_pull_request AS requirePullRequest, operator_ruling AS operatorRuling,
-              expected_exit_code AS expectedExitCode, expected_status AS expectedStatus,
-              floor_deferrable AS floorDeferrable
-         FROM workflow_obligation
-        WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
-    )
-    .all(cursorId)
-  return rows.map((row) => ({ ...row, floorDefinition: floorFromObligationRow(row) }))
-}
+export { openWorkflowObligations } from './workflow-obligation-floor.ts'
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
