@@ -1,10 +1,10 @@
 /** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
-import { redactSecretShapedOutput } from './secret-shaped-output.ts'
 import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
@@ -127,25 +127,26 @@ export type RunLogEvent =
 
 /** Which recorded text could carry a secret, so it is masked before it reaches the durable log? */
 export function redactRunLogEvent(event: RunLogEvent): RunLogEvent {
+  const redact = (text: string) => redactSecretShaped(text, { exemptEvidenceTokens: true }).text
   switch (event.type) {
     case 'text':
     case 'warning':
-      return { ...event, text: redactSecretShapedOutput(event.text) }
+      return { ...event, text: redact(event.text) }
     case 'tool_call':
       return {
         ...event,
-        title: redactSecretShapedOutput(event.title),
-        ...(event.input === undefined ? {} : { input: redactSecretShapedOutput(event.input) }),
+        title: redact(event.title),
+        ...(event.input === undefined ? {} : { input: redact(event.input) }),
       }
     case 'tool_result':
       return {
         ...event,
-        ...(event.text === undefined ? {} : { text: redactSecretShapedOutput(event.text) }),
+        ...(event.text === undefined ? {} : { text: redact(event.text) }),
       }
     case 'ask_exposure':
       return {
         ...event,
-        note: event.note === null ? null : redactSecretShapedOutput(event.note),
+        note: event.note === null ? null : redact(event.note),
       }
     case 'focused_test':
     case 'focused_test_refusal':

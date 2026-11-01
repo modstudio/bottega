@@ -4,11 +4,10 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
 import { nowIso, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
-import { runEventsPath } from '../events.ts'
+import { appendRunEvent } from '../events.ts'
 import { EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { repoRootOf } from '../git/git-environment.ts'
@@ -596,20 +595,11 @@ export function teardownTerminalRunResources(
     console.error(`orch: ${inventory.reason}`)
   }
   if (result.failures.size) {
-    try {
-      const path = runEventsPath(runId)
-      mkdirSync(dirname(path), { recursive: true })
-      appendFileSync(
-        path,
-        `${JSON.stringify({
-          ts: nowIso(),
-          type: 'text',
-          text: `Docker teardown incomplete: ${[...result.failures].join('; ')}`,
-        })}\n`,
-      )
-    } catch {
-      /* teardown remains best-effort even when its durable trace cannot be written */
-    }
+    appendRunEvent(runId, {
+      ts: nowIso(),
+      type: 'text',
+      text: `Docker teardown incomplete: ${[...result.failures].join('; ')}`,
+    })
   }
   const finalRetentionReason: TerminalDockerRetentionReason | null = result.skipped
     ? (result.reason ?? terminalDockerRetentionReason(database, row) ?? 'normalization failed')

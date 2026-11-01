@@ -75,10 +75,16 @@ function secretShapedValue(): string {
   return ['Bearer ', 'z'.repeat(24)].join('')
 }
 
+function evidenceCommit(): string {
+  return ['0123456789abcdef'.repeat(2), '01234567'].join('')
+}
+
 const redactedTextCases: Array<{
   name: string
   event: (text: string) => RunLogEvent
   read: (event: RunLogEvent) => string | null | undefined
+  source?: (secret: string) => string
+  expected?: string
 }> = [
   {
     name: 'text.text',
@@ -116,14 +122,24 @@ const redactedTextCases: Array<{
     }),
     read: (event) => (event.type === 'ask_exposure' ? event.note : undefined),
   },
+  {
+    name: 'text.text while preserving a commit ID',
+    event: (text) => ({ ts: 't1', type: 'text', text }),
+    read: (event) => (event.type === 'text' ? event.text : undefined),
+    source: (secret) => `before ${evidenceCommit()} ${secret} after`,
+    expected: `before ${evidenceCommit()} [withheld: bearer] after`,
+  },
 ]
 
-test.each(redactedTextCases)('redactRunLogEvent masks $name', ({ event, read }) => {
-  const secret = secretShapedValue()
-  const redacted = read(redactRunLogEvent(event(`before ${secret} after`)))
-  expect(redacted).toBe('before [withheld: bearer] after')
-  expect(redacted).not.toContain(secret)
-})
+test.each(redactedTextCases)(
+  'redactRunLogEvent masks $name',
+  ({ event, read, source, expected }) => {
+    const secret = secretShapedValue()
+    const redacted = read(redactRunLogEvent(event(source?.(secret) ?? `before ${secret} after`)))
+    expect(redacted).toBe(expected ?? 'before [withheld: bearer] after')
+    expect(redacted).not.toContain(secret)
+  },
+)
 
 test('redactRunLogEvent returns an event without free text unchanged', () => {
   const event: RunLogEvent = { ts: 't1', type: 'capacity_wait', waiting: true }
