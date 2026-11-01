@@ -35,6 +35,7 @@ const profileRow = (spaceId: string, lensId: string, body: string, id = newRecor
   axis: 'framework',
   name: 'default',
   version: 1,
+  currentVersionId: newRecordId(),
   body,
   enabled: true,
   updatedAt: new Date().toISOString(),

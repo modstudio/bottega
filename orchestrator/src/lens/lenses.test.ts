@@ -226,6 +226,54 @@ describe('lens catalogue', () => {
     }
   })
 
+  test('a profile version keeps its current id when it becomes a revision', async () => {
+    const input = {
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'stable-version-id',
+      body: '{"framework_guidance":"Version one.","commands":"one"}',
+      enabled: true,
+      reason: 'create version one',
+    }
+    await setProfile(input)
+    const versionOne = db()
+      .query<{ record_id: string; current_version_id: string }, []>(
+        `SELECT record_id,current_version_id FROM lens_profile WHERE name='stable-version-id'`,
+      )
+      .get()!
+
+    await setProfile({
+      ...input,
+      body: '{"framework_guidance":"Version two.","commands":"two"}',
+      reason: 'create version two',
+    })
+    expect(
+      db()
+        .query<{ record_id: string }, [string, number]>(
+          'SELECT record_id FROM lens_profile_revision WHERE profile_record_id=? AND version=?',
+        )
+        .get(versionOne.record_id, 1),
+    ).toEqual({ record_id: versionOne.current_version_id })
+    const versionTwo = db()
+      .query<{ current_version_id: string }, [string]>(
+        'SELECT current_version_id FROM lens_profile WHERE record_id=?',
+      )
+      .get(versionOne.record_id)!
+
+    await setProfile({
+      ...input,
+      body: '{"framework_guidance":"Version three.","commands":"three"}',
+      reason: 'create version three',
+    })
+    expect(
+      db()
+        .query<{ record_id: string }, [string, number]>(
+          'SELECT record_id FROM lens_profile_revision WHERE profile_record_id=? AND version=?',
+        )
+        .get(versionOne.record_id, 2),
+    ).toEqual({ record_id: versionTwo.current_version_id })
+  })
+
   test('profile validation refuses undeclared slots and project selection binds one shared row', async () => {
     upsertProject({ recordId: newRecordId(), name: 'one', path: '/tmp/one', settings: {} })
     upsertProject({ recordId: newRecordId(), name: 'two', path: '/tmp/two', settings: {} })

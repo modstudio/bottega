@@ -770,6 +770,7 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'lens.space_id',
     'lens_profile.record_id',
     'lens_profile.lens_record_id',
+    'lens_profile.current_version_id',
     'lens_profile.space_id',
     'lens_profile_revision.record_id',
     'lens_profile_revision.profile_record_id',

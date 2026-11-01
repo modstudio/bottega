@@ -81,6 +81,7 @@ export const lensProfile = pgTable.withRLS(
     axis: text().notNull(),
     name: text().notNull(),
     version: integer().notNull(),
+    currentVersionId: uuid('current_version_id'),
     body: text().notNull(),
     enabled: boolean().notNull().default(true),
     updatedAt: updatedAt(),

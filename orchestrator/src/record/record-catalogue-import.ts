@@ -90,7 +90,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
       const id = foundId(existing)
       if (id) result.alreadyPresent++
       else {
-        await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
+        await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
       profiles.set(row.id, id ?? row.id)

@@ -104,6 +104,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
         axis: 'framework' as const,
         name: 'default',
         version: 2,
+        currentVersionId: newRecordId(),
         body: '{"framework_guidance":"Hosted.","commands":"bun test"}',
         enabled: true,
         updatedAt: new Date().toISOString(),

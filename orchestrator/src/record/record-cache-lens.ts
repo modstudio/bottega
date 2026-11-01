@@ -201,12 +201,13 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
   if (found)
     local
       .query(
-        'UPDATE lens_profile SET record_id=?,lens_record_id=?,version=?,body=?,enabled=? WHERE record_id=?',
+        'UPDATE lens_profile SET record_id=?,lens_record_id=?,version=?,current_version_id=?,body=?,enabled=? WHERE record_id=?',
       )
       .run(
         recordId,
         lens.record_id,
         Number(item.version),
+        nullableText(item.currentVersionId),
         String(item.body),
         item.enabled ? 1 : 0,
         found.record_id,
@@ -214,7 +215,7 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
   else
     local
       .query(
-        'INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,body,enabled) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,current_version_id,body,enabled) VALUES (?,?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
@@ -223,6 +224,7 @@ function applyLensProfileRow(local: Database, item: Record<string, unknown>): vo
         String(item.axis),
         String(item.name),
         Number(item.version),
+        nullableText(item.currentVersionId),
         String(item.body),
         item.enabled ? 1 : 0,
       )
