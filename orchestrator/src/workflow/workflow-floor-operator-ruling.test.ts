@@ -33,22 +33,42 @@ const states: {
   { name: 'no question', remedy: `${PLATFORM_SLUG} workflow await` },
   {
     name: 'open question',
-    question: { id: 12, state: 'open', answeredAt: null },
+    question: { id: 12, state: 'open', answeredAt: null, replacement: null },
     remedy: '--ruling 12',
   },
   {
     name: 'closed question',
-    question: { id: 12, state: 'closed', answeredAt: null },
+    question: { id: 12, state: 'closed', answeredAt: null, replacement: null },
     remedy: `${PLATFORM_SLUG} workflow await`,
   },
   {
     name: 'operator-answered question',
-    question: { id: 12, state: 'answered-by-operator', answeredAt: '2026-10-20T12:00:00.001Z' },
+    question: {
+      id: 12,
+      state: 'answered-by-operator',
+      answeredAt: '2026-10-20T12:00:00.001Z',
+      replacement: null,
+    },
     remedy: '--ruling 12',
   },
   {
     name: 'agent-answered question',
-    question: { id: 12, state: 'answered-by-agent', answeredAt: '2026-10-20T12:00:00.001Z' },
+    question: {
+      id: 12,
+      state: 'answered-by-agent',
+      answeredAt: '2026-10-20T12:00:00.001Z',
+      replacement: null,
+    },
+    remedy: `${PLATFORM_SLUG} workflow await`,
+  },
+  {
+    name: 'overturned question',
+    question: {
+      id: 12,
+      state: 'overturned',
+      answeredAt: '2026-10-20T12:00:00.001Z',
+      replacement: 'Use this replacement exactly.',
+    },
     remedy: `${PLATFORM_SLUG} workflow await`,
   },
 ]
@@ -70,6 +90,10 @@ for (const { name, question, remedy } of states) {
       if (decision.action !== 'refuse') return
       expect(decision.message).toContain(remedy)
       if (question) expect(decision.message).toContain(String(question.id))
+      if (question?.state === 'overturned') {
+        expect(decision.message).toContain('Use this replacement exactly.')
+        expect(decision.message).not.toContain('close with `--ruling')
+      }
       if (question?.state === 'answered-by-operator' && path === 'supplied invalid ruling')
         expect(decision.message).toContain('supplied ruling 99 cannot close the step')
     })
@@ -81,7 +105,7 @@ test('a stale operator answer points at a fresh await instead of the supplied ru
   const decision = decide({
     freshRulingAfter: answeredAt,
     evidence: {
-      stepQuestion: { id: 12, state: 'answered-by-operator', answeredAt },
+      stepQuestion: { id: 12, state: 'answered-by-operator', answeredAt, replacement: null },
       ruling: {
         id: 12,
         answered: true,

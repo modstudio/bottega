@@ -139,6 +139,8 @@ function gatherRuling(
         id: string
         answered_at: string | null
         answerer_kind: string | null
+        overturned_at: string | null
+        replacement: string | null
         is_open: number
         workflow_cursor_record_id: string | null
         workflow_step_ordinal: number | null
@@ -146,7 +148,7 @@ function gatherRuling(
       },
       [number]
     >(
-      `SELECT number id,answered_at,answerer_kind,${questionOpenSql('question')} is_open,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
+      `SELECT number id,answered_at,answerer_kind,overturned_at,replacement,${questionOpenSql('question')} is_open,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
          FROM question WHERE number=?`,
     )
     .get(id)
@@ -165,26 +167,33 @@ function gatherRuling(
 export function questionRowToFacts(row: {
   answered_at: string | null
   answerer_kind: string | null
+  overturned_at: string | null
+  replacement: string | null
   is_open: number
 }): {
   state: NonNullable<ValidatedEvidence['stepQuestion']>['state']
   answered: boolean
   answeredByOperator: boolean
   answeredAt: string | null
+  replacement: string | null
 } {
-  const answered = row.answered_at !== null
+  const overturned = row.overturned_at !== null
+  const answered = !overturned && row.answered_at !== null
   const answeredByOperator = answered && row.answerer_kind === 'operator'
   return {
-    state: answered
-      ? answeredByOperator
-        ? 'answered-by-operator'
-        : 'answered-by-agent'
-      : row.is_open
-        ? 'open'
-        : 'closed',
+    state: overturned
+      ? 'overturned'
+      : answered
+        ? answeredByOperator
+          ? 'answered-by-operator'
+          : 'answered-by-agent'
+        : row.is_open
+          ? 'open'
+          : 'closed',
     answered,
     answeredByOperator,
     answeredAt: row.answered_at,
+    replacement: row.replacement,
   }
 }
 

@@ -85,6 +85,7 @@ export const stepQuestionRow = (
       id: 2,
       state: 'open',
       answeredAt: null,
+      replacement: null,
     })
 
     d.query('DELETE FROM question WHERE number=1').run()
@@ -93,5 +94,23 @@ export const stepQuestionRow = (
       id: 2,
       state: 'closed',
       answeredAt: null,
+      replacement: null,
+    })
+
+    d.query(
+      `INSERT INTO question
+        (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,overturned_at,replacement,workflow_step_ordinal,workflow_step_slug)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${cursorId}','2026-09-04','Overturned?','workflow','2026-09-04','yes','operator','2026-09-05','Use the replacement exactly.',1,'rebase')`,
+    ).run()
+    expect(gather(d, { ruling: 4 }, {}, identity, [floor]).ruling).toMatchObject({
+      id: 4,
+      answered: false,
+      answeredByOperator: false,
+    })
+    expect(gather(d, {}, {}, identity, [floor]).stepQuestion).toEqual({
+      id: 4,
+      state: 'overturned',
+      answeredAt: '2026-09-04',
+      replacement: 'Use the replacement exactly.',
     })
   }
