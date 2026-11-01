@@ -106,6 +106,7 @@ export function toolBurstObserver(input: {
     })
 }
 
+/** Record the peak of a tripped burst, killed or only observed; the `observed` column and event hold both. */
 export function recordToolBurstObservation(runId: string, burst: ToolCallBurst): void {
   if (!burst.tripped || burst.peakAtMs === null) return
   try {
@@ -129,15 +130,10 @@ export function recordToolBurstObservation(runId: string, burst: ToolCallBurst):
   }
 }
 
-/** Wait for a burst kill to finish, then record a burst the harness only observes. */
-export async function settleToolBurst(
-  runId: string,
-  harness: string | undefined,
-  state: ToolBurstState,
-): Promise<void> {
+/** Wait for any pending burst termination, then record a tripped burst. */
+export async function settleToolBurst(runId: string, state: ToolBurstState): Promise<void> {
   if (state.termination) await state.termination
-  if (toolCallBurstAction(harnessIdentity(harness)) === 'observe')
-    recordToolBurstObservation(runId, state.burst)
+  recordToolBurstObservation(runId, state.burst)
 }
 
 export function applyToolBurstOutcome(

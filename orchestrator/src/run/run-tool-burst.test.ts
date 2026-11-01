@@ -1,12 +1,14 @@
 import { expect, test } from 'bun:test'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
+import { scoreboard } from '../route/route.ts'
 import {
   applyToolBurstOutcome,
   newToolBurstState,
   observeToolBurst,
   performToolBurstKill,
   recordToolBurstObservation,
+  settleToolBurst,
 } from './run-tool-burst.ts'
 import { formatToolCallBurstError, TOOL_CALL_BURST_LIMIT } from './tool-call-burst.ts'
 
@@ -146,5 +148,37 @@ test('an observed burst is persisted and appended at most once per run', () => {
   ).toEqual({
     tool_burst_observed_peak: 64,
     tool_burst_observed_at: '2026-10-31T12:00:00.000Z',
+  })
+})
+
+test('settled killed and observed bursts both reach agent stats', async () => {
+  const killedRun = addRun({ agent: 'grok', job: 'craft', status: 'failed', kind: 'tool_burst' })
+  const observedRun = addRun({ agent: 'codex', job: 'craft' })
+  const trip = (harness: 'goose' | 'codex', extraStarts = 0) => {
+    const state = newToolBurstState()
+    for (let index = 0; index <= TOOL_CALL_BURST_LIMIT + extraStarts; index++) {
+      observeToolBurst({
+        state,
+        event: { kind: 'tool', phase: 'start', toolCallId: `call-${index}`, title: 'rg' },
+        harness,
+        nowMs: index,
+        kill: async () => {},
+      })
+    }
+    return state
+  }
+  const killed = trip('goose')
+  const observed = trip('codex', 1)
+
+  await settleToolBurst(killedRun, killed)
+  await settleToolBurst(observedRun, observed)
+
+  expect(scoreboard('craft').find((row) => row.agent === 'grok')?.toolBursts).toEqual({
+    runs: 1,
+    peak: TOOL_CALL_BURST_LIMIT + 1,
+  })
+  expect(scoreboard('craft').find((row) => row.agent === 'codex')?.toolBursts).toEqual({
+    runs: 1,
+    peak: TOOL_CALL_BURST_LIMIT + 2,
   })
 })
