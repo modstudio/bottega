@@ -113,11 +113,18 @@ export function verifyMainCheckout(project: Project, mergeCommit?: string): void
     ' during main checkout status',
   )
   if (dirty) throw new Error('registered main checkout is dirty; clean it')
-  if (
-    mergeCommit &&
-    !gitResult(['merge-base', '--is-ancestor', mergeCommit, 'HEAD'], project.path).ok
-  )
-    throw new Error(`registered main checkout does not contain landing commit ${mergeCommit}`)
+  if (mergeCommit) {
+    const ancestry = gitResult(['merge-base', '--is-ancestor', mergeCommit, 'HEAD'], project.path, {
+      env: targetGitEnvironment(project.path),
+    })
+    if (!ancestry.ok) {
+      if (ancestry.stderr === 'exit 1')
+        throw new Error(`registered main checkout does not contain landing commit ${mergeCommit}`)
+      throw new Error(
+        `registered main checkout landing-commit check could not run for ${mergeCommit}: ${ancestry.stderr}`,
+      )
+    }
+  }
 }
 
 export function mainCheckoutHead(project: Project): string {
@@ -189,14 +196,6 @@ export function releaseRequiredRungsAfterMainMove(input: {
   runner?: RequiredReleaseRunner
 }): RequiredReleaseReport {
   const runner = input.runner ?? requiredReleaseRunner
-  try {
-    verifyMainCheckout(input.project, input.mergeCommit)
-  } catch (cause) {
-    return failedRequiredRelease(
-      input.required,
-      cause instanceof Error ? cause.message : String(cause),
-    )
-  }
   return runRequiredReleaseRungs(input.project, input.mergeCommit, input.required, runner, false)
 }
 

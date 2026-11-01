@@ -32,6 +32,7 @@ import {
   encodePullRequestPostLandingPayload,
   POST_LANDING_FLAG,
   type PullRequestPostLandingPayload,
+  postLandingRecovery,
 } from './pr-post-landing-payload.ts'
 
 type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
@@ -41,19 +42,18 @@ export type WorkflowPromotionResult =
 
 const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
 const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
+export const POST_LANDING_REPORTED_EXIT_CODE = 22
 export type PullRequestMergeOutcome = {
   output: string
   exitCode: number
 }
-
-type HandOffResult = { output: string; exitCode: number }
 
 export type PullRequestPostLandingAdapter = {
   changedPaths(project: Project, mergeCommit: string): string[]
   mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string): void
   fence(reason: string): void
-  handOff(payload: PullRequestPostLandingPayload): HandOffResult
+  handOff(payload: PullRequestPostLandingPayload): PullRequestMergeOutcome
 }
 
 function moveMainForPostLanding(
@@ -104,7 +104,7 @@ const cliPostLandingAdapter: PullRequestPostLandingAdapter = {
       const detail = cause instanceof Error ? cause.message : String(cause)
       return {
         exitCode: MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
-        output: `post-landing hand-off failed: ${detail}; recover with: ${PLATFORM_SLUG} pr merge ${payload.target} --release-required`,
+        output: `post-landing hand-off failed: ${detail}; ${postLandingRecovery(payload.target)}`,
       }
     }
   },
@@ -286,14 +286,13 @@ export function completePullRequestPostLanding(input: {
     0,
     MERGED_WITH_RESIDUE_EXIT_CODE,
     MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+    POST_LANDING_REPORTED_EXIT_CODE,
   ].includes(handedOff.exitCode)
   const recovery = unexpectedExit
-    ? `post-landing steps (promotion, rungs, cleanup) did not complete; recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${input.target} --release-required`
+    ? `post-landing steps (promotion, rungs, cleanup) did not complete; ${postLandingRecovery(input.target)}`
     : ''
-  return {
-    output: [handedOff.output, recovery].filter(Boolean).join('\n'),
-    exitCode: handedOff.exitCode,
-  }
+  if (!recovery) return handedOff
+  return { output: `${handedOff.output}\n${recovery}`, exitCode: handedOff.exitCode }
 }
 
 function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {

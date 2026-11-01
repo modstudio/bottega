@@ -418,7 +418,9 @@ export function fenceStoreAfterCheckoutMove(reason: string): void {
 
 function refuseStoreAfterCheckoutMove(): void {
   if (storeFenceReason) {
-    throw new Error(`orchestrator store is fenced after checkout move: ${storeFenceReason}`)
+    throw new Error(
+      `orchestrator store is fenced after checkout move: ${storeFenceReason}; this process moved the main checkout and its post-landing child owns the store; if this appears outside a ${PLATFORM_SLUG} pr merge parent, that is a defect; recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge <target> --release-required`,
+    )
   }
 }
 

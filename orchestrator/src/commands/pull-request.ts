@@ -12,10 +12,14 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { mergePullRequest } from '../pull-request/pr-merge.ts'
-import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
+import {
+  POST_LANDING_REPORTED_EXIT_CODE,
+  runPullRequestPostLanding,
+} from '../pull-request/pr-post-landing.ts'
 import {
   POST_LANDING_FLAG,
   parsePullRequestPostLandingPayload,
+  postLandingRecovery,
 } from '../pull-request/pr-post-landing-payload.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { log } from './support.ts'
@@ -92,10 +96,8 @@ async function mergePullRequestCommand(
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause)
-      log(
-        `post-landing steps did not complete: ${detail}; recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${target} --release-required`,
-      )
-      process.exitCode = 1
+      log(`post-landing steps did not complete: ${detail}; ${postLandingRecovery(target)}`)
+      process.exitCode = POST_LANDING_REPORTED_EXIT_CODE
     }
     return
   }

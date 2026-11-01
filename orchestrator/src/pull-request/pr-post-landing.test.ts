@@ -8,11 +8,15 @@ import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
+  POST_LANDING_REPORTED_EXIT_CODE,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
   runPullRequestPostLanding,
 } from './pr-post-landing.ts'
-import type { PullRequestPostLandingPayload } from './pr-post-landing-payload.ts'
+import {
+  type PullRequestPostLandingPayload,
+  postLandingRecovery,
+} from './pr-post-landing-payload.ts'
 
 const project = {
   recordId: '01990000-0000-7000-8000-000000002004',
@@ -408,4 +412,25 @@ test('a non-ladder child exit keeps its code and adds the parent recovery', () =
   )
   expect(outcome.output).toContain(`${PLATFORM_SLUG} machine update`)
   expect(outcome.output).toContain(`${PLATFORM_SLUG} pr merge 42 --release-required`)
+})
+
+test('a child-reported failure keeps its code and prints the recovery once', () => {
+  const remedy = postLandingRecovery('42')
+  const outcome = complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-head',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: () => ({
+        output: `post-landing steps did not complete: store is behind; ${remedy}`,
+        exitCode: POST_LANDING_REPORTED_EXIT_CODE,
+      }),
+    },
+  })
+
+  expect(outcome.exitCode).toBe(POST_LANDING_REPORTED_EXIT_CODE)
+  expect(
+    outcome.output.match(new RegExp(remedy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')),
+  ).toHaveLength(1)
 })

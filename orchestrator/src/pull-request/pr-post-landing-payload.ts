@@ -5,6 +5,10 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 
 export const POST_LANDING_FLAG = '--post-landing'
 
+export function postLandingRecovery(target: string): string {
+  return `recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${target} --release-required`
+}
+
 export type PullRequestPostLandingPayload = {
   project: string
   target: string
