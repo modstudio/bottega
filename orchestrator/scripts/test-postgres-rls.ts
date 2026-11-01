@@ -13,6 +13,7 @@ import {
   RECORD_READER_ROLE,
 } from '../../shared/record/schema.ts'
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
+import { testPostgresSpawnEnvironment } from './test-postgres-spawn-env.ts'
 
 const falsify = process.argv.includes('--falsify')
 const withoutLiveImport = process.argv.includes('--without-live-import')
@@ -22,6 +23,7 @@ const falsifyMode = falsify
 const provisionedContainer = process.env.BOTTEGA_TEST_POSTGRES_CONTAINER
 const container = provisionedContainer ?? `dev-445-postgres-${randomUUID().slice(0, 8)}`
 const sourceCopies = mkdtempSync(join(tmpdir(), 'dev-429-sources-'))
+const stateRoot = mkdtempSync(join(tmpdir(), 'dev-1993-state-'))
 const sourceOrchDb = join(sourceCopies, FROZEN_STATE_NAMES.orchestratorDatabase)
 const sourceHubDb = join(sourceCopies, FROZEN_STATE_NAMES.hubDatabase)
 const LIVE_COPY_PHASE_TIMEOUT_MS = 900_000
@@ -43,12 +45,9 @@ function copyDatabase(source: string, target: string): void {
 }
 
 async function run(argv: string[], env?: Record<string, string>): Promise<number> {
-  const inheritedEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !name.startsWith('BOTTEGA_RECORD_')),
-  )
   const child = Bun.spawn(argv, {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
-    env: { ...inheritedEnv, ...env },
+    env: testPostgresSpawnEnvironment(process.env, stateRoot, env),
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -124,6 +123,7 @@ function release(): void {
   if (launched)
     Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' })
   rmSync(sourceCopies, { recursive: true, force: true })
+  rmSync(stateRoot, { recursive: true, force: true })
 }
 
 const signalHandlers = {
