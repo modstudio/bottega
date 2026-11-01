@@ -145,7 +145,8 @@ function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup 
   // Plain `bun test` from the package directory loads that package's bunfig.toml and preload.
   // A package's own `test` script cannot be used: several embed a path operand (`bun test src`),
   // which bun ORs with the selected paths, so the run would not narrow.
-  const operands = directory === root ? paths.map((path) => `./${path}`) : paths
+  // Every operand is prefixed because bun reads a bare path as a substring filter.
+  const operands = paths.map((path) => `./${path}`)
   return { directory, paths, argv: ['bun', 'test', ...nestedPackageIgnores, ...operands] }
 }
 

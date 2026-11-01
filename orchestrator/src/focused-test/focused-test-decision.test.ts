@@ -95,7 +95,9 @@ describe('focused test decisions', () => {
     expect(() => normalizeFocusedTestPaths([])).toThrow('at least one')
     expect(() =>
       normalizeFocusedTestPaths(Array.from({ length: FOCUSED_TEST_MAX_PATHS + 1 }, () => 'x')),
-    ).toThrow(`at most ${FOCUSED_TEST_MAX_PATHS}`)
+    ).toThrow(
+      `at most ${FOCUSED_TEST_MAX_PATHS} entries; run run_check for the whole suite, or split the selection across run_tests calls`,
+    )
   })
 
   test('decides existence and canonical confinement from filesystem facts', () => {
@@ -142,6 +144,13 @@ describe('focused test decisions', () => {
       argv: ['--fixed', 'registered', 'tests/one.test.ts'],
     })
     expect(invocation.argv).not.toContain('--from-request')
+    expect(
+      focusedTestInvocation(
+        { command: 'bun', args: ['test'], exactPaths: true },
+        ['tests/one.test.ts', 'tests/two.test.ts'],
+        '/worktree',
+      ).argv,
+    ).toEqual(['test', './tests/one.test.ts', './tests/two.test.ts'])
     expect(
       focusedTestInvocation({ command: 'bun', args: ['test'] }, ['tests/one.test.ts'], '/worktree')
         .command,
@@ -238,6 +247,34 @@ describe('affected focused test selections', () => {
     expect(
       validateFocusedTestDeclaration({ command: 'runner', args: [], affected: 'yes' }).problems,
     ).toEqual(['focusedTests.affected must be an object'])
+  })
+
+  test('validates and carries exact path declarations only on runners', () => {
+    expect(
+      validateFocusedTestDeclaration({ command: 'bun', args: ['test'], exactPaths: true }),
+    ).toEqual({
+      runners: [{ command: 'bun', args: ['test'], exactPaths: true }],
+      problems: [],
+    })
+    expect(
+      validateFocusedTestDeclaration({ command: 'bun', args: ['test'], exactPaths: 'yes' })
+        .problems,
+    ).toEqual(['focusedTests.exactPaths must be a boolean'])
+    expect(
+      validateFocusedTestDeclaration({
+        runners: [{ command: 'bun', args: ['test'], patterns: ['**/*.test.ts'], exactPaths: true }],
+      }),
+    ).toEqual({
+      runners: [{ command: 'bun', args: ['test'], patterns: ['**/*.test.ts'], exactPaths: true }],
+      problems: [],
+    })
+    expect(
+      validateFocusedTestDeclaration({
+        runners: [
+          { command: 'bun', args: ['test'], patterns: ['**/*.test.ts'], exactPaths: 'yes' },
+        ],
+      }).problems,
+    ).toEqual(['focusedTests.runners[0].exactPaths must be a boolean'])
   })
 
   test('asking for affected tests refuses when the project declares no selector', () => {
@@ -472,7 +509,7 @@ describe('affected focused test selections', () => {
     })
     expect(selection).toEqual({
       kind: 'refuse',
-      message: `paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries`,
+      message: `paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries; run run_check for the whole suite, or split the selection across run_tests calls`,
     })
   })
 

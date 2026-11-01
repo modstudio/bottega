@@ -12,13 +12,14 @@ const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
 type FocusedTestCommand = { command: string; args: string[] }
 export type FocusedTestRunner = FocusedTestCommand & {
   affected?: FocusedTestSelector
+  exactPaths?: boolean
   patterns?: string[]
 }
 /** The command that prints this project's affected test paths for one base commit. */
 export type FocusedTestSelector = FocusedTestCommand
 /** The `focusedTests` object a project's settings declare. */
 export type FocusedTestDeclaration =
-  | (FocusedTestCommand & { affected?: FocusedTestSelector })
+  | (FocusedTestCommand & { affected?: FocusedTestSelector; exactPaths?: boolean })
   | { runners: FocusedTestRunner[] }
 
 type FocusedTestCommandValidation = {
@@ -239,6 +240,17 @@ function validateFocusedTestPatterns(input: {
   return { patterns, problems }
 }
 
+function validateFocusedTestExactPaths(
+  value: unknown,
+  location: string,
+): { exactPaths: boolean | undefined; problems: string[] } {
+  if (value === undefined) return { exactPaths: undefined, problems: [] }
+  if (typeof value !== 'boolean') {
+    return { exactPaths: undefined, problems: [`${location}.exactPaths must be a boolean`] }
+  }
+  return { exactPaths: value, problems: [] }
+}
+
 /** The runner and selector parts of one `focusedTests` value, validated independently. */
 function focusedTestDeclarationParts(value: unknown): {
   runners: FocusedTestRunner[]
@@ -281,6 +293,8 @@ function focusedTestDeclarationParts(value: unknown): {
       const declared = entry as Record<string, unknown>
       const affected = validateFocusedTestCommand(declared.affected, `${location}.affected`)
       problems.push(...affected.problems)
+      const exactPaths = validateFocusedTestExactPaths(declared.exactPaths, location)
+      problems.push(...exactPaths.problems)
       const { patterns, problems: patternProblems } = validateFocusedTestPatterns({
         value: declared.patterns,
         location,
@@ -292,6 +306,7 @@ function focusedTestDeclarationParts(value: unknown): {
         runners.push({
           ...command.command,
           ...(affected.command ? { affected: affected.command } : {}),
+          ...(exactPaths.exactPaths === undefined ? {} : { exactPaths: exactPaths.exactPaths }),
           ...(patterns ? { patterns } : {}),
         })
       }
@@ -307,16 +322,19 @@ function focusedTestDeclarationParts(value: unknown): {
     'focusedTests',
   )
   const legacySelector = validateFocusedTestCommand(candidate.affected, 'focusedTests.affected')
+  const exactPaths = validateFocusedTestExactPaths(candidate.exactPaths, 'focusedTests')
   return {
-    runners: legacyRunner.command
-      ? [
-          {
-            ...legacyRunner.command,
-            ...(legacySelector.command ? { affected: legacySelector.command } : {}),
-          },
-        ]
-      : [],
-    runnerProblems: legacyRunner.problems,
+    runners:
+      legacyRunner.command && !exactPaths.problems.length
+        ? [
+            {
+              ...legacyRunner.command,
+              ...(legacySelector.command ? { affected: legacySelector.command } : {}),
+              ...(exactPaths.exactPaths === undefined ? {} : { exactPaths: exactPaths.exactPaths }),
+            },
+          ]
+        : [],
+    runnerProblems: [...legacyRunner.problems, ...exactPaths.problems],
     selector: legacySelector,
   }
 }
@@ -478,7 +496,9 @@ function normalizedFocusedTestPath(entry: string): string {
 export function normalizeFocusedTestPaths(paths: readonly string[]): string[] {
   if (!paths.length) throw new Error('paths must contain at least one project-relative path')
   if (paths.length > FOCUSED_TEST_MAX_PATHS) {
-    throw new Error(`paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries`)
+    throw new Error(
+      `paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries; run run_check for the whole suite, or split the selection across run_tests calls`,
+    )
   }
   return paths.map(normalizedFocusedTestPath)
 }
@@ -525,7 +545,7 @@ export function focusedTestInvocation(
       isAbsolute(runner.command) || !runner.command.includes('/')
         ? runner.command
         : resolve(worktree, runner.command),
-    argv: [...runner.args, ...paths],
+    argv: [...runner.args, ...paths.map((path) => (runner.exactPaths ? `./${path}` : path))],
   }
 }
 

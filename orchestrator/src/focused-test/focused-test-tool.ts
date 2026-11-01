@@ -21,6 +21,7 @@ export function registerFocusedTestTool(input: {
       description:
         "Run this project's registered focused test runners with project-relative paths. " +
         'Each path goes only to the runner whose registered patterns accept it. ' +
+        "A runner that declares exactPaths receives each path as a './'-prefixed file operand. " +
         'Set affected to also run the tests of every module that imports what this run changed, ' +
         "which the project's registered focusedTests affected commands select. " +
         "Declare expect: 'fail' on a call that is a mutation probe the spec asked for.",

@@ -77,13 +77,13 @@ test('runs a package selection through its own test entry point without nested p
   )
   expect(
     directoryGroups.find((candidate) => relative(root, candidate.directory) === 'hub/data')?.argv,
-  ).toEqual(['bun', 'test', '.'])
+  ).toEqual(['bun', 'test', './.'])
 })
 
 test('a selection inside a package whose test script embeds a path still narrows to the selection', () => {
   const [group] = groupFocusedTestPaths(['orchestrator/src/run/run.test.ts'])
   expect(relative(root, group!.directory)).toBe('orchestrator')
-  expect(group!.argv).toEqual(['bun', 'test', 'src/run/run.test.ts'])
+  expect(group!.argv).toEqual(['bun', 'test', './src/run/run.test.ts'])
 })
 
 test('an unreached test runs from its workspace', () => {
