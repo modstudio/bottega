@@ -124,6 +124,17 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
+    'bun:sqlite',
+    './workflow-floor.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-evidence-ruling.fixture.ts', [
+    'bun:sqlite',
+    'bun:test',
+    '../../../shared/record/schema.ts',
+    './workflow-floor.ts',
+    './workflow-floor-evidence.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
     'node:child_process',
@@ -155,6 +166,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',
+    './workflow-step-question-evidence.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-text.ts', [

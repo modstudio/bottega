@@ -60,8 +60,8 @@ import {
   type SessionMatch,
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'
-import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 import { gatherStepQuestionEvidence } from './workflow-step-question-evidence.ts'
+import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
 

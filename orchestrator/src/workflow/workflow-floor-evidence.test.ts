@@ -9,11 +9,8 @@ import {
   type FloorEvidencePorts,
   gatherValidatedEvidence,
 } from './workflow-floor-evidence.ts'
+import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
-import {
-  boundRulingAndGateRow,
-  stepQuestionRow,
-} from './workflow-floor-evidence-ruling.test-helper.ts'
 
 const identityOf = (key: string, taskId: string | null, branch: string | null): CursorIdentity => ({
   project: 'fixture',
