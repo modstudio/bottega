@@ -219,17 +219,17 @@ class HeartbeatDecisionTest(unittest.TestCase):
         self.assertEqual(
             heartbeat_decision.monitor_failure_reason(b"\x1b[2Junavailable"), "[2Junavailable"
         )
-    def test_failure_reason_withholds_secret_shapes(self):
-        for value in (
-            b"token=example-credential",
-            b"Authorization: example-credential",
-            b"Bearer example-credential",
-            b"https://user:pass@example.test",
-            b"Authorization: Bearer example-credential",
+    def test_failure_reason_redacts_secret_shapes(self):
+        for value, expected in (
+            (b"request token=example-credential failed", "request [withheld: assignment] failed"),
+            (b"request Authorization: example-credential", "request [withheld: authorization]"),
+            (b"request Bearer example-credential failed", "request [withheld: bearer] failed"),
+            (b"request https://user:pass@example.test failed", "request [withheld: url-userinfo]example.test failed"),
+            (b"request Authorization: Bearer example-credential", "request [withheld: authorization]"),
         ):
             self.assertEqual(
                 heartbeat_decision.monitor_failure_reason(value),
-                "reason withheld (secret-shaped)",
+                expected,
             )
     def test_secret_detector_matches_the_shared_canonical_fixtures(self):
         fixture_path = PATH.parents[2] / "shared" / "secret-shaped-fixtures.json"

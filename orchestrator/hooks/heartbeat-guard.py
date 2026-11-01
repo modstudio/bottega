@@ -153,7 +153,7 @@ def open_request_threads(session_id: str, board_observation, heartbeat_decision)
     """Open requests authored here, [] if none, None if the store cannot answer."""
     try:
         rows = board_observation.observe_board_requests(
-            DB, session_id, heartbeat_decision.contains_secret_shaped
+            DB, session_id, heartbeat_decision.redact_secret_shaped
         )
         return heartbeat_decision.open_board_requests(
             rows["roots"], rows["replies"], session_id, __import__("time").time()

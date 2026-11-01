@@ -4,9 +4,13 @@ import { join, relative } from 'node:path'
 const ROOTS = ['shared', 'orchestrator', 'scripts'] as const
 const checkout = process.argv[2] ?? process.cwd()
 const EXCLUDED = new Set(['shared/secret-shaped.ts', 'scripts/check-secret-shaped-redaction.ts'])
+const PYTHON_RULE_OWNER = 'orchestrator/hooks/secret_shaped.py'
 const WITHHELD_LITERAL = /(['"`])[^\n]*?(?:\[withheld|detail withheld|output withheld)[^\n]*?\1/
 const FIXED_REPLACEMENT =
   /(?:if\s*\(\s*(?:containsSecretShaped|secretShapedRule)\([^)]*\)\s*\)\s*return\s*(?:['"`]|[A-Za-z_$][\w$]*(?![\w$.]|\s*\())|(?:containsSecretShaped|secretShapedRule)\([^)]*\)\s*\?\s*(?:['"`]|[A-Za-z_$][\w$]*(?![\w$.]|\s*\()))/
+const PYTHON_SECRET_COMPILE =
+  /re\.compile\(\s*(?:r|f|fr|rf)?(['"])(?:(?!\1)[\s\S])*?(?:Bearer|PRIVATE KEY|ghp_|Authorization)(?:(?!\1)[\s\S])*?\1/
+const PYTHON_WHOLE_TEXT_WITHHOLD = 'withheld (secret-shaped)'
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
@@ -26,6 +30,19 @@ for (const root of ROOTS) {
     if (FIXED_REPLACEMENT.test(source))
       failures.push(`${local}: returns a fixed replacement from secret-shaped detection`)
   }
+}
+
+const trackedPython = Bun.spawnSync(['git', '-C', checkout, 'ls-files', '-z', '--', '*.py'])
+if (trackedPython.exitCode !== 0) {
+  console.error('could not list tracked Python files; run this check from a Git checkout')
+  process.exit(1)
+}
+for (const local of trackedPython.stdout.toString().split('\0').filter(Boolean)) {
+  const source = readFileSync(join(checkout, local), 'utf8')
+  if (local !== PYTHON_RULE_OWNER && PYTHON_SECRET_COMPILE.test(source))
+    failures.push(`${local}: compiles a secret-shaped pattern outside ${PYTHON_RULE_OWNER}`)
+  if (source.includes(PYTHON_WHOLE_TEXT_WITHHOLD))
+    failures.push(`${local}: defines a whole-text secret-shaped replacement`)
 }
 
 if (failures.length > 0) {
