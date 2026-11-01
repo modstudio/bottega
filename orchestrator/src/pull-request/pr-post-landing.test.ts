@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { db, fenceStoreAfterCheckoutMove, writableDb } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
@@ -17,6 +18,8 @@ import {
   type PullRequestPostLandingPayload,
   postLandingRecovery,
 } from './pr-post-landing-payload.ts'
+
+const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
 const project = {
   recordId: '01990000-0000-7000-8000-000000002004',
@@ -137,6 +140,26 @@ test('a successful move fences this process and hands off the exact fixed identi
     requeueOutput: null,
   })
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
+})
+
+test('the real post-landing adapter refuses move-main side effects under the test runner', () => {
+  const began = performance.now()
+  const outcome = completePullRequestPostLanding({
+    adapter: remaining([]),
+    database: db(),
+    project: { ...project, path: cwd },
+    pullRequest,
+    mergeCommit: 'merge-commit',
+    target: '42',
+    releaseRequired: false,
+    workflowPromotionDue: true,
+  })
+  const elapsedMs = performance.now() - began
+
+  expect(outcome.output).toContain(
+    'real pull-request post-landing adapter refuses side effects under the test runner; inject a post-landing adapter',
+  )
+  console.log(`post-landing real-adapter class guard: ${elapsedMs.toFixed(3)}ms`)
 })
 
 test('when no move is due all remaining work stays in process and the store stays open', () => {

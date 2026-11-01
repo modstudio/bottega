@@ -83,12 +83,24 @@ function moveMainForPostLanding(
   return { moved: true }
 }
 
+const refuseRealPostLandingAdapterInTest = (): void => {
+  if (process.env.NODE_ENV === 'test') {
+    throw new Error(
+      'real pull-request post-landing adapter refuses side effects under the test runner; inject a post-landing adapter',
+    )
+  }
+}
+
 const cliPostLandingAdapter: PullRequestPostLandingAdapter = {
   changedPaths,
   mainHead: mainCheckoutHead,
-  moveMain: moveMainCheckout,
+  moveMain(project, mergeCommit) {
+    refuseRealPostLandingAdapterInTest()
+    moveMainCheckout(project, mergeCommit)
+  },
   fence: fenceStoreAfterCheckoutMove,
   handOff(payload) {
+    refuseRealPostLandingAdapterInTest()
     try {
       const result = Bun.spawnSync(
         [...bottegaEntryArgv(PLATFORM_SLUG), 'pr', 'merge', payload.target, POST_LANDING_FLAG],
