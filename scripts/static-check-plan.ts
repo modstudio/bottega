@@ -46,16 +46,12 @@ export function classifyWorkerOmissionEvidence(evidence: string): WorkerOmission
 }
 
 function workerOmissionReason(decision: Extract<WorkerDecision, { run: false }>): string {
-  const evidence = classifyWorkerOmissionEvidence(decision.evidence)
-  const renderedEvidence =
-    evidence.kind === 'run'
-      ? `run ${evidence.runId}`
-      : evidence.kind === 'command'
-        ? `"${evidence.command}"`
-        : evidence.kind === 'citation'
-          ? `${evidence.path}:${evidence.symbol}`
-          : decision.evidence
-  return `${decision.reason} (evidence: ${renderedEvidence})`
+  if (classifyWorkerOmissionEvidence(decision.evidence).kind === 'invalid') {
+    throw new Error(
+      `worker omission evidence '${decision.evidence}' is not a run id, a quoted command or a path:symbol citation; cite one in scripts/static-check-plan.ts or scripts/check-plan.ts`,
+    )
+  }
+  return `${decision.reason} (evidence: ${decision.evidence})`
 }
 
 /** Select present paths from a NUL-separated worktree change view, once and in stable order. */
@@ -104,7 +100,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     name: 'project checks',
     argv: ({ root }) => ['bun', `${root}orchestrator/scripts/check-projects.ts`],
     worker: omit(
-      'slow: 4.2s CPU under the worker check; the landing gate and CI run it',
+      'slow: 4.2s CPU under the worker check; the landing gate runs it, and CI omits it as machine-only',
       'run 25620',
     ),
   },

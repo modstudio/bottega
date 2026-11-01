@@ -77,7 +77,7 @@ describe('worker static check plan', () => {
       const citedPath = join(REPOSITORY_ROOT, evidence.path)
       expect(existsSync(citedPath), `${evidence.path} must exist`).toBe(true)
       const declaration = new RegExp(
-        `\\b(?:function|const|class|type|interface)\\s+${evidence.symbol}\\b`,
+        `\\b(?:function|const|class|type|interface)\\s+${evidence.symbol.replaceAll('$', '\\$')}\\b`,
       )
       expect(
         readFileSync(citedPath, 'utf8'),
