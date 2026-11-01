@@ -54,6 +54,10 @@ export const CHECK_LEGS = [
           '-p',
           'test_*.py',
         ],
+        focused: {
+          directory: 'orchestrator/hooks',
+          argv: ['python3', '-m', 'unittest'],
+        },
         unitTests: true,
       },
     ],
@@ -293,6 +297,10 @@ export const CI_ONLY_SUITES = [
       '-p',
       'process_*.py',
     ],
+    focused: {
+      directory: 'orchestrator/hooks',
+      argv: ['python3', '-m', 'unittest'],
+    },
   },
 ].map((suite) => ({ ...suite, testPatterns: suiteReachPatterns(suite.argv) }))
 

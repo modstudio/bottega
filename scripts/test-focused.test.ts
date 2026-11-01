@@ -9,9 +9,9 @@ test('groups focused paths by nearest package with package-relative arguments', 
   const groups = groupFocusedTestPaths([
     'hub/src/db.test.ts',
     'hub/data/src/use-task.test.ts',
-    'hub/web/src/app.test.tsx',
-    'hub/deploy/site/src/site.test.ts',
-    'orchestrator/src/run.test.ts',
+    'hub/web/src/routes/notes.test.tsx',
+    'hub/deploy/site/src/decision.test.ts',
+    'orchestrator/src/run/exec.test.ts',
     'retrieval/src/search.test.ts',
     'shared/git.test.ts',
     'cli/routes.test.ts',
@@ -24,9 +24,9 @@ test('groups focused paths by nearest package with package-relative arguments', 
   ).toEqual([
     { directory: 'hub', paths: ['src/db.test.ts'] },
     { directory: 'hub/data', paths: ['src/use-task.test.ts'] },
-    { directory: 'hub/web', paths: ['src/app.test.tsx'] },
-    { directory: 'hub/deploy/site', paths: ['src/site.test.ts'] },
-    { directory: 'orchestrator', paths: ['src/run.test.ts'] },
+    { directory: 'hub/web', paths: ['src/routes/notes.test.tsx'] },
+    { directory: 'hub/deploy/site', paths: ['src/decision.test.ts'] },
+    { directory: 'orchestrator', paths: ['src/run/exec.test.ts'] },
     { directory: 'retrieval', paths: ['src/search.test.ts'] },
     { directory: '.', paths: ['shared/git.test.ts', 'cli/routes.test.ts'] },
   ])
@@ -81,15 +81,56 @@ test('runs a package selection through its own test entry point without nested p
 })
 
 test('a selection inside a package whose test script embeds a path still narrows to the selection', () => {
-  const [group] = groupFocusedTestPaths(['orchestrator/src/run/run.test.ts'])
+  const [group] = groupFocusedTestPaths(['orchestrator/src/run/exec.test.ts'])
   expect(relative(root, group!.directory)).toBe('orchestrator')
-  expect(group!.argv).toEqual(['bun', 'test', './src/run/run.test.ts'])
+  expect(group!.argv).toEqual(['bun', 'test', './src/run/exec.test.ts'])
 })
 
 test('an unreached test runs from its workspace', () => {
   const [group] = groupFocusedTestPaths(['orchestrator/src/postgres/postgres-import.test.ts'])
   expect(relative(root, group!.directory)).toBe('orchestrator')
   expect(group!.paths).toEqual(['src/postgres/postgres-import.test.ts'])
+})
+
+test('routes a hook test through unittest from the hooks directory', () => {
+  const [group] = groupFocusedTestPaths(['orchestrator/hooks/test_secret_shaped_parity.py'])
+  expect(relative(root, group!.directory)).toBe('orchestrator/hooks')
+  expect(group!.paths).toEqual(['test_secret_shaped_parity'])
+  expect(group!.argv).toEqual(['python3', '-m', 'unittest', 'test_secret_shaped_parity'])
+})
+
+test('routes a hook process test through unittest from the hooks directory', () => {
+  const [group] = groupFocusedTestPaths(['orchestrator/hooks/process_heartbeat_shell.py'])
+  expect(relative(root, group!.directory)).toBe('orchestrator/hooks')
+  expect(group!.paths).toEqual(['process_heartbeat_shell'])
+  expect(group!.argv).toEqual(['python3', '-m', 'unittest', 'process_heartbeat_shell'])
+})
+
+test('groups mixed Python and TypeScript selections by runner', () => {
+  const groups = groupFocusedTestPaths([
+    'orchestrator/hooks/test_secret_shaped_parity.py',
+    'scripts/test-focused.test.ts',
+  ])
+  expect(groups).toHaveLength(2)
+  expect(groups[0]!.argv).toEqual(['python3', '-m', 'unittest', 'test_secret_shaped_parity'])
+  expect(groups[1]!.argv).toContain('./scripts/test-focused.test.ts')
+})
+
+test('a hooks directory selection includes every claimed Python suite', () => {
+  const [group] = groupFocusedTestPaths(['orchestrator/hooks'])
+  expect(relative(root, group!.directory)).toBe('orchestrator/hooks')
+  expect(group!.paths).toContain('test_secret_shaped_parity')
+  expect(group!.paths).toContain('process_heartbeat_shell')
+  expect(group!.argv).toEqual(['python3', '-m', 'unittest', ...group!.paths])
+})
+
+test('refuses paths that no focused runner owns', () => {
+  expect(() =>
+    groupFocusedTestPaths([
+      'orchestrator/hooks/heartbeat_decision_fixture.py',
+      'scripts/check-plan.ts',
+    ]),
+  ).toThrow(/heartbeat_decision_fixture\.py.*scripts\/check-plan\.ts/)
 })
 
 test('a directory mixing root-run and workspace-run tests expands into both groups', () => {
@@ -137,4 +178,5 @@ test('refuses missing and escaping path arguments', () => {
   expect(() => groupFocusedTestPaths([])).toThrow('at least one')
   expect(() => groupFocusedTestPaths(['../outside.test.ts'])).toThrow('outside the project')
   expect(() => groupFocusedTestPaths(['--watch'])).toThrow('invalid project-relative')
+  expect(() => groupFocusedTestPaths(['scripts/missing.test.ts'])).toThrow('missing.test.ts')
 })
