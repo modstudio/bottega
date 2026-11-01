@@ -341,6 +341,18 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
 const DISPLAY_LABELS: readonly DisplayLabel[] = [
   ...TASK_CHILD_DISPLAY_LABELS,
   {
+    store: 'orchestrator',
+    column: 'question.filed_ref',
+    sibling: 'question.filed_record_id',
+    reason: 'display label beside the filed document revision UUID reference',
+  },
+  {
+    store: 'hosted',
+    column: 'question.filed_ref',
+    sibling: 'question.filed_record_id',
+    reason: 'display label beside the filed document revision UUID reference',
+  },
+  {
     store: 'hosted',
     column: 'question.number',
     sibling: 'question.id',
@@ -535,14 +547,12 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
     'contention.resource_key',
     'hosted_board_receipt_cache.reader_session',
     'operator_notification.item_id',
-    'question.filed_ref',
     'run.launch_key',
     'workflow_cursor.instance_id',
   ]),
   ...manifest('hosted', 'natural or encoded reference to an application row', [
     'board_receipt.reader_session',
     'contention.resource_key',
-    'question.filed_ref',
   ]),
 ]
 
