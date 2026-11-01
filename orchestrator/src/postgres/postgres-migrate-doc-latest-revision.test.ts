@@ -28,7 +28,7 @@ realPostgres('hosted doc latest revision repair', () => {
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
     }
 
-    const owner = new SQL(ownerUrl!)
+    const owner = new SQL({ url: ownerUrl!, max: 1 })
     const superuser = new SQL(superuserUrl!)
     try {
       for (const statement of migrationSessionStatements()) await owner.unsafe(statement)

@@ -33,7 +33,7 @@ postgres('populated workflow generation replay migration', () => {
     for (const folder of readdirSync(migrationsFolder).filter((name) => name < generationMigration))
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
 
-    const sql = new SQL(url!)
+    const sql = new SQL({ url: url!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })

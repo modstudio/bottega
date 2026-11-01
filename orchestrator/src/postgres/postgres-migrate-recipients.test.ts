@@ -28,7 +28,7 @@ realPostgres('populated report recipient migration', () => {
       cpSync(join(migrationsFolder, folder), join(priorMigrations, folder), { recursive: true })
     }
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })

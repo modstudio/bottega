@@ -38,7 +38,7 @@ realPostgres('populated run task_id expand and backfill', () => {
     priorToExpand = mkdtempSync(join(tmpdir(), 'dev-1771-prior-expand-'))
     copyMigrations(priorToExpand, (name) => name < expandMigration)
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorToExpand })
@@ -81,7 +81,7 @@ realPostgres('populated run task_id expand and backfill', () => {
   })
 
   test('backfill links only the task with the same key in the same space', async () => {
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder })

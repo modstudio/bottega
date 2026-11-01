@@ -105,7 +105,7 @@ realPostgres('populated hosted project cleanup', () => {
   afterAll(() => rmSync(priorMigrations, { recursive: true, force: true }))
 
   test('backfills, moves, preserves space documents, and reruns as a no-op', async () => {
-    const sql = new SQL(successUrl!)
+    const sql = new SQL({ url: successUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
@@ -129,7 +129,7 @@ realPostgres('populated hosted project cleanup', () => {
   })
 
   test('an address collision refuses the transaction without a partial backfill', async () => {
-    const sql = new SQL(collisionUrl!)
+    const sql = new SQL({ url: collisionUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })

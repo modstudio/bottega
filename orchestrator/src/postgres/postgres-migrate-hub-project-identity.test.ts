@@ -44,7 +44,7 @@ realPostgres('populated hub project_id expand and backfill', () => {
     copyMigrations(priorToExpand, (name) => name < expandMigration)
     copyMigrations(throughExpand, (name) => name < backfillMigration)
 
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorToExpand })
@@ -78,7 +78,7 @@ realPostgres('populated hub project_id expand and backfill', () => {
   })
 
   test('expand leaves project_id null and backfill fills a unique match', async () => {
-    const sql = new SQL(migrationUrl!)
+    const sql = new SQL({ url: migrationUrl!, max: 1 })
     try {
       expect(await taskProjectIds(sql)).toEqual([
         { id: matchTaskId, project_id: null },

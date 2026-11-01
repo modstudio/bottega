@@ -73,7 +73,7 @@ realPostgres('populated hosted doc revision author backfill', () => {
   afterAll(() => rmSync(priorMigrations, { recursive: true, force: true }))
 
   test('rewrites only eligible authors when exactly one non-stand-in person exists', async () => {
-    const owner = new SQL(ownerUrl!)
+    const owner = new SQL({ url: ownerUrl!, max: 1 })
     const superuser = new SQL(superuserUrl!)
     try {
       await resetToBeforeBackfill(owner, superuser)

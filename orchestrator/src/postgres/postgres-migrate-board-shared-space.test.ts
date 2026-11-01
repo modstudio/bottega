@@ -28,7 +28,7 @@ const READER_MESSAGE_ID = '02990000-0000-7000-8000-000000000404'
 const readerRunMigration = '20261101151116_dev_2002_board_receipt_reader_run_record_id'
 
 async function preparePriorStore(url: string, nested: boolean): Promise<SQL> {
-  const sql = new SQL(url)
+  const sql = new SQL({ url, max: 1 })
   for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
   await migrate(drizzle({ client: sql }), {
     migrationsFolder: priorMigrations,
@@ -131,7 +131,7 @@ describe.skipIf(!readerRunMigrationUrl)('populated board reader run migration', 
   afterAll(() => rmSync(readerRunPriorMigrations, { recursive: true, force: true }))
 
   test('backfills a run reader and leaves a session reader NULL', async () => {
-    const sql = new SQL(readerRunMigrationUrl!)
+    const sql = new SQL({ url: readerRunMigrationUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: readerRunPriorMigrations })

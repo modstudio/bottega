@@ -172,7 +172,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   afterAll(() => rmSync(priorMigrations, { recursive: true, force: true }))
 
   test('moves every listed run and declared run-owned row and reruns as a no-op', async () => {
-    const sql = new SQL(successUrl!)
+    const sql = new SQL({ url: successUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
@@ -204,7 +204,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   })
 
   test('a measured-set mismatch reports counts and rolls back', async () => {
-    const sql = new SQL(mismatchUrl!)
+    const sql = new SQL({ url: mismatchUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
@@ -223,7 +223,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   })
 
   test('a non-owned run foreign-key reference names its table and rolls back', async () => {
-    const sql = new SQL(referenceUrl!)
+    const sql = new SQL({ url: referenceUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
@@ -240,7 +240,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   })
 
   test('a record with none of the listed runs is unchanged', async () => {
-    const sql = new SQL(emptyUrl!)
+    const sql = new SQL({ url: emptyUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
@@ -261,7 +261,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
   })
 
   test('an unlisted run self-reference names run and rolls back', async () => {
-    const sql = new SQL(selfReferenceUrl!)
+    const sql = new SQL({ url: selfReferenceUrl!, max: 1 })
     try {
       for (const statement of migrationSessionStatements()) await sql.unsafe(statement)
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
