@@ -771,6 +771,7 @@ export const importBoundaries: ImportBoundary[] = [
       './record-doc-list-shape.ts',
       './record-cursor.ts',
       './record-project-destination.ts',
+      './record-routing-pool.ts',
       './record-session.ts',
       'bun:sqlite',
     ],

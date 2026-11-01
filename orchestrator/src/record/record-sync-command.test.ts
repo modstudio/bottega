@@ -5,6 +5,7 @@ import {
   quarantinedOutboxLines,
   quarantinedParentHeldLines,
   readOnlyDeferredLines,
+  routingPoolLine,
 } from './record-sync-command.ts'
 
 test('sync presentation names each quarantined row with its kind and error', () => {
@@ -45,4 +46,13 @@ test('sync presentation reports read-only deferred rows by space', () => {
   expect(readOnlyDeferredLines([{ spaceId: 'space-a', rows: 2 }])).toEqual([
     'deferred 2\tread-only space space-a',
   ])
+})
+
+test('sync presentation reports routing pool fill progress and completion', () => {
+  expect(routingPoolLine({ added: 500, updated: 0, caughtUp: false })).toBe(
+    'routing pool: 500 added, 0 updated, filling',
+  )
+  expect(routingPoolLine({ added: 3, updated: 1, caughtUp: true })).toBe(
+    'routing pool: 3 added, 1 updated, caught up',
+  )
 })

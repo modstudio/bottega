@@ -52,6 +52,6 @@ export function registerRecordRoutingEvidenceRoute(
       limit: query.data.limit,
       cursor,
     })
-    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf))
+    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
   })
 }

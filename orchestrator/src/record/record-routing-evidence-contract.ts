@@ -27,4 +27,5 @@ export type RecordRoutingEvidence = {
 export type RecordRoutingEvidencePage = {
   items: RecordRoutingEvidence[]
   nextCursor: string | null
+  endCursor?: string | null
 }

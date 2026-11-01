@@ -27,6 +27,7 @@ import {
   noActiveRecordSpaceRefusal,
   projectRecordDestination,
 } from './record-project-destination.ts'
+import { pullRoutingPool, type RoutingPoolPullResult } from './record-routing-pool.ts'
 import { rememberSignedInRecordUser } from './record-session.ts'
 
 const DOCS_CURSOR = 'record_docs_cursor'
@@ -221,6 +222,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
   lensCatalogue: number
   workflowCatalogue: number
   portCatalogue: number
+  routingPool: RoutingPoolPullResult
 }> {
   const hasMeta = local
     .query<{ n: number }, []>(
@@ -237,6 +239,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
       lensCatalogue: 0,
       workflowCatalogue: 0,
       portCatalogue: 0,
+      routingPool: { added: 0, updated: 0, caughtUp: true },
     }
   const client = recordApiClient()
   const identity = await client.whoami()
@@ -270,6 +273,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     }, local)
     if (!page.nextCursor) break
   }
+  const routingPool = await pullRoutingPool(local, cache.spaces)
   return {
     ...pulledDocs,
     ...pulledSubjects,
@@ -277,6 +281,7 @@ export async function pullRecordCache(local: Database = db()): Promise<{
     lensCatalogue,
     workflowCatalogue: workflowPull.count,
     portCatalogue: portPull.count,
+    routingPool,
   }
 }
 

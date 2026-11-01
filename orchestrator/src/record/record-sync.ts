@@ -549,12 +549,14 @@ function completedSyncResult(input: {
   readOnlyDeferred: Map<string, number>
   backfill: RecordSyncResult['backfill']
   machineNameRefusal?: string
+  routingPool?: RecordSyncResult['routingPool']
 }): RecordSyncResult {
   return {
     pushed: input.pushed,
     failed: input.failed,
     pending: pendingCount(input.local),
     configured: true,
+    ...(input.routingPool ? { routingPool: input.routingPool } : {}),
     quarantined: quarantinedOutboxRows(input.local),
     blocked: input.blocked,
     ...(input.machineNameRefusal ? { machineNameRefusal: input.machineNameRefusal } : {}),
@@ -662,7 +664,8 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     if (!batch.request.rows.length) break
   }
   cacheFirstSyncedMachineNames(options, identity, machineNameRefusal)
-  if (!options.client) await pullRecordCache(writableLocal)
+  let routingPool: RecordSyncResult['routingPool']
+  if (!options.client) routingPool = (await pullRecordCache(writableLocal)).routingPool
   rememberHostedRecord(writableLocal)
   return completedSyncResult({
     pushed,
@@ -674,5 +677,6 @@ export async function syncRecord(options: RecordSyncOptions = {}): Promise<Recor
     readOnlyDeferred,
     backfill,
     machineNameRefusal,
+    routingPool,
   })
 }

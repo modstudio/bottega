@@ -1482,6 +1482,14 @@
       "tag": "0194_board_receipt_reader_run_record_id",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 195,
+      "version": "6",
+      "when": 1793577600060,
+      "tag": "0195_routing_pool",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

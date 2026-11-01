@@ -153,6 +153,13 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-api-client-routing-evidence.ts', [
     './record-routing-evidence-contract.ts',
   ]),
+  module('orchestrator/src/record/record-routing-pool.ts', [
+    'bun:sqlite',
+    '../../../shared/record-id.ts',
+    '../database/db.ts',
+    './record-api-client.ts',
+    './record-routing-evidence-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-machine.ts', ['./record-api-client-paths.ts']),
   module('orchestrator/src/record/record-api-client-session.ts', [
     './record-api-client-paths.ts',
