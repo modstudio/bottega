@@ -5,77 +5,20 @@ Tick exits with HEARTBEAT_KEEP_LOOP_EXIT_STATUS while watching must continue and
 HEARTBEAT_CLEAR_EXIT_STATUS only for CLEAR, when the shell should stop watching.
 """
 
-import re
 import os
 import sys
-import base64
-import binascii
 import json
 import datetime
 from enum import Enum, auto
 from typing import NamedTuple
 
 from inbox_question_decision import decide_inbox_questions
+from secret_shaped import redact_secret_shaped
 
 NOTICE_REASON_MAX_BYTES = 4096
 NOTICE_REASON_MAX_CHARS = 240
 HEARTBEAT_KEEP_LOOP_EXIT_STATUS = 0
 HEARTBEAT_CLEAR_EXIT_STATUS = 10
-
-SECRET_ASSIGNMENT = re.compile(
-    r"(?<![A-Za-z0-9])(?:[A-Za-z0-9]+[_-])*(?:token|key|secret|password)\s*[:=]\s*\S+",
-    re.IGNORECASE,
-)
-SECRET_BEARER = re.compile(r"\bBearer\s+\S+", re.IGNORECASE)
-SECRET_AUTHORIZATION = re.compile(r"\bAuthorization\s*[:=]\s*\S+", re.IGNORECASE)
-SECRET_TOKEN_PREFIX = re.compile(
-    r"(?<![A-Za-z0-9])(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|xox[bposa]-|AKIA)"
-)
-SECRET_HEX_RUN = re.compile(r"[0-9a-fA-F]{32,}")
-SECRET_URL_USERINFO = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^/\s:@]+:[^/\s:@]+@")
-SECRET_PEM_PRIVATE_KEY = re.compile(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
-SECRET_JWT = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
-SECRET_BASE64_RUN = re.compile(r"[A-Za-z0-9+_-]{27,}={0,2}")
-
-
-def _jwt_header_is_object(token: str) -> bool:
-    try:
-        header = token.split(".", 1)[0]
-        padded = header + "=" * ((4 - len(header) % 4) % 4)
-        parsed = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-        return isinstance(parsed, dict)
-    except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
-        return False
-
-
-def _base64_run_is_secret(run: str) -> bool:
-    try:
-        normalized = run.replace("-", "+").replace("_", "/")
-        padded = normalized + "=" * ((4 - len(normalized) % 4) % 4)
-        decoded = base64.b64decode(padded, validate=True)
-        if base64.b64encode(decoded).decode("ascii").rstrip("=") != padded.rstrip("="):
-            return False
-    except (ValueError, binascii.Error):
-        return False
-    return len(decoded) >= 20 and (
-        bool(re.search(r"[+=]", run))
-        or (bool(re.search(r"[a-z]", run)) and bool(re.search(r"[A-Z]", run)) and bool(re.search(r"\d", run)))
-    )
-
-
-def contains_secret_shaped(text: str) -> bool:
-    return bool(
-        SECRET_AUTHORIZATION.search(text)
-        or SECRET_BEARER.search(text)
-        or SECRET_ASSIGNMENT.search(text)
-        or SECRET_TOKEN_PREFIX.search(text)
-        or SECRET_HEX_RUN.search(text)
-        or SECRET_URL_USERINFO.search(text)
-        or SECRET_PEM_PRIVATE_KEY.search(text)
-        or any(_jwt_header_is_object(match.group(0)) for match in SECRET_JWT.finditer(text))
-        or any(_base64_run_is_secret(match.group(0)) for match in SECRET_BASE64_RUN.finditer(text))
-    )
-
 
 class HeartbeatDecision(NamedTuple):
     lines: list[str]
@@ -266,10 +209,8 @@ def monitor_failure_reason(data: bytes) -> str:
         chr(value) for value in data[:NOTICE_REASON_MAX_BYTES] if value == 10 or 32 <= value <= 126
     )
     reason = next((line[:NOTICE_REASON_MAX_CHARS] for line in printable.splitlines() if line.split()), "")
-    if contains_secret_shaped(reason):
-        return "reason withheld (secret-shaped)"
     if reason:
-        return reason
+        return redact_secret_shaped(reason)[0]
     return "stderr not printable" if had_bytes else "stderr empty"
 
 

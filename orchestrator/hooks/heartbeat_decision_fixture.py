@@ -8,10 +8,34 @@ it lives here instead of in either of them.
 """
 
 import importlib.util
+import shutil
 import sys
 from pathlib import Path
 
 PATH = Path(__file__).with_name("heartbeat-decision.py")
+HEARTBEAT_SOURCE_NAMES = (
+    "heartbeat-decision.py",
+    "secret_shaped.py",
+    "heartbeat-board-observation.py",
+    "heartbeat-run-observation.py",
+    "inbox_question_decision.py",
+    "notice_transport.py",
+    "orch-heartbeat.sh",
+)
+
+
+def stage_heartbeat_sources(hooks):
+    """Copy the complete heartbeat runtime into a throwaway checkout."""
+    for name in HEARTBEAT_SOURCE_NAMES:
+        shutil.copy2(PATH.with_name(name), hooks / name)
+    shared = hooks.parents[1] / "shared"
+    shared.mkdir(exist_ok=True)
+    shutil.copy2(
+        PATH.parents[2] / "shared" / "secret-shaped-rules.json",
+        shared / "secret-shaped-rules.json",
+    )
+
+
 sys.path.insert(0, str(PATH.parent))
 
 SPEC = importlib.util.spec_from_file_location("heartbeat_decision", PATH)

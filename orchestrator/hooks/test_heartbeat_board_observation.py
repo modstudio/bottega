@@ -63,7 +63,7 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         return board_observation.observe_board_requests(
             self.store.name,
             "asking-session",
-            heartbeat_decision.contains_secret_shaped,
+            heartbeat_decision.redact_secret_shaped,
         )
 
     def open(self):
@@ -141,14 +141,14 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         self.assertEqual([reply["root_id"] for reply in projected["replies"]], ["root-1"])
         self.assertEqual(projected["holds"], [])
 
-    def test_secret_shaped_title_is_withheld(self):
+    def test_secret_shaped_title_is_redacted(self):
         connection = sqlite3.connect(self.store.name)
         connection.execute("UPDATE board_message SET title=? WHERE record_id='root-1'", ("token=abc",))
         connection.commit()
         connection.close()
         self.assertEqual(
             self.observe()["roots"][0]["label"],
-            "board:12 title withheld (secret-shaped)",
+            "board:12 [withheld: assignment]",
         )
 
     def test_hosted_projection_and_delivered_reply_release(self):
@@ -202,8 +202,12 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         connection.close()
         self.assertNotIn("hosted-root", [row["id"] for row in self.open()])
 
-    def test_assignment_shaped_secret_titles_are_withheld(self):
-        for title in ("GITHUB_TOKEN=xyz", "rotate api_key=abc123", "DB_PASSWORD=value"):
+    def test_assignment_shaped_secret_titles_are_redacted(self):
+        for title, expected in (
+            ("token=xyz", "[withheld: assignment]"),
+            ("rotate key=abc123", "rotate [withheld: assignment]"),
+            ("password=value", "[withheld: assignment]"),
+        ):
             with self.subTest(title=title):
                 connection = sqlite3.connect(self.store.name)
                 connection.execute(
@@ -213,8 +217,19 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
                 connection.close()
                 self.assertEqual(
                     self.observe()["roots"][0]["label"],
-                    "board:12 title withheld (secret-shaped)",
+                    f"board:12 {expected}",
                 )
+
+        connection = sqlite3.connect(self.store.name)
+        connection.execute(
+            "UPDATE board_message SET title='api_key: abc' WHERE record_id='root-1'"
+        )
+        connection.commit()
+        connection.close()
+        self.assertEqual(
+            self.observe()["roots"][0]["label"],
+            "board:12 [withheld: assignment]",
+        )
 
         connection = sqlite3.connect(self.store.name)
         connection.execute(

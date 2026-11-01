@@ -1,19 +1,66 @@
 // concern: secret-shaped
 /** Detection and redaction of text that resembles credentials. */
+import table from './secret-shaped-rules.json' with { type: 'json' }
 
-const SECRET_ASSIGNMENT = /\b(?:token|key|secret|password)\s*=\s*\S+/gi
-const SECRET_BEARER = /\bBearer\s+\S+/gi
-const SECRET_AUTHORIZATION = /\b(?:Proxy-)?Authorization\s*[:=]\s*\S+[^\r\n]*/gi
-const SECRET_TOKEN_PREFIX =
-  /(?<![A-Za-z0-9])(?:ghp_|gho_|ghu_|ghs_|ghr_|github_pat_|sk-|xox[bposa]-|AKIA)\S*/g
-const SECRET_HEX_RUN = /[0-9a-fA-F]{32,}/g
-const SECRET_URL_USERINFO = /[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^/\s:@]+:[^/\s:@]+@/g
-const SECRET_PEM_PRIVATE_KEY = /-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----/g
-const SECRET_JWT = /[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g
-const SECRET_BASE64_RUN = /[A-Za-z0-9+_-]{27,}={0,2}/g
-const SECRET_BASE64_BYTES = 20
-const EXEMPT_EVIDENCE_TOKEN =
-  /(?<!sha256:)\b(?:[0-9a-f]{64}|[0-9a-f]{40}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b/gi
+type RuleKind = 'span' | 'pem' | 'jwt' | 'base64'
+type RuleDefinition = { name: string; kind: RuleKind; pattern: string; ignoreCase: boolean }
+type RuleTable = {
+  rules: RuleDefinition[]
+  exemptEvidenceToken: { pattern: string; ignoreCase: boolean }
+  base64MinBytes: number
+}
+
+const RULE_KINDS = new Set<RuleKind>(['span', 'pem', 'jwt', 'base64'])
+
+function compiledPattern(pattern: unknown, field: string): string {
+  if (typeof pattern !== 'string') throw new Error(`${field} must be a string`)
+  try {
+    new RegExp(pattern)
+  } catch (error) {
+    throw new Error(`${field} must compile: ${String(error)}`)
+  }
+  return pattern
+}
+
+/** Validates the file-read rules table before any redaction rule is built. */
+export function validateSecretShapedRuleTable(parsed: unknown): RuleTable {
+  if (typeof parsed !== 'object' || parsed === null)
+    throw new Error('secret-shaped rule table must be an object')
+  const candidate = parsed as Record<string, unknown>
+  if (!Array.isArray(candidate.rules)) throw new Error('rules must be an array')
+  const rules = candidate.rules.map((value, index): RuleDefinition => {
+    if (typeof value !== 'object' || value === null)
+      throw new Error(`rule ${index} must be an object`)
+    const rule = value as Record<string, unknown>
+    if (typeof rule.name !== 'string') throw new Error(`rule ${index} name must be a string`)
+    if (typeof rule.kind !== 'string' || !RULE_KINDS.has(rule.kind as RuleKind))
+      throw new Error(`rule ${index} kind must be one of span, pem, jwt, base64`)
+    const pattern = compiledPattern(rule.pattern, `rule ${index} pattern`)
+    if (typeof rule.ignoreCase !== 'boolean')
+      throw new Error(`rule ${index} ignoreCase must be a boolean`)
+    return { name: rule.name, kind: rule.kind as RuleKind, pattern, ignoreCase: rule.ignoreCase }
+  })
+  if (typeof candidate.exemptEvidenceToken !== 'object' || candidate.exemptEvidenceToken === null)
+    throw new Error('exemptEvidenceToken must be an object')
+  const exemption = candidate.exemptEvidenceToken as Record<string, unknown>
+  const pattern = compiledPattern(exemption.pattern, 'exemptEvidenceToken pattern')
+  if (typeof exemption.ignoreCase !== 'boolean')
+    throw new Error('exemptEvidenceToken ignoreCase must be a boolean')
+  if (!Number.isInteger(candidate.base64MinBytes) || (candidate.base64MinBytes as number) < 0)
+    throw new Error('base64MinBytes must be a non-negative integer')
+  return {
+    rules,
+    exemptEvidenceToken: { pattern, ignoreCase: exemption.ignoreCase },
+    base64MinBytes: candidate.base64MinBytes as number,
+  }
+}
+
+const validatedTable = validateSecretShapedRuleTable(table)
+const definitions = validatedTable.rules
+const EXEMPT_EVIDENCE_TOKEN = new RegExp(
+  validatedTable.exemptEvidenceToken.pattern,
+  `g${validatedTable.exemptEvidenceToken.ignoreCase ? 'i' : ''}`,
+)
 
 function withheldMarker(rule: string): string {
   return `[withheld: ${rule}]`
@@ -39,8 +86,8 @@ const filteredSpans = (
     .filter((match) => accepts(match[0]))
     .map((match) => ({ start: match.index, end: match.index + match[0].length }))
 
-const pemSpans = (text: string): SecretSpan[] =>
-  [...text.matchAll(SECRET_PEM_PRIVATE_KEY)].map((match) => {
+const pemSpans = (pattern: RegExp, text: string): SecretSpan[] =>
+  [...text.matchAll(pattern)].map((match) => {
     const endMarker = `-----END ${match[1]}-----`
     const endStart = text.indexOf(endMarker, match.index + match[0].length)
     return {
@@ -49,17 +96,24 @@ const pemSpans = (text: string): SecretSpan[] =>
     }
   })
 
-const RULES: readonly SecretRule[] = [
-  { name: 'authorization', spans: (text) => regexSpans(SECRET_AUTHORIZATION, text) },
-  { name: 'bearer', spans: (text) => regexSpans(SECRET_BEARER, text) },
-  { name: 'assignment', spans: (text) => regexSpans(SECRET_ASSIGNMENT, text) },
-  { name: 'provider-prefix', spans: (text) => regexSpans(SECRET_TOKEN_PREFIX, text) },
-  { name: 'hex-run', spans: (text) => regexSpans(SECRET_HEX_RUN, text) },
-  { name: 'url-userinfo', spans: (text) => regexSpans(SECRET_URL_USERINFO, text) },
-  { name: 'pem', spans: pemSpans },
-  { name: 'jwt', spans: (text) => filteredSpans(SECRET_JWT, text, jwtHeaderIsObject) },
-  { name: 'base64', spans: (text) => filteredSpans(SECRET_BASE64_RUN, text, base64RunIsSecret) },
-]
+const RULES: readonly SecretRule[] = definitions.map((definition) => {
+  const pattern = new RegExp(definition.pattern, `g${definition.ignoreCase ? 'i' : ''}`)
+  if (definition.kind === 'pem')
+    return { name: definition.name, spans: (text) => pemSpans(pattern, text) }
+  if (definition.kind === 'jwt')
+    return {
+      name: definition.name,
+      spans: (text) => filteredSpans(pattern, text, jwtHeaderIsObject),
+    }
+  if (definition.kind === 'base64')
+    return {
+      name: definition.name,
+      spans: (text) => filteredSpans(pattern, text, base64RunIsSecret),
+    }
+  if (definition.kind === 'span')
+    return { name: definition.name, spans: (text) => regexSpans(pattern, text) }
+  throw new Error(`unsupported secret-shaped rule kind: ${definition.kind}`)
+})
 
 export function secretShapedRule(text: string): string | null {
   return secretShapedRules(text)[0] ?? null
@@ -148,7 +202,7 @@ function jwtHeaderIsObject(token: string): boolean {
 
 function base64RunIsSecret(run: string): boolean {
   const bytes = decodedBase64Bytes(run)
-  if (bytes === null || bytes < SECRET_BASE64_BYTES) return false
+  if (bytes === null || bytes < validatedTable.base64MinBytes) return false
   if (/[+=]/.test(run)) return true
   return /[a-z]/.test(run) && /[A-Z]/.test(run) && /\d/.test(run)
 }

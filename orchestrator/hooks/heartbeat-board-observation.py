@@ -9,12 +9,12 @@ import sqlite3
 import sys
 
 
-def _safe_title(value: object, contains_secret_shaped) -> str:
+def _safe_title(value: object, redact_secret_shaped) -> str:
     title = str(value).replace("\t", " ").replace("\r", " ").replace("\n", " ")
-    return "title withheld (secret-shaped)" if contains_secret_shaped(title) else title
+    return redact_secret_shaped(title)[0]
 
 
-def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -> dict:
+def observe_board_requests(path: str, session_id: str, redact_secret_shaped) -> dict:
     """Return plain authored-root and reply rows from local and hosted caches."""
     if not os.path.exists(path):
         return {"roots": [], "replies": [], "holds": []}
@@ -38,11 +38,11 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                 roots.append(
                     {
                         "id": record_id,
-                        "label": f"board:{number} {_safe_title(title, contains_secret_shaped)}",
+                        "label": f"board:{number} {_safe_title(title, redact_secret_shaped)}",
                         "kind": kind,
                         "purpose": purpose,
                         "author_session": author,
-                        "title": _safe_title(title, contains_secret_shaped),
+                        "title": _safe_title(title, redact_secret_shaped),
                         "expires_at": expires,
                         "withdrawn_at": withdrawn,
                         "created_at": created,
@@ -75,11 +75,11 @@ def observe_board_requests(path: str, session_id: str, contains_secret_shaped) -
                 roots.append(
                     {
                         "id": message_id,
-                        "label": f"board:{message_id} {_safe_title(message.get('title'), contains_secret_shaped)}",
+                        "label": f"board:{message_id} {_safe_title(message.get('title'), redact_secret_shaped)}",
                         "kind": kind,
                         "purpose": message.get("purpose"),
                         "author_session": author,
-                        "title": _safe_title(message.get('title'), contains_secret_shaped),
+                        "title": _safe_title(message.get('title'), redact_secret_shaped),
                         "expires_at": message.get("expiresAt"),
                         "withdrawn_at": message.get("withdrawnAt"),
                         "created_at": message.get("createdAt"),
@@ -131,7 +131,7 @@ def main() -> int:
     print(
         json.dumps(
             observe_board_requests(
-                args.database, args.session_id, heartbeat_decision.contains_secret_shaped
+                args.database, args.session_id, heartbeat_decision.redact_secret_shaped
             )
         )
     )

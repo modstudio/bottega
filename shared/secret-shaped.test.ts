@@ -3,9 +3,9 @@ import {
   containsSecretShaped,
   redactSecretShaped,
   secretShapedRule,
+  validateSecretShapedRuleTable,
   withholdSecretShapedDetail,
 } from './secret-shaped.ts'
-import fixtures from './secret-shaped-fixtures.json'
 
 const hex40 = 'a'.repeat(40)
 const hex64 = 'b'.repeat(64)
@@ -46,10 +46,14 @@ test('whole 40-hex and 64-hex tokens retain detection semantics', () => {
   expect(containsSecretShaped(uuid)).toBe(false)
 })
 
-test('canonical secret fixtures stay aligned with non-TypeScript adapters', () => {
-  for (const fixture of fixtures) {
-    expect(containsSecretShaped(fixture.parts.join('')), fixture.name).toBe(fixture.secret)
-  }
+test('rules table validation refuses an unknown kind', () => {
+  expect(() =>
+    validateSecretShapedRuleTable({
+      rules: [{ name: 'fixture', kind: 'unknown', pattern: 'fixture', ignoreCase: false }],
+      exemptEvidenceToken: { pattern: 'fixture', ignoreCase: false },
+      base64MinBytes: 20,
+    }),
+  ).toThrow('rule 0 kind')
 })
 
 test('known commits are abbreviated before secret-shaped redaction', () => {

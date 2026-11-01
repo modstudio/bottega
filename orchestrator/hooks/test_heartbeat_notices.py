@@ -8,8 +8,8 @@ import subprocess
 import tempfile
 import unittest
 
+from heartbeat_decision_fixture import stage_heartbeat_sources
 
-HOOKS = Path(__file__).parent
 CHILD_PROCESS_TIMEOUT_SECONDS = 10
 SESSION = "fixture-session"
 CONDITION_ID = "condition:1"
@@ -80,15 +80,7 @@ def run_heartbeat(rows, ack_result=""):
         binary = checkout / "bin"
         hooks.mkdir(parents=True)
         binary.mkdir()
-        for name in (
-            "orch-heartbeat.sh",
-            "heartbeat-decision.py",
-            "heartbeat-board-observation.py",
-            "heartbeat-run-observation.py",
-            "inbox_question_decision.py",
-            "notice_transport.py",
-        ):
-            shutil.copy2(HOOKS / name, hooks / name)
+        stage_heartbeat_sources(hooks)
         notices = checkout / "notices.json"
         notices.write_text(json.dumps(rows), encoding="utf-8")
         ack_log = checkout / "acked.txt"
