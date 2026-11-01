@@ -6,5 +6,5 @@ SET current_version_id = lower(hex(randomblob(4))) || '-' || lower(hex(randomblo
   substr(lower(hex(randomblob(2))), 2) || '-' ||
   substr('89ab', abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))), 2) || '-' ||
   lower(hex(randomblob(6)))
-WHERE current_version_id IS NULL;
+WHERE current_version_id IS NULL AND space_id IS NULL;
 -- /BACKFILL

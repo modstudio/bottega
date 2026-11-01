@@ -6,7 +6,7 @@ DECLARE
   profiles_without_id bigint;
 BEGIN
   UPDATE lens_profile
-  SET current_version_id = gen_random_uuid()
+  SET current_version_id = gen_random_uuid(), updated_at = now()
   WHERE current_version_id IS NULL;
   GET DIAGNOSTICS filled_profiles = ROW_COUNT;
 

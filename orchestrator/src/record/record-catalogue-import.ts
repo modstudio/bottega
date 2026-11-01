@@ -2,6 +2,7 @@
 /** Atomically imports complete catalogue snapshots without changing matched hosted rows. */
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { newRecordId } from '../../../shared/record-id.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
 import { reconcileCatalogueHistory } from './record-catalogue-reconciliation.ts'
@@ -90,7 +91,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
       const id = foundId(existing)
       if (id) result.alreadyPresent++
       else {
-        await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
+        await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId ?? newRecordId()}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
       profiles.set(row.id, id ?? row.id)
