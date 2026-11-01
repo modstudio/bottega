@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { workflowDriftPartition } from './check-workflow-drift.ts'
+import { workflowDriftPartition, workflowDriftReport } from './check-workflow-drift.ts'
 
 describe('workflow drift branch gate', () => {
   test('reports drift outside the branch as informational without failing', () => {
@@ -26,6 +26,21 @@ describe('workflow drift branch gate', () => {
       failing: ['.agents/workflows/review-fleet.md'],
       informational: ['.agents/workflow-sequences/review.md'],
     })
+  })
+
+  test('reports import for branch changes and hydrate for a stale tree', () => {
+    const failingPath = '.agents/workflow-steps/blast-radius.md'
+    const informationalPath = '.agents/workflow-steps/review-lenses.md'
+    const report = workflowDriftReport({
+      failing: [failingPath],
+      informational: [informationalPath],
+    })
+
+    expect(report.failing[0]).toContain(failingPath)
+    expect(report.failing[0]).toContain('workflow import')
+    expect(report.failing[0]).not.toContain('workflow hydrate')
+    expect(report.informational).toContain(informationalPath)
+    expect(report.informational).toContain('workflow hydrate')
   })
 
   test('accepts a branch-changed file matching its newest draft', () => {
