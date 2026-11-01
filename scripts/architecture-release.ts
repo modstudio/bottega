@@ -26,6 +26,7 @@ export const releaseModules = [
     file: 'orchestrator/src/release/release-entry-closure.ts',
     allowed: [
       'shared/brand.ts',
+      'shared/git-path-list.ts',
       'node:fs',
       'node:os',
       'node:path',

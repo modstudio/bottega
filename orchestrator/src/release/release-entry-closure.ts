@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync }
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 
@@ -149,14 +150,14 @@ export function entryClosureAtCommit(
       `tar failed while extracting release entry tree at ${commit}`,
     )
     const workspace = workspaceExternals(tree)
-    const trackedFiles = git(
-      ['ls-tree', '-r', '-z', '--name-only', '--full-tree', commit],
-      project.path,
-      targetGitEnvironment(project.path),
-      ` while listing tracked files at ${commit}`,
+    const trackedFiles = splitNulPaths(
+      git(
+        nulPathListArgs(['ls-tree', '-r', '--name-only', '--full-tree', commit]),
+        project.path,
+        targetGitEnvironment(project.path),
+        ` while listing tracked files at ${commit}`,
+      ),
     )
-      .split('\0')
-      .filter(Boolean)
     for (const [name, workspaceDirectory] of workspace.names) {
       const link = join(tree, 'node_modules', name)
       mkdirSync(dirname(link), { recursive: true })
