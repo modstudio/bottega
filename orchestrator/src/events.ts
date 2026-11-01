@@ -1,10 +1,10 @@
 /** Live vendor event log: append-only JSONL plus last_event_at, and bottega run peek. */
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
-import { redactSecretShapedOutput } from './secret-shaped-output.ts'
 import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
@@ -125,6 +125,49 @@ export type RunLogEvent =
       note: string | null
     }
 
+/** Which recorded text could carry a secret, so it is masked before it reaches the durable log? */
+export function redactRunLogEvent(event: RunLogEvent): RunLogEvent {
+  const redact = (text: string) => redactSecretShaped(text, { exemptEvidenceTokens: true }).text
+  switch (event.type) {
+    case 'text':
+    case 'warning':
+      return { ...event, text: redact(event.text) }
+    case 'tool_call':
+      return {
+        ...event,
+        title: redact(event.title),
+        ...(event.input === undefined ? {} : { input: redact(event.input) }),
+      }
+    case 'tool_result':
+      return {
+        ...event,
+        ...(event.text === undefined ? {} : { text: redact(event.text) }),
+      }
+    case 'ask_exposure':
+      return {
+        ...event,
+        note: event.note === null ? null : redact(event.note),
+      }
+    case 'focused_test':
+    case 'focused_test_refusal':
+    case 'gate_log':
+    case 'note':
+    case 'tool_burst_observed':
+    case 'usage':
+    case 'throttled':
+    case 'capacity_wait':
+    case 'ask_expected':
+    case 'ask_started':
+    case 'ask_initialized':
+    case 'ask_listed':
+      return event
+    default: {
+      const exhaustive: never = event
+      return exhaustive
+    }
+  }
+}
+
 type PeekEventSummary =
   | { type: 'text'; text: string }
   | { type: 'warning'; text: string }
@@ -234,7 +277,7 @@ export function appendRunEvent(runId: string, event: RunLogEvent, path?: string)
   try {
     const destination = path ?? runEventsPath(runId)
     mkdirSync(dirname(destination), { recursive: true })
-    appendFileSync(destination, `${JSON.stringify(event)}\n`)
+    appendFileSync(destination, `${JSON.stringify(redactRunLogEvent(event))}\n`)
   } catch {
     /* a missing or unwritable run directory loses the log line, nothing else */
   }
@@ -341,9 +384,7 @@ function observedToolEvents(
       type: 'tool_call',
       kind: event.toolKind,
       title: event.title,
-      ...(event.input === undefined
-        ? {}
-        : { input: redactSecretShapedOutput(capToolEventText(event.input)) }),
+      ...(event.input === undefined ? {} : { input: capToolEventText(event.input) }),
       ...(locations?.length ? { locations } : {}),
     })
   }
@@ -355,7 +396,7 @@ function observedToolEvents(
       status: event.status,
       ...(bytes === undefined ? {} : { bytes }),
       ...(event.status === 'failed' && event.result !== undefined
-        ? { text: redactSecretShapedOutput(capToolEventText(event.result)) }
+        ? { text: capToolEventText(event.result) }
         : {}),
     })
   }

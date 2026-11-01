@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { appendFileSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { addRun } from '../test/fixtures/store.ts'
 import { registrationProbeReadsRepo } from './agent/agent-probe.ts'
 import { db } from './database/db.ts'
@@ -11,7 +13,9 @@ import {
   idleLabel,
   isToolCallStart,
   peekRun,
+  type RunLogEvent,
   recordRunWarning,
+  redactRunLogEvent,
   runEventsPath,
 } from './events.ts'
 import type { NormalizedEvent } from './transport/transport.ts'
@@ -66,6 +70,96 @@ const GROK_PROBE_READ_RESULT = JSON.stringify({
 function probeEvents(...lines: string[]): NormalizedEvent[] {
   return lines.flatMap((line) => eventsFromVendorLine(line)) as NormalizedEvent[]
 }
+
+function secretShapedValue(): string {
+  return ['Bearer ', 'z'.repeat(24)].join('')
+}
+
+function evidenceCommit(): string {
+  return ['0123456789abcdef'.repeat(2), '01234567'].join('')
+}
+
+const redactedTextCases: Array<{
+  name: string
+  event: (text: string) => RunLogEvent
+  read: (event: RunLogEvent) => string | null | undefined
+  source?: (secret: string) => string
+  expected?: string
+}> = [
+  {
+    name: 'text.text',
+    event: (text) => ({ ts: 't1', type: 'text', text }),
+    read: (event) => (event.type === 'text' ? event.text : undefined),
+  },
+  {
+    name: 'warning.text',
+    event: (text) => ({ ts: 't1', type: 'warning', text }),
+    read: (event) => (event.type === 'warning' ? event.text : undefined),
+  },
+  {
+    name: 'tool_result.text',
+    event: (text) => ({ ts: 't1', type: 'tool_result', text }),
+    read: (event) => (event.type === 'tool_result' ? event.text : undefined),
+  },
+  {
+    name: 'tool_call.title',
+    event: (text) => ({ ts: 't1', type: 'tool_call', title: text }),
+    read: (event) => (event.type === 'tool_call' ? event.title : undefined),
+  },
+  {
+    name: 'tool_call.input',
+    event: (text) => ({ ts: 't1', type: 'tool_call', title: 'read', input: text }),
+    read: (event) => (event.type === 'tool_call' ? event.input : undefined),
+  },
+  {
+    name: 'ask_exposure.note',
+    event: (text) => ({
+      ts: 't1',
+      type: 'ask_exposure',
+      surface: 'code-mode',
+      cli_version: null,
+      note: text,
+    }),
+    read: (event) => (event.type === 'ask_exposure' ? event.note : undefined),
+  },
+  {
+    name: 'text.text while preserving a commit ID',
+    event: (text) => ({ ts: 't1', type: 'text', text }),
+    read: (event) => (event.type === 'text' ? event.text : undefined),
+    source: (secret) => `before ${evidenceCommit()} ${secret} after`,
+    expected: `before ${evidenceCommit()} [withheld: bearer] after`,
+  },
+]
+
+test.each(redactedTextCases)(
+  'redactRunLogEvent masks $name',
+  ({ event, read, source, expected }) => {
+    const secret = secretShapedValue()
+    const redacted = read(redactRunLogEvent(event(source?.(secret) ?? `before ${secret} after`)))
+    expect(redacted).toBe(expected ?? 'before [withheld: bearer] after')
+    expect(redacted).not.toContain(secret)
+  },
+)
+
+test('redactRunLogEvent returns an event without free text unchanged', () => {
+  const event: RunLogEvent = { ts: 't1', type: 'capacity_wait', waiting: true }
+  expect(redactRunLogEvent(event)).toBe(event)
+})
+
+test('appendRunEvent redacts worker-note refusal detail in the durable log', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'orch-events-redaction-'))
+  const path = join(dir, 'events.jsonl')
+  const secret = secretShapedValue()
+  const prefix = 'worker note request 3 was refused: '
+  try {
+    appendRunEvent('', { ts: 't1', type: 'text', text: `${prefix}${secret}` }, path)
+    const written = readFileSync(path, 'utf8')
+    expect(written).toContain(prefix)
+    expect(written).not.toContain(secret)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+})
 
 describe('vendor event log', () => {
   test('a CLI tool_use and tool_result pair contains one tool-call start', () => {
