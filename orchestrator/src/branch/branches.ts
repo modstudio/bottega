@@ -558,7 +558,11 @@ export function branchesReport(options: {
   }
 }
 
-function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): boolean {
+function listOperatorBranch(
+  row: BranchReportRow,
+  report: BranchPruneReport,
+  key: string | null,
+): boolean {
   if (row.state !== 'unlanded' && row.state !== 'unknown') return false
   const eligibility = decidePruneEligibility({
     state: row.state,
@@ -568,12 +572,14 @@ function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): bo
     tipMoved: false,
   })
   if (eligibility.eligible) return false
-  report.operator.push({
-    branch: row.branch,
-    state: row.state,
-    commitsNotOnTrunk: row.commitsNotOnTrunk,
-    command: `git branch -D ${row.branch}`,
-  })
+  if (eligibility.reason !== 'throwaway') {
+    report.operator.push({
+      branch: row.branch,
+      state: row.state,
+      commitsNotOnTrunk: row.commitsNotOnTrunk,
+      command: `git branch -D ${row.branch}`,
+    })
+  }
   report.kept.push({
     branch: row.branch,
     reason: eligibility.reason,
@@ -581,22 +587,24 @@ function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): bo
       row.probeOnly ? 'throwaway' : row.state,
       report.project,
       row.branch,
+      key,
     ),
   })
   if (row.state === 'unknown' && row.error) report.errors.push(`${row.branch}: ${row.error}`)
   return true
 }
 
-function branchVerdictRemedy(
+export function branchVerdictRemedy(
   reason: 'throwaway' | 'unlanded' | 'unknown',
   project: string,
   branch: string,
+  key: string | null,
 ): string {
   if (reason === 'throwaway')
     return `${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason throwaway --note "<why>"`
   if (reason === 'unlanded')
     return `land it through its own pull request, or ${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason abandoned --note "<why>"`
-  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY> --dry-run once the reported error clears`
+  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key ${key ?? '<KEY>'} --dry-run once the reported error clears`
 }
 
 function tipStillEligible(
@@ -739,12 +747,16 @@ export function pruneBranches(options: {
     observations: projectReport.observations,
     errors: [],
   }
-  const rows =
+  const rows: { row: BranchReportRow; key: string }[] =
     options.key === undefined
-      ? projectReport.keys.flatMap((candidate) => candidate.branches)
-      : (projectReport.keys.find((candidate) => candidate.key === options.key)?.branches ?? [])
-  for (const row of rows) {
-    if (listOperatorBranch(row, report)) continue
+      ? projectReport.keys.flatMap((candidate) =>
+          candidate.branches.map((row) => ({ row, key: candidate.key })),
+        )
+      : (projectReport.keys.find((candidate) => candidate.key === options.key)?.branches ?? []).map(
+          (row) => ({ row, key: options.key! }),
+        )
+  for (const { row, key } of rows) {
+    if (listOperatorBranch(row, report, key)) continue
     if (report.dryRun) {
       if (!tipStillEligible(project, row, report)) continue
       report.wouldDelete.push(row.branch)
@@ -783,10 +795,12 @@ export function pruneProjectBranches(options: {
     errors: [],
   }
   const seen = new Set<string>()
-  for (const row of projectReport.keys.flatMap((key) => key.branches)) {
+  for (const { row, key } of projectReport.keys.flatMap((group) =>
+    group.branches.map((row) => ({ row, key: group.key })),
+  )) {
     if (seen.has(row.branch)) continue
     seen.add(row.branch)
-    if (listOperatorBranch(row, report)) continue
+    if (listOperatorBranch(row, report, key)) continue
     if (report.dryRun) {
       if (!tipStillEligible(project, row, report)) continue
       report.wouldDelete.push(row.branch)

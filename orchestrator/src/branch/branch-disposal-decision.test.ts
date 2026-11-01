@@ -78,4 +78,20 @@ test('probe-only disposal bypasses only the open-task refusal', () => {
     eligible: false,
     reason: 'open-task',
   })
+  expect(decideBranchDisposal(facts({ probeOnly: true, liveRun: true }))).toEqual({
+    eligible: false,
+    reason: 'live-owner',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, checkedOut: true }))).toEqual({
+    eligible: false,
+    reason: 'live-owner',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, uniqueWork: false }))).toEqual({
+    eligible: false,
+    reason: 'proved-safe',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, refExists: false }))).toEqual({
+    eligible: false,
+    reason: 'missing-ref',
+  })
 })

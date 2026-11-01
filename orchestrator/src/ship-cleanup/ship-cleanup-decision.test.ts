@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { type BranchStateDecision, decidePruneEligibility } from '../branch/branch-state.ts'
+import {
+  type BranchStateDecision,
+  decidePruneEligibility,
+  isProbeOnlyMint,
+} from '../branch/branch-state.ts'
 import {
   decideShipCleanup,
   decideShipCleanupKeptItem,
@@ -311,6 +315,16 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
 })
 
 test('ship cleanup and prune give every minted branch state the same verdict', () => {
+  const probeCases = [
+    { name: 'empty', probes: [], expected: false },
+    { name: 'all probe', probes: [true, true], expected: true },
+    { name: 'mixed', probes: [true, false], expected: false },
+    { name: 'none', probes: [false, false], expected: false },
+  ]
+  for (const probeCase of probeCases) {
+    expect(isProbeOnlyMint(probeCase.probes), probeCase.name).toBe(probeCase.expected)
+  }
+
   const landed: BranchStateDecision = {
     state: 'landed',
     landedBy: { type: 'patch-equivalent', form: 'squash' },
@@ -354,7 +368,7 @@ test('ship cleanup and prune give every minted branch state the same verdict', (
     )
     const prune = decidePruneEligibility({
       state: row.state.state,
-      probeOnly: row.probes.every(Boolean),
+      probeOnly: isProbeOnlyMint(row.probes),
       checkedOut: false,
       liveRun: false,
       tipMoved: false,

@@ -1,7 +1,11 @@
 // concern: ship cleanup decision
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
-import { type BranchStateDecision, decideMintedBranchVerdict } from '../branch/branch-state.ts'
+import {
+  type BranchStateDecision,
+  decideMintedBranchVerdict,
+  isProbeOnlyMint,
+} from '../branch/branch-state.ts'
 import {
   decideUnjudgedRunRemedy,
   providerDidNotServeRun,
@@ -120,7 +124,7 @@ export function decideTaskBranchesToPrune(
         branch,
         decideMintedBranchVerdict({
           state: landingEvidence.get(branch)?.state ?? 'unknown',
-          probeOnly: mintingRuns.length > 0 && mintingRuns.every((run) => run.probe),
+          probeOnly: isProbeOnlyMint(mintingRuns.map((run) => run.probe)),
         }),
       ] as const
     }),

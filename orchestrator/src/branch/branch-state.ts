@@ -268,6 +268,10 @@ export type MintedBranchVerdict =
   | { verdict: 'throwaway' }
   | { verdict: 'keep'; reason: 'unlanded' | 'unknown' }
 
+export function isProbeOnlyMint(probes: readonly boolean[]): boolean {
+  return probes.length > 0 && probes.every(Boolean)
+}
+
 /** Is this branch's work preserved elsewhere (landed, superseded by a recorded successor, or empty), so deleting the ref loses nothing? */
 export function decideMintedBranchVerdict(input: {
   state: BranchStateDecision['state']

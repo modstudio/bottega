@@ -13,6 +13,7 @@ import {
   findRecordedBranchLanding,
 } from '../branch/branch-state.ts'
 import {
+  branchVerdictRemedy,
   classifyMintedBranch,
   type GitRefObservation,
   observeGitRef,
@@ -620,18 +621,6 @@ function taskCleanupPlan(input: {
   }
 }
 
-function branchVerdictRemedy(
-  reason: 'throwaway' | 'unlanded' | 'unknown',
-  project: string,
-  branch: string,
-): string {
-  if (reason === 'throwaway')
-    return `${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason throwaway --note "<why>"`
-  if (reason === 'unlanded')
-    return `land it through its own pull request, or ${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason abandoned --note "<why>"`
-  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY> --dry-run once the reported error clears`
-}
-
 type ShipCleanupOptions = {
   cwd?: string
   project?: string
@@ -769,7 +758,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
           reason: item.reason,
           reasonKind: 'landing-not-proved' as const,
           holdingPath: null,
-          remedy: branchVerdictRemedy(item.reason, report.project, item.branch),
+          remedy: branchVerdictRemedy(item.reason, report.project, item.branch, taskKey),
         },
         callerLandingTreePath,
       ),

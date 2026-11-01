@@ -9,6 +9,7 @@ import {
   type BranchStateDecision,
   decideBranchState,
   findRecordedBranchLanding,
+  isProbeOnlyMint,
   shouldSettleTruncatedBranch,
   type TaskBranchPullRequestCheck,
 } from './branch-state.ts'
@@ -207,7 +208,7 @@ export function branchKeyReport(input: Input): { key: string; branches: BranchRe
     ...observe(branch),
     checkedOut: input.checkedOut.has(branch),
     liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
-    probeOnly: branchRuns.length > 0 && branchRuns.every((run) => run.probe === 1),
+    probeOnly: isProbeOnlyMint(branchRuns.map((run) => run.probe === 1)),
     runIds: branchRuns.map((run) => run.number),
     recordedLanding: findRecordedBranchLanding(input.recordedLandings, input.project.name, branch),
     superseded: isTaskBranchSuperseded(branch, keyRows),
