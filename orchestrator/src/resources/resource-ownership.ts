@@ -6,8 +6,8 @@
 import type { Database } from 'bun:sqlite'
 import { existsSync } from 'node:fs'
 import { pidAlive } from '../../../shared/process-identity.ts'
-import { nowIso, SESSION_LIVE_MS, sessionId } from '../database/db.ts'
-import { appendRunEvent } from '../events.ts'
+import { SESSION_LIVE_MS, sessionId } from '../database/db.ts'
+import { recordRunWarning } from '../events.ts'
 import { EVIDENCE_CLOSED_SQL } from '../evidence/evidence-query.ts'
 import { realpathOrSpelled, withoutTrailingSeparators } from '../git/checkout-identity.ts'
 import { repoRootOf } from '../git/git-environment.ts'
@@ -595,11 +595,7 @@ export function teardownTerminalRunResources(
     console.error(`orch: ${inventory.reason}`)
   }
   if (result.failures.size) {
-    appendRunEvent(runId, {
-      ts: nowIso(),
-      type: 'text',
-      text: `Docker teardown incomplete: ${[...result.failures].join('; ')}`,
-    })
+    recordRunWarning(runId, `Docker teardown incomplete: ${[...result.failures].join('; ')}`)
   }
   const finalRetentionReason: TerminalDockerRetentionReason | null = result.skipped
     ? (result.reason ?? terminalDockerRetentionReason(database, row) ?? 'normalization failed')
