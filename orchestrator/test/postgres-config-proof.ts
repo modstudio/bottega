@@ -278,7 +278,7 @@ export function registerHostedConfigProofs(
       `UPDATE machine_public_key SET revoked_at=now()
        WHERE space_id='${spaceA}' AND key_id='HHHHHHHHHHHHHHHHHHHHHH';`,
     )
-    const revokedSender = insert('AAAAAAAAAAAAAAAAAAAAAA', 'HHHHHHHHHHHHHHHHHHHHHH')
+    const revokedSender = insert('CCCCCCCCCCCCCCCCCCCCCC', 'HHHHHHHHHHHHHHHHHHHHHH')
     expect(revokedSender.code, revokedSender.stderr).toBe(0)
 
     for (const [recipient, sender, constraint] of [
