@@ -12,6 +12,7 @@ import {
   awaitCommand,
   catalogueVersionsCommand,
   composeCommand,
+  copyWorkflowTextCommand,
   cursorsCommand,
   execCommand,
   forkWorkflowCommand,
@@ -32,6 +33,7 @@ import {
   setWorkflowCommand,
   showCatalogueCommand,
   showWorkflowCommand,
+  showWorkflowTextCommand,
   stepCommand,
   type WorkflowCommandOptions,
   type WorkflowPresentation,
@@ -332,6 +334,34 @@ function registerWorkflowCursorAdmin({
   handlerOptions,
   output,
 }: WorkflowRegistration): void {
+  const text = workflow
+    .command('text')
+    .description('read and preserve workflow text attachments')
+    .action(() => {
+      throw new Error(`unknown: ${PLATFORM_SLUG} workflow text. Try show | copy`)
+    })
+  jsonOption(text.command('show <reference>').description('show a workflow text attachment'))
+    .allowExcessArguments(false)
+    .action((reference, options) =>
+      showWorkflowTextCommand(
+        productArgv('workflow', ['text', 'show', reference], options),
+        output(options),
+      ),
+    )
+  jsonOption(
+    text
+      .command('copy')
+      .description('copy uncopied cursor text to task documents')
+      .requiredOption('--cursor <value>', 'select this workflow cursor'),
+  )
+    .allowExcessArguments(false)
+    .action((options) =>
+      copyWorkflowTextCommand(
+        productArgv('workflow', ['text', 'copy'], options),
+        output(options),
+        handlerOptions,
+      ),
+    )
   workflow
     .command('cursor identity-map')
     .description('print numeric workflow cursor identities and their durable record ids as JSON')

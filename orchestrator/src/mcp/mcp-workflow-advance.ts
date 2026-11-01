@@ -8,10 +8,17 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
 import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
+import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
+import {
+  copyWorkflowTextForTarget,
+  productionWorkflowTextDocumentPorts,
+  type WorkflowTextDocumentPorts,
+  workflowTextUncopiedReport,
+} from '../workflow/workflow-text-copy.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
@@ -39,6 +46,7 @@ export async function advanceWorkflow(
     cursor,
   }: z.infer<typeof nextWorkflowStepInputSchema>,
   hubTaskReader?: HubTaskReader,
+  workflowTextDocuments: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ) {
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
@@ -67,6 +75,19 @@ export async function advanceWorkflow(
     context,
     cursor,
   })
+  const copy = await copyWorkflowTextForTarget(
+    {
+      project,
+      workflow: slug,
+      mode: effectiveMode,
+      key: workflowKeyOf(workflowArgs) || undefined,
+      cursor,
+      context: advanceContext,
+    },
+    undefined,
+    hubTaskReader,
+    workflowTextDocuments,
+  )
   const result = nextWorkflowStep(
     slug,
     project,
@@ -98,5 +119,6 @@ export async function advanceWorkflow(
     outcome,
     live,
   )
-  return { content: [{ type: 'text' as const, text: result }] }
+  const warning = workflowTextUncopiedReport(copy)
+  return { content: [{ type: 'text' as const, text: warning ? `${result}\n${warning}` : result }] }
 }

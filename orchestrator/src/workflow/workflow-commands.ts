@@ -71,6 +71,16 @@ import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
 import { attachWorkflowText } from './workflow-text.ts'
+import {
+  copyWorkflowTextForCursor,
+  copyWorkflowTextForTarget,
+  cursorForWorkflowTextCopy,
+  productionWorkflowTextDocumentPorts,
+  showWorkflowText,
+  type WorkflowTextDocumentPorts,
+  workflowTextCopyReport,
+  workflowTextUncopiedReport,
+} from './workflow-text-copy.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
 import {
@@ -105,6 +115,7 @@ export type WorkflowCommandOptions = {
   /** Where a landing workflow reads the branch's commit count; the registered checkout's git by default. */
   commitCount?: CommitCountPort
   hubTaskReader?: HubTaskReader
+  workflowTextDocuments?: WorkflowTextDocumentPorts
 }
 export type WorkflowPrint = (value: unknown, line?: string) => void
 type ProbePrintRecord =
@@ -471,6 +482,19 @@ export async function abandonCommand(
     undefined,
     cursor,
   )
+  const copy = await copyWorkflowTextForTarget(
+    {
+      project,
+      workflow: slug,
+      mode,
+      key: workflowKeyOf(args) || undefined,
+      cursor,
+      context,
+    },
+    undefined,
+    options.hubTaskReader,
+    options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
+  )
   const result = abandonWorkflowCursor(
     slug,
     project ?? '',
@@ -481,7 +505,8 @@ export async function abandonCommand(
     undefined,
     cursor,
   )
-  print(result, result)
+  const warning = workflowTextUncopiedReport(copy)
+  print(warning ? `${result}\n${warning}` : result, warning ? `${result}\n${warning}` : result)
 }
 
 export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
@@ -597,6 +622,19 @@ export async function nextCommand(
     cursor,
   )
   const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
+  const copy = await copyWorkflowTextForTarget(
+    {
+      project,
+      workflow: slug,
+      mode,
+      key: workflowKeyOf(args) || undefined,
+      cursor,
+      context,
+    },
+    undefined,
+    options.hubTaskReader,
+    options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
+  )
   const result = nextWorkflowStep(
     slug,
     project,
@@ -619,7 +657,36 @@ export async function nextCommand(
     flagValue(argv, 'outcome'),
     live,
   )
-  print(result, result)
+  const warning = workflowTextUncopiedReport(copy)
+  print(warning ? `${result}\n${warning}` : result, warning ? `${result}\n${warning}` : result)
+}
+
+export function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): void {
+  const shown = showWorkflowText(argv[3]!)
+  if (shown.kind === 'live') {
+    print(shown, shown.body)
+    return
+  }
+  const line =
+    `${PLATFORM_SLUG} task document ${shown.documentReference} preserves attached-text:${shown.id}; ` +
+    `read it with: ${PLATFORM_SLUG} task doc show ${shown.documentReference}`
+  print(shown, line)
+}
+
+export async function copyWorkflowTextCommand(
+  argv: string[],
+  print: WorkflowPrint,
+  options: WorkflowCommandOptions = {},
+): Promise<void> {
+  const cursor = positive(flagValue(argv, 'cursor'), '--cursor')
+  if (cursor === undefined) throw new Error('--cursor is required')
+  const result = await copyWorkflowTextForCursor(
+    cursorForWorkflowTextCopy(cursor),
+    undefined,
+    options.hubTaskReader,
+    options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
+  )
+  print(result, workflowTextCopyReport(result, cursor) || 'no uncopied workflow text')
 }
 
 export async function awaitCommand(

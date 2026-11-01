@@ -189,6 +189,30 @@ export function attachWorkflowText(
   }, d)
 }
 
-export function deleteWorkflowText(cursorId: string, d: Database): void {
-  d.query('DELETE FROM workflow_step_text WHERE cursor_record_id=?').run(cursorId)
+export function workflowTextIdsToDelete(input: {
+  linked: boolean
+  rowIds: readonly string[]
+  copiedIds: ReadonlySet<string>
+}): string[] {
+  return input.linked ? input.rowIds.filter((id) => input.copiedIds.has(id)) : [...input.rowIds]
+}
+
+export function deleteWorkflowText(cursorId: string, linked: boolean, d: Database): void {
+  const rowIds = d
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM workflow_step_text WHERE cursor_record_id=?',
+    )
+    .all(cursorId)
+    .map((row) => row.record_id)
+  const copiedIds = new Set(
+    d
+      .query<{ workflow_text_record_id: string }, [string]>(
+        'SELECT workflow_text_record_id FROM workflow_text_copy WHERE cursor_record_id=?',
+      )
+      .all(cursorId)
+      .map((row) => row.workflow_text_record_id),
+  )
+  const deletable = workflowTextIdsToDelete({ linked, rowIds, copiedIds })
+  const remove = d.query('DELETE FROM workflow_step_text WHERE record_id=?')
+  for (const id of deletable) remove.run(id)
 }

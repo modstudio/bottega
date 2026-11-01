@@ -696,7 +696,7 @@ function persistWorkflowAdvance(
     d,
   )
   if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
-    deleteWorkflowText(row.record_id, d)
+    deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
   if (advance.ordinal === null) {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
@@ -857,7 +857,7 @@ function abandonSelectedWorkflowCursor(
         SET abandoned_at=?, abandoned_reason=?
       WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
   ).run(at, reason.trim(), row.record_id)
-  deleteWorkflowText(row.record_id, d)
+  deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
   d.query(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
      session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,

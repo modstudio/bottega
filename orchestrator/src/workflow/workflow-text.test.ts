@@ -19,7 +19,16 @@ import {
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
   WORKFLOW_TEXT_CURSOR_MAX_BYTES,
   workflowTextFacts,
+  workflowTextIdsToDelete,
 } from './workflow-text.ts'
+import {
+  copyWorkflowTextForCursor,
+  cursorForWorkflowTextCopy,
+  showWorkflowText,
+  type WorkflowTaskDocument,
+  type WorkflowTextDocumentPorts,
+  workflowTextUncopiedReport,
+} from './workflow-text-copy.ts'
 import { promoteWorkflowLocal, setWorkflowLocal } from './workflows.ts'
 
 const context = { session: 'text-owner' }
@@ -105,6 +114,23 @@ const rowCount = (d: Database, cursor: number) =>
   ).count
 
 describe('workflow text decisions', () => {
+  test('linked deletion selects only copied rows while unlinked deletion selects every row', () => {
+    const cases = [
+      { linked: false, copied: [], expected: ['one', 'two'] },
+      { linked: true, copied: [], expected: [] },
+      { linked: true, copied: ['two'], expected: ['two'] },
+      { linked: true, copied: ['one', 'two'], expected: ['one', 'two'] },
+    ]
+    for (const entry of cases)
+      expect(
+        workflowTextIdsToDelete({
+          linked: entry.linked,
+          rowIds: ['one', 'two'],
+          copiedIds: new Set(entry.copied),
+        }),
+      ).toEqual(entry.expected)
+  })
+
   test('attach permission names both measured byte bounds and ownership', () => {
     expect(
       decideWorkflowTextAttach({
@@ -309,9 +335,17 @@ describe('workflow text lifecycle', () => {
 
     const abandoned = database()
     const abandonedCursor = open(abandoned)
-    attachWorkflowTextByHandle(abandonedCursor, 'discard me', context, abandoned)
+    const abandonedReference = attachWorkflowTextByHandle(
+      abandonedCursor,
+      'discard me',
+      context,
+      abandoned,
+    )
     abandonWorkflowCursorByHandle(abandonedCursor, 'no longer needed', context, abandoned)
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
+    expect(() => showWorkflowText(abandonedReference, abandoned)).toThrow(
+      `${abandonedReference} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
+    )
   })
 
   test('the service refuses text over either live byte bound', () => {
@@ -330,5 +364,162 @@ describe('workflow text lifecycle', () => {
     expect(() => attachWorkflowTextByHandle(cursor, 'z', context, d)).toThrow(
       'WORKFLOW_TEXT_CURSOR_MAX_BYTES',
     )
+  })
+})
+
+const taskReader = async () => [{ key: 'DEV-1975', record_id: 'task-dev-1975', project: 'fixture' }]
+
+function linkCursor(d: Database, cursor: number): void {
+  d.query('UPDATE workflow_cursor SET task_record_id=? WHERE number=?').run('task-dev-1975', cursor)
+}
+
+function documentFake(initial: WorkflowTaskDocument[] = []): {
+  ports: WorkflowTextDocumentPorts
+  created: { title: string; body: string; reference: string }[]
+} {
+  const documents = [...initial]
+  const created: { title: string; body: string; reference: string }[] = []
+  return {
+    created,
+    ports: {
+      async list() {
+        return documents
+      },
+      async create(_task, _project, title, body) {
+        const reference = `DEV-1975/${documents.length + 1}`
+        documents.push({ reference, title })
+        created.push({ title, body, reference })
+        return reference
+      },
+    },
+  }
+}
+
+describe('task-linked workflow text preservation', () => {
+  test('finish and abandon preserve every attachment as a readable document redirect', async () => {
+    for (const terminal of ['finish', 'abandon'] as const) {
+      const d = database()
+      const cursor = open(d)
+      linkCursor(d, cursor)
+      const fake = documentFake()
+      const references: string[] = []
+      if (terminal === 'finish') {
+        for (const note of ['source', 'consumer', 'final']) {
+          const reference = attachWorkflowTextByHandle(cursor, `${terminal} ${note}`, context, d)
+          references.push(reference)
+          await copyWorkflowTextForCursor(
+            cursorForWorkflowTextCopy(cursor, d),
+            d,
+            taskReader,
+            fake.ports,
+          )
+          nextWorkflowStep(
+            'text-fixture',
+            'fixture',
+            'default',
+            {},
+            note,
+            context,
+            d,
+            { artifact: reference },
+            {},
+            cursor,
+          )
+        }
+      } else {
+        references.push(
+          attachWorkflowTextByHandle(cursor, `${terminal} first`, context, d),
+          attachWorkflowTextByHandle(cursor, `${terminal} second`, context, d),
+        )
+        await copyWorkflowTextForCursor(
+          cursorForWorkflowTextCopy(cursor, d),
+          d,
+          taskReader,
+          fake.ports,
+        )
+        abandonWorkflowCursorByHandle(cursor, 'done', context, d)
+      }
+      for (const reference of references) {
+        const shown = showWorkflowText(reference, d)
+        expect(shown.kind).toBe('redirect')
+      }
+      expect(fake.created.map((row) => row.body)).toEqual(
+        terminal === 'finish'
+          ? ['finish source', 'finish consumer', 'finish final']
+          : ['abandon first', 'abandon second'],
+      )
+    }
+  })
+
+  test('a failed copy does not block close, and terminal retry copies then deletes the live row', async () => {
+    const d = database()
+    const cursor = open(d)
+    linkCursor(d, cursor)
+    const reference = attachWorkflowTextByHandle(cursor, 'survives failure', context, d)
+    const failing = documentFake()
+    failing.ports.create = async () => {
+      throw new Error('document service unavailable')
+    }
+    const failed = await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(cursor, d),
+      d,
+      taskReader,
+      failing.ports,
+    )
+    expect(failed.uncopied).toHaveLength(1)
+    abandonWorkflowCursorByHandle(cursor, 'close anyway', context, d)
+    expect(workflowTextUncopiedReport(failed)).toContain('workflow text copy --cursor')
+    expect(showWorkflowText(reference, d)).toMatchObject({ kind: 'live', body: 'survives failure' })
+
+    const retry = documentFake()
+    await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(cursor, d),
+      d,
+      taskReader,
+      retry.ports,
+    )
+    expect(rowCount(d, cursor)).toBe(0)
+    expect(showWorkflowText(reference, d)).toMatchObject({
+      kind: 'redirect',
+      documentReference: 'DEV-1975/1',
+    })
+  })
+
+  test('retry reuses only an exact first title token, never a prefix collision', async () => {
+    const exactDb = database()
+    const exactCursor = open(exactDb)
+    linkCursor(exactDb, exactCursor)
+    const exactReference = attachWorkflowTextByHandle(exactCursor, 'exact', context, exactDb)
+    const exactId = exactReference.slice('attached-text:'.length)
+    const exact = documentFake([
+      { reference: 'DEV-1975/7', title: `attached-text:${exactId} original-step` },
+    ])
+    const exactResult = await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(exactCursor, exactDb),
+      exactDb,
+      taskReader,
+      exact.ports,
+    )
+    expect(exactResult.copied).toEqual([
+      { id: exactId, documentReference: 'DEV-1975/7', reused: true },
+    ])
+    expect(exact.created).toHaveLength(0)
+
+    const prefixDb = database()
+    const prefixCursor = open(prefixDb)
+    linkCursor(prefixDb, prefixCursor)
+    const prefixReference = attachWorkflowTextByHandle(prefixCursor, 'prefix', context, prefixDb)
+    const prefixId = prefixReference.slice('attached-text:'.length)
+    const prefix = documentFake([
+      { reference: 'DEV-1975/8', title: `attached-text:${prefixId}x collision` },
+    ])
+    const prefixResult = await copyWorkflowTextForCursor(
+      cursorForWorkflowTextCopy(prefixCursor, prefixDb),
+      prefixDb,
+      taskReader,
+      prefix.ports,
+    )
+    expect(prefixResult.copied[0]).toMatchObject({ reused: false })
+    expect(prefix.created[0]?.title).toBe(`attached-text:${prefixId} text-source`)
   })
 })

@@ -599,6 +599,7 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'monitor_condition.issue_key',
     'pull_request_ci.workflow_run_id',
     'run.vendor_session',
+    'workflow_text_copy.task_document_reference',
   ]),
   ...manifest('orchestrator', 'filesystem path or ref issued by the filesystem or Git', [
     'resource_claim.allocation_key',
@@ -910,6 +911,9 @@ const UUID_COLUMNS: readonly ManifestColumn[] = [
     'workflow_obligation.cursor_record_id',
     'workflow_step_text.record_id',
     'workflow_step_text.cursor_record_id',
+    'workflow_text_copy.record_id',
+    'workflow_text_copy.workflow_text_record_id',
+    'workflow_text_copy.cursor_record_id',
     'workflow_version.record_id',
     'workflow_version.workflow_record_id',
     'workflow_version.space_id',
