@@ -225,6 +225,7 @@ function release(): void {
         DROP DATABASE IF EXISTS run_task_reference_migration WITH (FORCE);
         DROP DATABASE IF EXISTS run_owner_migration WITH (FORCE);
         DROP DATABASE IF EXISTS workflow_generation_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS routing_evidence_migration WITH (FORCE);
         DROP DATABASE IF EXISTS workflow_catalogue WITH (FORCE);
         DROP DATABASE IF EXISTS lens_catalogue WITH (FORCE);
         DROP DATABASE IF EXISTS port_catalogue WITH (FORCE);
@@ -353,6 +354,7 @@ try {
     CREATE DATABASE board_shared_space_invalid_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_reader_run_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE workflow_generation_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE routing_evidence_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE workflow_catalogue OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE lens_catalogue OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE port_catalogue OWNER ${RECORD_OWNER_ROLE};
@@ -381,6 +383,7 @@ try {
   )
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'board_reader_run_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_generation_migration')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'routing_evidence_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_catalogue')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'lens_catalogue')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'port_catalogue')
@@ -412,6 +415,7 @@ try {
   const boardSharedSpaceInvalidMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_invalid_migration`
   const boardReaderRunMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_reader_run_migration`
   const workflowGenerationMigrationUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_generation_migration`
+  const routingEvidenceMigrationUrl = `postgres://postgres:postgres@127.0.0.1:${port}/routing_evidence_migration`
   const workflowCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_catalogue`
   const lensCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/lens_catalogue`
   const portCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/port_catalogue`
@@ -509,6 +513,18 @@ try {
     { BOTTEGA_TEST_WORKFLOW_GENERATION_MIGRATION_URL: workflowGenerationMigrationUrl },
   )
   if (workflowGenerationMigration !== 0) throw new EarlyExit(workflowGenerationMigration)
+
+  const routingEvidenceMigration = await run(
+    [
+      'bun',
+      'test',
+      '--timeout',
+      '30000',
+      'src/postgres/postgres-migrate-routing-evidence-sequence.test.ts',
+    ],
+    { BOTTEGA_TEST_ROUTING_EVIDENCE_MIGRATION_URL: routingEvidenceMigrationUrl },
+  )
+  if (routingEvidenceMigration !== 0) throw new EarlyExit(routingEvidenceMigration)
 
   const hubProjectIdentityMigration = await run(
     [

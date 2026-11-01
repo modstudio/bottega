@@ -11,7 +11,12 @@ import { rememberActiveRecordSpace, rememberProjectSpace } from '../project-spac
 import { applySubjectRecord } from '../subject/subjects.ts'
 import { recordApiClient } from './record-api-client.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
+import {
+  readCursor,
+  readRecordCursor,
+  writeCursor,
+  writeRecordCursor,
+} from './record-cache-cursor.ts'
 import { pullLensCatalogue } from './record-cache-lens.ts'
 import { recordCacheSpaceOwnsAddress } from './record-cache-ownership.ts'
 import { pullPortCatalogue } from './record-cache-port.ts'
@@ -29,21 +34,6 @@ import { rememberSignedInRecordUser } from './record-session.ts'
 const DOCS_CURSOR = 'record_docs_cursor'
 const SUBJECTS_CURSOR = 'record_subjects_cursor'
 const SCORES_CURSOR = 'record_scores_cursor'
-function readCursor(local: Database, key: string): string | undefined {
-  return local
-    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-    .get(key)?.value
-}
-
-function writeCursor(local: Database, key: string, value: string): void {
-  local
-    .query(
-      `INSERT INTO schema_meta (key, value) VALUES (?, ?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    .run(key, value)
-}
-
 function deleteCursor(local: Database, key: string): void {
   local.query('DELETE FROM schema_meta WHERE key=?').run(key)
 }

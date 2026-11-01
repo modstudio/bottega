@@ -5,25 +5,12 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
+import { readCursor, writeCursor } from './record-cache-cursor.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 
 export const ROUTING_POOL_PAGE_LIMIT = 100
 export const ROUTING_POOL_PAGES_PER_SYNC = 5
 const ROUTING_POOL_CURSOR = 'record_routing_pool_seq'
-
-function readCursor(local: Database, key: string): string | undefined {
-  return local
-    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-    .get(key)?.value
-}
-
-function writeCursor(local: Database, key: string, value: string): void {
-  local
-    .query(
-      'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(key, value)
-}
 
 export type RoutingPoolPullResult = {
   added: number

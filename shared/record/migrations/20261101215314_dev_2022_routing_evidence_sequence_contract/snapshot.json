@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "f0b06044-b704-493b-9aa2-70b61f04656b",
+  "id": "1ab3e856-1f12-4d33-a9cb-061a8629ee98",
   "prevIds": [
-    "7d72ccbe-773a-4161-a85b-470cbc1bb364"
+    "875a60c2-21a1-4126-9457-4e13403bceaf"
   ],
   "ddl": [
     {
@@ -22227,7 +22227,7 @@
       "roles": [
         "public"
       ],
-      "using": "\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid OR \"routing_evidence_head\".\"space_id\" = ANY(\n    string_to_array(nullif(current_setting('app.space_ids', true), ''), ',')::uuid[]\n  )",
+      "using": "\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "withCheck": null,
       "name": "routing_evidence_head_space_select",
       "entityType": "policies",
@@ -22241,7 +22241,7 @@
         "public"
       ],
       "using": null,
-      "withCheck": "(\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"routing_evidence_head\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "withCheck": "\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "routing_evidence_head_space_insert",
       "entityType": "policies",
       "schema": "public",
@@ -22253,8 +22253,8 @@
       "roles": [
         "public"
       ],
-      "using": "(\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"routing_evidence_head\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
-      "withCheck": "(\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"routing_evidence_head\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
+      "using": "\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
+      "withCheck": "\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid",
       "name": "routing_evidence_head_space_update",
       "entityType": "policies",
       "schema": "public",
@@ -22262,13 +22262,13 @@
     },
     {
       "as": "PERMISSIVE",
-      "for": "DELETE",
+      "for": "ALL",
       "roles": [
-        "public"
+        "record_owner"
       ],
-      "using": "(\"routing_evidence_head\".\"space_id\" = nullif(current_setting('app.space_id', true), '')::uuid) AND (EXISTS (\n    SELECT 1 FROM membership m\n    WHERE m.space_id = \"routing_evidence_head\".\"space_id\"\n      AND m.user_id = nullif(current_setting('app.user_id', true), '')::uuid\n      AND m.permission = 'write'\n  ))",
-      "withCheck": null,
-      "name": "routing_evidence_head_space_delete",
+      "using": "true",
+      "withCheck": "true",
+      "name": "routing_evidence_head_owner_all",
       "entityType": "policies",
       "schema": "public",
       "table": "routing_evidence_head"

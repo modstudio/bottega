@@ -10,13 +10,21 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
   unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import {
+  machine,
+  project,
+  RECORD_OWNER_ROLE,
+  spaceIdentity,
+  tenantPolicies,
+  user,
+} from './schema.ts'
 import { hubTask } from './schema-hub.ts'
 
 export const run = pgTable.withRLS(
@@ -145,9 +153,28 @@ export const routingEvidenceHead = pgTable.withRLS(
     spaceId: spaceIdentity(),
     sequence: bigint({ mode: 'bigint' }).notNull(),
   },
+  // Triggers write evidence heads inside a statement whose row policy already judged the caller.
   (table) => [
     unique('routing_evidence_head_space_unique').on(table.spaceId),
-    ...tenantPolicies('routing_evidence_head', table.spaceId),
+    pgPolicy('routing_evidence_head_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('routing_evidence_head_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('routing_evidence_head_space_update', {
+      for: 'update',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('routing_evidence_head_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 )
 
