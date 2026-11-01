@@ -3,6 +3,7 @@ import { decideBranchDisposal, disposalTaskState } from './branch-disposal-decis
 
 const facts = (overrides: Partial<Parameters<typeof decideBranchDisposal>[0]> = {}) => ({
   runMinted: true,
+  probeOnly: false,
   refExists: true,
   liveRun: false,
   checkedOut: false,
@@ -66,5 +67,31 @@ test('normalized active, unknown, and unverified statuses stay open', () => {
 test('operator authority is narrow to an open task with unique work', () => {
   expect(decideBranchDisposal(facts({ taskStatus: 'open', operator: true }))).toEqual({
     eligible: true,
+  })
+})
+
+test('probe-only disposal bypasses only the open-task refusal', () => {
+  expect(decideBranchDisposal(facts({ taskStatus: 'open', probeOnly: true }))).toEqual({
+    eligible: true,
+  })
+  expect(decideBranchDisposal(facts({ taskStatus: 'open', probeOnly: false }))).toEqual({
+    eligible: false,
+    reason: 'open-task',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, liveRun: true }))).toEqual({
+    eligible: false,
+    reason: 'live-owner',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, checkedOut: true }))).toEqual({
+    eligible: false,
+    reason: 'live-owner',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, uniqueWork: false }))).toEqual({
+    eligible: false,
+    reason: 'proved-safe',
+  })
+  expect(decideBranchDisposal(facts({ probeOnly: true, refExists: false }))).toEqual({
+    eligible: false,
+    reason: 'missing-ref',
   })
 })

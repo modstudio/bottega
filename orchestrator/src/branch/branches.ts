@@ -92,6 +92,7 @@ export type BranchPruneReport = {
     branch: string
     reason: import('./branch-state.ts').BranchPruneKeptReason
     holdingPath?: string | null
+    remedy?: string
   }[]
   operator: {
     branch: string
@@ -138,7 +139,7 @@ function recordedBranchLandings(): BranchLandingRecord[] {
 function projectRuns(project: Project): RunRow[] {
   return db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status
+      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status,probe
          FROM run
         WHERE project_record_id=?
         ORDER BY number`,
@@ -557,17 +558,53 @@ export function branchesReport(options: {
   }
 }
 
-function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): boolean {
+function listOperatorBranch(
+  row: BranchReportRow,
+  report: BranchPruneReport,
+  key: string | null,
+): boolean {
   if (row.state !== 'unlanded' && row.state !== 'unknown') return false
-  report.operator.push({
-    branch: row.branch,
+  const eligibility = decidePruneEligibility({
     state: row.state,
-    commitsNotOnTrunk: row.commitsNotOnTrunk,
-    command: `git branch -D ${row.branch}`,
+    probeOnly: row.probeOnly,
+    checkedOut: row.checkedOut,
+    liveRun: row.liveRun,
+    tipMoved: false,
   })
-  report.kept.push({ branch: row.branch, reason: row.state })
+  if (eligibility.eligible) return false
+  if (eligibility.reason !== 'throwaway') {
+    report.operator.push({
+      branch: row.branch,
+      state: row.state,
+      commitsNotOnTrunk: row.commitsNotOnTrunk,
+      command: `git branch -D ${row.branch}`,
+    })
+  }
+  report.kept.push({
+    branch: row.branch,
+    reason: eligibility.reason,
+    remedy: branchVerdictRemedy(
+      row.probeOnly ? 'throwaway' : row.state,
+      report.project,
+      row.branch,
+      key,
+    ),
+  })
   if (row.state === 'unknown' && row.error) report.errors.push(`${row.branch}: ${row.error}`)
   return true
+}
+
+export function branchVerdictRemedy(
+  reason: 'throwaway' | 'unlanded' | 'unknown',
+  project: string,
+  branch: string,
+  key: string | null,
+): string {
+  if (reason === 'throwaway')
+    return `${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason throwaway --note "<why>"`
+  if (reason === 'unlanded')
+    return `land it through its own pull request, or ${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason abandoned --note "<why>"`
+  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key ${key ?? '<KEY>'} --dry-run once the reported error clears`
 }
 
 function tipStillEligible(
@@ -590,6 +627,7 @@ function tipStillEligible(
   }
   const eligibility = decidePruneEligibility({
     state: row.state,
+    probeOnly: row.probeOnly,
     checkedOut: row.checkedOut,
     liveRun: row.liveRun,
     tipMoved: currentTip !== row.tip,
@@ -632,6 +670,7 @@ function deleteAndSettleBranch(
       )
       const eligibility = decidePruneEligibility({
         state: row.state,
+        probeOnly: row.probeOnly,
         checkedOut,
         liveRun,
         tipMoved: currentTip !== row.tip,
@@ -708,12 +747,16 @@ export function pruneBranches(options: {
     observations: projectReport.observations,
     errors: [],
   }
-  const rows =
+  const rows: { row: BranchReportRow; key: string }[] =
     options.key === undefined
-      ? projectReport.keys.flatMap((candidate) => candidate.branches)
-      : (projectReport.keys.find((candidate) => candidate.key === options.key)?.branches ?? [])
-  for (const row of rows) {
-    if (listOperatorBranch(row, report)) continue
+      ? projectReport.keys.flatMap((candidate) =>
+          candidate.branches.map((row) => ({ row, key: candidate.key })),
+        )
+      : (projectReport.keys.find((candidate) => candidate.key === options.key)?.branches ?? []).map(
+          (row) => ({ row, key: options.key! }),
+        )
+  for (const { row, key } of rows) {
+    if (listOperatorBranch(row, report, key)) continue
     if (report.dryRun) {
       if (!tipStillEligible(project, row, report)) continue
       report.wouldDelete.push(row.branch)
@@ -752,10 +795,12 @@ export function pruneProjectBranches(options: {
     errors: [],
   }
   const seen = new Set<string>()
-  for (const row of projectReport.keys.flatMap((key) => key.branches)) {
+  for (const { row, key } of projectReport.keys.flatMap((group) =>
+    group.branches.map((row) => ({ row, key: group.key })),
+  )) {
     if (seen.has(row.branch)) continue
     seen.add(row.branch)
-    if (listOperatorBranch(row, report)) continue
+    if (listOperatorBranch(row, report, key)) continue
     if (report.dryRun) {
       if (!tipStillEligible(project, row, report)) continue
       report.wouldDelete.push(row.branch)
@@ -941,7 +986,10 @@ export function renderBranchPruneReport(report: BranchPruneReport): string {
   }
   for (const observation of report.observations) lines.push(`  observation: ${observation}`)
   for (const branch of acted) lines.push(`  ${action}: ${branch}`)
-  for (const row of report.kept) lines.push(`  kept: ${row.branch} (${row.reason})`)
+  for (const row of report.kept)
+    lines.push(
+      `  kept: ${row.branch} (${row.reason})${row.remedy ? `; cleared by: ${row.remedy}` : ''}`,
+    )
   for (const row of report.operator) {
     lines.push(
       `  operator: ${row.branch} (${row.state}, ${row.commitsNotOnTrunk} commits not on trunk); ${row.command}`,

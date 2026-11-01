@@ -163,6 +163,7 @@ export const cleanupBoundarySpecs = [
       '../record/outbox-sanitize.ts',
       './branch-disposal-decision.ts',
       './branch-settlement.ts',
+      './branch-state.ts',
       './branches.ts',
       './task-status-observation.ts',
     ],
@@ -174,11 +175,12 @@ export const cleanupBoundarySpecs = [
     name: 'ship-cleanup-decision-boundary',
     file: 'orchestrator/src/ship-cleanup/ship-cleanup-decision.ts',
     allowed: [
+      '../branch/branch-state.ts',
       '../evidence/unjudged-run-remedy.ts',
       '../run/run-status.ts',
       '../run/synthetic-lifecycle-job.ts',
     ],
-    typeOnlyAllowed: ['../branch/branch-state.ts'],
+    typeOnlyAllowed: [],
     reason:
       'Keep ship cleanup selection pure and independent of filesystems, stores, commands, and processes.',
   },

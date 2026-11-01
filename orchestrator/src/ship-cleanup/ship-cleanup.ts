@@ -13,6 +13,7 @@ import {
   findRecordedBranchLanding,
 } from '../branch/branch-state.ts'
 import {
+  branchVerdictRemedy,
   classifyMintedBranch,
   type GitRefObservation,
   observeGitRef,
@@ -57,6 +58,7 @@ type RunRow = {
   branch: string | null
   minted_branch: string | null
   launch_key: string | null
+  probe: number
   evidence_excluded: string | null
   failure_kind: string | null
   root_failure_kind: string | null
@@ -135,7 +137,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
   const rows = database
     .query(
       `SELECT r.record_id,r.number,r.parent_run_record_id,r.started_at,r.job,r.status,r.branch,
-              r.minted_branch,r.launch_key,r.evidence_excluded,r.failure_kind,r.worktree,
+              r.minted_branch,r.launch_key,r.probe,r.evidence_excluded,r.failure_kind,r.worktree,
               root.number AS root_number,root.failure_kind AS root_failure_kind,root.agent AS root_agent
          FROM run r
          JOIN run root ON root.record_id=COALESCE(r.parent_run_record_id,r.record_id)
@@ -170,6 +172,7 @@ function runFacts(projectRecordId: string, database: Database): ShipCleanupRunFa
       branch: row.branch,
       mintedBranch: row.minted_branch,
       launchKey: row.launch_key,
+      probe: row.probe === 1,
       judged: scored.has(rootId) || excludedRoots.has(rootId),
       failureKind: row.failure_kind,
       rootFailureKind: row.root_failure_kind,
@@ -755,6 +758,7 @@ export function shipCleanup(branch: string, options: ShipCleanupOptions = {}): S
           reason: item.reason,
           reasonKind: 'landing-not-proved' as const,
           holdingPath: null,
+          remedy: branchVerdictRemedy(item.reason, report.project, item.branch, taskKey),
         },
         callerLandingTreePath,
       ),

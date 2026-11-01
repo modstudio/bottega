@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import {
+  type BranchStateDecision,
+  decidePruneEligibility,
+  isProbeOnlyMint,
+} from '../branch/branch-state.ts'
+import {
   decideShipCleanup,
   decideShipCleanupKeptItem,
   decideShipCleanupVerdict,
@@ -18,6 +23,7 @@ const run = (overrides: Partial<ShipCleanupRunFact> = {}): ShipCleanupRunFact =>
   branch: 'DEV-1392-c3',
   mintedBranch: 'DEV-1392-c3',
   launchKey: 'DEV-1392',
+  probe: false,
   judged: true,
   failureKind: null,
   rootFailureKind: null,
@@ -267,8 +273,8 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
     delete: [],
     landingProof: [],
     keep: [
-      { branch: 'DEV-1392-a', reason: 'landing not proved' },
-      { branch: 'DEV-1392-b', reason: 'landing not proved' },
+      { branch: 'DEV-1392-a', reason: 'unknown' },
+      { branch: 'DEV-1392-b', reason: 'unknown' },
     ],
     gone: [],
   })
@@ -284,7 +290,7 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
   ).toEqual({
     delete: ['DEV-1392-a'],
     landingProof: ['DEV-1392-a'],
-    keep: [{ branch: 'DEV-1392-b', reason: 'landing not proved' }],
+    keep: [{ branch: 'DEV-1392-b', reason: 'unknown' }],
     gone: [],
   })
   expect(decideTaskBranchesToPrune('DEV-1392', runs, new Set(), new Map())).toEqual({
@@ -306,4 +312,70 @@ test('task branch pruning accepts squash, recorded PR head, and containment proo
       goneLandedRun,
     ])[0],
   ).toMatchObject({ scope: 'chain', artifacts: 'remove', worktreeAction: 'close' })
+})
+
+test('ship cleanup and prune give every minted branch state the same verdict', () => {
+  const probeCases = [
+    { name: 'empty', probes: [], expected: false },
+    { name: 'all probe', probes: [true, true], expected: true },
+    { name: 'mixed', probes: [true, false], expected: false },
+    { name: 'none', probes: [false, false], expected: false },
+  ]
+  for (const probeCase of probeCases) {
+    expect(isProbeOnlyMint(probeCase.probes), probeCase.name).toBe(probeCase.expected)
+  }
+
+  const landed: BranchStateDecision = {
+    state: 'landed',
+    landedBy: { type: 'patch-equivalent', form: 'squash' },
+  }
+  const rows: {
+    name: string
+    state: BranchStateDecision
+    probes: boolean[]
+    expected: 'delete' | 'throwaway' | 'unlanded' | 'unknown'
+  }[] = [
+    { name: 'landed', state: landed, probes: [false], expected: 'delete' },
+    { name: 'superseded', state: { state: 'superseded' }, probes: [false], expected: 'delete' },
+    { name: 'empty', state: { state: 'empty' }, probes: [false], expected: 'delete' },
+    { name: 'unlanded', state: { state: 'unlanded' }, probes: [false], expected: 'unlanded' },
+    { name: 'unknown', state: { state: 'unknown' }, probes: [false], expected: 'unknown' },
+    {
+      name: 'probe-only unlanded',
+      state: { state: 'unlanded' },
+      probes: [true],
+      expected: 'throwaway',
+    },
+    { name: 'probe-only landed', state: landed, probes: [true], expected: 'delete' },
+    {
+      name: 'mixed probe unlanded',
+      state: { state: 'unlanded' },
+      probes: [true, false],
+      expected: 'unlanded',
+    },
+  ]
+
+  for (const row of rows) {
+    const branch = `DEV-1392-${row.name.replaceAll(' ', '-')}`
+    const runs = row.probes.map((probe, index) =>
+      run({ record_id: String(index), mintedBranch: branch, probe }),
+    )
+    const cleanup = decideTaskBranchesToPrune(
+      'DEV-1392',
+      runs,
+      new Set([branch]),
+      new Map([[branch, row.state]]),
+    )
+    const prune = decidePruneEligibility({
+      state: row.state.state,
+      probeOnly: isProbeOnlyMint(row.probes),
+      checkedOut: false,
+      liveRun: false,
+      tipMoved: false,
+    })
+    const cleanupVerdict = cleanup.delete.includes(branch) ? 'delete' : cleanup.keep[0]?.reason
+    const pruneVerdict = prune.eligible ? 'delete' : prune.reason
+    expect(cleanupVerdict, row.name).toBe(row.expected)
+    expect(pruneVerdict, row.name).toBe(row.expected)
+  }
 })

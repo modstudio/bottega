@@ -18,6 +18,7 @@ import {
 } from './branch-disposal-decision.ts'
 import { assertBranchRefMayBeCreated, assertBranchRefMayBeDeleted } from './branch-ref-guard.ts'
 import { settleDeletedBranch } from './branch-settlement.ts'
+import { isProbeOnlyMint } from './branch-state.ts'
 import { branchesReport } from './branches.ts'
 import { observeTaskStatus } from './task-status-observation.ts'
 
@@ -166,13 +167,15 @@ function planBranchDisposal(input: {
     group.branches.some((row) => row.branch === branch),
   )
   const row = keyGroup?.branches.find((candidate) => candidate.branch === branch)
-  const runMinted =
-    db()
-      .query('SELECT 1 present FROM run WHERE project_record_id=? AND minted_branch=? LIMIT 1')
-      .get(project.recordId, branch) !== null
+  const mintingRuns = db()
+    .query('SELECT probe FROM run WHERE project_record_id=? AND minted_branch=?')
+    .all(project.recordId, branch) as { probe: number }[]
+  const runMinted = mintingRuns.length > 0
+  const probeOnly = isProbeOnlyMint(mintingRuns.map((run) => run.probe === 1))
   const taskStatus = observeTaskStatus(keyGroup?.key ?? null, projectName)
   const decision = decideBranchDisposal({
     runMinted,
+    probeOnly,
     refExists: true,
     liveRun: row?.liveRun ?? false,
     checkedOut: row?.checkedOut ?? false,

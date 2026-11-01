@@ -1,7 +1,11 @@
 // concern: ship cleanup decision
 /** Selects branch-owned ephemeral run data without filesystem or database access. */
 
-import type { BranchStateDecision } from '../branch/branch-state.ts'
+import {
+  type BranchStateDecision,
+  decideMintedBranchVerdict,
+  isProbeOnlyMint,
+} from '../branch/branch-state.ts'
 import {
   decideUnjudgedRunRemedy,
   providerDidNotServeRun,
@@ -25,6 +29,7 @@ export type ShipCleanupRunFact = {
   branch: string | null
   mintedBranch: string | null
   launchKey: string | null
+  probe: boolean
   judged: boolean
   failureKind: string | null
   rootFailureKind: string | null
@@ -93,13 +98,13 @@ export function decideShipCleanupVerdict(report: ShipCleanupResidueReport): Ship
 /** Select proved task branches and report every unproved run-minted sibling. */
 export function decideTaskBranchesToPrune(
   taskKey: string,
-  runs: readonly Pick<ShipCleanupRunFact, 'launchKey' | 'mintedBranch'>[],
+  runs: readonly Pick<ShipCleanupRunFact, 'launchKey' | 'mintedBranch' | 'probe'>[],
   localBranches: ReadonlySet<string>,
   landingEvidence: ReadonlyMap<string, BranchStateDecision>,
 ): {
   delete: string[]
   landingProof: string[]
-  keep: { branch: string; reason: 'landing not proved' }[]
+  keep: { branch: string; reason: 'throwaway' | 'unlanded' | 'unknown' }[]
   gone: string[]
 } {
   const branches = [
@@ -110,15 +115,33 @@ export function decideTaskBranchesToPrune(
     ),
   ].sort()
   const existing = branches.filter((branch) => localBranches.has(branch))
+  const verdicts = new Map(
+    branches.map((branch) => {
+      const mintingRuns = runs.filter(
+        (run) => run.launchKey === taskKey && run.mintedBranch === branch,
+      )
+      return [
+        branch,
+        decideMintedBranchVerdict({
+          state: landingEvidence.get(branch)?.state ?? 'unknown',
+          probeOnly: isProbeOnlyMint(mintingRuns.map((run) => run.probe)),
+        }),
+      ] as const
+    }),
+  )
   const landed = branches.filter((branch) => landingEvidence.get(branch)?.state === 'landed')
   return {
-    delete: landed.filter((branch) => localBranches.has(branch)),
+    delete: branches.filter(
+      (branch) => localBranches.has(branch) && verdicts.get(branch)?.verdict === 'delete',
+    ),
     landingProof: landed,
-    keep: existing
-      .filter((branch) => landingEvidence.get(branch)?.state !== 'landed')
-      .map((branch) => ({ branch, reason: 'landing not proved' })),
+    keep: existing.flatMap((branch) => {
+      const verdict = verdicts.get(branch)!
+      if (verdict.verdict === 'delete') return []
+      return [{ branch, reason: verdict.verdict === 'keep' ? verdict.reason : verdict.verdict }]
+    }),
     gone: branches.filter(
-      (branch) => !localBranches.has(branch) && landingEvidence.get(branch)?.state !== 'landed',
+      (branch) => !localBranches.has(branch) && verdicts.get(branch)?.verdict !== 'delete',
     ),
   }
 }
