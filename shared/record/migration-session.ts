@@ -17,7 +17,7 @@ export function migrationSessionSettings(): Array<[name: string, value: string]>
   ]
   return [
     ...bounds,
-    ...bounds.map(([name, value]) => [publishedMigrationSetting(name), value] as const),
+    ...bounds.map<[string, string]>(([name, value]) => [publishedMigrationSetting(name), value]),
     ['client_connection_check_interval', MIGRATION_CLIENT_CHECK_INTERVAL],
   ]
 }

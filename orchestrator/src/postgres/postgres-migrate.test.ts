@@ -6,12 +6,6 @@ import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate as migrateWithBunSql } from 'drizzle-orm/bun-sql/migrator'
 import {
-  formatMigrationNotice,
-  MIGRATION_NOTICE_MESSAGE_LIMIT,
-  migratePostgresFolder,
-  pendingRecordMigrationNames,
-} from './postgres-migrate.ts'
-import {
   MIGRATION_CLIENT_CHECK_INTERVAL,
   MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT,
   MIGRATION_LOCK_TIMEOUT,
@@ -19,6 +13,12 @@ import {
   migrationSessionSettings,
   publishedMigrationSetting,
 } from '../../../shared/record/migration-session.ts'
+import {
+  formatMigrationNotice,
+  MIGRATION_NOTICE_MESSAGE_LIMIT,
+  migratePostgresFolder,
+  pendingRecordMigrationNames,
+} from './postgres-migrate.ts'
 
 describe('migration session settings', () => {
   test('bounds every migration wait and statement', () => {
