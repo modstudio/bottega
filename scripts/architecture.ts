@@ -244,6 +244,7 @@ export const modules: ArchitectureModule[] = [
     '../reclaim/reclaim.ts',
     '../run/run-artifacts.ts',
     '../worktree/worktree-attribution.ts',
+    '../worktree/reader-clone-commit-observer.ts',
     './absent-tree-close-out.ts',
     './reader-scratch-release.ts',
   ]),

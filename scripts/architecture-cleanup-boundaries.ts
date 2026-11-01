@@ -237,6 +237,7 @@ export const cleanupBoundarySpecs = [
       './cleanup-sweep-docker.ts',
       './cleanup-sweep-named-tree.ts',
       './cleanup-sweep-orphan-report.ts',
+      './cleanup-sweep-orphan-candidate.ts',
       './claim-reconciliation.ts',
       './project-sweep.ts',
       '../close/close-out.ts',
@@ -275,6 +276,27 @@ export const cleanupBoundarySpecs = [
     typeOnlyAllowed: [],
     reason:
       'Keep cleanup-sweep independent of transports, routing, reviews, contracts, the CLI, and durable execution.',
+  },
+  {
+    name: 'cleanup-sweep-orphan-candidate-boundary',
+    file: 'orchestrator/src/cleanup/cleanup-sweep-orphan-candidate.ts',
+    allowed: [
+      '../../../shared/process-identity.ts',
+      'node:path',
+      '../database/db.ts',
+      '../project/projects.ts',
+      '../run/run-alive.ts',
+      '../run/run-lease.ts',
+      '../run/run-owner-session-liveness.ts',
+      '../run/run-status.ts',
+      '../worktree/reader-clone-commit-observer.ts',
+      '../worktree/worktree-attribution.ts',
+      './cleanup.ts',
+      './cleanup-sweep-decisions.ts',
+    ],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep filesystem orphan fact gathering over canonical run liveness, reader-clone observation, and the pure sweep ruling.',
   },
   {
     name: 'cleanup-sweep-orphan-report-boundary',

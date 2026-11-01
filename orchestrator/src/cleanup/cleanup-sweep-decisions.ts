@@ -294,7 +294,7 @@ export type FilesystemOrphanCandidateRuling =
   | { action: 'reclaim' }
 
 const MANUAL_OR_ESCALATE = 'inspect the tree and remove it by hand, or escalate'
-const ORCH_TREE_LABEL = ['orch', 'tree'].join(' ')
+const READER_TREE_LABEL = ['orch', 'tree'].join(' ')
 
 function orphanKeepReason(detail: string): string {
   return /^has commits not reachable from /.test(detail) ? 'holds commits not on trunk' : detail
@@ -350,7 +350,7 @@ function decideUnmarkedFilesystemOrphan(
   if (facts.run === 'absent') {
     return {
       action: 'keep',
-      keepLine: `kept: unmarked ${ORCH_TREE_LABEL} names run ${facts.nameRunId}, which has no run record; ${MANUAL_OR_ESCALATE}`,
+      keepLine: `kept: unmarked ${READER_TREE_LABEL} names run ${facts.nameRunId}, which has no run record; ${MANUAL_OR_ESCALATE}`,
       keepReason: 'ownership cannot be attributed',
     }
   }
