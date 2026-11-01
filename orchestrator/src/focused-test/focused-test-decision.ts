@@ -1,7 +1,7 @@
 // concern: focused-test-decision
 /** Pure contracts and decisions for project-registered focused test runs. */
 
-import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 export const FOCUSED_TEST_MAX_PATHS = 64
 /** What one affected-test selector may print before its selection is refused rather than held. */
@@ -12,14 +12,13 @@ const FOCUSED_TEST_OUTPUT_TAIL_BYTES = 16 * 1024
 type FocusedTestCommand = { command: string; args: string[] }
 export type FocusedTestRunner = FocusedTestCommand & {
   affected?: FocusedTestSelector
-  exactPaths?: boolean
   patterns?: string[]
 }
 /** The command that prints this project's affected test paths for one base commit. */
 export type FocusedTestSelector = FocusedTestCommand
 /** The `focusedTests` object a project's settings declare. */
 export type FocusedTestDeclaration =
-  | (FocusedTestCommand & { affected?: FocusedTestSelector; exactPaths?: boolean })
+  | (FocusedTestCommand & { affected?: FocusedTestSelector })
   | { runners: FocusedTestRunner[] }
 
 type FocusedTestCommandValidation = {
@@ -240,17 +239,6 @@ function validateFocusedTestPatterns(input: {
   return { patterns, problems }
 }
 
-function validateFocusedTestExactPaths(
-  value: unknown,
-  location: string,
-): { exactPaths: boolean | undefined; problems: string[] } {
-  if (value === undefined) return { exactPaths: undefined, problems: [] }
-  if (typeof value !== 'boolean') {
-    return { exactPaths: undefined, problems: [`${location}.exactPaths must be a boolean`] }
-  }
-  return { exactPaths: value, problems: [] }
-}
-
 /** The runner and selector parts of one `focusedTests` value, validated independently. */
 function focusedTestDeclarationParts(value: unknown): {
   runners: FocusedTestRunner[]
@@ -293,8 +281,6 @@ function focusedTestDeclarationParts(value: unknown): {
       const declared = entry as Record<string, unknown>
       const affected = validateFocusedTestCommand(declared.affected, `${location}.affected`)
       problems.push(...affected.problems)
-      const exactPaths = validateFocusedTestExactPaths(declared.exactPaths, location)
-      problems.push(...exactPaths.problems)
       const { patterns, problems: patternProblems } = validateFocusedTestPatterns({
         value: declared.patterns,
         location,
@@ -306,7 +292,6 @@ function focusedTestDeclarationParts(value: unknown): {
         runners.push({
           ...command.command,
           ...(affected.command ? { affected: affected.command } : {}),
-          ...(exactPaths.exactPaths === undefined ? {} : { exactPaths: exactPaths.exactPaths }),
           ...(patterns ? { patterns } : {}),
         })
       }
@@ -322,19 +307,16 @@ function focusedTestDeclarationParts(value: unknown): {
     'focusedTests',
   )
   const legacySelector = validateFocusedTestCommand(candidate.affected, 'focusedTests.affected')
-  const exactPaths = validateFocusedTestExactPaths(candidate.exactPaths, 'focusedTests')
   return {
-    runners:
-      legacyRunner.command && !exactPaths.problems.length
-        ? [
-            {
-              ...legacyRunner.command,
-              ...(legacySelector.command ? { affected: legacySelector.command } : {}),
-              ...(exactPaths.exactPaths === undefined ? {} : { exactPaths: exactPaths.exactPaths }),
-            },
-          ]
-        : [],
-    runnerProblems: [...legacyRunner.problems, ...exactPaths.problems],
+    runners: legacyRunner.command
+      ? [
+          {
+            ...legacyRunner.command,
+            ...(legacySelector.command ? { affected: legacySelector.command } : {}),
+          },
+        ]
+      : [],
+    runnerProblems: legacyRunner.problems,
     selector: legacySelector,
   }
 }
@@ -540,13 +522,23 @@ export function focusedTestInvocation(
   paths: readonly string[],
   worktree: string,
 ): { command: string; argv: string[] } {
+  const operands =
+    focusedTestOperandForm(runner) === 'exact' ? paths.map((path) => `./${path}`) : paths
   return {
     command:
       isAbsolute(runner.command) || !runner.command.includes('/')
         ? runner.command
         : resolve(worktree, runner.command),
-    argv: [...runner.args, ...paths.map((path) => (runner.exactPaths ? `./${path}` : path))],
+    argv: [...runner.args, ...operands],
   }
+}
+
+/** Whether the runner consumes paths as exact file operands or with its own argument semantics. */
+export function focusedTestOperandForm(runner: FocusedTestCommand): 'exact' | 'as-given' {
+  return basename(runner.command) === 'bun' &&
+    runner.args.find((arg) => !arg.startsWith('-')) === 'test'
+    ? 'exact'
+    : 'as-given'
 }
 
 export function boundedFocusedTestOutputTail(value: string): string {

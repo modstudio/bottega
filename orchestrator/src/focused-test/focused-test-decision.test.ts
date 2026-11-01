@@ -12,6 +12,7 @@ import {
   FOCUSED_TEST_MAX_PATHS,
   FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
   focusedTestInvocation,
+  focusedTestOperandForm,
   formatFocusedTestRequestDecision,
   hasFocusedTestRunner,
   normalizeAffectedTestPaths,
@@ -145,16 +146,35 @@ describe('focused test decisions', () => {
     })
     expect(invocation.argv).not.toContain('--from-request')
     expect(
-      focusedTestInvocation(
-        { command: 'bun', args: ['test'], exactPaths: true },
-        ['tests/one.test.ts', 'tests/two.test.ts'],
-        '/worktree',
-      ).argv,
-    ).toEqual(['test', './tests/one.test.ts', './tests/two.test.ts'])
-    expect(
       focusedTestInvocation({ command: 'bun', args: ['test'] }, ['tests/one.test.ts'], '/worktree')
         .command,
     ).toBe('bun')
+  })
+
+  test('decides operand forms and argv for registered runner shapes', () => {
+    const cases: {
+      runner: { command: string; args: string[] }
+      form: 'exact' | 'as-given'
+    }[] = [
+      { runner: { command: 'bun', args: ['test'] }, form: 'exact' },
+      {
+        runner: { command: 'bun', args: ['--conditions=@segnavia/source', 'test'] },
+        form: 'exact',
+      },
+      { runner: { command: '/opt/homebrew/bin/bun', args: ['test'] }, form: 'exact' },
+      { runner: { command: 'bun', args: ['run', 'test'] }, form: 'as-given' },
+      { runner: { command: 'scripts/test-focused.ts', args: [] }, form: 'as-given' },
+      { runner: { command: 'scripts/test-focused', args: [] }, form: 'as-given' },
+      { runner: { command: 'node_modules/.bin/vitest', args: ['run'] }, form: 'as-given' },
+    ]
+
+    for (const { runner, form } of cases) {
+      expect(focusedTestOperandForm(runner)).toBe(form)
+      expect(focusedTestInvocation(runner, ['tests/one.test.ts'], '/worktree').argv).toEqual([
+        ...runner.args,
+        form === 'exact' ? './tests/one.test.ts' : 'tests/one.test.ts',
+      ])
+    }
   })
 
   test('parses only the request and result transport shapes', () => {
@@ -247,34 +267,6 @@ describe('affected focused test selections', () => {
     expect(
       validateFocusedTestDeclaration({ command: 'runner', args: [], affected: 'yes' }).problems,
     ).toEqual(['focusedTests.affected must be an object'])
-  })
-
-  test('validates and carries exact path declarations only on runners', () => {
-    expect(
-      validateFocusedTestDeclaration({ command: 'bun', args: ['test'], exactPaths: true }),
-    ).toEqual({
-      runners: [{ command: 'bun', args: ['test'], exactPaths: true }],
-      problems: [],
-    })
-    expect(
-      validateFocusedTestDeclaration({ command: 'bun', args: ['test'], exactPaths: 'yes' })
-        .problems,
-    ).toEqual(['focusedTests.exactPaths must be a boolean'])
-    expect(
-      validateFocusedTestDeclaration({
-        runners: [{ command: 'bun', args: ['test'], patterns: ['**/*.test.ts'], exactPaths: true }],
-      }),
-    ).toEqual({
-      runners: [{ command: 'bun', args: ['test'], patterns: ['**/*.test.ts'], exactPaths: true }],
-      problems: [],
-    })
-    expect(
-      validateFocusedTestDeclaration({
-        runners: [
-          { command: 'bun', args: ['test'], patterns: ['**/*.test.ts'], exactPaths: 'yes' },
-        ],
-      }).problems,
-    ).toEqual(['focusedTests.runners[0].exactPaths must be a boolean'])
   })
 
   test('asking for affected tests refuses when the project declares no selector', () => {
