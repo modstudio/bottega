@@ -597,6 +597,12 @@ try {
   )
   if (cleanRecordPool !== 0) throw new EarlyExit(cleanRecordPool)
 
+  const routingEvidence = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-routing-evidence.test.ts'],
+    { BOTTEGA_RECORD_URL: actorUrl, BOTTEGA_TEST_POSTGRES_URL: ownerUrl },
+  )
+  if (routingEvidence !== 0) throw new EarlyExit(routingEvidence)
+
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {

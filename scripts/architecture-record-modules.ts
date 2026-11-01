@@ -130,6 +130,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-routing-evidence-contract.ts', []),
   module('orchestrator/src/record/record-routing-evidence.ts', [
     'bun',
+    '../../../shared/record/tenant.ts',
     './record-cursor.ts',
     './record-pool.ts',
     './record-routing-evidence-contract.ts',

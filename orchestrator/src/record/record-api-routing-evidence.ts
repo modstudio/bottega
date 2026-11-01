@@ -4,6 +4,7 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
+import type { RecordCursor } from './record-cursor.ts'
 import { decodeRecordCursor, pageRecordItems, recordCursorOf } from './record-cursor.ts'
 import type { RecordRoutingEvidenceRow } from './record-routing-evidence.ts'
 
@@ -17,7 +18,7 @@ export type RoutingEvidenceRouteDeps = {
     input: Tenant & {
       updatedSince?: string
       limit: number
-      cursor: ReturnType<typeof decodeRecordCursor> | null
+      cursor: RecordCursor | null
     },
   ): Promise<RecordRoutingEvidenceRow[]>
 }

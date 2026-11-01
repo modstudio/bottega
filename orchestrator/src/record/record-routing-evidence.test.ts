@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
 import { pageRecordItems, recordCursorAt, recordCursorOf } from './record-cursor.ts'
-import { listRecordRoutingEvidence } from './record-routing-evidence.ts'
+import {
+  listRecordRoutingEvidence,
+  ROUTING_EVIDENCE_RUN_FIELDS,
+  ROUTING_EVIDENCE_SCORE_FIELDS,
+} from './record-routing-evidence.ts'
 
 const actorUrl = process.env.BOTTEGA_RECORD_URL
 const adminUrl = process.env.BOTTEGA_TEST_POSTGRES_URL
@@ -15,6 +19,8 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000002017'
 const FIRST_RUN_ID = '01990000-0000-7000-8000-000000002018'
 const SECOND_RUN_ID = '01990000-0000-7000-8000-000000002019'
 const STAMP = '2026-11-01T16:00:00.000Z'
+const UPDATED_SINCE = '2026-11-01T16:01:00.000Z'
+const UPDATED_AT = '2026-11-01T16:02:00.000Z'
 
 realPostgres('hosted routing evidence', () => {
   test('projects only readable evidence and pages an updated-at tie exactly once', async () => {
@@ -88,25 +94,8 @@ realPostgres('hosted routing evidence', () => {
         lenses: ['fidelity'],
       })
       expect(Object.keys(firstPage.items[0]!)).toEqual([
-        'id',
-        'spaceId',
-        'agent',
-        'model',
-        'job',
-        'stack',
-        'promptBytes',
-        'status',
-        'failureKind',
-        'executor',
-        'evidenceExcluded',
-        'startedAt',
-        'latencyMs',
-        'vendorTokens',
-        'modelCalls',
-        'peakCallTokens',
-        'delivery',
-        'quality',
-        'fidelity',
+        ...ROUTING_EVIDENCE_RUN_FIELDS,
+        ...ROUTING_EVIDENCE_SCORE_FIELDS,
         'lenses',
       ])
       expect(firstPage.nextCursor).not.toBeNull()
@@ -123,6 +112,21 @@ realPostgres('hosted routing evidence', () => {
       expect(
         await listRecordRoutingEvidence({ ...input, userId: OUTSIDER_ID, limit: 100 }),
       ).toEqual([])
+
+      expect(
+        await listRecordRoutingEvidence({ ...input, updatedSince: UPDATED_SINCE, limit: 100 }),
+      ).toEqual([])
+      await admin`UPDATE run SET updated_at=${UPDATED_AT}::timestamptz
+        WHERE id=${SECOND_RUN_ID}::uuid`
+      expect(
+        (
+          await listRecordRoutingEvidence({
+            ...input,
+            updatedSince: UPDATED_SINCE,
+            limit: 100,
+          })
+        ).map((row) => row.id),
+      ).toEqual([SECOND_RUN_ID])
     } finally {
       await admin`DELETE FROM review_lens WHERE run_id IN (${FIRST_RUN_ID}::uuid,${SECOND_RUN_ID}::uuid)`
       await admin`DELETE FROM run_score WHERE space_id=${SPACE_ID}::uuid`

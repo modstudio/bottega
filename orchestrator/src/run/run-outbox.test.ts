@@ -23,9 +23,46 @@ test('link refresh requires a new local link absent from the latest payload', ()
   expect(shouldRefreshRunRecordLinks({}, null, null)).toBe(false)
   expect(shouldRefreshRunRecordLinks({ projectName: 'project' }, projectId, null)).toBe(true)
   expect(shouldRefreshRunRecordLinks({ projectId }, projectId, taskId)).toBe(true)
-  const payloadWithoutExecutor = { projectId, taskId }
-  expect(payloadWithoutExecutor).not.toHaveProperty('executor')
-  expect(shouldRefreshRunRecordLinks(payloadWithoutExecutor, projectId, taskId)).toBe(false)
+})
+
+test('backfill does not enqueue a run whose latest payload lacks executor', () => {
+  const database = migratedTestDatabase()
+  fixtureProjectRecordId(database)
+  const projectId = database
+    .query<{ record_id: string }, []>('SELECT record_id FROM project ORDER BY name LIMIT 1')
+    .get()!.record_id
+  const runId = newRecordId()
+  database
+    .query(
+      `INSERT INTO run (
+         record_id,number,started_at,last_event_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+         status,failure_kind,project_record_id
+       ) VALUES (?,1,'2026-11-01T12:00:00.000Z','2026-11-01T12:01:00.000Z',
+                 'codex','implement','sha',4,'head','ok',NULL,?)`,
+    )
+    .run(runId, projectId)
+  database
+    .query(
+      `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
+       VALUES (?,'run',?,?,'2026-11-01T12:01:00.000Z')`,
+    )
+    .run(
+      newRecordId(),
+      runId,
+      JSON.stringify({ number: 1, projectId, status: 'ok', failureKind: null }),
+    )
+
+  expect(backfillRunRecords(database, '01990000-0000-7000-8000-000000000099')).toEqual({
+    enqueued: 0,
+    refreshedLinks: 0,
+    refreshedNumbers: 0,
+    refreshedRoots: 0,
+    skippedLive: 0,
+  })
+  expect(
+    database.query<{ count: number }, []>('SELECT count(*) AS count FROM outbox').get()!.count,
+  ).toBe(1)
+  database.close()
 })
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
