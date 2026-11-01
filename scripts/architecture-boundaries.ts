@@ -554,19 +554,6 @@ export const importBoundaries: ImportBoundary[] = [
     'Keep judgment independent of transports, worktrees, routing, the CLI, durable execution, dispatch, and cleanup.',
   ),
   boundary(
-    'landing-outbox-boundary',
-    'orchestrator/src/record/landing-outbox.ts',
-    [
-      '../../../shared/record-id.ts',
-      '../../../shared/record/schema.ts',
-      './machine-identity.ts',
-      './outbox-sanitize.ts',
-      './outbox-serialize.ts',
-      'bun:sqlite',
-    ],
-    'Enforce the landing-outbox concern boundary.',
-  ),
-  boundary(
     'machine-identity-boundary',
     'orchestrator/src/record/machine-identity.ts',
     ['node:os', '../../../shared/machine-config.ts', './machine-name.ts'],
