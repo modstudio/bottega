@@ -215,6 +215,7 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       profileName: String(r.profile_name),
       selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
+      selectedVersionId: null,
       selectionVersion: Number(r.selection_version),
       updatedAt: now,
     })),
@@ -231,6 +232,7 @@ function lensSpacePlan(
         priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
         priorSelectedVersion:
           r.prior_selected_version == null ? null : Number(r.prior_selected_version),
+        priorSelectedVersionId: null,
         reason: String(r.reason),
         sessionId: r.session_id == null ? null : String(r.session_id),
         at: String(r.at),

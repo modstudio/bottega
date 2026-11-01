@@ -326,8 +326,11 @@ test('lens pull caches an unregistered project selection and revision from a per
   local.query('DELETE FROM project').run()
   const space = newRecordId()
   const project = newRecordId()
+  const lens = newRecordId()
   const selection = newRecordId()
   const revision = newRecordId()
+  const selectedVersionId = newRecordId()
+  const priorSelectedVersionId = newRecordId()
   const pulledAt = '2026-10-19T12:00:00.000Z'
   const cursorKey = `record_lens_cursor:${space}:project_lens_profile`
   local
@@ -337,6 +340,11 @@ test('lens pull caches an unregistered project selection and revision from a per
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     async listLensCatalogue(table, query) {
+      if (table === 'lens')
+        return {
+          items: [{ ...row('pinned-lens', lens), spaceId: space, updatedAt: pulledAt }],
+          nextCursor: null,
+        }
       if (table === 'project_lens_profile') {
         selectionCursor = query.cursor
         return {
@@ -345,10 +353,11 @@ test('lens pull caches an unregistered project selection and revision from a per
               id: selection,
               spaceId: space,
               projectId: project,
-              lensId: null,
+              lensId: lens,
               axis: 'framework',
               profileName: 'default',
-              selectedVersion: null,
+              selectedVersion: 2,
+              selectedVersionId,
               selectionVersion: 1,
               updatedAt: pulledAt,
             },
@@ -364,7 +373,8 @@ test('lens pull caches an unregistered project selection and revision from a per
               spaceId: space,
               selectionId: selection,
               priorProfileName: null,
-              priorSelectedVersion: null,
+              priorSelectedVersion: 1,
+              priorSelectedVersionId,
               reason: 'pull',
               sessionId: null,
               at: pulledAt,
@@ -376,16 +386,43 @@ test('lens pull caches an unregistered project selection and revision from a per
     },
   })
 
-  expect(await pullLensCatalogue(local, [space])).toBe(2)
+  expect(await pullLensCatalogue(local, [space])).toBe(3)
   expect(selectionCursor).toBeDefined()
   expect(
     local
-      .query('SELECT project_record_id FROM project_lens_profile WHERE record_id=?')
+      .query(
+        'SELECT project_record_id,selected_version_id FROM project_lens_profile WHERE record_id=?',
+      )
       .get(selection),
-  ).toEqual({ project_record_id: project })
+  ).toEqual({ project_record_id: project, selected_version_id: selectedVersionId })
   expect(
-    local.query('SELECT 1 FROM project_lens_profile_revision WHERE record_id=?').get(revision),
-  ).not.toBeNull()
+    local
+      .query(
+        'SELECT prior_selected_version_id FROM project_lens_profile_revision WHERE record_id=?',
+      )
+      .get(revision),
+  ).toEqual({ prior_selected_version_id: priorSelectedVersionId })
+
+  const repinned = newRecordId()
+  applyLensCatalogueRow(local, 'project_lens_profile', {
+    id: selection,
+    spaceId: space,
+    projectId: project,
+    lensId: lens,
+    axis: 'framework',
+    profileName: 'default',
+    selectedVersion: 3,
+    selectedVersionId: repinned,
+    selectionVersion: 2,
+    updatedAt: '2026-10-19T13:00:00.000Z',
+  })
+  expect(
+    local
+      .query(
+        'SELECT selected_version,selected_version_id FROM project_lens_profile WHERE record_id=?',
+      )
+      .get(selection),
+  ).toEqual({ selected_version: 3, selected_version_id: repinned })
 })
 
 test('pullRecordCache pages six parent-first streams with independent space and table cursors', async () => {

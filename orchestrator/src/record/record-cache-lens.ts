@@ -309,19 +309,20 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version=?,selection_version=? WHERE record_id=?',
+        'UPDATE project_lens_profile SET record_id=?,profile_name=?,selected_version=?,selected_version_id=?,selection_version=? WHERE record_id=?',
       )
       .run(
         recordId,
         String(item.profileName),
         nullableNumber(item.selectedVersion),
+        nullableText(item.selectedVersionId),
         Number(item.selectionVersion),
         found.record_id,
       )
   else
     local
       .query(
-        'INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version) VALUES (?,?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
@@ -331,6 +332,7 @@ function applyProjectLensProfileRow(local: Database, item: Record<string, unknow
         String(item.axis),
         String(item.profileName),
         nullableNumber(item.selectedVersion),
+        nullableText(item.selectedVersionId),
         Number(item.selectionVersion),
       )
 }
@@ -361,12 +363,13 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
   if (found)
     local
       .query(
-        'UPDATE project_lens_profile_revision SET record_id=?,prior_profile_name=?,prior_selected_version=?,reason=?,session_id=?,at=? WHERE record_id=?',
+        'UPDATE project_lens_profile_revision SET record_id=?,prior_profile_name=?,prior_selected_version=?,prior_selected_version_id=?,reason=?,session_id=?,at=? WHERE record_id=?',
       )
       .run(
         recordId,
         nullableText(item.priorProfileName),
         nullableNumber(item.priorSelectedVersion),
+        nullableText(item.priorSelectedVersionId),
         String(item.reason),
         nullableText(item.sessionId),
         String(item.at),
@@ -375,7 +378,7 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
   else
     local
       .query(
-        'INSERT INTO project_lens_profile_revision (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
+        'INSERT INTO project_lens_profile_revision (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?,?)',
       )
       .run(
         recordId,
@@ -383,6 +386,7 @@ function applyProjectLensProfileRevisionRow(local: Database, item: Record<string
         parent.record_id,
         nullableText(item.priorProfileName),
         nullableNumber(item.priorSelectedVersion),
+        nullableText(item.priorSelectedVersionId),
         String(item.reason),
         nullableText(item.sessionId),
         String(item.at),

@@ -70,22 +70,28 @@ describe('lens catalogue', () => {
     expect(chooseLensProfile({ ...base, lensSelection: null, axisSelection: null })).toEqual({
       name: 'node',
       version: null,
+      versionId: null,
       source: 'stack',
     })
     expect(
       chooseLensProfile({
         ...base,
         lensSelection: null,
-        axisSelection: { name: 'shared', version: 2 },
+        axisSelection: { name: 'shared', version: 2, versionId: 'shared-version' },
       }),
-    ).toEqual({ name: 'shared', version: 2, source: 'project' })
+    ).toEqual({ name: 'shared', version: 2, versionId: 'shared-version', source: 'project' })
     expect(
       chooseLensProfile({
         ...base,
-        lensSelection: { name: 'specific', version: 3 },
-        axisSelection: { name: 'shared', version: 2 },
+        lensSelection: { name: 'specific', version: 3, versionId: 'specific-version' },
+        axisSelection: { name: 'shared', version: 2, versionId: 'shared-version' },
       }),
-    ).toEqual({ name: 'specific', version: 3, source: 'project' })
+    ).toEqual({
+      name: 'specific',
+      version: 3,
+      versionId: 'specific-version',
+      source: 'project',
+    })
     expect(
       chooseLensProfile({
         ...base,
@@ -93,7 +99,7 @@ describe('lens catalogue', () => {
         axisSelection: null,
         enabledProfileNames: ['default'],
       }),
-    ).toEqual({ name: 'default', version: null, source: 'generic' })
+    ).toEqual({ name: 'default', version: null, versionId: null, source: 'generic' })
   })
 
   test('a lens without a matching profile resolves a usable generic default', async () => {
@@ -272,6 +278,98 @@ describe('lens catalogue', () => {
         )
         .get(versionOne.record_id, 2),
     ).toEqual({ record_id: versionTwo.current_version_id })
+  })
+
+  test('a project pin follows its version id from current profile to revision', async () => {
+    upsertProject({ recordId: newRecordId(), name: 'pinned', path: '/tmp/pinned', settings: {} })
+    const input = {
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'pinned-profile',
+      body: '{"framework_guidance":"Version one.","commands":"one"}',
+      enabled: true,
+      reason: 'create pinned version one',
+    }
+    await setProfile(input)
+    await selectProjectProfile({
+      project: 'pinned',
+      axis: input.axis,
+      name: input.name,
+      lensId: input.lensId,
+      version: 1,
+      reason: 'pin version one',
+    })
+    const pin = db()
+      .query<{ selected_version_id: string }, []>(
+        `SELECT selected_version_id FROM project_lens_profile WHERE profile_name='pinned-profile'`,
+      )
+      .get()!
+
+    await setProfile({
+      ...input,
+      body: '{"framework_guidance":"Version two.","commands":"two"}',
+      reason: 'create pinned version two',
+    })
+    expect(resolveLens('correctness', 'pinned')!.body).toContain('Version one.')
+    expect(
+      db()
+        .query<{ record_id: string }, [string]>(
+          'SELECT record_id FROM lens_profile_revision WHERE record_id=?',
+        )
+        .get(pin.selected_version_id),
+    ).toEqual({ record_id: pin.selected_version_id })
+
+    db().query('UPDATE project_lens_profile SET selected_version_id=NULL').run()
+    expect(resolveLens('correctness', 'pinned')!.body).toContain('Version one.')
+
+    db().query('UPDATE project_lens_profile SET selected_version_id=?').run(newRecordId())
+    expect(() => resolveLens('correctness', 'pinned')).toThrow(
+      /profile correctness\/framework\/pinned-profile has no pinned version id .*; its current version 2 is .*; re-pin with select-profile --lens correctness --version 1/,
+    )
+
+    await selectProjectProfile({
+      project: 'pinned',
+      axis: input.axis,
+      name: input.name,
+      lensId: input.lensId,
+      version: 2,
+      reason: 're-pin version two',
+    })
+    expect(resolveLens('correctness', 'pinned')!.body).toContain('Version two.')
+    expect(
+      db()
+        .query<{ selected_version: number; selected_version_id: string }, []>(
+          `SELECT selected_version,selected_version_id FROM project_lens_profile WHERE profile_name='pinned-profile'`,
+        )
+        .get(),
+    ).toEqual({
+      selected_version: 2,
+      selected_version_id: db()
+        .query<{ current_version_id: string }, []>(
+          `SELECT current_version_id FROM lens_profile WHERE name='pinned-profile'`,
+        )
+        .get()!.current_version_id,
+    })
+  })
+
+  test('a versioned all-lenses selection requires one lens key', async () => {
+    upsertProject({
+      recordId: newRecordId(),
+      name: 'global-pin',
+      path: '/tmp/global-pin',
+      settings: {},
+    })
+    await expect(
+      selectProjectProfile({
+        project: 'global-pin',
+        axis: 'framework',
+        name: 'default',
+        version: 1,
+        reason: 'invalid global pin',
+      }),
+    ).rejects.toThrow(
+      "a pinned version names one lens profile's version; pass --lens <key> with --version",
+    )
   })
 
   test('profile validation refuses undeclared slots and project selection binds one shared row', async () => {

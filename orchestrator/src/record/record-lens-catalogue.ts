@@ -10,7 +10,7 @@ import type {
   RecordLensWriteInput,
   RecordProjectLensSelectionInput,
 } from './record-lens-contract.ts'
-import { RecordLensError } from './record-lens-contract.ts'
+import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY, RecordLensError } from './record-lens-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
@@ -90,6 +90,7 @@ function mapped(
         axis: text(row.axis),
         profileName: text(row.profile_name),
         selectedVersion: row.selected_version == null ? null : number(row.selected_version),
+        selectedVersionId: nullable(row.selected_version_id),
         selectionVersion: number(row.selection_version),
         updatedAt: iso(row.updated_at),
       }
@@ -100,6 +101,7 @@ function mapped(
         priorProfileName: nullable(row.prior_profile_name),
         priorSelectedVersion:
           row.prior_selected_version == null ? null : number(row.prior_selected_version),
+        priorSelectedVersionId: nullable(row.prior_selected_version_id),
         reason: text(row.reason),
         sessionId: nullable(row.session_id),
         at: iso(row.at),
@@ -260,27 +262,81 @@ async function selectionProfileExists(
   tx: SQL,
   input: Tenant & RecordProjectLensSelectionInput,
   lensId: string,
-): Promise<boolean> {
-  const profiles = await tx`SELECT id,version,enabled FROM lens_profile
+): Promise<{ versionId: string | null } | null> {
+  const profiles = await tx`SELECT id,version,current_version_id,enabled FROM lens_profile
     WHERE space_id=${input.spaceId}::uuid AND lens_id=${lensId}::uuid
       AND axis=${input.axis} AND name=${input.profileName}
     FOR UPDATE`
   const profile = profiles[0]
-  if (!profile?.enabled) return false
-  if (input.selectedVersion === null || number(profile.version) === input.selectedVersion)
-    return true
-  const revision = await tx`SELECT prior_body FROM lens_profile_revision
-    WHERE space_id=${input.spaceId}::uuid AND profile_id=${text(profile.id)}::uuid
-      AND version=${input.selectedVersion}`
-  if (!revision[0]) return false
-  const snapshot = JSON.parse(text(revision[0].prior_body)) as { enabled?: unknown }
-  return snapshot.enabled === true
+  if (!profile?.enabled) return null
+  const selectedVersionId = input.selectedVersionId
+  if (input.selectedVersion === null && selectedVersionId === null) return { versionId: null }
+  const resolved = selectedVersionId
+    ? await selectedProfileVersionById(tx, input.spaceId, profile, selectedVersionId)
+    : await selectedProfileVersionByNumber(tx, input.spaceId, profile, input.selectedVersion!)
+  if (!resolved?.enabled) return null
+  if (input.selectedVersion !== resolved.version)
+    throw new RecordLensError(
+      `selected version ${input.selectedVersion ?? 'none'} and selected version id ${selectedVersionId} name different versions`,
+      422,
+    )
+  return { versionId: resolved.id }
+}
+
+type SelectedProfileVersion = { id: string; version: number; enabled: boolean }
+
+function currentSelectedProfileVersion(
+  profile: Record<string, unknown>,
+): SelectedProfileVersion | null {
+  const id = nullable(profile.current_version_id)
+  return id ? { id, version: number(profile.version), enabled: Boolean(profile.enabled) } : null
+}
+
+function historicalSelectedProfileVersion(
+  revision: Record<string, unknown> | undefined,
+): SelectedProfileVersion | null {
+  if (!revision) return null
+  const snapshot = JSON.parse(text(revision.prior_body)) as { enabled?: unknown }
+  return {
+    id: text(revision.id),
+    version: number(revision.version),
+    enabled: snapshot.enabled === true,
+  }
+}
+
+async function selectedProfileVersionById(
+  tx: SQL,
+  spaceId: string,
+  profile: Record<string, unknown>,
+  versionId: string,
+): Promise<SelectedProfileVersion | null> {
+  if (nullable(profile.current_version_id) === versionId)
+    return currentSelectedProfileVersion(profile)
+  const revision = await tx`SELECT id,version,prior_body FROM lens_profile_revision
+    WHERE space_id=${spaceId}::uuid AND profile_id=${text(profile.id)}::uuid
+      AND id=${versionId}::uuid`
+  return historicalSelectedProfileVersion(revision[0])
+}
+
+async function selectedProfileVersionByNumber(
+  tx: SQL,
+  spaceId: string,
+  profile: Record<string, unknown>,
+  version: number,
+): Promise<SelectedProfileVersion | null> {
+  if (number(profile.version) === version) return currentSelectedProfileVersion(profile)
+  const revision = await tx`SELECT id,version,prior_body FROM lens_profile_revision
+    WHERE space_id=${spaceId}::uuid AND profile_id=${text(profile.id)}::uuid
+      AND version=${version}`
+  return historicalSelectedProfileVersion(revision[0])
 }
 
 async function validatedSelectionLensId(
   tx: SQL,
   input: Tenant & RecordProjectLensSelectionInput,
-): Promise<string | null> {
+): Promise<{ lensId: string | null; selectedVersionId: string | null }> {
+  if (input.selectedVersion !== null && !input.lensKey)
+    throw new RecordLensError(PINNED_LENS_VERSION_REQUIRES_LENS_KEY, 422)
   let lensId: string | null = null
   if (input.lensKey) {
     const found =
@@ -290,15 +346,18 @@ async function validatedSelectionLensId(
   }
   const candidateLenses = await selectionCandidateLenses(tx, input, lensId)
   const invalid: string[] = []
+  let selectedVersionId: string | null = null
   for (const lens of candidateLenses) {
-    if (!(await selectionProfileExists(tx, input, text(lens.id)))) invalid.push(text(lens.key))
+    const profile = await selectionProfileExists(tx, input, text(lens.id))
+    if (!profile) invalid.push(text(lens.key))
+    else if (lensId) selectedVersionId = profile.versionId
   }
   if (invalid.length)
     throw new RecordLensError(
       `profile ${input.axis}/${input.profileName}${input.selectedVersion ? ` version ${input.selectedVersion}` : ''} is missing or disabled for hosted lenses: ${invalid.join(', ')}`,
       422,
     )
-  return lensId
+  return { lensId, selectedVersionId }
 }
 
 export async function selectRecordProjectLensProfile(
@@ -309,7 +368,7 @@ export async function selectRecordProjectLensProfile(
     const project =
       await tx`SELECT id FROM project WHERE id=${input.projectId}::uuid AND space_id=${input.spaceId}::uuid`
     if (!project[0]) throw new RecordLensError('project is not in the destination space', 404)
-    const lensId = await validatedSelectionLensId(tx, input)
+    const { lensId, selectedVersionId } = await validatedSelectionLensId(tx, input)
     const rows =
       await tx`SELECT * FROM project_lens_profile WHERE space_id=${input.spaceId}::uuid AND project_id=${input.projectId}::uuid AND lens_id IS NOT DISTINCT FROM ${lensId}::uuid AND axis=${input.axis} FOR UPDATE`
     const prior = rows[0] as Record<string, unknown> | undefined
@@ -322,10 +381,10 @@ export async function selectRecordProjectLensProfile(
       id = prior ? text(prior.id) : newRecordId(),
       revisionId = newRecordId()
     if (prior)
-      await tx`UPDATE project_lens_profile SET profile_name=${input.profileName},selected_version=${input.selectedVersion},selection_version=selection_version+1,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
+      await tx`UPDATE project_lens_profile SET profile_name=${input.profileName},selected_version=${input.selectedVersion},selected_version_id=${selectedVersionId}::uuid,selection_version=selection_version+1,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
     else
-      await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.projectId}::uuid,${lensId}::uuid,${input.axis},${input.profileName},${input.selectedVersion},1,${now}::timestamptz)`
-    await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (${revisionId}::uuid,${input.spaceId}::uuid,${id}::uuid,${prior?.profile_name == null ? null : text(prior.profile_name)},${prior?.selected_version == null ? null : number(prior.selected_version)},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
+      await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selected_version_id,selection_version,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${input.projectId}::uuid,${lensId}::uuid,${input.axis},${input.profileName},${input.selectedVersion},${selectedVersionId}::uuid,1,${now}::timestamptz)`
+    await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (${revisionId}::uuid,${input.spaceId}::uuid,${id}::uuid,${prior?.profile_name == null ? null : text(prior.profile_name)},${prior?.selected_version == null ? null : number(prior.selected_version)},${prior?.selected_version_id == null ? null : text(prior.selected_version_id)}::uuid,${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
     return {
       selection: mapped(
         'project_lens_profile',

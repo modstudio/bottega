@@ -14,8 +14,8 @@ import {
   type RecordLensTable,
   type RecordLensWriteInput,
   type RecordLensWriteResponse,
-  type RecordProjectLensSelectionInput,
   type RecordProjectLensSelectionResponse,
+  type RecordProjectLensSelectionWireInput,
   recordLensPageSchema,
   recordLensProfileWriteResponseSchema,
   recordLensWriteResponseSchema,
@@ -48,7 +48,7 @@ export type RecordLensClient = {
     destination?: RecordRequestDestination,
   ): Promise<RecordLensProfileWriteResponse>
   selectProjectLensProfile(
-    input: RecordProjectLensSelectionInput,
+    input: RecordProjectLensSelectionWireInput,
     destination?: RecordRequestDestination,
   ): Promise<RecordProjectLensSelectionResponse>
   importLensCatalogue?(

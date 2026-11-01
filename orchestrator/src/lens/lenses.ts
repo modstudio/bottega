@@ -9,6 +9,7 @@ import type {
   RecordLensWriteResponse,
   RecordProjectLensSelectionResponse,
 } from '../record/record-lens-contract.ts'
+import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
@@ -42,7 +43,7 @@ type ProfileRow = {
 }
 
 export type LensProfileSource = 'project' | 'stack' | 'generic'
-type ProfileSelection = { name: string; version: number | null }
+type ProfileSelection = { name: string; version: number | null; versionId: string | null }
 type SetLensInput = {
   id: string
   title: string
@@ -90,6 +91,8 @@ function validateSelectionInput(input: SelectProjectProfileInput): LensAxis {
   nonempty(input.reason, 'reason')
   if (input.version !== undefined && (!Number.isInteger(input.version) || input.version < 1))
     throw new Error('version must be a positive integer')
+  if (input.version !== undefined && !input.lensId)
+    throw new Error(PINNED_LENS_VERSION_REQUIRES_LENS_KEY)
   return axisValue(input.axis)
 }
 
@@ -103,9 +106,9 @@ export function chooseLensProfile(input: {
   const selected = input.lensSelection ?? input.axisSelection
   if (selected) return { ...selected, source: 'project' }
   if (input.stack && input.enabledProfileNames.includes(input.stack)) {
-    return { name: input.stack, version: null, source: 'stack' }
+    return { name: input.stack, version: null, versionId: null, source: 'stack' }
   }
-  return { name: 'default', version: null, source: 'generic' }
+  return { name: 'default', version: null, versionId: null, source: 'generic' }
 }
 
 export function formatLensProfileSource(
@@ -513,27 +516,58 @@ export async function setProfile(input: SetProfileInput) {
   })
 }
 
-function versionedProfile(profile: ProfileRow, version: number | null, d: Database): ProfileRow {
-  if (version === null || version === profile.version) return profile
+function versionedProfile(
+  profile: ProfileRow,
+  selection: Pick<ProfileSelection, 'version' | 'versionId'>,
+  d: Database,
+): ProfileRow {
+  if (selection.versionId !== null && selection.versionId === profile.current_version_id)
+    return profile
+  if (
+    selection.versionId === null &&
+    (selection.version === null || selection.version === profile.version)
+  )
+    return profile
   const prior = d
     .query(
-      'SELECT prior_body FROM lens_profile_revision WHERE profile_record_id=? AND version=? AND space_id IS ?',
+      `SELECT record_id,version,prior_body FROM lens_profile_revision
+       WHERE profile_record_id=? AND space_id IS ?
+         AND (${selection.versionId === null ? 'version=?' : 'record_id=?'})`,
     )
-    .get(profile.record_id, version, profile.space_id) as { prior_body: string } | null
-  if (!prior)
+    .get(profile.record_id, profile.space_id, selection.versionId ?? selection.version) as {
+    record_id: string
+    version: number
+    prior_body: string
+  } | null
+  if (!prior) {
+    if (selection.versionId !== null)
+      throw new Error(
+        `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no pinned version id ${selection.versionId}; its current version ${profile.version} is ${profile.current_version_id ?? 'unidentified'}; re-pin with select-profile --lens ${profile.lens_id} --version ${selection.version ?? profile.version}`,
+      )
     throw new Error(
-      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${version}`,
+      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${selection.version}`,
     )
+  }
   const snapshot = objectJson(prior.prior_body, 'stored profile revision') as {
     body: Record<string, string>
     enabled: boolean
   }
   return {
     ...profile,
-    version,
+    version: prior.version,
+    current_version_id: prior.record_id,
     body: JSON.stringify(snapshot.body),
     enabled: snapshot.enabled ? 1 : 0,
   }
+}
+
+function selectedProfileVersionId(profile: ProfileRow, version: number, d: Database): string {
+  const resolved = versionedProfile(profile, { version, versionId: null }, d)
+  if (!resolved.current_version_id)
+    throw new Error(
+      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${version}`,
+    )
+  return resolved.current_version_id
 }
 
 function validateSelectedProfile(
@@ -543,7 +577,7 @@ function validateSelectedProfile(
   lensId: string | undefined,
   version: number | undefined,
   spaceId: string | null,
-): void {
+): string | null {
   const cores = lensId
     ? ([
         d
@@ -557,13 +591,25 @@ function validateSelectedProfile(
         .all(axis, spaceId) as CoreRow[])
   if (lensId && !cores.length) throw new Error(`no enabled lens "${lensId}"`)
   if (!cores.length) throw new Error(`no enabled lenses declare axis ${axis}`)
+  if (version !== undefined) {
+    if (!lensId) throw new Error(PINNED_LENS_VERSION_REQUIRES_LENS_KEY)
+    const profile = profileRows(lensId, d, spaceId).find(
+      (candidate) => candidate.axis === axis && candidate.name === name && candidate.enabled,
+    )
+    try {
+      if (profile) return selectedProfileVersionId(profile, version, d)
+    } catch {}
+    throw new Error(
+      `profile ${axis}/${name} version ${version} is missing or disabled for lenses: ${lensId}`,
+    )
+  }
   const missing = cores.filter((core) => {
     const profile = profileRows(core.id, d, spaceId).find(
       (candidate) => candidate.axis === axis && candidate.name === name && candidate.enabled,
     ) as ProfileRow | undefined
     if (!profile) return true
     try {
-      versionedProfile(profile, version ?? null, d)
+      versionedProfile(profile, { version: null, versionId: null }, d)
       return false
     } catch {
       return true
@@ -571,8 +617,84 @@ function validateSelectedProfile(
   })
   if (missing.length)
     throw new Error(
-      `profile ${axis}/${name}${version ? ` version ${version}` : ''} is missing or disabled for lenses: ${missing.map((core) => core.id).join(', ')}`,
+      `profile ${axis}/${name} is missing or disabled for lenses: ${missing.map((core) => core.id).join(', ')}`,
     )
+  return null
+}
+
+function writeProjectProfileSelectionLocal(input: {
+  d: Database
+  project: Project
+  axis: LensAxis
+  selection: SelectProjectProfileInput
+  spaceId: string | null
+  hosted?: RecordProjectLensSelectionResponse
+}) {
+  const { d, project, axis, selection, spaceId, hosted } = input
+  const selectedVersionId = validateSelectedProfile(
+    d,
+    axis,
+    selection.name,
+    selection.lensId,
+    selection.version,
+    spaceId,
+  )
+  const prior = d
+    .query(
+      `SELECT s.record_id,s.profile_name,s.selected_version,s.selected_version_id,s.selection_version FROM project_lens_profile s
+       LEFT JOIN lens l ON l.record_id=s.lens_record_id
+       WHERE s.project_record_id=? AND l.id IS ? AND s.axis=? AND s.space_id IS ?`,
+    )
+    .get(project.recordId, selection.lensId ?? null, axis, spaceId) as {
+    profile_name: string
+    selected_version: number | null
+    selected_version_id: string | null
+    selection_version: number
+    record_id: string
+  } | null
+  writeTransaction(() => {
+    const selectedLensRecordId = selection.lensId
+      ? lensRecordId(d, selection.lensId, spaceId)
+      : null
+    d.query(`INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version) VALUES (?,?,?,?,?,?,?,?,?)
+    ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selected_version_id=excluded.selected_version_id,selection_version=excluded.selection_version`).run(
+      hosted?.selection.id ?? prior?.record_id ?? newRecordId(),
+      spaceId,
+      project.recordId,
+      selectedLensRecordId,
+      axis,
+      selection.name,
+      selection.version ?? null,
+      hosted?.selection.selectedVersionId ?? selectedVersionId,
+      hosted?.selection.selectionVersion ?? (prior?.selection_version ?? 0) + 1,
+    )
+    const selected = d
+      .query(
+        'SELECT record_id FROM project_lens_profile WHERE project_record_id=? AND lens_record_id IS ? AND axis=? AND space_id IS ?',
+      )
+      .get(project.recordId, selectedLensRecordId, axis, spaceId) as { record_id: string }
+    d.query(`INSERT INTO project_lens_profile_revision
+    (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?,?)`).run(
+      hosted?.revision.id ?? newRecordId(),
+      spaceId,
+      selected.record_id,
+      prior?.profile_name ?? null,
+      prior?.selected_version ?? null,
+      hosted?.revision.priorSelectedVersionId ?? prior?.selected_version_id ?? null,
+      selection.reason,
+      sessionId(),
+      nowIso(),
+    )
+  }, d)
+  rememberProjectSpace(d, project.name, spaceId)
+  return {
+    project: project.name,
+    lens: selection.lensId ?? null,
+    axis,
+    name: selection.name,
+    version: selection.version ?? null,
+    reason: selection.reason,
+  }
 }
 
 export async function selectProjectProfile(input: SelectProjectProfileInput) {
@@ -582,60 +704,8 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
   const project = projectByName(input.project)
   if (!project) throw new Error(`no project "${input.project}"`)
   const profileSpaceId = lensProfileSpace(project.name, d)
-  const writeLocal = (spaceId: string | null, hosted?: RecordProjectLensSelectionResponse) => {
-    validateSelectedProfile(d, axis, input.name, input.lensId, input.version, spaceId)
-    const prior = d
-      .query(
-        `SELECT s.record_id,s.profile_name,s.selected_version,s.selection_version FROM project_lens_profile s
-         LEFT JOIN lens l ON l.record_id=s.lens_record_id
-         WHERE s.project_record_id=? AND l.id IS ? AND s.axis=? AND s.space_id IS ?`,
-      )
-      .get(project.recordId, input.lensId ?? null, axis, spaceId) as {
-      profile_name: string
-      selected_version: number | null
-      selection_version: number
-      record_id: string
-    } | null
-    writeTransaction(() => {
-      const selectedLensRecordId = input.lensId ? lensRecordId(d, input.lensId, spaceId) : null
-      d.query(`INSERT INTO project_lens_profile (record_id,space_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version) VALUES (?,?,?,?,?,?,?,?)
-      ON CONFLICT DO UPDATE SET record_id=excluded.record_id,profile_name=excluded.profile_name,selected_version=excluded.selected_version,selection_version=excluded.selection_version`).run(
-        hosted?.selection.id ?? prior?.record_id ?? newRecordId(),
-        spaceId,
-        project.recordId,
-        selectedLensRecordId,
-        axis,
-        input.name,
-        input.version ?? null,
-        hosted?.selection.selectionVersion ?? (prior?.selection_version ?? 0) + 1,
-      )
-      const selection = d
-        .query(
-          'SELECT record_id FROM project_lens_profile WHERE project_record_id=? AND lens_record_id IS ? AND axis=? AND space_id IS ?',
-        )
-        .get(project.recordId, selectedLensRecordId, axis, spaceId) as { record_id: string }
-      d.query(`INSERT INTO project_lens_profile_revision
-      (record_id,space_id,selection_record_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)`).run(
-        hosted?.revision.id ?? newRecordId(),
-        spaceId,
-        selection.record_id,
-        prior?.profile_name ?? null,
-        prior?.selected_version ?? null,
-        input.reason,
-        sessionId(),
-        nowIso(),
-      )
-    }, d)
-    rememberProjectSpace(d, project.name, spaceId)
-    return {
-      project: project.name,
-      lens: input.lensId ?? null,
-      axis,
-      name: input.name,
-      version: input.version ?? null,
-      reason: input.reason,
-    }
-  }
+  const writeLocal = (spaceId: string | null, hosted?: RecordProjectLensSelectionResponse) =>
+    writeProjectProfileSelectionLocal({ d, project, axis, selection: input, spaceId, hosted })
   return applyRecordWriteAuthority({
     local: () => writeLocal(profileSpaceId),
     hosted: async () => {
@@ -645,7 +715,14 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
         project.settings,
         client,
       )
-      validateSelectedProfile(d, axis, input.name, input.lensId, input.version, destinationSpaceId)
+      const selectedVersionId = validateSelectedProfile(
+        d,
+        axis,
+        input.name,
+        input.lensId,
+        input.version,
+        destinationSpaceId,
+      )
       const prior = d
         .query(
           `SELECT s.selection_version FROM project_lens_profile s LEFT JOIN lens l ON l.record_id=s.lens_record_id
@@ -661,6 +738,7 @@ export async function selectProjectProfile(input: SelectProjectProfileInput) {
           axis,
           profileName: input.name,
           selectedVersion: input.version ?? null,
+          selectedVersionId,
           expectedSelectionVersion: prior?.selection_version ?? null,
           reason: input.reason,
           sessionId: sessionId(),
@@ -685,7 +763,7 @@ function resolvedProfile(
   const profile = catalogueProfiles.find(
     (candidate) => candidate.axis === axis && candidate.name === choice.name,
   )
-  if (profile) return versionedProfile(profile, choice.version, d)
+  if (profile) return versionedProfile(profile, choice, d)
   if (choice.source !== 'generic')
     throw new Error(
       disabledLensRefusal(core.id, `lens "${core.id}" has no ${axis} profile "${choice.name}"`),
@@ -726,7 +804,7 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
     const selections = project
       ? (d
           .query(
-            `SELECT l.id lens_id,s.profile_name,s.selected_version FROM project_lens_profile s
+            `SELECT l.id lens_id,s.profile_name,s.selected_version,s.selected_version_id FROM project_lens_profile s
              LEFT JOIN lens l ON l.record_id=s.lens_record_id
              WHERE s.project_record_id=? AND s.axis=? AND (l.id=? OR s.lens_record_id IS NULL) AND s.space_id IS ?`,
           )
@@ -734,11 +812,18 @@ export function resolveLens(id: string, projectName: string | null, d: Database 
           lens_id: string | null
           profile_name: string
           selected_version: number | null
+          selected_version_id: string | null
         }[])
       : []
     const selection = (lensId: string | null): ProfileSelection | null => {
       const row = selections.find((candidate) => candidate.lens_id === lensId)
-      return row ? { name: row.profile_name, version: row.selected_version } : null
+      return row
+        ? {
+            name: row.profile_name,
+            version: row.selected_version,
+            versionId: row.selected_version_id,
+          }
+        : null
     }
     const catalogueProfiles = profileRows(id, d, spaceId)
     const enabledProfileNames = catalogueProfiles
