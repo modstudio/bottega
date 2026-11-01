@@ -52,32 +52,7 @@ export type RequiredReleaseRunner = {
 const requiredReleaseRunner: RequiredReleaseRunner = {
   changedPaths,
   prepareMain(project) {
-    const trunk = project.settings.trunk
-    if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
-    const branch = git(
-      ['branch', '--show-current'],
-      project.path,
-      targetGitEnvironment(project.path),
-      ' during main checkout branch lookup',
-    )
-    if (branch !== trunk) {
-      throw new Error(
-        `registered main checkout is on ${branch || 'detached HEAD'}, not ${trunk}; switch it to ${trunk}`,
-      )
-    }
-    const dirty = git(
-      ['status', '--porcelain'],
-      project.path,
-      targetGitEnvironment(project.path),
-      ' during main checkout status',
-    )
-    if (dirty) throw new Error('registered main checkout is dirty; clean it')
-    git(
-      ['merge', '--ff-only', `origin/${trunk}`],
-      project.path,
-      targetGitEnvironment(project.path),
-      ' during main checkout fast-forward',
-    )
+    moveMainCheckout(project)
   },
   newestLive(project, rung) {
     return newestSuccessfulLiveReleaseCommit(project.name, rung)
@@ -88,6 +63,52 @@ const requiredReleaseRunner: RequiredReleaseRunner = {
   release(project, rung) {
     return releaseProject(project.name, rung, undefined, undefined)
   },
+}
+
+export function verifyMainCheckout(project: Project, mergeCommit?: string): void {
+  const trunk = project.settings.trunk
+  if (!trunk) throw new Error('project has no trunk; set trunk, then retry')
+  const branch = git(
+    ['branch', '--show-current'],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout branch lookup',
+  )
+  if (branch !== trunk) {
+    throw new Error(
+      `registered main checkout is on ${branch || 'detached HEAD'}, not ${trunk}; switch it to ${trunk}`,
+    )
+  }
+  const dirty = git(
+    ['status', '--porcelain'],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout status',
+  )
+  if (dirty) throw new Error('registered main checkout is dirty; clean it')
+  if (
+    mergeCommit &&
+    !gitResult(['merge-base', '--is-ancestor', mergeCommit, 'HEAD'], project.path).ok
+  )
+    throw new Error(`registered main checkout does not contain landing commit ${mergeCommit}`)
+}
+
+export function moveMainCheckout(project: Project, mergeCommit?: string): void {
+  verifyMainCheckout(project)
+  const trunk = project.settings.trunk!
+  git(
+    ['fetch', 'origin', trunk],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout fetch',
+  )
+  git(
+    ['merge', '--ff-only', `origin/${trunk}`],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout fast-forward',
+  )
+  if (mergeCommit) verifyMainCheckout(project, mergeCommit)
 }
 
 export function changedPaths(project: Project, mergeCommit: string): string[] {
@@ -111,6 +132,74 @@ export function changedPaths(project: Project, mergeCommit: string): string[] {
 
 function failure(rung: string, detail: string): RequiredRungRelease {
   return { rung, deployExit: null, outputTail: detail, satisfied: false, deployed: false }
+}
+
+export function failedRequiredRelease(required: string[], detail: string): RequiredReleaseReport {
+  return {
+    required,
+    releases: required.map((rung) => failure(rung, detail)),
+    satisfied: required.length === 0,
+  }
+}
+
+export function releaseRequiredRungsAfterMainMove(input: {
+  project: Project
+  mergeCommit: string
+  required: string[]
+  runner?: RequiredReleaseRunner
+}): RequiredReleaseReport {
+  const runner = input.runner ?? requiredReleaseRunner
+  try {
+    verifyMainCheckout(input.project, input.mergeCommit)
+  } catch (cause) {
+    return failedRequiredRelease(
+      input.required,
+      cause instanceof Error ? cause.message : String(cause),
+    )
+  }
+  return runRequiredReleaseRungs(input.project, input.mergeCommit, input.required, runner, false)
+}
+
+function runRequiredReleaseRungs(
+  project: Project,
+  mergeCommit: string,
+  required: string[],
+  runner: RequiredReleaseRunner,
+  prepareMain: boolean,
+): RequiredReleaseReport {
+  if (required.length === 0) return { required, releases: [], satisfied: true }
+  if (prepareMain) {
+    try {
+      runner.prepareMain(project)
+    } catch (cause) {
+      return failedRequiredRelease(required, cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const releases = required.map((rung): RequiredRungRelease => {
+    try {
+      const live = runner.newestLive(project, rung)
+      if (live && runner.contains(project, mergeCommit, live)) {
+        return {
+          rung,
+          deployExit: 0,
+          outputTail: `already live at ${live}`,
+          satisfied: true,
+          deployed: false,
+        }
+      }
+      const result = runner.release(project, rung)
+      return {
+        rung,
+        deployExit: result.exitCode,
+        outputTail: result.outputTail || result.warning || '(no deploy output)',
+        satisfied: result.exitCode === 0 && result.liveMatchesCandidate === true,
+        deployed: !result.alreadyLive,
+      }
+    } catch (cause) {
+      return failure(rung, cause instanceof Error ? cause.message : String(cause))
+    }
+  })
+  return { required, releases, satisfied: releases.every((release) => release.satisfied) }
 }
 
 export function releaseRequiredRungs(input: {
@@ -145,37 +234,7 @@ export function releaseRequiredRungs(input: {
       satisfied: false,
     }
   }
-  try {
-    runner.prepareMain(input.project)
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    return { required, releases: required.map((rung) => failure(rung, detail)), satisfied: false }
-  }
-  const releases = required.map((rung): RequiredRungRelease => {
-    try {
-      const live = runner.newestLive(input.project, rung)
-      if (live && runner.contains(input.project, input.mergeCommit, live)) {
-        return {
-          rung,
-          deployExit: 0,
-          outputTail: `already live at ${live}`,
-          satisfied: true,
-          deployed: false,
-        }
-      }
-      const result = runner.release(input.project, rung)
-      return {
-        rung,
-        deployExit: result.exitCode,
-        outputTail: result.outputTail || result.warning || '(no deploy output)',
-        satisfied: result.exitCode === 0 && result.liveMatchesCandidate === true,
-        deployed: !result.alreadyLive,
-      }
-    } catch (cause) {
-      return failure(rung, cause instanceof Error ? cause.message : String(cause))
-    }
-  })
-  return { required, releases, satisfied: releases.every((release) => release.satisfied) }
+  return runRequiredReleaseRungs(input.project, input.mergeCommit, required, runner, true)
 }
 
 export function formatRequiredReleaseReport(

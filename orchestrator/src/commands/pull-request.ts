@@ -1,6 +1,6 @@
 // concern: cli
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
-import type { Command } from 'commander'
+import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
@@ -12,6 +12,11 @@ import {
 import type { PullRequestCiCounts } from '../pull-request/pr-ci-record.ts'
 import { recordPullRequestCi } from '../pull-request/pr-ci-record.ts'
 import { mergePullRequest } from '../pull-request/pr-merge.ts'
+import { runPullRequestPostLanding } from '../pull-request/pr-post-landing.ts'
+import {
+  POST_LANDING_FLAG,
+  parsePullRequestPostLandingPayload,
+} from '../pull-request/pr-post-landing-payload.ts'
 import { resolveReviewCommandCwd } from '../review/review-command-cwd.ts'
 import { log } from './support.ts'
 
@@ -73,6 +78,30 @@ function createPullRequestCommand(
   }
 }
 
+async function mergePullRequestCommand(
+  target: string,
+  options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean },
+): Promise<void> {
+  if (options.postLanding) {
+    const payload = parsePullRequestPostLandingPayload(await Bun.stdin.text())
+    if (payload.target !== target)
+      throw new Error('post-landing payload target does not match the command target')
+    const outcome = runPullRequestPostLanding(payload, writableDb())
+    log(outcome.output)
+    if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
+    return
+  }
+  const outcome = mergePullRequest(
+    target,
+    resolveReviewCommandCwd(options.cwd),
+    undefined,
+    undefined,
+    Boolean(options.releaseRequired),
+  )
+  log(outcome.output)
+  if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
+}
+
 export function register(program: Command): void {
   const pr = program.command('pr').allowExcessArguments(false)
 
@@ -89,18 +118,9 @@ export function register(program: Command): void {
     .description('merge a pull request only when its head commit is proven')
     .option('--cwd <tree>', 'verify and merge from this worktree')
     .option('--release-required', 'release every rung required by the merged paths')
+    .addOption(new Option(POST_LANDING_FLAG, 'complete a moved checkout hand-off').hideHelp())
     .allowExcessArguments(false)
-    .action((target: string, options) => {
-      const outcome = mergePullRequest(
-        target,
-        resolveReviewCommandCwd(options.cwd),
-        undefined,
-        undefined,
-        Boolean(options.releaseRequired),
-      )
-      log(outcome.output)
-      if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
-    })
+    .action(mergePullRequestCommand)
 
   pr.command('ci-record <number>')
     .description('record GitHub Actions attempts for an already-merged pull request')
