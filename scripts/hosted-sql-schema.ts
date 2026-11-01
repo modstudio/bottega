@@ -106,6 +106,8 @@ const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
   'orchestrator/test/postgres-customer-auth-proof.ts',
   'orchestrator/test/postgres-doc-order-proof.ts',
   'orchestrator/test/postgres-project-identity-proof.ts',
+  // Logs slow hosted proof requests and intentionally owns no SQL.
+  'orchestrator/test/postgres-proof-slow-request.ts',
   'orchestrator/test/postgres-rls-values.ts',
 ])
 
