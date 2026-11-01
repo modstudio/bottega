@@ -20,6 +20,7 @@ import { createFileRoute, useNavigate, useParams } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
 import { useDetailPanel } from '@/routes/-detail-panel'
+import { runDisplayLabel } from '@/routes/-run-label'
 import { WaitingBadge } from '@/routes/-waiting-badge'
 import { useWindowFilters, WindowControl } from '@/routes/-window-controls'
 
@@ -35,6 +36,7 @@ type RunDisplay = {
 }
 type RunRow = {
   id: number | string
+  machineLabel?: string | null
   space?: string
   agent: string
   job: string | null
@@ -51,6 +53,7 @@ type RunRow = {
 }
 type LiveRow = {
   id: number | string
+  machineLabel?: string | null
   root_id: number | string
   space?: string
   agent: string
@@ -188,6 +191,12 @@ function liveRunColumns({
 }): CollectionColumn<LiveRow>[] {
   return [
     {
+      id: 'run',
+      label: 'Run',
+      phone: 'line',
+      render: (row) => <Identifier>{runDisplayLabel(row.machineLabel, row.id)}</Identifier>,
+    },
+    {
       id: 'agent',
       label: 'Agent',
       phone: 'title',
@@ -239,6 +248,12 @@ function completedRunColumns(
   now: number,
 ): CollectionColumn<RunRow>[] {
   return [
+    {
+      id: 'run',
+      label: 'Run',
+      phone: 'line',
+      render: (row) => <Identifier>{runDisplayLabel(row.machineLabel, row.id)}</Identifier>,
+    },
     ...spaceColumn<RunRow>(showSpace),
     {
       id: 'project',

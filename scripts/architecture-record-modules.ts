@@ -236,6 +236,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/machine-name.ts', [
     '../../../shared/brand.ts',
     '../../../shared/machine-config.ts',
+    '../../../shared/machine-label.ts',
   ]),
   module('orchestrator/src/record/machine-name-record.ts', [
     'bun',
@@ -354,6 +355,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/record/record-doc-list-shape.ts', []),
   module('orchestrator/src/record/record-doc-transport-contract.ts', []),
   module('orchestrator/src/record/record-cursor.ts', ['zod']),
+  module('orchestrator/src/record/record-machine.ts', ['../../../shared/machine-label.ts']),
   module('orchestrator/src/record/record-api-subjects.ts', [
     'hono',
     'zod',

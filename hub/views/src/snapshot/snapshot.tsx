@@ -2,9 +2,14 @@ import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
+import type { MachineRef } from '../../../../shared/machine-label.ts'
 import { snapshotStyles } from './snapshot.styles.ts'
 
-type Machine = { id: string; takenAt: string }
+export type Machine = {
+  id: string
+  takenAt: string
+  machine: MachineRef | null
+}
 
 function asOf(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -35,7 +40,10 @@ export function SnapshotHeader({
           label="Machine"
           size="sm"
           value={machineId}
-          options={machines.map((machine) => ({ value: machine.id, label: machine.id }))}
+          options={machines.map(({ id, machine }) => ({
+            value: id,
+            label: machine?.displayName ?? machine?.shortName ?? id,
+          }))}
           onChange={onMachineChange}
         />
       </div>

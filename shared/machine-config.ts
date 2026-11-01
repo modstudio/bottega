@@ -866,7 +866,7 @@ export function storedMachineId(env: ConfigEnvironment = process.env): string | 
 
 export type StoredMachineNames = {
   shortName: string
-  displayName: string
+  displayName: string | null
   readonly formerShortNames: readonly string[]
 }
 
@@ -892,11 +892,11 @@ export function storedMachineNames(
   const formerShortNames = parseFormerShortNames(
     readMachineValue('machine.former_short_names', env),
   )
-  return shortName && displayName ? { shortName, displayName, formerShortNames } : null
+  return shortName ? { shortName, displayName: displayName || null, formerShortNames } : null
 }
 
 export function writeMachineNames(
-  names: Pick<StoredMachineNames, 'shortName' | 'displayName'>,
+  names: { shortName: string; displayName: string },
   env: ConfigEnvironment = process.env,
 ): void {
   atomicPatch((root) => {

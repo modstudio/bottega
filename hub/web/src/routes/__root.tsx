@@ -70,8 +70,13 @@ export function HostedPublicFrame({ children }: { children: React.ReactNode }) {
   return <div className="min-h-dvh bg-surface-page text-text-primary">{children}</div>
 }
 
-function identityForMode(hosted: boolean, email: string | null) {
-  if (!hosted) return { name: 'Local', detail: 'This machine', canSignOut: false }
+function identityForMode(
+  hosted: boolean,
+  email: string | null,
+  machineDisplayName?: string | null,
+) {
+  if (!hosted)
+    return { name: 'Local', detail: machineDisplayName ?? 'This machine', canSignOut: false }
   if (!email) return { name: 'Signed out', detail: 'Hosted hub', canSignOut: false }
   return { name: email, detail: 'Hosted hub', canSignOut: true }
 }
@@ -83,6 +88,7 @@ export function RailFooterIdentity({
   spaces = [],
   onSelectSpace,
   onSignOut,
+  machineDisplayName,
 }: {
   hosted: boolean
   email: string | null
@@ -90,8 +96,9 @@ export function RailFooterIdentity({
   spaces?: readonly { id: string; name: string }[]
   onSelectSpace?: (spaceId: string) => void
   onSignOut: () => void
+  machineDisplayName?: string | null
 }) {
-  const identity = identityForMode(hosted, email)
+  const identity = identityForMode(hosted, email, machineDisplayName)
   const activeSpace = spaces.find((space) => space.id === activeSpaceId)
   return (
     <UserMenu
@@ -231,6 +238,10 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
     enabled: hosted,
     retry: false,
   })
+  const machineDisplayName = useQuery({
+    ...trpc.operator.machineDisplayName.queryOptions(),
+    enabled: !hosted,
+  })
   const waiting = useQuery({
     ...trpc.operator.waiting.queryOptions(undefined, { refetchInterval: 20_000 }),
     enabled: !hosted,
@@ -288,6 +299,7 @@ function AppLayout({ hosted, pathname }: { hosted: boolean; pathname: string }) 
             spaces={spaces}
             onSelectSpace={(spaceId) => switchSpace.mutate({ spaceId })}
             onSignOut={() => void signOut()}
+            machineDisplayName={machineDisplayName.data?.displayName}
           />
         }
       >

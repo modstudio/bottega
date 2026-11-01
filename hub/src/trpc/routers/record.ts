@@ -10,6 +10,7 @@ import {
   normalizeDocSourceFiles,
   normalizeDocSummary,
 } from '../../../../shared/docs.ts'
+import type { MachineRef } from '../../../../shared/machine-label.ts'
 import { parseRecordSpaceMemberships } from '../../../../shared/record-space-membership.ts'
 import { recordSpaceAccessDecision } from '../../../../shared/record-space-request.ts'
 import { hostedMeasurePeople, hostedMeasures } from '../../hosted-measures.ts'
@@ -157,12 +158,9 @@ const subscriptionScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('projects'), projectIds: z.array(uuid).min(1) }).strict(),
 ])
 
-function optionalSnapshot<T extends { machineId: string; takenAt: string }>(
-  items: T[],
-  ignored: string[],
-  kind: string,
-  machineId?: string,
-) {
+function optionalSnapshot<
+  T extends { machineId: string; takenAt: string; machine: MachineRef | null },
+>(items: T[], ignored: string[], kind: string, machineId?: string) {
   const selection = selectSnapshot(items, machineId)
   if (selection) return selection
   const refusal = ignored.find((message) => message.startsWith(`${kind} snapshot ignored:`))
@@ -185,6 +183,7 @@ export const recordRouter = t.router({
     const rows = window.items.map((run) => {
       const row = {
         id: run.id,
+        machineLabel: run.machineLabel,
         space: run.spaceName,
         agent: run.agent,
         job: run.job,
@@ -207,6 +206,7 @@ export const recordRouter = t.router({
     const live = window.live.map((run) => {
       const row = {
         id: run.id,
+        machineLabel: run.machineLabel,
         space: run.spaceName,
         agent: run.agent,
         job: run.job,
@@ -246,6 +246,7 @@ export const recordRouter = t.router({
         : false
     return {
       id: run.id,
+      machineLabel: run.machineLabel,
       agent: run.agent,
       job: run.job,
       project: run.projectName,

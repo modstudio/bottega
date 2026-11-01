@@ -1,5 +1,6 @@
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { StoredMachineNames } from '../../../shared/machine-config.ts'
+import { isUnnamedMachinePrefix } from '../../../shared/machine-label.ts'
 
 const SHORT_NAME_RULE = '2-20 characters of [a-z0-9-], starting with a letter'
 const DISPLAY_NAME_RULE = '1-60 characters'
@@ -9,7 +10,7 @@ export function shortNameRefusal(value: string): string | null {
 }
 
 export type MachineIdentifierNames = Pick<StoredMachineNames, 'shortName' | 'formerShortNames'>
-export type MachineNamePair = Pick<StoredMachineNames, 'shortName' | 'displayName'>
+export type MachineNamePair = { shortName: string; displayName: string }
 
 export type MachineLabelDecision =
   | { kind: 'bare'; remainder: string }
@@ -23,12 +24,19 @@ export function decideMachineLabel(
   names: MachineIdentifierNames | null,
 ): MachineLabelDecision {
   const match = /^([^/]+)\/(.+)$/.exec(input)
-  if (!match || shortNameRefusal(match[1]!)) return { kind: 'not-label' }
+  if (!match) return { kind: 'not-label' }
   const name = match[1]!
+  const unnamedMachinePrefix = isUnnamedMachinePrefix(name) && shortNameRefusal(name) !== null
+  if (shortNameRefusal(name) && !unnamedMachinePrefix) return { kind: 'not-label' }
   if (!names)
     return {
       kind: 'refused',
       reason: `this machine has no short name because it has not joined a space; a bare number or UUID works meanwhile; set the name by joining a space with \`${PLATFORM_SLUG} record space switch --short-name <name>\``,
+    }
+  if (unnamedMachinePrefix)
+    return {
+      kind: 'refused',
+      reason: `\`${input}\` names a row on an unnamed machine with id prefix \`${name}\`; this command acts only on this machine's (\`${names.shortName}\`) rows`,
     }
   if (name === names.shortName || names.formerShortNames.includes(name))
     return { kind: 'bare', remainder: match[2]! }

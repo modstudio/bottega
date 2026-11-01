@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
-import { writeMachineNames } from '../../../shared/machine-config.ts'
+import { setMachineValue, writeMachineNames } from '../../../shared/machine-config.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { addRun } from '../../test/fixtures/store.ts'
 import { db } from '../database/db.ts'
@@ -46,6 +46,11 @@ describe('run identifier', () => {
       "acts only on this machine's (`mine`) rows",
     )
     expect(queries).toBe(0)
+  })
+
+  test('a label for a machine with only a short name parses as a local number', () => {
+    setMachineValue('machine.short_name', 'mine')
+    expect(parseRunIdentifier('mine/42')).toEqual({ kind: 'number', number: 42 })
   })
 
   test('parses a number and a full UUID without accepting lookalikes', () => {

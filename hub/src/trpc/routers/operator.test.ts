@@ -50,6 +50,7 @@ test('waiting query and answer mutation use the orchestrator seam', async () => 
     },
     emailDelay: () => 30,
     setEmailDelay: (value) => calls.push(['delay', value]),
+    machineDisplayName: () => ({ displayName: 'Studio Mac' }),
   })
   const caller = router.createCaller({})
   expect(await caller.waiting()).toEqual([item])
@@ -81,6 +82,7 @@ test('waiting query and answer mutation use the orchestrator seam', async () => 
   expect(await caller.emailSettings()).toEqual({ delayMinutes: 30 })
   expect(await caller.setEmailSettings({ delayMinutes: 0 })).toEqual({ delayMinutes: 0 })
   expect(calls.at(-1)).toEqual(['delay', 0])
+  expect(await caller.machineDisplayName()).toEqual({ displayName: 'Studio Mac' })
 })
 
 test('answer mutation surfaces orchestrator refusals and validates input at the edge', async () => {

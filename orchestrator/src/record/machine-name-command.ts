@@ -22,7 +22,7 @@ export async function renameMachine(input: {
   const current = machineNames()
   const names = {
     shortName: input.shortName ?? current.shortName,
-    displayName: input.displayName ?? current.displayName,
+    displayName: input.displayName ?? current.displayName ?? current.shortName,
   }
   const refusal = shortNameRefusal(names.shortName) ?? displayNameRefusal(names.displayName)
   if (refusal) throw new Error(refusal)

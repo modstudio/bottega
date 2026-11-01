@@ -11,6 +11,7 @@ import {
   type DocStatus,
   hostedDocAudiences,
 } from '../../shared/docs.ts'
+import type { MachineRef } from '../../shared/machine-label.ts'
 import {
   HarnessHealthSchema,
   OrchAgentDefinitionSchema,
@@ -69,8 +70,18 @@ const scoreInputSchema = z.object({
 const voidInputSchema = z.object({ reason: z.string().min(1) })
 const verdictResponseSchema = z.object({ ok: z.literal(true) })
 
+const machineRefSchema: z.ZodType<MachineRef> = z.object({
+  id: z.string().uuid(),
+  shortName: z.string().nullable(),
+  displayName: z.string().nullable(),
+})
+
 const runSchema = z.object({
   id: z.string().uuid(),
+  // A hosted API older than this client omits the machine fields.
+  number: z.number().nullable().default(null),
+  machine: machineRefSchema.nullable().default(null),
+  machineLabel: z.string().nullable().default(null),
   spaceId: z.string().uuid(),
   spaceName: z.string(),
   projectName: z.string().nullable(),
@@ -260,6 +271,7 @@ const jobSchema = z.object({
 const snapshotBase = {
   id: z.string().uuid(),
   machineId: z.string().uuid(),
+  machine: machineRefSchema.nullable().default(null),
   takenAt: z.string().datetime({ offset: true }),
 }
 

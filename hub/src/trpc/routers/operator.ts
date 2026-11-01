@@ -1,6 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server'
 import { z } from 'zod'
 import { FILING_DOC_SCOPES } from '../../../../shared/docs.ts'
+import { localMachineDisplayName } from '../../machine-display-name.ts'
 import {
   operatorEmailDelayMinutes,
   setOperatorEmailDelayMinutes,
@@ -21,6 +22,7 @@ export function createOperatorRouter(
     file: typeof fileWaitingRulingThroughOrch
     emailDelay?: typeof operatorEmailDelayMinutes
     setEmailDelay?: typeof setOperatorEmailDelayMinutes
+    machineDisplayName?: typeof localMachineDisplayName
   } = {
     waiting: waitingThroughOrch,
     answer: answerWaitingThroughOrch,
@@ -28,6 +30,9 @@ export function createOperatorRouter(
   },
 ) {
   return t.router({
+    machineDisplayName: t.procedure.query(() =>
+      (dependencies.machineDisplayName ?? localMachineDisplayName)(),
+    ),
     emailSettings: t.procedure.query(() => ({
       delayMinutes: (dependencies.emailDelay ?? operatorEmailDelayMinutes)(),
     })),
