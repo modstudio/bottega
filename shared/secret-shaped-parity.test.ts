@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
-import corpus from './secret-shaped-parity.json'
 import { redactSecretShaped } from './secret-shaped.ts'
+import corpus from './secret-shaped-parity.json'
 
 const PEM_BEGIN = ['-----BEGIN ', 'PRIVATE KEY-----'].join('')
 const PEM_END = ['-----END ', 'PRIVATE KEY-----'].join('')

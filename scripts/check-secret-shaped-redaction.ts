@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
+import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
 const ROOTS = ['shared', 'orchestrator', 'scripts'] as const
 const checkout = process.argv[2] ?? process.cwd()
@@ -32,12 +33,17 @@ for (const root of ROOTS) {
   }
 }
 
-const trackedPython = Bun.spawnSync(['git', '-C', checkout, 'ls-files', '-z', '--', '*.py'])
+const trackedPython = Bun.spawnSync([
+  'git',
+  '-C',
+  checkout,
+  ...nulPathListArgs(['ls-files', '--', '*.py']),
+])
 if (trackedPython.exitCode !== 0) {
   console.error('could not list tracked Python files; run this check from a Git checkout')
   process.exit(1)
 }
-for (const local of trackedPython.stdout.toString().split('\0').filter(Boolean)) {
+for (const local of splitNulPaths(trackedPython.stdout.toString())) {
   const source = readFileSync(join(checkout, local), 'utf8')
   if (local !== PYTHON_RULE_OWNER && PYTHON_SECRET_COMPILE.test(source))
     failures.push(`${local}: compiles a secret-shaped pattern outside ${PYTHON_RULE_OWNER}`)
