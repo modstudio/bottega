@@ -24,6 +24,7 @@ import {
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
@@ -135,13 +136,7 @@ function gatherRuling(
 ): ValidatedEvidence['ruling'] {
   const row = d
     .query<
-      {
-        id: string
-        answered_at: string | null
-        answerer_kind: string | null
-        overturned_at: string | null
-        replacement: string | null
-        is_open: number
+      QuestionEvidenceRow & {
         workflow_cursor_record_id: string | null
         workflow_step_ordinal: number | null
         workflow_step_slug: string | null
@@ -164,21 +159,25 @@ function gatherRuling(
   }
 }
 
-export function questionRowToFacts(row: {
+export type QuestionEvidenceRow = {
+  id: number
   answered_at: string | null
   answerer_kind: string | null
   overturned_at: string | null
   replacement: string | null
   is_open: number
-}): {
+}
+
+export function questionRowToFacts(row: QuestionEvidenceRow): {
   state: NonNullable<ValidatedEvidence['stepQuestion']>['state']
   answered: boolean
   answeredByOperator: boolean
   answeredAt: string | null
   replacement: string | null
 } {
-  const overturned = row.overturned_at !== null
-  const answered = !overturned && row.answered_at !== null
+  const status = rulingStatus(row.overturned_at, row.answered_at)
+  const overturned = status === 'overturned'
+  const answered = status === 'answered'
   const answeredByOperator = answered && row.answerer_kind === 'operator'
   return {
     state: overturned
