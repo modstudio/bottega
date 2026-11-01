@@ -18,6 +18,7 @@ import {
   type WorkflowPromotionResult,
 } from './pr-merge.ts'
 import { recordPassingMergeGate, requiredRelease } from './pr-merge-required-release.fixture.ts'
+import { fixturePromotionResult, inProcessPostLandingAdapter } from './pr-post-landing.fixture.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -109,18 +110,8 @@ function adapter(
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
     ...(input.promoteMergedWorkflowDrafts
       ? {
-          promoteMergedWorkflowDrafts: () => {
-            try {
-              const result = input.promoteMergedWorkflowDrafts!()
-              return typeof result === 'string' ? { ok: true as const, output: result } : result
-            } catch (cause) {
-              return {
-                ok: false as const,
-                stage: 'promote' as const,
-                detail: cause instanceof Error ? cause.message : String(cause),
-              }
-            }
-          },
+          promoteMergedWorkflowDrafts: () =>
+            fixturePromotionResult(input.promoteMergedWorkflowDrafts),
         }
       : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
@@ -144,6 +135,14 @@ function adapter(
     releaseRequired: (_project, _mergeCommit, _target, enabled) =>
       input.releaseRequired?.(enabled) ?? { required: [], releases: [], satisfied: true },
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
+    postLanding: inProcessPostLandingAdapter({
+      database: db(),
+      project: () => projectByName('merge-fixture')!,
+      promote: input.promoteMergedWorkflowDrafts,
+      release: (enabled) =>
+        input.releaseRequired?.(enabled) ?? { required: [], releases: [], satisfied: true },
+      cleanup: () => input.shipCleanup?.() ?? cleanupReport(),
+    }),
   }
 }
 

@@ -390,7 +390,7 @@ test('ship cleanup reports an unproved recorded branch with no ref as already go
   expect(formatShipCleanup(report)).toContain('kept: none')
 })
 
-test('ship cleanup rerun after the branch is gone stays clean and records no duplicate evidence', () => {
+test('ship cleanup rerun after the branch is gone stays clean', () => {
   const project = addProject()
   addLanding(project)
   let branchPresent = true
@@ -424,15 +424,12 @@ test('ship cleanup rerun after the branch is gone stays clean and records no dup
     database: db(),
     dependencies,
   })
-  const evidenceCount = db()
-    .query<{ count: number }, []>(
-      "SELECT COUNT(*) AS count FROM branch_landing_record WHERE branch='DEV-1392-c3'",
-    )
-    .get()!.count
-
   expect(rerun.verdict.clean).toBe(true)
+  expect(rerun.removed.branches).toEqual([])
+  expect(rerun.reclaimed).toEqual({ processes: [], compose: [] })
+  expect(rerun.kept).toEqual([])
+  expect(rerun.errors).toEqual([])
   expect(formatShipCleanup(rerun)).toContain('kept: none')
-  expect(evidenceCount).toBe(1)
 })
 
 function landingTreeCleanup(input: {

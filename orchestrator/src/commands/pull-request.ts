@@ -83,12 +83,20 @@ async function mergePullRequestCommand(
   options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean },
 ): Promise<void> {
   if (options.postLanding) {
-    const payload = parsePullRequestPostLandingPayload(await Bun.stdin.text())
-    if (payload.target !== target)
-      throw new Error('post-landing payload target does not match the command target')
-    const outcome = runPullRequestPostLanding(payload, writableDb())
-    log(outcome.output)
-    if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
+    try {
+      const payload = parsePullRequestPostLandingPayload(await Bun.stdin.text())
+      if (payload.target !== target)
+        throw new Error('post-landing payload target does not match the command target')
+      const outcome = runPullRequestPostLanding(payload, writableDb())
+      log(outcome.output)
+      if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      log(
+        `post-landing steps did not complete: ${detail}; recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${target} --release-required`,
+      )
+      process.exitCode = 1
+    }
     return
   }
   const outcome = mergePullRequest(

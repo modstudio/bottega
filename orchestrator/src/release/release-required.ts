@@ -41,6 +41,33 @@ export type RequiredReleaseReport = {
   satisfied: boolean
 }
 
+export type RequiredRungDecision =
+  | { decided: true; required: string[]; error: null }
+  | { decided: false; required: string[]; error: string }
+
+/** Own the required-rung policy, including a failure to inspect the landed paths. */
+export function requiredRungDecision(
+  project: Project,
+  readChangedPaths: () => readonly string[],
+): RequiredRungDecision {
+  const rungs = project.settings.release?.rungs ?? []
+  const declared = rungs.filter((rung) => rung.requiredWhenChanged !== undefined)
+  if (declared.length === 0) return { decided: true, required: [], error: null }
+  try {
+    return {
+      decided: true,
+      required: decideRequiredRungs(rungs, readChangedPaths()),
+      error: null,
+    }
+  } catch (cause) {
+    return {
+      decided: false,
+      required: declared.map((rung) => rung.name),
+      error: cause instanceof Error ? cause.message : String(cause),
+    }
+  }
+}
+
 export type RequiredReleaseRunner = {
   changedPaths(project: Project, mergeCommit: string): string[]
   prepareMain(project: Project): void
@@ -52,7 +79,7 @@ export type RequiredReleaseRunner = {
 const requiredReleaseRunner: RequiredReleaseRunner = {
   changedPaths,
   prepareMain(project) {
-    moveMainCheckout(project)
+    verifyMainCheckout(project)
   },
   newestLive(project, rung) {
     return newestSuccessfulLiveReleaseCommit(project.name, rung)
@@ -91,6 +118,15 @@ export function verifyMainCheckout(project: Project, mergeCommit?: string): void
     !gitResult(['merge-base', '--is-ancestor', mergeCommit, 'HEAD'], project.path).ok
   )
     throw new Error(`registered main checkout does not contain landing commit ${mergeCommit}`)
+}
+
+export function mainCheckoutHead(project: Project): string {
+  return git(
+    ['rev-parse', 'HEAD'],
+    project.path,
+    targetGitEnvironment(project.path),
+    ' during main checkout HEAD lookup',
+  )
 }
 
 export function moveMainCheckout(project: Project, mergeCommit?: string): void {
@@ -140,6 +176,10 @@ export function failedRequiredRelease(required: string[], detail: string): Requi
     releases: required.map((rung) => failure(rung, detail)),
     satisfied: required.length === 0,
   }
+}
+
+export function releaseRequiredFlagAbsent(required: string[]): RequiredReleaseReport {
+  return failedRequiredRelease(required, 'not released because --release-required was absent')
 }
 
 export function releaseRequiredRungsAfterMainMove(input: {
@@ -209,31 +249,13 @@ export function releaseRequiredRungs(input: {
   runner?: RequiredReleaseRunner
 }): RequiredReleaseReport {
   const runner = input.runner ?? requiredReleaseRunner
-  const rungs = input.project.settings.release?.rungs ?? []
-  const declared = rungs.filter((rung) => rung.requiredWhenChanged !== undefined)
-  if (declared.length === 0) return { required: [], releases: [], satisfied: true }
-  let required: string[]
-  try {
-    required = decideRequiredRungs(rungs, runner.changedPaths(input.project, input.mergeCommit))
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
-    const names = declared.map((rung) => rung.name)
-    return {
-      required: names,
-      releases: names.map((rung) => failure(rung, detail)),
-      satisfied: false,
-    }
-  }
+  const decision = requiredRungDecision(input.project, () =>
+    runner.changedPaths(input.project, input.mergeCommit),
+  )
+  if (!decision.decided) return failedRequiredRelease(decision.required, decision.error)
+  const required = decision.required
   if (required.length === 0) return { required, releases: [], satisfied: true }
-  if (!input.releaseRequired) {
-    return {
-      required,
-      releases: required.map((rung) =>
-        failure(rung, 'not released because --release-required was absent'),
-      ),
-      satisfied: false,
-    }
-  }
+  if (!input.releaseRequired) return releaseRequiredFlagAbsent(required)
   return runRequiredReleaseRungs(input.project, input.mergeCommit, required, runner, true)
 }
 

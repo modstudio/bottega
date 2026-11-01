@@ -22,6 +22,22 @@ export const pullRequestModuleSpecs = [
     typeOnlyAllowed: ['./pr-admission.ts', './pr-merge-evidence.ts'],
   },
   {
+    file: 'orchestrator/src/pull-request/pr-post-landing.fixture.ts',
+    allowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+      './pr-post-landing.ts',
+    ],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-merge-evidence.ts',
     allowed: ['bun:sqlite', '../../../shared/brand.ts', './pr-admission.ts', './pr-ci-record.ts'],
   },

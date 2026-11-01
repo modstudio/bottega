@@ -13,6 +13,7 @@ export type PullRequestPostLandingPayload = {
   headCommit: string
   mergeCommit: string
   requiredRungs: string[]
+  rungDecisionError: string | null
   releaseRequired: boolean
   promoteWorkflowDrafts: boolean
   recordingError: string | null
@@ -52,6 +53,8 @@ export function parsePullRequestPostLandingPayload(text: string): PullRequestPos
     row.requiredRungs.some((rung) => typeof rung !== 'string' || !rung)
   )
     throw refusal('requiredRungs', 'an array of non-empty strings')
+  if (!(row.rungDecisionError === null || typeof row.rungDecisionError === 'string'))
+    throw refusal('rungDecisionError', 'a string or null')
   if (typeof row.releaseRequired !== 'boolean') throw refusal('releaseRequired', 'a boolean')
   if (typeof row.promoteWorkflowDrafts !== 'boolean')
     throw refusal('promoteWorkflowDrafts', 'a boolean')

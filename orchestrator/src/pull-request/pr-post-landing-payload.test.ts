@@ -14,6 +14,7 @@ const payload: PullRequestPostLandingPayload = {
   headCommit: 'head',
   mergeCommit: 'merge',
   requiredRungs: ['hosted-api'],
+  rungDecisionError: null,
   releaseRequired: true,
   promoteWorkflowDrafts: true,
   recordingError: null,

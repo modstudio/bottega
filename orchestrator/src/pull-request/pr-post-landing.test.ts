@@ -10,6 +10,8 @@ import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
   type PullRequestPostLandingAdapter,
+  type PullRequestPostLandingChildAdapter,
+  runPullRequestPostLanding,
 } from './pr-post-landing.ts'
 import type { PullRequestPostLandingPayload } from './pr-post-landing-payload.ts'
 
@@ -92,6 +94,7 @@ function complete(input: {
   post: PullRequestPostLandingAdapter
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
+  alreadyMerged?: boolean
   calls?: string[]
 }) {
   return completePullRequestPostLanding({
@@ -105,7 +108,7 @@ function complete(input: {
     target: '42',
     releaseRequired: input.releaseRequired ?? true,
     workflowPromotionDue: input.workflowPromotionDue ?? false,
-    alreadyMerged: false,
+    alreadyMerged: input.alreadyMerged ?? false,
   })
 }
 
@@ -115,6 +118,7 @@ test('a successful move fences this process and hands off the exact fixed identi
     workflowPromotionDue: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-before',
       moveMain: () => {},
       fence: fenceStoreAfterCheckoutMove,
       handOff: (payload) => {
@@ -133,6 +137,7 @@ test('a successful move fences this process and hands off the exact fixed identi
     headCommit: 'head-commit',
     mergeCommit: 'merge-commit',
     requiredRungs: ['hosted-api'],
+    rungDecisionError: null,
     releaseRequired: true,
     promoteWorkflowDrafts: true,
     recordingError: null,
@@ -148,6 +153,7 @@ test('when no move is due all remaining work stays in process and the store stay
     calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-before',
       moveMain: () => {
         throw new Error('move must not run')
       },
@@ -171,6 +177,7 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
     calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-before',
       moveMain: () => {
         throw new Error('registered main checkout is dirty; clean it')
       },
@@ -196,10 +203,152 @@ test.each([0, 20, 21])('the parent propagates child output and exit %i', (exitCo
   const outcome = complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-before',
       moveMain: () => {},
       fence: () => {},
       handOff: () => ({ output: `child output ${exitCode}`, exitCode }),
     },
   })
   expect(outcome).toEqual({ output: `child output ${exitCode}`, exitCode })
+})
+
+const childPayload = (overrides: Partial<PullRequestPostLandingPayload> = {}) => ({
+  project: PLATFORM_SLUG,
+  target: '42',
+  prNumber: 42,
+  headBranch: pullRequest.headBranch,
+  headCommit: pullRequest.headCommit,
+  mergeCommit: 'merge-commit',
+  requiredRungs: ['hosted-api'],
+  rungDecisionError: null,
+  releaseRequired: true,
+  promoteWorkflowDrafts: false,
+  recordingError: null,
+  requeueOutput: null,
+  ...overrides,
+})
+
+const childAdapter = (
+  overrides: Partial<PullRequestPostLandingChildAdapter> = {},
+): PullRequestPostLandingChildAdapter => ({
+  project: () => project,
+  verify: () => {},
+  promote: () => ({ ok: true, output: '' }),
+  release: () => satisfied,
+  cleanup: () => cleanReport(),
+  ...overrides,
+})
+
+test('the child fails every declared rung when the parent could not decide', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload({
+      requiredRungs: ['hosted-api', 'worker'],
+      rungDecisionError: 'changed paths unavailable',
+    }),
+    db(),
+    childAdapter({
+      release: () => {
+        throw new Error('release must not run')
+      },
+    }),
+  )
+
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'required rung hosted-api: deploy exit not run; changed paths unavailable',
+  )
+  expect(outcome.output).toContain(
+    'required rung worker: deploy exit not run; changed paths unavailable',
+  )
+})
+
+test('the child reports checkout verification failure with the rung remedy', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload(),
+    db(),
+    childAdapter({
+      verify: () => {
+        throw new Error('main does not contain the landing commit')
+      },
+    }),
+  )
+
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'required rung hosted-api: deploy exit not run; main does not contain the landing commit',
+  )
+  expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
+})
+
+test('the child uses the shared absent release flag report', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload({ releaseRequired: false }),
+    db(),
+    childAdapter(),
+  )
+
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain('not released because --release-required was absent')
+})
+
+test('an already-merged recovery with a required rung moves, fences, and hands off', () => {
+  const events: string[] = []
+  complete({
+    alreadyMerged: true,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-head',
+      moveMain: () => events.push('move'),
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: 'recovered', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(events).toEqual(['move', 'fence', 'hand-off'])
+})
+
+test('a partial move that changes HEAD still fences and hands off', () => {
+  const events: string[] = []
+  let head = 'before'
+  const outcome = complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => head,
+      moveMain: () => {
+        head = 'after'
+        throw new Error('verification raced with a dirty checkout')
+      },
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: 'child verifies main', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
+  expect(events).toEqual(['fence', 'hand-off'])
+})
+
+test('a non-ladder child exit keeps its code and adds the parent recovery', () => {
+  const outcome = complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => 'main-head',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: () => ({ output: 'store is behind', exitCode: 1 }),
+    },
+  })
+
+  expect(outcome.exitCode).toBe(1)
+  expect(outcome.output).toContain('store is behind')
+  expect(outcome.output).toContain(
+    'post-landing steps (promotion, rungs, cleanup) did not complete',
+  )
+  expect(outcome.output).toContain(`${PLATFORM_SLUG} machine update`)
+  expect(outcome.output).toContain(`${PLATFORM_SLUG} pr merge 42 --release-required`)
 })

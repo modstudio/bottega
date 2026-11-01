@@ -5,7 +5,6 @@
  */
 
 import type { Database } from 'bun:sqlite'
-import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { recordMergeBranchLandings } from '../branch/branch-landing-service.ts'
 import { enableSchemaReload, writableDb } from '../database/db.ts'
@@ -57,6 +56,7 @@ import {
   completePullRequestPostLanding,
   type PullRequestMergeOutcome,
   type PullRequestPostLandingAdapter,
+  promoteWorkflowTree,
   type WorkflowPromotionResult,
   type WorkflowPromotionStage,
 } from './pr-post-landing.ts'
@@ -349,15 +349,7 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       ),
     )
     if ('failure' in fastForwarded) return fastForwarded.failure
-    const binary = join(change.project.path, 'bin', PLATFORM_SLUG)
-    const promoted = attempt('promote', () =>
-      successful(
-        change.project.path,
-        [binary, 'workflow', 'promote-tree', '--cwd', change.project.path, '--reason', reason],
-        'workflow draft promotion',
-      ),
-    )
-    return 'failure' in promoted ? promoted.failure : { ok: true, output: promoted.value }
+    return promoteWorkflowTree(change.project, reason)
   },
   recordCi(change, pullRequest, database) {
     const result = recordPullRequestCi({

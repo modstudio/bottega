@@ -10,12 +10,15 @@ import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import {
   changedPaths,
-  decideRequiredRungs,
   failedRequiredRelease,
   formatRequiredReleaseReport,
+  mainCheckoutHead,
   moveMainCheckout,
   type RequiredReleaseReport,
+  type RequiredRungDecision,
+  releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
+  requiredRungDecision,
   verifyMainCheckout,
 } from '../release/release-required.ts'
 import {
@@ -41,20 +44,43 @@ const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
 const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
 export type PullRequestMergeOutcome = {
   output: string
-  exitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE | typeof MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE
+  exitCode: number
 }
 
 type HandOffResult = { output: string; exitCode: number }
 
 export type PullRequestPostLandingAdapter = {
   changedPaths(project: Project, mergeCommit: string): string[]
+  mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string): void
   fence(reason: string): void
   handOff(payload: PullRequestPostLandingPayload): HandOffResult
 }
 
+function moveMainForPostLanding(
+  adapter: PullRequestPostLandingAdapter,
+  project: Project,
+  mergeCommit: string,
+): { moved: true } | { moved: false; detail: string } {
+  let headBefore: string
+  try {
+    headBefore = adapter.mainHead(project)
+  } catch (cause) {
+    return { moved: false, detail: cause instanceof Error ? cause.message : String(cause) }
+  }
+  let failure: string | null = null
+  try {
+    adapter.moveMain(project, mergeCommit)
+  } catch (cause) {
+    failure = cause instanceof Error ? cause.message : String(cause)
+  }
+  if (failure && adapter.mainHead(project) === headBefore) return { moved: false, detail: failure }
+  return { moved: true }
+}
+
 const cliPostLandingAdapter: PullRequestPostLandingAdapter = {
   changedPaths,
+  mainHead: mainCheckoutHead,
   moveMain: moveMainCheckout,
   fence: fenceStoreAfterCheckoutMove,
   handOff(payload) {
@@ -185,22 +211,6 @@ function mergedOutput(input: {
   })
 }
 
-function requiredRungsForHandOff(input: {
-  adapter: PullRequestPostLandingAdapter
-  project: Project
-  mergeCommit: string
-  inspect: boolean
-}): string[] | null {
-  if (!input.inspect) return null
-  const rungs = input.project.settings.release?.rungs ?? []
-  if (!rungs.some((rung) => rung.requiredWhenChanged !== undefined)) return []
-  try {
-    return decideRequiredRungs(rungs, input.adapter.changedPaths(input.project, input.mergeCommit))
-  } catch {
-    return null
-  }
-}
-
 export function completePullRequestPostLanding(input: {
   adapter: RemainingStageAdapter
   postLandingAdapter?: PullRequestPostLandingAdapter
@@ -217,16 +227,12 @@ export function completePullRequestPostLanding(input: {
   requeueOutput?: string
 }): PullRequestMergeOutcome {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
-  const required = requiredRungsForHandOff({
-    adapter: post,
-    project: input.project,
-    mergeCommit: input.mergeCommit,
-    inspect: !input.alreadyMerged && (input.workflowPromotionDue || input.releaseRequired),
-  })
+  const inspect = input.workflowPromotionDue || input.releaseRequired
+  const decision: RequiredRungDecision = inspect
+    ? requiredRungDecision(input.project, () => post.changedPaths(input.project, input.mergeCommit))
+    : { decided: true, required: [], error: null }
   const mustMove =
-    !input.alreadyMerged &&
-    (input.workflowPromotionDue ||
-      (input.releaseRequired && required !== null && required.length > 0))
+    input.workflowPromotionDue || (input.releaseRequired && decision.required.length > 0)
   if (!mustMove) {
     const reason = `merged PR #${input.pullRequest.number} (${input.mergeCommit})`
     const promotion = input.workflowPromotionDue
@@ -251,10 +257,8 @@ export function completePullRequestPostLanding(input: {
       ),
     })
   }
-  try {
-    post.moveMain(input.project, input.mergeCommit)
-  } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause)
+  const move = moveMainForPostLanding(post, input.project, input.mergeCommit)
+  if (!move.moved) {
     return mergedOutput({
       ...input,
       project: input.project.name,
@@ -262,13 +266,16 @@ export function completePullRequestPostLanding(input: {
       prNumber: input.pullRequest.number,
       promotion: input.workflowPromotionDue
         ? promotionOutput({
-            result: { ok: false, stage: 'fast-forward', detail },
+            result: { ok: false, stage: 'fast-forward', detail: move.detail },
             project: input.project,
             prNumber: input.pullRequest.number,
             mergeCommit: input.mergeCommit,
           })
         : { output: '' },
-      requiredRelease: failedRequiredRelease(required ?? [], detail),
+      requiredRelease: failedRequiredRelease(
+        decision.required,
+        decision.decided ? move.detail : decision.error,
+      ),
     })
   }
   const payload: PullRequestPostLandingPayload = {
@@ -278,7 +285,8 @@ export function completePullRequestPostLanding(input: {
     headBranch: input.pullRequest.headBranch,
     headCommit: input.pullRequest.headCommit,
     mergeCommit: input.mergeCommit,
-    requiredRungs: required ?? [],
+    requiredRungs: decision.required,
+    rungDecisionError: decision.error,
     releaseRequired: input.releaseRequired,
     promoteWorkflowDrafts: input.workflowPromotionDue,
     recordingError: input.recordingError ?? null,
@@ -286,18 +294,21 @@ export function completePullRequestPostLanding(input: {
   }
   post.fence(`main checkout moved to include ${input.mergeCommit}`)
   const handedOff = post.handOff(payload)
+  const unexpectedExit = ![
+    0,
+    MERGED_WITH_RESIDUE_EXIT_CODE,
+    MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE,
+  ].includes(handedOff.exitCode)
+  const recovery = unexpectedExit
+    ? `post-landing steps (promotion, rungs, cleanup) did not complete; recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${input.target} --release-required`
+    : ''
   return {
-    output: handedOff.output,
-    exitCode: handedOff.exitCode as PullRequestMergeOutcome['exitCode'],
+    output: [handedOff.output, recovery].filter(Boolean).join('\n'),
+    exitCode: handedOff.exitCode,
   }
 }
 
-function promoteTree(
-  project: Project,
-  payload: PullRequestPostLandingPayload,
-): WorkflowPromotionResult {
-  if (!payload.promoteWorkflowDrafts) return { ok: true, output: '' }
-  const reason = `merged PR #${payload.prNumber} (${payload.mergeCommit})`
+export function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
   const result = Bun.spawnSync(
     [
       join(project.path, 'bin', PLATFORM_SLUG),
@@ -318,15 +329,37 @@ function promoteTree(
   }
 }
 
+export type PullRequestPostLandingChildAdapter = {
+  project(name: string, database: Database): Project | null
+  verify(project: Project, mergeCommit: string): void
+  promote(project: Project, reason: string): WorkflowPromotionResult
+  release(input: {
+    project: Project
+    mergeCommit: string
+    required: string[]
+  }): RequiredReleaseReport
+  cleanup(project: string, branch: string, prNumber: number, database: Database): ShipCleanupReport
+}
+
+const cliChildAdapter: PullRequestPostLandingChildAdapter = {
+  project: projectByName,
+  verify: verifyMainCheckout,
+  promote: promoteWorkflowTree,
+  release: releaseRequiredRungsAfterMainMove,
+  cleanup: (projectName, branch, _prNumber, database) =>
+    shipCleanup(branch, { project: projectName, confirmedLanded: true, database }),
+}
+
 export function runPullRequestPostLanding(
   payload: PullRequestPostLandingPayload,
   database: Database,
+  adapter: PullRequestPostLandingChildAdapter = cliChildAdapter,
 ): PullRequestMergeOutcome {
-  const project = projectByName(payload.project, database)
+  const project = adapter.project(payload.project, database)
   if (!project) throw new Error(`post-landing project ${payload.project} is not registered`)
   let checkoutFailure: string | null = null
   try {
-    verifyMainCheckout(project, payload.mergeCommit)
+    adapter.verify(project, payload.mergeCommit)
   } catch (cause) {
     checkoutFailure = cause instanceof Error ? cause.message : String(cause)
   }
@@ -334,32 +367,26 @@ export function runPullRequestPostLanding(
     result:
       checkoutFailure && payload.promoteWorkflowDrafts
         ? { ok: false, stage: 'branch-check', detail: checkoutFailure }
-        : promoteTree(project, payload),
+        : payload.promoteWorkflowDrafts
+          ? adapter.promote(project, `merged PR #${payload.prNumber} (${payload.mergeCommit})`)
+          : { ok: true, output: '' },
     project,
     prNumber: payload.prNumber,
     mergeCommit: payload.mergeCommit,
   })
-  const requiredRelease = checkoutFailure
-    ? failedRequiredRelease(payload.requiredRungs, checkoutFailure)
-    : payload.releaseRequired
-      ? releaseRequiredRungsAfterMainMove({
-          project,
-          mergeCommit: payload.mergeCommit,
-          required: payload.requiredRungs,
-        })
-      : failedRequiredRelease(
-          payload.requiredRungs,
-          'not released because --release-required was absent',
-        )
+  const requiredRelease = payload.rungDecisionError
+    ? failedRequiredRelease(payload.requiredRungs, payload.rungDecisionError)
+    : checkoutFailure
+      ? failedRequiredRelease(payload.requiredRungs, checkoutFailure)
+      : payload.releaseRequired
+        ? adapter.release({
+            project,
+            mergeCommit: payload.mergeCommit,
+            required: payload.requiredRungs,
+          })
+        : releaseRequiredFlagAbsent(payload.requiredRungs)
   return mergedOutput({
-    adapter: {
-      cleanup: (projectName, branch, _prNumber, childDatabase) =>
-        shipCleanup(branch, {
-          project: projectName,
-          confirmedLanded: true,
-          database: childDatabase,
-        }),
-    },
+    adapter: { cleanup: adapter.cleanup },
     database,
     project: project.name,
     branch: payload.headBranch,
