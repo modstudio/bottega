@@ -432,6 +432,29 @@ describe('task-linked workflow text preservation', () => {
     })
   })
 
+  test('an unlinked close deletes its text and never calls the document port', async () => {
+    const d = database()
+    const cursor = open(d)
+    const reference = attachWorkflowTextByHandle(cursor, 'not linked', context, d)
+    const refusing: WorkflowTextDocumentPorts = {
+      list: async () => {
+        throw new Error('an unlinked close must not list task documents')
+      },
+      create: async () => {
+        throw new Error('an unlinked close must not create task documents')
+      },
+    }
+    const result = await closeCursorWithTextCopy(
+      { action: 'abandon', cursor, args: {}, context, reason: 'not linked' },
+      d,
+      taskReader,
+      refusing,
+    )
+    expect(result).not.toContain('uncopied')
+    expect(rowCount(d, cursor)).toBe(0)
+    expect(() => showWorkflowText(reference, d)).toThrow('is not held on this machine')
+  })
+
   test('refused close validation makes no document-port call', async () => {
     let calls = 0
     const documents: WorkflowTextDocumentPorts = {
