@@ -4,6 +4,7 @@ import { upsertRecordProject } from '../src/record/record-projects.ts'
 import { createRecordSpace, recordMemberships } from '../src/record/record-space.ts'
 import { moveRecordProjectSpace } from '../src/record/record-space-move.ts'
 import { registerProjectSpaceDryRunProofs } from './postgres-project-space-dry-run-proof.ts'
+import { registerProjectSpacePinProofs } from './postgres-project-space-pin-proof.ts'
 import { proveProjectSpaceRecordSync, SYNC_PROOF_MACHINE } from './postgres-score-proof.ts'
 import { registerHostedSyncAuthorizationProofs } from './postgres-sync-authorization-proof.ts'
 
@@ -26,6 +27,7 @@ export type ProjectSpaceProofInput = {
 }
 
 export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void {
+  registerProjectSpacePinProofs(input)
   test('space creation grants ownership and duplicate slug names the existing id', async () => {
     input.setToken(input.token())
     const created = await createRecordSpace('DEV 741 Team', 'dev-741-team')
@@ -209,11 +211,11 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
        INSERT INTO project_lens_profile
          (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
-         SELECT '${customSelection}','${source}','${project}',id,'architecture','move-custom',NULL,1,now()
+         SELECT '${customSelection}','${source}','${project}',id,'architecture','move-custom','${customProfile}',1,now()
          FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;
        INSERT INTO project_lens_profile_revision
          (id,space_id,selection_id,prior_profile_name,prior_selected_version_id,reason,session_id,at)
-         VALUES ('${selectionRevision}','${source}','${customSelection}','default','${customProfileRevision}',
+         VALUES ('${selectionRevision}','${source}','${customSelection}','move-custom','${customProfileRevision}',
            'move proof selection history','move-session',now());
        INSERT INTO port_pair(id,space_id,source_project_id,target_project_id,created_at) VALUES
          ('${pair}','${source}','${otherProject}','${project}',now()),
@@ -374,8 +376,19 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
        SELECT count(*) FROM project_lens_profile WHERE id IN ('${builtInSelection}','${customSelection}');
        SELECT count(*) FROM project_lens_profile_revision
          WHERE id='${selectionRevision}' AND selection_id='${customSelection}'
-           AND prior_profile_name='default' AND prior_selected_version_id='${customProfileRevision}'
+           AND prior_profile_name='move-custom'
            AND reason='move proof selection history' AND session_id='move-session';
+       SELECT count(*) FROM project_lens_profile s JOIN lens_profile p
+         ON p.space_id=s.space_id AND p.lens_id=s.lens_id AND p.axis=s.axis AND p.name=s.profile_name
+         WHERE s.id='${customSelection}' AND s.selected_version_id=p.current_version_id
+           AND s.selected_version_id<>'${customProfile}';
+       SELECT count(*) FROM project_lens_profile_revision s
+         JOIN project_lens_profile selection ON selection.id=s.selection_id
+         JOIN lens_profile p ON p.space_id=s.space_id AND p.lens_id=selection.lens_id
+           AND p.axis=selection.axis AND p.name=s.prior_profile_name
+         JOIN lens_profile_revision r ON r.profile_id=p.id AND r.version=1
+         WHERE s.id='${selectionRevision}' AND s.prior_selected_version_id=r.id
+           AND s.prior_selected_version_id<>'${customProfileRevision}';
        SELECT count(*) FROM lens_profile p JOIN lens l ON l.id=p.lens_id
          WHERE p.space_id='${destination.id}' AND p.axis='architecture' AND p.name='move-custom'
            AND p.body='{"guidance":"custom move profile"}';
@@ -404,6 +417,8 @@ export function registerProjectSpaceProofs(input: ProjectSpaceProofInput): void 
       '1', // note acknowledgement
       '2', // selections
       '1', // selection revision
+      '1', // copied profile live pin remapped
+      '1', // copied profile historical pin remapped
       '1', // copied custom profile
       '1', // copied custom profile revision
       '1', // pair
