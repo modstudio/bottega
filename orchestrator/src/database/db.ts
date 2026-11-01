@@ -92,6 +92,7 @@ let openedUserVersion: number | null = null
 const noopSchemaReload = (): void => {}
 let schemaReload: ((from: number, to: number) => void) | null = null
 let schemaReloadRefusal: ((reason: string) => void) | null = null
+let storeFenceReason: string | null = null
 type OpenHook = (database: Database) => void
 export type OpenHooks = {
   afterWritableOpen?: OpenHook[]
@@ -294,6 +295,7 @@ function storeDirectoryIsWritable(directory: string): boolean {
 }
 
 function commandReadOnlyDatabase(): Database {
+  refuseStoreAfterCheckoutMove()
   if (readOnlyHandle) return refuseOrReloadStaleSchema(readOnlyHandle, false)
   const legacyRefusal = legacyDatabaseRefusal()
   if (legacyRefusal) throw new Error(legacyRefusal)
@@ -312,6 +314,7 @@ function commandReadOnlyDatabase(): Database {
 
 /** Request the process connection for a mutation. */
 export function writableDb(): Database {
+  refuseStoreAfterCheckoutMove()
   return db(true)
 }
 
@@ -405,6 +408,18 @@ export function closeDatabaseForFixture(): void {
   handleOpenMode = null
   schemaReload = null
   schemaReloadRefusal = null
+  storeFenceReason = null
+}
+
+/** Prevent this process from touching the store after it moved its own executable checkout. */
+export function fenceStoreAfterCheckoutMove(reason: string): void {
+  storeFenceReason = reason
+}
+
+function refuseStoreAfterCheckoutMove(): void {
+  if (storeFenceReason) {
+    throw new Error(`orchestrator store is fenced after checkout move: ${storeFenceReason}`)
+  }
 }
 
 /** Flush and release the process-owned store handle before a setup state-file rename. */
@@ -528,6 +543,7 @@ export function db(writable = false): Database {
 }
 
 function defaultDatabase(writable: boolean): Database {
+  refuseStoreAfterCheckoutMove()
   if (writable && storeWritesRefused())
     throw new Error(storeWriteRefusal(storeActorFacts.workerCaller))
   if (handle) {
@@ -717,6 +733,7 @@ export function liveRuns(database: Database = db()): LiveRun[] {
 
 /** Open the only sanctioned multi-statement write transaction. */
 export function writeTransaction<T>(fn: () => T, database: Database = db(true)): T {
+  refuseStoreAfterCheckoutMove()
   const conn = refuseOrReloadStaleSchema(database, true)
   return conn.transaction(fn).immediate()
 }

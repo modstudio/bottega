@@ -109,6 +109,16 @@ function adapter(input: {
     now: input.now ?? Date.now,
     wait: (milliseconds) => input.wait?.(milliseconds),
     releaseRequired: () => ({ required: [], releases: [], satisfied: true }),
+    postLanding: {
+      changedPaths: () => [],
+      mainHead: () => 'fixture-main-head',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: (payload) => ({
+        output: [payload.mergeCommit, payload.requeueOutput].filter(Boolean).join('\n'),
+        exitCode: 0,
+      }),
+    },
   }
 }
 

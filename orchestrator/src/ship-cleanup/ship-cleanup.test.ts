@@ -390,6 +390,48 @@ test('ship cleanup reports an unproved recorded branch with no ref as already go
   expect(formatShipCleanup(report)).toContain('kept: none')
 })
 
+test('ship cleanup rerun after the branch is gone stays clean', () => {
+  const project = addProject()
+  addLanding(project)
+  let branchPresent = true
+  const dependencies: ShipCleanupDependencies = {
+    observeBranchRef: () => ({ outcome: branchPresent ? 'present' : 'absent' }),
+    landingState: () => ({ state: 'unlanded' }),
+    closeOut: () => ({ outcome: 'absent', detail: 'already absent' }),
+    prune: (_project, branch) => {
+      if (!branchPresent) return { deleted: [], kept: [], errors: [] }
+      branchPresent = false
+      return { deleted: [branch], kept: [], errors: [] }
+    },
+    measure: () => ({ bytes: 0, errors: [], stoppedAtLimit: false }),
+    readerCloneArchive: () => null,
+    runsFromTree: () => false,
+    removeLandingTree: () => ({ outcome: 'absent' }),
+    remove: () => {},
+    reclaimProcesses: () => ({ reclaimed: [], kept: [], errors: [] }),
+    reclaimCompose: () => ({ removed: [], kept: [], errors: [] }),
+  }
+
+  shipCleanup('DEV-1392-c3', {
+    project: 'ship-fixture',
+    confirmedLanded: true,
+    database: db(),
+    dependencies,
+  })
+  const rerun = shipCleanup('DEV-1392-c3', {
+    project: 'ship-fixture',
+    confirmedLanded: true,
+    database: db(),
+    dependencies,
+  })
+  expect(rerun.verdict.clean).toBe(true)
+  expect(rerun.removed.branches).toEqual([])
+  expect(rerun.reclaimed).toEqual({ processes: [], compose: [] })
+  expect(rerun.kept).toEqual([])
+  expect(rerun.errors).toEqual([])
+  expect(formatShipCleanup(rerun)).toContain('kept: none')
+})
+
 function landingTreeCleanup(input: {
   removal?: HookTreeRemovalResult
   runsFromTree?: boolean

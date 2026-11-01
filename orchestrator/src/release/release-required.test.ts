@@ -6,6 +6,7 @@ import {
   formatRequiredReleaseReport,
   type RequiredReleaseRunner,
   releaseRequiredRungs,
+  releaseRequiredRungsAfterMainMove,
 } from './release-required.ts'
 import type { ReleaseResult } from './release-service.ts'
 
@@ -295,5 +296,30 @@ describe('releaseRequiredRungs', () => {
       }).satisfied,
     ).toBe(true)
     expect(attempts).toBe(2)
+  })
+})
+
+describe('releaseRequiredRungsAfterMainMove', () => {
+  test('releases required rungs without preparing main again', () => {
+    let prepared = false
+    let released = false
+    const report = releaseRequiredRungsAfterMainMove({
+      project,
+      mergeCommit: 'merge',
+      required: ['hosted-api'],
+      runner: runner({
+        prepareMain: () => {
+          prepared = true
+        },
+        release: () => {
+          released = true
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(report.satisfied).toBe(true)
+    expect(released).toBe(true)
+    expect(prepared).toBe(false)
   })
 })

@@ -1,5 +1,43 @@
 export const pullRequestModuleSpecs = [
   {
+    file: 'orchestrator/src/pull-request/pr-post-landing-payload.ts',
+    allowed: ['../../../shared/brand.ts'],
+  },
+  {
+    file: 'orchestrator/src/pull-request/pr-post-landing.ts',
+    allowed: [
+      'bun:sqlite',
+      'node:path',
+      '../../../shared/brand.ts',
+      '../../../shared/self-spawn.ts',
+      '../database/db.ts',
+      '../project/projects.ts',
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup-decision.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+      './pr-admission.ts',
+      './pr-merge-evidence.ts',
+      './pr-post-landing-payload.ts',
+    ],
+    typeOnlyAllowed: ['./pr-admission.ts', './pr-merge-evidence.ts'],
+  },
+  {
+    file: 'orchestrator/src/pull-request/pr-post-landing.fixture.ts',
+    allowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+      './pr-post-landing.ts',
+    ],
+    typeOnlyAllowed: [
+      'bun:sqlite',
+      '../project/projects.ts',
+      '../release/release-required.ts',
+      '../ship-cleanup/ship-cleanup.ts',
+    ],
+  },
+  {
     file: 'orchestrator/src/pull-request/pr-merge-evidence.ts',
     allowed: ['bun:sqlite', '../../../shared/brand.ts', './pr-admission.ts', './pr-ci-record.ts'],
   },
