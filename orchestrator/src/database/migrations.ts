@@ -689,20 +689,6 @@ function boardReferenceOrphanCounts(d: Database): string[] {
   return findings
 }
 
-export function questionDocFilingOrphanCount(d: Database): number {
-  return (
-    d
-      .query(
-        `SELECT COUNT(*) n FROM question row
-         WHERE row.filed_as='doc'
-           AND (row.filed_record_id IS NULL OR NOT EXISTS (
-             SELECT 1 FROM doc_revision revision WHERE revision.record_id=row.filed_record_id
-           ))`,
-      )
-      .get() as { n: number }
-  ).n
-}
-
 function docReferenceOrphanCounts(d: Database): string[] {
   const findings: string[] = []
   for (const [table, column, label] of [
@@ -734,7 +720,13 @@ function docReferenceOrphanCounts(d: Database): string[] {
       .get() as { n: number }
   ).n
   if (packCount) findings.push(`canon_pack.doc_revisions=${packCount}`)
-  const filingCount = questionDocFilingOrphanCount(d)
+  const filingCount = (
+    d
+      .query(
+        `SELECT COUNT(*) n FROM question row WHERE row.filed_as='doc' AND (row.filed_ref IS NULL OR instr(row.filed_ref,'@')=0 OR NOT EXISTS (SELECT 1 FROM doc_revision revision WHERE revision.record_id=substr(row.filed_ref,instr(row.filed_ref,'@')+1)))`,
+      )
+      .get() as { n: number }
+  ).n
   if (filingCount) findings.push(`question.filed_ref=${filingCount}`)
   const ambiguousArtifactCount = (
     d

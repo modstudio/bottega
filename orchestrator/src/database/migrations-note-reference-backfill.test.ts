@@ -43,16 +43,7 @@ test('note UUID reference migration preserves rows and turns old integers into d
       )
       .run(run.id, run.id, `12@${revisionId}`)
 
-    expect(
-      applyMigrations(database, undefined, {
-        migration: '0130_doc_uuid_key',
-        action: (current) => {
-          current
-            .query("UPDATE question SET filed_record_id=? WHERE filed_as='doc'")
-            .run(revisionId)
-        },
-      }),
-    ).toEqual(pendingMigrationsFrom('0091_note_uuid_references'))
+    expect(applyMigrations(database)).toEqual(pendingMigrationsFrom('0091_note_uuid_references'))
     expect(
       database
         .query(
