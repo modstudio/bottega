@@ -111,6 +111,7 @@ function adapter(input: {
     releaseRequired: () => ({ required: [], releases: [], satisfied: true }),
     postLanding: {
       changedPaths: () => [],
+      entryClosure: () => new Map(),
       mainHead: () => 'fixture-main-head',
       moveMain: () => {},
       fence: () => {},

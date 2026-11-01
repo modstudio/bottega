@@ -50,6 +50,20 @@ const objectIn = (mode: SettingsObjectMode) =>
         // key this binary does not know differs.
         z.object(shape) as unknown as ReturnType<typeof strictObject<Shape>>
 
+const releaseEntryPoint = z
+  .string()
+  .trim()
+  .min(1)
+  .superRefine((entry, context) => {
+    if (isAbsolute(entry) || win32.isAbsolute(entry)) {
+      context.addIssue({ code: 'custom', message: 'must be a repository-relative file path' })
+    } else if (entry.split(/[\\/]/).includes('..')) {
+      context.addIssue({ code: 'custom', message: 'must not contain a .. path segment' })
+    } else if (/[*?[{]/.test(entry)) {
+      context.addIssue({ code: 'custom', message: 'must not contain glob characters' })
+    }
+  })
+
 const releaseSchema = (mode: SettingsObjectMode) =>
   objectIn(mode)({
     rungs: z
@@ -61,6 +75,7 @@ const releaseSchema = (mode: SettingsObjectMode) =>
           live: z.string().trim().min(1).optional(),
           onDemand: z.boolean().optional(),
           requiredWhenChanged: z.array(z.string().trim().min(1)).optional(),
+          entryPoints: z.array(releaseEntryPoint).min(1).optional(),
           releasesWhenChanged: z.array(z.string().trim().min(1)).min(1).optional(),
         }),
       )
@@ -72,6 +87,13 @@ const releaseSchema = (mode: SettingsObjectMode) =>
               code: 'custom',
               path: [index, 'requiredWhenChanged'],
               message: `release rung "${rung.name}" declares requiredWhenChanged; add a live probe or drop requiredWhenChanged`,
+            })
+          }
+          if (rung.entryPoints !== undefined && rung.live === undefined) {
+            context.addIssue({
+              code: 'custom',
+              path: [index, 'entryPoints'],
+              message: `release rung "${rung.name}" declares entryPoints; add a live probe or drop entryPoints`,
             })
           }
           if (seen.has(rung.name)) {

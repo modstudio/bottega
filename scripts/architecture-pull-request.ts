@@ -12,6 +12,7 @@ export const pullRequestModuleSpecs = [
       '../../../shared/self-spawn.ts',
       '../database/db.ts',
       '../project/projects.ts',
+      '../release/release-entry-closure.ts',
       '../release/release-required.ts',
       '../ship-cleanup/ship-cleanup-decision.ts',
       '../ship-cleanup/ship-cleanup.ts',

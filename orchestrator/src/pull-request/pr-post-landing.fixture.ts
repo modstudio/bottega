@@ -18,6 +18,7 @@ export function inProcessPostLandingAdapter(input: {
 }): PullRequestPostLandingAdapter {
   return {
     changedPaths: () => [],
+    entryClosure: () => new Map(),
     mainHead: () => 'main-head',
     moveMain: () => {},
     fence: () => {},

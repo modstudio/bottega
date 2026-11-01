@@ -91,6 +91,7 @@ const remaining = (calls: string[]) => ({
 
 function complete(input: {
   post: PullRequestPostLandingAdapter
+  project?: Project
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
   calls?: string[]
@@ -99,7 +100,7 @@ function complete(input: {
     adapter: remaining(input.calls ?? []),
     postLandingAdapter: input.post,
     database: db(),
-    project,
+    project: input.project ?? project,
     pullRequest,
     mergeCommit: 'merge-commit',
     target: '42',
@@ -114,6 +115,7 @@ test('a successful move fences this process and hands off the exact fixed identi
     workflowPromotionDue: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {},
       fence: fenceStoreAfterCheckoutMove,
@@ -142,6 +144,46 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
   expect(() => writableDb()).toThrow('its post-landing child owns the store')
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
+})
+
+test('a change inside a rung entry closure requires that rung and hands it off', () => {
+  const entryProject = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release,
+        rungs: [
+          { name: 'hosted-api', branch: 'main', requiredWhenChanged: ['shared/record/**'] },
+          { name: 'hosted-hub', branch: 'main', live: 'hub', entryPoints: ['hub/src/hosted.ts'] },
+        ],
+      },
+    },
+  } as Project
+  const asked: Array<{ mergeCommit: string; entries: readonly string[] }> = []
+  const received: PullRequestPostLandingPayload[] = []
+  complete({
+    project: entryProject,
+    post: {
+      changedPaths: () => ['shared/machine-label.ts'],
+      entryClosure: (_project, mergeCommit, entries) => {
+        asked.push({ mergeCommit, entries })
+        return new Map([
+          ['hub/src/hosted.ts', new Set(['hub/src/hosted.ts', 'shared/machine-label.ts'])],
+        ])
+      },
+      mainHead: () => 'main-before',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: (payload) => {
+        received.push(payload)
+        return { output: '', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(asked).toEqual([{ mergeCommit: 'merge-commit', entries: ['hub/src/hosted.ts'] }])
+  expect(received[0]?.requiredRungs).toEqual(['hosted-hub'])
 })
 
 test('the real post-landing adapter refuses before git or spawn under the test runner', () => {
@@ -216,6 +258,7 @@ test('when no move is due all remaining work stays in process and the store stay
     calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {
         throw new Error('move must not run')
@@ -240,6 +283,7 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
     calls,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {
         throw new Error('registered main checkout is dirty; clean it')
@@ -266,6 +310,7 @@ test.each([0, 20, 21])('the parent propagates child output and exit %i', (exitCo
   const outcome = complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {},
       fence: () => {},
@@ -388,6 +433,7 @@ test('a recovery with a required rung moves, fences, and hands off', () => {
   complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-head',
       moveMain: () => events.push('move'),
       fence: () => events.push('fence'),
@@ -423,6 +469,7 @@ test('a failed required-rung decision is carried to the child with every declare
       changedPaths: () => {
         throw new Error('changed paths unavailable')
       },
+      entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {},
       fence: () => {},
@@ -450,6 +497,7 @@ test('a partial move that changes HEAD still fences and hands off', () => {
   const outcome = complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => head,
       moveMain: () => {
         head = 'after'
@@ -473,6 +521,7 @@ test('a failed HEAD re-read after a move attempt still fences and hands off', ()
   const outcome = complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => {
         headReads += 1
         if (headReads === 1) return 'before'
@@ -497,6 +546,7 @@ test('a non-ladder child exit keeps its code and adds the parent recovery', () =
   const outcome = complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-head',
       moveMain: () => {},
       fence: () => {},
@@ -518,6 +568,7 @@ test('a child-reported failure keeps its code and prints the recovery once', () 
   const outcome = complete({
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
       mainHead: () => 'main-head',
       moveMain: () => {},
       fence: () => {},
