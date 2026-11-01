@@ -11,6 +11,9 @@ test('lens seeds are created only for an unbound store', () => {
   expect(unbound.query('SELECT COUNT(*) n FROM lens WHERE space_id IS NULL').get()).toEqual({
     n: 6,
   })
+  expect(
+    unbound.query('SELECT COUNT(*) n FROM lens_profile WHERE current_version_id IS NULL').get(),
+  ).toEqual({ n: 0 })
   unbound.close()
 
   const bound = new Database(':memory:')

@@ -43,9 +43,9 @@ async function ensureInTransaction(tx: SQL, spaceId: string): Promise<SpaceBuilt
     if (profiles[0]) result.alreadyPresent++
     else {
       await tx`INSERT INTO lens_profile
-        (id,space_id,lens_id,axis,name,version,body,enabled,updated_at)
+        (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
         VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${lensId}::uuid,'framework','default',1,
-          ${BUILT_IN_LENS_DEFAULT_PROFILE},true,now())`
+          ${newRecordId()}::uuid,${BUILT_IN_LENS_DEFAULT_PROFILE},true,now())`
       result.inserted++
     }
   })

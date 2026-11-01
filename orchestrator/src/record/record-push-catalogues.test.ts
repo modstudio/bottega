@@ -130,6 +130,12 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
   const local = db(),
     sourceId = newRecordId(),
     targetId = newRecordId()
+  const localProfile = local
+    .query<{ current_version_id: string; record_id: string }, []>(
+      `SELECT current_version_id,record_id FROM lens_profile
+       WHERE space_id IS NULL AND current_version_id IS NOT NULL LIMIT 1`,
+    )
+    .get()!
   upsertProject({
     recordId: sourceId,
     name: 'catalogue-source',
@@ -145,7 +151,18 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
   rememberProjectSpace(local, 'catalogue-source', spaceId)
   rememberProjectSpace(local, 'catalogue-target', spaceId)
   addPairLocal(sourceId, targetId)
-  const client = fakeCatalogueClient()
+  const client = fakeCatalogueClient(undefined, (input, destination) => {
+    expect(input.lens_profile).toContainEqual(
+      expect.objectContaining({
+        id: replicatedRecordId(destination, 'lens_profile', localProfile.record_id),
+        currentVersionId: replicatedRecordId(
+          destination,
+          'lens_profile_revision',
+          localProfile.current_version_id,
+        ),
+      }),
+    )
+  })
   installRecordApiClient(client)
   await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
   expect(resolveLens('correctness', 'catalogue-target', local)?.title).toBe('Correctness')

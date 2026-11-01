@@ -186,7 +186,10 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       name: String(r.name),
       version: Number(r.version),
-      currentVersionId: r.current_version_id == null ? null : String(r.current_version_id),
+      currentVersionId:
+        r.current_version_id == null
+          ? null
+          : replicatedRecordId(spaceId, 'lens_profile_revision', String(r.current_version_id)),
       body: String(r.body),
       enabled: Boolean(r.enabled),
       updatedAt: now,

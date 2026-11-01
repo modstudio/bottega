@@ -1,0 +1,1 @@
+ALTER TABLE "lens_profile" ALTER COLUMN "current_version_id" SET DEFAULT public.record_uuid_v7();
