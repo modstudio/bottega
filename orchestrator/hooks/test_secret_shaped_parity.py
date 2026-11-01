@@ -21,9 +21,11 @@ class SecretShapedParityTest(unittest.TestCase):
         fixtures = json.loads(CORPUS.read_text(encoding="utf-8"))
         for fixture in fixtures:
             with self.subTest(fixture["name"]):
+                input_parts = fixture.get("inputParts")
+                input_text = "".join(input_parts) if input_parts else fixture["input"]
                 self.assertEqual(
                     redact_secret_shaped(
-                        expand_pem_placeholders(fixture["input"]),
+                        expand_pem_placeholders(input_text),
                         fixture["exemptEvidenceTokens"],
                     ),
                     (expand_pem_placeholders(fixture["text"]), fixture["rules"]),

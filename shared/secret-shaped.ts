@@ -45,7 +45,7 @@ const pemSpans = (pattern: RegExp, text: string): SecretSpan[] =>
     }
   })
 
-const RULES: readonly SecretRule[] = definitions.map((definition, index) => {
+const RULES: readonly SecretRule[] = definitions.map((definition) => {
   const pattern = new RegExp(definition.pattern, `g${definition.ignoreCase ? 'i' : ''}`)
   if (definition.kind === 'pem')
     return { name: definition.name, spans: (text) => pemSpans(pattern, text) }

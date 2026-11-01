@@ -10,8 +10,10 @@ function expandPemPlaceholders(text: string): string {
 }
 
 test.each(corpus)('$name has the shared redaction result', (fixture) => {
+  const input = fixture.inputParts?.join('') ?? fixture.input
+  if (input === undefined) throw new Error(`${fixture.name}: parity fixture has no input`)
   expect(
-    redactSecretShaped(expandPemPlaceholders(fixture.input), {
+    redactSecretShaped(expandPemPlaceholders(input), {
       exemptEvidenceTokens: fixture.exemptEvidenceTokens,
     }),
   ).toEqual({
