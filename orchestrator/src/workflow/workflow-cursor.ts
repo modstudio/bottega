@@ -833,25 +833,6 @@ export function nextWorkflowStep(
   )
 }
 
-function abandonWorkflowCursorImpl(
-  slug: string,
-  project: string,
-  mode: string,
-  args: Record<string, string>,
-  reason: string | undefined,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  cursor?: number,
-): string {
-  refuseMissingAbandonReason(reason)
-  const row = findCursor(project, slug, mode, args, context, d, cursor)
-  if (!row)
-    throw new Error(
-      `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-    )
-  return abandonSelectedWorkflowCursor(row, reason, context, d)
-}
-
 function abandonSelectedWorkflowCursor(
   row: CursorRow,
   reason: string,
@@ -881,21 +862,6 @@ function abandonSelectedWorkflowCursor(
      session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
   ).run(JSON.stringify(closed), context.session ?? null, at, row.record_id)
   return `${cursorName(slug, mode, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
-}
-
-export function abandonWorkflowCursor(
-  slug: string,
-  project: string,
-  mode: string,
-  args: Record<string, string>,
-  reason: string | undefined,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  cursor?: number,
-): string {
-  return withLinkedWorkflowTask(project, args, context, d, () =>
-    abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
-  )
 }
 
 /** Abandons a cursor the close service selected before copying its attached text. */

@@ -6,11 +6,8 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import {
-  abandonWorkflowCursor,
-  getWorkflowStepWithCursor,
-  nextWorkflowStep,
-} from './workflow-cursor.ts'
+import { getWorkflowStepWithCursor, nextWorkflowStep } from './workflow-cursor.ts'
+import { abandonCursor } from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import {
   attachedTextReferenceMeetsFloor,
@@ -105,7 +102,7 @@ function open(d: Database): number {
 }
 
 const abandon = (d: Database, cursor: number, reason: string) =>
-  abandonWorkflowCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
+  abandonCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
 
 const rowCount = (d: Database, cursor: number) =>
   (
