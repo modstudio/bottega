@@ -15,6 +15,10 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { gitResult } from '../git/git-environment.ts'
 import { isReadOnlyRepositoryJob } from '../jobs/jobs.ts'
 import { RUNS_DIR, runArtifactsDir } from '../run/run-artifacts.ts'
+import {
+  readerCloneHasNoUniqueCommits,
+  readerCloneSourceRefExclusions,
+} from '../worktree/reader-clone-commit-observer.ts'
 import { extractWorktree } from '../worktree/worktree-attribution.ts'
 import { dryRunReleaseResult, reconstructibilityHold } from './absent-tree-close-out.ts'
 import {
@@ -89,24 +93,6 @@ function repositoryStorageAbsent(treePath: string): boolean {
   return true
 }
 
-function sourceRefExclusions(repoRoot: string): string[] | null {
-  const sourceRefs = gitResult(['for-each-ref', '--format=%(objectname)'], repoRoot)
-  if (!sourceRefs.ok) return null
-  return sourceRefs.stdout
-    .split('\n')
-    .filter(Boolean)
-    .map((oid) => `^${oid}`)
-}
-
-function noUniqueReachableCommit(
-  treePath: string,
-  baseCommit: string,
-  exclusions: readonly string[],
-): boolean {
-  const result = gitResult(['rev-list', '--all', `^${baseCommit}`, ...exclusions], treePath)
-  return result.ok && result.stdout.trim() === ''
-}
-
 function readerCloneDisposableFacts(input: {
   treePath: string
   repoRoot: string
@@ -117,7 +103,7 @@ function readerCloneDisposableFacts(input: {
     input.treePath,
   )
   const head = gitResult(['rev-parse', 'HEAD'], input.treePath)
-  const exclusions = sourceRefExclusions(input.repoRoot)
+  const exclusions = readerCloneSourceRefExclusions(input.repoRoot)
   return {
     facts: {
       clean: status.ok && status.stdout === '',
@@ -125,7 +111,7 @@ function readerCloneDisposableFacts(input: {
       noUniqueCommits:
         Boolean(input.baseCommit) &&
         exclusions !== null &&
-        noUniqueReachableCommit(input.treePath, input.baseCommit, exclusions),
+        readerCloneHasNoUniqueCommits(input.treePath, input.repoRoot, exclusions, input.baseCommit),
       noNestedStorage: repositoryStorageAbsent(input.treePath),
     },
     sourceRefExclusions: exclusions,

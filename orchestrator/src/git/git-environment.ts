@@ -163,13 +163,14 @@ function gitOk(
 function gitResult(
   args: string[],
   cwd: string,
-  options: { env?: NodeJS.ProcessEnv } = {},
+  options: { env?: NodeJS.ProcessEnv; input?: Uint8Array } = {},
 ): { ok: boolean; stdout: string; stderr: string } {
   if (cwdMissing(cwd)) return { ok: false, stdout: '', stderr: `${cwd} does not exist` }
   try {
     const p = Bun.spawnSync(['git', ...args], {
       cwd,
       env: options.env ?? targetGitEnvironment(cwd),
+      stdin: options.input,
       stdout: 'pipe',
       stderr: 'pipe',
     })

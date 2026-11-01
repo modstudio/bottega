@@ -16,9 +16,7 @@ import {
 import { closeOutCommand } from './close-out-command.ts'
 import { extractionRunId } from './reader-scratch-close-out.ts'
 
-afterEach(() => {
-  mock.restore()
-})
+afterEach(() => mock.restore())
 
 function spawnResult(stdout = '', exitCode = 0): ReturnType<typeof Bun.spawnSync> {
   return {
@@ -49,12 +47,15 @@ function landingObservationResult(
   branch: string,
   head: string,
   state: { statusCalls: number },
+  sourceRefs?: string,
 ): { args: string[]; result: ReturnType<typeof Bun.spawnSync> | null } {
   const args = normalizedGitArgs(command)
   if (args[0] === 'for-each-ref') {
     return {
       args,
-      result: spawnResult(observation === 'missing-branch' ? '' : `${branch}\t${head}\n`),
+      result: spawnResult(
+        sourceRefs ?? (observation === 'missing-branch' ? '' : `${branch}\t${head}\n`),
+      ),
     }
   }
   if (args[0] === 'status') {
@@ -99,6 +100,7 @@ function closeOutFixture(
   landingObservation?: 'clean' | 'becomes-dirty' | 'missing-branch',
   cwdObservation?: { stdout?: string | ((tree: string) => string); exitCode?: number },
   observeBeforeLock?: (tree: string) => void,
+  readerSourceRefs?: string,
 ) {
   const id = addRun({ agent: 'codex', job: 'implement', status: 'ok' })
   const project = `close-out-${id}`
@@ -142,6 +144,7 @@ function closeOutFixture(
       branch,
       head,
       landingState,
+      readerSourceRefs,
     )
     const { args } = observed
     if (observed.result) return observed.result
@@ -171,6 +174,25 @@ describe('close-out extraction decision', () => {
   test('rejects filing a child turn extraction under the conversation root', () => {
     expect(extractionRunId({ record_id: 'run-record-id-4267' })).toBe('run-record-id-4267')
   })
+})
+
+test('reader close-out excludes its base when the source no longer reaches it', () => {
+  const fixture = closeOutFixture('owned', false, undefined, undefined, undefined, '')
+  db()
+    .query(
+      "UPDATE run SET job='review-lens',branch=NULL,minted_branch=NULL,worktree_source='clone' WHERE record_id=?",
+    )
+    .run(fixture.id)
+  try {
+    expect(closeOutRun(fixture.id, { intent: 'terminal' }).outcome).toBe('released')
+    expect(fixture.spawnCommands.map(normalizedGitArgs)).toContainEqual([
+      'rev-list',
+      '--all',
+      '^1234567890abcdef1234567890abcdef12345678',
+    ])
+  } finally {
+    rmSync(fixture.repo, { recursive: true, force: true })
+  }
 })
 
 describe('close-out of a tree named by an open workflow cursor', () => {

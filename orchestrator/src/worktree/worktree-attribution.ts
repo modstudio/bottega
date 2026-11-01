@@ -26,6 +26,7 @@ export type OrphanSafety = {
   removable: boolean
   branch: string
   detail: string
+  unmarkedBorrowedReader: boolean
 }
 
 export const ORCH_RUN_MARKER = '.orch-run'
@@ -280,11 +281,17 @@ export function orphanSafety(path: string, repoRoot: string, _trunk: string): Or
       removable: false,
       branch: '',
       detail: 'not a registered git worktree or marked borrowed checkout',
+      unmarkedBorrowedReader: false,
     }
   }
 
   const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) ?? ''
-  return { removable: true, branch, detail: 'committed work is retained by its branch' }
+  return {
+    removable: true,
+    branch,
+    detail: 'committed work is retained by its branch',
+    unmarkedBorrowedReader,
+  }
 }
 
 /** Who creates a reader clone with this basename: its own run, or any run reviewing a commit. */

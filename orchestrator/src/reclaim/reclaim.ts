@@ -27,6 +27,7 @@ import { runLeaseState } from '../run/run-lease.ts'
 import { recordedOwnerProcess } from '../run/run-owner-session-liveness.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { keepTreeHold } from '../worktree/keep-tree-hold.ts'
+import { readerCloneUniqueCommitCount } from '../worktree/reader-clone-commit-observer.ts'
 import { snapshotlessTrackedRecipeRefusal } from '../worktree/snapshotless-tracked-recipe.ts'
 import {
   isUnmarkedBorrowedReaderClone,
@@ -37,7 +38,11 @@ import {
   worktreeDirty,
 } from '../worktree/worktree-attribution.ts'
 import { branchTip, removeFor } from '../worktree/worktree-remove.ts'
-import { type ReaderCloneRunFact, readerCloneReclaimDecision } from './reclaim-reader-clone.ts'
+import {
+  type ReaderCloneRunFact,
+  readerCloneReclaimDecision,
+  unmarkedReaderCloneReclaimRefusal,
+} from './reclaim-reader-clone.ts'
 import { reclaimDirtyTreeRefusal } from './reclaim-worktree-dirty.ts'
 
 export type ReclaimResult = { ok: boolean; action: string }
@@ -215,8 +220,27 @@ function readerCloneCreationRefusal(
   }
   const creator = readerCloneCreator(basename(path))
   if (!creator) return null
-  const decision = readerCloneReclaimDecision(creator, projectRunFacts(project))
-  return decision.allowed ? null : refuse(decision.reason)
+  const runs = projectRunFacts(project)
+  if (creator.kind === 'shared-review') {
+    const decision = readerCloneReclaimDecision(creator, runs)
+    return decision.allowed ? null : refuse(decision.reason)
+  }
+  const run = runs.find((candidate) => candidate.recordId === creator.runId) ?? null
+  const uniqueCommitCount =
+    run && TERMINAL_RUN_STATUS_SET.has(run.status)
+      ? readerCloneUniqueCommitCount(path, project.path)
+      : 0
+  const dirty = run && TERMINAL_RUN_STATUS_SET.has(run.status) ? worktreeDirty(path) : null
+  return refuse(
+    unmarkedReaderCloneReclaimRefusal({
+      runId: creator.runId,
+      run,
+      uniqueCommitCount,
+      dirty: dirty?.dirty ?? false,
+      dirtyDetail: dirty?.detail ?? 'has no uncommitted or untracked changes',
+      platformSlug: PLATFORM_SLUG,
+    }),
+  )
 }
 
 function recordedWorktreeRefusal(rows: ReclaimRun[], clock: number): ReclaimResult | null {
