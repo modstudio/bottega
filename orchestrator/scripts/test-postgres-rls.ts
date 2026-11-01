@@ -100,6 +100,8 @@ function release(): void {
         DROP DATABASE IF EXISTS port_catalogue WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_project_cleanup_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hosted_project_cleanup_collision WITH (FORCE);
+        DROP DATABASE IF EXISTS migration_notice WITH (FORCE);
+        DROP DATABASE IF EXISTS migration_compatibility WITH (FORCE);
         REASSIGN OWNED BY ${RECORD_OWNER_ROLE} TO postgres;
         DROP OWNED BY ${RECORD_OWNER_ROLE};
         DROP OWNED BY ${RECORD_ACTOR_ROLE};
@@ -217,6 +219,8 @@ try {
     CREATE DATABASE port_catalogue OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_project_cleanup_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE hosted_project_cleanup_collision OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE migration_notice OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE migration_compatibility OWNER ${RECORD_OWNER_ROLE};
   `)
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'recipient_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_task_id_migration')
@@ -237,6 +241,8 @@ try {
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'port_catalogue')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_project_cleanup_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'hosted_project_cleanup_collision')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'migration_notice')
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'migration_compatibility')
 
   const ownerUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/postgres`
   const actorUrl = `postgres://${RECORD_ACTOR_ROLE}:actor-password@127.0.0.1:${port}/postgres`
@@ -260,6 +266,17 @@ try {
   const portCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/port_catalogue`
   const hostedProjectCleanupMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_project_cleanup_migration`
   const hostedProjectCleanupCollisionUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/hosted_project_cleanup_collision`
+  const migrationNoticeUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/migration_notice`
+  const migrationCompatibilityUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/migration_compatibility`
+
+  const migrationClient = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate.test.ts'],
+    {
+      BOTTEGA_TEST_MIGRATION_NOTICE_URL: migrationNoticeUrl,
+      BOTTEGA_TEST_MIGRATION_COMPATIBILITY_URL: migrationCompatibilityUrl,
+    },
+  )
+  if (migrationClient !== 0) throw new EarlyExit(migrationClient)
 
   const hostedProjectCleanupMigration = await run(
     [

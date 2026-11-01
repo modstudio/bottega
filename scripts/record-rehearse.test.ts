@@ -3,8 +3,10 @@ import {
   launchedMachineId,
   machineExitCode,
   parseRehearsalLines,
+  REHEARSAL_NOTICE_LIMIT,
   type RehearsalCommandRunner,
   rehearsalStatus,
+  renderRehearsalNotices,
   rerunFailedRecordRehearsal,
   runRecordRehearsal,
 } from './record-rehearse.ts'
@@ -38,12 +40,51 @@ test('parses contract lines and classifies a pass', () => {
     pending: 1,
     restoreMs: 123,
     migrateMs: 45,
+    notices: [],
+    noticesTruncated: 0,
     hash,
   })
   expect(rehearsalStatus(lines, 0)).toEqual({
     state: 'success',
     description: `migration-set ${hash}; pending 1; restore 123; migrate 45; dump record/new.dump`,
+    notices: [],
+    noticesTruncated: 0,
   })
+  expect(renderRehearsalNotices(lines)).toEqual(['notices: none'])
+})
+
+test('parses and reports captured migration notices including truncation', () => {
+  const lines = parseRehearsalLines(`${passOutput}
+REHEARSAL NOTICE MIGRATE NOTICE 20261101000000_fixture: moved rows
+REHEARSAL NOTICE MIGRATE NOTICE 20261101000001_other: no-op
+REHEARSAL NOTICE-TRUNCATED 3`)
+
+  expect(lines.notices).toEqual([
+    'MIGRATE NOTICE 20261101000000_fixture: moved rows',
+    'MIGRATE NOTICE 20261101000001_other: no-op',
+  ])
+  expect(lines.noticesTruncated).toBe(3)
+  expect(rehearsalStatus(lines, 0)).toMatchObject({
+    notices: lines.notices,
+    noticesTruncated: 3,
+  })
+  expect(renderRehearsalNotices(lines)).toEqual([
+    'notices:',
+    'MIGRATE NOTICE 20261101000000_fixture: moved rows',
+    'MIGRATE NOTICE 20261101000001_other: no-op',
+    'NOTICE-TRUNCATED 3',
+  ])
+})
+
+test('bounds captured migration notices', () => {
+  const noticeLines = Array.from(
+    { length: REHEARSAL_NOTICE_LIMIT + 2 },
+    (_, index) => `REHEARSAL NOTICE MIGRATE NOTICE fixture_${index}: message`,
+  ).join('\n')
+  const lines = parseRehearsalLines(`${passOutput}\n${noticeLines}`)
+
+  expect(lines.notices).toHaveLength(REHEARSAL_NOTICE_LIMIT)
+  expect(lines.noticesTruncated).toBe(2)
 })
 
 test('destroys a launched machine when waiting for it fails', async () => {
@@ -121,6 +162,8 @@ test('refuses a pass that applied no pending migration', () => {
     state: 'failure',
     description: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
     failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
+    notices: [],
+    noticesTruncated: 0,
   })
 })
 

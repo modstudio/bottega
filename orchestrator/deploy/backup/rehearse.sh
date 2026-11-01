@@ -2,6 +2,8 @@
 # shellcheck shell=ash
 set -eu
 
+REHEARSAL_NOTICE_LIMIT=20
+
 work_dir="$(mktemp -d)"
 pg_data="${work_dir}/postgres"
 dump_file="${work_dir}/record.dump"
@@ -116,5 +118,14 @@ echo "REHEARSAL MIGRATE $migrate_ms"
 if [ "$migrate_exit" -ne 0 ]; then
   failure "$migrate_error"
 fi
+printf '%s\n' "$migrate_error" | awk -v limit="$REHEARSAL_NOTICE_LIMIT" '
+  /^MIGRATE NOTICE / {
+    count += 1
+    if (count <= limit) print "REHEARSAL NOTICE " $0
+  }
+  END {
+    if (count > limit) print "REHEARSAL NOTICE-TRUNCATED " count - limit
+  }
+'
 
 echo "REHEARSAL PASS $migration_hash"
