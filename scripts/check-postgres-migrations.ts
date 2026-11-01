@@ -50,6 +50,13 @@ const APPLIED_MIGRATION_EXCEPTIONS: readonly MigrationException[] = [
     reasonText: `${executeKeyword}s a rewritten CREATE OR REPLACE FUNCTION definition: DDL, writes no rows`,
   },
   {
+    migration: '20261101151500_dev_1994_stranded_runs',
+    table: '*',
+    operation: 'EXECUTE',
+    reason: 'dynamic-sql-force-enabled',
+    reasonText: `${executeKeyword}s read-only count queries over catalog-discovered run foreign keys and the NO FORCE/FORCE DDL needed for those counts to see rows; writes no rows`,
+  },
+  {
     migration: '20260924180716_dev_906_doc_latest_revision',
     table: 'doc',
     operation: 'UPDATE',
