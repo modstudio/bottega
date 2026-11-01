@@ -464,8 +464,21 @@ export const recordModules: RecordModule[] = [
     '../database/db.ts',
     '../record/machine-identity.ts',
     '../record/outbox-sanitize.ts',
+    '../record/outbox-serialize.ts',
   ]),
-  module('orchestrator/src/record/outbox-sanitize.ts', ['../../../shared/secret-shaped.ts']),
+  module('orchestrator/src/record/outbox-sanitize.ts', [
+    '../../../shared/secret-shaped.ts',
+    './outbox-serialize.ts',
+  ]),
+  module('orchestrator/src/record/outbox-serialize.ts', []),
+  module('orchestrator/src/record/landing-outbox.ts', [
+    '../../../shared/record-id.ts',
+    '../../../shared/record/schema.ts',
+    './machine-identity.ts',
+    './outbox-sanitize.ts',
+    './outbox-serialize.ts',
+    'bun:sqlite',
+  ]),
   module('orchestrator/src/record/outbox-secret-audit.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
@@ -477,6 +490,7 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     './outbox-sanitize.ts',
+    './outbox-serialize.ts',
   ]),
   module('orchestrator/src/record/record-command.ts', [
     '../../../shared/brand.ts',

@@ -520,6 +520,7 @@ export const modules: ArchitectureModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/record/schema.ts',
     '../record/outbox-sanitize.ts',
+    '../record/outbox-serialize.ts',
     '../verdict/verdict-payload.ts',
   ]),
   ...projectModules,

@@ -169,6 +169,15 @@ test('question withholds secret-shaped option elements and keeps the options arr
   expect(sanitized.withheldFields).toEqual(['options[1]', 'audit_reason'])
 })
 
+test('a payload already carrying withheldFields is still sanitized and keeps its earlier paths', () => {
+  const sanitized = sanitizeOutboxPayload('run', {
+    error: SECRET,
+    withheldFields: ['promptHead'],
+  })
+  expect(sanitized.error).toBe(MASKED_SECRET)
+  expect(sanitized.withheldFields).toEqual(['promptHead', 'error'])
+})
+
 test('string leaves retain text outside a masked span', () => {
   expect(
     sanitizeOutboxPayload('run', { error: `deploy digest sha256:${'a'.repeat(64)} ready` }),
@@ -185,6 +194,16 @@ test('a bare 64-hex evidence word stays readable', () => {
     withheldFields: [],
   })
   expect(firstOutboxEvidenceRule('score', { note: evidence })).toBeNull()
+})
+
+test('replaces unstorable code points in nested values and keys but preserves literal escape text', () => {
+  const sanitized = sanitizeOutboxPayload('run', {
+    nested: [{ value: 'nul\0surrogate\ud800', ['key\0\udfff']: 'literal \\u0000' }],
+  })
+
+  expect(sanitized).toMatchObject({
+    nested: [{ value: 'nul\uFFFDsurrogate\uFFFD', ['key\uFFFD\uFFFD']: 'literal \\u0000' }],
+  })
 })
 
 test('a sanitized run row stays eligible for the send-time payload re-check', () => {

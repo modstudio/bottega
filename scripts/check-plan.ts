@@ -240,6 +240,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-postgres-array-bindings.test.ts',
   'scripts/check-record-jsonb-string-checks.test.ts',
   'scripts/check-record-sql-pool.test.ts',
+  'scripts/check-outbox-serialization.test.ts',
   'orchestrator/scripts/time-wait-guard.test.ts',
   'scripts/check-self-spawn.test.ts',
   'scripts/check-source-root.test.ts',

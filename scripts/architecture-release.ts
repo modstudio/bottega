@@ -54,6 +54,7 @@ export const releaseModules = [
       'orchestrator/src/database/db.ts',
       'orchestrator/src/record/machine-identity.ts',
       'orchestrator/src/record/outbox-sanitize.ts',
+      'orchestrator/src/record/outbox-serialize.ts',
     ],
   },
   {

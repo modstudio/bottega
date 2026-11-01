@@ -463,6 +463,7 @@ export const reviewBoundarySpecs: ReviewBoundarySpec[] = [
       '../database/db.ts',
       '../record/machine-identity.ts',
       '../record/outbox-sanitize.ts',
+      '../record/outbox-serialize.ts',
       'bun:sqlite',
     ],
     reason: 'Enforce the review-outbox concern boundary.',
