@@ -40,6 +40,6 @@ describe('renderRehearsalNoticeLines', () => {
       ],
     ],
   ] as const)('%s', (_name, input, expected) => {
-    expect(renderRehearsalNoticeLines(input)).toEqual(expected)
+    expect(renderRehearsalNoticeLines(input)).toEqual([...expected])
   })
 })
