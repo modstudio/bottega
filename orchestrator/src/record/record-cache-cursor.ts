@@ -3,13 +3,13 @@
 import type { Database } from 'bun:sqlite'
 import { parseStoredRecordCursor, type RecordCursor } from './record-cursor.ts'
 
-function readCursor(local: Database, key: string): string | undefined {
+export function readCursor(local: Database, key: string): string | undefined {
   return local
     .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
     .get(key)?.value
 }
 
-function writeCursor(local: Database, key: string, value: string): void {
+export function writeCursor(local: Database, key: string, value: string): void {
   local
     .query(
       'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',

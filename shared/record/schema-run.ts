@@ -10,18 +10,28 @@ import {
   index,
   integer,
   jsonb,
+  pgPolicy,
   pgTable,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { machine, project, spaceIdentity, tenantPolicies, user } from './schema.ts'
+import {
+  machine,
+  project,
+  RECORD_OWNER_ROLE,
+  spaceIdentity,
+  tenantPolicies,
+  user,
+} from './schema.ts'
 import { hubTask } from './schema-hub.ts'
 
 export const run = pgTable.withRLS(
   'run',
   {
     id: uuid().primaryKey(),
+    evidenceSeq: bigint('evidence_seq', { mode: 'bigint' }).notNull(),
     number: integer(),
     spaceId: spaceIdentity(),
     projectId: uuid('project_id').references(() => project.id),
@@ -118,6 +128,7 @@ export const run = pgTable.withRLS(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    index('run_space_evidence_seq_idx').on(table.spaceId, table.evidenceSeq),
     index('run_space_started_id_idx').on(table.spaceId, table.startedAt.desc(), table.id.desc()),
     index('run_task_id_idx').on(table.taskId),
     index('run_unlinked_task_key_idx')
@@ -132,6 +143,38 @@ export const run = pgTable.withRLS(
       sql`${table.executor} IS NULL OR ${table.executor} IN ('external', 'harness')`,
     ),
     ...tenantPolicies('run', table.spaceId),
+  ],
+)
+
+export const routingEvidenceHead = pgTable.withRLS(
+  'routing_evidence_head',
+  {
+    id: uuid().primaryKey(),
+    spaceId: spaceIdentity(),
+    sequence: bigint({ mode: 'bigint' }).notNull(),
+  },
+  // Triggers write evidence heads inside a statement whose row policy already judged the caller.
+  (table) => [
+    unique('routing_evidence_head_space_unique').on(table.spaceId),
+    pgPolicy('routing_evidence_head_space_select', {
+      for: 'select',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('routing_evidence_head_space_insert', {
+      for: 'insert',
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('routing_evidence_head_space_update', {
+      for: 'update',
+      using: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+      withCheck: sql`${table.spaceId} = nullif(current_setting('app.space_id', true), '')::uuid`,
+    }),
+    pgPolicy('routing_evidence_head_owner_all', {
+      for: 'all',
+      to: RECORD_OWNER_ROLE,
+      using: sql`true`,
+      withCheck: sql`true`,
+    }),
   ],
 )
 

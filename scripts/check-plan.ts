@@ -223,6 +223,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-test-reach.test.ts',
   'scripts/check-typecheck-reach.test.ts',
   'orchestrator/src/postgres/postgres-migrate.test.ts',
+  'orchestrator/src/postgres/postgres-migrate-routing-evidence-sequence.test.ts',
   'orchestrator/src/record/record-pool-postgres.test.ts',
   'orchestrator/src/postgres/postgres-migrate-stranded-runs.test.ts',
   'orchestrator/src/postgres/migration-failure.test.ts',

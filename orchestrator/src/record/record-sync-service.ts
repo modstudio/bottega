@@ -265,7 +265,8 @@ async function pushRun(
     }
     const written = await drizzle({ client: tx })
       .insert(runRecord)
-      .values(values)
+      // The routing_evidence_run_stamp trigger assigns evidence_seq; this placeholder only satisfies the column type.
+      .values({ ...values, evidenceSeq: 0n })
       .onConflictDoUpdate({
         target: runRecord.id,
         set: updates,

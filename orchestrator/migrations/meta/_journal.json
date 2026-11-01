@@ -1490,6 +1490,14 @@
       "tag": "0195_routing_pool",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 196,
+      "version": "6",
+      "when": 1793577600061,
+      "tag": "0196_routing_pool_sequence_cursor",
+      "breakpoints": true,
+      "compatibility": "fenced"
     }
   ]
 }

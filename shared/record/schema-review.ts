@@ -1,7 +1,7 @@
 // concern: postgres-schema-review
 /** Knows the hosted review record shape. Must not know local review or synchronization behavior. */
 import { sql } from 'drizzle-orm'
-import { check, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
+import { check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core'
 import { machine, project, spaceIdentity, tenantPolicies } from './schema.ts'
 
 const recordIdentity = () => uuid().primaryKey()
@@ -74,7 +74,10 @@ export const reviewLens = pgTable.withRLS(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (table) => [...tenantPolicies('review_lens', table.spaceId)],
+  (table) => [
+    index('review_lens_run_id_idx').on(table.runId),
+    ...tenantPolicies('review_lens', table.spaceId),
+  ],
 )
 
 export const reviewFinding = pgTable.withRLS(

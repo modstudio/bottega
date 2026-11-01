@@ -3,13 +3,11 @@
 
 import type { SQL } from 'bun'
 import { bindTenant } from '../../../shared/record/tenant.ts'
-import type { RecordCursor, RecordListCursorRow } from './record-cursor.ts'
-import { recordCursorAt } from './record-cursor.ts'
 import { recordPool } from './record-pool.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 
 type Tenant = { url: string; userId: string; spaceId: string }
-export type RecordRoutingEvidenceRow = RecordRoutingEvidence & RecordListCursorRow
+export type RecordRoutingEvidenceRow = RecordRoutingEvidence & { evidenceSequence: bigint }
 
 export const ROUTING_EVIDENCE_RUN_FIELDS = [
   'id',
@@ -41,7 +39,7 @@ const nullableString = (value: unknown) => (value == null ? null : String(value)
 const nullableNumber = (value: unknown) => (value == null ? null : Number(value))
 
 export async function listRecordRoutingEvidence(
-  input: Tenant & { updatedSince?: string; limit: number; cursor: RecordCursor | null },
+  input: Tenant & { limit: number; cursor: bigint | null },
 ): Promise<RecordRoutingEvidenceRow[]> {
   return recordPool(input.url).begin(async (tx: SQL) => {
     await bindTenant(tx, input)
@@ -49,8 +47,7 @@ export async function listRecordRoutingEvidence(
       SELECT r.id, r.space_id, r.agent, r.model, r.job, r.stack, r.prompt_bytes,
         r.status, r.failure_kind, COALESCE(r.executor, 'external') AS executor,
         r.evidence_excluded, r.started_at, r.latency_ms, r.vendor_tokens, r.model_calls,
-        r.peak_call_tokens, s.delivery, s.quality, s.fidelity,
-        GREATEST(r.updated_at, s.updated_at) AS cursor_at,
+        r.peak_call_tokens, s.delivery, s.quality, s.fidelity, r.evidence_seq,
         COALESCE((
           SELECT array_agg(DISTINCT lens.lens ORDER BY lens.lens)
           FROM review_lens lens WHERE lens.run_id=r.id
@@ -78,16 +75,8 @@ export async function listRecordRoutingEvidence(
           WHERE withheld_lens.run_id=r.id
             AND COALESCE(withheld_lens.withheld_fields, '[]'::jsonb) ? 'lens'
         )
-        AND (
-          ${input.updatedSince ?? null}::timestamptz IS NULL
-          OR GREATEST(r.updated_at, s.updated_at) > ${input.updatedSince ?? null}::timestamptz
-        )
-        AND (
-          ${input.cursor?.at ?? null}::timestamptz IS NULL
-          OR (GREATEST(r.updated_at, s.updated_at), r.id)
-            > (${input.cursor?.at ?? null}::timestamptz, ${input.cursor?.id ?? null}::uuid)
-        )
-      ORDER BY GREATEST(r.updated_at, s.updated_at), r.id
+        AND r.evidence_seq > ${input.cursor ?? 0}
+      ORDER BY r.evidence_seq
       LIMIT ${input.limit + 1}
     `
     return rows.map((row: Record<string, unknown>) => ({
@@ -111,7 +100,7 @@ export async function listRecordRoutingEvidence(
       quality: nullableString(row.quality),
       fidelity: nullableString(row.fidelity),
       lenses: Array.isArray(row.lenses) ? row.lenses.map(String) : [],
-      [recordCursorAt]: iso(row.cursor_at),
+      evidenceSequence: BigInt(String(row.evidence_seq)),
     }))
   })
 }

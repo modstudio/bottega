@@ -1,0 +1,1 @@
+ALTER TABLE "run" ALTER COLUMN "evidence_seq" SET NOT NULL;

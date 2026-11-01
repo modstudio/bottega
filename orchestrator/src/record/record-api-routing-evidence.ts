@@ -4,8 +4,6 @@
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
 import type { RecordIdentity } from './record-auth.ts'
-import type { RecordCursor } from './record-cursor.ts'
-import { decodeRecordCursor, pageRecordItems, recordCursorOf } from './record-cursor.ts'
 import type { RecordRoutingEvidenceRow } from './record-routing-evidence.ts'
 
 const ROUTING_EVIDENCE_LIMIT_MAX = 100
@@ -16,19 +14,25 @@ export type RoutingEvidenceRouteDeps = {
   recordUrl: string
   listRoutingEvidence(
     input: Tenant & {
-      updatedSince?: string
       limit: number
-      cursor: RecordCursor | null
+      cursor: bigint | null
     },
   ): Promise<RecordRoutingEvidenceRow[]>
 }
 
 const querySchema = z.object({
   spaceId: z.string().uuid(),
-  updatedSince: z.string().datetime({ offset: true }).optional(),
   limit: z.coerce.number().int().min(1).max(ROUTING_EVIDENCE_LIMIT_MAX).default(20),
   cursor: z.string().optional(),
 })
+
+const encodeRoutingEvidenceCursor = (sequence: bigint): string => btoa(sequence.toString())
+
+export function decodeRoutingEvidenceCursor(value: string): bigint {
+  const decoded = atob(value)
+  if (!/^[1-9][0-9]*$/.test(decoded)) throw new Error('invalid cursor parameter')
+  return BigInt(decoded)
+}
 
 export function registerRecordRoutingEvidenceRoute(
   app: Hono<ApiEnvironment>,
@@ -39,19 +43,26 @@ export function registerRecordRoutingEvidenceRoute(
     if (!query.success) return context.json({ error: 'invalid routing evidence query' }, 400)
     let cursor = null
     try {
-      cursor = query.data.cursor ? decodeRecordCursor(query.data.cursor) : null
+      cursor = query.data.cursor ? decodeRoutingEvidenceCursor(query.data.cursor) : null
     } catch {
-      return context.json({ error: 'invalid cursor' }, 400)
+      return context.json({ error: 'invalid cursor parameter' }, 400)
     }
     const identity = context.get('identity')
     const items = await deps.listRoutingEvidence({
       url: deps.recordUrl,
       userId: identity.user.id,
       spaceId: query.data.spaceId,
-      updatedSince: query.data.updatedSince,
       limit: query.data.limit,
       cursor,
     })
-    return context.json(pageRecordItems(items, query.data.limit, recordCursorOf, true))
+    const hasMore = items.length > query.data.limit
+    if (hasMore) items.pop()
+    const last = items.at(-1)
+    const endCursor = last ? encodeRoutingEvidenceCursor(last.evidenceSequence) : null
+    return context.json({
+      items: items.map(({ evidenceSequence: _sequence, ...item }) => item),
+      nextCursor: hasMore ? endCursor : null,
+      endCursor,
+    })
   })
 }
