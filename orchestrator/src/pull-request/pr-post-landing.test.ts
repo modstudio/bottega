@@ -142,20 +142,32 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
 })
 
-test('the real post-landing adapter refuses move-main side effects under the test runner', () => {
+test('the real post-landing adapter refuses before git or spawn under the test runner', () => {
+  const spawnSync = Bun.spawnSync
+  let spawnCount = 0
+  Bun.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) => {
+    spawnCount++
+    return spawnSync(...args)
+  }) as typeof Bun.spawnSync
   const began = performance.now()
-  const outcome = completePullRequestPostLanding({
-    adapter: remaining([]),
-    database: db(),
-    project: { ...project, path: cwd },
-    pullRequest,
-    mergeCommit: 'merge-commit',
-    target: '42',
-    releaseRequired: false,
-    workflowPromotionDue: true,
-  })
+  let outcome: ReturnType<typeof completePullRequestPostLanding>
+  try {
+    outcome = completePullRequestPostLanding({
+      adapter: remaining([]),
+      database: db(),
+      project: { ...project, path: cwd },
+      pullRequest,
+      mergeCommit: 'merge-commit',
+      target: '42',
+      releaseRequired: false,
+      workflowPromotionDue: true,
+    })
+  } finally {
+    Bun.spawnSync = spawnSync
+  }
   const elapsedMs = performance.now() - began
 
+  expect(spawnCount).toBe(0)
   expect(outcome.output).toContain(
     'real pull-request post-landing adapter refuses side effects under the test runner; inject a post-landing adapter',
   )

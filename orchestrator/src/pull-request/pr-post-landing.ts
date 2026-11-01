@@ -91,16 +91,37 @@ const refuseRealPostLandingAdapterInTest = (): void => {
   }
 }
 
-const cliPostLandingAdapter: PullRequestPostLandingAdapter = {
+function guardRealPostLandingAdapter(
+  adapter: PullRequestPostLandingAdapter,
+): PullRequestPostLandingAdapter {
+  return {
+    changedPaths(project, mergeCommit) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.changedPaths(project, mergeCommit)
+    },
+    mainHead(project) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.mainHead(project)
+    },
+    moveMain(project, mergeCommit) {
+      refuseRealPostLandingAdapterInTest()
+      adapter.moveMain(project, mergeCommit)
+    },
+    // Fencing only changes in-process store state; it performs no git or process side effect.
+    fence: adapter.fence,
+    handOff(payload) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.handOff(payload)
+    },
+  }
+}
+
+const cliPostLandingAdapter = guardRealPostLandingAdapter({
   changedPaths,
   mainHead: mainCheckoutHead,
-  moveMain(project, mergeCommit) {
-    refuseRealPostLandingAdapterInTest()
-    moveMainCheckout(project, mergeCommit)
-  },
+  moveMain: moveMainCheckout,
   fence: fenceStoreAfterCheckoutMove,
   handOff(payload) {
-    refuseRealPostLandingAdapterInTest()
     try {
       const result = Bun.spawnSync(
         [...bottegaEntryArgv(PLATFORM_SLUG), 'pr', 'merge', payload.target, POST_LANDING_FLAG],
@@ -120,7 +141,7 @@ const cliPostLandingAdapter: PullRequestPostLandingAdapter = {
       }
     }
   },
-}
+})
 
 /**
  * Untested at the process boundary by choice, matching workflow-evidence-handoff.ts: a spawn
