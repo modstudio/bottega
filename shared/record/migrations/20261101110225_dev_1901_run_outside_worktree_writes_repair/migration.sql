@@ -5,7 +5,7 @@ DECLARE
   decoded_count bigint;
 BEGIN
   SELECT
-    count(*) FILTER (WHERE ("outside_worktree_writes" #>> '{}') LIKE '%' || E'\\u0000' || '%'),
+    count(*) FILTER (WHERE strpos("outside_worktree_writes" #>> '{}', E'\\u0000') > 0),
     count(*)
   INTO rewritten_count, decoded_count
   FROM "run"
