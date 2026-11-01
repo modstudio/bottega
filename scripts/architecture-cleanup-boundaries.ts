@@ -163,6 +163,7 @@ export const cleanupBoundarySpecs = [
       '../record/outbox-sanitize.ts',
       './branch-disposal-decision.ts',
       './branch-settlement.ts',
+      './branch-state.ts',
       './branches.ts',
       './task-status-observation.ts',
     ],
