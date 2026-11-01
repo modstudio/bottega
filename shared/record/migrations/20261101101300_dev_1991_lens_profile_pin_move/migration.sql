@@ -389,16 +389,21 @@ BEGIN
       ON copied_revision.source_revision_id=sr.id
     WHERE s.space_id=source_id AND s.project_id=moving_project_id;
   CREATE TEMP TABLE live_pin_map AS
-    SELECT selection_id,string_agg(lens_key,',' ORDER BY lens_key) lens_key,axis,profile_name,
-      (array_agg(source_version ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_version,
-      (array_agg(source_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_content,
-      (array_agg(destination_version_id ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_version_id,
-      (array_agg(destination_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_content,
-      coalesce(bool_or(copy_profile) FILTER (WHERE source_version IS NOT NULL),false) copy_profile,
-      count(DISTINCT (destination_version_id,destination_content)) FILTER (WHERE source_version IS NOT NULL)>1 resolution_disagrees,
-      bool_or(selected_version_id IS NOT NULL) pinned
-    FROM live_pin_candidates
-    GROUP BY selection_id,axis,profile_name;
+    SELECT s.id selection_id,
+      coalesce(string_agg(c.lens_key,',' ORDER BY c.lens_key),selected_lens.key) lens_key,
+      s.axis,s.profile_name,
+      (array_agg(c.source_version ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] source_version,
+      (array_agg(c.source_content ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] source_content,
+      (array_agg(c.destination_version_id ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] destination_version_id,
+      (array_agg(c.destination_content ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] destination_content,
+      coalesce(bool_or(c.copy_profile) FILTER (WHERE c.source_version IS NOT NULL),false) copy_profile,
+      count(DISTINCT (c.destination_version_id,c.destination_content)) FILTER (WHERE c.source_version IS NOT NULL)>1 resolution_disagrees,
+      s.selected_version_id IS NOT NULL pinned
+    FROM project_lens_profile s
+    LEFT JOIN lens selected_lens ON selected_lens.id=s.lens_id
+    LEFT JOIN live_pin_candidates c ON c.selection_id=s.id
+    WHERE s.space_id=source_id AND s.project_id=moving_project_id
+    GROUP BY s.id,selected_lens.key,s.axis,s.profile_name,s.selected_version_id;
   SELECT string_agg(
       format('project %s lens %s profile %s version %s from space %s differs from or is missing in space %s',
         project_name,lens_key,profile_name,source_version,source_space,destination_space),
@@ -455,16 +460,22 @@ BEGIN
     LEFT JOIN selected_profile_revision_map copied_revision
       ON copied_revision.source_revision_id=sr.id;
   CREATE TEMP TABLE historical_pin_map AS
-    SELECT revision_id,string_agg(lens_key,',' ORDER BY lens_key) lens_key,axis,prior_profile_name,
-      (array_agg(source_version ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_version,
-      (array_agg(source_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] source_content,
-      (array_agg(destination_version_id ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_version_id,
-      (array_agg(destination_content ORDER BY lens_key) FILTER (WHERE source_version IS NOT NULL))[1] destination_content,
-      coalesce(bool_or(copy_profile) FILTER (WHERE source_version IS NOT NULL),false) copy_profile,
-      count(DISTINCT (destination_version_id,destination_content)) FILTER (WHERE source_version IS NOT NULL)>1 resolution_disagrees,
-      bool_or(prior_selected_version_id IS NOT NULL) pinned
-    FROM historical_pin_candidates
-    GROUP BY revision_id,axis,prior_profile_name;
+    SELECT r.id revision_id,
+      coalesce(string_agg(c.lens_key,',' ORDER BY c.lens_key),selected_lens.key) lens_key,
+      s.axis,r.prior_profile_name,
+      (array_agg(c.source_version ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] source_version,
+      (array_agg(c.source_content ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] source_content,
+      (array_agg(c.destination_version_id ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] destination_version_id,
+      (array_agg(c.destination_content ORDER BY c.lens_key) FILTER (WHERE c.source_version IS NOT NULL))[1] destination_content,
+      coalesce(bool_or(c.copy_profile) FILTER (WHERE c.source_version IS NOT NULL),false) copy_profile,
+      count(DISTINCT (c.destination_version_id,c.destination_content)) FILTER (WHERE c.source_version IS NOT NULL)>1 resolution_disagrees,
+      r.prior_selected_version_id IS NOT NULL pinned
+    FROM project_lens_profile_revision r
+    JOIN project_lens_profile s ON s.id=r.selection_id
+      AND s.space_id=source_id AND s.project_id=moving_project_id
+    LEFT JOIN lens selected_lens ON selected_lens.id=s.lens_id
+    LEFT JOIN historical_pin_candidates c ON c.revision_id=r.id
+    GROUP BY r.id,selected_lens.key,s.axis,r.prior_profile_name,r.prior_selected_version_id;
   SELECT string_agg(
       format('%s/%s/%s version %s',lens_key,axis,prior_profile_name,source_version),
       ', ' ORDER BY lens_key,axis,prior_profile_name,source_version)
@@ -498,10 +509,7 @@ BEGIN
     ALTER TABLE lens_profile NO FORCE ROW LEVEL SECURITY;
     INSERT INTO lens_profile(id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
       SELECT destination_profile_id,destination_id,destination_lens_id,axis,name,version,destination_current_version_id,body,enabled,updated_at
-      FROM selected_profile_map WHERE destination_profile_id IS NULL;
-    UPDATE selected_profile_map m SET destination_profile_id=p.id
-      FROM lens_profile p WHERE p.space_id=destination_id AND p.lens_id=m.destination_lens_id
-        AND p.axis=m.axis AND p.name=m.name;
+      FROM selected_profile_map WHERE copy_profile;
     ALTER TABLE lens_profile_revision NO FORCE ROW LEVEL SECURITY;
     INSERT INTO lens_profile_revision(id,space_id,profile_id,version,prior_body,reason,session_id,at)
       SELECT r.destination_revision_id,destination_id,m.destination_profile_id,

@@ -197,6 +197,38 @@ export function registerProjectSpacePinProofs(input: ProjectSpaceProofInput): vo
     ).toBe(`${destination.id}:1`)
   })
 
+  test('a pinned selection without a source profile refuses the move', async () => {
+    input.setToken(input.token())
+    const source = (await recordMemberships()).activeSpaceId
+    if (!source) throw new Error('pinned missing source profile proof has no active source space')
+    const destination = await createRecordSpace(
+      'DEV 1991 Pinned Missing Source Profile',
+      `dev-1991-${newRecordId().slice(-8)}`,
+    )
+    const project = newRecordId(),
+      selection = newRecordId(),
+      missingVersion = newRecordId()
+    input.admin(
+      `INSERT INTO project(id,space_id,name,created_at)
+         VALUES ('${project}','${source}','pinned-missing-source-profile',now());
+       INSERT INTO project_lens_profile
+         (id,space_id,project_id,lens_id,axis,profile_name,selected_version_id,selection_version,updated_at)
+         SELECT '${selection}','${source}','${project}',id,'architecture','does-not-exist','${missingVersion}',1,now()
+         FROM lens WHERE space_id='${source}' ORDER BY key LIMIT 1;`,
+    )
+    for (const confirm of [undefined, 0])
+      await expect(
+        moveRecordProjectSpace({
+          url: input.actorUrl,
+          project: 'pinned-missing-source-profile',
+          source,
+          destination: destination.slug,
+          confirm,
+        }),
+      ).rejects.toThrow('project lens profile pinned-version conflict:')
+    expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
+  })
+
   test('an axis-level selection and its revision move exactly once across matching profiles', async () => {
     input.setToken(input.token())
     const source = (await recordMemberships()).activeSpaceId
