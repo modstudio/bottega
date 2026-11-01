@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PGlite } from '@electric-sql/pglite'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
+import { migrationSessionStatements } from '../shared/record/migration-session.ts'
 import { applyRecordMigration, provisionRecordDatabase } from './check-record-migrations-apply.ts'
 import { extractHostedSql, type HostedSqlSite } from './hosted-sql-schema.ts'
 
@@ -177,6 +178,7 @@ async function main(): Promise<void> {
     await provisionRecordDatabase(database)
     const migrations = readMigrationFiles({ migrationsFolder })
     await database.transaction(async (transaction) => {
+      for (const statement of migrationSessionStatements()) await transaction.exec(statement)
       for (const migration of migrations) await applyRecordMigration(transaction, migration)
     })
     const extracted = extractHostedSql(root)

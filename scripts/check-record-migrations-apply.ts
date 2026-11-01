@@ -886,8 +886,22 @@ async function main(): Promise<void> {
     }
     try {
       await database.transaction(async (transaction) => {
-        await prepareRecordMigrationProof(transaction, migrations)
+        const runnerSettings = await prepareRecordMigrationProof(transaction, migrations)
         for (const migration of migrations) await applyAndProveMigration(transaction, migration)
+        for (const parameter of [
+          'lock_timeout',
+          'statement_timeout',
+          'idle_in_transaction_session_timeout',
+        ] as const) {
+          const expected = runnerSettings.get(parameter)
+          const shown = await transaction.query<Record<string, string>>(`SHOW ${parameter}`)
+          const actual = shown.rows[0]?.[parameter]
+          if (actual !== expected) {
+            throw new CheckFailure(
+              `${parameter} ended the migration batch at ${JSON.stringify(actual)} instead of the runner value ${JSON.stringify(expected)}`,
+            )
+          }
+        }
         await proofManagedCanonProjects(transaction)
         await proofProjectRelationsStayWithinOneSpace(transaction)
         await proofCatalogueDefaultGrants(transaction)

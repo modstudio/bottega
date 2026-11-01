@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { migrationSessionStatements } from './migration-session.ts'
 import { RECORD_ACTOR_ROLE } from './schema.ts'
 
 /**
@@ -87,6 +88,7 @@ async function createRecordDatabase(): Promise<PGlite> {
     );
   `)
   await database.transaction(async (transaction) => {
+    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
     for (const migration of readMigrationFiles({ migrationsFolder })) {
       await applyMigration(transaction, migration)
     }

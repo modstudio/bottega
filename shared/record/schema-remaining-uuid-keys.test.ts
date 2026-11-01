@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
+import { migrationSessionStatements } from './migration-session.ts'
 
 const migrationsFolder = join(fileURLToPath(new URL('.', import.meta.url)), 'migrations')
 const targetMigrationName = '20261025040554_dev_1726_uuid_primary_keys'
@@ -59,6 +60,7 @@ test('remaining hosted tables mint UUID keys and preserve their old conflict key
       );
     `)
     await database.transaction(async (transaction) => {
+      for (const statement of migrationSessionStatements()) await transaction.exec(statement)
       for (const migration of migrations) {
         if (migration.name === targetMigrationName) break
         await applyMigration(transaction, migration)

@@ -7,6 +7,7 @@ import { getMigrationsToRun } from 'drizzle-orm/migrator.utils'
 import { drizzle as drizzlePostgresJs } from 'drizzle-orm/postgres-js'
 import { migrate as migrateWithPostgresJs } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
+import { migrationSessionSettings } from '../../../shared/record/migration-session.ts'
 
 const POSTGRES_MIGRATIONS_FOLDER = join(
   import.meta.dir,
@@ -18,10 +19,6 @@ const POSTGRES_MIGRATIONS_FOLDER = join(
   'migrations',
 )
 
-export const MIGRATION_LOCK_TIMEOUT = '5s'
-export const MIGRATION_STATEMENT_TIMEOUT = '60s'
-export const MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT = '30s'
-export const MIGRATION_CLIENT_CHECK_INTERVAL = '5s'
 export const MIGRATION_NOTICE_MESSAGE_LIMIT = 500
 
 export type MigrationNoticeSink = (line: string) => void
@@ -33,15 +30,6 @@ export function formatMigrationNotice(migrationName: string, message: string): s
       ? `${normalized.slice(0, MIGRATION_NOTICE_MESSAGE_LIMIT - 2).trimEnd()} …`
       : normalized
   return `MIGRATE NOTICE ${migrationName}: ${bounded}`
-}
-
-export function migrationSessionSettings(): Array<[name: string, value: string]> {
-  return [
-    ['lock_timeout', MIGRATION_LOCK_TIMEOUT],
-    ['statement_timeout', MIGRATION_STATEMENT_TIMEOUT],
-    ['idle_in_transaction_session_timeout', MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT],
-    ['client_connection_check_interval', MIGRATION_CLIENT_CHECK_INTERVAL],
-  ]
 }
 
 export function recordMigrationCount(folder = POSTGRES_MIGRATIONS_FOLDER): number {

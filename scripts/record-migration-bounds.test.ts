@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { join } from 'node:path'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
+import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { assertMigrationBounds } from './record-migration-bounds.ts'
 
 function migration(sql: string): MigrationMeta {
@@ -43,15 +45,58 @@ describe('record migration bounds', () => {
     )
   })
 
-  test('accepts a raised local statement timeout', () => {
+  test('accepts a bound restored after its last change', () => {
     expect(() =>
-      assertMigrationBounds([migration("SET LOCAL statement_timeout = '5min';")]),
+      assertMigrationBounds([
+        migration(
+          "SET LOCAL statement_timeout = '5min'; SELECT set_config('statement_timeout', current_setting('record_migration.statement_timeout'), true);",
+        ),
+      ]),
     ).not.toThrow()
   })
 
-  test('accepts a raised set_config statement timeout', () => {
+  test('refuses a missing restore', () => {
     expect(() =>
       assertMigrationBounds([migration("SELECT set_config('statement_timeout', '5min', false);")]),
+    ).toThrow(/fixture_migration.*statement_timeout.*SELECT set_config/)
+  })
+
+  test('refuses a restore before the change', () => {
+    expect(() =>
+      assertMigrationBounds([
+        migration(
+          "SELECT set_config('statement_timeout', current_setting('record_migration.statement_timeout'), true); SET LOCAL statement_timeout = '5min';",
+        ),
+      ]),
+    ).toThrow(/fixture_migration.*statement_timeout/)
+  })
+
+  test('accepts a restore opening the next migration', () => {
+    const changed = migration("SET LOCAL statement_timeout = '5min';")
+    changed.name = 'first_migration'
+    const repair = migration(
+      "SELECT set_config('statement_timeout', current_setting('record_migration.statement_timeout'), true); SELECT 1;",
+    )
+    repair.name = 'second_migration'
+    expect(() => assertMigrationBounds([repair, changed])).not.toThrow()
+  })
+
+  test('refuses a next migration that does not open with the restore', () => {
+    const changed = migration("SET LOCAL statement_timeout = '5min';")
+    changed.name = 'first_migration'
+    const repair = migration(
+      "SELECT 1; SELECT set_config('statement_timeout', current_setting('record_migration.statement_timeout'), true);",
+    )
+    repair.name = 'second_migration'
+    expect(() => assertMigrationBounds([changed, repair])).toThrow(
+      /first_migration.*statement_timeout/,
+    )
+  })
+
+  test('accepts the real migration set', () => {
+    const folder = join(import.meta.dir, '..', 'shared', 'record', 'migrations')
+    expect(() =>
+      assertMigrationBounds(readMigrationFiles({ migrationsFolder: folder })),
     ).not.toThrow()
   })
 })

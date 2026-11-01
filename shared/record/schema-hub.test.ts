@@ -6,6 +6,7 @@ import { PGlite, type Transaction } from '@electric-sql/pglite'
 import { getTableColumns } from 'drizzle-orm'
 import { type MigrationMeta, readMigrationFiles } from 'drizzle-orm/migrator'
 import { PLATFORM_SLUG } from '../brand.ts'
+import { migrationSessionStatements } from './migration-session.ts'
 import { RECORD_ACTOR_ROLE, RECORD_OWNER_ROLE } from './schema.ts'
 import { hubSend, hubTaskComment, hubTaskDocument, hubTaskStatusEvent } from './schema-hub.ts'
 
@@ -299,6 +300,7 @@ test('token bigint migration keeps values and appends no change-log entry', asyn
   const tokenMigration = migrations.find((item) => item.name === TOKEN_BIGINT_MIGRATION)
   if (!tokenMigration) throw new Error(`missing ${TOKEN_BIGINT_MIGRATION}`)
   await database.transaction(async (transaction) => {
+    for (const statement of migrationSessionStatements()) await transaction.exec(statement)
     for (const item of migrations) {
       if (item.name === TOKEN_BIGINT_MIGRATION) continue
       await applyMigration(transaction, item)

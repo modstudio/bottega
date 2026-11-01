@@ -1,12 +1,12 @@
 import type { Transaction } from '@electric-sql/pglite'
 import type { MigrationMeta } from 'drizzle-orm/migrator'
-import { migrationSessionSettings } from '../orchestrator/src/postgres/postgres-migrate.ts'
+import { migrationSessionSettings } from '../shared/record/migration-session.ts'
 import { assertMigrationBounds } from './record-migration-bounds.ts'
 
 export async function prepareRecordMigrationProof(
   transaction: Transaction,
   migrations: MigrationMeta[],
-): Promise<void> {
+): Promise<Map<string, string>> {
   assertMigrationBounds(migrations)
   const effective = new Map<string, string>()
   for (const [name, value] of migrationSessionSettings()) {
@@ -22,4 +22,5 @@ export async function prepareRecordMigrationProof(
       throw new Error(`${name} is not in force inside the migration transaction`)
     }
   }
+  return effective
 }
