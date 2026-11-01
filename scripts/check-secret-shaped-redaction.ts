@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { nulPathListArgs, splitNulPaths } from '../shared/git-path-list.ts'
 
-const ROOTS = ['shared', 'orchestrator', 'scripts'] as const
+const ROOTS = ['shared', 'orchestrator', 'scripts', 'hub'] as const
 const checkout = process.argv[2] ?? process.cwd()
 const EXCLUDED = new Set(['shared/secret-shaped.ts', 'scripts/check-secret-shaped-redaction.ts'])
 const PYTHON_RULE_OWNER = 'orchestrator/hooks/secret_shaped.py'
@@ -17,9 +17,38 @@ function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name)
     if (statSync(path).isDirectory()) return name === 'node_modules' ? [] : sourceFiles(path)
-    return path.endsWith('.ts') && !path.endsWith('.test.ts') ? [path] : []
+    return /\.tsx?$/.test(path) && !/\.test\.tsx?$/.test(path) ? [path] : []
   })
 }
+
+type PatternOwner = { name: string; pattern: string }
+
+const table = JSON.parse(
+  readFileSync(join(checkout, 'shared', 'secret-shaped-rules.json'), 'utf8'),
+) as {
+  rules: PatternOwner[]
+  exemptEvidenceToken: { pattern: string }
+}
+const pythonPatternOwners = [
+  ...table.rules,
+  { name: 'exemptEvidenceToken', pattern: table.exemptEvidenceToken.pattern },
+]
+
+function copiedPythonPatterns(source: string): string[] {
+  return pythonPatternOwners
+    .filter(
+      ({ pattern }) =>
+        source.includes(pattern) || source.includes(pattern.replaceAll('\\', '\\\\')),
+    )
+    .map(({ name }) => name)
+}
+
+if (
+  !copiedPythonPatterns(
+    `fixture = r'${table.rules.find(({ name }) => name === 'base64')?.pattern}'`,
+  ).includes('base64')
+)
+  throw new Error('secret-shaped guard self-check failed to refuse a copied base64 pattern')
 
 const failures: string[] = []
 for (const root of ROOTS) {
@@ -47,6 +76,11 @@ for (const local of splitNulPaths(trackedPython.stdout.toString())) {
   const source = readFileSync(join(checkout, local), 'utf8')
   if (local !== PYTHON_RULE_OWNER && PYTHON_SECRET_COMPILE.test(source))
     failures.push(`${local}: compiles a secret-shaped pattern outside ${PYTHON_RULE_OWNER}`)
+  if (local !== PYTHON_RULE_OWNER)
+    for (const name of copiedPythonPatterns(source))
+      failures.push(
+        `${local}: copies the ${name} secret-shaped pattern outside ${PYTHON_RULE_OWNER}`,
+      )
   if (source.includes(PYTHON_WHOLE_TEXT_WITHHOLD))
     failures.push(`${local}: defines a whole-text secret-shaped replacement`)
 }

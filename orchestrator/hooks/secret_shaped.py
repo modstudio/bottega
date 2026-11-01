@@ -21,7 +21,7 @@ def _compiled_pattern(value, field):
     return value
 
 
-def _validate_table(parsed):
+def validate_secret_shaped_rule_table(parsed):
     if not isinstance(parsed, dict):
         raise ValueError("secret-shaped rule table must be an object")
     if not isinstance(parsed.get("rules"), list):
@@ -48,7 +48,9 @@ def _validate_table(parsed):
     return parsed
 
 
-_TABLE = _validate_table(json.loads(_TABLE_PATH.read_text(encoding="utf-8")))
+_TABLE = validate_secret_shaped_rule_table(
+    json.loads(_TABLE_PATH.read_text(encoding="utf-8"))
+)
 _RULES = [
     {
         **definition,

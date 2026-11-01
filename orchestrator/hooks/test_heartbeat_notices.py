@@ -10,7 +10,6 @@ import unittest
 
 from heartbeat_decision_fixture import stage_heartbeat_sources
 
-HOOKS = Path(__file__).parent
 CHILD_PROCESS_TIMEOUT_SECONDS = 10
 SESSION = "fixture-session"
 CONDITION_ID = "condition:1"
