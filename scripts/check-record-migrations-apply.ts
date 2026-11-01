@@ -47,6 +47,7 @@ import {
   runTaskReferenceBackfill,
   seedRunTaskReferenceBackfill,
 } from './record-run-task-backfill-proof.ts'
+import { proofStrandedRunsMigration, seedStrandedRunsProof } from './record-stranded-runs-proof.ts'
 import {
   proofTaskChildUuidMigration,
   proofTaskLinkBackfill,
@@ -841,7 +842,7 @@ async function applyAndProveMigration(
   }
   if (migration.name === lensPinContractGuard)
     await proofLensPinContractGuard(transaction, migration)
-  await seedMigrationProof(transaction, migration.name)
+  await seedMigrationProof(transaction, migration)
   await applyRecordMigration(transaction, migration)
   await proofDocumentMigration(transaction, migration)
   if (migration.name === boardSharedSpacesMigration)
@@ -851,6 +852,7 @@ async function applyAndProveMigration(
   if (migration.name === jsonbStringChecksValidate)
     await proofJsonbStringChecksValidate(transaction, PLATFORM_SPACE_ID)
   await applyHostedProjectCleanupProof(transaction, migration)
+  await proofStrandedRunsMigration(transaction, migration)
 }
 
 async function seedLensPinContractRow(
@@ -920,7 +922,11 @@ async function proofLensPinContractGuard(
   await seedLensPinContractRow(transaction, null)
 }
 
-async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
+async function seedMigrationProof(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
+  const name = migration.name
   if (name === brokenDocBackfill) await seedDocBackfillProof(transaction)
   if (name === audienceVocabularyBackfill) await seedAudienceVocabularyBackfill(transaction)
   if (name === boardSharedSpacesMigration) await seedBoardThreadAuthorBackfill(transaction)
@@ -949,6 +955,7 @@ async function seedMigrationProof(transaction: Transaction, name: string): Promi
       userId: platformOperatorId,
     })
   await seedHostedProjectCleanupProof(transaction, name)
+  await seedStrandedRunsProof(transaction, migration)
 }
 
 async function proofBoardNotifications(database: PGlite): Promise<void> {
