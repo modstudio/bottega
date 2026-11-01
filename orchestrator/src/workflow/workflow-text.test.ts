@@ -490,6 +490,40 @@ describe('task-linked workflow text preservation', () => {
     expect(calls).toBe(0)
   })
 
+  test('a cursor that moves during the copy is refused rather than closed from a stale row', async () => {
+    const d = database()
+    const cursor = open(d)
+    linkCursor(d, cursor)
+    attachWorkflowTextByHandle(cursor, 'copied while another session advances', context, d)
+    const fake = documentFake()
+    const create = fake.ports.create
+    fake.ports.create = async (...args) => {
+      d.query(
+        "UPDATE workflow_cursor SET ordinal=1,step_slug='text-consumer',updated_at=? WHERE number=?",
+      ).run('2099-01-01T00:00:00.000Z', cursor)
+      return create(...args)
+    }
+    await expect(
+      closeCursorWithTextCopy(
+        {
+          action: 'abandon',
+          cursor,
+          args: {},
+          context,
+          reason: 'stale close',
+        },
+        d,
+        taskReader,
+        fake.ports,
+      ),
+    ).rejects.toThrow('changed while its attached text was copied')
+    expect(
+      d
+        .query<{ state: string }, [number]>('SELECT state FROM workflow_cursor WHERE number=?')
+        .get(cursor)?.state,
+    ).toBe('running')
+  })
+
   test('finish and abandon preserve every attachment as a readable document redirect', async () => {
     for (const terminal of ['finish', 'abandon'] as const) {
       const d = database()

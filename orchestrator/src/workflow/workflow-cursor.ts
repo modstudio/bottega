@@ -31,6 +31,7 @@ import {
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
+  selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
@@ -114,6 +115,16 @@ function findCursor(
     d,
     context.taskRecordId,
   ) as CursorRow | null
+}
+
+/** Re-reads, inside the close transaction, a cursor selected before its text copy. */
+function reselectCursor(selected: WorkflowCloseCursor, d: Database): CursorRow {
+  const row = selectWorkflowCursorForClose({}, selected.id, null, d) as CursorRow
+  if (row.updated_at !== selected.updated_at)
+    throw new Error(
+      `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} changed while its attached text was copied; run the close again`,
+    )
+  return row
 }
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
@@ -778,7 +789,9 @@ export function nextWorkflowStep(
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     withLinkedWorkflowTask(project, args, context, d, () => {
-      const row = selected ?? findCursor(project, slug, mode, args, context, d, cursor)
+      const row = selected
+        ? reselectCursor(selected, d)
+        : findCursor(project, slug, mode, args, context, d, cursor)
       if (!row)
         throw new Error(
           `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
@@ -877,9 +890,10 @@ export function abandonWorkflowCursorByHandle(
   if (!reason?.trim()) throw new Error('--reason is required')
   if (selected)
     return withLinkedWorkflowTask(selected.project, args, context, d, () => {
-      if (!selected.task_record_id && keyOf(args) && context.taskRecordId)
-        selected.task_record_id = context.taskRecordId
-      return abandonSelectedWorkflowCursor(selected, reason, context, d)
+      const row = reselectCursor(selected, d)
+      if (!row.task_record_id && keyOf(args) && context.taskRecordId)
+        row.task_record_id = context.taskRecordId
+      return abandonSelectedWorkflowCursor(row, reason, context, d)
     })
   return abandonWorkflowCursor('', '', '', {}, reason, context, d, cursor)
 }
