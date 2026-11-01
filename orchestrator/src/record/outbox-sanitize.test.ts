@@ -169,6 +169,15 @@ test('question withholds secret-shaped option elements and keeps the options arr
   expect(sanitized.withheldFields).toEqual(['options[1]', 'audit_reason'])
 })
 
+test('a payload already carrying withheldFields is still sanitized and keeps its earlier paths', () => {
+  const sanitized = sanitizeOutboxPayload('run', {
+    error: SECRET,
+    withheldFields: ['promptHead'],
+  })
+  expect(sanitized.error).toBe(MASKED_SECRET)
+  expect(sanitized.withheldFields).toEqual(['promptHead', 'error'])
+})
+
 test('string leaves retain text outside a masked span', () => {
   expect(
     sanitizeOutboxPayload('run', { error: `deploy digest sha256:${'a'.repeat(64)} ready` }),

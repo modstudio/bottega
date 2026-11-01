@@ -149,7 +149,7 @@ export function redactSyncedOutbox(
           newRecordId(),
           row.kind,
           row.row_id,
-          stringifyOutboxPayload(row.kind, sanitized.payload),
+          stringifyOutboxPayload(row.kind, sanitized.payload, { sanitizedForRules: true }),
           at,
         )!
       const paths = [...new Set(sanitized.matches.map((match) => match.path))].toSorted()

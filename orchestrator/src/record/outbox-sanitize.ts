@@ -316,8 +316,10 @@ export function sanitizeOutboxPayload(
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
   const next = replaceUnstorableCodePoints(payload) as Record<string, unknown>
-  if (!(kind in LEAVES) || Array.isArray(next.withheldFields)) return next
-  const withheld: string[] = []
+  if (!(kind in LEAVES)) return next
+  const withheld = Array.isArray(next.withheldFields)
+    ? next.withheldFields.filter((path): path is string => typeof path === 'string')
+    : []
   for (const leaf of LEAVES[kind as OutboxSanitizeKind]) {
     applyLeaf(next, leaf, (path, _rule, replace) => {
       replace()
@@ -328,8 +330,18 @@ export function sanitizeOutboxPayload(
   return next
 }
 
-export function stringifyOutboxPayload(kind: string, payload: Record<string, unknown>): string {
-  return serializeOutboxPayload(kind, sanitizeOutboxPayload(kind, payload))
+/** `sanitizedForRules` is for a payload that sanitizeOutboxPayloadForRules already withheld; its chosen rules stand. */
+export function stringifyOutboxPayload(
+  kind: string,
+  payload: Record<string, unknown>,
+  options: { sanitizedForRules?: boolean } = {},
+): string {
+  return serializeOutboxPayload(
+    kind,
+    options.sanitizedForRules
+      ? replaceUnstorableCodePoints(payload)
+      : sanitizeOutboxPayload(kind, payload),
+  )
 }
 
 export function firstOutboxEvidenceRule(
