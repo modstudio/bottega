@@ -7,26 +7,27 @@ import { groupFocusedTestPaths } from './test-focused.ts'
 const testFiles = trackedFiles().filter((path) => /\.test\.tsx?$/.test(path))
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
-function barePathOperands(argv: readonly string[]): string[] {
-  const operands: string[] = []
-  for (let index = 2; index < argv.length; index += 1) {
-    if (argv[index] === '--path-ignore-patterns') {
-      index += 1
-      continue
-    }
-    if (!argv[index]!.startsWith('./')) operands.push(argv[index]!)
-  }
-  return operands
-}
-
 function routingFailures(): { file: string; error: string }[] {
   // One grouped call is the cheap pass path; only a failure pays for naming every file.
   try {
     return groupFocusedTestPaths(testFiles).flatMap((group) =>
-      barePathOperands(group.argv).map((operand) => ({
-        file: relative(root, group.directory) || '.',
-        error: `path operand ${JSON.stringify(operand)} must start with './'`,
-      })),
+      group.paths.flatMap((path) => {
+        const file = relative(root, group.directory) || '.'
+        const failures: { file: string; error: string }[] = []
+        if (!group.argv.includes(`./${path}`)) {
+          failures.push({
+            file,
+            error: `path operand ${JSON.stringify(path)} must appear as ${JSON.stringify(`./${path}`)}`,
+          })
+        }
+        if (group.argv.includes(path)) {
+          failures.push({
+            file,
+            error: `path operand ${JSON.stringify(path)} must not appear bare`,
+          })
+        }
+        return failures
+      }),
     )
   } catch {
     return testFiles.flatMap((file) => {
