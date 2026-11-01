@@ -43,15 +43,14 @@ test('ignores a function body because it runs at call time', () => {
   expect(violations).toEqual([])
 })
 
-test('ignores nested dollar-quoted SQL assembled inside a DO block', () => {
+test('refuses quoted SQL that a DO block may EXECUTE at migrate time', () => {
   const violations = forceRlsLiftViolations(
     `DO $$
-     DECLARE fragment text := $fragment$UPDATE profile SET version = 2$fragment$;
-     BEGIN INSERT INTO selection (id) VALUES (1); END
+     BEGIN EXECUTE $q$UPDATE profile SET version = 2$q$; END
      $$;`,
     forced,
   )
-  expect(violations).toEqual([])
+  expect(violations).toEqual([{ table: 'profile' }])
 })
 
 test('accepts a named table exemption', () => {

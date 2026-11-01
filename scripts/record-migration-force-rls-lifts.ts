@@ -83,7 +83,13 @@ function migrateTimeText(statement: string, keyword: string): string {
   const bodyStart = opening.index + opening[0].length
   const bodyEnd = statement.indexOf(opening[1], bodyStart)
   if (bodyEnd < 0) return ''
-  return maskMigrationLiterals(statement.slice(bodyStart, bodyEnd))
+  // A DO body may EXECUTE quoted SQL at migrate time, so its literals stay visible;
+  // literals that are function text are exempted by name, never silently excluded.
+  return maskComments(statement.slice(bodyStart, bodyEnd))
+}
+
+function maskComments(sql: string): string {
+  return sql.replace(/--[^\n]*|\/\*[\s\S]*?\*\//gu, (comment) => ' '.repeat(comment.length))
 }
 
 function leadingKeyword(statement: string): string | null {

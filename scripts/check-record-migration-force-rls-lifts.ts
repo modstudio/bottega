@@ -19,11 +19,20 @@ const EXEMPTIONS: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map([
     new Map([
       [
         'hub_report_subscription',
-        'likely no-op on rows existing at the time; outcome not established; reported to system-health under note #607',
+        'record_owner SELECT policies from 20260918114125 cover the delivery-relevant rows; user is not forced',
       ],
       [
         'hub_send',
-        'likely no-op on rows existing at the time; outcome not established; reported to system-health under note #607',
+        'record_owner SELECT policies from 20260918114125 cover the delivery-relevant rows; user is not forced',
+      ],
+    ]),
+  ],
+  [
+    '20260924234500_dev_921_report_project_move',
+    new Map([
+      [
+        'hub_report_subscription_project',
+        'reads are $fragment$ text spliced into record_move_project_space, which runs at call time',
       ],
     ]),
   ],
