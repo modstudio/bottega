@@ -159,9 +159,8 @@ describe('worker static check plan', () => {
     expect(projection.forced).toEqual(
       expected.map((name) => ({ name, subject: 'shared/record/migrations/', file })),
     )
-    expect(projection.omitted.map((omission) => omission.name)).not.toEqual(
-      expect.arrayContaining(expected),
-    )
+    const omittedNames = projection.omitted.map((omission) => omission.name)
+    for (const name of expected) expect(omittedNames).not.toContain(name)
   })
 
   test('forces only cascade preservation for a changed orchestrator migration', () => {
