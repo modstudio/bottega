@@ -73,7 +73,10 @@ test('local and record migrations apply the same outside-worktree NUL rewrite', 
   const encodedFixture = JSON.stringify(fixture)
 
   const local = new Database(':memory:')
-  local.exec('CREATE TABLE run (outside_worktree_writes TEXT)')
+  local.exec(`
+    CREATE TABLE run (outside_worktree_writes TEXT);
+    CREATE TABLE outbox (kind TEXT, payload TEXT);
+  `)
   local.query('INSERT INTO run (outside_worktree_writes) VALUES (?)').run(encodedFixture)
   const localMigration = await readFile(
     `${root}/orchestrator/migrations/0192_run_outside_worktree_writes_nul.sql`,

@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const INSERT_OUTBOX = /INSERT\s+INTO\s+outbox\s*\(/i
-const SERIALIZER_IMPORT =
-  /import\s*{[^}]*\bserializeOutboxPayload\b[^}]*}\s*from\s*['"][^'"]*\/outbox-serialize\.ts['"]/
-const SERIALIZER_CALL = /\bserializeOutboxPayload\s*\(/
+const OUTBOX_PAYLOAD_WRITE = /INSERT\s+INTO\s+outbox\s*\(|UPDATE\s+outbox\s+SET\s+payload/i
+const WRAPPER_IMPORT =
+  /import\s*{[^}]*\bstringifyOutboxPayload\b[^}]*}\s*from\s*['"][^'"]*\/outbox-sanitize\.ts['"]/
+const WRAPPER_CALL = /\bstringifyOutboxPayload\s*\(/
 const TEST_FILE = /(?:^|\/)(?:test|tests)\/|(?:^|\/)(?:test-[^/]+|[^/]+\.test)\.ts$/
 
 export type OutboxSource = { file: string; source: string }
@@ -16,12 +16,12 @@ export type OutboxSource = { file: string; source: string }
 export function outboxSerializationViolations(files: readonly OutboxSource[]): string[] {
   const violations: string[] = []
   for (const { file, source } of files) {
-    if (TEST_FILE.test(file) || !INSERT_OUTBOX.test(source)) continue
-    if (SERIALIZER_IMPORT.test(source) && SERIALIZER_CALL.test(source)) continue
-    const offset = source.search(INSERT_OUTBOX)
+    if (TEST_FILE.test(file) || !OUTBOX_PAYLOAD_WRITE.test(source)) continue
+    if (WRAPPER_IMPORT.test(source) && WRAPPER_CALL.test(source)) continue
+    const offset = source.search(OUTBOX_PAYLOAD_WRITE)
     const line = source.slice(0, offset).split('\n').length
     violations.push(
-      `${file}:${line}: outbox inserts must import and call serializeOutboxPayload before enqueue`,
+      `${file}:${line}: outbox payload writes must import and call stringifyOutboxPayload before enqueue`,
     )
   }
   return violations

@@ -1,3 +1,5 @@
+SET LOCAL lock_timeout = '1s';--> statement-breakpoint
+SET LOCAL statement_timeout = '3s';--> statement-breakpoint
 ALTER TABLE "run" NO FORCE ROW LEVEL SECURITY;--> statement-breakpoint
 DO $$
 DECLARE

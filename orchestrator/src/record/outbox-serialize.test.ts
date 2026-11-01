@@ -5,13 +5,19 @@ test('refuses the first nested NUL and reports its JSON path and remedy', () => 
   expect(() =>
     serializeOutboxPayload('run', [{ clean: 'value' }, { before: ' M file\0' }]),
   ).toThrow(
-    'outbox run payload contains U+0000 at $[1].before; split or replace the separator before enqueue',
+    'outbox run payload contains U+0000 or a lone surrogate at $[1].before; sanitizeOutboxPayload should have replaced the value before enqueue',
+  )
+})
+
+test('refuses a lone surrogate and reports its JSON path', () => {
+  expect(() => serializeOutboxPayload('run', { nested: [{ error: '\ud800' }] })).toThrow(
+    'outbox run payload contains U+0000 or a lone surrogate at $.nested[0].error',
   )
 })
 
 test('refuses a NUL in an object key and reports its escaped JSON path', () => {
   expect(() => serializeOutboxPayload('question', { ['bad\0key']: 'value' })).toThrow(
-    'outbox question payload contains U+0000 at $["bad\\u0000key"]',
+    'outbox question payload contains U+0000 or a lone surrogate at $["bad\\u0000key"]',
   )
 })
 

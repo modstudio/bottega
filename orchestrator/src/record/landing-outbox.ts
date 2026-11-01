@@ -5,8 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from './machine-identity.ts'
 
-import { type OutboxSanitizeKind, sanitizeOutboxPayload } from './outbox-sanitize.ts'
-import { serializeOutboxPayload } from './outbox-serialize.ts'
+import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
   enqueuedLandings: number
@@ -28,12 +27,7 @@ const enqueue = (
   value: Record<string, unknown>,
   at: string,
 ): void => {
-  const payload = serializeOutboxPayload(
-    kind,
-    kind === 'landing_review_carry' || kind === 'landing_triage_snapshot'
-      ? value
-      : sanitizeOutboxPayload(kind as OutboxSanitizeKind, value),
-  )
+  const payload = stringifyOutboxPayload(kind, value)
   database
     .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
     .run(newRecordId(), kind, recordId, payload, at)
@@ -227,7 +221,7 @@ export function enqueuePullRequestCi(database: Database, recordId: string, at = 
     database
       .query('UPDATE outbox SET payload=?,created_at=?,attempts=0,last_error=NULL WHERE id=?')
       .run(
-        serializeOutboxPayload('pull_request_ci', sanitizeOutboxPayload('pull_request_ci', value)),
+        stringifyOutboxPayload('pull_request_ci', value),
         at,
         pending.id,
       )

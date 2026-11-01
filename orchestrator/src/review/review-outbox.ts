@@ -5,8 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { type OutboxSanitizeKind, sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
-import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
+import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 export type ReviewRecordBackfillResult = {
   enqueuedReviews: number
@@ -27,7 +26,7 @@ const enqueue = (
       newRecordId(),
       kind,
       recordId,
-      serializeOutboxPayload(kind, sanitizeOutboxPayload(kind, value)),
+      stringifyOutboxPayload(kind, value),
       at,
     )
 }

@@ -4,8 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 
-import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
-import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 import type { VerdictPayload } from '../verdict/verdict-payload.ts'
 
 type LocalScore = {
@@ -77,10 +76,7 @@ export function enqueueScoreRecord(database: Database, runId: string, machineId:
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} has no score and cannot be enqueued`)
-  const payload = serializeOutboxPayload(
-    'score',
-    sanitizeOutboxPayload('score', buildScoreRecordPayload(row, machineId)),
-  )
+  const payload = stringifyOutboxPayload('score', buildScoreRecordPayload(row, machineId))
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox

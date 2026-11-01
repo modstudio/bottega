@@ -6,8 +6,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
-import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
-import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
+import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
 
 type QuestionRow = Record<string, unknown> & {
   record_id: string
@@ -57,9 +56,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
       at: audit.at,
       reason: audit.reason,
     }))
-  const payload = serializeOutboxPayload(
-    'question',
-    sanitizeOutboxPayload('question', {
+  const payload = stringifyOutboxPayload('question', {
       id: recordId,
       number: row.number,
       spaceId: PLATFORM_SPACE_ID,
@@ -103,8 +100,7 @@ export function enqueueQuestionRecord(database: Database, questionId: string): b
       audits,
       createdAt: row.asked_at,
       updatedAt: at,
-    }),
-  )
+    })
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox
