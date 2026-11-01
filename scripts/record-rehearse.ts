@@ -120,7 +120,7 @@ export function rehearsalStatus(
   return {
     state: 'failure',
     description: description.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
-    failure: description,
+    failure: [description, ...renderRehearsalNotices(lines)].join('\n'),
     notices: lines.notices,
     noticesTruncated: lines.noticesTruncated,
   }

@@ -151,7 +151,9 @@ test('classifies a failed machine and bounds the GitHub description', () => {
   expect(status.state).toBe('failure')
   expect(status.description).toStartWith('REHEARSAL FAIL ')
   expect(status.description.length).toBe(140)
-  expect(status.state === 'failure' ? status.failure : undefined).toBe(`REHEARSAL FAIL ${failure}`)
+  expect(status.state === 'failure' ? status.failure : undefined).toBe(
+    `REHEARSAL FAIL ${failure}\nnotices: none`,
+  )
 })
 
 test('refuses a pass that applied no pending migration', () => {
@@ -161,7 +163,7 @@ test('refuses a pass that applied no pending migration', () => {
   expect(rehearsalStatus(lines, 0)).toEqual({
     state: 'failure',
     description: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
-    failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
+    failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS\nnotices: none',
     notices: [],
     noticesTruncated: 0,
   })
@@ -208,6 +210,10 @@ test('runs, posts success and destroys the machine through the injected runner',
 
 test('posts a bounded failure description and throws the whole rehearsal failure', async () => {
   const failure = `migration long_name statement ${'x'.repeat(200)}: postgres rejected it`
+  const notices = [
+    'MIGRATE NOTICE 20261101000000_fixture: guarded migration refused',
+    'MIGRATE NOTICE 20261101000001_other: preserved before failure',
+  ]
   const calls: string[][] = []
   const runner: RehearsalCommandRunner = async (argv) => {
     calls.push([...argv])
@@ -216,7 +222,11 @@ test('posts a bounded failure description and throws the whole rehearsal failure
     if (argv[0] === 'flyctl' && argv[1] === 'machine' && argv[2] === 'run')
       return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
     if (argv[0] === 'flyctl' && argv[1] === 'logs')
-      return { exitCode: 0, stdout: `REHEARSAL FAIL ${failure}\n`, stderr: '' }
+      return {
+        exitCode: 0,
+        stdout: `${notices.map((notice) => `REHEARSAL NOTICE ${notice}`).join('\n')}\nREHEARSAL FAIL ${failure}\n`,
+        stderr: '',
+      }
     return { exitCode: 0, stdout: '', stderr: '' }
   }
 
@@ -226,7 +236,7 @@ test('posts a bounded failure description and throws the whole rehearsal failure
       runner,
       machineDetails: async () => ({ events: [{ request: { exit_event: { exit_code: 1 } } }] }),
     }),
-  ).rejects.toThrow(`REHEARSAL FAIL ${failure}`)
+  ).rejects.toThrow(`REHEARSAL FAIL ${failure}\nnotices:\n${notices.join('\n')}`)
 
   const postedDescription = calls
     .find((argv) => argv.includes('state=failure'))

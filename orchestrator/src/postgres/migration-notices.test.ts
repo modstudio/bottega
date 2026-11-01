@@ -1,5 +1,26 @@
 import { describe, expect, test } from 'bun:test'
-import { REHEARSAL_NOTICE_LIMIT, renderRehearsalNoticeLines } from './migration-notices.ts'
+import {
+  migrateFailureText,
+  REHEARSAL_NOTICE_LIMIT,
+  renderRehearsalNoticeLines,
+} from './migration-notices.ts'
+
+describe('migrateFailureText', () => {
+  test.each([
+    [
+      'removes notices before the error',
+      'MIGRATE NOTICE -: schema "drizzle" already exists, skipping\nMIGRATE NOTICE fixture: moved rows\n\nmigration fixture statement 2: permission denied\n',
+      'migration fixture statement 2: permission denied',
+    ],
+    [
+      'removes notices interleaved with the error and preserves the error text',
+      '\nerror first line\nMIGRATE NOTICE fixture: guarded branch refused\nerror second line\n\n',
+      'error first line\nerror second line',
+    ],
+  ])('%s', (_name, input, expected) => {
+    expect(migrateFailureText(input)).toBe(expected)
+  })
+})
 
 describe('renderRehearsalNoticeLines', () => {
   test.each([

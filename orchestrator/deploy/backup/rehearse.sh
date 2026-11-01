@@ -18,6 +18,14 @@ milliseconds() {
   bun --eval 'process.stdout.write(String(Date.now()))'
 }
 
+render_migration_notices() {
+  bun --eval '
+    import { renderRehearsalNoticeLines } from "./orchestrator/src/postgres/migration-notices.ts";
+    const lines = renderRehearsalNoticeLines(await Bun.stdin.text());
+    if (lines.length > 0) process.stdout.write(`${lines.join("\\n")}\\n`);
+  '
+}
+
 failure() {
   echo "REHEARSAL FAIL $1"
   exit 1
@@ -114,12 +122,13 @@ set -e
 migrate_ms="$(($(milliseconds) - migrate_start))"
 echo "REHEARSAL MIGRATE $migrate_ms"
 if [ "$migrate_exit" -ne 0 ]; then
-  failure "$migrate_error"
+  printf '%s\n' "$migrate_error" | render_migration_notices
+  migrate_failure="$(printf '%s\n' "$migrate_error" | bun --eval '
+    import { migrateFailureText } from "./orchestrator/src/postgres/migration-notices.ts";
+    process.stdout.write(migrateFailureText(await Bun.stdin.text()));
+  ')"
+  failure "$migrate_failure"
 fi
-printf '%s\n' "$migrate_error" | bun --eval '
-  import { renderRehearsalNoticeLines } from "./orchestrator/src/postgres/migration-notices.ts";
-  const lines = renderRehearsalNoticeLines(await Bun.stdin.text());
-  if (lines.length > 0) process.stdout.write(`${lines.join("\n")}\n`);
-'
+printf '%s\n' "$migrate_error" | render_migration_notices
 
 echo "REHEARSAL PASS $migration_hash"
