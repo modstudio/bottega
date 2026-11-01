@@ -124,6 +124,15 @@ async function runFacts(sql: SQL, query: string) {
   }
 }
 
+async function migrationRefusal(sql: SQL) {
+  const failure = await migrate(drizzle({ client: sql }), { migrationsFolder }).then(
+    () => null,
+    (error: unknown) => error,
+  )
+  expect(failure).toBeInstanceOf(Error)
+  return ((failure as Error).cause as Error | undefined)?.message ?? ''
+}
+
 async function movedFacts(sql: SQL) {
   await sql.unsafe(`
     ALTER TABLE run NO FORCE ROW LEVEL SECURITY;
@@ -195,7 +204,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
     try {
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, listedRuns.slice(1), { unlisted: true })
-      await expect(sql.unsafe(migrationSql)).rejects.toThrow(
+      expect(await migrationRefusal(sql)).toContain(
         'found 47, expected 47, listed missing 1, unlisted present 1',
       )
       const remaining = await runFacts(
@@ -213,7 +222,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
     try {
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, listedRuns, { question: true })
-      await expect(sql.unsafe(migrationSql)).rejects.toThrow('question=1')
+      expect(await migrationRefusal(sql)).toContain('question=1')
       const remaining = await runFacts(
         sql,
         `SELECT count(*)::int count FROM run WHERE project_id IS NULL AND NOT probe`,
@@ -254,7 +263,7 @@ realPostgres('DEV-1994 stranded hosted runs', () => {
         `UPDATE run SET parent_run_id='${listedRuns[0]!.runId}' WHERE id='${unrelatedRun}'`,
       )
       await sql.unsafe('ALTER TABLE run FORCE ROW LEVEL SECURITY')
-      await expect(sql.unsafe(migrationSql)).rejects.toThrow('run=1')
+      expect(await migrationRefusal(sql)).toContain('run=1')
       const remaining = await runFacts(
         sql,
         `SELECT count(*)::int count FROM run WHERE project_id IS NULL AND NOT probe`,
