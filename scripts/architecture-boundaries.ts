@@ -604,6 +604,7 @@ export const importBoundaries: ImportBoundary[] = [
       'bun:sqlite',
       '../database/db.ts',
       './record-api-client.ts',
+      './record-cache-cursor.ts',
       './record-cursor.ts',
       './record-port-contract.ts',
     ],

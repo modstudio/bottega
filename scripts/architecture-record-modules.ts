@@ -211,6 +211,7 @@ export const recordModules: RecordModule[] = [
     'bun:sqlite',
     '../database/db.ts',
     './record-api-client.ts',
+    './record-cache-cursor.ts',
     './record-cursor.ts',
     './record-workflow-contract.ts',
   ]),
