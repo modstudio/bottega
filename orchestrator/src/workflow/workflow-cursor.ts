@@ -23,6 +23,8 @@ import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import {
   refuseInvalidServe,
+  refuseMissingAbandonReason,
+  refuseMissingCloseNote,
   refuseTerminalCursor,
   renderWorkflowAdvanceResult,
 } from './workflow-cursor-result.ts'
@@ -118,13 +120,35 @@ function findCursor(
 }
 
 /** Re-reads, inside the close transaction, a cursor selected before its text copy. */
-function reselectCursor(selected: WorkflowCloseCursor, d: Database): CursorRow {
+function reselectCursor(
+  selected: WorkflowCloseCursor,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  d: Database,
+): CursorRow {
   const row = selectWorkflowCursorForClose({}, selected.id, null, d) as CursorRow
-  if (row.updated_at !== selected.updated_at)
+  const moved =
+    row.updated_at !== selected.updated_at ||
+    row.state !== selected.state ||
+    row.ordinal !== selected.ordinal ||
+    row.step_slug !== selected.step_slug
+  if (moved) {
+    refuseTerminalCursor(row)
     throw new Error(
       `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} changed while its attached text was copied; run the close again`,
     )
+  }
+  adoptLinkedTask(row, args, context)
   return row
+}
+
+function adoptLinkedTask(
+  row: CursorRow,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+): void {
+  if (!row.task_record_id && keyOf(args) && context.taskRecordId)
+    row.task_record_id = context.taskRecordId
 }
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
@@ -738,12 +762,8 @@ function nextWorkflowStepImpl(
   refuseKeylessStepClose(row, evidence.task, d, live)
   adoptWorkflowTask(row, evidence.task, context.adoptionTaskRecordId ?? context.taskRecordId, d)
   const composition = cursorComposition(row, d, live)
-  if (!note?.trim()) {
-    const step = composition.steps[row.ordinal]!
-    throw new Error(
-      `--note is required: one line saying how step ${step.n} ${step.slug}'s floor was met`,
-    )
-  }
+  const step = composition.steps[row.ordinal]!
+  refuseMissingCloseNote(note, step.n, step.slug)
   const close = closeFloorsForStep(row, composition, evidence, ports, selfRuling, outcome, d)
   persistWorkflowAdvance(
     row,
@@ -790,14 +810,13 @@ export function nextWorkflowStep(
   return withReplayedFloorEvidence(ports, (replayPorts) =>
     withLinkedWorkflowTask(project, args, context, d, () => {
       const row = selected
-        ? reselectCursor(selected, d)
+        ? reselectCursor(selected, args, context, d)
         : findCursor(project, slug, mode, args, context, d, cursor)
       if (!row)
         throw new Error(
           `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
         )
-      if (!row.task_record_id && keyOf(args) && context.taskRecordId)
-        row.task_record_id = context.taskRecordId
+      adoptLinkedTask(row, args, context)
       return nextWorkflowStepImpl(
         row,
         args,
@@ -824,7 +843,7 @@ function abandonWorkflowCursorImpl(
   d: Database = writableDb(),
   cursor?: number,
 ): string {
-  if (!reason?.trim()) throw new Error('--reason is required')
+  refuseMissingAbandonReason(reason)
   const row = findCursor(project, slug, mode, args, context, d, cursor)
   if (!row)
     throw new Error(
@@ -879,23 +898,18 @@ export function abandonWorkflowCursor(
   )
 }
 
-export function abandonWorkflowCursorByHandle(
-  cursor: number,
+/** Abandons a cursor the close service selected before copying its attached text. */
+export function abandonSelectedWorkflowCursorForClose(
+  selected: WorkflowCloseCursor,
   reason: string | undefined,
   context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  selected?: WorkflowCloseCursor,
-  args: Record<string, string> = {},
+  d: Database,
+  args: Record<string, string>,
 ): string {
-  if (!reason?.trim()) throw new Error('--reason is required')
-  if (selected)
-    return withLinkedWorkflowTask(selected.project, args, context, d, () => {
-      const row = reselectCursor(selected, d)
-      if (!row.task_record_id && keyOf(args) && context.taskRecordId)
-        row.task_record_id = context.taskRecordId
-      return abandonSelectedWorkflowCursor(row, reason, context, d)
-    })
-  return abandonWorkflowCursor('', '', '', {}, reason, context, d, cursor)
+  refuseMissingAbandonReason(reason)
+  return withLinkedWorkflowTask(selected.project, args, context, d, () =>
+    abandonSelectedWorkflowCursor(reselectCursor(selected, args, context, d), reason, context, d),
+  )
 }
 
 function awaitWorkflowRulingImpl(

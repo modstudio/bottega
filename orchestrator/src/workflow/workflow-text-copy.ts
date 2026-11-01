@@ -9,9 +9,13 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
 import type { LiveCursorAutonomy } from './autonomy.ts'
-import { abandonWorkflowCursorByHandle, nextWorkflowStep } from './workflow-cursor.ts'
+import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
 import { cursorName } from './workflow-cursor-format.ts'
-import { refuseTerminalCursor } from './workflow-cursor-result.ts'
+import {
+  refuseMissingAbandonReason,
+  refuseMissingCloseNote,
+  refuseTerminalCursor,
+} from './workflow-cursor-result.ts'
 import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursorForClose } from './workflow-cursor-selection.ts'
@@ -32,7 +36,7 @@ export type WorkflowTextDocumentPorts = {
 
 type CopyRow = { id: string; stepSlug: string; body: string }
 type CopyCursor = {
-  id: string
+  recordId: string
   number: number
   project: string
   taskRecordId: string | null
@@ -112,7 +116,7 @@ export async function copyWorkflowTextForCursor(
   taskReader: HubTaskReader = readHubTasks,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<WorkflowTextCopyResult> {
-  const rows = uncopiedRows(cursor.id, database)
+  const rows = uncopiedRows(cursor.recordId, database)
   if (!cursor.taskRecordId || rows.length === 0)
     return { cursor: cursor.number, copied: [], uncopied: [] }
   try {
@@ -133,7 +137,7 @@ export async function copyWorkflowTextForCursor(
         const reference =
           found?.reference ??
           (await documents.create(task.key, cursor.project, `${token} ${row.stepSlug}`, row.body))
-        recordCopy(cursor.id, row.id, reference, database)
+        recordCopy(cursor.recordId, row.id, reference, database)
         copied.push({ id: row.id, documentReference: reference, reused: Boolean(found) })
         if (!found) existing.push({ reference, title: `${token} ${row.stepSlug}` })
       } catch (error) {
@@ -144,7 +148,7 @@ export async function copyWorkflowTextForCursor(
       }
     }
     if (cursor.state === 'done' || cursor.state === 'abandoned')
-      writeTransaction(() => deleteWorkflowText(cursor.id, true, database), database)
+      writeTransaction(() => deleteWorkflowText(cursor.recordId, true, database), database)
     return { cursor: cursor.number, copied, uncopied }
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
@@ -202,15 +206,12 @@ export async function closeCursorWithTextCopy(
       `${cursorName(input.workflow ?? 'workflow', input.mode ?? 'default', input.key ?? '')} has no cursor; compose the workflow first`,
     )
   refuseTerminalCursor(row)
-  if (input.action === 'next' && !input.note?.trim())
-    throw new Error(
-      `--note is required: one line saying how step ${row.ordinal + 1} ${row.step_slug}'s floor was met`,
-    )
-  if (input.action === 'abandon' && !input.reason?.trim()) throw new Error('--reason is required')
+  if (input.action === 'next') refuseMissingCloseNote(input.note, row.ordinal + 1, row.step_slug)
+  else refuseMissingAbandonReason(input.reason)
 
   const copy = await copyWorkflowTextForCursor(
     {
-      id: row.record_id,
+      recordId: row.record_id,
       number: row.id,
       project: row.project,
       taskRecordId:
@@ -242,12 +243,11 @@ export async function closeCursorWithTextCopy(
           input.live,
           row,
         )
-      : abandonWorkflowCursorByHandle(
-          row.id,
+      : abandonSelectedWorkflowCursorForClose(
+          row,
           input.reason!.trim(),
           input.context,
           database,
-          row,
           input.args,
         )
   const warning = workflowTextUncopiedReport(copy)
@@ -304,31 +304,10 @@ export function showWorkflowText(
 }
 
 export function cursorForWorkflowTextCopy(cursor: number, database: Database = db()): CopyCursor {
-  const row = database
-    .query<
-      {
-        record_id: string
-        number: number
-        project: string
-        task_record_id: string | null
-        state: string
-      },
-      [number]
-    >(
-      `SELECT record_id,number,project,task_record_id,state
-       FROM workflow_cursor WHERE number=?`,
-    )
-    .get(cursor) as {
-    record_id: string
-    number: number
-    project: string
-    task_record_id: string | null
-    state: string
-  } | null
-  if (!row) throw new Error(`workflow cursor ${cursor} does not exist`)
+  const row = selectWorkflowCursorForClose({}, cursor, null, database) as WorkflowCloseCursor
   return {
-    id: row.record_id,
-    number: row.number,
+    recordId: row.record_id,
+    number: row.id,
     project: row.project,
     taskRecordId: row.task_record_id,
     state: row.state,

@@ -74,6 +74,15 @@ export function refuseTerminalCursor(row: {
     )
 }
 
+export function refuseMissingCloseNote(note: string | undefined, n: number, slug: string): void {
+  if (!note?.trim())
+    throw new Error(`--note is required: one line saying how step ${n} ${slug}'s floor was met`)
+}
+
+export function refuseMissingAbandonReason(reason: string | undefined): asserts reason is string {
+  if (!reason?.trim()) throw new Error('--reason is required')
+}
+
 function renderWorkflowCursorRemedy(
   row: Pick<
     AdvanceRow,
