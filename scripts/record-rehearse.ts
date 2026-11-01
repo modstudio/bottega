@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
-import { PLATFORM_SLUG } from '../shared/brand.ts'
 import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
+import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
   recordRehearsalDescription,
