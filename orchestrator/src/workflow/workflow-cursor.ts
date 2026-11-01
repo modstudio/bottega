@@ -23,13 +23,17 @@ import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { cursorName, formatCursorOpened, formatCursorResumed } from './workflow-cursor-format.ts'
 import {
   refuseInvalidServe,
+  refuseMissingAbandonReason,
+  refuseMissingCloseNote,
   refuseTerminalCursor,
   renderWorkflowAdvanceResult,
 } from './workflow-cursor-result.ts'
+import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
   selectWorkflowCursor,
+  selectWorkflowCursorForClose,
   type WorkflowCursorContext,
 } from './workflow-cursor-selection.ts'
 import { refuseUnlinkedCursorLabelCollision } from './workflow-cursor-task-reference.ts'
@@ -56,7 +60,6 @@ import {
   DEFAULT_EXPECTED_STATUS,
   decideCloseFloors,
   decideFloorSatisfaction,
-  type EnforcementMode,
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
@@ -79,18 +82,7 @@ import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-tas
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
-type CursorRow = SelectableCursorRow & {
-  workflow_version: number
-  catalogue_version: number
-  args: string
-  autonomy: string | null
-  closed: string
-  question: string | null
-  total_steps: number
-  created_at: string
-  updated_at: string
-  enforcement: EnforcementMode
-}
+type CursorRow = WorkflowCloseCursor
 
 function closeOpenWorkflowQuestion(
   cursorId: string,
@@ -125,6 +117,38 @@ function findCursor(
     d,
     context.taskRecordId,
   ) as CursorRow | null
+}
+
+/** Re-reads, inside the close transaction, a cursor selected before its text copy. */
+function reselectCursor(
+  selected: WorkflowCloseCursor,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+  d: Database,
+): CursorRow {
+  const row = selectWorkflowCursorForClose({}, selected.id, null, d) as CursorRow
+  const moved =
+    row.updated_at !== selected.updated_at ||
+    row.state !== selected.state ||
+    row.ordinal !== selected.ordinal ||
+    row.step_slug !== selected.step_slug
+  if (moved) {
+    refuseTerminalCursor(row)
+    throw new Error(
+      `${cursorName(row.workflow_slug, row.mode_slug, row.workflow_key, true)} changed while its attached text was copied; run the close again`,
+    )
+  }
+  adoptLinkedTask(row, args, context)
+  return row
+}
+
+function adoptLinkedTask(
+  row: CursorRow,
+  args: Record<string, string>,
+  context: WorkflowCursorContext,
+): void {
+  if (!row.task_record_id && keyOf(args) && context.taskRecordId)
+    row.task_record_id = context.taskRecordId
 }
 
 const takenOverFrom = (row: CursorRow | null, context: WorkflowCursorContext): string | null =>
@@ -696,7 +720,7 @@ function persistWorkflowAdvance(
     d,
   )
   if (advance.ordinal === null || composition.steps[row.ordinal]!.needs.includes('workflow-text'))
-    deleteWorkflowText(row.record_id, d)
+    deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
   if (advance.ordinal === null) {
     d.query(
       `UPDATE workflow_cursor SET state='done',closed=?,question=NULL,
@@ -719,39 +743,27 @@ function persistWorkflowAdvance(
 }
 
 function nextWorkflowStepImpl(
-  slug: string,
-  project: string,
-  mode: string,
+  row: CursorRow,
   args: Record<string, string>,
   note: string | undefined,
   context: WorkflowCursorContext,
   evidence: WorkflowEvidenceInput,
   ports: FloorEvidencePorts,
   d: Database = writableDb(),
-  cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): string {
-  const row = findCursor(project, slug, mode, args, context, d, cursor)
-  if (!row)
-    throw new Error(
-      `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-    )
-  slug = row.workflow_slug
-  project = row.project
-  mode = row.mode_slug
+  const slug = row.workflow_slug
+  const project = row.project
+  const mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
   refuseKeylessStepClose(row, evidence.task, d, live)
   adoptWorkflowTask(row, evidence.task, context.adoptionTaskRecordId ?? context.taskRecordId, d)
   const composition = cursorComposition(row, d, live)
-  if (!note?.trim()) {
-    const step = composition.steps[row.ordinal]!
-    throw new Error(
-      `--note is required: one line saying how step ${step.n} ${step.slug}'s floor was met`,
-    )
-  }
+  const step = composition.steps[row.ordinal]!
+  refuseMissingCloseNote(note, step.n, step.slug)
   const close = closeFloorsForStep(row, composition, evidence, ports, selfRuling, outcome, d)
   persistWorkflowAdvance(
     row,
@@ -793,45 +805,32 @@ export function nextWorkflowStep(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
+  selected?: WorkflowCloseCursor,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
-    withLinkedWorkflowTask(project, args, context, d, () =>
-      nextWorkflowStepImpl(
-        slug,
-        project,
-        mode,
+    withLinkedWorkflowTask(project, args, context, d, () => {
+      const row = selected
+        ? reselectCursor(selected, args, context, d)
+        : findCursor(project, slug, mode, args, context, d, cursor)
+      if (!row)
+        throw new Error(
+          `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
+        )
+      adoptLinkedTask(row, args, context)
+      return nextWorkflowStepImpl(
+        row,
         args,
         note,
         context,
         evidence,
         replayPorts,
         d,
-        cursor,
         selfRuling,
         outcome,
         live,
-      ),
-    ),
+      )
+    }),
   )
-}
-
-function abandonWorkflowCursorImpl(
-  slug: string,
-  project: string,
-  mode: string,
-  args: Record<string, string>,
-  reason: string | undefined,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  cursor?: number,
-): string {
-  if (!reason?.trim()) throw new Error('--reason is required')
-  const row = findCursor(project, slug, mode, args, context, d, cursor)
-  if (!row)
-    throw new Error(
-      `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-    )
-  return abandonSelectedWorkflowCursor(row, reason, context, d)
 }
 
 function abandonSelectedWorkflowCursor(
@@ -857,7 +856,7 @@ function abandonSelectedWorkflowCursor(
         SET abandoned_at=?, abandoned_reason=?
       WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL`,
   ).run(at, reason.trim(), row.record_id)
-  deleteWorkflowText(row.record_id, d)
+  deleteWorkflowText(row.record_id, Boolean(row.task_record_id), d)
   d.query(
     `UPDATE workflow_cursor SET state='abandoned',closed=?,question=NULL,
      session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
@@ -865,32 +864,18 @@ function abandonSelectedWorkflowCursor(
   return `${cursorName(slug, mode, row.workflow_key, true)} was abandoned at step ${row.ordinal + 1} ${row.step_slug}.`
 }
 
-export function abandonWorkflowCursor(
-  slug: string,
-  project: string,
-  mode: string,
+/** Abandons a cursor the close service selected before copying its attached text. */
+export function abandonSelectedWorkflowCursorForClose(
+  selected: WorkflowCloseCursor,
+  reason: string | undefined,
+  context: WorkflowCursorContext,
+  d: Database,
   args: Record<string, string>,
-  reason: string | undefined,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  cursor?: number,
 ): string {
-  return withLinkedWorkflowTask(project, args, context, d, () =>
-    abandonWorkflowCursorImpl(slug, project, mode, args, reason, context, d, cursor),
+  refuseMissingAbandonReason(reason)
+  return withLinkedWorkflowTask(selected.project, args, context, d, () =>
+    abandonSelectedWorkflowCursor(reselectCursor(selected, args, context, d), reason, context, d),
   )
-}
-
-export function abandonWorkflowCursorByHandle(
-  cursor: number,
-  reason: string | undefined,
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-): string {
-  if (!reason?.trim()) throw new Error('--reason is required')
-  return writeTransaction(() => {
-    const row = selectWorkflowCursor({}, cursor, context.session, d) as CursorRow
-    return abandonSelectedWorkflowCursor(row, reason, context, d)
-  }, d)
 }
 
 function awaitWorkflowRulingImpl(

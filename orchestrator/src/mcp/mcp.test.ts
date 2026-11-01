@@ -20,6 +20,8 @@ import { type Project, removeProject, upsertProject } from '../project/projects.
 import { rememberProjectSpace } from '../project-space.ts'
 import { applyWorkflowCatalogueRow } from '../record/record-cache-workflow.fixture.ts'
 import { productionStepCatalogue } from '../workflow/step-catalogue.ts'
+import { attachWorkflowTextByHandle } from '../workflow/workflow-text.ts'
+import { showWorkflowText } from '../workflow/workflow-text-copy.ts'
 import {
   promoteWorkflowLocal,
   setWorkflowLocal,
@@ -515,6 +517,14 @@ describe('orch MCP', () => {
           record_id: `task-${key}`,
           project,
         })),
+      workflowTextDocuments: {
+        async list() {
+          return []
+        },
+        async create() {
+          throw new Error('document service unavailable')
+        },
+      },
     })
     const client = new Client({ name: 'orch-test', version: '1.0.0' })
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -568,7 +578,28 @@ describe('orch MCP', () => {
         ruling: 'Proceed.',
         from_operator: true,
       })
-      await call('abandon_workflow', { cursor: second.id, reason: 'stopped through MCP handle' })
+      const secondSession = db()
+        .query<{ session_id: string }, [number]>(
+          'SELECT session_id FROM workflow_cursor WHERE number=?',
+        )
+        .get(second.id)!.session_id
+      const attached = attachWorkflowTextByHandle(second.id, 'survives the failed MCP copy', {
+        session: secondSession,
+      })
+      db()
+        .query('UPDATE workflow_cursor SET task_record_id=? WHERE number=?')
+        .run('task-DEV-1082-MCP-B', second.id)
+      const abandoned = await call('abandon_workflow', {
+        cursor: second.id,
+        reason: 'stopped through MCP handle',
+      })
+      expect(abandoned).toContain(
+        `retry: ${PLATFORM_SLUG} workflow text copy --cursor ${second.id}`,
+      )
+      expect(showWorkflowText(attached)).toMatchObject({
+        kind: 'live',
+        body: 'survives the failed MCP copy',
+      })
 
       expect(
         db().query('SELECT ordinal,state FROM workflow_cursor WHERE number=?').get(first.id),

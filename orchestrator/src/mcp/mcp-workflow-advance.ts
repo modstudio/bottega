@@ -7,11 +7,16 @@ import { resolveGateIdentifier } from '../gate/gate-identifier.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { resolveProbeArtifact } from '../workflow/probe-identifier.ts'
-import { nextWorkflowStep } from '../workflow/workflow-cursor.ts'
+import { workflowKeyOf } from '../workflow/workflow-cursor-arguments.ts'
 import { resolveCursorLiveAutonomy } from '../workflow/workflow-cursor-live-autonomy.ts'
 import { resolveMcpCursorContext } from '../workflow/workflow-cursor-selection.ts'
 import { resolveLinkedWorkflowCursorMode } from '../workflow/workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from '../workflow/workflow-task-reference.ts'
+import {
+  closeCursorWithTextCopy,
+  productionWorkflowTextDocumentPorts,
+  type WorkflowTextDocumentPorts,
+} from '../workflow/workflow-text-copy.ts'
 import type { nextWorkflowStepInputSchema } from './mcp-workflow-input.ts'
 
 const workflowRunEvidence = (run: string | number | undefined) =>
@@ -39,6 +44,7 @@ export async function advanceWorkflow(
     cursor,
   }: z.infer<typeof nextWorkflowStepInputSchema>,
   hubTaskReader?: HubTaskReader,
+  workflowTextDocuments: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ) {
   if (self_ruling_basis !== undefined && self_ruling === undefined)
     throw new Error(
@@ -67,36 +73,42 @@ export async function advanceWorkflow(
     context,
     cursor,
   })
-  const result = nextWorkflowStep(
-    slug,
-    project,
-    effectiveMode,
-    workflowArgs,
-    note,
-    advanceContext,
-    undefined,
+  const result = await closeCursorWithTextCopy(
     {
-      ruling,
-      review: review === undefined ? undefined : resolveReviewIdentifier(db(), review),
-      gate: gate === undefined ? undefined : resolveGateIdentifier(db(), gate),
-      run: workflowRunEvidence(run),
-      artifact: resolveProbeArtifact(db(), artifact),
-      task,
-      defer,
-      satisfies,
+      action: 'next',
+      project,
+      workflow: slug,
+      mode: effectiveMode,
+      key: workflowKeyOf(workflowArgs) || undefined,
+      cursor,
+      args: workflowArgs,
+      context: advanceContext,
+      note,
+      evidence: {
+        ruling,
+        review: review === undefined ? undefined : resolveReviewIdentifier(db(), review),
+        gate: gate === undefined ? undefined : resolveGateIdentifier(db(), gate),
+        run: workflowRunEvidence(run),
+        artifact: resolveProbeArtifact(db(), artifact),
+        task,
+        defer,
+        satisfies,
+      },
+      selfRuling:
+        self_ruling === undefined
+          ? undefined
+          : {
+              ruling: self_ruling,
+              basis: self_ruling_basis ?? '',
+              question,
+              channel: 'mcp',
+            },
+      outcome,
+      live,
     },
     undefined,
-    cursor,
-    self_ruling === undefined
-      ? undefined
-      : {
-          ruling: self_ruling,
-          basis: self_ruling_basis ?? '',
-          question,
-          channel: 'mcp',
-        },
-    outcome,
-    live,
+    hubTaskReader,
+    workflowTextDocuments,
   )
   return { content: [{ type: 'text' as const, text: result }] }
 }

@@ -7,7 +7,6 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
-  abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
@@ -17,6 +16,7 @@ import {
 import { listWorkflowCursors } from './workflow-cursor-list.ts'
 import { workflowCursorProjectScope } from './workflow-cursor-selection.ts'
 import {
+  abandonCursor,
   args,
   closeStep,
   context,
@@ -256,7 +256,7 @@ describe('workflow cursor adapter', () => {
   test('abandoned cursor is retired and compose starts a fresh run', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-    abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
 
     const recomposed = composeWorkflowWithCursor(
       'flow',
@@ -360,7 +360,7 @@ describe('workflow cursor adapter', () => {
   test('first step fetch retires a terminal cursor and starts a fresh run', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-    abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
 
     getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
 
@@ -377,7 +377,7 @@ describe('workflow cursor adapter', () => {
   test('step fetch on a terminal cursor directs the caller to compose again', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
-    abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
 
     expect(() =>
       getWorkflowStepWithCursor('flow', 'fixture', 'lens', args, 'default', context, d, {}),
@@ -679,9 +679,9 @@ describe('workflow cursor adapter', () => {
     const d = database()
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
 
-    expect(
-      abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d),
-    ).toBe('Workflow flow for DEV-822 was abandoned at step 1 rebase.')
+    expect(abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)).toBe(
+      'Workflow flow for DEV-822 was abandoned at step 1 rebase.',
+    )
     expect(listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)).toEqual([])
     const row = d.query('SELECT state,question,closed,session_id FROM workflow_cursor').get() as {
       state: string
@@ -703,9 +703,9 @@ describe('workflow cursor adapter', () => {
     expect(() =>
       awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Question?', context, d, () => {}),
     ).toThrow('workflow flow for DEV-822 is abandoned')
-    expect(() =>
-      abandonWorkflowCursor('flow', 'fixture', 'default', args, 'again', context, d),
-    ).toThrow('workflow flow for DEV-822 is abandoned')
+    expect(() => abandonCursor('flow', 'fixture', 'default', args, 'again', context, d)).toThrow(
+      'workflow flow for DEV-822 is abandoned',
+    )
   })
 
   test('abandon clears an awaiting cursor question and records the current session', () => {
@@ -713,7 +713,7 @@ describe('workflow cursor adapter', () => {
     composeWorkflowWithCursor('flow', 'fixture', 'default', args, context, d, {}, {})
     awaitWorkflowRuling('flow', 'fixture', 'default', args, 'Which ruling?', context, d, () => {})
 
-    abandonWorkflowCursor(
+    abandonCursor(
       'flow',
       'fixture',
       'default',
@@ -745,7 +745,7 @@ describe('workflow cursor adapter', () => {
         (record_id,cursor_record_id,step_ordinal,step_slug,floor,floor_deferrable,reason,session_id,created_at)
        VALUES (?,?,1,'rebase','command-exit',1,'merge later','session-one','2026-09-01')`,
     ).run(newRecordId(), cursor.record_id)
-    abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
     expect(
       d
         .query(
@@ -775,14 +775,14 @@ describe('workflow cursor adapter', () => {
       {},
       {},
     )
-    expect(() =>
-      abandonWorkflowCursor('flow', 'fixture', 'default', args, '   ', context, d),
-    ).toThrow('--reason is required')
+    expect(() => abandonCursor('flow', 'fixture', 'default', args, '   ', context, d)).toThrow(
+      '--reason is required',
+    )
     for (const step of composition.steps)
       closeStep('flow', 'fixture', 'default', args, `closed ${step.slug}`, context, d)
-    expect(() =>
-      abandonWorkflowCursor('flow', 'fixture', 'default', args, 'too late', context, d),
-    ).toThrow('workflow flow for DEV-822 is done')
+    expect(() => abandonCursor('flow', 'fixture', 'default', args, 'too late', context, d)).toThrow(
+      'workflow flow for DEV-822 is done',
+    )
   })
 
   test('an advanced cursor keeps its pinned versions and args when production moves on', () => {

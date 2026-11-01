@@ -44,11 +44,7 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import {
-  abandonWorkflowCursorByHandle,
-  awaitWorkflowRuling,
-  ruleWorkflow,
-} from '../workflow/workflow-cursor.ts'
+import { awaitWorkflowRuling, ruleWorkflow } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpCursorContext,
@@ -59,6 +55,11 @@ import {
   attachWorkflowTextByHandle,
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
 } from '../workflow/workflow-text.ts'
+import {
+  closeCursorWithTextCopy,
+  productionWorkflowTextDocumentPorts,
+  type WorkflowTextDocumentPorts,
+} from '../workflow/workflow-text-copy.ts'
 import { composeWorkflow, listResolvedWorkflows } from '../workflow/workflows.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
 import { registerBoardTools } from './mcp-board-tools.ts'
@@ -75,6 +76,7 @@ import { registerWorkflowStepTool } from './mcp-workflow-step.ts'
 
 type DocsMcpPorts = LandingBranchPorts & {
   hubTaskReader?: HubTaskReader
+  workflowTextDocuments?: WorkflowTextDocumentPorts
 }
 
 const portLedgerSources = (
@@ -462,6 +464,22 @@ function registerWorkflowListTool(server: McpServer): void {
   )
 }
 
+async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
+  const result = await closeCursorWithTextCopy(
+    {
+      action: 'abandon',
+      cursor,
+      args: {},
+      context: mcpWorkflowCursorContext(),
+      reason,
+    },
+    undefined,
+    ports.hubTaskReader,
+    ports.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
+  )
+  return text(result)
+}
+
 export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
   const server = new McpServer({ name: MCP_SERVER_NAME, version: '0.1.0' })
   enableSchemaReload((from, to) => {
@@ -533,7 +551,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
         'Close the current step with a one-line note and a validated evidence reference for its floor, then fetch the next; the cursor is the record.',
       inputSchema: nextWorkflowStepInputSchema,
     },
-    (input) => advanceWorkflow(input, ports.hubTaskReader),
+    (input) => advanceWorkflow(input, ports.hubTaskReader, ports.workflowTextDocuments),
   )
 
   server.registerTool(
@@ -632,8 +650,7 @@ export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
         reason: z.string().trim().min(1),
       }),
     },
-    async ({ cursor, reason }) =>
-      text(abandonWorkflowCursorByHandle(cursor, reason, mcpWorkflowCursorContext())),
+    async ({ cursor, reason }) => abandonWorkflowWithTextCopy(cursor, reason, ports),
   )
 
   server.registerTool(

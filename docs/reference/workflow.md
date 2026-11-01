@@ -35,6 +35,9 @@ workflows and their cursors
 - [bottega workflow set](#bottega-workflow-set)
 - [bottega workflow show](#bottega-workflow-show)
 - [bottega workflow step](#bottega-workflow-step)
+- [bottega workflow text](#bottega-workflow-text)
+- [bottega workflow text copy](#bottega-workflow-text-copy)
+- [bottega workflow text show](#bottega-workflow-text-show)
 - [bottega workflow versions](#bottega-workflow-versions)
 
 ## bottega workflow
@@ -69,6 +72,7 @@ workflows and their cursors
 - [bottega workflow set](./workflow.md#bottega-workflow-set)
 - [bottega workflow show](./workflow.md#bottega-workflow-show)
 - [bottega workflow step](./workflow.md#bottega-workflow-step)
+- [bottega workflow text](./workflow.md#bottega-workflow-text)
 - [bottega workflow versions](./workflow.md#bottega-workflow-versions)
 
 ## bottega workflow abandon
@@ -573,6 +577,47 @@ render one workflow step by slug or position
 ### Related
 
 - [bottega workflow](./workflow.md#bottega-workflow)
+
+## bottega workflow text
+
+**Synopsis:** `bottega workflow text`
+
+read and preserve workflow text attachments
+
+### Related
+
+- [bottega workflow](./workflow.md#bottega-workflow)
+- [bottega workflow text copy](./workflow.md#bottega-workflow-text-copy)
+- [bottega workflow text show](./workflow.md#bottega-workflow-text-show)
+
+## bottega workflow text copy
+
+**Synopsis:** `bottega workflow text copy [--cursor <value>] [--json]`
+
+copy uncopied cursor text to task documents
+
+### Options
+
+- `--cursor <value>`: select this workflow cursor
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow text](./workflow.md#bottega-workflow-text)
+
+## bottega workflow text show
+
+**Synopsis:** `bottega workflow text show <reference> [--json]`
+
+show a workflow text attachment
+
+### Options
+
+- `--json`: print JSON output
+
+### Related
+
+- [bottega workflow text](./workflow.md#bottega-workflow-text)
 
 ## bottega workflow versions
 

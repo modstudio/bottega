@@ -1,7 +1,13 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import { nextWorkflowStep } from './workflow-cursor.ts'
+import { abandonSelectedWorkflowCursorForClose, nextWorkflowStep } from './workflow-cursor.ts'
+import { workflowKeyOf } from './workflow-cursor-arguments.ts'
+import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
+import {
+  selectWorkflowCursorForClose,
+  type WorkflowCursorContext,
+} from './workflow-cursor-selection.ts'
 import type { WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
@@ -151,4 +157,27 @@ export function closeStep(
     installEvidence(d, project, slug, mode, callArgs, callContext),
     testPorts,
   )
+}
+
+/** Abandons a cursor the way the close service does: select it, then close the selected row. */
+export function abandonCursor(
+  slug: string,
+  project: string,
+  mode: string,
+  callArgs: Record<string, string>,
+  reason: string | undefined,
+  callContext: WorkflowCursorContext,
+  d: Database,
+  cursor?: number,
+): string {
+  const key = workflowKeyOf(callArgs)
+  const row = selectWorkflowCursorForClose(
+    { project, workflow: slug, mode, ...(key ? { key } : {}) },
+    cursor,
+    callContext.session,
+    d,
+    callContext.taskRecordId,
+  ) as WorkflowCloseCursor | null
+  if (!row) throw new Error(`fixture has no ${slug} cursor to abandon`)
+  return abandonSelectedWorkflowCursorForClose(row, reason, callContext, d, callArgs)
 }

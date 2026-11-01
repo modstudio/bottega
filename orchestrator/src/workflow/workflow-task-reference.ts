@@ -32,7 +32,7 @@ function taskReference(row: unknown): HubTaskReference {
   return row as HubTaskReference
 }
 
-async function taskCommand(command: string[]): Promise<unknown> {
+export async function taskCommand(command: string[]): Promise<string> {
   const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...command], {
     stdout: 'pipe',
     stderr: 'pipe',
@@ -44,11 +44,13 @@ async function taskCommand(command: string[]): Promise<unknown> {
     child.exited,
   ])
   if (code !== 0) throw new Error(stderr.trim() || `exit status ${code}`)
-  return JSON.parse(stdout)
+  return stdout.trim()
 }
 
 export async function readHubTasks(project: string): Promise<HubTaskReference[]> {
-  const response = await taskCommand(['task', 'list', '--project', project, '--json'])
+  const response = JSON.parse(
+    await taskCommand(['task', 'list', '--project', project, '--json']),
+  ) as unknown
   if (!Array.isArray(response)) throw new Error('response was not an array')
   return response.map(taskReference)
 }
@@ -61,7 +63,7 @@ export function parseHubTaskResponse(response: unknown): HubTaskReference {
 }
 
 async function readHubTask(key: string): Promise<HubTaskReference | null> {
-  return parseHubTaskResponse(await taskCommand(['task', 'show', key, '--json']))
+  return parseHubTaskResponse(JSON.parse(await taskCommand(['task', 'show', key, '--json'])))
 }
 
 /** A reader failure is a refusal; callers with best-effort policy catch it explicitly. */

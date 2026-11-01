@@ -8,12 +8,9 @@ import {
   promoteStepCatalogueLocal,
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
-import {
-  abandonWorkflowCursor,
-  composeWorkflowWithCursor,
-  getWorkflowStepWithCursor,
-} from './workflow-cursor.ts'
+import { composeWorkflowWithCursor, getWorkflowStepWithCursor } from './workflow-cursor.ts'
 import { combineCursorAutonomy, mapStoredAutonomyResolution } from './workflow-cursor-autonomy.ts'
+import { abandonCursor } from './workflow-cursor-test.fixture.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
 import { composeWorkflow } from './workflows.ts'
@@ -202,7 +199,7 @@ describe('workflow cursor stored autonomy', () => {
     const d = database()
     installShipToFlow(d)
     composeShipToFlow(d)
-    abandonWorkflowCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
+    abandonCursor('flow', 'fixture', 'default', args, 'operator stopped', context, d)
     replaceCursorAutonomy(d, (stored) => {
       delete stored.shipTo
     })

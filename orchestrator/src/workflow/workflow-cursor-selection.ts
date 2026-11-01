@@ -127,17 +127,30 @@ function selectByHandle(
   cursor: number,
   identity: WorkflowCursorSelector,
   d: Database,
+  includeTerminal = false,
 ): SelectableCursorRow {
   const row = d
     .query(`SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE number=?`)
     .get(cursor) as SelectableCursorRow | null
   if (!row) throw new Error(`workflow cursor ${cursor} does not exist`)
   validateIdentity(row, identity)
-  if (row.state === 'done' || row.state === 'abandoned')
+  if (!includeTerminal && (row.state === 'done' || row.state === 'abandoned'))
     throw new Error(
       `cursor ${row.id} is ${row.state}; a new run is opened by fetching step 1 without a handle`,
     )
   return row
+}
+
+/** Selects the cursor a close targets while leaving terminal-state refusal to the close service. */
+export function selectWorkflowCursorForClose(
+  identity: WorkflowCursorSelector,
+  cursor: number | undefined,
+  ownerSession: string | null | undefined,
+  d: Database,
+  taskRecordId?: string | null,
+): SelectableCursorRow | null {
+  if (cursor !== undefined) return selectByHandle(cursor, identity, d, true)
+  return selectWorkflowCursor(identity, cursor, ownerSession, d, taskRecordId)
 }
 
 export function selectWorkflowCursor(
