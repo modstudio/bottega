@@ -58,12 +58,13 @@ import {
   type PullRequestMergeOutcome,
   type PullRequestPostLandingAdapter,
   type WorkflowPromotionResult,
+  type WorkflowPromotionStage,
 } from './pr-post-landing.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
-export {
-  type PullRequestMergeOutcome,
-  type WorkflowPromotionResult,
+export type {
+  PullRequestMergeOutcome,
+  WorkflowPromotionResult,
 } from './pr-post-landing.ts'
 
 export type PullRequestMergeAdapter = {

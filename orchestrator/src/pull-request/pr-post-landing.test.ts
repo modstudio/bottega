@@ -25,7 +25,7 @@ const project = {
     release: {
       mergeMethod: 'squash',
       requiredChecks: [],
-      rungs: [{ name: 'hosted-api', requiredWhenChanged: ['shared/record/**'] }],
+      rungs: [{ name: 'hosted-api', branch: 'main', requiredWhenChanged: ['shared/record/**'] }],
     },
   },
 } as Project
@@ -110,7 +110,7 @@ function complete(input: {
 }
 
 test('a successful move fences this process and hands off the exact fixed identity', () => {
-  let received: PullRequestPostLandingPayload | null = null
+  const received: PullRequestPostLandingPayload[] = []
   const outcome = complete({
     workflowPromotionDue: true,
     post: {
@@ -118,14 +118,14 @@ test('a successful move fences this process and hands off the exact fixed identi
       moveMain: () => {},
       fence: fenceStoreAfterCheckoutMove,
       handOff: (payload) => {
-        received = payload
+        received.push(payload)
         return { output: 'child output', exitCode: 0 }
       },
     },
   })
 
   expect(outcome).toEqual({ output: 'child output', exitCode: 0 })
-  expect(received).toEqual({
+  expect(received[0]).toEqual({
     project: PLATFORM_SLUG,
     target: '42',
     prNumber: 42,
@@ -187,9 +187,7 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(outcome.output).toContain(
     'required rung hosted-api: deploy exit not run; registered main checkout is dirty; clean it',
   )
-  expect(outcome.output).toContain(
-    `remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`,
-  )
+  expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
   expect(calls).toEqual(['cleanup'])
   expect(writableDb()).toBeDefined()
 })

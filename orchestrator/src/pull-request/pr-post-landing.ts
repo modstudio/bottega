@@ -32,13 +32,13 @@ import {
   type PullRequestPostLandingPayload,
 } from './pr-post-landing-payload.ts'
 
-type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
+export type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
 export type WorkflowPromotionResult =
   | { ok: true; output: string }
   | { ok: false; stage: WorkflowPromotionStage; detail: string }
 
-export const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
-export const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
+const MERGED_WITH_RESIDUE_EXIT_CODE = SHIP_CLEANUP_RESIDUE_EXIT_CODE
+const MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE = 21
 export type PullRequestMergeOutcome = {
   output: string
   exitCode: 0 | typeof MERGED_WITH_RESIDUE_EXIT_CODE | typeof MERGED_WITH_UNRELEASED_RUNG_EXIT_CODE
@@ -185,6 +185,22 @@ function mergedOutput(input: {
   })
 }
 
+function requiredRungsForHandOff(input: {
+  adapter: PullRequestPostLandingAdapter
+  project: Project
+  mergeCommit: string
+  inspect: boolean
+}): string[] | null {
+  if (!input.inspect) return null
+  const rungs = input.project.settings.release?.rungs ?? []
+  if (!rungs.some((rung) => rung.requiredWhenChanged !== undefined)) return []
+  try {
+    return decideRequiredRungs(rungs, input.adapter.changedPaths(input.project, input.mergeCommit))
+  } catch {
+    return null
+  }
+}
+
 export function completePullRequestPostLanding(input: {
   adapter: RemainingStageAdapter
   postLandingAdapter?: PullRequestPostLandingAdapter
@@ -201,17 +217,12 @@ export function completePullRequestPostLanding(input: {
   requeueOutput?: string
 }): PullRequestMergeOutcome {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
-  let required: string[] | null = null
-  const rungs = input.project.settings.release?.rungs ?? []
-  if (rungs.some((rung) => rung.requiredWhenChanged !== undefined)) {
-    try {
-      required = decideRequiredRungs(rungs, post.changedPaths(input.project, input.mergeCommit))
-    } catch {
-      // The ordinary in-process release report preserves the existing changed-path remedy.
-    }
-  } else {
-    required = []
-  }
+  const required = requiredRungsForHandOff({
+    adapter: post,
+    project: input.project,
+    mergeCommit: input.mergeCommit,
+    inspect: !input.alreadyMerged && (input.workflowPromotionDue || input.releaseRequired),
+  })
   const mustMove =
     !input.alreadyMerged &&
     (input.workflowPromotionDue ||
@@ -228,6 +239,7 @@ export function completePullRequestPostLanding(input: {
       : { output: '' }
     return mergedOutput({
       ...input,
+      project: input.project.name,
       branch: input.pullRequest.headBranch,
       prNumber: input.pullRequest.number,
       promotion,
@@ -245,6 +257,7 @@ export function completePullRequestPostLanding(input: {
     const detail = cause instanceof Error ? cause.message : String(cause)
     return mergedOutput({
       ...input,
+      project: input.project.name,
       branch: input.pullRequest.headBranch,
       prNumber: input.pullRequest.number,
       promotion: input.workflowPromotionDue

@@ -217,6 +217,7 @@ test('an already-merged pull request skips admission and resumes post-merge stag
 
 test('a merged pull request records evidence before refusing a failed merge-commit lookup', () => {
   registerProject([])
+  recordPassingGate()
   const evidence: string[] = []
   let releaseReached = false
   expect(() =>
@@ -247,7 +248,6 @@ test('a merged pull request records evidence before refusing a failed merge-comm
 
 test('a workflow promotion failure is merge residue and a required release failure wins', () => {
   registerProject([])
-  recordPassingGate()
   const failedPromotion = () => {
     throw new Error('catalogue promotion refused')
   }
