@@ -24,6 +24,7 @@ RUN bun install --frozen-lockfile
 COPY shared/record/migrations shared/record/migrations
 COPY orchestrator/src/postgres/postgres-migrate.ts orchestrator/src/postgres/postgres-migrate.ts
 COPY orchestrator/src/postgres/migration-failure.ts orchestrator/src/postgres/migration-failure.ts
+COPY orchestrator/src/postgres/migration-notices.ts orchestrator/src/postgres/migration-notices.ts
 COPY scripts/record-migration-set.ts scripts/record-migration-set.ts
 COPY orchestrator/deploy/backup/rehearse.sh /usr/local/bin/rehearse.sh
 

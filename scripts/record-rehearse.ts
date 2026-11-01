@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { PLATFORM_SLUG } from '../shared/brand.ts'
+import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
   recordRehearsalDescription,
@@ -11,8 +12,6 @@ const REHEARSAL_VM_MEMORY_MB = '1024'
 const REHEARSAL_WAIT_TIMEOUT_MS = 20 * 60 * 1000
 const FLY_WAIT_TIMEOUT_SECONDS = 60
 const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
-export const REHEARSAL_NOTICE_LIMIT = 20
-
 const tokenName = `${PLATFORM_SLUG.toUpperCase()}_RECORD_REHEARSAL_FLY_TOKEN`
 const sealingCommand = `${PLATFORM_SLUG} machine config secret run --name ${tokenName} -- bun scripts/record-rehearse.ts`
 

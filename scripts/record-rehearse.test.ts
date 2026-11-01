@@ -1,9 +1,9 @@
 import { expect, spyOn, test } from 'bun:test'
+import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import {
   launchedMachineId,
   machineExitCode,
   parseRehearsalLines,
-  REHEARSAL_NOTICE_LIMIT,
   type RehearsalCommandRunner,
   rehearsalStatus,
   renderRehearsalNotices,
