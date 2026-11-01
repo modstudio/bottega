@@ -1,0 +1,26 @@
+# Each addition is a reviewed change.
+Bottega
+CLI
+Harper
+JSON
+MCP
+Postgres
+SQLite
+TypeScript
+UUID
+UUIDs
+YAML
+adn
+ands
+bottega
+canon
+gam
+harper
+hydrate
+hydrated
+nd
+repo
+repos
+unparseable
+worktree
+worktrees

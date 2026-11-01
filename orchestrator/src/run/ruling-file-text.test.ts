@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { lintProse } from '../canon/prose-lint.ts'
+import { lintProse } from '../../../shared/prose/prose-lint.ts'
 import {
   operatorAttributedRuling,
   renderCanonProposalNote,

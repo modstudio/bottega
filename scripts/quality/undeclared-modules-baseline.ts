@@ -168,7 +168,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/canon/codex-project-doc.ts',
   'orchestrator/src/canon/evals.ts',
   'orchestrator/src/canon/pack-budget.ts',
-  'orchestrator/src/canon/prose-lint.ts',
   'orchestrator/src/canon/user-canon-commands.ts',
   'orchestrator/src/canon/user-canon-home-files.ts',
   'orchestrator/src/canon/user-canon-home.ts',

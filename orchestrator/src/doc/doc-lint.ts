@@ -3,8 +3,8 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { DocKind, DocScope } from '../../../shared/docs.ts'
+import { lintProse, type ProseFinding } from '../../../shared/prose/prose-lint.ts'
 import { type CanonLintInput, lintCanonReferences } from '../canon/canon-lint.ts'
-import { lintProse, type ProseFinding } from '../canon/prose-lint.ts'
 export type DocLintFinding = {
   rule: string
   level: DocLintLevel
