@@ -24,8 +24,14 @@ function uniqueReachableCommitCount(
 export function readerCloneHasNoUniqueCommits(
   treePath: string,
   exclusions: readonly string[],
+  baseCommit?: string,
 ): boolean {
-  return uniqueReachableCommitCount(treePath, exclusions) === 0
+  return (
+    uniqueReachableCommitCount(
+      treePath,
+      baseCommit ? [`^${baseCommit}`, ...exclusions] : exclusions,
+    ) === 0
+  )
 }
 
 /** Count commits the clone can reach that no ref in the source checkout can reach. */

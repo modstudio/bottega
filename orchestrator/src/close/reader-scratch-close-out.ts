@@ -111,7 +111,7 @@ function readerCloneDisposableFacts(input: {
       noUniqueCommits:
         Boolean(input.baseCommit) &&
         exclusions !== null &&
-        readerCloneHasNoUniqueCommits(input.treePath, exclusions),
+        readerCloneHasNoUniqueCommits(input.treePath, exclusions, input.baseCommit),
       noNestedStorage: repositoryStorageAbsent(input.treePath),
     },
     sourceRefExclusions: exclusions,
