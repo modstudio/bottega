@@ -59,16 +59,19 @@ export function registerHostedConfigProofs(
          ('01990000-0000-7000-8000-000000000212', '${spaceA}', '${userA}', 'user-x', 'default', '${DEK_A}', 1, decode('02', 'hex'), now()),
          ('01990000-0000-7000-8000-000000000213', '${spaceA}', '${USER_B}', 'user-y', 'default', '${DEK_A}', 1, decode('03', 'hex'), now()),
          ('01990000-0000-7000-8000-000000000214', '${spaceB}', NULL, 'wide', 'default', '${DEK_B}', 1, decode('04', 'hex'), now());
-       INSERT INTO secret_dek_wrap
-         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
-       VALUES
-         ('${newRecordId()}', '${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'CCCCCCCCCCCCCCCCCCCCCC', decode('01', 'hex'), decode('02', 'hex'), now()),
-         ('${newRecordId()}', '${spaceB}', '${DEK_B}', 'BBBBBBBBBBBBBBBBBBBBBB', 'DDDDDDDDDDDDDDDDDDDDDD', decode('03', 'hex'), decode('04', 'hex'), now());
        INSERT INTO machine_public_key
          (id, space_id, key_id, public_key, label, created_at)
        VALUES
          ('${newRecordId()}', '${spaceA}', 'AAAAAAAAAAAAAAAAAAAAAA', decode(repeat('00', 32), 'hex'), 'machine-a', now()),
-         ('${newRecordId()}', '${spaceB}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now());`,
+         ('${newRecordId()}', '${spaceA}', 'CCCCCCCCCCCCCCCCCCCCCC', decode(repeat('22', 32), 'hex'), 'sender-a', now()),
+         ('${newRecordId()}', '${spaceA}', 'EEEEEEEEEEEEEEEEEEEEEE', decode(repeat('44', 32), 'hex'), 'sender-a-2', now()),
+         ('${newRecordId()}', '${spaceB}', 'BBBBBBBBBBBBBBBBBBBBBB', decode(repeat('11', 32), 'hex'), 'machine-b', now()),
+         ('${newRecordId()}', '${spaceB}', 'DDDDDDDDDDDDDDDDDDDDDD', decode(repeat('33', 32), 'hex'), 'sender-b', now());
+       INSERT INTO secret_dek_wrap
+         (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+       VALUES
+         ('${newRecordId()}', '${spaceA}', '${DEK_A}', 'AAAAAAAAAAAAAAAAAAAAAA', 'CCCCCCCCCCCCCCCCCCCCCC', decode('01', 'hex'), decode('02', 'hex'), now()),
+         ('${newRecordId()}', '${spaceB}', '${DEK_B}', 'BBBBBBBBBBBBBBBBBBBBBB', 'DDDDDDDDDDDDDDDDDDDDDD', decode('03', 'hex'), decode('04', 'hex'), now());`,
     )
     if (process.env.BOTTEGA_TEST_POSTGRES_FALSIFY === 'grant-config-secret-reader-select') {
       succeeds('postgres', 'postgres', `GRANT SELECT ON config_secret TO ${RECORD_READER_ROLE};`)
@@ -210,16 +213,21 @@ export function registerHostedConfigProofs(
 
   test('DEK references cannot cross spaces', () => {
     const statements = [
-      `INSERT INTO config_secret
+      {
+        sql: `INSERT INTO config_secret
          (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
        VALUES
          ('01990000-0000-7000-8000-000000000221', '${spaceA}', NULL, 'cross-space',
           'default', '${DEK_B}', 1, decode('05', 'hex'), now());`,
-      `INSERT INTO secret_dek_wrap
+      },
+      {
+        sql: `INSERT INTO secret_dek_wrap
          (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
        VALUES
-         ('${newRecordId()}', '${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'FFFFFFFFFFFFFFFFFFFFFF',
+         ('${newRecordId()}', '${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'CCCCCCCCCCCCCCCCCCCCCC',
           decode('05', 'hex'), decode('06', 'hex'), now());`,
+        constraint: 'secret_dek_wrap_space_dek_fk',
+      },
     ]
     for (const statement of statements) {
       const result = asSpace(
@@ -228,11 +236,81 @@ export function registerHostedConfigProofs(
         spaceA,
         `\\set VERBOSITY verbose
          SET app.user_id = '${userA}';
-         ${statement}`,
+         ${statement.sql}`,
       )
       expect(result.code).not.toBe(0)
       expect(result.stderr).toContain('23503')
+      if (statement.constraint) expect(result.stderr).toContain(statement.constraint)
     }
+  })
+
+  test('wrap key foreign keys require both keys in the wrap space and prevent key deletion', () => {
+    succeeds(
+      'postgres',
+      'postgres',
+      `INSERT INTO machine_public_key
+         (id, space_id, key_id, public_key, label, created_at)
+       VALUES
+         ('${newRecordId()}', '${spaceA}', 'GGGGGGGGGGGGGGGGGGGGGG', decode(repeat('66', 32), 'hex'), 'foreign-key recipient', now()),
+         ('${newRecordId()}', '${spaceA}', 'HHHHHHHHHHHHHHHHHHHHHH', decode(repeat('77', 32), 'hex'), 'foreign-key sender', now()),
+         ('${newRecordId()}', '${spaceB}', 'IIIIIIIIIIIIIIIIIIIIII', decode(repeat('88', 32), 'hex'), 'other-space key', now());`,
+    )
+
+    const insert = (recipientKeyId: string, senderKeyId: string) =>
+      asSpace(
+        RECORD_ACTOR_ROLE,
+        'actor-password',
+        spaceA,
+        `\\set VERBOSITY verbose
+         INSERT INTO secret_dek_wrap
+           (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
+         VALUES
+           ('${newRecordId()}', '${spaceA}', '${DEK_A}', '${recipientKeyId}', '${senderKeyId}',
+            decode('0a', 'hex'), decode('0b', 'hex'), now());`,
+      )
+
+    const registered = insert('GGGGGGGGGGGGGGGGGGGGGG', 'HHHHHHHHHHHHHHHHHHHHHH')
+    expect(registered.code, registered.stderr).toBe(0)
+
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE machine_public_key SET revoked_at=now()
+       WHERE space_id='${spaceA}' AND key_id='HHHHHHHHHHHHHHHHHHHHHH';`,
+    )
+    const revokedSender = insert('CCCCCCCCCCCCCCCCCCCCCC', 'HHHHHHHHHHHHHHHHHHHHHH')
+    expect(revokedSender.code, revokedSender.stderr).toBe(0)
+
+    for (const [recipient, sender, constraint] of [
+      [
+        'JJJJJJJJJJJJJJJJJJJJJJ',
+        'HHHHHHHHHHHHHHHHHHHHHH',
+        'secret_dek_wrap_space_recipient_key_fk',
+      ],
+      ['GGGGGGGGGGGGGGGGGGGGGG', 'KKKKKKKKKKKKKKKKKKKKKK', 'secret_dek_wrap_space_sender_key_fk'],
+      [
+        'IIIIIIIIIIIIIIIIIIIIII',
+        'HHHHHHHHHHHHHHHHHHHHHH',
+        'secret_dek_wrap_space_recipient_key_fk',
+      ],
+    ] as const) {
+      const result = insert(recipient, sender)
+      expect(result.code).not.toBe(0)
+      expect(result.stderr).toContain('23503')
+      expect(result.stderr).toContain(constraint)
+    }
+
+    const deletion = asSpace(
+      RECORD_ACTOR_ROLE,
+      'actor-password',
+      spaceA,
+      `\\set VERBOSITY verbose
+       DELETE FROM machine_public_key
+       WHERE space_id='${spaceA}' AND key_id='GGGGGGGGGGGGGGGGGGGGGG';`,
+    )
+    expect(deletion.code).not.toBe(0)
+    expect(deletion.stderr).toContain('23503')
+    expect(deletion.stderr).toContain('secret_dek_wrap_space_recipient_key_fk')
   })
 
   test('wrap identity permits two senders but rejects an exact duplicate', () => {

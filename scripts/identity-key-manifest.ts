@@ -4,6 +4,7 @@ import type {
   KeyManifests,
   KeyStore,
   ManifestColumn,
+  RuledReference,
 } from './identity-inventory.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
@@ -547,14 +548,14 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
   ...manifest('hosted', 'natural or encoded reference to an application row', [
     'board_receipt.reader_session',
     'contention.resource_key',
-    'machine_public_key.key_id',
     'question.filed_ref',
-    'secret_dek_wrap.recipient_key_id',
-    'secret_dek_wrap.sender_key_id',
   ]),
 ]
 
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
+  ...manifest('hosted', 'fingerprint derived from a machine public key', [
+    'machine_public_key.key_id',
+  ]),
   ...manifest('orchestrator', 'identifier issued by the harness session system', [
     'board_claim.holder_session',
     'board_message.author_session',
@@ -681,6 +682,17 @@ const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
     'branch_disposal.task_key',
     'port_ref.task_key',
   ]),
+]
+
+const RULED_REFERENCES: readonly RuledReference[] = [
+  ...['secret_dek_wrap.recipient_key_id', 'secret_dek_wrap.sender_key_id'].map((column) => ({
+    store: 'hosted' as const,
+    column,
+    reason:
+      'fingerprint derived from a machine public key; enforced by composite foreign key to machine_public_key (space_id, key_id)',
+    ruling:
+      'operator ruling, board 01a1954f-2502-750d-abb8-6a41bb86dccc: machine keys keep the fingerprint plus composite foreign keys',
+  })),
 ]
 
 const UUID_COLUMNS: readonly ManifestColumn[] = [
@@ -980,6 +992,7 @@ export const KEY_MANIFESTS: KeyManifests = {
   values: INTEGER_VALUES,
   displayLabels: DISPLAY_LABELS,
   references: UNDECLARED_REFERENCES,
+  ruledReferences: RULED_REFERENCES,
   externalIdentifiers: EXTERNAL_IDENTIFIERS,
   uuids: UUID_COLUMNS,
   infrastructure: INFRASTRUCTURE_IDENTITIES,

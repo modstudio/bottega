@@ -1,0 +1,2 @@
+ALTER TABLE "secret_dek_wrap" ADD CONSTRAINT "secret_dek_wrap_space_recipient_key_fk" FOREIGN KEY ("space_id","recipient_key_id") REFERENCES "machine_public_key"("space_id","key_id");--> statement-breakpoint
+ALTER TABLE "secret_dek_wrap" ADD CONSTRAINT "secret_dek_wrap_space_sender_key_fk" FOREIGN KEY ("space_id","sender_key_id") REFERENCES "machine_public_key"("space_id","key_id");

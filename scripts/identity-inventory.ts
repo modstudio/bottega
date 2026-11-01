@@ -17,6 +17,7 @@ type KeyColumn = {
 }
 export type KeyTable = { name: string; columns: KeyColumn[]; primaryKey: string[] }
 export type ManifestColumn = { store: KeyStore; column: string; reason: string }
+export type RuledReference = ManifestColumn & { ruling: string }
 export type DisplayLabel = ManifestColumn & { sibling: string }
 export type InfrastructureIdentity = { store: KeyStore; table: string; reason: string }
 type SyncedSource = {
@@ -31,6 +32,7 @@ export type KeyManifests = {
   values: readonly ManifestColumn[]
   displayLabels: readonly DisplayLabel[]
   references: readonly ManifestColumn[]
+  ruledReferences: readonly RuledReference[]
   externalIdentifiers: readonly ManifestColumn[]
   uuids: readonly ManifestColumn[]
   infrastructure: readonly InfrastructureIdentity[]
@@ -47,9 +49,18 @@ type StoreManifests = {
   values: Map<string, string>
   displayLabels: Map<string, DisplayLabel>
   references: Map<string, string>
+  ruledReferences: Map<string, RuledReference>
   externalIdentifiers: Map<string, string>
   uuids: Map<string, string>
   infrastructure: Map<string, string>
+}
+
+type SeenKeys = {
+  values: Set<string>
+  references: Set<string>
+  ruledReferences: Set<string>
+  externalIdentifiers: Set<string>
+  uuids: Set<string>
 }
 
 const REFERENCE_NAME = /(?:^parent_|_(?:id|ids|ref|key|session)$)/
@@ -62,9 +73,10 @@ export function classifyKeyInventory(
 ): KeyInventory {
   const manifests = keyManifests(store, allManifests)
   validateDisplayLabels(store, tables, manifests)
-  const seen = {
+  const seen: SeenKeys = {
     values: new Set<string>(),
     references: new Set<string>(),
+    ruledReferences: new Set<string>(),
     externalIdentifiers: new Set<string>(),
     uuids: new Set<string>(),
   }
@@ -90,6 +102,11 @@ function keyManifests(store: KeyStore, manifests: KeyManifests): StoreManifests 
         .map((entry) => [entry.column, entry]),
     ),
     references: selected(manifests.references),
+    ruledReferences: new Map(
+      manifests.ruledReferences
+        .filter((entry) => entry.store === store)
+        .map((entry) => [entry.column, entry]),
+    ),
     externalIdentifiers: selected(manifests.externalIdentifiers),
     uuids: selected(manifests.uuids),
     infrastructure: new Map(
@@ -104,12 +121,7 @@ function classifyKeyTable(
   store: KeyStore,
   table: KeyTable,
   manifests: StoreManifests,
-  seen: {
-    values: Set<string>
-    references: Set<string>
-    externalIdentifiers: Set<string>
-    uuids: Set<string>
-  },
+  seen: SeenKeys,
 ): string[] {
   const findings = hasOwnedUuidPrimaryKey(table, manifests.uuids)
     ? []
@@ -139,12 +151,7 @@ function classifyKeyColumn(
   store: KeyStore,
   column: KeyColumn,
   manifests: StoreManifests,
-  seen: {
-    values: Set<string>
-    references: Set<string>
-    externalIdentifiers: Set<string>
-    uuids: Set<string>
-  },
+  seen: SeenKeys,
 ): string[] {
   const address = `${column.table}.${column.name}`
   const uuid = column.type === 'uuid' || manifests.uuids.has(address)
@@ -153,24 +160,28 @@ function classifyKeyColumn(
   if (externalIdentifier) seen.externalIdentifiers.add(address)
   const explicitReference = manifests.references.has(address)
   if (explicitReference) seen.references.add(address)
+  const ruledReference = manifests.ruledReferences.has(address)
+  if (ruledReference) seen.ruledReferences.add(address)
   const displayLabel = manifests.displayLabels.has(address)
   const shapedReference =
     (column.type === 'integer' || column.type === 'text') && REFERENCE_NAME.test(column.name)
   const shapedProjectName =
     store === 'orchestrator' && column.type === 'text' && PROJECT_NAME.test(column.name)
   if (
-    !column.foreignKey &&
-    (column.type === 'integer' || column.type === 'text') &&
-    (shapedReference || shapedProjectName) &&
-    !uuid &&
-    !externalIdentifier &&
-    !explicitReference &&
-    !displayLabel &&
-    !manifests.values.has(address)
+    isUnclassifiedReferenceColumn(column, {
+      shaped: shapedReference || shapedProjectName,
+      uuid,
+      externalIdentifier,
+      explicitReference,
+      ruledReference,
+      displayLabel,
+      value: manifests.values.has(address),
+    })
   )
     throw new Error(`${store} reference-shaped column ${address} is not classified`)
   const reference =
     !displayLabel &&
+    !ruledReference &&
     (column.foreignKey || (!externalIdentifier && shapedReference) || explicitReference)
   if (manifests.values.has(address)) seen.values.add(address)
   if (column.type === 'integer')
@@ -178,11 +189,36 @@ function classifyKeyColumn(
       store,
       address,
       column,
-      reference || displayLabel,
+      reference || ruledReference || displayLabel,
       manifests.values,
       seen.values,
     )
   return reference && !uuid ? [`${address}:reference`] : []
+}
+
+function isUnclassifiedReferenceColumn(
+  column: KeyColumn,
+  classification: {
+    shaped: boolean
+    uuid: boolean
+    externalIdentifier: boolean
+    explicitReference: boolean
+    ruledReference: boolean
+    displayLabel: boolean
+    value: boolean
+  },
+): boolean {
+  return (
+    !column.foreignKey &&
+    (column.type === 'integer' || column.type === 'text') &&
+    classification.shaped &&
+    !classification.uuid &&
+    !classification.externalIdentifier &&
+    !classification.explicitReference &&
+    !classification.ruledReference &&
+    !classification.displayLabel &&
+    !classification.value
+  )
 }
 
 function classifyIntegerColumn(
@@ -212,12 +248,7 @@ function validateKeyManifests(
   store: KeyStore,
   tables: readonly KeyTable[],
   manifests: StoreManifests,
-  seen: {
-    values: ReadonlySet<string>
-    references: ReadonlySet<string>
-    externalIdentifiers: ReadonlySet<string>
-    uuids: ReadonlySet<string>
-  },
+  seen: Readonly<SeenKeys>,
 ): void {
   const columns = new Map(
     tables.flatMap((table) =>
@@ -228,6 +259,7 @@ function validateKeyManifests(
     ['value', manifests.values],
     ['display label', manifests.displayLabels],
     ['reference', manifests.references],
+    ['ruled reference', manifests.ruledReferences],
     ['external identifier', manifests.externalIdentifiers],
     ['UUID', manifests.uuids],
   ] as const
@@ -242,6 +274,7 @@ function validateKeyManifests(
   }
   validateManifestEntries(store, 'integer value', manifests.values, seen.values)
   validateManifestEntries(store, 'undeclared reference', manifests.references, seen.references)
+  validateRuledReferences(store, columns, manifests.ruledReferences, seen.ruledReferences)
   validateManifestEntries(
     store,
     'external identifier',
@@ -255,6 +288,21 @@ function validateKeyManifests(
     new Set(tables.map((table) => table.name)),
     manifests.infrastructure,
   )
+}
+
+function validateRuledReferences(
+  store: KeyStore,
+  columns: ReadonlyMap<string, KeyColumn>,
+  entries: ReadonlyMap<string, RuledReference>,
+  seen: ReadonlySet<string>,
+): void {
+  for (const [column, entry] of entries) {
+    if (!entry.reason.trim()) throw new Error(`${store} ruled reference ${column} needs a reason`)
+    if (!entry.ruling.trim()) throw new Error(`${store} ruled reference ${column} needs a ruling`)
+    if (!seen.has(column)) throw new Error(`${store} ruled reference ${column} is stale`)
+    if (!columns.get(column)?.foreignKey)
+      throw new Error(`${store} ruled reference ${column} must be a declared foreign key`)
+  }
 }
 
 function validateDisplayLabels(

@@ -514,7 +514,7 @@ export async function listDataKeys(input: ConfigTenant): Promise<DataKey[]> {
   })
 }
 
-async function validateWrapRecipients(
+async function validateWrapKeys(
   tx: SQL,
   input: { spaceId: string; wraps: ConfigWrapInput[] },
 ): Promise<void> {
@@ -528,6 +528,17 @@ async function validateWrapRecipients(
     if (rows[0]) active.add(keyId)
   }
   assertActiveWrapRecipients(input.wraps, active)
+
+  const registered = new Set<string>()
+  for (const keyId of new Set(input.wraps.map((wrap) => wrap.senderKeyId))) {
+    const rows = await tx`
+      SELECT key_id FROM machine_public_key
+      WHERE space_id=${input.spaceId}::uuid AND key_id=${keyId}
+      FOR UPDATE
+    `
+    if (rows[0]) registered.add(keyId)
+  }
+  assertRegisteredWrapSenders(input.wraps, registered)
 }
 
 export function assertActiveWrapRecipients(
@@ -538,6 +549,18 @@ export function assertActiveWrapRecipients(
   if (invalid)
     throw new ConfigServiceError(
       `wrap recipient ${invalid.recipientKeyId} is not a registered non-revoked machine in this space; list machine keys and retry with an active recipient`,
+      422,
+    )
+}
+
+export function assertRegisteredWrapSenders(
+  wraps: ConfigWrapInput[],
+  registeredKeyIds: ReadonlySet<string>,
+): void {
+  const invalid = wraps.find((wrap) => !registeredKeyIds.has(wrap.senderKeyId))
+  if (invalid)
+    throw new ConfigServiceError(
+      `wrap sender ${invalid.senderKeyId} is not a registered machine in this space; list machine keys and retry with a registered sender`,
       422,
     )
 }
@@ -573,7 +596,7 @@ export async function createDataKey(
           409,
         )
       }
-      await validateWrapRecipients(tx, input)
+      await validateWrapKeys(tx, input)
       try {
         await tx`
         INSERT INTO secret_dek (id, space_id, version, created_at)
@@ -628,7 +651,7 @@ export async function addDataKeyWraps(
         404,
       )
     }
-    await validateWrapRecipients(tx, input)
+    await validateWrapKeys(tx, input)
     await insertWraps(tx, input)
   })
 }
