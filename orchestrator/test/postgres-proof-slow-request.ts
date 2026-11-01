@@ -41,11 +41,20 @@ export async function timedHostedRequest<T>(
     )
   }
   const timer = setTimeout(logSlowRequest, PROOF_SLOW_REQUEST_MS)
+  let outcome: 'resolved' | 'rejected' = 'rejected'
   try {
-    return await request()
+    const result = await request()
+    outcome = 'resolved'
+    return result
   } finally {
     clearTimeout(timer)
     globalThis.fetch = originalFetch
-    if (performance.now() - startedAt >= PROOF_SLOW_REQUEST_MS) logSlowRequest()
+    const elapsedMs = performance.now() - startedAt
+    if (elapsedMs >= PROOF_SLOW_REQUEST_MS) {
+      logSlowRequest()
+      console.error(
+        `postgres RLS proof slow request settled: test="${input.test}" operation=${input.operation} routes="${[...routes].join(', ') || 'unknown'}" elapsed_ms=${Math.round(elapsedMs)} outcome=${outcome}`,
+      )
+    }
   }
 }
