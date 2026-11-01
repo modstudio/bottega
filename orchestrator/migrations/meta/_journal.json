@@ -1463,7 +1463,15 @@
       "idx": 192,
       "version": "6",
       "when": 1793577600057,
-      "tag": "0192_lens_profile_pin_contract",
+      "tag": "0192_run_outside_worktree_writes_nul",
+      "breakpoints": true,
+      "compatibility": "fenced"
+    },
+    {
+      "idx": 193,
+      "version": "6",
+      "when": 1793577600058,
+      "tag": "0193_lens_profile_pin_contract",
       "breakpoints": true,
       "compatibility": "fenced"
     }

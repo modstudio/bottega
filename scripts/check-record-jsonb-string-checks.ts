@@ -12,12 +12,6 @@ export const NEVER_VALIDATED_JSONB_CHECKS: readonly {
   reason: string
 }[] = [
   {
-    table: 'run',
-    column: 'outside_worktree_writes',
-    reason:
-      '81 historical rows are top-level strings whose decoded JSON contains \\u0000, which jsonb cannot store',
-  },
-  {
     table: 'doc_revision',
     column: 'source_files',
     reason:

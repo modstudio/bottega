@@ -371,7 +371,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/reclaim/reclaim-commands.ts',
   'orchestrator/src/reclaim/reclaim-kind.ts',
   'orchestrator/src/reclaim/reclaim.ts',
-  'orchestrator/src/record/landing-outbox.ts',
   'orchestrator/src/record/machine-identity.ts',
   'orchestrator/src/record/record-api-client-port.ts',
   'orchestrator/src/record/record-api-client.ts',

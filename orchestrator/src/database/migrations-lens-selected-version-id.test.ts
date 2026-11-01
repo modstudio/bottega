@@ -4,7 +4,7 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrationsBefore } from './migrations.ts'
 
 const MIGRATION = '0190_lens_profile_selected_version_id'
-const CONTRACT = '0192_lens_profile_pin_contract'
+const CONTRACT = '0193_lens_profile_pin_contract'
 
 test('lens pin migration resolves current and prior versions without guessing', () => {
   const database = new Database(':memory:')

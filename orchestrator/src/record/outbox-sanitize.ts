@@ -1,6 +1,7 @@
 // concern: outbox-sanitize
 /** Withholds secret-shaped free-text leaves from hosted outbox payloads. Must not know Postgres. */
 import { redactSecretShaped, WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
+import { serializeOutboxPayload } from './outbox-serialize.ts'
 
 export type OutboxSanitizeKind =
   | 'run'
@@ -104,6 +105,22 @@ function cloneJson<T>(value: T): T {
 
 function clonePayload(payload: Record<string, unknown>): Record<string, unknown> {
   return { ...payload }
+}
+
+function wellFormedText(text: string): string {
+  return text.toWellFormed().replaceAll('\0', '\uFFFD')
+}
+
+function replaceUnstorableCodePoints(value: unknown): unknown {
+  if (typeof value === 'string') return wellFormedText(value)
+  if (Array.isArray(value)) return value.map(replaceUnstorableCodePoints)
+  if (!isPlainObject(value)) return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [
+      wellFormedText(key),
+      replaceUnstorableCodePoints(child),
+    ]),
+  )
 }
 
 function getAt(root: Record<string, unknown>, path: string): unknown {
@@ -295,12 +312,15 @@ export function sanitizeOutboxPayloadForRules(
 }
 
 export function sanitizeOutboxPayload(
-  kind: OutboxSanitizeKind,
+  kind: string,
   payload: Record<string, unknown>,
 ): Record<string, unknown> {
-  const next = clonePayload(payload)
-  const withheld: string[] = []
-  for (const leaf of LEAVES[kind]) {
+  const next = replaceUnstorableCodePoints(payload) as Record<string, unknown>
+  if (!(kind in LEAVES)) return next
+  const withheld = Array.isArray(next.withheldFields)
+    ? next.withheldFields.filter((path): path is string => typeof path === 'string')
+    : []
+  for (const leaf of LEAVES[kind as OutboxSanitizeKind]) {
     applyLeaf(next, leaf, (path, _rule, replace) => {
       replace()
       withheld.push(path)
@@ -310,11 +330,18 @@ export function sanitizeOutboxPayload(
   return next
 }
 
+/** `sanitizedForRules` is for a payload that sanitizeOutboxPayloadForRules already withheld; its chosen rules stand. */
 export function stringifyOutboxPayload(
-  kind: OutboxSanitizeKind,
+  kind: string,
   payload: Record<string, unknown>,
+  options: { sanitizedForRules?: boolean } = {},
 ): string {
-  return JSON.stringify(sanitizeOutboxPayload(kind, payload))
+  return serializeOutboxPayload(
+    kind,
+    options.sanitizedForRules
+      ? replaceUnstorableCodePoints(payload)
+      : sanitizeOutboxPayload(kind, payload),
+  )
 }
 
 export function firstOutboxEvidenceRule(

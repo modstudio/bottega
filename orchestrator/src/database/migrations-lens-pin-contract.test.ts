@@ -4,7 +4,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
 
-const MIGRATION = '0192_lens_profile_pin_contract'
+const MIGRATION = '0193_lens_profile_pin_contract'
 
 function beforeContract(): Database {
   const database = new Database(':memory:')

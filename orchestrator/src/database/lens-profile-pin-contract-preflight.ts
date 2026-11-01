@@ -4,7 +4,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { MigrationJournalEntry } from './migration-compatibility.ts'
 
-export const LENS_PROFILE_PIN_CONTRACT_MIGRATION = '0192_lens_profile_pin_contract'
+export const LENS_PROFILE_PIN_CONTRACT_MIGRATION = '0193_lens_profile_pin_contract'
 
 export function lensProfilePinBackfillEntries(
   entries: MigrationJournalEntry[],

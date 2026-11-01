@@ -5,7 +5,7 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 import { machineId } from './machine-identity.ts'
 
-import { type OutboxSanitizeKind, stringifyOutboxPayload } from './outbox-sanitize.ts'
+import { stringifyOutboxPayload } from './outbox-sanitize.ts'
 
 export type LandingEvidenceBackfillResult = {
   enqueuedLandings: number
@@ -27,10 +27,7 @@ const enqueue = (
   value: Record<string, unknown>,
   at: string,
 ): void => {
-  const payload =
-    kind === 'landing_review_carry' || kind === 'landing_triage_snapshot'
-      ? JSON.stringify(value)
-      : stringifyOutboxPayload(kind as OutboxSanitizeKind, value)
+  const payload = stringifyOutboxPayload(kind, value)
   database
     .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
     .run(newRecordId(), kind, recordId, payload, at)

@@ -761,7 +761,7 @@ function execute(database: Database, migration: Migration): void {
 }
 
 function prepareLensProfilePinContractProbe(database: Database, migration: Migration): void {
-  if (migration.tag !== '0192_lens_profile_pin_contract') return
+  if (migration.tag !== '0193_lens_profile_pin_contract') return
   const unidentified = database
     .query<{ record_id: string }, []>(
       'SELECT record_id FROM lens_profile WHERE current_version_id IS NULL',
