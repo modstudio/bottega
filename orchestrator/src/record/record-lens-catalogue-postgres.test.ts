@@ -133,6 +133,7 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
       axis: 'framework' as const,
       profileName: 'default',
       selectedVersion: 1,
+      selectedVersionId: null,
       expectedSelectionVersion: null,
       reason: 'create',
     }
@@ -258,6 +259,7 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
       axis: 'architecture' as const,
       profileName: 'pinned',
       selectedVersion: 1,
+      selectedVersionId: null,
       expectedSelectionVersion: null,
       reason: 'older client pin',
     }
@@ -340,6 +342,7 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
       axis: 'architecture' as const,
       profileName: 'historical',
       selectedVersion: 1,
+      selectedVersionId: null,
       expectedSelectionVersion: null,
       reason: 'invalid selection',
     }

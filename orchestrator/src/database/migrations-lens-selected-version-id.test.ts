@@ -72,3 +72,40 @@ test('lens pin migration resolves current and prior versions without guessing', 
       .get(),
   ).toEqual({ prior_selected_version_id: priorVersionId })
 })
+
+test('lens pin backfill preserves an id it cannot resolve when migrations run again', () => {
+  const database = new Database(':memory:')
+  applyMigrations(database)
+  const lensId = newRecordId()
+  const profileId = newRecordId()
+  const selectedVersionId = newRecordId()
+  database
+    .query(
+      `INSERT INTO lens (record_id,id,title,question,excludes,slots,version,enabled,requires_execution)
+       VALUES (?,'migration-rerun','Migration rerun','Question?','Nothing.','{}',1,1,0)`,
+    )
+    .run(lensId)
+  database
+    .query(
+      `INSERT INTO lens_profile (record_id,lens_record_id,axis,name,version,current_version_id,body,enabled)
+       VALUES (?,?,'framework','default',2,?,'{}',1)`,
+    )
+    .run(profileId, lensId, newRecordId())
+  database
+    .query(
+      `INSERT INTO project_lens_profile
+       (record_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version)
+       VALUES (?,?,?,'framework','default',99,?,1)`,
+    )
+    .run(newRecordId(), newRecordId(), lensId, selectedVersionId)
+
+  applyMigrations(database)
+
+  expect(
+    database
+      .query<{ selected_version_id: string }, []>(
+        'SELECT selected_version_id FROM project_lens_profile',
+      )
+      .get(),
+  ).toEqual({ selected_version_id: selectedVersionId })
+})

@@ -16,6 +16,7 @@ SET selected_version_id = CASE
 END
 FROM lens_profile AS profile
 WHERE selection.selected_version IS NOT NULL
+  AND selection.selected_version_id IS NULL
   AND profile.lens_record_id = selection.lens_record_id
   AND profile.axis = selection.axis
   AND profile.name = selection.profile_name
@@ -35,6 +36,7 @@ SET prior_selected_version_id = CASE
 END
 FROM project_lens_profile AS selection, lens_profile AS profile
 WHERE history.prior_selected_version IS NOT NULL
+  AND history.prior_selected_version_id IS NULL
   AND selection.record_id = history.selection_record_id
   AND selection.space_id IS history.space_id
   AND profile.lens_record_id = selection.lens_record_id

@@ -9,6 +9,7 @@ import type {
   RecordLensWriteResponse,
   RecordProjectLensSelectionResponse,
 } from '../record/record-lens-contract.ts'
+import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY } from '../record/record-lens-contract.ts'
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
@@ -91,9 +92,7 @@ function validateSelectionInput(input: SelectProjectProfileInput): LensAxis {
   if (input.version !== undefined && (!Number.isInteger(input.version) || input.version < 1))
     throw new Error('version must be a positive integer')
   if (input.version !== undefined && !input.lensId)
-    throw new Error(
-      "a pinned version names one lens profile's version; pass --lens <key> with --version",
-    )
+    throw new Error(PINNED_LENS_VERSION_REQUIRES_LENS_KEY)
   return axisValue(input.axis)
 }
 
@@ -522,7 +521,8 @@ function versionedProfile(
   selection: Pick<ProfileSelection, 'version' | 'versionId'>,
   d: Database,
 ): ProfileRow {
-  if (selection.versionId === profile.current_version_id) return profile
+  if (selection.versionId !== null && selection.versionId === profile.current_version_id)
+    return profile
   if (
     selection.versionId === null &&
     (selection.version === null || selection.version === profile.version)
@@ -539,10 +539,15 @@ function versionedProfile(
     version: number
     prior_body: string
   } | null
-  if (!prior)
+  if (!prior) {
+    if (selection.versionId !== null)
+      throw new Error(
+        `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no pinned version id ${selection.versionId}; its current version ${profile.version} is ${profile.current_version_id ?? 'unidentified'}; re-pin with select-profile --lens ${profile.lens_id} --version ${selection.version ?? profile.version}`,
+      )
     throw new Error(
-      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${selection.version ?? selection.versionId}`,
+      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${selection.version}`,
     )
+  }
   const snapshot = objectJson(prior.prior_body, 'stored profile revision') as {
     body: Record<string, string>
     enabled: boolean
@@ -554,6 +559,15 @@ function versionedProfile(
     body: JSON.stringify(snapshot.body),
     enabled: snapshot.enabled ? 1 : 0,
   }
+}
+
+function selectedProfileVersionId(profile: ProfileRow, version: number, d: Database): string {
+  const resolved = versionedProfile(profile, { version, versionId: null }, d)
+  if (!resolved.current_version_id)
+    throw new Error(
+      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${version}`,
+    )
+  return resolved.current_version_id
 }
 
 function validateSelectedProfile(
@@ -577,13 +591,21 @@ function validateSelectedProfile(
         .all(axis, spaceId) as CoreRow[])
   if (lensId && !cores.length) throw new Error(`no enabled lens "${lensId}"`)
   if (!cores.length) throw new Error(`no enabled lenses declare axis ${axis}`)
+  if (version !== undefined) {
+    if (!lensId) throw new Error(PINNED_LENS_VERSION_REQUIRES_LENS_KEY)
+    const profile = profileRows(lensId, d, spaceId).find(
+      (candidate) => candidate.axis === axis && candidate.name === name && candidate.enabled,
+    )
+    if (!profile) throw new Error(`profile ${lensId}/${axis}/${name} has no version ${version}`)
+    return selectedProfileVersionId(profile, version, d)
+  }
   const missing = cores.filter((core) => {
     const profile = profileRows(core.id, d, spaceId).find(
       (candidate) => candidate.axis === axis && candidate.name === name && candidate.enabled,
     ) as ProfileRow | undefined
     if (!profile) return true
     try {
-      versionedProfile(profile, { version: version ?? null, versionId: null }, d)
+      versionedProfile(profile, { version: null, versionId: null }, d)
       return false
     } catch {
       return true
@@ -593,16 +615,7 @@ function validateSelectedProfile(
     throw new Error(
       `profile ${axis}/${name}${version ? ` version ${version}` : ''} is missing or disabled for lenses: ${missing.map((core) => core.id).join(', ')}`,
     )
-  if (version === undefined) return null
-  const profile = profileRows(lensId, d, spaceId).find(
-    (candidate) => candidate.axis === axis && candidate.name === name,
-  )!
-  const resolved = versionedProfile(profile, { version, versionId: null }, d)
-  if (!resolved.current_version_id)
-    throw new Error(
-      `profile ${profile.lens_id}/${profile.axis}/${profile.name} has no version ${version}`,
-    )
-  return resolved.current_version_id
+  return null
 }
 
 function writeProjectProfileSelectionLocal(input: {

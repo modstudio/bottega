@@ -319,17 +319,12 @@ describe('lens catalogue', () => {
         .get(pin.selected_version_id),
     ).toEqual({ record_id: pin.selected_version_id })
 
-    const revisionId = db()
-      .query<{ record_id: string }, []>(
-        `SELECT record_id FROM lens_profile_revision WHERE version=1 AND profile_record_id=(SELECT record_id FROM lens_profile WHERE name='pinned-profile')`,
-      )
-      .get()!.record_id
-    db().query('UPDATE project_lens_profile SET selected_version_id=?').run(revisionId)
+    db().query('UPDATE project_lens_profile SET selected_version_id=NULL').run()
     expect(resolveLens('correctness', 'pinned')!.body).toContain('Version one.')
 
     db().query('UPDATE project_lens_profile SET selected_version_id=?').run(newRecordId())
     expect(() => resolveLens('correctness', 'pinned')).toThrow(
-      'profile correctness/framework/pinned-profile has no version 1',
+      /profile correctness\/framework\/pinned-profile has no pinned version id .*; its current version 2 is .*; re-pin with select-profile --lens correctness --version 1/,
     )
   })
 

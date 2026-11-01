@@ -139,9 +139,13 @@ export const recordProjectLensSelectionSchema = z.object({
   ...context,
 })
 
+export const PINNED_LENS_VERSION_REQUIRES_LENS_KEY =
+  "a pinned version names one lens profile's version; pass --lens <key> with --version"
+
 export type RecordLensWriteInput = z.infer<typeof recordLensUpsertSchema>
 export type RecordLensProfileWriteInput = z.infer<typeof recordLensProfileUpsertSchema>
-export type RecordProjectLensSelectionInput = z.input<typeof recordProjectLensSelectionSchema>
+export type RecordProjectLensSelectionInput = z.infer<typeof recordProjectLensSelectionSchema>
+export type RecordProjectLensSelectionWireInput = z.input<typeof recordProjectLensSelectionSchema>
 
 export const recordLensWriteResponseSchema = z.object({
   lens: recordLensRowSchemas.lens,

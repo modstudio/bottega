@@ -10,7 +10,7 @@ import type {
   RecordLensWriteInput,
   RecordProjectLensSelectionInput,
 } from './record-lens-contract.ts'
-import { RecordLensError } from './record-lens-contract.ts'
+import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY, RecordLensError } from './record-lens-contract.ts'
 
 type Tenant = { url: string } & TenantPrincipal
 
@@ -269,7 +269,7 @@ async function selectionProfileExists(
     FOR UPDATE`
   const profile = profiles[0]
   if (!profile?.enabled) return null
-  const selectedVersionId = input.selectedVersionId ?? null
+  const selectedVersionId = input.selectedVersionId
   if (input.selectedVersion === null && selectedVersionId === null) return { versionId: null }
   const resolved = selectedVersionId
     ? await selectedProfileVersionById(tx, input.spaceId, profile, selectedVersionId)
@@ -336,10 +336,7 @@ async function validatedSelectionLensId(
   input: Tenant & RecordProjectLensSelectionInput,
 ): Promise<{ lensId: string | null; selectedVersionId: string | null }> {
   if (input.selectedVersion !== null && !input.lensKey)
-    throw new RecordLensError(
-      "a pinned version names one lens profile's version; pass --lens <key> with --version",
-      422,
-    )
+    throw new RecordLensError(PINNED_LENS_VERSION_REQUIRES_LENS_KEY, 422)
   let lensId: string | null = null
   if (input.lensKey) {
     const found =

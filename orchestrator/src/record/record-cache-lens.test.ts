@@ -326,6 +326,7 @@ test('lens pull caches an unregistered project selection and revision from a per
   local.query('DELETE FROM project').run()
   const space = newRecordId()
   const project = newRecordId()
+  const lens = newRecordId()
   const selection = newRecordId()
   const revision = newRecordId()
   const selectedVersionId = newRecordId()
@@ -339,6 +340,11 @@ test('lens pull caches an unregistered project selection and revision from a per
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     async listLensCatalogue(table, query) {
+      if (table === 'lens')
+        return {
+          items: [{ ...row('pinned-lens', lens), spaceId: space, updatedAt: pulledAt }],
+          nextCursor: null,
+        }
       if (table === 'project_lens_profile') {
         selectionCursor = query.cursor
         return {
@@ -347,7 +353,7 @@ test('lens pull caches an unregistered project selection and revision from a per
               id: selection,
               spaceId: space,
               projectId: project,
-              lensId: null,
+              lensId: lens,
               axis: 'framework',
               profileName: 'default',
               selectedVersion: 2,
@@ -380,7 +386,7 @@ test('lens pull caches an unregistered project selection and revision from a per
     },
   })
 
-  expect(await pullLensCatalogue(local, [space])).toBe(2)
+  expect(await pullLensCatalogue(local, [space])).toBe(3)
   expect(selectionCursor).toBeDefined()
   expect(
     local
