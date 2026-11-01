@@ -2,7 +2,7 @@ import { PHONE_QUERY, useMediaQuery } from '@bottega/hub-ui/dom/use-media-query'
 import { Select } from '@bottega/hub-ui/listbox/select'
 import { PageHeader } from '@bottega/hub-ui/page-header'
 import { ToolbarBand } from '@bottega/hub-ui/toolbar-band'
-import type { MachineRef } from '../../../../shared/machine-label.ts'
+import { type MachineRef, resolveMachineDisplayName } from '../../../../shared/machine-label.ts'
 import { snapshotStyles } from './snapshot.styles.ts'
 
 export type Machine = {
@@ -42,7 +42,7 @@ export function SnapshotHeader({
           value={machineId}
           options={machines.map(({ id, machine }) => ({
             value: id,
-            label: machine?.displayName ?? machine?.shortName ?? id,
+            label: machine ? (resolveMachineDisplayName(machine) ?? id) : id,
           }))}
           onChange={onMachineChange}
         />
