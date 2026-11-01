@@ -10,7 +10,20 @@ describe('record naming rule', () => {
   )
 
   test.each([
+    '- operator approved the plan',
+    '* Operator ruled on it',
+    '> operator said yes',
+    '  - operator approved the plan',
+    '  * Operator ruled on it',
+    '  > operator said yes',
+  ])('refuses a Markdown marker as the role sense in %s', (text) => {
+    expect(namingFindings(text, null)).toHaveLength(1)
+  })
+
+  test.each([
     'the && operator',
+    '&& operator',
+    'a + operator',
     'the `IN` operator',
     'comparison operators',
     'a ternary operator',

@@ -48,7 +48,11 @@ function programmingSense(text: string, start: number): boolean {
   const qualifier = before.match(/([A-Za-z]+)$/)?.[1]?.toLowerCase()
   if (qualifier && PROGRAMMING_QUALIFIERS.some((word) => word === qualifier)) return true
   if (/(`+)[^`\n]*\1$/.test(before)) return true
-  return /(?:&&|\|\||\?\?|===?|=>|\.\.\.|[+*/%<>!&|^~-])$/.test(before)
+  const symbols = before.match(/[+*/%<>!&|^~?.=-]+$/)?.[0]
+  if (!symbols) return false
+  if (symbols.length >= 2) return true
+  const lineBeforeSymbol = before.slice(0, -1).split('\n').at(-1) ?? ''
+  return lineBeforeSymbol.trimStart().length > 0
 }
 
 function replacement(text: string, displayName: string | null): string {
