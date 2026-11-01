@@ -6,7 +6,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
 
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
+import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
 
 type ReleaseRow = Record<string, unknown> & { record_id: string }
 
@@ -20,34 +21,37 @@ export function enqueueReleaseRecord(database: Database, releaseRecordId: string
     .get(releaseRecordId)
   if (!row) throw new Error(`release ${releaseRecordId} does not exist and cannot be enqueued`)
   const at = nowIso()
-  const payload = stringifyOutboxPayload('release', {
-    id: row.record_id,
-    spaceId: PLATFORM_SPACE_ID,
-    projectId: row.project_record_id,
-    projectName: row.project,
-    machineId: machineId(),
-    localId: null,
-    rung: row.rung,
-    candidateCommit: row.candidate_commit,
-    trunk: row.trunk,
-    trunkTip: row.trunk_tip,
-    commitsBehindTrunk: row.commits_behind_trunk,
-    behindTrunkReason: row.behind_trunk_reason,
-    liveCommitBefore: row.live_commit_before,
-    liveCommitAfter: row.live_commit_after,
-    rollback: Boolean(row.rollback),
-    rollbackReason: row.rollback_reason,
-    actor: row.actor,
-    sessionId: row.session_id,
-    startedAt: row.started_at,
-    finishedAt: row.finished_at,
-    exitCode: row.exit_code,
-    liveMatchesCandidate:
-      row.live_matches_candidate == null ? null : Boolean(row.live_matches_candidate),
-    warning: row.warning,
-    createdAt: row.started_at,
-    updatedAt: at,
-  })
+  const payload = serializeOutboxPayload(
+    'release',
+    sanitizeOutboxPayload('release', {
+      id: row.record_id,
+      spaceId: PLATFORM_SPACE_ID,
+      projectId: row.project_record_id,
+      projectName: row.project,
+      machineId: machineId(),
+      localId: null,
+      rung: row.rung,
+      candidateCommit: row.candidate_commit,
+      trunk: row.trunk,
+      trunkTip: row.trunk_tip,
+      commitsBehindTrunk: row.commits_behind_trunk,
+      behindTrunkReason: row.behind_trunk_reason,
+      liveCommitBefore: row.live_commit_before,
+      liveCommitAfter: row.live_commit_after,
+      rollback: Boolean(row.rollback),
+      rollbackReason: row.rollback_reason,
+      actor: row.actor,
+      sessionId: row.session_id,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      exitCode: row.exit_code,
+      liveMatchesCandidate:
+        row.live_matches_candidate == null ? null : Boolean(row.live_matches_candidate),
+      warning: row.warning,
+      createdAt: row.started_at,
+      updatedAt: at,
+    }),
+  )
   const pending = database
     .query<{ id: number }, [string]>(
       `SELECT id FROM outbox

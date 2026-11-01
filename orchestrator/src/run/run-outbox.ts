@@ -4,7 +4,8 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { hasRecordIdShape, newRecordId } from '../../../shared/record-id.ts'
 
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
+import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
 import { chainTerminationAtForRoot } from './run-chain.ts'
 import { HOOK_TREE_JOB, LANDING_TREE_JOB } from './synthetic-lifecycle-job.ts'
 
@@ -195,13 +196,16 @@ export function enqueueRunRecord(
     )
     .get(runId)
   if (!row) throw new Error(`run ${runId} does not exist and cannot be enqueued`)
-  const payload = stringifyOutboxPayload(
+  const payload = serializeOutboxPayload(
     'run',
-    buildRunRecordPayload(
-      { ...row, record_id: row.record_id },
-      machineId,
-      finishedAt,
-      evidenceUnvoid,
+    sanitizeOutboxPayload(
+      'run',
+      buildRunRecordPayload(
+        { ...row, record_id: row.record_id },
+        machineId,
+        finishedAt,
+        evidenceUnvoid,
+      ),
     ),
   )
   database

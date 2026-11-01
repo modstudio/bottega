@@ -310,13 +310,6 @@ export function sanitizeOutboxPayload(
   return next
 }
 
-export function stringifyOutboxPayload(
-  kind: OutboxSanitizeKind,
-  payload: Record<string, unknown>,
-): string {
-  return JSON.stringify(sanitizeOutboxPayload(kind, payload))
-}
-
 export function firstOutboxEvidenceRule(
   kind: string,
   payload: Record<string, unknown>,

@@ -50,6 +50,6 @@ test('fails when a never-validated hosted jsonb check has a validation statement
 
 test('fails when a never-validated entry is not a hosted jsonb column', () => {
   expect(jsonbStringValidationFailures([], '', NEVER_VALIDATED_JSONB_CHECKS.slice(0, 1))).toEqual([
-    'run.outside_worktree_writes: NEVER_VALIDATED_JSONB_CHECKS entry is not a hosted jsonb column',
+    'doc_revision.source_files: NEVER_VALIDATED_JSONB_CHECKS entry is not a hosted jsonb column',
   ])
 })

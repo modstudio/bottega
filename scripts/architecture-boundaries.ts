@@ -561,6 +561,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/record/schema.ts',
       './machine-identity.ts',
       './outbox-sanitize.ts',
+      './outbox-serialize.ts',
       'bun:sqlite',
     ],
     'Enforce the landing-outbox concern boundary.',

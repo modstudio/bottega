@@ -9,7 +9,8 @@ import { observeGitRef, targetGitEnvironment } from '../git/git-environment.ts'
 import { withWorktreeCreateLock } from '../project/project-lock.ts'
 import { projectByName } from '../project/projects.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
+import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
 import {
   BRANCH_DISPOSAL_REASONS,
   type BranchDisposalReason,
@@ -232,26 +233,29 @@ function recordDisposal(plan: DisposalPlan, database = writableDb()): void {
       plan.actor,
       plan.disposedAt,
     )
-  const payload = stringifyOutboxPayload('branch_disposal', {
-    id: plan.recordId,
-    spaceId: PLATFORM_SPACE_ID,
-    projectId: plan.project.recordId,
-    projectName: plan.projectName,
-    machineId: machineId(),
-    localId: null,
-    branch: plan.branch,
-    tip: plan.tip,
-    taskKey: plan.taskKey,
-    reason: plan.reason,
-    note: plan.note,
-    archiveRef: plan.archiveRef,
-    archiveExpiresAt: plan.archiveExpiresAt,
-    actorSession: plan.actor,
-    disposedAt: plan.disposedAt,
-    withheldFields: null,
-    createdAt: plan.disposedAt,
-    updatedAt: plan.disposedAt,
-  })
+  const payload = serializeOutboxPayload(
+    'branch_disposal',
+    sanitizeOutboxPayload('branch_disposal', {
+      id: plan.recordId,
+      spaceId: PLATFORM_SPACE_ID,
+      projectId: plan.project.recordId,
+      projectName: plan.projectName,
+      machineId: machineId(),
+      localId: null,
+      branch: plan.branch,
+      tip: plan.tip,
+      taskKey: plan.taskKey,
+      reason: plan.reason,
+      note: plan.note,
+      archiveRef: plan.archiveRef,
+      archiveExpiresAt: plan.archiveExpiresAt,
+      actorSession: plan.actor,
+      disposedAt: plan.disposedAt,
+      withheldFields: null,
+      createdAt: plan.disposedAt,
+      updatedAt: plan.disposedAt,
+    }),
+  )
   database
     .query(
       "INSERT INTO outbox (record_id,kind,row_id,payload,created_at) VALUES (?,'branch_disposal',?,?,?)",

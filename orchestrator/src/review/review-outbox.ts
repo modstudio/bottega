@@ -5,7 +5,8 @@ import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso } from '../database/db.ts'
 import { machineId } from '../record/machine-identity.ts'
-import { type OutboxSanitizeKind, stringifyOutboxPayload } from '../record/outbox-sanitize.ts'
+import { type OutboxSanitizeKind, sanitizeOutboxPayload } from '../record/outbox-sanitize.ts'
+import { serializeOutboxPayload } from '../record/outbox-serialize.ts'
 
 export type ReviewRecordBackfillResult = {
   enqueuedReviews: number
@@ -22,7 +23,13 @@ const enqueue = (
 ) => {
   database
     .query('INSERT INTO outbox (record_id, kind, row_id, payload, created_at) VALUES (?,?,?,?,?)')
-    .run(newRecordId(), kind, recordId, stringifyOutboxPayload(kind, value), at)
+    .run(
+      newRecordId(),
+      kind,
+      recordId,
+      serializeOutboxPayload(kind, sanitizeOutboxPayload(kind, value)),
+      at,
+    )
 }
 
 export function enqueueReview(database: Database, reviewRecordId: string): void {

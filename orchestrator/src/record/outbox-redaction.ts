@@ -5,6 +5,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { sanitizeOutboxPayloadForRules } from './outbox-sanitize.ts'
+import { serializeOutboxPayload } from './outbox-serialize.ts'
 
 const DEFAULT_SYNCED_REDACTION_RULES = [
   'url-userinfo',
@@ -145,7 +146,13 @@ export function redactSyncedOutbox(
           `INSERT INTO outbox (record_id,kind,row_id,payload,created_at)
            VALUES (?,?,?,?,?) RETURNING id`,
         )
-        .get(newRecordId(), row.kind, row.row_id, JSON.stringify(sanitized.payload), at)!
+        .get(
+          newRecordId(),
+          row.kind,
+          row.row_id,
+          serializeOutboxPayload(row.kind, sanitized.payload),
+          at,
+        )!
       const paths = [...new Set(sanitized.matches.map((match) => match.path))].toSorted()
       database
         .query(
