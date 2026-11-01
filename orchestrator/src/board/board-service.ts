@@ -133,12 +133,21 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-export function runReaderIdentity(runId: string, database = db()) {
+function rootRunRecordId(runId: string, database = db()): string | null {
   const row = database
     .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
     .get(runId) as { root_id: string } | null
-  if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
-  return { reader: `run:${row.root_id}`, readerRunRecordId: row.root_id }
+  return row?.root_id ?? null
+}
+
+function runReader(rootRunRecordId: string): string {
+  return `run:${rootRunRecordId}`
+}
+
+export function runReaderIdentity(runId: string, database = db()) {
+  const readerRunRecordId = rootRunRecordId(runId, database)
+  if (!readerRunRecordId) throw new Error(`no run ${runId}; use a live orchestrator run id`)
+  return { reader: runReader(readerRunRecordId), readerRunRecordId }
 }
 
 function receiptDelivery(messageRecordId: string, reader: string, database = db()) {
@@ -340,19 +349,17 @@ export function claimRunPushNotices(
   withheldOlderCount: number
   warning: string | null
 } {
-  const run = database
-    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
-    .get(runId) as { root_id: string } | null
-  if (!run) {
+  const readerRunRecordId = rootRunRecordId(runId, database)
+  if (!readerRunRecordId) {
     const selected = selectPushNotices('unbounded', [], clock)
     return {
       notices: selected.notices,
       withheldOlderCount: selected.withheldOlderCount,
-      warning: missingReaderStartWarning(`run:${runId}`),
+      warning: missingReaderStartWarning(runReader(runId)),
     }
   }
-  const reader = `run:${run.root_id}`
-  const beganAt = boardReaderBeganAt(reader, database, run.root_id)
+  const reader = runReader(readerRunRecordId)
+  const beganAt = boardReaderBeganAt(reader, database, readerRunRecordId)
   const selected = selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock)
   return {
     notices: selected.notices,

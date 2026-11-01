@@ -21,6 +21,7 @@ import {
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
   OPERATOR_READER,
+  type PresenceFact,
   parseAudience,
   postDecision,
   resolveAudience,
@@ -342,6 +343,31 @@ export function latestRunStatus(
   return row?.status ?? 'missing'
 }
 
+function readerRunRecordIds(facts: PresenceFact[]): Map<string, string | null> {
+  return new Map(facts.map((fact) => [fact.reader, fact.readerRunRecordId ?? null]))
+}
+
+function matchingRecipients(
+  audienceExpression: string,
+  at: number,
+  tags: BoardTag[],
+  database: ReturnType<typeof db>,
+  facts: PresenceFact[],
+  postingProject: string | null,
+  runIds: Map<string, string | null>,
+): string[] {
+  const audience = parseAudience(audienceExpression)
+  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
+  if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
+  return coarse.filter((reader) => {
+    const runRecordId = runIds.get(reader) ?? null
+    return boardNoticeMatches(
+      tags,
+      runRecordId ? boardRunContext(runRecordId, database) : boardContext(reader, at, database),
+    )
+  })
+}
+
 export function recipients(
   audienceExpression: string,
   at: number,
@@ -350,16 +376,15 @@ export function recipients(
   facts = presenceFacts(database, at),
   postingProject: string | null = null,
 ): string[] {
-  const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
-  if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
-  return coarse.filter((reader) => {
-    const runRecordId = facts.find((fact) => fact.reader === reader)?.readerRunRecordId ?? null
-    return boardNoticeMatches(
-      tags,
-      runRecordId ? boardRunContext(runRecordId, database) : boardContext(reader, at, database),
-    )
-  })
+  return matchingRecipients(
+    audienceExpression,
+    at,
+    tags,
+    database,
+    facts,
+    postingProject,
+    readerRunRecordIds(facts),
+  )
 }
 
 function resolvePostAudience(expression: string, machine: string) {
@@ -505,12 +530,16 @@ function recordRecipients(
   database: ReturnType<typeof writableDb>,
 ): number {
   const facts = presenceFacts(database, clock)
-  const readers = recipients(audience, clock, tags, database, facts, project).filter(
-    (reader) =>
-      kind !== 'question' ||
-      facts.find((fact) => fact.reader === reader)?.readerRunRecordId == null,
-  )
-  const runIds = new Map(facts.map((fact) => [fact.reader, fact.readerRunRecordId ?? null]))
+  const runIds = readerRunRecordIds(facts)
+  const readers = matchingRecipients(
+    audience,
+    clock,
+    tags,
+    database,
+    facts,
+    project,
+    runIds,
+  ).filter((reader) => kind !== 'question' || (runIds.get(reader) ?? null) === null)
   const add = database.query(
     `INSERT OR IGNORE INTO board_receipt
      (record_id,message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at)
