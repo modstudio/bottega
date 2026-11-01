@@ -240,16 +240,18 @@ export function decideBranchState(input: {
 
 export type PruneEligibility =
   | { eligible: true }
-  | { eligible: false; reason: 'state' | 'checked-out' | 'live' | 'tip-moved' }
+  | {
+      eligible: false
+      reason: 'throwaway' | 'unlanded' | 'unknown' | 'checked-out' | 'live' | 'tip-moved'
+    }
 
 type PruneEligibilityReason = Extract<PruneEligibility, { eligible: false }>['reason']
 
 export type BranchPruneKeptReason =
   | PruneEligibilityReason
+  | 'state'
   | 'held'
   | 'protected'
-  | 'unlanded'
-  | 'unknown'
   | `base of live run ${string} (${string})`
   | 'tip could not be rechecked'
   | `registered ${ProtectedBranchKind}`
@@ -261,16 +263,35 @@ export function isPruneSafeLandingState(
   return state === 'landed' || state === 'superseded' || state === 'empty'
 }
 
+export type MintedBranchVerdict =
+  | { verdict: 'delete' }
+  | { verdict: 'throwaway' }
+  | { verdict: 'keep'; reason: 'unlanded' | 'unknown' }
+
+/** Is this branch's work preserved elsewhere (landed, superseded by a recorded successor, or empty), so deleting the ref loses nothing? */
+export function decideMintedBranchVerdict(input: {
+  state: BranchStateDecision['state']
+  probeOnly: boolean
+}): MintedBranchVerdict {
+  if (isPruneSafeLandingState(input.state)) return { verdict: 'delete' }
+  if (input.probeOnly) return { verdict: 'throwaway' }
+  return { verdict: 'keep', reason: input.state === 'unknown' ? 'unknown' : 'unlanded' }
+}
+
 /** Decides whether an observed branch may be deleted, without performing any I/O. */
 export function decidePruneEligibility(input: {
   state: BranchLanding['state']
+  probeOnly: boolean
   checkedOut: boolean
   liveRun: boolean
   tipMoved: boolean
 }): PruneEligibility {
-  if (!isPruneSafeLandingState(input.state)) {
-    return { eligible: false, reason: 'state' }
-  }
+  const verdict = decideMintedBranchVerdict(input)
+  if (verdict.verdict !== 'delete')
+    return {
+      eligible: false,
+      reason: verdict.verdict === 'keep' ? verdict.reason : verdict.verdict,
+    }
   if (input.checkedOut) return { eligible: false, reason: 'checked-out' }
   if (input.liveRun) return { eligible: false, reason: 'live' }
   if (input.tipMoved) return { eligible: false, reason: 'tip-moved' }

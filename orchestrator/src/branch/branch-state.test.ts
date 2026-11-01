@@ -488,7 +488,13 @@ describe('branch prune eligibility decision', () => {
       for (const liveRun of [false, true]) {
         for (const tipMoved of [false, true]) {
           test(`prune guard mutation: ${state}, checked-out=${checkedOut}, live=${liveRun}, tip-moved=${tipMoved}`, () => {
-            const result = decidePruneEligibility({ state, checkedOut, liveRun, tipMoved })
+            const result = decidePruneEligibility({
+              state,
+              probeOnly: false,
+              checkedOut,
+              liveRun,
+              tipMoved,
+            })
             expect(result.eligible).toBe(
               ['landed', 'empty', 'superseded'].includes(state) &&
                 !checkedOut &&

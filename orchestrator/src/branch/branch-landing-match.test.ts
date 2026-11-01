@@ -116,10 +116,11 @@ describe('automatic branch landing tip decision', () => {
     expect(
       decidePruneEligibility({
         state: state.state,
+        probeOnly: false,
         checkedOut: false,
         liveRun: false,
         tipMoved: false,
       }),
-    ).toEqual({ eligible: false, reason: 'state' })
+    ).toEqual({ eligible: false, reason: 'unlanded' })
   })
 })

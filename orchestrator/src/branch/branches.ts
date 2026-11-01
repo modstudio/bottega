@@ -92,6 +92,7 @@ export type BranchPruneReport = {
     branch: string
     reason: import('./branch-state.ts').BranchPruneKeptReason
     holdingPath?: string | null
+    remedy?: string
   }[]
   operator: {
     branch: string
@@ -138,7 +139,7 @@ function recordedBranchLandings(): BranchLandingRecord[] {
 function projectRuns(project: Project): RunRow[] {
   return db()
     .query(
-      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status
+      `SELECT record_id,number,parent_run_record_id,launch_key,branch,minted_branch,launch_base,status,probe
          FROM run
         WHERE project_record_id=?
         ORDER BY number`,
@@ -559,15 +560,43 @@ export function branchesReport(options: {
 
 function listOperatorBranch(row: BranchReportRow, report: BranchPruneReport): boolean {
   if (row.state !== 'unlanded' && row.state !== 'unknown') return false
+  const eligibility = decidePruneEligibility({
+    state: row.state,
+    probeOnly: row.probeOnly,
+    checkedOut: row.checkedOut,
+    liveRun: row.liveRun,
+    tipMoved: false,
+  })
+  if (eligibility.eligible) return false
   report.operator.push({
     branch: row.branch,
     state: row.state,
     commitsNotOnTrunk: row.commitsNotOnTrunk,
     command: `git branch -D ${row.branch}`,
   })
-  report.kept.push({ branch: row.branch, reason: row.state })
+  report.kept.push({
+    branch: row.branch,
+    reason: eligibility.reason,
+    remedy: branchVerdictRemedy(
+      row.probeOnly ? 'throwaway' : row.state,
+      report.project,
+      row.branch,
+    ),
+  })
   if (row.state === 'unknown' && row.error) report.errors.push(`${row.branch}: ${row.error}`)
   return true
+}
+
+function branchVerdictRemedy(
+  reason: 'throwaway' | 'unlanded' | 'unknown',
+  project: string,
+  branch: string,
+): string {
+  if (reason === 'throwaway')
+    return `${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason throwaway --note "<why>"`
+  if (reason === 'unlanded')
+    return `land it through its own pull request, or ${PLATFORM_SLUG} tree branch dispose ${project}:${branch} --reason abandoned --note "<why>"`
+  return `${PLATFORM_SLUG} tree branch prune --project ${project} --key <KEY> --dry-run once the reported error clears`
 }
 
 function tipStillEligible(
@@ -590,6 +619,7 @@ function tipStillEligible(
   }
   const eligibility = decidePruneEligibility({
     state: row.state,
+    probeOnly: row.probeOnly,
     checkedOut: row.checkedOut,
     liveRun: row.liveRun,
     tipMoved: currentTip !== row.tip,
@@ -632,6 +662,7 @@ function deleteAndSettleBranch(
       )
       const eligibility = decidePruneEligibility({
         state: row.state,
+        probeOnly: row.probeOnly,
         checkedOut,
         liveRun,
         tipMoved: currentTip !== row.tip,
@@ -941,7 +972,10 @@ export function renderBranchPruneReport(report: BranchPruneReport): string {
   }
   for (const observation of report.observations) lines.push(`  observation: ${observation}`)
   for (const branch of acted) lines.push(`  ${action}: ${branch}`)
-  for (const row of report.kept) lines.push(`  kept: ${row.branch} (${row.reason})`)
+  for (const row of report.kept)
+    lines.push(
+      `  kept: ${row.branch} (${row.reason})${row.remedy ? `; cleared by: ${row.remedy}` : ''}`,
+    )
   for (const row of report.operator) {
     lines.push(
       `  operator: ${row.branch} (${row.state}, ${row.commitsNotOnTrunk} commits not on trunk); ${row.command}`,

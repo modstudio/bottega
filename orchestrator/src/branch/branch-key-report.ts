@@ -29,6 +29,7 @@ export type BranchReportRun = {
   branch: string | null
   launch_base: string | null
   status: string
+  probe: number
 }
 
 export type BranchReportRow = BranchStateDecision & {
@@ -37,6 +38,7 @@ export type BranchReportRow = BranchStateDecision & {
   commitsNotOnTrunk: number
   checkedOut: boolean
   liveRun: boolean
+  probeOnly: boolean
   runIds: number[]
 }
 
@@ -205,6 +207,7 @@ export function branchKeyReport(input: Input): { key: string; branches: BranchRe
     ...observe(branch),
     checkedOut: input.checkedOut.has(branch),
     liveRun: branchRuns.some((run) => run.status === 'running' || run.status === 'asking'),
+    probeOnly: branchRuns.length > 0 && branchRuns.every((run) => run.probe === 1),
     runIds: branchRuns.map((run) => run.number),
     recordedLanding: findRecordedBranchLanding(input.recordedLandings, input.project.name, branch),
     superseded: isTaskBranchSuperseded(branch, keyRows),
