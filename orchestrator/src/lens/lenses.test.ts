@@ -280,6 +280,77 @@ describe('lens catalogue', () => {
     ).toEqual({ record_id: versionTwo.current_version_id })
   })
 
+  test('profile revision numbering skips appended revision numbers and keeps version ids', async () => {
+    const input = {
+      lensId: 'correctness',
+      axis: 'framework',
+      name: 'appended-version-number',
+      body: '{"framework_guidance":"Version one.","commands":"one"}',
+      enabled: true,
+      reason: 'create version one',
+    }
+    await setProfile(input)
+    await setProfile({
+      ...input,
+      body: '{"framework_guidance":"Version two.","commands":"two"}',
+      reason: 'create version two',
+    })
+    const versionTwo = db()
+      .query<{ current_version_id: string; record_id: string }, []>(
+        `SELECT current_version_id,record_id FROM lens_profile WHERE name='appended-version-number'`,
+      )
+      .get()!
+    db()
+      .query(
+        `INSERT INTO lens_profile_revision
+          (record_id,profile_record_id,version,prior_body,reason,at)
+         VALUES (?,?,3,?,'appended by catalogue import',?)`,
+      )
+      .run(
+        newRecordId(),
+        versionTwo.record_id,
+        '{"body":{"framework_guidance":"Appended.","commands":"append"},"enabled":true}',
+        new Date().toISOString(),
+      )
+
+    await setProfile({
+      ...input,
+      body: '{"framework_guidance":"Version four.","commands":"four"}',
+      reason: 'create version four',
+    })
+    const versionFour = db()
+      .query<{ current_version_id: string; version: number }, [string]>(
+        'SELECT current_version_id,version FROM lens_profile WHERE record_id=?',
+      )
+      .get(versionTwo.record_id)!
+    expect(versionFour.version).toBe(4)
+    expect(
+      db()
+        .query<{ record_id: string }, [string, number]>(
+          'SELECT record_id FROM lens_profile_revision WHERE profile_record_id=? AND version=?',
+        )
+        .get(versionTwo.record_id, 2),
+    ).toEqual({ record_id: versionTwo.current_version_id })
+
+    await setProfile({
+      ...input,
+      body: '{"framework_guidance":"Version five.","commands":"five"}',
+      reason: 'create version five',
+    })
+    expect(
+      db()
+        .query<{ version: number }, [string]>('SELECT version FROM lens_profile WHERE record_id=?')
+        .get(versionTwo.record_id),
+    ).toEqual({ version: 5 })
+    expect(
+      db()
+        .query<{ record_id: string }, [string, number]>(
+          'SELECT record_id FROM lens_profile_revision WHERE profile_record_id=? AND version=?',
+        )
+        .get(versionTwo.record_id, 4),
+    ).toEqual({ record_id: versionFour.current_version_id })
+  })
+
   test('a project pin follows its version id from current profile to revision', async () => {
     upsertProject({ recordId: newRecordId(), name: 'pinned', path: '/tmp/pinned', settings: {} })
     const input = {

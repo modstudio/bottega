@@ -178,6 +178,109 @@ test('pushes a seeded local store through bulk routes and sync resolves routed c
   expect(local.query('SELECT 1 FROM port_pair WHERE space_id=?').get(spaceId)).not.toBeNull()
 })
 
+test('push maps current, prior, and null profile version pins through the version id kind', async () => {
+  const local = db()
+  const profileName = `version-pin-${newRecordId()}`
+  await setProfile({
+    lensId: 'correctness',
+    axis: 'framework',
+    name: profileName,
+    body: '{"framework_guidance":"Version one.","commands":"one"}',
+    enabled: true,
+    reason: 'create version one',
+  })
+  await setProfile({
+    lensId: 'correctness',
+    axis: 'framework',
+    name: profileName,
+    body: '{"framework_guidance":"Version two.","commands":"two"}',
+    enabled: true,
+    reason: 'create version two',
+  })
+  const profile = local
+    .query<{ current_version_id: string; record_id: string }, [string]>(
+      'SELECT current_version_id,record_id FROM lens_profile WHERE name=?',
+    )
+    .get(profileName)!
+  const versionOne = local
+    .query<{ record_id: string }, [string]>(
+      'SELECT record_id FROM lens_profile_revision WHERE profile_record_id=? AND version=1',
+    )
+    .get(profile.record_id)!
+  const fixtures = [
+    { label: 'prior', version: 1, versionId: versionOne.record_id },
+    { label: 'current', version: 2, versionId: profile.current_version_id },
+    { label: 'null', version: null, versionId: null },
+  ] as const
+  const selections = new Map<string, string>()
+  for (const fixture of fixtures) {
+    const projectId = newRecordId()
+    const projectName = `push-${fixture.label}-${projectId}`
+    upsertProject({
+      recordId: projectId,
+      name: projectName,
+      path: `/tmp/${projectName}`,
+      settings: {},
+    })
+    await selectProjectProfile({
+      project: projectName,
+      lensId: 'correctness',
+      axis: 'framework',
+      name: profileName,
+      ...(fixture.version === null ? {} : { version: fixture.version }),
+      reason: `${fixture.label} version pin`,
+    })
+    rememberProjectSpace(local, projectName, spaceId)
+    const selection = local
+      .query<{ record_id: string }, [string]>(
+        'SELECT record_id FROM project_lens_profile WHERE project_record_id=?',
+      )
+      .get(projectId)!
+    selections.set(fixture.label, selection.record_id)
+    local
+      .query(
+        `INSERT INTO project_lens_profile_revision
+          (record_id,selection_record_id,prior_profile_name,prior_selected_version,
+           prior_selected_version_id,reason,at)
+         VALUES (?,?,?,?,?,'pin history fixture',?)`,
+      )
+      .run(
+        newRecordId(),
+        selection.record_id,
+        profileName,
+        fixture.version,
+        fixture.versionId,
+        new Date().toISOString(),
+      )
+  }
+
+  let observed = false
+  const client = fakeCatalogueClient(undefined, (input) => {
+    observed = true
+    for (const fixture of fixtures) {
+      const selectionId = selections.get(fixture.label)!
+      const expectedVersionId = fixture.versionId
+        ? replicatedRecordId(spaceId, 'lens_profile_revision', fixture.versionId)
+        : null
+      expect(input.project_lens_profile).toContainEqual(
+        expect.objectContaining({
+          id: replicatedRecordId(spaceId, 'project_lens_profile', selectionId),
+          selectedVersionId: expectedVersionId,
+        }),
+      )
+      expect(input.project_lens_profile_revision).toContainEqual(
+        expect.objectContaining({
+          selectionId: replicatedRecordId(spaceId, 'project_lens_profile', selectionId),
+          priorSelectedVersionId: expectedVersionId,
+        }),
+      )
+    }
+  })
+  installRecordApiClient(client)
+  await pushCataloguesCommand({ dryRun: false }, { log: () => undefined }, { local, client })
+  expect(observed).toBeTrue()
+})
+
 test('dry run logs its local plan without calling hosted methods', async () => {
   const local = db(),
     projectId = newRecordId()

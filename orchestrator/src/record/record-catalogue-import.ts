@@ -3,6 +3,7 @@
 import { SQL } from 'bun'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
+import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
 import { BUILT_IN_WORKFLOW_AUTHOR } from '../workflow/workflow-built-ins.ts'
 import type { RecordCatalogueImportResult } from './record-catalogue-contract.ts'
 import { reconcileCatalogueHistory } from './record-catalogue-reconciliation.ts'
@@ -49,11 +50,136 @@ function foundId(rows: Record<string, unknown>[]): string | null {
   return rows[0] ? text(rows[0].id) : null
 }
 
+async function recordProfileVersionNumber(
+  tx: SQL,
+  spaceId: string,
+  versionId: string,
+): Promise<number | null> {
+  const current = await tx`SELECT version FROM lens_profile
+    WHERE space_id=${spaceId}::uuid AND current_version_id=${versionId}::uuid LIMIT 1`
+  if (current[0]) return Number(current[0].version)
+  const revision = await tx`SELECT version FROM lens_profile_revision
+    WHERE space_id=${spaceId}::uuid AND id=${versionId}::uuid LIMIT 1`
+  return revision[0] ? Number(revision[0].version) : null
+}
+
+async function appendProfileRevision(
+  tx: SQL,
+  input: Tenant,
+  profileId: string,
+  row: {
+    id: string
+    priorBody: string
+    reason: string
+    sessionId: string | null
+    at: string
+  },
+): Promise<void> {
+  const [profile] = await tx`SELECT version FROM lens_profile
+      WHERE space_id=${input.spaceId}::uuid AND id=${profileId}::uuid`,
+    revisions = await tx`SELECT version FROM lens_profile_revision
+      WHERE space_id=${input.spaceId}::uuid AND profile_id=${profileId}::uuid`,
+    version = nextLensProfileVersion(
+      Number(profile!.version),
+      revisions.map((revision: Record<string, unknown>) => Number(revision.version)),
+    )
+  await tx`INSERT INTO lens_profile_revision
+    (id,space_id,profile_id,version,prior_body,reason,session_id,at)
+    VALUES (${row.id}::uuid,${input.spaceId}::uuid,${profileId}::uuid,${version},
+      ${row.priorBody},${row.reason},${row.sessionId},${row.at}::timestamptz)`
+}
+
+type PushedProfileRevision = RecordLensImportInput['lens_profile_revision'][number]
+
+async function insertFreshProfileRevisions(
+  tx: SQL,
+  input: Tenant,
+  profileId: string,
+  revisions: readonly PushedProfileRevision[],
+  result: RecordCatalogueImportResult,
+): Promise<void> {
+  await forEachAsync(revisions, async (revision) => {
+    const held = await tx`SELECT id FROM lens_profile_revision
+      WHERE space_id=${input.spaceId}::uuid AND id=${revision.id}::uuid LIMIT 1`
+    if (held[0]) result.alreadyPresent++
+    else {
+      await tx`INSERT INTO lens_profile_revision (id,space_id,profile_id,version,prior_body,reason,session_id,at) VALUES (${revision.id}::uuid,${input.spaceId}::uuid,${profileId}::uuid,${revision.version},${revision.priorBody},${revision.reason},${revision.sessionId},${revision.at}::timestamptz)`
+      result.inserted++
+    }
+  })
+}
+
+async function appendMatchedProfileVersions(
+  tx: SQL,
+  input: Tenant & RecordLensImportInput,
+  profileId: string,
+  row: RecordLensImportInput['lens_profile'][number],
+  revisions: readonly PushedProfileRevision[],
+  result: RecordCatalogueImportResult,
+): Promise<void> {
+  await forEachAsync(revisions, async (revision) => {
+    if ((await recordProfileVersionNumber(tx, input.spaceId, revision.id)) !== null)
+      result.alreadyPresent++
+    else {
+      await appendProfileRevision(tx, input, profileId, revision)
+      result.inserted++
+    }
+  })
+  if (row.currentVersionId === null) {
+    result.skipped.push({
+      id: row.id,
+      reason: `lens_profile ${row.id} current version has no id; not appended`,
+    })
+  } else if ((await recordProfileVersionNumber(tx, input.spaceId, row.currentVersionId)) !== null)
+    result.alreadyPresent++
+  else {
+    await appendProfileRevision(tx, input, profileId, {
+      id: row.currentVersionId,
+      priorBody: lensProfileSnapshot(row.body, row.enabled),
+      reason: 'appended by catalogue import',
+      sessionId: null,
+      at: row.updatedAt,
+    })
+    result.inserted++
+  }
+}
+
+async function importLensProfiles(
+  tx: SQL,
+  input: Tenant & RecordLensImportInput,
+  lenses: ReadonlyMap<string, string>,
+  result: RecordCatalogueImportResult,
+): Promise<Map<string, string>> {
+  const profiles = new Map<string, string>()
+  await forEachAsync(input.lens_profile, async (row) => {
+    const lensId = lenses.get(row.lensId)
+    if (!lensId) {
+      result.skipped.push({ id: row.id, reason: `lens ${row.lensId} is absent` })
+      return
+    }
+    const existing =
+      await tx`SELECT id FROM lens_profile WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (lens_id=${lensId}::uuid AND axis=${row.axis} AND name=${row.name})) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
+    const id = foundId(existing)
+    if (id) result.alreadyPresent++
+    else {
+      await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId ?? newRecordId()}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
+      result.inserted++
+    }
+    const profileId = id ?? row.id
+    profiles.set(row.id, profileId)
+    const revisions = input.lens_profile_revision
+      .filter((revision) => revision.profileId === row.id)
+      .sort((left, right) => left.version - right.version)
+    if (id) await appendMatchedProfileVersions(tx, input, profileId, row, revisions, result)
+    else await insertFreshProfileRevisions(tx, input, profileId, revisions, result)
+  })
+  return profiles
+}
+
 export async function importRecordLensCatalogue(input: Tenant & RecordLensImportInput) {
   return tenant(input, async (tx) => {
     const result = empty(),
       lenses = new Map<string, string>(),
-      profiles = new Map<string, string>(),
       selections = new Map<string, string>()
     await forEachAsync(input.lens, async (row) => {
       const existing =
@@ -80,35 +206,10 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         result.inserted++
       }
     })
-    await forEachAsync(input.lens_profile, async (row) => {
-      const lensId = lenses.get(row.lensId)
-      if (!lensId) {
-        result.skipped.push({ id: row.id, reason: `lens ${row.lensId} is absent` })
-        return
-      }
-      const existing =
-        await tx`SELECT id FROM lens_profile WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (lens_id=${lensId}::uuid AND axis=${row.axis} AND name=${row.name})) ORDER BY id=${row.id}::uuid DESC LIMIT 1`
-      const id = foundId(existing)
-      if (id) result.alreadyPresent++
-      else {
-        await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${row.axis},${row.name},${row.version},${row.currentVersionId ?? newRecordId()}::uuid,${row.body},${row.enabled},${row.updatedAt}::timestamptz)`
-        result.inserted++
-      }
-      profiles.set(row.id, id ?? row.id)
-    })
+    const profiles = await importLensProfiles(tx, input, lenses, result)
     await forEachAsync(input.lens_profile_revision, async (row) => {
-      const profileId = profiles.get(row.profileId)
-      if (!profileId) {
+      if (!profiles.has(row.profileId))
         result.skipped.push({ id: row.id, reason: `profile ${row.profileId} is absent` })
-        return
-      }
-      const existing =
-        await tx`SELECT id FROM lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND (id=${row.id}::uuid OR (profile_id=${profileId}::uuid AND version=${row.version})) LIMIT 1`
-      if (existing[0]) result.alreadyPresent++
-      else {
-        await tx`INSERT INTO lens_profile_revision (id,space_id,profile_id,version,prior_body,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${profileId}::uuid,${row.version},${row.priorBody},${row.reason},${row.sessionId},${row.at}::timestamptz)`
-        result.inserted++
-      }
     })
     await forEachAsync(input.project_lens_profile, async (row) => {
       const lensId = row.lensId ? lenses.get(row.lensId) : null
@@ -122,7 +223,10 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
       const id = foundId(existing)
       if (id) result.alreadyPresent++
       else {
-        await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selected_version_id,selection_version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.projectId}::uuid,${lensId}::uuid,${row.axis},${row.profileName},${row.selectedVersion},${row.selectedVersionId}::uuid,${row.selectionVersion},${row.updatedAt}::timestamptz)`
+        const heldVersion = row.selectedVersionId
+          ? await recordProfileVersionNumber(tx, input.spaceId, row.selectedVersionId)
+          : null
+        await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selected_version_id,selection_version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.projectId}::uuid,${lensId}::uuid,${row.axis},${row.profileName},${heldVersion ?? row.selectedVersion},${row.selectedVersionId}::uuid,${row.selectionVersion},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
       selections.set(row.id, id ?? row.id)
@@ -137,7 +241,10 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         await tx`SELECT id FROM project_lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid LIMIT 1`
       if (existing[0]) result.alreadyPresent++
       else {
-        await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${row.priorSelectedVersion},${row.priorSelectedVersionId}::uuid,${row.reason},${row.sessionId},${row.at}::timestamptz)`
+        const heldVersion = row.priorSelectedVersionId
+          ? await recordProfileVersionNumber(tx, input.spaceId, row.priorSelectedVersionId)
+          : null
+        await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${heldVersion ?? row.priorSelectedVersion},${row.priorSelectedVersionId}::uuid,${row.reason},${row.sessionId},${row.at}::timestamptz)`
         result.inserted++
       }
     })

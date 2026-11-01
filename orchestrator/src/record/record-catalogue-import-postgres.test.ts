@@ -6,6 +6,7 @@ import {
   importRecordPortCatalogue,
   importRecordWorkflowCatalogue,
 } from './record-catalogue-import.ts'
+import { selectRecordProjectLensProfile } from './record-lens-catalogue.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import { listRecordWorkflowCatalogue } from './record-workflow-catalogue.ts'
 
@@ -181,6 +182,189 @@ postgres('hosted catalogue bulk imports', () => {
     const secondBuiltIns = await ensureSpaceBuiltIns(tenant)
     expect(firstBuiltIns.inserted).toBeGreaterThan(0)
     expect(secondBuiltIns.inserted).toBe(0)
+  })
+
+  test('matched profiles append unknown version ids and keep pins on their body', async () => {
+    const spaceId = newRecordId(),
+      userId = newRecordId(),
+      projectId = newRecordId(),
+      hostedLensId = newRecordId(),
+      pushedLensId = newRecordId(),
+      hostedProfileId = newRecordId(),
+      pushedProfileId = newRecordId(),
+      legacyProfileId = newRecordId(),
+      hostedVersionOneId = newRecordId(),
+      hostedVersionTwoId = newRecordId(),
+      pushedVersionTwoId = newRecordId(),
+      selectionId = newRecordId(),
+      selectionRevisionId = newRecordId(),
+      at = new Date().toISOString(),
+      setup = new SQL(setupUrl!)
+    try {
+      await setup`INSERT INTO "user" (id,email,name,email_verified,created_at,updated_at)
+        VALUES (${userId}::uuid,${`${userId}@test.invalid`},'Version Import',true,now(),now())`
+      await setup`INSERT INTO space (id,name,slug,created_at)
+        VALUES (${spaceId}::uuid,${`Version ${spaceId}`},${`version-${spaceId}`},now())`
+      await setup`INSERT INTO membership (id,space_id,user_id,role,permission,created_at)
+        VALUES (${newRecordId()}::uuid,${spaceId}::uuid,${userId}::uuid,'owner','write',now())`
+      await setup`INSERT INTO project (id,space_id,name,created_at)
+        VALUES (${projectId}::uuid,${spaceId}::uuid,${`version-${spaceId}`},now())`
+      await setup`INSERT INTO lens
+        (id,space_id,key,title,question,excludes,slots,version,enabled,requires_execution,updated_at)
+        VALUES (${hostedLensId}::uuid,${spaceId}::uuid,'version-import','Version import','Works?',
+          'Nothing.','{}',1,true,false,now())`
+      await setup`INSERT INTO lens_profile
+        (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at)
+        VALUES (${hostedProfileId}::uuid,${spaceId}::uuid,${hostedLensId}::uuid,'framework',
+          'default',2,${hostedVersionTwoId}::uuid,'{"source":"hosted-v2"}',true,now())`
+      await setup`INSERT INTO lens_profile_revision
+        (id,space_id,profile_id,version,prior_body,reason,at)
+        VALUES (${hostedVersionOneId}::uuid,${spaceId}::uuid,${hostedProfileId}::uuid,1,
+          '{"body":{"source":"hosted-v1"},"enabled":true}','hosted v1',now())`
+    } finally {
+      await setup.close()
+    }
+    const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId }
+    const input = {
+      ...tenant,
+      dryRun: false,
+      lens: [
+        {
+          id: pushedLensId,
+          spaceId,
+          key: 'version-import',
+          title: 'Pushed',
+          question: 'Pushed?',
+          excludes: 'Nothing.',
+          slots: '{}',
+          version: 1,
+          enabled: true,
+          requiresExecution: false,
+          updatedAt: at,
+        },
+      ],
+      lens_revision: [],
+      lens_profile: [
+        {
+          id: pushedProfileId,
+          spaceId,
+          lensId: pushedLensId,
+          axis: 'framework' as const,
+          name: 'default',
+          version: 2,
+          currentVersionId: pushedVersionTwoId,
+          body: '{"source":"pushed-v2"}',
+          enabled: true,
+          updatedAt: at,
+        },
+        {
+          id: legacyProfileId,
+          spaceId,
+          lensId: pushedLensId,
+          axis: 'framework' as const,
+          name: 'default',
+          version: 2,
+          currentVersionId: null,
+          body: '{"source":"legacy-v2"}',
+          enabled: true,
+          updatedAt: at,
+        },
+      ],
+      lens_profile_revision: [
+        {
+          id: hostedVersionOneId,
+          spaceId,
+          profileId: pushedProfileId,
+          version: 1,
+          priorBody: '{"body":{"source":"pushed-v1"},"enabled":true}',
+          reason: 'pushed v1',
+          sessionId: null,
+          at,
+        },
+      ],
+      project_lens_profile: [
+        {
+          id: selectionId,
+          spaceId,
+          projectId,
+          lensId: pushedLensId,
+          axis: 'framework' as const,
+          profileName: 'default',
+          selectedVersion: 2,
+          selectedVersionId: pushedVersionTwoId,
+          selectionVersion: 1,
+          updatedAt: at,
+        },
+      ],
+      project_lens_profile_revision: [
+        {
+          id: selectionRevisionId,
+          spaceId,
+          selectionId,
+          priorProfileName: 'default',
+          priorSelectedVersion: 2,
+          priorSelectedVersionId: pushedVersionTwoId,
+          reason: 'pushed selection',
+          sessionId: null,
+          at,
+        },
+      ],
+    }
+    const first = await importRecordLensCatalogue(input)
+    expect(first.skipped).toContainEqual({
+      id: legacyProfileId,
+      reason: `lens_profile ${legacyProfileId} current version has no id; not appended`,
+    })
+    const verify = new SQL(setupUrl!)
+    try {
+      expect(
+        await verify`SELECT version,id::text id,prior_body FROM lens_profile_revision
+          WHERE profile_id=${hostedProfileId}::uuid ORDER BY version`,
+      ).toEqual([
+        {
+          version: 1,
+          id: hostedVersionOneId,
+          prior_body: '{"body":{"source":"hosted-v1"},"enabled":true}',
+        },
+        {
+          version: 3,
+          id: pushedVersionTwoId,
+          prior_body: '{"body":{"source":"pushed-v2"},"enabled":true}',
+        },
+      ])
+      expect(
+        await verify`SELECT version,current_version_id::text current_version_id,body
+          FROM lens_profile WHERE id=${hostedProfileId}::uuid`,
+      ).toEqual([
+        { version: 2, current_version_id: hostedVersionTwoId, body: '{"source":"hosted-v2"}' },
+      ])
+      expect(
+        await verify`SELECT selected_version,selected_version_id::text selected_version_id
+          FROM project_lens_profile WHERE id=${selectionId}::uuid`,
+      ).toEqual([{ selected_version: 3, selected_version_id: pushedVersionTwoId }])
+      expect(
+        await verify`SELECT prior_selected_version,prior_selected_version_id::text prior_selected_version_id
+          FROM project_lens_profile_revision WHERE id=${selectionRevisionId}::uuid`,
+      ).toEqual([{ prior_selected_version: 3, prior_selected_version_id: pushedVersionTwoId }])
+    } finally {
+      await verify.close()
+    }
+    const selected = await selectRecordProjectLensProfile({
+      ...tenant,
+      projectId,
+      lensKey: 'version-import',
+      axis: 'framework',
+      profileName: 'default',
+      selectedVersion: 3,
+      selectedVersionId: pushedVersionTwoId,
+      expectedSelectionVersion: 1,
+      reason: 'reselect imported pin',
+    })
+    expect(selected.selection).toMatchObject({
+      selectedVersion: 3,
+      selectedVersionId: pushedVersionTwoId,
+    })
+    expect((await importRecordLensCatalogue(input)).inserted).toBe(0)
   })
 
   test('machine history replaces seeded workflow and step catalogue versions', async () => {

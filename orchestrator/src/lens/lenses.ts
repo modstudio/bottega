@@ -13,6 +13,7 @@ import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY } from '../record/record-lens-con
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
+import { lensProfileSnapshot, nextLensProfileVersion } from './lens-profile-version.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
@@ -231,8 +232,7 @@ const coreSnapshot = (row: CoreRow) =>
     enabled: !!row.enabled,
     requires_execution: !!row.requires_execution,
   })
-const profileSnapshot = (row: ProfileRow) =>
-  JSON.stringify({ body: JSON.parse(row.body), enabled: !!row.enabled })
+const profileSnapshot = (row: ProfileRow) => lensProfileSnapshot(row.body, !!row.enabled)
 
 export function listLenses(
   database: Database = db(),
@@ -430,6 +430,16 @@ function profileRowInSpace(
     )
     .get(lensId, axis, name, spaceId) as ProfileRow | null
 }
+
+function profileRevisionNumbers(database: Database, profileId: string): number[] {
+  return database
+    .query<{ version: number }, [string]>(
+      'SELECT version FROM lens_profile_revision WHERE profile_record_id=?',
+    )
+    .all(profileId)
+    .map((revision) => revision.version)
+}
+
 export async function setProfile(input: SetProfileInput) {
   writableDb()
   const axis = validateProfileInput(input)
@@ -458,6 +468,7 @@ export async function setProfile(input: SetProfileInput) {
         )
       else {
         const outgoingVersionId = hosted?.revision?.id ?? prior.current_version_id ?? newRecordId()
+        const revisionNumbers = profileRevisionNumbers(d, prior.record_id)
         d.query(
           'INSERT INTO lens_profile_revision (record_id,space_id,profile_record_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
         ).run(
@@ -473,7 +484,7 @@ export async function setProfile(input: SetProfileInput) {
         d.query(
           'UPDATE lens_profile SET version=?,current_version_id=?,body=?,enabled=? WHERE record_id=?',
         ).run(
-          hosted?.profile.version ?? prior.version + 1,
+          hosted?.profile.version ?? nextLensProfileVersion(prior.version, revisionNumbers),
           hosted?.profile.currentVersionId ?? newRecordId(),
           input.body,
           input.enabled ? 1 : 0,

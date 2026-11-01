@@ -5,6 +5,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { migratePostgres } from '../postgres/postgres-migrate.ts'
 import { registerRecordLensRoutes } from './record-api-lens.ts'
 import type { RecordIdentity } from './record-auth.ts'
+import { importRecordLensCatalogue } from './record-catalogue-import.ts'
 import {
   listRecordLensCatalogue,
   selectRecordProjectLensProfile,
@@ -217,6 +218,144 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
         { version: 1, id: versionOne.profile.currentVersionId },
         { version: 2, id: versionTwo.profile.currentVersionId },
       ])
+    } finally {
+      await sql.close()
+    }
+  })
+
+  test('hosted profile revisions skip an appended version and preserve its pinned id', async () => {
+    const lensKey = `appended-profile-version-${newRecordId()}`
+    await upsertRecordLens({
+      ...tenant(),
+      key: lensKey,
+      title: 'Appended profile version',
+      question: 'Stable?',
+      excludes: 'Nothing.',
+      slots: '{}',
+      enabled: true,
+      requiresExecution: false,
+      expectedVersion: null,
+      reason: 'create lens',
+    })
+    const profileInput = {
+      ...tenant(),
+      lensKey,
+      axis: 'framework' as const,
+      name: 'default',
+      body: '{"source":"hosted-v1"}',
+      enabled: true,
+      expectedVersion: null,
+      reason: 'create version one',
+    }
+    await upsertRecordLensProfile(profileInput)
+    const hostedVersionTwo = await upsertRecordLensProfile({
+      ...profileInput,
+      body: '{"source":"hosted-v2"}',
+      expectedVersion: 1,
+      reason: 'create version two',
+    })
+    const pushedLensId = newRecordId(),
+      pushedProfileId = newRecordId(),
+      appendedVersionId = newRecordId(),
+      selectionId = newRecordId(),
+      at = new Date().toISOString()
+    await importRecordLensCatalogue({
+      ...tenant(),
+      dryRun: false,
+      lens: [
+        {
+          id: pushedLensId,
+          spaceId,
+          key: lensKey,
+          title: 'Pushed',
+          question: 'Pushed?',
+          excludes: 'Nothing.',
+          slots: '{}',
+          version: 1,
+          enabled: true,
+          requiresExecution: false,
+          updatedAt: at,
+        },
+      ],
+      lens_revision: [],
+      lens_profile: [
+        {
+          id: pushedProfileId,
+          spaceId,
+          lensId: pushedLensId,
+          axis: 'framework',
+          name: 'default',
+          version: 2,
+          currentVersionId: appendedVersionId,
+          body: '{"source":"appended-v2"}',
+          enabled: true,
+          updatedAt: at,
+        },
+      ],
+      lens_profile_revision: [],
+      project_lens_profile: [
+        {
+          id: selectionId,
+          spaceId,
+          projectId,
+          lensId: pushedLensId,
+          axis: 'framework',
+          profileName: 'default',
+          selectedVersion: 2,
+          selectedVersionId: appendedVersionId,
+          selectionVersion: 1,
+          updatedAt: at,
+        },
+      ],
+      project_lens_profile_revision: [],
+    })
+    const selected = await selectRecordProjectLensProfile({
+      ...tenant(),
+      projectId,
+      lensKey,
+      axis: 'framework',
+      profileName: 'default',
+      selectedVersion: 3,
+      selectedVersionId: appendedVersionId,
+      expectedSelectionVersion: 1,
+      reason: 'reselect appended pin',
+    })
+    expect(selected.selection).toMatchObject({
+      selectedVersion: 3,
+      selectedVersionId: appendedVersionId,
+    })
+    const versionFour = await upsertRecordLensProfile({
+      ...profileInput,
+      body: '{"source":"hosted-v4"}',
+      expectedVersion: 2,
+      reason: 'create version four',
+    })
+    await upsertRecordLensProfile({
+      ...profileInput,
+      body: '{"source":"hosted-v5"}',
+      expectedVersion: 4,
+      reason: 'create version five',
+    })
+
+    const sql = new SQL(url!)
+    try {
+      expect(
+        await sql`SELECT version,id::text id FROM lens_profile_revision
+          WHERE profile_id=${hostedVersionTwo.profile.id}::uuid ORDER BY version`,
+      ).toEqual([
+        expect.objectContaining({ version: 1 }),
+        { version: 2, id: hostedVersionTwo.profile.currentVersionId },
+        { version: 3, id: appendedVersionId },
+        { version: 4, id: versionFour.profile.currentVersionId },
+      ])
+      expect(
+        await sql`SELECT selected_version,selected_version_id::text selected_version_id
+          FROM project_lens_profile WHERE id=${selectionId}::uuid`,
+      ).toEqual([{ selected_version: 3, selected_version_id: appendedVersionId }])
+      expect(
+        await sql`SELECT prior_body::jsonb->'body' body FROM lens_profile_revision
+          WHERE id=${appendedVersionId}::uuid`,
+      ).toEqual([{ body: { source: 'appended-v2' } }])
     } finally {
       await sql.close()
     }

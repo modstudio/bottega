@@ -3,6 +3,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
+import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
 import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import type {
   RecordLensProfileWriteInput,
@@ -210,18 +211,19 @@ export async function upsertRecordLensProfile(input: Tenant & RecordLensProfileW
       id = prior ? text(prior.id) : newRecordId()
     let revision: Record<string, unknown> | null = null
     if (prior) {
+      const revisionNumbers = (
+        await tx`SELECT version FROM lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND profile_id=${id}::uuid`
+      ).map((row: Record<string, unknown>) => number(row.version))
       const revisionId = nullable(prior.current_version_id) ?? newRecordId(),
         currentVersionId = newRecordId(),
-        priorBody = JSON.stringify({
-          body: JSON.parse(text(prior.body)),
-          enabled: Boolean(prior.enabled),
-        })
+        nextVersion = nextLensProfileVersion(number(prior.version), revisionNumbers),
+        priorBody = lensProfileSnapshot(text(prior.body), Boolean(prior.enabled))
       await tx`INSERT INTO lens_profile_revision (id,space_id,profile_id,version,prior_body,reason,session_id,at) VALUES (${revisionId}::uuid,${input.spaceId}::uuid,${id}::uuid,${number(prior.version)},${priorBody},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
       revision = mapped(
         'lens_profile_revision',
         (await tx`SELECT * FROM lens_profile_revision WHERE id=${revisionId}::uuid`)[0]!,
       )
-      await tx`UPDATE lens_profile SET body=${input.body},enabled=${input.enabled},version=version+1,current_version_id=${currentVersionId}::uuid,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
+      await tx`UPDATE lens_profile SET body=${input.body},enabled=${input.enabled},version=${nextVersion},current_version_id=${currentVersionId}::uuid,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
     } else
       await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${input.axis},${input.name},1,${newRecordId()}::uuid,${input.body},${input.enabled},${now}::timestamptz)`
     return {
