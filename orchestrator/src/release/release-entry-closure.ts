@@ -1,4 +1,4 @@
-// concern: release-required
+// concern: release-entry-closure
 /** Computes the runtime module closure of release image entry points. */
 
 import {
@@ -11,7 +11,7 @@ import {
   symlinkSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { git, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
@@ -19,6 +19,8 @@ import type { Project } from '../project/projects.ts'
 type Metafile = {
   inputs?: Record<string, { imports?: Array<{ path: string; external?: boolean }> }>
 }
+
+export type EntryClosure = ReadonlyMap<string, ReadonlySet<string>>
 
 type PackageManifest = {
   name?: string
@@ -69,7 +71,19 @@ export function sourceDirectivePaths(
     const argument = match[1]?.trim() ?? ''
     const quoted = argument.match(/^(["'])([^"']+)\1$/)
     if (!quoted) throw new Error(`unsupported @source directive in ${cssPath}: ${directive}`)
-    const source = relative('/', resolve('/', dirname(cssPath), quoted[2]!)).replaceAll('\\', '/')
+    const sourceArgument = quoted[2]!
+    if (/[*?[{]/.test(sourceArgument)) {
+      throw new Error(`unsupported @source directive in ${cssPath}: ${directive}`)
+    }
+    const source = posix.normalize(posix.join(posix.dirname(cssPath), sourceArgument))
+    if (
+      posix.isAbsolute(sourceArgument) ||
+      posix.isAbsolute(source) ||
+      source === '..' ||
+      source.startsWith('../')
+    ) {
+      throw new Error(`@source directive escapes repository in ${cssPath}: ${directive}`)
+    }
     for (const tracked of trackedFiles) {
       if (tracked === source || tracked.startsWith(`${source}/`)) paths.add(tracked)
     }
@@ -139,7 +153,7 @@ export function entryClosureAtCommit(
   project: Project,
   commit: string,
   entries: readonly string[],
-): Map<string, Set<string>> {
+): EntryClosure {
   const directory = mkdtempSync(join(tmpdir(), `${PLATFORM_SLUG}-release-entry-`))
   const tree = join(directory, 'tree')
   try {

@@ -8,7 +8,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
-import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
+import { type EntryClosure, entryClosureAtCommit } from '../release/release-entry-closure.ts'
 import {
   changedPaths,
   failedRequiredRelease,
@@ -51,11 +51,7 @@ export type PullRequestMergeOutcome = {
 
 export type PullRequestPostLandingAdapter = {
   changedPaths(project: Project, mergeCommit: string): string[]
-  entryClosure(
-    project: Project,
-    mergeCommit: string,
-    entries: readonly string[],
-  ): ReadonlyMap<string, ReadonlySet<string>>
+  entryClosure(project: Project, mergeCommit: string, entries: readonly string[]): EntryClosure
   mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string): void
   fence(reason: string): void
@@ -166,6 +162,7 @@ type RemainingStageAdapter = {
     mergeCommit: string,
     target: string,
     enabled: boolean,
+    decision?: RequiredRungDecision,
   ): RequiredReleaseReport
   cleanup?(project: string, branch: string, prNumber: number, database: Database): ShipCleanupReport
 }
@@ -290,6 +287,7 @@ export function completePullRequestPostLanding(input: {
         input.mergeCommit,
         input.target,
         input.releaseRequired,
+        inspect ? decision : undefined,
       ),
     })
   }

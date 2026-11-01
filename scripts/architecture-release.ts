@@ -32,7 +32,6 @@ export const releaseModules = [
       'orchestrator/src/git/git-environment.ts',
       'orchestrator/src/project/projects.ts',
     ],
-    typeOnlyAllowed: ['orchestrator/src/project/projects.ts'],
   },
   {
     file: 'orchestrator/src/release/release-required.ts',

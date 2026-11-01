@@ -113,6 +113,97 @@ describe('decideRequiredRungs', () => {
 })
 
 describe('releaseRequiredRungs', () => {
+  const entryPointProject = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release!,
+        rungs: [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            entryPoints: ['orchestrator/src/record/server.ts'],
+          },
+        ],
+      },
+    },
+  } as Project
+
+  test('releases a rung when a changed path is in its entry closure', () => {
+    let released = false
+    const report = releaseRequiredRungs({
+      project: entryPointProject,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        changedPaths: () => ['orchestrator/src/record/evidence.ts'],
+        entryClosure: () =>
+          new Map([
+            [
+              'orchestrator/src/record/server.ts',
+              new Set(['orchestrator/src/record/server.ts', 'orchestrator/src/record/evidence.ts']),
+            ],
+          ]),
+        release: () => {
+          released = true
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(report.required).toEqual(['hosted-api'])
+    expect(released).toBe(true)
+  })
+
+  test('does not require a rung when a changed path is outside its entry closure', () => {
+    let released = false
+    const report = releaseRequiredRungs({
+      project: entryPointProject,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        changedPaths: () => ['docs/release.md'],
+        entryClosure: () =>
+          new Map([
+            ['orchestrator/src/record/server.ts', new Set(['orchestrator/src/record/server.ts'])],
+          ]),
+        release: () => {
+          released = true
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(report).toEqual({ required: [], releases: [], satisfied: true })
+    expect(released).toBe(false)
+  })
+
+  test('uses a supplied empty decision without deriving it again', () => {
+    let changedPathsRead = false
+    let entryClosureRead = false
+    const report = releaseRequiredRungs({
+      project: entryPointProject,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      decision: { decided: true, required: [], error: null },
+      runner: runner({
+        changedPaths: () => {
+          changedPathsRead = true
+          return []
+        },
+        entryClosure: () => {
+          entryClosureRead = true
+          return new Map()
+        },
+      }),
+    })
+
+    expect(report).toEqual({ required: [], releases: [], satisfied: true })
+    expect(changedPathsRead).toBe(false)
+    expect(entryClosureRead).toBe(false)
+  })
+
   test('does not inspect changes when no rung declares required paths', () => {
     let inspected = false
     const report = releaseRequiredRungs({

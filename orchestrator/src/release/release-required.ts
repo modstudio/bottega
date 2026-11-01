@@ -6,7 +6,7 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
-import { entryClosureAtCommit } from './release-entry-closure.ts'
+import { type EntryClosure, entryClosureAtCommit } from './release-entry-closure.ts'
 import {
   newestSuccessfulLiveReleaseCommit,
   type ReleaseResult,
@@ -23,7 +23,7 @@ export type RequiredReleaseRung = {
 export function decideRequiredRungs(
   rungs: readonly RequiredReleaseRung[],
   changedPaths: readonly string[],
-  entryClosure: ReadonlyMap<string, ReadonlySet<string>>,
+  entryClosure: EntryClosure,
 ): string[] {
   return rungs
     .filter(
@@ -58,7 +58,7 @@ export type RequiredRungDecision =
 export function requiredRungDecision(
   project: Project,
   readChangedPaths: () => readonly string[],
-  readEntryClosure: (entries: readonly string[]) => ReadonlyMap<string, ReadonlySet<string>>,
+  readEntryClosure: (entries: readonly string[]) => EntryClosure,
 ): RequiredRungDecision {
   const rungs = project.settings.release?.rungs ?? []
   const declared = rungs.filter(
@@ -85,11 +85,7 @@ export function requiredRungDecision(
 
 export type RequiredReleaseRunner = {
   changedPaths(project: Project, mergeCommit: string): string[]
-  entryClosure(
-    project: Project,
-    mergeCommit: string,
-    entries: readonly string[],
-  ): ReadonlyMap<string, ReadonlySet<string>>
+  entryClosure(project: Project, mergeCommit: string, entries: readonly string[]): EntryClosure
   prepareMain(project: Project): void
   newestLive(project: Project, rung: string): string | null
   contains(project: Project, ancestor: string, descendant: string): boolean
@@ -266,14 +262,17 @@ export function releaseRequiredRungs(input: {
   project: Project
   mergeCommit: string
   releaseRequired: boolean
+  decision?: RequiredRungDecision
   runner?: RequiredReleaseRunner
 }): RequiredReleaseReport {
   const runner = input.runner ?? requiredReleaseRunner
-  const decision = requiredRungDecision(
-    input.project,
-    () => runner.changedPaths(input.project, input.mergeCommit),
-    (entries) => runner.entryClosure(input.project, input.mergeCommit, entries),
-  )
+  const decision =
+    input.decision ??
+    requiredRungDecision(
+      input.project,
+      () => runner.changedPaths(input.project, input.mergeCommit),
+      (entries) => runner.entryClosure(input.project, input.mergeCommit, entries),
+    )
   if (!decision.decided) return failedRequiredRelease(decision.required, decision.error)
   const required = decision.required
   if (required.length === 0) return { required, releases: [], satisfied: true }

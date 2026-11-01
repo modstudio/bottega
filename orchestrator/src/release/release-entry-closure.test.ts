@@ -72,6 +72,20 @@ describe('sourceDirectivePaths', () => {
       )
     },
   )
+
+  test('refuses a source directory outside the repository', () => {
+    const directive = '@source "../../../../../shared";'
+    expect(() => sourceDirectivePaths('hub/web/src/styles/index.css', directive, [])).toThrow(
+      `@source directive escapes repository in hub/web/src/styles/index.css: ${directive}`,
+    )
+  })
+
+  test('refuses a source glob', () => {
+    const directive = '@source "../../../ui/src/**/*.tsx";'
+    expect(() => sourceDirectivePaths('hub/web/src/styles/index.css', directive, [])).toThrow(
+      `unsupported @source directive in hub/web/src/styles/index.css: ${directive}`,
+    )
+  })
 })
 
 test('workspaceExternals maps workspace names and excludes them from externals', () => {
