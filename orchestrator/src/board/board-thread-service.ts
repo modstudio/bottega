@@ -110,11 +110,19 @@ function addReplyReceipts(
   const addReceipt = database.query(
     `INSERT INTO board_receipt
      (message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,record_id)
-     VALUES (?,?,(SELECT reader_run_record_id FROM board_receipt
-                    WHERE reader_session=? AND reader_run_record_id IS NOT NULL LIMIT 1),1,NULL,NULL,?)`,
+     VALUES (?,?,?,1,NULL,NULL,?)`,
   )
-  for (const recipient of recipients)
-    addReceipt.run(replyRecordId, recipient, recipient, newRecordId())
+  const readerRunRecordIds = new Map(
+    facts.rootReceipts.map((receipt) => [receipt.reader, receipt.readerRunRecordId]),
+  )
+  for (const recipient of recipients) {
+    addReceipt.run(
+      replyRecordId,
+      recipient,
+      readerRunRecordIds.get(recipient) ?? null,
+      newRecordId(),
+    )
+  }
   return recipients.length
 }
 
@@ -131,11 +139,12 @@ function replyAudienceFacts(root: MessageRow, database: ReturnType<typeof writab
   }[]
   const rootReceipts = database
     .query(
-      `SELECT reader_session,audience_at_posting,acknowledged_at FROM board_receipt
+      `SELECT reader_session,reader_run_record_id,audience_at_posting,acknowledged_at FROM board_receipt
        WHERE message_record_id=? ORDER BY rowid`,
     )
     .all(root.record_id) as Array<{
     reader_session: string
+    reader_run_record_id: string | null
     audience_at_posting: number
     acknowledged_at: string | null
   }>
@@ -147,6 +156,7 @@ function replyAudienceFacts(root: MessageRow, database: ReturnType<typeof writab
     }),
     rootReceipts: rootReceipts.map((receipt) => ({
       reader: receipt.reader_session,
+      readerRunRecordId: receipt.reader_run_record_id,
       audienceAtPosting: receipt.audience_at_posting === 1,
       acknowledged: receipt.acknowledged_at !== null,
     })),

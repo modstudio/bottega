@@ -15,7 +15,7 @@ import {
   RECORD_READER_ROLE,
 } from '../shared/record/schema.ts'
 import { proofProjectSpaceOwnershipDeclaration } from './check-record-project-space-ownership.ts'
-import * as boardMigrationProof from './record-board-reader-run-backfill-proof.ts'
+import * as boardMigrationProof from './record-board-migration-proofs.ts'
 import {
   docJsonbArrayRepair,
   proofDocJsonbArrayRepair,

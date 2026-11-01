@@ -342,7 +342,7 @@ export function claimRunPushNotices(
 } {
   const run = database
     .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
-    .get(runId) as { root_id: number } | null
+    .get(runId) as { root_id: string } | null
   if (!run) {
     const selected = selectPushNotices('unbounded', [], clock)
     return {
@@ -352,7 +352,7 @@ export function claimRunPushNotices(
     }
   }
   const reader = `run:${run.root_id}`
-  const beganAt = boardReaderBeganAt(reader, database, String(run.root_id))
+  const beganAt = boardReaderBeganAt(reader, database, run.root_id)
   const selected = selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock)
   return {
     notices: selected.notices,

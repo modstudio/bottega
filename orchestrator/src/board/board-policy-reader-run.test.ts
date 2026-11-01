@@ -4,7 +4,12 @@ import { resolve } from 'node:path'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db } from '../database/db.ts'
 import { fixtureProjectRecordId } from '../database/test-database.fixture.ts'
-import { postNotice } from './board-service.ts'
+import {
+  boardEscalations,
+  markRunNoticesDelivered,
+  noticeStatus,
+  postNotice,
+} from './board-service.ts'
 
 beforeEach(() => fixtureProjectRecordId(db()))
 
@@ -48,6 +53,48 @@ test('run receipts carry their UUID sibling while session receipts leave it NULL
     reader_session: 'receipt-session-reader',
     reader_run_record_id: null,
   })
+})
+
+test('run receipts stay out of session acknowledgement policy and delivery stamps the sibling', () => {
+  const clock = Date.now()
+  const runId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'proof','running',1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
+    )
+    .run(runId, new Date(clock).toISOString())
+  const posted = postNotice(
+    {
+      audience: `run:${runId}`,
+      title: 'Run acknowledgement policy',
+      body: 'Run readers do not enter session acknowledgement policy.',
+      ackRequired: true,
+      purpose: 'request',
+      deadlineMs: 1_000,
+    },
+    {},
+    clock,
+  )
+
+  expect(noticeStatus(posted.recordId, {}, clock + 1).unacknowledged).toEqual([])
+  expect(
+    boardEscalations(clock + 1_001).some(
+      (row) => row.subject === `board:${posted.number}:run:${runId}`,
+    ),
+  ).toBe(false)
+
+  db()
+    .query('UPDATE board_receipt SET reader_run_record_id=NULL WHERE message_record_id=?')
+    .run(posted.recordId)
+  markRunNoticesDelivered(runId, [posted.recordId], clock + 2)
+  expect(
+    db()
+      .query('SELECT reader_run_record_id FROM board_receipt WHERE message_record_id=?')
+      .get(posted.recordId),
+  ).toEqual({ reader_run_record_id: runId })
 })
 
 test('board receipt readers do not parse run labels', () => {

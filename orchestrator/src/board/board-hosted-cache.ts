@@ -444,7 +444,7 @@ type HostedClaimContext = {
   threadMessages: Map<string, HostedBoardMessage[]>
   presence: ReturnType<typeof presenceFacts>
   readerBeganAt: string | null
-  readerRunId: string | null
+  readerRunRecordId: string | null
   signedIn: string | null
   claimFacts: Map<string, HostedClaimFacts>
 }
@@ -477,7 +477,7 @@ function claimContext(
     threadMessages,
     presence: presenceFacts(database, clock),
     readerBeganAt: boardReaderBeganAt(reader, database, readerRunRecordId),
-    readerRunId: readerRunRecordId,
+    readerRunRecordId,
     signedIn,
     claimFacts,
   }
@@ -590,8 +590,8 @@ const readerMatchesAuthor = (message: HostedBoardMessage, context: HostedClaimCo
   if (message.authorUserId !== context.signedIn) return false
   const { reader } = context
   if (reader === OPERATOR_READER) return message.authorSession === null
-  if (context.readerRunId === null) return message.authorSession === reader
-  return Boolean(context.readerRunId && context.readerRunId === message.origin.runId)
+  if (context.readerRunRecordId === null) return message.authorSession === reader
+  return context.readerRunRecordId === message.origin.runId
 }
 
 const replyAddressesReader = (
@@ -696,7 +696,7 @@ function takeHostedReportReplySuccessor(
          successor=1,
          pending_sync=1`,
       )
-      .run(newRecordId(), message.id, context.reader, context.readerRunId)
+      .run(newRecordId(), message.id, context.reader, context.readerRunRecordId)
     return true
   }, context.database)
 }
@@ -732,7 +732,7 @@ function messageAddressesReader(
     message.origin.project,
   ).includes(context.reader)
   if (!addressed) return false
-  if (message.kind === 'question' && context.readerRunId !== null) return false
+  if (message.kind === 'question' && context.readerRunRecordId !== null) return false
   return true
 }
 
@@ -855,7 +855,7 @@ function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheN
     .map(({ message, tags }) => {
       const notice = {
         id: message.id,
-        text: renderCached(message, tags, context.messages, context.readerRunId !== null),
+        text: renderCached(message, tags, context.messages, context.readerRunRecordId !== null),
         oneLine:
           message.kind === 'reply'
             ? renderBoardReplyDelivery({
