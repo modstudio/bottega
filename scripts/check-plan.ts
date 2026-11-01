@@ -211,6 +211,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-gitleaks-plan.test.ts',
   'scripts/check-cascade-preservation.test.ts',
   'scripts/identity-inventory.test.ts',
+  'scripts/identity-state-class-check.test.ts',
   'scripts/check-outbox-payload-contracts.test.ts',
   'scripts/record-migration-bounds.test.ts',
   'scripts/record-migration-failure.test.ts',

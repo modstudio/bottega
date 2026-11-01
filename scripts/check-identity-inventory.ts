@@ -28,6 +28,8 @@ import {
 } from './identity-inventory.ts'
 import baseline from './identity-key-baseline.json'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
+import { stateClassRefusals } from './identity-state-class-check.ts'
+import { STATE_CLASSES } from './identity-state-classes.ts'
 
 type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
 
@@ -173,7 +175,17 @@ async function main(): Promise<void> {
         ...sqliteSyncedSchemaFacts('hub', hubTables),
       ],
     )
-    const refusals = [...syncedRefusals, ...runtimeSyncedSourceRefusals()]
+    const classRefusals = stateClassRefusals({
+      tables: {
+        orchestrator: orchestratorTables.map((table) => table.name),
+        hub: hubTables.map((table) => table.name),
+      },
+      declarations: STATE_CLASSES,
+      outboxSources: Object.values(OUTBOX_KIND_SOURCES).map(({ source }) => source),
+      pushableHubTables: PUSHABLE_HUB_CHANGE_TABLES,
+      hostedTables: (await hostedKeyTables()).map((table) => table.name),
+    })
+    const refusals = [...syncedRefusals, ...runtimeSyncedSourceRefusals(), ...classRefusals]
     if (refusals.length) throw new Error(refusals.join('\n'))
     const inventories = {
       orchestrator: classifyKeyInventory('orchestrator', orchestratorTables, KEY_MANIFESTS),
