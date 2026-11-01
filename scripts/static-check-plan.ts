@@ -1,11 +1,10 @@
 import { parseNameStatus, untrackedChanges } from '../shared/change-view.ts'
 
-type WorkerDecision =
-  | { run: true }
-  | ({ run: false; reason: string; evidence: string } & (
-      | { subjects: readonly string[]; noSubjects?: never }
-      | { noSubjects: string; subjects?: never }
-    ))
+type WorkerOmissionBase = { run: false; reason: string; evidence: string }
+type WorkerSubjects =
+  | { subjects: readonly `${string}/`[]; noSubjects?: never }
+  | { noSubjects: string; subjects?: never }
+type WorkerDecision = { run: true } | (WorkerOmissionBase & WorkerSubjects)
 const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'
 export const BIOME_CHECK_NAME = 'Biome'
 
@@ -19,13 +18,7 @@ export type StaticCheckDeclaration = {
 }
 
 const run = { run: true } as const
-const omit = (
-  reason: string,
-  evidence: string,
-  subjects:
-    | { subjects: readonly string[]; noSubjects?: never }
-    | { noSubjects: string; subjects?: never },
-): WorkerDecision => ({
+const omit = (reason: string, evidence: string, subjects: WorkerSubjects): WorkerDecision => ({
   run: false,
   reason,
   evidence,
@@ -281,7 +274,7 @@ export function staticCheckPlan(): readonly StaticCheckDeclaration[] {
 type WorkerLegDeclaration = {
   name: string
   typecheck: unknown
-  worker: { run: true } | { run: false; reason: string; evidence: string }
+  worker: { run: true } | WorkerOmissionBase
 }
 
 export type WorkerOmission = { name: string; reason: string }
@@ -315,9 +308,9 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
     return []
   })
   const forcedNames = new Set(forced.map((check) => check.name))
-  const workerStaticChecks = staticChecks.filter(
-    (check) => check !== biome && (check.worker.run || forcedNames.has(check.name)),
-  )
+  const runsInWorker = (check: StaticCheckDeclaration) =>
+    check.worker.run || forcedNames.has(check.name)
+  const workerStaticChecks = staticChecks.filter((check) => check !== biome && runsInWorker(check))
   const omitted: WorkerOmission[] = [
     {
       name: 'test suites',
@@ -336,12 +329,12 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
           ],
     ),
     ...staticChecks.flatMap((check) =>
-      check.worker.run || forcedNames.has(check.name)
+      runsInWorker(check)
         ? []
         : [
             {
               name: check.name,
-              reason: workerOmissionReason(check.worker),
+              reason: workerOmissionReason(check.worker as WorkerOmissionBase),
             },
           ],
     ),

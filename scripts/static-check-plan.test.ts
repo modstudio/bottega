@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS } from './check-plan.ts'
@@ -70,6 +70,14 @@ describe('worker static check plan', () => {
     expect(omissions.length).toBeGreaterThan(0)
 
     for (const omission of omissions) {
+      if ('subjects' in omission && omission.subjects !== undefined) {
+        for (const subject of omission.subjects) {
+          const subjectPath = join(REPOSITORY_ROOT, subject)
+          expect(existsSync(subjectPath), `${subject} must exist`).toBe(true)
+          expect(statSync(subjectPath).isDirectory(), `${subject} must be a directory`).toBe(true)
+        }
+      }
+
       const evidence = classifyWorkerOmissionEvidence(omission.evidence)
       expect(evidence.kind, omission.evidence).not.toBe('invalid')
       if (evidence.kind !== 'citation') continue
@@ -150,6 +158,9 @@ describe('worker static check plan', () => {
     )
     expect(projection.forced).toEqual(
       expected.map((name) => ({ name, subject: 'shared/record/migrations/', file })),
+    )
+    expect(projection.omitted.map((omission) => omission.name)).not.toEqual(
+      expect.arrayContaining(expected),
     )
   })
 
