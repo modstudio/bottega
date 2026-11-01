@@ -7,6 +7,7 @@ import { recordApiClient } from '../src/record/record-api-client.ts'
 import { syncRecord } from '../src/record/record-sync.ts'
 import { installRecordApiClient } from './fixtures/record-api.ts'
 import { headers, notice } from './postgres-board-api-values.ts'
+import { timedHostedRequest } from './postgres-proof-slow-request.ts'
 
 type Input = {
   machineId: string
@@ -135,12 +136,19 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       }),
     )
     try {
-      const result = await withoutDirectRecordCredentials(() =>
-        syncRecord({
-          local,
-          identity: { id: input.machineId, name: 'proof-machine' },
-          projectSpaces: { [deniedProjectName]: deniedSpaceId },
-        }),
+      const result = await timedHostedRequest(
+        {
+          test: 'hosted sync refuses a space outside the bearer memberships without writing',
+          operation: 'sync',
+        },
+        () =>
+          withoutDirectRecordCredentials(() =>
+            syncRecord({
+              local,
+              identity: { id: input.machineId, name: 'proof-machine' },
+              projectSpaces: { [deniedProjectName]: deniedSpaceId },
+            }),
+          ),
       )
       expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
       expect(result.quarantined[0]?.error).toContain('not a member')
@@ -182,8 +190,15 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       )
       .run(newRecordId(), String(second.id), JSON.stringify(second), String(second.createdAt))
     try {
-      const result = await withoutDirectRecordCredentials(() =>
-        syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
+      const result = await timedHostedRequest(
+        {
+          test: 'hosted sync refuses a project id owned by another space',
+          operation: 'sync',
+        },
+        () =>
+          withoutDirectRecordCredentials(() =>
+            syncRecord({ local, identity: { id: input.machineId, name: 'proof-machine' } }),
+          ),
       )
       expect(result).toMatchObject({ pushed: 0, failed: 2, pending: 0 })
       expect(result.quarantined).toHaveLength(2)
@@ -217,12 +232,19 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       }),
     )
     try {
-      const result = await withoutDirectRecordCredentials(() =>
-        syncRecord({
-          local,
-          identity: { id: input.machineId, name: 'proof-machine' },
-          projectSpaces: { [readProjectName]: readSpaceId },
-        }),
+      const result = await timedHostedRequest(
+        {
+          test: 'hosted sync defers a read-only space and keeps its local row pending',
+          operation: 'sync',
+        },
+        () =>
+          withoutDirectRecordCredentials(() =>
+            syncRecord({
+              local,
+              identity: { id: input.machineId, name: 'proof-machine' },
+              projectSpaces: { [readProjectName]: readSpaceId },
+            }),
+          ),
       )
       expect(result).toMatchObject({ pushed: 0, failed: 0, pending: 1 })
       expect(result.readOnlyDeferred).toEqual([{ spaceId: readSpaceId, rows: 1 }])
@@ -278,7 +300,15 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     }
     await withoutDirectRecordCredentials(async () => {
       const client = recordApiClient()
-      expect(await client.sync!(request)).toEqual({
+      expect(
+        await timedHostedRequest(
+          {
+            test: 'hosted sync binds user and space to the bearer and replays idempotently',
+            operation: 'sync',
+          },
+          () => client.sync!(request),
+        ),
+      ).toEqual({
         results: [{ id: 1, status: 'synced' }],
       })
       const before = input.admin(
@@ -286,7 +316,15 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
          FROM run WHERE id='${id}';`,
       )
       expect(before.split('|').slice(0, 2)).toEqual([input.writeSpaceId, input.userId])
-      expect(await client.sync!(request)).toEqual({
+      expect(
+        await timedHostedRequest(
+          {
+            test: 'hosted sync binds user and space to the bearer and replays idempotently',
+            operation: 'sync',
+          },
+          () => client.sync!(request),
+        ),
+      ).toEqual({
         results: [{ id: 1, status: 'synced' }],
       })
       expect(
@@ -322,18 +360,25 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
         )
       const requests: string[][] = []
       const hosted = recordApiClient()
-      const result = await syncRecord({
-        local,
-        identity: { id: String(inputRows.run.machineId), name: 'proof-machine' },
-        projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-        client: {
-          whoami: hosted.whoami,
-          sync: async (request) => {
-            requests.push(request.rows.map((row) => row.kind))
-            return hosted.sync!(request)
-          },
+      const result = await timedHostedRequest(
+        {
+          test: 'hosted sync records a same-request run and score but not a refused parent child',
+          operation: 'sync',
         },
-      })
+        () =>
+          syncRecord({
+            local,
+            identity: { id: String(inputRows.run.machineId), name: 'proof-machine' },
+            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+            client: {
+              whoami: hosted.whoami,
+              sync: async (request) => {
+                requests.push(request.rows.map((row) => row.kind))
+                return hosted.sync!(request)
+              },
+            },
+          }),
+      )
       return { local, requests, result }
     }
 
@@ -373,11 +418,18 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     )
     try {
       expect(
-        await syncRecord({
-          local: owner,
-          identity: { id: ownerMachineId, name: 'parent-owner' },
-          projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-        }),
+        await timedHostedRequest(
+          {
+            test: 'hosted sync records a same-request run and score but not a refused parent child',
+            operation: 'sync',
+          },
+          () =>
+            syncRecord({
+              local: owner,
+              identity: { id: ownerMachineId, name: 'parent-owner' },
+              projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+            }),
+        ),
       ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
     } finally {
       owner.close()
@@ -433,13 +485,20 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     const first = localFor(firstRunId)
     try {
       expect(
-        await withoutDirectRecordCredentials(() =>
-          syncRecord({
-            local: first,
-            identity: { id: machineId, name: 'first-owner' },
-            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-            now: () => firstSeen,
-          }),
+        await timedHostedRequest(
+          {
+            test: 'hosted sync refuses machine takeover before writing and preserves the owner',
+            operation: 'sync',
+          },
+          () =>
+            withoutDirectRecordCredentials(() =>
+              syncRecord({
+                local: first,
+                identity: { id: machineId, name: 'first-owner' },
+                projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+                now: () => firstSeen,
+              }),
+            ),
         ),
       ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
       expect(
@@ -453,12 +512,19 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     const refused = localFor(refusedRunId)
     try {
       await expect(
-        withoutDirectRecordCredentials(() =>
-          syncRecord({
-            local: refused,
-            identity: { id: machineId, name: 'takeover' },
-            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-          }),
+        timedHostedRequest(
+          {
+            test: 'hosted sync refuses machine takeover before writing and preserves the owner',
+            operation: 'sync',
+          },
+          () =>
+            withoutDirectRecordCredentials(() =>
+              syncRecord({
+                local: refused,
+                identity: { id: machineId, name: 'takeover' },
+                projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+              }),
+            ),
         ),
       ).rejects.toThrow('is registered to another user')
       expect(refused.query('SELECT attempts,synced_at,quarantined_at FROM outbox').get()).toEqual({
@@ -476,13 +542,20 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     const returning = localFor(returningRunId)
     try {
       expect(
-        await withoutDirectRecordCredentials(() =>
-          syncRecord({
-            local: returning,
-            identity: { id: machineId, name: 'returning-owner' },
-            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-            now: () => returningSeen,
-          }),
+        await timedHostedRequest(
+          {
+            test: 'hosted sync refuses machine takeover before writing and preserves the owner',
+            operation: 'sync',
+          },
+          () =>
+            withoutDirectRecordCredentials(() =>
+              syncRecord({
+                local: returning,
+                identity: { id: machineId, name: 'returning-owner' },
+                projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+                now: () => returningSeen,
+              }),
+            ),
         ),
       ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
       expect(
@@ -502,7 +575,17 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     const runId = newRecordId()
     // The second user is whoever the other token signs in as, so ask the server.
     input.setToken(input.otherToken())
-    const otherUserId = String((await recordApiClient().whoami()).user.id)
+    const otherUserId = String(
+      (
+        await timedHostedRequest(
+          {
+            test: 'hosted sync cannot replace another machine run in a shared writable space',
+            operation: 'whoami',
+          },
+          () => recordApiClient().whoami(),
+        )
+      ).user.id,
+    )
     input.setToken(input.token())
     expect(otherUserId).not.toBe(input.userId)
     input.admin(
@@ -520,12 +603,19 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
     )
     try {
       expect(
-        await withoutDirectRecordCredentials(() =>
-          syncRecord({
-            local: victim,
-            identity: { id: victimMachineId, name: 'victim-machine' },
-            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-          }),
+        await timedHostedRequest(
+          {
+            test: 'hosted sync cannot replace another machine run in a shared writable space',
+            operation: 'sync',
+          },
+          () =>
+            withoutDirectRecordCredentials(() =>
+              syncRecord({
+                local: victim,
+                identity: { id: victimMachineId, name: 'victim-machine' },
+                projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+              }),
+            ),
         ),
       ).toMatchObject({ pushed: 1, failed: 0, pending: 0 })
     } finally {
@@ -543,12 +633,19 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       }),
     )
     try {
-      const result = await withoutDirectRecordCredentials(() =>
-        syncRecord({
-          local: attacker,
-          identity: { id: attackerMachineId, name: 'attacker-machine' },
-          projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-        }),
+      const result = await timedHostedRequest(
+        {
+          test: 'hosted sync cannot replace another machine run in a shared writable space',
+          operation: 'sync',
+        },
+        () =>
+          withoutDirectRecordCredentials(() =>
+            syncRecord({
+              local: attacker,
+              identity: { id: attackerMachineId, name: 'attacker-machine' },
+              projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+            }),
+          ),
       )
       expect(result).toMatchObject({ pushed: 0, failed: 1, pending: 0 })
       expect(result.quarantined[0]?.error).toContain('already owned by another machine or user')
@@ -597,13 +694,20 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       applyMigrations(local)
       local.query(insert).run(newRecordId(), rowId, id, JSON.stringify(flake), at)
       try {
-        return await withoutDirectRecordCredentials(() =>
-          syncRecord({
-            client: { ...client, sync: client.sync! },
-            local,
-            identity: { id: input.machineId, name: 'proof-machine' },
-            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-          }),
+        return await timedHostedRequest(
+          {
+            test: 'hosted sync writes and replays a kind that carries no starting user',
+            operation: 'sync',
+          },
+          () =>
+            withoutDirectRecordCredentials(() =>
+              syncRecord({
+                client: { ...client, sync: client.sync! },
+                local,
+                identity: { id: input.machineId, name: 'proof-machine' },
+                projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+              }),
+            ),
         )
       } finally {
         local.close()
@@ -684,13 +788,20 @@ export function registerHostedSyncAuthorizationProofs(input: Input): void {
       )
     try {
       expect(
-        await withoutDirectRecordCredentials(() =>
-          syncRecord({
-            client: { ...client, sync: client.sync! },
-            local,
-            identity: { id: input.machineId, name: 'proof-machine' },
-            projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
-          }),
+        await timedHostedRequest(
+          {
+            test: 'hosted sync writes a review read before its triage snapshot in one sync',
+            operation: 'sync',
+          },
+          () =>
+            withoutDirectRecordCredentials(() =>
+              syncRecord({
+                client: { ...client, sync: client.sync! },
+                local,
+                identity: { id: input.machineId, name: 'proof-machine' },
+                projectSpaces: { [input.writeProjectName]: input.writeSpaceId },
+              }),
+            ),
         ),
       ).toMatchObject({ pushed: 2, failed: 0, pending: 0, quarantined: [] })
       expect(input.admin(`SELECT count(*) FROM review_read WHERE id='${readId}';`)).toBe('1')
