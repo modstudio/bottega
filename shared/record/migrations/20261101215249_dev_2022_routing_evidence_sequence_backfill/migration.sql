@@ -55,6 +55,7 @@ INSERT INTO public.routing_evidence_head (id, space_id, sequence)
 SELECT public.record_uuid_v7(), space_id, max(evidence_seq) FROM public.run GROUP BY space_id
 ON CONFLICT (space_id) DO UPDATE SET sequence = EXCLUDED.sequence;
 --> statement-breakpoint
+-- The stamp triggers follow the backfill and head seed so the mass UPDATE does not fire them per row.
 CREATE TRIGGER routing_evidence_run_stamp BEFORE INSERT OR UPDATE ON public.run
 FOR EACH ROW EXECUTE FUNCTION public.routing_evidence_stamp_run();
 --> statement-breakpoint
