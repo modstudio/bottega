@@ -518,6 +518,11 @@ describe('workflow cursor adapter', () => {
       answered_at: null,
       closed_at: null,
     })
+    const question = d.query<{ number: number }, []>('SELECT number FROM question').get()!
+    const listed = listWorkflowCursors({ project: 'fixture', session: 'session-one' }, d)[0]!
+    expect(listed.question_number).toBe(question.number)
+    expect(listed.question).toBe('Which ruling?')
+    expect(listed.line).toContain(`question q${question.number}:`)
 
     getWorkflowStepWithCursor('flow', 'fixture', 'rebase', args, 'default', context, d, {})
     expect(d.query('SELECT state,question FROM workflow_cursor').get()).toEqual({

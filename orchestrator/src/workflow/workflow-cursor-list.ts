@@ -4,6 +4,7 @@
 import type { Database } from 'bun:sqlite'
 import { db } from '../database/db.ts'
 import { projectAt } from '../project/projects.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { cursorAutonomy } from './workflow-cursor-autonomy.ts'
 import { renderWorkflowCursorLine } from './workflow-cursor-format.ts'
 import {
@@ -24,6 +25,7 @@ export type CursorListOptions = {
 type ListedCursorRow = SelectableCursorRow & {
   closed: string
   question: string | null
+  question_number: number | null
   total_steps: number
   created_at: string
   updated_at: string
@@ -49,7 +51,11 @@ export function listWorkflowCursors(
   }
   const rows = d
     .query(
-      `SELECT ${LISTED_CURSOR_COLUMNS} FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,number`,
+      `SELECT ${LISTED_CURSOR_COLUMNS},
+       (SELECT q.number FROM question q
+        WHERE q.workflow_cursor_record_id=workflow_cursor.record_id
+          AND ${questionOpenSql('q')} LIMIT 1) question_number
+       FROM workflow_cursor WHERE ${clauses.join(' AND ')} ORDER BY updated_at,number`,
     )
     .all(...values) as ListedCursorRow[]
   return rows.map((row) => {
