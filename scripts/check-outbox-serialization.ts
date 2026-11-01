@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
-const OUTBOX_PAYLOAD_WRITE = /INSERT\s+INTO\s+outbox\s*\(|UPDATE\s+outbox\s+SET\s+payload/i
+// A payload assignment in the SET list counts; a `WHERE payload=?` comparison does not.
+const OUTBOX_PAYLOAD_WRITE =
+  /INSERT\s+INTO\s+outbox\b|UPDATE\s+outbox\s+SET\b(?:(?!\bWHERE\b)[^`'";])*\bpayload\s*=/i
 const WRAPPER_IMPORT =
   /import\s*{[^}]*\bstringifyOutboxPayload\b[^}]*}\s*from\s*['"][^'"]*\/outbox-sanitize\.ts['"]/
 const WRAPPER_CALL = /\bstringifyOutboxPayload\s*\(/

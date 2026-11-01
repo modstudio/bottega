@@ -42,6 +42,37 @@ test('refuses an outbox payload update without the shared wrapper', () => {
   ])
 })
 
+test('refuses a reordered payload update and an insert without a column list', () => {
+  expect(
+    outboxSerializationViolations([
+      {
+        file: 'orchestrator/src/run/reordered.ts',
+        source:
+          "database.query('UPDATE outbox SET attempts=0, payload=? WHERE id=?').run(text, id)\n",
+      },
+      {
+        file: 'orchestrator/src/run/values.ts',
+        source: "database.query('INSERT INTO outbox VALUES (?,?,?,?,?)').run(...row)\n",
+      },
+    ]),
+  ).toEqual([
+    'orchestrator/src/run/reordered.ts:1: outbox payload writes must import and call stringifyOutboxPayload before enqueue',
+    'orchestrator/src/run/values.ts:1: outbox payload writes must import and call stringifyOutboxPayload before enqueue',
+  ])
+})
+
+test('ignores outbox bookkeeping updates and audit-table inserts', () => {
+  expect(
+    outboxSerializationViolations([
+      {
+        file: 'orchestrator/src/record/bookkeeping.ts',
+        source:
+          "database.query('UPDATE outbox SET attempts=attempts+1 WHERE id=? AND payload=?').run(id, text)\nconst payload = {}\ndatabase.query('INSERT INTO outbox_redaction_audit (record_id) VALUES (?)').run(id)\n",
+      },
+    ]),
+  ).toEqual([])
+})
+
 test('allows an outbox payload write that imports and calls the wrapper', () => {
   expect(
     outboxSerializationViolations([
