@@ -221,6 +221,62 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
     }
   })
 
+  test('hosted selection derives an omitted version id and refuses disagreement', async () => {
+    const lensKey = 'selection-version-id'
+    await upsertRecordLens({
+      ...tenant(),
+      key: lensKey,
+      title: 'Selection version id',
+      question: 'Pinned?',
+      excludes: 'Nothing.',
+      slots: '{}',
+      enabled: true,
+      requiresExecution: false,
+      expectedVersion: null,
+      reason: 'create selection lens',
+    })
+    const profileInput = {
+      ...tenant(),
+      lensKey,
+      axis: 'architecture' as const,
+      name: 'pinned',
+      body: '{}',
+      enabled: true,
+      expectedVersion: null,
+      reason: 'create selection profile',
+    }
+    const versionOne = await upsertRecordLensProfile(profileInput)
+    const versionTwo = await upsertRecordLensProfile({
+      ...profileInput,
+      expectedVersion: 1,
+      reason: 'revise selection profile',
+    })
+    const selection = {
+      ...tenant(),
+      projectId,
+      lensKey,
+      axis: 'architecture' as const,
+      profileName: 'pinned',
+      selectedVersion: 1,
+      expectedSelectionVersion: null,
+      reason: 'older client pin',
+    }
+    const written = await selectRecordProjectLensProfile(selection)
+    expect(written.selection.selectedVersionId).toBe(versionOne.profile.currentVersionId)
+
+    await expect(
+      selectRecordProjectLensProfile({
+        ...selection,
+        selectedVersionId: String(versionTwo.profile.currentVersionId),
+      }),
+    ).rejects.toThrow(
+      `selected version 1 and selected version id ${versionTwo.profile.currentVersionId} name different versions`,
+    )
+    await expect(selectRecordProjectLensProfile({ ...selection, lensKey: null })).rejects.toThrow(
+      "a pinned version names one lens profile's version; pass --lens <key> with --version",
+    )
+  })
+
   test('two concurrent creates serialize to one success and one named stale refusal', async () => {
     const input = {
       ...tenant(),

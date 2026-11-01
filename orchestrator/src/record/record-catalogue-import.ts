@@ -122,7 +122,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
       const id = foundId(existing)
       if (id) result.alreadyPresent++
       else {
-        await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selection_version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.projectId}::uuid,${lensId}::uuid,${row.axis},${row.profileName},${row.selectedVersion},${row.selectionVersion},${row.updatedAt}::timestamptz)`
+        await tx`INSERT INTO project_lens_profile (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selected_version_id,selection_version,updated_at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${row.projectId}::uuid,${lensId}::uuid,${row.axis},${row.profileName},${row.selectedVersion},${row.selectedVersionId}::uuid,${row.selectionVersion},${row.updatedAt}::timestamptz)`
         result.inserted++
       }
       selections.set(row.id, id ?? row.id)
@@ -137,7 +137,7 @@ export async function importRecordLensCatalogue(input: Tenant & RecordLensImport
         await tx`SELECT id FROM project_lens_profile_revision WHERE space_id=${input.spaceId}::uuid AND id=${row.id}::uuid LIMIT 1`
       if (existing[0]) result.alreadyPresent++
       else {
-        await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${row.priorSelectedVersion},${row.reason},${row.sessionId},${row.at}::timestamptz)`
+        await tx`INSERT INTO project_lens_profile_revision (id,space_id,selection_id,prior_profile_name,prior_selected_version,prior_selected_version_id,reason,session_id,at) VALUES (${row.id}::uuid,${input.spaceId}::uuid,${selectionId}::uuid,${row.priorProfileName},${row.priorSelectedVersion},${row.priorSelectedVersionId}::uuid,${row.reason},${row.sessionId},${row.at}::timestamptz)`
         result.inserted++
       }
     })

@@ -328,6 +328,8 @@ test('lens pull caches an unregistered project selection and revision from a per
   const project = newRecordId()
   const selection = newRecordId()
   const revision = newRecordId()
+  const selectedVersionId = newRecordId()
+  const priorSelectedVersionId = newRecordId()
   const pulledAt = '2026-10-19T12:00:00.000Z'
   const cursorKey = `record_lens_cursor:${space}:project_lens_profile`
   local
@@ -348,7 +350,8 @@ test('lens pull caches an unregistered project selection and revision from a per
               lensId: null,
               axis: 'framework',
               profileName: 'default',
-              selectedVersion: null,
+              selectedVersion: 2,
+              selectedVersionId,
               selectionVersion: 1,
               updatedAt: pulledAt,
             },
@@ -364,7 +367,8 @@ test('lens pull caches an unregistered project selection and revision from a per
               spaceId: space,
               selectionId: selection,
               priorProfileName: null,
-              priorSelectedVersion: null,
+              priorSelectedVersion: 1,
+              priorSelectedVersionId,
               reason: 'pull',
               sessionId: null,
               at: pulledAt,
@@ -380,12 +384,18 @@ test('lens pull caches an unregistered project selection and revision from a per
   expect(selectionCursor).toBeDefined()
   expect(
     local
-      .query('SELECT project_record_id FROM project_lens_profile WHERE record_id=?')
+      .query(
+        'SELECT project_record_id,selected_version_id FROM project_lens_profile WHERE record_id=?',
+      )
       .get(selection),
-  ).toEqual({ project_record_id: project })
+  ).toEqual({ project_record_id: project, selected_version_id: selectedVersionId })
   expect(
-    local.query('SELECT 1 FROM project_lens_profile_revision WHERE record_id=?').get(revision),
-  ).not.toBeNull()
+    local
+      .query(
+        'SELECT prior_selected_version_id FROM project_lens_profile_revision WHERE record_id=?',
+      )
+      .get(revision),
+  ).toEqual({ prior_selected_version_id: priorSelectedVersionId })
 })
 
 test('pullRecordCache pages six parent-first streams with independent space and table cursors', async () => {

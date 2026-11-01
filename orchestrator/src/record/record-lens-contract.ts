@@ -74,6 +74,7 @@ const recordLensRowSchemas = {
     axis,
     profileName: z.string().min(1),
     selectedVersion: z.number().int().positive().nullable(),
+    selectedVersionId: uuid.nullable().default(null),
     selectionVersion: z.number().int().positive(),
     updatedAt: iso,
   }),
@@ -82,6 +83,7 @@ const recordLensRowSchemas = {
     selectionId: uuid,
     priorProfileName: z.string().nullable(),
     priorSelectedVersion: z.number().int().positive().nullable(),
+    priorSelectedVersionId: uuid.nullable().default(null),
     reason: z.string().min(1),
     sessionId: z.string().nullable(),
     at: iso,
@@ -132,13 +134,14 @@ export const recordProjectLensSelectionSchema = z.object({
   axis,
   profileName: z.string().min(1),
   selectedVersion: z.number().int().positive().nullable(),
+  selectedVersionId: uuid.nullable().default(null),
   expectedSelectionVersion: z.number().int().positive().nullable(),
   ...context,
 })
 
 export type RecordLensWriteInput = z.infer<typeof recordLensUpsertSchema>
 export type RecordLensProfileWriteInput = z.infer<typeof recordLensProfileUpsertSchema>
-export type RecordProjectLensSelectionInput = z.infer<typeof recordProjectLensSelectionSchema>
+export type RecordProjectLensSelectionInput = z.input<typeof recordProjectLensSelectionSchema>
 
 export const recordLensWriteResponseSchema = z.object({
   lens: recordLensRowSchemas.lens,
