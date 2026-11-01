@@ -61,6 +61,7 @@ import {
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
+import { gatherStepQuestionEvidence } from './workflow-step-question-evidence.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
 
@@ -955,6 +956,7 @@ export function gatherValidatedEvidence(input: {
   identity: CursorIdentity
   stepOrdinal: number
   stepSlug: string
+  floors?: Floor[]
   evidence: WorkflowEvidenceInput
   ports?: FloorEvidencePorts
   d?: Database
@@ -969,6 +971,10 @@ export function gatherValidatedEvidence(input: {
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
+  Object.assign(
+    gathered,
+    gatherStepQuestionEvidence(input.floors, input.cursorId, input.stepOrdinal, input.stepSlug, d),
+  )
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
   if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)
