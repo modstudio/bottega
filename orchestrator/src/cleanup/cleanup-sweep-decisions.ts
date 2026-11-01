@@ -274,25 +274,49 @@ export function decideRecordedRunPostInventory(
   return { action: facts.closeOutcome, cleanupFailed: false }
 }
 
-export type FilesystemOrphanEligibilityFacts = {
+export type FilesystemOrphanCandidateFacts = {
+  marker: 'present' | 'absent' | 'unreadable'
+  nameRunId: string | null
+  run: 'absent' | 'terminal' | 'live'
   orchOwned: boolean
   alive: boolean
-  safe: { removable: boolean; detail: string; branch: string | null }
+  removable: boolean
+  removalDetail: string
+  uniqueCommitCount: number | null
+  dirty: boolean
+  dirtyDetail: string
   dry: boolean
 }
-export type FilesystemOrphanEligibilityRuling =
+
+export type FilesystemOrphanCandidateRuling =
   | { action: 'keep'; keepLine: string; keepReason: string }
   | { action: 'dry-would-reclaim' }
-  | { action: 'proceed' }
+  | { action: 'reclaim' }
+
+const MANUAL_OR_ESCALATE = 'inspect the tree and remove it by hand, or escalate'
+const ORCH_TREE_LABEL = ['orch', 'tree'].join(' ')
 
 function orphanKeepReason(detail: string): string {
   return /^has commits not reachable from /.test(detail) ? 'holds commits not on trunk' : detail
 }
 
-/** Decide an orphan after its ownership, liveness, and removal safety are known. */
-export function decideFilesystemOrphanEligibility(
-  facts: FilesystemOrphanEligibilityFacts,
-): FilesystemOrphanEligibilityRuling {
+function decideMarkedFilesystemOrphan(
+  facts: FilesystemOrphanCandidateFacts,
+): FilesystemOrphanCandidateRuling {
+  if (facts.marker === 'unreadable') {
+    return {
+      action: 'keep',
+      keepLine: 'kept: no UUID ownership marker',
+      keepReason: 'ownership cannot be attributed',
+    }
+  }
+  if (facts.run === 'absent') {
+    return {
+      action: 'keep',
+      keepLine: 'kept: marker UUID has no run record',
+      keepReason: 'ownership cannot be attributed',
+    }
+  }
   if (!facts.orchOwned) {
     return {
       action: 'keep',
@@ -300,20 +324,82 @@ export function decideFilesystemOrphanEligibility(
       keepReason: 'not created by orch',
     }
   }
-  if (facts.alive)
+  if (facts.alive) {
+    return { action: 'keep', keepLine: 'live — kept', keepReason: 'live — kept' }
+  }
+  if (!facts.removable) {
     return {
       action: 'keep',
-      keepLine: 'live — kept',
-      keepReason: 'live — kept',
-    }
-  if (!facts.safe.removable) {
-    return {
-      action: 'keep',
-      keepLine: facts.safe.detail,
-      keepReason: orphanKeepReason(facts.safe.detail),
+      keepLine: facts.removalDetail,
+      keepReason: orphanKeepReason(facts.removalDetail),
     }
   }
-  return { action: facts.dry ? 'dry-would-reclaim' : 'proceed' }
+  return { action: facts.dry ? 'dry-would-reclaim' : 'reclaim' }
+}
+
+function decideUnmarkedFilesystemOrphan(
+  facts: FilesystemOrphanCandidateFacts,
+): FilesystemOrphanCandidateRuling {
+  if (!facts.nameRunId) {
+    return {
+      action: 'keep',
+      keepLine: 'kept: no UUID ownership marker',
+      keepReason: 'ownership cannot be attributed',
+    }
+  }
+  if (facts.run === 'absent') {
+    return {
+      action: 'keep',
+      keepLine: `kept: unmarked ${ORCH_TREE_LABEL} names run ${facts.nameRunId}, which has no run record; ${MANUAL_OR_ESCALATE}`,
+      keepReason: 'ownership cannot be attributed',
+    }
+  }
+  if (facts.run === 'live' || facts.alive) {
+    return {
+      action: 'keep',
+      keepLine: `live — kept; wait for run ${facts.nameRunId} to become terminal, then run ${PLATFORM_SLUG} machine sweep`,
+      keepReason: 'live — kept',
+    }
+  }
+  if (!facts.removable) {
+    return {
+      action: 'keep',
+      keepLine: `${facts.removalDetail}; ${MANUAL_OR_ESCALATE}`,
+      keepReason: facts.removalDetail,
+    }
+  }
+  if (facts.uniqueCommitCount === null) {
+    return {
+      action: 'keep',
+      keepLine: `could not count commits not on main; ${MANUAL_OR_ESCALATE}`,
+      keepReason: 'unique work could not be inspected',
+    }
+  }
+  if (facts.uniqueCommitCount > 0) {
+    const noun = facts.uniqueCommitCount === 1 ? 'commit' : 'commits'
+    return {
+      action: 'keep',
+      keepLine: `kept: ${facts.uniqueCommitCount} ${noun} not on main; retain them in main or archive them, then run ${PLATFORM_SLUG} machine sweep`,
+      keepReason: 'holds commits not on main',
+    }
+  }
+  if (facts.dirty) {
+    return {
+      action: 'keep',
+      keepLine: `${facts.dirtyDetail}; preserve or discard those changes, then run ${PLATFORM_SLUG} machine sweep`,
+      keepReason: facts.dirtyDetail,
+    }
+  }
+  return { action: facts.dry ? 'dry-would-reclaim' : 'reclaim' }
+}
+
+/** Decide marker ownership and the stricter fallback for an unmarked run-named reader clone. */
+export function decideFilesystemOrphanCandidate(
+  facts: FilesystemOrphanCandidateFacts,
+): FilesystemOrphanCandidateRuling {
+  return facts.marker === 'absent'
+    ? decideUnmarkedFilesystemOrphan(facts)
+    : decideMarkedFilesystemOrphan(facts)
 }
 
 export type FilesystemOrphanUnderLockFacts = {

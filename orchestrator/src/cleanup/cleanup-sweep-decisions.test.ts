@@ -5,7 +5,7 @@ import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterInventory,
   decideFilesystemOrphanAfterRemoval,
-  decideFilesystemOrphanEligibility,
+  decideFilesystemOrphanCandidate,
   decideFilesystemOrphanUnderLock,
   decideProjectSweep,
   decideRecordedRunCloseOut,
@@ -15,7 +15,7 @@ import {
   decideUnattendedReclaim,
   type FilesystemOrphanAfterInventoryFacts,
   type FilesystemOrphanAfterRemovalFacts,
-  type FilesystemOrphanEligibilityFacts,
+  type FilesystemOrphanCandidateFacts,
   type FilesystemOrphanUnderLockFacts,
   isSweepCandidate,
   ownerIsGone,
@@ -552,42 +552,36 @@ describe('recorded run post-inventory ruling', () => {
   }
 })
 
-describe('filesystem orphan eligibility ruling', () => {
-  const safe = { removable: true, detail: 'safe to remove', branch: 'orch-1' }
+describe('unmarked filesystem orphan candidate ruling', () => {
+  const orchTree = ['orch', 'tree'].join(' ')
+  const base: FilesystemOrphanCandidateFacts = {
+    marker: 'absent',
+    nameRunId: '01990000-0000-7000-8000-000000001974',
+    run: 'terminal',
+    orchOwned: false,
+    alive: false,
+    removable: true,
+    removalDetail: 'committed work is retained by its branch',
+    uniqueCommitCount: 0,
+    dirty: false,
+    dirtyDetail: 'all work is committed',
+    dry: false,
+  }
   const cases: Array<{
     name: string
-    facts: FilesystemOrphanEligibilityFacts
-    expected: ReturnType<typeof decideFilesystemOrphanEligibility>
+    facts: FilesystemOrphanCandidateFacts
+    expected: ReturnType<typeof decideFilesystemOrphanCandidate>
+    dryExpected?: ReturnType<typeof decideFilesystemOrphanCandidate>
   }> = [
     {
-      name: 'a tree not created by orchestrator is kept',
-      facts: { orchOwned: false, alive: false, safe, dry: false },
-      expected: {
-        action: 'keep',
-        keepLine: 'kept: not created by orch',
-        keepReason: 'not created by orch',
-      },
-    },
-    {
-      name: 'a live orphan is never removed even when safe',
-      facts: { orchOwned: true, alive: true, safe, dry: false },
-      expected: {
-        action: 'keep',
-        keepLine: 'live — kept',
-        keepReason: 'live — kept',
-      },
-    },
-    {
-      name: 'an unsafe orphan keeps the safety detail',
+      name: 'a marked candidate keeps its existing eligibility ruling',
       facts: {
+        ...base,
+        marker: 'present',
+        nameRunId: null,
         orchOwned: true,
-        alive: false,
-        safe: {
-          removable: false,
-          detail: 'has local changes',
-          branch: 'orch-1',
-        },
-        dry: false,
+        removable: false,
+        removalDetail: 'has local changes',
       },
       expected: {
         action: 'keep',
@@ -596,37 +590,75 @@ describe('filesystem orphan eligibility ruling', () => {
       },
     },
     {
-      name: 'unreachable commits use the concise keep reason',
+      name: 'a terminal clean unmarked run tree is reclaimed',
+      facts: base,
+      expected: { action: 'reclaim' },
+      dryExpected: { action: 'dry-would-reclaim' },
+    },
+    {
+      name: 'an unmarked run tree with no run row is kept with its remedy',
+      facts: { ...base, run: 'absent' },
+      expected: {
+        action: 'keep',
+        keepLine:
+          `kept: unmarked ${orchTree} names run ${base.nameRunId}, which has no run record; ` +
+          'inspect the tree and remove it by hand, or escalate',
+        keepReason: 'ownership cannot be attributed',
+      },
+    },
+    {
+      name: 'an unmarked tree for a live run is kept',
+      facts: { ...base, run: 'live' },
+      expected: {
+        action: 'keep',
+        keepLine: `live — kept; wait for run ${base.nameRunId} to become terminal, then run ${PLATFORM_SLUG} machine sweep`,
+        keepReason: 'live — kept',
+      },
+    },
+    {
+      name: 'an unmarked tree with unique commits names the count',
+      facts: { ...base, uniqueCommitCount: 2 },
+      expected: {
+        action: 'keep',
+        keepLine: `kept: 2 commits not on main; retain them in main or archive them, then run ${PLATFORM_SLUG} machine sweep`,
+        keepReason: 'holds commits not on main',
+      },
+    },
+    {
+      name: 'an unmarked tree with reader edits is kept',
       facts: {
-        orchOwned: true,
-        alive: false,
-        safe: {
-          removable: false,
-          detail: 'has commits not reachable from main',
-          branch: 'orch-1',
-        },
-        dry: false,
+        ...base,
+        dirty: true,
+        dirtyDetail: 'has uncommitted or untracked changes',
       },
       expected: {
         action: 'keep',
-        keepLine: 'has commits not reachable from main',
-        keepReason: 'holds commits not on trunk',
+        keepLine:
+          `has uncommitted or untracked changes; preserve or discard those changes, then run ` +
+          `${PLATFORM_SLUG} machine sweep`,
+        keepReason: 'has uncommitted or untracked changes',
       },
     },
     {
-      name: 'a dry run reports would-reclaim without removal facts',
-      facts: { orchOwned: true, alive: false, safe, dry: true },
-      expected: { action: 'dry-would-reclaim' },
-    },
-    {
-      name: 'a safe orphan proceeds to the lock',
-      facts: { orchOwned: true, alive: false, safe, dry: false },
-      expected: { action: 'proceed' },
+      name: 'an unmarked shared review clone stays kept without a run owner',
+      facts: { ...base, nameRunId: null, run: 'absent' },
+      expected: {
+        action: 'keep',
+        keepLine: 'kept: no UUID ownership marker',
+        keepReason: 'ownership cannot be attributed',
+      },
     },
   ]
 
   for (const row of cases) {
-    test(row.name, () => expect(decideFilesystemOrphanEligibility(row.facts)).toEqual(row.expected))
+    test(row.name, () => {
+      expect(decideFilesystemOrphanCandidate(row.facts)).toEqual(row.expected)
+      if (row.dryExpected) {
+        expect(decideFilesystemOrphanCandidate({ ...row.facts, dry: true })).toEqual(
+          row.dryExpected,
+        )
+      }
+    })
   }
 })
 

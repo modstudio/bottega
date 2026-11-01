@@ -53,9 +53,8 @@ import type { GrokTrustObservation } from '../sandbox/grok-trust.ts'
 import type { HubTaskReader } from '../workflow/workflow-task-reference.ts'
 import {
   inspectTreeOwnership,
-  isOrchWorktree,
   markedWorktreeSource,
-  orphanSafety,
+  readWorktreeMarker,
   worktreeNameRunId,
 } from '../worktree/worktree-attribution.ts'
 import { branchTip } from '../worktree/worktree-remove.ts'
@@ -71,7 +70,6 @@ import {
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanAfterRemoval,
-  decideFilesystemOrphanEligibility,
   decideFilesystemOrphanUnderLock,
   decideRecordedRunCloseOut,
   decideRecordedRunPointer,
@@ -84,6 +82,7 @@ import {
 } from './cleanup-sweep-decisions.ts'
 import { reclaimSweptDockerResources } from './cleanup-sweep-docker.ts'
 import { holdNamedFilesystemOrphans } from './cleanup-sweep-named-tree.ts'
+import { orphanCandidateDecision } from './cleanup-sweep-orphan-candidate.ts'
 import { finishRemovedOrphan, reportOrphanAfterRemovalKeep } from './cleanup-sweep-orphan-report.ts'
 import { pruneSweptProjectBranches, reclaimAbsentTrustEntries } from './cleanup-sweep-reclaim.ts'
 import { sweepUnattendedResidue } from './cleanup-sweep-residue.ts'
@@ -217,8 +216,12 @@ type SweepCandidate = {
 }
 type ClosedSweepCounts = Record<ClosedSweepOutcome, number>
 
-function namedRun(name: string, project: Project): NamedRunLookup {
-  const runRecordId = worktreeNameRunId(name)
+function namedRun(
+  name: string,
+  project: Project,
+  fallbackRunId: string | null = null,
+): NamedRunLookup {
+  const runRecordId = worktreeNameRunId(name) ?? fallbackRunId
   if (runRecordId === null) return { outcome: 'absent' }
   const member = db()
     .query(
@@ -307,77 +310,19 @@ function observeNamedRunForSweep(
   project: Project,
   label: string,
   presentation: CleanupPresentation,
+  fallbackRunId: string | null = null,
 ): { alive: boolean; failed: boolean } {
-  const lookup = namedRun(path, project)
+  const lookup = namedRun(path, project, fallbackRunId)
   if (lookup.outcome !== 'unknown') return { alive: namedRunAlive(lookup), failed: false }
   presentation.error(`could not reclaim ${label}: ${lookup.reason}`)
   return { alive: true, failed: true }
 }
 
-type OrphanCandidateDecision =
-  | { action: 'keep'; line: string; reason: string; failed: boolean; held: boolean }
-  | { action: 'dry'; detail: string; failed: boolean }
-  | {
-      action: 'reclaim'
-      runId: string
-      safe: ReturnType<typeof orphanSafety>
-      failed: boolean
-    }
-
-function orphanCandidateDecision(
-  path: string,
-  project: Project,
-  label: string,
-  dry: boolean,
-  presentation: CleanupPresentation,
-): OrphanCandidateDecision {
-  const runRecordId = worktreeNameRunId(path)
-  if (runRecordId === null) {
-    return {
-      action: 'keep',
-      line: 'kept: no UUID ownership marker',
-      reason: 'ownership cannot be attributed',
-      failed: false,
-      held: false,
-    }
-  }
-  const owner = db()
-    .query<{ record_id: string }, [string]>('SELECT record_id FROM run WHERE record_id=?')
-    .get(runRecordId)
-  if (!owner) {
-    return {
-      action: 'keep',
-      line: 'kept: marker UUID has no run record',
-      reason: 'ownership cannot be attributed',
-      failed: false,
-      held: false,
-    }
-  }
-  const named = observeNamedRunForSweep(path, project, label, presentation)
-  const trunk =
-    typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
-      ? project.settings.trunk
-      : 'HEAD'
-  const safe = orphanSafety(path, project.path, trunk)
-  const ruling = decideFilesystemOrphanEligibility({
-    orchOwned: isOrchWorktree(path),
-    alive: named.alive,
-    safe,
-    dry,
-  })
-  if (ruling.action === 'keep') {
-    return {
-      action: 'keep',
-      line: ruling.keepLine,
-      reason: ruling.keepReason,
-      failed: named.failed,
-      held: named.alive || (isOrchWorktree(path) && !safe.removable),
-    }
-  }
-  if (ruling.action === 'dry-would-reclaim') {
-    return { action: 'dry', detail: safe.detail, failed: named.failed }
-  }
-  return { action: 'reclaim', runId: owner.record_id, safe, failed: named.failed }
+function orphanWorktreeSource(path: string): Worktree['source'] | undefined {
+  return (
+    markedWorktreeSource(path) ??
+    (readWorktreeMarker(path).state === 'absent' ? 'clone' : undefined)
+  )
 }
 
 function conversationProjectOwnershipIssue(
@@ -928,7 +873,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
         branch: safe.branch,
         base: '',
         repoRoot: p.path,
-        source: markedWorktreeSource(path),
+        source: orphanWorktreeSource(path),
         mintedBranch: safe.branch,
       }
       try {
@@ -936,7 +881,7 @@ export async function sweepRuns(options: SweepOptions, helpers: SweepHelpers): P
           const ownerRow = { record_id: runId, repo: p.name, branch: safe.branch }
           const worktreeRow = { record_id: runId, worktree: path }
           const sharersBefore = liveWorktreeSharers(db(), worktreeRow)
-          const locked = observeNamedRunForSweep(path, p, label, options.presentation)
+          const locked = observeNamedRunForSweep(path, p, label, options.presentation, runId)
           cleanupFailed ||= locked.failed
           const lockedRuling = decideFilesystemOrphanUnderLock({
             sharers: sharersBefore.length,
