@@ -326,6 +326,30 @@ describe('lens catalogue', () => {
     expect(() => resolveLens('correctness', 'pinned')).toThrow(
       /profile correctness\/framework\/pinned-profile has no pinned version id .*; its current version 2 is .*; re-pin with select-profile --lens correctness --version 1/,
     )
+
+    await selectProjectProfile({
+      project: 'pinned',
+      axis: input.axis,
+      name: input.name,
+      lensId: input.lensId,
+      version: 2,
+      reason: 're-pin version two',
+    })
+    expect(resolveLens('correctness', 'pinned')!.body).toContain('Version two.')
+    expect(
+      db()
+        .query<{ selected_version: number; selected_version_id: string }, []>(
+          `SELECT selected_version,selected_version_id FROM project_lens_profile WHERE profile_name='pinned-profile'`,
+        )
+        .get(),
+    ).toEqual({
+      selected_version: 2,
+      selected_version_id: db()
+        .query<{ current_version_id: string }, []>(
+          `SELECT current_version_id FROM lens_profile WHERE name='pinned-profile'`,
+        )
+        .get()!.current_version_id,
+    })
   })
 
   test('a versioned all-lenses selection requires one lens key', async () => {

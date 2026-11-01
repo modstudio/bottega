@@ -402,6 +402,27 @@ test('lens pull caches an unregistered project selection and revision from a per
       )
       .get(revision),
   ).toEqual({ prior_selected_version_id: priorSelectedVersionId })
+
+  const repinned = newRecordId()
+  applyLensCatalogueRow(local, 'project_lens_profile', {
+    id: selection,
+    spaceId: space,
+    projectId: project,
+    lensId: lens,
+    axis: 'framework',
+    profileName: 'default',
+    selectedVersion: 3,
+    selectedVersionId: repinned,
+    selectionVersion: 2,
+    updatedAt: '2026-10-19T13:00:00.000Z',
+  })
+  expect(
+    local
+      .query(
+        'SELECT selected_version,selected_version_id FROM project_lens_profile WHERE record_id=?',
+      )
+      .get(selection),
+  ).toEqual({ selected_version: 3, selected_version_id: repinned })
 })
 
 test('pullRecordCache pages six parent-first streams with independent space and table cursors', async () => {
