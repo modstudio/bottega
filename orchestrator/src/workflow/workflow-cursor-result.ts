@@ -74,7 +74,11 @@ export function refuseTerminalCursor(row: {
     )
 }
 
-export function refuseMissingCloseNote(note: string | undefined, n: number, slug: string): void {
+export function refuseMissingCloseNote(
+  note: string | undefined,
+  n: number,
+  slug: string,
+): asserts note is string {
   if (!note?.trim())
     throw new Error(`--note is required: one line saying how step ${n} ${slug}'s floor was met`)
 }
