@@ -596,8 +596,12 @@ function validateSelectedProfile(
     const profile = profileRows(lensId, d, spaceId).find(
       (candidate) => candidate.axis === axis && candidate.name === name && candidate.enabled,
     )
-    if (!profile) throw new Error(`profile ${lensId}/${axis}/${name} has no version ${version}`)
-    return selectedProfileVersionId(profile, version, d)
+    try {
+      if (profile) return selectedProfileVersionId(profile, version, d)
+    } catch {}
+    throw new Error(
+      `profile ${axis}/${name} version ${version} is missing or disabled for lenses: ${lensId}`,
+    )
   }
   const missing = cores.filter((core) => {
     const profile = profileRows(core.id, d, spaceId).find(
@@ -613,7 +617,7 @@ function validateSelectedProfile(
   })
   if (missing.length)
     throw new Error(
-      `profile ${axis}/${name}${version ? ` version ${version}` : ''} is missing or disabled for lenses: ${missing.map((core) => core.id).join(', ')}`,
+      `profile ${axis}/${name} is missing or disabled for lenses: ${missing.map((core) => core.id).join(', ')}`,
     )
   return null
 }
