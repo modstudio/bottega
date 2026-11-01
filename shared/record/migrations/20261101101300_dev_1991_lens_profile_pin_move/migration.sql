@@ -344,7 +344,7 @@ BEGIN
   IF missing_lenses IS NOT NULL THEN
     ALTER TABLE lens_profile FORCE ROW LEVEL SECURITY;
     ALTER TABLE lens FORCE ROW LEVEL SECURITY;
-    RAISE EXCEPTION 'project % cannot move from space % to space % because destination lenses are missing for selected profiles: %',project_name,source_space,destination_space,missing_lenses;
+    RAISE EXCEPTION 'project % cannot move from space % to space % because destination lenses are missing for selections: %; create those lenses in the destination space, then retry',project_name,source_space,destination_space,missing_lenses;
   END IF;
   SELECT string_agg(format('%s/%s/%s',m.lens_key,m.axis,m.name),', ' ORDER BY m.lens_key,m.axis,m.name)
     INTO profile_conflicts

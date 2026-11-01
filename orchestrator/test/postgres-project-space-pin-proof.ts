@@ -232,7 +232,7 @@ export function registerProjectSpacePinProofs(input: ProjectSpaceProofInput): vo
           destination: destination.slug,
           confirm,
         }),
-      ).rejects.toThrow('because destination lenses are missing for selected profiles:')
+      ).rejects.toThrow('because destination lenses are missing for selections:')
     expect(input.admin(`SELECT space_id FROM project WHERE id='${project}';`).trim()).toBe(source)
   })
 
