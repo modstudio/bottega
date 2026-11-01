@@ -265,7 +265,11 @@ export function showLens(
     enabled: !!row.enabled,
     requires_execution: !!row.requires_execution,
     slots: JSON.parse(row.slots),
-    profiles: profiles.map((p) => ({ ...p, enabled: !!p.enabled, body: JSON.parse(p.body) })),
+    profiles: profiles.map(({ current_version_id: _currentVersionId, ...p }) => ({
+      ...p,
+      enabled: !!p.enabled,
+      body: JSON.parse(p.body),
+    })),
   }
 }
 export async function setLens(input: SetLensInput) {
@@ -405,7 +409,9 @@ function showProfileInSpace(
   spaceId: string | null,
 ) {
   const row = profileRowInSpace(lensId, axisValue(axis), name, database, spaceId)
-  return row ? { ...row, enabled: !!row.enabled, body: JSON.parse(row.body) } : null
+  if (!row) return null
+  const { current_version_id: _currentVersionId, ...profile } = row
+  return { ...profile, enabled: !!profile.enabled, body: JSON.parse(profile.body) }
 }
 
 function profileRowInSpace(

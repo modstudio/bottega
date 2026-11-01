@@ -136,6 +136,27 @@ test('lens cache reconciles hosted rows within their space and preserves the loc
     record_id: inserted.id,
   })
 
+  const pulledProfile = profileRow(inserted.spaceId, inserted.id, '{}')
+  applyLensCatalogueRow(local, 'lens_profile', pulledProfile)
+  expect(
+    local
+      .query('SELECT current_version_id FROM lens_profile WHERE record_id=?')
+      .get(pulledProfile.id),
+  ).toEqual({ current_version_id: pulledProfile.currentVersionId })
+
+  const { currentVersionId: _omitted, ...legacyProfile } = profileRow(
+    inserted.spaceId,
+    inserted.id,
+    '{}',
+  )
+  legacyProfile.name = 'legacy'
+  applyLensCatalogueRow(local, 'lens_profile', legacyProfile)
+  expect(
+    local
+      .query('SELECT current_version_id FROM lens_profile WHERE record_id=?')
+      .get(legacyProfile.id),
+  ).toEqual({ current_version_id: null })
+
   const localSeed = local
     .query<{ record_id: string; title: string }, []>(
       "SELECT record_id,title FROM lens WHERE id='correctness' AND space_id IS NULL",

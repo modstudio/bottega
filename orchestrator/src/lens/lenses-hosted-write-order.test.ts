@@ -94,6 +94,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
 
   const profileId = before.record_id
   const revisionId = newRecordId()
+  const currentVersionId = newRecordId()
   installRecordApiClient({
     ...createMemoryRecordApiClient(),
     upsertLensProfile: async () => ({
@@ -104,7 +105,7 @@ test('hosted profile failure is inert and success adopts hosted identities and v
         axis: 'framework' as const,
         name: 'default',
         version: 2,
-        currentVersionId: newRecordId(),
+        currentVersionId,
         body: '{"framework_guidance":"Hosted.","commands":"bun test"}',
         enabled: true,
         updatedAt: new Date().toISOString(),
@@ -132,9 +133,12 @@ test('hosted profile failure is inert and success adopts hosted identities and v
     })
     expect(changed).toMatchObject({ record_id: profileId, version: 2 })
     expect(
-      db().query('SELECT record_id FROM lens_profile WHERE record_id=?').get(before.record_id),
+      db()
+        .query('SELECT record_id,current_version_id FROM lens_profile WHERE record_id=?')
+        .get(before.record_id),
     ).toEqual({
       record_id: profileId,
+      current_version_id: currentVersionId,
     })
     expect(
       db().query('SELECT record_id FROM lens_profile_revision WHERE space_id=?').get(HOSTED_SPACE),
