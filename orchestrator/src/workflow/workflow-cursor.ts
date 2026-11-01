@@ -62,11 +62,11 @@ import {
 } from './workflow-floor.ts'
 import {
   type FloorEvidencePorts,
-  gatherValidatedEvidence,
   openWorkflowObligations,
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
@@ -494,30 +494,30 @@ function applyFloorDecision(
   requireRuling = false,
 ): FloorDecision {
   const args = JSON.parse(row.args) as Record<string, string>
-  const gathered = gatherValidatedEvidence({
-    cursorId: row.record_id,
-    identity: {
-      project: row.project,
-      workflowKey: row.workflow_key,
-      workflowTaskRecordId: row.task_record_id,
-      branch: args.branch?.trim() || null,
-      worktree: args.worktree?.trim() || null,
-      session: row.session_id,
-      createdAt: row.created_at,
-      stepActivatedAt: currentStepActivatedAt(
-        row,
-        cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
-      ),
-    },
-    stepOrdinal: row.ordinal + 1,
-    stepSlug: row.step_slug,
-    evidence,
-    ports,
-    d,
-  })
   return decideFloorSatisfaction({
     floors,
-    evidence: gathered,
+    evidence: gatherValidatedEvidence({
+      cursorId: row.record_id,
+      identity: {
+        project: row.project,
+        workflowKey: row.workflow_key,
+        workflowTaskRecordId: row.task_record_id,
+        branch: args.branch?.trim() || null,
+        worktree: args.worktree?.trim() || null,
+        session: row.session_id,
+        createdAt: row.created_at,
+        stepActivatedAt: currentStepActivatedAt(
+          row,
+          cursorName(row.workflow_slug, row.mode_slug, row.workflow_key),
+        ),
+      },
+      stepOrdinal: row.ordinal + 1,
+      stepSlug: row.step_slug,
+      floors,
+      evidence,
+      ports,
+      d,
+    }),
     enforcement: row.enforcement ?? 'note-only',
     finishing,
     openObligations: openWorkflowObligations(row.record_id, d),

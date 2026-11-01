@@ -12,8 +12,8 @@ import {
   bottegaCommandIdentity,
   type CursorIdentity,
   type FloorEvidencePorts,
-  gatherValidatedEvidence,
 } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 
 test(`command identity accepts only registered ${PLATFORM_SLUG} executable paths`, () => {
   const root = mkdtempSync(join(tmpdir(), `workflow-${PLATFORM_SLUG}-command-`))
@@ -155,6 +155,7 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
           identity,
           stepOrdinal: 1,
           stepSlug: 'rebase',
+          floors: [floor],
           evidence: { artifact: `exec:${id}` },
           ports,
           d,

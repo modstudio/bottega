@@ -4,11 +4,9 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import {
-  type CursorIdentity,
-  type FloorEvidencePorts,
-  gatherValidatedEvidence,
-} from './workflow-floor-evidence.ts'
+import type { CursorIdentity, FloorEvidencePorts } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
+import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 
 const identityOf = (key: string, taskId: string | null, branch: string | null): CursorIdentity => ({
@@ -25,7 +23,6 @@ const identityOf = (key: string, taskId: string | null, branch: string | null): 
 const identity = identityOf('DEV-977', 'task-DEV-977', 'DEV-977-work')
 const unlinkedIdentity = identityOf('DEV-977', null, 'DEV-977-work')
 const planningIdentity = identityOf('', null, null)
-
 const matchingCheckout = {
   project: 'fixture',
   branch: 'DEV-977-work',
@@ -125,49 +122,28 @@ const gather = (
   evidence: Parameters<typeof gatherValidatedEvidence>[0]['evidence'],
   extraPorts: FloorEvidencePorts = {},
   cursorIdentity: CursorIdentity = identity,
+  floors: Parameters<typeof gatherValidatedEvidence>[0]['floors'] = [],
 ) =>
   gatherValidatedEvidence({
     cursorId: CURSOR_RECORD_ID,
     identity: cursorIdentity,
     stepOrdinal: 1,
     stepSlug: 'rebase',
+    floors,
     evidence,
     ports: { ...ports, ...extraPorts },
     d,
   })
 
-test('gathers a bound answered ruling and a finished matching gate', () => {
-  const d = database()
-  d.query(
-    `INSERT INTO question
-      (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
-     VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${CURSOR_RECORD_ID}','2026-09-01','Q?','workflow','2026-09-01','yes','operator',1,'rebase')`,
-  ).run()
-  d.query(
-    `INSERT INTO gate_execution (record_id, run_record_id,requested_at,started_at,finished_at,exit_code,cwd,head_commit)
-     VALUES ('${newRecordId()}', NULL,'2026-09-01','2026-09-01','2026-09-01',0,'/fixture/work','abc')`,
-  ).run()
-  const gathered = gather(d, { ruling: 1, gate: 1 })
-  expect(gathered.ruling).toEqual({
-    id: 1,
-    answered: true,
-    answeredByOperator: true,
-    boundToCursor: true,
-    boundToStep: true,
-    answeredAt: '2026-09-01',
-  })
-  expect(gathered.gate).toEqual({
-    recordId: expect.any(String),
-    finished: true,
-    exitCode: 0,
-    project: 'fixture',
-    commit: 'abc',
-  })
-  const gateRecordId = d
-    .query<{ record_id: string }, []>('SELECT record_id FROM gate_execution WHERE number=1')
-    .get()!.record_id
-  expect(gather(d, { gate: gateRecordId }).gate).toEqual(gathered.gate)
-})
+test(
+  'gathers a bound answered ruling and a finished matching gate',
+  boundRulingAndGateRow(database, gather, CURSOR_RECORD_ID),
+)
+
+test(
+  'gathers the bound step question without an offered ruling for an operator floor',
+  stepQuestionRow(database, gather, CURSOR_RECORD_ID, identity),
+)
 
 test('resolves probe artifacts and task comments through injected ports', () => {
   const d = database()

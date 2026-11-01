@@ -88,6 +88,11 @@ type ValidatedSatisfy =
 export type ValidatedEvidence = {
   runOffered?: string | number
   artifactRunOffered?: string
+  stepQuestion?: {
+    id: number
+    state: 'open' | 'closed' | 'answered-by-operator' | 'answered-by-agent'
+    answeredAt: string | null
+  }
   ruling?: {
     id: number
     answered: boolean
@@ -155,6 +160,9 @@ export type ValidatedEvidence = {
   satisfy?: ValidatedSatisfy
   tree?: { project: string; worktree?: string | null; commit: string | null }
 }
+
+export const isOperatorRulingFloor = (floor: Floor): boolean =>
+  floor.kind === 'ruling' && floor.operatorRuling
 
 export type OpenObligation = {
   id: string
@@ -654,9 +662,13 @@ function pullRequestUnmetMessage(floor: Floor, evidence: ValidatedEvidence): str
   return `floor ${floor.kind} is unmet: ${decision.condition}; ${remedy}`
 }
 
-function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
-  if (floor.kind === 'ruling' && floor.operatorRuling)
-    return `floor ruling is unmet: no operator answer on this step; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
+function floorUnmetMessage(
+  floor: Floor,
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): string {
+  if (isOperatorRulingFloor(floor))
+    return operatorRulingRemedy(evidence.stepQuestion, evidence.ruling?.id, freshRulingAfter)
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
     return gateFloorRefusal(
       evidence.tree ?? { project: 'this project', worktree: null, commit: null },
@@ -677,8 +689,44 @@ function floorUnmetMessage(floor: Floor, evidence: ValidatedEvidence): string {
   return existing
 }
 
-function unmetMessage(floors: Floor[], evidence: ValidatedEvidence): string {
-  return floors.map((floor) => floorUnmetMessage(floor, evidence)).join('; ')
+function operatorRulingRemedy(
+  question: ValidatedEvidence['stepQuestion'],
+  suppliedRuling?: number,
+  freshRulingAfter?: string,
+): string {
+  if (!question)
+    return `floor ruling is unmet: no operator answer on this step; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
+  if (question.state === 'closed')
+    return `floor ruling is unmet: the step's question ${question.id} is closed; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
+  if (question.state === 'open')
+    return `floor ruling is unmet: the step's question ${question.id} is open; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}the operator answers it with \`${PLATFORM_SLUG} workflow rule --from-operator\`, then close with \`--ruling ${question.id}\``
+  if (
+    question.state === 'answered-by-operator' &&
+    freshRulingAfter !== undefined &&
+    (!question.answeredAt || question.answeredAt <= freshRulingAfter)
+  )
+    return `floor ruling is unmet: the step was re-entered after the operator answered question ${question.id}; record the question again with \`${PLATFORM_SLUG} workflow await\` for a fresh operator answer`
+  if (question.state === 'answered-by-operator')
+    return `floor ruling is unmet: ${suppliedOperatorRulingRefusal(suppliedRuling, question.id)}the operator answered the step's question ${question.id}; close with \`--ruling ${question.id}\``
+  return `floor ruling is unmet: question ${question.id} was answered by an agent, which cannot close an operator floor; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question for the operator with \`${PLATFORM_SLUG} workflow await\``
+}
+
+function suppliedOperatorRulingRefusal(
+  suppliedRuling: number | undefined,
+  questionId: number,
+): string {
+  if (!suppliedRuling) return ''
+  if (suppliedRuling !== questionId)
+    return `the supplied ruling ${suppliedRuling} cannot close the step; `
+  return 'the supplied ruling cannot close the step; '
+}
+
+function unmetMessage(
+  floors: Floor[],
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): string {
+  return floors.map((floor) => floorUnmetMessage(floor, evidence, freshRulingAfter)).join('; ')
 }
 
 function commandExitFailureRefusal(
@@ -700,14 +748,18 @@ function commandExitFailureRefusal(
   })
 }
 
-function operatorRulingBindingRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
-  if (!evidence.ruling || !floors.some((floor) => floor.operatorRuling)) return null
+function operatorRulingBindingRefusal(
+  floors: Floor[],
+  evidence: ValidatedEvidence,
+  freshRulingAfter?: string,
+): string | null {
+  if (!evidence.ruling || !floors.some(isOperatorRulingFloor)) return null
   return evidence.ruling.answered &&
     evidence.ruling.answeredByOperator &&
     evidence.ruling.boundToCursor &&
     evidence.ruling.boundToStep
     ? null
-    : `floor ruling is unmet: no operator answer on this step; the supplied ruling cannot close it; record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
+    : operatorRulingRemedy(evidence.stepQuestion, evidence.ruling.id, freshRulingAfter)
 }
 
 function unfinishedReviewRefusal(floors: Floor[], evidence: ValidatedEvidence): string | null {
@@ -831,7 +883,11 @@ function finishOf(
 export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDecision {
   if (input.enforcement === 'note-only')
     return { action: 'allow', enforcement: 'note-only', refs: [] }
-  const rulingRefusal = operatorRulingBindingRefusal(input.floors, input.evidence)
+  const rulingRefusal = operatorRulingBindingRefusal(
+    input.floors,
+    input.evidence,
+    input.freshRulingAfter,
+  )
   if (rulingRefusal) return { action: 'refuse', message: rulingRefusal }
   const reviewRefusal = unfinishedReviewRefusal(input.floors, input.evidence)
   if (reviewRefusal) return { action: 'refuse', message: reviewRefusal }
@@ -853,7 +909,10 @@ export function decideFloorSatisfaction(input: FloorSatisfactionInput): FloorDec
   const deferred = deferralOf(input.floors, input.evidence, met.length > 0)
   if ('action' in deferred) return deferred
   if (met.length === 0 && !deferred.defer)
-    return { action: 'refuse', message: unmetMessage(input.floors, input.evidence) }
+    return {
+      action: 'refuse',
+      message: unmetMessage(input.floors, input.evidence, input.freshRulingAfter),
+    }
   const satisfied = satisfyOf(input.evidence, input.freshRulingAfter)
   if ('action' in satisfied) return satisfied
   const remaining = input.openObligations.filter((row) => row.id !== input.evidence.satisfy?.id)

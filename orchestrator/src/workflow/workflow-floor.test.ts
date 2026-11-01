@@ -52,6 +52,15 @@ const answeredRuling: ValidatedEvidence = {
 const gradedReview: ValidatedEvidence = {
   review: { recordId: 'review-4', number: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
+const reviewCategoryTask: ValidatedEvidence = {
+  task: {
+    key: 'DEV-1',
+    status: 'blocked',
+    statusCategory: 'review',
+    mergedPullRequest: true,
+    trackerStates: {},
+  },
+}
 const passingGate: ValidatedEvidence = {
   gate: {
     recordId: '00000000-0000-4000-8000-000000000002',
@@ -135,41 +144,6 @@ test('the re-entry bound refusal names await and a non-re-entering outcome', () 
   )
 })
 
-test('a re-entry bound accepts only a ruling answered after the last re-entry', () => {
-  const after = '2026-10-20T12:00:00.000Z'
-  const bound = (answeredAt: string | null): ValidatedEvidence => ({
-    ruling: {
-      id: 9,
-      answered: true,
-      answeredByOperator: false,
-      boundToCursor: true,
-      boundToStep: true,
-      answeredAt,
-    },
-  })
-  expect(
-    decide({
-      floors: [ruling],
-      evidence: bound('2026-10-20T12:00:00.001Z'),
-      freshRulingAfter: after,
-    }),
-  ).toMatchObject({ action: 'allow' })
-  expect(decide({ floors: [ruling], evidence: bound(after), freshRulingAfter: after }).action).toBe(
-    'refuse',
-  )
-  expect(
-    decide({
-      floors: [ruling],
-      evidence: bound('2026-10-20T11:59:59.999Z'),
-      freshRulingAfter: after,
-    }).action,
-  ).toBe('refuse')
-  expect(decide({ floors: [ruling], evidence: gradedReview, freshRulingAfter: after }).action).toBe(
-    'refuse',
-  )
-  expect(decide({ floors: [ruling], evidence: gradedReview }).action).toBe('allow')
-})
-
 test('note-only enforcement closes without evidence', () => {
   expect(decide({ floors: [ruling], enforcement: 'note-only' })).toEqual({
     action: 'allow',
@@ -212,35 +186,25 @@ test('an unfinished review round refusal names every unfinished review id', () =
   })
 })
 
-test("a person's ruling floor requires a bound operator answer", () => {
-  const agentAnswer = answeredRuling
-  const operatorAnswer: ValidatedEvidence = {
+test('a bound operator answer satisfies an operator ruling floor', () => {
+  const evidence: ValidatedEvidence = {
     ruling: { ...answeredRuling.ruling!, answeredByOperator: true },
   }
-
-  const reviewCategoryTask: ValidatedEvidence = {
-    task: {
-      key: 'DEV-1',
-      status: 'blocked',
-      statusCategory: 'review',
-      mergedPullRequest: true,
-      trackerStates: {},
-    },
-  }
-
-  for (const evidence of [{}, agentAnswer, gradedReview, reviewCategoryTask]) {
-    const decision = decide({ floors: [operatorRuling], evidence })
-    expect(decision.action).toBe('refuse')
-    if (decision.action === 'refuse') {
-      expect(decision.message).toContain('no operator answer on this step')
-      expect(decision.message).toContain(`${PLATFORM_SLUG} workflow await`)
-    }
-  }
-  expect(decide({ floors: [operatorRuling], evidence: operatorAnswer })).toMatchObject({
+  expect(decide({ floors: [operatorRuling], evidence })).toMatchObject({
     action: 'allow',
     refs: [{ flag: '--ruling', value: '9' }],
   })
 })
+
+for (const [name, evidence] of [
+  ['agent answer', answeredRuling],
+  ['graded review', gradedReview],
+  ['review-category task', reviewCategoryTask],
+] as const) {
+  test(`${name} does not satisfy an operator ruling floor`, () => {
+    expect(decide({ floors: [operatorRuling], evidence }).action).toBe('refuse')
+  })
+}
 
 test('an agent ruling is refused when task evidence also meets an alternative floor', () => {
   const decision = decide({

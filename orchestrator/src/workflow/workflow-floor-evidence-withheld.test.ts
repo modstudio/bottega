@@ -5,7 +5,7 @@ import { newRecordId } from '../../../shared/record/schema.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
 import { decidePullRequestEvidence } from './workflow-floor.ts'
-import { gatherValidatedEvidence } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 
 const database = testDatabaseFixture((d) => {
   d.query(
@@ -35,6 +35,7 @@ const gather = (d: Database) =>
     },
     stepOrdinal: 1,
     stepSlug: 'rebase',
+    floors: [],
     evidence: { artifact: 'exec:1' },
     ports: {
       resolveCheckout: () => ({

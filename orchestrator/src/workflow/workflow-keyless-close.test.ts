@@ -268,6 +268,118 @@ test('a prose KEY marker without a key-bound tracker action closes keylessly', (
   ).toContain('is finished')
 })
 
+test('operator-ruling cursor refusals name the bound question remedy', () => {
+  const d = database()
+  const current = productionStepCatalogue(d).definition
+  const catalogue = setStepCatalogueLocal(
+    {
+      ...current,
+      steps: [
+        ...current.steps,
+        {
+          slug: 'operator-signoff',
+          title: 'Operator signoff',
+          body: 'Obtain operator signoff.',
+          stage: 'plan',
+          floor: ['ruling'],
+          operatorRuling: true,
+          job: null,
+          autonomy: 'auto',
+          needs: [],
+        },
+      ],
+    },
+    'operator ruling refusal fixture',
+    'test',
+    d,
+  )
+  promoteStepCatalogueLocal(catalogue.n, 'operator ruling refusal fixture', 'test', d)
+  const workflow = setWorkflowLocal(
+    'operator-signoff',
+    {
+      title: 'Operator signoff',
+      description: 'Requires operator signoff.',
+      arguments: [],
+      modes: [
+        {
+          slug: 'default',
+          title: 'Default',
+          default: true,
+          steps: ['operator-signoff'],
+        },
+      ],
+    },
+    'operator ruling refusal fixture',
+    'test',
+    d,
+  )
+  promoteWorkflowLocal('operator-signoff', workflow.n, 'operator ruling refusal fixture', 'test', d)
+
+  const answeredContext = { session: 'operator-signoff-answered' }
+  const answered = composeWorkflowWithCursor(
+    'operator-signoff',
+    'fixture',
+    'default',
+    {},
+    answeredContext,
+    d,
+    {},
+    {},
+  )
+  const answeredCursor = answered.cursor!.id
+  const cursorRecord = d
+    .query<{ record_id: string }, [number]>('SELECT record_id FROM workflow_cursor WHERE number=?')
+    .get(answeredCursor)!
+  const question = d
+    .query<{ number: number }, [string, string]>(
+      `INSERT INTO question
+        (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),?,?,'2026-11-01','Approve?','workflow','2026-11-01T00:00:01.000Z','yes','operator',1,'operator-signoff')
+       RETURNING number`,
+    )
+    .get(newRecordId(), cursorRecord.record_id)!
+  expect(() =>
+    nextWorkflowStep(
+      'operator-signoff',
+      'fixture',
+      'default',
+      {},
+      'approved',
+      answeredContext,
+      d,
+      {},
+      testPorts,
+      answeredCursor,
+    ),
+  ).toThrow(`--ruling ${question.number}`)
+
+  const emptyContext = { session: 'operator-signoff-empty' }
+  const empty = composeWorkflowWithCursor(
+    'operator-signoff',
+    'fixture',
+    'default',
+    {},
+    emptyContext,
+    d,
+    {},
+    {},
+  )
+  expect(() =>
+    nextWorkflowStep(
+      'operator-signoff',
+      'fixture',
+      'default',
+      {},
+      'approved',
+      emptyContext,
+      d,
+      {},
+      testPorts,
+      empty.cursor!.id,
+    ),
+  ).toThrow('workflow await')
+})
+
 test('next refuses an undeclared argument before storing it and a correct next still renders', () => {
   const d = database()
   const current = productionStepCatalogue(d).definition
