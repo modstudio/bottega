@@ -519,6 +519,12 @@ try {
   if (workflowCatalogue !== 0 || lensCatalogue !== 0 || portCatalogue !== 0)
     throw new EarlyExit(workflowCatalogue || lensCatalogue || portCatalogue)
 
+  const cleanRecordPool = await run(
+    ['bun', 'test', '--timeout', '30000', 'src/record/record-pool-postgres.test.ts'],
+    { BOTTEGA_TEST_RECORD_POOL_URL: actorUrl },
+  )
+  if (cleanRecordPool !== 0) throw new EarlyExit(cleanRecordPool)
+
   const rls = await run(
     ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-rls.test.ts'],
     {
