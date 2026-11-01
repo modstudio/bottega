@@ -17,14 +17,13 @@ import {
   worktreeDirty,
   worktreeNameRunId,
 } from '../worktree/worktree-attribution.ts'
-import type { CleanupPresentation } from './cleanup.ts'
 import {
   decideConversationProjectOwnership,
   decideFilesystemOrphanCandidate,
 } from './cleanup-sweep-decisions.ts'
 
 type NamedRun = { record_id: string; status: string; alive: boolean }
-type NamedRunLookup =
+export type NamedRunLookup =
   | { outcome: 'absent' }
   | { outcome: 'owned'; run: NamedRun }
   | { outcome: 'unknown'; runId: string; reason: string }
@@ -110,18 +109,13 @@ function namedRun(
   }
 }
 
-function observeNamedRunForSweep(
+export function observeNamedRunForSweep(
   path: string,
   project: Project,
-  label: string,
-  presentation: CleanupPresentation,
   fallbackRunId: string | null = null,
-): { alive: boolean; failed: boolean } {
+): NamedRunLookup {
   const lookup = namedRun(path, project, fallbackRunId)
-  if (lookup.outcome === 'absent') return { alive: false, failed: false }
-  if (lookup.outcome === 'owned') return { alive: lookup.run.alive, failed: false }
-  presentation.error(`could not reclaim ${label}: ${lookup.reason}`)
-  return { alive: true, failed: true }
+  return lookup
 }
 
 export type OrphanCandidateDecision =
@@ -166,12 +160,13 @@ function unmarkedReaderWorkFacts(
   marker: WorktreeMarkerRead,
   nameRunId: string | null,
   owner: OrphanOwner | null,
+  readerClone: boolean,
 ): {
   dirty: ReturnType<typeof worktreeDirty> | null
   uniqueCommitCount: number | null
 } {
-  if (marker.state !== 'absent' || !nameRunId || !owner) {
-    return { dirty: null, uniqueCommitCount: 0 }
+  if (marker.state !== 'absent' || !nameRunId || !owner || !readerClone) {
+    return { dirty: null, uniqueCommitCount: null }
   }
   return {
     dirty: worktreeDirty(path),
@@ -185,7 +180,9 @@ function orphanCandidateHeld(input: {
   nameRunId: string | null
   path: string
   removable: boolean
+  owner: OrphanOwner | null
 }): boolean {
+  if (!input.owner) return false
   if (input.namedAlive) return true
   if (input.marker.state === 'absent' && input.nameRunId !== null) return true
   return isOrchWorktree(input.path) && !input.removable
@@ -194,28 +191,37 @@ function orphanCandidateHeld(input: {
 export function orphanCandidateDecision(
   path: string,
   project: Project,
-  label: string,
   dry: boolean,
-  presentation: CleanupPresentation,
 ): OrphanCandidateDecision {
   const marker = readWorktreeMarker(path)
   const { nameRunId, runRecordId } = orphanCandidateIds(path, marker)
   const owner = orphanOwner(runRecordId)
   const named = owner
-    ? observeNamedRunForSweep(path, project, label, presentation, nameRunId)
-    : { alive: false, failed: false }
+    ? observeNamedRunForSweep(path, project, nameRunId)
+    : { outcome: 'absent' as const }
   const trunk =
     typeof project.settings.trunk === 'string' && project.settings.trunk.trim()
       ? project.settings.trunk
       : 'HEAD'
   const safe = orphanSafety(path, project.path, trunk)
-  const work = unmarkedReaderWorkFacts(path, project.path, marker, nameRunId, owner)
+  const work = unmarkedReaderWorkFacts(
+    path,
+    project.path,
+    marker,
+    nameRunId,
+    owner,
+    safe.unmarkedBorrowedReader,
+  )
+  const namedAlive = named.outcome === 'owned' && named.run.alive
   const ruling = decideFilesystemOrphanCandidate({
     marker: marker.state,
+    markerRunId: marker.state === 'present' ? marker.runRecordId : null,
     nameRunId,
     run: orphanRunState(owner),
+    ownership: named.outcome === 'unknown' ? 'unknown' : 'owned',
     orchOwned: isOrchWorktree(path),
-    alive: named.alive,
+    readerClone: safe.unmarkedBorrowedReader,
+    alive: namedAlive,
     removable: safe.removable,
     removalDetail: safe.detail,
     uniqueCommitCount: work.uniqueCommitCount,
@@ -228,19 +234,20 @@ export function orphanCandidateDecision(
       action: 'keep',
       line: ruling.keepLine,
       reason: ruling.keepReason,
-      failed: named.failed,
+      failed: false,
       held: orphanCandidateHeld({
-        namedAlive: named.alive,
+        namedAlive,
         marker,
         nameRunId,
         path,
         removable: safe.removable,
+        owner,
       }),
     }
   }
   if (ruling.action === 'dry-would-reclaim') {
-    return { action: 'dry', detail: safe.detail, failed: named.failed }
+    return { action: 'dry', detail: safe.detail, failed: false }
   }
   if (!owner) throw new Error(`orphan reclaim ruling lacked owner for ${path}`)
-  return { action: 'reclaim', runId: owner.record_id, safe, failed: named.failed }
+  return { action: 'reclaim', runId: owner.record_id, safe, failed: false }
 }

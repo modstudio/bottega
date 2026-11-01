@@ -553,12 +553,14 @@ describe('recorded run post-inventory ruling', () => {
 })
 
 describe('unmarked filesystem orphan candidate ruling', () => {
-  const orchTree = ['orch', 'tree'].join(' ')
   const base: FilesystemOrphanCandidateFacts = {
     marker: 'absent',
+    markerRunId: null,
     nameRunId: '01990000-0000-7000-8000-000000001974',
     run: 'terminal',
+    ownership: 'owned',
     orchOwned: false,
+    readerClone: true,
     alive: false,
     removable: true,
     removalDetail: 'committed work is retained by its branch',
@@ -574,10 +576,56 @@ describe('unmarked filesystem orphan candidate ruling', () => {
     dryExpected?: ReturnType<typeof decideFilesystemOrphanCandidate>
   }> = [
     {
-      name: 'a marked candidate keeps its existing eligibility ruling',
+      name: 'an unreadable marker keeps its existing ownership line',
+      facts: { ...base, marker: 'unreadable', nameRunId: null },
+      expected: {
+        action: 'keep',
+        keepLine: 'kept: no UUID ownership marker',
+        keepReason: 'ownership cannot be attributed',
+      },
+    },
+    {
+      name: 'a present non-UUID marker keeps its existing ownership line',
+      facts: { ...base, marker: 'present', nameRunId: null, run: 'absent' },
+      expected: {
+        action: 'keep',
+        keepLine: 'kept: no UUID ownership marker',
+        keepReason: 'ownership cannot be attributed',
+      },
+    },
+    {
+      name: 'a marker UUID without a run row names the missing record',
       facts: {
         ...base,
         marker: 'present',
+        markerRunId: base.nameRunId,
+        nameRunId: null,
+        run: 'absent',
+      },
+      expected: {
+        action: 'keep',
+        keepLine: 'kept: marker UUID has no run record',
+        keepReason: 'ownership cannot be attributed',
+      },
+    },
+    {
+      name: 'a present owned removable marker tree is reclaimed',
+      facts: {
+        ...base,
+        marker: 'present',
+        markerRunId: base.nameRunId,
+        nameRunId: null,
+        orchOwned: true,
+      },
+      expected: { action: 'reclaim' },
+      dryExpected: { action: 'dry-would-reclaim' },
+    },
+    {
+      name: 'a present owned non-removable marker tree keeps its safety ruling',
+      facts: {
+        ...base,
+        marker: 'present',
+        markerRunId: base.nameRunId,
         nameRunId: null,
         orchOwned: true,
         removable: false,
@@ -601,9 +649,20 @@ describe('unmarked filesystem orphan candidate ruling', () => {
       expected: {
         action: 'keep',
         keepLine:
-          `kept: unmarked ${orchTree} names run ${base.nameRunId}, which has no run record; ` +
+          `kept: unmarked reader clone names run ${base.nameRunId}, which has no run record; ` +
           'inspect the tree and remove it by hand, or escalate',
         keepReason: 'ownership cannot be attributed',
+      },
+    },
+    {
+      name: 'an unmarked tree whose run project is unknown is kept with a manual remedy',
+      facts: { ...base, ownership: 'unknown' },
+      expected: {
+        action: 'keep',
+        keepLine:
+          `kept: unmarked reader clone names run ${base.nameRunId}, which cannot be ` +
+          'attributed to this project; inspect the tree and remove it by hand, or escalate',
+        keepReason: 'run project cannot be attributed',
       },
     },
     {
@@ -613,6 +672,27 @@ describe('unmarked filesystem orphan candidate ruling', () => {
         action: 'keep',
         keepLine: `live — kept; wait for run ${base.nameRunId} to become terminal, then run ${PLATFORM_SLUG} machine sweep`,
         keepReason: 'live — kept',
+      },
+    },
+    {
+      name: 'an unmarked run-named tree without reader clone shape is kept',
+      facts: { ...base, readerClone: false },
+      expected: {
+        action: 'keep',
+        keepLine:
+          `kept: unmarked tree named for run ${base.nameRunId} is not a reader clone of ` +
+          'this project; inspect the tree and remove it by hand, or escalate',
+        keepReason: 'not a reader clone of this project',
+      },
+    },
+    {
+      name: 'an unmarked tree whose unique work cannot be counted is kept',
+      facts: { ...base, uniqueCommitCount: null },
+      expected: {
+        action: 'keep',
+        keepLine:
+          'could not count commits not on main; inspect the tree and remove it by hand, or escalate',
+        keepReason: 'unique work could not be inspected',
       },
     },
     {

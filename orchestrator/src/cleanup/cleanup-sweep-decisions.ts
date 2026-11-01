@@ -276,9 +276,12 @@ export function decideRecordedRunPostInventory(
 
 export type FilesystemOrphanCandidateFacts = {
   marker: 'present' | 'absent' | 'unreadable'
+  markerRunId: string | null
   nameRunId: string | null
   run: 'absent' | 'terminal' | 'live'
+  ownership: 'owned' | 'unknown'
   orchOwned: boolean
+  readerClone: boolean
   alive: boolean
   removable: boolean
   removalDetail: string
@@ -294,7 +297,6 @@ export type FilesystemOrphanCandidateRuling =
   | { action: 'reclaim' }
 
 const MANUAL_OR_ESCALATE = 'inspect the tree and remove it by hand, or escalate'
-const READER_TREE_LABEL = ['orch', 'tree'].join(' ')
 
 function orphanKeepReason(detail: string): string {
   return /^has commits not reachable from /.test(detail) ? 'holds commits not on trunk' : detail
@@ -304,6 +306,13 @@ function decideMarkedFilesystemOrphan(
   facts: FilesystemOrphanCandidateFacts,
 ): FilesystemOrphanCandidateRuling {
   if (facts.marker === 'unreadable') {
+    return {
+      action: 'keep',
+      keepLine: 'kept: no UUID ownership marker',
+      keepReason: 'ownership cannot be attributed',
+    }
+  }
+  if (!facts.markerRunId) {
     return {
       action: 'keep',
       keepLine: 'kept: no UUID ownership marker',
@@ -350,8 +359,15 @@ function decideUnmarkedFilesystemOrphan(
   if (facts.run === 'absent') {
     return {
       action: 'keep',
-      keepLine: `kept: unmarked ${READER_TREE_LABEL} names run ${facts.nameRunId}, which has no run record; ${MANUAL_OR_ESCALATE}`,
+      keepLine: `kept: unmarked reader clone names run ${facts.nameRunId}, which has no run record; ${MANUAL_OR_ESCALATE}`,
       keepReason: 'ownership cannot be attributed',
+    }
+  }
+  if (facts.ownership === 'unknown') {
+    return {
+      action: 'keep',
+      keepLine: `kept: unmarked reader clone names run ${facts.nameRunId}, which cannot be attributed to this project; ${MANUAL_OR_ESCALATE}`,
+      keepReason: 'run project cannot be attributed',
     }
   }
   if (facts.run === 'live' || facts.alive) {
@@ -359,6 +375,13 @@ function decideUnmarkedFilesystemOrphan(
       action: 'keep',
       keepLine: `live — kept; wait for run ${facts.nameRunId} to become terminal, then run ${PLATFORM_SLUG} machine sweep`,
       keepReason: 'live — kept',
+    }
+  }
+  if (!facts.readerClone) {
+    return {
+      action: 'keep',
+      keepLine: `kept: unmarked tree named for run ${facts.nameRunId} is not a reader clone of this project; ${MANUAL_OR_ESCALATE}`,
+      keepReason: 'not a reader clone of this project',
     }
   }
   if (!facts.removable) {
