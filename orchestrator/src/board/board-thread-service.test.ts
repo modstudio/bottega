@@ -116,6 +116,22 @@ test('reply receipts select acknowledged readers or the root audience', () => {
     new Date(clock + 1).toISOString(),
   )
   addRootReceipt.run(newRecordId(), question.recordId, 'root-audience-reader', 1, null)
+  const runReaderRecordId = newRecordId()
+  db()
+    .query(
+      `INSERT INTO run
+       (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
+       VALUES (?,(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'proof','running',1,
+               (SELECT record_id FROM project ORDER BY name LIMIT 1))`,
+    )
+    .run(runReaderRecordId, new Date(clock).toISOString())
+  db()
+    .query(
+      `INSERT INTO board_receipt
+       (record_id,message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at)
+       VALUES (?,?,?,?,1,NULL,NULL)`,
+    )
+    .run(newRecordId(), question.recordId, `run:${runReaderRecordId}`, runReaderRecordId)
 
   const acknowledged = replyToThread(
     question.recordId,
@@ -143,7 +159,18 @@ test('reply receipts select acknowledged readers or the root audience', () => {
     ).map((row) => row.reader_session)
 
   expect(readers(acknowledged.recordId)).toEqual(['acknowledged-reader', 'selected-asker'])
-  expect(readers(rootAudience.recordId)).toEqual(['root-audience-reader', 'selected-asker'])
+  expect(readers(rootAudience.recordId)).toEqual([
+    'root-audience-reader',
+    `run:${runReaderRecordId}`,
+    'selected-asker',
+  ])
+  expect(
+    db()
+      .query(
+        'SELECT reader_run_record_id FROM board_receipt WHERE message_record_id=? AND reader_session=?',
+      )
+      .get(rootAudience.recordId, `run:${runReaderRecordId}`),
+  ).toEqual({ reader_run_record_id: runReaderRecordId })
 })
 
 test('an explicit reply recipient is looped into the thread and can read and reply', () => {

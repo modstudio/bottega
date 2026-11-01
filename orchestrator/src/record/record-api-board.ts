@@ -104,6 +104,7 @@ const receiptSchema = z
   .object({
     messageId: idSchema,
     readerSession: z.string().min(1),
+    readerRunRecordId: idSchema.nullable().optional(),
     audienceAtPosting: z.boolean(),
     delivered: z.boolean().optional(),
     acknowledged: z.boolean().optional(),

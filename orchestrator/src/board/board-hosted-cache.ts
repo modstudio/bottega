@@ -118,10 +118,11 @@ export function cacheHostedBoardReceipt(
   database
     .query(
       `INSERT INTO hosted_board_receipt_cache
-       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       SELECT ?,?,?,?,?,?,0 WHERE EXISTS (
+       (record_id,message_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       SELECT ?,?,?,?,?,?,?,0 WHERE EXISTS (
          SELECT 1 FROM hosted_board_message_cache WHERE id=?
        ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       reader_run_record_id=COALESCE(hosted_board_receipt_cache.reader_run_record_id,excluded.reader_run_record_id),
        audience_at_posting=excluded.audience_at_posting,
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
        acknowledged_at=COALESCE(hosted_board_receipt_cache.acknowledged_at,excluded.acknowledged_at),
@@ -135,6 +136,7 @@ export function cacheHostedBoardReceipt(
       newRecordId(),
       receipt.messageId,
       receipt.readerSession,
+      receipt.readerRunRecordId ?? null,
       receipt.audienceAtPosting ? 1 : 0,
       receipt.deliveredAt,
       receipt.acknowledgedAt,
@@ -152,8 +154,8 @@ export function queueHostedBoardAcknowledgement(
   const result = database
     .query(
       `INSERT INTO hosted_board_receipt_cache
-       (record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       SELECT ?,?,?,?,?, ?,1 WHERE EXISTS (
+       (record_id,message_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       SELECT ?,?,?,NULL,?,?,?,1 WHERE EXISTS (
          SELECT 1 FROM hosted_board_message_cache WHERE id=?
        ) ON CONFLICT(message_id,reader_session) DO UPDATE SET
        audience_at_posting=excluded.audience_at_posting,
@@ -261,13 +263,14 @@ async function flushReceipts(
 ): Promise<void> {
   const rows = database
     .query(
-      `SELECT message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at
+      `SELECT message_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at
        FROM hosted_board_receipt_cache
        WHERE pending_sync=1 AND (delivered_at IS NOT NULL OR acknowledged_at IS NOT NULL)`,
     )
     .all() as {
     message_id: string
     reader_session: string
+    reader_run_record_id: string | null
     audience_at_posting: number
     delivered_at: string | null
     acknowledged_at: string | null
@@ -280,6 +283,7 @@ async function flushReceipts(
             {
               messageId: row.message_id,
               readerSession: row.reader_session,
+              readerRunRecordId: row.reader_run_record_id,
               audienceAtPosting: row.audience_at_posting === 1,
               delivered: row.delivered_at !== null,
               acknowledged: row.acknowledged_at !== null,
@@ -440,7 +444,7 @@ type HostedClaimContext = {
   threadMessages: Map<string, HostedBoardMessage[]>
   presence: ReturnType<typeof presenceFacts>
   readerBeganAt: string | null
-  readerRunId: string | null
+  readerRunRecordId: string | null
   signedIn: string | null
   claimFacts: Map<string, HostedClaimFacts>
 }
@@ -453,6 +457,7 @@ function claimContext(
   signedIn: string | null,
   allRows: CachedRow[],
   claimFacts: Map<string, HostedClaimFacts>,
+  readerRunRecordId: string | null = null,
 ): HostedClaimContext {
   const messages = allRows.map((row) => row.message)
   const threadMessages = new Map<string, HostedBoardMessage[]>()
@@ -471,8 +476,8 @@ function claimContext(
     messagesById: new Map(messages.map((message) => [message.id, message])),
     threadMessages,
     presence: presenceFacts(database, clock),
-    readerBeganAt: reader === OPERATOR_READER ? null : boardReaderBeganAt(reader, database),
-    readerRunId: readerRunId(reader, database),
+    readerBeganAt: boardReaderBeganAt(reader, database, readerRunRecordId),
+    readerRunRecordId,
     signedIn,
     claimFacts,
   }
@@ -497,12 +502,13 @@ function loadClaimContext(
   all: boolean,
   clock: number,
   extraRow?: CachedRow,
+  readerRunRecordId: string | null = null,
 ): HostedClaimContext {
   const owner = meta(database, BOARD_CACHE_OWNER_KEY)
   const signedIn = meta(database, BOARD_REFRESH_USER_KEY)
   if (!owner || owner !== signedIn) {
     const rows = extraRow ? [extraRow] : []
-    return claimContext(database, reader, clock, rows, signedIn, rows, new Map())
+    return claimContext(database, reader, clock, rows, signedIn, rows, new Map(), readerRunRecordId)
   }
   const rows = attachCachedTags(
     database,
@@ -576,24 +582,16 @@ function loadClaimContext(
     signedIn,
     allRows,
     claimFacts,
+    readerRunRecordId,
   )
-}
-
-function readerRunId(reader: string, database: Database): string | null {
-  const run = /^run:([0-9a-f-]{36})$/.exec(reader)
-  if (!run) return null
-  const root = database.query('SELECT record_id FROM run WHERE record_id=?').get(run[1]!) as {
-    record_id: string | null
-  } | null
-  return root?.record_id ?? null
 }
 
 const readerMatchesAuthor = (message: HostedBoardMessage, context: HostedClaimContext) => {
   if (message.authorUserId !== context.signedIn) return false
   const { reader } = context
   if (reader === OPERATOR_READER) return message.authorSession === null
-  if (!reader.startsWith('run:')) return message.authorSession === reader
-  return Boolean(context.readerRunId && context.readerRunId === message.origin.runId)
+  if (context.readerRunRecordId === null) return message.authorSession === reader
+  return context.readerRunRecordId === message.origin.runId
 }
 
 const replyAddressesReader = (
@@ -691,13 +689,14 @@ function takeHostedReportReplySuccessor(
     context.database
       .query(
         `INSERT INTO hosted_board_receipt_cache
-         (record_id,message_id,reader_session,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
-         VALUES (?,?,?,0,1,NULL,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         (record_id,message_id,reader_session,reader_run_record_id,audience_at_posting,successor,delivered_at,acknowledged_at,pending_sync)
+         VALUES (?,?,?,?,0,1,NULL,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+         reader_run_record_id=COALESCE(hosted_board_receipt_cache.reader_run_record_id,excluded.reader_run_record_id),
          delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),
          successor=1,
          pending_sync=1`,
       )
-      .run(newRecordId(), message.id, context.reader)
+      .run(newRecordId(), message.id, context.reader, context.readerRunRecordId)
     return true
   }, context.database)
 }
@@ -733,7 +732,7 @@ function messageAddressesReader(
     message.origin.project,
   ).includes(context.reader)
   if (!addressed) return false
-  if (message.kind === 'question' && context.reader.startsWith('run:')) return false
+  if (message.kind === 'question' && context.readerRunRecordId !== null) return false
   return true
 }
 
@@ -856,7 +855,7 @@ function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheN
     .map(({ message, tags }) => {
       const notice = {
         id: message.id,
-        text: renderCached(message, tags, context.messages, context.reader.startsWith('run:')),
+        text: renderCached(message, tags, context.messages, context.readerRunRecordId !== null),
         oneLine:
           message.kind === 'reply'
             ? renderBoardReplyDelivery({
@@ -894,13 +893,14 @@ export function claimCachedHostedForPush(
   clock = Date.now(),
   database: Database = writableDb(),
   claimReplySuccessors = true,
+  readerRunRecordId: string | null = null,
 ): {
   notices: HostedCacheNotice[]
   withheldOlderCount: number
   deferredReplySuccessors: DeferredReplySuccessor[]
   warning: string | null
 } {
-  const context = loadClaimContext(database, reader, all, clock)
+  const context = loadClaimContext(database, reader, all, clock, undefined, readerRunRecordId)
   const beganAt = reader === OPERATOR_READER ? ('unbounded' as const) : context.readerBeganAt
   const selected = selectPushNotices(
     beganAt,
@@ -925,9 +925,14 @@ export function claimCachedHostedForPush(
   }
 }
 
-function audienceAtPosting(reader: string, createdAt: string, database: Database): boolean {
+function audienceAtPosting(
+  reader: string,
+  createdAt: string,
+  database: Database,
+  readerRunRecordId: string | null = null,
+): boolean {
   if (reader === OPERATOR_READER) return true
-  const beganAt = boardReaderBeganAt(reader, database)
+  const beganAt = boardReaderBeganAt(reader, database, readerRunRecordId)
   return beganAt !== null && beganAt <= createdAt
 }
 
@@ -951,6 +956,7 @@ export async function markCachedHostedDelivered(
     client?: RecordApiClient
     database?: Database
     clock?: number
+    readerRunRecordId?: string | null
   } = {},
 ): Promise<void> {
   const database = input.database ?? writableDb()
@@ -966,17 +972,24 @@ export async function markCachedHostedDelivered(
       reader,
       (JSON.parse(row.payload) as HostedBoardMessage).createdAt,
       database,
+      input.readerRunRecordId ?? null,
     )
     writeTransaction(() => {
       database
         .query(
-          `INSERT INTO hosted_board_receipt_cache(record_id,message_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
-       VALUES (?,?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+          `INSERT INTO hosted_board_receipt_cache(record_id,message_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,pending_sync)
+       VALUES (?,?,?,?,?,?,NULL,1) ON CONFLICT(message_id,reader_session) DO UPDATE SET
+       reader_run_record_id=COALESCE(hosted_board_receipt_cache.reader_run_record_id,excluded.reader_run_record_id),
        delivered_at=COALESCE(hosted_board_receipt_cache.delivered_at,excluded.delivered_at),pending_sync=1`,
         )
-        .run(newRecordId(), id, reader, posting ? 1 : 0, at)
+        .run(newRecordId(), id, reader, input.readerRunRecordId ?? null, posting ? 1 : 0, at)
     }, database)
-    await syncCachedHostedReceipt(reader, id, posting, { client, database, deadline })
+    await syncCachedHostedReceipt(reader, id, posting, {
+      client,
+      database,
+      deadline,
+      readerRunRecordId: input.readerRunRecordId,
+    })
   }
 }
 
@@ -988,6 +1001,7 @@ export async function syncCachedHostedReceipt(
     client?: RecordApiClient
     database?: Database
     deadline?: number
+    readerRunRecordId?: string | null
   } = {},
 ): Promise<void> {
   const database = input.database ?? writableDb()
@@ -1000,6 +1014,7 @@ export async function syncCachedHostedReceipt(
           {
             messageId: id,
             readerSession: reader,
+            readerRunRecordId: input.readerRunRecordId ?? null,
             audienceAtPosting: posting,
             delivered: true,
           },

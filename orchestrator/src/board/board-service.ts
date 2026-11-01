@@ -133,12 +133,21 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-export function runReader(runId: string, database = db()): string {
+function rootRunRecordId(runId: string, database = db()): string | null {
   const row = database
     .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
     .get(runId) as { root_id: string } | null
-  if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
-  return `run:${row.root_id}`
+  return row?.root_id ?? null
+}
+
+function runReader(rootRunRecordId: string): string {
+  return `run:${rootRunRecordId}`
+}
+
+export function runReaderIdentity(runId: string, database = db()) {
+  const readerRunRecordId = rootRunRecordId(runId, database)
+  if (!readerRunRecordId) throw new Error(`no run ${runId}; use a live orchestrator run id`)
+  return { reader: runReader(readerRunRecordId), readerRunRecordId }
 }
 
 function receiptDelivery(messageRecordId: string, reader: string, database = db()) {
@@ -312,7 +321,7 @@ export function claimRunNotices(
   expiresAt: string | null
   purpose: BoardPurpose
 }[] {
-  const reader = runReader(runId, database)
+  const { reader } = runReaderIdentity(runId, database)
   return messageRows(database)
     .filter(
       (row) =>
@@ -340,19 +349,17 @@ export function claimRunPushNotices(
   withheldOlderCount: number
   warning: string | null
 } {
-  const run = database
-    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
-    .get(runId) as { root_id: number } | null
-  if (!run) {
+  const readerRunRecordId = rootRunRecordId(runId, database)
+  if (!readerRunRecordId) {
     const selected = selectPushNotices('unbounded', [], clock)
     return {
       notices: selected.notices,
       withheldOlderCount: selected.withheldOlderCount,
-      warning: missingReaderStartWarning(`run:${runId}`),
+      warning: missingReaderStartWarning(runReader(runId)),
     }
   }
-  const reader = `run:${run.root_id}`
-  const beganAt = boardReaderBeganAt(reader, database)
+  const reader = runReader(readerRunRecordId)
+  const beganAt = boardReaderBeganAt(reader, database, readerRunRecordId)
   const selected = selectPushNotices(beganAt, claimRunNotices(runId, all, clock, database), clock)
   return {
     notices: selected.notices,
@@ -362,7 +369,7 @@ export function claimRunPushNotices(
 }
 
 export function markRunNoticesDelivered(runId: string, ids: string[], clock = Date.now()): void {
-  const reader = runReader(runId)
+  const { reader, readerRunRecordId } = runReaderIdentity(runId)
   const idSet = new Set(ids)
   const rows = messageRows().filter(
     (row) =>
@@ -377,11 +384,13 @@ export function markRunNoticesDelivered(runId: string, ids: string[], clock = Da
   writeTransaction(() => {
     const stamp = database.query(
       `INSERT INTO board_receipt
-       (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-       VALUES (?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
+       (message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,record_id)
+       VALUES (?,?,?,0,?,NULL,?) ON CONFLICT(message_record_id,reader_session) DO UPDATE SET
+       reader_run_record_id=COALESCE(board_receipt.reader_run_record_id,excluded.reader_run_record_id),
        delivered_at=COALESCE(board_receipt.delivered_at,excluded.delivered_at)`,
     )
-    for (const row of rows) stamp.run(row.record_id, reader, deliveredAt, newRecordId())
+    for (const row of rows)
+      stamp.run(row.record_id, reader, readerRunRecordId, deliveredAt, newRecordId())
   }, database)
 }
 
@@ -548,11 +557,12 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
     throw new Error(`board notice ${id} was not authored by or addressed to this session`)
   const receipts = db()
     .query(
-      `SELECT reader_session,audience_at_posting,delivered_at,acknowledged_at FROM board_receipt
+      `SELECT reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at FROM board_receipt
        WHERE message_record_id=? ORDER BY reader_session`,
     )
     .all(row.record_id) as {
     reader_session: string
+    reader_run_record_id: string | null
     audience_at_posting: number
     delivered_at: string | null
     acknowledged_at: string | null
@@ -563,7 +573,7 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
       : [],
   )
   for (const receipt of receipts) {
-    if (receipt.reader_session.startsWith('run:')) continue
+    if (receipt.reader_run_record_id !== null) continue
     if (receipt.acknowledged_at) unresolved.delete(receipt.reader_session)
     else unresolved.add(receipt.reader_session)
   }
@@ -575,7 +585,15 @@ export function noticeStatus(id: string, env: Environment = process.env, clock =
     reached: receipts.length,
     acknowledged: receipts.filter((receipt) => receipt.acknowledged_at !== null).length,
     unacknowledged: row.ack_required
-      ? [...unresolved].filter((reader) => !reader.startsWith('run:')).sort()
+      ? [...unresolved]
+          .filter(
+            (reader) =>
+              !receipts.some(
+                (receipt) =>
+                  receipt.reader_session === reader && receipt.reader_run_record_id !== null,
+              ),
+          )
+          .sort()
       : [],
   }
 }
@@ -610,7 +628,7 @@ export function markSessionMessagesDelivered(session: string, ids: string[], at 
 export function boardEscalations(clock = Date.now()) {
   const rows = db()
     .query(
-      `SELECT m.number,m.ack_required,m.ack_deadline,m.expires_at,m.withdrawn_at,r.reader_session,
+      `SELECT m.number,m.ack_required,m.ack_deadline,m.expires_at,m.withdrawn_at,r.reader_session,r.reader_run_record_id,
               r.acknowledged_at,r.audience_at_posting
        FROM board_message m JOIN board_receipt r ON r.message_record_id=m.record_id
       `,
@@ -622,13 +640,14 @@ export function boardEscalations(clock = Date.now()) {
     expires_at: string
     withdrawn_at: string | null
     reader_session: string
+    reader_run_record_id: string | null
     acknowledged_at: string | null
     audience_at_posting: number
   }[]
   return rows
     .filter(
       (row) =>
-        !row.reader_session.startsWith('run:') &&
+        row.reader_run_record_id === null &&
         needsAckEscalation({
           ackRequired: row.ack_required === 1,
           deadline: row.ack_deadline ? Date.parse(row.ack_deadline) : null,

@@ -668,7 +668,7 @@ test('real natural and undeclared references remain measured', () => {
   }
 })
 
-test('real board reader run labels remain measured as row references', () => {
+test('board reader identities are declared external identifiers beside the run UUID sibling', () => {
   const database = new Database(':memory:')
   try {
     applyMigrations(database)
@@ -680,12 +680,14 @@ test('real board reader run labels remain measured as row references', () => {
          VALUES ('01990000-0000-7000-8000-000000001213','01990000-0000-7000-8000-000000001214','run:42',0,0)`,
       )
       .run()
-    expect(database.query('SELECT reader_session FROM hosted_board_receipt_cache').get()).toEqual({
-      reader_session: 'run:42',
-    })
+    expect(
+      database
+        .query('SELECT reader_session,reader_run_record_id FROM hosted_board_receipt_cache')
+        .get(),
+    ).toEqual({ reader_session: 'run:42', reader_run_record_id: null })
     expect(
       classifyKeyInventory('orchestrator', readSqliteKeyTables(database), KEY_MANIFESTS).findings,
-    ).toContain('hosted_board_receipt_cache.reader_session:reference')
+    ).not.toContain('hosted_board_receipt_cache.reader_session:reference')
   } finally {
     database.close()
   }

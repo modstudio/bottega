@@ -21,6 +21,7 @@ import {
   BOARD_POST_RATE_WINDOW_MS,
   messageIsLive,
   OPERATOR_READER,
+  type PresenceFact,
   parseAudience,
   postDecision,
   resolveAudience,
@@ -134,12 +135,15 @@ function rootPurpose(
   return purpose
 }
 
-export function boardReaderBeganAt(reader: string, database = db()): string | null {
-  const run = /^run:([0-9a-f-]{36})$/.exec(reader)
-  if (run)
+export function boardReaderBeganAt(
+  reader: string,
+  database = db(),
+  readerRunRecordId: string | null = null,
+): string | null {
+  if (readerRunRecordId)
     return (
       (
-        database.query('SELECT started_at FROM run WHERE record_id=?').get(run[1]!) as {
+        database.query('SELECT started_at FROM run WHERE record_id=?').get(readerRunRecordId) as {
           started_at: string
         } | null
       )?.started_at ?? null
@@ -198,6 +202,7 @@ function architectPresenceFacts(database: ReturnType<typeof db>) {
     }[]
   ).map((row) => ({
     reader: row.session_id,
+    readerRunRecordId: null,
     role: 'architect' as const,
     project: row.project,
     machine: row.machine,
@@ -257,6 +262,7 @@ function workerPresenceFacts(database: ReturnType<typeof db>) {
   }
   return [...workers.values()].map((row) => ({
     reader: `run:${row.root_id}`,
+    readerRunRecordId: row.root_id,
     role: 'worker' as const,
     project: row.repo ?? '',
     machine: hostname(),
@@ -300,6 +306,7 @@ function claimPresenceFacts(database: ReturnType<typeof db>, at: number) {
   }
   return [...claimReaders].map(([reader, fact]) => ({
     reader,
+    readerRunRecordId: null,
     role: fact.role,
     project: '',
     machine: hostname(),
@@ -336,6 +343,31 @@ export function latestRunStatus(
   return row?.status ?? 'missing'
 }
 
+function readerRunRecordIds(facts: PresenceFact[]): Map<string, string | null> {
+  return new Map(facts.map((fact) => [fact.reader, fact.readerRunRecordId ?? null]))
+}
+
+function matchingRecipients(
+  audienceExpression: string,
+  at: number,
+  tags: BoardTag[],
+  database: ReturnType<typeof db>,
+  facts: PresenceFact[],
+  postingProject: string | null,
+  runIds: Map<string, string | null>,
+): string[] {
+  const audience = parseAudience(audienceExpression)
+  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
+  if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
+  return coarse.filter((reader) => {
+    const runRecordId = runIds.get(reader) ?? null
+    return boardNoticeMatches(
+      tags,
+      runRecordId ? boardRunContext(runRecordId, database) : boardContext(reader, at, database),
+    )
+  })
+}
+
 export function recipients(
   audienceExpression: string,
   at: number,
@@ -344,16 +376,15 @@ export function recipients(
   facts = presenceFacts(database, at),
   postingProject: string | null = null,
 ): string[] {
-  const audience = parseAudience(audienceExpression)
-  const coarse = resolveAudience(audience, facts, at, SESSION_LIVE_MS, postingProject)
-  if (audience.kind !== 'project' && audience.kind !== 'workers') return coarse
-  return coarse.filter((reader) => {
-    const run = /^run:([0-9a-f-]{36})$/i.exec(reader)
-    return boardNoticeMatches(
-      tags,
-      run ? boardRunContext(run[1]!, database) : boardContext(reader, at, database),
-    )
-  })
+  return matchingRecipients(
+    audienceExpression,
+    at,
+    tags,
+    database,
+    facts,
+    postingProject,
+    readerRunRecordIds(facts),
+  )
 }
 
 function resolvePostAudience(expression: string, machine: string) {
@@ -498,20 +529,24 @@ function recordRecipients(
   project: string | null,
   database: ReturnType<typeof writableDb>,
 ): number {
-  const readers = recipients(
+  const facts = presenceFacts(database, clock)
+  const runIds = readerRunRecordIds(facts)
+  const readers = matchingRecipients(
     audience,
     clock,
     tags,
     database,
-    presenceFacts(database, clock),
+    facts,
     project,
-  ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
+    runIds,
+  ).filter((reader) => kind !== 'question' || (runIds.get(reader) ?? null) === null)
   const add = database.query(
     `INSERT OR IGNORE INTO board_receipt
-     (record_id,message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at)
-     VALUES (?,?,?,1,NULL,NULL)`,
+     (record_id,message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at)
+     VALUES (?,?,?,?,1,NULL,NULL)`,
   )
-  for (const reader of readers) add.run(newRecordId(), messageRecordId, reader)
+  for (const reader of readers)
+    add.run(newRecordId(), messageRecordId, reader, runIds.get(reader) ?? null)
   return readers.length
 }
 

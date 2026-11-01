@@ -1,0 +1,1 @@
+ALTER TABLE "board_receipt" ADD COLUMN "reader_run_record_id" uuid;

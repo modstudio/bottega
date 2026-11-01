@@ -339,16 +339,26 @@ async function uploadReceipts(
       await client.putBoardReceipt({
         messageId: hostedId,
         readerSession: receipt.reader_session,
+        readerRunRecordId: receipt.reader_run_record_id,
         audienceAtPosting: receipt.audience_at_posting === 1,
         delivered: Boolean(receipt.delivered_at),
         acknowledged: Boolean(receipt.acknowledged_at),
       })
-      recordReceiptUpload(hostedId, receipt.reader_session, 'uploaded', null, database, clock)
+      recordReceiptUpload(
+        hostedId,
+        receipt.reader_session,
+        receipt.reader_run_record_id,
+        'uploaded',
+        null,
+        database,
+        clock,
+      )
     } catch (error) {
       if (!(error instanceof RecordApiRequestError) || error.kind !== 'refused') throw error
       recordReceiptUpload(
         hostedId,
         receipt.reader_session,
+        receipt.reader_run_record_id,
         'skipped',
         error.message,
         database,
@@ -363,6 +373,7 @@ async function uploadReceipts(
 type LocalReceipt = {
   message_record_id: string
   reader_session: string
+  reader_run_record_id: string | null
   audience_at_posting: number
   delivered_at: string | null
   acknowledged_at: string | null
@@ -386,7 +397,7 @@ function pendingReceiptsForMessage(
   const facts = presenceFacts(database, clock)
   const receipts = database
     .query(
-      `SELECT r.message_record_id,r.reader_session,r.audience_at_posting,r.delivered_at,r.acknowledged_at
+      `SELECT r.message_record_id,r.reader_session,r.reader_run_record_id,r.audience_at_posting,r.delivered_at,r.acknowledged_at
        FROM board_receipt r
        JOIN board_message message ON message.record_id=r.message_record_id
        LEFT JOIN board_hosted_adoption_receipt a
@@ -400,7 +411,7 @@ function pendingReceiptsForMessage(
       (receipt.delivered_at !== null || receipt.acknowledged_at !== null) &&
       (receipt.reader_session === OPERATOR_READER ||
         recipients(
-          receipt.reader_session.startsWith('run:')
+          receipt.reader_run_record_id !== null
             ? receipt.reader_session
             : `session:${receipt.reader_session}`,
           clock,
@@ -414,6 +425,7 @@ function pendingReceiptsForMessage(
 function recordReceiptUpload(
   messageRecordId: string,
   readerSession: string,
+  readerRunRecordId: string | null,
   state: 'uploaded' | 'skipped',
   refusal: string | null,
   database: Database,
@@ -423,9 +435,16 @@ function recordReceiptUpload(
     database
       .query(
         `INSERT INTO board_hosted_adoption_receipt
-         (message_record_id,reader_session,state,refusal,updated_at) VALUES (?,?,?,?,?)`,
+         (message_record_id,reader_session,reader_run_record_id,state,refusal,updated_at) VALUES (?,?,?,?,?,?)`,
       )
-      .run(messageRecordId, readerSession, state, refusal, new Date(clock).toISOString())
+      .run(
+        messageRecordId,
+        readerSession,
+        readerRunRecordId,
+        state,
+        refusal,
+        new Date(clock).toISOString(),
+      )
   }, database)
 }
 

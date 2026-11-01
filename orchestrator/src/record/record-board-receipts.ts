@@ -26,6 +26,7 @@ export function hostedBoardReceiptView(row: Record<string, unknown>): HostedBoar
     messageId: String(row.message_id),
     readerUserId: String(row.reader_user_id),
     readerSession: String(row.reader_session),
+    readerRunRecordId: row.reader_run_record_id == null ? null : String(row.reader_run_record_id),
     audienceAtPosting: Boolean(row.audience_at_posting),
     deliveredAt: iso(row.delivered_at),
     acknowledgedAt: iso(row.acknowledged_at),
@@ -39,7 +40,7 @@ export async function hostedBoardStatus(
     const message = await loadHostedBoardMessage(tx, input.id)
     if (!message) throw new RecordBoardError(`board message ${input.id} not found`, 404)
     const rows = (await tx`
-      SELECT message_id, reader_user_id, reader_session, audience_at_posting,
+      SELECT message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting,
         delivered_at, acknowledged_at
       FROM board_receipt
       WHERE message_id=${input.id}::uuid
@@ -75,15 +76,16 @@ export async function putHostedBoardReceipt(
     const acknowledgedAt = input.acknowledged ? clock : null
     const rows = await tx`
       INSERT INTO board_receipt (
-        id, message_id, reader_user_id, reader_session, audience_at_posting, delivered_at, acknowledged_at
+        id, message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting, delivered_at, acknowledged_at
       ) VALUES (
-        ${newRecordId()}::uuid, ${input.messageId}::uuid, ${input.userId}::uuid, ${input.readerSession},
+        ${newRecordId()}::uuid, ${input.messageId}::uuid, ${input.userId}::uuid, ${input.readerSession}, ${input.readerRunRecordId ?? null}::uuid,
         ${input.audienceAtPosting}, ${deliveredAt}::timestamptz, ${acknowledgedAt}::timestamptz
       )
       ON CONFLICT (message_id, reader_user_id, reader_session) DO UPDATE SET
         delivered_at = COALESCE(board_receipt.delivered_at, EXCLUDED.delivered_at),
+        reader_run_record_id = COALESCE(board_receipt.reader_run_record_id, EXCLUDED.reader_run_record_id),
         acknowledged_at = COALESCE(board_receipt.acknowledged_at, EXCLUDED.acknowledged_at)
-      RETURNING message_id, reader_user_id, reader_session, audience_at_posting,
+      RETURNING message_id, reader_user_id, reader_session, reader_run_record_id, audience_at_posting,
         delivered_at, acknowledged_at
     `
     if (!rows[0])

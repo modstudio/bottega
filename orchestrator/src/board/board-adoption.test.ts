@@ -763,15 +763,15 @@ test('a receipt network failure stops adoption with its mark unset', async () =>
   ).toBeNull()
 })
 
-test('the plan and upload include only receipts for readers that are still around', async () => {
+test('the plan and upload include sibling ids only for readers that are still around', async () => {
   presence('live-reader')
   const projectRecordId = newRecordId()
   upsertProject({ recordId: projectRecordId, name: 'board-adoption-run', path: '/tmp/board-run' })
-  const finishedRun = db()
+  const liveRun = db()
     .query(
       `INSERT INTO run
        (record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','ok',1,?)
+       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1,?)
        RETURNING record_id AS id`,
     )
     .get(new Date(NOW - 1_000).toISOString(), projectRecordId) as { id: string }
@@ -782,23 +782,32 @@ test('the plan and upload include only receipts for readers that are still aroun
   )
   receipt(notice.recordId, 'live-reader')
   receipt(notice.recordId, 'long-gone-reader')
-  receipt(notice.recordId, `run:${finishedRun.id}`)
-  const readers: string[] = []
+  receipt(notice.recordId, `run:${liveRun.id}`)
+  db()
+    .query('UPDATE board_receipt SET reader_run_record_id=? WHERE reader_session=?')
+    .run(liveRun.id, `run:${liveRun.id}`)
+  const readers: { readerSession: string; readerRunRecordId: string | null | undefined }[] = []
   const base = capturingClient([]).client
   const client: RecordApiClient = {
     ...base,
     async putBoardReceipt(input) {
-      readers.push(input.readerSession)
+      readers.push({
+        readerSession: input.readerSession,
+        readerRunRecordId: input.readerRunRecordId,
+      })
       return base.putBoardReceipt(input)
     },
   }
 
   const plan = await adoptHostedBoard({ clock: () => NOW, client })
-  expect(plan).toMatchObject({ status: 'plan', total: 1, receipts: 1 })
+  expect(plan).toMatchObject({ status: 'plan', total: 1, receipts: 2 })
   expect(plan.note).toContain('Hosted reach counts readers from adoption onward.')
   await adoptHostedBoard({ confirm: 1, clock: () => NOW, client })
 
-  expect(readers).toEqual(['live-reader'])
+  expect(readers).toEqual([
+    { readerSession: 'live-reader', readerRunRecordId: null },
+    { readerSession: `run:${liveRun.id}`, readerRunRecordId: liveRun.id },
+  ])
 })
 
 test('a receipt server failure resumes after recorded successes and sends only the remainder', async () => {

@@ -94,6 +94,7 @@ export type HostedBoardReceipt = {
   messageId: string
   readerUserId: string
   readerSession: string
+  readerRunRecordId?: string | null
   audienceAtPosting: boolean
   deliveredAt: string | null
   acknowledgedAt: string | null
@@ -244,6 +245,7 @@ export type HostedBoardFilingFailInput = HostedBoardSessionInput & { error: stri
 export type HostedBoardReceiptInput = {
   messageId: string
   readerSession: string
+  readerRunRecordId?: string | null
   audienceAtPosting: boolean
   delivered?: boolean
   acknowledged?: boolean

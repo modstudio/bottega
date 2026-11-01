@@ -220,6 +220,7 @@ function release(): void {
         DROP DATABASE IF EXISTS public_role_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_migration WITH (FORCE);
         DROP DATABASE IF EXISTS board_shared_space_invalid_migration WITH (FORCE);
+        DROP DATABASE IF EXISTS board_reader_run_migration WITH (FORCE);
         DROP DATABASE IF EXISTS hub_project_identity_migration WITH (FORCE);
         DROP DATABASE IF EXISTS run_task_reference_migration WITH (FORCE);
         DROP DATABASE IF EXISTS run_owner_migration WITH (FORCE);
@@ -350,6 +351,7 @@ try {
     CREATE DATABASE public_role_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_shared_space_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE board_shared_space_invalid_migration OWNER ${RECORD_OWNER_ROLE};
+    CREATE DATABASE board_reader_run_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE workflow_generation_migration OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE workflow_catalogue OWNER ${RECORD_OWNER_ROLE};
     CREATE DATABASE lens_catalogue OWNER ${RECORD_OWNER_ROLE};
@@ -377,6 +379,7 @@ try {
     `ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`,
     'board_shared_space_invalid_migration',
   )
+  postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'board_reader_run_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_generation_migration')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'workflow_catalogue')
   postgres(`ALTER SCHEMA public OWNER TO ${RECORD_OWNER_ROLE};`, 'lens_catalogue')
@@ -407,6 +410,7 @@ try {
   const publicRoleMigrationSuperuserUrl = `postgres://postgres:postgres@127.0.0.1:${port}/public_role_migration`
   const boardSharedSpaceMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_migration`
   const boardSharedSpaceInvalidMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_shared_space_invalid_migration`
+  const boardReaderRunMigrationUrl = `postgres://${RECORD_OWNER_ROLE}:owner-password@127.0.0.1:${port}/board_reader_run_migration`
   const workflowGenerationMigrationUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_generation_migration`
   const workflowCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/workflow_catalogue`
   const lensCatalogueUrl = `postgres://postgres:postgres@127.0.0.1:${port}/lens_catalogue`
@@ -468,6 +472,7 @@ try {
     {
       BOTTEGA_TEST_BOARD_SHARED_SPACE_MIGRATION_URL: boardSharedSpaceMigrationUrl,
       BOTTEGA_TEST_BOARD_SHARED_SPACE_INVALID_MIGRATION_URL: boardSharedSpaceInvalidMigrationUrl,
+      BOTTEGA_TEST_BOARD_READER_RUN_MIGRATION_URL: boardReaderRunMigrationUrl,
     },
   )
   if (boardSharedSpaceMigration !== 0) throw new EarlyExit(boardSharedSpaceMigration)
