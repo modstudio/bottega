@@ -187,19 +187,18 @@ export async function copyWorkflowTextForTarget(
     input.context.session,
     database,
     input.context.taskRecordId,
-  ) as {
-    record_id: string
-    number: number
-    project: string
-    task_record_id: string | null
-    state: string
-  }
+  )
+  if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
   return copyWorkflowTextForCursor(
     {
       id: row.record_id,
-      number: row.number,
+      number: row.id,
       project: row.project,
-      taskRecordId: row.task_record_id,
+      taskRecordId:
+        row.task_record_id ??
+        input.context.adoptionTaskRecordId ??
+        input.context.taskRecordId ??
+        null,
       state: row.state,
     },
     database,
