@@ -54,6 +54,7 @@ export const recordModules: RecordModule[] = [
   ]),
   module('orchestrator/src/record/record-catalogue-import.ts', [
     'bun',
+    '../../../shared/record-id.ts',
     '../../../shared/record/tenant.ts',
     '../workflow/workflow-built-ins.ts',
     './record-catalogue-reconciliation.ts',

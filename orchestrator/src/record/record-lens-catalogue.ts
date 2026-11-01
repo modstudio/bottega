@@ -67,6 +67,7 @@ function mapped(
         axis: text(row.axis),
         name: text(row.name),
         version: number(row.version),
+        currentVersionId: nullable(row.current_version_id),
         body: text(row.body),
         enabled: Boolean(row.enabled),
         updatedAt: iso(row.updated_at),
@@ -207,7 +208,8 @@ export async function upsertRecordLensProfile(input: Tenant & RecordLensProfileW
       id = prior ? text(prior.id) : newRecordId()
     let revision: Record<string, unknown> | null = null
     if (prior) {
-      const revisionId = newRecordId(),
+      const revisionId = nullable(prior.current_version_id) ?? newRecordId(),
+        currentVersionId = newRecordId(),
         priorBody = JSON.stringify({
           body: JSON.parse(text(prior.body)),
           enabled: Boolean(prior.enabled),
@@ -217,9 +219,9 @@ export async function upsertRecordLensProfile(input: Tenant & RecordLensProfileW
         'lens_profile_revision',
         (await tx`SELECT * FROM lens_profile_revision WHERE id=${revisionId}::uuid`)[0]!,
       )
-      await tx`UPDATE lens_profile SET body=${input.body},enabled=${input.enabled},version=version+1,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
+      await tx`UPDATE lens_profile SET body=${input.body},enabled=${input.enabled},version=version+1,current_version_id=${currentVersionId}::uuid,updated_at=${now}::timestamptz WHERE id=${id}::uuid`
     } else
-      await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,body,enabled,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${input.axis},${input.name},1,${input.body},${input.enabled},${now}::timestamptz)`
+      await tx`INSERT INTO lens_profile (id,space_id,lens_id,axis,name,version,current_version_id,body,enabled,updated_at) VALUES (${id}::uuid,${input.spaceId}::uuid,${lensId}::uuid,${input.axis},${input.name},1,${newRecordId()}::uuid,${input.body},${input.enabled},${now}::timestamptz)`
     return {
       profile: mapped(
         'lens_profile',

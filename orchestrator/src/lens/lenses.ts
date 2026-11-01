@@ -35,6 +35,7 @@ type ProfileRow = {
   axis: LensAxis
   name: string
   version: number
+  current_version_id: string | null
   body: string
   enabled: number
   space_id: string | null
@@ -243,7 +244,7 @@ export function listLenses(
 const LENS_COLUMNS =
   'record_id,id,title,question,excludes,slots,version,enabled,requires_execution,space_id' as const
 const PROFILE_COLUMNS =
-  'p.record_id,p.lens_record_id,l.id lens_id,p.axis,p.name,p.version,p.body,p.enabled,p.space_id' as const
+  'p.record_id,p.lens_record_id,l.id lens_id,p.axis,p.name,p.version,p.current_version_id,p.body,p.enabled,p.space_id' as const
 
 export function showLens(
   id: string,
@@ -264,7 +265,11 @@ export function showLens(
     enabled: !!row.enabled,
     requires_execution: !!row.requires_execution,
     slots: JSON.parse(row.slots),
-    profiles: profiles.map((p) => ({ ...p, enabled: !!p.enabled, body: JSON.parse(p.body) })),
+    profiles: profiles.map(({ current_version_id: _currentVersionId, ...p }) => ({
+      ...p,
+      enabled: !!p.enabled,
+      body: JSON.parse(p.body),
+    })),
   }
 }
 export async function setLens(input: SetLensInput) {
@@ -403,12 +408,24 @@ function showProfileInSpace(
   database: Database,
   spaceId: string | null,
 ) {
-  const row = database
+  const row = profileRowInSpace(lensId, axisValue(axis), name, database, spaceId)
+  if (!row) return null
+  const { current_version_id: _currentVersionId, ...profile } = row
+  return { ...profile, enabled: !!profile.enabled, body: JSON.parse(profile.body) }
+}
+
+function profileRowInSpace(
+  lensId: string,
+  axis: LensAxis,
+  name: string,
+  database: Database,
+  spaceId: string | null,
+): ProfileRow | null {
+  return database
     .query(
       `SELECT ${PROFILE_COLUMNS} FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id WHERE l.id=? AND p.axis=? AND p.name=? AND p.space_id IS ?`,
     )
-    .get(lensId, axisValue(axis), name, spaceId) as ProfileRow | null
-  return row ? { ...row, enabled: !!row.enabled, body: JSON.parse(row.body) } : null
+    .get(lensId, axis, name, spaceId) as ProfileRow | null
 }
 export async function setProfile(input: SetProfileInput) {
   writableDb()
@@ -421,29 +438,27 @@ export async function setProfile(input: SetProfileInput) {
       .get(input.lensId, spaceId) as CoreRow | null
     if (!core) throw new Error(`no lens "${input.lensId}" in the selected record space`)
     profileValues(input.body, core.slots)
-    const prior = d
-      .query(
-        `SELECT ${PROFILE_COLUMNS} FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id WHERE l.id=? AND p.axis=? AND p.name=? AND p.space_id IS ?`,
-      )
-      .get(input.lensId, axis, input.name, spaceId) as ProfileRow | null
+    const prior = profileRowInSpace(input.lensId, axis, input.name, d, spaceId)
     writeTransaction(() => {
       if (!prior)
         d.query(
-          'INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,body,enabled) VALUES (?,?,?,?,?,1,?,?)',
+          'INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,current_version_id,body,enabled) VALUES (?,?,?,?,?,1,?,?,?)',
         ).run(
           hosted?.profile.id ?? newRecordId(),
           spaceId,
           core.record_id,
           axis,
           input.name,
+          hosted?.profile.currentVersionId ?? newRecordId(),
           input.body,
           input.enabled ? 1 : 0,
         )
       else {
+        const outgoingVersionId = hosted?.revision?.id ?? prior.current_version_id ?? newRecordId()
         d.query(
           'INSERT INTO lens_profile_revision (record_id,space_id,profile_record_id,version,prior_body,reason,session_id,at) VALUES (?,?,?,?,?,?,?,?)',
         ).run(
-          hosted?.revision?.id ?? newRecordId(),
+          outgoingVersionId,
           spaceId,
           prior.record_id,
           prior.version,
@@ -452,8 +467,11 @@ export async function setProfile(input: SetProfileInput) {
           sessionId(),
           nowIso(),
         )
-        d.query('UPDATE lens_profile SET version=?,body=?,enabled=? WHERE record_id=?').run(
+        d.query(
+          'UPDATE lens_profile SET version=?,current_version_id=?,body=?,enabled=? WHERE record_id=?',
+        ).run(
           hosted?.profile.version ?? prior.version + 1,
+          hosted?.profile.currentVersionId ?? newRecordId(),
           input.body,
           input.enabled ? 1 : 0,
           prior.record_id,
@@ -476,11 +494,7 @@ export async function setProfile(input: SetProfileInput) {
         .get(input.lensId, destinationSpaceId) as CoreRow | null
       if (!core) throw new Error(`no lens "${input.lensId}" in the selected record space`)
       profileValues(input.body, core.slots)
-      const prior = d
-        .query(
-          `SELECT ${PROFILE_COLUMNS} FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id WHERE l.id=? AND p.axis=? AND p.name=? AND p.space_id IS ?`,
-        )
-        .get(input.lensId, axis, input.name, destinationSpaceId) as ProfileRow | null
+      const prior = profileRowInSpace(input.lensId, axis, input.name, d, destinationSpaceId)
       const result = await client.upsertLensProfile(
         {
           lensKey: input.lensId,
@@ -683,6 +697,7 @@ function resolvedProfile(
     axis,
     name: 'default',
     version: 1,
+    current_version_id: null,
     body: defaultProfileBody(core.slots),
     enabled: 1,
     space_id: core.space_id,

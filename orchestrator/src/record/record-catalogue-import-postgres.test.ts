@@ -38,7 +38,8 @@ postgres('hosted catalogue bulk imports', () => {
     const tenant = { url: actorUrl!, spaceId, spaceIds: [spaceId], userId }
     const at = new Date().toISOString(),
       lensId = newRecordId(),
-      profileId = newRecordId()
+      profileId = newRecordId(),
+      profileCurrentVersionId = newRecordId()
     const lens = {
       dryRun: false,
       lens: [
@@ -65,6 +66,7 @@ postgres('hosted catalogue bulk imports', () => {
           axis: 'framework' as const,
           name: 'default',
           version: 1,
+          currentVersionId: profileCurrentVersionId,
           body: '{}',
           enabled: true,
           updatedAt: at,
@@ -166,6 +168,14 @@ postgres('hosted catalogue bulk imports', () => {
         importRecordPortCatalogue({ ...tenant, ...portInput }),
       ])
       expect(results.map((result) => result.inserted)).toEqual(run === 1 ? [2, 2, 4] : [0, 0, 0])
+    }
+    const verify = new SQL(setupUrl!)
+    try {
+      expect([
+        ...(await verify`SELECT current_version_id FROM lens_profile WHERE id=${profileId}::uuid`),
+      ]).toEqual([{ current_version_id: profileCurrentVersionId }])
+    } finally {
+      await verify.close()
     }
     const firstBuiltIns = await ensureSpaceBuiltIns(tenant)
     const secondBuiltIns = await ensureSpaceBuiltIns(tenant)
@@ -649,6 +659,7 @@ postgres('hosted catalogue bulk imports', () => {
           axis: 'framework',
           name: 'imported',
           version: 1,
+          currentVersionId: newRecordId(),
           body: '{}',
           enabled: true,
           updatedAt: at,

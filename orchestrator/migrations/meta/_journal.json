@@ -1434,6 +1434,14 @@
       "tag": "0188_run_tool_burst_observation",
       "breakpoints": true,
       "compatibility": "additive"
+    },
+    {
+      "idx": 189,
+      "version": "6",
+      "when": 1793577600054,
+      "tag": "0189_lens_profile_current_version_id",
+      "breakpoints": true,
+      "compatibility": "additive"
     }
   ]
 }

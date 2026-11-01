@@ -24,8 +24,8 @@ export function seedLenses(local: Database): void {
     if (!lens) continue
     local
       .query(`INSERT OR IGNORE INTO lens_profile
-      (record_id,space_id,lens_record_id,axis,name,version,body,enabled)
-      VALUES (?,NULL,?,'framework','default',1,?,1)`)
-      .run(newRecordId(), lens.record_id, BUILT_IN_LENS_DEFAULT_PROFILE)
+      (record_id,space_id,lens_record_id,axis,name,version,current_version_id,body,enabled)
+      VALUES (?,NULL,?,'framework','default',1,?,?,1)`)
+      .run(newRecordId(), lens.record_id, newRecordId(), BUILT_IN_LENS_DEFAULT_PROFILE)
   }
 }

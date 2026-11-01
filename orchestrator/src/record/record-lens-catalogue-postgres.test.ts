@@ -172,6 +172,55 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
     }
   })
 
+  test('a hosted profile version keeps its current id when it becomes a revision', async () => {
+    const lensKey = 'stable-profile-version-id'
+    await upsertRecordLens({
+      ...tenant(),
+      key: lensKey,
+      title: 'Stable profile version id',
+      question: 'Stable?',
+      excludes: 'Nothing.',
+      slots: '{}',
+      enabled: true,
+      requiresExecution: false,
+      expectedVersion: null,
+      reason: 'create lens',
+    })
+    const input = {
+      ...tenant(),
+      lensKey,
+      axis: 'framework' as const,
+      name: 'default',
+      body: '{}',
+      enabled: true,
+      expectedVersion: null,
+      reason: 'create version one',
+    }
+    const versionOne = await upsertRecordLensProfile(input)
+    const versionTwo = await upsertRecordLensProfile({
+      ...input,
+      expectedVersion: 1,
+      reason: 'create version two',
+    })
+    await upsertRecordLensProfile({
+      ...input,
+      expectedVersion: 2,
+      reason: 'create version three',
+    })
+
+    const sql = new SQL(url!)
+    try {
+      expect(
+        await sql`SELECT version,id::text id FROM lens_profile_revision WHERE profile_id=${versionOne.profile.id}::uuid ORDER BY version`,
+      ).toEqual([
+        { version: 1, id: versionOne.profile.currentVersionId },
+        { version: 2, id: versionTwo.profile.currentVersionId },
+      ])
+    } finally {
+      await sql.close()
+    }
+  })
+
   test('two concurrent creates serialize to one success and one named stale refusal', async () => {
     const input = {
       ...tenant(),

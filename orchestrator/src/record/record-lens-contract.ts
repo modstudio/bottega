@@ -53,6 +53,7 @@ const recordLensRowSchemas = {
     axis,
     name: z.string().min(1),
     version: z.number().int().positive(),
+    currentVersionId: uuid.nullable().default(null),
     body: z.string(),
     enabled: z.boolean(),
     updatedAt: iso,

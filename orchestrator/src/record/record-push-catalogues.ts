@@ -113,7 +113,7 @@ function lensPlanRows(local: Database): LensPlanRows {
     profiles = (
       local
         .query(
-          `SELECT record_id,lens_record_id,axis,name,version,body,enabled FROM lens_profile WHERE space_id IS NULL`,
+          `SELECT record_id,lens_record_id,axis,name,version,current_version_id,body,enabled FROM lens_profile WHERE space_id IS NULL`,
         )
         .all() as Record<string, unknown>[]
     ).filter(
@@ -186,6 +186,10 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       name: String(r.name),
       version: Number(r.version),
+      currentVersionId:
+        r.current_version_id == null
+          ? null
+          : replicatedRecordId(spaceId, 'lens_profile_revision', String(r.current_version_id)),
       body: String(r.body),
       enabled: Boolean(r.enabled),
       updatedAt: now,

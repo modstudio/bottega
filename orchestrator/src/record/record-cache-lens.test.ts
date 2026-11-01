@@ -35,6 +35,7 @@ const profileRow = (spaceId: string, lensId: string, body: string, id = newRecor
   axis: 'framework',
   name: 'default',
   version: 1,
+  currentVersionId: newRecordId(),
   body,
   enabled: true,
   updatedAt: new Date().toISOString(),
@@ -134,6 +135,27 @@ test('lens cache reconciles hosted rows within their space and preserves the loc
   expect(local.query("SELECT record_id FROM lens WHERE id='inserted-key'").get()).toEqual({
     record_id: inserted.id,
   })
+
+  const pulledProfile = profileRow(inserted.spaceId, inserted.id, '{}')
+  applyLensCatalogueRow(local, 'lens_profile', pulledProfile)
+  expect(
+    local
+      .query('SELECT current_version_id FROM lens_profile WHERE record_id=?')
+      .get(pulledProfile.id),
+  ).toEqual({ current_version_id: pulledProfile.currentVersionId })
+
+  const { currentVersionId: _omitted, ...legacyProfile } = profileRow(
+    inserted.spaceId,
+    inserted.id,
+    '{}',
+  )
+  legacyProfile.name = 'legacy'
+  applyLensCatalogueRow(local, 'lens_profile', legacyProfile)
+  expect(
+    local
+      .query('SELECT current_version_id FROM lens_profile WHERE record_id=?')
+      .get(legacyProfile.id),
+  ).toEqual({ current_version_id: null })
 
   const localSeed = local
     .query<{ record_id: string; title: string }, []>(

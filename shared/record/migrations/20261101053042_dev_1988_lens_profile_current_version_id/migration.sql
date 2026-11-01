@@ -1,0 +1,1 @@
+ALTER TABLE "lens_profile" ADD COLUMN "current_version_id" uuid;
