@@ -1,7 +1,7 @@
 // concern: focused-test-decision
 /** Pure contracts and decisions for project-registered focused test runs. */
 
-import { isAbsolute, normalize, relative, resolve, sep } from 'node:path'
+import { basename, isAbsolute, normalize, relative, resolve, sep } from 'node:path'
 
 export const FOCUSED_TEST_MAX_PATHS = 64
 /** What one affected-test selector may print before its selection is refused rather than held. */
@@ -478,7 +478,9 @@ function normalizedFocusedTestPath(entry: string): string {
 export function normalizeFocusedTestPaths(paths: readonly string[]): string[] {
   if (!paths.length) throw new Error('paths must contain at least one project-relative path')
   if (paths.length > FOCUSED_TEST_MAX_PATHS) {
-    throw new Error(`paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries`)
+    throw new Error(
+      `paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries; run run_check for the whole suite, or split the selection across run_tests calls`,
+    )
   }
   return paths.map(normalizedFocusedTestPath)
 }
@@ -520,13 +522,23 @@ export function focusedTestInvocation(
   paths: readonly string[],
   worktree: string,
 ): { command: string; argv: string[] } {
+  const operands =
+    focusedTestOperandForm(runner) === 'exact' ? paths.map((path) => `./${path}`) : paths
   return {
     command:
       isAbsolute(runner.command) || !runner.command.includes('/')
         ? runner.command
         : resolve(worktree, runner.command),
-    argv: [...runner.args, ...paths],
+    argv: [...runner.args, ...operands],
   }
+}
+
+/** Whether the runner consumes paths as exact file operands or with its own argument semantics. */
+export function focusedTestOperandForm(runner: FocusedTestCommand): 'exact' | 'as-given' {
+  return basename(runner.command) === 'bun' &&
+    runner.args.find((arg) => !arg.startsWith('-')) === 'test'
+    ? 'exact'
+    : 'as-given'
 }
 
 export function boundedFocusedTestOutputTail(value: string): string {

@@ -12,6 +12,7 @@ import {
   FOCUSED_TEST_MAX_PATHS,
   FOCUSED_TEST_SELECTOR_OUTPUT_MAX_BYTES,
   focusedTestInvocation,
+  focusedTestOperandForm,
   formatFocusedTestRequestDecision,
   hasFocusedTestRunner,
   normalizeAffectedTestPaths,
@@ -95,7 +96,9 @@ describe('focused test decisions', () => {
     expect(() => normalizeFocusedTestPaths([])).toThrow('at least one')
     expect(() =>
       normalizeFocusedTestPaths(Array.from({ length: FOCUSED_TEST_MAX_PATHS + 1 }, () => 'x')),
-    ).toThrow(`at most ${FOCUSED_TEST_MAX_PATHS}`)
+    ).toThrow(
+      `at most ${FOCUSED_TEST_MAX_PATHS} entries; run run_check for the whole suite, or split the selection across run_tests calls`,
+    )
   })
 
   test('decides existence and canonical confinement from filesystem facts', () => {
@@ -146,6 +149,32 @@ describe('focused test decisions', () => {
       focusedTestInvocation({ command: 'bun', args: ['test'] }, ['tests/one.test.ts'], '/worktree')
         .command,
     ).toBe('bun')
+  })
+
+  test('decides operand forms and argv for registered runner shapes', () => {
+    const cases: {
+      runner: { command: string; args: string[] }
+      form: 'exact' | 'as-given'
+    }[] = [
+      { runner: { command: 'bun', args: ['test'] }, form: 'exact' },
+      {
+        runner: { command: 'bun', args: ['--conditions=@segnavia/source', 'test'] },
+        form: 'exact',
+      },
+      { runner: { command: '/opt/homebrew/bin/bun', args: ['test'] }, form: 'exact' },
+      { runner: { command: 'bun', args: ['run', 'test'] }, form: 'as-given' },
+      { runner: { command: 'scripts/test-focused.ts', args: [] }, form: 'as-given' },
+      { runner: { command: 'scripts/test-focused', args: [] }, form: 'as-given' },
+      { runner: { command: 'node_modules/.bin/vitest', args: ['run'] }, form: 'as-given' },
+    ]
+
+    for (const { runner, form } of cases) {
+      expect(focusedTestOperandForm(runner)).toBe(form)
+      expect(focusedTestInvocation(runner, ['tests/one.test.ts'], '/worktree').argv).toEqual([
+        ...runner.args,
+        form === 'exact' ? './tests/one.test.ts' : 'tests/one.test.ts',
+      ])
+    }
   })
 
   test('parses only the request and result transport shapes', () => {
@@ -472,7 +501,7 @@ describe('affected focused test selections', () => {
     })
     expect(selection).toEqual({
       kind: 'refuse',
-      message: `paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries`,
+      message: `paths may contain at most ${FOCUSED_TEST_MAX_PATHS} entries; run run_check for the whole suite, or split the selection across run_tests calls`,
     })
   })
 
