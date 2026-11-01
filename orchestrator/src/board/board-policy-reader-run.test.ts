@@ -51,7 +51,7 @@ test('run receipts carry their UUID sibling while session receipts leave it NULL
 })
 
 test('board receipt readers do not parse run labels', () => {
-  for (const file of ['board-service.ts', 'board-store.ts']) {
+  for (const file of ['board-service.ts', 'board-store.ts', 'board-hosted-cache.ts']) {
     const source = readFileSync(resolve(import.meta.dir, file), 'utf8')
     expect(source).not.toMatch(/\^run:\([^\n]+\)\$/)
     expect(source).not.toMatch(/reader_session[^\n]*(?:slice|substring|substr)/)

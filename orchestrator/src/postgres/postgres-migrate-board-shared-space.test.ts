@@ -22,6 +22,7 @@ const REPLY_ID = '02990000-0000-7000-8000-000000000212'
 const NESTED_REPLY_ID = '02990000-0000-7000-8000-000000000213'
 const READER_MACHINE_ID = '02990000-0000-7000-8000-000000000402'
 const READER_RUN_ID = '02990000-0000-7000-8000-000000000403'
+const MISSING_READER_RUN_ID = '02990000-0000-7000-8000-000000000407'
 const READER_MESSAGE_ID = '02990000-0000-7000-8000-000000000404'
 const readerRunMigration = '20261101151116_dev_2002_board_receipt_reader_run_record_id'
 
@@ -160,7 +161,8 @@ describe.skipIf(!readerRunMigrationUrl)('populated board reader run migration', 
           (id,message_id,reader_user_id,reader_session,audience_at_posting)
         VALUES
           ('02990000-0000-7000-8000-000000000405',${READER_MESSAGE_ID},${AUTHOR_ID},${`run:${READER_RUN_ID}`},true),
-          ('02990000-0000-7000-8000-000000000406',${READER_MESSAGE_ID},${AUTHOR_ID},'session-reader',true)
+          ('02990000-0000-7000-8000-000000000406',${READER_MESSAGE_ID},${AUTHOR_ID},'session-reader',true),
+          ('02990000-0000-7000-8000-000000000408',${READER_MESSAGE_ID},${AUTHOR_ID},${`run:${MISSING_READER_RUN_ID}`},true)
       `
 
       await migrate(drizzle({ client: sql }), { migrationsFolder })
@@ -170,6 +172,10 @@ describe.skipIf(!readerRunMigrationUrl)('populated board reader run migration', 
       `
       expect(rows).toEqual([
         { reader_session: `run:${READER_RUN_ID}`, reader_run_record_id: READER_RUN_ID },
+        {
+          reader_session: `run:${MISSING_READER_RUN_ID}`,
+          reader_run_record_id: MISSING_READER_RUN_ID,
+        },
         { reader_session: 'session-reader', reader_run_record_id: null },
       ])
     } finally {

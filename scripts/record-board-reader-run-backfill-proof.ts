@@ -5,6 +5,7 @@ import { CheckFailure } from './record-migration-failure.ts'
 export const boardReaderRunBackfill = '20261101151123_dev_2002_board_receipt_reader_run_backfill'
 const USER_ID = '01990000-0000-7000-8000-000000000002'
 const RUN_ID = '01990000-0000-7000-8000-000000000401'
+const MISSING_RUN_ID = '01990000-0000-7000-8000-000000000406'
 const MACHINE_ID = '01990000-0000-7000-8000-000000000402'
 const MESSAGE_ID = '01990000-0000-7000-8000-000000000403'
 const ROOT_ID = '01990000-0000-7000-8000-000000000021'
@@ -89,7 +90,9 @@ export async function seedBoardReaderRunBackfill(transaction: Transaction): Prom
       ('01990000-0000-7000-8000-000000000404','${MESSAGE_ID}','${USER_ID}',
        'run:${RUN_ID}',true),
       ('01990000-0000-7000-8000-000000000405','${MESSAGE_ID}','${USER_ID}',
-       'hosted-session-reader',true);
+       'hosted-session-reader',true),
+      ('01990000-0000-7000-8000-000000000407','${MESSAGE_ID}','${USER_ID}',
+       'run:${MISSING_RUN_ID}',true);
     ALTER TABLE run FORCE ROW LEVEL SECURITY;
     ALTER TABLE board_receipt FORCE ROW LEVEL SECURITY;
     ALTER TABLE board_message FORCE ROW LEVEL SECURITY;
@@ -109,6 +112,7 @@ export async function proofBoardReaderRunBackfill(transaction: Transaction): Pro
   const expected = [
     { reader_session: 'hosted-session-reader', reader_run_record_id: null },
     { reader_session: `run:${RUN_ID}`, reader_run_record_id: RUN_ID },
+    { reader_session: `run:${MISSING_RUN_ID}`, reader_run_record_id: MISSING_RUN_ID },
   ]
   if (JSON.stringify(result.rows) !== JSON.stringify(expected))
     throw new CheckFailure(
