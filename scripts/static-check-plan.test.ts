@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS } from './check-plan.ts'
@@ -37,7 +37,7 @@ describe('worker static check plan', () => {
 
   test('builds worker Biome argv from the selected files without changed mode', () => {
     const files = ['scripts/committed.ts', 'scripts/untracked.ts']
-    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS)
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [])
 
     const argv = projection.biome.workerArgv!({ root: '/repo/', files })
 
@@ -70,6 +70,14 @@ describe('worker static check plan', () => {
     expect(omissions.length).toBeGreaterThan(0)
 
     for (const omission of omissions) {
+      if ('subjects' in omission && omission.subjects !== undefined) {
+        for (const subject of omission.subjects) {
+          const subjectPath = join(REPOSITORY_ROOT, subject)
+          expect(existsSync(subjectPath), `${subject} must exist`).toBe(true)
+          expect(statSync(subjectPath).isDirectory(), `${subject} must be a directory`).toBe(true)
+        }
+      }
+
       const evidence = classifyWorkerOmissionEvidence(omission.evidence)
       expect(evidence.kind, omission.evidence).not.toBe('invalid')
       if (evidence.kind !== 'citation') continue
@@ -87,7 +95,7 @@ describe('worker static check plan', () => {
   })
 
   test('includes the checks that protect worker changes from known silent failures', () => {
-    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS)
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [])
     const run = new Set<string>([
       projection.biome.name,
       ...projection.staticChecks.map((check) => check.name),
@@ -118,7 +126,7 @@ describe('worker static check plan', () => {
   })
 
   test('reports every projected omission without also running it', () => {
-    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS)
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [])
     expect(projection.omitted).toContainEqual({
       name: 'test suites',
       reason: 'worker check runs no test suites; bun run check runs them',
@@ -134,5 +142,50 @@ describe('worker static check plan', () => {
       ...projection.staticChecks.map((check) => check.name),
     ])
     for (const omission of projection.omitted) expect(run.has(omission.name)).toBe(false)
+  })
+
+  test('forces hosted migration checks for a changed hosted migration', () => {
+    const file = 'shared/record/migrations/0190_x/migration.sql'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
+    const expected = [
+      'hosted SQL schema',
+      'scripts/check-postgres-migrations.ts',
+      'scripts/check-record-migrations-apply.ts',
+    ]
+
+    expect(projection.staticChecks.map((check) => check.name)).toEqual(
+      expect.arrayContaining(expected),
+    )
+    expect(projection.forced).toEqual(
+      expected.map((name) => ({ name, subject: 'shared/record/migrations/', file })),
+    )
+    const omittedNames = projection.omitted.map((omission) => omission.name)
+    for (const name of expected) expect(omittedNames).not.toContain(name)
+  })
+
+  test('forces only cascade preservation for a changed orchestrator migration', () => {
+    const file = 'orchestrator/migrations/0190_x.sql'
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [file])
+
+    expect(projection.forced).toEqual([
+      { name: 'scripts/check-cascade-preservation.ts', subject: 'orchestrator/migrations/', file },
+    ])
+  })
+
+  test('leaves every omission omitted for an ordinary source change', () => {
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, ['orchestrator/src/x.ts'])
+    const unchanged = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [])
+
+    expect(projection.forced).toEqual([])
+    expect(projection.omitted).toEqual(unchanged.omitted)
+    expect(projection.staticChecks).toEqual(unchanged.staticChecks)
+  })
+
+  test('does not match a path that only shares the subject prefix text', () => {
+    const projection = workerCheckProjection(STATIC_CHECKS, CHECK_LEGS, [
+      'shared/record/migrations-old/x',
+    ])
+
+    expect(projection.forced).toEqual([])
   })
 })

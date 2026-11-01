@@ -573,26 +573,16 @@ const rootTests = [
 ]
 
 const selected = new Set(selectedCheckLegs(checkArguments))
-const workerProjection =
-  checkArguments.mode === 'worker' ? workerCheckProjection(STATIC_CHECKS, legs) : null
 let workerQualityBase: string | undefined
 let workerBaseCommit: string | undefined
-if (workerProjection) {
+let workerFiles: string[] | undefined
+if (checkArguments.mode === 'worker') {
   try {
     const base = qualityBase()
     workerQualityBase = base.argument
     workerBaseCommit = base.commit
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error))
-    process.exit(1)
-  }
-}
-let workerBiomeStep: GateStepResult | null = null
-if (workerProjection) {
-  let files: string[]
-  try {
-    const plan = changeViewPlan(workerBaseCommit!, 'worktree')
-    files = workerBiomeFiles({
+    const plan = changeViewPlan(workerBaseCommit, 'worktree')
+    workerFiles = workerBiomeFiles({
       nameStatus: gitOutput(root, plan.nameStatus, 'throw'),
       untracked: gitOutput(root, plan.untracked!, 'throw'),
     })
@@ -600,7 +590,15 @@ if (workerProjection) {
     console.error(error instanceof Error ? error.message : String(error))
     process.exit(1)
   }
-  if (files.length === 0) {
+}
+const workerProjection =
+  checkArguments.mode === 'worker' ? workerCheckProjection(STATIC_CHECKS, legs, workerFiles!) : null
+for (const check of workerProjection?.forced ?? []) {
+  console.log(`${check.name}: runs because ${check.subject} changed (${check.file})`)
+}
+let workerBiomeStep: GateStepResult | null = null
+if (workerProjection) {
+  if (workerFiles!.length === 0) {
     console.log(`Biome: skipped because no file changed since the base ${workerBaseCommit}`)
     workerBiomeStep = {
       name: workerProjection.biome.name,
@@ -611,7 +609,7 @@ if (workerProjection) {
   } else {
     const workerBiomeArgv = workerProjection.biome.workerArgv!({
       root,
-      files,
+      files: workerFiles!,
     })
     const workerBiomeResult = await inherit(workerBiomeArgv, root)
     workerBiomeStep = {
