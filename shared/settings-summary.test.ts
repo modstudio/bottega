@@ -8,7 +8,7 @@ test('settings summaries keep text outside secret-shaped spans', () => {
       hooks: { PreToolUse: [{ matcher: 'before token=fixture-value after' }] },
     }),
   ).toMatchObject({
-    permissions: { allow: ['prefix [withheld: assignment] suffix'] },
-    hooks: [{ matcher: 'before [withheld: assignment] after' }],
+    permissions: { allow: ['prefix [withheld: assignment]'] },
+    hooks: [{ matcher: 'before [withheld: assignment]' }],
   })
 })
