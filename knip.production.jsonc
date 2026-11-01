@@ -23,6 +23,7 @@
     "orchestrator/src/transport/ajv-validator.ts": ["exports"],
     // rehearse.sh's eval imports the export.
     "orchestrator/src/postgres/migration-failure.ts": ["exports"],
+    "orchestrator/src/postgres/migration-notices.ts": ["exports"],
     // Cloudflare loads this default export through wrangler.toml rather than an import.
     "hub/deploy/site/src/worker.ts": ["exports"]
   },
@@ -102,6 +103,7 @@
         "scripts/import-postgres-projects.ts!",
         // Imported by the inline eval in deploy/backup/rehearse.sh.
         "src/postgres/migration-failure.ts!",
+        "src/postgres/migration-notices.ts!",
         "scripts/test-postgres-rls.ts!"
       ],
       "project": [

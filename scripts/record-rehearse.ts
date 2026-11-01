@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
 import { PLATFORM_SLUG } from '../shared/brand.ts'
 import {
   RECORD_REHEARSAL_STATUS_CONTEXT,
@@ -11,7 +12,6 @@ const REHEARSAL_VM_MEMORY_MB = '1024'
 const REHEARSAL_WAIT_TIMEOUT_MS = 20 * 60 * 1000
 const FLY_WAIT_TIMEOUT_SECONDS = 60
 const GITHUB_STATUS_DESCRIPTION_LIMIT = 140
-
 const tokenName = `${PLATFORM_SLUG.toUpperCase()}_RECORD_REHEARSAL_FLY_TOKEN`
 const sealingCommand = `${PLATFORM_SLUG} machine config secret run --name ${tokenName} -- bun scripts/record-rehearse.ts`
 
@@ -26,24 +26,35 @@ export type RehearsalLines = {
   pending: number
   restoreMs: number
   migrateMs: number
+  notices: string[]
+  noticesTruncated: number
   hash?: string
   failure?: string
 }
 
 export function parseRehearsalLines(output: string): RehearsalLines {
+  const outputLines = output.split('\n')
   const value = (prefix: string) => {
-    for (const line of output.split('\n')) {
+    for (const line of outputLines) {
       const start = line.indexOf(prefix)
       if (start >= 0) return line.slice(start + prefix.length).trim()
     }
     return undefined
   }
   const number = (prefix: string) => Number(value(prefix))
+  const notices = outputLines.flatMap((line) => {
+    const start = line.indexOf('REHEARSAL NOTICE ')
+    return start >= 0 ? [line.slice(start + 'REHEARSAL NOTICE '.length).trim()] : []
+  })
   const lines: RehearsalLines = {
     dump: value('REHEARSAL DUMP ') ?? '',
     pending: number('REHEARSAL PENDING '),
     restoreMs: number('REHEARSAL RESTORE '),
     migrateMs: number('REHEARSAL MIGRATE '),
+    notices: notices.slice(0, REHEARSAL_NOTICE_LIMIT),
+    noticesTruncated:
+      (number('REHEARSAL NOTICE-TRUNCATED ') || 0) +
+      Math.max(0, notices.length - REHEARSAL_NOTICE_LIMIT),
   }
   const hash = value('REHEARSAL PASS ')
   const failure = value('REHEARSAL FAIL ')
@@ -73,8 +84,14 @@ export function rehearsalStatus(
   lines: RehearsalLines,
   exitCode: number | null,
 ):
-  | { state: 'success'; description: string }
-  | { state: 'failure'; description: string; failure: string } {
+  | { state: 'success'; description: string; notices: string[]; noticesTruncated: number }
+  | {
+      state: 'failure'
+      description: string
+      failure: string
+      notices: string[]
+      noticesTruncated: number
+    } {
   const passed =
     exitCode === 0 &&
     Boolean(lines.hash?.match(/^[0-9a-f]{64}$/)) &&
@@ -96,13 +113,26 @@ export function rehearsalStatus(
     return {
       state: 'success',
       description: description.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
+      notices: lines.notices,
+      noticesTruncated: lines.noticesTruncated,
     }
   }
   return {
     state: 'failure',
     description: description.slice(0, GITHUB_STATUS_DESCRIPTION_LIMIT),
-    failure: description,
+    failure: [description, ...renderRehearsalNotices(lines)].join('\n'),
+    notices: lines.notices,
+    noticesTruncated: lines.noticesTruncated,
   }
+}
+
+export function renderRehearsalNotices(lines: RehearsalLines): string[] {
+  if (lines.notices.length === 0 && lines.noticesTruncated === 0) return ['notices: none']
+  const rendered = ['notices:', ...lines.notices]
+  if (lines.noticesTruncated > 0) {
+    rendered.push(`NOTICE-TRUNCATED ${lines.noticesTruncated}`)
+  }
+  return rendered
 }
 
 function checked(result: CommandResult, argv: readonly string[]): string {
@@ -408,6 +438,7 @@ if (import.meta.main) {
       machineDetails: realMachineDetails,
     })
     console.log(`record rehearsal passed migration-set ${lines.hash}`)
+    for (const line of renderRehearsalNotices(lines)) console.log(line)
   } catch (error) {
     console.error(
       `record rehearsal failed: ${error instanceof Error ? error.message : String(error)}`,

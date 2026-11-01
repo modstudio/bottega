@@ -114,7 +114,15 @@ set -e
 migrate_ms="$(($(milliseconds) - migrate_start))"
 echo "REHEARSAL MIGRATE $migrate_ms"
 if [ "$migrate_exit" -ne 0 ]; then
-  failure "$migrate_error"
+  printf '%s\n' "$migrate_error" | bun --eval '
+    import { rehearsalMigrateFailureOutput } from "./orchestrator/src/postgres/migration-notices.ts";
+    process.stdout.write(rehearsalMigrateFailureOutput(await Bun.stdin.text()));
+  '
+  exit 1
 fi
+printf '%s\n' "$migrate_error" | bun --eval '
+  import { rehearsalNoticeOutput } from "./orchestrator/src/postgres/migration-notices.ts";
+  process.stdout.write(rehearsalNoticeOutput(await Bun.stdin.text()));
+'
 
 echo "REHEARSAL PASS $migration_hash"

@@ -81,7 +81,6 @@ function productionTypeScriptFilesIncludingTests(directory: string): string[] {
 }
 
 const HOSTED_FIXTURE_IMPORTS_WITHOUT_SQL = new Set([
-  'orchestrator/src/postgres/postgres-migrate.test.ts',
   'orchestrator/src/postgres/postgres-migrate-public-role.test.ts',
   'orchestrator/src/postgres/postgres-migrate-schema.test.ts',
   // Builds hosted document-import HTTP payloads and intentionally owns no SQL.

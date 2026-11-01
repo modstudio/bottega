@@ -2,10 +2,11 @@
 
 import { join } from 'node:path'
 import { SQL } from 'bun'
-import { drizzle } from 'drizzle-orm/bun-sql'
-import { migrate } from 'drizzle-orm/bun-sql/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import { getMigrationsToRun } from 'drizzle-orm/migrator.utils'
+import { drizzle as drizzlePostgresJs } from 'drizzle-orm/postgres-js'
+import { migrate as migrateWithPostgresJs } from 'drizzle-orm/postgres-js/migrator'
+import postgres from 'postgres'
 
 const POSTGRES_MIGRATIONS_FOLDER = join(
   import.meta.dir,
@@ -21,6 +22,18 @@ export const MIGRATION_LOCK_TIMEOUT = '5s'
 export const MIGRATION_STATEMENT_TIMEOUT = '60s'
 export const MIGRATION_IDLE_IN_TRANSACTION_TIMEOUT = '30s'
 export const MIGRATION_CLIENT_CHECK_INTERVAL = '5s'
+export const MIGRATION_NOTICE_MESSAGE_LIMIT = 500
+
+export type MigrationNoticeSink = (line: string) => void
+
+export function formatMigrationNotice(migrationName: string, message: string): string {
+  const normalized = message.replace(/\s+/g, ' ').trim()
+  const bounded =
+    normalized.length > MIGRATION_NOTICE_MESSAGE_LIMIT
+      ? `${normalized.slice(0, MIGRATION_NOTICE_MESSAGE_LIMIT - 2).trimEnd()} …`
+      : normalized
+  return `MIGRATE NOTICE ${migrationName}: ${bounded}`
+}
 
 export function migrationSessionSettings(): Array<[name: string, value: string]> {
   return [
@@ -90,15 +103,68 @@ export async function appliedRecordMigrationCount(url: string): Promise<number> 
   }
 }
 
-export async function migratePostgres(url = process.env.BOTTEGA_RECORD_MIGRATE_URL): Promise<void> {
+export async function migratePostgres(
+  url = process.env.BOTTEGA_RECORD_MIGRATE_URL,
+  noticeSink: MigrationNoticeSink = console.log,
+): Promise<void> {
+  return migratePostgresFolder(url, noticeSink, POSTGRES_MIGRATIONS_FOLDER)
+}
+
+type MigrationQueryTracker = {
+  migrationName(): string
+  logQuery(query: string): void
+}
+
+function migrationQueryTracker(
+  folder: string,
+  pendingNames: readonly string[],
+): MigrationQueryTracker {
+  const pending = new Set(pendingNames)
+  const statements = readMigrationFiles({ migrationsFolder: folder })
+    .filter((migration) => pending.has(migration.name))
+    .flatMap((migration) => migration.sql.map((query) => ({ name: migration.name, query })))
+  let index = 0
+  let current = '-'
+  return {
+    migrationName: () => current,
+    logQuery(query) {
+      const expected = statements[index]
+      if (expected?.query === query) {
+        current = expected.name
+        index += 1
+      } else {
+        current = '-'
+      }
+    },
+  }
+}
+
+/** Test seam for exercising the production migrator against a fixture journal. */
+export async function migratePostgresFolder(
+  url: string | undefined,
+  noticeSink: MigrationNoticeSink = console.log,
+  folder = POSTGRES_MIGRATIONS_FOLDER,
+): Promise<void> {
   if (!url) throw new Error('BOTTEGA_RECORD_MIGRATE_URL is required to migrate the record')
-  const sql = new SQL({ url, max: 1 })
+  let tracker: MigrationQueryTracker = {
+    migrationName: () => '-',
+    logQuery: () => {},
+  }
+  const sql = postgres(url, {
+    max: 1,
+    onnotice: (notice) =>
+      noticeSink(formatMigrationNotice(tracker.migrationName(), notice.message ?? '')),
+  })
   try {
     for (const [name, value] of migrationSessionSettings()) {
       await sql`SELECT set_config(${name}, ${value}, false)`
     }
-    await migrate(drizzle({ client: sql }), { migrationsFolder: POSTGRES_MIGRATIONS_FOLDER })
+    const pendingNames = await pendingRecordMigrationNames(sql, folder)
+    tracker = migrationQueryTracker(folder, pendingNames)
+    await migrateWithPostgresJs(drizzlePostgresJs({ client: sql, logger: tracker }), {
+      migrationsFolder: folder,
+    })
   } finally {
-    await sql.close()
+    await sql.end()
   }
 }

@@ -1,10 +1,16 @@
 import { expect, spyOn, test } from 'bun:test'
 import {
+  REHEARSAL_NOTICE_LIMIT,
+  rehearsalMigrateFailureOutput,
+  rehearsalNoticeOutput,
+} from '../orchestrator/src/postgres/migration-notices.ts'
+import {
   launchedMachineId,
   machineExitCode,
   parseRehearsalLines,
   type RehearsalCommandRunner,
   rehearsalStatus,
+  renderRehearsalNotices,
   rerunFailedRecordRehearsal,
   runRecordRehearsal,
 } from './record-rehearse.ts'
@@ -38,12 +44,79 @@ test('parses contract lines and classifies a pass', () => {
     pending: 1,
     restoreMs: 123,
     migrateMs: 45,
+    notices: [],
+    noticesTruncated: 0,
     hash,
   })
   expect(rehearsalStatus(lines, 0)).toEqual({
     state: 'success',
     description: `migration-set ${hash}; pending 1; restore 123; migrate 45; dump record/new.dump`,
+    notices: [],
+    noticesTruncated: 0,
   })
+  expect(renderRehearsalNotices(lines)).toEqual(['notices: none'])
+})
+
+test('parses and reports captured migration notices including truncation', () => {
+  const lines = parseRehearsalLines(`${passOutput}
+REHEARSAL NOTICE MIGRATE NOTICE 20261101000000_fixture: moved rows
+REHEARSAL NOTICE MIGRATE NOTICE 20261101000001_other: no-op
+REHEARSAL NOTICE-TRUNCATED 3`)
+
+  expect(lines.notices).toEqual([
+    'MIGRATE NOTICE 20261101000000_fixture: moved rows',
+    'MIGRATE NOTICE 20261101000001_other: no-op',
+  ])
+  expect(lines.noticesTruncated).toBe(3)
+  expect(rehearsalStatus(lines, 0)).toMatchObject({
+    notices: lines.notices,
+    noticesTruncated: 3,
+  })
+  expect(renderRehearsalNotices(lines)).toEqual([
+    'notices:',
+    'MIGRATE NOTICE 20261101000000_fixture: moved rows',
+    'MIGRATE NOTICE 20261101000001_other: no-op',
+    'NOTICE-TRUNCATED 3',
+  ])
+})
+
+test('round trips each migration notice as its own rehearsal line on success', () => {
+  const output = rehearsalNoticeOutput(`MIGRATE NOTICE first: moved rows
+MIGRATE NOTICE second: no-op`)
+
+  expect(parseRehearsalLines(output)).toMatchObject({
+    notices: ['MIGRATE NOTICE first: moved rows', 'MIGRATE NOTICE second: no-op'],
+    noticesTruncated: 0,
+  })
+})
+
+test('round trips migration notices separately from a migrate failure', () => {
+  const output =
+    rehearsalMigrateFailureOutput(`MIGRATE NOTICE -: schema "drizzle" already exists, skipping
+MIGRATE NOTICE guarded: moved rows
+MIGRATE NOTICE audit: recorded branch
+permission denied for migration guard`)
+
+  expect(parseRehearsalLines(output)).toMatchObject({
+    failure: 'permission denied for migration guard',
+    notices: [
+      'MIGRATE NOTICE -: schema "drizzle" already exists, skipping',
+      'MIGRATE NOTICE guarded: moved rows',
+      'MIGRATE NOTICE audit: recorded branch',
+    ],
+    noticesTruncated: 0,
+  })
+})
+
+test('bounds captured migration notices', () => {
+  const noticeLines = Array.from(
+    { length: REHEARSAL_NOTICE_LIMIT + 2 },
+    (_, index) => `REHEARSAL NOTICE MIGRATE NOTICE fixture_${index}: message`,
+  ).join('\n')
+  const lines = parseRehearsalLines(`${passOutput}\n${noticeLines}`)
+
+  expect(lines.notices).toHaveLength(REHEARSAL_NOTICE_LIMIT)
+  expect(lines.noticesTruncated).toBe(2)
 })
 
 test('destroys a launched machine when waiting for it fails', async () => {
@@ -110,7 +183,9 @@ test('classifies a failed machine and bounds the GitHub description', () => {
   expect(status.state).toBe('failure')
   expect(status.description).toStartWith('REHEARSAL FAIL ')
   expect(status.description.length).toBe(140)
-  expect(status.state === 'failure' ? status.failure : undefined).toBe(`REHEARSAL FAIL ${failure}`)
+  expect(status.state === 'failure' ? status.failure : undefined).toBe(
+    `REHEARSAL FAIL ${failure}\nnotices: none`,
+  )
 })
 
 test('refuses a pass that applied no pending migration', () => {
@@ -120,7 +195,9 @@ test('refuses a pass that applied no pending migration', () => {
   expect(rehearsalStatus(lines, 0)).toEqual({
     state: 'failure',
     description: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
-    failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS',
+    failure: 'REHEARSAL FAIL machine exit 0 without a valid PASS\nnotices: none',
+    notices: [],
+    noticesTruncated: 0,
   })
 })
 
@@ -165,6 +242,10 @@ test('runs, posts success and destroys the machine through the injected runner',
 
 test('posts a bounded failure description and throws the whole rehearsal failure', async () => {
   const failure = `migration long_name statement ${'x'.repeat(200)}: postgres rejected it`
+  const notices = [
+    'MIGRATE NOTICE 20261101000000_fixture: guarded migration refused',
+    'MIGRATE NOTICE 20261101000001_other: preserved before failure',
+  ]
   const calls: string[][] = []
   const runner: RehearsalCommandRunner = async (argv) => {
     calls.push([...argv])
@@ -173,7 +254,11 @@ test('posts a bounded failure description and throws the whole rehearsal failure
     if (argv[0] === 'flyctl' && argv[1] === 'machine' && argv[2] === 'run')
       return { exitCode: 0, stdout: 'Machine ID: abcdef12345678\n', stderr: '' }
     if (argv[0] === 'flyctl' && argv[1] === 'logs')
-      return { exitCode: 0, stdout: `REHEARSAL FAIL ${failure}\n`, stderr: '' }
+      return {
+        exitCode: 0,
+        stdout: `${notices.map((notice) => `REHEARSAL NOTICE ${notice}`).join('\n')}\nREHEARSAL FAIL ${failure}\n`,
+        stderr: '',
+      }
     return { exitCode: 0, stdout: '', stderr: '' }
   }
 
@@ -183,7 +268,7 @@ test('posts a bounded failure description and throws the whole rehearsal failure
       runner,
       machineDetails: async () => ({ events: [{ request: { exit_event: { exit_code: 1 } } }] }),
     }),
-  ).rejects.toThrow(`REHEARSAL FAIL ${failure}`)
+  ).rejects.toThrow(`REHEARSAL FAIL ${failure}\nnotices:\n${notices.join('\n')}`)
 
   const postedDescription = calls
     .find((argv) => argv.includes('state=failure'))
