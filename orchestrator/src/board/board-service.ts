@@ -133,14 +133,6 @@ export function postNoticeInTransaction(
   return insertRootMessage('notice', input, env, clock, cwd, database)
 }
 
-export function runReader(runId: string, database = db()): string {
-  const row = database
-    .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')
-    .get(runId) as { root_id: string } | null
-  if (!row) throw new Error(`no run ${runId}; use a live orchestrator run id`)
-  return `run:${row.root_id}`
-}
-
 export function runReaderIdentity(runId: string, database = db()) {
   const row = database
     .query('SELECT COALESCE(parent_run_record_id,record_id) root_id FROM run WHERE record_id=?')

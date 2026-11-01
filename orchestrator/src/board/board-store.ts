@@ -502,15 +502,12 @@ function recordRecipients(
   project: string | null,
   database: ReturnType<typeof writableDb>,
 ): number {
-  const readers = recipients(
-    audience,
-    clock,
-    tags,
-    database,
-    presenceFacts(database, clock),
-    project,
-  ).filter((reader) => kind !== 'question' || !reader.startsWith('run:'))
   const facts = presenceFacts(database, clock)
+  const readers = recipients(audience, clock, tags, database, facts, project).filter(
+    (reader) =>
+      kind !== 'question' ||
+      facts.find((fact) => fact.reader === reader)?.readerRunRecordId == null,
+  )
   const runIds = new Map(facts.map((fact) => [fact.reader, fact.readerRunRecordId ?? null]))
   const add = database.query(
     `INSERT OR IGNORE INTO board_receipt

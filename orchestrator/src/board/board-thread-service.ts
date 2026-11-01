@@ -109,10 +109,12 @@ function addReplyReceipts(
   })
   const addReceipt = database.query(
     `INSERT INTO board_receipt
-     (message_record_id,reader_session,audience_at_posting,delivered_at,acknowledged_at,record_id)
-     VALUES (?,?,1,NULL,NULL,?)`,
+     (message_record_id,reader_session,reader_run_record_id,audience_at_posting,delivered_at,acknowledged_at,record_id)
+     VALUES (?,?,(SELECT reader_run_record_id FROM board_receipt
+                    WHERE reader_session=? AND reader_run_record_id IS NOT NULL LIMIT 1),1,NULL,NULL,?)`,
   )
-  for (const recipient of recipients) addReceipt.run(replyRecordId, recipient, newRecordId())
+  for (const recipient of recipients)
+    addReceipt.run(replyRecordId, recipient, recipient, newRecordId())
   return recipients.length
 }
 

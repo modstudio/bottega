@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { SQL } from 'bun'
 import { drizzle } from 'drizzle-orm/bun-sql'
 import { migrate } from 'drizzle-orm/bun-sql/migrator'
+import { PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
 
 const migrationUrl = process.env.BOTTEGA_TEST_BOARD_READER_RUN_MIGRATION_URL
 const realPostgres = migrationUrl ? describe : describe.skip
@@ -44,10 +45,10 @@ realPostgres('populated board reader run migration', () => {
       `
       await sql`
         INSERT INTO run
-          (id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
+          (id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,
            probe,status,turn,no_failover,automatic_failover,work_preserved,created_at,updated_at)
         VALUES
-          (${RUN_ID},${MACHINE_ID},${USER_ID},now(),'codex','implement','sha',1,'proof',false,
+          (${RUN_ID},${PLATFORM_SPACE_ID},${MACHINE_ID},${USER_ID},now(),'codex','implement','sha',1,'proof',false,
            'ok',1,false,false,false,now(),now())
       `
       await sql`

@@ -1,10 +1,10 @@
+ALTER TABLE board_receipt NO FORCE ROW LEVEL SECURITY;
+ALTER TABLE run NO FORCE ROW LEVEL SECURITY;
+
 DO $$
 DECLARE
   remaining_null bigint;
 BEGIN
-  ALTER TABLE board_receipt NO FORCE ROW LEVEL SECURITY;
-  ALTER TABLE run NO FORCE ROW LEVEL SECURITY;
-
   UPDATE board_receipt AS receipt
   SET reader_run_record_id = substring(receipt.reader_session FROM 5)::uuid
   WHERE receipt.reader_run_record_id IS NULL
@@ -19,6 +19,7 @@ BEGIN
 
   RAISE NOTICE 'DEV-2002 board receipt reader run ids: NULL=%', remaining_null;
 
-  ALTER TABLE run FORCE ROW LEVEL SECURITY;
-  ALTER TABLE board_receipt FORCE ROW LEVEL SECURITY;
 END $$;
+
+ALTER TABLE run FORCE ROW LEVEL SECURITY;
+ALTER TABLE board_receipt FORCE ROW LEVEL SECURITY;

@@ -913,23 +913,10 @@ test('an older snapshot applied after a newer one leaves payload, tags, receipts
   ).toEqual({ delivered_at: '2026-10-05T12:02:00.000Z', audience_at_posting: 1 })
 })
 
-test('audienceAtPosting uses session first_seen and chain-root start time in both directions', () => {
+test('audienceAtPosting uses session first_seen in both directions', () => {
   const database = db()
-  const projectRecordId = fixtureProjectRecordId(database)
   insertArchitect('early-session', '2026-10-05T11:00:00.000Z', createdAt)
   insertArchitect('late-session', '2026-10-05T13:00:00.000Z')
-  const earlyRun = database
-    .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1,?) RETURNING record_id AS id`,
-    )
-    .get('2026-10-05T11:00:00.000Z', projectRecordId) as { id: string }
-  const lateRun = database
-    .query(
-      `INSERT INTO run(record_id,number,started_at,agent,job,prompt_sha,prompt_bytes,prompt_head,status,turn,project_record_id)
-       VALUES ('${newRecordId()}',(SELECT COALESCE(MAX(number),0)+1 FROM run),?,'codex','implement','sha',1,'prompt','running',1,?) RETURNING record_id AS id`,
-    )
-    .get('2026-10-05T13:00:00.000Z', projectRecordId) as { id: string }
   const cached = message()
   database
     .query(
@@ -938,8 +925,6 @@ test('audienceAtPosting uses session first_seen and chain-root start time in bot
     .run(cached.id, cached.kind, null, cached.revision, JSON.stringify(cached))
   expect(cachedAudienceAtPosting(cached.id, 'early-session')).toBe(true)
   expect(cachedAudienceAtPosting(cached.id, 'late-session')).toBe(false)
-  expect(cachedAudienceAtPosting(cached.id, `run:${earlyRun.id}`, db(), earlyRun.id)).toBe(true)
-  expect(cachedAudienceAtPosting(cached.id, `run:${lateRun.id}`, db(), lateRun.id)).toBe(false)
 })
 
 test('hosted push selection withholds every older message and keeps newer messages', () => {

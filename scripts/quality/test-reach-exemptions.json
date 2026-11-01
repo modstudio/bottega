@@ -8,6 +8,10 @@
     "reason": "DEV-1474"
   },
   {
+    "file": "orchestrator/src/postgres/postgres-migrate-board-reader-run.test.ts",
+    "reason": "DEV-2002 real-Postgres migration proof runs through orchestrator test:postgres"
+  },
+  {
     "file": "orchestrator/src/postgres/postgres-migrate-doc-latest-revision.test.ts",
     "reason": "DEV-1474"
   },

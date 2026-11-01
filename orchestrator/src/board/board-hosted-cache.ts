@@ -846,11 +846,8 @@ export function claimCachedHosted(
   all = false,
   clock = Date.now(),
   database: Database = db(),
-  readerRunRecordId: string | null = null,
 ): HostedCacheNotice[] {
-  return claimCachedHostedFromContext(
-    loadClaimContext(database, reader, all, clock, undefined, readerRunRecordId),
-  )
+  return claimCachedHostedFromContext(loadClaimContext(database, reader, all, clock))
 }
 
 function claimCachedHostedFromContext(context: HostedClaimContext): HostedCacheNotice[] {
@@ -944,18 +941,12 @@ export function cachedAudienceAtPosting(
   messageId: string,
   reader: string,
   database: Database = db(),
-  readerRunRecordId: string | null = null,
 ): boolean | null {
   const row = database
     .query('SELECT payload FROM hosted_board_message_cache WHERE id=?')
     .get(messageId) as { payload: string } | null
   return row
-    ? audienceAtPosting(
-        reader,
-        (JSON.parse(row.payload) as HostedBoardMessage).createdAt,
-        database,
-        readerRunRecordId,
-      )
+    ? audienceAtPosting(reader, (JSON.parse(row.payload) as HostedBoardMessage).createdAt, database)
     : null
 }
 

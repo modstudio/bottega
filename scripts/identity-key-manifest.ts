@@ -8,6 +8,7 @@ import type {
 } from './identity-inventory.ts'
 import { SYNCED_SOURCE_DECLARATIONS } from './identity-synced-sources.ts'
 import { TASK_CHILD_DISPLAY_LABELS } from './identity-task-child-manifest.ts'
+import { BOARD_READER_EXTERNAL_IDENTIFIERS } from './identity-board-reader-manifest.ts'
 
 const manifest = (store: KeyStore, reason: string, columns: readonly string[]): ManifestColumn[] =>
   columns.map((column) => ({ store, column, reason }))
@@ -553,19 +554,7 @@ const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
 ]
 
 const EXTERNAL_IDENTIFIERS: readonly ManifestColumn[] = [
-  ...(
-    [
-      ['orchestrator', 'board_hosted_adoption_receipt.reader_session'],
-      ['orchestrator', 'board_receipt.reader_session'],
-      ['orchestrator', 'hosted_board_receipt_cache.reader_session'],
-      ['hosted', 'board_receipt.reader_session'],
-    ] as const
-  ).map(([store, column]) => ({
-    store,
-    column,
-    reason:
-      'reader identity: a harness session id, the operator, or a run label whose run is named by reader_run_record_id',
-  })),
+  ...BOARD_READER_EXTERNAL_IDENTIFIERS,
   ...manifest('hosted', 'fingerprint derived from a machine public key', [
     'machine_public_key.key_id',
   ]),
