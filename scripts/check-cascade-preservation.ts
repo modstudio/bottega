@@ -760,6 +760,17 @@ function execute(database: Database, migration: Migration): void {
   }
 }
 
+function prepareLensProfilePinContractProbe(database: Database, migration: Migration): void {
+  if (migration.tag !== '0192_lens_profile_pin_contract') return
+  const unidentified = database
+    .query<{ record_id: string }, []>(
+      'SELECT record_id FROM lens_profile WHERE current_version_id IS NULL',
+    )
+    .all()
+  const identify = database.query('UPDATE lens_profile SET current_version_id=? WHERE record_id=?')
+  for (const row of unidentified) identify.run(newRecordId(), row.record_id)
+}
+
 function probeDestructiveMigration(
   database: Database,
   migration: Migration,
@@ -768,17 +779,7 @@ function probeDestructiveMigration(
   result: CascadeProbe,
 ): void {
   result.unprobed.push(...seedTables(database, migration.tag))
-  if (migration.tag === '0192_lens_profile_pin_contract') {
-    const unidentified = database
-      .query<{ record_id: string }, []>(
-        'SELECT record_id FROM lens_profile WHERE current_version_id IS NULL',
-      )
-      .all()
-    const identify = database.query(
-      'UPDATE lens_profile SET current_version_id=? WHERE record_id=?',
-    )
-    for (const row of unidentified) identify.run(newRecordId(), row.record_id)
-  }
+  prepareLensProfilePinContractProbe(database, migration)
   if (migration.tag === '0115_project_identity_contract') {
     const missing = database
       .query<{ id: number }, []>('SELECT id FROM project WHERE record_id IS NULL')

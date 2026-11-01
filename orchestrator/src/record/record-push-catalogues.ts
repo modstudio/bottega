@@ -46,6 +46,11 @@ function replicatedProfileVersionId(spaceId: string, value: unknown): string | n
   return value == null ? null : replicatedRecordId(spaceId, 'lens_profile_revision', String(value))
 }
 
+function replicatedCurrentProfileVersionId(spaceId: string, value: unknown): string {
+  if (value == null) throw new Error('lens profile current version id is required after migration')
+  return replicatedRecordId(spaceId, 'lens_profile_revision', String(value))
+}
+
 function cachedProjectRoutes(local: Database): Map<string, string | null> {
   const cache = cachedProjectSpaces(local)
   const registered = local.query('SELECT name FROM project').all() as { name: string }[]
@@ -218,7 +223,7 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       name: String(r.name),
       version: Number(r.version),
-      currentVersionId: replicatedProfileVersionId(spaceId, r.current_version_id),
+      currentVersionId: replicatedCurrentProfileVersionId(spaceId, r.current_version_id),
       body: String(r.body),
       enabled: Boolean(r.enabled),
       updatedAt: now,

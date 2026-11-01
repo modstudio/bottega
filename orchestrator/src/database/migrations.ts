@@ -12,14 +12,14 @@ import {
 import { assertAgentPortBaselineIdentities } from './agent-port-baseline-uuid-migration-preflight.ts'
 import { gateCheckExecutionOrphanCounts } from './gate-check-execution-uuid-migration-preflight.ts'
 import {
+  lensPortReferenceOrphanCounts,
+  portStaleCopyConflicts,
+} from './lens-port-migration-preflight.ts'
+import {
   assertLensProfilePinContract,
   LENS_PROFILE_PIN_CONTRACT_MIGRATION,
   lensProfilePinBackfillEntries,
 } from './lens-profile-pin-contract-preflight.ts'
-import {
-  lensPortReferenceOrphanCounts,
-  portStaleCopyConflicts,
-} from './lens-port-migration-preflight.ts'
 import { assertMetricIdentities } from './metric-receipt-cache-uuid-migration-preflight.ts'
 import {
   BACKFILL_SCHEMA_BOUNDARIES,

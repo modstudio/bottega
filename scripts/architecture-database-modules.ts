@@ -37,6 +37,16 @@ export const databaseModules: ArchitectureModule[] = [
     '../project-space.ts',
     '../record/install-binding.ts',
   ]),
+  module('orchestrator/src/database/lens-profile-pin-contract-preflight.ts', [
+    'bun:sqlite',
+    '../../../shared/brand.ts',
+    './migration-compatibility.ts',
+  ]),
+  module('orchestrator/src/database/migration-backfill-compatibility.ts', [
+    'bun:sqlite',
+    './lens-profile-pin-contract-preflight.ts',
+    './migration-compatibility.ts',
+  ]),
   module('orchestrator/src/database/run-filesystem-identity.ts', [
     'bun:sqlite',
     'node:fs',
