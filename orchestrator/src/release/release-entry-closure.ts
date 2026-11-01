@@ -1,7 +1,15 @@
 // concern: release-required
 /** Computes the runtime module closure of release image entry points. */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
@@ -45,6 +53,25 @@ export function closureFromMetafile(
       !repositoryPath.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
     ) {
       paths.add(repositoryPath.replaceAll('\\', '/'))
+    }
+  }
+  return paths
+}
+
+export function sourceDirectivePaths(
+  cssPath: string,
+  cssText: string,
+  trackedFiles: readonly string[],
+): Set<string> {
+  const paths = new Set<string>()
+  for (const match of cssText.matchAll(/@source\s+([^;]+);/g)) {
+    const directive = match[0]
+    const argument = match[1]?.trim() ?? ''
+    const quoted = argument.match(/^(["'])([^"']+)\1$/)
+    if (!quoted) throw new Error(`unsupported @source directive in ${cssPath}: ${directive}`)
+    const source = relative('/', resolve('/', dirname(cssPath), quoted[2]!)).replaceAll('\\', '/')
+    for (const tracked of trackedFiles) {
+      if (tracked === source || tracked.startsWith(`${source}/`)) paths.add(tracked)
     }
   }
   return paths
@@ -94,6 +121,20 @@ function spawnOrThrow(command: string[], cwd: string, detail: string): void {
   }
 }
 
+function trackedFilesIn(root: string): string[] {
+  const files: string[] = []
+  const walk = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.name === 'node_modules') continue
+      const path = join(directory, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else if (entry.isFile()) files.push(relative(root, path).replaceAll('\\', '/'))
+    }
+  }
+  walk(root)
+  return files
+}
+
 export function entryClosureAtCommit(
   project: Project,
   commit: string,
@@ -115,6 +156,7 @@ export function entryClosureAtCommit(
       `tar failed while extracting release entry tree at ${commit}`,
     )
     const workspace = workspaceExternals(tree)
+    const trackedFiles = trackedFilesIn(tree)
     for (const [name, workspaceDirectory] of workspace.names) {
       const link = join(tree, 'node_modules', name)
       mkdirSync(dirname(link), { recursive: true })
@@ -145,7 +187,23 @@ export function entryClosureAtCommit(
         `release entry ${entry} failed to build`,
       )
       const metafile = JSON.parse(readFileSync(metafilePath, 'utf8')) as Metafile
-      closure.set(entry, closureFromMetafile(tree, tree, metafile, new Set(workspace.names.keys())))
+      const entryClosure = closureFromMetafile(
+        tree,
+        tree,
+        metafile,
+        new Set(workspace.names.keys()),
+      )
+      for (const path of [...entryClosure]) {
+        if (!path.endsWith('.css')) continue
+        for (const sourcePath of sourceDirectivePaths(
+          path,
+          readFileSync(join(tree, path), 'utf8'),
+          trackedFiles,
+        )) {
+          entryClosure.add(sourcePath)
+        }
+      }
+      closure.set(entry, entryClosure)
     }
     return closure
   } finally {

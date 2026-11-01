@@ -2,7 +2,11 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { closureFromMetafile, workspaceExternals } from './release-entry-closure.ts'
+import {
+  closureFromMetafile,
+  sourceDirectivePaths,
+  workspaceExternals,
+} from './release-entry-closure.ts'
 
 const fixtures: string[] = []
 
@@ -47,6 +51,27 @@ describe('closureFromMetafile', () => {
       ),
     ).toEqual(new Set(['a.ts']))
   })
+})
+
+describe('sourceDirectivePaths', () => {
+  test('returns tracked files under a quoted relative source directory', () => {
+    expect(
+      sourceDirectivePaths('hub/web/src/styles/index.css', '@source "../../../ui/src";', [
+        'hub/ui/src/button.tsx',
+        'hub/ui/src/story.tsx',
+        'hub/views/src/page.tsx',
+      ]),
+    ).toEqual(new Set(['hub/ui/src/button.tsx', 'hub/ui/src/story.tsx']))
+  })
+
+  test.each(['@source not "x";', '@source inline("a b");'])(
+    'refuses unsupported directive %s',
+    (directive) => {
+      expect(() => sourceDirectivePaths('hub/web/src/styles/index.css', directive, [])).toThrow(
+        `unsupported @source directive in hub/web/src/styles/index.css: ${directive}`,
+      )
+    },
+  )
 })
 
 test('workspaceExternals maps workspace names and excludes them from externals', () => {
