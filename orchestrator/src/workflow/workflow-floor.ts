@@ -170,6 +170,7 @@ export type OpenObligation = {
   stepOrdinal: number
   stepSlug: string
   floor: FloorKind
+  floorDefinition: Floor
 }
 
 type EvidenceRef = { flag: string; value: string }
@@ -201,6 +202,17 @@ export function flagForFloor(kind: FloorKind): string {
     return '--artifact <doc:<scope>/<subject-or-_>/<slug> | doc:<UUID> | task:<KEY> | task:<KEY>#comment:<id> | run number or run id | probe:<id> | exec:<id> | attached-text:<UUID> | GitHub pull-request link>'
   if (kind === 'tracker-transition') return '--task <KEY>'
   throw new Error(`unknown floor kind "${String(kind)}"`)
+}
+
+function closingFlagsForFloor(
+  floor: Pick<Floor, 'kind' | 'operatorRuling' | 'commandEvidence'>,
+): string {
+  if (isOperatorRulingFloor(floor as Floor)) return '--ruling <question id>'
+  if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
+    return '--gate <gate execution id>'
+  if (floor.commandEvidence === 'pull-request')
+    return floor.kind === 'command-exit' ? '--artifact exec:<id>' : '--artifact <pull-request link>'
+  return flagForFloor(floor.kind)
 }
 
 export function parseArtifactRef(value: string): ArtifactRef | { error: string } {
@@ -677,7 +689,7 @@ function floorUnmetMessage(
   const pullRequest = pullRequestUnmetMessage(floor, evidence)
   if (pullRequest) return pullRequest
   const existing =
-    `floor ${floor.kind} is unmet; pass ${flagForFloor(floor.kind)}` +
+    `floor ${floor.kind} is unmet; pass ${closingFlagsForFloor(floor)}` +
     (floor.kind === 'command-exit'
       ? ` with exit code ${floor.expectedExitCode}`
       : floor.kind === 'tracker-transition'
@@ -739,7 +751,16 @@ function unmetMessage(
   evidence: ValidatedEvidence,
   freshRulingAfter?: string,
 ): string {
-  return floors.map((floor) => floorUnmetMessage(floor, evidence, freshRulingAfter)).join('; ')
+  if (floors.length === 1) return floorUnmetMessage(floors[0]!, evidence, freshRulingAfter)
+  const ordinary = floors.filter((floor) => !isOperatorRulingFloor(floor))
+  const operator = floors.filter(isOperatorRulingFloor)
+  const remedies = ordinary.map((floor) => floorUnmetMessage(floor, evidence, freshRulingAfter))
+  if (operator.length === 0) return `${remedies.join('; ')}; any one floor is enough`
+  const operatorRemedies = operator.map((floor) =>
+    floorUnmetMessage(floor, evidence, freshRulingAfter),
+  )
+  if (ordinary.length === 0) return `${operatorRemedies.join('; ')}; any one floor is enough`
+  return `${remedies.join('; ')}; any one floor is enough; a person's ruling is needed only when that other evidence does not close the step — ${operatorRemedies.join('; ')}`
 }
 
 function commandExitFailureRefusal(
@@ -824,7 +845,7 @@ function refuseSatisfy(satisfy: ValidatedSatisfy): FloorDecision {
     }
   return {
     action: 'refuse',
-    message: `obligation ${satisfy.id} is unmet; pass ${flagForFloor(satisfy.floor.kind)} as evidence for that floor`,
+    message: `obligation ${satisfy.id} is unmet; pass ${closingFlagsForFloor(satisfy.floor)} as evidence for that floor`,
   }
 }
 
@@ -836,7 +857,7 @@ function refuseOpen(open: OpenObligation[]): FloorDecision {
       open
         .map(
           (row) =>
-            `obligation ${row.id} (step ${row.stepOrdinal} ${row.stepSlug} ${row.floor}) — pass --satisfies ${row.id} with ${flagForFloor(row.floor)}`,
+            `obligation ${row.id} (step ${row.stepOrdinal} ${row.stepSlug} ${row.floor}) — pass --satisfies ${row.id} with ${closingFlagsForFloor(row.floorDefinition)}`,
         )
         .join('; '),
   }

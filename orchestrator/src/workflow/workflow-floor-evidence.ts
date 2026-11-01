@@ -36,12 +36,9 @@ import {
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
-  DEFAULT_EXPECTED_EXIT_CODE,
-  DEFAULT_EXPECTED_STATUS,
   type Floor,
   flagForFloor,
   githubPullRequestUrlIn,
-  isFloorKind,
   type OpenObligation,
   parseArtifactRef,
   pullRequestCreateArgv,
@@ -55,6 +52,10 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
+import {
+  floorFromObligationRow,
+  type WorkflowObligationFloorRow,
+} from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -88,13 +89,18 @@ export type CursorIdentity = {
 }
 
 export function openWorkflowObligations(cursorId: string, d: Database): OpenObligation[] {
-  return d
-    .query<OpenObligation, [string]>(
-      `SELECT record_id id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
+  type StoredOpenObligation = Omit<OpenObligation, 'floorDefinition'> & WorkflowObligationFloorRow
+  const rows = d
+    .query<StoredOpenObligation, [string]>(
+      `SELECT record_id id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor,
+              require_pull_request AS requirePullRequest, operator_ruling AS operatorRuling,
+              expected_exit_code AS expectedExitCode, expected_status AS expectedStatus,
+              floor_deferrable AS floorDeferrable
          FROM workflow_obligation
         WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
     )
     .all(cursorId)
+  return rows.map((row) => ({ ...row, floorDefinition: floorFromObligationRow(row) }))
 }
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
@@ -765,16 +771,14 @@ function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvid
     )
     .get(id)
   if (!row) return { id, found: false }
-  if (!isFloorKind(row.floor))
-    throw new Error(`--satisfies ${id} records unknown floor kind "${row.floor}"`)
-  const floor: Floor = {
-    kind: row.floor,
-    deferrable: row.floor_deferrable === 1,
-    expectedExitCode: row.expected_exit_code ?? DEFAULT_EXPECTED_EXIT_CODE,
-    expectedStatus: row.expected_status ?? DEFAULT_EXPECTED_STATUS,
-    requirePullRequest: row.require_pull_request === 1,
-    operatorRuling: row.operator_ruling === 1,
-  }
+  const floor = floorFromObligationRow({
+    floor: row.floor,
+    floorDeferrable: row.floor_deferrable,
+    expectedExitCode: row.expected_exit_code,
+    expectedStatus: row.expected_status,
+    requirePullRequest: row.require_pull_request,
+    operatorRuling: row.operator_ruling,
+  })
   return {
     id,
     found: true,

@@ -895,7 +895,13 @@ test('satisfying an open obligation requires evidence for that floor', () => {
 
 test('finish refuses while any obligation would remain open', () => {
   const open: OpenObligation[] = [
-    { id: OBLIGATION_UUID, stepOrdinal: 2, stepSlug: 'merge', floor: 'command-exit' },
+    {
+      id: OBLIGATION_UUID,
+      stepOrdinal: 2,
+      stepSlug: 'merge',
+      floor: 'command-exit',
+      floorDefinition: commandExit,
+    },
   ]
   const decision = decide({
     floors: [artifact],
@@ -938,7 +944,13 @@ test('finish proceeds when the last open obligation is satisfied', () => {
       },
       finishing: true,
       openObligations: [
-        { id: OBLIGATION_UUID, stepOrdinal: 2, stepSlug: 'merge', floor: 'command-exit' },
+        {
+          id: OBLIGATION_UUID,
+          stepOrdinal: 2,
+          stepSlug: 'merge',
+          floor: 'command-exit',
+          floorDefinition: commandExit,
+        },
       ],
     }).action,
   ).toBe('allow')
