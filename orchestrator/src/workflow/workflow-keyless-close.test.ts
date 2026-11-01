@@ -353,6 +353,26 @@ test('operator-ruling cursor refusals name the bound question remedy', () => {
     ),
   ).toThrow(`--ruling ${question.number}`)
 
+  d.query(
+    `UPDATE question
+        SET overturned_at='2026-11-01T00:00:02.000Z',replacement='Obtain security approval instead.'
+      WHERE number=?`,
+  ).run(question.number)
+  expect(() =>
+    nextWorkflowStep(
+      'operator-signoff',
+      'fixture',
+      'default',
+      {},
+      'approved',
+      answeredContext,
+      d,
+      { ruling: question.number },
+      testPorts,
+      answeredCursor,
+    ),
+  ).toThrow('workflow await')
+
   const emptyContext = { session: 'operator-signoff-empty' }
   const empty = composeWorkflowWithCursor(
     'operator-signoff',

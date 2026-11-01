@@ -159,6 +159,15 @@ test('a bound answered ruling satisfies a ruling floor', () => {
   })
 })
 
+test('an overturned bound ruling does not satisfy a ruling floor', () => {
+  expect(
+    decide({
+      floors: [ruling],
+      evidence: { ruling: { ...answeredRuling.ruling!, answered: false } },
+    }).action,
+  ).toBe('refuse')
+})
+
 test('a fully triaged graded review satisfies a ruling floor', () => {
   expect(decide({ floors: [ruling], evidence: gradedReview })).toMatchObject({
     action: 'allow',

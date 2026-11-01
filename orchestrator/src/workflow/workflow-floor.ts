@@ -90,8 +90,9 @@ export type ValidatedEvidence = {
   artifactRunOffered?: string
   stepQuestion?: {
     id: number
-    state: 'open' | 'closed' | 'answered-by-operator' | 'answered-by-agent'
+    state: 'open' | 'closed' | 'answered-by-operator' | 'answered-by-agent' | 'overturned'
     answeredAt: string | null
+    replacement: string | null
   }
   ruling?: {
     id: number
@@ -700,6 +701,8 @@ function operatorRulingRemedy(
     return `floor ruling is unmet: the step's question ${question.id} is closed; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question with \`${PLATFORM_SLUG} workflow await\`; the operator answers it`
   if (question.state === 'open')
     return `floor ruling is unmet: the step's question ${question.id} is open; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}the operator answers it with \`${PLATFORM_SLUG} workflow rule --from-operator\`, then close with \`--ruling ${question.id}\``
+  if (question.state === 'overturned')
+    return overturnedQuestionRemedy(question, suppliedRuling !== undefined)
   if (
     question.state === 'answered-by-operator' &&
     freshRulingAfter !== undefined &&
@@ -709,6 +712,16 @@ function operatorRulingRemedy(
   if (question.state === 'answered-by-operator')
     return `floor ruling is unmet: ${suppliedOperatorRulingRefusal(suppliedRuling, question.id)}the operator answered the step's question ${question.id}; close with \`--ruling ${question.id}\``
   return `floor ruling is unmet: question ${question.id} was answered by an agent, which cannot close an operator floor; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question for the operator with \`${PLATFORM_SLUG} workflow await\``
+}
+
+function overturnedQuestionRemedy(
+  question: NonNullable<ValidatedEvidence['stepQuestion']>,
+  rulingSupplied: boolean,
+): string {
+  const replacement =
+    question.replacement === null ? '' : ` with replacement "${question.replacement}"`
+  const supplied = rulingSupplied ? 'the supplied ruling cannot close it; ' : ''
+  return `floor ruling is unmet: question ${question.id} was overturned${replacement}; ${supplied}record the question again for the operator with \`${PLATFORM_SLUG} workflow await\``
 }
 
 function suppliedOperatorRulingRefusal(

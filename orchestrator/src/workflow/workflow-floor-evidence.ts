@@ -24,6 +24,7 @@ import {
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { questionOpenSql } from '../run/question-open.ts'
+import { rulingStatus } from '../run/question-vocabulary.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
@@ -135,18 +136,14 @@ function gatherRuling(
 ): ValidatedEvidence['ruling'] {
   const row = d
     .query<
-      {
-        id: string
-        answered_at: string | null
-        answerer_kind: string | null
-        is_open: number
+      QuestionEvidenceRow & {
         workflow_cursor_record_id: string | null
         workflow_step_ordinal: number | null
         workflow_step_slug: string | null
       },
       [number]
     >(
-      `SELECT number id,answered_at,answerer_kind,${questionOpenSql('question')} is_open,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
+      `SELECT number id,answered_at,answerer_kind,overturned_at,replacement,${questionOpenSql('question')} is_open,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
          FROM question WHERE number=?`,
     )
     .get(id)
@@ -162,29 +159,40 @@ function gatherRuling(
   }
 }
 
-export function questionRowToFacts(row: {
+export type QuestionEvidenceRow = {
+  id: number
   answered_at: string | null
   answerer_kind: string | null
+  overturned_at: string | null
+  replacement: string | null
   is_open: number
-}): {
+}
+
+export function questionRowToFacts(row: QuestionEvidenceRow): {
   state: NonNullable<ValidatedEvidence['stepQuestion']>['state']
   answered: boolean
   answeredByOperator: boolean
   answeredAt: string | null
+  replacement: string | null
 } {
-  const answered = row.answered_at !== null
+  const status = rulingStatus(row.overturned_at, row.answered_at)
+  const overturned = status === 'overturned'
+  const answered = status === 'answered'
   const answeredByOperator = answered && row.answerer_kind === 'operator'
   return {
-    state: answered
-      ? answeredByOperator
-        ? 'answered-by-operator'
-        : 'answered-by-agent'
-      : row.is_open
-        ? 'open'
-        : 'closed',
+    state: overturned
+      ? 'overturned'
+      : answered
+        ? answeredByOperator
+          ? 'answered-by-operator'
+          : 'answered-by-agent'
+        : row.is_open
+          ? 'open'
+          : 'closed',
     answered,
     answeredByOperator,
     answeredAt: row.answered_at,
+    replacement: row.replacement,
   }
 }
 
