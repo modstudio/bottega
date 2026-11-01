@@ -7,7 +7,7 @@ import { constants, homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { redactSecretShaped, WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { callerIdentityRefusal } from '../caller-classification.ts'
 import {
   callerIdentity,
@@ -24,7 +24,6 @@ import { migrationJournal } from '../database/migrations.ts'
 import { boundedGateOutputTail, GATE_OUTPUT_TAIL_BYTES } from '../gate/gate-decision.ts'
 import { probeSandboxProfileForCwd, resetSandbox, sandboxLaunchArgv } from '../sandbox/sandbox.ts'
 import { sandboxRuntimeAvailability } from '../sandbox/sandbox-runtime.ts'
-import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
 import { handOffWorkflowEvidence } from './workflow-evidence-handoff.ts'
 import type { WorkflowEvidencePayload } from './workflow-evidence-payload.ts'
 import {
@@ -32,8 +31,6 @@ import {
   type WorkflowEvidenceRecordingDecision,
   workflowEvidenceNotRecordedRefusal,
 } from './workflow-evidence-recording.ts'
-
-const PROBE_WITHHELD = '[withheld: secret-shaped content]'
 
 type ProbeRunResult = {
   exitCode: number
@@ -47,16 +44,18 @@ export type WorkflowOutput = Pick<ProbeRunResult, 'output' | 'secretFound'> & {
   pendingLine?: string
 }
 
-/** Retains a bounded tail after redacting secret-shaped lines. */
+/** Retains a bounded tail after redacting complete secret-shaped spans. */
 export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): WorkflowOutput {
   const candidate = (current.pendingLine ?? '') + chunk
   const lastNewline = candidate.lastIndexOf('\n')
   if (lastNewline < 0) return { ...current, pendingLine: candidate }
   const completeLines = candidate.slice(0, lastNewline + 1)
-  const redacted = withholdSecretShapedLines(completeLines, current.knownIdentifiers)
+  const redacted = redactSecretShaped(completeLines, {
+    knownCommits: current.knownIdentifiers,
+  })
   return {
-    output: boundedGateOutputTail(current.output + redacted, GATE_OUTPUT_TAIL_BYTES),
-    secretFound: current.secretFound === true || redacted !== completeLines,
+    output: boundedGateOutputTail(current.output + redacted.text, GATE_OUTPUT_TAIL_BYTES),
+    secretFound: current.secretFound === true || redacted.rules.length > 0,
     knownIdentifiers: current.knownIdentifiers,
     pendingLine: candidate.slice(lastNewline + 1),
   }
@@ -64,10 +63,12 @@ export function appendWorkflowOutput(current: WorkflowOutput, chunk: string): Wo
 
 function finishWorkflowOutput(current: WorkflowOutput): WorkflowOutput {
   const pendingLine = current.pendingLine ?? ''
-  const redacted = withholdSecretShapedLines(pendingLine, current.knownIdentifiers)
+  const redacted = redactSecretShaped(pendingLine, {
+    knownCommits: current.knownIdentifiers,
+  })
   return {
-    output: boundedGateOutputTail(current.output + redacted, GATE_OUTPUT_TAIL_BYTES),
-    secretFound: current.secretFound === true || redacted !== pendingLine,
+    output: boundedGateOutputTail(current.output + redacted.text, GATE_OUTPUT_TAIL_BYTES),
+    secretFound: current.secretFound === true || redacted.rules.length > 0,
   }
 }
 export type ProbeRunner = (input: {
@@ -240,15 +241,20 @@ async function recordWorkflowCommand(
   kind: 'probe' | 'exec',
   input: { d?: Database; commit?: string | null; preCommandCommit?: string | null },
 ): Promise<RecordedArtifact> {
-  const commandJson = JSON.stringify(command)
-  const redactedOutput = withholdSecretShapedLines(ran.output, [
-    input.commit ?? '',
-    input.preCommandCommit ?? '',
-  ])
-  const commandSecret = containsSecretShaped(commandJson)
-  const storedCommand = commandSecret ? PROBE_WITHHELD : commandJson
-  const tail = boundedGateOutputTail(redactedOutput, GATE_OUTPUT_TAIL_BYTES)
-  const withheld = tail === PROBE_WITHHELD
+  const knownCommits = [input.commit ?? '', input.preCommandCommit ?? '']
+  const redactedOutput = redactSecretShaped(ran.output, { knownCommits })
+  const redactedCommand = command.map((argument) => redactSecretShaped(argument, { knownCommits }))
+  const joinedCommand = redactSecretShaped(command.join(' '), { knownCommits })
+  // Any span the joined command masks beyond the per-argument masks crosses an argument boundary.
+  const joinedOnlySecret =
+    joinedCommand.text !== redactedCommand.map((argument) => argument.text).join(' ')
+  const commandJson = joinedOnlySecret
+    ? WITHHELD_SECRET_SHAPED
+    : JSON.stringify(redactedCommand.map((argument) => argument.text))
+  const tail = boundedGateOutputTail(redactedOutput.text, GATE_OUTPUT_TAIL_BYTES)
+  const withheld = ran.secretFound === true || redactedOutput.rules.length > 0
+  const commandSecret =
+    joinedOnlySecret || redactedCommand.some((argument) => argument.rules.length > 0)
   const d = input.d ?? writableDb()
   return writeTransaction(() => {
     // head_commit is the checkout head after the command for every workflow evidence row.
@@ -259,7 +265,7 @@ async function recordWorkflowCommand(
       )
       .get(
         newRecordId(),
-        storedCommand,
+        commandJson,
         cwd,
         input.commit ?? null,
         input.preCommandCommit ?? null,

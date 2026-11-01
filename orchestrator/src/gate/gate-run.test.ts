@@ -249,10 +249,10 @@ test('withholds secret-shaped output', async () => {
       .output_tail,
   ).toBe(
     [
-      `--base=${sha}`,
+      `--base=${sha.slice(0, 12)}`,
       'gate failures: scripts/check-architecture.ts',
-      '[withheld line: hex-run]',
-      '[withheld line: provider-prefix]',
+      '[withheld: hex-run]',
+      '[withheld: provider-prefix]',
     ].join('\n'),
   )
 })

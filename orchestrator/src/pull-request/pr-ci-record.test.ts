@@ -8,7 +8,6 @@ import { CONFIG_HOME_ENV } from '../../../shared/config-directory.ts'
 import { machineId } from '../../../shared/machine-config.ts'
 import { applyMigrations } from '../database/migrations.ts'
 import { enqueuePullRequestCi } from '../record/landing-outbox.ts'
-import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import attemptFixture from './fixtures/github-workflow-attempt.json'
 import jobsFixture from './fixtures/github-workflow-jobs.json'
 import runsFixture from './fixtures/github-workflow-runs.json'
@@ -338,7 +337,7 @@ test('CI outbox refresh sanitizes errors and does not reuse quarantined or retir
   const refreshed = database.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!
   expect(refreshed.payload).not.toContain(secret)
   expect(JSON.parse(refreshed.payload)).toMatchObject({
-    error: WITHHELD_SECRET_SHAPED,
+    error: '[withheld: provider-prefix]',
     withheldFields: ['error'],
   })
 

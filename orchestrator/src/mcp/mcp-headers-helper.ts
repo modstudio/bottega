@@ -1,7 +1,7 @@
 // concern: mcp-headers-helper
 /** Resolves dynamic HTTP headers declared by a project MCP server. */
 
-import { withholdSecretShapedLines } from '../secret-shaped-output.ts'
+import { redactSecretShapedOutput } from '../secret-shaped-output.ts'
 
 export type McpHeadersConfig = {
   name: string
@@ -111,7 +111,7 @@ export async function resolveMcpHeaders(
     throw helperRefusal(config, `timed out after ${MCP_HEADERS_HELPER_TIMEOUT_MS}ms`)
   }
   const [stdout, stderr, exitCode] = result
-  const diagnostic = withholdSecretShapedLines(oneLineStderr(stderr))
+  const diagnostic = redactSecretShapedOutput(oneLineStderr(stderr))
   const suffix = diagnostic ? `; stderr: ${diagnostic}` : ''
   if (exitCode !== 0) throw helperRefusal(config, `exited with code ${exitCode}${suffix}`)
   return effectiveMcpHeaders(config, stdout)

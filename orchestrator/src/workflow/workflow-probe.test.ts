@@ -109,7 +109,7 @@ test('probe output keeps a 40-hex sha line and a refusal line', async () => {
       output: `--base=${'a'.repeat(40)}\n${refusal}`,
     }),
   })
-  const tail = `--base=${'a'.repeat(40)}\n${refusal}`
+  const tail = `--base=${'a'.repeat(12)}\n${refusal}`
   expect(result.withheld).toBe(false)
   expect(result.outputTail).toBe(tail)
   expect(
@@ -138,17 +138,17 @@ test('probe output withholds only the secret-shaped line and names the rule', as
   })
   const tail = [
     'applicable lens safety has no recorded result on this branch',
-    '[withheld line: provider-prefix]',
+    '[withheld: provider-prefix]',
     'ok',
   ].join('\n')
-  expect(result.withheld).toBe(false)
+  expect(result.withheld).toBe(true)
   expect(result.outputTail).toBe(tail)
   expect(
     d.query('SELECT output_tail,withheld FROM probe').get() as {
       output_tail: string
       withheld: number
     },
-  ).toEqual({ output_tail: tail, withheld: 0 })
+  ).toEqual({ output_tail: tail, withheld: 1 })
 })
 
 test('withholds secret-shaped output', async () => {
@@ -160,11 +160,11 @@ test('withholds secret-shaped output', async () => {
     commit: 'abc',
     runner: () => ({ exitCode: 0, output: 'token=ghp_exampletokenvalue' }),
   })
-  expect(result.withheld).toBe(false)
-  expect(result.outputTail).toBe('[withheld line: assignment]')
+  expect(result.withheld).toBe(true)
+  expect(result.outputTail).toBe('[withheld: assignment]')
   expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
-    output_tail: '[withheld line: assignment]',
-    withheld: 0,
+    output_tail: '[withheld: assignment]',
+    withheld: 1,
   })
 })
 
@@ -179,10 +179,29 @@ test('withholds secret-shaped command JSON', async () => {
   })
   expect(result.withheld).toBe(false)
   expect(d.query('SELECT command,command_withheld,output_tail,withheld FROM probe').get()).toEqual({
-    command: '[withheld: secret-shaped content]',
+    command: '["echo","[withheld: assignment]"]',
     command_withheld: 1,
     output_tail: 'ok',
     withheld: 0,
+  })
+})
+
+test.each([
+  ['assignment', [PLATFORM_SLUG, 'pr', 'create', 'token=', 'hunter2']],
+  ['authorization', ['curl', '-H', 'Authorization:', 'Bearer', 'hunter2']],
+  ['repeated-rule', ['deploy', 'token=abc', 'password=', 'hunter2']],
+])('withholds a whole command when %s secret evidence spans arguments', async (_, command) => {
+  initializeProbeRepository()
+  const d = database()
+  await recordWorkflowProbe(command, {
+    cwd: probeRepository,
+    d,
+    commit: 'abc',
+    runner: () => ({ exitCode: 0, output: 'ok' }),
+  })
+  expect(d.query('SELECT command,command_withheld FROM probe').get()).toEqual({
+    command: '[withheld: secret-shaped content]',
+    command_withheld: 1,
   })
 })
 
@@ -273,7 +292,7 @@ test('exec records the checkout head after the command finishes', async () => {
     ).toEqual({
       head_commit: rebasedTip,
       pre_command_head_commit: preRebaseHead,
-      output_tail: preRebaseHead,
+      output_tail: preRebaseHead.slice(0, 12),
     })
     expect(heads).toEqual([])
   } finally {
@@ -336,12 +355,12 @@ test('exec stores a bounded tail after scanning supplied chunks', async () => {
     expect(Buffer.byteLength(streamed.output)).toBeLessThanOrEqual(GATE_OUTPUT_TAIL_BYTES)
     expect(streamed.output).not.toContain('ghp_exampletokenvalue')
     expect(result).toMatchObject({
-      withheld: false,
+      withheld: true,
       outputTail: streamed.output,
     })
     expect(d.query('SELECT output_tail,withheld FROM probe').get()).toEqual({
       output_tail: streamed.output,
-      withheld: 0,
+      withheld: 1,
     })
   } finally {
     if (priorDepth === undefined) delete process.env.BOTTEGA_DEPTH
@@ -356,7 +375,7 @@ test('a secret split across chunks is withheld when its line completes', () => {
     appendWorkflowOutput,
     { output: '', secretFound: false },
   )
-  expect(streamed.output).toBe('[withheld line: provider-prefix]\n')
+  expect(streamed.output).toBe('[withheld: provider-prefix]\n')
   expect(streamed.secretFound).toBe(true)
 })
 
@@ -373,9 +392,10 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
       appendWorkflowOutput,
       { output: '', secretFound: false, knownIdentifiers: [commit] },
     )
-    expect(streamed.output).toBe(`--base=${'a'.repeat(40)}\nopened ${url}\n${refusal}\n`)
+    expect(streamed.output).toBe(`--base=${'a'.repeat(12)}\nopened ${url}\n${refusal}\n`)
     const d = database()
-    const result = await recordWorkflowExec([PLATFORM_SLUG, 'pr', 'create'], {
+    const command = [PLATFORM_SLUG, 'pr', 'create', 'token=ghp_exampletokenvalue']
+    const result = await recordWorkflowExec(command, {
       cwd: probeRepository,
       d,
       commit,
@@ -384,10 +404,19 @@ test('a sha line, pull-request URL, and refusal remain usable evidence', async (
     })
     expect(result.withheld).toBe(false)
     expect(result.outputTail).toBe(streamed.output)
+    const stored = d
+      .query<{ command: string; command_withheld: number }, []>(
+        'SELECT command,command_withheld FROM probe',
+      )
+      .get()
+    expect(stored?.command).not.toContain('ghp_exampletokenvalue')
+    expect(stored?.command_withheld).toBe(1)
+    const storedArgv = JSON.parse(stored?.command ?? '') as string[]
+    expect(storedArgv).toEqual([PLATFORM_SLUG, 'pr', 'create', '[withheld: assignment]'])
     expect(
       decidePullRequestEvidence({
         kind: 'exec',
-        argv: [PLATFORM_SLUG, 'pr', 'create'],
+        argv: storedArgv,
         exitCode: 0,
         sessionBound: true,
         createdAfterStepActivation: true,

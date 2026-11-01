@@ -119,7 +119,7 @@ test('workflow exec --record-evidence records the payload row with the receiving
     ).toEqual({
       kind: 'exec',
       exit_code: 7,
-      output_tail: '[withheld line: assignment]\n',
+      output_tail: '[withheld: assignment]\n',
       session_id: 'architect-session',
     })
     // The receiver's status reports that the row was recorded, never the wrapped command's status.

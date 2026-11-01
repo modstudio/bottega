@@ -1,11 +1,10 @@
 // concern: live-outcome
-import { containsSecretShaped } from '../../shared/secret-shaped.ts'
+import { redactSecretShaped } from '../../shared/secret-shaped.ts'
 import { classify, FAILS_OVER, type FailureKind, isNonAnswer } from './failure/failure.ts'
 import { decideOutcomeRule, type OutcomeInputs, type OutcomeRule } from './outcome.ts'
 import { errorTail } from './run/run-process.ts'
 import { failureKindFromStop, stopErrorMessage } from './transport/transport.ts'
 
-const SECRET_SHAPED_STDERR = '[withheld: secret-shaped content]'
 export const LAST_VENDOR_EVENT_TYPE_MAX = 64
 const CONTROL_CHARACTERS = /[\p{Cc}]/u
 
@@ -176,9 +175,9 @@ function lastStdoutJsonlEvent(stdout: string): LastStdoutJsonlEvent | null {
 function recordedLastVendorEventType(raw: string | null): string | null {
   const trimmed = raw?.trim() ?? ''
   if (!trimmed || CONTROL_CHARACTERS.test(trimmed)) return null
-  if (containsSecretShaped(trimmed)) return SECRET_SHAPED_STDERR
-  if (trimmed.length <= LAST_VENDOR_EVENT_TYPE_MAX) return trimmed
-  return `${trimmed.slice(0, LAST_VENDOR_EVENT_TYPE_MAX)}…`
+  const redacted = redactSecretShaped(trimmed).text
+  if (redacted.length <= LAST_VENDOR_EVENT_TYPE_MAX) return redacted
+  return `${redacted.slice(0, LAST_VENDOR_EVENT_TYPE_MAX)}…`
 }
 
 export function composeCompletedReplyEndedError(facts: CompletedReplyEndedFacts): string {
@@ -194,12 +193,12 @@ export function composeCompletedReplyEndedError(facts: CompletedReplyEndedFacts)
   if (eventType) lines.push(`last vendor event: ${eventType}`)
   const vendorError = facts.lastVendorError?.trim() ?? ''
   if (vendorError) {
-    const body = containsSecretShaped(vendorError) ? SECRET_SHAPED_STDERR : vendorError
+    const body = redactSecretShaped(vendorError).text
     lines.push(`vendor error: ${errorTail(body)}`)
   }
   const stderr = facts.stderr.trim()
   if (stderr) {
-    const body = containsSecretShaped(stderr) ? SECRET_SHAPED_STDERR : stderr
+    const body = redactSecretShaped(stderr).text
     lines.push(`vendor stderr: ${errorTail(body)}`)
   }
   return lines.join('\n')

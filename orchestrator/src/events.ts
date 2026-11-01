@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { resolveRunsDirectory } from './database/database-location.ts'
 import { db, nowIso, writableDb } from './database/db.ts'
 import { targetGitEnvironment } from './git/git-environment.ts'
-import { withholdSecretShapedLines } from './secret-shaped-output.ts'
+import { redactSecretShapedOutput } from './secret-shaped-output.ts'
 import { capToolEventText } from './tool-event-text.ts'
 
 /** The live-stream subset the JSONL log records. Wider transport events are ignored. */
@@ -343,7 +343,7 @@ function observedToolEvents(
       title: event.title,
       ...(event.input === undefined
         ? {}
-        : { input: withholdSecretShapedLines(capToolEventText(event.input)) }),
+        : { input: redactSecretShapedOutput(capToolEventText(event.input)) }),
       ...(locations?.length ? { locations } : {}),
     })
   }
@@ -355,7 +355,7 @@ function observedToolEvents(
       status: event.status,
       ...(bytes === undefined ? {} : { bytes }),
       ...(event.status === 'failed' && event.result !== undefined
-        ? { text: withholdSecretShapedLines(capToolEventText(event.result)) }
+        ? { text: redactSecretShapedOutput(capToolEventText(event.result)) }
         : {}),
     })
   }

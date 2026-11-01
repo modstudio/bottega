@@ -24,7 +24,8 @@ test('a foreign snapshot at a matching remote tip does not establish ownership',
       port: mirrorFixturePort(root, { remoteBranchTip: () => tip }),
       noteFailure: async () => {},
     })
-    expect(result[0]?.text).toContain(tip)
+    expect(result[0]?.text).toContain(tip.slice(0, 12))
+    expect(result[0]?.text).not.toContain('[withheld')
     expect(result[0]?.text).not.toContain('output withheld')
   } finally {
     rmSync(root, { recursive: true, force: true })

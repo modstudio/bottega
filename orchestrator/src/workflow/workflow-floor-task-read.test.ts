@@ -9,12 +9,21 @@ test(`missing ${PLATFORM_SLUG} task refusal names the fresh tracker read`, () =>
 })
 
 test.each([
-  'tracker failed with token=abcdefghijklmnopqrstuvwxyz123456',
-  'tracker failed with Authorization: Bearer fixture-value',
-])('fresh tracker refusal withholds sensitive detail: %s', (detail) => {
-  const refusal = hubTaskReadRefusal('DEV-1070', 1, detail, '')
-  expect(refusal).toBe(
-    `--task DEV-1070 could not be read through the project's tracker by ${PLATFORM_SLUG} task show DEV-1070 --json --fresh: detail withheld`,
-  )
-  expect(refusal).not.toContain(detail)
-})
+  [
+    'tracker failed with token=abcdefghijklmnopqrstuvwxyz123456',
+    'tracker failed with [withheld: assignment]',
+  ],
+  [
+    'tracker failed with Authorization: Bearer fixture-value',
+    'tracker failed with [withheld: authorization]',
+  ],
+] as const)(
+  'fresh tracker refusal withholds sensitive detail: %s',
+  (detail, expectedRefusalTail) => {
+    const refusal = hubTaskReadRefusal('DEV-1070', 1, detail, '')
+    expect(refusal).toBe(
+      `--task DEV-1070 could not be read through the project's tracker by ${PLATFORM_SLUG} task show DEV-1070 --json --fresh: ${expectedRefusalTail}`,
+    )
+    expect(refusal).not.toContain(detail)
+  },
+)

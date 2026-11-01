@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
+import { redactSecretShaped } from '../../../shared/secret-shaped.ts'
 import {
   assertBranchRefMayBeCreated,
   assertBranchRefMayBeDeleted,
@@ -97,14 +97,12 @@ export type CanonMirrorPort = {
   releaseRun(runId: string): { outcome: string; detail: string }
 }
 
-const WITHHELD = 'command failed: output withheld because it resembles a secret'
-export function screenCanonMirrorError(value: unknown): string {
+export function screenCanonMirrorError(
+  value: unknown,
+  knownCommits: readonly string[] = [],
+): string {
   const text = value instanceof Error ? value.message : String(value)
-  const masked = text.replace(
-    /(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])|(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/g,
-    '[git-object-id]',
-  )
-  return containsSecretShaped(masked) ? WITHHELD : text
+  return redactSecretShaped(text, { knownCommits }).text
 }
 function spawn(cwd: string, args: string[]): ReturnType<typeof Bun.spawnSync> {
   return Bun.spawnSync(args, {
@@ -119,7 +117,6 @@ function command(cwd: string, args: string[]): string {
   if (child.exitCode !== 0) {
     const detail = child.stderr?.toString().trim() || `exit ${child.exitCode}`
     const safe = screenCanonMirrorError(detail)
-    if (safe === WITHHELD) throw new Error(WITHHELD)
     throw new Error(`${args.join(' ')} failed: ${safe}`)
   }
   return child.stdout?.toString().trim() ?? ''
@@ -178,7 +175,6 @@ export const systemCanonMirrorPort: CanonMirrorPort = {
     if (child.exitCode !== 0) {
       const detail = child.stderr?.toString().trim() || `exit ${child.exitCode}`
       const safe = screenCanonMirrorError(detail)
-      if (safe === WITHHELD) throw new Error(WITHHELD)
       throw new Error(`git worktree add failed: ${safe}`)
     }
     if (!existsSync(path)) throw new Error(`git worktree add did not create ${path}`)
@@ -407,13 +403,11 @@ function releaseOwnedLeftover(project: Project, path: string, port: CanonMirrorP
   }
 }
 function proveLocalBranchOwnership(
-  project: Project,
   branch: string,
-  port: CanonMirrorPort,
   previous: Publication | null,
+  tip: string | null,
 ): void {
-  if (!port.localBranch(project, branch)) return
-  const tip = port.refTip(project, `refs/heads/${branch}`)
+  if (tip === null) return
   if (previous && (tip === previous.tip || tip === previous.base)) return
   throw new Error(
     `refusing unowned local branch ${branch} at ${tip}; expected prior canon-mirror tip ${previous?.tip ?? 'none'} or base ${previous?.base ?? 'none'}; it was left intact`,
@@ -438,6 +432,32 @@ type MirrorExecution = {
   pushed: boolean
   base: string | null
   commit: string | null
+  knownCommits: string[]
+}
+
+function mirrorOwnership(
+  project: Project,
+  branch: string,
+  runId: string,
+  port: CanonMirrorPort,
+  execution: MirrorExecution,
+): { previous: Publication | null; remoteTip: string | null } {
+  const previous = previousPublication(project, branch, runId)
+  const remoteTip = port.remoteBranchTip(project, branch)
+  const localTip = port.localBranch(project, branch)
+    ? port.refTip(project, `refs/heads/${branch}`)
+    : null
+  execution.knownCommits = [remoteTip, localTip, previous?.tip, previous?.base].filter(
+    (tip): tip is string => typeof tip === 'string',
+  )
+  proveLocalBranchOwnership(branch, previous, localTip)
+  const refusal = remoteOwnershipRefusal(branch, remoteTip, previous)
+  if (refusal) throw new Error(refusal)
+  return { previous, remoteTip }
+}
+
+function emptyMirrorExecution(): MirrorExecution {
+  return { treeCreated: false, pushed: false, base: null, commit: null, knownCommits: [] }
 }
 
 function recordPushedTip(runId: string, commit: string): void {
@@ -486,11 +506,7 @@ function performMirrorPublication(input: {
     throw new Error(EMPTY_PROJECT_CANON_STORE_REFUSAL)
   }
   releaseOwnedLeftover(project, path, port)
-  const previous = previousPublication(project, branch, runId)
-  proveLocalBranchOwnership(project, branch, port, previous)
-  const remoteTip = port.remoteBranchTip(project, branch)
-  const remoteRefusal = remoteOwnershipRefusal(branch, remoteTip, previous)
-  if (remoteRefusal) throw new Error(remoteRefusal)
+  const { previous, remoteTip } = mirrorOwnership(project, branch, runId, port, execution)
   port.createTree({
     project,
     path,
@@ -617,7 +633,7 @@ async function mirrorProject(
     failed: true,
     text: 'failed, mirror did not finish',
   }
-  const execution: MirrorExecution = { treeCreated: false, pushed: false, base: null, commit: null }
+  const execution = emptyMirrorExecution()
   try {
     const autonomy = dryRun
       ? null
@@ -651,7 +667,7 @@ async function mirrorProject(
         })
         return outcome
       } catch (cause) {
-        const reason = screenCanonMirrorError(cause)
+        const reason = screenCanonMirrorError(cause, execution.knownCommits)
         setRunTerminal(runId, started, reason)
         outcome = { project: project.name, failed: true, text: `failed, ${reason}` }
         return outcome
@@ -673,7 +689,7 @@ async function mirrorProject(
             port.releaseBranch(project, branch, releasableTip)
             settleReleasedBranch(runId, branch)
           } catch (cause) {
-            const reason = screenCanonMirrorError(cause)
+            const reason = screenCanonMirrorError(cause, execution.knownCommits)
             setRunTerminal(runId, started, reason)
             outcome.failed = true
             outcome.text = `failed, local branch ${branch} could not be released: ${reason}`
@@ -684,7 +700,7 @@ async function mirrorProject(
       }
     })
   } catch (cause) {
-    const reason = screenCanonMirrorError(cause)
+    const reason = screenCanonMirrorError(cause, execution.knownCommits)
     setRunTerminal(runId, started, reason)
     outcome = { project: project.name, failed: true, text: `failed, ${reason}` }
     const cleanupFailure = releaseLifecycle(port, runId)

@@ -20,15 +20,15 @@ describe('coordinatorErrorTail', () => {
     expect(tail).not.toContain('first line')
   })
 
-  test('withholds secret-shaped coordinator output before bounding it', () => {
+  test('redacts secret-shaped coordinator output before bounding it', () => {
     expect(coordinatorErrorTail(`failure: token=${'s'.repeat(100)}`, 24)).toBe(
-      '[withheld: secret-shaped content]',
+      ': [withheld: assignment]',
     )
   })
 
   test('withholds secret-shaped output outside a marked routing refusal', () => {
     const output = `failure: token=${'s'.repeat(100)}\n${ROUTING_REFUSAL_MARKER}: no eligible agent`
-    expect(coordinatorErrorTail(output)).toBe('[withheld: secret-shaped content]')
+    expect(coordinatorErrorTail(output)).toBe('failure: [withheld: assignment]\nno eligible agent')
   })
 
   test('withholds secret-shaped output after a marked routing refusal', () => {
@@ -37,15 +37,15 @@ describe('coordinatorErrorTail', () => {
       coordinatorErrorTail(
         `${ROUTING_REFUSAL_MARKER}: no eligible agent\n    at pick (route.ts:1:1)\n${secret}`,
       ),
-    ).toBe('[withheld: secret-shaped content]')
+    ).toBe('no eligible agent\n    at pick (route.ts:1:1)\n[withheld: assignment]')
     expect(coordinatorErrorTail(`${ROUTING_REFUSAL_MARKER}: no eligible agent\n\n${secret}`)).toBe(
-      '[withheld: secret-shaped content]',
+      'no eligible agent\n\n[withheld: assignment]',
     )
     expect(
       coordinatorErrorTail(
         `${ROUTING_REFUSAL_MARKER}: no eligible agent\ngrok: disabled\n${secret}`,
       ),
-    ).toBe('[withheld: secret-shaped content]')
+    ).toBe('no eligible agent\ngrok: disabled\n[withheld: assignment]')
   })
 
   test('names an empty coordinator log', () => {

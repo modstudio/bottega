@@ -81,7 +81,9 @@ test('worker note refusals show their stored cause without leaking secret-shaped
   expect(workerNoteRefusalMessage('supervisor-closed', 'run stopped')).toContain(
     'the supervising run ended before filing completed',
   )
-  expect(workerNoteRefusalMessage('filing-refused', 'token=hidden')).toContain('detail withheld')
+  expect(workerNoteRefusalMessage('filing-refused', 'token=hidden')).toContain(
+    '[withheld: assignment]',
+  )
   expect(workerNoteRefusalMessage('filing-refused', null)).toContain('without recording a cause')
 })
 

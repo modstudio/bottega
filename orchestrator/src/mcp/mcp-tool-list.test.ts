@@ -33,7 +33,7 @@ test('a probe keeps the child diagnostic but withholds a secret-shaped stderr li
   // The tail reaches a refusal, the stored run record and the Codex setup
   // header, so the credential-shaped line stays out while the rest survives.
   expect(failure.message).not.toContain('abc123')
-  expect(failure.message).toContain('[withheld line: assignment]')
+  expect(failure.message).toContain('[withheld: assignment]')
   expect(failure.message).toContain('starting starship upstream')
   expect(failure.message).toContain('listening on the socket')
   expect(failure.message).toContain('Connection closed')

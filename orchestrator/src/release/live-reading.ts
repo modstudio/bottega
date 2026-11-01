@@ -1,7 +1,6 @@
 // concern: release-live-reading
 /** Reads and parses the commit reported by a release rung's bounded live command. */
 
-import { containsSecretShaped } from '../../../shared/secret-shaped.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { releaseCapturedText, releaseProcessEnvironment } from './release-decision.ts'
 
@@ -28,7 +27,7 @@ export type LiveReadingRunner = (
 ) => LiveReadingCapture
 
 function capturedText(text: string): string {
-  return releaseCapturedText(text, containsSecretShaped(text))
+  return releaseCapturedText(text, /^[0-9a-f]{40}$/i.test(text) ? [text] : [])
 }
 
 /** Parse a captured live command without observing a process or clock. */

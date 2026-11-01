@@ -1,7 +1,7 @@
 export const releaseModules = [
   {
     file: 'orchestrator/src/release/release-decision.ts',
-    allowed: ['shared/release-tag.ts'],
+    allowed: ['shared/release-tag.ts', 'shared/secret-shaped.ts'],
   },
   {
     file: 'orchestrator/src/release/release-service.ts',

@@ -419,8 +419,9 @@ describe('hosted context router', () => {
     })
 
     const result = await caller(client).settings.get({ user: true })
-    expect(result.settings.hooks[0]?.matcher).toBe('[withheld: secret-shaped]')
+    expect(result.settings.hooks[0]?.matcher).toBe('[withheld: authorization]')
     expect(JSON.stringify(result)).not.toContain(secret)
+    expect(JSON.stringify(result)).not.toContain('sk-proj-stored-before-screening')
   })
 
   test('settings.permission posts the hosted address unchanged', async () => {

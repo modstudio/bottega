@@ -4,7 +4,6 @@ import {
   checkoutReleaseDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
-  RELEASE_OUTPUT_WITHHELD,
   releaseAncestryFromExitCode,
   releaseCapturedText,
   releaseCommandEnvironment,
@@ -193,13 +192,13 @@ describe('release freshness against trunk', () => {
 })
 
 describe('release text policy', () => {
-  test('withholds secret-shaped captured output', () =>
+  test('redacts secret-shaped captured output without dropping surrounding text', () =>
     expect(
-      releaseCapturedText(`token=credential\n${'ordinary trailing output\n'.repeat(2_000)}`, true),
-    ).toBe(RELEASE_OUTPUT_WITHHELD))
+      releaseCapturedText(`failed token=credential\n${'ordinary trailing output\n'.repeat(2)}`),
+    ).toBe(`failed [withheld: assignment]\n${'ordinary trailing output\n'.repeat(2)}`))
 
   test('keeps ordinary captured output', () =>
-    expect(releaseCapturedText('deploying revision abc123\ndone', false)).toBe(
+    expect(releaseCapturedText('deploying revision abc123\ndone')).toBe(
       'deploying revision abc123\ndone',
     ))
 

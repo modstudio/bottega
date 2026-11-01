@@ -3,6 +3,7 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { hasRecordIdShape } from '../../../shared/record-id.ts'
+import { WITHHELD_SECRET_SHAPED } from '../../../shared/secret-shaped.ts'
 import { MachineLabelRefusal } from '../record/machine-name.ts'
 import { classifyRunIdentifier, machineLabelRefusal } from '../run/run-identifier-names.ts'
 import { parseProbeArtifact } from './probe-identifier.ts'
@@ -390,13 +391,12 @@ export type PullRequestEvidenceFacts =
 
 export type PullRequestEvidenceDecision = { met: true } | { met: false; condition: string }
 
-const WITHHELD_PULL_REQUEST_OUTPUT = '[withheld: secret-shaped content]'
 const WITHHELD_PULL_REQUEST_CONDITION =
   'the recorded output was withheld, so the pull-request URL cannot be read'
 const WITHHELD_PULL_REQUEST_COMMAND_CONDITION = `the recorded command was withheld, so it cannot be identified as ${PLATFORM_SLUG} pr create`
 
 function execOutputWithheld(facts: { outputWithheld: boolean; output: string }): boolean {
-  return facts.outputWithheld || facts.output === WITHHELD_PULL_REQUEST_OUTPUT
+  return facts.outputWithheld || facts.output === WITHHELD_SECRET_SHAPED
 }
 
 export type BottegaCommandIdentity = {
@@ -457,8 +457,10 @@ function decidePullRequestExec(
       condition: `the recorded command checkout branch is ${facts.checkoutBranch ?? 'unset'}, not this cursor's ${facts.cursorBranch}`,
     }
   if (!facts.headCommit) return { met: false, condition: 'the recorded command has no head commit' }
-  if (execOutputWithheld(facts)) return { met: false, condition: WITHHELD_PULL_REQUEST_CONDITION }
-  if (!githubPullRequestUrlIn(facts.output))
+  const pullRequestUrl = githubPullRequestUrlIn(facts.output)
+  if (!pullRequestUrl && execOutputWithheld(facts))
+    return { met: false, condition: WITHHELD_PULL_REQUEST_CONDITION }
+  if (!pullRequestUrl)
     return {
       met: false,
       condition: 'the recorded command output does not contain a GitHub pull-request URL',

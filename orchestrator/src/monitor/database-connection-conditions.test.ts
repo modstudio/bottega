@@ -71,7 +71,7 @@ describe('tree database connection classification', () => {
       rows: [row('stopal_orch_1', secretShaped), row('stopal_orch_1', 'ok"; report only')],
     })
     expect(condition!.detail).not.toContain(secretShaped)
-    expect(condition!.detail).toContain('(withheld: secret-shaped) (1)')
+    expect(condition!.detail).toContain('[withheld: assignment] (1)')
     expect(condition!.detail).toContain('"ok\\"; report only" (1)')
   })
 

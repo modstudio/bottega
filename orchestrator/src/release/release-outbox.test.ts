@@ -3,7 +3,6 @@ import { expect, test } from 'bun:test'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { migratedTestDatabase } from '../database/test-database.fixture.ts'
 import { OUTBOX_PAYLOAD_CONTRACTS } from '../record/outbox-payload-contracts.ts'
-import { WITHHELD_SECRET_SHAPED } from '../record/outbox-sanitize.ts'
 import { finishReleaseLedgerEntry, startReleaseLedgerEntry } from './release-ledger.ts'
 import { backfillReleaseRecords, enqueueReleaseRecord } from './release-outbox.ts'
 
@@ -173,9 +172,9 @@ test('release sanitizer withholds warning and release reasons while local values
   const payload = JSON.parse(
     database.query<{ payload: string }, []>('SELECT payload FROM outbox').get()!.payload,
   ) as Record<string, unknown>
-  expect(payload.rollbackReason).toBe(WITHHELD_SECRET_SHAPED)
-  expect(payload.behindTrunkReason).toBe(WITHHELD_SECRET_SHAPED)
-  expect(payload.warning).toBe(WITHHELD_SECRET_SHAPED)
+  expect(payload.rollbackReason).toBe('[withheld: authorization]')
+  expect(payload.behindTrunkReason).toBe('[withheld: authorization]')
+  expect(payload.warning).toBe('[withheld: authorization]')
   expect(payload.withheldFields).toEqual(['rollback_reason', 'behind_trunk_reason', 'warning'])
   expect(
     database.query('SELECT rollback_reason,behind_trunk_reason,warning FROM release_ledger').get(),
