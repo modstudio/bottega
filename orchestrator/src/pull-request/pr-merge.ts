@@ -56,16 +56,10 @@ import {
   completePullRequestPostLanding,
   type PullRequestMergeOutcome,
   type PullRequestPostLandingAdapter,
-  promoteWorkflowTree,
-  type WorkflowPromotionResult,
-  type WorkflowPromotionStage,
 } from './pr-post-landing.ts'
 
 export type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
-export type {
-  PullRequestMergeOutcome,
-  WorkflowPromotionResult,
-} from './pr-post-landing.ts'
+export type { PullRequestMergeOutcome } from './pr-post-landing.ts'
 
 export type PullRequestMergeAdapter = {
   repository(project: Project): string | null
@@ -100,12 +94,6 @@ export type PullRequestMergeAdapter = {
     pullRequest: PullRequestMergeFacts,
     database: Database,
   ): void
-  promoteMergedWorkflowDrafts?(
-    change: PullRequestChange,
-    pullRequest: PullRequestMergeFacts,
-    mergeCommit: string,
-    reason: string,
-  ): WorkflowPromotionResult
   recordCi?(
     change: PullRequestChange,
     pullRequest: PullRequestMergeFacts,
@@ -299,57 +287,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
       admittedHead: pullRequest.headCommit,
       number: pullRequest.number,
     })
-  },
-  promoteMergedWorkflowDrafts(change, _pullRequest, mergeCommit, reason) {
-    if (!mergedChangeNeedsWorkflowPromotion(change.group.pathSet))
-      return {
-        ok: true,
-        output: 'workflow draft promotion skipped: merged change touched no workflow tree path',
-      }
-    const attempt = (
-      stage: WorkflowPromotionStage,
-      action: () => string,
-    ): { value: string } | { failure: WorkflowPromotionResult } => {
-      try {
-        return { value: action() }
-      } catch (cause) {
-        return {
-          failure: {
-            ok: false,
-            stage,
-            detail: cause instanceof Error ? cause.message : String(cause),
-          },
-        }
-      }
-    }
-    const fetched = attempt('fetch', () =>
-      successful(change.project.path, ['git', 'fetch', 'origin'], 'workflow promotion fetch'),
-    )
-    if ('failure' in fetched) return fetched.failure
-    const branch = attempt('branch-check', () =>
-      successful(
-        change.project.path,
-        ['git', 'branch', '--show-current'],
-        'workflow promotion branch check',
-      ).trim(),
-    )
-    if ('failure' in branch) return branch.failure
-    const trunk = change.project.settings.trunk
-    if (branch.value !== trunk)
-      return {
-        ok: false,
-        stage: 'branch-check',
-        detail: `main checkout ${change.project.path} is on branch ${branch.value || '<detached>'}, expected trunk ${trunk}`,
-      }
-    const fastForwarded = attempt('fast-forward', () =>
-      successful(
-        change.project.path,
-        ['git', 'merge', '--ff-only', mergeCommit],
-        'workflow promotion fast-forward',
-      ),
-    )
-    if ('failure' in fastForwarded) return fastForwarded.failure
-    return promoteWorkflowTree(change.project, reason)
   },
   recordCi(change, pullRequest, database) {
     const result = recordPullRequestCi({
@@ -785,11 +722,9 @@ function completeMerge(input: {
   let mergeCommitLookupFailed = false
   let requeueOutput: string | undefined
   let admittedChange: PullRequestChange
-  let alreadyMerged = false
   try {
     pullRequest = input.adapter.view(input.cwd, input.target)
     if (pullRequest.state === 'MERGED') {
-      alreadyMerged = true
       if (!pullRequest.mergeCommit)
         throw new Error('merged pull request lookup returned no merge commit')
       mergeCommit = pullRequest.mergeCommit
@@ -836,24 +771,15 @@ function completeMerge(input: {
     projectName: input.project.name,
   })
   const pathSet = admittedChange!.group?.pathSet
-  const workflowPromotionDue = Boolean(
-    input.adapter.promoteMergedWorkflowDrafts &&
-      (pathSet ? mergedChangeNeedsWorkflowPromotion(pathSet) : true),
-  )
+  const workflowPromotionDue = pathSet ? mergedChangeNeedsWorkflowPromotion(pathSet) : true
   return completePullRequestPostLanding({
     adapter: {
-      promote: (change, mergedPullRequest, commit, reason) =>
-        input.adapter.promoteMergedWorkflowDrafts?.(change, mergedPullRequest, commit, reason) ?? {
-          ok: true,
-          output: '',
-        },
       release: input.adapter.releaseRequired,
       ...(input.adapter.shipCleanup ? { cleanup: input.adapter.shipCleanup } : {}),
     },
     postLandingAdapter: input.adapter.postLanding,
     database: input.database,
     project: input.project,
-    change: admittedChange!,
     pullRequest: pullRequest!,
     mergeCommit,
     recordingError,
@@ -861,7 +787,6 @@ function completeMerge(input: {
     target: input.target,
     releaseRequired: input.releaseRequired,
     workflowPromotionDue,
-    alreadyMerged,
   })
 }
 

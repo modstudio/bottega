@@ -5,7 +5,6 @@ import type { Project } from '../project/projects.ts'
 import type { RequiredReleaseReport } from '../release/release-required.ts'
 import type { ShipCleanupReport } from '../ship-cleanup/ship-cleanup.ts'
 import { decideShipCleanupVerdict } from '../ship-cleanup/ship-cleanup-decision.ts'
-import type { PullRequestChange } from './pr-admission.ts'
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   completePullRequestPostLanding,
@@ -43,12 +42,6 @@ const pullRequest: PullRequestMergeFacts = {
   mergeCommit: null,
 }
 
-const change = {
-  project,
-  branch: pullRequest.headBranch,
-  group: { pathSet: ['shared/record/schema.ts'] },
-} as PullRequestChange
-
 const cleanReport = (): ShipCleanupReport => ({
   project: project.name,
   branch: pullRequest.headBranch,
@@ -79,7 +72,6 @@ const satisfied: RequiredReleaseReport = {
 }
 
 const remaining = (calls: string[]) => ({
-  promote: () => ({ ok: true as const, output: 'promoted workflow drafts' }),
   release: () => {
     calls.push('release')
     return satisfied
@@ -94,7 +86,6 @@ function complete(input: {
   post: PullRequestPostLandingAdapter
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
-  alreadyMerged?: boolean
   calls?: string[]
 }) {
   return completePullRequestPostLanding({
@@ -102,13 +93,11 @@ function complete(input: {
     postLandingAdapter: input.post,
     database: db(),
     project,
-    change,
     pullRequest,
     mergeCommit: 'merge-commit',
     target: '42',
     releaseRequired: input.releaseRequired ?? true,
     workflowPromotionDue: input.workflowPromotionDue ?? false,
-    alreadyMerged: input.alreadyMerged ?? false,
   })
 }
 
@@ -291,10 +280,9 @@ test('the child uses the shared absent release flag report', () => {
   expect(outcome.output).toContain('not released because --release-required was absent')
 })
 
-test('an already-merged recovery with a required rung moves, fences, and hands off', () => {
+test('a recovery with a required rung moves, fences, and hands off', () => {
   const events: string[] = []
   complete({
-    alreadyMerged: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
       mainHead: () => 'main-head',
@@ -310,6 +298,49 @@ test('an already-merged recovery with a required rung moves, fences, and hands o
   expect(events).toEqual(['move', 'fence', 'hand-off'])
 })
 
+test('a failed required-rung decision is carried to the child with every declared rung', () => {
+  const received: PullRequestPostLandingPayload[] = []
+  const projectWithTwoRungs = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release!,
+        rungs: [
+          { name: 'hosted-api', branch: 'main', requiredWhenChanged: ['shared/record/**'] },
+          { name: 'worker', branch: 'main', requiredWhenChanged: ['orchestrator/**'] },
+        ],
+      },
+    },
+  } as Project
+
+  completePullRequestPostLanding({
+    adapter: remaining([]),
+    postLandingAdapter: {
+      changedPaths: () => {
+        throw new Error('changed paths unavailable')
+      },
+      mainHead: () => 'main-before',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: (payload) => {
+        received.push(payload)
+        return { output: 'child output', exitCode: 21 }
+      },
+    },
+    database: db(),
+    project: projectWithTwoRungs,
+    pullRequest,
+    mergeCommit: 'merge-commit',
+    target: '42',
+    releaseRequired: true,
+    workflowPromotionDue: false,
+  })
+
+  expect(received[0]?.rungDecisionError).toBe('changed paths unavailable')
+  expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'worker'])
+})
+
 test('a partial move that changes HEAD still fences and hands off', () => {
   const events: string[] = []
   let head = 'before'
@@ -320,6 +351,32 @@ test('a partial move that changes HEAD still fences and hands off', () => {
       moveMain: () => {
         head = 'after'
         throw new Error('verification raced with a dirty checkout')
+      },
+      fence: () => events.push('fence'),
+      handOff: () => {
+        events.push('hand-off')
+        return { output: 'child verifies main', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(outcome).toEqual({ output: 'child verifies main', exitCode: 0 })
+  expect(events).toEqual(['fence', 'hand-off'])
+})
+
+test('a failed HEAD re-read after a move attempt still fences and hands off', () => {
+  const events: string[] = []
+  let headReads = 0
+  const outcome = complete({
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      mainHead: () => {
+        headReads += 1
+        if (headReads === 1) return 'before'
+        throw new Error('cannot read main HEAD after move')
+      },
+      moveMain: () => {
+        throw new Error('move verification failed')
       },
       fence: () => events.push('fence'),
       handOff: () => {

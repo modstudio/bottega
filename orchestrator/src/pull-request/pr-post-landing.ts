@@ -27,7 +27,6 @@ import {
   shipCleanup,
 } from '../ship-cleanup/ship-cleanup.ts'
 import { SHIP_CLEANUP_RESIDUE_EXIT_CODE } from '../ship-cleanup/ship-cleanup-decision.ts'
-import type { PullRequestChange } from './pr-admission.ts'
 import type { PullRequestMergeFacts } from './pr-merge-evidence.ts'
 import {
   encodePullRequestPostLandingPayload,
@@ -35,7 +34,7 @@ import {
   type PullRequestPostLandingPayload,
 } from './pr-post-landing-payload.ts'
 
-export type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
+type WorkflowPromotionStage = 'fetch' | 'branch-check' | 'fast-forward' | 'promote'
 export type WorkflowPromotionResult =
   | { ok: true; output: string }
   | { ok: false; stage: WorkflowPromotionStage; detail: string }
@@ -74,7 +73,13 @@ function moveMainForPostLanding(
   } catch (cause) {
     failure = cause instanceof Error ? cause.message : String(cause)
   }
-  if (failure && adapter.mainHead(project) === headBefore) return { moved: false, detail: failure }
+  if (failure) {
+    try {
+      if (adapter.mainHead(project) === headBefore) return { moved: false, detail: failure }
+    } catch {
+      return { moved: true }
+    }
+  }
   return { moved: true }
 }
 
@@ -112,12 +117,6 @@ const cliPostLandingAdapter: PullRequestPostLandingAdapter = {
  */
 
 type RemainingStageAdapter = {
-  promote(
-    change: PullRequestChange,
-    pullRequest: PullRequestMergeFacts,
-    mergeCommit: string,
-    reason: string,
-  ): WorkflowPromotionResult
   release(
     project: Project,
     mergeCommit: string,
@@ -216,13 +215,11 @@ export function completePullRequestPostLanding(input: {
   postLandingAdapter?: PullRequestPostLandingAdapter
   database: Database
   project: Project
-  change: PullRequestChange
   pullRequest: PullRequestMergeFacts
   mergeCommit: string
   target: string
   releaseRequired: boolean
   workflowPromotionDue: boolean
-  alreadyMerged: boolean
   recordingError?: string
   requeueOutput?: string
 }): PullRequestMergeOutcome {
@@ -234,21 +231,12 @@ export function completePullRequestPostLanding(input: {
   const mustMove =
     input.workflowPromotionDue || (input.releaseRequired && decision.required.length > 0)
   if (!mustMove) {
-    const reason = `merged PR #${input.pullRequest.number} (${input.mergeCommit})`
-    const promotion = input.workflowPromotionDue
-      ? promotionOutput({
-          result: input.adapter.promote(input.change, input.pullRequest, input.mergeCommit, reason),
-          project: input.project,
-          prNumber: input.pullRequest.number,
-          mergeCommit: input.mergeCommit,
-        })
-      : { output: '' }
     return mergedOutput({
       ...input,
       project: input.project.name,
       branch: input.pullRequest.headBranch,
       prNumber: input.pullRequest.number,
-      promotion,
+      promotion: { output: '' },
       requiredRelease: input.adapter.release(
         input.project,
         input.mergeCommit,
@@ -308,7 +296,7 @@ export function completePullRequestPostLanding(input: {
   }
 }
 
-export function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
+function promoteWorkflowTree(project: Project, reason: string): WorkflowPromotionResult {
   const result = Bun.spawnSync(
     [
       join(project.path, 'bin', PLATFORM_SLUG),

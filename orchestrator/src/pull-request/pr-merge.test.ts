@@ -15,10 +15,10 @@ import {
   mergePullRequest,
   type PullRequestMergeAdapter,
   type PullRequestMergeFacts,
-  type WorkflowPromotionResult,
 } from './pr-merge.ts'
 import { recordPassingMergeGate, requiredRelease } from './pr-merge-required-release.fixture.ts'
-import { fixturePromotionResult, inProcessPostLandingAdapter } from './pr-post-landing.fixture.ts'
+import { inProcessPostLandingAdapter } from './pr-post-landing.fixture.ts'
+import type { WorkflowPromotionResult } from './pr-post-landing.ts'
 
 const cwd = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 
@@ -82,6 +82,9 @@ function adapter(
   } = {},
 ): PullRequestMergeAdapter {
   let mergedCommit = 'merge-commit'
+  const pathSet = input.promoteMergedWorkflowDrafts
+    ? ['.agents/workflows/fixture.md']
+    : ['orchestrator/src/pull-request/pr-merge.ts']
   return {
     repository: () => 'example/repository',
     view: (_cwd, target) => input.view?.(target) ?? pullRequest,
@@ -91,7 +94,10 @@ function adapter(
     admission:
       input.admission ??
       (() => ({
-        change: { branch: pullRequest.headBranch } as PullRequestChange,
+        change: {
+          branch: pullRequest.headBranch,
+          group: { pathSet },
+        } as PullRequestChange,
         decision: {
           complete: true,
           overrideId: null,
@@ -106,14 +112,9 @@ function adapter(
         ({
           project: { name: 'merge-fixture', path: cwd },
           branch: pullRequest.headBranch,
+          group: { pathSet },
         }) as PullRequestChange),
     ...(input.recordLandings ? { recordLandings: input.recordLandings } : {}),
-    ...(input.promoteMergedWorkflowDrafts
-      ? {
-          promoteMergedWorkflowDrafts: () =>
-            fixturePromotionResult(input.promoteMergedWorkflowDrafts),
-        }
-      : {}),
     ...(input.recordCi ? { recordCi: input.recordCi } : {}),
     merge: (_cwd, _number, method, subject, headCommit) => {
       mergedCommit = input.merge?.(method, subject, headCommit) ?? 'merge-commit'

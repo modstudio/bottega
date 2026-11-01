@@ -32,7 +32,7 @@ export function inProcessPostLandingAdapter(input: {
   }
 }
 
-export function fixturePromotionResult(
+function fixturePromotionResult(
   promote?: () => string | WorkflowPromotionResult,
 ): WorkflowPromotionResult {
   try {
