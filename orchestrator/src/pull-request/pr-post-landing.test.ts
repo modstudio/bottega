@@ -140,6 +140,8 @@ test('a successful move fences this process and hands off the exact fixed identi
     requeueOutput: null,
   })
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
+  expect(() => writableDb()).toThrow('its post-landing child owns the store')
+  expect(() => writableDb()).toThrow(postLandingRecovery('42'))
 })
 
 test('the real post-landing adapter refuses before git or spawn under the test runner', () => {
@@ -172,6 +174,39 @@ test('the real post-landing adapter refuses before git or spawn under the test r
     'real pull-request post-landing adapter refuses side effects under the test runner; inject a post-landing adapter',
   )
   console.log(`post-landing real-adapter class guard: ${elapsedMs.toFixed(3)}ms`)
+})
+
+test('the real child adapter refuses before spawn under the test runner', () => {
+  const database = db()
+  database
+    .query('INSERT INTO project (record_id,name,path,stack,settings) VALUES (?,?,?,?,?)')
+    .run(
+      project.recordId,
+      project.name,
+      project.path,
+      project.stack,
+      JSON.stringify(project.settings),
+    )
+  const spawnSync = Bun.spawnSync
+  let spawnCount = 0
+  Bun.spawnSync = ((...args: Parameters<typeof Bun.spawnSync>) => {
+    spawnCount++
+    return spawnSync(...args)
+  }) as typeof Bun.spawnSync
+  const began = performance.now()
+  let outcome: ReturnType<typeof runPullRequestPostLanding>
+  try {
+    outcome = runPullRequestPostLanding(childPayload(), database)
+  } finally {
+    Bun.spawnSync = spawnSync
+  }
+  const elapsedMs = performance.now() - began
+
+  expect(spawnCount).toBe(0)
+  expect(outcome.output).toContain(
+    'real pull-request post-landing adapter refuses side effects under the test runner; inject a post-landing adapter',
+  )
+  console.log(`post-landing real-child-adapter class guard: ${elapsedMs.toFixed(3)}ms`)
 })
 
 test('when no move is due all remaining work stays in process and the store stays open', () => {
@@ -317,6 +352,35 @@ test('the child uses the shared absent release flag report', () => {
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain('not released because --release-required was absent')
+})
+
+test('a child promote throw still runs release and cleanup', () => {
+  const calls: string[] = []
+  const outcome = runPullRequestPostLanding(
+    childPayload({ promoteWorkflowDrafts: true }),
+    db(),
+    childAdapter({
+      promote: () => {
+        calls.push('promote')
+        throw new Error('promote process could not start')
+      },
+      release: () => {
+        calls.push('release')
+        return satisfied
+      },
+      cleanup: () => {
+        calls.push('cleanup')
+        return cleanReport()
+      },
+    }),
+  )
+
+  expect(calls).toEqual(['promote', 'release', 'cleanup'])
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain(
+    'workflow draft promotion failed at promote: promote process could not start',
+  )
+  expect(outcome.output).toContain(`${PLATFORM_SLUG} workflow promote-tree`)
 })
 
 test('a recovery with a required rung moves, fences, and hands off', () => {

@@ -35,14 +35,6 @@ export function inProcessPostLandingAdapter(input: {
 function fixturePromotionResult(
   promote?: () => string | WorkflowPromotionResult,
 ): WorkflowPromotionResult {
-  try {
-    const result = promote?.() ?? ''
-    return typeof result === 'string' ? { ok: true, output: result } : result
-  } catch (cause) {
-    return {
-      ok: false,
-      stage: 'promote',
-      detail: cause instanceof Error ? cause.message : String(cause),
-    }
-  }
+  const result = promote?.() ?? ''
+  return typeof result === 'string' ? { ok: true, output: result } : result
 }

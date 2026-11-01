@@ -313,7 +313,9 @@ export function completePullRequestPostLanding(input: {
     recordingError: input.recordingError ?? null,
     requeueOutput: input.requeueOutput ?? null,
   }
-  post.fence(`main checkout moved to include ${input.mergeCommit}`)
+  post.fence(
+    `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target)}`,
+  )
   const handedOff = post.handOff(payload)
   const unexpectedExit = ![
     0,
@@ -361,13 +363,62 @@ export type PullRequestPostLandingChildAdapter = {
   cleanup(project: string, branch: string, prNumber: number, database: Database): ShipCleanupReport
 }
 
-const cliChildAdapter: PullRequestPostLandingChildAdapter = {
+function guardRealPostLandingChildAdapter(
+  adapter: PullRequestPostLandingChildAdapter,
+): PullRequestPostLandingChildAdapter {
+  return {
+    // Project lookup is a store read needed to resolve the payload before child side effects begin.
+    project: adapter.project,
+    verify(project, mergeCommit) {
+      refuseRealPostLandingAdapterInTest()
+      adapter.verify(project, mergeCommit)
+    },
+    promote(project, reason) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.promote(project, reason)
+    },
+    release(input) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.release(input)
+    },
+    cleanup(project, branch, prNumber, database) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.cleanup(project, branch, prNumber, database)
+    },
+  }
+}
+
+const cliChildAdapter = guardRealPostLandingChildAdapter({
   project: projectByName,
   verify: verifyMainCheckout,
   promote: promoteWorkflowTree,
   release: releaseRequiredRungsAfterMainMove,
   cleanup: (projectName, branch, _prNumber, database) =>
     shipCleanup(branch, { project: projectName, confirmedLanded: true, database }),
+})
+
+function workflowPromotionResultForChild(input: {
+  adapter: PullRequestPostLandingChildAdapter
+  checkoutFailure: string | null
+  payload: PullRequestPostLandingPayload
+  project: Project
+}): WorkflowPromotionResult {
+  if (input.checkoutFailure && input.payload.promoteWorkflowDrafts) {
+    return { ok: false, stage: 'branch-check', detail: input.checkoutFailure }
+  }
+  if (!input.payload.promoteWorkflowDrafts) return { ok: true, output: '' }
+  try {
+    return input.adapter.promote(
+      input.project,
+      `merged PR #${input.payload.prNumber} (${input.payload.mergeCommit})`,
+    )
+  } catch (cause) {
+    return {
+      ok: false,
+      stage: 'promote',
+      detail: cause instanceof Error ? cause.message : String(cause),
+    }
+  }
 }
 
 export function runPullRequestPostLanding(
@@ -384,12 +435,7 @@ export function runPullRequestPostLanding(
     checkoutFailure = cause instanceof Error ? cause.message : String(cause)
   }
   const promotion = promotionOutput({
-    result:
-      checkoutFailure && payload.promoteWorkflowDrafts
-        ? { ok: false, stage: 'branch-check', detail: checkoutFailure }
-        : payload.promoteWorkflowDrafts
-          ? adapter.promote(project, `merged PR #${payload.prNumber} (${payload.mergeCommit})`)
-          : { ok: true, output: '' },
+    result: workflowPromotionResultForChild({ adapter, checkoutFailure, payload, project }),
     project,
     prNumber: payload.prNumber,
     mergeCommit: payload.mergeCommit,
