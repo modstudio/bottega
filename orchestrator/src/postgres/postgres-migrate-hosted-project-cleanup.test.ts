@@ -84,6 +84,15 @@ async function facts(sql: SQL): Promise<unknown[]> {
   return rows
 }
 
+async function migrationRefusal(sql: SQL) {
+  const failure = await migrate(drizzle({ client: sql }), { migrationsFolder }).then(
+    () => null,
+    (error: unknown) => error,
+  )
+  expect(failure).toBeInstanceOf(Error)
+  return ((failure as Error).cause as Error | undefined)?.message ?? ''
+}
+
 realPostgres('populated hosted project cleanup', () => {
   beforeAll(() => {
     priorMigrations = mkdtempSync(join(tmpdir(), 'dev-1214-hosted-cleanup-'))
@@ -120,9 +129,7 @@ realPostgres('populated hosted project cleanup', () => {
     try {
       await migrate(drizzle({ client: sql }), { migrationsFolder: priorMigrations })
       await seed(sql, true)
-      await expect(migrate(drizzle({ client: sql }), { migrationsFolder })).rejects.toThrow(
-        'destination addresses already exist',
-      )
+      expect(await migrationRefusal(sql)).toContain('destination addresses already exist')
       const unchanged = await facts(sql)
       expect(unchanged).toContainEqual({
         kind: 'local-doc',
