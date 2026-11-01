@@ -2,14 +2,12 @@
 /** Gathers recorded rows that a floor decision may consume. Must not decide satisfaction. */
 
 import type { Database } from 'bun:sqlite'
-import { spawnSync } from 'node:child_process'
 import { existsSync, readdirSync, realpathSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { docScopeHasProjectSubject, docScopeIsProjectless } from '../../../shared/docs.ts'
 import { githubRepository } from '../../../shared/github-repository.ts'
-import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
-import { bottegaEntryArgv, installedBottegaExecutable } from '../../../shared/self-spawn.ts'
+import { installedBottegaExecutable } from '../../../shared/self-spawn.ts'
 import { runArtifactsDir, runScratchReplyPath } from '../artifact-paths.ts'
 import { viewPullRequest } from '../branch/merged-pull-request.ts'
 import { branchForTaskKey, pullRequestNumberForBranch } from '../branch/task-key-pull-request.ts'
@@ -27,6 +25,7 @@ import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import {
   type CheckoutResolution,
@@ -53,7 +52,7 @@ import {
   invokeFloorEvidencePort,
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
-import { type HubTaskRead, hubTaskReadFromJson } from './workflow-floor-task-read.ts'
+import { readHubTask } from './workflow-floor-task-read.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -95,38 +94,6 @@ export function openWorkflowObligations(cursorId: string, d: Database): OpenObli
         WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
     )
     .all(cursorId)
-}
-
-function readHubTask(key: string, cwd = process.cwd()): HubTaskRead {
-  const [hub, ...prefix] = bottegaEntryArgv(PLATFORM_SLUG)
-  const result = spawnSync(hub!, [...prefix, 'task', 'show', key, '--json', '--fresh'], {
-    cwd,
-    encoding: 'utf8',
-    env: process.env,
-  })
-  if (result.status !== 0) {
-    throw new Error(hubTaskReadRefusal(key, result.status, result.stderr, result.stdout))
-  }
-  return hubTaskReadFromJson(key, JSON.parse(result.stdout))
-}
-
-export function hubTaskReadRefusal(
-  key: string,
-  status: number | null,
-  stderr: string,
-  stdout: string,
-): string {
-  const rawDetail = stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${status}`
-  const detail = withholdSecretShapedDetail(rawDetail)
-  const attempted = `${PLATFORM_SLUG} task show ${key} --json --fresh`
-  if (
-    rawDetail.split('\n').some((line) => {
-      const text = line.trim()
-      return text === `no task ${key}` || text.includes(`task ${key} was not found in project`)
-    })
-  )
-    return `--task ${key} was not found in the project's tracker; ${attempted} attempted the registered tracker read: ${detail}`
-  return `--task ${key} could not be read through the project's tracker by ${attempted}: ${detail}`
 }
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
@@ -178,23 +145,51 @@ function gatherRuling(
         id: string
         answered_at: string | null
         answerer_kind: string | null
+        is_open: number
         workflow_cursor_record_id: string | null
         workflow_step_ordinal: number | null
         workflow_step_slug: string | null
       },
       [number]
     >(
-      `SELECT number id,answered_at,answerer_kind,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
+      `SELECT number id,answered_at,answerer_kind,${questionOpenSql('question')} is_open,workflow_cursor_record_id,workflow_step_ordinal,workflow_step_slug
          FROM question WHERE number=?`,
     )
     .get(id)
   if (!row) throw new Error(`--ruling ${id} does not exist`)
+  const facts = questionRowToFacts(row)
   return {
     id,
-    answered: row.answered_at !== null,
-    answeredByOperator: row.answerer_kind === 'operator',
+    answered: facts.answered,
+    answeredByOperator: facts.answeredByOperator,
     boundToCursor: row.workflow_cursor_record_id === cursorId,
     boundToStep: row.workflow_step_ordinal === stepOrdinal && row.workflow_step_slug === stepSlug,
+    answeredAt: row.answered_at,
+  }
+}
+
+export function questionRowToFacts(row: {
+  answered_at: string | null
+  answerer_kind: string | null
+  is_open: number
+}): {
+  state: NonNullable<ValidatedEvidence['stepQuestion']>['state']
+  answered: boolean
+  answeredByOperator: boolean
+  answeredAt: string | null
+} {
+  const answered = row.answered_at !== null
+  const answeredByOperator = answered && row.answerer_kind === 'operator'
+  return {
+    state: answered
+      ? answeredByOperator
+        ? 'answered-by-operator'
+        : 'answered-by-agent'
+      : row.is_open
+        ? 'open'
+        : 'closed',
+    answered,
+    answeredByOperator,
     answeredAt: row.answered_at,
   }
 }
@@ -956,7 +951,7 @@ export function gatherValidatedEvidence(input: {
   identity: CursorIdentity
   stepOrdinal: number
   stepSlug: string
-  floors?: Floor[]
+  floors: Floor[]
   evidence: WorkflowEvidenceInput
   ports?: FloorEvidencePorts
   d?: Database

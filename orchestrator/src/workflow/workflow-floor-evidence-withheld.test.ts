@@ -35,6 +35,7 @@ const gather = (d: Database) =>
     },
     stepOrdinal: 1,
     stepSlug: 'rebase',
+    floors: [],
     evidence: { artifact: 'exec:1' },
     ports: {
       resolveCheckout: () => ({

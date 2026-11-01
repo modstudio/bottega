@@ -2,35 +2,31 @@
 /** Reads the question fact bound to an operator-ruling step. */
 
 import type { Database } from 'bun:sqlite'
-import type { Floor, ValidatedEvidence } from './workflow-floor.ts'
+import { questionOpenSql } from '../run/question-open.ts'
+import { isOperatorRulingFloor, type Floor, type ValidatedEvidence } from './workflow-floor.ts'
+import { questionRowToFacts } from './workflow-floor-evidence.ts'
 
 export function gatherStepQuestionEvidence(
-  floors: Floor[] | undefined,
+  floors: Floor[],
   cursorId: string,
   stepOrdinal: number,
   stepSlug: string,
   d: Database,
 ): Pick<ValidatedEvidence, 'stepQuestion'> {
-  if (!floors?.some((floor) => floor.kind === 'ruling' && floor.operatorRuling)) return {}
+  if (!floors.some(isOperatorRulingFloor)) return {}
   const row = d
     .query<
-      { id: number; answered_at: string | null; answerer_kind: string | null },
+      { id: number; answered_at: string | null; answerer_kind: string | null; is_open: number },
       [string, number, string]
     >(
-      `SELECT number id,answered_at,answerer_kind
+      `SELECT number id,answered_at,answerer_kind,${questionOpenSql('question')} is_open
          FROM question
         WHERE workflow_cursor_record_id=? AND workflow_step_ordinal=? AND workflow_step_slug=?
-        ORDER BY CASE WHEN answered_at IS NOT NULL AND answerer_kind='operator' THEN 0 ELSE 1 END,
-                 number DESC
+        ORDER BY number DESC
         LIMIT 1`,
     )
     .get(cursorId, stepOrdinal, stepSlug)
   if (!row) return {}
-  return {
-    stepQuestion: {
-      id: row.id,
-      answered: row.answered_at !== null,
-      answeredByOperator: row.answered_at !== null && row.answerer_kind === 'operator',
-    },
-  }
+  const facts = questionRowToFacts(row)
+  return { stepQuestion: { id: row.id, state: facts.state, answeredAt: facts.answeredAt } }
 }

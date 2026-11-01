@@ -52,6 +52,15 @@ const answeredRuling: ValidatedEvidence = {
 const gradedReview: ValidatedEvidence = {
   review: { recordId: 'review-4', number: 4, allFindingsDisposed: true, allLensesGraded: true },
 }
+const reviewCategoryTask: ValidatedEvidence = {
+  task: {
+    key: 'DEV-1',
+    status: 'blocked',
+    statusCategory: 'review',
+    mergedPullRequest: true,
+    trackerStates: {},
+  },
+}
 const passingGate: ValidatedEvidence = {
   gate: {
     recordId: '00000000-0000-4000-8000-000000000002',
@@ -177,54 +186,6 @@ test('an unfinished review round refusal names every unfinished review id', () =
   })
 })
 
-const operatorQuestionStates: {
-  name: string
-  question?: NonNullable<ValidatedEvidence['stepQuestion']>
-  remedy: string
-}[] = [
-  { name: 'no question', remedy: `${PLATFORM_SLUG} workflow await` },
-  {
-    name: 'open question',
-    question: { id: 12, answered: false, answeredByOperator: false },
-    remedy: '--ruling 12',
-  },
-  {
-    name: 'operator-answered question',
-    question: { id: 12, answered: true, answeredByOperator: true },
-    remedy: '--ruling 12',
-  },
-  {
-    name: 'agent-answered question',
-    question: { id: 12, answered: true, answeredByOperator: false },
-    remedy: `${PLATFORM_SLUG} workflow await`,
-  },
-]
-
-for (const { name, question, remedy } of operatorQuestionStates) {
-  for (const path of ['no --ruling', 'supplied invalid ruling'] as const) {
-    test(`operator ruling refusal for ${name} through ${path} names the remedy`, () => {
-      const evidence: ValidatedEvidence = question ? { stepQuestion: question } : {}
-      if (path === 'supplied invalid ruling')
-        evidence.ruling = {
-          id: 99,
-          answered: true,
-          answeredByOperator: false,
-          boundToCursor: true,
-          boundToStep: false,
-        }
-
-      const decision = decide({ floors: [operatorRuling], evidence })
-
-      expect(decision.action).toBe('refuse')
-      if (decision.action !== 'refuse') return
-      expect(decision.message).toContain(remedy)
-      if (question) expect(decision.message).toContain(String(question.id))
-      if (question?.answeredByOperator && path === 'supplied invalid ruling')
-        expect(decision.message).toContain('supplied ruling 99 cannot close the step')
-    })
-  }
-}
-
 test('a bound operator answer satisfies an operator ruling floor', () => {
   const evidence: ValidatedEvidence = {
     ruling: { ...answeredRuling.ruling!, answeredByOperator: true },
@@ -234,6 +195,16 @@ test('a bound operator answer satisfies an operator ruling floor', () => {
     refs: [{ flag: '--ruling', value: '9' }],
   })
 })
+
+for (const [name, evidence] of [
+  ['agent answer', answeredRuling],
+  ['graded review', gradedReview],
+  ['review-category task', reviewCategoryTask],
+] as const) {
+  test(`${name} does not satisfy an operator ruling floor`, () => {
+    expect(decide({ floors: [operatorRuling], evidence }).action).toBe('refuse')
+  })
+}
 
 test('an agent ruling is refused when task evidence also meets an alternative floor', () => {
   const decision = decide({

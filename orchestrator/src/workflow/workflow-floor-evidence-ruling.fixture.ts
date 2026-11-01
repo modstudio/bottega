@@ -65,6 +65,11 @@ export const stepQuestionRow = (
     ).run()
     d.query(
       `INSERT INTO question
+        (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,workflow_step_ordinal,workflow_step_slug)
+       VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${cursorId}','2026-09-02','New bound?','workflow',1,'rebase')`,
+    ).run()
+    d.query(
+      `INSERT INTO question
         (number,record_id,workflow_cursor_record_id,asked_at,question,asked_via,answered_at,answer,answerer_kind,workflow_step_ordinal,workflow_step_slug)
        VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}','${cursorId}','2026-09-01','Other step?','workflow','2026-09-01','yes','operator',2,'other')`,
     ).run()
@@ -77,8 +82,16 @@ export const stepQuestionRow = (
       operatorRuling: true,
     }
     expect(gather(d, {}, {}, identity, [floor]).stepQuestion).toEqual({
-      id: 1,
-      answered: true,
-      answeredByOperator: true,
+      id: 2,
+      state: 'open',
+      answeredAt: null,
+    })
+
+    d.query('DELETE FROM question WHERE number=1').run()
+    d.query("UPDATE question SET closed_at='2026-09-03' WHERE number=2").run()
+    expect(gather(d, {}, {}, identity, [floor]).stepQuestion).toEqual({
+      id: 2,
+      state: 'closed',
+      answeredAt: null,
     })
   }

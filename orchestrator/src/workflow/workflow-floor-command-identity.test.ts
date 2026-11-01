@@ -155,6 +155,7 @@ test(`a recorded pr-create exec accepts the registered ${PLATFORM_SLUG} path onl
           identity,
           stepOrdinal: 1,
           stepSlug: 'rebase',
+          floors: [floor],
           evidence: { artifact: `exec:${id}` },
           ports,
           d,

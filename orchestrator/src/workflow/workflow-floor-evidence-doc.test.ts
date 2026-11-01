@@ -72,6 +72,7 @@ test('admits a machine-scope document with no project as evidence on another pro
     identity,
     stepOrdinal: 1,
     stepSlug: 'rebase',
+    floors: [],
     evidence: { artifact: 'doc:machine/_/note' },
     ports: {},
     d: database(),

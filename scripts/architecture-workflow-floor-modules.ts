@@ -106,7 +106,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-task-read.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-task-read.ts', [
+    'node:child_process',
     '../../../shared/brand.ts',
+    '../../../shared/secret-shaped.ts',
+    '../../../shared/self-spawn.ts',
     '../../../shared/trackers.ts',
   ]),
   module('orchestrator/src/workflow/workflow-checkout-refusal.ts', ['../../../shared/brand.ts']),
@@ -126,6 +129,13 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
     'bun:sqlite',
+    '../run/question-open.ts',
+    './workflow-floor.ts',
+    './workflow-floor-evidence.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-operator-ruling.test.ts', [
+    'bun:test',
+    '../../../shared/brand.ts',
     './workflow-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-evidence-ruling.fixture.ts', [
@@ -137,13 +147,11 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   ]),
   module('orchestrator/src/workflow/workflow-floor-evidence.ts', [
     'bun:sqlite',
-    'node:child_process',
     'node:fs',
     'node:path',
     '../../../shared/brand.ts',
     '../../../shared/docs.ts',
     '../../../shared/github-repository.ts',
-    '../../../shared/secret-shaped.ts',
     '../../../shared/self-spawn.ts',
     '../artifact-paths.ts',
     '../branch/merged-pull-request.ts',
@@ -158,6 +166,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../review/review-lineage-store.ts',
     '../run/run-identifier.ts',
     '../run/run-status.ts',
+    '../run/question-open.ts',
     './probe-identifier.ts',
     './workflow-floor.ts',
     './workflow-checkout-landing.ts',
