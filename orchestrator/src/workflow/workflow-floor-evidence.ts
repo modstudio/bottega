@@ -23,9 +23,9 @@ import {
 } from '../review/review-group.ts'
 import { resolveReviewIdentifier } from '../review/review-identifier.ts'
 import { reviewLineage } from '../review/review-lineage-store.ts'
+import { questionOpenSql } from '../run/question-open.ts'
 import { resolveRunIdentifier } from '../run/run-identifier.ts'
 import { TERMINAL_RUN_STATUS_SET } from '../run/run-status.ts'
-import { questionOpenSql } from '../run/question-open.ts'
 import { parseProbeArtifact, resolveProbeArtifact } from './probe-identifier.ts'
 import {
   type CheckoutResolution,
@@ -47,6 +47,7 @@ import {
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import { gitText, productionResolveCheckout } from './workflow-floor-evidence-checkout.ts'
+import { positiveEvidenceId } from './workflow-floor-evidence-input.ts'
 import {
   type FloorEvidencePorts,
   invokeFloorEvidencePort,
@@ -59,7 +60,6 @@ import {
   type SessionMatch,
   sessionOrAdopterMatch,
 } from './workflow-run-binding.ts'
-import { gatherStepQuestionEvidence } from './workflow-step-question-evidence.ts'
 import { attachedTextReferenceMeetsFloor, type WorkflowTextRow } from './workflow-text.ts'
 
 export type { FloorEvidencePorts } from './workflow-floor-evidence-replay.ts'
@@ -124,12 +124,6 @@ function runHasRecordedArtifacts(
   const reply = runScratchReplyPath(recordId, runsDir)
   if (existsSync(reply)) return true
   return existsSync(artifacts) && readdirSync(artifacts).length > 0
-}
-
-function positive(value: number | undefined, flag: string): number | undefined {
-  if (value === undefined) return undefined
-  if (!Number.isInteger(value) || value < 1) throw new Error(`${flag} must be a positive integer`)
-  return value
 }
 
 function gatherRuling(
@@ -946,7 +940,7 @@ function evidenceCheckoutResolver(
     )
 }
 
-export function gatherValidatedEvidence(input: {
+type GatherValidatedEvidenceInput = {
   cursorId: string
   identity: CursorIdentity
   stepOrdinal: number
@@ -955,21 +949,21 @@ export function gatherValidatedEvidence(input: {
   evidence: WorkflowEvidenceInput
   ports?: FloorEvidencePorts
   d?: Database
-}): ValidatedEvidence {
+}
+
+export function gatherValidatedEvidenceBase(
+  input: GatherValidatedEvidenceInput,
+): ValidatedEvidence {
   const d = input.d ?? db()
   const ports = input.ports ?? {}
   const resolveCheckout = evidenceCheckoutResolver(input.identity, ports, d)
   const gathered: ValidatedEvidence = {}
   gathered.tree = gatherTreeEvidence(input.identity, ports)
-  const ruling = positive(input.evidence.ruling, '--ruling')
+  const ruling = positiveEvidenceId(input.evidence.ruling, '--ruling')
   const review = input.evidence.review
   const gateRecordId = resolveOfferedGate(d, input.evidence.gate)
   const run = input.evidence.run
   const satisfies = input.evidence.satisfies
-  Object.assign(
-    gathered,
-    gatherStepQuestionEvidence(input.floors, input.cursorId, input.stepOrdinal, input.stepSlug, d),
-  )
   if (ruling)
     gathered.ruling = gatherRuling(ruling, input.cursorId, input.stepOrdinal, input.stepSlug, d)
   if (review) gathered.review = gatherReview(resolveReviewIdentifier(d, review), input.identity, d)

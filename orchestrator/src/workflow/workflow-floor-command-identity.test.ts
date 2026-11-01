@@ -12,8 +12,8 @@ import {
   bottegaCommandIdentity,
   type CursorIdentity,
   type FloorEvidencePorts,
-  gatherValidatedEvidence,
 } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 
 test(`command identity accepts only registered ${PLATFORM_SLUG} executable paths`, () => {
   const root = mkdtempSync(join(tmpdir(), `workflow-${PLATFORM_SLUG}-command-`))

@@ -1,11 +1,8 @@
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import {
-  type CursorIdentity,
-  docAdmissibleAsCursorEvidence,
-  gatherValidatedEvidence,
-} from './workflow-floor-evidence.ts'
+import { type CursorIdentity, docAdmissibleAsCursorEvidence } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 
 test('accepts a document in a project-less scope on any cursor', () => {
   expect(

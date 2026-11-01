@@ -4,11 +4,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { catalogueVersionRecordId, workflowVersionRecordId } from '../../test/fixtures/workflow.ts'
 import { testDatabaseFixture } from '../database/test-database.fixture.ts'
-import {
-  type CursorIdentity,
-  type FloorEvidencePorts,
-  gatherValidatedEvidence,
-} from './workflow-floor-evidence.ts'
+import type { CursorIdentity, FloorEvidencePorts } from './workflow-floor-evidence.ts'
+import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { boundRulingAndGateRow, stepQuestionRow } from './workflow-floor-evidence-ruling.fixture.ts'
 import { hubTaskReadFromJson } from './workflow-floor-task-read.ts'
 

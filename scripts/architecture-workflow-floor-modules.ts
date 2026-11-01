@@ -127,11 +127,17 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-floor-evidence-input.ts', []),
   module('orchestrator/src/workflow/workflow-step-question-evidence.ts', [
     'bun:sqlite',
     '../run/question-open.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
+  ]),
+  module('orchestrator/src/workflow/workflow-floor-evidence-gather.ts', [
+    '../database/db.ts',
+    './workflow-floor-evidence.ts',
+    './workflow-step-question-evidence.ts',
   ]),
   module('orchestrator/src/workflow/workflow-floor-operator-ruling.test.ts', [
     'bun:test',
@@ -172,10 +178,10 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-checkout-landing.ts',
     './workflow-checkout-refusal.ts',
     './workflow-floor-evidence-checkout.ts',
+    './workflow-floor-evidence-input.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',
-    './workflow-step-question-evidence.ts',
     './workflow-text.ts',
   ]),
   module('orchestrator/src/workflow/workflow-text.ts', [
@@ -231,6 +237,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     '../run/ruling-attribution.ts',
     './workflow-floor.ts',
     './workflow-floor-evidence.ts',
+    './workflow-floor-evidence-gather.ts',
     './workflow-floor-evidence-replay.ts',
     './workflow-rule-answer.ts',
     './workflow-self-ruling-mutation.ts',

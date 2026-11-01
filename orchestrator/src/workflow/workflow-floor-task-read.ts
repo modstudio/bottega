@@ -1,11 +1,11 @@
 // concern: workflows
 /** One tracker task read as the floor verifier consumes it. */
 
+import { spawnSync } from 'node:child_process'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { withholdSecretShapedDetail } from '../../../shared/secret-shaped.ts'
 import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { isTrackerCommentId } from '../../../shared/trackers.ts'
-import { spawnSync } from 'node:child_process'
 
 export type HubTaskRead = {
   recordId?: string

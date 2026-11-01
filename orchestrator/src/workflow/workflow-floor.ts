@@ -668,11 +668,7 @@ function floorUnmetMessage(
   freshRulingAfter?: string,
 ): string {
   if (isOperatorRulingFloor(floor))
-    return operatorRulingRemedy(
-      evidence.stepQuestion,
-      evidence.ruling?.id,
-      freshRulingAfter,
-    )
+    return operatorRulingRemedy(evidence.stepQuestion, evidence.ruling?.id, freshRulingAfter)
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
     return gateFloorRefusal(
       evidence.tree ?? { project: 'this project', worktree: null, commit: null },
@@ -711,14 +707,18 @@ function operatorRulingRemedy(
   )
     return `floor ruling is unmet: the step was re-entered after the operator answered question ${question.id}; record the question again with \`${PLATFORM_SLUG} workflow await\` for a fresh operator answer`
   if (question.state === 'answered-by-operator')
-    return `floor ruling is unmet: ${
-      suppliedRuling && suppliedRuling !== question.id
-        ? `the supplied ruling ${suppliedRuling} cannot close the step; `
-        : suppliedRuling
-          ? 'the supplied ruling cannot close the step; '
-          : ''
-    }the operator answered the step's question ${question.id}; close with \`--ruling ${question.id}\``
+    return `floor ruling is unmet: ${suppliedOperatorRulingRefusal(suppliedRuling, question.id)}the operator answered the step's question ${question.id}; close with \`--ruling ${question.id}\``
   return `floor ruling is unmet: question ${question.id} was answered by an agent, which cannot close an operator floor; ${suppliedRuling ? 'the supplied ruling cannot close it; ' : ''}record the question for the operator with \`${PLATFORM_SLUG} workflow await\``
+}
+
+function suppliedOperatorRulingRefusal(
+  suppliedRuling: number | undefined,
+  questionId: number,
+): string {
+  if (!suppliedRuling) return ''
+  if (suppliedRuling !== questionId)
+    return `the supplied ruling ${suppliedRuling} cannot close the step; `
+  return 'the supplied ruling cannot close the step; '
 }
 
 function unmetMessage(
@@ -726,9 +726,7 @@ function unmetMessage(
   evidence: ValidatedEvidence,
   freshRulingAfter?: string,
 ): string {
-  return floors
-    .map((floor) => floorUnmetMessage(floor, evidence, freshRulingAfter))
-    .join('; ')
+  return floors.map((floor) => floorUnmetMessage(floor, evidence, freshRulingAfter)).join('; ')
 }
 
 function commandExitFailureRefusal(

@@ -31,10 +31,26 @@ const states: {
   remedy: string
 }[] = [
   { name: 'no question', remedy: `${PLATFORM_SLUG} workflow await` },
-  { name: 'open question', question: { id: 12, state: 'open', answeredAt: null }, remedy: '--ruling 12' },
-  { name: 'closed question', question: { id: 12, state: 'closed', answeredAt: null }, remedy: `${PLATFORM_SLUG} workflow await` },
-  { name: 'operator-answered question', question: { id: 12, state: 'answered-by-operator', answeredAt: '2026-10-20T12:00:00.001Z' }, remedy: '--ruling 12' },
-  { name: 'agent-answered question', question: { id: 12, state: 'answered-by-agent', answeredAt: '2026-10-20T12:00:00.001Z' }, remedy: `${PLATFORM_SLUG} workflow await` },
+  {
+    name: 'open question',
+    question: { id: 12, state: 'open', answeredAt: null },
+    remedy: '--ruling 12',
+  },
+  {
+    name: 'closed question',
+    question: { id: 12, state: 'closed', answeredAt: null },
+    remedy: `${PLATFORM_SLUG} workflow await`,
+  },
+  {
+    name: 'operator-answered question',
+    question: { id: 12, state: 'answered-by-operator', answeredAt: '2026-10-20T12:00:00.001Z' },
+    remedy: '--ruling 12',
+  },
+  {
+    name: 'agent-answered question',
+    question: { id: 12, state: 'answered-by-agent', answeredAt: '2026-10-20T12:00:00.001Z' },
+    remedy: `${PLATFORM_SLUG} workflow await`,
+  },
 ]
 
 for (const { name, question, remedy } of states) {
@@ -66,7 +82,14 @@ test('a stale operator answer points at a fresh await instead of the supplied ru
     freshRulingAfter: answeredAt,
     evidence: {
       stepQuestion: { id: 12, state: 'answered-by-operator', answeredAt },
-      ruling: { id: 12, answered: true, answeredByOperator: true, boundToCursor: true, boundToStep: true, answeredAt },
+      ruling: {
+        id: 12,
+        answered: true,
+        answeredByOperator: true,
+        boundToCursor: true,
+        boundToStep: true,
+        answeredAt,
+      },
     },
   })
   expect(decision.action).toBe('refuse')
