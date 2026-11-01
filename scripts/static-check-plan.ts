@@ -1,6 +1,11 @@
 import { parseNameStatus, untrackedChanges } from '../shared/change-view.ts'
 
-type WorkerDecision = { run: true } | { run: false; reason: string; evidence: string }
+type WorkerDecision =
+  | { run: true }
+  | ({ run: false; reason: string; evidence: string } & (
+      | { subjects: readonly string[]; noSubjects?: never }
+      | { noSubjects: string; subjects?: never }
+    ))
 const HOSTED_REFUSAL_TEXT_CHECK = 'scripts/check-hosted-refusal-text.ts'
 export const BIOME_CHECK_NAME = 'Biome'
 
@@ -14,10 +19,17 @@ export type StaticCheckDeclaration = {
 }
 
 const run = { run: true } as const
-const omit = (reason: string, evidence: string): WorkerDecision => ({
+const omit = (
+  reason: string,
+  evidence: string,
+  subjects:
+    | { subjects: readonly string[]; noSubjects?: never }
+    | { noSubjects: string; subjects?: never },
+): WorkerDecision => ({
   run: false,
   reason,
   evidence,
+  ...subjects,
 })
 
 export type WorkerOmissionEvidence =
@@ -45,7 +57,7 @@ export function classifyWorkerOmissionEvidence(evidence: string): WorkerOmission
   return { kind: 'invalid' }
 }
 
-function workerOmissionReason(decision: Extract<WorkerDecision, { run: false }>): string {
+function workerOmissionReason(decision: { reason: string; evidence: string }): string {
   if (classifyWorkerOmissionEvidence(decision.evidence).kind === 'invalid') {
     throw new Error(
       `worker omission evidence '${decision.evidence}' is not a run id, a quoted command or a path:symbol citation; cite one in scripts/static-check-plan.ts or scripts/check-plan.ts`,
@@ -102,6 +114,9 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     worker: omit(
       'slow: 4.2s CPU under the worker check; the landing gate runs it, and CI omits it as machine-only',
       'run 25620',
+      {
+        noSubjects: "it gates the operator's live store snapshot, which a worker cannot open",
+      },
     ),
   },
   {
@@ -124,23 +139,30 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     worker: omit(
       'slow: 3.8s CPU under the worker check; the landing gate and CI run it',
       'run 25620',
+      { subjects: ['shared/record/migrations/'] },
     ),
   },
   script('scripts/check-machine-state.ts', run),
   script(
     'scripts/check-cascade-preservation.ts',
-    omit('slow: 2.7s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
+    omit('slow: 2.7s CPU under the worker check; the landing gate and CI run it', 'run 25620', {
+      subjects: ['orchestrator/migrations/'],
+    }),
   ),
   script(
     'scripts/check-postgres-migrations.ts',
-    omit('slow: 2.5s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
+    omit('slow: 2.5s CPU under the worker check; the landing gate and CI run it', 'run 25620', {
+      subjects: ['shared/record/migrations/'],
+    }),
   ),
   script('scripts/check-postgres-array-bindings.ts', run),
   script('scripts/check-record-jsonb-string-checks.ts', run),
   script('scripts/check-outbox-payload-contracts.ts', run),
   script(
     'scripts/check-record-migrations-apply.ts',
-    omit('slow: 2.3s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
+    omit('slow: 2.3s CPU under the worker check; the landing gate and CI run it', 'run 25620', {
+      subjects: ['shared/record/migrations/'],
+    }),
   ),
   script('scripts/check-bun-serve-timeout.ts', run),
   script('scripts/check-hosted-hub-server-boundary.ts', run),
@@ -222,6 +244,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     omit(
       'a worker cannot write the doc store, so its canon edit always differs from the store',
       'shared/store-access.ts:decideStoreAccess',
+      { noSubjects: 'a worker cannot write the doc store, so the check always differs' },
     ),
   ),
   script(
@@ -229,6 +252,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
     omit(
       'a worker cannot write the doc store, so its workflow step edit always differs from the store',
       'shared/store-access.ts:decideStoreAccess',
+      { noSubjects: 'a worker cannot write the doc store, so the check always differs' },
     ),
   ),
   script('scripts/check-workflow-tree.ts', run),
@@ -238,7 +262,10 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   }),
   script(
     'orchestrator/scripts/check-pack-budget.ts',
-    omit('slow: 6.3s CPU under the worker check; the landing gate and CI run it', 'run 25620'),
+    omit('slow: 6.3s CPU under the worker check; the landing gate and CI run it', 'run 25620', {
+      noSubjects:
+        "it compiles packs against the operator's live store snapshot, which a worker cannot open",
+    }),
   ),
   script('orchestrator/scripts/check-canon-lint.ts', run),
   script('scripts/quality/check-test-substance.ts', run, {
@@ -254,20 +281,23 @@ export function staticCheckPlan(): readonly StaticCheckDeclaration[] {
 type WorkerLegDeclaration = {
   name: string
   typecheck: unknown
-  worker: WorkerDecision
+  worker: { run: true } | { run: false; reason: string; evidence: string }
 }
 
 export type WorkerOmission = { name: string; reason: string }
+export type ForcedWorkerCheck = { name: string; subject: string; file: string }
 
 /** Project the shared gate declaration into the worker's commands and complete omission report. */
 export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
   staticChecks: readonly StaticCheckDeclaration[],
   legs: readonly TLeg[],
+  changedFiles: readonly string[],
 ): {
   biome: StaticCheckDeclaration
   typecheckLegs: TLeg[]
   staticChecks: StaticCheckDeclaration[]
   omitted: WorkerOmission[]
+  forced: ForcedWorkerCheck[]
 } {
   const biomeCandidates = staticChecks.filter((check) => check.workerArgv !== undefined)
   if (biomeCandidates.length !== 1) {
@@ -275,7 +305,19 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
   }
   const biome = biomeCandidates[0]!
   const typecheckLegs = legs.filter((leg) => leg.typecheck !== null && leg.worker.run)
-  const workerStaticChecks = staticChecks.filter((check) => check !== biome && check.worker.run)
+  const sortedFiles = [...changedFiles].sort()
+  const forced = staticChecks.flatMap((check): ForcedWorkerCheck[] => {
+    if (check.worker.run || check.worker.subjects === undefined) return []
+    for (const subject of check.worker.subjects) {
+      const file = sortedFiles.find((candidate) => candidate.startsWith(subject))
+      if (file) return [{ name: check.name, subject, file }]
+    }
+    return []
+  })
+  const forcedNames = new Set(forced.map((check) => check.name))
+  const workerStaticChecks = staticChecks.filter(
+    (check) => check !== biome && (check.worker.run || forcedNames.has(check.name)),
+  )
   const omitted: WorkerOmission[] = [
     {
       name: 'test suites',
@@ -294,7 +336,7 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
           ],
     ),
     ...staticChecks.flatMap((check) =>
-      check.worker.run
+      check.worker.run || forcedNames.has(check.name)
         ? []
         : [
             {
@@ -304,5 +346,5 @@ export function workerCheckProjection<TLeg extends WorkerLegDeclaration>(
           ],
     ),
   ]
-  return { biome, typecheckLegs, staticChecks: workerStaticChecks, omitted }
+  return { biome, typecheckLegs, staticChecks: workerStaticChecks, omitted, forced }
 }
