@@ -213,16 +213,21 @@ export function registerHostedConfigProofs(
 
   test('DEK references cannot cross spaces', () => {
     const statements = [
-      `INSERT INTO config_secret
+      {
+        sql: `INSERT INTO config_secret
          (id, space_id, user_id, key, environment, dek_id, row_version, envelope, updated_at)
        VALUES
          ('01990000-0000-7000-8000-000000000221', '${spaceA}', NULL, 'cross-space',
           'default', '${DEK_B}', 1, decode('05', 'hex'), now());`,
-      `INSERT INTO secret_dek_wrap
+      },
+      {
+        sql: `INSERT INTO secret_dek_wrap
          (id, space_id, dek_id, recipient_key_id, sender_key_id, enc, ciphertext, created_at)
        VALUES
-         ('${newRecordId()}', '${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'FFFFFFFFFFFFFFFFFFFFFF',
+         ('${newRecordId()}', '${spaceA}', '${DEK_B}', 'EEEEEEEEEEEEEEEEEEEEEE', 'CCCCCCCCCCCCCCCCCCCCCC',
           decode('05', 'hex'), decode('06', 'hex'), now());`,
+        constraint: 'secret_dek_wrap_space_dek_fk',
+      },
     ]
     for (const statement of statements) {
       const result = asSpace(
@@ -231,10 +236,11 @@ export function registerHostedConfigProofs(
         spaceA,
         `\\set VERBOSITY verbose
          SET app.user_id = '${userA}';
-         ${statement}`,
+         ${statement.sql}`,
       )
       expect(result.code).not.toBe(0)
       expect(result.stderr).toContain('23503')
+      if (statement.constraint) expect(result.stderr).toContain(statement.constraint)
     }
   })
 
@@ -265,6 +271,15 @@ export function registerHostedConfigProofs(
 
     const registered = insert('GGGGGGGGGGGGGGGGGGGGGG', 'HHHHHHHHHHHHHHHHHHHHHH')
     expect(registered.code, registered.stderr).toBe(0)
+
+    succeeds(
+      'postgres',
+      'postgres',
+      `UPDATE machine_public_key SET revoked_at=now()
+       WHERE space_id='${spaceA}' AND key_id='HHHHHHHHHHHHHHHHHHHHHH';`,
+    )
+    const revokedSender = insert('AAAAAAAAAAAAAAAAAAAAAA', 'HHHHHHHHHHHHHHHHHHHHHH')
+    expect(revokedSender.code, revokedSender.stderr).toBe(0)
 
     for (const [recipient, sender, constraint] of [
       [
@@ -542,7 +557,7 @@ export function registerHostedConfigProofs(
     ).rejects.toMatchObject({ status: 409 })
   })
 
-  test('machine registration verifies key ids and revocation preserves wraps', async () => {
+  test('machine registration verifies key ids and revocation atomically removes wraps', async () => {
     const publicKey = Uint8Array.from({ length: 32 }, (_, index) => index)
     const keyId = await machineKeyId(publicKey)
     await expect(
@@ -583,6 +598,6 @@ export function registerHostedConfigProofs(
          (SELECT count(*) FROM secret_dek_wrap WHERE space_id='${spaceA}' AND recipient_key_id='${keyId}')
        FROM machine_public_key WHERE space_id='${spaceA}' AND key_id='${keyId}';`,
     )
-    expect(facts).toBe('t|1')
+    expect(facts).toBe('t|0')
   })
 }

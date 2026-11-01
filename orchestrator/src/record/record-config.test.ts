@@ -20,7 +20,7 @@ test('data-key services refuse wraps to absent or revoked recipients', () => {
   )
 })
 
-test('data-key services require a registered sender and allow a revoked sender', () => {
+test('data-key services refuse an unregistered wrap sender and allow a registered one', () => {
   const candidate = wrap('AAAAAAAAAAAAAAAAAAAAAA')
   try {
     assertRegisteredWrapSenders([candidate], new Set())

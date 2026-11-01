@@ -55,6 +55,14 @@ type StoreManifests = {
   infrastructure: Map<string, string>
 }
 
+type SeenKeys = {
+  values: Set<string>
+  references: Set<string>
+  ruledReferences: Set<string>
+  externalIdentifiers: Set<string>
+  uuids: Set<string>
+}
+
 const REFERENCE_NAME = /(?:^parent_|_(?:id|ids|ref|key|session)$)/
 const PROJECT_NAME = /^(?:project|repo|.*_project)$/
 
@@ -65,7 +73,7 @@ export function classifyKeyInventory(
 ): KeyInventory {
   const manifests = keyManifests(store, allManifests)
   validateDisplayLabels(store, tables, manifests)
-  const seen = {
+  const seen: SeenKeys = {
     values: new Set<string>(),
     references: new Set<string>(),
     ruledReferences: new Set<string>(),
@@ -113,13 +121,7 @@ function classifyKeyTable(
   store: KeyStore,
   table: KeyTable,
   manifests: StoreManifests,
-  seen: {
-    values: Set<string>
-    references: Set<string>
-    ruledReferences: Set<string>
-    externalIdentifiers: Set<string>
-    uuids: Set<string>
-  },
+  seen: SeenKeys,
 ): string[] {
   const findings = hasOwnedUuidPrimaryKey(table, manifests.uuids)
     ? []
@@ -149,13 +151,7 @@ function classifyKeyColumn(
   store: KeyStore,
   column: KeyColumn,
   manifests: StoreManifests,
-  seen: {
-    values: Set<string>
-    references: Set<string>
-    ruledReferences: Set<string>
-    externalIdentifiers: Set<string>
-    uuids: Set<string>
-  },
+  seen: SeenKeys,
 ): string[] {
   const address = `${column.table}.${column.name}`
   const uuid = column.type === 'uuid' || manifests.uuids.has(address)
@@ -252,13 +248,7 @@ function validateKeyManifests(
   store: KeyStore,
   tables: readonly KeyTable[],
   manifests: StoreManifests,
-  seen: {
-    values: ReadonlySet<string>
-    references: ReadonlySet<string>
-    ruledReferences: ReadonlySet<string>
-    externalIdentifiers: ReadonlySet<string>
-    uuids: ReadonlySet<string>
-  },
+  seen: Readonly<SeenKeys>,
 ): void {
   const columns = new Map(
     tables.flatMap((table) =>

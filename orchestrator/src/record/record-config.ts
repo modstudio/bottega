@@ -514,7 +514,7 @@ export async function listDataKeys(input: ConfigTenant): Promise<DataKey[]> {
   })
 }
 
-async function validateWrapRecipients(
+async function validateWrapKeys(
   tx: SQL,
   input: { spaceId: string; wraps: ConfigWrapInput[] },
 ): Promise<void> {
@@ -596,7 +596,7 @@ export async function createDataKey(
           409,
         )
       }
-      await validateWrapRecipients(tx, input)
+      await validateWrapKeys(tx, input)
       try {
         await tx`
         INSERT INTO secret_dek (id, space_id, version, created_at)
@@ -651,7 +651,7 @@ export async function addDataKeyWraps(
         404,
       )
     }
-    await validateWrapRecipients(tx, input)
+    await validateWrapKeys(tx, input)
     await insertWraps(tx, input)
   })
 }
@@ -753,5 +753,9 @@ export async function revokeMachineKey(input: ConfigTenant & { keyId: string }):
         404,
       )
     }
+    await tx`
+      DELETE FROM secret_dek_wrap
+      WHERE space_id=${input.spaceId}::uuid AND recipient_key_id=${input.keyId}
+    `
   })
 }
