@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { SQL } from 'bun'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { newRecordId, PLATFORM_SPACE_ID } from '../../../shared/record/schema.ts'
+import { newRecordId, PLATFORM_SPACE_ID, project } from '../../../shared/record/schema.ts'
 import { installRecordApiClient } from '../../test/fixtures/record-api.ts'
 import {
   installRecordSessionRunner,
@@ -232,42 +232,14 @@ realPostgres('project import against copied live SQLite data', () => {
     )
     expect(imported).toHaveLength(sourceProjects.length)
     expectPreservedProjectIds(sourceProjects, imported)
-    const columnForSetting: Record<string, string> = {
-      agentKeys: 'agent_keys',
-      color: 'color',
-      colorDark: 'color_dark',
-      docs: 'docs',
-      envPrefix: 'env_prefix',
-      gate: 'gate',
-      gateInput: 'gate_input',
-      focusedTests: 'focused_tests',
-      keyPrefixes: 'key_prefixes',
-      managedContext: 'managed_context',
-      mcp: 'mcp_probe_tool',
-      'mcp.reader_tools': 'mcp_reader_tools',
-      'mcp.writer_tools': 'mcp_writer_tools',
-      mcpServer: 'mcp_server',
-      mechanicalChecks: 'mechanical_checks',
-      productionBranch: 'production_branch',
-      reference: 'reference',
-      release: 'release',
-      requireCleanMain: 'require_clean_main',
-      secretPaths: 'secret_paths',
-      signals: 'signals',
-      review: 'review',
-      states: 'states',
-      testSubstance: 'test_substance',
-      tracker: 'tracker',
-      trunk: 'landing_branch',
-      visibility: 'visibility',
-      worktree: 'worktree',
-      workerMcpServers: 'worker_mcp_servers',
-    }
-    expect(
-      Object.keys(columnForSetting)
-        .filter((key) => key !== 'mcp.reader_tools' && key !== 'mcp.writer_tools')
-        .sort(),
-    ).toEqual(Object.keys(PROJECT_SETTING_COLUMNS).sort())
+    const columnForSetting: Record<string, string> = Object.fromEntries([
+      ...Object.entries(PROJECT_SETTING_COLUMNS).map(([setting, column]) => [
+        setting,
+        project[column].name,
+      ]),
+      ['mcp.reader_tools', project.mcpReaderTools.name],
+      ['mcp.writer_tools', project.mcpWriterTools.name],
+    ])
     const notImported = new Set<string>(PROJECT_SETTINGS_NOT_IMPORTED.map(({ key }) => key))
     expect(
       [...sourceKeySet].filter((key) => !(key in columnForSetting) && !notImported.has(key)),
