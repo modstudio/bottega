@@ -8,6 +8,7 @@ import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
+import { entryClosureAtCommit } from '../release/release-entry-closure.ts'
 import {
   changedPaths,
   failedRequiredRelease,
@@ -50,6 +51,11 @@ export type PullRequestMergeOutcome = {
 
 export type PullRequestPostLandingAdapter = {
   changedPaths(project: Project, mergeCommit: string): string[]
+  entryClosure(
+    project: Project,
+    mergeCommit: string,
+    entries: readonly string[],
+  ): ReadonlyMap<string, ReadonlySet<string>>
   mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string): void
   fence(reason: string): void
@@ -99,6 +105,10 @@ function guardRealPostLandingAdapter(
       refuseRealPostLandingAdapterInTest()
       return adapter.changedPaths(project, mergeCommit)
     },
+    entryClosure(project, mergeCommit, entries) {
+      refuseRealPostLandingAdapterInTest()
+      return adapter.entryClosure(project, mergeCommit, entries)
+    },
     mainHead(project) {
       refuseRealPostLandingAdapterInTest()
       return adapter.mainHead(project)
@@ -118,6 +128,7 @@ function guardRealPostLandingAdapter(
 
 const cliPostLandingAdapter = guardRealPostLandingAdapter({
   changedPaths,
+  entryClosure: entryClosureAtCommit,
   mainHead: mainCheckoutHead,
   moveMain: moveMainCheckout,
   fence: fenceStoreAfterCheckoutMove,
@@ -259,7 +270,11 @@ export function completePullRequestPostLanding(input: {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const inspect = input.workflowPromotionDue || input.releaseRequired
   const decision: RequiredRungDecision = inspect
-    ? requiredRungDecision(input.project, () => post.changedPaths(input.project, input.mergeCommit))
+    ? requiredRungDecision(
+        input.project,
+        () => post.changedPaths(input.project, input.mergeCommit),
+        (entries) => post.entryClosure(input.project, input.mergeCommit, entries),
+      )
     : { decided: true, required: [], error: null }
   const mustMove =
     input.workflowPromotionDue || (input.releaseRequired && decision.required.length > 0)

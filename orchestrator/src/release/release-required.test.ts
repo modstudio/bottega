@@ -44,6 +44,7 @@ const successfulRelease = (overrides: Partial<ReleaseResult> = {}): ReleaseResul
 
 const runner = (overrides: Partial<RequiredReleaseRunner> = {}): RequiredReleaseRunner => ({
   changedPaths: () => ['shared/record/migrations/20261031_add_column.sql'],
+  entryClosure: () => new Map(),
   prepareMain: () => {},
   newestLive: () => null,
   contains: () => false,
@@ -57,6 +58,7 @@ describe('decideRequiredRungs', () => {
       decideRequiredRungs(
         [{ name: 'hosted-api', requiredWhenChanged: ['shared/record/migrations/**'] }],
         ['shared/record/migrations/20261031_add_column.sql'],
+        new Map(),
       ),
     ).toEqual(['hosted-api'])
   })
@@ -66,6 +68,7 @@ describe('decideRequiredRungs', () => {
       decideRequiredRungs(
         [{ name: 'hosted-api', requiredWhenChanged: ['shared/record/migrations/**'] }],
         ['orchestrator/src/run.ts'],
+        new Map(),
       ),
     ).toEqual([])
   })
@@ -75,6 +78,7 @@ describe('decideRequiredRungs', () => {
       decideRequiredRungs(
         [{ name: 'hosted-api', onDemand: true, requiredWhenChanged: ['shared/record/**'] }],
         ['shared/record/schema.ts'],
+        new Map(),
       ),
     ).toEqual(['hosted-api'])
   })
@@ -88,8 +92,23 @@ describe('decideRequiredRungs', () => {
           { name: 'unmatched', requiredWhenChanged: ['docs/**'] },
         ],
         ['shared/record/schema.ts'],
+        new Map(),
       ),
     ).toEqual(['second', 'first'])
+  })
+
+  test('requires a rung when a changed path is in its entry closure', () => {
+    const rungs = [{ name: 'hosted-api', entryPoints: ['orchestrator/src/record/server.ts'] }]
+    const closure = new Map([
+      [
+        'orchestrator/src/record/server.ts',
+        new Set(['orchestrator/src/record/server.ts', 'orchestrator/src/record/evidence.ts']),
+      ],
+    ])
+    expect(decideRequiredRungs(rungs, ['orchestrator/src/record/evidence.ts'], closure)).toEqual([
+      'hosted-api',
+    ])
+    expect(decideRequiredRungs(rungs, ['docs/release.md'], closure)).toEqual([])
   })
 })
 
@@ -115,6 +134,55 @@ describe('releaseRequiredRungs', () => {
     })
     expect(report).toEqual({ required: [], releases: [], satisfied: true })
     expect(inspected).toBe(false)
+  })
+
+  test('does not read entry closures when no rung declares entry points', () => {
+    let readClosure = false
+    releaseRequiredRungs({
+      project,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        entryClosure: () => {
+          readClosure = true
+          return new Map()
+        },
+      }),
+    })
+    expect(readClosure).toBe(false)
+  })
+
+  test('an entry closure failure requires every declaring rung', () => {
+    const report = releaseRequiredRungs({
+      project: {
+        ...project,
+        settings: {
+          ...project.settings,
+          release: {
+            ...project.settings.release!,
+            rungs: [
+              ...project.settings.release!.rungs,
+              { name: 'hosted-hub', branch: 'main', entryPoints: ['hub/src/hosted.ts'] },
+            ],
+          },
+        },
+      },
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        entryClosure: () => {
+          throw new Error('entry closure unavailable')
+        },
+      }),
+    })
+    expect(report).toEqual({
+      required: ['hosted-api', 'hosted-hub'],
+      releases: [
+        expect.objectContaining({ rung: 'hosted-api', outputTail: 'entry closure unavailable' }),
+        expect.objectContaining({ rung: 'hosted-hub', outputTail: 'entry closure unavailable' }),
+      ],
+      satisfied: false,
+    })
   })
 
   test('contains a changed-path failure and names every declaring rung', () => {
