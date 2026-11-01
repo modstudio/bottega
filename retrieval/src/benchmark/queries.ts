@@ -292,7 +292,7 @@ export const REAL_CODE_QUERIES: BenchmarkQuery[] = [
     'real-orphan-removal',
     'Where does sweep decide whether an orphaned worktree directory is safe to remove?',
     'orchestrator/src/cleanup/cleanup-sweep-decisions.ts',
-    'if (!facts.safe.removable) {',
+    'if (!facts.removable) {',
   ),
   codeQuestion(
     'real-index-stale-write',
