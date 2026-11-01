@@ -35,6 +35,26 @@ BEGIN
 END
 $$;
 --> statement-breakpoint
+WITH ordered AS (
+  SELECT r.id, row_number() OVER (
+    PARTITION BY r.space_id
+    ORDER BY GREATEST(r.updated_at, s.updated_at, max_lens.updated_at), r.id
+  ) AS evidence_seq
+  FROM public.run r
+  LEFT JOIN public.run_score s ON s.run_id = r.id AND s.space_id = r.space_id
+  LEFT JOIN (
+    SELECT run_id, space_id, max(updated_at) AS updated_at
+    FROM public.review_lens
+    GROUP BY run_id, space_id
+  ) max_lens ON max_lens.run_id = r.id AND max_lens.space_id = r.space_id
+)
+UPDATE public.run r SET evidence_seq = ordered.evidence_seq
+FROM ordered WHERE r.id = ordered.id;
+--> statement-breakpoint
+INSERT INTO public.routing_evidence_head (id, space_id, sequence)
+SELECT public.record_uuid_v7(), space_id, max(evidence_seq) FROM public.run GROUP BY space_id
+ON CONFLICT (space_id) DO UPDATE SET sequence = EXCLUDED.sequence;
+--> statement-breakpoint
 CREATE TRIGGER routing_evidence_run_stamp BEFORE INSERT OR UPDATE ON public.run
 FOR EACH ROW EXECUTE FUNCTION public.routing_evidence_stamp_run();
 --> statement-breakpoint
@@ -43,25 +63,6 @@ FOR EACH ROW EXECUTE FUNCTION public.routing_evidence_stamp_child();
 --> statement-breakpoint
 CREATE TRIGGER routing_evidence_review_lens_stamp AFTER INSERT OR UPDATE OR DELETE ON public.review_lens
 FOR EACH ROW EXECUTE FUNCTION public.routing_evidence_stamp_child();
---> statement-breakpoint
-WITH ordered AS (
-  SELECT r.id, row_number() OVER (
-    PARTITION BY r.space_id
-    ORDER BY GREATEST(r.updated_at, s.updated_at, max_lens.updated_at), r.id
-  ) AS evidence_seq
-  FROM public.run r
-  LEFT JOIN public.run_score s ON s.run_id = r.id AND s.space_id = r.space_id
-  LEFT JOIN LATERAL (
-    SELECT max(lens.updated_at) AS updated_at FROM public.review_lens lens
-    WHERE lens.run_id = r.id AND lens.space_id = r.space_id
-  ) max_lens ON true
-)
-UPDATE public.run r SET evidence_seq = ordered.evidence_seq
-FROM ordered WHERE r.id = ordered.id;
---> statement-breakpoint
-INSERT INTO public.routing_evidence_head (id, space_id, sequence)
-SELECT public.record_uuid_v7(), space_id, max(evidence_seq) FROM public.run GROUP BY space_id
-ON CONFLICT (space_id) DO UPDATE SET sequence = EXCLUDED.sequence;
 --> statement-breakpoint
 ALTER TABLE public.review_lens FORCE ROW LEVEL SECURITY;
 ALTER TABLE public.run_score FORCE ROW LEVEL SECURITY;
