@@ -1,35 +1,27 @@
 #!/usr/bin/env bun
 import { basename, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { CHECK_LEGS, CI_ONLY_SUITES } from './check-plan.ts'
-import { trackedFiles } from './check-test-reach.ts'
-import { groupFocusedTestPaths } from './test-focused.ts'
+import { matchesTestPattern, trackedFiles } from './check-test-reach.ts'
+import { focusedSuiteOwners, groupFocusedTestPaths } from './test-focused.ts'
 
-const testFiles = trackedFiles().filter((path) => /\.test\.tsx?$/.test(path))
-const pythonSuites = [
-  ...CHECK_LEGS.flatMap((leg) =>
-    leg.suite.flatMap((suite) =>
-      'focused' in suite ? [{ testPatterns: leg.testPatterns, focused: suite.focused }] : [],
-    ),
-  ),
-  ...CI_ONLY_SUITES.map((suite) => ({
-    testPatterns: suite.testPatterns,
-    focused: suite.focused,
-  })),
-]
+const tracked = trackedFiles()
+const testFiles = tracked.filter((path) => /\.test\.tsx?$/.test(path))
+const pythonSuites = focusedSuiteOwners()
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
-function matches(pattern: string, path: string): boolean {
-  const expression = pattern
-    .split('*')
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('[^/]*')
-  return new RegExp(`^${expression}$`).test(path)
-}
-
-const pythonFiles = trackedFiles().filter((path) =>
-  pythonSuites.some((suite) => suite.testPatterns.some((pattern) => matches(pattern, path))),
+const pythonFiles = tracked.filter((path) =>
+  pythonSuites.some((suite) =>
+    suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
+  ),
 )
+
+function suiteDeclarationFailures(): { file: string; error: string }[] {
+  return pythonSuites.flatMap((suite) =>
+    suite.focused
+      ? []
+      : [{ file: suite.owner, error: 'test-pattern owner is missing the focused field' }],
+  )
+}
 
 function routingFailures(): { file: string; error: string }[] {
   // One grouped call is the cheap pass path; only a failure pays for naming every file.
@@ -69,30 +61,33 @@ function routingFailures(): { file: string; error: string }[] {
 }
 
 function pythonRoutingFailures(): { file: string; error: string }[] {
-  return pythonFiles.flatMap((file) => {
-    const suite = pythonSuites.find((candidate) =>
-      candidate.testPatterns.some((pattern) => matches(pattern, file)),
-    )!
-    try {
-      const groups = groupFocusedTestPaths([file])
-      const expectedArgv = [...suite.focused.argv, basename(file, '.py')]
-      return groups.length === 1 &&
-        relative(root, groups[0]!.directory) === suite.focused.directory &&
-        JSON.stringify(groups[0]!.argv) === JSON.stringify(expectedArgv)
-        ? []
-        : [
-            {
-              file,
-              error: `must route through ${suite.focused.directory}: ${expectedArgv.join(' ')}`,
-            },
-          ]
-    } catch (error) {
-      return [{ file, error: error instanceof Error ? error.message : String(error) }]
-    }
+  return pythonSuites.flatMap((suite) => {
+    if (!suite.focused) return []
+    const form = suite.focused
+    return pythonFiles
+      .filter((file) => suite.testPatterns.some((pattern) => matchesTestPattern(pattern, file)))
+      .flatMap((file) => {
+        try {
+          const groups = groupFocusedTestPaths([file])
+          const expectedArgv = [...form.argv, basename(file, '.py')]
+          return groups.length === 1 &&
+            relative(root, groups[0]!.directory) === form.directory &&
+            JSON.stringify(groups[0]!.argv) === JSON.stringify(expectedArgv)
+            ? []
+            : [
+                {
+                  file,
+                  error: `must route through ${form.directory}: ${expectedArgv.join(' ')}`,
+                },
+              ]
+        } catch (error) {
+          return [{ file, error: error instanceof Error ? error.message : String(error) }]
+        }
+      })
   })
 }
 
-const failures = [...routingFailures(), ...pythonRoutingFailures()]
+const failures = [...suiteDeclarationFailures(), ...routingFailures(), ...pythonRoutingFailures()]
 if (failures.length > 0) {
   console.error('focused test routing failed: every tracked test must resolve through its runner')
   for (const failure of failures) console.error(`- ${failure.file}: ${failure.error}`)

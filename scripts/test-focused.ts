@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CHECK_LEGS, CI_ONLY_SUITES, ROOT_TEST_FILES } from './check-plan.ts'
-import { gateTestDirectories, testLegReaches } from './check-test-reach.ts'
+import { gateTestDirectories, matchesTestPattern, testLegReaches } from './check-test-reach.ts'
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
@@ -31,7 +31,11 @@ const packageDirectoriesByDepth = packages
 export type FocusedTestGroup = { directory: string; paths: string[]; argv: string[] }
 
 type FocusedForm = { directory: string; argv: readonly string[] }
-type FocusedSuite = { testPatterns: readonly string[]; focused: FocusedForm }
+export type FocusedSuiteOwner = {
+  owner: string
+  testPatterns: readonly string[]
+  focused?: FocusedForm
+}
 
 function beneath(directory: string, candidate: string) {
   const offset = relative(directory, candidate)
@@ -76,34 +80,32 @@ function typeScriptTestsUnder(directory: string): string[] {
     .sort()
 }
 
-function matchesTestPattern(pattern: string, path: string): boolean {
-  const expression = pattern
-    .split('*')
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-    .join('[^/]*')
-  return new RegExp(`^${expression}$`).test(path)
-}
-
-function focusedSuites(): FocusedSuite[] {
-  const checkLegSuites = CHECK_LEGS.flatMap((leg) =>
-    leg.suite.flatMap((suite) =>
-      'focused' in suite ? [{ testPatterns: leg.testPatterns, focused: suite.focused }] : [],
-    ),
-  )
+export function focusedSuiteOwners(): FocusedSuiteOwner[] {
+  const checkLegSuites = CHECK_LEGS.filter((leg) => leg.testPatterns.length > 0).map((leg) => {
+    const suite = leg.suite.find((candidate) => 'focused' in candidate)
+    return {
+      owner: `CHECK_LEGS leg ${JSON.stringify(leg.name)}`,
+      testPatterns: leg.testPatterns,
+      focused: suite && 'focused' in suite ? suite.focused : undefined,
+    }
+  })
   return [
     ...checkLegSuites,
     ...CI_ONLY_SUITES.map((suite) => ({
+      owner: `CI_ONLY_SUITES job ${JSON.stringify(suite.job)}`,
       testPatterns: suite.testPatterns,
-      focused: suite.focused,
+      focused: 'focused' in suite ? suite.focused : undefined,
     })),
   ]
 }
 
-const nonBunSuites = focusedSuites()
+const suiteOwners = focusedSuiteOwners()
 
-function focusedSuiteFor(path: string): FocusedSuite | undefined {
-  return nonBunSuites.find((suite) =>
-    suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
+function focusedSuiteFor(path: string): (FocusedSuiteOwner & { focused: FocusedForm }) | undefined {
+  return suiteOwners.find(
+    (suite): suite is FocusedSuiteOwner & { focused: FocusedForm } =>
+      suite.focused !== undefined &&
+      suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
   )
 }
 
@@ -183,7 +185,7 @@ function focusedGroupKey(form: FocusedForm): string {
 
 function addFocusedSelection(
   groups: Map<string, { form: FocusedForm; modules: string[] }>,
-  suite: FocusedSuite,
+  suite: FocusedSuiteOwner & { focused: FocusedForm },
   path: string,
 ) {
   const key = focusedGroupKey(suite.focused)

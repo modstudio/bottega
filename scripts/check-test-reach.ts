@@ -43,7 +43,7 @@ function beneath(directory: string, path: string): boolean {
   return path === directory || path.startsWith(`${directory}/`)
 }
 
-function matchesTestPattern(pattern: string, path: string): boolean {
+export function matchesTestPattern(pattern: string, path: string): boolean {
   const expression = pattern
     .split('*')
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
