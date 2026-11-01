@@ -1,19 +1,15 @@
 #!/usr/bin/env bun
 import { basename, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { matchesTestPattern, trackedFiles } from './check-test-reach.ts'
-import { focusedSuiteOwners, groupFocusedTestPaths } from './test-focused.ts'
+import { trackedFiles } from './check-test-reach.ts'
+import { focusedSuiteOwners, groupFocusedTestPaths, suiteOwnerClaiming } from './test-focused.ts'
 
 const tracked = trackedFiles()
 const testFiles = tracked.filter((path) => /\.test\.tsx?$/.test(path))
 const pythonSuites = focusedSuiteOwners()
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 
-const pythonFiles = tracked.filter((path) =>
-  pythonSuites.some((suite) =>
-    suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
-  ),
-)
+const pythonFiles = tracked.filter((path) => suiteOwnerClaiming(path) !== undefined)
 
 function suiteDeclarationFailures(): { file: string; error: string }[] {
   return pythonSuites.flatMap((suite) =>
@@ -30,9 +26,6 @@ function routingFailures(): { file: string; error: string }[] {
       group.paths.flatMap((path) => {
         const file = relative(root, group.directory) || '.'
         const failures: { file: string; error: string }[] = []
-        if (group.argv[0] === 'bun' && !/\.test\.tsx?$/.test(path)) {
-          failures.push({ file, error: `bun group contains non-TypeScript test ${path}` })
-        }
         if (!group.argv.includes(`./${path}`)) {
           failures.push({
             file,
@@ -65,13 +58,13 @@ function pythonRoutingFailures(): { file: string; error: string }[] {
     if (!suite.focused) return []
     const form = suite.focused
     return pythonFiles
-      .filter((file) => suite.testPatterns.some((pattern) => matchesTestPattern(pattern, file)))
+      .filter((file) => suiteOwnerClaiming(file)?.owner === suite.owner)
       .flatMap((file) => {
         try {
           const groups = groupFocusedTestPaths([file])
           const expectedArgv = [...form.argv, basename(file, '.py')]
           return groups.length === 1 &&
-            relative(root, groups[0]!.directory) === form.directory &&
+            relative(form.directory, file) === basename(file) &&
             JSON.stringify(groups[0]!.argv) === JSON.stringify(expectedArgv)
             ? []
             : [

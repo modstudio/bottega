@@ -101,12 +101,15 @@ export function focusedSuiteOwners(): FocusedSuiteOwner[] {
 
 const suiteOwners = focusedSuiteOwners()
 
-function focusedSuiteFor(path: string): (FocusedSuiteOwner & { focused: FocusedForm }) | undefined {
-  return suiteOwners.find(
-    (suite): suite is FocusedSuiteOwner & { focused: FocusedForm } =>
-      suite.focused !== undefined &&
-      suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
+export function suiteOwnerClaiming(path: string): FocusedSuiteOwner | undefined {
+  return suiteOwners.find((suite) =>
+    suite.testPatterns.some((pattern) => matchesTestPattern(pattern, path)),
   )
+}
+
+function focusedSuiteFor(path: string): (FocusedSuiteOwner & { focused: FocusedForm }) | undefined {
+  const suite = suiteOwnerClaiming(path)
+  return suite?.focused ? (suite as FocusedSuiteOwner & { focused: FocusedForm }) : undefined
 }
 
 function claimedPythonTestsUnder(directory: string): string[] {
@@ -195,27 +198,41 @@ function addFocusedSelection(
   groups.set(key, group)
 }
 
-function refusal(paths: readonly string[]): Error {
-  return new Error(
-    `run_tests cannot run: ${paths.map((path) => JSON.stringify(path)).join(', ')}. ` +
-      "Run *.test.ts(x) files, or the Python suites' test_*.py and process_*.py files under orchestrator/hooks.",
-  )
+type RefusedSelection = { path: string; reason: 'missing' | 'unclaimed' }
+
+function refusal(refused: readonly RefusedSelection[]): Error {
+  const missing = refused.filter(({ reason }) => reason === 'missing').map(({ path }) => path)
+  const unclaimed = refused.filter(({ reason }) => reason === 'unclaimed').map(({ path }) => path)
+  const messages: string[] = []
+  if (missing.length > 0) {
+    messages.push(
+      `${missing.map((path) => JSON.stringify(path)).join(', ')} ${missing.length === 1 ? 'does' : 'do'} not exist in this tree.`,
+    )
+  }
+  if (unclaimed.length > 0) {
+    const patterns = [...new Set(focusedSuiteOwners().flatMap((suite) => suite.testPatterns))]
+    messages.push(
+      `No runner claims ${unclaimed.map((path) => JSON.stringify(path)).join(', ')}. ` +
+        `Run *.test.ts(x) files or files matching a declared suite pattern: ${patterns.join(', ')}.`,
+    )
+  }
+  return new Error(`run_tests cannot run: ${messages.join(' ')}`)
 }
 
 function addSelection(
   bunGroups: Map<string, string[]>,
   focusedGroups: Map<string, { form: FocusedForm; modules: string[] }>,
   path: string,
-): string[] {
+): RefusedSelection[] {
   const absolute = selectedAbsolutePath(path)
   const projectRelativePath = relative(root, absolute)
-  if (!existsSync(absolute)) return [path]
+  if (!existsSync(absolute)) return [{ path, reason: 'missing' }]
   const directory = statSync(absolute).isDirectory()
   if (!directory) {
     const focusedSuite = focusedSuiteFor(projectRelativePath)
     if (focusedSuite) addFocusedSelection(focusedGroups, focusedSuite, projectRelativePath)
     else if (/\.test\.tsx?$/.test(projectRelativePath)) addBunSelection(bunGroups, absolute)
-    else return [path]
+    else return [{ path, reason: 'unclaimed' }]
     return []
   }
   const typeScriptTests = typeScriptTestsUnder(absolute)
@@ -224,7 +241,9 @@ function addSelection(
   for (const pythonPath of pythonTests) {
     addFocusedSelection(focusedGroups, focusedSuiteFor(pythonPath)!, pythonPath)
   }
-  return typeScriptTests.length === 0 && pythonTests.length === 0 ? [path] : []
+  return typeScriptTests.length === 0 && pythonTests.length === 0
+    ? [{ path, reason: 'unclaimed' }]
+    : []
 }
 
 function focusedTestGroup(directory: string, paths: string[]): FocusedTestGroup {

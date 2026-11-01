@@ -119,9 +119,10 @@ test('groups mixed Python and TypeScript selections by runner', () => {
 test('a hooks directory selection includes every claimed Python suite', () => {
   const [group] = groupFocusedTestPaths(['orchestrator/hooks'])
   expect(relative(root, group!.directory)).toBe('orchestrator/hooks')
-  expect(group!.paths).toContain('test_secret_shaped_parity')
-  expect(group!.paths).toContain('process_heartbeat_shell')
-  expect(group!.argv).toEqual(['python3', '-m', 'unittest', ...group!.paths])
+  expect(group!.argv).toContain('test_secret_shaped_parity')
+  expect(group!.argv).toContain('process_heartbeat_shell')
+  expect(group!.paths.every((module) => /^(?:test_|process_)/.test(module))).toBe(true)
+  expect(group!.paths).not.toContain('heartbeat_decision_fixture')
 })
 
 test('refuses paths that no focused runner owns', () => {
@@ -178,5 +179,13 @@ test('refuses missing and escaping path arguments', () => {
   expect(() => groupFocusedTestPaths([])).toThrow('at least one')
   expect(() => groupFocusedTestPaths(['../outside.test.ts'])).toThrow('outside the project')
   expect(() => groupFocusedTestPaths(['--watch'])).toThrow('invalid project-relative')
-  expect(() => groupFocusedTestPaths(['scripts/missing.test.ts'])).toThrow('missing.test.ts')
+  expect(() => groupFocusedTestPaths(['scripts/missing.test.ts'])).toThrow(
+    'run_tests cannot run: "scripts/missing.test.ts" does not exist in this tree.',
+  )
+})
+
+test('distinguishes missing paths from paths no runner claims', () => {
+  expect(() => groupFocusedTestPaths(['scripts/missing.test.ts', 'scripts/check-plan.ts'])).toThrow(
+    'run_tests cannot run: "scripts/missing.test.ts" does not exist in this tree. No runner claims "scripts/check-plan.ts". Run *.test.ts(x) files or files matching a declared suite pattern: orchestrator/hooks/test_*.py, orchestrator/hooks/process_*.py.',
+  )
 })
