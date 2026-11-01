@@ -80,6 +80,7 @@ export const run = pgTable.withRLS(
     escalations: integer(),
     stack: text(),
     model: text(),
+    executor: text(),
     evidenceExcluded: text('evidence_excluded'),
     inputTree: text('input_tree'),
     headCommit: text('head_commit'),
@@ -125,6 +126,10 @@ export const run = pgTable.withRLS(
     check(
       'run_review_role_check',
       sql`${table.reviewRole} IS NULL OR ${table.reviewRole} IN ('round', 'supplementary')`,
+    ),
+    check(
+      'run_executor_check',
+      sql`${table.executor} IS NULL OR ${table.executor} IN ('external', 'harness')`,
     ),
     ...tenantPolicies('run', table.spaceId),
   ],

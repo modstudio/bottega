@@ -94,6 +94,7 @@ import {
 import { recordReleaseCheck } from './record-release-check.ts'
 import { listRecordReleases, readLatestRecordReleases } from './record-releases.ts'
 import { getRecordReview, listRecordReviews } from './record-reviews.ts'
+import { listRecordRoutingEvidence } from './record-routing-evidence.ts'
 import { getRecordRun, listRecordRuns, viewRecordRuns } from './record-runs.ts'
 import { applyRecordSettingsAutoMode, applyRecordSettingsPermission } from './record-settings.ts'
 import { listRecordSnapshots, upsertRecordSnapshot } from './record-snapshots.ts'
@@ -217,6 +218,17 @@ function recordDocDependencies() {
   }
 }
 
+function recordRunDependencies() {
+  return {
+    readRuns: listRecordRuns,
+    readRunsWindow: viewRecordRuns,
+    readRun: getRecordRun,
+    listRoutingEvidence: listRecordRoutingEvidence,
+    readReviews: listRecordReviews,
+    readReview: getRecordReview,
+  }
+}
+
 function recordLensDependencies() {
   return {
     ensureSpaceBuiltIns,
@@ -256,11 +268,7 @@ export async function startRecordApiServer(environment: ServerEnvironment = proc
     recordUrl: config.recordUrl,
     allowedOrigins: config.allowedOrigins,
     ...recordApiAccessDependencies(config, auth, migrations),
-    readRuns: listRecordRuns,
-    readRunsWindow: viewRecordRuns,
-    readRun: getRecordRun,
-    readReviews: listRecordReviews,
-    readReview: getRecordReview,
+    ...recordRunDependencies(),
     readReleases: listRecordReleases,
     readLatestReleases: readLatestRecordReleases,
     readProjects: listRecordProjects,

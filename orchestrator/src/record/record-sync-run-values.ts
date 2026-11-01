@@ -56,6 +56,7 @@ export function runRecordValues(
     escalations: nullableNumber(row.escalations),
     stack: nullableString(row.stack),
     model: nullableString(row.model),
+    executor: nullableString(row.executor),
     evidenceExcluded: nullableString(row.evidenceExcluded),
     inputTree: nullableString(row.inputTree),
     headCommit: nullableString(row.headCommit),

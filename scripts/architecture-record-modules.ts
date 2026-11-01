@@ -127,6 +127,31 @@ export const recordModules: RecordModule[] = [
     './record-catalogue-contract.ts',
     './record-lens-contract.ts',
   ]),
+  module('orchestrator/src/record/record-routing-evidence-contract.ts', []),
+  module('orchestrator/src/record/record-routing-evidence.ts', [
+    'bun',
+    './record-cursor.ts',
+    './record-pool.ts',
+    './record-routing-evidence-contract.ts',
+  ]),
+  module('orchestrator/src/record/record-api-routing-evidence.ts', [
+    'hono',
+    'zod',
+    './record-auth.ts',
+    './record-cursor.ts',
+    './record-routing-evidence.ts',
+  ]),
+  module('orchestrator/src/record/record-api-session-routes.ts', [
+    'hono',
+    './record-api-invitations.ts',
+    './record-api-machine.ts',
+    './record-api-routing-evidence.ts',
+    './record-api-sync.ts',
+    './record-auth.ts',
+  ]),
+  module('orchestrator/src/record/record-api-client-routing-evidence.ts', [
+    './record-routing-evidence-contract.ts',
+  ]),
   module('orchestrator/src/record/record-api-client-machine.ts', ['./record-api-client-paths.ts']),
   module('orchestrator/src/record/record-api-client-session.ts', [
     './record-api-client-paths.ts',

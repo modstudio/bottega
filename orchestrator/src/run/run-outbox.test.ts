@@ -23,7 +23,9 @@ test('link refresh requires a new local link absent from the latest payload', ()
   expect(shouldRefreshRunRecordLinks({}, null, null)).toBe(false)
   expect(shouldRefreshRunRecordLinks({ projectName: 'project' }, projectId, null)).toBe(true)
   expect(shouldRefreshRunRecordLinks({ projectId }, projectId, taskId)).toBe(true)
-  expect(shouldRefreshRunRecordLinks({ projectId, taskId }, projectId, taskId)).toBe(false)
+  const payloadWithoutExecutor = { projectId, taskId }
+  expect(payloadWithoutExecutor).not.toHaveProperty('executor')
+  expect(shouldRefreshRunRecordLinks(payloadWithoutExecutor, projectId, taskId)).toBe(false)
 })
 
 test('terminal payload maps every hosted run column and no execution-state column', () => {
@@ -50,6 +52,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
         resource_source: 'sampled',
         host_admission_first: '{"decision":"hold"}',
         host_admission: '{"decision":"admit"}',
+        executor: 'harness',
       },
       '01990000-0000-7000-8000-000000000099',
       '2026-09-15T01:01:00.000Z',
@@ -74,6 +77,7 @@ test('terminal payload maps every hosted run column and no execution-state colum
     resourceSource: 'sampled',
     hostAdmissionFirst: { decision: 'hold' },
     hostAdmission: { decision: 'admit' },
+    executor: 'harness',
   })
   expect(payload).not.toHaveProperty('cwd')
   expect(payload).not.toHaveProperty('outputPath')
