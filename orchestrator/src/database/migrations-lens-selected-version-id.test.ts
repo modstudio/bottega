@@ -1,9 +1,10 @@
 import { Database } from 'bun:sqlite'
 import { expect, test } from 'bun:test'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { applyMigrations, applyMigrationsBefore } from './migrations.ts'
+import { applyMigrationsBefore } from './migrations.ts'
 
 const MIGRATION = '0190_lens_profile_selected_version_id'
+const CONTRACT = '0193_lens_profile_pin_contract'
 
 test('lens pin migration resolves current and prior versions without guessing', () => {
   const database = new Database(':memory:')
@@ -52,7 +53,7 @@ test('lens pin migration resolves current and prior versions without guessing', 
     )
     .run(newRecordId(), selections[0]!.id)
 
-  expect(applyMigrations(database)).toContain(MIGRATION)
+  expect(applyMigrationsBefore(database, CONTRACT)).toContain(MIGRATION)
   expect(
     database
       .query<{ selected_version_id: string | null }, []>(
@@ -75,7 +76,7 @@ test('lens pin migration resolves current and prior versions without guessing', 
 
 test('lens pin backfill preserves an id it cannot resolve when migrations run again', () => {
   const database = new Database(':memory:')
-  applyMigrations(database)
+  applyMigrationsBefore(database, CONTRACT)
   const lensId = newRecordId()
   const profileId = newRecordId()
   const selectedVersionId = newRecordId()
@@ -99,7 +100,7 @@ test('lens pin backfill preserves an id it cannot resolve when migrations run ag
     )
     .run(newRecordId(), newRecordId(), lensId, selectedVersionId)
 
-  applyMigrations(database)
+  applyMigrationsBefore(database, CONTRACT)
 
   expect(
     database

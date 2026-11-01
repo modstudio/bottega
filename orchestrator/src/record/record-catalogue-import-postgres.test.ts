@@ -192,7 +192,6 @@ postgres('hosted catalogue bulk imports', () => {
       pushedLensId = newRecordId(),
       hostedProfileId = newRecordId(),
       pushedProfileId = newRecordId(),
-      legacyProfileId = newRecordId(),
       hostedVersionOneId = newRecordId(),
       hostedVersionTwoId = newRecordId(),
       pushedVersionTwoId = newRecordId(),
@@ -257,18 +256,6 @@ postgres('hosted catalogue bulk imports', () => {
           enabled: true,
           updatedAt: at,
         },
-        {
-          id: legacyProfileId,
-          spaceId,
-          lensId: pushedLensId,
-          axis: 'framework' as const,
-          name: 'default',
-          version: 2,
-          currentVersionId: null,
-          body: '{"source":"legacy-v2"}',
-          enabled: true,
-          updatedAt: at,
-        },
       ],
       lens_profile_revision: [
         {
@@ -310,11 +297,7 @@ postgres('hosted catalogue bulk imports', () => {
         },
       ],
     }
-    const first = await importRecordLensCatalogue(input)
-    expect(first.skipped).toContainEqual({
-      id: legacyProfileId,
-      reason: `lens_profile ${legacyProfileId} current version has no id; not appended`,
-    })
+    await importRecordLensCatalogue(input)
     const verify = new SQL(setupUrl!)
     try {
       expect(
@@ -339,12 +322,20 @@ postgres('hosted catalogue bulk imports', () => {
         { version: 2, current_version_id: hostedVersionTwoId, body: '{"source":"hosted-v2"}' },
       ])
       expect(
-        await verify`SELECT selected_version,selected_version_id::text selected_version_id
-          FROM project_lens_profile WHERE id=${selectionId}::uuid`,
+        await verify`SELECT revision.version selected_version,
+            selection.selected_version_id::text selected_version_id
+          FROM project_lens_profile selection
+          LEFT JOIN lens_profile_revision revision
+            ON revision.id=selection.selected_version_id
+          WHERE selection.id=${selectionId}::uuid`,
       ).toEqual([{ selected_version: 3, selected_version_id: pushedVersionTwoId }])
       expect(
-        await verify`SELECT prior_selected_version,prior_selected_version_id::text prior_selected_version_id
-          FROM project_lens_profile_revision WHERE id=${selectionRevisionId}::uuid`,
+        await verify`SELECT revision.version prior_selected_version,
+            history.prior_selected_version_id::text prior_selected_version_id
+          FROM project_lens_profile_revision history
+          LEFT JOIN lens_profile_revision revision
+            ON revision.id=history.prior_selected_version_id
+          WHERE history.id=${selectionRevisionId}::uuid`,
       ).toEqual([{ prior_selected_version: 3, prior_selected_version_id: pushedVersionTwoId }])
     } finally {
       await verify.close()

@@ -630,6 +630,10 @@ function preserveLogicalSeedRelationships(
   table: string,
   values: Map<string, ProbeValue>,
 ): void {
+  if (table === 'lens_profile' && values.has('current_version_id')) {
+    values.set('current_version_id', newRecordId())
+    return
+  }
   if (
     table !== 'board_reach_delivery' ||
     values.get('message_source') !== 'local' ||
@@ -670,6 +674,7 @@ function seedTables(database: Database, migration: string): CascadeProbe['unprob
       const checks = checkExpressions(tableSql(database, table))
       const required = columns.filter(
         (column) =>
+          (table === 'lens_profile' && column.name === 'current_version_id') ||
           foreignColumns.has(column.name) ||
           checks.some((check) => mentions(check, column.name)) ||
           (column.dflt_value === null &&
@@ -755,6 +760,17 @@ function execute(database: Database, migration: Migration): void {
   }
 }
 
+function prepareLensProfilePinContractProbe(database: Database, migration: Migration): void {
+  if (migration.tag !== '0193_lens_profile_pin_contract') return
+  const unidentified = database
+    .query<{ record_id: string }, []>(
+      'SELECT record_id FROM lens_profile WHERE current_version_id IS NULL',
+    )
+    .all()
+  const identify = database.query('UPDATE lens_profile SET current_version_id=? WHERE record_id=?')
+  for (const row of unidentified) identify.run(newRecordId(), row.record_id)
+}
+
 function probeDestructiveMigration(
   database: Database,
   migration: Migration,
@@ -763,6 +779,7 @@ function probeDestructiveMigration(
   result: CascadeProbe,
 ): void {
   result.unprobed.push(...seedTables(database, migration.tag))
+  prepareLensProfilePinContractProbe(database, migration)
   if (migration.tag === '0115_project_identity_contract') {
     const missing = database
       .query<{ id: number }, []>('SELECT id FROM project WHERE record_id IS NULL')

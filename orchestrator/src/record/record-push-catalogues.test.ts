@@ -240,15 +240,14 @@ test('push maps current, prior, and null profile version pins through the versio
     local
       .query(
         `INSERT INTO project_lens_profile_revision
-          (record_id,selection_record_id,prior_profile_name,prior_selected_version,
+          (record_id,selection_record_id,prior_profile_name,
            prior_selected_version_id,reason,at)
-         VALUES (?,?,?,?,?,'pin history fixture',?)`,
+         VALUES (?,?,?,?,'pin history fixture',?)`,
       )
       .run(
         newRecordId(),
         selection.record_id,
         profileName,
-        fixture.version,
         fixture.versionId,
         new Date().toISOString(),
       )

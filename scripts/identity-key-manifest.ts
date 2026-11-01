@@ -330,9 +330,7 @@ const INTEGER_VALUES: readonly ManifestColumn[] = [
     'lens_revision.version',
     'lens_profile.version',
     'lens_profile_revision.version',
-    'project_lens_profile.selected_version',
     'project_lens_profile.selection_version',
-    'project_lens_profile_revision.prior_selected_version',
     'port_baseline.version',
     'port_doctrine.number',
     'port_doctrine.version',
@@ -531,10 +529,6 @@ const INFRASTRUCTURE_IDENTITIES: readonly InfrastructureIdentity[] = [
 ]
 
 const UNDECLARED_REFERENCES: readonly ManifestColumn[] = [
-  ...manifest('orchestrator', 'stored integer selects another row', [
-    'project_lens_profile.selected_version',
-    'project_lens_profile_revision.prior_selected_version',
-  ]),
   ...manifest('orchestrator', 'natural or encoded reference to an application row', [
     'board_hosted_adoption_receipt.reader_session',
     'board_receipt.reader_session',

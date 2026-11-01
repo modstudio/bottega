@@ -18,6 +18,7 @@ export const recordModules: RecordModule[] = [
   module('orchestrator/src/postgres/migration-notices.ts', []),
   module('orchestrator/src/lens/lens-built-ins.ts', []),
   module('orchestrator/src/lens/lens-profile-version.ts', []),
+  module('orchestrator/src/lens/lens-profile-pin-version-sql.ts', []),
   module('orchestrator/src/lens/lens-seeds.ts', [
     'bun:sqlite',
     '../../../shared/record-id.ts',
@@ -91,6 +92,7 @@ export const recordModules: RecordModule[] = [
     '../../../shared/record-id.ts',
     '../../../shared/record-space-membership.ts',
     '../database/db.ts',
+    '../lens/lens-profile-pin-version-sql.ts',
     '../project-space.ts',
     '../project/projects.ts',
     './record-api-client.ts',

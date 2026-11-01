@@ -144,19 +144,6 @@ test('lens cache reconciles hosted rows within their space and preserves the loc
       .get(pulledProfile.id),
   ).toEqual({ current_version_id: pulledProfile.currentVersionId })
 
-  const { currentVersionId: _omitted, ...legacyProfile } = profileRow(
-    inserted.spaceId,
-    inserted.id,
-    '{}',
-  )
-  legacyProfile.name = 'legacy'
-  applyLensCatalogueRow(local, 'lens_profile', legacyProfile)
-  expect(
-    local
-      .query('SELECT current_version_id FROM lens_profile WHERE record_id=?')
-      .get(legacyProfile.id),
-  ).toEqual({ current_version_id: null })
-
   const localSeed = local
     .query<{ record_id: string; title: string }, []>(
       "SELECT record_id,title FROM lens WHERE id='correctness' AND space_id IS NULL",
@@ -418,11 +405,9 @@ test('lens pull caches an unregistered project selection and revision from a per
   })
   expect(
     local
-      .query(
-        'SELECT selected_version,selected_version_id FROM project_lens_profile WHERE record_id=?',
-      )
+      .query('SELECT selected_version_id FROM project_lens_profile WHERE record_id=?')
       .get(selection),
-  ).toEqual({ selected_version: 3, selected_version_id: repinned })
+  ).toEqual({ selected_version_id: repinned })
 })
 
 test('pullRecordCache pages six parent-first streams with independent space and table cursors', async () => {

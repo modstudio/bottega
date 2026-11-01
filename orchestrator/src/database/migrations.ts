@@ -15,7 +15,16 @@ import {
   lensPortReferenceOrphanCounts,
   portStaleCopyConflicts,
 } from './lens-port-migration-preflight.ts'
+import {
+  assertLensProfilePinContract,
+  LENS_PROFILE_PIN_CONTRACT_MIGRATION,
+  lensProfilePinBackfillEntries,
+} from './lens-profile-pin-contract-preflight.ts'
 import { assertMetricIdentities } from './metric-receipt-cache-uuid-migration-preflight.ts'
+import {
+  BACKFILL_SCHEMA_BOUNDARIES,
+  compatibleBackfillEntries,
+} from './migration-backfill-compatibility.ts'
 import {
   CONNECTION_SCHEMA_INVARIANT,
   type MigrationJournalEntry,
@@ -746,50 +755,6 @@ function applyBackfills(d: Database, entries: MigrationJournalEntry[], folder: s
   }
 }
 
-const BACKFILL_SCHEMA_BOUNDARIES = new Set(['0117_project_uuid_key'])
-const INTEGER_PROJECT_BACKFILLS = new Set([
-  '0006_project_id_backfill',
-  '0010_landing_queue',
-  '0116_release_project_identity',
-])
-
-function compatibleBackfillEntries(
-  d: Database,
-  entries: MigrationJournalEntry[],
-): MigrationJournalEntry[] {
-  const projectHasIntegerId = (
-    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('project') WHERE name='id'").get() as {
-      n: number
-    }
-  ).n
-  if (projectHasIntegerId > 0)
-    return entries.filter((entry) => !BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag))
-  const runHasIntegerId = (
-    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('run') WHERE name='id'").get() as {
-      n: number
-    }
-  ).n
-  const reviewHasIntegerId = (
-    d.query("SELECT COUNT(*) AS n FROM pragma_table_info('review') WHERE name='id'").get() as {
-      n: number
-    }
-  ).n
-  const cursorHasIntegerId = (
-    d
-      .query("SELECT COUNT(*) AS n FROM pragma_table_info('workflow_cursor') WHERE name='id'")
-      .get() as {
-      n: number
-    }
-  ).n
-  return entries.filter(
-    (entry) =>
-      !INTEGER_PROJECT_BACKFILLS.has(entry.tag) &&
-      (runHasIntegerId > 0 || entry.tag !== '0117_project_uuid_key') &&
-      (reviewHasIntegerId > 0 || entry.tag !== '0124_run_uuid_key') &&
-      (cursorHasIntegerId > 0 || entry.tag !== '0056_workflow_questions'),
-  )
-}
-
 const expectedSchemaHashes = new Map<string, string>()
 
 /** Hash the schema produced by the complete journal, not only its adoption baseline. */
@@ -977,6 +942,7 @@ function prepareMigrationEntry(
     }
   }
   if (entry.tag === WORKFLOW_UUID_KEY_MIGRATION) prepareWorkflowUuidMigration(d)
+  if (entry.tag === LENS_PROFILE_PIN_CONTRACT_MIGRATION) assertLensProfilePinContract(d)
   if (entry.tag === '0160_agent_port_baseline_uuid_keys') assertAgentPortBaselineIdentities(d)
   if (entry.tag === '0161_metric_receipt_cache_uuid_keys') assertMetricIdentities(d)
 }
@@ -1008,12 +974,19 @@ function applyMigrationRange(
     }
     const allowed = new Set(allowedEntries.map((entry) => entry.tag))
     for (const entry of state.pending.filter((entry) => allowed.has(entry.tag))) {
-      prepareMigrationEntry(d, entry, beforeApply)
-      createMigrationsTable(d)
       if (BACKFILL_SCHEMA_BOUNDARIES.has(entry.tag)) {
         const boundary = allowedEntries.findIndex((candidate) => candidate.tag === entry.tag)
-        applyBackfills(d, allowedEntries.slice(0, boundary), folder)
+        const boundaryEntries = allowedEntries.slice(0, boundary)
+        applyBackfills(
+          d,
+          entry.tag === LENS_PROFILE_PIN_CONTRACT_MIGRATION
+            ? lensProfilePinBackfillEntries(boundaryEntries)
+            : boundaryEntries,
+          folder,
+        )
       }
+      prepareMigrationEntry(d, entry, beforeApply)
+      createMigrationsTable(d)
       executeMigrationSource(d, migrationSource(entry, folder))
       recordMigration(d, entry, folder)
       stampUserVersion(d, entry.idx + 1)

@@ -5,6 +5,11 @@ import { relative, resolve } from 'node:path'
 import ts from 'typescript'
 import { applyMigrations as applyHubMigrations } from '../hub/src/migrations.ts'
 import { applyMigrations as applyOrchestratorMigrations } from '../orchestrator/src/database/migrations.ts'
+import {
+  LOCAL_PIN_VERSION_SQL,
+  LOCAL_REVISION_PIN_VERSION_JOINS_SQL,
+  LOCAL_SELECTION_PIN_VERSION_JOINS_SQL,
+} from '../orchestrator/src/lens/lens-profile-pin-version-sql.ts'
 import { PROJECT_REFERENCES } from '../orchestrator/src/project/project-reference-counts.ts'
 import { TERMINAL_RUN_STATUS_SQL } from '../orchestrator/src/run/run-status.ts'
 import { SUBSCRIPTION_QUOTA_WINDOWS_SQL } from '../orchestrator/src/run/run-subscription-cost-store.ts'
@@ -46,6 +51,18 @@ type GlobalSubstitution = {
  * substitution would otherwise prepare SQL that file never writes.
  */
 const GLOBAL_SUBSTITUTIONS: Readonly<Record<string, GlobalSubstitution>> = {
+  LOCAL_PIN_VERSION_SQL: {
+    values: [LOCAL_PIN_VERSION_SQL],
+    declaredIn: 'orchestrator/src/lens/lens-profile-pin-version-sql.ts',
+  },
+  LOCAL_SELECTION_PIN_VERSION_JOINS_SQL: {
+    values: [LOCAL_SELECTION_PIN_VERSION_JOINS_SQL],
+    declaredIn: 'orchestrator/src/lens/lens-profile-pin-version-sql.ts',
+  },
+  LOCAL_REVISION_PIN_VERSION_JOINS_SQL: {
+    values: [LOCAL_REVISION_PIN_VERSION_JOINS_SQL],
+    declaredIn: 'orchestrator/src/lens/lens-profile-pin-version-sql.ts',
+  },
   TERMINAL_RUN_STATUS_SQL: {
     values: [TERMINAL_RUN_STATUS_SQL],
     declaredIn: 'orchestrator/src/run/run-status.ts',
@@ -122,6 +139,11 @@ const SQL_PREPARE_EXEMPTIONS: readonly SqlExemption[] = [
     'orchestrator/src/database/gate-check-execution-uuid-migration-preflight.ts',
     ['faf93b9a220976e3'],
     'gate check migration orphan preflight reads controlled legacy columns before the UUID-key rebuild',
+  ),
+  ...exempt(
+    'orchestrator/src/database/lens-profile-pin-contract-preflight.ts',
+    ['b48998b5b894886c'],
+    'lens profile pin contract preflight intentionally reads the integer pin columns before the contract drops them',
   ),
   ...exempt(
     'orchestrator/src/database/migrations.ts',

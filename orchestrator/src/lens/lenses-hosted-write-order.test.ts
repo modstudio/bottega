@@ -21,11 +21,11 @@ function installHostedCorrectness(): void {
       WHERE id='correctness' AND space_id IS NULL`)
     .run(newRecordId(), HOSTED_SPACE)
   local
-    .query(`INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,body,enabled)
-      SELECT ?,?,(SELECT record_id FROM lens WHERE id='correctness' AND space_id IS ?),p.axis,p.name,p.version,p.body,p.enabled
+    .query(`INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,current_version_id,body,enabled)
+      SELECT ?,?,(SELECT record_id FROM lens WHERE id='correctness' AND space_id IS ?),p.axis,p.name,p.version,?,p.body,p.enabled
       FROM lens_profile p JOIN lens l ON l.record_id=p.lens_record_id
       WHERE l.id='correctness' AND p.axis='framework' AND p.name='default' AND p.space_id IS NULL`)
-    .run(newRecordId(), HOSTED_SPACE, HOSTED_SPACE)
+    .run(newRecordId(), HOSTED_SPACE, HOSTED_SPACE, newRecordId())
   rememberActiveRecordSpace(local, HOSTED_SPACE)
 }
 

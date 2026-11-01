@@ -5,6 +5,11 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { replicatedRecordId } from '../../../shared/record-id.ts'
 import { parseRecordSpaceMemberships } from '../../../shared/record-space-membership.ts'
 import { db } from '../database/db.ts'
+import {
+  LOCAL_PIN_VERSION_SQL,
+  LOCAL_REVISION_PIN_VERSION_JOINS_SQL,
+  LOCAL_SELECTION_PIN_VERSION_JOINS_SQL,
+} from '../lens/lens-profile-pin-version-sql.ts'
 import { normalizePortBaselineScannedAt } from '../porting/porting-date.ts'
 import { projects } from '../project/projects.ts'
 import { activeRecordSpace, cachedProjectSpaces } from '../project-space.ts'
@@ -44,6 +49,11 @@ type ProjectRoutes = ReadonlyMap<string, string | null>
 
 function replicatedProfileVersionId(spaceId: string, value: unknown): string | null {
   return value == null ? null : replicatedRecordId(spaceId, 'lens_profile_revision', String(value))
+}
+
+function replicatedCurrentProfileVersionId(spaceId: string, value: unknown): string {
+  if (value == null) throw new Error('lens profile current version id is required after migration')
+  return replicatedRecordId(spaceId, 'lens_profile_revision', String(value))
 }
 
 function cachedProjectRoutes(local: Database): Map<string, string | null> {
@@ -105,13 +115,25 @@ function lensPlanRows(local: Database): LensPlanRows {
       .all() as Record<string, unknown>[],
     selections = local
       .query(
-        `SELECT record_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version FROM project_lens_profile WHERE space_id IS NULL`,
+        `SELECT selection.record_id,selection.project_record_id,selection.lens_record_id,
+          selection.axis,selection.profile_name,selection.selected_version_id,
+          selection.selection_version,
+          ${LOCAL_PIN_VERSION_SQL} selected_version
+         FROM project_lens_profile selection
+         ${LOCAL_SELECTION_PIN_VERSION_JOINS_SQL}
+         WHERE selection.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     selectionRevisions = local
       .query(
-        `SELECT r.record_id,r.selection_record_id,r.prior_profile_name,r.prior_selected_version,r.prior_selected_version_id,r.reason,r.session_id,r.at,s.project_record_id
-         FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.record_id=r.selection_record_id WHERE r.space_id IS NULL`,
+        `SELECT history.record_id,history.selection_record_id,history.prior_profile_name,
+          history.prior_selected_version_id,history.reason,history.session_id,history.at,
+          selection.project_record_id,
+          ${LOCAL_PIN_VERSION_SQL} prior_selected_version
+         FROM project_lens_profile_revision history
+         JOIN project_lens_profile selection ON selection.record_id=history.selection_record_id
+         ${LOCAL_REVISION_PIN_VERSION_JOINS_SQL}
+         WHERE history.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     profiles = (
@@ -190,7 +212,7 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       name: String(r.name),
       version: Number(r.version),
-      currentVersionId: replicatedProfileVersionId(spaceId, r.current_version_id),
+      currentVersionId: replicatedCurrentProfileVersionId(spaceId, r.current_version_id),
       body: String(r.body),
       enabled: Boolean(r.enabled),
       updatedAt: now,

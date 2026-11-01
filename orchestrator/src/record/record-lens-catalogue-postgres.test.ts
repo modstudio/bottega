@@ -160,7 +160,11 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
       const [profile] =
         await sql`SELECT body,version FROM lens_profile WHERE space_id=${spaceId}::uuid AND name='default'`
       const [selection] =
-        await sql`SELECT selected_version,selection_version FROM project_lens_profile WHERE space_id=${spaceId}::uuid AND project_id=${projectId}::uuid`
+        await sql`SELECT profile.version selected_version,selection.selection_version
+          FROM project_lens_profile selection
+          LEFT JOIN lens_profile profile
+            ON profile.current_version_id=selection.selected_version_id
+          WHERE selection.space_id=${spaceId}::uuid AND selection.project_id=${projectId}::uuid`
       const [counts] = await sql`SELECT
         (SELECT count(*)::integer FROM lens_revision WHERE space_id=${spaceId}::uuid) lens_revisions,
         (SELECT count(*)::integer FROM lens_profile_revision WHERE space_id=${spaceId}::uuid) profile_revisions,
@@ -349,8 +353,12 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
         { version: 4, id: versionFour.profile.currentVersionId },
       ])
       expect(
-        await sql`SELECT selected_version,selected_version_id::text selected_version_id
-          FROM project_lens_profile WHERE id=${selectionId}::uuid`,
+        await sql`SELECT revision.version selected_version,
+            selection.selected_version_id::text selected_version_id
+          FROM project_lens_profile selection
+          LEFT JOIN lens_profile_revision revision
+            ON revision.id=selection.selected_version_id
+          WHERE selection.id=${selectionId}::uuid`,
       ).toEqual([{ selected_version: 3, selected_version_id: appendedVersionId }])
       expect(
         await sql`SELECT prior_body::jsonb->'body' body FROM lens_profile_revision

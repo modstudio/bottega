@@ -83,13 +83,14 @@ test('profile show reads the named project space', async () => {
     .run(newRecordId(), space)
   db()
     .query(
-      `INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,body,enabled)
-       VALUES (?,?,(SELECT record_id FROM lens WHERE id='correctness' AND space_id=?),'framework','project-show',1,?,1)`,
+      `INSERT INTO lens_profile (record_id,space_id,lens_record_id,axis,name,version,current_version_id,body,enabled)
+       VALUES (?,?,(SELECT record_id FROM lens WHERE id='correctness' AND space_id=?),'framework','project-show',1,?,?,1)`,
     )
     .run(
       newRecordId(),
       space,
       space,
+      newRecordId(),
       '{"framework_guidance":"Project show.","commands":"bun test"}',
     )
   rememberProjectSpace(db(), project, space)

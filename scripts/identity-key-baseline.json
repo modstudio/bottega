@@ -18,8 +18,6 @@
     "outbox_redaction_audit.outbox_id:reference",
     "outbox_redaction_audit:primary-key",
     "presence:primary-key",
-    "project_lens_profile.selected_version:reference",
-    "project_lens_profile_revision.prior_selected_version:reference",
     "question.filed_ref:reference",
     "question_delivery:primary-key",
     "record_install_binding:primary-key",

@@ -53,7 +53,7 @@ const recordLensRowSchemas = {
     axis,
     name: z.string().min(1),
     version: z.number().int().positive(),
-    currentVersionId: uuid.nullable().default(null),
+    currentVersionId: uuid,
     body: z.string(),
     enabled: z.boolean(),
     updatedAt: iso,
@@ -73,6 +73,7 @@ const recordLensRowSchemas = {
     lensId: uuid.nullable(),
     axis,
     profileName: z.string().min(1),
+    // Derived from the pin id for clients whose store still carries integer columns; pins never resolve through this label.
     selectedVersion: z.number().int().positive().nullable(),
     selectedVersionId: uuid.nullable().default(null),
     selectionVersion: z.number().int().positive(),
@@ -82,6 +83,7 @@ const recordLensRowSchemas = {
     ...common,
     selectionId: uuid,
     priorProfileName: z.string().nullable(),
+    // Derived from the pin id for clients whose store still carries integer columns; pins never resolve through this label.
     priorSelectedVersion: z.number().int().positive().nullable(),
     priorSelectedVersionId: uuid.nullable().default(null),
     reason: z.string().min(1),

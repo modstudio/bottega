@@ -68,6 +68,7 @@ const boardNotifyMigration = '20261013170000_dev_1217_board_notify'
 const boardPurposeBackfillMigration = '20261013225840_dev_1217_board_purpose_backfill'
 const hubProjectIdentityExpand = '20261015133608_dev_1214_hub_project_identity'
 const hubProjectIdentityBackfill = '20261015133609_dev_1214_hub_project_identity_backfill'
+const lensPinContractGuard = '20261101120000_dev_1991_lens_profile_pin_contract_guard'
 const proofDocId = '01990000-0000-7000-8000-000000000010'
 const proofRevisionId = '01990000-0000-7000-8000-000000000012'
 const managedProjectId = '01990000-0000-7000-8000-000000000013'
@@ -477,9 +478,10 @@ function catalogueFixtureSql(spaceId: string, fixture: CatalogueFixture, label: 
       'same-space proof', now()
     );
     INSERT INTO lens_profile
-      (id, space_id, lens_id, axis, name, version, body)
+      (id, space_id, lens_id, axis, name, version, current_version_id, body)
     VALUES (
-      '${fixture.lensProfile}', '${spaceId}', '${fixture.lens}', 'framework', 'proof', 1, '{}'
+      '${fixture.lensProfile}', '${spaceId}', '${fixture.lens}', 'framework', 'proof', 1,
+      '${fixture.lensProfile}', '{}'
     );
     INSERT INTO lens_profile_revision
       (id, space_id, profile_id, version, prior_body, reason, at)
@@ -488,16 +490,16 @@ function catalogueFixtureSql(spaceId: string, fixture: CatalogueFixture, label: 
       'same-space proof', now()
     );
     INSERT INTO project_lens_profile
-      (id, space_id, project_id, lens_id, axis, profile_name, selected_version)
+      (id, space_id, project_id, lens_id, axis, profile_name, selected_version_id)
     VALUES (
       '${fixture.projectLensProfile}', '${spaceId}', '${fixture.projectSource}',
-      '${fixture.lens}', 'framework', 'proof', 1
+      '${fixture.lens}', 'framework', 'proof', '${fixture.lensProfile}'
     );
     INSERT INTO project_lens_profile_revision
-      (id, space_id, selection_id, prior_profile_name, prior_selected_version, reason, at)
+      (id, space_id, selection_id, prior_profile_name, prior_selected_version_id, reason, at)
     VALUES (
       '${fixture.projectLensProfileRevision}', '${spaceId}', '${fixture.projectLensProfile}',
-      'proof', 1, 'same-space proof', now()
+      'proof', '${fixture.lensProfile}', 'same-space proof', now()
     );
     INSERT INTO port_pair (id, space_id, source_project_id, target_project_id, created_at)
     VALUES (
@@ -634,7 +636,7 @@ function crossSpaceCatalogueRows(): readonly (readonly [string, string, boolean?
     ],
     [
       'lens profile to lens',
-      `INSERT INTO lens_profile (id, space_id, lens_id, axis, name, version, body, enabled) VALUES ('${catalogueProofId(305)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross', 1, '{}', true)`,
+      `INSERT INTO lens_profile (id, space_id, lens_id, axis, name, version, current_version_id, body, enabled) VALUES ('${catalogueProofId(305)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross', 1, '${catalogueProofId(305)}', '{}', true)`,
     ],
     [
       'lens profile revision to profile',
@@ -642,15 +644,15 @@ function crossSpaceCatalogueRows(): readonly (readonly [string, string, boolean?
     ],
     [
       'project lens profile to project',
-      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version) VALUES ('${catalogueProofId(307)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.lens}', 'architecture', 'cross-project', 1)`,
+      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version_id) VALUES ('${catalogueProofId(307)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectSource}', '${sameSpaceCatalogue.lens}', 'architecture', 'cross-project', '${sameSpaceCatalogue.lensProfile}')`,
     ],
     [
       'project lens profile to lens',
-      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version) VALUES ('${catalogueProofId(308)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross-lens', 1)`,
+      `INSERT INTO project_lens_profile (id, space_id, project_id, lens_id, axis, profile_name, selected_version_id) VALUES ('${catalogueProofId(308)}', '${PLATFORM_SPACE_ID}', '${sameSpaceCatalogue.projectSource}', '${otherSpaceCatalogue.lens}', 'architecture', 'cross-lens', '${otherSpaceCatalogue.lensProfile}')`,
     ],
     [
       'project lens profile revision to selection',
-      `INSERT INTO project_lens_profile_revision (id, space_id, selection_id, prior_profile_name, prior_selected_version, reason, session_id, at) VALUES ('${catalogueProofId(309)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectLensProfile}', 'proof', 1, 'proof', NULL, now())`,
+      `INSERT INTO project_lens_profile_revision (id, space_id, selection_id, prior_profile_name, prior_selected_version_id, reason, session_id, at) VALUES ('${catalogueProofId(309)}', '${PLATFORM_SPACE_ID}', '${otherSpaceCatalogue.projectLensProfile}', 'proof', '${otherSpaceCatalogue.lensProfile}', 'proof', NULL, now())`,
     ],
     [
       'port pair to source project',
@@ -837,6 +839,8 @@ async function applyAndProveMigration(
   ) {
     throw new CheckFailure('DEV-1217 board notify migration does not use the exported channel')
   }
+  if (migration.name === lensPinContractGuard)
+    await proofLensPinContractGuard(transaction, migration)
   await seedMigrationProof(transaction, migration.name)
   await applyRecordMigration(transaction, migration)
   await proofDocumentMigration(transaction, migration)
@@ -847,6 +851,73 @@ async function applyAndProveMigration(
   if (migration.name === jsonbStringChecksValidate)
     await proofJsonbStringChecksValidate(transaction, PLATFORM_SPACE_ID)
   await applyHostedProjectCleanupProof(transaction, migration)
+}
+
+async function seedLensPinContractRow(
+  transaction: Transaction,
+  selectedVersion: number | null,
+): Promise<void> {
+  await transaction.exec(`
+    ALTER TABLE project_lens_profile NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE lens_profile NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE lens NO FORCE ROW LEVEL SECURITY;
+    ALTER TABLE project NO FORCE ROW LEVEL SECURITY;
+    INSERT INTO project (id,space_id,name,created_at)
+    VALUES ('${catalogueProofId(390)}','${PLATFORM_SPACE_ID}','pin-contract-proof',now());
+    INSERT INTO lens (id,space_id,key,title,question,excludes,slots,version)
+    VALUES ('${catalogueProofId(391)}','${PLATFORM_SPACE_ID}','pin-contract-proof','Proof','Question?','[]','[]',1);
+    INSERT INTO lens_profile
+      (id,space_id,lens_id,axis,name,version,current_version_id,body)
+    VALUES (
+      '${catalogueProofId(392)}','${PLATFORM_SPACE_ID}','${catalogueProofId(391)}',
+      'framework','proof',1,'${catalogueProofId(393)}','{}'
+    );
+    INSERT INTO project_lens_profile
+      (id,space_id,project_id,lens_id,axis,profile_name,selected_version,selected_version_id)
+    VALUES (
+      '${catalogueProofId(394)}','${PLATFORM_SPACE_ID}','${catalogueProofId(390)}',
+      '${catalogueProofId(391)}','framework','proof',${selectedVersion ?? 'NULL'},NULL
+    );
+    ALTER TABLE project_lens_profile FORCE ROW LEVEL SECURITY;
+    ALTER TABLE lens_profile FORCE ROW LEVEL SECURITY;
+    ALTER TABLE lens FORCE ROW LEVEL SECURITY;
+    ALTER TABLE project FORCE ROW LEVEL SECURITY;
+  `)
+}
+
+async function proofLensPinContractGuard(
+  transaction: Transaction,
+  migration: MigrationMeta,
+): Promise<void> {
+  await transaction.exec('SAVEPOINT lens_pin_contract_guard_refusal')
+  await seedLensPinContractRow(transaction, 2)
+  let refusal: unknown
+  try {
+    await applyRecordMigration(transaction, migration)
+  } catch (error) {
+    refusal = error
+  }
+  await transaction.exec('ROLLBACK TO SAVEPOINT lens_pin_contract_guard_refusal')
+  await transaction.exec('RELEASE SAVEPOINT lens_pin_contract_guard_refusal')
+  if (!errorMessage(refusal).includes('unresolved lens profile pins block the S4 contract'))
+    throw new CheckFailure(
+      `DEV-1991 hosted pin guard did not refuse the integer-only row: ${errorMessage(refusal)}`,
+    )
+
+  await transaction.exec('SAVEPOINT lens_pin_contract_guard_resolution')
+  await seedLensPinContractRow(transaction, 1)
+  await applyRecordMigration(transaction, migration)
+  await transaction.exec('ALTER TABLE project_lens_profile NO FORCE ROW LEVEL SECURITY')
+  const resolved = await transaction.query<{ selected_version_id: string | null }>(
+    'SELECT selected_version_id FROM project_lens_profile WHERE id = $1',
+    [catalogueProofId(394)],
+  )
+  if (resolved.rows[0]?.selected_version_id !== catalogueProofId(393))
+    throw new CheckFailure('DEV-1991 hosted pin guard did not re-resolve the current-version pin')
+  await transaction.exec('ROLLBACK TO SAVEPOINT lens_pin_contract_guard_resolution')
+  await transaction.exec('RELEASE SAVEPOINT lens_pin_contract_guard_resolution')
+
+  await seedLensPinContractRow(transaction, null)
 }
 
 async function seedMigrationProof(transaction: Transaction, name: string): Promise<void> {
