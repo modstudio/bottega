@@ -226,7 +226,10 @@ class HeartbeatBoardObservationTest(unittest.TestCase):
         )
         connection.commit()
         connection.close()
-        self.assertEqual(self.observe()["roots"][0]["label"], "board:12 api_key: abc")
+        self.assertEqual(
+            self.observe()["roots"][0]["label"],
+            "board:12 [withheld: assignment]",
+        )
 
         connection = sqlite3.connect(self.store.name)
         connection.execute(

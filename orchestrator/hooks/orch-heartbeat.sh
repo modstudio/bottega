@@ -119,6 +119,8 @@ ACTIVE_WATCHDOG_PID=""
 
 heartbeat_source_fingerprint() {
   cksum "$SCRIPT_PATH" "$ROOT/hooks/heartbeat-decision.py" \
+    "$ROOT/hooks/secret_shaped.py" \
+    "$ROOT/../shared/secret-shaped-rules.json" \
     "$ROOT/hooks/heartbeat-board-observation.py" \
     "$ROOT/hooks/heartbeat-run-observation.py" \
     "$ROOT/hooks/inbox_question_decision.py" \
