@@ -1,5 +1,9 @@
 import { expect, spyOn, test } from 'bun:test'
-import { REHEARSAL_NOTICE_LIMIT } from '../orchestrator/src/postgres/migration-notices.ts'
+import {
+  REHEARSAL_NOTICE_LIMIT,
+  rehearsalMigrateFailureOutput,
+  rehearsalNoticeOutput,
+} from '../orchestrator/src/postgres/migration-notices.ts'
 import {
   launchedMachineId,
   machineExitCode,
@@ -74,6 +78,33 @@ REHEARSAL NOTICE-TRUNCATED 3`)
     'MIGRATE NOTICE 20261101000001_other: no-op',
     'NOTICE-TRUNCATED 3',
   ])
+})
+
+test('round trips each migration notice as its own rehearsal line on success', () => {
+  const output = rehearsalNoticeOutput(`MIGRATE NOTICE first: moved rows
+MIGRATE NOTICE second: no-op`)
+
+  expect(parseRehearsalLines(output)).toMatchObject({
+    notices: ['MIGRATE NOTICE first: moved rows', 'MIGRATE NOTICE second: no-op'],
+    noticesTruncated: 0,
+  })
+})
+
+test('round trips migration notices separately from a migrate failure', () => {
+  const output = rehearsalMigrateFailureOutput(`MIGRATE NOTICE -: schema "drizzle" already exists, skipping
+MIGRATE NOTICE guarded: moved rows
+MIGRATE NOTICE audit: recorded branch
+permission denied for migration guard`)
+
+  expect(parseRehearsalLines(output)).toMatchObject({
+    failure: 'permission denied for migration guard',
+    notices: [
+      'MIGRATE NOTICE -: schema "drizzle" already exists, skipping',
+      'MIGRATE NOTICE guarded: moved rows',
+      'MIGRATE NOTICE audit: recorded branch',
+    ],
+    noticesTruncated: 0,
+  })
 })
 
 test('bounds captured migration notices', () => {
