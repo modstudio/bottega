@@ -309,6 +309,21 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
       ],
       project_lens_profile_revision: [],
     })
+    const selected = await selectRecordProjectLensProfile({
+      ...tenant(),
+      projectId,
+      lensKey,
+      axis: 'framework',
+      profileName: 'default',
+      selectedVersion: 3,
+      selectedVersionId: appendedVersionId,
+      expectedSelectionVersion: 1,
+      reason: 'reselect appended pin',
+    })
+    expect(selected.selection).toMatchObject({
+      selectedVersion: 3,
+      selectedVersionId: appendedVersionId,
+    })
     const versionFour = await upsertRecordLensProfile({
       ...profileInput,
       body: '{"source":"hosted-v4"}',
@@ -334,14 +349,13 @@ postgres('hosted lens catalogue compare-and-set writers', () => {
         { version: 4, id: versionFour.profile.currentVersionId },
       ])
       expect(
-        await sql`SELECT profile.version,revision.prior_body::jsonb->'body' body
-          FROM project_lens_profile selection
-          JOIN lens_profile profile ON profile.lens_id=selection.lens_id
-            AND profile.axis=selection.axis AND profile.name=selection.profile_name
-          JOIN lens_profile_revision revision ON revision.profile_id=profile.id
-            AND revision.id=selection.selected_version_id
-          WHERE selection.id=${selectionId}::uuid`,
-      ).toEqual([{ version: 5, body: { source: 'appended-v2' } }])
+        await sql`SELECT selected_version,selected_version_id::text selected_version_id
+          FROM project_lens_profile WHERE id=${selectionId}::uuid`,
+      ).toEqual([{ selected_version: 3, selected_version_id: appendedVersionId }])
+      expect(
+        await sql`SELECT prior_body::jsonb->'body' body FROM lens_profile_revision
+          WHERE id=${appendedVersionId}::uuid`,
+      ).toEqual([{ body: { source: 'appended-v2' } }])
     } finally {
       await sql.close()
     }

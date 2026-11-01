@@ -6,6 +6,7 @@ import {
   importRecordPortCatalogue,
   importRecordWorkflowCatalogue,
 } from './record-catalogue-import.ts'
+import { selectRecordProjectLensProfile } from './record-lens-catalogue.ts'
 import { ensureSpaceBuiltIns } from './record-space-built-ins.ts'
 import { listRecordWorkflowCatalogue } from './record-workflow-catalogue.ts'
 
@@ -196,6 +197,7 @@ postgres('hosted catalogue bulk imports', () => {
       hostedVersionTwoId = newRecordId(),
       pushedVersionTwoId = newRecordId(),
       selectionId = newRecordId(),
+      selectionRevisionId = newRecordId(),
       at = new Date().toISOString(),
       setup = new SQL(setupUrl!)
     try {
@@ -294,7 +296,19 @@ postgres('hosted catalogue bulk imports', () => {
           updatedAt: at,
         },
       ],
-      project_lens_profile_revision: [],
+      project_lens_profile_revision: [
+        {
+          id: selectionRevisionId,
+          spaceId,
+          selectionId,
+          priorProfileName: 'default',
+          priorSelectedVersion: 2,
+          priorSelectedVersionId: pushedVersionTwoId,
+          reason: 'pushed selection',
+          sessionId: null,
+          at,
+        },
+      ],
     }
     const first = await importRecordLensCatalogue(input)
     expect(first.skipped).toContainEqual({
@@ -325,17 +339,31 @@ postgres('hosted catalogue bulk imports', () => {
         { version: 2, current_version_id: hostedVersionTwoId, body: '{"source":"hosted-v2"}' },
       ])
       expect(
-        await verify`SELECT revision.prior_body::jsonb->'body' body
-          FROM project_lens_profile selection
-          JOIN lens_profile profile ON profile.lens_id=selection.lens_id
-            AND profile.axis=selection.axis AND profile.name=selection.profile_name
-          JOIN lens_profile_revision revision ON revision.profile_id=profile.id
-            AND revision.id=selection.selected_version_id
-          WHERE selection.id=${selectionId}::uuid`,
-      ).toEqual([{ body: { source: 'pushed-v2' } }])
+        await verify`SELECT selected_version,selected_version_id::text selected_version_id
+          FROM project_lens_profile WHERE id=${selectionId}::uuid`,
+      ).toEqual([{ selected_version: 3, selected_version_id: pushedVersionTwoId }])
+      expect(
+        await verify`SELECT prior_selected_version,prior_selected_version_id::text prior_selected_version_id
+          FROM project_lens_profile_revision WHERE id=${selectionRevisionId}::uuid`,
+      ).toEqual([{ prior_selected_version: 3, prior_selected_version_id: pushedVersionTwoId }])
     } finally {
       await verify.close()
     }
+    const selected = await selectRecordProjectLensProfile({
+      ...tenant,
+      projectId,
+      lensKey: 'version-import',
+      axis: 'framework',
+      profileName: 'default',
+      selectedVersion: 3,
+      selectedVersionId: pushedVersionTwoId,
+      expectedSelectionVersion: 1,
+      reason: 'reselect imported pin',
+    })
+    expect(selected.selection).toMatchObject({
+      selectedVersion: 3,
+      selectedVersionId: pushedVersionTwoId,
+    })
     expect((await importRecordLensCatalogue(input)).inserted).toBe(0)
   })
 

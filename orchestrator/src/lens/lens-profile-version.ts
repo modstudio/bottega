@@ -6,3 +6,8 @@ export function nextLensProfileVersion(
 ): number {
   return Math.max(current, ...revisionNumbers) + 1
 }
+
+/** Serialize the body and enabled state retained by a profile revision. */
+export function lensProfileSnapshot(body: string, enabled: boolean): string {
+  return JSON.stringify({ body: JSON.parse(body), enabled })
+}

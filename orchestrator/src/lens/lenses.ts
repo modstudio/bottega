@@ -13,7 +13,7 @@ import { PINNED_LENS_VERSION_REQUIRES_LENS_KEY } from '../record/record-lens-con
 import { requireProjectRecordDestination } from '../record/record-project-destination-client.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { BUILT_IN_LENS_DEFAULT_PROFILE } from './lens-built-ins.ts'
-import { nextLensProfileVersion } from './lens-profile-version.ts'
+import { lensProfileSnapshot, nextLensProfileVersion } from './lens-profile-version.ts'
 
 const LENS_AXES = ['framework', 'architecture'] as const
 export type LensAxis = (typeof LENS_AXES)[number]
@@ -232,8 +232,7 @@ const coreSnapshot = (row: CoreRow) =>
     enabled: !!row.enabled,
     requires_execution: !!row.requires_execution,
   })
-const profileSnapshot = (row: ProfileRow) =>
-  JSON.stringify({ body: JSON.parse(row.body), enabled: !!row.enabled })
+const profileSnapshot = (row: ProfileRow) => lensProfileSnapshot(row.body, !!row.enabled)
 
 export function listLenses(
   database: Database = db(),

@@ -3,7 +3,7 @@
 import { SQL } from 'bun'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { bindTenant, type TenantPrincipal } from '../../../shared/record/tenant.ts'
-import { nextLensProfileVersion } from '../lens/lens-profile-version.ts'
+import { lensProfileSnapshot, nextLensProfileVersion } from '../lens/lens-profile-version.ts'
 import { type RecordCursor, type RecordListCursorRow, recordCursorAt } from './record-cursor.ts'
 import type {
   RecordLensProfileWriteInput,
@@ -217,10 +217,7 @@ export async function upsertRecordLensProfile(input: Tenant & RecordLensProfileW
       const revisionId = nullable(prior.current_version_id) ?? newRecordId(),
         currentVersionId = newRecordId(),
         nextVersion = nextLensProfileVersion(number(prior.version), revisionNumbers),
-        priorBody = JSON.stringify({
-          body: JSON.parse(text(prior.body)),
-          enabled: Boolean(prior.enabled),
-        })
+        priorBody = lensProfileSnapshot(text(prior.body), Boolean(prior.enabled))
       await tx`INSERT INTO lens_profile_revision (id,space_id,profile_id,version,prior_body,reason,session_id,at) VALUES (${revisionId}::uuid,${input.spaceId}::uuid,${id}::uuid,${number(prior.version)},${priorBody},${input.reason},${input.sessionId ?? null},${now}::timestamptz)`
       revision = mapped(
         'lens_profile_revision',

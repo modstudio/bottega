@@ -190,16 +190,13 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       name: String(r.name),
       version: Number(r.version),
-      currentVersionId:
-        r.current_version_id == null
-          ? null
-          : replicatedRecordId(spaceId, 'lens_profile_revision', String(r.current_version_id)),
+      currentVersionId: replicatedProfileVersionId(spaceId, r.current_version_id),
       body: String(r.body),
       enabled: Boolean(r.enabled),
       updatedAt: now,
     })),
     lens_profile_revision: profileRevisions.map((r) => ({
-      id: replicatedRecordId(spaceId, 'lens_profile_revision', String(r.record_id)),
+      id: replicatedProfileVersionId(spaceId, r.record_id)!,
       spaceId,
       profileId: replicatedRecordId(spaceId, 'lens_profile', String(r.profile_record_id)),
       version: Number(r.version),
