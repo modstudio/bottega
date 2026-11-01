@@ -26,6 +26,7 @@ import {
   refuseTerminalCursor,
   renderWorkflowAdvanceResult,
 } from './workflow-cursor-result.ts'
+import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import {
   type SelectableCursorRow,
   selectUntouchedKeylessWorkflowCursor,
@@ -56,7 +57,6 @@ import {
   DEFAULT_EXPECTED_STATUS,
   decideCloseFloors,
   decideFloorSatisfaction,
-  type EnforcementMode,
   type Floor,
   type FloorDecision,
 } from './workflow-floor.ts'
@@ -79,18 +79,7 @@ import { linkResolvedWorkflowTask, withLinkedWorkflowTask } from './workflow-tas
 import { deleteWorkflowText, withWorkflowTextFacts } from './workflow-text.ts'
 import { composeWorkflow, getWorkflowStep } from './workflows.ts'
 
-type CursorRow = SelectableCursorRow & {
-  workflow_version: number
-  catalogue_version: number
-  args: string
-  autonomy: string | null
-  closed: string
-  question: string | null
-  total_steps: number
-  created_at: string
-  updated_at: string
-  enforcement: EnforcementMode
-}
+type CursorRow = WorkflowCloseCursor
 
 function closeOpenWorkflowQuestion(
   cursorId: string,
@@ -719,28 +708,20 @@ function persistWorkflowAdvance(
 }
 
 function nextWorkflowStepImpl(
-  slug: string,
-  project: string,
-  mode: string,
+  row: CursorRow,
   args: Record<string, string>,
   note: string | undefined,
   context: WorkflowCursorContext,
   evidence: WorkflowEvidenceInput,
   ports: FloorEvidencePorts,
   d: Database = writableDb(),
-  cursor?: number,
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
 ): string {
-  const row = findCursor(project, slug, mode, args, context, d, cursor)
-  if (!row)
-    throw new Error(
-      `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-    )
-  slug = row.workflow_slug
-  project = row.project
-  mode = row.mode_slug
+  const slug = row.workflow_slug
+  const project = row.project
+  const mode = row.mode_slug
   refuseTerminalCursor(row)
   applyCursorArguments(row, args, d)
   refuseKeylessStepClose(row, evidence.task, d, live)
@@ -793,25 +774,30 @@ export function nextWorkflowStep(
   selfRuling?: WorkflowSelfRulingInput,
   outcome?: string,
   live?: LiveCursorAutonomy,
+  selected?: WorkflowCloseCursor,
 ): string {
   return withReplayedFloorEvidence(ports, (replayPorts) =>
-    withLinkedWorkflowTask(project, args, context, d, () =>
-      nextWorkflowStepImpl(
-        slug,
-        project,
-        mode,
+    withLinkedWorkflowTask(project, args, context, d, () => {
+      const row = selected ?? findCursor(project, slug, mode, args, context, d, cursor)
+      if (!row)
+        throw new Error(
+          `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
+        )
+      if (!row.task_record_id && keyOf(args) && context.taskRecordId)
+        row.task_record_id = context.taskRecordId
+      return nextWorkflowStepImpl(
+        row,
         args,
         note,
         context,
         evidence,
         replayPorts,
         d,
-        cursor,
         selfRuling,
         outcome,
         live,
-      ),
-    ),
+      )
+    }),
   )
 }
 
@@ -885,12 +871,26 @@ export function abandonWorkflowCursorByHandle(
   reason: string | undefined,
   context: WorkflowCursorContext,
   d: Database = writableDb(),
+  selected?: WorkflowCloseCursor,
+  args: Record<string, string> = {},
 ): string {
   if (!reason?.trim()) throw new Error('--reason is required')
-  return writeTransaction(() => {
-    const row = selectWorkflowCursor({}, cursor, context.session, d) as CursorRow
-    return abandonSelectedWorkflowCursor(row, reason, context, d)
-  }, d)
+  if (selected)
+    return withLinkedWorkflowTask(selected.project, args, context, d, () => {
+      if (!selected.task_record_id && keyOf(args) && context.taskRecordId)
+        selected.task_record_id = context.taskRecordId
+      return abandonSelectedWorkflowCursor(selected, reason, context, d)
+    })
+  return writeTransaction(
+    () =>
+      abandonSelectedWorkflowCursor(
+        selectWorkflowCursor({}, cursor, context.session, d) as CursorRow,
+        reason,
+        context,
+        d,
+      ),
+    d,
+  )
 }
 
 function awaitWorkflowRulingImpl(

@@ -1,7 +1,7 @@
 CREATE TABLE workflow_text_copy (
   record_id TEXT PRIMARY KEY,
   workflow_text_record_id TEXT NOT NULL UNIQUE,
-  cursor_record_id TEXT NOT NULL REFERENCES workflow_cursor(record_id),
+  cursor_record_id TEXT NOT NULL REFERENCES workflow_cursor(record_id) ON UPDATE CASCADE ON DELETE CASCADE,
   task_document_reference TEXT NOT NULL,
   copied_at TEXT NOT NULL
 );

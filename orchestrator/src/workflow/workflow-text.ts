@@ -10,6 +10,15 @@ import { linkWorkflowTaskLabel } from './workflow-task-linking.ts'
 
 export const WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES = 32 * 1024
 export const WORKFLOW_TEXT_CURSOR_MAX_BYTES = 64 * 1024
+const WORKFLOW_TEXT_ATTACHMENT_PREFIX = 'attached-text:'
+
+export const workflowTextAttachmentToken = (id: string): string =>
+  `${WORKFLOW_TEXT_ATTACHMENT_PREFIX}${id}`
+
+export const workflowTextAttachmentId = (reference: string): string =>
+  reference.startsWith(WORKFLOW_TEXT_ATTACHMENT_PREFIX)
+    ? reference.slice(WORKFLOW_TEXT_ATTACHMENT_PREFIX.length)
+    : reference
 
 export type WorkflowTextRow = {
   id: string
@@ -154,7 +163,7 @@ function attachSelectedWorkflowText(
     )
     .get(newRecordId(), row.record_id, row.ordinal + 1, row.step_slug, body, nowIso())
   if (!inserted) throw new Error('workflow text was not attached; retry the attach call')
-  return `attached-text:${inserted.id}`
+  return workflowTextAttachmentToken(inserted.id)
 }
 
 export function attachWorkflowTextByHandle(

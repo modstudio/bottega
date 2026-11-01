@@ -7,7 +7,7 @@ import {
   setStepCatalogueLocal,
 } from './step-catalogue.ts'
 import {
-  abandonWorkflowCursorByHandle,
+  abandonWorkflowCursor,
   getWorkflowStepWithCursor,
   nextWorkflowStep,
 } from './workflow-cursor.ts'
@@ -22,6 +22,7 @@ import {
   workflowTextIdsToDelete,
 } from './workflow-text.ts'
 import {
+  closeCursorWithTextCopy,
   copyWorkflowTextForCursor,
   cursorForWorkflowTextCopy,
   showWorkflowText,
@@ -102,6 +103,9 @@ function open(d: Database): number {
     {},
   ).cursor
 }
+
+const abandon = (d: Database, cursor: number, reason: string) =>
+  abandonWorkflowCursor('text-fixture', 'fixture', 'default', {}, reason, context, d, cursor)
 
 const rowCount = (d: Database, cursor: number) =>
   (
@@ -341,7 +345,7 @@ describe('workflow text lifecycle', () => {
       context,
       abandoned,
     )
-    abandonWorkflowCursorByHandle(abandonedCursor, 'no longer needed', context, abandoned)
+    abandon(abandoned, abandonedCursor, 'no longer needed')
     expect(rowCount(abandoned, abandonedCursor)).toBe(0)
     expect(() => showWorkflowText(abandonedReference, abandoned)).toThrow(
       `${abandonedReference} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
@@ -396,6 +400,96 @@ function documentFake(initial: WorkflowTaskDocument[] = []): {
 }
 
 describe('task-linked workflow text preservation', () => {
+  test('the close service copies through a context-only task link and leaves a redirect', async () => {
+    const d = database()
+    const cursor = open(d)
+    d.query("UPDATE workflow_cursor SET workflow_key='DEV-1975',args=? WHERE number=?").run(
+      JSON.stringify({ key: 'DEV-1975' }),
+      cursor,
+    )
+    const reference = attachWorkflowTextByHandle(cursor, 'context-linked body', context, d)
+    const fake = documentFake()
+    await closeCursorWithTextCopy(
+      {
+        action: 'abandon',
+        project: 'fixture',
+        workflow: 'text-fixture',
+        mode: 'default',
+        key: 'DEV-1975',
+        cursor,
+        args: { key: 'DEV-1975' },
+        context: { ...context, taskRecordId: 'task-dev-1975' },
+        reason: 'copied before close',
+      },
+      d,
+      taskReader,
+      fake.ports,
+    )
+    expect(fake.created).toHaveLength(1)
+    expect(
+      d.query<{ count: number }, []>('SELECT COUNT(*) count FROM workflow_text_copy').get()?.count,
+    ).toBe(1)
+    expect(showWorkflowText(reference, d)).toMatchObject({
+      kind: 'redirect',
+      documentReference: 'DEV-1975/1',
+    })
+  })
+
+  test('refused close validation makes no document-port call', async () => {
+    let calls = 0
+    const documents: WorkflowTextDocumentPorts = {
+      async list() {
+        calls += 1
+        return []
+      },
+      async create() {
+        calls += 1
+        return 'DEV-1975/1'
+      },
+    }
+    const nextDb = database()
+    const nextCursor = open(nextDb)
+    linkCursor(nextDb, nextCursor)
+    attachWorkflowTextByHandle(nextCursor, 'must not copy', context, nextDb)
+    await expect(
+      closeCursorWithTextCopy(
+        {
+          action: 'next',
+          project: 'fixture',
+          workflow: 'text-fixture',
+          mode: 'default',
+          cursor: nextCursor,
+          args: {},
+          context,
+        },
+        nextDb,
+        taskReader,
+        documents,
+      ),
+    ).rejects.toThrow('--note is required')
+
+    const terminalDb = database()
+    const terminalCursor = open(terminalDb)
+    linkCursor(terminalDb, terminalCursor)
+    attachWorkflowTextByHandle(terminalCursor, 'terminal text', context, terminalDb)
+    abandon(terminalDb, terminalCursor, 'first close')
+    await expect(
+      closeCursorWithTextCopy(
+        {
+          action: 'abandon',
+          cursor: terminalCursor,
+          args: {},
+          context,
+          reason: 'refused repeat',
+        },
+        terminalDb,
+        taskReader,
+        documents,
+      ),
+    ).rejects.toThrow('is abandoned')
+    expect(calls).toBe(0)
+  })
+
   test('finish and abandon preserve every attachment as a readable document redirect', async () => {
     for (const terminal of ['finish', 'abandon'] as const) {
       const d = database()
@@ -437,7 +531,7 @@ describe('task-linked workflow text preservation', () => {
           taskReader,
           fake.ports,
         )
-        abandonWorkflowCursorByHandle(cursor, 'done', context, d)
+        abandon(d, cursor, 'done')
       }
       for (const reference of references) {
         const shown = showWorkflowText(reference, d)
@@ -467,7 +561,7 @@ describe('task-linked workflow text preservation', () => {
       failing.ports,
     )
     expect(failed.uncopied).toHaveLength(1)
-    abandonWorkflowCursorByHandle(cursor, 'close anyway', context, d)
+    abandon(d, cursor, 'close anyway')
     expect(workflowTextUncopiedReport(failed)).toContain('workflow text copy --cursor')
     expect(showWorkflowText(reference, d)).toMatchObject({ kind: 'live', body: 'survives failure' })
 

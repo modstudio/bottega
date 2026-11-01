@@ -26,11 +26,9 @@ import {
 } from './step-catalogue.ts'
 import type { CommitCountPort } from './workflow-compose-branch.ts'
 import {
-  abandonWorkflowCursor,
   awaitWorkflowRuling,
   composeWorkflowWithCursor,
   getWorkflowStepWithCursor,
-  nextWorkflowStep,
   ruleWorkflow,
 } from './workflow-cursor.ts'
 import { workflowKeyOf } from './workflow-cursor-arguments.ts'
@@ -70,16 +68,15 @@ import {
 import { resolveWorkflowStepReference } from './workflow-step-reference.ts'
 import { resolveLinkedWorkflowCursorMode } from './workflow-task-linking.ts'
 import { type HubTaskReader, resolveHubTaskReference } from './workflow-task-reference.ts'
-import { attachWorkflowText } from './workflow-text.ts'
+import { attachWorkflowText, workflowTextAttachmentToken } from './workflow-text.ts'
 import {
+  closeCursorWithTextCopy,
   copyWorkflowTextForCursor,
-  copyWorkflowTextForTarget,
   cursorForWorkflowTextCopy,
   productionWorkflowTextDocumentPorts,
   showWorkflowText,
   type WorkflowTextDocumentPorts,
   workflowTextCopyReport,
-  workflowTextUncopiedReport,
 } from './workflow-text-copy.ts'
 import { parseWorkflowTree, planWorkflowHydration } from './workflow-tree.ts'
 import { applyWorkflowTreePlan, collectWorkflowTree } from './workflow-tree-files.ts'
@@ -482,31 +479,23 @@ export async function abandonCommand(
     undefined,
     cursor,
   )
-  const copy = await copyWorkflowTextForTarget(
+  const result = await closeCursorWithTextCopy(
     {
+      action: 'abandon',
       project,
       workflow: slug,
       mode,
       key: workflowKeyOf(args) || undefined,
       cursor,
+      args,
       context,
+      reason: flagValue(argv, 'reason'),
     },
     undefined,
     options.hubTaskReader,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
-  const result = abandonWorkflowCursor(
-    slug,
-    project ?? '',
-    mode,
-    args,
-    flagValue(argv, 'reason'),
-    context,
-    undefined,
-    cursor,
-  )
-  const warning = workflowTextUncopiedReport(copy)
-  print(warning ? `${result}\n${warning}` : result, warning ? `${result}\n${warning}` : result)
+  print(result, result)
 }
 
 export async function setWorkflowCommand(argv: string[], print: WorkflowPrint): Promise<void> {
@@ -622,43 +611,36 @@ export async function nextCommand(
     cursor,
   )
   const live = await resolveCursorLiveAutonomy({ slug, project, mode, args, context, cursor })
-  const copy = await copyWorkflowTextForTarget(
+  const result = await closeCursorWithTextCopy(
     {
+      action: 'next',
       project,
       workflow: slug,
       mode,
       key: workflowKeyOf(args) || undefined,
       cursor,
+      args,
       context,
+      note: flagValue(argv, 'note'),
+      evidence,
+      floorPorts: productionFloorPorts() as FloorEvidencePorts,
+      selfRuling:
+        selfRuling === undefined
+          ? undefined
+          : {
+              ruling: selfRuling,
+              basis: basis ?? '',
+              question: flagValue(argv, 'question'),
+              channel: 'cli',
+            },
+      outcome: flagValue(argv, 'outcome'),
+      live,
     },
     undefined,
     options.hubTaskReader,
     options.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
-  const result = nextWorkflowStep(
-    slug,
-    project,
-    mode,
-    args,
-    flagValue(argv, 'note'),
-    context,
-    undefined,
-    evidence,
-    productionFloorPorts() as FloorEvidencePorts,
-    cursor,
-    selfRuling === undefined
-      ? undefined
-      : {
-          ruling: selfRuling,
-          basis: basis ?? '',
-          question: flagValue(argv, 'question'),
-          channel: 'cli',
-        },
-    flagValue(argv, 'outcome'),
-    live,
-  )
-  const warning = workflowTextUncopiedReport(copy)
-  print(warning ? `${result}\n${warning}` : result, warning ? `${result}\n${warning}` : result)
+  print(result, result)
 }
 
 export function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): void {
@@ -668,7 +650,7 @@ export function showWorkflowTextCommand(argv: string[], print: WorkflowPrint): v
     return
   }
   const line =
-    `${PLATFORM_SLUG} task document ${shown.documentReference} preserves attached-text:${shown.id}; ` +
+    `${PLATFORM_SLUG} task document ${shown.documentReference} preserves ${workflowTextAttachmentToken(shown.id)}; ` +
     `read it with: ${PLATFORM_SLUG} task doc show ${shown.documentReference}`
   print(shown, line)
 }

@@ -7,12 +7,22 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
 import { db, nowIso, writeTransaction } from '../database/db.ts'
+import type { LiveCursorAutonomy } from './autonomy.ts'
+import { abandonWorkflowCursorByHandle, nextWorkflowStep } from './workflow-cursor.ts'
+import { cursorName } from './workflow-cursor-format.ts'
+import { refuseTerminalCursor } from './workflow-cursor-result.ts'
+import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
-import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
-import { type HubTaskReader, readHubTasks } from './workflow-task-reference.ts'
-import { deleteWorkflowText } from './workflow-text.ts'
+import { selectWorkflowCursorForClose } from './workflow-cursor-selection.ts'
+import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
+import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
+import { type HubTaskReader, readHubTasks, taskCommand } from './workflow-task-reference.ts'
+import {
+  deleteWorkflowText,
+  workflowTextAttachmentId,
+  workflowTextAttachmentToken,
+} from './workflow-text.ts'
 
 export type WorkflowTaskDocument = { reference: string; title: string }
 export type WorkflowTextDocumentPorts = {
@@ -34,26 +44,10 @@ export type WorkflowTextCopyResult = {
   uncopied: { id: string; reason: string }[]
 }
 
-async function taskDocumentCommand(args: string[]): Promise<string> {
-  const child = Bun.spawn([...bottegaEntryArgv(PLATFORM_SLUG), ...args], {
-    stdout: 'pipe',
-    stderr: 'pipe',
-    env: { ...process.env },
-  })
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (code !== 0)
-    throw new Error(stderr.trim() || stdout.trim() || `${PLATFORM_SLUG} exited ${code}`)
-  return stdout.trim()
-}
-
 export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
   async list(taskKey, project) {
     const rows = JSON.parse(
-      await taskDocumentCommand(['task', 'doc', 'list', taskKey, '--project', project, '--json']),
+      await taskCommand(['task', 'doc', 'list', taskKey, '--project', project, '--json']),
     ) as { label?: unknown; id?: unknown; title?: unknown }[]
     if (!Array.isArray(rows)) throw new Error('task document list response was not an array')
     return rows.map((row) => {
@@ -68,7 +62,7 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
     const bodyPath = join(directory, 'body.md')
     try {
       writeFileSync(bodyPath, body)
-      return await taskDocumentCommand([
+      return await taskCommand([
         'task',
         'doc',
         'new',
@@ -86,7 +80,6 @@ export const productionWorkflowTextDocumentPorts: WorkflowTextDocumentPorts = {
   },
 }
 
-const attachmentToken = (id: string) => `attached-text:${id}`
 const firstToken = (title: string) => title.trim().split(/\s+/, 1)[0] ?? ''
 
 function uncopiedRows(cursorId: string, database: Database): CopyRow[] {
@@ -135,7 +128,7 @@ export async function copyWorkflowTextForCursor(
     const uncopied: WorkflowTextCopyResult['uncopied'] = []
     for (const row of rows) {
       try {
-        const token = attachmentToken(row.id)
+        const token = workflowTextAttachmentToken(row.id)
         const found = existing.find((document) => firstToken(document.title) === token)
         const reference =
           found?.reference ??
@@ -163,20 +156,36 @@ export async function copyWorkflowTextForCursor(
   }
 }
 
-export async function copyWorkflowTextForTarget(
-  input: {
-    project?: string
-    workflow?: string
-    mode?: string
-    key?: string
-    cursor?: number
-    context: WorkflowCursorContext
-  },
+type CloseTarget = {
+  project?: string
+  workflow?: string
+  mode?: string
+  key?: string
+  cursor?: number
+  args: Record<string, string>
+  context: WorkflowCursorContext
+}
+
+export type WorkflowTextCloseInput =
+  | (CloseTarget & {
+      action: 'next'
+      note?: string
+      evidence?: WorkflowEvidenceInput
+      floorPorts?: FloorEvidencePorts
+      selfRuling?: WorkflowSelfRulingInput
+      outcome?: string
+      live?: LiveCursorAutonomy
+    })
+  | (CloseTarget & { action: 'abandon'; reason?: string })
+
+/** Owns validation, preservation, transactional close, and the uncopied remedy. */
+export async function closeCursorWithTextCopy(
+  input: WorkflowTextCloseInput,
   database: Database = db(),
   taskReader: HubTaskReader = readHubTasks,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
-): Promise<WorkflowTextCopyResult> {
-  const row = selectWorkflowCursor(
+): Promise<string> {
+  const row = selectWorkflowCursorForClose(
     {
       project: input.project,
       workflow: input.workflow,
@@ -187,9 +196,19 @@ export async function copyWorkflowTextForTarget(
     input.context.session,
     database,
     input.context.taskRecordId,
-  )
-  if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
-  return copyWorkflowTextForCursor(
+  ) as WorkflowCloseCursor | null
+  if (!row)
+    throw new Error(
+      `${cursorName(input.workflow ?? 'workflow', input.mode ?? 'default', input.key ?? '')} has no cursor; compose the workflow first`,
+    )
+  refuseTerminalCursor(row)
+  if (input.action === 'next' && !input.note?.trim())
+    throw new Error(
+      `--note is required: one line saying how step ${row.ordinal + 1} ${row.step_slug}'s floor was met`,
+    )
+  if (input.action === 'abandon' && !input.reason?.trim()) throw new Error('--reason is required')
+
+  const copy = await copyWorkflowTextForCursor(
     {
       id: row.record_id,
       number: row.id,
@@ -205,6 +224,38 @@ export async function copyWorkflowTextForTarget(
     taskReader,
     documents,
   )
+  const result =
+    input.action === 'next'
+      ? nextWorkflowStep(
+          row.workflow_slug,
+          row.project,
+          row.mode_slug,
+          input.args,
+          input.note!.trim(),
+          input.context,
+          database,
+          input.evidence,
+          input.floorPorts,
+          row.id,
+          input.selfRuling,
+          input.outcome,
+          input.live,
+          row,
+        )
+      : abandonWorkflowCursorByHandle(
+          row.id,
+          input.reason!.trim(),
+          input.context,
+          database,
+          row,
+          input.args,
+        )
+  const warning = workflowTextUncopiedReport(copy)
+  return warning ? `${result}\n${warning}` : result
+}
+
+function uncopiedLine(row: WorkflowTextCopyResult['uncopied'][number], cursor: number): string {
+  return `${workflowTextAttachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy --cursor ${cursor}`
 }
 
 export function workflowTextCopyReport(
@@ -213,12 +264,9 @@ export function workflowTextCopyReport(
 ): string {
   const lines = result.copied.map(
     (row) =>
-      `${attachmentToken(row.id)} ${row.reused ? 'reuses' : 'copied to'} ${row.documentReference}`,
+      `${workflowTextAttachmentToken(row.id)} ${row.reused ? 'reuses' : 'copied to'} ${row.documentReference}`,
   )
-  for (const row of result.uncopied)
-    lines.push(
-      `${attachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy --cursor ${cursor}`,
-    )
+  for (const row of result.uncopied) lines.push(uncopiedLine(row, cursor))
   return lines.join('\n')
 }
 
@@ -226,12 +274,7 @@ export function workflowTextUncopiedReport(
   result: WorkflowTextCopyResult,
   cursor = result.cursor,
 ): string {
-  return result.uncopied
-    .map(
-      (row) =>
-        `${attachmentToken(row.id)} is still uncopied: ${row.reason}; retry: ${PLATFORM_SLUG} workflow text copy --cursor ${cursor}`,
-    )
-    .join('\n')
+  return result.uncopied.map((row) => uncopiedLine(row, cursor)).join('\n')
 }
 
 export function showWorkflowText(
@@ -240,7 +283,7 @@ export function showWorkflowText(
 ):
   | { kind: 'live'; id: string; cursor: number; stepSlug: string; body: string }
   | { kind: 'redirect'; id: string; documentReference: string } {
-  const id = idInput.startsWith('attached-text:') ? idInput.slice('attached-text:'.length) : idInput
+  const id = workflowTextAttachmentId(idInput)
   const live = database
     .query<{ cursor: number; step_slug: string; body: string }, [string]>(
       `SELECT c.number cursor,t.step_slug,t.body FROM workflow_step_text t
@@ -256,7 +299,7 @@ export function showWorkflowText(
     .get(id)
   if (copied) return { kind: 'redirect', id, documentReference: copied.task_document_reference }
   throw new Error(
-    `${attachmentToken(id)} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
+    `${workflowTextAttachmentToken(id)} is not held on this machine; attachments of a cursor not linked to a task are removed when the cursor closes, and an id from another machine is readable only through its task document`,
   )
 }
 

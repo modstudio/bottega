@@ -44,11 +44,7 @@ import {
   type LandingBranchPorts,
   workflowComposeBranchRefusal,
 } from '../workflow/workflow-compose-branch.ts'
-import {
-  abandonWorkflowCursorByHandle,
-  awaitWorkflowRuling,
-  ruleWorkflow,
-} from '../workflow/workflow-cursor.ts'
+import { awaitWorkflowRuling, ruleWorkflow } from '../workflow/workflow-cursor.ts'
 import {
   mcpWorkflowCursorContext,
   resolveMcpCursorContext,
@@ -60,11 +56,9 @@ import {
   WORKFLOW_TEXT_ATTACHMENT_MAX_BYTES,
 } from '../workflow/workflow-text.ts'
 import {
-  copyWorkflowTextForCursor,
-  cursorForWorkflowTextCopy,
+  closeCursorWithTextCopy,
   productionWorkflowTextDocumentPorts,
   type WorkflowTextDocumentPorts,
-  workflowTextUncopiedReport,
 } from '../workflow/workflow-text-copy.ts'
 import { composeWorkflow, listResolvedWorkflows } from '../workflow/workflows.ts'
 import { fileNote, hubOutput } from './hub-notes.ts'
@@ -471,15 +465,19 @@ function registerWorkflowListTool(server: McpServer): void {
 }
 
 async function abandonWorkflowWithTextCopy(cursor: number, reason: string, ports: DocsMcpPorts) {
-  const copy = await copyWorkflowTextForCursor(
-    cursorForWorkflowTextCopy(cursor),
+  const result = await closeCursorWithTextCopy(
+    {
+      action: 'abandon',
+      cursor,
+      args: {},
+      context: mcpWorkflowCursorContext(),
+      reason,
+    },
     undefined,
     ports.hubTaskReader,
     ports.workflowTextDocuments ?? productionWorkflowTextDocumentPorts,
   )
-  const result = abandonWorkflowCursorByHandle(cursor, reason, mcpWorkflowCursorContext())
-  const warning = workflowTextUncopiedReport(copy)
-  return text(warning ? `${result}\n${warning}` : result)
+  return text(result)
 }
 
 export function createDocsMcpServer(ports: DocsMcpPorts = {}): McpServer {
