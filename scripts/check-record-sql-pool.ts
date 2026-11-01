@@ -19,6 +19,13 @@ const RECORD_SQL_POOL_EXEMPTIONS = new Map<string, { sites: number; reason: stri
     { sites: 1, reason: 'the LISTEN client is long-lived and owns its subscription session' },
   ],
   [
+    'orchestrator/src/record/record-space-move.ts',
+    {
+      sites: 1,
+      reason: 'record_move_project_space leaves session-lifetime temp tables on its connection',
+    },
+  ],
+  [
     'orchestrator/src/record/record-auth.ts',
     { sites: 2, reason: 'Better Auth owns its dedicated one-connection clients' },
   ],
