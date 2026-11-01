@@ -158,12 +158,9 @@ const subscriptionScope = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('projects'), projectIds: z.array(uuid).min(1) }).strict(),
 ])
 
-function optionalSnapshot<T extends { machineId: string; takenAt: string; machine: MachineRef }>(
-  items: T[],
-  ignored: string[],
-  kind: string,
-  machineId?: string,
-) {
+function optionalSnapshot<
+  T extends { machineId: string; takenAt: string; machine: MachineRef | null },
+>(items: T[], ignored: string[], kind: string, machineId?: string) {
   const selection = selectSnapshot(items, machineId)
   if (selection) return selection
   const refusal = ignored.find((message) => message.startsWith(`${kind} snapshot ignored:`))

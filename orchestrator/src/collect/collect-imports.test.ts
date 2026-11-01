@@ -12,6 +12,7 @@ const DEGRADED_COLLECTION_GRAPH = [
   '../../../shared/embedded-assets.ts',
   '../../../shared/install-root.ts',
   '../../../shared/machine-config.ts',
+  '../../../shared/machine-label.ts',
   '../../../shared/process-identity.ts',
   '../../../shared/record-id.ts',
   '../../../shared/secret-shaped.ts',

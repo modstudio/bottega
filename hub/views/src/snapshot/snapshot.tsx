@@ -8,7 +8,7 @@ import { snapshotStyles } from './snapshot.styles.ts'
 export type Machine = {
   id: string
   takenAt: string
-  machine: MachineRef
+  machine: MachineRef | null
 }
 
 function asOf(value: string) {
@@ -42,7 +42,7 @@ export function SnapshotHeader({
           value={machineId}
           options={machines.map(({ id, machine }) => ({
             value: id,
-            label: machine.displayName ?? machine.shortName ?? id,
+            label: machine?.displayName ?? machine?.shortName ?? id,
           }))}
           onChange={onMachineChange}
         />

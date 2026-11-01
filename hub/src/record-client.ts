@@ -78,9 +78,10 @@ const machineRefSchema: z.ZodType<MachineRef> = z.object({
 
 const runSchema = z.object({
   id: z.string().uuid(),
-  number: z.number().nullable(),
-  machine: machineRefSchema,
-  machineLabel: z.string().nullable(),
+  // A hosted API older than this client omits the machine fields.
+  number: z.number().nullable().default(null),
+  machine: machineRefSchema.nullable().default(null),
+  machineLabel: z.string().nullable().default(null),
   spaceId: z.string().uuid(),
   spaceName: z.string(),
   projectName: z.string().nullable(),
@@ -270,7 +271,7 @@ const jobSchema = z.object({
 const snapshotBase = {
   id: z.string().uuid(),
   machineId: z.string().uuid(),
-  machine: machineRefSchema,
+  machine: machineRefSchema.nullable().default(null),
   takenAt: z.string().datetime({ offset: true }),
 }
 
