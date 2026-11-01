@@ -10,12 +10,11 @@ test('routing evidence client carries the space and incremental cursor query', a
   expect(
     await client.listRoutingEvidence({
       spaceId: '01990000-0000-7000-8000-000000002013',
-      updatedSince: '2026-11-01T16:00:00.000Z',
       limit: 50,
       cursor: 'next-page',
     }),
   ).toEqual({ items: [], nextCursor: null })
   expect(paths).toEqual([
-    '/v1/routing-evidence?spaceId=01990000-0000-7000-8000-000000002013&updatedSince=2026-11-01T16%3A00%3A00.000Z&limit=50&cursor=next-page',
+    '/v1/routing-evidence?spaceId=01990000-0000-7000-8000-000000002013&limit=50&cursor=next-page',
   ])
 })

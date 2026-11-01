@@ -5,13 +5,25 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
-import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
-import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 
 export const ROUTING_POOL_PAGE_LIMIT = 100
 export const ROUTING_POOL_PAGES_PER_SYNC = 5
-const ROUTING_POOL_CURSOR = 'record_routing_pool_cursor'
+const ROUTING_POOL_CURSOR = 'record_routing_pool_seq'
+
+function readCursor(local: Database, key: string): string | undefined {
+  return local
+    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
+    .get(key)?.value
+}
+
+function writeCursor(local: Database, key: string, value: string): void {
+  local
+    .query(
+      'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+    )
+    .run(key, value)
+}
 
 export type RoutingPoolPullResult = {
   added: number
@@ -87,8 +99,7 @@ export async function pullRoutingPool(
   let caughtUp = true
   for (const spaceId of spaces) {
     const cursorKey = `${ROUTING_POOL_CURSOR}:${spaceId}`
-    const storedCursor = readRecordCursor(local, cursorKey)
-    let requestCursor = storedCursor ? encodeRecordCursor(storedCursor) : undefined
+    let requestCursor = readCursor(local, cursorKey)
     let spaceCaughtUp = false
     for (let pageNumber = 0; pageNumber < ROUTING_POOL_PAGES_PER_SYNC; pageNumber++) {
       const page = await client.listRoutingEvidence({
@@ -110,7 +121,7 @@ export async function pullRoutingPool(
         }
         const pageCursor = page.endCursor ?? page.nextCursor
         if (pageCursor) {
-          writeRecordCursor(local, cursorKey, decodeRecordCursor(pageCursor))
+          writeCursor(local, cursorKey, pageCursor)
         }
       }, local)
       if (!page.nextCursor) {

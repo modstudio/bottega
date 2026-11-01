@@ -6,7 +6,6 @@ import {
 } from '../../test/fixtures/record-api.ts'
 import { db } from '../database/db.ts'
 import type { RecordApiClient } from './record-api-client.ts'
-import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 import {
   pullRoutingPool,
@@ -55,10 +54,7 @@ function installRoutingClient(listRoutingEvidence: RecordApiClient['listRoutingE
 }
 
 function routingCursor(index: number): string {
-  return encodeRecordCursor({
-    at: `2026-11-01T12:00:${String(index).padStart(2, '0')}.000Z`,
-    id: '019a3c2f-8c00-7000-8000-000000000001',
-  })
+  return btoa(String(index + 1))
 }
 
 test('routing pool caps pages, stores its cursor, and resumes to a final page', async () => {
@@ -68,9 +64,7 @@ test('routing pool caps pages, stores its cursor, and resumes to a final page', 
   )
   installRoutingClient(async (query) => {
     calls.push({ cursor: query.cursor, limit: query.limit })
-    const index = query.cursor
-      ? Number(decodeRecordCursor(query.cursor).at.slice('2026-11-01T12:00:'.length, -5)) + 1
-      : 0
+    const index = query.cursor ? Number(atob(query.cursor)) : 0
     const endCursor = routingCursor(index)
     return {
       items: [rows[index]!],
@@ -89,10 +83,10 @@ test('routing pool caps pages, stores its cursor, and resumes to a final page', 
   expect(
     db()
       .query<{ value: string }, []>(
-        "SELECT value FROM schema_meta WHERE key='record_routing_pool_cursor:space-a'",
+        "SELECT value FROM schema_meta WHERE key='record_routing_pool_seq:space-a'",
       )
       .get()?.value,
-  ).toBe(JSON.stringify(decodeRecordCursor(routingCursor(ROUTING_POOL_PAGES_PER_SYNC - 1))))
+  ).toBe(routingCursor(ROUTING_POOL_PAGES_PER_SYNC - 1))
 
   expect(await pullRoutingPool(db(), ['space-a'])).toEqual({
     added: 2,
@@ -158,17 +152,17 @@ test('routing pool keeps a separate cursor for every readable space', async () =
   expect(
     db()
       .query<{ key: string; value: string }, []>(
-        "SELECT key,value FROM schema_meta WHERE key LIKE 'record_routing_pool_cursor:%' ORDER BY key",
+        "SELECT key,value FROM schema_meta WHERE key LIKE 'record_routing_pool_seq:%' ORDER BY key",
       )
       .all(),
   ).toEqual([
     {
-      key: 'record_routing_pool_cursor:space-a',
-      value: JSON.stringify(decodeRecordCursor(routingCursor(0))),
+      key: 'record_routing_pool_seq:space-a',
+      value: routingCursor(0),
     },
     {
-      key: 'record_routing_pool_cursor:space-b',
-      value: JSON.stringify(decodeRecordCursor(routingCursor(1))),
+      key: 'record_routing_pool_seq:space-b',
+      value: routingCursor(1),
     },
   ])
 })
@@ -192,10 +186,10 @@ test('routing pool persists nextCursor when the hosted API omits endCursor', asy
   expect(
     db()
       .query<{ value: string }, []>(
-        "SELECT value FROM schema_meta WHERE key='record_routing_pool_cursor:space-a'",
+        "SELECT value FROM schema_meta WHERE key='record_routing_pool_seq:space-a'",
       )
       .get()?.value,
-  ).toBe(JSON.stringify(decodeRecordCursor(routingCursor(ROUTING_POOL_PAGES_PER_SYNC))))
+  ).toBe(routingCursor(ROUTING_POOL_PAGES_PER_SYNC))
 
   expect(await pullRoutingPool(db(), ['space-a'])).toEqual({
     added: 0,

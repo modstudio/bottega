@@ -205,6 +205,11 @@ export const RECORD_PROJECT_SPACE_OWNERSHIP = [
   { table: 'review_read', kind: 'project', ownerColumns: ['project_id'] },
   { table: 'run', kind: 'project', ownerColumns: ['project_id'] },
   {
+    table: 'routing_evidence_head',
+    kind: 'space',
+    reason: 'space routing-evidence cursor',
+  },
+  {
     table: 'run_exclusion',
     kind: 'parent',
     parents: [{ table: 'run', column: 'run_id' }],

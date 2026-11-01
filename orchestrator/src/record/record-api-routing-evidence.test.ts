@@ -2,11 +2,11 @@ import { expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
 import { identity } from '../../test/fixtures/record-api.ts'
 import {
+  decodeRoutingEvidenceCursor,
   type RoutingEvidenceRouteDeps,
   registerRecordRoutingEvidenceRoute,
 } from './record-api-routing-evidence.ts'
 import type { RecordIdentity } from './record-auth.ts'
-import { recordCursorAt } from './record-cursor.ts'
 
 type ApiEnvironment = { Variables: { identity: RecordIdentity; destinationSpaceId?: string } }
 
@@ -33,7 +33,7 @@ test('routing evidence binds the requested space and pages without exposing its 
     quality: null,
     fidelity: null,
     lenses: [],
-    [recordCursorAt]: '2026-11-01T16:00:00.000Z',
+    evidenceSequence: 1n,
   }
   const listRoutingEvidence = mock(async () => [row, { ...row, id: row.spaceId }])
   const deps: RoutingEvidenceRouteDeps = {
@@ -54,10 +54,11 @@ test('routing evidence binds the requested space and pages without exposing its 
     nextCursor: string | null
     endCursor: string | null
   }
-  const { [recordCursorAt]: _cursor, ...projected } = row
+  const { evidenceSequence: _cursor, ...projected } = row
   expect(page.items).toEqual([projected])
   expect(page.nextCursor).not.toBeNull()
   expect(page.endCursor).not.toBeNull()
+  expect(decodeRoutingEvidenceCursor(page.endCursor!)).toBe(1n)
   expect(listRoutingEvidence).toHaveBeenCalledWith(
     expect.objectContaining({ spaceId, userId: identity.user.id, limit: 1, cursor: null }),
   )
@@ -67,4 +68,7 @@ test('routing evidence binds the requested space and pages without exposing its 
   expect(lastPage.nextCursor).toBeNull()
   expect(lastPage.endCursor).not.toBeNull()
   expect((await app.request(`/v1/routing-evidence?spaceId=${spaceId}&limit=101`)).status).toBe(400)
+  const invalid = await app.request(`/v1/routing-evidence?spaceId=${spaceId}&cursor=not-base64`)
+  expect(invalid.status).toBe(400)
+  expect(await invalid.json()).toEqual({ error: 'invalid cursor parameter' })
 })

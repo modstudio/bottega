@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { SQL } from 'bun'
-import { pageRecordItems, recordCursorAt, recordCursorOf } from './record-cursor.ts'
 import {
   listRecordRoutingEvidence,
   ROUTING_EVIDENCE_RUN_FIELDS,
@@ -19,11 +18,9 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000002017'
 const FIRST_RUN_ID = '01990000-0000-7000-8000-000000002018'
 const SECOND_RUN_ID = '01990000-0000-7000-8000-000000002019'
 const STAMP = '2026-11-01T16:00:00.000Z'
-const UPDATED_SINCE = '2026-11-01T16:01:00.000Z'
-const UPDATED_AT = '2026-11-01T16:02:00.000Z'
 
 realPostgres('hosted routing evidence', () => {
-  test('projects only readable evidence and pages an updated-at tie exactly once', async () => {
+  test('projects readable evidence and pages sequence changes exactly once', async () => {
     const admin = new SQL(adminUrl!)
     try {
       await admin`INSERT INTO space (id,name,slug,created_at)
@@ -84,49 +81,43 @@ realPostgres('hosted routing evidence', () => {
         cursor: null,
       }
       const firstRows = await listRecordRoutingEvidence(input)
-      const firstPage = pageRecordItems(firstRows, 1, recordCursorOf)
-      expect(firstPage.items.map((row) => row.id)).toEqual([FIRST_RUN_ID])
-      expect(firstPage.items[0]).toMatchObject({
+      expect(firstRows.map((row) => row.id)).toEqual([SECOND_RUN_ID, FIRST_RUN_ID])
+      expect(firstRows[0]).toMatchObject({ executor: 'harness', delivery: null, lenses: [] })
+      expect(Object.keys(firstRows[0]!)).toEqual([
+        ...ROUTING_EVIDENCE_RUN_FIELDS,
+        ...ROUTING_EVIDENCE_SCORE_FIELDS,
+        'lenses',
+        'evidenceSequence',
+      ])
+      const firstCursor = firstRows[0]!.evidenceSequence
+      const secondRows = await listRecordRoutingEvidence({
+        ...input,
+        cursor: firstCursor,
+      })
+      expect(secondRows.map((row) => row.id)).toEqual([FIRST_RUN_ID])
+      expect(secondRows[0]).toMatchObject({
         executor: 'external',
         delivery: 'full',
         quality: 'right',
         fidelity: 'faithful',
         lenses: ['fidelity'],
       })
-      expect(Object.keys(firstPage.items[0]!)).toEqual([
-        ...ROUTING_EVIDENCE_RUN_FIELDS,
-        ...ROUTING_EVIDENCE_SCORE_FIELDS,
-        'lenses',
-      ])
-      expect(firstPage.nextCursor).not.toBeNull()
-      const secondRows = await listRecordRoutingEvidence({
-        ...input,
-        cursor: recordCursorOf(firstPage.items[0]!),
-      })
-      const secondPage = pageRecordItems(secondRows, 1, recordCursorOf)
-      expect(secondPage.items.map((row) => row.id)).toEqual([SECOND_RUN_ID])
-      expect(secondPage.items[0]).toMatchObject({ executor: 'harness', delivery: null, lenses: [] })
-      expect(secondPage.nextCursor).toBeNull()
-      expect(firstPage.items[0]![recordCursorAt]).toBe(secondPage.items[0]![recordCursorAt])
 
       expect(
         await listRecordRoutingEvidence({ ...input, userId: OUTSIDER_ID, limit: 100 }),
       ).toEqual([])
 
-      expect(
-        await listRecordRoutingEvidence({ ...input, updatedSince: UPDATED_SINCE, limit: 100 }),
-      ).toEqual([])
-      await admin`UPDATE run SET updated_at=${UPDATED_AT}::timestamptz
-        WHERE id=${SECOND_RUN_ID}::uuid`
+      const priorSequence = secondRows[0]!.evidenceSequence
+      await admin`UPDATE run_score SET note='late score' WHERE run_id=${FIRST_RUN_ID}::uuid`
       expect(
         (
           await listRecordRoutingEvidence({
             ...input,
-            updatedSince: UPDATED_SINCE,
+            cursor: priorSequence,
             limit: 100,
           })
         ).map((row) => row.id),
-      ).toEqual([SECOND_RUN_ID])
+      ).toEqual([FIRST_RUN_ID])
     } finally {
       await admin`DELETE FROM review_lens WHERE run_id IN (${FIRST_RUN_ID}::uuid,${SECOND_RUN_ID}::uuid)`
       await admin`DELETE FROM run_score WHERE space_id=${SPACE_ID}::uuid`
