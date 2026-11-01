@@ -64,6 +64,14 @@ describe('sourceDirectivePaths', () => {
     ).toEqual(new Set(['hub/ui/src/button.tsx', 'hub/ui/src/story.tsx']))
   })
 
+  test('a trailing slash on the source directory still matches its files', () => {
+    expect(
+      sourceDirectivePaths('hub/web/src/styles/index.css', '@source "../../../ui/src/";', [
+        'hub/ui/src/button.tsx',
+      ]),
+    ).toEqual(new Set(['hub/ui/src/button.tsx']))
+  })
+
   test.each(['@source not "x";', '@source inline("a b");'])(
     'refuses unsupported directive %s',
     (directive) => {

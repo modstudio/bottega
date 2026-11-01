@@ -75,7 +75,9 @@ export function sourceDirectivePaths(
     if (/[*?[{]/.test(sourceArgument)) {
       throw new Error(`unsupported @source directive in ${cssPath}: ${directive}`)
     }
-    const source = posix.normalize(posix.join(posix.dirname(cssPath), sourceArgument))
+    const source = posix
+      .normalize(posix.join(posix.dirname(cssPath), sourceArgument))
+      .replace(/\/+$/, '')
     if (
       posix.isAbsolute(sourceArgument) ||
       posix.isAbsolute(source) ||
