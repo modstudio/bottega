@@ -223,6 +223,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-typecheck-reach.test.ts',
   'orchestrator/src/postgres/postgres-migrate.test.ts',
   'orchestrator/src/postgres/migration-failure.test.ts',
+  'orchestrator/src/postgres/migration-notices.test.ts',
   'orchestrator/src/ratchet/biome-adapter.test.ts',
   'orchestrator/src/ratchet/ratchet-plan.test.ts',
   'scripts/check-file-ceiling.test.ts',
