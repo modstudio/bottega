@@ -42,6 +42,10 @@ const forEachValue = <T>(values: readonly T[], use: (value: T) => void) => value
 
 type ProjectRoutes = ReadonlyMap<string, string | null>
 
+function replicatedProfileVersionId(spaceId: string, value: unknown): string | null {
+  return value == null ? null : replicatedRecordId(spaceId, 'lens_profile_revision', String(value))
+}
+
 function cachedProjectRoutes(local: Database): Map<string, string | null> {
   const cache = cachedProjectSpaces(local)
   const registered = local.query('SELECT name FROM project').all() as { name: string }[]
@@ -101,12 +105,12 @@ function lensPlanRows(local: Database): LensPlanRows {
       .all() as Record<string, unknown>[],
     selections = local
       .query(
-        `SELECT record_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selection_version FROM project_lens_profile WHERE space_id IS NULL`,
+        `SELECT record_id,project_record_id,lens_record_id,axis,profile_name,selected_version,selected_version_id,selection_version FROM project_lens_profile WHERE space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
     selectionRevisions = local
       .query(
-        `SELECT r.record_id,r.selection_record_id,r.prior_profile_name,r.prior_selected_version,r.reason,r.session_id,r.at,s.project_record_id
+        `SELECT r.record_id,r.selection_record_id,r.prior_profile_name,r.prior_selected_version,r.prior_selected_version_id,r.reason,r.session_id,r.at,s.project_record_id
          FROM project_lens_profile_revision r JOIN project_lens_profile s ON s.record_id=r.selection_record_id WHERE r.space_id IS NULL`,
       )
       .all() as Record<string, unknown>[],
@@ -215,7 +219,7 @@ function lensSpacePlan(
       axis: r.axis as 'framework' | 'architecture',
       profileName: String(r.profile_name),
       selectedVersion: r.selected_version == null ? null : Number(r.selected_version),
-      selectedVersionId: null,
+      selectedVersionId: replicatedProfileVersionId(spaceId, r.selected_version_id),
       selectionVersion: Number(r.selection_version),
       updatedAt: now,
     })),
@@ -232,7 +236,7 @@ function lensSpacePlan(
         priorProfileName: r.prior_profile_name == null ? null : String(r.prior_profile_name),
         priorSelectedVersion:
           r.prior_selected_version == null ? null : Number(r.prior_selected_version),
-        priorSelectedVersionId: null,
+        priorSelectedVersionId: replicatedProfileVersionId(spaceId, r.prior_selected_version_id),
         reason: String(r.reason),
         sessionId: r.session_id == null ? null : String(r.session_id),
         at: String(r.at),
