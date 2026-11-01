@@ -54,10 +54,10 @@ ESTAB     0      0      127.0.0.1:51002  127.0.0.1:64321`
 
 test('empty sampler output is not a zero measurement', () => {
   expect(parseNetstatTimeWait('')).toEqual({
-    reason: 'netstat output had no recognisable TCP header',
+    reason: 'netstat output had no recognizable TCP header',
   })
   expect(parseSsTimeWait('')).toEqual({
-    reason: 'ss output had no recognisable TCP header',
+    reason: 'ss output had no recognizable TCP header',
   })
 })
 

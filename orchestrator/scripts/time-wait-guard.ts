@@ -10,7 +10,7 @@ export type TimeWaitSample =
 export function parseNetstatTimeWait(output: string): TimeWaitSample {
   const lines = output.split('\n')
   if (!lines.some((line) => /^Proto\s+.*Foreign Address.*State/i.test(line.trim()))) {
-    return { reason: 'netstat output had no recognisable TCP header' }
+    return { reason: 'netstat output had no recognizable TCP header' }
   }
   const byDestination = new Map<string, number>()
   let total = 0
@@ -31,7 +31,7 @@ export function parseSsTimeWait(output: string): TimeWaitSample {
     /^(?:State\s+)?Recv-Q\s+Send-Q\s+.*Peer Address:Port/i.test(line.trim()),
   )
   if (header < 0) {
-    return { reason: 'ss output had no recognisable TCP header' }
+    return { reason: 'ss output had no recognizable TCP header' }
   }
   const hasState = /^State\s+/i.test(lines[header]!.trim())
   const byDestination = new Map<string, number>()
