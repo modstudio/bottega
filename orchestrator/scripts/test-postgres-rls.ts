@@ -570,8 +570,12 @@ try {
       BOTTEGA_TEST_POSTGRES_FALSIFY: falsifyMode,
     },
   )
-  if (rls !== 0) process.exitCode = rls
-  else if (!falsifyMode) {
+  if (rls !== 0) {
+    console.error(
+      `hub evidence step (bun run --cwd ../hub test:postgres) skipped: src/postgres/postgres-migrate-rls.test.ts exited ${rls}`,
+    )
+    process.exitCode = rls
+  } else if (!falsifyMode) {
     const readOnlyMembership = await run(
       ['bun', 'test', '--timeout', '30000', 'src/postgres/postgres-migrate-read-only.test.ts'],
       {
