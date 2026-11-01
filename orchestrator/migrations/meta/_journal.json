@@ -1497,7 +1497,7 @@
       "when": 1793577600061,
       "tag": "0196_routing_pool_sequence_cursor",
       "breakpoints": true,
-      "compatibility": "additive"
+      "compatibility": "fenced"
     }
   ]
 }
