@@ -3,37 +3,11 @@
 import type { Database } from 'bun:sqlite'
 import { writeTransaction } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
-import {
-  decodeRecordCursor,
-  encodeRecordCursor,
-  parseStoredRecordCursor,
-  type RecordCursor,
-} from './record-cursor.ts'
+import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
+import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import { RECORD_LENS_TABLES, type RecordLensTable } from './record-lens-contract.ts'
 
 const LENS_CURSOR = 'record_lens_cursor'
-function readCursor(local: Database, key: string): string | undefined {
-  return local
-    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-    .get(key)?.value
-}
-function writeCursor(local: Database, key: string, value: string): void {
-  local
-    .query(
-      'INSERT INTO schema_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-    )
-    .run(key, value)
-}
-function readRecordCursor(local: Database, key: string): RecordCursor | undefined {
-  const value = readCursor(local, key)
-  if (value === undefined) return undefined
-  const parsed = parseStoredRecordCursor(value, false)
-  if ('cursor' in parsed) return parsed.cursor
-  throw new Error(`invalid record cache cursor for ${key}`)
-}
-function writeRecordCursor(local: Database, key: string, cursor: RecordCursor): void {
-  writeCursor(local, key, JSON.stringify(cursor))
-}
 
 export async function pullLensCatalogue(
   local: Database,

@@ -1,5 +1,5 @@
 CREATE TABLE routing_pool_run (
-  record_id TEXT PRIMARY KEY,
+  record_id TEXT NOT NULL PRIMARY KEY,
   space_id TEXT NOT NULL,
   agent TEXT NOT NULL,
   model TEXT,
@@ -22,7 +22,7 @@ CREATE TABLE routing_pool_run (
 );
 --> statement-breakpoint
 CREATE TABLE routing_pool_lens (
-  record_id TEXT PRIMARY KEY,
+  record_id TEXT NOT NULL PRIMARY KEY,
   run_record_id TEXT NOT NULL REFERENCES routing_pool_run(record_id) ON DELETE CASCADE,
   lens TEXT NOT NULL,
   UNIQUE (run_record_id, lens)

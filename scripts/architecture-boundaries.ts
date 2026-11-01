@@ -764,6 +764,7 @@ export const importBoundaries: ImportBoundary[] = [
       '../subject/subjects.ts',
       './record-api-client.ts',
       './record-auth.ts',
+      './record-cache-cursor.ts',
       './record-cache-lens.ts',
       './record-cache-port.ts',
       './record-cache-workflow.ts',

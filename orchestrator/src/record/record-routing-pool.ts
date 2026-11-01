@@ -5,6 +5,8 @@ import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writeTransaction } from '../database/db.ts'
 import { recordApiClient } from './record-api-client.ts'
+import { readRecordCursor, writeRecordCursor } from './record-cache-cursor.ts'
+import { decodeRecordCursor, encodeRecordCursor } from './record-cursor.ts'
 import type { RecordRoutingEvidence } from './record-routing-evidence-contract.ts'
 
 export const ROUTING_POOL_PAGE_LIMIT = 100
@@ -15,21 +17,6 @@ export type RoutingPoolPullResult = {
   added: number
   updated: number
   caughtUp: boolean
-}
-
-function readCursor(local: Database, spaceId: string): string | undefined {
-  return local
-    .query<{ value: string }, [string]>('SELECT value FROM schema_meta WHERE key=?')
-    .get(`${ROUTING_POOL_CURSOR}:${spaceId}`)?.value
-}
-
-function writeCursor(local: Database, spaceId: string, cursor: string): void {
-  local
-    .query(
-      `INSERT INTO schema_meta (key,value) VALUES (?,?)
-       ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
-    )
-    .run(`${ROUTING_POOL_CURSOR}:${spaceId}`, cursor)
 }
 
 function upsertPoolRun(local: Database, row: RecordRoutingEvidence, pulledAt: string): void {
@@ -99,12 +86,14 @@ export async function pullRoutingPool(
   let updated = 0
   let caughtUp = true
   for (const spaceId of spaces) {
-    let cursor = readCursor(local, spaceId)
+    const cursorKey = `${ROUTING_POOL_CURSOR}:${spaceId}`
+    const storedCursor = readRecordCursor(local, cursorKey)
+    let requestCursor = storedCursor ? encodeRecordCursor(storedCursor) : undefined
     let spaceCaughtUp = false
     for (let pageNumber = 0; pageNumber < ROUTING_POOL_PAGES_PER_SYNC; pageNumber++) {
       const page = await client.listRoutingEvidence({
         spaceId,
-        cursor,
+        cursor: requestCursor,
         limit: ROUTING_POOL_PAGE_LIMIT,
       })
       writeTransaction(() => {
@@ -119,16 +108,16 @@ export async function pullRoutingPool(
           if (exists) updated++
           else added++
         }
-        if (page.endCursor) {
-          cursor = page.endCursor
-          writeCursor(local, spaceId, page.endCursor)
+        const pageCursor = page.endCursor ?? page.nextCursor
+        if (pageCursor) {
+          writeRecordCursor(local, cursorKey, decodeRecordCursor(pageCursor))
         }
       }, local)
       if (!page.nextCursor) {
         spaceCaughtUp = true
         break
       }
-      cursor = page.nextCursor
+      requestCursor = page.nextCursor
     }
     if (!spaceCaughtUp) caughtUp = false
   }
