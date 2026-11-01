@@ -53,7 +53,9 @@ function productionSources(): RecordSqlSource[] {
   return sources
 }
 
-const violations = recordSqlPoolViolations(productionSources())
-for (const violation of violations) console.error(violation)
-if (violations.length) process.exit(1)
-console.log('check-record-sql-pool: ok')
+if (import.meta.main) {
+  const violations = recordSqlPoolViolations(productionSources())
+  for (const violation of violations) console.error(violation)
+  if (violations.length) process.exit(1)
+  console.log('check-record-sql-pool: ok')
+}

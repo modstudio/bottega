@@ -14,7 +14,12 @@ import {
 } from '../../shared/record/schema.ts'
 import { resolveHubDatabase, resolveOrchestratorDatabase } from '../../shared/state-directory.ts'
 import { testPostgresSpawnEnvironment } from './test-postgres-spawn-env.ts'
-import { parseNetstatTimeWait, parseSsTimeWait, timeWaitPeakExceeded } from './time-wait-guard.ts'
+import {
+  busiestDestination,
+  parseNetstatTimeWait,
+  parseSsTimeWait,
+  timeWaitPeakExceeded,
+} from './time-wait-guard.ts'
 
 const falsify = process.argv.includes('--falsify')
 const withoutLiveImport = process.argv.includes('--without-live-import')
@@ -81,10 +86,13 @@ function ephemeralPortRange(): { size: number } | { reason: string } {
   return { reason: `TIME_WAIT sampling is unsupported on ${process.platform}` }
 }
 
-function startTimeWaitMonitor(port: number): TimeWaitMonitor {
+function startTimeWaitMonitor(): TimeWaitMonitor {
   const range = ephemeralPortRange()
-  let peak = -1
-  let peakLeg = currentLeg
+  let destinationPeak = -1
+  let destinationPeakEndpoint: string | undefined
+  let destinationPeakLeg = currentLeg
+  let totalPeak = -1
+  let totalPeakLeg = currentLeg
   let reason = 'reason' in range ? range.reason : null
   const sample = () => {
     if (reason) return
@@ -99,15 +107,21 @@ function startTimeWaitMonitor(port: number): TimeWaitMonitor {
     }
     const parsed =
       process.platform === 'darwin'
-        ? parseNetstatTimeWait(result.stdout.toString(), port)
-        : parseSsTimeWait(result.stdout.toString(), port)
+        ? parseNetstatTimeWait(result.stdout.toString())
+        : parseSsTimeWait(result.stdout.toString())
     if ('reason' in parsed) {
       reason = parsed.reason
       return
     }
-    if (parsed.count > peak) {
-      peak = parsed.count
-      peakLeg = currentLeg
+    const busiest = busiestDestination(parsed)
+    if (busiest.count > destinationPeak) {
+      destinationPeak = busiest.count
+      destinationPeakEndpoint = busiest.destination
+      destinationPeakLeg = currentLeg
+    }
+    if (parsed.total > totalPeak) {
+      totalPeak = parsed.total
+      totalPeakLeg = currentLeg
     }
   }
   sample()
@@ -116,15 +130,19 @@ function startTimeWaitMonitor(port: number): TimeWaitMonitor {
     finish() {
       clearInterval(timer)
       sample()
-      if (reason || peak < 0 || 'reason' in range) {
+      if (reason || destinationPeak < 0 || totalPeak < 0 || 'reason' in range) {
         console.log(
           `TIME_WAIT not measured: ${reason ?? 'no valid sample'}; guard is informational`,
         )
         return
       }
-      console.log(`peak TIME_WAIT to ${port}: ${peak} of ${range.size} (${peakLeg})`)
-      if (timeWaitPeakExceeded(peak, range.size)) {
-        console.error(`TIME_WAIT peak exceeded the allowed fraction during ${peakLeg}`)
+      console.log(
+        `peak TIME_WAIT to ${destinationPeakEndpoint ?? 'no destination'}: ${destinationPeak} of ${range.size} (${destinationPeakLeg}); machine total peak ${totalPeak} (${totalPeakLeg})`,
+      )
+      if (timeWaitPeakExceeded(destinationPeak, range.size)) {
+        console.error(
+          `TIME_WAIT peak to ${destinationPeakEndpoint ?? 'no destination'} exceeded the allowed fraction during ${destinationPeakLeg}`,
+        )
         process.exitCode = 1
       }
     },
@@ -288,7 +306,7 @@ try {
   if (portResult.exitCode !== 0) throw new Error(portResult.stderr.toString())
   const port = portResult.stdout.toString().trim().split(':').at(-1)
   if (!port) throw new Error('disposable Postgres published no host port')
-  timeWaitMonitor = startTimeWaitMonitor(Number(port))
+  timeWaitMonitor = startTimeWaitMonitor()
 
   postgres(`
     CREATE ROLE ${RECORD_OWNER_ROLE} LOGIN PASSWORD 'owner-password' NOSUPERUSER NOBYPASSRLS;

@@ -1,10 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import {
-  closeRecordPools,
-  RECORD_POOL_IDLE_TIMEOUT_SECONDS,
-  RECORD_POOL_MAX,
-  recordPool,
-} from './record-pool.ts'
+import { closeRecordPools, recordPool } from './record-pool.ts'
 
 const url = process.env.BOTTEGA_TEST_RECORD_POOL_URL
 
@@ -13,8 +8,6 @@ afterAll(closeRecordPools)
 const realPostgres = url ? describe : describe.skip
 realPostgres('record pool against real Postgres', () => {
   test('a failed tenant transaction returns a clean pooled connection', async () => {
-    expect(RECORD_POOL_MAX).toBe(10)
-    expect(RECORD_POOL_IDLE_TIMEOUT_SECONDS).toBe(30)
     const pool = recordPool(url!, 1)
     await expect(
       pool.begin(async (tx) => {

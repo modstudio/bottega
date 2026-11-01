@@ -2,8 +2,8 @@
 /** Owns bounded, process-wide record Postgres pools. Must not know tenant or query policy. */
 import { SQL } from 'bun'
 
-export const RECORD_POOL_MAX = 10
-export const RECORD_POOL_IDLE_TIMEOUT_SECONDS = 30
+const RECORD_POOL_MAX = 10
+const RECORD_POOL_IDLE_TIMEOUT_SECONDS = 30
 
 const pools = new Map<string, SQL>()
 
