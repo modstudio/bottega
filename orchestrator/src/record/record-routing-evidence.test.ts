@@ -57,7 +57,7 @@ realPostgres('hosted routing evidence', () => {
           ${id}::uuid,${SPACE_ID}::uuid,${MACHINE_ID}::uuid,${USER_ID}::uuid,
           ${STAMP}::timestamptz,${`agent-${index}`},'implement','sha',123,'head',${probe},
           ${status},${parent}::uuid,1,'typescript','model-a',${index === 1 ? 'harness' : null},
-          false,false,false,${JSON.stringify(withheld)}::jsonb,${STAMP}::timestamptz,${STAMP}::timestamptz
+          false,false,false,${withheld}::jsonb,${STAMP}::timestamptz,${STAMP}::timestamptz
         )`
       }
       await admin`INSERT INTO run_score (
