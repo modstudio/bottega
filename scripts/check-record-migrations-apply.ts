@@ -890,7 +890,7 @@ async function proofLensPinContractGuard(
   migration: MigrationMeta,
 ): Promise<void> {
   await transaction.exec('SAVEPOINT lens_pin_contract_guard_refusal')
-  await seedLensPinContractRow(transaction, 1)
+  await seedLensPinContractRow(transaction, 2)
   let refusal: unknown
   try {
     await applyRecordMigration(transaction, migration)
@@ -903,6 +903,20 @@ async function proofLensPinContractGuard(
     throw new CheckFailure(
       `DEV-1991 hosted pin guard did not refuse the integer-only row: ${errorMessage(refusal)}`,
     )
+
+  await transaction.exec('SAVEPOINT lens_pin_contract_guard_resolution')
+  await seedLensPinContractRow(transaction, 1)
+  await applyRecordMigration(transaction, migration)
+  await transaction.exec('ALTER TABLE project_lens_profile NO FORCE ROW LEVEL SECURITY')
+  const resolved = await transaction.query<{ selected_version_id: string | null }>(
+    'SELECT selected_version_id FROM project_lens_profile WHERE id = $1',
+    [catalogueProofId(394)],
+  )
+  if (resolved.rows[0]?.selected_version_id !== catalogueProofId(393))
+    throw new CheckFailure('DEV-1991 hosted pin guard did not re-resolve the current-version pin')
+  await transaction.exec('ROLLBACK TO SAVEPOINT lens_pin_contract_guard_resolution')
+  await transaction.exec('RELEASE SAVEPOINT lens_pin_contract_guard_resolution')
+
   await seedLensPinContractRow(transaction, null)
 }
 

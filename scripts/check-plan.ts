@@ -214,6 +214,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-outbox-payload-contracts.test.ts',
   'scripts/record-migration-bounds.test.ts',
   'scripts/record-migration-failure.test.ts',
+  'scripts/record-migration-force-rls-lifts.test.ts',
   'scripts/record-migration-set.test.ts',
   'scripts/check-record-rehearsal.test.ts',
   'scripts/record-rehearse.test.ts',
