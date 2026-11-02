@@ -15,7 +15,7 @@ export type TreeProcessCwdDecision =
 export function treeProcessCwdDecision(input: {
   treePaths: readonly string[]
   cwdByPid: ReadonlyMap<number, string>
-  ownPid: number
+  excludedPids: ReadonlySet<number>
   scanError: string | null
 }): TreeProcessCwdDecision {
   if (input.scanError) {
@@ -24,7 +24,7 @@ export function treeProcessCwdDecision(input: {
   const processes = [...input.cwdByPid]
     .filter(
       ([pid, cwd]) =>
-        pid !== input.ownPid &&
+        !input.excludedPids.has(pid) &&
         input.treePaths.some((treePath) => workingDirectoryIsInsideTree(cwd, treePath)),
     )
     .map(([pid, cwd]) => ({ pid, cwd }))

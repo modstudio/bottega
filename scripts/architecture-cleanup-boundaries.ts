@@ -49,6 +49,7 @@ export const cleanupBoundarySpecs = [
       'node:path',
       '../../../shared/brand.ts',
       '../resources/process-inventory.ts',
+      '../resources/session-process-anchoring.ts',
       './tree-process-cwd-decision.ts',
     ],
     typeOnlyAllowed: [],

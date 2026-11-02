@@ -3,12 +3,16 @@ import { treeProcessCwdDecision } from './tree-process-cwd-decision.ts'
 
 const decide = (
   cwdByPid: ReadonlyMap<number, string>,
-  options: { ownPid?: number; scanError?: string | null; treePaths?: string[] } = {},
+  options: {
+    excludedPids?: ReadonlySet<number>
+    scanError?: string | null
+    treePaths?: string[]
+  } = {},
 ) =>
   treeProcessCwdDecision({
     treePaths: options.treePaths ?? ['/real/tree'],
     cwdByPid,
-    ownPid: options.ownPid ?? 99,
+    excludedPids: options.excludedPids ?? new Set([99]),
     scanError: options.scanError ?? null,
   })
 
@@ -28,9 +32,27 @@ describe('tree process cwd decision', () => {
     expect(decide(new Map([[12, '/real/other']]))).toEqual({ action: 'proceed' })
   })
 
-  test('ignores the close-out process itself', () => {
-    expect(decide(new Map([[12, '/real/tree']]), { ownPid: 12 })).toEqual({
+  test('proceeds when every pid inside the tree is excluded', () => {
+    expect(decide(new Map([[12, '/real/tree']]), { excludedPids: new Set([12]) })).toEqual({
       action: 'proceed',
+    })
+  })
+
+  test('holds only a non-ancestor sibling inside the tree', () => {
+    expect(
+      decide(
+        new Map([
+          [12, '/real/tree'],
+          [13, '/real/tree/packages/app'],
+        ]),
+        { excludedPids: new Set([12, 99]) },
+      ),
+    ).toEqual({
+      action: 'hold',
+      reason: {
+        kind: 'processes',
+        processes: [{ pid: 13, cwd: '/real/tree/packages/app' }],
+      },
     })
   })
 
