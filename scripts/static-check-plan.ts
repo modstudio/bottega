@@ -166,6 +166,7 @@ const STATIC_CHECKS: readonly StaticCheckDeclaration[] = [
   script('scripts/check-remedy-text.ts', run),
   script('scripts/check-secret-shaped-redaction.ts', run),
   script('scripts/check-docker-workspaces.ts', run),
+  script('scripts/check-hosted-memory.ts', run),
   script('scripts/check-hub-packages.ts', run),
   script('scripts/check-hub-ui-styles.ts', run),
   script('scripts/check-storybook.ts', run),

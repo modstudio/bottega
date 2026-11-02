@@ -202,6 +202,7 @@ export const ROOT_TEST_FILES = [
   'scripts/check-machine-state.test.ts',
   'scripts/check-legacy-names.test.ts',
   'scripts/check-docker-workspaces.test.ts',
+  'scripts/check-hosted-memory.test.ts',
   'scripts/check-dependency-audit.test.ts',
   'scripts/check-runtime.test.ts',
   'scripts/static-check-plan.test.ts',
