@@ -29,6 +29,7 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
     './workflow-tree.ts',
   ]),
   module('orchestrator/src/workflow/workflow-tree-promotion.ts', [
+    'node:util',
     './step-catalogue.ts',
     './workflow-tree.ts',
     './workflows.ts',
@@ -36,7 +37,6 @@ export const workflowTreeModules: WorkflowTreeModule[] = [
   module('orchestrator/src/workflow/workflow-tree-store.ts', [
     '../../../shared/brand.ts',
     'bun:sqlite',
-    'node:util',
     '../database/db.ts',
     '../record/record-write-authority.ts',
     './step-catalogue.ts',
