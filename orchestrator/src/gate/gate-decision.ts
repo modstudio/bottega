@@ -42,6 +42,15 @@ export const GATE_COMMAND_TIMEOUT_MS = 20 * 60_000
 export const RUN_GATE_WAIT_MS = 4 * 60_000
 export const GATE_CLOSE_REASON = 'Gate run cancelled because the supervising run closed.'
 export const WORKER_GATE_BASE_ENV = 'BOTTEGA_GATE_BASE_COMMIT'
+/** The base commit the run recorded, which is the commit its worktree recipe installed dependencies at. */
+export const GATE_PROVISIONED_BASE_ENV = 'BOTTEGA_PROVISIONED_BASE_COMMIT'
+
+export function workerGateOverlay(
+  environment: Readonly<Record<string, string>>,
+  baseCommit: string,
+): Record<string, string> {
+  return { ...environment, [GATE_PROVISIONED_BASE_ENV]: baseCommit }
+}
 const GATE_TOOLING_PATH_NAMES = [
   'package.json',
   'bun.lock',

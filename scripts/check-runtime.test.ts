@@ -18,45 +18,40 @@ describe('dependency installation', () => {
     expect(dependencyProvisioningBase({ borrowedCheckout: true })).toEqual({ kind: 'head' })
   })
 
-  test('a linked writer uses the registered remote landing branch merge base', () => {
+  test('a linked writer uses the base commit recorded by its run', () => {
+    const recordedBase = '93425334662129b123175441fbf77babdd163b93'
     expect(
       dependencyProvisioningBase({
         borrowedCheckout: false,
-        landingBranch: 'stable',
-        remoteLandingRefResolved: true,
+        recordedBase,
       }),
-    ).toEqual({ kind: 'merge-base', landingRef: 'origin/stable' })
+    ).toEqual({ kind: 'recorded', commit: recordedBase })
   })
 
-  test('a linked writer falls back to the registered local landing branch', () => {
+  test('a linked writer refuses a missing or empty recorded base', () => {
     expect(
       dependencyProvisioningBase({
         borrowedCheckout: false,
-        landingBranch: 'stable',
-        remoteLandingRefResolved: false,
+        recordedBase: null,
       }),
-    ).toEqual({ kind: 'merge-base', landingRef: 'stable' })
-  })
-
-  test('a linked writer refuses an unreadable registered landing branch', () => {
+    ).toEqual({ kind: 'unresolved' })
     expect(
       dependencyProvisioningBase({
         borrowedCheckout: false,
-        landingBranch: null,
-        remoteLandingRefResolved: false,
+        recordedBase: '',
       }),
     ).toEqual({ kind: 'unresolved' })
   })
 
-  test("a worker keeps using its base when main's lockfile advances", () => {
-    const factsAfterMainAdvances = {
+  test('a worker whose lockfile matches its recorded base stays provisioned', () => {
+    const factsFromRecordedBase = {
       workerRun: true,
       nodeModulesPresent: true,
       lockfileReadable: true,
       provisioningSourceResolved: true,
       lockfileMatchesProvisioningSource: true,
     }
-    expect(dependencyInstallDecision(factsAfterMainAdvances)).toBe('skip-provisioned')
+    expect(dependencyInstallDecision(factsFromRecordedBase)).toBe('skip-provisioned')
   })
 
   test('a worker refuses a lockfile change', () => {

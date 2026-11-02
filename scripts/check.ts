@@ -2,8 +2,8 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'n
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
-import { projectAt } from '../orchestrator/src/project/projects.ts'
+import { DB_PATH, openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
+import { GATE_PROVISIONED_BASE_ENV } from '../orchestrator/src/gate/gate-decision.ts'
 import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
 import { changeViewPlan } from '../shared/change-view.ts'
@@ -12,7 +12,7 @@ import {
   type CheckExecutionRecord,
   UNIT_TEST_CHECK_CATEGORY,
 } from '../shared/check-execution'
-import { borrowedCheckoutOf, inspectionGitEnv, mainCheckoutOf } from '../shared/git'
+import { borrowedCheckoutOf, inspectionGitEnv } from '../shared/git'
 import { findingLine } from '../shared/ratchet.ts'
 import {
   decideGateOutcome,
@@ -468,46 +468,70 @@ function gitOutput(cwd: string, argv: string[], failure: 'null' | 'throw' = 'nul
   return result.stdout.length ? result.stdout : null
 }
 
-function registeredLandingBranch(mainCheckout: string): string | null {
+function recordedRunBase(): { commit: string } | { unresolved: string } {
+  const brokeredBase = process.env[GATE_PROVISIONED_BASE_ENV]?.trim()
+  if (brokeredBase) return { commit: brokeredBase }
+  const runId = process.env.BOTTEGA_RUN_ID?.trim()
+  if (!runId) return { unresolved: 'BOTTEGA_RUN_ID is unset' }
   let database: ReturnType<typeof openReadOnlyDatabase> | null = null
   try {
     database = openReadOnlyDatabase()
-    return projectAt(mainCheckout, database)?.settings.trunk?.trim() || null
-  } catch {
-    return null
+    const row = database
+      .query<{ base_commit: string | null }, [string]>(
+        'SELECT base_commit FROM run WHERE record_id = ?',
+      )
+      .get(runId)
+    if (!row) return { unresolved: `no run row has record id ${runId}` }
+    const commit = row.base_commit?.trim()
+    return commit
+      ? { commit }
+      : { unresolved: `the run row for record id ${runId} records no base commit` }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return {
+      unresolved: `the orchestrator store at ${DB_PATH} could not be opened: ${message}`,
+    }
   } finally {
     database?.close()
   }
 }
 
-function provisionedLockfile(): Buffer | null {
-  const mainCheckout = mainCheckoutOf(root)
-  if (!mainCheckout) return null
+function provisionedLockfile(): { lockfile: Buffer | null; unresolved: string | null } {
   const borrowedCheckout = borrowedCheckoutOf(root) !== null
+  const recordedBase = borrowedCheckout ? null : recordedRunBase()
+  if (recordedBase && 'unresolved' in recordedBase) {
+    return { lockfile: null, unresolved: recordedBase.unresolved }
+  }
   const baseChoice = borrowedCheckout
     ? dependencyProvisioningBase({ borrowedCheckout: true })
-    : (() => {
-        const landingBranch = registeredLandingBranch(mainCheckout)
-        return dependencyProvisioningBase({
-          borrowedCheckout: false,
-          landingBranch,
-          remoteLandingRefResolved:
-            landingBranch !== null &&
-            gitOutput(root, ['rev-parse', '--verify', `origin/${landingBranch}`]) !== null,
-        })
-      })()
-  if (baseChoice.kind === 'unresolved') return null
-  if (baseChoice.kind === 'head') return gitOutput(root, ['show', 'HEAD:bun.lock'])
-  const base = gitOutput(root, ['merge-base', 'HEAD', baseChoice.landingRef])?.toString().trim()
-  if (!base) return null
-  // The tracked writer recipe runs bun install after creating the tree at this base. Reading the
-  // base commit keeps that provisioning source stable when the main checkout advances later.
-  return gitOutput(root, ['show', `${base}:bun.lock`])
+    : dependencyProvisioningBase({
+        borrowedCheckout: false,
+        recordedBase: recordedBase?.commit ?? null,
+      })
+  if (baseChoice.kind === 'unresolved') {
+    return { lockfile: null, unresolved: 'the recorded provisioning base could not be resolved' }
+  }
+  if (baseChoice.kind === 'head') {
+    const lockfile = gitOutput(root, ['show', 'HEAD:bun.lock'])
+    return {
+      lockfile,
+      unresolved: lockfile ? null : 'bun.lock could not be read from the borrowed checkout HEAD',
+    }
+  }
+  // The tracked writer recipe runs bun install after creating the tree at this recorded base.
+  const lockfile = gitOutput(root, ['show', `${baseChoice.commit}:bun.lock`])
+  return {
+    lockfile,
+    unresolved: lockfile
+      ? null
+      : `bun.lock could not be read from recorded base ${baseChoice.commit}`,
+  }
 }
 
 async function installDependencies() {
   const workerRun = classifyCaller(process.env).kind === 'worker'
-  const sourceLockfile = workerRun ? provisionedLockfile() : null
+  const provisioned = workerRun ? provisionedLockfile() : null
+  const sourceLockfile = provisioned?.lockfile ?? null
   let lockfile: Buffer | null = null
   if (workerRun) {
     try {
@@ -545,6 +569,7 @@ async function installDependencies() {
     console.error(
       "INSTALL: refused; the worker's dependency provisioning source or its bun.lock could not be resolved; run the architect's gate to reprovision dependencies",
     )
+    console.error(`INSTALL: reason; ${provisioned?.unresolved ?? 'the source is unresolved'}`)
     return 1
   }
   console.error(

@@ -37,12 +37,11 @@ export type DependencyProvisioningBaseFacts =
   | { borrowedCheckout: true }
   | {
       borrowedCheckout: false
-      landingBranch: string | null
-      remoteLandingRefResolved: boolean
+      recordedBase: string | null
     }
 export type DependencyProvisioningBase =
   | { kind: 'head' }
-  | { kind: 'merge-base'; landingRef: string }
+  | { kind: 'recorded'; commit: string }
   | { kind: 'unresolved' }
 
 /** Select the commit whose dependencies the worktree recipe provisioned. */
@@ -50,19 +49,14 @@ export function dependencyProvisioningBase(
   facts: DependencyProvisioningBaseFacts,
 ): DependencyProvisioningBase {
   if (facts.borrowedCheckout) return { kind: 'head' }
-  if (!facts.landingBranch) return { kind: 'unresolved' }
-  return {
-    kind: 'merge-base',
-    landingRef: facts.remoteLandingRefResolved
-      ? `origin/${facts.landingBranch}`
-      : facts.landingBranch,
-  }
+  if (!facts.recordedBase?.trim()) return { kind: 'unresolved' }
+  return { kind: 'recorded', commit: facts.recordedBase }
 }
 
 /**
  * Decide whether the gate may use dependencies provisioned before a worker entered its sandbox.
- * The gate resolves that source from Git structure instead of a worker environment marker because
- * orchestration marker names are not part of the check's contract.
+ * The provisioning source is the base commit the run recorded, which is the commit where the
+ * worktree recipe installed the dependencies.
  */
 export function dependencyInstallDecision(
   facts: DependencyInstallFacts,
