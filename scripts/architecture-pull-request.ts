@@ -1,7 +1,12 @@
 export const pullRequestModuleSpecs = [
   {
     file: 'orchestrator/src/pull-request/pr-post-landing-payload.ts',
-    allowed: ['../../../shared/brand.ts'],
+    allowed: [
+      '../../../shared/brand.ts',
+      '../release/release-required.ts',
+      '../release/ship-to-reach.ts',
+    ],
+    typeOnlyAllowed: ['../release/release-required.ts'],
   },
   {
     file: 'orchestrator/src/pull-request/pr-post-landing.ts',
@@ -15,6 +20,7 @@ export const pullRequestModuleSpecs = [
       '../project/projects.ts',
       '../release/release-entry-closure.ts',
       '../release/release-required.ts',
+      '../release/ship-to-reach.ts',
       '../ship-cleanup/ship-cleanup-decision.ts',
       '../ship-cleanup/ship-cleanup.ts',
       './pr-admission.ts',

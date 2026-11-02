@@ -13,7 +13,7 @@ import {
   type ReleaseResult,
   releaseProject,
 } from './release-service.ts'
-import { decideShipToReach, shipToRungs } from './ship-to-reach.ts'
+import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reach.ts'
 
 export type RequiredReleaseRung = {
   name: string
@@ -58,10 +58,12 @@ export type RequiredReleaseReport = {
 export type ReleaseRungPlan = {
   rung: string
   required: boolean
-  requiredBy: 'explicit' | 'reach' | null
+  requiredBy: (typeof RELEASE_REQUIREMENT_SOURCES)[number] | null
   reason: string | null
   declaresLive: boolean
 }
+
+export const RELEASE_REQUIREMENT_SOURCES = ['explicit', 'reach'] as const
 
 export type RequiredRungDecision =
   | { decided: true; required: string[]; rungs: ReleaseRungPlan[]; error: null }
@@ -103,6 +105,25 @@ function releaseRungPlans(
       declaresLive: rung.live !== undefined,
     }
   })
+}
+
+export function legacyRungPlans(
+  rungs: readonly RequiredReleaseRung[],
+  requiredRungs: readonly string[],
+): ReleaseRungPlan[] {
+  const known = new Set(rungs.map(({ name }) => name))
+  const allRungs = [
+    ...rungs,
+    ...requiredRungs.filter((name) => !known.has(name)).map((name) => ({ name })),
+  ]
+  return releaseRungPlans(
+    allRungs,
+    new Set(requiredRungs),
+    new Set(),
+    undefined,
+    new Map(),
+    new Set(),
+  )
 }
 
 /** Own the required-rung policy, including a failure to inspect the landed paths. */
@@ -282,13 +303,18 @@ export function failedRequiredRelease(
   }
 }
 
-export function releaseRequiredFlagAbsent(rungs: ReleaseRungPlan[]): RequiredReleaseReport {
+export function releaseRequiredFlagAbsent(
+  rungs: ReleaseRungPlan[],
+  decisionError?: string | null,
+): RequiredReleaseReport {
+  const withDecisionError = (detail: string): string =>
+    decisionError ? `${detail}; ${decisionError}` : detail
   const releases = rungs.map((plan): RequiredRungRelease => {
     if (plan.requiredBy !== 'reach')
-      return failure(plan, 'not released because --release-required was absent')
+      return failure(plan, withDecisionError('not released because --release-required was absent'))
     return failure(
       { ...plan, required: false },
-      'ship-to reach deploys only at production with --release-required',
+      withDecisionError('ship-to reach deploys only at production with --release-required'),
     )
   })
   return {
@@ -385,7 +411,8 @@ export function releaseRequiredRungs(input: {
       (entries) => runner.entryClosure(input.project, input.mergeCommit, entries),
       input.depth,
     )
-  if (!input.releaseRequired) return releaseRequiredFlagAbsent(decision.rungs)
+  if (!input.releaseRequired)
+    return releaseRequiredFlagAbsent(decision.rungs, decision.decided ? null : decision.error)
   if (!decision.decided) return failedRequiredRelease(decision.rungs, decision.error)
   return runRequiredReleaseRungs(input.project, input.mergeCommit, decision.rungs, runner, true)
 }
@@ -405,7 +432,7 @@ export function formatRequiredReleaseReport(
   if (!report.satisfied) {
     const rung = report.releases.find((release) => !release.satisfied)!.rung
     lines.push(
-      `remedy: ${PLATFORM_SLUG} pr merge ${target} --release-required${depth ? ` --depth ${depth}` : ''}, or ${PLATFORM_SLUG} release run ${project} --rung ${rung} and then ${PLATFORM_SLUG} pr merge ${target} --release-required${depth ? ` --depth ${depth}` : ''}`,
+      `remedy: ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}, or ${PLATFORM_SLUG} release run ${project} --rung ${rung} and then ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`,
     )
   }
   return lines.join('\n')

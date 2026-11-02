@@ -2,11 +2,13 @@
 /** Identity fixed by the parent before the main checkout moves. */
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
+import { RELEASE_REQUIREMENT_SOURCES, type ReleaseRungPlan } from '../release/release-required.ts'
+import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 
 export const POST_LANDING_FLAG = '--post-landing'
 
 export function postLandingRecovery(target: string, depth?: string | null): string {
-  return `recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${target} --release-required${depth ? ` --depth ${depth}` : ''}`
+  return `recover with: ${PLATFORM_SLUG} machine update (or ${PLATFORM_SLUG} machine migrate when no runs are in flight), then ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
 }
 
 export type PullRequestPostLandingPayload = {
@@ -17,13 +19,7 @@ export type PullRequestPostLandingPayload = {
   headCommit: string
   mergeCommit: string
   requiredRungs: string[]
-  rungPlans?: Array<{
-    rung: string
-    required: boolean
-    requiredBy: 'explicit' | 'reach' | null
-    reason: string | null
-    declaresLive: boolean
-  }>
+  rungPlans?: ReleaseRungPlan[]
   rungDecisionError: string | null
   releaseRequired: boolean
   depth: string | null
@@ -55,7 +51,10 @@ function validRungPlans(value: unknown): boolean {
       typeof plan.rung === 'string' &&
       Boolean(plan.rung) &&
       typeof plan.required === 'boolean' &&
-      (plan.requiredBy === 'explicit' || plan.requiredBy === 'reach' || plan.requiredBy === null) &&
+      (plan.requiredBy === null ||
+        RELEASE_REQUIREMENT_SOURCES.includes(
+          plan.requiredBy as (typeof RELEASE_REQUIREMENT_SOURCES)[number],
+        )) &&
       (plan.reason === null || typeof plan.reason === 'string') &&
       typeof plan.declaresLive === 'boolean'
     )

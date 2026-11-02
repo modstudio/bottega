@@ -19,6 +19,7 @@ import {
   changedPaths,
   failedRequiredRelease,
   formatRequiredReleaseReport,
+  legacyRungPlans,
   mainCheckoutHead,
   moveNonInstallationMainCheckout,
   type ReleaseRungPlan,
@@ -29,6 +30,7 @@ import {
   requiredRungDecision,
   verifyMainCheckout,
 } from '../release/release-required.ts'
+import { releaseDepthFlag } from '../release/ship-to-reach.ts'
 import {
   formatShipCleanup,
   type ShipCleanupReport,
@@ -70,7 +72,7 @@ export type PullRequestPostLandingAdapter = {
 }
 
 const releaseRequiredCommand = (target: string, depth?: string): string =>
-  `${PLATFORM_SLUG} pr merge ${target} --release-required${depth ? ` --depth ${depth}` : ''}`
+  `${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`
 
 function moveMainForPostLanding(
   adapter: PullRequestPostLandingAdapter,
@@ -346,7 +348,7 @@ export function completePullRequestPostLanding(input: {
 }): PullRequestMergeOutcome {
   const post = input.postLandingAdapter ?? cliPostLandingAdapter
   const decision: RequiredRungDecision =
-    (input.project.settings.release?.rungs.length ?? 0) > 0
+    input.workflowPromotionDue || input.releaseRequired
       ? requiredRungDecision(
           input.project,
           () => post.changedPaths(input.project, input.mergeCommit),
@@ -539,23 +541,9 @@ export function runPullRequestPostLanding(
   })
   const rungPlans =
     payload.rungPlans ??
-    [
-      ...new Set([
-        ...(project.settings.release?.rungs ?? []).map(({ name }) => name),
-        ...payload.requiredRungs,
-      ]),
-    ].map((name) => {
-      const rung = project.settings.release?.rungs.find((candidate) => candidate.name === name)
-      return {
-        rung: name,
-        required: payload.requiredRungs.includes(name),
-        requiredBy: payload.requiredRungs.includes(name) ? 'explicit' : null,
-        reason: payload.requiredRungs.includes(name) ? null : 'not required',
-        declaresLive: rung?.live !== undefined,
-      }
-    })
+    legacyRungPlans(project.settings.release?.rungs ?? [], payload.requiredRungs)
   const requiredRelease = !payload.releaseRequired
-    ? releaseRequiredFlagAbsent(rungPlans)
+    ? releaseRequiredFlagAbsent(rungPlans, payload.rungDecisionError)
     : payload.rungDecisionError
       ? failedRequiredRelease(rungPlans, payload.rungDecisionError)
       : checkoutFailure

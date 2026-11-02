@@ -18,6 +18,10 @@ export type ShipToReachDecision =
     }
   | { allowed: false; refusal: string }
 
+export function releaseDepthFlag(depth?: string | null): string {
+  return depth ? ` --depth ${depth}` : ''
+}
+
 export function shipToRungs(rungs: readonly (ShipToRung & { onDemand?: boolean })[]): ShipToRung[] {
   return rungs
     .filter(({ onDemand }) => !onDemand)

@@ -82,10 +82,10 @@ const satisfied: RequiredReleaseReport = {
   satisfied: true,
 }
 
-const remaining = (calls: string[]) => ({
+const remaining = (calls: string[], releaseReport: RequiredReleaseReport = satisfied) => ({
   release: () => {
     calls.push('release')
-    return satisfied
+    return releaseReport
   },
   cleanup: () => {
     calls.push('cleanup')
@@ -98,11 +98,13 @@ function complete(input: {
   project?: Project
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
+  depth?: string
   calls?: string[]
+  releaseReport?: RequiredReleaseReport
   movesInstallation?: boolean
 }) {
   return completePullRequestPostLanding({
-    adapter: remaining(input.calls ?? []),
+    adapter: remaining(input.calls ?? [], input.releaseReport),
     postLandingAdapter: input.post,
     database: db(),
     project: input.project ?? project,
@@ -110,6 +112,7 @@ function complete(input: {
     mergeCommit: 'merge-commit',
     target: '42',
     releaseRequired: input.releaseRequired ?? true,
+    depth: input.depth,
     workflowPromotionDue: input.workflowPromotionDue ?? false,
     ...(input.movesInstallation === undefined
       ? {}
@@ -298,11 +301,16 @@ test('the real child adapter refuses before spawn under the test runner', () => 
 
 test('when no move is due all remaining work stays in process and the store stays open', () => {
   const calls: string[] = []
+  let changedPathsCalls = 0
   const outcome = complete({
     releaseRequired: false,
     calls,
+    releaseReport: { required: [], releases: [], satisfied: true },
     post: {
-      changedPaths: () => ['shared/record/schema.ts'],
+      changedPaths: () => {
+        changedPathsCalls += 1
+        return ['shared/record/schema.ts']
+      },
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {
@@ -318,6 +326,8 @@ test('when no move is due all remaining work stays in process and the store stay
   })
 
   expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).not.toContain('rung hosted-api')
+  expect(changedPathsCalls).toBe(0)
   expect(calls).toEqual(['release', 'cleanup'])
   expect(writableDb()).toBeDefined()
 })
@@ -524,6 +534,19 @@ test('the child satisfies a reach-only rung when the release flag is absent', ()
   )
 })
 
+test('the child appends a parent decision error when the release flag is absent', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload({ releaseRequired: false, rungDecisionError: 'changed paths unavailable' }),
+    db(),
+    childAdapter(),
+  )
+
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'not released because --release-required was absent; changed paths unavailable',
+  )
+})
+
 test('a child promote throw still runs release and cleanup', () => {
   const calls: string[] = []
   const outcome = runPullRequestPostLanding(
@@ -614,6 +637,30 @@ test('a failed required-rung decision is carried to the child with every declare
 
   expect(received[0]?.rungDecisionError).toBe('changed paths unavailable')
   expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'worker'])
+})
+
+test('the selected depth is carried to the child and its recovery command', () => {
+  const received: PullRequestPostLandingPayload[] = []
+  complete({
+    depth: 'staging',
+    workflowPromotionDue: true,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: (payload) => {
+        received.push(payload)
+        return { output: 'child output', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(received[0]?.depth).toBe('staging')
+  expect(postLandingRecovery('42', received[0]?.depth)).toContain(
+    '--release-required --depth staging',
+  )
 })
 
 test('a partial move that changes HEAD still fences and hands off', () => {

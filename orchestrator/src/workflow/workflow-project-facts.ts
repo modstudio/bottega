@@ -16,6 +16,7 @@ import { projectByName } from '../project/projects.ts'
 import { changedPaths } from '../release/release-required.ts'
 import {
   decideShipToReach,
+  releaseDepthFlag,
   shipToDepthRefusal,
   shipToReachNeedsMergedChange,
   shipToRungs,
@@ -139,7 +140,7 @@ function validatedDepthFlag(
 ): string {
   const refusal = shipToDepthRefusal(rungs, depth, project)
   if (refusal) throw new Error(refusal)
-  return depth ? ` --depth ${depth}` : ''
+  return releaseDepthFlag(depth)
 }
 
 function shipToFact(

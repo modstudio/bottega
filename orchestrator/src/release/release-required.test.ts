@@ -350,6 +350,20 @@ describe('releaseRequiredRungs', () => {
     expect(output).toContain(`${PLATFORM_SLUG} release run fixture --rung hosted-api`)
   })
 
+  test('preserves the depth bound in both failed-rung remedy commands', () => {
+    const report = releaseRequiredRungs({
+      project,
+      mergeCommit: 'merge',
+      releaseRequired: true,
+      runner: runner({
+        release: () => successfulRelease({ exitCode: 7, outputTail: 'pending 1' }),
+      }),
+    })
+
+    const output = formatRequiredReleaseReport(report, '42', project.name, 'staging')
+    expect(output.match(/--release-required --depth staging/g)).toHaveLength(2)
+  })
+
   test('does not deploy a required rung when the flag is absent', () => {
     let deployed = false
     const report = releaseRequiredRungs({
@@ -426,7 +440,7 @@ describe('releaseRequiredRungs', () => {
     expect(report.required).toEqual([])
     expect(report.satisfied).toBe(true)
     expect(report.releases[0]?.outputTail).toBe(
-      'ship-to reach deploys only at production with --release-required',
+      'ship-to reach deploys only at production with --release-required; changed paths unavailable',
     )
   })
 
