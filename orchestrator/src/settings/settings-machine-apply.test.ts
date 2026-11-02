@@ -146,9 +146,7 @@ describe('settings apply', () => {
         }),
       ]),
     )
-    expect(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).toContain(
-      'Bash(orch *)',
-    )
+    expect(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).toContain('Bash(orch *)')
     expect(
       JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).autoMode,
     ).toEqual({ allow: ['$defaults', 'Bash(docker compose *)'] })
