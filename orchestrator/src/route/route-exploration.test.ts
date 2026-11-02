@@ -29,6 +29,9 @@ beforeEach(() => seedNeutralCodexQuotaReading())
 
 function seedCostPolicyLens(lens: 'correctness' | 'architecture'): void {
   for (let i = 0; i < MIN_SAMPLE; i++) {
+    // grok must shrink above the high-stakes floor in DEFAULT_ROUTE_COST_POLICY, which is
+    // strict, yet below codex by less than the tie band: only then does the enabled cost
+    // rule, and nothing else, switch the pick to the cheaper agent.
     for (const [agent, quality, cost] of [
       ['codex', 'right', 10],
       ['grok', i < 4 ? 'right' : 'mixed', 0.2],
