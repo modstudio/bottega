@@ -105,8 +105,8 @@ import {
   listStoredDocRevisions,
 } from './doc-revision-store.ts'
 import {
-  type CanonWriteTree,
   addCanonWriteWarnings,
+  type CanonWriteTree,
   canonFindingsRefusal,
   canonFindingWarnings,
   consumeDocBody,
@@ -956,7 +956,7 @@ export async function restoreDoc(
     current,
   )
   assertLocalRestoreCommands(revision, tree.audiences)
-  const restored = await applyRecordWriteAuthority({
+  return applyRecordWriteAuthority({
     // A removed local document has no live row retaining its document UUID. Restore mints a
     // new document UUID while its revision history remains continuous by address.
     local: () =>
@@ -1054,8 +1054,7 @@ export async function restoreDoc(
         revisionId: hosted.revisionId,
       })
     },
-  })
-  return addCanonWriteWarnings(restored, canonWarnings)
+  }).then((restored) => addCanonWriteWarnings(restored, canonWarnings))
 }
 
 export function diffDocRevisions(a: string, b: string, owner: string | null = null): string {

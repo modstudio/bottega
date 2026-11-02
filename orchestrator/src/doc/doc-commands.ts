@@ -831,11 +831,24 @@ async function handleHistoryDocCommand(
     { reason, author: flags.flag('author'), expectedRevision: flags.flag('expect') },
     owner,
   )
-  presentation.log(
-    flags.has('json') ? JSON.stringify(restored) : `restored ${scope}/${subject ?? '_'}/${slug}`,
-  )
-  if (!flags.has('json')) printDocWriteWarnings(restored.writeWarnings, presentation)
+  printRestoreResult(restored, flags, presentation, scope, subject, slug)
   return true
+}
+
+function printRestoreResult(
+  restored: Awaited<ReturnType<typeof restoreDoc>>,
+  flags: DocFlags,
+  presentation: DocPresentation,
+  scope: string,
+  subject: string | null,
+  slug: string,
+): void {
+  if (flags.has('json')) {
+    presentation.log(JSON.stringify(restored))
+    return
+  }
+  presentation.log(`restored ${scope}/${subject ?? '_'}/${slug}`)
+  printDocWriteWarnings(restored.writeWarnings, presentation)
 }
 
 function handleResumesDocCommand(

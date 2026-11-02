@@ -112,7 +112,9 @@ export function addCanonWriteWarnings<T>(
   warnings: string[],
 ): T & { writeWarnings?: string[] } {
   const prior = (written as { writeWarnings?: string[] }).writeWarnings
-  return warnings.length ? { ...written, writeWarnings: [...(prior ?? []), ...warnings] } : written
+  return warnings.length
+    ? { ...written, writeWarnings: [...(prior ?? []), ...warnings] }
+    : (written as T & { writeWarnings?: string[] })
 }
 
 export function canonRemovalRefusal(findings: CanonFinding[]): string | null {
