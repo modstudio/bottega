@@ -54,3 +54,23 @@ test.each(Object.keys(payload))('post-landing payload refuses missing %s', (fiel
   delete incomplete[field]
   expect(() => parsePullRequestPostLandingPayload(JSON.stringify(incomplete))).toThrow(field)
 })
+
+test.each(['branch', 'declaresDeploy'] as const)(
+  'post-landing payload refuses a rung plan missing %s',
+  (field) => {
+    const plan = {
+      rung: 'hosted-api',
+      branch: 'main',
+      required: true,
+      requiredBy: 'reach',
+      reason: null,
+      declaresLive: false,
+      declaresDeploy: true,
+    }
+    delete (plan as Partial<typeof plan>)[field]
+
+    expect(() =>
+      parsePullRequestPostLandingPayload(JSON.stringify({ ...payload, rungPlans: [plan] })),
+    ).toThrow('rungPlans')
+  },
+)

@@ -161,23 +161,21 @@ export function requiredRungDecision(
     const reach = decideShipToReach('production', shipToRungs(rungs), depth, { changedPaths })
     if (!reach.allowed) throw new Error(reach.refusal)
     const reached = new Set(reach.reach)
-    const required = new Set([...explicitlyRequired, ...reached])
     const skipped = new Map(reach.skipped.map(({ name, reason }) => [name, reason]))
     const beyondDepth = new Set(reach.remaining)
+    const plans = releaseRungPlans(
+      rungs,
+      explicitlyRequired,
+      reached,
+      depth,
+      skipped,
+      beyondDepth,
+      project.settings.trunk!,
+    )
     return {
       decided: true,
-      required: rungs
-        .filter(({ name, branch }) => required.has(name) && branch === project.settings.trunk)
-        .map(({ name }) => name),
-      rungs: releaseRungPlans(
-        rungs,
-        explicitlyRequired,
-        reached,
-        depth,
-        skipped,
-        beyondDepth,
-        project.settings.trunk!,
-      ),
+      required: plans.filter(({ required }) => required).map(({ rung }) => rung),
+      rungs: plans,
       error: null,
     }
   } catch (cause) {
@@ -191,21 +189,19 @@ export function requiredRungDecision(
         .filter((rung) => !rung.onDemand && !explicitlyRequired.has(rung.name))
         .map(({ name }) => name),
     )
-    const required = new Set([...explicitlyRequired, ...reached])
+    const plans = releaseRungPlans(
+      rungs,
+      explicitlyRequired,
+      reached,
+      depth,
+      new Map(),
+      new Set(),
+      project.settings.trunk!,
+    )
     return {
       decided: false,
-      required: rungs
-        .filter(({ name, branch }) => required.has(name) && branch === project.settings.trunk)
-        .map(({ name }) => name),
-      rungs: releaseRungPlans(
-        rungs,
-        explicitlyRequired,
-        reached,
-        depth,
-        new Map(),
-        new Set(),
-        project.settings.trunk!,
-      ),
+      required: plans.filter(({ required }) => required).map(({ rung }) => rung),
+      rungs: plans,
       error: cause instanceof Error ? cause.message : String(cause),
     }
   }
@@ -392,6 +388,7 @@ function runRequiredReleaseRungs(
             PLATFORM_SLUG,
             project.name,
             plan.rung,
+            plan.branch,
             project.settings.release?.rungs ?? [],
           ),
         ),
@@ -443,8 +440,9 @@ export function formatRequiredReleaseReport(
       ? `required rung ${release.rung}: deploy exit ${release.deployExit ?? 'not run'}; ${release.outputTail || '(no output)'}`
       : `rung ${release.rung}: not required; ${(release.outputTail || '(no reason)').replace('<project>', project)}`,
   )
-  if (!report.satisfied && !report.releases.some((release) => release.unprovable)) {
-    const rung = report.releases.find((release) => !release.satisfied)!.rung
+  if (!report.satisfied) {
+    const rung = report.releases.find((release) => !release.satisfied && !release.unprovable)?.rung
+    if (!rung) return lines.join('\n')
     lines.push(
       `remedy: ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}, or ${PLATFORM_SLUG} release run ${project} --rung ${rung} and then ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`,
     )

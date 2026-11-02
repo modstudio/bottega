@@ -632,6 +632,48 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     expect(output).not.toContain(`${PLATFORM_SLUG} pr merge`)
     expect(released).toBe(false)
   })
+
+  test('an unprovable rung does not suppress another failed rung remedy', () => {
+    const mixedProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [
+            { name: 'unprovable', branch: 'main' },
+            { name: 'failed', branch: 'main', deploy: 'deploy failed' },
+          ],
+        },
+      },
+    } as Project
+    const report = releaseRequiredRungsAfterMainMove({
+      project: mixedProject,
+      mergeCommit: 'merge',
+      rungs: [
+        {
+          rung: 'unprovable',
+          branch: 'main',
+          required: true,
+          requiredBy: 'reach',
+          reason: null,
+          declaresLive: false,
+          declaresDeploy: false,
+        },
+        {
+          ...requiredPlan,
+          rung: 'failed',
+        },
+      ],
+      runner: runner({
+        release: () => successfulRelease({ exitCode: 7, outputTail: 'deploy failed' }),
+      }),
+    })
+
+    const output = formatRequiredReleaseReport(report, '42', mixedProject.name)
+    expect(output).toContain(`${PLATFORM_SLUG} release run fixture --rung failed`)
+    expect(output).not.toContain(`${PLATFORM_SLUG} release run fixture --rung unprovable`)
+  })
 })
 
 describe('declared-rung report class guard', () => {

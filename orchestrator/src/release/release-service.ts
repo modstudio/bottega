@@ -20,6 +20,7 @@ import {
   alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
   ciDeployWaitDecision,
+  ciDeployWaitOutcome,
   forwardReleaseDecision,
   postDeployLiveDecision,
   releaseAncestryFromExitCode,
@@ -40,16 +41,6 @@ type CommandResult = { exitCode: number; output: string }
 
 const RELEASE_CI_DEPLOY_WAIT_MS = 30 * 60 * 1_000
 const RELEASE_CI_DEPLOY_POLL_MS = 30 * 1_000
-
-export type ReleaseCiDeployWait = {
-  now(): number
-  sleep(milliseconds: number): void
-}
-
-const releaseCiDeployWait: ReleaseCiDeployWait = {
-  now: Date.now,
-  sleep: Bun.sleepSync,
-}
 
 /** Validate a proposed tag against the version reported by this development checkout. */
 export function validateReleaseTagVersion(
@@ -183,9 +174,13 @@ function newestSuccessfulRelease(
   )
 }
 
-/** Return the candidate commit from a rung's newest successful ledger row. */
+/** Return the live commit proved by the newest successful row, or its candidate without live proof. */
 export function newestSuccessfulReleasedCommit(project: string, rung: string): string | null {
-  return newestSuccessfulRelease(project, rung, false)?.candidate_commit ?? null
+  const release = newestSuccessfulRelease(project, rung, false)
+  if (!release) return null
+  return release.live_matches_candidate === 1 && release.live_commit_after
+    ? release.live_commit_after
+    : release.candidate_commit
 }
 
 /** Return the newest release row that can prove a rung with this live-probe policy. */
@@ -251,9 +246,30 @@ function releaseTarget(projectName: string, requestedRung: string | undefined) {
   if ('refusal' in selected) throw new Error(selected.refusal)
   if (!selected.deploy && !selected.live)
     throw new Error(
-      unprovableReleaseRungMessage(PLATFORM_SLUG, projectName, selected.name, release.rungs),
+      unprovableReleaseRungMessage(
+        PLATFORM_SLUG,
+        projectName,
+        selected.name,
+        selected.branch,
+        release.rungs,
+      ),
     )
   return { project, selected, deploy: selected.deploy, trunk }
+}
+
+function releaseTrunkPositionFacts(
+  path: string,
+  trunk: string,
+  rungBranch: string,
+  candidate: string,
+) {
+  const trunkTip = git(['rev-parse', `origin/${trunk}`], path)
+  const candidateTrunkBase =
+    rungBranch === trunk ? null : git(['merge-base', candidate, `origin/${trunk}`], path)
+  const commitsBehindTrunk = candidateTrunkBase
+    ? Number(git(['rev-list', '--count', `${candidateTrunkBase}..origin/${trunk}`], path))
+    : 0
+  return { trunk, trunkTip, candidateTrunkBase, commitsBehindTrunk }
 }
 
 function releaseTrunkFacts(
@@ -265,27 +281,27 @@ function releaseTrunkFacts(
   overrideReason: string | undefined,
   rollback: boolean,
 ) {
-  const trunkTip = git(['rev-parse', `origin/${trunk}`], path)
-  const candidateTrunkBase =
-    rungBranch === trunk ? null : git(['merge-base', candidate, `origin/${trunk}`], path)
+  const position = releaseTrunkPositionFacts(path, trunk, rungBranch, candidate)
   const previousTrunkBase =
     rungBranch === trunk || previousRelease === null
       ? null
       : git(['merge-base', previousRelease, `origin/${trunk}`], path)
-  const commitsBehindTrunk = candidateTrunkBase
-    ? Number(git(['rev-list', '--count', `${candidateTrunkBase}..origin/${trunk}`], path))
-    : 0
   const decision = trunkFreshnessDecision({
     trunk,
     rungBranch,
-    candidateTrunkBase,
+    candidateTrunkBase: position.candidateTrunkBase,
     previousTrunkBase,
-    commitsBehind: commitsBehindTrunk,
+    commitsBehind: position.commitsBehindTrunk,
     overrideReason,
     rollback,
   })
   if (!decision.ok) throw new Error(decision.message)
-  return { trunk, trunkTip, commitsBehindTrunk, behindTrunkReason: decision.overrideReason }
+  return {
+    trunk: position.trunk,
+    trunkTip: position.trunkTip,
+    commitsBehindTrunk: position.commitsBehindTrunk,
+    behindTrunkReason: decision.overrideReason,
+  }
 }
 
 function postDeployFacts(
@@ -425,24 +441,19 @@ function candidateIsLiveAncestor(candidate: string, live: string, path: string):
   )
 }
 
-function ciReleaseTrunkFacts(path: string, trunk: string, branch: string, candidate: string) {
-  const trunkTip = branch === trunk ? candidate : git(['rev-parse', `origin/${trunk}`], path)
-  const trunkBase = branch === trunk ? null : git(['merge-base', candidate, trunkTip], path)
-  const commitsBehindTrunk = trunkBase
-    ? Number(git(['rev-list', '--count', `${trunkBase}..${trunkTip}`], path))
-    : 0
+function failedCiDeployOutcome(warning: string, live: string) {
   return {
-    trunk,
-    trunkTip,
-    commitsBehindTrunk,
-    behindTrunkReason: null,
-  }
+    ledgerResult: { exitCode: 1, output: warning },
+    outputTail: warning,
+    liveAfter: live,
+    liveMatchesCandidate: false,
+    warning: null,
+  } as const
 }
 
 function releaseCiDeployedTarget(
   target: ReturnType<typeof releaseTarget>,
   projectName: string,
-  wait: ReleaseCiDeployWait,
   redeployReason: string | undefined,
 ): ReleaseResult {
   const { project, selected, trunk } = target
@@ -463,7 +474,8 @@ function releaseCiDeployedTarget(
 
   let live = releaseLiveCommit(liveCommand, project.path, 'CI-deployed release live', selected.name)
   const liveBefore = live
-  const freshness = ciReleaseTrunkFacts(project.path, trunk, selected.branch, candidate)
+  const position = releaseTrunkPositionFacts(project.path, trunk, selected.branch, candidate)
+  const freshness = { ...position, behindTrunkReason: null }
   const ledger = startReleaseLedgerEntry(writableDb(), {
     project: projectName,
     rung: selected.name,
@@ -473,44 +485,44 @@ function releaseCiDeployedTarget(
     reason: null,
     ...freshness,
   })
-  const startedAt = wait.now()
-  let exitCode = 1
-  let output = ''
-  let matches = false
+  const startedAt = Date.now()
+  let outcome: ReturnType<typeof ciDeployWaitOutcome> | null = null
   let warning: string | null = null
   try {
     for (;;) {
+      const elapsedMs = Date.now() - startedAt
       const decision = ciDeployWaitDecision({
         candidateIsLiveAncestor: candidateIsLiveAncestor(candidate, live, project.path),
-        elapsedMs: wait.now() - startedAt,
+        elapsedMs,
         waitMs: RELEASE_CI_DEPLOY_WAIT_MS,
       })
-      if (decision === 'matched') {
-        exitCode = 0
-        matches = true
-        output = `live commit ${live} contains CI release candidate ${candidate}`
+      if (decision !== 'keep-waiting') {
+        outcome = ciDeployWaitOutcome({
+          decision,
+          rung: selected.name,
+          candidate,
+          live,
+          elapsedMs,
+        })
         break
       }
-      if (decision === 'timed-out') {
-        output = `timed out after ${RELEASE_CI_DEPLOY_WAIT_MS / 60_000} minutes waiting for rung ${selected.name} live commit to contain CI release candidate ${candidate}`
-        break
-      }
-      wait.sleep(RELEASE_CI_DEPLOY_POLL_MS)
+      Bun.sleepSync(RELEASE_CI_DEPLOY_POLL_MS)
       live = releaseLiveCommit(liveCommand, project.path, 'CI-deployed release live', selected.name)
     }
   } catch (cause) {
     warning = cause instanceof Error ? cause.message : String(cause)
-    output = warning
+    outcome = failedCiDeployOutcome(warning, live)
   }
-  const outputTail = capturedOutputTail(output, [candidate, live])
+  const terminal = outcome!
+  const outputTail = capturedOutputTail(terminal.outputTail, [candidate, live])
   const capturedWarning = warning ? releaseCapturedText(warning, [candidate, live]) : null
   finishReleaseLedgerEntry(
     writableDb(),
     ledger.recordId,
-    { exitCode, output },
+    terminal.ledgerResult,
     outputTail,
-    live,
-    matches,
+    terminal.liveAfter,
+    terminal.liveMatchesCandidate,
     capturedWarning,
   )
   return deployedReleaseResult({
@@ -526,10 +538,10 @@ function releaseCiDeployedTarget(
     baseline: false,
     rollback: false,
     rollbackReason: null,
-    exitCode,
+    exitCode: terminal.ledgerResult.exitCode,
     outputTail,
-    liveAfter: live,
-    liveMatchesCandidate: matches,
+    liveAfter: terminal.liveAfter,
+    liveMatchesCandidate: terminal.liveMatchesCandidate,
     warning: capturedWarning,
   })
 }
@@ -646,7 +658,6 @@ function releaseProjectUnderLock(
   rollbackReason: string | undefined,
   behindTrunkReason: string | undefined,
   redeployReason: string | undefined,
-  wait: ReleaseCiDeployWait,
 ): ReleaseResult {
   return target.deploy
     ? releaseCommandTarget(
@@ -657,7 +668,7 @@ function releaseProjectUnderLock(
         behindTrunkReason,
         redeployReason,
       )
-    : releaseCiDeployedTarget(target, projectName, wait, redeployReason)
+    : releaseCiDeployedTarget(target, projectName, redeployReason)
 }
 
 export function releaseProject(
@@ -666,7 +677,6 @@ export function releaseProject(
   rollbackReason: string | undefined,
   behindTrunkReason: string | undefined,
   redeployReason?: string,
-  wait: ReleaseCiDeployWait = releaseCiDeployWait,
 ): ReleaseResult {
   validateReleaseReasons([
     ['rollback', rollbackReason],
@@ -675,6 +685,11 @@ export function releaseProject(
   ])
   const target = releaseTarget(projectName, requestedRung)
   const { project, selected } = target
+  if (!target.deploy && (rollbackReason !== undefined || behindTrunkReason !== undefined)) {
+    throw new Error(
+      `release rung ${selected.name} deploys through CI on push; a rollback or behind-trunk override does not apply to it; revert or promote on branch ${selected.branch}, then retry`,
+    )
+  }
   const lock = releaseLockDecision(projectLockState(project.path, 'release').holder)
   if (!lock.ok) throw new Error(lock.message)
   return withReleaseLock(
@@ -687,7 +702,6 @@ export function releaseProject(
         rollbackReason,
         behindTrunkReason,
         redeployReason,
-        wait,
       ),
   )
 }

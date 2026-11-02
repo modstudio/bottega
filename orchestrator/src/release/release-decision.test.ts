@@ -4,6 +4,7 @@ import {
   alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
   ciDeployWaitDecision,
+  ciDeployWaitOutcome,
   forwardReleaseDecision,
   postDeployLiveDecision,
   releaseAncestryFromExitCode,
@@ -37,16 +38,70 @@ describe('CI deploy live wait', () => {
       ciDeployWaitDecision({ candidateIsLiveAncestor: false, elapsedMs: 30_000, waitMs: 30_000 }),
     ).toBe('timed-out')
   })
+
+  test('maps a match to successful ledger and release fields', () => {
+    expect(
+      ciDeployWaitOutcome({
+        decision: 'matched',
+        rung: 'production',
+        candidate: 'candidate',
+        live: 'live',
+        elapsedMs: 30_000,
+      }),
+    ).toEqual({
+      ledgerResult: {
+        exitCode: 0,
+        output: 'live commit live contains CI release candidate candidate after 30 seconds',
+      },
+      outputTail: 'live commit live contains CI release candidate candidate after 30 seconds',
+      liveAfter: 'live',
+      liveMatchesCandidate: true,
+      warning: null,
+    })
+  })
+
+  test('maps a timeout to failed ledger and release fields naming the wait', () => {
+    const outcome = ciDeployWaitOutcome({
+      decision: 'timed-out',
+      rung: 'production',
+      candidate: 'candidate',
+      live: 'old-live',
+      elapsedMs: 30 * 60 * 1_000,
+    })
+
+    expect(outcome).toEqual({
+      ledgerResult: {
+        exitCode: 1,
+        output:
+          'timed out after 1800 seconds waiting for rung production live commit to contain CI release candidate candidate',
+      },
+      outputTail:
+        'timed out after 1800 seconds waiting for rung production live commit to contain CI release candidate candidate',
+      liveAfter: 'old-live',
+      liveMatchesCandidate: false,
+      warning: null,
+    })
+  })
 })
 
 test('an unprovable rung names the complete register remedy', () => {
   expect(
-    unprovableReleaseRungMessage(PLATFORM_SLUG, 'fixture', 'production', [
+    unprovableReleaseRungMessage(PLATFORM_SLUG, 'fixture', 'production', 'master', [
       { name: 'staging', branch: 'develop', deploy: 'deploy staging' },
       { name: 'production', branch: 'master' },
     ]),
   ).toBe(
     `release rung production declares neither a deploy command nor a live probe and cannot be proved; declare a live probe with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
+  )
+})
+
+test('an undeclared required rung names a register remedy that declares it', () => {
+  expect(
+    unprovableReleaseRungMessage(PLATFORM_SLUG, 'fixture', 'production', 'master', [
+      { name: 'staging', branch: 'develop', deploy: 'deploy staging' },
+    ]),
+  ).toBe(
+    `release rung production is required but the register does not declare it; declare it in release.rungs with its branch and a live probe through ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
   )
 })
 
