@@ -524,7 +524,6 @@ export const undeclaredModulesBaseline: readonly string[] = [
   'orchestrator/src/workflow/versioned-lifecycle.ts',
   'orchestrator/src/workflow/workflow-autonomy-output.ts',
   'orchestrator/src/workflow/workflow-commands.ts',
-  'orchestrator/src/workflow/workflow-cursor-list.ts',
   'orchestrator/src/workflow/workflow-cursor-live-autonomy.ts',
   'orchestrator/src/workflow/workflow-cursor-test.fixture.ts',
   'orchestrator/src/workflow/workflow-definition.ts',

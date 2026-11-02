@@ -36,13 +36,9 @@ import {
 import {
   type ArtifactRef,
   type BottegaCommandIdentity,
-  DEFAULT_EXPECTED_EXIT_CODE,
-  DEFAULT_EXPECTED_STATUS,
   type Floor,
   flagForFloor,
   githubPullRequestUrlIn,
-  isFloorKind,
-  type OpenObligation,
   parseArtifactRef,
   pullRequestCreateArgv,
   type ValidatedEvidence,
@@ -55,6 +51,11 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
+import {
+  floorFromObligationRow,
+  WORKFLOW_OBLIGATION_FLOOR_COLUMNS,
+  type WorkflowObligationFloorRow,
+} from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -85,16 +86,6 @@ export type CursorIdentity = {
   session: string | null
   createdAt: string
   stepActivatedAt: string
-}
-
-export function openWorkflowObligations(cursorId: string, d: Database): OpenObligation[] {
-  return d
-    .query<OpenObligation, [string]>(
-      `SELECT record_id id, step_ordinal AS stepOrdinal, step_slug AS stepSlug, floor
-         FROM workflow_obligation
-        WHERE cursor_record_id=? AND satisfied_at IS NULL AND abandoned_at IS NULL ORDER BY rowid`,
-    )
-    .all(cursorId)
 }
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
@@ -745,36 +736,20 @@ function gatherTask(
 function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvidence['satisfy'] {
   const row = d
     .query<
-      {
-        id: number
+      WorkflowObligationFloorRow & {
         cursor_record_id: string
-        floor: string
-        require_pull_request: number
-        operator_ruling: number
-        expected_exit_code: number
-        expected_status: string
-        floor_deferrable: number
         satisfied_at: string | null
         abandoned_at: string | null
       },
       [string]
     >(
-      `SELECT record_id id,cursor_record_id,floor,require_pull_request,operator_ruling,expected_exit_code,expected_status,floor_deferrable,
+      `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},cursor_record_id,
               satisfied_at,abandoned_at
          FROM workflow_obligation WHERE record_id=?`,
     )
     .get(id)
   if (!row) return { id, found: false }
-  if (!isFloorKind(row.floor))
-    throw new Error(`--satisfies ${id} records unknown floor kind "${row.floor}"`)
-  const floor: Floor = {
-    kind: row.floor,
-    deferrable: row.floor_deferrable === 1,
-    expectedExitCode: row.expected_exit_code ?? DEFAULT_EXPECTED_EXIT_CODE,
-    expectedStatus: row.expected_status ?? DEFAULT_EXPECTED_STATUS,
-    requirePullRequest: row.require_pull_request === 1,
-    operatorRuling: row.operator_ruling === 1,
-  }
+  const floor = floorFromObligationRow(row)
   return {
     id,
     found: true,

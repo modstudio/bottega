@@ -24,7 +24,7 @@ export function recordWorkflowSelfRuling(
     stepSlug: string
     stepTitle: string
     resolvedAutonomy: AutonomyValue
-    floors: Pick<Floor, 'kind' | 'operatorRuling'>[]
+    floors: Pick<Floor, 'kind' | 'operatorRuling' | 'commandEvidence'>[]
     selfRuling: WorkflowSelfRulingInput
   },
   database: Database,

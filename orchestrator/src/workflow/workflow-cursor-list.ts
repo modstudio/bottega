@@ -12,7 +12,7 @@ import {
   type SelectableCursorRow,
   workflowCursorProjectScope,
 } from './workflow-cursor-selection.ts'
-import { openWorkflowObligations } from './workflow-floor-evidence.ts'
+import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { composeWorkflow } from './workflows.ts'
 
 export type CursorListOptions = {
@@ -77,7 +77,9 @@ export function listWorkflowCursors(
     const listed = {
       ...row,
       next_slug: composition.steps[row.ordinal + 1]?.slug ?? 'finished',
-      obligations: open.map((item) => `${item.id}(${item.stepSlug}:${item.floor})`).join(','),
+      obligations: open
+        .map((item) => `${item.id}(${item.stepSlug}:${item.floorDefinition.kind})`)
+        .join(','),
     }
     return { ...listed, line: renderWorkflowCursorLine(listed) }
   })
