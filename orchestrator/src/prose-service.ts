@@ -15,7 +15,7 @@ export function proseCheckEnabled(): boolean {
 
 export async function orchestratorProseGate(fields: ProseGateField[]): Promise<ProseGateResult> {
   try {
-    return proseGate(fields, {
+    return await proseGate(fields, {
       displayName: cachedSignedInRecordUser()?.name ?? null,
       enabled: proseCheckEnabled(),
     })

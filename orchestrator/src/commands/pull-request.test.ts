@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
@@ -29,6 +29,26 @@ test('PR create refuses a misspelled explicit title before admission', async () 
     ),
   ).rejects.toThrow(`title:\n"${misspelling}"`)
   expect(creates).toBe(0)
+})
+
+test('PR create hands GitHub the stdin body it checked', async () => {
+  const received: string[][] = []
+  const create = (args: string[]) => {
+    received.push(args)
+    return { output: '', overrideId: null }
+  }
+  const stdin = spyOn(Bun.stdin, 'text').mockResolvedValue('Checked body.')
+  try {
+    await createPullRequestCommand(
+      ['--title', 'DEV-2016 Title', '--body-file', '-'],
+      { cwd: process.cwd() },
+      undefined,
+      create,
+    )
+  } finally {
+    stdin.mockRestore()
+  }
+  expect(received).toEqual([['--title', 'DEV-2016 Title', '--body', 'Checked body.']])
 })
 
 test('PR create consumes --cwd instead of forwarding it to GitHub', () => {
