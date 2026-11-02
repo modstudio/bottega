@@ -33,3 +33,14 @@ test('loads Harper WASM, applies the dictionary, and leaves naming to the naming
   })
   expect(disabledRules).toEqual({ ran: true, findings: [] })
 })
+
+test('masks a word longer than Harper can lint without poisoning the next call', async () => {
+  const overlongWord = 'x'.repeat(32_769)
+  const misspelling = ['me', 'ida'].join('')
+
+  expect(await harperFindings(overlongWord)).toEqual({ ran: true, findings: [] })
+  expect(await harperFindings(`We saw the ${misspelling} here.`)).toMatchObject({
+    ran: true,
+    findings: [expect.objectContaining({ rule: 'SpellCheck', text: misspelling })],
+  })
+})

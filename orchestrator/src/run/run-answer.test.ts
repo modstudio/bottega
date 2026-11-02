@@ -368,12 +368,12 @@ test('answer reads a ruling from stdin without shell interpretation', async () =
     readMessageText: (options: Parameters<typeof readMessageText>[0]) =>
       readMessageText(options, {
         isTTY: false,
-        bytes: async () => new TextEncoder().encode('stdin $(literal)'),
+        bytes: async () => new TextEncoder().encode('standard input $(literal)'),
       }),
   }
   await answerRun(id, { argv: [], recordOnly: true, flags }, stdinHelpers)
   expect(db().query('SELECT answer FROM question WHERE run_record_id=?').get(id)).toEqual({
-    answer: 'stdin $(literal)',
+    answer: 'standard input $(literal)',
   })
 })
 

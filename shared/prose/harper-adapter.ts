@@ -17,6 +17,8 @@ export type EngineFinding = {
 
 export type EngineResult = { ran: true; findings: EngineFinding[] } | { ran: false; reason: string }
 
+const HARPER_MAX_WORD_CHARS = 64
+
 let linterPromise: Promise<LocalLinter> | null = null
 
 function dictionaryWords(): string[] {
@@ -65,10 +67,16 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+function maskOverlongWords(text: string): string {
+  return text.replace(/\S+/g, (word) =>
+    word.length > HARPER_MAX_WORD_CHARS ? ' '.repeat(word.length) : word,
+  )
+}
+
 async function runHarperFindings(text: string): Promise<EngineResult> {
   try {
     const linter = await initializedLinter()
-    const organized = await linter.organizedLints(text, { language: 'markdown' })
+    const organized = await linter.organizedLints(maskOverlongWords(text), { language: 'markdown' })
     const entries = Object.entries(organized).flatMap(([rule, lints]) =>
       lints.map((lint) => ({ rule, lint })),
     )

@@ -85,7 +85,7 @@ describe('scoped operator docs', () => {
       scope: 'global',
       subject: null,
       slug: 'statusless',
-      title: 'Statusless',
+      title: 'Missing Status',
       body: '---\nepic: demo\n---\nBODY\n',
     })
     await expect(consumeDoc('global', null, 'plain')).rejects.toThrow('has no YAML frontmatter')

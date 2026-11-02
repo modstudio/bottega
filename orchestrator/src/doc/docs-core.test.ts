@@ -964,7 +964,7 @@ describe('scoped operator docs', () => {
       title: 'Capabilities',
       body: 'MCP scoping details',
     })
-    await setDoc({ scope: 'global', subject: null, slug: 'other', title: 'Other', body: 'é' })
+    await setDoc({ scope: 'global', subject: null, slug: 'other', title: 'Other', body: 'OK' })
     db().query('UPDATE doc SET updated_at=? WHERE slug=?').run('2026-09-01T00:00:00.000Z', 'other')
     db()
       .query('UPDATE doc SET updated_at=? WHERE slug=?')
