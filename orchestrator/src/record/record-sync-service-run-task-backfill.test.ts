@@ -64,11 +64,11 @@ realPostgres('populated run task_id expand and backfill', () => {
            task_key, probe, status, turn, no_failover, automatic_failover, work_preserved, created_at, updated_at)
         VALUES
           ('${ownRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'OWN-1', false, 'ok', 1, false, false, false, now(), now()),
-          ('${otherOnlyRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'OTHER-1', false, 'ok', 1, false, false, false, now(), now()),
+          ('${otherOnlyRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'OTHER-1', true, 'ok', 1, false, false, false, now(), now()),
           ('${platformSharedRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'SHARED-1', false, 'ok', 1, false, false, false, now(), now()),
           ('${otherSharedRunId}', '${otherSpaceId}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'SHARED-1', false, 'ok', 1, false, false, false, now(), now()),
-          ('${keylessRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', NULL, false, 'ok', 1, false, false, false, now(), now()),
-          ('${unmatchedRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'MISSING-1', false, 'ok', 1, false, false, false, now(), now());
+          ('${keylessRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', NULL, true, 'ok', 1, false, false, false, now(), now()),
+          ('${unmatchedRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', now(), 'proof', 'proof', 'prompt', 6, 'prompt', 'MISSING-1', true, 'ok', 1, false, false, false, now(), now());
         ALTER TABLE "run" FORCE ROW LEVEL SECURITY;
       `)
     } finally {

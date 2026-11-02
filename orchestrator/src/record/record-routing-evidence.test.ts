@@ -18,6 +18,7 @@ const MACHINE_ID = '01990000-0000-7000-8000-000000002017'
 const FIRST_RUN_ID = '01990000-0000-7000-8000-000000002018'
 const SECOND_RUN_ID = '01990000-0000-7000-8000-000000002019'
 const OTHER_SPACE_ID = '01990000-0000-7000-8000-000000002026'
+const PROJECT_ID = '01990000-0000-7000-8000-000000002027'
 const STAMP = '2026-11-01T16:00:00.000Z'
 
 realPostgres('hosted routing evidence', () => {
@@ -35,6 +36,8 @@ realPostgres('hosted routing evidence', () => {
         VALUES (${MEMBERSHIP_ID}::uuid,${SPACE_ID}::uuid,${USER_ID}::uuid,'member','write',${STAMP}::timestamptz)`
       await admin`INSERT INTO machine (id,user_id,name,registered_at,last_seen)
         VALUES (${MACHINE_ID}::uuid,${USER_ID}::uuid,'routing-proof',${STAMP}::timestamptz,${STAMP}::timestamptz)`
+      await admin`INSERT INTO project (id,space_id,name,created_at)
+        VALUES (${PROJECT_ID}::uuid,${SPACE_ID}::uuid,'routing-evidence-proof',${STAMP}::timestamptz)`
 
       const runIds = [
         FIRST_RUN_ID,
@@ -51,12 +54,12 @@ realPostgres('hosted routing evidence', () => {
         const withheld = index === 5 ? ['agent'] : []
         await admin`INSERT INTO run (
           id,space_id,machine_id,started_by_user_id,started_at,agent,job,prompt_sha,prompt_bytes,
-          prompt_head,probe,status,parent_run_id,turn,stack,model,executor,no_failover,
+          prompt_head,probe,project_id,status,parent_run_id,turn,stack,model,executor,no_failover,
           automatic_failover,work_preserved,withheld_fields,created_at,updated_at
         ) VALUES (
           ${id}::uuid,${SPACE_ID}::uuid,${MACHINE_ID}::uuid,${USER_ID}::uuid,
           ${STAMP}::timestamptz,${`agent-${index}`},'implement','sha',123,'head',${probe},
-          ${status},${parent}::uuid,1,'typescript','model-a',${index === 1 ? 'harness' : null},
+          ${PROJECT_ID}::uuid,${status},${parent}::uuid,1,'typescript','model-a',${index === 1 ? 'harness' : null},
           false,false,false,${withheld}::jsonb,${STAMP}::timestamptz,${STAMP}::timestamptz
         )`
       }
@@ -167,6 +170,7 @@ realPostgres('hosted routing evidence', () => {
       await admin`DELETE FROM review_lens WHERE run_id IN (${FIRST_RUN_ID}::uuid,${SECOND_RUN_ID}::uuid)`
       await admin`DELETE FROM run_score WHERE space_id=${SPACE_ID}::uuid`
       await admin`DELETE FROM run WHERE space_id=${SPACE_ID}::uuid`
+      await admin`DELETE FROM project WHERE id=${PROJECT_ID}::uuid`
       await admin`DELETE FROM membership WHERE space_id=${SPACE_ID}::uuid`
       await admin`DELETE FROM machine_name_claim WHERE machine_id=${MACHINE_ID}::uuid`
       await admin`DELETE FROM machine WHERE id=${MACHINE_ID}::uuid`

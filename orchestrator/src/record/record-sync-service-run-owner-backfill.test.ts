@@ -42,9 +42,9 @@ realPostgres('populated run owner backfill and contract', () => {
            work_preserved, created_at, updated_at)
         VALUES
           ('${ownerlessRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', NULL, now(), 'proof',
-           'proof', 'prompt', 6, 'prompt', false, 'ok', 1, false, false, false, now(), now()),
+           'proof', 'prompt', 6, 'prompt', true, 'ok', 1, false, false, false, now(), now()),
           ('${ownedRunId}', '${PLATFORM_SPACE_ID}', '${machineId}', '${existingOwnerId}', now(),
-           'proof', 'proof', 'prompt', 6, 'prompt', false, 'ok', 1, false, false, false, now(), now());
+           'proof', 'proof', 'prompt', 6, 'prompt', true, 'ok', 1, false, false, false, now(), now());
         ALTER TABLE "run" FORCE ROW LEVEL SECURITY;
       `)
     } finally {
