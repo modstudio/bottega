@@ -143,17 +143,16 @@ data because architect attention is the scarce resource.
 
 ## Design from the multi-space hosted platform
 
-Bottega runs in two modes, and both are first-class: on a machine with no
-record, and against a hosted record shared by a space's machines and members.
-Every design decision starts from the hosted, multi-space perspective, meaning
-state a space shares across machines and members, then keeps the same
-capability useful as a CLI with no record.
-
-Where a record is configured, everything a space works by or does together is
-hosted-first, and a machine keeps only what is specific to it. State that
-silently works on one machine only, when a record is configured, is a gap to
-close, not a design to extend. The seam is the doc store document
+Design starts from the hosted, multi-space platform; the CLI stays useful
+without a record. All work, from space down to run, is portable between
+machines. Machine-only is only state another machine would never care about;
+everything else is space data. A table whose hosted home is unbuilt is
+hosted-first and names the task that builds it. The seam is doc-store record
 `design-machine-hosted-seam`.
+
+Every local table declares `hosted-first`, `evidence` or `machine-only` in
+`scripts/identity-state-classes.ts`; a machine-only declaration names Shmuel
+Barkin's ruling. `scripts/check-identity-inventory.ts` enforces this.
 
 ## Delegation costs nothing in judgment
 
