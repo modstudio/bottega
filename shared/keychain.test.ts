@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   classifySecretFailure,
   decideKeychainBackend,
+  decideNullRead,
   deleteLinuxKeychainItem,
+  parseCollectionLocked,
   readKeychainItem,
   readKeychainItemAsync,
   readLinuxKeychainItem,
@@ -20,7 +22,18 @@ const result = (exitCode: number, stdout = '', stderr = '') => ({
 const secretError = (code: string, message: string) =>
   result(70, '', JSON.stringify({ code, message }))
 const PLATFORM_KEY = Symbol.for('orch.keychain-platform')
+const RUNNER_KEY = Symbol.for('orch.security-runner')
 const platformHolder = globalThis as typeof globalThis & { [PLATFORM_KEY]?: string }
+const runnerHolder = globalThis as typeof globalThis & { [RUNNER_KEY]?: SecurityRunner }
+const busctlArgv = [
+  'busctl',
+  '--user',
+  'get-property',
+  'org.freedesktop.secrets',
+  '/org/freedesktop/secrets/aliases/default',
+  'org.freedesktop.Secret.Collection',
+  'Locked',
+]
 
 describe('secret backend decisions', () => {
   test('selects the platform backend and refuses unsupported platforms', () => {
@@ -50,9 +63,36 @@ describe('Linux secret failure classification', () => {
   })
 })
 
+describe('Linux collection lock decisions', () => {
+  test('parses the measured busctl boolean output', () => {
+    expect(parseCollectionLocked(result(0, 'b true\n'))).toBe(true)
+    expect(parseCollectionLocked(result(0, ' b false '))).toBe(false)
+    expect(parseCollectionLocked(result(1, '', 'D-Bus unavailable'))).toBeNull()
+    expect(parseCollectionLocked(result(0, 'unexpected'))).toBeNull()
+  })
+
+  test('distinguishes locked, missing, and unchecked null reads', () => {
+    expect(decideNullRead(true)).toBe('locked')
+    expect(decideNullRead(false)).toBe('missing')
+    expect(decideNullRead(null)).toBe('missing-unchecked')
+  })
+})
+
 describe('Linux secret runner', () => {
+  let originalConsoleError: typeof console.error
+
+  beforeEach(() => {
+    originalConsoleError = console.error
+  })
+
+  afterEach(() => {
+    console.error = originalConsoleError
+  })
+
   test('reads a found value through the Bun child environment', () => {
+    const calls: string[][] = []
     const runner: SecurityRunner = (argv, stdin, env) => {
+      calls.push(argv)
       expect(argv).toEqual([process.execPath, '-e', expect.any(String)])
       expect(stdin).toBeUndefined()
       expect(env).toMatchObject({
@@ -64,12 +104,56 @@ describe('Linux secret runner', () => {
       return result(0, 'stored-value')
     }
     expect(readLinuxKeychainItem('service', 'account', runner)).toBe('stored-value')
+    expect(calls).toEqual([[process.execPath, '-e', expect.any(String)]])
   })
 
-  test('maps missing reads and deletes without touching a keyring', () => {
-    const runner: SecurityRunner = () => result(44)
+  test('refuses a null read when the default collection is locked', () => {
+    let calls = 0
+    const runner: SecurityRunner = (argv) => {
+      calls += 1
+      if (calls === 1) return result(44)
+      expect(argv).toEqual(busctlArgv)
+      return result(0, 'b true')
+    }
+    expect(() => readLinuxKeychainItem('service', 'account', runner)).toThrow(
+      'gnome-keyring-daemon --replace --unlock --components=secrets --daemonize',
+    )
+  })
+
+  test('returns a missing null read silently when the default collection is unlocked', () => {
+    const errors: unknown[][] = []
+    console.error = (...args: unknown[]) => errors.push(args)
+    const runner: SecurityRunner = (argv) =>
+      argv[0] === 'busctl' ? result(0, 'b false') : result(44)
+
     expect(readLinuxKeychainItem('service', 'account', runner)).toBeNull()
+    expect(errors).toEqual([])
+  })
+
+  test('reports why the collection lock state could not be checked', () => {
+    const errors: unknown[][] = []
+    console.error = (...args: unknown[]) => errors.push(args)
+    const runner: SecurityRunner = (argv) =>
+      argv[0] === 'busctl'
+        ? result(1, '', 'Failed to connect to user scope bus\nmore detail')
+        : result(44)
+
+    expect(readLinuxKeychainItem('service', 'account', runner)).toBeNull()
+    expect(errors).toEqual([
+      [
+        'keyring lock state could not be checked (Failed to connect to user scope bus); if the login keyring is locked, unlock it with gnome-keyring-daemon --replace --unlock --components=secrets --daemonize, providing the password on stdin',
+      ],
+    ])
+  })
+
+  test('maps missing deletes without checking the collection lock', () => {
+    const calls: string[][] = []
+    const runner: SecurityRunner = (argv) => {
+      calls.push(argv)
+      return result(44)
+    }
     expect(deleteLinuxKeychainItem('service', 'account', runner)).toBeUndefined()
+    expect(calls).toHaveLength(1)
   })
 
   test('turns a classified child failure into a refusal with its remedy', () => {
@@ -126,15 +210,19 @@ describe('Linux secret runner', () => {
 
 describe('public Linux backend dispatch', () => {
   let originalPlatform: string | undefined
+  let originalRunner: SecurityRunner | undefined
 
   beforeEach(() => {
     originalPlatform = platformHolder[PLATFORM_KEY]
+    originalRunner = runnerHolder[RUNNER_KEY]
     platformHolder[PLATFORM_KEY] = 'linux'
   })
 
   afterEach(() => {
     if (originalPlatform === undefined) delete platformHolder[PLATFORM_KEY]
     else platformHolder[PLATFORM_KEY] = originalPlatform
+    if (originalRunner === undefined) delete runnerHolder[RUNNER_KEY]
+    else runnerHolder[RUNNER_KEY] = originalRunner
   })
 
   test('routes reads and writes through the Bun child argv', () => {
@@ -162,6 +250,14 @@ describe('public Linux backend dispatch', () => {
   test('refuses an async read without an injected runner in tests', async () => {
     await expect(readKeychainItemAsync('service', 'account')).rejects.toThrow(
       'keychain access requires an injected security runner in tests',
+    )
+  })
+
+  test('refuses an async null read when the injected runner finds a locked collection', async () => {
+    runnerHolder[RUNNER_KEY] = (argv) => (argv[0] === 'busctl' ? result(0, 'b true') : result(44))
+
+    await expect(readKeychainItemAsync('service', 'account')).rejects.toThrow(
+      'gnome-keyring-daemon --replace --unlock --components=secrets --daemonize',
     )
   })
 })
