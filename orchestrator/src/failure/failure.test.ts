@@ -12,6 +12,14 @@ describe('Goose provider failure classification', () => {
     expect(classify(run26637)).toBe('provider_error')
   })
 
+  test('keeps a reply that quotes the provider failure line as an answer', () => {
+    const reply =
+      'The reproduced vendor text is:\n' +
+      'Ran into this error: Rate limit exceeded: Provider returned error.\n' +
+      'That line explains the stored failure.'
+    expect(isNonAnswer(reply)).toBe(false)
+  })
+
   test.each(['Rate limit exceeded', '429'])(
     'keeps plain quota text classified as quota: %s',
     (text) => {

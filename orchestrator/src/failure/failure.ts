@@ -86,11 +86,12 @@ export type FailureKind = (typeof FAILURE_KINDS)[number]
 
 const ANSI_ESCAPE_PATTERN = String.raw`\x1B\[[0-?]*[ -/]*[@-~]`
 const ANSI_ESCAPE_SEQUENCE = new RegExp(ANSI_ESCAPE_PATTERN, 'g')
-const GOOSE_PROVIDER_ERROR_NON_ANSWER = /^Ran into this error:[^\n]*Provider returned error/im
+const GOOSE_PROVIDER_ERROR_STORED = /^Ran into this error:[^\n]*Provider returned error/im
+const GOOSE_PROVIDER_ERROR_NON_ANSWER = /^Ran into this error:[^\n]*Provider returned error/i
 
 /** Whether Goose's final message reports that the upstream provider failed the request. */
 export function isGooseProviderErrorNonAnswer(text: string): boolean {
-  return GOOSE_PROVIDER_ERROR_NON_ANSWER.test(text)
+  return GOOSE_PROVIDER_ERROR_STORED.test(text)
 }
 
 /** Remove volatile values while retaining the wording that identifies one failure shape. */
@@ -188,7 +189,7 @@ const PATTERNS: [FailureKind, RegExp][] = [
   // OpenRouter's "Provider returned error" is the upstream provider's failure,
   // not this account's plan. It is not evidence, fails over, and cools the
   // agent through PROVIDER_ERROR_STREAK.
-  ['provider_error', GOOSE_PROVIDER_ERROR_NON_ANSWER],
+  ['provider_error', GOOSE_PROVIDER_ERROR_STORED],
   // The plan is out. Distinct from `auth` because waiting fixes it.
   [
     'quota',

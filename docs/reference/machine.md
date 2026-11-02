@@ -553,7 +553,7 @@ remove question, interval and task rows left by the documented gate fixtures
 
 **Synopsis:** `bottega machine reclassify-failures [--dry-run]`
 
-classify stored quota and authentication failures from vendor errors
+classify unclassified quota, billing, and authentication failures and Goose provider-error contract rows
 
 ### Options
 
