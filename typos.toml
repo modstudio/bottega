@@ -57,10 +57,7 @@ extend-exclude = [
   "orchestrator/src/check/fixtures/spelling-samples/**",
   # These prose-check tests hold deliberate misspellings that test the checker.
   "shared/prose/prose-check.test.ts",
-  "shared/prose/harper-adapter.test.ts",
   "shared/prose/prose-gate.test.ts",
-  # The vendored English word list is third-party data, not hand-authored prose.
-  "shared/prose/english-words.txt",
   # The vendored misspelling and British spelling lists are third-party data.
   "shared/prose/misspellings.csv",
   "shared/prose/british-spellings.csv",

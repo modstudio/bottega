@@ -750,6 +750,9 @@ const allowedCycles: { cycle: string[]; reason: string }[] = [
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
+/** Repository-root data files that source modules intentionally embed. */
+export const REPOSITORY_ROOT_DATA_IMPORTS = ['typos.toml'] as const
+
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
   const installedPackageRoots = [
@@ -758,6 +761,8 @@ function architectureDependencyPath(target: string) {
   ]
   if (target === 'bun') return installedPackageRoots.map((root) => `${root}@types/bun/`).join('|')
   if (target.includes(':')) return exactArchitecturePath(target)
+  if (REPOSITORY_ROOT_DATA_IMPORTS.some((file) => file === target))
+    return exactArchitecturePath(target)
   if (CONCERNS.some((root) => target.startsWith(`${root}/`)) || target.startsWith('shared/')) {
     return exactArchitecturePath(target)
   }

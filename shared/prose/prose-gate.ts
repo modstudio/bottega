@@ -1,19 +1,16 @@
 // concern: prose
-/** Runs the shared prose engine over named write fields and formats one refusal. */
+/** Runs the shared prose correction lists over named write fields and formats one refusal. */
 
-import { isEnglishWord } from './english-words.ts'
-import { harperFindings } from './harper-adapter.ts'
 import {
   checkProse,
   type ProseCheckFinding,
   proseCheckRefusal,
-  proseCheckSkipNotice,
   suggestionText,
 } from './prose-check.ts'
+import { americanSpelling, isAllowedWord, misspellingCorrection } from './spelling-lists.ts'
 
 export type ProseGateField = { field: string; text: string; prior: string | null }
 export type ProseGateResult = { refusal: string | null; notices: string[] }
-export type EngineResult = Awaited<ReturnType<typeof harperFindings>>
 
 function introducedFindings(
   findings: ProseCheckFinding[],
@@ -33,7 +30,7 @@ function introducedFindings(
   })
 }
 
-type CheckOptions = Parameters<typeof checkProse>[2]
+type CheckOptions = Parameters<typeof checkProse>[1]
 type FieldOutcome = { notices: string[]; refusalLines: string[] }
 
 function advisoryNotices(field: string, findings: ProseCheckFinding[]): string[] {
@@ -45,21 +42,12 @@ function advisoryNotices(field: string, findings: ProseCheckFinding[]): string[]
     )
 }
 
-async function checkedField(
-  field: ProseGateField,
-  engine: (text: string) => Promise<EngineResult>,
-  checkOptions: CheckOptions,
-): Promise<FieldOutcome> {
-  const current = checkProse(field.text, await engine(field.text), checkOptions)
-  const notice = proseCheckSkipNotice(current)
-  if (notice) return { notices: [`${field.field}: ${notice}`], refusalLines: [] }
-  let findings = current.findings
-  if (field.prior !== null) {
-    const prior = checkProse(field.prior, await engine(field.prior), checkOptions)
-    const priorNotice = proseCheckSkipNotice(prior)
-    if (priorNotice) return { notices: [`${field.field}: ${priorNotice}`], refusalLines: [] }
-    findings = introducedFindings(findings, prior.findings)
-  }
+function checkedField(field: ProseGateField, checkOptions: CheckOptions): FieldOutcome {
+  const current = checkProse(field.text, checkOptions)
+  const findings =
+    field.prior === null
+      ? current.findings
+      : introducedFindings(current.findings, checkProse(field.prior, checkOptions).findings)
   const refusal = proseCheckRefusal({ ...current, findings })
   return {
     notices: advisoryNotices(field.field, findings),
@@ -69,21 +57,21 @@ async function checkedField(
 
 export async function proseGate(
   fields: ProseGateField[],
-  options: {
-    displayName: string | null
-    enabled: boolean
-    engine?: (text: string) => Promise<EngineResult>
-  },
+  options: { displayName: string | null; enabled: boolean },
 ): Promise<ProseGateResult> {
   if (!options.enabled)
     return { refusal: null, notices: ['Spelling and grammar check is switched off'] }
   const refusalSections: string[] = []
   const notices: string[] = []
-  const engine = options.engine ?? harperFindings
-  const checkOptions = { displayName: options.displayName, isEnglishWord }
+  const checkOptions = {
+    displayName: options.displayName,
+    isAllowedWord,
+    misspellingCorrection,
+    americanSpelling,
+  }
   for (const field of fields) {
     if (!field.text.trim()) continue
-    const outcome = await checkedField(field, engine, checkOptions)
+    const outcome = checkedField(field, checkOptions)
     notices.push(...outcome.notices)
     refusalSections.push(...outcome.refusalLines)
   }
