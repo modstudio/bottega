@@ -17,6 +17,7 @@ import { resolveWorkflowLiveAutonomy } from './workflow-cursor-live-autonomy.ts'
 import { flagForFloor } from './workflow-floor.ts'
 import { seedWorkflows } from './workflow-seeds.ts'
 import { installWorkflowStoreFixture } from './workflow-store.fixture.ts'
+import { closeCursorWithTextCopy } from './workflow-text-copy.ts'
 import { composeWorkflow } from './workflows.ts'
 
 const args = {
@@ -171,6 +172,37 @@ test('self-ruling records the answered question and closes the step atomically',
   expect(d.query("SELECT count(*) count FROM outbox WHERE kind='question'").get()).toEqual({
     count: 1,
   })
+})
+
+test('misspelled self-ruling is refused before recording or advancing', async () => {
+  const d = database()
+  openAtRuling(d)
+  const cursorBefore = d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()
+  const misspelling = ['me', 'ida'].join('')
+  await expect(
+    closeCursorWithTextCopy(
+      {
+        action: 'next',
+        project: 'fixture',
+        workflow: 'flow',
+        mode: 'default',
+        key: 'DEV-1264',
+        args,
+        context,
+        note: 'agent ruled proceed',
+        evidence: {},
+        floorPorts: ports,
+        selfRuling: {
+          ruling: `We saw the ${misspelling} here.`,
+          basis: 'The specification permits this action.',
+          channel: 'mcp',
+        },
+      },
+      d,
+    ),
+  ).rejects.toThrow(`self-ruling text:\n"${misspelling}"`)
+  expect(d.query('SELECT ordinal,step_slug,state FROM workflow_cursor').get()).toEqual(cursorBefore)
+  expect(d.query('SELECT count(*) count FROM question').get()).toEqual({ count: 0 })
 })
 
 test('a close failure rolls back the self-ruling question and audit', () => {

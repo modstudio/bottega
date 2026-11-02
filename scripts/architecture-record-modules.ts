@@ -794,5 +794,4 @@ export const recordModules: RecordModule[] = [
     './record-board-contract.ts',
     './record-board-tx.ts',
   ]),
-  module('orchestrator/src/record/record-api-prose.ts', ['./record-auth.ts']),
 ]

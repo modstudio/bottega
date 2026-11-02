@@ -20,7 +20,10 @@ import type { WorkflowCloseCursor } from './workflow-cursor-row.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursorForClose } from './workflow-cursor-selection.ts'
 import type { FloorEvidencePorts, WorkflowEvidenceInput } from './workflow-floor-evidence.ts'
-import type { WorkflowSelfRulingInput } from './workflow-self-ruling-mutation.ts'
+import {
+  assertWorkflowSelfRulingProse,
+  type WorkflowSelfRulingInput,
+} from './workflow-self-ruling-mutation.ts'
 import { type HubTaskReader, readHubTasks, taskCommand } from './workflow-task-reference.ts'
 import {
   deleteWorkflowText,
@@ -189,6 +192,7 @@ export async function closeCursorWithTextCopy(
   taskReader: HubTaskReader = readHubTasks,
   documents: WorkflowTextDocumentPorts = productionWorkflowTextDocumentPorts,
 ): Promise<string> {
+  if (input.action === 'next') await assertWorkflowSelfRulingProse(input.selfRuling)
   const row = selectWorkflowCursorForClose(
     {
       project: input.project,

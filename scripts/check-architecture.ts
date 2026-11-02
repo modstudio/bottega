@@ -32,6 +32,16 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url)).replace(/\/$/, '')
 const BASELINE_FILE = 'scripts/quality/undeclared-modules-baseline.ts'
 const manifestFiles: string[] = modules.map(({ file }) => file)
 const violations: string[] = []
+const manifestFileCounts = new Map<string, number>()
+
+for (const file of manifestFiles) {
+  manifestFileCounts.set(file, (manifestFileCounts.get(file) ?? 0) + 1)
+}
+for (const [file, count] of manifestFileCounts) {
+  if (count > 1) {
+    violations.push(`manifest module declares ${file} more than once; keep one declaration`)
+  }
+}
 
 /** The `--base=<commit>` the gate passes; the frozen baseline is compared against it. */
 function baseArgumentOrExit(argv: readonly string[]): string | null {

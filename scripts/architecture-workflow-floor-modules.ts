@@ -132,6 +132,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-self-ruling-mutation.ts', [
     'bun:sqlite',
     '../database/db.ts',
+    '../prose-service.ts',
     '../run/question-mutation.ts',
     '../run/ruling-attribution.ts',
     './autonomy.ts',

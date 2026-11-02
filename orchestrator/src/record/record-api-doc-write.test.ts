@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { PLATFORM_NAME } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { identity, idleRecordApiDeps, idleSubjectDeps } from '../../test/fixtures/record-api.ts'
@@ -90,6 +90,12 @@ const appWith = (session: typeof identity | null, overrides: Record<string, unkn
   })
 
 const id = '01990000-0000-7000-8000-000000000001'
+const originalProseCheck = process.env.BOTTEGA_PROSE_CHECK
+
+afterEach(() => {
+  if (originalProseCheck === undefined) delete process.env.BOTTEGA_PROSE_CHECK
+  else process.env.BOTTEGA_PROSE_CHECK = originalProseCheck
+})
 
 describe('record API doc write refusals', () => {
   test('PUT docs refuses misspelled text without calling the hosted write', async () => {
@@ -142,6 +148,34 @@ describe('record API doc write refusals', () => {
         body: JSON.stringify({ permissions: { allow: [`Bash(${unknownToken} *)`] } }),
         delivery: 'demand',
         reason: 'test structured settings body',
+        author: 'tester',
+      }),
+    })
+    expect(response.status).toBe(200)
+    expect(writes).toBe(1)
+  })
+
+  test('PUT docs writes misspelled text when the hosted prose check is off', async () => {
+    process.env.BOTTEGA_PROSE_CHECK = 'off'
+    let writes = 0
+    const misspelling = ['me', 'ida'].join('')
+    const app = appWith(identity, {
+      upsertDoc: async () => {
+        writes += 1
+        return { id, revisionId: id }
+      },
+    })
+    const response = await app.request('/v1/docs', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        scope: 'global',
+        subject: null,
+        slug: 'hosted-prose-off',
+        title: 'Hosted prose',
+        body: `We saw the ${misspelling} here.`,
+        delivery: 'demand',
+        reason: 'test prose rollback',
         author: 'tester',
       }),
     })

@@ -3,6 +3,7 @@
 
 import type { Database } from 'bun:sqlite'
 import { nowIso, sessionId } from '../database/db.ts'
+import { assertOrchestratorProse } from '../prose-service.ts'
 import { answerWorkflowQuestion, upsertWorkflowQuestion } from '../run/question-mutation.ts'
 import type { AutonomyValue } from './autonomy.ts'
 import type { Floor } from './workflow-floor.ts'
@@ -13,6 +14,20 @@ export type WorkflowSelfRulingInput = {
   basis: string
   question?: string
   channel: 'cli' | 'mcp'
+}
+
+export async function assertWorkflowSelfRulingProse(
+  selfRuling: WorkflowSelfRulingInput | undefined,
+): Promise<void> {
+  if (!selfRuling) return
+  const fields = [
+    { field: 'self-ruling text', text: selfRuling.ruling, prior: null },
+    { field: 'basis', text: selfRuling.basis, prior: null },
+  ]
+  if (selfRuling.question !== undefined) {
+    fields.push({ field: 'question', text: selfRuling.question, prior: null })
+  }
+  await assertOrchestratorProse(fields)
 }
 
 export function recordWorkflowSelfRuling(
