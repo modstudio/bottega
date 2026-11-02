@@ -58,8 +58,9 @@ function programmingSense(text: string, start: number): boolean {
   return lineBeforeSymbol.trimStart().length > 0
 }
 
-function replacement(text: string, displayName: string | null): string {
-  const person = displayName ?? 'the user'
+function replacement(text: string, displayName: string | null, determiner: string | null): string {
+  const generic = determiner !== null && /^[A-Z]/.test(determiner) ? 'The user' : 'the user'
+  const person = displayName ?? generic
   return /['’]s$/i.test(text) ? `${person}'s` : person
 }
 
@@ -70,16 +71,20 @@ export function namingFindings(text: string, displayName: string | null): Naming
     : 'Name the person who decided; where a role word is needed, use "the user".'
   const findings: NamingFinding[] = []
   for (const match of text.matchAll(/\boperators?\b(?:['’]s\b)?/gi)) {
-    const start = match.index
-    const end = start + match[0].length
-    if (overlaps(start, end, masks) || programmingSense(text, start)) continue
+    const wordStart = match.index
+    const end = wordStart + match[0].length
+    if (overlaps(wordStart, end, masks) || programmingSense(text, wordStart)) continue
+    const determinerMatch = text.slice(0, wordStart).match(/\b(the|a|an)\s+$/i)
+    const determiner = determinerMatch?.[1] ?? null
+    const start = determinerMatch ? wordStart - determinerMatch[0].length : wordStart
+    const matchedText = text.slice(start, end)
     findings.push({
       rule: 'Naming',
       start,
       end,
-      text: match[0],
+      text: matchedText,
       message,
-      suggestions: [replacement(match[0], displayName)],
+      suggestions: [replacement(match[0], displayName, determiner)],
     })
   }
   return findings

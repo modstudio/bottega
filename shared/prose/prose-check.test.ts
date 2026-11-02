@@ -6,7 +6,12 @@ function engine(...findings: EngineFinding[]): EngineResult {
   return { ran: true, findings }
 }
 
-function finding(text: string, problem: string, replacement: string): EngineFinding {
+function finding(
+  text: string,
+  problem: string,
+  replacement: string,
+  kind: EngineFinding['suggestions'][number]['kind'] = 'replace',
+): EngineFinding {
   const start = text.indexOf(problem)
   return {
     rule: 'SpellCheck',
@@ -14,7 +19,7 @@ function finding(text: string, problem: string, replacement: string): EngineFind
     end: start + problem.length,
     text: problem,
     message: 'This word was misspelled.',
-    suggestions: [replacement],
+    suggestions: [{ kind, text: replacement }],
   }
 }
 
@@ -47,6 +52,29 @@ describe('combined prose check', () => {
       'The media was weird.',
     ])
   })
+
+  test.each([
+    ['replace', 'The meida matters.', 'meida', 'media', 'The media matters.'],
+    ['remove', 'This very matters.', 'very ', '', 'This matters.'],
+    [
+      'insert-after',
+      'We changed routing, history and billing.',
+      'history',
+      ',',
+      'We changed routing, history, and billing.',
+    ],
+  ] as const)(
+    'applies a %s suggestion to the finding span',
+    (kind, text, problem, value, expected) => {
+      const check = checkProse(text, engine(finding(text, problem, value, kind)), {
+        displayName: null,
+      })
+      expect(check.findings[0]?.suggestion).toBe(
+        kind === 'insert-after' ? `${problem}${value}` : value,
+      )
+      expect(check.findings[0]?.correctedSentence).toBe(expected)
+    },
+  )
 
   test('keeps naming findings and reports a skipped engine', () => {
     const check = checkProse(

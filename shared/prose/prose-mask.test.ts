@@ -30,12 +30,34 @@ describe('prose masks', () => {
     ['hex identifier', 'Read deadb33f and ordinary.', 'deadb33f'],
     ['long flag', 'Use --hidden and ordinary.', '--hidden'],
     ['short flag', 'Use -x and ordinary.', '-x'],
+    ['plain ANSI escape', 'mistake \x1b[0m ordinary', '\x1b[0m'],
+    ['colored ANSI escape', 'mistake \x1b[1;31m ordinary', '\x1b[1;31m'],
+    ['slice token', 'mistake s1 ordinary', 's1'],
+    ['version token', 'mistake v41 ordinary', 'v41'],
+    ['mixed token', 'mistake k7b ordinary', 'k7b'],
+    ['numbered product', 'mistake sqlite3 ordinary', 'sqlite3'],
+    ['duration token', 'mistake 500s ordinary', '500s'],
+    ['time suffix', 'mistake 14Z ordinary', '14Z'],
+    ['camelCase identifier', 'mistake apiCallSlow ordinary', 'apiCallSlow'],
+    ['PascalCase identifier', 'mistake ApiCallSlow ordinary', 'ApiCallSlow'],
+    ['session identifier', 'mistake SessionStart ordinary', 'SessionStart'],
+    ['hook identifier', 'mistake PreToolUse ordinary', 'PreToolUse'],
+    ['snake case identifier', 'mistake api_call_slow ordinary', 'api_call_slow'],
+    ['all-capital token', 'mistake ENOENT ordinary', 'ENOENT'],
+    ['all-capital acronym', 'mistake RLS ordinary', 'RLS'],
+    ['plural all-capital token', 'mistake SKUs ordinary', 'SKUs'],
+    ['single letter', 'mistake x ordinary', 'x'],
   ] as const
 
   for (const [name, text, value] of cases) {
     test(`masks ${name} without masking ordinary prose`, () => {
       expect(masked(text, value)).toBe(true)
       expect(masked(text, 'ordinary')).toBe(false)
+      if (text.includes('mistake')) expect(masked(text, 'mistake')).toBe(false)
     })
   }
+
+  test.each(['a', 'A', 'I'])('does not mask the prose token %s', (value) => {
+    expect(masked(`ordinary ${value} prose`, value)).toBe(false)
+  })
 })

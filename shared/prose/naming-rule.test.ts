@@ -53,4 +53,17 @@ describe('record naming rule', () => {
       'Name the person who decided; where a role word is needed, use "the user".',
     )
   })
+
+  test.each([
+    ['the operator', null, 'the operator', 'the user'],
+    ['The operator', null, 'The operator', 'The user'],
+    ['an operator', null, 'an operator', 'the user'],
+    ["the operator's", null, "the operator's", "the user's"],
+    ['the operator', 'Shmuel Barkin', 'the operator', 'Shmuel Barkin'],
+    ['operator', null, 'operator', 'the user'],
+  ])('replaces the complete role phrase in %s', (text, displayName, problem, suggestion) => {
+    expect(namingFindings(text, displayName)).toEqual([
+      expect.objectContaining({ text: problem, suggestions: [suggestion] }),
+    ])
+  })
 })

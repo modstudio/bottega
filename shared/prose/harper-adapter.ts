@@ -1,7 +1,7 @@
 // concern: prose
 /** I/O adapter for the lazily initialized Harper prose engine. */
 
-import { Dialect, type LintConfig, LocalLinter } from 'harper.js'
+import { Dialect, type LintConfig, LocalLinter, SuggestionKind } from 'harper.js'
 import { binary } from 'harper.js/binary'
 import dictionaryText from './dictionary.txt' with { type: 'text' }
 import recordRules from './record-rules.json' with { type: 'json' }
@@ -12,7 +12,7 @@ export type EngineFinding = {
   end: number
   text: string
   message: string
-  suggestions: string[]
+  suggestions: Array<{ kind: 'replace' | 'remove' | 'insert-after'; text: string }>
 }
 
 export type EngineResult = { ran: true; findings: EngineFinding[] } | { ran: false; reason: string }
@@ -20,10 +20,28 @@ export type EngineResult = { ran: true; findings: EngineFinding[] } | { ran: fal
 let linterPromise: Promise<LocalLinter> | null = null
 
 function dictionaryWords(): string[] {
-  return dictionaryText
+  const words = dictionaryText
     .split(/\r?\n/)
     .map((word) => word.trim())
     .filter((word) => word !== '' && !word.startsWith('#'))
+  return [
+    ...new Set(
+      words.flatMap((word) => {
+        const lowercase = word.toLowerCase()
+        return [word, lowercase, `${word}'s`, `${word}’s`, `${lowercase}'s`, `${lowercase}’s`]
+      }),
+    ),
+  ]
+}
+
+function normalizedDictionaryWords(): Set<string> {
+  return new Set(dictionaryWords().map((word) => word.replaceAll('’', "'")))
+}
+
+function suggestionKind(kind: SuggestionKind): EngineFinding['suggestions'][number]['kind'] {
+  if (kind === SuggestionKind.Remove) return 'remove'
+  if (kind === SuggestionKind.InsertAfter) return 'insert-after'
+  return 'replace'
 }
 
 async function initializedLinter(): Promise<LocalLinter> {
@@ -32,7 +50,11 @@ async function initializedLinter(): Promise<LocalLinter> {
       const linter = new LocalLinter({ binary, dialect: Dialect.American })
       await linter.setup()
       await linter.importWords(dictionaryWords())
-      await linter.setLintConfig(recordRules as LintConfig)
+      const defaultRules = await linter.getDefaultLintConfig()
+      const disabledRules = Object.fromEntries(
+        Object.keys(defaultRules).map((rule) => [rule, false]),
+      ) as LintConfig
+      await linter.setLintConfig({ ...disabledRules, ...(recordRules as LintConfig) })
       return linter
     })()
   }
@@ -52,18 +74,25 @@ export async function harperFindings(text: string): Promise<EngineResult> {
     )
     try {
       const findings: EngineFinding[] = []
+      const dictionary = normalizedDictionaryWords()
       for (const { rule, lint } of entries) {
         const span = lint.span()
         let suggestions: ReturnType<typeof lint.suggestions> = []
         try {
+          const problemText = lint.get_problem_text()
+          // Harper 2.13.0 does not apply imported possessive words.
+          if (rule === 'SpellCheck' && dictionary.has(problemText.replaceAll('’', "'"))) continue
           suggestions = lint.suggestions()
           findings.push({
             rule,
             start: span.start,
             end: span.end,
-            text: lint.get_problem_text(),
+            text: problemText,
             message: lint.message(),
-            suggestions: suggestions.map((suggestion) => suggestion.get_replacement_text()),
+            suggestions: suggestions.map((suggestion) => ({
+              kind: suggestionKind(suggestion.kind()),
+              text: suggestion.get_replacement_text(),
+            })),
           })
         } finally {
           span.free()

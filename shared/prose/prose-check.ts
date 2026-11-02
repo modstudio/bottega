@@ -21,6 +21,14 @@ export type ProseCheck =
 
 type FindingWithoutCorrection = Omit<ProseCheckFinding, 'correctedSentence'>
 
+function spanReplacement(finding: EngineFinding): string | null {
+  const suggestion = finding.suggestions[0]
+  if (!suggestion) return null
+  if (suggestion.kind === 'remove') return ''
+  if (suggestion.kind === 'insert-after') return `${finding.text}${suggestion.text}`
+  return suggestion.text
+}
+
 function isNewlineBoundary(text: string, index: number): boolean {
   return text[index] === '\n' && (index + 1 === text.length || /\s/.test(text[index + 1] ?? ''))
 }
@@ -104,7 +112,7 @@ export function checkProse(
       end: finding.end,
       text: finding.text,
       message: finding.message,
-      suggestion: finding.suggestions[0] ?? null,
+      suggestion: spanReplacement(finding),
     })),
     ...namingFindings(text, options.displayName).map((finding) => ({
       rule: finding.rule,

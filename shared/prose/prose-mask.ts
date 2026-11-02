@@ -5,6 +5,7 @@ export type MaskedRange = { start: number; end: number }
 export type ScannedLine = { text: string; line: number }
 
 export const TASK_KEY_PATTERN = /\b[A-Z][A-Z0-9]{1,9}-\d+\b/
+const ANSI_ESCAPE_PATTERN = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g')
 
 function mergedRanges(ranges: MaskedRange[]): MaskedRange[] {
   const ordered = ranges
@@ -110,6 +111,12 @@ export function maskedRanges(text: string): MaskedRange[] {
   )
   ranges.push(...matches(visible, /\b(?=[0-9a-f]{7,}\b)(?=[0-9a-f]*\d)[0-9a-f]+\b/gi))
   ranges.push(...matches(visible, /(?<![\w-])--?[A-Za-z][\w-]*/g))
+  ranges.push(...matches(visible, ANSI_ESCAPE_PATTERN))
+  ranges.push(...matches(visible, /\b(?=[A-Za-z0-9]*[A-Za-z])(?=[A-Za-z0-9]*\d)[A-Za-z0-9]+\b/g))
+  ranges.push(...matches(visible, /\b(?=[A-Za-z]*[a-z][A-Z])[A-Za-z]+\b/g))
+  ranges.push(...matches(visible, /(?<!\w)[A-Za-z0-9]+(?:_[A-Za-z0-9]+)+(?!\w)/g))
+  ranges.push(...matches(visible, /\b[A-Z]{2,}s?\b/g))
+  ranges.push(...matches(visible, /(?<!['’])\b[B-HJ-Zb-z]\b/g))
   return mergedRanges(ranges)
 }
 
