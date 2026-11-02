@@ -4,8 +4,9 @@
 import type { Database } from 'bun:sqlite'
 import { join } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
-import { bottegaEntryArgv } from '../../../shared/self-spawn.ts'
+import { embeddedDistributionManifest } from '../../../shared/embedded-assets.ts'
 import { fenceStoreAfterCheckoutMove } from '../database/db.ts'
+import { moveRegisteredMainCheckout } from '../database/machine-update-mover.ts'
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { type EntryClosure, entryClosureAtCommit } from '../release/release-entry-closure.ts'
@@ -14,7 +15,6 @@ import {
   failedRequiredRelease,
   formatRequiredReleaseReport,
   mainCheckoutHead,
-  moveMainCheckout,
   type RequiredReleaseReport,
   type RequiredRungDecision,
   releaseRequiredFlagAbsent,
@@ -55,13 +55,14 @@ export type PullRequestPostLandingAdapter = {
   mainHead(project: Project): string
   moveMain(project: Project, mergeCommit: string): void
   fence(reason: string): void
-  handOff(payload: PullRequestPostLandingPayload): PullRequestMergeOutcome
+  handOff(payload: PullRequestPostLandingPayload, project: Project): PullRequestMergeOutcome
 }
 
 function moveMainForPostLanding(
   adapter: PullRequestPostLandingAdapter,
   project: Project,
   mergeCommit: string,
+  target: string,
 ): { moved: true } | { moved: false; detail: string } {
   let headBefore: string
   try {
@@ -77,7 +78,14 @@ function moveMainForPostLanding(
   }
   if (failure) {
     try {
-      if (adapter.mainHead(project) === headBefore) return { moved: false, detail: failure }
+      if (adapter.mainHead(project) === headBefore) {
+        return {
+          moved: false,
+          detail:
+            `${failure}; recover with: ${project.path}/bin/${PLATFORM_SLUG} machine update, then ` +
+            `${PLATFORM_SLUG} pr merge ${target} --release-required`,
+        }
+      }
     } catch {
       return { moved: true }
     }
@@ -115,9 +123,9 @@ function guardRealPostLandingAdapter(
     },
     // Fencing only changes in-process store state; it performs no git or process side effect.
     fence: adapter.fence,
-    handOff(payload) {
+    handOff(payload, project) {
       refuseRealPostLandingAdapterInTest()
-      return adapter.handOff(payload)
+      return adapter.handOff(payload, project)
     },
   }
 }
@@ -126,13 +134,25 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
   changedPaths,
   entryClosure: entryClosureAtCommit,
   mainHead: mainCheckoutHead,
-  moveMain: moveMainCheckout,
+  moveMain(project, mergeCommit) {
+    verifyMainCheckout(project)
+    const result = moveRegisteredMainCheckout(project)
+    if (result.exitCode !== 0) {
+      throw new Error(result.output || `${PLATFORM_SLUG} machine update exited ${result.exitCode}`)
+    }
+    verifyMainCheckout(project, mergeCommit)
+  },
   fence: fenceStoreAfterCheckoutMove,
-  handOff(payload) {
+  handOff(payload, project) {
     try {
+      const command = postLandingHandOffInvocation(
+        project.path,
+        Boolean(embeddedDistributionManifest()),
+      )
       const result = Bun.spawnSync(
-        [...bottegaEntryArgv(PLATFORM_SLUG), 'pr', 'merge', payload.target, POST_LANDING_FLAG],
+        [...command.argv, 'pr', 'merge', payload.target, POST_LANDING_FLAG],
         {
+          cwd: command.cwd,
           env: process.env,
           stdin: Buffer.from(encodePullRequestPostLandingPayload(payload)),
           stdout: 'pipe',
@@ -149,6 +169,17 @@ const cliPostLandingAdapter = guardRealPostLandingAdapter({
     }
   },
 })
+
+/** Name the moved checkout's binary unless this process is an embedded distribution. */
+export function postLandingHandOffInvocation(
+  projectPath: string,
+  embeddedDistribution: boolean,
+): { argv: string[]; cwd: string } {
+  return {
+    argv: [embeddedDistribution ? process.execPath : join(projectPath, 'bin', PLATFORM_SLUG)],
+    cwd: projectPath,
+  }
+}
 
 /**
  * Untested at the process boundary by choice, matching workflow-evidence-handoff.ts: a spawn
@@ -172,12 +203,14 @@ function promotionOutput(input: {
   project: Project
   prNumber: number
   mergeCommit: string
+  recovery?: string
 }): { output: string; error?: string } {
   if (input.result.ok) return { output: input.result.output }
   const reason = `merged PR #${input.prNumber} (${input.mergeCommit})`
   const promotion = `${PLATFORM_SLUG} workflow promote-tree --cwd ${input.project.path} --reason "${reason}"`
-  const command =
-    input.result.stage === 'fetch'
+  const command = input.recovery
+    ? input.recovery
+    : input.result.stage === 'fetch'
       ? `git -C ${input.project.path} fetch origin, then git -C ${input.project.path} merge --ff-only ${input.mergeCommit}, then ${promotion}`
       : input.result.stage === 'branch-check'
         ? `put checkout ${input.project.path} on trunk ${input.project.settings.trunk}, then git -C ${input.project.path} merge --ff-only ${input.mergeCommit}, then ${promotion}`
@@ -291,7 +324,7 @@ export function completePullRequestPostLanding(input: {
       ),
     })
   }
-  const move = moveMainForPostLanding(post, input.project, input.mergeCommit)
+  const move = moveMainForPostLanding(post, input.project, input.mergeCommit, input.target)
   if (!move.moved) {
     return mergedOutput({
       ...input,
@@ -304,6 +337,9 @@ export function completePullRequestPostLanding(input: {
             project: input.project,
             prNumber: input.pullRequest.number,
             mergeCommit: input.mergeCommit,
+            recovery:
+              `${input.project.path}/bin/${PLATFORM_SLUG} machine update, then ` +
+              `${PLATFORM_SLUG} pr merge ${input.target} --release-required`,
           })
         : { output: '' },
       requiredRelease: failedRequiredRelease(
@@ -329,7 +365,7 @@ export function completePullRequestPostLanding(input: {
   post.fence(
     `main checkout moved to include ${input.mergeCommit}; this process moved the main checkout and its post-landing child owns the store; ${postLandingRecovery(input.target)}`,
   )
-  const handedOff = post.handOff(payload)
+  const handedOff = post.handOff(payload, input.project)
   const unexpectedExit = ![
     0,
     MERGED_WITH_RESIDUE_EXIT_CODE,

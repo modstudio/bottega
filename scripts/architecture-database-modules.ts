@@ -9,6 +9,11 @@ const module = (file: string, allowed: string[]): ArchitectureModule => ({
 })
 
 export const databaseModules: ArchitectureModule[] = [
+  module('orchestrator/src/database/machine-update-mover.ts', [
+    'node:path',
+    '../../../shared/brand.ts',
+    '../../../shared/install-root.ts',
+  ]),
   module('orchestrator/src/database/slow-statements.ts', ['bun:sqlite']),
   module('orchestrator/src/database/migration-drain-wait.ts', [
     '../../../shared/brand.ts',

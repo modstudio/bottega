@@ -12,6 +12,7 @@ import {
 export function inProcessPostLandingAdapter(input: {
   database: Database
   project(): Project
+  move?(): void
   promote?(): string | WorkflowPromotionResult
   release(enabled: boolean): RequiredReleaseReport
   cleanup(): ShipCleanupReport
@@ -20,7 +21,7 @@ export function inProcessPostLandingAdapter(input: {
     changedPaths: () => [],
     entryClosure: () => new Map(),
     mainHead: () => 'main-head',
-    moveMain: () => {},
+    moveMain: () => input.move?.(),
     fence: () => {},
     handOff: (payload) =>
       runPullRequestPostLanding(payload, input.database, {

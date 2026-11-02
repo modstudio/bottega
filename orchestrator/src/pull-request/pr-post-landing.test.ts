@@ -12,6 +12,7 @@ import {
   POST_LANDING_REPORTED_EXIT_CODE,
   type PullRequestPostLandingAdapter,
   type PullRequestPostLandingChildAdapter,
+  postLandingHandOffInvocation,
   runPullRequestPostLanding,
 } from './pr-post-landing.ts'
 import {
@@ -111,6 +112,7 @@ function complete(input: {
 
 test('a successful move fences this process and hands off the exact fixed identity', () => {
   const received: PullRequestPostLandingPayload[] = []
+  const handOffProjects: string[] = []
   const outcome = complete({
     workflowPromotionDue: true,
     post: {
@@ -119,14 +121,16 @@ test('a successful move fences this process and hands off the exact fixed identi
       mainHead: () => 'main-before',
       moveMain: () => {},
       fence: fenceStoreAfterCheckoutMove,
-      handOff: (payload) => {
+      handOff: (payload, movedProject) => {
         received.push(payload)
+        handOffProjects.push(movedProject.path)
         return { output: 'child output', exitCode: 0 }
       },
     },
   })
 
   expect(outcome).toEqual({ output: 'child output', exitCode: 0 })
+  expect(handOffProjects).toEqual([project.path])
   expect(received[0]).toEqual({
     project: PLATFORM_SLUG,
     target: '42',
@@ -144,6 +148,17 @@ test('a successful move fences this process and hands off the exact fixed identi
   expect(() => writableDb()).toThrow('orchestrator store is fenced after checkout move')
   expect(() => writableDb()).toThrow('its post-landing child owns the store')
   expect(() => writableDb()).toThrow(postLandingRecovery('42'))
+})
+
+test('the post-landing child runs from main through its binary or the embedded executable', () => {
+  expect(postLandingHandOffInvocation(project.path, false)).toEqual({
+    argv: [`${project.path}/bin/${PLATFORM_SLUG}`],
+    cwd: project.path,
+  })
+  expect(postLandingHandOffInvocation(project.path, true)).toEqual({
+    argv: [process.execPath],
+    cwd: project.path,
+  })
 })
 
 test('a change inside a rung entry closure requires that rung and hands it off', () => {
@@ -301,6 +316,7 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(outcome.output).toContain(
     'required rung hosted-api: deploy exit not run; registered main checkout is dirty; clean it',
   )
+  expect(outcome.output).toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
   expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
   expect(calls).toEqual(['cleanup'])
   expect(writableDb()).toBeDefined()

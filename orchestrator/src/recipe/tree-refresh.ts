@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { gitToplevel, inspectCheckout, resolvedPathsEqual } from '../../../shared/git.ts'
 import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts'
-import { MAIN_CHECKOUT_MIGRATION_JOURNAL_SOURCES } from '../database/migration-journal-sources.ts'
+import { moveRegisteredMainCheckout } from '../database/machine-update-mover.ts'
 import { recordedChainRootsForWorktree } from '../dispatch/dispatch-preflight.ts'
 import { git, gitOk, repoRootOf } from '../git/git-environment.ts'
 import { projectAt, resolvedWorktreeTool } from '../project/projects.ts'
@@ -51,122 +51,6 @@ export function decideMainCheckoutBranch(
   trunk: string,
 ): MainCheckoutBranchDecision {
   return branch === trunk ? { action: 'refresh' } : { action: 'refuse', branch }
-}
-
-type MigrationJournalTags = {
-  source: string
-  path: string
-  revision: string
-  tags: string[]
-}
-
-type UnreadableMigrationJournal = Omit<MigrationJournalTags, 'tags'> & { error: string }
-
-export type MainCheckoutMigrationRefreshDecision =
-  | { action: 'refresh' }
-  | { action: 'refuse'; migrationTags: string[]; journalErrors: string[] }
-
-/** Decide whether moving the main checkout would put its binary ahead of its stores. */
-export function decideMainCheckoutMigrationRefresh(input: {
-  currentJournals: MigrationJournalTags[]
-  incomingJournals: Array<MigrationJournalTags | UnreadableMigrationJournal>
-}): MainCheckoutMigrationRefreshDecision {
-  const currentBySource = new Map(
-    input.currentJournals.map((journal) => [journal.source, new Set(journal.tags)]),
-  )
-  const readableIncoming = input.incomingJournals.filter(
-    (journal): journal is MigrationJournalTags => 'tags' in journal,
-  )
-  const migrationTags = readableIncoming.flatMap((journal) =>
-    journal.tags.filter((tag) => !currentBySource.get(journal.source)?.has(tag)),
-  )
-  const journalErrors = input.incomingJournals.flatMap((journal) =>
-    'error' in journal
-      ? [`${journal.path} at ${journal.revision} could not be read: ${journal.error}`]
-      : [],
-  )
-  return migrationTags.length || journalErrors.length
-    ? { action: 'refuse', migrationTags, journalErrors }
-    : { action: 'refresh' }
-}
-
-function parseMigrationJournal(
-  value: string,
-  source: (typeof MAIN_CHECKOUT_MIGRATION_JOURNAL_SOURCES)[number],
-  revision: string,
-): MigrationJournalTags {
-  const parsed = JSON.parse(value) as { entries?: Array<{ tag?: unknown }> }
-  if (!Array.isArray(parsed.entries)) {
-    throw new Error(`${source.path} at ${revision} has no migration journal entries`)
-  }
-  return {
-    source: source.store,
-    path: source.path,
-    revision,
-    tags: parsed.entries.map((entry, index) => {
-      if (typeof entry.tag !== 'string' || !entry.tag) {
-        throw new Error(`${source.path} at ${revision} has no tag for migration entry ${index}`)
-      }
-      return entry.tag
-    }),
-  }
-}
-
-function mainCheckoutMigrationJournals(
-  treeRoot: string,
-  incomingRevision: string,
-): {
-  currentJournals: MigrationJournalTags[]
-  incomingJournals: Array<MigrationJournalTags | UnreadableMigrationJournal>
-} {
-  const currentJournals: MigrationJournalTags[] = []
-  const incomingJournals: Array<MigrationJournalTags | UnreadableMigrationJournal> = []
-  for (const source of MAIN_CHECKOUT_MIGRATION_JOURNAL_SOURCES) {
-    if (gitOk(['cat-file', '-e', `HEAD:${source.path}`], treeRoot) === null) continue
-    currentJournals.push(
-      parseMigrationJournal(git(['show', `HEAD:${source.path}`], treeRoot), source, 'HEAD'),
-    )
-    const incomingValue = gitOk(['show', `${incomingRevision}:${source.path}`], treeRoot)
-    if (incomingValue === null) {
-      incomingJournals.push({
-        source: source.store,
-        path: source.path,
-        revision: incomingRevision,
-        error: 'journal is absent',
-      })
-      continue
-    }
-    try {
-      incomingJournals.push(parseMigrationJournal(incomingValue, source, incomingRevision))
-    } catch (error) {
-      incomingJournals.push({
-        source: source.store,
-        path: source.path,
-        revision: incomingRevision,
-        error: error instanceof Error ? error.message : String(error),
-      })
-    }
-  }
-  return { currentJournals, incomingJournals }
-}
-
-function refuseMainCheckoutMigrationRefresh(treeRoot: string, incomingRevision: string): void {
-  const decision = decideMainCheckoutMigrationRefresh(
-    mainCheckoutMigrationJournals(treeRoot, incomingRevision),
-  )
-  if (decision.action === 'refresh') return
-  const conditions = [
-    ...(decision.migrationTags.length
-      ? [
-          `incoming migrations are not applied to this machine's stores: ${decision.migrationTags.join(', ')}`,
-        ]
-      : []),
-    ...decision.journalErrors,
-  ]
-  throw new Error(
-    `refusing to refresh main checkout because ${conditions.join('; ')}\n` +
-      `cleared by: ${PLATFORM_SLUG} machine update`,
-  )
 }
 
 function countCommits(range: string, cwd: string): number {
@@ -363,7 +247,7 @@ export function refreshTarget(target: ReturnType<typeof registeredRefreshTarget>
 }
 
 function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>): string[] {
-  const { treeRoot, trunk } = target
+  const { project, treeRoot, trunk } = target
   const branch = gitOk(['symbolic-ref', '--quiet', '--short', 'HEAD'], treeRoot)
   const branchDecision = decideMainCheckoutBranch(branch, trunk)
   if (branchDecision.action === 'refuse') {
@@ -387,11 +271,13 @@ function refreshMainCheckout(target: ReturnType<typeof registeredRefreshTarget>)
     )
   }
 
-  return [
-    fastForwardTree(treeRoot, trunk, trunk, (remote) =>
-      refuseMainCheckoutMigrationRefresh(treeRoot, remote),
-    ),
-  ]
+  const result = moveRegisteredMainCheckout(project)
+  if (result.exitCode !== 0) {
+    throw new Error(result.output || `${PLATFORM_SLUG} machine update exited ${result.exitCode}`)
+  }
+  return result.output
+    ? result.output.split('\n')
+    : ['updated main checkout through machine update']
 }
 
 function refreshWorktree(target: ReturnType<typeof registeredRefreshTarget>): string[] {
