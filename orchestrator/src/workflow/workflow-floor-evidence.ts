@@ -51,7 +51,11 @@ import {
   rethrowFloorEvidencePortMiss,
 } from './workflow-floor-evidence-replay.ts'
 import { readHubTask } from './workflow-floor-task-read.ts'
-import { floorFromObligationRow } from './workflow-obligation-floor.ts'
+import {
+  floorFromObligationRow,
+  WORKFLOW_OBLIGATION_FLOOR_COLUMNS,
+  type WorkflowObligationFloorRow,
+} from './workflow-obligation-floor.ts'
 import {
   type BoundRun,
   decideRunBinding,
@@ -83,8 +87,6 @@ export type CursorIdentity = {
   createdAt: string
   stepActivatedAt: string
 }
-
-export { openWorkflowObligations } from './workflow-obligation-floor.ts'
 
 export const productionFloorPorts = (): FloorEvidencePorts => ({
   readTask: (key) => readHubTask(key),
@@ -734,34 +736,20 @@ function gatherTask(
 function gatherSatisfy(id: string, cursorId: string, d: Database): ValidatedEvidence['satisfy'] {
   const row = d
     .query<
-      {
-        id: number
+      WorkflowObligationFloorRow & {
         cursor_record_id: string
-        floor: string
-        require_pull_request: number
-        operator_ruling: number
-        expected_exit_code: number
-        expected_status: string
-        floor_deferrable: number
         satisfied_at: string | null
         abandoned_at: string | null
       },
       [string]
     >(
-      `SELECT record_id id,cursor_record_id,floor,require_pull_request,operator_ruling,expected_exit_code,expected_status,floor_deferrable,
+      `SELECT ${WORKFLOW_OBLIGATION_FLOOR_COLUMNS},cursor_record_id,
               satisfied_at,abandoned_at
          FROM workflow_obligation WHERE record_id=?`,
     )
     .get(id)
   if (!row) return { id, found: false }
-  const floor = floorFromObligationRow({
-    floor: row.floor,
-    floorDeferrable: row.floor_deferrable,
-    expectedExitCode: row.expected_exit_code,
-    expectedStatus: row.expected_status,
-    requirePullRequest: row.require_pull_request,
-    operatorRuling: row.operator_ruling,
-  })
+  const floor = floorFromObligationRow(row, row.cursor_record_id)
   return {
     id,
     found: true,

@@ -3,21 +3,23 @@
 
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import type { AutonomyValue } from './autonomy.ts'
-import { type Floor, flagForFloor, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
+import { closingFlagsForFloor, type Floor, mayCloseOnAgentSelfRuling } from './workflow-floor.ts'
 
 const remedy = `use \`${PLATFORM_SLUG} workflow await\` and \`${PLATFORM_SLUG} workflow rule\` instead, with \`--from-operator\` where the operator rules`
 
-function operatorRulingRefusal(floors: Pick<Floor, 'kind' | 'operatorRuling'>[]): string {
+type RulingRefusalFloor = Pick<Floor, 'kind' | 'operatorRuling' | 'commandEvidence'>
+
+function operatorRulingRefusal(floors: RulingRefusalFloor[]): string {
   const alternatives = floors.filter((floor) => floor.kind !== 'ruling')
   if (alternatives.length === 0)
     return `self-ruling is refused because this step's floor requires a ruling recorded with --from-operator; ${remedy}`
-  const named = alternatives.map((floor) => flagForFloor(floor.kind)).join('; ')
+  const named = alternatives.map(closingFlagsForFloor).join('; ')
   return `self-ruling is refused because this step's ruling floor requires a ruling recorded with --from-operator; close with no ruling using ${named}; a person's ruling is needed only when that other evidence does not close the step — ${remedy}`
 }
 
 export function selfRulingRefusal(
   resolvedAutonomy: AutonomyValue,
-  floors: Pick<Floor, 'kind' | 'operatorRuling'>[],
+  floors: RulingRefusalFloor[],
   basis: string,
   stepOrdinal: number,
   stepSlug: string,
@@ -32,7 +34,7 @@ export function selfRulingRefusal(
     ) &&
     !floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling)
   )
-    return `self-ruling is refused because step ${stepOrdinal} ${stepSlug} has no ruling floor; close it with ${floors.map((floor) => flagForFloor(floor.kind)).join('; ')}`
+    return `self-ruling is refused because step ${stepOrdinal} ${stepSlug} has no ruling floor; close it with ${floors.map(closingFlagsForFloor).join('; ')}`
   if (resolvedAutonomy !== 'auto' && resolvedAutonomy !== 'review')
     return `self-ruling is refused because resolved autonomy is ${resolvedAutonomy}; ${remedy}`
   if (floors.some((floor) => floor.kind === 'ruling' && floor.operatorRuling))

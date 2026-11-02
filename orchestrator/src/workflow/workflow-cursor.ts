@@ -65,13 +65,13 @@ import {
 } from './workflow-floor.ts'
 import {
   type FloorEvidencePorts,
-  openWorkflowObligations,
   productionFloorPorts,
   type WorkflowEvidenceInput,
 } from './workflow-floor-evidence.ts'
 import { gatherValidatedEvidence } from './workflow-floor-evidence-gather.ts'
 import { withReplayedFloorEvidence } from './workflow-floor-evidence-replay.ts'
 import { refuseKeylessStepClose } from './workflow-keyless-close.ts'
+import { openWorkflowObligations } from './workflow-obligation-floor.ts'
 import { decideWorkflowRuleAnswer, pinnedWorkflowRuleStep } from './workflow-rule-answer.ts'
 import {
   bindCloseSelfRuling,

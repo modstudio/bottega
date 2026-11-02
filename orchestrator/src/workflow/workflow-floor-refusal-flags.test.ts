@@ -8,6 +8,7 @@ import {
   type ValidatedEvidence,
 } from './workflow-floor.ts'
 import { floorFromObligationRow } from './workflow-obligation-floor.ts'
+import { selfRulingRefusal } from './workflow-self-ruling.ts'
 
 const ID = '00000000-0000-4000-8000-000000000011'
 const base: Floor = {
@@ -200,6 +201,29 @@ for (const variant of variants) {
     }
   })
 
+  test(`${variant.name} self-ruling refusal names only closing evidence`, () => {
+    const message = selfRulingRefusal('auto', [variant.floor], 'test basis', 2, 'acceptance')
+    if (message) expectNamedFlagsClose(message, variant.floor)
+  })
+
+  test(`${variant.name} operator-ruling refusal names only closing alternatives`, () => {
+    const operator = { ...base, operatorRuling: true }
+    const message = selfRulingRefusal(
+      'auto',
+      [variant.floor, operator],
+      'test basis',
+      2,
+      'acceptance',
+    )
+    expect(message).not.toBeNull()
+    if (!message) return
+    for (const flag of namedFlags(message)) {
+      const evidence =
+        flag === '--ruling' ? evidenceFor(flag, operator) : evidenceFor(flag, variant.floor)
+      expect(decide([variant.floor, operator], evidence).action).toBe('allow')
+    }
+  })
+
   test(`${variant.name} --satisfies refusal names only evidence that satisfies`, () => {
     const decision = decide([{ ...base, kind: 'tracker-transition', deferrable: true }], {
       deferReason: 'later',
@@ -234,17 +258,20 @@ for (const variant of variants) {
   test(`${variant.name} open-obligation refusal uses its reconstructed floor`, () => {
     const row = {
       id: ID,
+      floor: variant.floor.kind,
+      require_pull_request: variant.floor.requirePullRequest,
+      operator_ruling: variant.floor.operatorRuling,
+      expected_exit_code: variant.floor.expectedExitCode,
+      expected_status: variant.floor.expectedStatus,
+      floor_deferrable: variant.floor.deferrable,
+    }
+    const obligationFloor = floorFromObligationRow(row, ID)
+    const open: OpenObligation = {
+      id: ID,
       stepOrdinal: 2,
       stepSlug: 'acceptance',
-      floor: variant.floor.kind,
-      requirePullRequest: variant.floor.requirePullRequest,
-      operatorRuling: variant.floor.operatorRuling,
-      expectedExitCode: variant.floor.expectedExitCode,
-      expectedStatus: variant.floor.expectedStatus,
-      floorDeferrable: variant.floor.deferrable,
+      floorDefinition: obligationFloor,
     }
-    const obligationFloor = floorFromObligationRow(row)
-    const open: OpenObligation = { ...row, floorDefinition: obligationFloor }
     const current: Floor =
       obligationFloor.kind === 'recorded-artifact' ? base : { ...base, kind: 'recorded-artifact' }
     const currentEvidence = evidenceFor(
@@ -280,3 +307,18 @@ for (const variant of variants) {
     }
   })
 }
+
+test('ordinary multi-floor refusal says any one floor is enough', () => {
+  const command = { ...base, kind: 'command-exit' as const }
+  const artifact = { ...base, kind: 'recorded-artifact' as const }
+  const decision = decide([command, artifact], {
+    tree: { project: PLATFORM_SLUG, commit: 'abc' },
+  })
+  expect(decision.action).toBe('refuse')
+  if (decision.action !== 'refuse') return
+  expect(decision.message).toContain('any one floor is enough')
+  for (const flag of namedFlags(decision.message)) {
+    const floor = flag === '--artifact' ? artifact : command
+    expect(decide([command, artifact], evidenceFor(flag, floor)).action).toBe('allow')
+  }
+})

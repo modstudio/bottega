@@ -899,7 +899,6 @@ test('finish refuses while any obligation would remain open', () => {
       id: OBLIGATION_UUID,
       stepOrdinal: 2,
       stepSlug: 'merge',
-      floor: 'command-exit',
       floorDefinition: commandExit,
     },
   ]
@@ -948,7 +947,6 @@ test('finish proceeds when the last open obligation is satisfied', () => {
           id: OBLIGATION_UUID,
           stepOrdinal: 2,
           stepSlug: 'merge',
-          floor: 'command-exit',
           floorDefinition: commandExit,
         },
       ],

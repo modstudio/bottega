@@ -57,6 +57,17 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-task-reference.ts',
     './workflows.ts',
   ]),
+  module('orchestrator/src/workflow/workflow-cursor-list.ts', [
+    'bun:sqlite',
+    '../database/db.ts',
+    '../project/projects.ts',
+    '../run/question-open.ts',
+    './workflow-cursor-autonomy.ts',
+    './workflow-cursor-format.ts',
+    './workflow-cursor-selection.ts',
+    './workflow-obligation-floor.ts',
+    './workflows.ts',
+  ]),
   module('orchestrator/src/workflow/workflow-task-linking.ts', [
     'bun:sqlite',
     '../database/db.ts',
@@ -110,6 +121,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
   module('orchestrator/src/workflow/workflow-floor-refusal.ts', ['../../../shared/brand.ts']),
   module('orchestrator/src/workflow/workflow-obligation-floor.ts', [
     'bun:sqlite',
+    '../../../shared/brand.ts',
     './workflow-floor.ts',
   ]),
   module('orchestrator/src/workflow/workflow-self-ruling.ts', [
@@ -208,8 +220,8 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence-checkout.ts',
     './workflow-floor-evidence-input.ts',
     './workflow-floor-evidence-replay.ts',
-    './workflow-floor-task-read.ts',
     './workflow-obligation-floor.ts',
+    './workflow-floor-task-read.ts',
     './workflow-run-binding.ts',
     './workflow-text.ts',
   ]),
@@ -268,6 +280,7 @@ export const workflowFloorModules: WorkflowFloorModule[] = [
     './workflow-floor-evidence.ts',
     './workflow-floor-evidence-gather.ts',
     './workflow-floor-evidence-replay.ts',
+    './workflow-obligation-floor.ts',
     './workflow-rule-answer.ts',
     './workflow-self-ruling-mutation.ts',
     './workflows.ts',

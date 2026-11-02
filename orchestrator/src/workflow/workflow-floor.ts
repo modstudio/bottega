@@ -162,14 +162,13 @@ export type ValidatedEvidence = {
   tree?: { project: string; worktree?: string | null; commit: string | null }
 }
 
-export const isOperatorRulingFloor = (floor: Floor): boolean =>
+export const isOperatorRulingFloor = (floor: Pick<Floor, 'kind' | 'operatorRuling'>): boolean =>
   floor.kind === 'ruling' && floor.operatorRuling
 
 export type OpenObligation = {
   id: string
   stepOrdinal: number
   stepSlug: string
-  floor: FloorKind
   floorDefinition: Floor
 }
 
@@ -204,10 +203,10 @@ export function flagForFloor(kind: FloorKind): string {
   throw new Error(`unknown floor kind "${String(kind)}"`)
 }
 
-function closingFlagsForFloor(
+export function closingFlagsForFloor(
   floor: Pick<Floor, 'kind' | 'operatorRuling' | 'commandEvidence'>,
 ): string {
-  if (isOperatorRulingFloor(floor as Floor)) return '--ruling <question id>'
+  if (isOperatorRulingFloor(floor)) return '--ruling <question id>'
   if (floor.kind === 'command-exit' && floor.commandEvidence === 'gate')
     return '--gate <gate execution id>'
   if (floor.commandEvidence === 'pull-request')
@@ -857,7 +856,7 @@ function refuseOpen(open: OpenObligation[]): FloorDecision {
       open
         .map(
           (row) =>
-            `obligation ${row.id} (step ${row.stepOrdinal} ${row.stepSlug} ${row.floor}) — pass --satisfies ${row.id} with ${closingFlagsForFloor(row.floorDefinition)}`,
+            `obligation ${row.id} (step ${row.stepOrdinal} ${row.stepSlug} ${row.floorDefinition.kind}) — pass --satisfies ${row.id} with ${closingFlagsForFloor(row.floorDefinition)}`,
         )
         .join('; '),
   }
