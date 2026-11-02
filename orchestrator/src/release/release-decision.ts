@@ -73,6 +73,43 @@ export type CheckoutFacts = {
 
 export type Decision = { ok: true } | { ok: false; message: string }
 
+export type CiDeployWaitDecision = 'matched' | 'keep-waiting' | 'timed-out'
+
+/** Decide the next action after one CI-deployed rung live reading. */
+export function ciDeployWaitDecision(facts: {
+  candidateIsLiveAncestor: boolean
+  elapsedMs: number
+  waitMs: number
+}): CiDeployWaitDecision {
+  if (facts.candidateIsLiveAncestor) return 'matched'
+  return facts.elapsedMs >= facts.waitMs ? 'timed-out' : 'keep-waiting'
+}
+
+type ReleaseRungForRemedy = {
+  name: string
+  [field: string]: unknown
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+/** Name the register edit that makes a rung without a deploy command provable. */
+export function unprovableReleaseRungMessage(
+  platformSlug: string,
+  project: string,
+  rung: string,
+  rungs: readonly ReleaseRungForRemedy[],
+): string {
+  const replacement = rungs.map((candidate) =>
+    candidate.name === rung
+      ? { ...candidate, live: '<command that prints the deployed commit sha>' }
+      : candidate,
+  )
+  const patch = JSON.stringify({ release: { rungs: replacement } })
+  return `release rung ${rung} declares neither a deploy command nor a live probe and cannot be proved; declare a live probe with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
+}
+
 export type TrunkFreshnessDecision =
   | { ok: true; overrideReason: string | null }
   | { ok: false; message: string }

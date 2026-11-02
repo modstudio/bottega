@@ -26,6 +26,7 @@ const project = {
         {
           name: 'hosted-api',
           branch: 'main',
+          deploy: 'deploy hosted-api',
           requiredWhenChanged: ['shared/record/migrations/**'],
         },
       ],
@@ -55,7 +56,13 @@ describe('decideRequiredRungs', () => {
   test('requires the hosted API for a record migration', () => {
     expect(
       decideRequiredRungs(
-        [{ name: 'hosted-api', requiredWhenChanged: ['shared/record/migrations/**'] }],
+        [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            requiredWhenChanged: ['shared/record/migrations/**'],
+          },
+        ],
         ['shared/record/migrations/20261031_add_column.sql'],
         new Map(),
       ),
@@ -65,7 +72,13 @@ describe('decideRequiredRungs', () => {
   test('requires no rung when no path matches', () => {
     expect(
       decideRequiredRungs(
-        [{ name: 'hosted-api', requiredWhenChanged: ['shared/record/migrations/**'] }],
+        [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            requiredWhenChanged: ['shared/record/migrations/**'],
+          },
+        ],
         ['orchestrator/src/run.ts'],
         new Map(),
       ),
@@ -75,7 +88,14 @@ describe('decideRequiredRungs', () => {
   test('on-demand rungs remain required by a matching change', () => {
     expect(
       decideRequiredRungs(
-        [{ name: 'hosted-api', onDemand: true, requiredWhenChanged: ['shared/record/**'] }],
+        [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            onDemand: true,
+            requiredWhenChanged: ['shared/record/**'],
+          },
+        ],
         ['shared/record/schema.ts'],
         new Map(),
       ),
@@ -86,9 +106,9 @@ describe('decideRequiredRungs', () => {
     expect(
       decideRequiredRungs(
         [
-          { name: 'second', requiredWhenChanged: ['shared/**'] },
-          { name: 'first', requiredWhenChanged: ['**/*.ts'] },
-          { name: 'unmatched', requiredWhenChanged: ['docs/**'] },
+          { name: 'second', branch: 'main', requiredWhenChanged: ['shared/**'] },
+          { name: 'first', branch: 'main', requiredWhenChanged: ['**/*.ts'] },
+          { name: 'unmatched', branch: 'main', requiredWhenChanged: ['docs/**'] },
         ],
         ['shared/record/schema.ts'],
         new Map(),
@@ -97,7 +117,13 @@ describe('decideRequiredRungs', () => {
   })
 
   test('requires a rung when a changed path is in its entry closure', () => {
-    const rungs = [{ name: 'hosted-api', entryPoints: ['orchestrator/src/record/server.ts'] }]
+    const rungs = [
+      {
+        name: 'hosted-api',
+        branch: 'main',
+        entryPoints: ['orchestrator/src/record/server.ts'],
+      },
+    ]
     const closure = new Map([
       [
         'orchestrator/src/record/server.ts',
@@ -299,8 +325,18 @@ describe('requiredRungDecision', () => {
         release: {
           ...project.settings.release!,
           rungs: [
-            { name: 'explicit', branch: 'main', requiredWhenChanged: ['packages/**'] },
-            { name: 'reach', branch: 'main', releasesWhenChanged: ['packages/**'] },
+            {
+              name: 'explicit',
+              branch: 'main',
+              deploy: 'deploy explicit',
+              requiredWhenChanged: ['packages/**'],
+            },
+            {
+              name: 'reach',
+              branch: 'main',
+              deploy: 'deploy reach',
+              releasesWhenChanged: ['packages/**'],
+            },
           ],
         },
       },
@@ -333,15 +369,100 @@ describe('requiredRungDecision', () => {
     expect(report.satisfied).toBe(true)
     expect(deployed).toBe(2)
   })
+
+  test('defers a reached non-landing production rung to promote-release', () => {
+    let releases = 0
+    const productionProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        trunk: 'develop',
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'production', branch: 'master' }],
+        },
+      },
+    } as Project
+    const decision = requiredRungDecision(
+      productionProject,
+      () => ['src/app.ts'],
+      () => new Map(),
+    )
+    const report = releaseRequiredRungsAfterMainMove({
+      project: productionProject,
+      mergeCommit: 'merge',
+      rungs: decision.rungs,
+      runner: runner({
+        release: () => {
+          releases++
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(decision.required).toEqual([])
+    expect(decision.rungs).toEqual([
+      expect.objectContaining({
+        rung: 'production',
+        branch: 'master',
+        required: false,
+        reason:
+          'proved at promote-release: rung production deploys from master, not the landing branch develop',
+      }),
+    ])
+    expect(report).toEqual({
+      required: [],
+      releases: [
+        {
+          rung: 'production',
+          required: false,
+          deployExit: null,
+          outputTail:
+            'proved at promote-release: rung production deploys from master, not the landing branch develop',
+          satisfied: true,
+          deployed: false,
+        },
+      ],
+      satisfied: true,
+    })
+    expect(releases).toBe(0)
+  })
+
+  test('still requires a reached rung on the landing branch', () => {
+    const landingProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        trunk: 'develop',
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'production', branch: 'develop', deploy: 'deploy production' }],
+        },
+      },
+    } as Project
+
+    const decision = requiredRungDecision(
+      landingProject,
+      () => ['src/app.ts'],
+      () => new Map(),
+    )
+
+    expect(decision.required).toEqual(['production'])
+    expect(decision.rungs).toEqual([
+      expect.objectContaining({ rung: 'production', branch: 'develop', required: true }),
+    ])
+  })
 })
 
 describe('releaseRequiredRungsAfterMainMove', () => {
   const requiredPlan = {
     rung: 'hosted-api',
+    branch: 'main',
     required: true,
     requiredBy: 'explicit' as const,
     reason: null,
     declaresLive: false,
+    declaresDeploy: true,
   }
 
   test('releases required rungs after the main checkout move', () => {
@@ -479,12 +600,18 @@ describe('declared-rung report class guard', () => {
         release: {
           ...project.settings.release!,
           rungs: [
-            { name: 'artifact-match', branch: 'main', releasesWhenChanged: ['packages/**'] },
+            {
+              name: 'artifact-match',
+              branch: 'main',
+              deploy: 'deploy artifact-match',
+              releasesWhenChanged: ['packages/**'],
+            },
             { name: 'artifact-skip', branch: 'main', releasesWhenChanged: ['docs/**'] },
-            { name: 'unconditioned', branch: 'main' },
+            { name: 'unconditioned', branch: 'main', deploy: 'deploy unconditioned' },
             {
               name: 'demand-match',
               branch: 'main',
+              deploy: 'deploy demand-match',
               onDemand: true,
               requiredWhenChanged: ['packages/**'],
             },

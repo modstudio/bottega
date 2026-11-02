@@ -34,10 +34,12 @@ test('post-landing payload carries the release plan requirement source', () => {
     rungPlans: [
       {
         rung: 'hosted-api',
+        branch: 'main',
         required: true,
         requiredBy: 'reach',
         reason: null,
         declaresLive: false,
+        declaresDeploy: true,
       },
     ],
   }

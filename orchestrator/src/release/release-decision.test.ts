@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import {
   alreadyLiveReleaseDecision,
   checkoutReleaseDecision,
+  ciDeployWaitDecision,
   forwardReleaseDecision,
   postDeployLiveDecision,
   releaseAncestryFromExitCode,
@@ -14,7 +16,39 @@ import {
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
+  unprovableReleaseRungMessage,
 } from './release-decision.ts'
+
+describe('CI deploy live wait', () => {
+  test('matches when the live commit contains the candidate', () => {
+    expect(
+      ciDeployWaitDecision({ candidateIsLiveAncestor: true, elapsedMs: 30_000, waitMs: 30_000 }),
+    ).toBe('matched')
+  })
+
+  test('keeps waiting before the deadline', () => {
+    expect(
+      ciDeployWaitDecision({ candidateIsLiveAncestor: false, elapsedMs: 29_999, waitMs: 30_000 }),
+    ).toBe('keep-waiting')
+  })
+
+  test('times out at the deadline', () => {
+    expect(
+      ciDeployWaitDecision({ candidateIsLiveAncestor: false, elapsedMs: 30_000, waitMs: 30_000 }),
+    ).toBe('timed-out')
+  })
+})
+
+test('an unprovable rung names the complete register remedy', () => {
+  expect(
+    unprovableReleaseRungMessage(PLATFORM_SLUG, 'fixture', 'production', [
+      { name: 'staging', branch: 'develop', deploy: 'deploy staging' },
+      { name: 'production', branch: 'master' },
+    ]),
+  ).toBe(
+    `release rung production declares neither a deploy command nor a live probe and cannot be proved; declare a live probe with: ${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"staging","branch":"develop","deploy":"deploy staging"},{"name":"production","branch":"master","live":"<command that prints the deployed commit sha>"}]}}', then retry`,
+  )
+})
 
 describe('release ledger row proof', () => {
   const noLiveMatch = {

@@ -54,13 +54,16 @@ function validRungPlans(value: unknown): boolean {
     return (
       typeof plan.rung === 'string' &&
       Boolean(plan.rung) &&
+      typeof plan.branch === 'string' &&
+      Boolean(plan.branch) &&
       typeof plan.required === 'boolean' &&
       (plan.requiredBy === null ||
         RELEASE_REQUIREMENT_SOURCES.includes(
           plan.requiredBy as (typeof RELEASE_REQUIREMENT_SOURCES)[number],
         )) &&
       (plan.reason === null || typeof plan.reason === 'string') &&
-      typeof plan.declaresLive === 'boolean'
+      typeof plan.declaresLive === 'boolean' &&
+      typeof plan.declaresDeploy === 'boolean'
     )
   })
 }

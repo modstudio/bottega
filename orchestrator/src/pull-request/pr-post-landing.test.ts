@@ -155,10 +155,12 @@ test('a successful move fences this process and hands off the exact fixed identi
     rungPlans: [
       {
         rung: 'hosted-api',
+        branch: 'main',
         required: true,
         requiredBy: 'explicit',
         reason: null,
         declaresLive: false,
+        declaresDeploy: false,
       },
     ],
     rungDecisionError: null,
@@ -664,10 +666,12 @@ test('the child satisfies a reach-only rung when the release flag is absent', ()
       rungPlans: [
         {
           rung: 'hosted-api',
+          branch: 'main',
           required: true,
           requiredBy: 'reach',
           reason: null,
           declaresLive: false,
+          declaresDeploy: true,
         },
       ],
     }),
