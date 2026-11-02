@@ -89,9 +89,13 @@ test('run link guard sees every space and the constraint permits only unlinked p
         )
       ).rows[0]?.relforcerowsecurity,
     ).toBeTrue()
-    await expect(
-      database.transaction(async (transaction) => applyMigration(transaction, guard)),
-    ).rejects.toThrow('run_task_or_project_unless_probe blocked by 2 violating rows')
+    const guardFailure = database.transaction(async (transaction) =>
+      applyMigration(transaction, guard),
+    )
+    await expect(guardFailure).rejects.toThrow(
+      'run_task_or_project_unless_probe blocked by 2 violating rows',
+    )
+    await expect(guardFailure).rejects.toThrow('01990000-0000-7000-8000-000000002044')
 
     await database.exec(`
       RESET ROLE;
