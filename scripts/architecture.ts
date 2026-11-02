@@ -751,7 +751,7 @@ export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 
 /** Repository-root data files that source modules intentionally embed. */
-export const REPOSITORY_ROOT_DATA_IMPORTS = ['typos.toml'] as const
+const REPOSITORY_ROOT_DATA_IMPORTS = ['typos.toml'] as const
 
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))
