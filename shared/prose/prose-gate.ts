@@ -8,6 +8,7 @@ import {
   type ProseCheckFinding,
   proseCheckRefusal,
   proseCheckSkipNotice,
+  suggestionText,
 } from './prose-check.ts'
 
 export type ProseGateField = { field: string; text: string; prior: string | null }
@@ -38,10 +39,10 @@ type FieldOutcome = { notices: string[]; refusalLines: string[] }
 function advisoryNotices(field: string, findings: ProseCheckFinding[]): string[] {
   return findings
     .filter((finding) => !finding.blocking)
-    .map((finding) => {
-      const suggestion = finding.suggestion === null ? 'none' : `"${finding.suggestion}"`
-      return `${field}: advisory: "${finding.text}"; suggestion: ${suggestion}`
-    })
+    .map(
+      (finding) =>
+        `${field}: advisory: "${finding.text}"; suggestion: ${suggestionText(finding.suggestion)}`,
+    )
 }
 
 async function checkedField(

@@ -204,13 +204,18 @@ export function checkProse(
     : { ran: false, reason: engine.reason, findings: completed }
 }
 
+/** Renders a finding's suggestion the same way in refusals and advisory notices. */
+export function suggestionText(suggestion: string | null): string {
+  return suggestion === null ? 'none' : `"${suggestion}"`
+}
+
 export function proseCheckRefusal(check: ProseCheck): string | null {
   const blocking = check.findings.filter((finding) => finding.blocking)
   if (blocking.length === 0) return null
-  const lines = blocking.map((finding) => {
-    const suggestion = finding.suggestion === null ? 'none' : `"${finding.suggestion}"`
-    return `"${finding.text}"; suggestion: ${suggestion}; corrected sentence: "${finding.correctedSentence}"`
-  })
+  const lines = blocking.map(
+    (finding) =>
+      `"${finding.text}"; suggestion: ${suggestionText(finding.suggestion)}; corrected sentence: "${finding.correctedSentence}"`,
+  )
   return [...lines, 'Correct the text and resubmit it.'].join('\n')
 }
 
