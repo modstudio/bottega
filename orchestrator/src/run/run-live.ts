@@ -40,6 +40,7 @@ import {
   sampleProcesses,
 } from '../process-resource-sampler.ts'
 import { processStartTime } from '../project/project-lock.ts'
+import { orchestratorProseGate } from '../prose/prose-service.ts'
 import type { CodexMcpScope } from '../sandbox/codex-mcp-scope.ts'
 import type { ProjectMcpSelection } from '../sandbox/project-mcp-scope.ts'
 import type { SandboxSelection } from '../sandbox/sandbox.ts'
@@ -927,6 +928,22 @@ export async function runLive(input: LiveInput): Promise<LiveResult> {
     }
     const questionsControlStatus = isAsking(contract) || contract?.status === 'done'
     acceptedQuestions = questionsControlStatus ? realQuestions(contract) : transportQuestions
+    if (acceptedQuestions.length) {
+      const questionProse = await orchestratorProseGate(
+        acceptedQuestions.map((question) => ({
+          field: 'question text',
+          text: question.question,
+          prior: null,
+        })),
+      )
+      const notice = questionProse.refusal ?? questionProse.notices.join('\n')
+      if (notice)
+        appendRunEvent(claim.id, {
+          ts: nowIso(),
+          type: 'text',
+          text: `prose-check notice:\n${notice}`,
+        })
+    }
     const derived = deriveLiveOutcome({
       writesJob,
       contractStatus: contract?.status ?? null,

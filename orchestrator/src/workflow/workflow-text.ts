@@ -3,6 +3,7 @@
 import type { Database } from 'bun:sqlite'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { nowIso, writableDb, writeTransaction } from '../database/db.ts'
+import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import type { WorkflowCursorContext } from './workflow-cursor-selection.ts'
 import { selectWorkflowCursor } from './workflow-cursor-selection.ts'
 import type { CursorState } from './workflow-cursor-transition.ts'
@@ -196,6 +197,27 @@ export function attachWorkflowText(
     if (!row) throw new Error('workflow has no live cursor; fetch its current step first')
     return attachSelectedWorkflowText(row, body, context, d)
   }, d)
+}
+
+export async function attachWorkflowTextByHandleChecked(
+  cursor: number,
+  body: string,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): Promise<string> {
+  await assertOrchestratorProse([{ field: 'text', text: body, prior: null }])
+  return attachWorkflowTextByHandle(cursor, body, context, d)
+}
+
+export async function attachWorkflowTextChecked(
+  identity: { project: string; workflow: string; mode: string; key?: string },
+  cursor: number | undefined,
+  body: string,
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+): Promise<string> {
+  await assertOrchestratorProse([{ field: 'text', text: body, prior: null }])
+  return attachWorkflowText(identity, cursor, body, context, d)
 }
 
 export function workflowTextIdsToDelete(input: {

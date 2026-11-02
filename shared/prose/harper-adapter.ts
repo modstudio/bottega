@@ -65,7 +65,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-export async function harperFindings(text: string): Promise<EngineResult> {
+async function runHarperFindings(text: string): Promise<EngineResult> {
   try {
     const linter = await initializedLinter()
     const organized = await linter.organizedLints(text, { language: 'markdown' })
@@ -106,4 +106,15 @@ export async function harperFindings(text: string): Promise<EngineResult> {
   } catch (error) {
     return { ran: false, reason: errorMessage(error) }
   }
+}
+
+let lintTail: Promise<void> = Promise.resolve()
+
+export function harperFindings(text: string): Promise<EngineResult> {
+  const result = lintTail.then(() => runHarperFindings(text))
+  lintTail = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  return result
 }

@@ -32,9 +32,17 @@ export const proseModules: ProseModule[] = [
     'harper.js',
     'harper.js/binary',
   ]),
+  module('shared/prose/prose-gate.ts', ['./harper-adapter.ts', './prose-check.ts']),
 ]
 
 export const proseBoundarySpecs: ProseBoundarySpec[] = [
+  {
+    name: 'prose-gate-boundary',
+    file: 'shared/prose/prose-gate.ts',
+    allowed: ['./harper-adapter.ts', './prose-check.ts'],
+    typeOnlyAllowed: [],
+    reason: 'Keep the write gate shared while its callers own transport and persistence.',
+  },
   {
     name: 'prose-lint-boundary',
     file: 'shared/prose/prose-lint.ts',

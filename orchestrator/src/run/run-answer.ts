@@ -15,6 +15,7 @@ import { dashboardCapabilityAuthorized } from '../dashboard-capability.ts'
 import { callerIdentity, db, writableDb, writeTransaction } from '../database/db.ts'
 import { job } from '../jobs/jobs.ts'
 import { mcpRequestFromStored } from '../mcp/mcp-preflight.ts'
+import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import { chainTransport, retryModelForAgent, transportTurns } from '../route/failover.ts'
 import { answerRulingRefusal } from '../workflow/autonomy.ts'
@@ -866,6 +867,9 @@ export async function answerRun(
   }
   const incomplete = incompleteRulingsRefusal(open.length, answers.length, input, ownersLive)
   if (incomplete) throw new Error(incomplete)
+  await assertOrchestratorProse(
+    answers.map((answer) => ({ field: 'answer text', text: answer.answer, prior: null })),
+  )
 
   if (
     answerResumeUnavailable({

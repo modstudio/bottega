@@ -25,6 +25,7 @@ import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
 import { projectAt, projectByName, projects } from '../project/projects.ts'
+import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import { recordDocArticleCompatibilityRefusal } from '../record/record-doc-transport-contract.ts'
 import { applyRecordWriteAuthority } from '../record/record-write-authority.ts'
 import { storedCanonRemovalRefusal } from './canon-removal.ts'
@@ -406,6 +407,11 @@ async function setDocWithOp(
   assertLocalArticleDelivery(input, delivery, kind)
   const canonWarnings = assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
+  await assertOrchestratorProse([
+    { field: 'title', text: input.title, prior: prior?.title ?? null },
+    { field: 'summary', text: input.summary ?? '', prior: prior?.summary ?? null },
+    { field: 'body', text: input.body, prior: prior?.body ?? null },
+  ])
   const written = await applyRecordWriteAuthority({
     local: () =>
       executeLocalDocSet({

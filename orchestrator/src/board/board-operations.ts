@@ -10,6 +10,7 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { newRecordId } from '../../../shared/record/schema.ts'
 import { db } from '../database/db.ts'
 import { projectAt, projectByName, projectRowByName } from '../project/projects.ts'
+import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
 import {
   type RecordApiClient,
@@ -464,6 +465,10 @@ export function hostedBoardPostInput(
 export async function boardPost(input: PostNoticeInput, inputContext?: Context) {
   const c = context(inputContext)
   input = preparePostText(input, c)
+  await assertOrchestratorProse([
+    { field: 'title', text: input.title, prior: null },
+    { field: 'body', text: input.body, prior: null },
+  ])
   const actor = boardActor(c.env)
   const audience = parseAudience(input.audience)
   const purpose = defaultBoardPurpose(input.purpose, Boolean(input.ackRequired))
@@ -508,6 +513,10 @@ export async function boardAsk(
 ) {
   const c = context(inputContext)
   input = preparePostText(input, c)
+  await assertOrchestratorProse([
+    { field: 'title', text: input.title, prior: null },
+    { field: 'body', text: input.body, prior: null },
+  ])
   const audience = parseAudience(input.audience)
   if (boardMode(locality(input.audience), c.env) === 'local') {
     const localRefusal = localBoardAudienceRefusal(audience)
@@ -534,6 +543,7 @@ export async function boardReply(
 ) {
   const c = context(inputContext)
   body = prepareBoardText(body, ownBoardTextCheckout(c.cwd), c.isKnownCommit)
+  await assertOrchestratorProse([{ field: 'body', text: body, prior: null }])
   const resolved = resolveBoardMessageIdentifier(db(), id, c.env)
   if (resolved.source === 'local') {
     const parsed = resolved.recordId

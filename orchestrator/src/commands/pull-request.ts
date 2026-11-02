@@ -1,9 +1,12 @@
 // concern: cli
 /** Registers the pull-request admission wrapper and its read-only pre-push check. */
+
+import { readFileSync } from 'node:fs'
 import { type Command, Option } from 'commander'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { writableDb } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
+import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import {
   checkPushedTip,
   createPullRequest,
@@ -57,7 +60,16 @@ export function pullRequestCiCommandOutcome(result: {
   }
 }
 
-function createPullRequestCommand(
+function githubValue(args: string[], long: string, short: string): string | undefined {
+  for (let index = 0; index < args.length; index += 1) {
+    const argument = args[index]!
+    if (argument === long || argument === short) return args[index + 1]
+    if (argument.startsWith(`${long}=`)) return argument.slice(long.length + 1)
+  }
+  return undefined
+}
+
+async function createPullRequestCommand(
   githubArgs: string[],
   options: {
     cwd?: string
@@ -65,8 +77,21 @@ function createPullRequestCommand(
     ceilingRuling?: string
     fromOperator?: boolean
   },
-): void {
+): Promise<void> {
   validateGithubArguments(githubArgs)
+  const title = githubValue(githubArgs, '--title', '-t')
+  const inlineBody = githubValue(githubArgs, '--body', '-b')
+  const bodyFile = githubValue(githubArgs, '--body-file', '-F')
+  const body = bodyFile
+    ? bodyFile === '-'
+      ? await Bun.stdin.text()
+      : readFileSync(bodyFile, 'utf8')
+    : inlineBody
+  // Text derived from commits is covered by the commit-msg prose hook.
+  await assertOrchestratorProse([
+    { field: 'title', text: title ?? '', prior: null },
+    { field: 'body', text: body ?? '', prior: null },
+  ])
   const result = createPullRequest(
     githubArgs,
     {

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { builtCommitResponse } from '../../../shared/built-commit.ts'
 import { DOC_AUDIENCES, DOC_KINDS, DOC_STATUSES, type DocAudience } from '../../../shared/docs.ts'
+import { proseGate } from '../../../shared/prose/prose-gate.ts'
 import type { RecordClientAddresses } from '../../../shared/record-client-addresses.ts'
 import type { RecordProject } from '../../../shared/record-project-contract.ts'
 import type { DocGenerator } from '../doc/doc-generator.ts'
@@ -812,7 +813,31 @@ export function recordApi(deps: Deps): Hono<ApiEnvironment> {
     const body = recordDocUpsertSchema.safeParse(await context.req.json().catch(() => null))
     if (!body.success) return context.json({ error: 'invalid doc upsert' }, 400)
     try {
-      return context.json(await deps.upsertDoc({ ...tenant, ...body.data }))
+      const prior = body.data.id ? await deps.readDoc({ ...tenant, id: body.data.id }) : null
+      const identity = context.get('identity')
+      const checked = await proseGate(
+        [
+          { field: 'title', text: body.data.title, prior: prior?.title ?? null },
+          {
+            field: 'summary',
+            text: body.data.summary ?? '',
+            prior: prior?.summary ?? null,
+          },
+          { field: 'body', text: body.data.body, prior: prior?.body ?? null },
+        ],
+        {
+          displayName: typeof identity?.user.name === 'string' ? identity.user.name : null,
+          enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
+        },
+      )
+      if (checked.refusal) return context.json({ error: checked.refusal }, 400)
+      const written = await deps.upsertDoc({ ...tenant, ...body.data })
+      return context.json({
+        ...written,
+        ...(checked.notices.length
+          ? { writeWarnings: [...(written.writeWarnings ?? []), ...checked.notices] }
+          : {}),
+      })
     } catch (error) {
       return writeError(context, error)
     }

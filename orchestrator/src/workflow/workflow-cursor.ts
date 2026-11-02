@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { newRecordId } from '../../../shared/record-id.ts'
 import { db, nowIso, sessionId, writableDb, writeTransaction } from '../database/db.ts'
 import { notifyWaitingItem } from '../operator/operator-waiting.ts'
+import { assertOrchestratorProse } from '../prose/prose-service.ts'
 import { closeQuestions } from '../run/question-close.ts'
 import {
   answerWorkflowQuestion,
@@ -996,6 +997,23 @@ export function ruleWorkflow(
       questionId: question.number,
     }
   }, d)
+}
+
+export async function ruleWorkflowChecked(
+  slug: string,
+  project: string,
+  mode: string,
+  args: Record<string, string>,
+  ruling: string | undefined,
+  fromOperator: boolean,
+  channel: 'cli' | 'mcp',
+  context: WorkflowCursorContext,
+  d: Database = writableDb(),
+  cursor?: number,
+): Promise<{ summary: string; questionId: number }> {
+  if (!ruling?.trim()) throw new Error('--ruling is required')
+  await assertOrchestratorProse([{ field: 'ruling text', text: ruling, prior: null }])
+  return ruleWorkflow(slug, project, mode, args, ruling, fromOperator, channel, context, d, cursor)
 }
 
 export function awaitWorkflowRuling(

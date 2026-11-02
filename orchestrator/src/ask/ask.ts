@@ -66,6 +66,7 @@ import { JOBS } from '../jobs/jobs.ts'
 import { LOCAL_LISTENER_IDLE_TIMEOUT_SECONDS } from '../local-listener.ts'
 import { checkMessages, messageArchitect } from '../mailbox/mailbox.ts'
 import { initialQuestionWaitingAt } from '../operator/operator-waiting.ts'
+import { orchestratorProseGate } from '../prose/prose-service.ts'
 import { machineId } from '../record/machine-identity.ts'
 import { nextQuestionNumber } from '../run/question-number.ts'
 import { enqueueQuestionRecord } from '../run/question-outbox.ts'
@@ -167,7 +168,9 @@ export function recordReplyQuestions(input: {
 /** How often to look for a ruling. Cheap: one indexed read of a local file. */
 const POLL_MS = 1_000
 
-export type AskResult = { answered: true; answer: string } | { answered: false; reason: string }
+export type AskResult =
+  | { answered: true; answer: string; notice?: string }
+  | { answered: false; reason: string; notice?: string }
 
 function checkEligibility(runId: string, token: string) {
   const row = db()
@@ -421,6 +424,10 @@ export async function ask(o: {
   timeoutMs?: number
 }): Promise<AskResult> {
   writableDb()
+  const prose = await orchestratorProseGate([
+    { field: 'question text', text: o.question, prior: null },
+  ])
+  const proseNotice = prose.refusal ?? (prose.notices.join('\n') || undefined)
   const askedAt = nowIso()
   const awaitingOperatorAt = await initialQuestionWaitingAt(o.runId, askedAt)
   const id = writeTransaction(() => {
@@ -456,7 +463,7 @@ export async function ask(o: {
         type: 'text',
         text: 'ruling delivered; worker resumed',
       })
-      return { answered: true, answer: row.answer ?? '' }
+      return { answered: true, answer: row.answer ?? '', notice: proseNotice }
     }
     if (Date.now() >= deadline) {
       // The question STAYS OPEN. The architect may still want to see what was
@@ -465,6 +472,7 @@ export async function ask(o: {
       // still has to be made.
       return {
         answered: false,
+        notice: proseNotice,
         reason:
           'No ruling arrived within the time limit. The architect is not available right now. ' +
           'Do NOT decide this yourself. Stop here and return status "blocked" with this ' +
@@ -653,7 +661,8 @@ export function createAskMcpServer(
         const result = authorized()
           ? await ask({ runId, question, options, recommendation, why, timeoutMs })
           : { answered: false as const, reason: unauthorized() }
-        return text(result.answered ? result.answer : result.reason)
+        const response = result.answered ? result.answer : result.reason
+        return text(result.notice ? `${response}\n\n${result.notice}` : response)
         // Not `isError`. A timeout is a legitimate outcome carrying an
         // instruction the worker must follow; flagged as an error, agents
         // retry it or treat the tool as broken and stop using it.

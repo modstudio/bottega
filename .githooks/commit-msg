@@ -11,6 +11,14 @@ if ! "$main_checkout/bin/bottega" gate check attribution --message "$1"; then
   status=1
 fi
 
+"$main_checkout/bin/bottega" gate check prose --message "$1"
+prose_status=$?
+if [ "$prose_status" -eq 3 ]; then
+  status=1
+elif [ "$prose_status" -ne 0 ]; then
+  echo "commit-msg: prose check did not run (exit $prose_status)" >&2
+fi
+
 subject=$(sed -n '1p' "$1")
 case "$subject" in
 Merge\ *|fixup!*|squash!*) ;;

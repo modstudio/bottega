@@ -3,6 +3,7 @@
 
 import type { Context, Hono } from 'hono'
 import { z } from 'zod'
+import { proseGate } from '../../../shared/prose/prose-gate.ts'
 import { parseReplyAudienceOption } from '../board/board-reply-audience.ts'
 import type { RecordIdentity } from './record-auth.ts'
 import {
@@ -25,6 +26,7 @@ import {
   type HostedBoardStatus,
   type HostedBoardTakeClaimInput,
   type HostedBoardThread,
+  RecordBoardError,
 } from './record-board-contract.ts'
 import {
   type BoardStreamClock,
@@ -263,6 +265,19 @@ export function registerRecordBoardRoutes(
     const body = postSchema.safeParse(await readJson(context))
     if (!body.success) return context.json({ error: 'invalid board message' }, 400)
     try {
+      const identity = context.get('identity')
+      const checked = await proseGate(
+        [
+          { field: 'title', text: body.data.title, prior: null },
+          { field: 'body', text: body.data.body, prior: null },
+        ],
+        {
+          displayName: typeof identity?.user.name === 'string' ? identity.user.name : null,
+          enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
+        },
+      )
+      if (checked.refusal) throw new RecordBoardError(checked.refusal, 400)
+      // This route has no warning channel; R8 notices are intentionally omitted from its response.
       return context.json(await deps.postBoardMessage({ ...tenant, ...body.data }))
     } catch (error) {
       return writeError(context, error)
@@ -275,6 +290,13 @@ export function registerRecordBoardRoutes(
     const body = replySchema.safeParse(await readJson(context))
     if (!id.success || !body.success) return context.json({ error: 'invalid board reply' }, 400)
     try {
+      const identity = context.get('identity')
+      const checked = await proseGate([{ field: 'body', text: body.data.body, prior: null }], {
+        displayName: typeof identity?.user.name === 'string' ? identity.user.name : null,
+        enabled: process.env.BOTTEGA_PROSE_CHECK !== 'off',
+      })
+      if (checked.refusal) throw new RecordBoardError(checked.refusal, 400)
+      // This route has no warning channel; R8 notices are intentionally omitted from its response.
       return context.json(
         await deps.replyBoardMessage({ ...tenant, ...body.data, rootId: id.data }),
       )
