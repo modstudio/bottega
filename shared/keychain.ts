@@ -140,7 +140,6 @@ export function decideKeychainBackend(platform: string): KeychainBackend {
 }
 
 export function keychainPlatform(): string {
-  if (process.env.NODE_ENV !== 'test') return process.platform
   const holder = globalThis as typeof globalThis & { [PLATFORM_KEY]?: string }
   return holder[PLATFORM_KEY] ?? process.platform
 }
