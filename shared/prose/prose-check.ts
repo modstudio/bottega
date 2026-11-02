@@ -33,8 +33,20 @@ function variantInPlace(original: string, variant: string): string {
   return `${capitalized}${possessive}`
 }
 
-function overlaps(finding: Range, ranges: Range[]): boolean {
-  return ranges.some((range) => finding.start < range.end && finding.end > range.start)
+/** One flag per character, so mask tests cost the same however many ranges a text has. */
+type MaskMap = Uint8Array
+
+function maskMap(text: string, ranges: Range[]): MaskMap {
+  const masked = new Uint8Array(text.length)
+  for (const range of ranges) masked.fill(1, range.start, range.end)
+  return masked
+}
+
+function overlaps(finding: Range, masked: MaskMap): boolean {
+  for (let index = finding.start; index < finding.end; index += 1) {
+    if (masked[index] === 1) return true
+  }
+  return false
 }
 
 type CheckProseOptions = {
@@ -46,7 +58,7 @@ type CheckProseOptions = {
 
 function correctionFindings(
   text: string,
-  masks: Range[],
+  masks: MaskMap,
   options: CheckProseOptions,
 ): FindingWithoutCorrection[] {
   const findings: FindingWithoutCorrection[] = []
@@ -75,7 +87,7 @@ function correctionFindings(
   return findings
 }
 
-function repeatedWordFindings(text: string, masks: Range[]): FindingWithoutCorrection[] {
+function repeatedWordFindings(text: string, masks: MaskMap): FindingWithoutCorrection[] {
   const findings: FindingWithoutCorrection[] = []
   for (const match of text.matchAll(/\b([A-Za-z]+)\s+\1\b/gi)) {
     const start = match.index
@@ -102,9 +114,8 @@ function isSentenceTerminator(text: string, index: number): boolean {
   return text[index] === '.' || text[index] === '!' || text[index] === '?'
 }
 
-function sentenceBounds(text: string, position: number, ranges: Range[]): Range {
-  const masked = (index: number) =>
-    ranges.some((range) => index >= range.start && index < range.end)
+function sentenceBounds(text: string, position: number, masks: MaskMap): Range {
+  const masked = (index: number) => masks[index] === 1
   let start = 0
   for (let index = position - 1; index >= 0; index -= 1) {
     if (!masked(index) && (isSentenceTerminator(text, index) || isNewlineBoundary(text, index))) {
@@ -132,7 +143,7 @@ function correctedSentence(
   text: string,
   subject: FindingWithoutCorrection,
   findings: FindingWithoutCorrection[],
-  masks: Range[],
+  masks: MaskMap,
 ): string {
   const bounds = sentenceBounds(text, subject.start, masks)
   let sentence = text.slice(bounds.start, bounds.end)
@@ -154,7 +165,7 @@ function correctedSentence(
 }
 
 export function checkProse(text: string, options: CheckProseOptions): ProseCheck {
-  const masks = maskedRanges(text)
+  const masks = maskMap(text, maskedRanges(text))
   const findings: FindingWithoutCorrection[] = [
     ...correctionFindings(text, masks, options),
     ...repeatedWordFindings(text, masks),
