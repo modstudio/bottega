@@ -20,11 +20,14 @@ test('candidates pace codex reading work but never implementation', () => {
     )
     .run(windowMinutes, resetsAt, reading)
 
-  expect(candidates('understand').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+  const pacedCandidate = candidates('understand').find((candidate) => candidate.agent === 'codex')
+  const pacedRefusal = pacedCandidate?.subscriptionPacingHold?.refusal ?? ''
+  expect(pacedCandidate).toMatchObject({
     eligible: false,
     why: expect.stringContaining('ahead of'),
     subscriptionPacingHold: { estimatePercent: 21 },
   })
+  expect(pacedRefusal).not.toContain('agent probe')
   expect(candidates('implement').find((candidate) => candidate.agent === 'codex')).toMatchObject({
     eligible: true,
     subscriptionPacingHold: null,
@@ -62,9 +65,12 @@ test('candidates show the no-data pacing hold', () => {
     )
     .run()
 
-  expect(candidates('understand').find((candidate) => candidate.agent === 'codex')).toMatchObject({
+  const candidate = candidates('understand').find((candidate) => candidate.agent === 'codex')
+  const refusal = candidate?.subscriptionPacingHold?.refusal ?? ''
+  expect(candidate).toMatchObject({
     eligible: false,
     why: expect.stringContaining('no reading in the current window and no calibration'),
     subscriptionPacingHold: { estimatePercent: null },
   })
+  expect(refusal.endsWith('agent probe codex --fresh')).toBe(true)
 })

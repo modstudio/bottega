@@ -120,6 +120,7 @@ export const runModuleSpecs = [
     file: 'orchestrator/src/route/subscription-pacing-adapter.ts',
     allowed: [
       'bun:sqlite',
+      '../../../shared/brand.ts',
       '../agent/agents.ts',
       '../transport/codex-quota.ts',
       './subscription-pacing.ts',

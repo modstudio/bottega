@@ -417,6 +417,7 @@ function registerAgentCommands(program: Command): void {
     .option('--max-concurrent <value>', 'limit concurrent runs for this agent')
     .option('--enabled <value>', 'enable or disable the agent')
     .option('--reason <value>', 'record why the agent is disabled')
+    .option('--fresh', 'probe again even when a passed probe result is cached')
     .action((args, options) => agentCommand(productArgv('agent', args, options), presentation))
 }
 

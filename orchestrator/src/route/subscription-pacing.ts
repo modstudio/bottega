@@ -34,6 +34,11 @@ export type SubscriptionPacingInput = {
   highStakesLens: boolean
 }
 
+/** Whether a pacing hold exists because no current reading or calibration can estimate usage. */
+export function isNoDataHold(hold: SubscriptionPacingHold): boolean {
+  return hold.estimatePercent === null
+}
+
 function currentReading(
   reading: QuotaPacingReading | null,
   nowSeconds: number,

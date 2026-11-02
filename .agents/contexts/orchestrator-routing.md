@@ -83,7 +83,7 @@ A failing behavioral canon eval closes exploration for the default eval agent un
 
 **The vocabulary lives in `score.ts` and every prompt is generated from it.** A level that is not offered does not exist. Evidence identity is the caller prompt (`spec_sha`), the change (`patch_id` and path set), the lens, and the effective model.
 
-**Calibration runs are marked `--probe` and never count as evidence.** `bottega score pending` and the Stop hook skip them. A probe is excluded from every query that routes or reports.
+**Calibration runs are marked `--probe` and never count as evidence.** `bottega score pending` and the Stop hook skip them. A probe is excluded from every query that judges, ranks or reports. A subscription quota reading is a fact about the account, not about an agent's quality, so pacing counts it from any finished run, a registration probe included.
 
 **A share of runs goes to challengers.** Unproven agents that might win receive the exploration draw; once proven, `STANDING_EXPLORE_RATE` keeps testing against the leader.
 

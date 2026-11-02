@@ -145,13 +145,33 @@ test('a successful registration probe clears a quota cooldown', async () => {
   )
 
   expect(calls).toEqual(['codex'])
-  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env })
+  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env, fresh: false })
   expect(
     candidates('implement').find((candidate) => candidate.agent === 'codex')?.cooling,
   ).toBeNull()
   expect(
     db().query("SELECT probe, status FROM run WHERE agent='codex' AND job='agent-probe'").get(),
   ).toEqual({ probe: 1, status: 'ok' })
+})
+
+test('agent probe forwards the fresh option', async () => {
+  const prior = db().query("SELECT probe_result FROM agent WHERE name='codex'").get() as {
+    probe_result: string
+  }
+  let probeInputs: unknown
+
+  await agentCommand(
+    ['agent', 'probe', 'codex', '--fresh'],
+    { log: () => {}, setExitCode: () => {} },
+    {
+      probeAgent: async (_name, inputs) => {
+        probeInputs = inputs
+        return JSON.parse(prior.probe_result)
+      },
+    },
+  )
+
+  expect(probeInputs).toEqual({ path: process.env.PATH, environment: process.env, fresh: true })
 })
 
 test('a successful registration probe does not clear a billing hold', async () => {
