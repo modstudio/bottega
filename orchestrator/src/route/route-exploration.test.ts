@@ -31,7 +31,7 @@ function seedCostPolicyLens(lens: 'correctness' | 'architecture'): void {
   for (let i = 0; i < MIN_SAMPLE; i++) {
     for (const [agent, quality, cost] of [
       ['codex', 'right', 10],
-      ['grok', 'right', 0.2],
+      ['grok', i < 4 ? 'right' : 'mixed', 0.2],
     ] as const) {
       const runId = addRun({ agent, job: 'review-lens', lens })
       recordReview(runId, reviewReply(0), db())
