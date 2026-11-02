@@ -94,6 +94,9 @@ shul
 sigterm
 sql
 src
+stderr
+stdin
+stdout
 tRPC
 teardown
 tsconfig

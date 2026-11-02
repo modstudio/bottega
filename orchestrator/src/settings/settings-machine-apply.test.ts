@@ -43,7 +43,7 @@ beforeEach(async () => {
     slug: 'settings',
     title: 'settings',
     body: serializeOwnedSettings({
-      permissions: { allow: [`Bash(${PLATFORM_SLUG} *)`] },
+      permissions: { allow: ['Bash(orch *)'] },
       hooks: {},
       autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
       envKeys: [],
@@ -88,7 +88,7 @@ function writeCurrentSettings() {
       {
         ...withMachineProductHooks(
           {
-            permissions: { allow: [`Bash(${PLATFORM_SLUG} *)`] },
+            permissions: { allow: ['Bash(orch *)'] },
             hooks: {},
             autoMode: { allow: ['$defaults', 'Bash(docker compose *)'] },
           },
@@ -147,7 +147,7 @@ describe('settings apply', () => {
       ]),
     )
     expect(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).toContain(
-      `Bash(${PLATFORM_SLUG} *)`,
+      'Bash(orch *)',
     )
     expect(
       JSON.parse(readFileSync(join(root, '.claude', 'settings.json'), 'utf8')).autoMode,
@@ -164,7 +164,7 @@ describe('settings apply', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: [`Bash(${PLATFORM_SLUG} *)`] },
+        permissions: { allow: ['Bash(orch *)'] },
         hooks: {},
         envKeys: [],
       }),
@@ -176,7 +176,7 @@ describe('settings apply', () => {
     const withoutAutoMode = `${JSON.stringify(
       {
         ...withMachineProductHooks(
-          { permissions: { allow: [`Bash(${PLATFORM_SLUG} *)`] }, hooks: {} },
+          { permissions: { allow: ['Bash(orch *)'] }, hooks: {} },
           assetPath(),
           resolveOrchestratorDatabase(environment),
         ).settings,
@@ -228,7 +228,7 @@ describe('settings apply', () => {
     writeFileSync(
       join(config, 'machine.toml'),
       '[permissions]\nallow = ["Bash(git status)"]\n' +
-        `[permissions.drop]\nallow = ["Bash(${PLATFORM_SLUG} *)", "Bash(missing)"]\n`,
+        '[permissions.drop]\nallow = ["Bash(orch *)", "Bash(missing)"]\n',
     )
     writeCurrentSettings()
     const results = await applyMachineSettings({ check: false }, deps())

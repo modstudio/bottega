@@ -567,7 +567,7 @@ describe('settings permission', () => {
         shown.flags({
           project: 'missing',
           list: 'allow',
-          rule: `Bash(${PLATFORM_SLUG} *)`,
+          rule: 'Bash(orch *)',
           expect: 'revision-1',
         }),
         'add',
@@ -588,7 +588,7 @@ describe('settings permission', () => {
         shown.flags({
           project: 'unmanaged-permissions',
           list: 'allow',
-          rule: `Bash(${PLATFORM_SLUG} *)`,
+          rule: 'Bash(orch *)',
           expect: 'revision-1',
         }),
         'add',
@@ -604,7 +604,7 @@ describe('settings permission', () => {
         shown.flags({
           project: 'permission-missing',
           list: 'allow',
-          rule: `Bash(${PLATFORM_SLUG} *)`,
+          rule: 'Bash(orch *)',
         }),
         'add',
       ),
@@ -614,7 +614,7 @@ describe('settings permission', () => {
         shown.flags({
           project: 'permission-missing',
           list: 'allow',
-          rule: `Bash(${PLATFORM_SLUG} *)`,
+          rule: 'Bash(orch *)',
           expect: 'revision-1',
         }),
         'remove',
@@ -632,7 +632,7 @@ describe('settings permission', () => {
       slug: 'settings',
       title: 'settings',
       body: serializeOwnedSettings({
-        permissions: { allow: [`Bash(${PLATFORM_SLUG} *)`] },
+        permissions: { allow: ['Bash(orch *)'] },
         hooks: {},
       }),
       delivery: 'demand',
@@ -642,7 +642,7 @@ describe('settings permission', () => {
     const input = {
       project: 'permission-idempotent',
       list: 'allow',
-      rule: `Bash(${PLATFORM_SLUG} *)`,
+      rule: 'Bash(orch *)',
       expect: seeded.revision!,
     }
     const duplicate = await settingsPermissionCommand(shown.flags(input), 'add')

@@ -25,6 +25,7 @@ export const proseModules: ProseModule[] = [
   ]),
   module('orchestrator/src/doc/doc-prose.ts', [
     '../prose-service.ts',
+    '../settings/settings.ts',
     './doc-article-fields.ts',
     './doc-read-store.ts',
   ]),

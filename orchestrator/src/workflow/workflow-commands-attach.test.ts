@@ -32,7 +32,7 @@ test('workflow attach reads text from stdin and prints its close reference', asy
       presentation(lines),
       {
         stdinIsTTY: () => false,
-        stdinText: async () => 'research from standard input',
+        stdinText: async () => 'research from stdin',
       },
     )
     const attached = db()
@@ -55,7 +55,7 @@ test('workflow attach reads text from stdin and prints its close reference', asy
       cursor_record_id: cursor.record_id,
       step_ordinal: 1,
       step_slug: 'research',
-      body: 'research from standard input',
+      body: 'research from stdin',
     })
   } finally {
     if (priorSession === undefined) delete process.env.CLAUDE_CODE_SESSION_ID
