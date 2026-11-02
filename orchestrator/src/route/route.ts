@@ -62,6 +62,7 @@ import {
   type CurrentPolicySelection,
   currentPolicySelection,
   MIN_SAMPLE,
+  NOISE_BAND,
 } from './route-selection.ts'
 import { aggregateEvidence, routingEvidenceWindow, runUsageMedians } from './route-statistics.ts'
 
@@ -491,7 +492,7 @@ export function scoreboard(
               job: j,
               promptBucket: bucket,
               costPolicy,
-              belowCostFloor: belowCostFloor(c.shrunk, costPolicy.floor),
+              belowCostFloor: belowCostFloor(c.shrunk, costPolicy.floor, NOISE_BAND),
               costPerAccepted,
               toolBursts: observedBursts.get(c.agent) ?? { runs: 0, peak: null },
             }))
