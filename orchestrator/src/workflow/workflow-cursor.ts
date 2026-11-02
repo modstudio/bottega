@@ -927,78 +927,6 @@ function awaitWorkflowRulingImpl(
   }
 }
 
-function recordWorkflowRuling(
-  slug: string,
-  project: string,
-  mode: string,
-  args: Record<string, string>,
-  ruling: string | undefined,
-  fromOperator: boolean,
-  channel: 'cli' | 'mcp',
-  context: WorkflowCursorContext,
-  d: Database = writableDb(),
-  cursor?: number,
-): { summary: string; questionId: number } {
-  if (!ruling?.trim()) throw new Error('--ruling is required')
-  return writeTransaction(() => {
-    linkResolvedWorkflowTask(project, args, context, d)
-    const row = findCursor(project, slug, mode, args, context, d, cursor)
-    if (!row)
-      throw new Error(
-        `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
-      )
-    if (row.state !== 'awaiting-ruling')
-      throw new Error(`${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling`)
-    const step = pinnedWorkflowRuleStep(row, cursorName(slug, mode, row.workflow_key), d)
-    const refusal = decideWorkflowRuleAnswer({
-      fromOperator,
-      operatorRuling: Boolean(step.operatorRuling),
-    })
-    if (refusal) throw new Error(refusal)
-    const actor = sessionId()
-    const adoptionReason = authorizeWorkflowQuestionMutation({
-      owner: row.session_id,
-      actor,
-      fromOperator,
-      subject: cursorName(slug, mode, row.workflow_key),
-      action: 'rule',
-      chainLastActivityAt: Date.parse(row.updated_at),
-      database: d,
-    })
-    const at = nowIso()
-    const question = d
-      .query<{ record_id: string; number: number }, [string]>(
-        `SELECT record_id,number FROM question
-         WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
-      )
-      .get(row.record_id)
-    if (!question)
-      throw new Error(`${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`)
-    answerWorkflowQuestion(
-      {
-        questionId: question.record_id,
-        cursorId: row.record_id,
-        ruling: ruling.trim(),
-        at,
-        actor,
-        fromOperator,
-        personName: resolvedRulingPersonName(fromOperator),
-        channel,
-        adoptionReason,
-      },
-      d,
-    )
-    d.query(
-      `UPDATE workflow_cursor SET state='running',question=NULL,
-       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
-    ).run(adoptionReason ? null : (context.session ?? null), at, row.record_id)
-    return {
-      summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
-      questionId: question.number,
-    }
-  }, d)
-}
-
 export async function ruleWorkflow(
   slug: string,
   project: string,
@@ -1013,18 +941,69 @@ export async function ruleWorkflow(
 ): Promise<{ summary: string; questionId: number }> {
   if (ruling?.trim())
     await assertOrchestratorProse([{ field: 'ruling text', text: ruling, prior: null }])
-  return recordWorkflowRuling(
-    slug,
-    project,
-    mode,
-    args,
-    ruling,
-    fromOperator,
-    channel,
-    context,
-    d,
-    cursor,
-  )
+  function recordWorkflowRuling(): { summary: string; questionId: number } {
+    if (!ruling?.trim()) throw new Error('--ruling is required')
+    return writeTransaction(() => {
+      linkResolvedWorkflowTask(project, args, context, d)
+      const row = findCursor(project, slug, mode, args, context, d, cursor)
+      if (!row)
+        throw new Error(
+          `${cursorName(slug, mode, keyOf(args))} has no cursor; compose the workflow first`,
+        )
+      if (row.state !== 'awaiting-ruling')
+        throw new Error(`${cursorName(slug, mode, row.workflow_key)} is not awaiting a ruling`)
+      const step = pinnedWorkflowRuleStep(row, cursorName(slug, mode, row.workflow_key), d)
+      const refusal = decideWorkflowRuleAnswer({
+        fromOperator,
+        operatorRuling: Boolean(step.operatorRuling),
+      })
+      if (refusal) throw new Error(refusal)
+      const actor = sessionId()
+      const adoptionReason = authorizeWorkflowQuestionMutation({
+        owner: row.session_id,
+        actor,
+        fromOperator,
+        subject: cursorName(slug, mode, row.workflow_key),
+        action: 'rule',
+        chainLastActivityAt: Date.parse(row.updated_at),
+        database: d,
+      })
+      const at = nowIso()
+      const question = d
+        .query<{ record_id: string; number: number }, [string]>(
+          `SELECT record_id,number FROM question
+         WHERE workflow_cursor_record_id=? AND ${questionOpenSql('question')}`,
+        )
+        .get(row.record_id)
+      if (!question)
+        throw new Error(
+          `${cursorName(slug, mode, row.workflow_key)} has no open question to rule on`,
+        )
+      answerWorkflowQuestion(
+        {
+          questionId: question.record_id,
+          cursorId: row.record_id,
+          ruling: ruling.trim(),
+          at,
+          actor,
+          fromOperator,
+          personName: resolvedRulingPersonName(fromOperator),
+          channel,
+          adoptionReason,
+        },
+        d,
+      )
+      d.query(
+        `UPDATE workflow_cursor SET state='running',question=NULL,
+       session_id=COALESCE(?,session_id),updated_at=? WHERE record_id=?`,
+      ).run(adoptionReason ? null : (context.session ?? null), at, row.record_id)
+      return {
+        summary: `${cursorName(slug, mode, row.workflow_key, true)} is running at step ${row.ordinal + 1} ${row.step_slug}.`,
+        questionId: question.number,
+      }
+    }, d)
+  }
+  return recordWorkflowRuling()
 }
 
 export function awaitWorkflowRuling(

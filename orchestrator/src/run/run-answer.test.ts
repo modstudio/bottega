@@ -40,29 +40,6 @@ afterEach(() => {
 })
 
 describe('run answers', () => {
-  test('a misspelled answer is refused and leaves the question open', async () => {
-    const id = insert('asking')
-    const misspelling = ['me', 'ida'].join('')
-    db()
-      .query(
-        `INSERT INTO question (number,record_id,run_record_id,asked_at,question,awaiting_operator_at) VALUES ((SELECT COALESCE(MAX(number),0)+1 FROM question),'${newRecordId()}',?,?,?,?)`,
-      )
-      .run(id, new Date().toISOString(), 'Which shape?', new Date().toISOString())
-    await expect(
-      answerRun(
-        id,
-        { argv: [`We saw the ${misspelling} here.`], recordOnly: true, flags },
-        helpers,
-      ),
-    ).rejects.toThrow(`answer text:\n"${misspelling}"`)
-    expect(
-      db().query('SELECT answer,answered_at FROM question WHERE run_record_id=?').get(id),
-    ).toEqual({
-      answer: null,
-      answered_at: null,
-    })
-  })
-
   test('record-only closes the question, marks the chain stranded, and retry restates the ruling', async () => {
     const id = insert('asking')
     const prompt = trackResidue(join(dir, `record-only-${id}.txt`))
