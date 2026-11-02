@@ -25,6 +25,7 @@ import type { DetachSpec } from '../route/failover.ts'
 import { keepTreeExemptionFromOption } from '../worktree/keep-tree-hold.ts'
 import { preflight, resolvedFindingsLens } from './dispatch-preflight.ts'
 import { executionRequirementRefusal } from './execution-requirement.ts'
+import { decideProbeLaunchOverrides } from './probe-launch-overrides.ts'
 import { reviewLensPrompt } from './review-lens-prompt.ts'
 import type { ReviewFindingMemory } from './review-memory.ts'
 import { checkTaskKeyAdmission, type TaskKeyLookup } from './task-key-admission.ts'
@@ -130,6 +131,7 @@ type DispatchOptions = {
   avoid: string[]
   distinctModels: string[]
   mcp: McpRequest | undefined
+  agentHarness: string | null
 }
 type DispatchFlags = {
   has(name: string): boolean
@@ -446,6 +448,39 @@ function detachedRunCollectRemedy(id: string, runNumber: (id: string) => number)
   return `detached as run ${number}: ${PLATFORM_SLUG} run wait ${number}, then ${PLATFORM_SLUG} run result ${number}`
 }
 
+function probeLaunchOverrides(flags: DispatchFlags, resolved: DispatchOptions, findings: boolean) {
+  const decision = decideProbeLaunchOverrides({
+    probe: flags.has('probe'),
+    contextLimit: flags.flag('probe-context-limit'),
+    readerSuites: flags.has('probe-reader-suites'),
+    agentHarness: resolved.agentHarness,
+    findings,
+  })
+  if (!decision.accepted) throw new Error(decision.refusal)
+  return decision
+}
+
+function validatedTimeoutMinutes(
+  flags: DispatchFlags,
+  requested: ReturnType<typeof job>,
+  jobName: string,
+): number | undefined {
+  const raw = flags.flag('timeout')
+  const minutes = raw === undefined ? undefined : Number(raw)
+  if (minutes !== undefined) resolveJobTimeoutMs(requested, 1, minutes)
+  if (flags.has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
+    throw new Error(`--keep-tree is only valid for jobs that read the repository (${jobName})`)
+  }
+  return minutes
+}
+
+function validatedDeliverables(values: string[], jobName: string): string[] {
+  if (values.length && !isReaderJob(jobName)) {
+    throw new Error('--deliverable is only valid for diagnose, understand, and file-question')
+  }
+  return values
+}
+
 export async function dispatchCommand(
   argv: string[],
   flags: DispatchFlags,
@@ -477,6 +512,7 @@ export async function dispatchCommand(
     resolved = await resolveDispatchOptions(jobName)
   const reviewRole = reviewRoleForDispatch(requested.findings, has('supplementary'))
   const { agent, agentExplicit, transport, transportExplicit, avoid, distinctModels } = resolved
+  const probeOverrides = probeLaunchOverrides(flags, resolved, Boolean(requested.findings))
   const requestedCwd = existingRequestedCwd(flag('cwd'))
   const explicitRepo = flag('repo')
   const caller = resolveCallerCheckout(requestedCwd, explicitRepo)
@@ -538,16 +574,8 @@ export async function dispatchCommand(
   // before detach() claims a row. An explicitly pinned non-Codex agent keeps
   // its own schema dialect and reads the caller's original file unchanged.
   if (schema && (!flag('agent') || flag('agent') === 'codex')) validateSchema(schema)
-  const deliverables = values('deliverable')
-  if (deliverables.length && !isReaderJob(jobName)) {
-    throw new Error('--deliverable is only valid for diagnose, understand, and file-question')
-  }
-  const timeoutRaw = flag('timeout')
-  const timeoutMinutes = timeoutRaw === undefined ? undefined : Number(timeoutRaw)
-  if (timeoutMinutes !== undefined) resolveJobTimeoutMs(requested, 1, timeoutMinutes)
-  if (has('keep-tree') && !reclaimsTreeByDefault(jobName)) {
-    throw new Error(`--keep-tree is only valid for jobs that read the repository (${jobName})`)
-  }
+  const deliverables = validatedDeliverables(values('deliverable'), jobName)
+  const timeoutMinutes = validatedTimeoutMinutes(flags, requested, jobName)
   if (!porcelain && !dispatchProjectName) {
     error(
       `! this run will not be attributed to any project; use --repo <name> ` +
@@ -614,6 +642,8 @@ export async function dispatchCommand(
       mcp: resolved.mcp,
       model: flag('model'),
       probe: has('probe'),
+      probeContextLimit: probeOverrides.contextLimit,
+      probeReaderSuites: probeOverrides.readerSuites,
       seed,
       key: flag('key'),
       repo: dispatchProjectName ?? undefined,
@@ -672,6 +702,8 @@ export async function dispatchCommand(
     mcp: resolved.mcp,
     model: flag('model'),
     probe: has('probe'),
+    probeContextLimit: probeOverrides.contextLimit,
+    probeReaderSuites: probeOverrides.readerSuites,
     seed,
     key: flag('key'),
     repo: dispatchProjectName ?? undefined,

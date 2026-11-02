@@ -8,6 +8,7 @@ import { readDelegationSettings } from '../../../shared/machine-config.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { type Agent, resumePromptByteLimit } from '../agent/agents.ts'
 import { ensureLocalHealth } from '../agent/model-host.ts'
+import { workerHarnessName } from '../agent/worker-launch-env.ts'
 import {
   resolveTaskBranch,
   resolveTaskBranchCandidates,
@@ -563,6 +564,7 @@ export async function doCommand(argv: string[], presentation: Presentation): Pro
       ...transport,
       ...(await routeConstraints(argv, flag('agent'))),
       mcp: parseRequestedMcp(argv),
+      agentHarness: selected ? workerHarnessName(selected) : null,
     }
   }
   await dispatchCommand(

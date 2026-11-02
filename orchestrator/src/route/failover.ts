@@ -8,6 +8,7 @@ import type { Database } from 'bun:sqlite'
 import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { AGENTS } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import type { ProbeContextLimit } from '../dispatch/probe-launch-overrides.ts'
 import type { McpRequest } from '../mcp/mcp-preflight.ts'
 import type { ReviewRole } from '../review/review-role.ts'
 import type { ResolvedReviewTarget } from '../review/review-target.ts'
@@ -50,6 +51,8 @@ export type DetachSpec = {
   mcp?: McpRequest
   model?: string
   probe?: boolean
+  probeContextLimit?: ProbeContextLimit
+  probeReaderSuites?: boolean
   transport?: TransportName
   transportPinSource?: 'explicit' | 'environment'
   label?: string
@@ -138,6 +141,8 @@ const detachRouting = (spec: DetachSpec) => ({
   routedAgent: spec.routedAgent,
   reviewRole: spec.reviewRole,
   resolvedReviewTarget: spec.resolvedReviewTarget,
+  probeContextLimit: spec.probeContextLimit,
+  probeReaderSuites: spec.probeReaderSuites,
 })
 
 export function detachedRunOptions(

@@ -185,6 +185,8 @@ export type Agent = {
    * run 294 is the blunter version — a flat 400 saying 65,536.
    */
   contextTokens: number
+  /** Exact context window served by this registered endpoint, when declared. */
+  servedContextTokens?: number | null
   /**
    * The vendor's native stop reason for exhausting the reply budget.
    *

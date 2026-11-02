@@ -70,6 +70,10 @@ export function gooseContextLimit(
   return servedWindow === null ? workingLimit : Math.min(servedWindow, workingLimit)
 }
 
+function servedContextTokens(stored: Caps & { contextTokens?: number | null }): number | null {
+  return typeof stored.contextTokens === 'number' ? stored.contextTokens : null
+}
+
 function rowLaunchEnvironment(
   row: AgentRow,
   jobContextTokens: number | null,
@@ -78,7 +82,7 @@ function rowLaunchEnvironment(
 ): Record<string, string> {
   if (!row.base_url) return {}
   const stored = JSON.parse(row.caps) as Caps & { contextTokens?: number | null }
-  const servedWindow = typeof stored.contextTokens === 'number' ? stored.contextTokens : null
+  const servedWindow = servedContextTokens(stored)
   const contextLimit = gooseContextLimit(servedWindow, jobContextTokens, promptBytes)
   return {
     BOTTEGA_MODEL_HOST_URL: row.base_url,
@@ -141,6 +145,7 @@ export function rowAgent(row: AgentRow): Agent {
         ? Number.POSITIVE_INFINITY
         : stored.contextTokens!
       : 0,
+    servedContextTokens: servedContextTokens(stored),
     enabled: Boolean(row.enabled),
     disabledReason: row.disabled_reason,
     probedAt: row.probed_at,

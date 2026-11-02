@@ -110,6 +110,11 @@ import {
   operatorKnowledgeSection,
 } from './run-pack-prompt.ts'
 import { carriedRefusalFailure, refuseUnstartedRun } from './run-prelaunch-refusal.ts'
+import {
+  prepareRunProbeLaunch,
+  probeReaderFindings,
+  reportProbeOverrides,
+} from './run-probe-launch.ts'
 import { completeRunStartup, sha } from './run-process.ts'
 import { readOnlyBaseProjectPath, repoOf } from './run-project-context.ts'
 import { runInfrastructurePrompt } from './run-readonly-infrastructure.ts'
@@ -255,6 +260,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
    * worker never to verify against somebody else's server, so the facts bottega
    * does know are stated on its behalf.
    */
+  const readerFindings = probeReaderFindings(opts, requestedJob)
   const infra = runInfrastructurePrompt({
     tool: toolFor(callerCwd),
     callerCwd,
@@ -262,7 +268,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
     writesRepo: writesJob,
     readOnlyBase,
     mainCheckout: projectByName(runProjectName ?? '')?.path ?? callerCwd,
-    findings: Boolean(requestedJob.findings),
+    findings: readerFindings,
   })
   const [originalPrompt, resolvedDialect] = [opts.prompt, resolveReplyDialect(requestedJob)]
   const replySchemaName = opts.schemaPath ? basename(opts.schemaPath) : resolvedDialect.schemaName
@@ -332,7 +338,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           preamble: writesJob
             ? workerPreamble(opts.job, harnessDelegation)
             : repoJob
-              ? repositoryReaderPreamble(Boolean(requestedJob.findings))
+              ? repositoryReaderPreamble(readerFindings)
               : NO_REPO_PREAMBLE,
           infrastructure: infra,
           operatorKnowledge: operatorKnowledgeSection(pack ?? null),
@@ -415,6 +421,8 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       { source: 'resume' as const, ...opts.resume! }
   const launch = decideRunLaunch({ ...source, ...transportPinFacts })
   const a = launch.agent === HARNESS_AGENT ? harness.harnessAgent() : requireAgent(launch.agent)
+  const probeLaunch = prepareRunProbeLaunch(a, opts, requestedJob)
+  enforceRunStartupRefusal(opts.reserveId, probeLaunch.refusal)
   const transportName = launch.useRequestedTransport ? requestedTransport : a.defaultTransport
   const writingAcp = isWritingAcpRun(transportName, writesJob)
   const { agent: name, reason } = launch
@@ -682,6 +690,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
       mcpSetupHeader = mcpSetupHeader ? `${mcpSetupHeader}\n${header}` : header
       console.error(`orch: run ${claim.id} ${header}`)
     }
+    reportProbeOverrides(claim.id, probeLaunch.environment, probeLaunch.readerSuites)
     if (mcpMode && mcpServerName) {
       const probeConfig = mcpLaunch.config[mcpServerName]
       if (probeConfig?.url || probeConfig?.command) {
@@ -932,7 +941,7 @@ export async function run(opts: RunOptions): Promise<RunResult> {
           gitConfigEnvironment,
           runtimeDir,
           recipeEnvironment,
-          launchEnvironment: mcpEnvironment,
+          launchEnvironment: { ...mcpEnvironment, ...probeLaunch.environment },
           scratchDir,
           writesJob,
           codexSandbox,

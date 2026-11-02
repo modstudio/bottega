@@ -8,6 +8,7 @@ import {
   rowAgent,
 } from '../agent/agent-registry.ts'
 import { db } from '../database/db.ts'
+import { probeContextLimitEnvironment } from '../dispatch/probe-launch-overrides.ts'
 import { job, PROMPT_BYTES_PER_TOKEN } from '../jobs/jobs.ts'
 import { childEnv, planRunProcessTermination, terminateRunProcesses } from './run-process.ts'
 
@@ -66,6 +67,32 @@ test('worker context controls follow a registered agent harness rather than its 
     GROK_CLAUDE_MCPS_ENABLED: '0',
     GROK_CLAUDE_SKILLS_ENABLED: '0',
   })
+})
+
+test('a probe context override wins over the ceilinged Goose child environment', () => {
+  const row = db().query("SELECT * FROM agent WHERE name = 'codex'").get() as AgentRow
+  const { contextTokens: _contextTokens, ...caps } = JSON.parse(row.caps)
+  const goose = rowAgent({
+    ...row,
+    name: 'probe-goose',
+    harness: 'goose',
+    model: 'probe-model',
+    base_url: 'http://model.test',
+    caps: JSON.stringify({ ...caps, contextTokens: 200_000 }),
+  })
+  const extra = probeContextLimitEnvironment(180_000, goose.servedContextTokens)
+  expect(
+    childEnv(
+      goose,
+      undefined,
+      undefined,
+      extra,
+      false,
+      undefined,
+      {},
+      job('review-lens').contextTokens,
+    ).GOOSE_CONTEXT_LIMIT,
+  ).toBe('180000')
 })
 
 test('a parent environment holding both record URLs yields a child environment holding neither', () => {
