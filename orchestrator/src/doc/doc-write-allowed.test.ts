@@ -3,6 +3,8 @@ import { PLATFORM_SLUG } from '../../../shared/brand.ts'
 import { REFERENCE_GENERATOR } from './doc-generator.ts'
 import {
   articleFieldRefusal,
+  canonFindingsRefusal,
+  canonFindingWarnings,
   canonRemovalRefusal,
   decideDocRevisionWrite,
   docWriteProjectName,
@@ -15,6 +17,38 @@ import {
   refuseSettingsAddress,
   userCanonWriteTargets,
 } from './doc-write-allowed.ts'
+
+const finding = (rule: string, message: string, line = 1) => ({
+  file: 'AGENTS.md',
+  line,
+  rule,
+  message,
+})
+
+test('canon numeral findings warn while unambiguous prose findings refuse', () => {
+  const numeral = finding('canon/numeral', 'prose contains numeral 11')
+  expect(canonFindingsRefusal([numeral])).toBeNull()
+  expect(canonFindingWarnings([numeral])).toEqual([
+    'AGENTS.md:1 canon/numeral prose contains numeral 11',
+  ])
+
+  for (const error of [
+    finding('canon/history', 'prose narrates history'),
+    finding('canon/task-key', 'prose contains a task key'),
+    finding('canon/iso-date', 'prose contains an ISO date'),
+  ]) {
+    expect(canonFindingsRefusal([error])).toContain(error.rule)
+  }
+})
+
+test('a mixed canon refusal includes its numeral warning', () => {
+  const refusal = canonFindingsRefusal([
+    finding('canon/history', 'prose narrates history'),
+    finding('canon/numeral', 'prose contains numeral 11', 2),
+  ])
+  expect(refusal).toContain('refusing canon write; introduced 1 finding')
+  expect(refusal).toContain('warning:\nAGENTS.md:2 canon/numeral prose contains numeral 11')
+})
 
 test('reference writes require the explicit publisher marker for new and stored rows', () => {
   expect(referenceWriteRefusal({ requestedForm: 'reference' })).toContain(

@@ -569,6 +569,21 @@ describe('scoped operator docs', () => {
     ).rejects.toThrow('refusing canon write; introduced')
   })
 
+  test('a canon write stores a clock time and returns its numeral warning', async () => {
+    const written = await writeDoc({
+      scope: 'canon',
+      subject: null,
+      slug: 'AGENTS.md',
+      title: 'Entry',
+      body: 'Run from 11 PM to 7 AM US Eastern.\n',
+      reason: 'write a clock-time rule',
+      allowCanonBootstrap: true,
+    })
+    expect(written.writeWarnings).toContainEqual(
+      expect.stringMatching(/AGENTS\.md:1 canon\/numeral .*11/),
+    )
+  })
+
   test('a four-row user write uses the harness load budget instead of the repo tier budget', async () => {
     const owner = '01990000-0000-7000-8000-000000000093'
     const prose = (minimum: number) => {

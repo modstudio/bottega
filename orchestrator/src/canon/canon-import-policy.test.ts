@@ -39,6 +39,17 @@ describe('planCanonImport', () => {
     expect(dryRun.deletionSlugs).toEqual(['.agents/rules/local.md'])
   })
 
+  test('permits an established import with only numeral findings', () => {
+    const plan = planCanonImport({
+      address: { kind: 'project' },
+      current: [{ slug: 'AGENTS.md', body: 'Current rule.' }],
+      desired: [{ slug: 'AGENTS.md', body: 'Current rule. Run from 11 PM to 7 AM US Eastern.' }],
+      hasHistory: true,
+    })
+    expect(plan.refusal).toBeNull()
+    expect(plan.findings.map(({ rule }) => rule)).toContain('canon/numeral')
+  })
+
   test('uses the same address policy for project and owner deletions', () => {
     const current = [
       { slug: 'AGENTS.md', body: 'Entry.' },

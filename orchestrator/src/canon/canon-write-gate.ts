@@ -6,6 +6,7 @@ import {
   type CanonFinding,
   type CanonLintInput,
   type CanonSourceText,
+  canonRuleLevel,
   introducedCanonFindings,
   lintCanon,
 } from './canon-lint.ts'
@@ -18,6 +19,10 @@ import { mapUserCanonPath } from './user-canon-home.ts'
 
 type Row = { slug: string; body: string }
 export type WorkflowStepBody = { slug: string; body: string }
+
+export function hasRefusingCanonFindings(findings: CanonFinding[]): boolean {
+  return findings.some(({ rule }) => canonRuleLevel(rule) === 'error')
+}
 
 const SYNTHETIC_REPO = '/repo'
 const SYNTHETIC_CLAUDE_HOME = '/home/.claude'

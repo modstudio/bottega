@@ -20,7 +20,7 @@ import {
   collectCanonLintInput as productionCanonLintInput,
 } from '../canon/canon-files.ts'
 import { type CanonRow, composeCanonRows } from '../canon/canon-hydrate.ts'
-import { decideUserCanonImport } from '../canon/canon-write-gate.ts'
+import { decideNextCanonSet, decideUserCanonImport } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES } from '../canon/pack-budget.ts'
 import { db, nowIso, writableDb } from '../database/db.ts'
 import { JOBS } from '../jobs/jobs.ts'
@@ -107,11 +107,11 @@ import {
 import {
   type CanonWriteTree,
   canonFindingsRefusal,
+  canonFindingWarnings,
   consumeDocBody,
   docWriteProjectName,
   forcedDocDelivery,
   globalCanonWriteTargets,
-  refuseCanonWrite,
   refuseOversizedInject,
   refuseOwnedDocAddress,
   refuseProjectOrGlobalInject,
@@ -276,22 +276,23 @@ function ownedCanonWriteFindings(global: CanonRow[], current: CanonRow[], next: 
   return decideUserCanonImport({ current, next, surroundings }).findings
 }
 
-function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }): void {
+function assertOwnedCanonWriteAllowed(input: DocWriteInput & { owner: string }): string[] {
   const global = listDocs({ ...currentCanon, subject: null })
   const user = listDocs({ ...currentCanon, subject: null, owner: input.owner })
   const changedRows = input.canonSet ?? [
     ...user.filter(({ slug }) => slug !== input.slug),
     { slug: input.slug, body: input.body },
   ]
-  const refusal = canonFindingsRefusal(ownedCanonWriteFindings(global, user, changedRows))
+  const findings = ownedCanonWriteFindings(global, user, changedRows)
+  const refusal = canonFindingsRefusal(findings)
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
+  return canonFindingWarnings(findings)
 }
 
-function assertCanonWriteAllowed(input: DocWriteInput): void {
-  if (input.scope !== 'canon') return
+function assertCanonWriteAllowed(input: DocWriteInput): string[] {
+  if (input.scope !== 'canon') return []
   if (input.owner) {
-    assertOwnedCanonWriteAllowed({ ...input, owner: input.owner })
-    return
+    return assertOwnedCanonWriteAllowed({ ...input, owner: input.owner })
   }
   const project = input.subject ? projectByName(input.subject)! : null
   const global = listDocs({ ...currentCanon, subject: null })
@@ -309,12 +310,13 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
     })),
   ).map(({ slug, body }) => ({ slug, body }))
   const projectsToCheck = project ? [project] : globalCanonWriteTargets(projects())
-  const refusals = projectsToCheck.map((target) => {
+  const decisions = projectsToCheck.map((target) => {
     if (!target) {
-      return refuseCanonWrite({
+      const findings = decideNextCanonSet({
         current: global.map(({ slug, body }) => ({ slug, body })),
         next,
       })
+      return { refusal: canonFindingsRefusal(findings), warnings: canonFindingWarnings(findings) }
     }
     const targetProjectRows = listDocs({ ...currentCanon, subject: target.name })
     const targetCurrent = composeCanonRows(global, [], targetProjectRows).map(({ slug, body }) => ({
@@ -330,16 +332,18 @@ function assertCanonWriteAllowed(input: DocWriteInput): void {
         ).map(({ slug, body }) => ({ slug, body }))
     const root = input.canonTree?.project.name === target.name ? input.canonTree.root : target.path
     const collected = (input.collectCanonLintInput ?? productionCanonLintInput)(root)
-    return refuseCanonWrite({
+    const findings = decideNextCanonSet({
       current: targetCurrent,
       next: targetNext,
       trackedPaths: collected.trackedPaths,
       packageScripts: collected.packageScripts,
       sourceTexts: collected.sourceTexts,
     })
+    return { refusal: canonFindingsRefusal(findings), warnings: canonFindingWarnings(findings) }
   })
-  const refusal = refusals.find((value) => value)
+  const refusal = decisions.find(({ refusal: value }) => value)?.refusal
   if (refusal && !input.allowCanonBootstrap) throw new Error(refusal)
+  return [...new Set(decisions.flatMap(({ warnings }) => warnings))]
 }
 
 function assertCanonRemovalAllowed(
@@ -352,13 +356,13 @@ function assertCanonRemovalAllowed(
   if (refusal) throw new Error(refusal)
 }
 
-function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): void {
+function assertDocWriteAllowed(input: DocWriteInput & { delivery: 'inject' | 'demand' }): string[] {
   const inject = refuseProjectOrGlobalInject(input.scope, input.delivery)
   if (inject) throw new Error(inject)
   const settings = refuseSettingsBody(input.scope, input.body)
   if (settings) throw new Error(settings)
   assertInjectSize(input)
-  assertCanonWriteAllowed(input)
+  return assertCanonWriteAllowed(input)
 }
 
 export {
@@ -371,6 +375,15 @@ function assertDocLint(input: DocWriteInput, prior: Doc | null): void {
   if (skipsProseLint(prior, input)) return
   const refusal = storedDocLintRefusal(input, prior, input.canonTree)
   if (refusal) throw new Error(refusal)
+}
+
+function addCanonWriteWarnings(
+  written: Doc & { writeWarnings?: string[] },
+  warnings: string[],
+): Doc & { writeWarnings?: string[] } {
+  return warnings.length
+    ? { ...written, writeWarnings: [...(written.writeWarnings ?? []), ...warnings] }
+    : written
 }
 
 async function setDocWithOp(
@@ -396,7 +409,7 @@ async function setDocWithOp(
   assertDocBodyCommands(input, { kind, form: articleFields.form, audiences: tree.audiences })
   const lifecycle = localDocumentLifecycle(input, prior)
   assertLocalArticleDelivery(input, delivery, kind)
-  assertDocWriteAllowed({ ...input, delivery })
+  const canonWarnings = assertDocWriteAllowed({ ...input, delivery })
   assertDocLint(input, prior)
   const written = await applyRecordWriteAuthority({
     local: () =>
@@ -461,7 +474,8 @@ async function setDocWithOp(
       })
     },
   })
-  return addSecretScanWarning(written, input, secretScan)
+  const withCanonWarnings = addCanonWriteWarnings(written, canonWarnings)
+  return addSecretScanWarning(withCanonWarnings, input, secretScan)
 }
 
 export async function setDoc(input: DocWriteInput): Promise<Doc & { writeWarnings?: string[] }> {

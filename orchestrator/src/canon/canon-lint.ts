@@ -34,6 +34,11 @@ export type CanonLintInput = {
   sourceTexts: CanonSourceText[]
 }
 export type CanonFinding = Finding & { measuredBytes?: number }
+export type CanonRuleLevel = 'warning' | 'error'
+
+export function canonRuleLevel(rule: string): CanonRuleLevel {
+  return rule === 'canon/numeral' ? 'warning' : 'error'
+}
 
 export function isCanonCodeSourcePath(path: string): boolean {
   return /\.(?:ts|tsx|js|mjs|cjs|py|sh|php|vue)$/.test(path)

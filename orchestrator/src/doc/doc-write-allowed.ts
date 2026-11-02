@@ -9,7 +9,7 @@ import {
   docScopeHasProjectSubject,
 } from '../../../shared/docs.ts'
 import { composeCanonRows } from '../canon/canon-hydrate.ts'
-import type { CanonFinding, CanonSourceText } from '../canon/canon-lint.ts'
+import { type CanonFinding, type CanonSourceText, canonRuleLevel } from '../canon/canon-lint.ts'
 import { decideNextCanonSet } from '../canon/canon-write-gate.ts'
 import { DEFAULT_PACK_BYTES, MAX_INJECT_DOC_BYTES } from '../canon/pack-budget.ts'
 import { refuseSettingsBody } from '../settings/settings.ts'
@@ -84,13 +84,22 @@ export function globalCanonWriteTargets(
 export const userCanonWriteTargets = globalCanonWriteTargets
 
 export function canonFindingsRefusal(findings: CanonFinding[]): string | null {
-  if (!findings.length) return null
+  const errors = findings.filter(({ rule }) => canonRuleLevel(rule) === 'error')
+  if (!errors.length) return null
+  const warnings = canonFindingWarnings(findings)
   return (
-    `refusing canon write; introduced ${findings.length} finding${findings.length === 1 ? '' : 's'}:\n` +
-    findings
+    `refusing canon write; introduced ${errors.length} finding${errors.length === 1 ? '' : 's'}:\n` +
+    errors
       .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
-      .join('\n')
+      .join('\n') +
+    (warnings.length ? `\nwarning:\n${warnings.join('\n')}` : '')
   )
+}
+
+export function canonFindingWarnings(findings: CanonFinding[]): string[] {
+  return findings
+    .filter(({ rule }) => canonRuleLevel(rule) === 'warning')
+    .map((finding) => `${finding.file}:${finding.line} ${finding.rule} ${finding.message}`)
 }
 
 export function canonRemovalRefusal(findings: CanonFinding[]): string | null {
