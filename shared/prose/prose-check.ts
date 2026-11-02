@@ -32,7 +32,7 @@ export function americanVariant(
 ): string | null {
   const normalized = normalizedWord(word)
   const replacements: Array<[RegExp, string]> = [
-    [/our$/, 'or'],
+    [/our(s|ed|ing|ite|ites|able)?$/, 'or$1'],
     [/isations$/, 'izations'],
     [/isation$/, 'ization'],
     [/ising$/, 'izing'],

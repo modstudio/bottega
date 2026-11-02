@@ -63,7 +63,6 @@
     "mdast-util-from-markdown": "^2.1.0",
     "micromark-extension-directive": "^4.0.0",
     "typescript": "^5.9.3",
-    "word-list": "4.1.0",
     "zod": "^4.6.7"
   },
   "overrides": {

@@ -15,6 +15,8 @@ describe('proseGate', () => {
     "DEV-1948's",
     "6262's",
     "step 2's",
+    'The bug is at Lot.php:78 in the model.',
+    'See LotAllocator.php:120-140 and grid.vue:12.',
   ])('does not refuse the real-word regression %s', async (text) => {
     const result = await proseGate([{ field: 'body', text, prior: null }], {
       displayName: null,

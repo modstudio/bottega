@@ -46,7 +46,7 @@ export const proseModules: ProseModule[] = [
   module('shared/prose/prose-mask.ts', []),
   module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),
   module('shared/prose/naming-rule.ts', ['./prose-mask.ts']),
-  module('shared/prose/english-words.ts', ['../../node_modules/word-list/words.txt']),
+  module('shared/prose/english-words.ts', ['./english-words.txt']),
   module('shared/prose/prose-check.ts', [
     './harper-adapter.ts',
     './naming-rule.ts',
@@ -69,9 +69,10 @@ export const proseBoundarySpecs: ProseBoundarySpec[] = [
   {
     name: 'english-words-boundary',
     file: 'shared/prose/english-words.ts',
-    allowed: ['../../node_modules/word-list/words.txt'],
+    allowed: ['./english-words.txt'],
     typeOnlyAllowed: [],
-    reason: 'Keep the embedded word-list adapter independent of prose policy and platform concerns.',
+    reason:
+      'Keep the embedded word-list adapter independent of prose policy and platform concerns.',
   },
   {
     name: 'prose-gate-boundary',

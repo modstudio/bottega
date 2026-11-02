@@ -1,7 +1,7 @@
 // concern: prose
-/** Lazy adapter for the embedded English word list. */
+/** Lazy adapter for the vendored English word list (word-list 4.1.0, MIT; see english-words.LICENSE). */
 
-import englishWordsText from '../../node_modules/word-list/words.txt' with { type: 'text' }
+import englishWordsText from './english-words.txt' with { type: 'text' }
 
 let englishWords: Set<string> | null = null
 

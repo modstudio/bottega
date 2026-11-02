@@ -114,6 +114,10 @@ describe('combined prose check', () => {
 
   test.each([
     ['behaviour', 'behavior'],
+    ['behaviours', 'behaviors'],
+    ['honoured', 'honored'],
+    ['favouring', 'favoring'],
+    ['favourite', 'favorite'],
     ['organise', 'organize'],
     ['realisation', 'realization'],
     ['analyse', 'analyze'],
