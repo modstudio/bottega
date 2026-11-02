@@ -357,6 +357,7 @@ describe('ship-to workflow composition', () => {
       reach: [],
       remaining: [],
       skipped: [],
+      depthFlag: '',
       reachText: 'none',
       remainingText: 'none',
       skippedText: 'none',

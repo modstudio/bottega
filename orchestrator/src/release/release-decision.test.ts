@@ -10,10 +10,37 @@ import {
   releaseLockDecision,
   releaseProcessEnvironment,
   releaseReasonDecision,
+  releaseRowProvesCandidate,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
 } from './release-decision.ts'
+
+describe('release ledger row proof', () => {
+  const noLiveMatch = {
+    exit_code: 0,
+    live_matches_candidate: null,
+    candidate_commit: 'deployed',
+  }
+
+  test('a no-live rung is proved by a successful row for the deployed commit', () => {
+    expect(releaseRowProvesCandidate(noLiveMatch, false, 'deployed')).toBe(true)
+  })
+
+  test('a successful row for another commit does not prove the deployed commit', () => {
+    expect(releaseRowProvesCandidate(noLiveMatch, false, 'different')).toBe(false)
+  })
+
+  test('a live rung is not proved by a null live match', () => {
+    expect(releaseRowProvesCandidate(noLiveMatch, true, 'deployed')).toBe(false)
+  })
+
+  test('a live rung is proved by a matching row at the deployed commit', () => {
+    expect(
+      releaseRowProvesCandidate({ ...noLiveMatch, live_matches_candidate: 1 }, true, 'deployed'),
+    ).toBe(true)
+  })
+})
 
 test('identifies the release to its deploy command', () => {
   expect(releaseCommandEnvironment('project-name', 'hosted-api', 'abc123', false)).toEqual({

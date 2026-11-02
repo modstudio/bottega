@@ -16,6 +16,7 @@ const payload: PullRequestPostLandingPayload = {
   requiredRungs: ['hosted-api'],
   rungDecisionError: null,
   releaseRequired: true,
+  depth: null,
   promoteWorkflowDrafts: true,
   recordingError: null,
   requeueOutput: null,
@@ -24,6 +25,25 @@ const payload: PullRequestPostLandingPayload = {
 test('post-landing payload round trips every fixed identity field', () => {
   expect(parsePullRequestPostLandingPayload(encodePullRequestPostLandingPayload(payload))).toEqual(
     payload,
+  )
+})
+
+test('post-landing payload carries the release plan requirement source', () => {
+  const withPlan: PullRequestPostLandingPayload = {
+    ...payload,
+    rungPlans: [
+      {
+        rung: 'hosted-api',
+        required: true,
+        requiredBy: 'reach',
+        reason: null,
+        declaresLive: false,
+      },
+    ],
+  }
+
+  expect(parsePullRequestPostLandingPayload(encodePullRequestPostLandingPayload(withPlan))).toEqual(
+    withPlan,
   )
 })
 

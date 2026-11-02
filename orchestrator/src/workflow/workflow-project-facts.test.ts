@@ -202,6 +202,43 @@ Synthetic body.
     })
   })
 
+  test('ship-to exposes an always-present validated depth flag', () => {
+    const registered = {
+      name: 'fixture',
+      stack: 'bun',
+      settings: {
+        release: {
+          rungs: [{ name: 'staging', branch: 'main' }],
+          mergeMethod: 'squash' as const,
+          requiredChecks: [],
+        },
+      },
+    }
+    const production = { ...autonomy, shipTo: { value: 'production' as const, scope: 'test' } }
+    expect(
+      resolveWorkflowProjectFacts(
+        registered,
+        ['release', 'ship-to'],
+        false,
+        { depth: 'staging' },
+        production,
+        [],
+        unusedMergedChangeSources,
+      ).facts.shipTo,
+    ).toMatchObject({ depthFlag: ' --depth staging' })
+    expect(
+      resolveWorkflowProjectFacts(
+        registered,
+        ['release', 'ship-to'],
+        false,
+        {},
+        production,
+        [],
+        unusedMergedChangeSources,
+      ).facts.shipTo,
+    ).toMatchObject({ depthFlag: '' })
+  })
+
   test.each([
     {
       case: 'skips an unmatched release rung',

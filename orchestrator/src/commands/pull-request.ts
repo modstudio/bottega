@@ -84,11 +84,13 @@ function createPullRequestCommand(
 
 async function mergePullRequestCommand(
   target: string,
-  options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean },
+  options: { cwd?: string; releaseRequired?: boolean; postLanding?: boolean; depth?: string },
 ): Promise<void> {
   if (options.postLanding) {
+    let recoveryDepth: string | null = null
     try {
       const payload = parsePullRequestPostLandingPayload(await Bun.stdin.text())
+      recoveryDepth = payload.depth
       if (payload.target !== target)
         throw new Error('post-landing payload target does not match the command target')
       const outcome = runPullRequestPostLanding(payload, writableDb())
@@ -96,7 +98,9 @@ async function mergePullRequestCommand(
       if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : String(cause)
-      log(`post-landing steps did not complete: ${detail}; ${postLandingRecovery(target)}`)
+      log(
+        `post-landing steps did not complete: ${detail}; ${postLandingRecovery(target, recoveryDepth)}`,
+      )
       process.exitCode = POST_LANDING_REPORTED_EXIT_CODE
     }
     return
@@ -107,6 +111,7 @@ async function mergePullRequestCommand(
     undefined,
     undefined,
     Boolean(options.releaseRequired),
+    options.depth,
   )
   log(outcome.output)
   if (outcome.exitCode !== 0) process.exitCode = outcome.exitCode
@@ -128,6 +133,7 @@ export function register(program: Command): void {
     .description('merge a pull request only when its head commit is proven')
     .option('--cwd <tree>', 'verify and merge from this worktree')
     .option('--release-required', 'release every rung required by the merged paths')
+    .option('--depth <rung>', 'bound the production release reach through this rung')
     .addOption(new Option(POST_LANDING_FLAG, 'complete a moved checkout hand-off').hideHelp())
     .allowExcessArguments(false)
     .action(mergePullRequestCommand)

@@ -83,7 +83,7 @@ display help for command
 
 ## bottega pr merge
 
-**Synopsis:** `bottega pr merge <number-or-url> [--cwd <tree>] [--release-required]`
+**Synopsis:** `bottega pr merge <number-or-url> [--cwd <tree>] [--release-required] [--depth <rung>]`
 
 merge a pull request only when its head commit is proven
 
@@ -91,6 +91,7 @@ merge a pull request only when its head commit is proven
 
 - `--cwd <tree>`: verify and merge from this worktree
 - `--release-required`: release every rung required by the merged paths
+- `--depth <rung>`: bound the production release reach through this rung
 
 ### Related
 

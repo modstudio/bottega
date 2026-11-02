@@ -195,6 +195,36 @@ export function alreadyLiveReleaseDecision(facts: {
   )
 }
 
+/** Decide whether release evidence proves the merge is deployed on this rung. */
+export function releaseProofDecision(facts: {
+  declaresLive: boolean
+  exitCode: number | null
+  liveMatchesCandidate: boolean | null
+  candidateContainsMerge: boolean
+}): boolean {
+  if (facts.exitCode !== 0 || !facts.candidateContainsMerge) return false
+  return facts.declaresLive ? facts.liveMatchesCandidate === true : true
+}
+
+/** Map a release ledger row to proof that its candidate is deployed. */
+export function releaseRowProvesCandidate(
+  row: {
+    exit_code: number | null
+    live_matches_candidate: number | null
+    candidate_commit: string
+  },
+  declaresLive: boolean,
+  deployed: string,
+): boolean {
+  return releaseProofDecision({
+    declaresLive,
+    exitCode: row.exit_code,
+    liveMatchesCandidate:
+      row.live_matches_candidate === null ? null : row.live_matches_candidate === 1,
+    candidateContainsMerge: row.candidate_commit === deployed,
+  })
+}
+
 export function releaseLockDecision(
   holder: { session: string | null; since: string } | null,
 ): Decision {

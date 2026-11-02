@@ -72,6 +72,7 @@ const satisfied: RequiredReleaseReport = {
   releases: [
     {
       rung: 'hosted-api',
+      required: true,
       deployExit: 0,
       outputTail: 'already live at release-commit',
       satisfied: true,
@@ -81,10 +82,10 @@ const satisfied: RequiredReleaseReport = {
   satisfied: true,
 }
 
-const remaining = (calls: string[]) => ({
+const remaining = (calls: string[], releaseReport: RequiredReleaseReport = satisfied) => ({
   release: () => {
     calls.push('release')
-    return satisfied
+    return releaseReport
   },
   cleanup: () => {
     calls.push('cleanup')
@@ -97,11 +98,13 @@ function complete(input: {
   project?: Project
   workflowPromotionDue?: boolean
   releaseRequired?: boolean
+  depth?: string
   calls?: string[]
+  releaseReport?: RequiredReleaseReport
   movesInstallation?: boolean
 }) {
   return completePullRequestPostLanding({
-    adapter: remaining(input.calls ?? []),
+    adapter: remaining(input.calls ?? [], input.releaseReport),
     postLandingAdapter: input.post,
     database: db(),
     project: input.project ?? project,
@@ -109,6 +112,7 @@ function complete(input: {
     mergeCommit: 'merge-commit',
     target: '42',
     releaseRequired: input.releaseRequired ?? true,
+    depth: input.depth,
     workflowPromotionDue: input.workflowPromotionDue ?? false,
     ...(input.movesInstallation === undefined
       ? {}
@@ -153,8 +157,18 @@ test('a successful move fences this process and hands off the exact fixed identi
     headCommit: 'head-commit',
     mergeCommit: 'merge-commit',
     requiredRungs: ['hosted-api'],
+    rungPlans: [
+      {
+        rung: 'hosted-api',
+        required: true,
+        requiredBy: 'explicit',
+        reason: null,
+        declaresLive: false,
+      },
+    ],
     rungDecisionError: null,
     releaseRequired: true,
+    depth: null,
     promoteWorkflowDrafts: true,
     recordingError: null,
     requeueOutput: null,
@@ -217,7 +231,7 @@ test('a change inside a rung entry closure requires that rung and hands it off',
   })
 
   expect(asked).toEqual([{ mergeCommit: 'merge-commit', entries: ['hub/src/hosted.ts'] }])
-  expect(received[0]?.requiredRungs).toEqual(['hosted-hub'])
+  expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'hosted-hub'])
 })
 
 test('the real post-landing adapter refuses before git or spawn under the test runner', () => {
@@ -287,11 +301,16 @@ test('the real child adapter refuses before spawn under the test runner', () => 
 
 test('when no move is due all remaining work stays in process and the store stays open', () => {
   const calls: string[] = []
+  let changedPathsCalls = 0
   const outcome = complete({
     releaseRequired: false,
     calls,
+    releaseReport: { required: [], releases: [], satisfied: true },
     post: {
-      changedPaths: () => ['shared/record/schema.ts'],
+      changedPaths: () => {
+        changedPathsCalls += 1
+        return ['shared/record/schema.ts']
+      },
       entryClosure: () => new Map(),
       mainHead: () => 'main-before',
       moveMain: () => {
@@ -307,6 +326,8 @@ test('when no move is due all remaining work stays in process and the store stay
   })
 
   expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).not.toContain('rung hosted-api')
+  expect(changedPathsCalls).toBe(0)
   expect(calls).toEqual(['release', 'cleanup'])
   expect(writableDb()).toBeDefined()
 })
@@ -315,6 +336,25 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   const calls: string[] = []
   const outcome = complete({
     calls,
+    depth: 'staging',
+    project: {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          mergeMethod: 'squash',
+          requiredChecks: [],
+          rungs: [
+            {
+              name: 'hosted-api',
+              branch: 'main',
+              requiredWhenChanged: ['shared/record/**'],
+            },
+            { name: 'staging', branch: 'main' },
+          ],
+        },
+      },
+    } as Project,
     movesInstallation: true,
     post: {
       changedPaths: () => ['shared/record/schema.ts'],
@@ -335,6 +375,9 @@ test('a move failure reports every rung and remedy, cleans up, and does not fenc
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain(
     'required rung hosted-api: deploy exit not run; registered main checkout is dirty; clean it',
+  )
+  expect(outcome.output).toContain(
+    `recover with: ${project.path}/bin/${PLATFORM_SLUG} machine update, then ${PLATFORM_SLUG} pr merge 42 --release-required --depth staging`,
   )
   expect(outcome.output).toContain(`${project.path}/bin/${PLATFORM_SLUG} machine update`)
   expect(outcome.output).toContain(`remedy: ${PLATFORM_SLUG} pr merge 42 --release-required`)
@@ -419,6 +462,7 @@ const childPayload = (overrides: Partial<PullRequestPostLandingPayload> = {}) =>
   requiredRungs: ['hosted-api'],
   rungDecisionError: null,
   releaseRequired: true,
+  depth: null,
   promoteWorkflowDrafts: false,
   recordingError: null,
   requeueOutput: null,
@@ -486,6 +530,43 @@ test('the child uses the shared absent release flag report', () => {
 
   expect(outcome.exitCode).toBe(21)
   expect(outcome.output).toContain('not released because --release-required was absent')
+})
+
+test('the child satisfies a reach-only rung when the release flag is absent', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload({
+      releaseRequired: false,
+      rungPlans: [
+        {
+          rung: 'hosted-api',
+          required: true,
+          requiredBy: 'reach',
+          reason: null,
+          declaresLive: false,
+        },
+      ],
+    }),
+    db(),
+    childAdapter(),
+  )
+
+  expect(outcome.exitCode).toBe(0)
+  expect(outcome.output).toContain(
+    'rung hosted-api: not required; ship-to reach deploys only at production with --release-required',
+  )
+})
+
+test('the child appends a parent decision error when the release flag is absent', () => {
+  const outcome = runPullRequestPostLanding(
+    childPayload({ releaseRequired: false, rungDecisionError: 'changed paths unavailable' }),
+    db(),
+    childAdapter(),
+  )
+
+  expect(outcome.exitCode).toBe(21)
+  expect(outcome.output).toContain(
+    'not released because --release-required was absent; changed paths unavailable',
+  )
 })
 
 test('a child promote throw still runs release and cleanup', () => {
@@ -578,6 +659,30 @@ test('a failed required-rung decision is carried to the child with every declare
 
   expect(received[0]?.rungDecisionError).toBe('changed paths unavailable')
   expect(received[0]?.requiredRungs).toEqual(['hosted-api', 'worker'])
+})
+
+test('the selected depth is carried to the child and its recovery command', () => {
+  const received: PullRequestPostLandingPayload[] = []
+  complete({
+    depth: 'staging',
+    workflowPromotionDue: true,
+    post: {
+      changedPaths: () => ['shared/record/schema.ts'],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {},
+      fence: () => {},
+      handOff: (payload) => {
+        received.push(payload)
+        return { output: 'child output', exitCode: 0 }
+      },
+    },
+  })
+
+  expect(received[0]?.depth).toBe('staging')
+  expect(postLandingRecovery('42', received[0]?.depth)).toContain(
+    '--release-required --depth staging',
+  )
 })
 
 test('a partial move that changes HEAD still fences and hands off', () => {

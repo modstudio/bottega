@@ -14,8 +14,14 @@ import {
 import type { Project } from '../project/projects.ts'
 import { projectByName } from '../project/projects.ts'
 import { changedPaths } from '../release/release-required.ts'
+import {
+  decideShipToReach,
+  releaseDepthFlag,
+  shipToDepthRefusal,
+  shipToReachNeedsMergedChange,
+  shipToRungs,
+} from '../release/ship-to-reach.ts'
 import type { WorkflowAutonomyResolution } from './autonomy.ts'
-import { decideShipToReach, shipToReachNeedsMergedChange, shipToRungs } from './ship-to-reach.ts'
 import { checkoutLanding } from './workflow-checkout-landing.ts'
 
 export type WorkflowFactProject = Pick<Project, 'name' | 'stack' | 'settings'>
@@ -127,6 +133,16 @@ function mergedChangeFor(
   return { changedPaths: sources.changedPaths(project.name, mergeCommit) }
 }
 
+function validatedDepthFlag(
+  rungs: Parameters<typeof shipToDepthRefusal>[0],
+  depth: string | undefined,
+  project: string,
+): string {
+  const refusal = shipToDepthRefusal(rungs, depth, project)
+  if (refusal) throw new Error(refusal)
+  return releaseDepthFlag(depth)
+}
+
 function shipToFact(
   project: WorkflowFactProject,
   needs: readonly WorkflowFactSource[],
@@ -149,11 +165,7 @@ function shipToFact(
       `hosted autonomy settings could not be read: ${autonomy.shipTo.unavailableReason}; retry when the hosted record is reachable, or set the level for this machine with ${PLATFORM_SLUG} machine config set --machine autonomy.ship-to <level>`,
     )
   const rungs = project.settings.release?.rungs ?? []
-  const depthRung = rungs.find(({ name }) => name === args.depth)
-  if (depthRung?.onDemand)
-    throw new Error(
-      `ship-to depth "${depthRung.name}" names a rung released on demand with ${PLATFORM_SLUG} release run ${project.name} --rung ${depthRung.name} and cannot be a ship-to depth`,
-    )
+  const depthFlag = validatedDepthFlag(rungs, args.depth, project.name)
   const reachableRungs = shipToRungs(rungs)
   const initialDecision = decideShipToReach(autonomy.shipTo.value, reachableRungs, args.depth)
   if (!initialDecision.allowed) throw new Error(initialDecision.refusal)
@@ -171,6 +183,7 @@ function shipToFact(
       reach: decision.reach,
       remaining: decision.remaining,
       skipped: decision.skipped,
+      depthFlag,
       reachText: decision.reach.join(', ') || 'none',
       remainingText: decision.remaining.join(', ') || 'none',
       skippedText:

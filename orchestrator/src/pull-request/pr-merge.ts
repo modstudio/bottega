@@ -16,6 +16,7 @@ import {
   type RequiredRungDecision,
   releaseRequiredRungs,
 } from '../release/release-required.ts'
+import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
 import type { AdmissionDecision } from './admission-decision.ts'
@@ -720,6 +721,7 @@ function completeMerge(input: {
   mergeQueue: boolean
   mergeMethod: 'squash' | 'merge' | 'rebase'
   releaseRequired: boolean
+  depth?: string
 }): PullRequestMergeOutcome {
   let pullRequest: PullRequestMergeFacts | undefined
   let mergeCommit = ''
@@ -791,6 +793,7 @@ function completeMerge(input: {
     requeueOutput,
     target: input.target,
     releaseRequired: input.releaseRequired,
+    depth: input.depth,
     workflowPromotionDue,
   })
 }
@@ -801,6 +804,7 @@ export function mergePullRequest(
   adapter: PullRequestMergeAdapter = cliPullRequestMergeAdapter,
   injectedDatabase?: Database,
   releaseRequired = false,
+  depth?: string,
 ): PullRequestMergeOutcome {
   enableSchemaReload()
   const database = injectedDatabase ?? writableDb()
@@ -817,6 +821,8 @@ export function mergePullRequest(
       `project ${project.name} has no landing branch and release policy; cleared by: ${PLATFORM_SLUG} project set ${project.name} --settings '<settings with trunk and release>'`,
     )
   }
+  const depthRefusal = shipToDepthRefusal(release.rungs, depth, project.name)
+  if (depthRefusal) throw new Error(depthRefusal)
   return completeMerge({
     target,
     cwd,
@@ -828,5 +834,6 @@ export function mergePullRequest(
     mergeQueue: release.mergeQueue ?? false,
     mergeMethod: release.mergeMethod,
     releaseRequired,
+    depth,
   })
 }

@@ -9,6 +9,7 @@ export const requiredRelease = (
   releases: [
     {
       rung: 'hosted-api',
+      required: true,
       deployExit: 0,
       outputTail: 'pending 0',
       satisfied: true,

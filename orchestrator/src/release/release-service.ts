@@ -27,6 +27,7 @@ import {
   releaseLockDecision,
   releaseProcessEnvironment,
   releaseReasonDecision,
+  releaseRowProvesCandidate,
   releaseTagVersionDecision,
   selectReleaseRung,
   trunkFreshnessDecision,
@@ -172,9 +173,13 @@ export function newestSuccessfulReleasedCommit(project: string, rung: string): s
   return newestSuccessfulRelease(project, rung, false)?.candidate_commit ?? null
 }
 
-/** Return the newest candidate confirmed live by a successful release of this rung. */
-export function newestSuccessfulLiveReleaseCommit(project: string, rung: string): string | null {
-  return newestSuccessfulRelease(project, rung, true)?.candidate_commit ?? null
+/** Return the newest release row that can prove a rung with this live-probe policy. */
+export function newestSuccessfulProvenReleaseCommit(
+  project: string,
+  rung: string,
+  declaresLive: boolean,
+): string | null {
+  return newestSuccessfulRelease(project, rung, declaresLive)?.candidate_commit ?? null
 }
 
 function liveReadingRefusal(
@@ -329,10 +334,12 @@ function alreadyLiveReleaseResult(
   deployed: string,
   redeployReason: string | undefined,
   rollbackReason: string | undefined,
+  declaresLive: boolean,
 ): ReleaseResult | null {
-  const newestLive = newestSuccessfulRelease(project, rung, true)
+  const newestLive = newestSuccessfulRelease(project, rung, declaresLive)
   if (
     !newestLive ||
+    !releaseRowProvesCandidate(newestLive, declaresLive, deployed) ||
     !alreadyLiveReleaseDecision({
       newestLive: newestLive.candidate_commit,
       candidate: deployed,
@@ -425,6 +432,7 @@ function releaseProjectUnderLock(
     checkout.head,
     redeployReason,
     rollbackReason,
+    selected.live !== undefined,
   )
   if (alreadyLive) return alreadyLive
   const live = previousReleaseCommit(selected.live, project.path, projectName, selected.name)
