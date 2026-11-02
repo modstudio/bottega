@@ -14,6 +14,7 @@ const completeIgnore = `
 *
 !alpha/package.json
 !nested/beta/package.json
+!data.toml
 `
 
 function inputs(overrides: Partial<DockerWorkspaceInputs> = {}): DockerWorkspaceInputs {
@@ -21,6 +22,7 @@ function inputs(overrides: Partial<DockerWorkspaceInputs> = {}): DockerWorkspace
     workspaces,
     dockerfiles: [{ path: 'deploy/Dockerfile', text: completeDockerfile }],
     dockerignore: completeIgnore,
+    rootDataImports: ['data.toml'],
     ...overrides,
   }
 }
@@ -46,6 +48,12 @@ describe('docker workspace decision', () => {
         inputs({ dockerignore: completeIgnore.replace('!nested/beta/package.json\n', '') }),
       ),
     ).toEqual(['.dockerignore: missing workspace nested/beta; add: !nested/beta/package.json'])
+  })
+
+  test('refuses an allowlist missing an embedded root data file', () => {
+    expect(
+      decideDockerWorkspaces(inputs({ dockerignore: completeIgnore.replace('!data.toml\n', '') })),
+    ).toEqual(['.dockerignore: missing root data import data.toml; add: !data.toml'])
   })
 
   test('refuses a later stage missing a workspace copied only in the first stage', () => {

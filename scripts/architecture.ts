@@ -62,6 +62,7 @@ import { workflowCommandModules } from './architecture-workflow-command-modules.
 import { workflowFloorModules } from './architecture-workflow-floor-modules.ts'
 import { workflowTreeModules } from './architecture-workflow-tree-modules.ts'
 import { worktreeModules } from './architecture-worktree-modules.ts'
+import { REPOSITORY_ROOT_DATA_IMPORTS } from './repository-root-data-imports.ts'
 
 export type ArchitectureModule = { file: string; allowed: string[]; typeOnlyAllowed?: string[] }
 type ArchitectureInversion = { from: string; to: string }
@@ -749,9 +750,6 @@ const allowedCycles: { cycle: string[]; reason: string }[] = [
 
 export const exactArchitecturePath = (path: string) =>
   `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
-
-/** Repository-root data files that source modules intentionally embed. */
-const REPOSITORY_ROOT_DATA_IMPORTS = ['typos.toml'] as const
 
 function architectureDependencyPath(target: string) {
   if (target.startsWith('node:')) return exactArchitecturePath(target.slice('node:'.length))

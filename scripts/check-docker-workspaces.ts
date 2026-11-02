@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Glob } from 'bun'
+import { REPOSITORY_ROOT_DATA_IMPORTS } from './repository-root-data-imports.ts'
 
 type DockerfileText = { path: string; text: string }
 
@@ -10,6 +11,7 @@ export type DockerWorkspaceInputs = {
   workspaces: string[]
   dockerfiles: DockerfileText[]
   dockerignore: string
+  rootDataImports: readonly string[]
 }
 
 type DockerInstruction = { keyword: string; body: string; line: number }
@@ -96,7 +98,7 @@ function dockerfileFindings(dockerfile: DockerfileText, workspaces: string[]): s
   return findings
 }
 
-/** Decide whether install-stage manifests stay complete when the workspace list changes. */
+/** Decide whether install-stage manifests and embedded root data stay complete in the image. */
 export function decideDockerWorkspaces(inputs: DockerWorkspaceInputs): string[] {
   const findings = inputs.dockerfiles.flatMap((dockerfile) =>
     dockerfileFindings(dockerfile, inputs.workspaces),
@@ -107,6 +109,11 @@ export function decideDockerWorkspaces(inputs: DockerWorkspaceInputs): string[] 
     const manifest = `${workspace}/package.json`
     if (!included.has(manifest)) {
       findings.push(`.dockerignore: missing workspace ${workspace}; add: !${manifest}`)
+    }
+  }
+  for (const file of inputs.rootDataImports) {
+    if (!included.has(file)) {
+      findings.push(`.dockerignore: missing root data import ${file}; add: !${file}`)
     }
   }
   return findings
@@ -125,6 +132,7 @@ if (import.meta.main) {
     workspaces: rootPackage.workspaces ?? [],
     dockerfiles,
     dockerignore: readFileSync(resolve(root, '.dockerignore'), 'utf8'),
+    rootDataImports: REPOSITORY_ROOT_DATA_IMPORTS,
   })
   if (findings.length) {
     console.error('docker workspace check failed')
