@@ -208,13 +208,6 @@ export function postLandingHandOffInvocation(
  */
 
 type RemainingStageAdapter = {
-  release(
-    project: Project,
-    mergeCommit: string,
-    target: string,
-    enabled: boolean,
-    decision?: RequiredRungDecision,
-  ): RequiredReleaseReport
   cleanup?(project: string, branch: string, prNumber: number, database: Database): ShipCleanupReport
 }
 
@@ -376,7 +369,7 @@ export function completePullRequestPostLanding(input: {
             mergeCommit: input.mergeCommit,
             recovery: move.recovery,
           })
-        : input.releaseRequired
+        : input.releaseRequired && decision.required.length > 0
           ? { output: '' }
           : {
               output: `${move.detail}; recover with: ${move.recovery}`,
@@ -517,7 +510,7 @@ export function runPullRequestPostLanding(
   } catch (cause) {
     checkoutFailure = cause instanceof Error ? cause.message : String(cause)
   }
-  const promotion = promotionOutput({
+  let promotion = promotionOutput({
     result: workflowPromotionResultForChild({ adapter, checkoutFailure, payload, project }),
     project,
     prNumber: payload.prNumber,
@@ -537,6 +530,12 @@ export function runPullRequestPostLanding(
             mergeCommit: payload.mergeCommit,
             rungs: rungPlans,
           })
+  if (checkoutFailure && !payload.promoteWorkflowDrafts && requiredRelease.satisfied) {
+    promotion = {
+      output: `${checkoutFailure}; ${postLandingRecovery(payload.target, payload.depth ?? undefined)}`,
+      error: checkoutFailure,
+    }
+  }
   return mergedOutput({
     adapter: { cleanup: adapter.cleanup },
     database,

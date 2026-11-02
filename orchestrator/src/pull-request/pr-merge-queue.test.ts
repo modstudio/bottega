@@ -108,7 +108,6 @@ function adapter(input: {
       },
     now: input.now ?? Date.now,
     wait: (milliseconds) => input.wait?.(milliseconds),
-    releaseRequired: () => ({ required: [], releases: [], satisfied: true }),
     postLanding: {
       changedPaths: () => [],
       entryClosure: () => new Map(),

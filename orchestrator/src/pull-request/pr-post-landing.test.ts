@@ -82,11 +82,7 @@ const satisfied: RequiredReleaseReport = {
   satisfied: true,
 }
 
-const remaining = (calls: string[], releaseReport: RequiredReleaseReport = satisfied) => ({
-  release: () => {
-    calls.push('release')
-    return releaseReport
-  },
+const remaining = (calls: string[]) => ({
   cleanup: () => {
     calls.push('cleanup')
     return cleanReport()
@@ -100,11 +96,10 @@ function complete(input: {
   releaseRequired?: boolean
   depth?: string
   calls?: string[]
-  releaseReport?: RequiredReleaseReport
   movesInstallation?: boolean
 }) {
   return completePullRequestPostLanding({
-    adapter: remaining(input.calls ?? [], input.releaseReport),
+    adapter: remaining(input.calls ?? []),
     postLandingAdapter: input.post,
     database: db(),
     project: input.project ?? project,
@@ -374,6 +369,32 @@ test('a move failure without a release flag or promotion reports recovery as res
   )
 })
 
+test('a move failure with an empty required set reports recovery as residue', () => {
+  const outcome = complete({
+    project: onDemandProject,
+    releaseRequired: true,
+    movesInstallation: true,
+    post: {
+      changedPaths: () => [],
+      entryClosure: () => new Map(),
+      mainHead: () => 'main-before',
+      moveMain: () => {
+        throw new Error('registered main checkout is dirty; clean it')
+      },
+      fence: () => {
+        throw new Error('fence must not run')
+      },
+      handOff: () => {
+        throw new Error('hand-off must not run')
+      },
+    },
+  })
+
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain('registered main checkout is dirty; clean it')
+  expect(outcome.output).toContain('recover with:')
+})
+
 test('a move failure reports every rung and remedy, cleans up, and does not fence or hand off', () => {
   const calls: string[] = []
   const outcome = complete({
@@ -602,6 +623,38 @@ test('the child with no release and no promotion only verifies and cleans up', (
   expect(outcome.exitCode).toBe(0)
   expect(outcome.output).toContain('merge-commit')
   expect(calls).toEqual(['verify', 'cleanup'])
+})
+
+test('the child reports a failed checkout check as residue when no release or promotion is due', () => {
+  const calls: string[] = []
+  const outcome = runPullRequestPostLanding(
+    childPayload({
+      requiredRungs: [],
+      rungPlans: [],
+      releaseRequired: false,
+      promoteWorkflowDrafts: false,
+    }),
+    db(),
+    childAdapter({
+      verify: () => {
+        throw new Error('main does not contain the landing commit')
+      },
+      promote: () => {
+        throw new Error('promotion must not run')
+      },
+      release: () => {
+        throw new Error('release must not run')
+      },
+      cleanup: () => {
+        calls.push('cleanup')
+        return cleanReport()
+      },
+    }),
+  )
+
+  expect(outcome.exitCode).toBe(20)
+  expect(outcome.output).toContain('main does not contain the landing commit')
+  expect(calls).toEqual(['cleanup'])
 })
 
 test('the child satisfies a reach-only rung when the release flag is absent', () => {

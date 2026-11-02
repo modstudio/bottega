@@ -134,8 +134,6 @@ function adapter(
     failedMergeGroupRun: () => null,
     now: Date.now,
     wait: () => input.wait?.(),
-    releaseRequired: (_project, _mergeCommit, _target, enabled) =>
-      input.releaseRequired?.(enabled) ?? { required: [], releases: [], satisfied: true },
     ...(input.shipCleanup ? { shipCleanup: input.shipCleanup } : {}),
     postLanding: inProcessPostLandingAdapter({
       database: db(),

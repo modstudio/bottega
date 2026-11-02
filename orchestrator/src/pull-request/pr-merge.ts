@@ -11,11 +11,6 @@ import { enableSchemaReload, writableDb } from '../database/db.ts'
 import { passingGateForCommit } from '../gate/gate-passed.ts'
 import { targetGitEnvironment } from '../git/git-environment.ts'
 import { currentProjectRepository, type Project, projectAt } from '../project/projects.ts'
-import {
-  type RequiredReleaseReport,
-  type RequiredRungDecision,
-  releaseRequiredRungs,
-} from '../release/release-required.ts'
 import { shipToDepthRefusal } from '../release/ship-to-reach.ts'
 import { type ShipCleanupReport, shipCleanup } from '../ship-cleanup/ship-cleanup.ts'
 import { matchWorkflowTreePath } from '../workflow/workflow-tree.ts'
@@ -124,13 +119,6 @@ export type PullRequestMergeAdapter = {
   ): FailedMergeGroupRun | null
   now(): number
   wait(milliseconds: number): void
-  releaseRequired(
-    project: Project,
-    mergeCommit: string,
-    target: string,
-    enabled: boolean,
-    decision?: RequiredRungDecision,
-  ): RequiredReleaseReport
   shipCleanup?(
     project: string,
     branch: string,
@@ -349,9 +337,6 @@ const cliPullRequestMergeAdapter: PullRequestMergeAdapter = {
   now: Date.now,
   wait(milliseconds) {
     Bun.sleepSync(milliseconds)
-  },
-  releaseRequired(project, mergeCommit, _target, enabled, decision) {
-    return releaseRequiredRungs({ project, mergeCommit, releaseRequired: enabled, decision })
   },
   shipCleanup(project, branch, _prNumber, database) {
     return shipCleanup(branch, { project, confirmedLanded: true, database })
@@ -781,7 +766,6 @@ function completeMerge(input: {
   const workflowPromotionDue = pathSet ? mergedChangeNeedsWorkflowPromotion(pathSet) : true
   return completePullRequestPostLanding({
     adapter: {
-      release: input.adapter.releaseRequired,
       ...(input.adapter.shipCleanup ? { cleanup: input.adapter.shipCleanup } : {}),
     },
     postLandingAdapter: input.adapter.postLanding,

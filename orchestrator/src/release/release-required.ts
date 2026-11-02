@@ -394,29 +394,6 @@ function runRequiredReleaseRungs(
   return { required, releases, satisfied: releases.every((release) => release.satisfied) }
 }
 
-export function releaseRequiredRungs(input: {
-  project: Project
-  mergeCommit: string
-  releaseRequired: boolean
-  depth?: string
-  decision?: RequiredRungDecision
-  runner?: RequiredReleaseRunner
-}): RequiredReleaseReport {
-  const runner = input.runner ?? requiredReleaseRunner
-  const decision =
-    input.decision ??
-    requiredRungDecision(
-      input.project,
-      () => runner.changedPaths(input.project, input.mergeCommit),
-      (entries) => runner.entryClosure(input.project, input.mergeCommit, entries),
-      input.depth,
-    )
-  if (!input.releaseRequired)
-    return releaseRequiredFlagAbsent(decision.rungs, decision.decided ? null : decision.error)
-  if (!decision.decided) return failedRequiredRelease(decision.rungs, decision.error)
-  return runRequiredReleaseRungs(input.project, input.mergeCommit, decision.rungs, runner, true)
-}
-
 export function formatRequiredReleaseReport(
   report: RequiredReleaseReport,
   target: string,
