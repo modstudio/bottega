@@ -60,6 +60,16 @@ function validRungPlans(value: unknown): boolean {
   })
 }
 
+function validateRungPlans(value: unknown): void {
+  if (value !== undefined && !validRungPlans(value))
+    throw refusal('rungPlans', 'an array of release-rung plans')
+}
+
+function validateDepth(value: unknown): void {
+  if (!(value === null || (typeof value === 'string' && value)))
+    throw refusal('depth', 'a non-empty string or null')
+}
+
 export function parsePullRequestPostLandingPayload(text: string): PullRequestPostLandingPayload {
   let value: unknown
   try {
@@ -80,13 +90,11 @@ export function parsePullRequestPostLandingPayload(text: string): PullRequestPos
     row.requiredRungs.some((rung) => typeof rung !== 'string' || !rung)
   )
     throw refusal('requiredRungs', 'an array of non-empty strings')
-  if (row.rungPlans !== undefined && !validRungPlans(row.rungPlans))
-    throw refusal('rungPlans', 'an array of release-rung plans')
+  validateRungPlans(row.rungPlans)
   if (!(row.rungDecisionError === null || typeof row.rungDecisionError === 'string'))
     throw refusal('rungDecisionError', 'a string or null')
   if (typeof row.releaseRequired !== 'boolean') throw refusal('releaseRequired', 'a boolean')
-  if (!(row.depth === null || (typeof row.depth === 'string' && row.depth)))
-    throw refusal('depth', 'a non-empty string or null')
+  validateDepth(row.depth)
   if (typeof row.promoteWorkflowDrafts !== 'boolean')
     throw refusal('promoteWorkflowDrafts', 'a boolean')
   if (!(row.recordingError === null || typeof row.recordingError === 'string'))
