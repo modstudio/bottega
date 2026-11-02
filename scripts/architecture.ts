@@ -1,4 +1,4 @@
-import { dirname, join, normalize } from 'node:path'
+import { dirname, join } from 'node:path'
 import { CONCERNS } from '../shared/brand.ts'
 import { agentProbeModules } from './architecture-agent-probe-modules.ts'
 import { boardModules } from './architecture-board-modules.ts'
@@ -36,6 +36,7 @@ import { metricModules } from './architecture-metric-modules.ts'
 import { monitorModules } from './architecture-monitor-modules.ts'
 import { operatorWaitingModules } from './architecture-operator-waiting.ts'
 import { projectModules } from './architecture-project-modules.ts'
+import { proseModules } from './architecture-prose-modules.ts'
 import { pullRequestModuleSpecs } from './architecture-pull-request.ts'
 import { ratchetModules } from './architecture-ratchet-modules.ts'
 import { recipeModules } from './architecture-recipe-modules.ts'
@@ -73,9 +74,7 @@ type ConcernManifest = {
 
 const module = (file: string, allowed: string[]): ArchitectureModule => ({
   file,
-  allowed: allowed.map((target) =>
-    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
-  ),
+  allowed: allowed.map((target) => (target.startsWith('.') ? join(dirname(file), target) : target)),
 })
 
 const concerns: ConcernManifest = {
@@ -422,15 +421,7 @@ export const modules: ArchitectureModule[] = [
   module('shared/run-process-marker.ts', []),
   module('shared/gate-timing-directory.ts', ['./brand.ts', './state-directory.ts']),
   module('shared/command-spellings.ts', []),
-  module('shared/prose/prose-mask.ts', []),
-  module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),
-  module('shared/prose/naming-rule.ts', ['./prose-mask.ts']),
-  module('shared/prose/prose-check.ts', [
-    './harper-adapter.ts',
-    './naming-rule.ts',
-    './prose-mask.ts',
-  ]),
-  module('shared/prose/harper-adapter.ts', ['node:fs', 'harper.js', 'harper.js/binary']),
+  ...proseModules,
   module('shared/config-directory.ts', ['node:path', './brand.ts']),
   module('shared/env-source.ts', [
     './config-client.ts',

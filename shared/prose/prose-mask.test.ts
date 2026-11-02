@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { PLATFORM_NAME } from '../brand.ts'
 import { maskedRanges } from './prose-mask.ts'
 
 function masked(text: string, value: string): boolean {
@@ -20,7 +21,7 @@ describe('prose masks', () => {
     ['parent path', 'Open ../hidden and ordinary.', '../hidden'],
     ['file extension', 'Open hidden.json and ordinary.', 'hidden.json'],
     ['task key', 'Read DEV-2016 and ordinary.', 'DEV-2016'],
-    ['note reference', 'Read bottega#1358 and ordinary.', 'bottega#1358'],
+    ['note reference', `Read ${PLATFORM_NAME}#1358 and ordinary.`, `${PLATFORM_NAME}#1358`],
     [
       'UUID',
       'Read 123e4567-e89b-12d3-a456-426614174000 and ordinary.',

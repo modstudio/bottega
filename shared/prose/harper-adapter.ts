@@ -1,9 +1,10 @@
 // concern: prose
 /** I/O adapter for the lazily initialized Harper prose engine. */
 
-import { readFileSync } from 'node:fs'
 import { Dialect, type LintConfig, LocalLinter } from 'harper.js'
 import { binary } from 'harper.js/binary'
+import dictionaryText from './dictionary.txt' with { type: 'text' }
+import recordRules from './record-rules.json' with { type: 'json' }
 
 export type EngineFinding = {
   rule: string
@@ -19,16 +20,10 @@ export type EngineResult = { ran: true; findings: EngineFinding[] } | { ran: fal
 let linterPromise: Promise<LocalLinter> | null = null
 
 function dictionaryWords(): string[] {
-  return readFileSync(new URL('./dictionary.txt', import.meta.url), 'utf8')
+  return dictionaryText
     .split(/\r?\n/)
     .map((word) => word.trim())
     .filter((word) => word !== '' && !word.startsWith('#'))
-}
-
-function recordRules(): LintConfig {
-  return JSON.parse(
-    readFileSync(new URL('./record-rules.json', import.meta.url), 'utf8'),
-  ) as LintConfig
 }
 
 async function initializedLinter(): Promise<LocalLinter> {
@@ -37,7 +32,7 @@ async function initializedLinter(): Promise<LocalLinter> {
       const linter = new LocalLinter({ binary, dialect: Dialect.American })
       await linter.setup()
       await linter.importWords(dictionaryWords())
-      await linter.setLintConfig(recordRules())
+      await linter.setLintConfig(recordRules as LintConfig)
       return linter
     })()
   }

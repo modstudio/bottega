@@ -21,6 +21,14 @@ export type ProseCheck =
 
 type FindingWithoutCorrection = Omit<ProseCheckFinding, 'correctedSentence'>
 
+function isNewlineBoundary(text: string, index: number): boolean {
+  return text[index] === '\n' && (index + 1 === text.length || /\s/.test(text[index + 1] ?? ''))
+}
+
+function isSentenceTerminator(text: string, index: number): boolean {
+  return text[index] === '.' || text[index] === '!' || text[index] === '?'
+}
+
 function overlaps(
   finding: Pick<EngineFinding, 'start' | 'end'>,
   ranges: Array<{ start: number; end: number }>,
@@ -37,27 +45,18 @@ function sentenceBounds(
     ranges.some((range) => index >= range.start && index < range.end)
   let start = 0
   for (let index = position - 1; index >= 0; index -= 1) {
-    const character = text[index]
-    const newlineBoundary =
-      character === '\n' && (index + 1 === text.length || /\s/.test(text[index + 1] ?? ''))
-    if (
-      !masked(index) &&
-      (character === '.' || character === '!' || character === '?' || newlineBoundary)
-    ) {
+    if (!masked(index) && (isSentenceTerminator(text, index) || isNewlineBoundary(text, index))) {
       start = index + 1
       break
     }
   }
   let end = text.length
   for (let index = position; index < text.length; index += 1) {
-    const character = text[index]
-    const newlineBoundary =
-      character === '\n' && (index + 1 === text.length || /\s/.test(text[index + 1] ?? ''))
-    if (!masked(index) && (character === '.' || character === '!' || character === '?')) {
+    if (!masked(index) && isSentenceTerminator(text, index)) {
       end = index + 1
       break
     }
-    if (!masked(index) && newlineBoundary) {
+    if (!masked(index) && isNewlineBoundary(text, index)) {
       end = index
       break
     }

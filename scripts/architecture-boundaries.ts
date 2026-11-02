@@ -8,6 +8,7 @@ import { docBoundarySpecs } from './architecture-doc-boundaries.ts'
 import { gateBoundarySpecs } from './architecture-gate-modules.ts'
 import { mcpBoundarySpecs } from './architecture-mcp-boundaries.ts'
 import { portBoundarySpecs } from './architecture-port-boundaries.ts'
+import { proseBoundarySpecs } from './architecture-prose-modules.ts'
 import {
   recordApiBoundaries,
   recordMachineBoundaries,
@@ -56,6 +57,9 @@ const boundary = (
 // Each row lists every import its file may use; anything else fails check-architecture.
 // Widen a row deliberately, with its reason still true, rather than routing around it.
 export const importBoundaries: ImportBoundary[] = [
+  ...proseBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
+  ),
   ...gateBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason),
   ),
@@ -119,37 +123,6 @@ export const importBoundaries: ImportBoundary[] = [
       '../../../shared/prose/prose-lint.ts',
     ],
     'Keep canon lint decisions pure and independent of filesystems, stores, commands, and processes.',
-  ),
-  boundary(
-    'prose-lint-boundary',
-    'shared/prose/prose-lint.ts',
-    ['./prose-mask.ts'],
-    'Keep shared prose lint decisions pure and independent of filesystems, stores, commands, and processes.',
-  ),
-  boundary(
-    'prose-mask-boundary',
-    'shared/prose/prose-mask.ts',
-    [],
-    'Keep prose masking pure and independent of filesystems, stores, commands, and processes.',
-  ),
-  boundary(
-    'naming-rule-boundary',
-    'shared/prose/naming-rule.ts',
-    ['./prose-mask.ts'],
-    'Keep record naming decisions pure and independent of filesystems, stores, commands, and processes.',
-  ),
-  boundary(
-    'prose-check-boundary',
-    'shared/prose/prose-check.ts',
-    ['./naming-rule.ts', './prose-mask.ts'],
-    'Keep prose check composition pure and independent of filesystems, stores, commands, and processes.',
-    ['./harper-adapter.ts'],
-  ),
-  boundary(
-    'harper-adapter-boundary',
-    'shared/prose/harper-adapter.ts',
-    ['node:fs', 'harper.js', 'harper.js/binary'],
-    'Keep Harper I/O isolated from pure prose decisions and every platform concern.',
   ),
   boundary(
     'canon-write-gate-boundary',

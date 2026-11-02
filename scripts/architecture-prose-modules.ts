@@ -1,0 +1,77 @@
+// concern: architecture-manifest
+/** Shared prose module allowlists, kept outside the root manifests to preserve their ceilings. */
+import { dirname, normalize } from 'node:path'
+
+type ProseModule = { file: string; allowed: string[] }
+
+type ProseBoundarySpec = ProseModule & {
+  name: string
+  reason: string
+  typeOnlyAllowed: string[]
+}
+
+const module = (file: string, allowed: string[]): ProseModule => ({
+  file,
+  allowed: allowed.map((target) =>
+    target.startsWith('.') ? normalize(`${dirname(file)}/${target}`) : target,
+  ),
+})
+
+export const proseModules: ProseModule[] = [
+  module('shared/prose/prose-mask.ts', []),
+  module('shared/prose/prose-lint.ts', ['./prose-mask.ts']),
+  module('shared/prose/naming-rule.ts', ['./prose-mask.ts']),
+  module('shared/prose/prose-check.ts', [
+    './harper-adapter.ts',
+    './naming-rule.ts',
+    './prose-mask.ts',
+  ]),
+  module('shared/prose/harper-adapter.ts', [
+    './dictionary.txt',
+    './record-rules.json',
+    'harper.js',
+    'harper.js/binary',
+  ]),
+]
+
+export const proseBoundarySpecs: ProseBoundarySpec[] = [
+  {
+    name: 'prose-lint-boundary',
+    file: 'shared/prose/prose-lint.ts',
+    allowed: ['./prose-mask.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep shared prose lint decisions pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'prose-mask-boundary',
+    file: 'shared/prose/prose-mask.ts',
+    allowed: [],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep prose masking pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'naming-rule-boundary',
+    file: 'shared/prose/naming-rule.ts',
+    allowed: ['./prose-mask.ts'],
+    typeOnlyAllowed: [],
+    reason:
+      'Keep record naming decisions pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'prose-check-boundary',
+    file: 'shared/prose/prose-check.ts',
+    allowed: ['./naming-rule.ts', './prose-mask.ts'],
+    typeOnlyAllowed: ['./harper-adapter.ts'],
+    reason:
+      'Keep prose check composition pure and independent of filesystems, stores, commands, and processes.',
+  },
+  {
+    name: 'harper-adapter-boundary',
+    file: 'shared/prose/harper-adapter.ts',
+    allowed: ['./dictionary.txt', './record-rules.json', 'harper.js', 'harper.js/binary'],
+    typeOnlyAllowed: [],
+    reason: 'Keep Harper I/O isolated from pure prose decisions and every platform concern.',
+  },
+]
