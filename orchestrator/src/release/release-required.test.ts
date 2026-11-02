@@ -589,6 +589,49 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     expect(release().satisfied).toBe(true)
     expect(attempts).toBe(2)
   })
+
+  test('a landing-branch rung without deploy or live reports only the register remedy', () => {
+    let released = false
+    const unprovableProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'production', branch: 'main' }],
+        },
+      },
+    } as Project
+    const report = releaseRequiredRungsAfterMainMove({
+      project: unprovableProject,
+      mergeCommit: 'merge',
+      rungs: [
+        {
+          rung: 'production',
+          branch: 'main',
+          required: true,
+          requiredBy: 'reach',
+          reason: null,
+          declaresLive: false,
+          declaresDeploy: false,
+        },
+      ],
+      runner: runner({
+        release: () => {
+          released = true
+          return successfulRelease()
+        },
+      }),
+    })
+    const output = formatRequiredReleaseReport(report, '42', unprovableProject.name)
+
+    expect(report.satisfied).toBe(false)
+    expect(output).toContain(
+      `${PLATFORM_SLUG} project set fixture --settings '{"release":{"rungs":[{"name":"production","branch":"main","live":"<command that prints the deployed commit sha>"}]}}'`,
+    )
+    expect(output).not.toContain(`${PLATFORM_SLUG} pr merge`)
+    expect(released).toBe(false)
+  })
 })
 
 describe('declared-rung report class guard', () => {
