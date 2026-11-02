@@ -504,7 +504,10 @@ function provisionedLockfile(): { lockfile: Buffer | null; unresolved: string | 
   }
   const baseChoice = borrowedCheckout
     ? dependencyProvisioningBase({ borrowedCheckout: true })
-    : dependencyProvisioningBase({ borrowedCheckout: false, recordedBase: recordedBase?.commit ?? null })
+    : dependencyProvisioningBase({
+        borrowedCheckout: false,
+        recordedBase: recordedBase?.commit ?? null,
+      })
   if (baseChoice.kind === 'unresolved') {
     return { lockfile: null, unresolved: 'the recorded provisioning base could not be resolved' }
   }
@@ -519,7 +522,9 @@ function provisionedLockfile(): { lockfile: Buffer | null; unresolved: string | 
   const lockfile = gitOutput(root, ['show', `${baseChoice.commit}:bun.lock`])
   return {
     lockfile,
-    unresolved: lockfile ? null : `bun.lock could not be read from recorded base ${baseChoice.commit}`,
+    unresolved: lockfile
+      ? null
+      : `bun.lock could not be read from recorded base ${baseChoice.commit}`,
   }
 }
 
