@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Ruled bottega-api memory floor (DEV-2016 S3a); lowering it is an operator ruling. */
+/** Ruled bottega-api memory floor; lowering it is an operator ruling. */
 export const HOSTED_API_MEMORY_FLOOR_MB = 1024
 
 type HostedMemoryInputs = {
