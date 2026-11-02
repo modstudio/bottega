@@ -69,12 +69,12 @@ describe('cost policy selection', () => {
     ).toBe('cheap')
   })
 
-  test('the floor includes its noise band, excludes a clear miss, and is ignored when all miss', () => {
-    const withinNoise = candidate('within-noise', 70, 1, 0.7)
-    const clearMiss = candidate('clear-miss', 95, 0.1, 0.69)
-    expect(select([withinNoise, clearMiss], 1, 0.8).chosen.agent).toBe('within-noise')
-    const current = candidate('quality-choice', 95, 2, 0.69)
-    const allBelow = select([current, candidate('cheap-low', 70, 0.1, 0.6)], 1, 0.8, current)
+  test('the floor is strict and is ignored when all candidates miss', () => {
+    const belowFloor = candidate('below-floor', 95, 0.1, 0.85)
+    const atFloor = candidate('at-floor', 90, 1, 0.9)
+    expect(select([belowFloor, atFloor], 1, 0.9).chosen.agent).toBe('at-floor')
+    const current = candidate('quality-choice', 95, 2, 0.85)
+    const allBelow = select([current, candidate('cheap-low', 70, 0.1, 0.8)], 1, 0.9, current)
     expect(allBelow.floorIgnored).toBe(true)
     expect(allBelow.chosen.agent).toBe('quality-choice')
     expect(allBelow.chargedCost).toBe(2)
