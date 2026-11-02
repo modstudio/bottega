@@ -7,6 +7,8 @@ import { newRecordId } from '../../../shared/record-id.ts'
 import { writableDb } from '../database/db.ts'
 import { workerMcpLaunchSelection, writerProxyRoute } from '../run/run-mcp-launch-scope.ts'
 import { nextRunNumber } from '../run/run-number.ts'
+import { quotaReadingsColumnValues } from '../run/run-usage-columns.ts'
+import { EMPTY_QUOTA_READINGS } from '../transport/quota-readings.ts'
 import type {
   AgentTransport,
   NormalizedEvent,
@@ -168,7 +170,9 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
       const outcome = await collectTurn(input, handle, draining)
       writableDb()
         .query(
-          `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=? WHERE record_id=?`,
+          `UPDATE run SET status=?,latency_ms=?,exit_code=?,output_bytes=?,error=?,
+                          quota_used_percent_start=?,quota_used_percent_end=?,
+                          quota_window_minutes=?,quota_resets_at=? WHERE record_id=?`,
         )
         .run(
           outcome.status === 'ok' ? 'ok' : 'failed',
@@ -176,6 +180,7 @@ export async function runProbeTurn(input: ProbeTurnInput): Promise<ProbeTurnResu
           outcome.status === 'ok' ? 0 : 1,
           Buffer.byteLength(outcome.output),
           outcome.status === 'ok' ? null : outcome.output,
+          ...quotaReadingsColumnValues(outcome.quotaReadings ?? EMPTY_QUOTA_READINGS),
           recordId,
         )
       return {
