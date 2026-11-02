@@ -21,6 +21,15 @@ describe('record naming rule', () => {
   })
 
   test.each([
+    'The plan is ready. Operator approved it.',
+    'Is it ready? Operator says yes.',
+    'Done! Operator ruled.',
+  ])('refuses sentence punctuation followed by the role sense in %s', (text) => {
+    expect(namingFindings(text, null)).toHaveLength(1)
+  })
+
+  test.each([
+    'the ... operator',
     'the && operator',
     '&& operator',
     'a + operator',

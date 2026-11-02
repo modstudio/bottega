@@ -50,8 +50,11 @@ function programmingSense(text: string, start: number): boolean {
   if (/(`+)[^`\n]*\1$/.test(before)) return true
   const symbols = before.match(/[+*/%<>!&|^~?.=-]+$/)?.[0]
   if (!symbols) return false
+  const symbolStart = before.length - symbols.length
+  const characterBeforeSymbols = before[symbolStart - 1]
+  if (characterBeforeSymbols !== undefined && !/\s/.test(characterBeforeSymbols)) return false
   if (symbols.length >= 2) return true
-  const lineBeforeSymbol = before.slice(0, -1).split('\n').at(-1) ?? ''
+  const lineBeforeSymbol = before.slice(0, symbolStart).split('\n').at(-1) ?? ''
   return lineBeforeSymbol.trimStart().length > 0
 }
 
