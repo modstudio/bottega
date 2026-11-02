@@ -4,7 +4,7 @@
 import { db } from '../database/db.ts'
 import { projectAt, projectByName } from '../project/projects.ts'
 import { budgetedReviewPlanForResolvedChange } from './review-round-lens-service.ts'
-import { resolveReviewTarget, type ResolvedReviewTarget } from './review-target.ts'
+import { type ResolvedReviewTarget, resolveReviewTarget } from './review-target.ts'
 import type { ReviewLensSelectionReason } from './review-vocabulary.ts'
 
 const OPERATOR_ORDERED: ReviewLensSelectionReason = 'operator-ordered'
@@ -29,6 +29,7 @@ function funnelReasonForLens(input: {
   cwd: string
   repo?: string
   key?: string
+  resolvedReviewTarget?: ResolvedReviewTarget
 }): ReviewLensSelectionReason {
   const project = input.repo ? projectByName(input.repo) : projectAt(input.cwd)
   if (!project) return OPERATOR_ORDERED

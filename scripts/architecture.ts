@@ -903,17 +903,6 @@ export function architectureRules() {
         pathNot: [...entry.allowed, ...(entry.typeOnlyAllowed ?? [])].map(exactArchitecturePath),
       },
     })),
-    ...modules.flatMap((entry) =>
-      (entry.typeOnlyAllowed ?? []).map((target) => ({
-        name: `module-${entry.file.replace(/[^a-z0-9]+/gi, '-')}-${target.replace(/[^a-z0-9]+/gi, '-')}-is-type-only`,
-        severity: 'error' as const,
-        from: { path: exactArchitecturePath(entry.file) },
-        to: {
-          path: exactArchitecturePath(target),
-          dependencyTypesNot: ['type-only'],
-        },
-      })),
-    ),
     ...importBoundaries.map((entry) => ({
       name: `import-${entry.name}`,
       severity: 'error' as const,

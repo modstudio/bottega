@@ -20,6 +20,7 @@ import {
 import { recordSettingsBoundarySpecs } from './architecture-record-settings-boundaries.ts'
 import { reviewBoundarySpecs } from './architecture-review-boundaries.ts'
 import { runLifecycleBoundarySpecs } from './architecture-run-lifecycle-boundaries.ts'
+import { runLifecycleTypeOnlyBoundarySpecs } from './architecture-run-lifecycle-modules.ts'
 import { runLivenessBoundarySpecs } from './architecture-run-liveness.ts'
 import { runModuleBoundarySpecs } from './architecture-run-modules.ts'
 import { runRetryModuleSpecs } from './architecture-run-retry.ts'
@@ -70,6 +71,9 @@ export const importBoundaries: ImportBoundary[] = [
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   ...runLivenessBoundarySpecs.map((spec) =>
+    boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
+  ),
+  ...runLifecycleTypeOnlyBoundarySpecs.map((spec) =>
     boundary(spec.name, spec.file, [...spec.allowed], spec.reason, [...spec.typeOnlyAllowed]),
   ),
   ...runModuleBoundarySpecs.map((spec) =>

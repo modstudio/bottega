@@ -1,6 +1,6 @@
 import { REVIEW_SEVERITY_INSTRUCTION } from '../contract/contract.ts'
 import { resolveLens } from '../lens/lenses.ts'
-import { reviewArtifactBlock, type ResolvedReviewTarget } from '../review/review-target.ts'
+import { type ResolvedReviewTarget, reviewArtifactBlock } from '../review/review-target.ts'
 
 export function operatorKnowledgeSection(pack: { markdown: string } | null): string {
   return pack?.markdown ? `WHAT THE OPERATOR WANTS YOU TO KNOW\n\n${pack.markdown}` : ''
