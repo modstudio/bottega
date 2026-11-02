@@ -68,7 +68,7 @@ function injectedRunner(): SecurityRunner | undefined {
 
 function runSecurity(argv: string[], stdin?: Uint8Array, env?: RunnerEnvironment): SecurityResult {
   const injected = injectedRunner()
-  if (injected) return injected(argv, stdin, env)
+  if (injected) return env ? injected(argv, stdin, env) : injected(argv, stdin)
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
   const result = Bun.spawnSync(argv, {
@@ -87,7 +87,7 @@ async function runSecurityAsync(
   env?: RunnerEnvironment,
 ): Promise<SecurityResult> {
   const injected = injectedRunner()
-  if (injected) return injected(argv, stdin, env)
+  if (injected) return env ? injected(argv, stdin, env) : injected(argv, stdin)
   if (process.env.NODE_ENV === 'test')
     throw new Error('keychain access requires an injected security runner in tests')
   const child = Bun.spawn(argv, {
@@ -223,9 +223,16 @@ async function readLinuxKeychainItemAsync(
   service: string,
   account: string,
   signal?: AbortSignal,
+  runner: AsyncSecurityRunner = runSecurityAsync,
 ): Promise<string | null> {
   const injected = injectedRunner()
   if (injected) return readLinuxKeychainItem(service, account, injected)
+  if (runner !== runSecurityAsync) {
+    return linuxResult(
+      'get',
+      await runner(linuxArgv(), undefined, signal, linuxEnvironment('get', service, account)),
+    )
+  }
   if (signal?.aborted) throw signal.reason
   let abort: (() => void) | undefined
   const aborted = new Promise<never>((_, reject) => {
@@ -296,7 +303,7 @@ export async function readKeychainItemAsync(
   runner: AsyncSecurityRunner = runSecurityAsync,
 ): Promise<string | null> {
   if (decideKeychainBackend(process.platform) === 'bun-secrets')
-    return readLinuxKeychainItemAsync(service, account, signal)
+    return readLinuxKeychainItemAsync(service, account, signal, runner)
   const result = await runner(
     ['security', 'find-generic-password', '-a', account, '-s', service, '-w'],
     undefined,
