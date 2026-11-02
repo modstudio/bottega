@@ -73,6 +73,90 @@ export type CheckoutFacts = {
 
 export type Decision = { ok: true } | { ok: false; message: string }
 
+export type CiDeployWaitDecision = 'matched' | 'keep-waiting' | 'timed-out'
+
+/** Decide the next action after one CI-deployed rung live reading. */
+export function ciDeployWaitDecision(facts: {
+  candidateIsLiveAncestor: boolean
+  elapsedMs: number
+  waitMs: number
+}): CiDeployWaitDecision {
+  if (facts.candidateIsLiveAncestor) return 'matched'
+  return facts.elapsedMs >= facts.waitMs ? 'timed-out' : 'keep-waiting'
+}
+
+export type CiDeployWaitOutcome = {
+  ledgerResult: { exitCode: number; output: string }
+  outputTail: string
+  liveAfter: string
+  liveMatchesCandidate: boolean
+  warning: null
+}
+
+/** Map a terminal CI live wait to the fields shared by the ledger and release result. */
+export function ciDeployWaitOutcome(facts: {
+  decision: Exclude<CiDeployWaitDecision, 'keep-waiting'>
+  rung: string
+  candidate: string
+  live: string
+  elapsedMs: number
+}): CiDeployWaitOutcome {
+  const matched = facts.decision === 'matched'
+  const elapsed = `${Math.ceil(facts.elapsedMs / 1_000)} seconds`
+  const output = matched
+    ? `live commit ${facts.live} contains CI release candidate ${facts.candidate} after ${elapsed}`
+    : `timed out after ${elapsed} waiting for rung ${facts.rung} live commit to contain CI release candidate ${facts.candidate}`
+  return {
+    ledgerResult: { exitCode: matched ? 0 : 1, output },
+    outputTail: output,
+    liveAfter: facts.live,
+    liveMatchesCandidate: matched,
+    warning: null,
+  }
+}
+
+type ReleaseRungForRemedy = {
+  name: string
+  [field: string]: unknown
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
+}
+
+/** Name the register edit that makes a rung without a deploy command provable. */
+export function unprovableReleaseRungMessage(
+  platformSlug: string,
+  project: string,
+  rung: string,
+  branch: string,
+  rungs: readonly ReleaseRungForRemedy[],
+): string {
+  const declared = rungs.some((candidate) => candidate.name === rung)
+  if (!declared) {
+    const patch = JSON.stringify({
+      release: {
+        rungs: [
+          ...rungs,
+          {
+            name: rung,
+            branch,
+            live: '<command that prints the deployed commit sha>',
+          },
+        ],
+      },
+    })
+    return `release rung ${rung} is required but the register does not declare it; declare it in release.rungs with its branch and a live probe through ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
+  }
+  const replacement = rungs.map((candidate) =>
+    candidate.name === rung
+      ? { ...candidate, live: '<command that prints the deployed commit sha>' }
+      : candidate,
+  )
+  const patch = JSON.stringify({ release: { rungs: replacement } })
+  return `release rung ${rung} declares neither a deploy command nor a live probe and cannot be proved; declare a live probe with: ${platformSlug} project set ${project} --settings ${shellQuote(patch)}, then retry`
+}
+
 export type TrunkFreshnessDecision =
   | { ok: true; overrideReason: string | null }
   | { ok: false; message: string }

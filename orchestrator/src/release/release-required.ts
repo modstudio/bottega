@@ -6,7 +6,7 @@ import { nulPathListArgs, splitNulPaths } from '../../../shared/git-path-list.ts
 import { git, gitResult, targetGitEnvironment } from '../git/git-environment.ts'
 import type { Project } from '../project/projects.ts'
 import { declaredGlobsMatch } from '../review/review-declared-globs.ts'
-import { releaseProofDecision } from './release-decision.ts'
+import { releaseProofDecision, unprovableReleaseRungMessage } from './release-decision.ts'
 import type { EntryClosure } from './release-entry-closure.ts'
 import {
   newestSuccessfulProvenReleaseCommit,
@@ -17,6 +17,8 @@ import { decideShipToReach, releaseDepthFlag, shipToRungs } from './ship-to-reac
 
 export type RequiredReleaseRung = {
   name: string
+  branch: string
+  deploy?: string
   onDemand?: boolean
   live?: string
   requiredWhenChanged?: readonly string[]
@@ -47,6 +49,7 @@ type RequiredRungRelease = {
   outputTail: string
   satisfied: boolean
   deployed: boolean
+  unprovable?: true
 }
 
 export type RequiredReleaseReport = {
@@ -57,10 +60,12 @@ export type RequiredReleaseReport = {
 
 export type ReleaseRungPlan = {
   rung: string
+  branch: string
   required: boolean
   requiredBy: (typeof RELEASE_REQUIREMENT_SOURCES)[number] | null
   reason: string | null
   declaresLive: boolean
+  declaresDeploy: boolean
 }
 
 export const RELEASE_REQUIREMENT_SOURCES = ['explicit', 'reach'] as const
@@ -90,6 +95,7 @@ function releaseRungPlans(
   depth: string | undefined,
   skipped: ReadonlyMap<string, string>,
   beyondDepth: ReadonlySet<string>,
+  landingBranch: string,
 ): ReleaseRungPlan[] {
   return rungs.map((rung) => {
     const requiredBy = explicitlyRequired.has(rung.name)
@@ -97,12 +103,20 @@ function releaseRungPlans(
       : reached.has(rung.name)
         ? 'reach'
         : null
+    const required = requiredBy !== null && rung.branch === landingBranch
     return {
       rung: rung.name,
-      required: requiredBy !== null,
+      branch: rung.branch,
+      required,
       requiredBy,
-      reason: requiredBy !== null ? null : notRequiredReason(rung, depth, skipped, beyondDepth),
+      reason:
+        requiredBy !== null && !required
+          ? `proved at promote-release: rung ${rung.name} deploys from ${rung.branch}, not the landing branch ${landingBranch}`
+          : requiredBy !== null
+            ? null
+            : notRequiredReason(rung, depth, skipped, beyondDepth),
       declaresLive: rung.live !== undefined,
+      declaresDeploy: rung.deploy !== undefined,
     }
   })
 }
@@ -110,11 +124,14 @@ function releaseRungPlans(
 export function legacyRungPlans(
   rungs: readonly RequiredReleaseRung[],
   requiredRungs: readonly string[],
+  landingBranch: string,
 ): ReleaseRungPlan[] {
   const known = new Set(rungs.map(({ name }) => name))
   const allRungs = [
     ...rungs,
-    ...requiredRungs.filter((name) => !known.has(name)).map((name) => ({ name })),
+    ...requiredRungs
+      .filter((name) => !known.has(name))
+      .map((name) => ({ name, branch: landingBranch })),
   ]
   return releaseRungPlans(
     allRungs,
@@ -123,6 +140,7 @@ export function legacyRungPlans(
     undefined,
     new Map(),
     new Set(),
+    landingBranch,
   )
 }
 
@@ -143,13 +161,21 @@ export function requiredRungDecision(
     const reach = decideShipToReach('production', shipToRungs(rungs), depth, { changedPaths })
     if (!reach.allowed) throw new Error(reach.refusal)
     const reached = new Set(reach.reach)
-    const required = new Set([...explicitlyRequired, ...reached])
     const skipped = new Map(reach.skipped.map(({ name, reason }) => [name, reason]))
     const beyondDepth = new Set(reach.remaining)
+    const plans = releaseRungPlans(
+      rungs,
+      explicitlyRequired,
+      reached,
+      depth,
+      skipped,
+      beyondDepth,
+      project.settings.trunk!,
+    )
     return {
       decided: true,
-      required: rungs.filter(({ name }) => required.has(name)).map(({ name }) => name),
-      rungs: releaseRungPlans(rungs, explicitlyRequired, reached, depth, skipped, beyondDepth),
+      required: plans.filter(({ required }) => required).map(({ rung }) => rung),
+      rungs: plans,
       error: null,
     }
   } catch (cause) {
@@ -163,11 +189,19 @@ export function requiredRungDecision(
         .filter((rung) => !rung.onDemand && !explicitlyRequired.has(rung.name))
         .map(({ name }) => name),
     )
-    const required = new Set([...explicitlyRequired, ...reached])
+    const plans = releaseRungPlans(
+      rungs,
+      explicitlyRequired,
+      reached,
+      depth,
+      new Map(),
+      new Set(),
+      project.settings.trunk!,
+    )
     return {
       decided: false,
-      required: rungs.filter(({ name }) => required.has(name)).map(({ name }) => name),
-      rungs: releaseRungPlans(rungs, explicitlyRequired, reached, depth, new Map(), new Set()),
+      required: plans.filter(({ required }) => required).map(({ rung }) => rung),
+      rungs: plans,
       error: cause instanceof Error ? cause.message : String(cause),
     }
   }
@@ -302,6 +336,7 @@ export function releaseRequiredFlagAbsent(
   const withDecisionError = (detail: string): string =>
     decisionError ? `${detail}; ${decisionError}` : detail
   const releases = rungs.map((plan): RequiredRungRelease => {
+    if (!plan.required) return failure(plan, plan.reason ?? 'not required')
     if (plan.requiredBy !== 'reach')
       return failure(plan, withDecisionError('not released because --release-required was absent'))
     return failure(
@@ -345,6 +380,21 @@ function runRequiredReleaseRungs(
   }
   const releases = plans.map((plan): RequiredRungRelease => {
     if (!plan.required) return failure(plan, plan.reason ?? 'not required')
+    if (!plan.declaresDeploy && !plan.declaresLive) {
+      return {
+        ...failure(
+          plan,
+          unprovableReleaseRungMessage(
+            PLATFORM_SLUG,
+            project.name,
+            plan.rung,
+            plan.branch,
+            project.settings.release?.rungs ?? [],
+          ),
+        ),
+        unprovable: true,
+      }
+    }
     try {
       const live = runner.newestLive(project, plan.rung, plan.declaresLive)
       if (live && runner.contains(project, mergeCommit, live)) {
@@ -391,7 +441,8 @@ export function formatRequiredReleaseReport(
       : `rung ${release.rung}: not required; ${(release.outputTail || '(no reason)').replace('<project>', project)}`,
   )
   if (!report.satisfied) {
-    const rung = report.releases.find((release) => !release.satisfied)!.rung
+    const rung = report.releases.find((release) => !release.satisfied && !release.unprovable)?.rung
+    if (!rung) return lines.join('\n')
     lines.push(
       `remedy: ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}, or ${PLATFORM_SLUG} release run ${project} --rung ${rung} and then ${PLATFORM_SLUG} pr merge ${target} --release-required${releaseDepthFlag(depth)}`,
     )

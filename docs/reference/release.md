@@ -52,7 +52,7 @@ list recorded releases for a project
 
 **Synopsis:** `bottega release run [project] [--rung <name>] [--rollback <reason>] [--behind-trunk <reason>] [--redeploy <reason>] [--json]`
 
-run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback
+run the registered deploy with BOTTEGA_RELEASE_PROJECT, BOTTEGA_RELEASE_RUNG, and BOTTEGA_RELEASE_COMMIT set, plus BOTTEGA_RELEASE_ROLLBACK set to 1 on a deliberate rollback; for a rung CI deploys, wait for its live probe to contain the branch tip and record the proof
 
 ### Options
 

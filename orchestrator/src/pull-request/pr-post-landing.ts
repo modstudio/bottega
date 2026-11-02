@@ -518,7 +518,11 @@ export function runPullRequestPostLanding(
   })
   const rungPlans =
     payload.rungPlans ??
-    legacyRungPlans(project.settings.release?.rungs ?? [], payload.requiredRungs)
+    legacyRungPlans(
+      project.settings.release?.rungs ?? [],
+      payload.requiredRungs,
+      project.settings.trunk ?? '',
+    )
   const requiredRelease = !payload.releaseRequired
     ? releaseRequiredFlagAbsent(rungPlans, payload.rungDecisionError)
     : payload.rungDecisionError
