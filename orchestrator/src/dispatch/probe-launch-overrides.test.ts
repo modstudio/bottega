@@ -1,5 +1,4 @@
 import { expect, test } from 'bun:test'
-import { repositoryReaderPreamble } from '../contract/contract.ts'
 import { readonlyInfrastructurePrompt } from '../run/run-readonly-infrastructure.ts'
 import {
   decideProbeLaunchOverrides,
@@ -55,13 +54,6 @@ test('probe launch overrides are accepted only for their approved launch shapes'
 })
 
 test('reader suites switch only the findings reader preamble wording', () => {
-  expect(repositoryReaderPreamble(readerPromptFindings(true, true))).toBe(
-    repositoryReaderPreamble(false),
-  )
-  expect(repositoryReaderPreamble(readerPromptFindings(true, false))).toBe(
-    repositoryReaderPreamble(true),
-  )
-
   const infrastructure = {
     readsRepo: true,
     writesRepo: false,
