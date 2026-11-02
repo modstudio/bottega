@@ -6,6 +6,7 @@ import {
   decideRequiredRungs,
   formatRequiredReleaseReport,
   type RequiredReleaseRunner,
+  releaseRequiredFlagAbsent,
   releaseRequiredRungsAfterMainMove,
   requiredRungDecision,
 } from './release-required.ts'
@@ -44,9 +45,6 @@ const successfulRelease = (overrides: Partial<ReleaseResult> = {}): ReleaseResul
   }) as ReleaseResult
 
 const runner = (overrides: Partial<RequiredReleaseRunner> = {}): RequiredReleaseRunner => ({
-  changedPaths: () => ['shared/record/migrations/20261031_add_column.sql'],
-  entryClosure: () => new Map(),
-  prepareMain: () => {},
   newestLive: () => null,
   contains: () => false,
   release: () => successfulRelease(),
@@ -113,6 +111,230 @@ describe('decideRequiredRungs', () => {
   })
 })
 
+describe('requiredRungDecision', () => {
+  const entryPointProject = {
+    ...project,
+    settings: {
+      ...project.settings,
+      release: {
+        ...project.settings.release!,
+        rungs: [
+          {
+            name: 'hosted-api',
+            branch: 'main',
+            entryPoints: ['orchestrator/src/record/server.ts'],
+          },
+        ],
+      },
+    },
+  } as Project
+
+  test('reaches an unconditioned rung when a changed path is outside its entry closure', () => {
+    const decision = requiredRungDecision(
+      entryPointProject,
+      () => ['docs/release.md'],
+      () =>
+        new Map([
+          ['orchestrator/src/record/server.ts', new Set(['orchestrator/src/record/server.ts'])],
+        ]),
+    )
+
+    expect(decision.required).toEqual(['hosted-api'])
+  })
+
+  test('does not inspect changes when no rung declares required paths', () => {
+    let inspected = false
+    const decision = requiredRungDecision(
+      {
+        ...project,
+        settings: {
+          ...project.settings,
+          release: { ...project.settings.release!, rungs: [] },
+        },
+      },
+      () => {
+        inspected = true
+        return []
+      },
+      () => new Map(),
+    )
+
+    expect(decision).toEqual({ decided: true, required: [], rungs: [], error: null })
+    expect(inspected).toBe(false)
+  })
+
+  test('does not read entry closures when no rung declares entry points', () => {
+    let readClosure = false
+    requiredRungDecision(
+      project,
+      () => ['shared/record/migrations/20261031_add_column.sql'],
+      () => {
+        readClosure = true
+        return new Map()
+      },
+    )
+
+    expect(readClosure).toBe(false)
+  })
+
+  test('an entry closure failure requires every declaring rung', () => {
+    const decision = requiredRungDecision(
+      {
+        ...project,
+        settings: {
+          ...project.settings,
+          release: {
+            ...project.settings.release!,
+            rungs: [
+              ...project.settings.release!.rungs,
+              { name: 'hosted-hub', branch: 'main', entryPoints: ['hub/src/hosted.ts'] },
+            ],
+          },
+        },
+      },
+      () => ['shared/record/migrations/20261031_add_column.sql'],
+      () => {
+        throw new Error('entry closure unavailable')
+      },
+    )
+
+    expect(decision).toMatchObject({
+      decided: false,
+      required: ['hosted-api', 'hosted-hub'],
+      error: 'entry closure unavailable',
+    })
+  })
+
+  test('contains a changed-path failure and names every declaring rung', () => {
+    const decision = requiredRungDecision(
+      {
+        ...project,
+        settings: {
+          ...project.settings,
+          release: {
+            ...project.settings.release!,
+            rungs: [
+              ...project.settings.release!.rungs,
+              { name: 'worker', branch: 'main', requiredWhenChanged: ['worker/**'] },
+            ],
+          },
+        },
+      },
+      () => {
+        throw new Error('landing-branch fetch failed')
+      },
+      () => new Map(),
+    )
+
+    expect(decision).toMatchObject({
+      decided: false,
+      required: ['hosted-api', 'worker'],
+      error: 'landing-branch fetch failed',
+    })
+  })
+
+  test('satisfies and explains a reach-only rung when the flag is absent', () => {
+    const reachOnlyProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'npm', branch: 'main', releasesWhenChanged: ['packages/**'] }],
+        },
+      },
+    } as Project
+    const decision = requiredRungDecision(
+      reachOnlyProject,
+      () => ['packages/core/CHANGELOG.md'],
+      () => new Map(),
+    )
+    const report = releaseRequiredFlagAbsent(decision.rungs)
+
+    expect(report.required).toEqual([])
+    expect(report.satisfied).toBe(true)
+    expect(report.releases).toEqual([
+      expect.objectContaining({
+        rung: 'npm',
+        required: false,
+        satisfied: true,
+        outputTail: 'ship-to reach deploys only at production with --release-required',
+      }),
+    ])
+  })
+
+  test('the absent flag still satisfies a reach-only plan when path inspection failed', () => {
+    const reachOnlyProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [{ name: 'npm', branch: 'main', releasesWhenChanged: ['packages/**'] }],
+        },
+      },
+    } as Project
+    const decision = requiredRungDecision(
+      reachOnlyProject,
+      () => {
+        throw new Error('changed paths unavailable')
+      },
+      () => new Map(),
+    )
+    const report = releaseRequiredFlagAbsent(decision.rungs, 'changed paths unavailable')
+
+    expect(report.required).toEqual([])
+    expect(report.satisfied).toBe(true)
+    expect(report.releases[0]?.outputTail).toBe(
+      'ship-to reach deploys only at production with --release-required; changed paths unavailable',
+    )
+  })
+
+  test('deploys rungs matched explicitly and by reach with the flag', () => {
+    let deployed = 0
+    const bothProject = {
+      ...project,
+      settings: {
+        ...project.settings,
+        release: {
+          ...project.settings.release!,
+          rungs: [
+            { name: 'explicit', branch: 'main', requiredWhenChanged: ['packages/**'] },
+            { name: 'reach', branch: 'main', releasesWhenChanged: ['packages/**'] },
+          ],
+        },
+      },
+    } as Project
+    const decision = requiredRungDecision(
+      bothProject,
+      () => ['packages/core/CHANGELOG.md'],
+      () => new Map(),
+    )
+
+    expect(decision.required).toEqual(['explicit', 'reach'])
+    expect(decision.rungs).toEqual([
+      expect.objectContaining({ rung: 'explicit', required: true, requiredBy: 'explicit' }),
+      expect.objectContaining({ rung: 'reach', required: true, requiredBy: 'reach' }),
+    ])
+
+    const report = releaseRequiredRungsAfterMainMove({
+      project: bothProject,
+      mergeCommit: 'merge',
+      rungs: decision.rungs,
+      runner: runner({
+        release: () => {
+          deployed++
+          return successfulRelease()
+        },
+      }),
+    })
+
+    expect(report.required).toEqual(['explicit', 'reach'])
+    expect(report.satisfied).toBe(true)
+    expect(deployed).toBe(2)
+  })
+})
+
 describe('releaseRequiredRungsAfterMainMove', () => {
   const requiredPlan = {
     rung: 'hosted-api',
@@ -122,17 +344,13 @@ describe('releaseRequiredRungsAfterMainMove', () => {
     declaresLive: false,
   }
 
-  test('releases required rungs without preparing main again', () => {
-    let prepared = false
+  test('releases required rungs after the main checkout move', () => {
     let released = false
     const report = releaseRequiredRungsAfterMainMove({
       project,
       mergeCommit: 'merge',
       rungs: [requiredPlan],
       runner: runner({
-        prepareMain: () => {
-          prepared = true
-        },
         release: () => {
           released = true
           return successfulRelease()
@@ -142,7 +360,6 @@ describe('releaseRequiredRungsAfterMainMove', () => {
 
     expect(report.satisfied).toBe(true)
     expect(released).toBe(true)
-    expect(prepared).toBe(false)
   })
 
   test('requires a matching live check for a released rung', () => {
@@ -282,18 +499,17 @@ describe('declared-rung report class guard', () => {
         },
       },
     } as Project
-    const guardedRunner = runner({ changedPaths: () => ['packages/core/CHANGELOG.md'] })
     const decision = requiredRungDecision(
       guardedProject,
-      () => guardedRunner.changedPaths(guardedProject, 'merge'),
-      (entries) => guardedRunner.entryClosure(guardedProject, 'merge', entries),
+      () => ['packages/core/CHANGELOG.md'],
+      () => new Map(),
       'unconditioned',
     )
     const report = releaseRequiredRungsAfterMainMove({
       project: guardedProject,
       mergeCommit: 'merge',
       rungs: decision.rungs,
-      runner: guardedRunner,
+      runner: runner(),
     })
     const output = formatRequiredReleaseReport(report, '42', guardedProject.name)
 
