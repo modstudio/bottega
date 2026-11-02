@@ -17,12 +17,14 @@ import {
   formatGateRequestDecision,
   GATE_CLOSE_REASON,
   GATE_COMMAND_TIMEOUT_MS,
+  GATE_PROVISIONED_BASE_ENV,
   GATE_OUTPUT_TAIL_BYTES,
   isGateToolingPath,
   parseGateInput,
   RUN_GATE_WAIT_MS,
   resolveGateCommand,
   shapeGateResult,
+  workerGateOverlay,
 } from './gate-decision.ts'
 
 test('gate input parsing keeps absence distinct from an invalid stored value', () => {
@@ -93,6 +95,15 @@ test('broker gate environment adds host paths without exposing secrets and appli
     HOME: '/sandbox/home',
     TMPDIR: '/tmp/operator',
     BOTTEGA_RUN_ID: '41',
+  })
+})
+
+test('worker gate overlay exposes the recorded provisioning base and keeps other entries', () => {
+  const baseCommit = 'a'.repeat(40)
+  expect(workerGateOverlay({ PATH: '/bin', BOTTEGA_RUN_ID: '41' }, baseCommit)).toEqual({
+    PATH: '/bin',
+    BOTTEGA_RUN_ID: '41',
+    [GATE_PROVISIONED_BASE_ENV]: baseCommit,
   })
 })
 

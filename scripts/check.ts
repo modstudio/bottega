@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openReadOnlyDatabase } from '../orchestrator/src/database/db.ts'
+import { GATE_PROVISIONED_BASE_ENV } from '../orchestrator/src/gate/gate-decision.ts'
 import { biomeFindings } from '../orchestrator/src/ratchet/biome-adapter.ts'
 import { classifyCaller } from '../shared/caller-classification'
 import { changeViewPlan } from '../shared/change-view.ts'
@@ -468,6 +469,8 @@ function gitOutput(cwd: string, argv: string[], failure: 'null' | 'throw' = 'nul
 }
 
 function recordedRunBase(): string | null {
+  const brokeredBase = process.env[GATE_PROVISIONED_BASE_ENV]?.trim()
+  if (brokeredBase) return brokeredBase
   const runId = process.env.BOTTEGA_RUN_ID?.trim()
   if (!runId) return null
   let database: ReturnType<typeof openReadOnlyDatabase> | null = null

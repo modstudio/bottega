@@ -43,6 +43,7 @@ import {
   type GateInput,
   parseGateInput,
   resolveGateCommand,
+  workerGateOverlay,
 } from './gate-decision.ts'
 import { prepareSyntheticGateIndex } from './gate-index.ts'
 import { cancelGateExecutions, type GatePurpose } from './gate-run.ts'
@@ -534,7 +535,7 @@ async function runPreparedGate(input: {
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,
-          environment: input.environment,
+          environment: workerGateOverlay(input.environment, input.prepared.baseCommit),
           confinement: input.confinement,
           state: input.state,
           record: input.record,
@@ -550,7 +551,10 @@ async function runPreparedGate(input: {
         await runGateProcess({
           command: input.prepared.command,
           worktree: input.prepared.worktree,
-          environment: { ...input.environment, ...gateIndex.environment },
+          environment: workerGateOverlay(
+            { ...input.environment, ...gateIndex.environment },
+            input.prepared.baseCommit,
+          ),
           confinement: input.confinement,
           state: input.state,
           record: input.record,
