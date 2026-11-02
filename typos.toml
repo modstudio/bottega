@@ -34,10 +34,6 @@ DOUB = "DOUB"
 requir = "requir"
 # `uest` is the optional regex suffix that expands `req` to `request`.
 uest = "uest"
-# `ises`, `yse` and `tre` are British suffix patterns the prose check maps to `izes`, `yze` and `ter`.
-ises = "ises"
-yse = "yse"
-tre = "tre"
 
 [files]
 extend-exclude = [

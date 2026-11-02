@@ -64,8 +64,11 @@ function replacement(text: string, displayName: string | null, determiner: strin
   return /['’]s$/i.test(text) ? `${person}'s` : person
 }
 
-export function namingFindings(text: string, displayName: string | null): NamingFinding[] {
-  const masks = maskedRanges(text)
+export function namingFindings(
+  text: string,
+  displayName: string | null,
+  masks: Array<{ start: number; end: number }> = maskedRanges(text),
+): NamingFinding[] {
   const message = displayName
     ? `Name the person: ${displayName}; where a role word is needed, use "the user".`
     : 'Name the person who decided; where a role word is needed, use "the user".'

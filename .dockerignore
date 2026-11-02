@@ -4,6 +4,8 @@
 !package.json
 !bun.lock
 !tsconfig.base.json
+# The shared prose check embeds the spelling allow list from typos.toml.
+!typos.toml
 !shared/
 !orchestrator/package.json
 !orchestrator/tsconfig.json

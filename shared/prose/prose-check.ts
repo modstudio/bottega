@@ -165,11 +165,12 @@ function correctedSentence(
 }
 
 export function checkProse(text: string, options: CheckProseOptions): ProseCheck {
-  const masks = maskMap(text, maskedRanges(text))
+  const ranges = maskedRanges(text)
+  const masks = maskMap(text, ranges)
   const findings: FindingWithoutCorrection[] = [
     ...correctionFindings(text, masks, options),
     ...repeatedWordFindings(text, masks),
-    ...namingFindings(text, options.displayName).map((finding) => ({
+    ...namingFindings(text, options.displayName, ranges).map((finding) => ({
       rule: finding.rule,
       start: finding.start,
       end: finding.end,
