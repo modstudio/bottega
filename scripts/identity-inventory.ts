@@ -6,6 +6,7 @@ import { type AnyPgTable, getTableConfig, PgTable } from 'drizzle-orm/pg-core'
 import drizzleConfig from '../shared/record/drizzle.config.ts'
 
 export type KeyStore = 'orchestrator' | 'hub' | 'hosted'
+export type StateClassStore = Exclude<KeyStore, 'hosted'>
 type KeyColumn = {
   table: string
   name: string

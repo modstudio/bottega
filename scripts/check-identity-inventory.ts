@@ -28,6 +28,8 @@ import {
 } from './identity-inventory.ts'
 import baseline from './identity-key-baseline.json'
 import { KEY_MANIFESTS } from './identity-key-manifest.ts'
+import { stateClassRefusals } from './identity-state-class-check.ts'
+import { STATE_CLASSES } from './identity-state-classes.ts'
 
 type Baseline = Record<'orchestrator' | 'hub' | 'hosted', string[]>
 
@@ -82,6 +84,11 @@ const OUTBOX_KIND_SOURCES: Readonly<Record<keyof typeof OUTBOX_PAYLOAD_CONTRACTS
   branch_disposal: { source: 'branch_disposal', reason: 'enqueued from branch_disposal' },
 }
 
+const PUSHABLE_HUB_TABLES = PUSHABLE_HUB_CHANGE_TABLES.map((hosted) => ({
+  hosted,
+  local: hosted.replace(/^hub_/, ''),
+}))
+
 function runtimeSyncedSourceRefusals(): string[] {
   const syncSources = new Set(
     KEY_MANIFESTS.syncedSources['orchestrator.recordApiClient.sync']?.sources ?? [],
@@ -100,12 +107,11 @@ function runtimeSyncedSourceRefusals(): string[] {
             `orchestrator.recordApiClient.sync: outbox kind ${kind} source ${mapping.source} is not declared; remedy: add the source table (${mapping.reason})`,
           ]
     }),
-    ...PUSHABLE_HUB_CHANGE_TABLES.flatMap((hostedTable) => {
-      const localTable = hostedTable.replace(/^hub_/, '')
-      return pushSources.has(localTable)
+    ...PUSHABLE_HUB_TABLES.flatMap(({ hosted, local }) => {
+      return pushSources.has(local)
         ? []
         : [
-            `hub.taskClient.hostedPushChanges: runtime push table ${hostedTable} has no declared local source ${localTable}; remedy: add the source table`,
+            `hub.taskClient.hostedPushChanges: runtime push table ${hosted} has no declared local source ${local}; remedy: add the source table`,
           ]
     }),
   ].sort()
@@ -173,7 +179,17 @@ async function main(): Promise<void> {
         ...sqliteSyncedSchemaFacts('hub', hubTables),
       ],
     )
-    const refusals = [...syncedRefusals, ...runtimeSyncedSourceRefusals()]
+    const classRefusals = stateClassRefusals({
+      tables: {
+        orchestrator: orchestratorTables.map((table) => table.name),
+        hub: hubTables.map((table) => table.name),
+      },
+      declarations: STATE_CLASSES,
+      outboxSources: Object.values(OUTBOX_KIND_SOURCES).map(({ source }) => source),
+      pushableHubTables: PUSHABLE_HUB_TABLES,
+      hostedTables: (await hostedKeyTables()).map((table) => table.name),
+    })
+    const refusals = [...syncedRefusals, ...runtimeSyncedSourceRefusals(), ...classRefusals]
     if (refusals.length) throw new Error(refusals.join('\n'))
     const inventories = {
       orchestrator: classifyKeyInventory('orchestrator', orchestratorTables, KEY_MANIFESTS),
