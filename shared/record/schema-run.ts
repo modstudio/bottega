@@ -142,6 +142,10 @@ export const run = pgTable.withRLS(
       'run_executor_check',
       sql`${table.executor} IS NULL OR ${table.executor} IN ('external', 'harness')`,
     ),
+    check(
+      'run_task_or_project_unless_probe',
+      sql`${table.probe} OR ${table.taskId} IS NOT NULL OR ${table.projectId} IS NOT NULL`,
+    ),
     ...tenantPolicies('run', table.spaceId),
   ],
 )

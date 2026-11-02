@@ -1,0 +1,1 @@
+ALTER TABLE "run" ADD CONSTRAINT "run_task_or_project_unless_probe" CHECK ("probe" OR "task_id" IS NOT NULL OR "project_id" IS NOT NULL);
