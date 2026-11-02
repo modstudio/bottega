@@ -32,14 +32,8 @@ describe('tree process cwd decision', () => {
     expect(decide(new Map([[12, '/real/other']]))).toEqual({ action: 'proceed' })
   })
 
-  test('ignores the close-out process itself', () => {
+  test('proceeds when every pid inside the tree is excluded', () => {
     expect(decide(new Map([[12, '/real/tree']]), { excludedPids: new Set([12]) })).toEqual({
-      action: 'proceed',
-    })
-  })
-
-  test('proceeds when only an excluded ancestor is inside the tree', () => {
-    expect(decide(new Map([[12, '/real/tree']]), { excludedPids: new Set([12, 99]) })).toEqual({
       action: 'proceed',
     })
   })
